@@ -20,6 +20,19 @@ def test_zero_bins_do_not_annihilate_informative_poisson_gaussian_fit():
     assert candidate.constrained_shape(rows[:1]) is None
 
 
+def test_clipped_bright_plateau_reproduces_the_shipping_fit_collapse():
+    rows = [*observations(), dict(signal=1.25,variance=0.,pixels=1000,zero_fraction=.57)]
+    signal = np.array([row['signal'] for row in rows])
+    variance = np.array([row['variance'] for row in rows])
+    weight = np.array([row['pixels'] for row in rows])
+    old = adaptive._fit_variance(signal,variance,weight)
+    assert old[1] == 1e-20
+    assert abs(old[0])+abs(old[2]) < 1e-12
+    corrected = candidate.constrained_shape(rows)
+    assert corrected[0] == pytest.approx(.003,rel=1e-8)
+    assert corrected[1] == pytest.approx(2e-6,rel=1e-8)
+
+
 def test_constrained_shape_is_nonnegative_and_exposure_covariant():
     shape = candidate.constrained_shape(observations())
     for scale in (1/64, 64):
@@ -100,3 +113,27 @@ def test_sensor_profile_requires_evidence_not_just_iso_black_white():
 def test_adapters_are_described_as_research_only():
     assert candidate.raw().description()['input_kind'] == 'bayer'
     assert candidate.raw_corrected().description()['corrected_model']
+
+
+def test_native_fit_exposure_scaling_and_no_borrowing_for_synthetic(monkeypatch):
+    from pathlib import Path
+    values = dict(a=.003,b=1e-6,c=.01,band_sigmas=[[1.]*5]*3)
+    monkeypatch.setattr(Path, 'read_text', lambda self: '{"records": []}')
+    monkeypatch.setattr(candidate.json, 'loads', lambda text: dict(records=[dict(file='same.CR2',current=values,corrected=values)]))
+    adapter = candidate.native_corrected()
+    image = np.full((96,96,3),.1,'float32')
+    model = adapter.prepare(image,dict(source='same.CR2',exposure_stops=4))
+    assert (model.a,model.b,model.c)==pytest.approx((.048,.000256,.01))
+    synthetic = adapter.prepare(image,dict(source='same.CR2',generated='chart'))
+    assert synthetic.a != model.a
+
+
+def test_raw_zero_amount_and_bypass_return_unrepaired_development(monkeypatch):
+    monkeypatch.setattr(candidate, 'develop', lambda image, metadata: np.repeat(image[...,None],3,axis=2))
+    image = np.full((32,32), .05, 'float32')
+    image[16,16] = 0
+    adapter = candidate.raw()
+    adapter.controls = replace(adapter.controls,amount=0)
+    expected = candidate.develop(image,{})
+    assert np.array_equal(adapter.process(image,{},None),expected)
+    assert np.array_equal(adapter.process(image,{},None,bypass=True),expected)

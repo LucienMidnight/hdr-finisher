@@ -6,6 +6,8 @@ specify conversion gain or read noise; empirical fits remain provisional.
 from __future__ import annotations
 
 from dataclasses import replace
+import json
+from pathlib import Path
 from statistics import NormalDist
 
 import numpy as np
@@ -208,7 +210,7 @@ class RawSpecks(AppDefault):
                     origin=metadata.get('tile_origin', [0, 0]))
 
     def process(self, image, metadata, state, *, bypass=False):
-        if bypass:
+        if bypass or self.controls.amount <= 0:
             return develop(image, metadata)
         output = adaptive.resolve_adaptive(state['rgb'], state['model'], self.controls)
         top, left = metadata.get('tile_origin', [0, 0])
@@ -239,3 +241,36 @@ def raw_corrected():
 
 def poisson_gaussian():
     return RobustModel(quadratic=False)
+
+
+class NativeModel(AppDefault):
+    """Decision-only reuse of measured full-frame fits, not camera tuning."""
+    def __init__(self, corrected):
+        super().__init__()
+        self.corrected = corrected
+
+    def prepare(self, image, metadata):
+        if metadata.get('generated') or metadata.get('held_out') is not None:
+            return super().prepare(image, metadata)
+        path = Path(__file__).resolve().parents[3]/'output/denoise-v1/noise-model-raw-specks/audit.json'
+        records = json.loads(path.read_text())['records']
+        name = metadata.get('source', metadata.get('file'))
+        row = next((row for row in records if row['file']==name and 'current' in row), None)
+        if row is None:
+            return super().prepare(image, metadata)
+        values = row['corrected' if self.corrected else 'current']
+        scale = 2**metadata.get('exposure_stops', 0)
+        return adaptive.AdaptiveNoiseModel(values['a']*scale, values['b']*scale**2, values['c'],
+                                           tuple(tuple(band) for band in values['band_sigmas']))
+
+    def description(self):
+        return dict(**super().description(), native_model='corrected' if self.corrected else 'current',
+                    scope='Corpus real RAW: same native-frame fit from audit; synthetic/public: current crop fit')
+
+
+def native_current():
+    return NativeModel(corrected=False)
+
+
+def native_corrected():
+    return NativeModel(corrected=True)

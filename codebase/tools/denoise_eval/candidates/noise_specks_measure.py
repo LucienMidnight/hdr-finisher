@@ -19,6 +19,9 @@ from hdr_finisher import denoise_adaptive as adaptive
 from tools.denoise_eval.candidates.noise_model_specks import prepare_model, repair_sensor
 from tools.denoise_eval.candidates.pilot_wiener_measure import windows
 from tools.denoise_eval.inputs import develop, metadata_from_raw, inventory, optical_black
+from tools.denoise_eval.inputs import synthetic_samples
+from tools.denoise_eval import metrics
+from tools.denoise_eval.adapters import load_adapter
 from tools.denoise_eval.run import main as quality_main, peak_rss
 from tools.lib.test_photos import photo_root
 
@@ -118,7 +121,7 @@ def native(photo, method):
     start = time.perf_counter()
     entries = json.loads((OUTPUT/'audit.json').read_text())['inventory']
     entry = next(row for row in entries if row['file']==photo)
-    clocks = dict(sensor_seconds=0., repair_seconds=0., ahd_seconds=0., resolve_seconds=0., halo_inclusive_repaired_pixels=0)
+    clocks = dict(sensor_seconds=0., repair_seconds=0., ahd_seconds=0., adaptive_filter_seconds=0., halo_inclusive_repaired_pixels=0)
     with rawpy.imread(str(photo_root()/photo)) as raw:
         height, width = raw.raw_image_visible.shape
         info = metadata(raw, entry)
@@ -140,7 +143,7 @@ def native(photo, method):
             then = time.perf_counter()
             edges = adaptive._Edges(sy==0, ey==height, sx==0, ex==width, height, width)
             output = adaptive._filter_region(image, model, adaptive.AdaptiveControls(), edges)
-            clocks['resolve_seconds'] += time.perf_counter()-then
+            clocks['adaptive_filter_seconds'] += time.perf_counter()-then
             checksum += output[top-sy:bottom-sy, left-sx:right-sx].sum(axis=(0,1), dtype=float)
             del image, output
         result = dict(photo=photo, method=method, shape=[height,width], model=model.as_dict(), details=details,
@@ -152,10 +155,33 @@ def native(photo, method):
         print(json.dumps(result), flush=True)
 
 
+def clean_probes():
+    entries = json.loads((OUTPUT/'audit.json').read_text())['inventory']
+    records = []
+    selected = ('star-field','fine-text','fabric','slanted-edge','colour-patches')
+    for sample in synthetic_samples(entries, False):
+        if sample.metadata.get('generated') not in selected or sample.metadata['iso'] not in (6400,25600):
+            continue
+        print('Clean:', sample.name, flush=True)
+        row = dict(name=sample.name, adapters={})
+        for name in ADAPTERS:
+            adapter = load_adapter(name)
+            source = sample.clean if adapter.input_kind=='rgb' else sample.clean_bayer
+            state = adapter.prepare(source, sample.metadata)
+            output = adapter.process(source, sample.metadata, state)
+            row['adapters'][name] = metrics.evaluate(output,sample.clean,sample.clean,sample.masks,
+                                                    'slanted-edge' in sample.name)
+            if hasattr(adapter,'state_description'):
+                row['adapters'][name]['state'] = adapter.state_description(state)
+            del state,output,adapter
+        records.append(row)
+    (OUTPUT/'clean-probes.json').write_text(json.dumps(dict(records=records,git_head=head(),peak_rss_bytes=peak_rss()),indent=2)+'\n')
+
+
 def main():
     signal.signal(signal.SIGTERM, lambda signum, frame: (_ for _ in ()).throw(SystemExit(128+signum)))
     parser = argparse.ArgumentParser()
-    parser.add_argument('command', choices=('audit','quick','full','heldout','seen','native'))
+    parser.add_argument('command', choices=('audit','quick','full','heldout','seen','native','clean'))
     parser.add_argument('--photo', default='IMG_0790.CR2')
     parser.add_argument('--method', choices=('current','corrected','raw'), default='corrected')
     args = parser.parse_args()
@@ -163,6 +189,8 @@ def main():
     cv2.setNumThreads(1)
     if args.command=='audit':
         audit()
+    elif args.command=='clean':
+        clean_probes()
     elif args.command=='native':
         native(args.photo, args.method)
     else:
