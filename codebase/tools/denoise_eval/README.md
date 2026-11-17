@@ -75,6 +75,39 @@ stream the entire photo with even CFA origins, 32px development context and
 research reconstruction, not a live cache or screen wait. Findings and
 unmeasured integration requirements: `docs/technical/research/denoise-v1-2026-11-16/demosaic-noise.md`.
 
+### Faithful upstream LMMSE (November 17 research)
+
+`candidates.lmmse_demosaic:factory` builds the pinned, verbatim RawTherapee
+LMMSE source through a small native shim. Primary configuration: upstream gamma
+2.4/slope 17 and two median passes (`iterations=3`), signed-range gates removed,
+linear negative gamma toe, analytic above-white extension, calibration repair
+and unchanged shipping Denoise controls. `:linear` is upstream iterations=0;
+`:ahd`/`:off` use the installed production signed AHD core through the common
+normalized sensor research bridge. Exact upstream attribution, signed changes,
+host/scalar qualifications and license are in `vendor/rawtherapee/NOTICE`.
+
+From `codebase`, run serially under the existing shared lock and 2.5 GB guard:
+
+```sh
+PYTHONPATH=backend .venv/bin/python tools/gpu-run-lock.py --label lmmse-quick -- \
+  .venv/bin/python -m tools.denoise_eval.candidates.guard \
+  --receipt output/denoise-v1/lmmse-demosaic/quick-guard.json --seconds 1200 -- \
+  .venv/bin/python -m tools.denoise_eval.candidates.lmmse_measure \
+  --inventory <frozen-results.json> --phase quick
+```
+
+Phases: `quick`, `clean`, `decision`, `heldout`, `full`, `seen`, `safety`,
+`native --photo IMG_0790.CR2` (also `2025_0730_1331_3.arw`) and `review`.
+Outputs overwrite `output/denoise-v1/lmmse-demosaic/`; public pair/model stores
+must already be linked in their usual locations. No photographs/datasets enter
+Git. The 12-row signed decision review keeps the 13 MB budget. `clean` separately
+saves pristine-chart and low-noise RAW/pair crops without added noise/Denoise,
+and evaluates with/without default Denoise. Exact strip equality is tested.
+All fixed shadow supports retain the earlier research signed-AHD reference,
+while picture scores and Off use the shipping signed AHD core. This isolates
+the changed implementation without moving the dark-pit measurement support.
+CPU-only: finished-pixel GPU parity and production HDR delivery remain untested.
+
 ### Dark-noise calibration and strength (signed-primary research)
 
 `candidates/dark_noise.py:factory` jointly repairs censored brightness fits

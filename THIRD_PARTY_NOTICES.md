@@ -235,3 +235,14 @@ use MIT; Highway uses Apache-2.0; skcms uses BSD-style terms. Complete upstream
 notices are in codebase/bin/licenses/LICENSE.libjxl, LICENSE.brotli,
 LICENSE.highway and LICENSE.skcms. Source and reproducible build instructions
 are in codebase/tools/jpegxl-info. These notices accompany packaged copies.
+
+RawTherapee LMMSE research: the unmodified `rtengine/lmmse_demosaic.cc` from
+RawTherapee commit `64c2d90a3248c7ad41842d9162368858b61aac6a` is retained in
+`codebase/tools/denoise_eval/candidates/vendor/rawtherapee/`, under GPL-3.0-or-later
+(repository-root `LICENSE`). Copyright (c) 2004-2019 Gabor Horvath; RawTherapee
+adaptation by Jacques Desmis (2013), speed/memory refinements by Ingo Weyrich
+(2015), following Zhang and Wu's 2005 LMMSE demosaicing paper. The research-only
+shim adapts the same commit's `rtengine/color.h`, `rtengine/color.cc` and
+`rtengine/LUT.h` gamma/lookup definitions; signed-domain changes and exact file
+hash are documented in that folder's `NOTICE`. No production import, binary,
+dataset, model weight or photograph is added by this experiment.
