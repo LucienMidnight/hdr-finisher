@@ -127,3 +127,14 @@ def test_grain_variant_changes_only_luma_and_chroma_controls():
     assert grain.denoise.controls == replace(baseline.denoise.controls, luminance=.25, color_noise=1.)
     assert grain.denoise.controls.strengths()[0] < baseline.denoise.controls.strengths()[0]
     assert grain.denoise.controls.strengths()[1] > baseline.denoise.controls.strengths()[1]
+
+
+def test_grain_statistics_respect_fixed_valid_support():
+    from tools.denoise_eval.candidates.early_uniformity_measure import grain_statistics
+    image = np.full((48, 48, 3), .005, np.float32)
+    valid = np.zeros((48, 48), bool)
+    valid[20:28, 20:28] = True
+    result = grain_statistics(image, image, valid=valid)
+    assert result['support_pixels'] == 64
+    assert result['luma_std'] < 1e-12
+    assert grain_statistics(image, image, valid=valid & False)['support_pixels'] == 0

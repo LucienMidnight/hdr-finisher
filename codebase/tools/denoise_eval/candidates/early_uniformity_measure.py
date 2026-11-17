@@ -36,10 +36,12 @@ def methods(include_ai=True):
     return selected
 
 
-def grain_statistics(image, reference, lift=0):
+def grain_statistics(image, reference, lift=0, valid=None):
     source_luma = reference @ np.array([.2722287, .6740818, .0536895])
     smooth = cv2.GaussianBlur(source_luma.astype('float32'), (0, 0), 2)
     support = cv2.erode((smooth < .02).astype('uint8'), np.ones((5, 5), 'uint8')).astype(bool)
+    if valid is not None:
+        support &= valid
     support[:8] = support[-8:] = False
     support[:, :8] = support[:, -8:] = False
     shown = base.metrics.luma_chroma(base.metrics.display(image * np.float32(2 ** lift)))
@@ -57,7 +59,7 @@ def grain_statistics(image, reference, lift=0):
                 chroma_rms=float(np.sqrt(np.mean(residual[..., 1:][support] ** 2))),
                 luma_tail_to_rms=float(np.percentile(abs(luma), 99.9) / max(np.std(luma), 1e-12)),
                 block_rms_cv=float(np.std(block_rms) / max(np.mean(block_rms), 1e-12)) if block_rms else None,
-                blocks=len(block_rms), support='Fixed clean (when available), otherwise signed Off, sigma2 luma < .02')
+                blocks=len(block_rms), support='Fixed clean (when available), otherwise signed Off, sigma2 luma < .02; inherited valid mask')
 
 
 def grain_review(args, entries):
@@ -77,13 +79,14 @@ def grain_review(args, entries):
         folder.mkdir(parents=True, exist_ok=True)
         left, top = offset
         region = np.s_[top:top+288, left:left+288]
+        valid = sample.masks['valid'][region] if 'valid' in sample.masks else None
         for name, adapter in methods(not args.no_ai).items():
             source = sample.bayer if adapter.input_kind == 'bayer' else sample.rgb
             output = adapter.process(source, sample.metadata, adapter.prepare(source, sample.metadata))
-            record['methods'][name] = grain_statistics(output[region], reference[region], lift)
+            record['methods'][name] = grain_statistics(output[region], reference[region], lift, valid)
             base.decision_crops.save_png(base.decision_crops.pixels(output[region] * 2 ** lift), folder / (name + '.png'))
         if sample.clean is not None:
-            record['methods']['clean'] = grain_statistics(reference[region], reference[region], lift)
+            record['methods']['clean'] = grain_statistics(reference[region], reference[region], lift, valid)
             base.decision_crops.save_png(base.decision_crops.pixels(reference[region] * 2 ** lift), folder / 'clean.png')
         result['cases'].append(record)
         print('grain', case_id, flush=True)
