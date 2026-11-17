@@ -270,6 +270,15 @@
     }
   ],
   "drivers": [
+    {
+      "path": "tools/denoise_eval/candidates/hot_pixel_gpu.cjs",
+      "areas": ["detail", "library"],
+      "tier": "diagnostic",
+      "launch": {
+        "method": "electron",
+        "args": ["output/denoise-v1/hot-pixel/gpu-input.json", "output/denoise-v1/hot-pixel/gpu-output.json"]
+      }
+    },
     {"path":"tests/performance/sdr-linked-slider.js","areas":["film","preview"],"tier":"diagnostic","protects":"Whole Film-on slider wait on machine window, linked and independent SDR, before/after eager-prefix branch comparison on identical source.","launch":{"method":"electron"}},
     {"path":"tests/sdr-linked-interaction.js","areas":["film","masks","export-proof","ui"],"tier":"area","protects":"Safe linked Match, live HDR edits, unlink, SDR global/local edits, one Undo, N4 consent and linked finished GPU/CPU export plus reduced/full Proof agreement.","launch":{"method":"electron"}},
     {"path":"tests/sdr-linked-render.js","areas":["film","masks","export-proof"],"tier":"area","protects":"Linked SDR common HDR creatives and overlapping locals; finished float CPU/GPU agreement before encoding.","launch":{"method":"electron"}},

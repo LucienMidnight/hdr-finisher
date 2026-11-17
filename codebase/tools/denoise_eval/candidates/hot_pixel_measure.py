@@ -111,15 +111,16 @@ def generated(entries):
     records, previews = [], []
     colours = dict(white=(1., 1., 1.), warm_spark=(1., .3, .05),
                    narrow_red=(1., .01, .002), narrow_blue=(.003, .02, 1.))
-    profiles = (('gaussian', .8), ('airy', 1.2), ('airy', .65))
+    profiles = (('gaussian', .8), ('airy', 1.2), ('airy', .65), ('airy', .35))
     for profile_index, (kind, width) in enumerate(profiles):
         for colour_name, response in colours.items():
-            for offset_index, offset in enumerate(itertools.product((-.4, 0., .4), repeat=2)):
+            offsets = itertools.product((-.4, 0., .4), repeat=2)
+            for offset_index, (offset, amplitude) in enumerate(itertools.product(offsets, (.06, .2, .6))):
                 for phase in range(4):
                     point = point_psf(kind, width, offset)
                     camera = np.full((64, 64, 3), .002, np.float32)
                     top, left = 16 + phase // 2, 16 + phase % 2
-                    camera[top:top+32, left:left+32] += point[..., None] * np.asarray(response) * .6
+                    camera[top:top+32, left:left+32] += point[..., None] * np.asarray(response) * amplitude
                     clean = remosaic(camera, metadata['cfa'])
                     for noisy in (False, True):
                         seed = 1711000 + profile_index * 10000 + offset_index * 20 + phase
@@ -129,12 +130,16 @@ def generated(entries):
                         light_mask = np.max(camera - .002, axis=-1) > .0001
                         record = dict(psf=kind, width=width,
                                       width_definition='Gaussian sigma or Airy first-zero radius in sensor pixels',
-                                      colour=colour_name, phase=phase, offset_yx=offset,
+                                      colour=colour_name, phase=phase, offset_yx=offset, amplitude=amplitude,
                                       noise=noisy, seed=seed, real_point_sites_changed=int(np.sum(changed & light_mask)),
                                       any_point_changed=bool(np.any(changed & light_mask)), repairs=diagnostic)
                         records.append(record)
-                        if offset_index == 4 and phase == 0 and not noisy:
-                            case_name = f'{kind}-{width}-{colour_name}'
+                        case_name = f'{kind}-{width}-{colour_name}'
+                        damaged_name = case_name + '-changed'
+                        damaged = record['any_point_changed'] and damaged_name not in previews
+                        if damaged or (offset_index == 14 and phase == 0 and not noisy):
+                            if damaged:
+                                case_name = damaged_name
                             before, after = develop(source, metadata), develop(repaired, metadata)
                             folder = OUTPUT / 'points' / case_name
                             save_png(pixels(before), folder_path(folder, 'off.png'))
@@ -296,9 +301,88 @@ def native(entries, photo):
                 conditions='MacBook Neo A18 Pro 8 GB; one CPU thread; native samples, bounded 768px AHD/Denoise cores, 86px+16px halos; shared lock; checksums not whole-frame pixels; no UI, geometry, lens or Opposed color. ±10% descriptive timing allowance.')
 
 
+def gpu_fixtures(entries):
+    from tools.denoise_eval.candidates.hot_pixel import _profile
+    entry = next(item for item in entries if item['file'] == 'IMG_0790.CR2')
+    with rawpy.imread(str(photo_root() / entry['file'])) as raw:
+        base = metadata_from_raw(raw, entry)
+    fixtures = []
+    def append(name, source, metadata):
+        parameters, pattern, steps = _profile(metadata)
+        fixtures.append(dict(name=name, shape=list(source.shape), samples=source.ravel().tolist(),
+                             metadata=metadata, colours=pattern.ravel().tolist(),
+                             noise=[dict(a=float(row[0]), b=float(row[1])) for row in parameters],
+                             steps=steps.tolist()))
+    for pattern in (((0, 1), (1, 2)), ((2, 1), (1, 0)), ((1, 0), (2, 1)), ((1, 2), (0, 1))):
+        md = dict(base, cfa=pattern, noise_parameters=[dict(a=.00003, b=.0000003)]*4)
+        source = np.random.default_rng(1711).normal(.01, .0005, (96, 96)).astype('float32')
+        source[24, 24], source[25, 65], source[65, 24], source[65, 65] = .6, .6, .6, .6
+        source[24, 25] = .1
+        source[64, 65] = 1.
+        source[45, 45] = -.3
+        append('phases-' + str(len(fixtures)), source, md)
+        for width in (.35, .65, 1.2):
+            point = point_psf('airy', width, (.4, .4))
+            camera = np.full((96, 96, 3), .002, np.float32)
+            camera[32:64, 32:64] += point[..., None] * np.array((.6, .006, .0012))
+            append('airy-' + str(len(fixtures)), remosaic(camera, pattern), md)
+    audit = json.loads((OUTPUT / 'corpus.json').read_text())
+    for photo in audit['photos']:
+        if not photo.get('inspected'):
+            continue
+        chosen = photo['repairs']['changed'][:2] + photo['repairs']['protected_light'][:1]
+        if not chosen:
+            continue
+        entry = next(item for item in entries if item['file'] == photo['photo'])
+        with rawpy.imread(str(photo_root() / entry['file'])) as raw:
+            md = metadata_from_raw(raw, entry)
+            for item in chosen:
+                top, left = (item['y']-48)//2*2, (item['x']-48)//2*2
+                if min(top, left) < 0:
+                    continue
+                source = read_sensor(raw, top, left, top+96, left+96)
+                append(photo['photo'] + '-' + str(len(fixtures)), source, md)
+    write(OUTPUT / 'gpu-input.json', dict(cases=fixtures))
+    return dict(fixtures=len(fixtures), input_path=str(OUTPUT / 'gpu-input.json'))
+
+
+def gpu_compare():
+    expected = json.loads((OUTPUT / 'gpu-input.json').read_text())
+    observed = json.loads((OUTPUT / 'gpu-output.json').read_text())
+    if len(expected['cases']) != len(observed['cases']):
+        raise ValueError('Incomplete GPU fixture output')
+    records = []
+    for fixture, result in zip(expected['cases'], observed['cases']):
+        if fixture['name'] != result['name']:
+            raise ValueError('GPU fixture ordering changed')
+        source = np.asarray(fixture['samples'], dtype='float32').reshape(fixture['shape'])
+        cpu, diagnostic = filter_sensor(source, fixture['metadata'])
+        gpu = np.asarray(result['samples'], dtype='float32').reshape(fixture['shape'])
+        if not np.isfinite(gpu).all():
+            raise ValueError('GPU produced invalid samples')
+        cpu_rgb, gpu_rgb = develop(cpu, fixture['metadata']), develop(gpu, fixture['metadata'])
+        differences = {}
+        for denoise in (False, True):
+            if denoise:
+                adapter = AppDefault()
+                cpu_rgb = adapter.process(cpu_rgb, fixture['metadata'], adapter.prepare(cpu_rgb, fixture['metadata']))
+                gpu_rgb = adapter.process(gpu_rgb, fixture['metadata'], adapter.prepare(gpu_rgb, fixture['metadata']))
+            for lane in ('sdr', 'hdr'):
+                difference = metrics.summary(metrics.colour_error(cpu_rgb, gpu_rgb, lane))
+                if difference['mean'] >= 1 or difference['p99'] >= 3:
+                    raise AssertionError('CPU/GPU finished-pixel perceptual tolerance exceeded')
+                differences[('denoise_' if denoise else '') + lane] = difference
+        records.append(dict(name=fixture['name'], cpu_repairs=diagnostic['repaired'],
+                            changed_mask_equal=bool(np.array_equal(cpu != source, gpu != source)),
+                            sensor_max_abs=float(np.max(np.abs(cpu-gpu))), colour_difference=differences))
+    return dict(adapter=observed.get('adapter'), cases=records,
+                qualification='Actual WebGPU filter, then common CPU AHD/colour/shipping Denoise and fixed SDR/PQ display. Isolates this added step; not end-to-end library-gpu-raw.js parity, native GPU timing, lens/Opposed-color or encoding qualification.')
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('command', choices=('generated', 'quick', 'full', 'heldout', 'seen', 'corpus', 'native'))
+    parser.add_argument('command', choices=('generated', 'quick', 'full', 'heldout', 'seen', 'corpus', 'native',
+                                          'gpu-fixtures', 'gpu-compare'))
     parser.add_argument('--inventory', type=Path, required=True)
     parser.add_argument('--photo')
     args = parser.parse_args()
@@ -312,6 +396,10 @@ def main():
         result = corpus(entries)
     elif args.command == 'native':
         result = native(entries, args.photo)
+    elif args.command == 'gpu-fixtures':
+        result = gpu_fixtures(entries)
+    elif args.command == 'gpu-compare':
+        result = gpu_compare()
     else:
         result = quality(entries, args.command)
     result.update(inventory=entries, inventory_source=str(args.inventory.resolve()),
