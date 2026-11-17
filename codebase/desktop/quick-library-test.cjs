@@ -6,6 +6,29 @@ function observeVisibility(window) {
   window.on('hide', hide);window.on('minimize', hide);
   return {result, stop() {window.removeListener('hide', hide);window.removeListener('minimize', hide);}};
 }
+function observeDiagnostics(window, profile, stage, details = {}) {
+  const file = path.join(profile, 'quick-diagnostic.json');
+  let progress = null;
+  const messages = [];
+  const write = () => fs.writeFileSync(file, JSON.stringify({at:new Date().toISOString(), ...details,
+    visible:window.isVisible(), minimized:window.isMinimized(), focused:window.isFocused(), bounds:window.getBounds(), progress, messages}));
+  const consoleMessage = (_event, ...args) => {
+    const message = args.find(value => typeof value === 'string');
+    if (!message) return;
+    messages.push(message.slice(0,2000));
+    if (messages.length > 20) messages.shift();
+    if (message.startsWith('QUICK_LIBRARY_STAGE:')) stage(message.slice('QUICK_LIBRARY_STAGE:'.length));
+    if (message.startsWith('QUICK_LIBRARY_PROGRESS:')) {
+      try { progress = JSON.parse(message.slice('QUICK_LIBRARY_PROGRESS:'.length)); } catch {}
+    }
+    write();
+  };
+  window.webContents.on('console-message', consoleMessage);
+  const timer = setInterval(write,5000);
+  timer.unref();
+  write();
+  return {stop() {clearInterval(timer);window.webContents.removeListener('console-message',consoleMessage);write();}};
+}
 async function run({app, window, backend, configPath = process.env.HDR_FINISHER_QUICK_LIBRARY_CONFIG}) {
   if (!configPath) return;
   const profile = app.getPath('userData');
@@ -16,16 +39,15 @@ async function run({app, window, backend, configPath = process.env.HDR_FINISHER_
   const resultPath = path.join(profile, 'quick-result.json');
   const quitTimer=setInterval(()=>{if(fs.existsSync(path.join(profile,'quick-quit'))){clearInterval(quitTimer);for(const w of require('electron').BrowserWindow.getAllWindows())w.destroy();app.quit();}},50);quitTimer.unref();
   const stage = name => fs.writeFileSync(stagePath, JSON.stringify({stage:name}));
-  window.webContents.on('console-message', (_event, ...args) => {
-    const message = args.find(value => typeof value === 'string' && value.startsWith('QUICK_LIBRARY_STAGE:'));
-    if (message) stage(message.slice('QUICK_LIBRARY_STAGE:'.length));
-  });
+  const details = {profile, backend:backend.url};
+  const diagnostics = observeDiagnostics(window,profile,stage,details);
   try {
     stage('cache guard');
     const cache = await (await fetch(`${backend.url}/api/library/cache-settings`, {
       headers:{'X-HDR-Finisher-Token':backend.authoringSecret}, signal:AbortSignal.timeout(10000)
     })).json();
     const location = String(cache.location || '');
+    details.cache = location;
     if (!location.toLowerCase().includes('test-') || !config.warm && fs.existsSync(path.join(location, 'library-pictures')) && fs.readdirSync(path.join(location, 'library-pictures')).length)
       throw Error('Not an empty isolated cache: ' + location);
     if(config.trace)await require('electron').contentTracing.startRecording({included_categories:['toplevel','devtools.timeline','v8']});
@@ -71,6 +93,8 @@ async function run({app, window, backend, configPath = process.env.HDR_FINISHER_
   } catch(error) {
     fs.writeFileSync(resultPath, JSON.stringify({error:String(error.stack || error)}));
     stage('failed');
+  } finally {
+    diagnostics.stop();
   }
 }
-module.exports = {run, observeVisibility};
+module.exports = {run, observeVisibility, observeDiagnostics};

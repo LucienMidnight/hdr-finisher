@@ -33,7 +33,7 @@ const out=path.resolve(root,'output/quick-library-check',label);
 if(path.dirname(out)!==path.join(root,'output/quick-library-check'))throw Error('Label must be a simple folder name');
 if(!Number.isFinite(seconds)||seconds<=0||seconds>110||!Number.isInteger(singleSteps)||singleSteps<0||!Number.isFinite(singlePace)||singlePace<0)throw Error('Invalid duration, steps or pace');
 fs.mkdirSync(out,{recursive:true});
-for(const name of ['report.json','scenario.json','failure.json']){const file=path.join(out,name);if(fs.existsSync(file))fs.unlinkSync(file);}
+for(const name of ['report.json','scenario.json','failure.json','quick-diagnostic.json']){const file=path.join(out,name);if(fs.existsSync(file))fs.unlinkSync(file);}
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 function freezeSummary(probe = {}) {
   const summary = (list = [], label) => {
@@ -129,10 +129,15 @@ function analyse(text, openedAt, events, openedPageAt, visibleFiles) {
     execFileSync('powershell.exe',['-NoProfile','-NonInteractive','-Command',script],{env:{...process.env,HDR_QUICK_PROFILE:profile,HDR_QUICK_OUTPUT:os.tmpdir()},windowsHide:true,stdio:'ignore',timeout:10000});
   };
   const currentStage=()=>{try{return JSON.parse(fs.readFileSync(path.join(profile,'quick-stage.json'),'utf8')).stage;}catch{return stage;}};
+  const preserveEvidence=()=>{
+    for(const [source,target] of [[logPath,'backend.log'],[path.join(profile,'quick-diagnostic.json'),'quick-diagnostic.json']])if(fs.existsSync(source))fs.copyFileSync(source,path.join(out,target));
+    try{return JSON.parse(fs.readFileSync(path.join(out,'quick-diagnostic.json'),'utf8'));}catch{return null;}
+  };
   const deadline=setTimeout(()=>{
     const failure=`Hard timeout (${retentionMode?420:130} s; shutdown bounded to 15 s), stage: ${currentStage()}`;
+    const diagnostics=preserveEvidence();
     console.error(failure);kill();
-    fs.writeFileSync(path.join(out,'report.json'),JSON.stringify({label,error:failure,stage:currentStage(),harness_total_ms:Date.now()-harnessAt},null,1));
+    fs.writeFileSync(path.join(out,'report.json'),JSON.stringify({label,error:failure,stage:currentStage(),diagnostics,harness_total_ms:Date.now()-harnessAt},null,1));
     try{cleanup();}catch{}process.exit(1);
   },retentionMode?420000:130000);
   const signal=()=>{kill();try{cleanup();}catch{}process.exit(130);};process.once('SIGINT',signal);process.once('SIGTERM',signal);
@@ -193,6 +198,7 @@ function analyse(text, openedAt, events, openedPageAt, visibleFiles) {
     }
     // Read the scenario and backend evidence only after completion.
     const result=JSON.parse(fs.readFileSync(resultPath,'utf8'));done=true;
+    preserveEvidence();
     fs.writeFileSync(path.join(out,'scenario.json'),JSON.stringify(result,null,1));
     fs.writeFileSync(path.join(out,'gpu-cache.json'),JSON.stringify({before:cacheBefore,after:cacheInventory()},null,1));
     if(config.trace)fs.copyFileSync(path.join(profile,'diagnostic-trace.json'),path.join(out,'diagnostic-trace.json'));
@@ -282,7 +288,7 @@ function analyse(text, openedAt, events, openedPageAt, visibleFiles) {
     console.log(JSON.stringify(report,null,1));
     if(errors.length){console.error(errors.join('; '));process.exitCode=1;}
   }catch(error){console.error(error);process.exitCode=1;
-    if(fs.existsSync(logPath))fs.copyFileSync(logPath,path.join(out,'backend.log'));
+    preserveEvidence();
     fs.writeFileSync(path.join(out,'failure.json'),JSON.stringify({error:String(error.stack||error),stage:currentStage(),done},null,1));
   }finally{
     clearTimeout(deadline);const shutdownAt=Date.now();

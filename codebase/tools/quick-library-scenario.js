@@ -9,7 +9,23 @@ async function scenario(config) {
     await sleep(600);
     memoryDiagnostic.push({label,at:performance.now(),snapshot:await (await fetch('/api/library/memory')).json()});
   };
-  const frame = () => new Promise(resolve => requestAnimationFrame(resolve));
+  const frame = () => new Promise((resolve, reject) => {
+    if (document.hidden) {
+      reject(Error('Library window is hidden or occluded; keep it visible on the active desktop for drawing checks'));
+      return;
+    }
+    const changed = () => {
+      if (!document.hidden) return;
+      cancelAnimationFrame(pending);
+      document.removeEventListener('visibilitychange',changed);
+      reject(Error('Library window became hidden or occluded while waiting for a frame; keep it visible on the active desktop'));
+    };
+    const pending = requestAnimationFrame(now => {
+      document.removeEventListener('visibilitychange',changed);
+      resolve(now);
+    });
+    document.addEventListener('visibilitychange',changed);
+  });
   const probe = {started, frame_gaps:[], main_blocks:[], long_tasks:[], frames:0, hidden:document.hidden};
   const onVisibility=()=>{if(document.hidden)probe.hidden=true;};
   document.addEventListener('visibilitychange',onVisibility);
@@ -33,6 +49,7 @@ async function scenario(config) {
     if(now-timerAt>=50)probe.main_blocks.push({from_ms:Math.round(timerAt),ms:Math.round(now-timerAt)});
     timerAt=now;
   },20);
+  const heartbeat = setInterval(() => console.log('QUICK_LIBRARY_PROGRESS:' + JSON.stringify({stage, at_ms:performance.now()-started, frames:probe.frames, hidden:document.hidden, visibility:document.visibilityState, last_frame_ms:performance.now()-frameAt, total:HDRLibrary.getSnapshot().total, shown:gridSeen.size})),5000);
   let observer;
   try { observer=new PerformanceObserver(list=>{for(const e of list.getEntries())probe.long_tasks.push({start_ms:Math.round(e.startTime),ms:Math.round(e.duration)});});observer.observe({type:'longtask',buffered:false}); } catch {}
   const onError=e=>errors.push(String(e.message || e.reason));
@@ -190,7 +207,9 @@ async function scenario(config) {
       }
     }
     await sleep(Math.max(0,config.seconds*1000-(performance.now()-openedAt)));
+    mark('observe: final frame');
     await frame();
+    mark('observe: frame received');
     if(config.gradeHandoff){
       mark('handoff: finish initial grid');
       const cells=()=>[...document.querySelectorAll('#grid-space .library-cell')];
@@ -404,7 +423,7 @@ async function scenario(config) {
     return {opened_epoch_ms:openedAt===undefined?null:performance.timeOrigin+openedAt,scenario_ms:performance.now()-started,probe,grid_progress:gridProgress,virtual_copy:config.virtualCopyResult,single,redisplay,retention,memory_diagnostic:memoryDiagnostic,grade_handoff:config.gradeHandoffResult,grade_frame:config.gradeHandoff?parent.HDRGradeLibraryPictures?.getSnapshot():null,handoff_state:config.gradeHandoff?window.HDRLibraryGradeHandoffSnapshot?.():null,grade_return:config.gradeReturnResult,events,errors:[...errors,String(error.stack||error)],stage};
   } finally {
     document.removeEventListener('visibilitychange',onVisibility);
-    stopped=true;clearInterval(timer);clearInterval(gridTimer);observer?.disconnect();window.HDRLibraryStopwatch=inherited;
+    stopped=true;clearInterval(timer);clearInterval(gridTimer);clearInterval(heartbeat);observer?.disconnect();window.HDRLibraryStopwatch=inherited;
     window.removeEventListener('error',onError);window.removeEventListener('unhandledrejection',onError);
   }
 }
