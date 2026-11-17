@@ -171,6 +171,7 @@ def quality(phase, baseline_root):
 
 def decision(entries, source_folder):
     from tools.denoise_eval import decision_crops as decisions
+    from tools.denoise_eval.candidates.rawnind import bayer
     destination = ROOT / 'output/denoise-v1/decision'
     if source_folder.resolve() != destination.resolve():
         shutil.copytree(source_folder, destination, dirs_exist_ok=True)
@@ -191,6 +192,10 @@ def decision(entries, source_folder):
         variants['current_import_gamut_denoise'] = denoise(map_negative_acescg(rgb), metadata)[0]
         variants['signed_import_gamut_denoise'] = denoise(map_negative_acescg(signed), metadata)[0]
         variants['signed_denoise_then_gamut'] = map_negative_acescg(variants['signed_denoise'])
+        neural = bayer()
+        neural_state = neural.prepare(sample.bayer, metadata)
+        variants['rawnind_bayer'] = neural.process(sample.bayer, metadata, neural_state)
+        del neural_state, neural
         left, top = offset
         size = by_id[case_id]['crop_rectangle']['width']
         region = np.s_[top:top + size, left:left + size]
@@ -199,7 +204,7 @@ def decision(entries, source_folder):
         for label, output in variants.items():
             encoded = decisions.pixels(output[region])
             decisions.save_png(encoded, destination / case_id / (label + '.png'))
-            rows.append(dict(column=label, adapter='signed_shadows research',
+            rows.append(dict(column=label, adapter=RAWNIND if label == 'rawnind_bayer' else 'signed_shadows research',
                              metrics_vs_clean=decisions.scores(encoded, decisions.pixels(clean[region]), valid) if clean is not None else None,
                              vs_current=comparison(output[region], current[region], valid),
                              fixed_roi_shadow_tail=fixed_shadow_tail(output[region], rgb[region], stops=lift, valid=valid),
