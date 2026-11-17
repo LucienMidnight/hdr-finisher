@@ -225,6 +225,16 @@ https://claude.ai/artifact/4ZcqC4Ht2fJ67Nu6F2S4t9 (1:1 crops, blind mode):
 
 ## 8. Log
 
+- 2026-11-17: AI + highlight reconstruction research merged
+  (`ai-highlights.md`): no combination qualifies for both Opposed color and
+  Edge colour. Region blends keep repaired highlights but leave visible
+  grain/colour transitions; with Edge on the flame the protection covers
+  nearly the whole frame (no AI benefit); AI-then-RGB-Edge changes the flame
+  and omits the Opposed repair; headroom scaling is promising but
+  unqualified. Extra 3–3.5 s (Opposed) / 6.1–6.7 s (Edge) at 18 MP on top of
+  AI; 42 MP Edge hit the memory guard. Recommendation, per Steve's rule of
+  delaying rather than compromising: AI Denoise after v1.
+
 - 2026-11-17: early outlier taming merged (`early-outlier-taming.md`;
   review https://claude.ai/artifact/Edqv4SaRSdtrNGYEbgkx89). Pre-demosaic soft
   clamp with neighbour support: flat-gallery specks 547 → 141 (2.5σ, up to
