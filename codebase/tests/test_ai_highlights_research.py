@@ -66,6 +66,13 @@ def test_rejects_invalid_blend_and_mask():
         reconstruction_support(normal, normal, tolerance=0)
 
 
+def test_research_expand_uses_supported_production_range():
+    for expand in (0., 1., 3.):
+        assert settings('edge_colour_v1', expand).highlight_reconstruction.edge_colour_expand_percent == expand
+    with pytest.raises(ValueError):
+        settings('edge_colour_v1', 5.)
+
+
 @pytest.mark.parametrize('rotation', range(4))
 def test_clip_map_preserves_all_cfa_phases_and_model_white_convention(rotation):
     info = metadata(np.rot90(np.array([[0, 1], [3, 2]]), rotation).copy())

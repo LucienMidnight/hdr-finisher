@@ -275,7 +275,7 @@ def evaluate_frame(sensor, info, matrix, global_white, name, folder):
     rows = []
     results = []
     for method in METHODS:
-        for expand in ((0., 1., 5.) if method == 'edge_colour_v1' else (0.,)):
+        for expand in ((0., 1., 3.) if method == 'edge_colour_v1' else (0.,)):
             started = time.perf_counter()
             repaired = sensor.copy()
             diagnostics = raw_import._apply_raw_highlight_reconstruction(
@@ -548,7 +548,7 @@ The existing fixed −0.8 EV RAW calibration is applied to every photographic vi
 Compare normal and −3 EV rows for a brightness ridge, halo, colour step or a change in texture/noise.
 White in the mask = normal, black = AI. RGB Edge comparator uses the whole frame but lacks sensor Opposed repair;
 do not treat it as the production Edge pipeline. No automatic exposure or white-balance matching.</p>
-<p>Both feather widths and Expand 0/1/5% are scored in the JSON; displayed primary is 32px, Expand 0/1%.
+<p>Both feather widths and Expand 0/1/3% are scored in the JSON; displayed primary is 32px, Expand 0/1%.
 Saturation is not a guarantee that all channels are noiseless. Synthetic captures have clean AHD truth;
 real-photo highpass measurements mix texture and noise. Visual sign-off is Steve's, not a metric pass.</p>
 ''' + ''.join(sections) + '</body></html>'
