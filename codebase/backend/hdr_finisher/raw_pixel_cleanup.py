@@ -170,8 +170,14 @@ def apply_raw(raw, metadata, settings, *, cancelled=None):
     enabled = settings.pixel_cleanup.remove_hot_pixels
     diagnostic = dict(enabled=enabled, supported=metadata.raw_pattern.shape == (2, 2), repaired=0,
                       stage="signed_normalized_sensor_before_opposed_color")
-    if enabled and diagnostic['supported']:
+    diagnostic.update(specks_enabled=settings.pixel_cleanup.even_out_specks, tamed=0)
+    if (enabled or settings.pixel_cleanup.even_out_specks) and diagnostic['supported']:
         config = configuration(raw.raw_image_visible, metadata, cancelled=cancelled)
         diagnostic['noise_supported'] = config is not None
-        diagnostic['repaired'] = apply(raw.raw_image_visible, config, cancelled=cancelled)
+        if enabled:
+            diagnostic['repaired'] = apply(raw.raw_image_visible, config, cancelled=cancelled)
+        if settings.pixel_cleanup.even_out_specks:
+            from .raw_speck_cleanup import apply as tame
+            diagnostic['tamed'] = tame(raw.raw_image_visible, config,
+                settings.pixel_cleanup.speck_threshold, cancelled=cancelled)
     return diagnostic

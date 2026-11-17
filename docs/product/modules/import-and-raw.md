@@ -1,3 +1,49 @@
+### November 17, 2026: optional harsh-speck control (Steve approved)
+
+Pixel cleanup now also contains **Even out harsh specks (Experimental)**,
+default off, followed when enabled by **Threshold** ×2–×4, default ×2.5.
+Lower thresholds generally act more strongly; changing the slider applies on
+release, not during dragging. Both controls use existing components/tokens,
+with the existing Bayer eligibility explanation, modified marker and Reset.
+The tooltip warns that small stars and thin lettering may soften. Colourful
+blobs can remain. Raising the threshold is not a guarantee of protecting stars:
+the research's component detector can split a feature at higher thresholds.
+Denoise defaults and the original hot-pixel algorithm are unchanged.
+
+Order: optional hot-pixel removal → optional signed per-phase soft clamp →
+Opposed-color evidence/reconstruction → signed AHD → WB/camera transform →
+Edge colour → Denoise. The clamp uses the 5×5 same-phase median, sensor-model
+noise floor raised by residual MAD, smoothstep threshold ramp, fixed envelope
+1.5 and strength .75, both signs, eight-connected same-sign area ≤5 counted
+before the always-on two-similar-neighbours veto. Preserve the research's
+outer four same-phase samples (eight sensor pixels), and near-saturation
+≥.98 with its 5×5 same-phase context. No median replacement or zero floor.
+Changed readings are encoded into the existing DN buffer, retaining signed
+black-subtracted values. Bounded strips preserve original context at seams.
+Unavailable four-phase noise fits leave input untouched, as with hot pixels.
+
+CPU development and Library GPU RAW preparation share the new sensor step.
+When both options are on, GPU preparation also runs the unchanged CPU hot
+filter first and explicitly suppresses the later GPU hot filter. The hot-only
+GPU path remains. Grade, saved Library developments, export/Proof and Edge
+colour re-development all receive the same cleaned sensor source. Off skips
+noise fitting and clamping and preserves prior pixels exactly, including old
+projects without the fields. There is no migration code. Saved projects,
+sidecars, RAW-containing recipes and selective paste carry `even_out_specks`
+and `speck_threshold`; rendition-only grading presets keep their scope.
+Undo/Redo re-develops the stored recipe.
+
+**Absolute floor included: .005 normalized sensor units.** Shared-lock native
+comparison on clean DSC04375 (ISO100) changes 223,318 readings without it and
+10,670 with it (95.2% fewer); total absolute DN correction 1,792,391 →334,535.
+Noisy IMG_0790 (ISO3200) stays exactly 208,976 changed readings and 14,476,601
+absolute DN correction, retaining 100% on both measures. Floors .001/.002
+were also measured; the brief records the predeclared selection rule. These
+are sensor-change proxies, not proof that every changed reading was noise.
+The existing research's star/text warnings still apply. Development timings
+are in the performance table. App/GPU qualification is pending the focused
+checks recorded in the brief log; no release qualification is claimed.
+
 ### November 17: Steve's Pixel cleanup decision; GPU qualification open
 
 **Steve, November 17, 2026:** add a RAW development section named **Pixel

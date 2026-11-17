@@ -658,6 +658,11 @@
         </div>
         <div class="control-group-body">
           <label class="checkbox-row" data-tooltip="Fixes single stuck bright pixels from the sensor. Leave off unless you see them: it can occasionally remove a real tiny light, such as a star or a glint."><input id="raw-remove-hot-pixels" type="checkbox" disabled> Remove hot pixels</label>
+          <label class="checkbox-row" data-tooltip="Experimental: pulls unusual sensor readings toward the local noise range before development. Small stars and thin lettering may soften; colourful blobs can remain."><input id="raw-even-out-specks" type="checkbox" disabled> Even out harsh specks (Experimental)</label>
+          <div id="raw-speck-threshold-row" class="control-row" hidden>
+            <div class="control-heading"><label for="raw-speck-threshold" data-tooltip="Smooth readings beyond this multiple of the local noise range. Lower values are stronger. Applies when you release the slider.">Threshold</label><output id="raw-speck-threshold-value">×2.5</output></div>
+            <input id="raw-speck-threshold" type="range" min="2" max="4" step="0.1" value="2.5" disabled>
+          </div>
         </div>
       </section>
 

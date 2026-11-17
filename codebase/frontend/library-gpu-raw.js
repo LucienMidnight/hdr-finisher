@@ -760,7 +760,7 @@
   async function developRaw({ mosaic, meta, lensData = null, edges = Object.keys(meta.reduced_sizes_sensor || {}).map(Number), syncStages = false, beforeSubmit = null, memoryBudget = Infinity, signal = null, context = null, keepNative = false }) {
     const sharedContext = context || await gpu();
     await preparePipelines(sharedContext);
-    const cleanup = meta.raw_import_settings?.pixel_cleanup?.remove_hot_pixels && meta.pixel_cleanup;
+    const cleanup = !meta.pixel_cleanup_applied && meta.raw_import_settings?.pixel_cleanup?.remove_hot_pixels && meta.pixel_cleanup;
     if (cleanup) await preparePipelines(sharedContext, undefined, ["NORMALIZE_CLEAN"]);
     const { device, pipelines, errors } = sharedContext;
     const errorStart = errors.length;

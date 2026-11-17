@@ -1,3 +1,28 @@
+## November 17: optional harsh-speck sensor clamp (minimum Mac)
+
+MacBook Neo / A18 Pro / 8 GB, shared GPU lock, window setting 1408×794,
+OpenMP3/BLAS1, approved originals read-only. Implementation based on `b1d0e63e`,
+recorded in this implementation commit. Three observations per setting,
+alternating Off/On/On/Off/Off/On on the same unpacked source; the ±10%
+descriptive allowance was proposed in the trial log before measurement.
+No existing tolerance, limit or budget changes. Hot pixels off, speck threshold
+2.5, included absolute floor .005. Source open/unpack, EXIF, lens, WB/matrix,
+Denoise, UI and delivery are excluded: this is sensor cleanup + Opposed + signed
+AHD to camera RGB, not action-to-screen latency or a claimed speedup.
+
+| Action, same Mac | Off → On (median; observed range) | Added development / cleanup step |
+| --- | --- | --- |
+| 18.02 MP Canon IMG_0790.CR2 | .929 s (.913–.935) →2.134 s (2.103–2.196) | +1.205 s; cleanup 1.213 s (1.191–1.254), including noise fit |
+| 42.39 MP Sony DSC04375.ARW | 2.485 s (2.472–2.636) →5.238 s (5.235–5.248) | +2.753 s; cleanup 2.751 s (2.699–2.771), including noise fit |
+
+Off invokes neither noise fitting nor clamping (exact sample and developed-pixel
+result tests); only the pre-existing development work remains. All timing
+spreads are inside the declared allowance. Receipt:
+`codebase/output/raw-speck-cleanup/measurement.json`; reusable read-only tool
+`codebase/tools/measure_raw_specks.py` also records the no-floor/.001/.002/.005
+comparison. .005 reduces clean changed readings by 95.2% and total correction
+by 81.3%; noisy changed readings and total correction are exactly unchanged.
+
 ## November 17: signed RAW validation follow-up (minimum Mac)
 
 MacBook Neo / A18 Pro / 8 GB, November 17, unpackaged 1408x794, baseline

@@ -430,7 +430,11 @@ function renderRawImportControls(session) {
     "Pixel cleanup is available only for supported Bayer RAW sensors, not X-Trans, linear DNG or finished images.");
   if (els.rawRemoveHotPixels) {
     els.rawRemoveHotPixels.checked = state.editDocument?.source?.raw_import_settings?.pixel_cleanup?.remove_hot_pixels === true;
-    els.rawPixelCleanupGroup?.classList.toggle("modified", els.rawRemoveHotPixels.checked);
+    const cleanup = state.editDocument?.source?.raw_import_settings?.pixel_cleanup;
+    if (els.rawEvenOutSpecks) els.rawEvenOutSpecks.checked = cleanup?.even_out_specks === true;
+    if (els.rawSpeckThreshold) els.rawSpeckThreshold.value = String(cleanup?.speck_threshold ?? 2.5);
+    renderRawSpeckControls();
+    els.rawPixelCleanupGroup?.classList.toggle("modified", els.rawRemoveHotPixels.checked || cleanup?.even_out_specks === true || (cleanup?.speck_threshold ?? 2.5) !== 2.5);
   }
   if (!visible) {
     state.rawSettingsOpen = false;
@@ -545,11 +549,24 @@ function optionalPositiveNumber(element) {
   return Number.isFinite(value) && value > 0 ? value : null;
 }
 
+function renderRawSpeckControls() {
+  if (els.rawSpeckThresholdRow) els.rawSpeckThresholdRow.hidden = !els.rawEvenOutSpecks?.checked;
+  if (els.rawSpeckThreshold) {
+    els.rawSpeckThreshold.disabled = !els.rawEvenOutSpecks?.checked || els.rawEvenOutSpecks.disabled;
+    updateRangeVisual(els.rawSpeckThreshold);
+  }
+  if (els.rawSpeckThresholdValue) els.rawSpeckThresholdValue.textContent = `×${Number(els.rawSpeckThreshold?.value || 2.5).toFixed(1)}`;
+}
+
 function rawImportSettingsPayload() {
   return {
     white_balance: "as_shot",
     demosaic: "ahd",
-    pixel_cleanup: { remove_hot_pixels: els.rawRemoveHotPixels?.checked === true },
+    pixel_cleanup: {
+      remove_hot_pixels: els.rawRemoveHotPixels?.checked === true,
+      even_out_specks: els.rawEvenOutSpecks?.checked === true,
+      speck_threshold: Number(els.rawSpeckThreshold?.value || 2.5),
+    },
     highlight_reconstruction: {
       enabled: els.rawHighlightBypass?.getAttribute("aria-pressed") === "true",
       method: els.rawHighlightMethod?.value || "opposed_color_v1",
