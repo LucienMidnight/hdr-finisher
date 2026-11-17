@@ -1,0 +1,29 @@
+RawTherapee LMMSE research adapter
+
+Upstream: https://github.com/RawTherapee/RawTherapee
+Commit: 64c2d90a3248c7ad41842d9162368858b61aac6a (dev, retrieved 2026-11-17)
+File: rtengine/lmmse_demosaic.cc
+SHA-256: d1064f21cbae0c4a97580698f577b5d63fe919e907d77483b30f1be3ac4a11ba
+The vendored file is byte-for-byte upstream, including its attribution/header.
+Copyright (c) 2004-2019 Gabor Horvath <hgabor@rawtherapee.com>.
+LMMSE: Lei Zhang and Xiaolin Wu, IEEE Transactions on Image Processing 14,
+2167-2178 (December 2005). RawTherapee adaptation: Jacques Desmis, March 2013;
+speed/memory refinements: Ingo Weyrich, February 2015.
+License: GPL-3.0-or-later; complete GPL v3 text in repository-root LICENSE.
+
+lmmse_shim.hpp supplies the minimal array/LUT/math/host interface, scalar
+execution and gamma functions from rtengine/color.h gamma24_17/igamma24_17,
+tables from rtengine/color.cc, and floating lookup semantics from rtengine/LUT.h
+at the same commit. It contains no GUI, threading or SSE dependency.
+lmmse_demosaic.py strips dependency includes at build time and replaces final
+nonnegative floors with a switchable signed floor. Its signed mode disables
+the original unit-interval and difference-domain gates, extends the gamma
+linear toe below zero and uses the analytic gamma pair above white (avoiding
+a finite-LUT extrapolation round-trip bias). Stock mode keeps upstream gates.
+Core directional interpolation, 9-tap low-pass, nine-sample MMSE, chroma
+reconstruction, median iterations and optional edge reinforcement are retained.
+The primary candidate fixes iterations=3 (gamma plus two median passes).
+Iterations 5..8 require whole-image mode because edge reinforcement is in-place.
+This is not a claim of complete RawTherapee application or CPU/SIMD equivalence.
+IGV, in rtengine/demosaic_algos.cc, was inspected but not ported/tested.
+No non-commercial code, pretrained weights or original photographs are included.
