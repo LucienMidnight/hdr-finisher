@@ -27,6 +27,42 @@ recipe, ISO, noise fits, clipping fractions and RNG seeds are recorded.
 
 ## Inputs
 
+### Pixel cleanup: independently mapped sensor defects (research only)
+
+`candidates/pixel_cleanup.py:alone` and `:with_denoise` repair only
+`metadata.pixel_cleanup_defects`, a list of visible unrotated sensor
+`{y, x, evidence}` records. Bayer normalisation is `(DN-black)/(white-black)`
+before WB. Keep green phases separate, and supply even `tile_origin=[y,x]`
+for windows. No map means exactly unchanged sensor samples; the second
+adapter then runs shipping `.75/.5/.75/.5` Denoise. Single-frame
+`candidate_samples` output is diagnostic, **never** a runtime defect map.
+`confirm_calibration` requires five or more independent dark/flat captures,
+unique acquisition IDs, matching camera/regime/geometry, and a valid
+four-position Poisson–Gaussian profile. The caller must verify calibration
+provenance/uniformity; a label alone is not a shipping trust policy.
+
+From `codebase`, with the existing unchanged baseline receipts available:
+
+```sh
+.venv/bin/python tools/gpu-run-lock.py --label pixel-cleanup-quick -- .venv/bin/python -m tools.denoise_eval.candidates.guard --receipt output/denoise-v1/raw-pixel-cleanup/quick-guard.json -- .venv/bin/python -m tools.denoise_eval.candidates.pixel_cleanup_measure quick --baseline-root output/denoise-v1/speck-cleanup
+```
+
+Use `heldout`, `full`, `seen`, `injected`, `audit`, `traces`, or
+`native --photo IMG_0790.CR2` / `native --photo 2025_0730_1331_3.arw` in the
+same locked/guarded command. `traces` requires the preceding `audit` output.
+The baseline root's phase receipts must be the original speck trial
+`quick/results-quick.json`, `full/results-full.json`, and
+`heldout|seen/results-pairs.json`. Existing scores are retained with their
+source hashes; new adapters and exact identity controls are freshly run.
+No model/download or photo copying is performed. Native timing grid maps
+are probes only, not real detected defects. Regenerate decision columns
+with the locked/guarded `tools.denoise_eval.decision_crops --inventory
+output/denoise-v1/raw-pixel-cleanup/full.json` command. Outputs are overwritten
+in place, not multiplied per run. See the RAW Pixel cleanup research report
+for interpretation and the absence of real calibration ground truth.
+
+### Corpus and baseline generation
+
 The approved manifest and `tools.lib.test_photos.photo_root()` resolve
 `<photosRoot>/HDR Test Images`, including machine/env overrides. Inventory all
 18 RAWs with the app's bundled ExifTool helper and rawpy; read originals only.

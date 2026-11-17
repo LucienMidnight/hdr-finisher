@@ -1,3 +1,31 @@
+## November 17: RAW Pixel cleanup (research only)
+
+MacBook Neo / A18 Pro / 8 GB, one CPU thread, prototype `78f93157`.
+Shared machine lock, unchanged 2.5 GB process-tree guard, single runs with
+±10% descriptive allowance. No app integration or whole-screen speed claim.
+The sparse-map probe is a hypothetical timing grid, not detected real faults;
+its values are discarded. Native whole waits include normalisation, global
+adaptive-model analysis, AHD and shipping `.75/.5/.75/.5` Denoise, plus the
+separately timed empty/sparse-map probes. No full-frame float cache or spool.
+
+| Research action, same Mac | Whole wait / peak process RSS | Pixel cleanup split / conditions |
+| --- | --- | --- |
+| 18.02 MP native RAW → AHD → Denoise | 7.186 s / .675 GB | Empty map .0054 s; sparse map .0207 s (260 coordinates), accumulated over all reads. IMG_0790.CR2; 768px cores, 86px Denoise + 16px AHD context. |
+| 42.39 MP native RAW → AHD → Denoise | 16.026 s / .718 GB | Empty map .0138 s; sparse map .0752 s (651 coordinates). 2025_0730_1331_3.arw; same bounded native sweep. |
+| Optional native per-CFA diagnostic scan, 18.02 / 42.39 MP | 2.237 / 4.537 s to sensor-audit result | Scan subclock 1.925 / 4.349 s; not required for map repair. Process peak .326 GB on Sony, then .364 GB after Canon in the same process (cumulative). 256-row strips with conservative border gaps. |
+| Quick / full quality | 5.171 / 41.498 s; .546 / .749 GB process RSS | 23 / 35 cases; two fresh adapters plus exact current-pixel control. Unchanged Off/current/RawNIND quality scores reused with hashes. |
+| Public held-out / seen quality | 24.396 / 45.732 s; .577 / .578 GB process RSS | 19 / 33 paired cases, kept separate; same fresh/reused policy. |
+| Known-defect positive controls / decision crops | 4.524 / 33.938 s guarded command wall | .444 / 1.108 GB tree RSS; seven generated charts / twelve native 288px decision rows. |
+| Required fast checks | Node 11.86 s; Python 265.20 s | Node 1091 passed, one skipped. Python 3980 passed, 150 skipped, one xpassed; guard succeeded. |
+
+Map repair is cheap, but no independent calibration is supplied for the real
+photos, so all no-map pixels stay exactly Off/current Denoise. No demonstrated
+Canon-speck quality gain or new GPU route is claimed. Algorithm, clipping and
+CPU/GPU placement qualifications: [raw-pixel-cleanup.md](research/denoise-v1-2026-11-16/raw-pixel-cleanup.md).
+Receipts: `codebase/output/denoise-v1/raw-pixel-cleanup/`; decision PNGs are
+regenerated in place, 11.69 MB. Original photographs are neither copied nor
+modified by these runs.
+
 ## November 17: residual speck/chroma cleanup (research only)
 
 MacBook Neo / A18 Pro / 8 GB, one CPU thread, prototype `994152ca` /

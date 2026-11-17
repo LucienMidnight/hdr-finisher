@@ -626,6 +626,10 @@ Completed UI polish round 3 (pending visual sign-off): `docs/technical/archive/b
   `noise-model-and-raw-specks.md` records the clipped-bright-bin noise-fit
   failure, stable model and held-out/seen comparisons, native CPU costs,
   GPU integration limits and the stopped RAW-adapter handoff.
+  `raw-pixel-cleanup.md` records calibration-backed Pixel cleanup before
+  AHD: sensor-defect prior art, unconfirmed Canon suspects, synthetic known
+  faults, held-out/seen preservation, native cost and CPU/GPU placement;
+  no automatic scene-outlier repair or production integration.
 - `docs/technical/briefs/tone-endpoints-design-2026-11-15.md`: proposed
   five-control Tone block (Blacks/Whites endpoints, broad zones, fixed
   Highlight Compression cap) with open decisions T1-b to T1-f.
