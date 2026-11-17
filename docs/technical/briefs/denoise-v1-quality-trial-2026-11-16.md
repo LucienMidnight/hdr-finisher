@@ -225,6 +225,11 @@ https://claude.ai/artifact/4ZcqC4Ht2fJ67Nu6F2S4t9 (1:1 crops, blind mode):
 
 ## 8. Log
 
+- 2026-11-17: Steve approved the Pixel cleanup **Remove hot pixels**
+  checkbox, off by default (single-photo filter from `raw-pixel-cleanup.md`,
+  no slider, no cold/dead mode). Build queued after signed RAW development,
+  since both change RAW development on CPU and GPU.
+
 - 2026-11-17: Steve approved building signed RAW development: "I think we
   should build it because it's more technically accurate and probably how we
   should be handling the data. But it might also make the rest of our Denoise
