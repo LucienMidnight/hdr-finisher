@@ -326,8 +326,6 @@ def evaluate_frame(sensor, info, matrix, global_white, name, folder):
                                if np.any(transition) else center // 8)
                 selections = dict(highlight=window(center, sensor.shape),
                                   seam=window(np.array(seam_center) * 8, sensor.shape))
-                if name == 'IMG_3129':
-                    selections['sun-sky'] = window((2144, 3264), sensor.shape)
                 observations = {}
                 started = time.perf_counter()
                 for role, selection in selections.items():
@@ -339,7 +337,7 @@ def evaluate_frame(sensor, info, matrix, global_white, name, folder):
                     observations[role] = seam_measure(combined, normal_crop, neural_crop, weight_crop, ratio[selection])
                     observations[role]['sensor_origin'] = [selection[0].start, selection[1].start]
                     displayed = (method == 'opposed_color_v1' or expand == 1.)
-                    if feather == 32 and displayed and (role in ('seam', 'sun-sky') or name == 'IMG_0790'):
+                    if feather == 32 and displayed and (role == 'seam' or name in ('IMG_0790', 'IMG_3129')):
                         label = f'{name}-{method}-{expand:g}-{role}'
                         mask_rgb = np.repeat(weight_crop[..., None], 3, axis=-1)
                         columns = [('Normal reconstruction', normal_crop), ('AI only (no reconstruction)', neural_crop),
