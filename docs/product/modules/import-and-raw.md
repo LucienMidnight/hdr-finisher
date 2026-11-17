@@ -1,4 +1,64 @@
-### November 17: Steve's Pixel cleanup decision; GPU qualification open
+### November 17, 2026: optional harsh-speck control (Steve approved)
+
+Pixel cleanup now also contains **Even out harsh specks (Experimental)**,
+default off, followed when enabled by **Threshold** ×2–×4, default ×2.5.
+Lower thresholds generally act more strongly; changing the slider applies on
+release, not during dragging. Both controls use existing components/tokens,
+with the existing Bayer eligibility explanation, modified marker and Reset.
+The tooltip warns that small stars and thin lettering may soften. Colourful
+blobs can remain. Raising the threshold is not a guarantee of protecting stars:
+the research's component detector can split a feature at higher thresholds.
+Denoise defaults and the original hot-pixel algorithm are unchanged.
+
+Order: optional hot-pixel removal → optional signed per-phase soft clamp →
+Opposed-color evidence/reconstruction → signed AHD → WB/camera transform →
+Edge colour → Denoise. The clamp uses the 5×5 same-phase median, sensor-model
+noise floor raised by residual MAD, smoothstep threshold ramp, fixed envelope
+1.5 and strength .75, both signs, eight-connected same-sign area ≤5 counted
+before the always-on two-similar-neighbours veto. Preserve the research's
+outer four same-phase samples (eight sensor pixels), and near-saturation
+≥.98 with its 5×5 same-phase context. No median replacement or zero floor.
+Changed readings are encoded into the existing DN buffer, retaining signed
+black-subtracted values. Bounded strips preserve original context at seams.
+Unavailable four-phase noise fits leave input untouched, as with hot pixels.
+
+CPU development and Library GPU RAW preparation share the new sensor step.
+When both options are on, GPU preparation also runs the unchanged CPU hot
+filter first and explicitly suppresses the later GPU hot filter. The hot-only
+GPU path remains. Grade, saved Library developments, export/Proof and Edge
+colour re-development all receive the same cleaned sensor source. Off skips
+noise fitting and clamping and preserves prior pixels exactly, including old
+projects without the fields. There is no migration code. Saved projects,
+sidecars, RAW-containing recipes and selective paste carry `even_out_specks`
+and `speck_threshold`; rendition-only grading presets keep their scope.
+Undo/Redo re-develops the stored recipe.
+
+**Absolute floor included: .005 normalized sensor units.** Shared-lock native
+comparison on clean DSC04375 (ISO100) changes 223,318 readings without it and
+10,670 with it (95.2% fewer); total absolute DN correction 1,792,391 →334,535.
+Noisy IMG_0790 (ISO3200) stays exactly 208,976 changed readings and 14,476,601
+absolute DN correction, retaining 100% on both measures. Floors .001/.002
+were also measured; the brief records the predeclared selection rule. These
+are sensor-change proxies, not proof that every changed reading was noise.
+The existing research's star/text warnings still apply. Development timings
+are in the performance table.
+
+**Focused minimum-Mac qualification:** full Node 1,108 pass / one skip;
+full Python 4,236 pass / 155 skips / one xpass, with the existing deprecation
+warning. The final sensor/state set passes 53 tests, with the Gaussian-star
+fixture subsequently tightened to FWHM4.24 sensor pixels (23 sensor tests pass).
+The GPU driver passes 128 cases / 768 finished SDR/HDR comparisons at unchanged
+limits, including 32 byte-identical old/explicit-Off GPU recipe pairs. Real
+DSC00264/IMG_3129 checks pass with both options enabled: CPU/GPU Grade and saved
+Library GPU agreement, identical encoded Proof/export, restored controls,
+input-only slider movement, exactly one development on release and Reset.
+The separate five-photo Library GPU RAW and default Edge colour checks pass.
+Plain 90-second Library passes 9/9 visible photos; all ten Single steps pass.
+Both run in visible plain Electron at 1408×794 under the same shared lock.
+This is focused qualification, not a release check.
+
+
+### November 17: Steve's initial hot-pixel decision and implementation
 
 **Steve, November 17, 2026:** add a RAW development section named **Pixel
 cleanup**, initially containing only **Remove hot pixels**, off by default.
@@ -32,7 +92,7 @@ the recipe. Changing the checkbox re-develops the source while preserving the
 grade, and Undo/Redo re-develops the previous/next recipe. Library, Grade,
 Proof, export and batch consume those same developed pixels/recipes.
 
-**Not GPU-qualified or release-ready.** Fast result tests cover detection,
+**Initial implementation before the focused qualification above.** Fast result tests cover detection,
 light/clipping/border preservation, Off equality, strip seams, placement before
 clipping evidence/AHD, saved identity, copy/paste and undo failure rollback.
 Full Node: 1,103 passed / one skipped; full Python: 4,125 passed / 155 skipped /
@@ -40,7 +100,7 @@ one xpassed, no failures. The existing Starlette/httpx deprecation warning stays
 Final focused filter/state checks pass 20/4 tests after the fixture additions and
 test-file split. The CPU fixture generator also passes all 32 cases.
 
-The new `raw-pixel-cleanup.js` driver is registered but deliberately not run:
+At that initial point, `raw-pixel-cleanup.js` was registered but not run:
 production GPU normalization/Opposed/AHD/WB on four Bayer layouts, both states
 and four orientations, with finished SDR ΔE2000 / HDR ΔE ITP mean <1 and
 p99 <3 at −6/0/+6 EV. `raw-pixel-cleanup-delivery.js` adds the enabled saved

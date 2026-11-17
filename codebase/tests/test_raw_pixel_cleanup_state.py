@@ -10,7 +10,8 @@ from hdr_finisher.models import EditCommand, EditDocument, RawImportSettings
 from test_library_grades import setup
 
 
-def test_saved_recipe_copy_selection_and_development_identity(tmp_path):
+@pytest.mark.parametrize('field,value', [('remove_hot_pixels', True), ('even_out_specks', True), ('speck_threshold', 3.1)])
+def test_saved_recipe_copy_selection_and_development_identity(tmp_path, field, value):
     from hdr_finisher.library_live import quality
     from hdr_finisher.library_paste import LibraryPaste
     from hdr_finisher.sessions import SessionStore
@@ -20,20 +21,21 @@ def test_saved_recipe_copy_selection_and_development_identity(tmp_path):
     payload = store.create_session(source)
     document = store.get(payload.session_id).edit_document().model_dump(mode='json')
     edited = deepcopy(document)
-    edited['source']['raw_import_settings']['pixel_cleanup']['remove_hot_pixels'] = True
+    edited['source']['raw_import_settings']['pixel_cleanup'][field] = value
     saved = EditDocument.model_validate_json(EditDocument.model_validate(edited).model_dump_json())
-    assert saved.source.raw_import_settings.pixel_cleanup.remove_hot_pixels
+    assert getattr(saved.source.raw_import_settings.pixel_cleanup, field) == value
     assert quality(edited) != quality(document)
     schema = LibraryPaste.schema(None, edited, document)
     selected = next(group for group in schema if group['id'] == 'raw-development')
-    setting = next(item for item in selected['settings'] if item['id'].endswith('pixel_cleanup.remove_hot_pixels'))
-    assert setting['modified'] and 'Remove hot pixels' in setting['label']
+    setting = next(item for item in selected['settings'] if item['id'].endswith('pixel_cleanup.' + field))
+    assert setting['modified'] and {'remove_hot_pixels': 'Remove hot pixels', 'even_out_specks': 'Even out harsh specks', 'speck_threshold': 'Speck threshold'}[field] in setting['label']
 
 
-def test_selective_raw_copy_paste_and_undo_persist_cleanup(setup):
+@pytest.mark.parametrize('field,value', [('remove_hot_pixels', True), ('even_out_specks', True), ('speck_threshold', 3.1)])
+def test_selective_raw_copy_paste_and_undo_persist_cleanup(setup, field, value):
     from hdr_finisher.library_paste import LibraryPaste
     photo, store, session, marks, grades = setup
-    session.raw_import_settings.pixel_cleanup.remove_hot_pixels = True
+    setattr(session.raw_import_settings.pixel_cleanup, field, value)
     grades.capture(str(session.session_id))
     grades.save(str(session.session_id))
     marks.writer.drain()
@@ -48,16 +50,16 @@ def test_selective_raw_copy_paste_and_undo_persist_cleanup(setup):
     starting = deepcopy(copied)
     starting['source']['filename'] = target.name
     starting['source']['durable_path'] = str(target)
-    starting['source']['raw_import_settings']['pixel_cleanup']['remove_hot_pixels'] = False
+    starting['source']['raw_import_settings']['pixel_cleanup'][field] = 2.5 if field == 'speck_threshold' else False
     document = dict(format='HDR Finisher Photo', schema_version=1, photo_id='raw-target', marks={},
                     albums=[], grade=starting, grade_default=starting)
     Path(str(target) + '.hdrf').write_text(json.dumps(document), encoding='utf-8')
     marks.read([target])
     folder.rename(photo.parent / 'disconnected')
-    selection = {'lanes': ['hdr', 'sdr'], 'settings': ['source.raw_import_settings.pixel_cleanup.remove_hot_pixels']}
+    selection = {'lanes': ['hdr', 'sdr'], 'settings': ['source.raw_import_settings.pixel_cleanup.' + field]}
     result = paste.paste([str(target)], selection)
     assert result['count'] == 1
-    assert grades._get(str(target))['desired']['source']['raw_import_settings']['pixel_cleanup']['remove_hot_pixels']
+    assert grades._get(str(target))['desired']['source']['raw_import_settings']['pixel_cleanup'][field] == value
     marks.undo()
     assert grades._get(str(target))['desired'] == starting
     (photo.parent / 'disconnected').rename(folder)
@@ -65,7 +67,8 @@ def test_selective_raw_copy_paste_and_undo_persist_cleanup(setup):
     assert json.loads(Path(str(target) + '.hdrf').read_text())['grade'] == starting
 
 
-def test_cleanup_redevelopment_can_undo_redo_pixels_and_saved_setting(tmp_path, monkeypatch):
+@pytest.mark.parametrize('field', ['remove_hot_pixels', 'even_out_specks'])
+def test_cleanup_redevelopment_can_undo_redo_pixels_and_saved_setting(tmp_path, monkeypatch, field):
     from hdr_finisher import sessions as module
     from hdr_finisher.sessions import SessionStore, _source_mip_identity
     source = tmp_path / 'sensor.png'
@@ -75,13 +78,13 @@ def test_cleanup_redevelopment_can_undo_redo_pixels_and_saved_setting(tmp_path, 
     current = store.get(initial.session_id)
     original_pixels = current.image.copy()
     original_identity = _source_mip_identity(current)
-    enabled = RawImportSettings(pixel_cleanup={'remove_hot_pixels': True})
+    enabled = RawImportSettings(pixel_cleanup={field: True})
     actual_load = module.load_image
     calls = []
 
     def load(*args, **kwargs):
         image, descriptor, information, analysis, reference = actual_load(*args, **kwargs)
-        active = kwargs['raw_import_settings'].pixel_cleanup.remove_hot_pixels
+        active = getattr(kwargs['raw_import_settings'].pixel_cleanup, field)
         calls.append(active)
         if active:
             image = image.copy()
@@ -92,25 +95,26 @@ def test_cleanup_redevelopment_can_undo_redo_pixels_and_saved_setting(tmp_path, 
     developed = store.prepare_session(source, raw_import_settings=enabled)
     store.redevelop_session(initial.session_id, developed)
     active = store.get(initial.session_id)
-    assert active.raw_import_settings.pixel_cleanup.remove_hot_pixels
+    assert getattr(active.raw_import_settings.pixel_cleanup, field)
     assert not np.array_equal(active.image, original_pixels)
     assert _source_mip_identity(active) != original_identity
     for command, expected in [('undo', False), ('redo', True)]:
         store.apply_edit_commands(active.session_id, [EditCommand(expected_revision=active.edit_revision, command_type=command)])
-        assert active.raw_import_settings.pixel_cleanup.remove_hot_pixels is expected
+        assert getattr(active.raw_import_settings.pixel_cleanup, field) is expected
         assert (not np.array_equal(active.image, original_pixels)) is expected
         assert (active.render_cache.source_identity != original_identity) is expected
     assert calls == [True, False, True]
 
 
-def test_failed_raw_undo_keeps_pixels_recipe_and_history(tmp_path, monkeypatch):
+@pytest.mark.parametrize('field', ['remove_hot_pixels', 'even_out_specks'])
+def test_failed_raw_undo_keeps_pixels_recipe_and_history(tmp_path, monkeypatch, field):
     from hdr_finisher import sessions as module
     from hdr_finisher.sessions import SessionStore
     source = tmp_path / 'sensor.png'
     Image.new('RGB', (16, 16), (80, 120, 160)).save(source)
     store = SessionStore()
     initial = store.create_session(source)
-    developed = store.prepare_session(source, raw_import_settings=RawImportSettings(pixel_cleanup={'remove_hot_pixels': True}))
+    developed = store.prepare_session(source, raw_import_settings=RawImportSettings(pixel_cleanup={field: True}))
     store.redevelop_session(initial.session_id, developed)
     session = store.get(initial.session_id)
     previous = session.edit_document().model_dump_json()

@@ -169,7 +169,16 @@ def sensor(path: Path, settings: RawImportSettings | None = None) -> tuple[dict,
         # LibRaw frees its own buffer when the file closes.
         mosaic = np.array(raw.raw_image_visible, dtype="<u2", order="C", copy=True)
         from .raw_pixel_cleanup import configuration
-        cleanup = configuration(mosaic, metadata) if settings.pixel_cleanup.remove_hot_pixels else None
+        cleanup = configuration(mosaic, metadata) if settings.pixel_cleanup.remove_hot_pixels and not settings.pixel_cleanup.even_out_specks else None
+        # Reuse the CPU sensor step for this optional clamp. Both routes consume
+        # identical encoded sensor samples, before Opposed/Edge evidence and AHD.
+        # The hot-only GPU route stays unchanged; never run it a second time.
+        cleanup_applied = settings.pixel_cleanup.even_out_specks
+        if cleanup_applied:
+            from .raw_pixel_cleanup import apply_raw
+            from types import SimpleNamespace
+            apply_raw(SimpleNamespace(raw_image_visible=mosaic), metadata, settings)
+            cleanup = None
         colors = np.asarray(raw.raw_colors_visible[:2, :2], dtype=np.int64)
         xyz_cam = raw_import._ahd_lab_matrix(raw)
         flip = int(raw.sizes.flip)
@@ -185,6 +194,7 @@ def sensor(path: Path, settings: RawImportSettings | None = None) -> tuple[dict,
         "path": str(path), "identity": identity, "width": width, "height": height, "flip": flip,
         "raw_import_settings": settings.model_dump(mode="json"),
         "pixel_cleanup": cleanup,
+        "pixel_cleanup_applied": cleanup_applied,
         "cfa_raw": colors.reshape(-1).tolist(),
         "cfa_rgb": [int(metadata.raw_channel_to_rgb[c]) for c in colors.reshape(-1)],
         "raw_black": metadata.raw_black_level.tolist(), "raw_white": metadata.raw_white_level.tolist(),

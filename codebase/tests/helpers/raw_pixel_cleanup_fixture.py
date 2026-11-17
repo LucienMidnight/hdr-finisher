@@ -10,7 +10,7 @@ import numpy as np
 
 sys.path[:0] = [str(Path(__file__).resolve().parents[2]), str(Path(__file__).resolve().parents[2] / 'backend')]
 from signed_raw_fixture import compare
-from hdr_finisher import raw_import, raw_pixel_cleanup
+from hdr_finisher import raw_import, raw_pixel_cleanup, raw_speck_cleanup
 from hdr_finisher.color import _ACESCG_TO_LINEAR_BT2020
 from hdr_finisher.models import RawImportSettings
 from hdr_finisher.signed_raw import demosaic
@@ -40,11 +40,17 @@ def fixtures():
             black=black[channels].ravel().tolist(), spans=(white - black)[channels].ravel().tolist(),
             colours=colours.ravel().tolist(), thresholds=[raw_pixel_cleanup.HOT_SIGMA, raw_pixel_cleanup.MINIMUM_EXCESS,
                 raw_pixel_cleanup.LIGHT_SIGMA, raw_pixel_cleanup.CLIP_GUARD])
-        for enabled in (False, True):
-            settings = RawImportSettings(pixel_cleanup={'remove_hot_pixels': enabled})
+        for enabled, specks, threshold in ((False, False, 2.5), (True, False, 2.5),
+                                           (False, True, 2), (False, True, 2.5),
+                                           (True, True, 2.5), (True, True, 4)):
+            settings = RawImportSettings(pixel_cleanup={'remove_hot_pixels': enabled,
+                'even_out_specks': specks, 'speck_threshold': threshold})
             cleaned = sensor.copy()
             if enabled:
                 assert raw_pixel_cleanup.apply(cleaned, config) == 4
+            if specks:
+                assert raw_speck_cleanup.apply(cleaned, config, threshold) > 0
+            transported = cleaned.copy() if specks else sensor
             raw_import._apply_raw_highlight_reconstruction(SimpleNamespace(raw_image_visible=cleaned), camera, settings)
             expected = demosaic(cleaned, colours, black[channels], np.eye(3))
             expected *= (1 / (rgb_white - rgb_black)).astype(np.float32)
@@ -56,9 +62,17 @@ def fixtures():
                     threshold=raw_import.OPPOSED_COLOR_THRESHOLD_SAFETY, camera_to_acescg=np.eye(3).tolist(),
                     xyz_cam=np.eye(3).tolist(), acescg_to_bt2020=np.asarray(_ACESCG_TO_LINEAR_BT2020).T.tolist(),
                     calibration_gain=1, sample_stride=1, raw_import_settings=settings.model_dump(mode='json'),
-                    pixel_cleanup=config if enabled else None)
-                cases.append(dict(meta=meta, mosaic=base64.b64encode(sensor.astype('<u2').tobytes()).decode(),
-                    expected=base64.b64encode(expected.astype('<f4').tobytes()).decode()))
+                    pixel_cleanup=config if enabled and not specks else None, pixel_cleanup_applied=specks)
+                case = dict(meta=meta, mosaic=base64.b64encode(transported.astype('<u2').tobytes()).decode(),
+                    expected=base64.b64encode(expected.astype('<f4').tobytes()).decode())
+                if not specks:
+                    legacy = json.loads(json.dumps(meta))
+                    legacy['raw_import_settings']['pixel_cleanup'] = {'remove_hot_pixels': enabled}
+                    del legacy['pixel_cleanup_applied']
+                    case['identical_to'] = len(cases)
+                    cases.append(dict(case, meta=legacy))
+                    del cases[-1]['identical_to']
+                cases.append(case)
     return cases
 
 

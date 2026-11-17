@@ -26,7 +26,7 @@ assert.equal(photos.length,2,'Both requested clipped-highlight photos must be av
     const result=await page.evaluate(async({photo,cpu,pixelCleanup})=>{
      const start=performance.now();__edgeFrames.length=0;
      const grant=await desktop.grantSourcePath(photo);
-     const created=await projectIo.createImportJob(fetch,{grant:grant.grant,rawImportSettings:{pixel_cleanup:{remove_hot_pixels:pixelCleanup},highlight_reconstruction:{enabled:true,method:'edge_colour_v1',edge_colour_expand_percent:.5}}});
+     const created=await projectIo.createImportJob(fetch,{grant:grant.grant,rawImportSettings:{pixel_cleanup:{remove_hot_pixels:pixelCleanup,even_out_specks:pixelCleanup,speck_threshold:2.5},highlight_reconstruction:{enabled:true,method:'edge_colour_v1',edge_colour_expand_percent:.5}}});
      let job=created.payload;if(!created.response.ok)throw Error(JSON.stringify(job));
      while(!['ready','error','cancelled'].includes(job.state)){await new Promise(r=>setTimeout(r,100));job=(await projectIo.pollImportJob(fetch,job.job_id)).payload;}
      if(job.state!=='ready')throw Error(JSON.stringify(job));
@@ -40,6 +40,11 @@ assert.equal(photos.length,2,'Both requested clipped-highlight photos must be av
      assert.equal(result.session.metadata.extra.raw_pixel_cleanup.supported,true);
      assert.equal(await page.locator('#raw-remove-hot-pixels').isChecked(),true);
      assert.equal(await page.locator('#raw-remove-hot-pixels').isEnabled(),true);
+     assert.equal(result.session.edit_document.source.raw_import_settings.pixel_cleanup.even_out_specks,true);
+     assert.equal(result.session.metadata.extra.raw_pixel_cleanup.specks_enabled,true);
+     assert.equal(await page.locator('#raw-even-out-specks').isChecked(),true);
+     assert.equal(await page.locator('#raw-even-out-specks').isEnabled(),true);
+     assert.equal(await page.locator('#raw-speck-threshold').inputValue(),'2.5');
     }
     await page.waitForFunction(()=>__edgeFrames.some(e=>e.generation===state.previewGeneration[state.currentView]&&e.lane===state.currentView)&&state.acceptedPresentation?.exact&&viewerState().status==='ready',null,{timeout:180000});
     const timing=await page.evaluate(start=>({firstFrameMs:__edgeFrames.find(e=>e.generation===state.previewGeneration[state.currentView]&&e.lane===state.currentView).at-start,exactMs:performance.now()-start}),result.start);
@@ -95,6 +100,32 @@ assert.equal(photos.length,2,'Both requested clipped-highlight photos must be av
    console.log(JSON.stringify({photo:path.basename(photo),cpuFirstFrameMs:row.cpu.firstFrameMs,gpuFirstFrameMs:row.gpu.firstFrameMs,libraryMs:row.library.ms,delivery:row.export.renderer}));
   }
   console.log(execFileSync(python,[path.join(__dirname,'helpers/edge_colour_raw_compare.py'),path.join(folder,'results.json')],{encoding:'utf8',maxBuffer:1<<24}));
+  if(pixelCleanup){
+   // Real UI event path: inputs update the readout only; release starts one
+   // redevelopment. Restore the starting value and check Reset afterwards.
+   await page.evaluate(()=>activateWorkflowTab('grade'));
+   if(await page.locator('#raw-settings-toggle').getAttribute('aria-expanded')!=='true')
+    await page.locator('#raw-settings-toggle').click();
+   if(await page.locator('#raw-pixel-cleanup-group .group-toggle').getAttribute('aria-expanded')!=='true')
+    await page.locator('#raw-pixel-cleanup-group .group-toggle').click();
+   assert.equal(await page.locator('#raw-speck-threshold').isVisible(),true);
+   const inputOnly=await page.evaluate(()=>{
+    window.__speckFetch=window.fetch;window.__speckRequests=0;
+    window.fetch=(url,options)=>{if(String(url).endsWith('/api/import-jobs')&&options?.method==='POST')__speckRequests++;return __speckFetch(url,options);};
+    for(const value of ['2.6','2.8','3.0']){els.rawSpeckThreshold.value=value;els.rawSpeckThreshold.dispatchEvent(new Event('input',{bubbles:true}));}
+    return {requests:__speckRequests,readout:els.rawSpeckThresholdValue.textContent};
+   });
+   assert.deepEqual(inputOnly,{requests:0,readout:'×3.0'});
+   await page.locator('#raw-speck-threshold').dispatchEvent('change');
+   await page.waitForFunction(()=>state.editDocument?.source.raw_import_settings.pixel_cleanup.speck_threshold===3 && !els.applyRawSettings.disabled,null,{timeout:180000});
+   assert.equal(await page.evaluate(()=>__speckRequests),1);
+   await page.locator('#raw-pixel-cleanup-reset').click();
+   await page.waitForFunction(()=>!state.editDocument?.source.raw_import_settings.pixel_cleanup.even_out_specks && !state.editDocument?.source.raw_import_settings.pixel_cleanup.remove_hot_pixels && state.editDocument?.source.raw_import_settings.pixel_cleanup.speck_threshold===2.5 && !els.applyRawSettings.disabled,null,{timeout:180000});
+   assert.equal(await page.locator('#raw-even-out-specks').isChecked(),false);
+   assert.equal(await page.locator('#raw-speck-threshold').isVisible(),false);
+   await page.evaluate(()=>{window.fetch=__speckFetch;delete window.__speckFetch;delete window.__speckRequests;});
+   console.log('Pixel cleanup UI: input-only changes, one redevelopment on release and Reset passed.');
+  }
   console.log('Results: '+folder);
  }finally{reusePhoto.cleanup();await page.request.post(new URL('/api/delivery/preferences',process.env.HDR_FINISHER_URL).href,{data:{force_cpu:false}}).catch(()=>{});await browser.close();}
 })().catch(error=>{console.error(error);process.exitCode=1;}).finally(()=>reusePhoto.cleanup());

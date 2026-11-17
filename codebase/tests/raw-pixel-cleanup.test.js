@@ -17,14 +17,14 @@ function control(value = '') {
 
 function context() {
   const names = ['rawSettingsSection', 'rawSettingsPanel', 'rawSettingsToggle', 'rawHighlightGroup',
-    'rawPixelCleanupGroup', 'rawRemoveHotPixels', 'lensMode', 'lensDistortion', 'lensChromaticAberration',
+    'rawPixelCleanupGroup', 'rawRemoveHotPixels', 'rawEvenOutSpecks', 'rawSpeckThreshold', 'rawSpeckThresholdRow', 'rawSpeckThresholdValue', 'lensMode', 'lensDistortion', 'lensChromaticAberration',
     'lensVignetting', 'lensFocal', 'lensAperture', 'lensDistance', 'manualLensControls', 'lensSettingsNote',
     'lensProfile', 'rawHighlightMethod', 'rawHighlightThreshold', 'rawHighlightThresholdValue',
     'rawEdgeColourExpand', 'rawHighlightBypass'];
   const els = Object.fromEntries(names.map(name => [name, control()]));
-  els.rawPixelCleanupGroup.querySelectorAll = () => [els.rawRemoveHotPixels];
+  els.rawPixelCleanupGroup.querySelectorAll = () => [els.rawRemoveHotPixels, els.rawEvenOutSpecks, els.rawSpeckThreshold];
   const state = {rawSettingsOpen: false, editDocument: {source: {raw_import_settings: {
-    pixel_cleanup: {remove_hot_pixels: true}, highlight_reconstruction: {enabled: true, method: 'edge_colour_v1',
+    pixel_cleanup: {remove_hot_pixels: true, even_out_specks: true, speck_threshold: 3.2}, highlight_reconstruction: {enabled: true, method: 'edge_colour_v1',
       clipping_threshold: 1.1, edge_colour_expand_percent: 1.5}}}}};
   const result = {els, state, isRawSession: session => session?.raw === true,
     renderRawHighlightState() {}, optionalPositiveNumber: value => Number(value) || null,
@@ -41,6 +41,11 @@ test('Pixel cleanup is enabled only for supported Bayer RAW and restores saved s
     metadata: {extra: {raw_pipeline: 'camera_linear_signed_ahd_opposed_v3', raw_pixel_cleanup: {supported: true}}}});
   assert.equal(els.rawRemoveHotPixels.disabled, false);
   assert.equal(els.rawRemoveHotPixels.checked, true);
+  assert.equal(els.rawEvenOutSpecks.checked, true);
+  assert.equal(els.rawSpeckThreshold.disabled, false);
+  assert.equal(els.rawSpeckThreshold.value, '3.2');
+  assert.equal(els.rawSpeckThresholdValue.textContent, '×3.2');
+  assert.equal(els.rawSpeckThresholdRow.hidden, false);
   assert.equal(els.rawPixelCleanupGroup.classList.contains('modified'), true);
   assert.equal(els.rawHighlightMethod.value, 'edge_colour_v1');
   assert.equal(els.rawEdgeColourExpand.value, '1.5');
@@ -49,6 +54,8 @@ test('Pixel cleanup is enabled only for supported Bayer RAW and restores saved s
     metadata: {extra: {raw_mosaiced: false}}}]) {
     fixture.renderRawImportControls(session);
     assert.equal(els.rawRemoveHotPixels.disabled, true);
+    assert.equal(els.rawEvenOutSpecks.disabled, true);
+    assert.equal(els.rawSpeckThreshold.disabled, true);
     assert.match(els.rawPixelCleanupGroup.title, /Bayer.*X-Trans.*linear DNG/);
   }
 });
@@ -69,4 +76,24 @@ test('RAW payload carries the checkbox without changing other development contro
   assert.equal(on.highlight_reconstruction.edge_colour_expand_percent, 1.5);
   delete on.pixel_cleanup; delete off.pixel_cleanup;
   assert.deepEqual(on, off);
+});
+
+
+test('Missing saved speck fields mean off and the threshold round trips', () => {
+  const fixture = context();
+  const {els, state} = fixture;
+  state.editDocument.source.raw_import_settings.pixel_cleanup = {};
+  fixture.renderRawImportControls({raw: true, session_id: 'bayer', source: {suffix: '.arw'},
+    metadata: {extra: {raw_pixel_cleanup: {supported: true}}}});
+  assert.equal(els.rawEvenOutSpecks.checked, false);
+  assert.equal(els.rawSpeckThresholdRow.hidden, true);
+  assert.equal(els.rawSpeckThreshold.value, '2.5');
+  els.rawEvenOutSpecks.checked = true;
+  els.rawSpeckThreshold.value = '4';
+  fixture.renderRawSpeckControls();
+  assert.equal(els.rawSpeckThresholdRow.hidden, false);
+  assert.equal(els.rawSpeckThresholdValue.textContent, '×4.0');
+  const payload = fixture.rawImportSettingsPayload();
+  assert.equal(payload.pixel_cleanup.even_out_specks, true);
+  assert.equal(payload.pixel_cleanup.speck_threshold, 4);
 });

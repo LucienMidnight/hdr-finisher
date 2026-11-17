@@ -75,7 +75,15 @@ The source is then normalized into the internal working representation when the 
 
 In the source/RAW controls, open **Pixel cleanup** and turn on **Remove hot
 pixels** only if you can see isolated stuck bright sensor pixels. It starts
-off. There is no strength slider; **Reset** turns it off again.
+off and has no strength slider.
+
+The second checkbox, **Even out harsh specks (Experimental)**, also starts off.
+It gently pulls unusual bright or dark sensor readings toward the local noise
+range before development. With it checked, **Threshold** runs from ×2 to ×4,
+starting at ×2.5; lower values are stronger. The slider applies when released.
+Small stars and thin lettering may soften, and colourful blobs can remain.
+Check important details at 100%. It is an optional aid, not a Denoise replacement.
+**Reset** turns both options off and restores Threshold to ×2.5.
 
 The filter works before the RAW is demosaiced or highlights are reconstructed.
 It protects nearby signs of real light and clipped areas, but can occasionally
@@ -84,8 +92,8 @@ remove a real tiny light, such as a star or a glint. Check those details at
 or use a camera defect map. X-Trans, linear DNG and finished images show the
 section disabled with a short explanation.
 
-Changing it re-develops the RAW, so allow the photo to refresh. The setting is
-saved with this photo and applies to Library, Grade, Proof and exported files,
+Changing either option or releasing Threshold re-develops the RAW, so allow
+the photo to refresh. The settings are saved with this photo and apply to Library, Grade, Proof and exported files,
 including batch export. **Undo** and **Redo** restore the previous/next setting
 and re-develop the source. Selective grade copy/paste includes it under **RAW
 development**; saved recipes that contain RAW settings keep it too.

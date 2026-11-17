@@ -225,6 +225,51 @@ https://claude.ai/artifact/4ZcqC4Ht2fJ67Nu6F2S4t9 (1:1 crops, blind mode):
 
 ## 8. Log
 
+**November 17 — optional sensor speck control, implementation and qualification.**
+Steve approved the protected 2.5σ soft clamp (envelope1.5, strength.75,
+area5, similarity veto always on), threshold2–4, default off. Timing tolerance
+proposed before measurement: ±10% descriptive same-Mac variation, matching
+research; no existing budget changes. Measure 18/42MP added development and
+step costs under the shared lock. Absolute-floor comparison: 0/.001/.002/.005
+normalized sensor units on ISO100 DSC04375 and ISO3200 IMG_0790; count changed
+samples and total absolute DN correction. Include a floor only if it halves
+clean-photo changed samples while retaining at least 90% of noisy-photo
+correction and changed samples. This is an experiment decision rule, not a
+relaxed picture-agreement tolerance. Existing delivery/perceptual limits stay.
+
+Floor decision: include .005. Clean ISO100 DSC04375: 223,318 →10,670 changed
+readings, absolute DN correction 1,792,391 →334,535. Noisy ISO3200 IMG_0790:
+208,976 →208,976 changes and 14,476,601 →14,476,601 correction (100% retained).
+At .001/.002 clean changes were 212,093/130,157; noisy unchanged throughout.
+Native shared-lock measurements: three Off/On observations each, 18MP median
+.929→2.134 s (+1.205), 42MP 2.485→5.238 s (+2.753). Cleanup including noise fit
+1.213/2.751 s. These exclude unpack, WB/matrix, lens, Denoise and UI; complete
+conditions/ranges are in the performance table. The implementation uses the
+existing CPU sensor step before GPU normalization; no new shader or budget.
+Off result tests compare both raw readings and signed developed pixels against
+the preceding hot-only path, including omitted saved fields. New result tests
+cover signed outliers, supported Gaussian stars, near saturation, component
+size/similarity, seams, floor and shared GPU sensor transport. State tests cover
+saved fields, paste and re-development Undo/Redo. Implementation committed as
+`bb8c9b1e` (no push). Full Node: 1,108 pass / one skip; full Python: 4,236 pass /
+155 skips / one xpass, existing deprecation warning only. Final focused set:
+53 pass; supported star fixture subsequently tightened to FWHM4.24 sensor pixels,
+23 sensor tests pass. GPU parity expanded to 128 cases / 768 finished checks,
+including 32 exact old/explicit-Off pairs: pass. Cleanup delivery passes both
+real photos, CPU/GPU Grade and Library, identical encoded Proof/export and UI
+input/release/Reset. Five-photo Library GPU RAW and default Edge colour pass.
+The shared machine was occupied by serial research phases, so the final group
+waited for the same lock. Only the waiting interval was shortened in a disposable
+launcher; repository lock, lifecycle, window, guards and limits were unchanged.
+The final grouped run remains serial at 1408×794. Plain Library passes 9/9
+viewport photos (93.93 s including launch/shutdown), and all ten Single steps
+pass (94.20 s total). Both windows remain visible, with no reported errors; disposable renders and pytest scratch removed, JSON receipts
+and logs retained under `output/raw-speck-cleanup` / `output/edge-colour-raw`.
+Final output-size check: **13.2 GB**, below 100 GB; about 871 MiB of disposable
+real-photo renders removed. No read-only projects overwritten, no push.
+
+
+
 - **November 17, Library quick checks after merging validation (ad2475cd, MacBook, 1408x794).** With the Library window visible, the plain 90-second check passes 9/9 viewport photos (peak 3.17 GB, no memory violation) and `--single` passes. An earlier timeout came from a hidden window behind a full-screen app; an earlier DJI DNG failure came from this worktree missing the built `signed_ahd.dylib` (fixed by rerunning setup). One cold first run after the build peaked at 4.33 GB against the 4.0 GB ceiling and hit the system reserve with one DJI `Failed to fetch`; the immediate rerun passed. Not reproduced, not investigated further.
 
 - 2026-11-17: `observe` timeout investigation from `2db4de36`: reproduced

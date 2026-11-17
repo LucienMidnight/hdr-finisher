@@ -621,9 +621,20 @@ function bindEvents() {
   });
   els.applyRawSettings?.addEventListener("click", applyRawImportSettings);
   els.rawRemoveHotPixels?.addEventListener("change", applyRawImportSettings);
+  els.rawEvenOutSpecks?.addEventListener("change", async () => {
+    renderRawSpeckControls();
+    await applyRawImportSettings();
+  });
+  els.rawSpeckThreshold?.addEventListener("input", renderRawSpeckControls);
+  els.rawSpeckThreshold?.addEventListener("change", () => {
+    if (els.rawEvenOutSpecks?.checked) return applyRawImportSettings();
+  });
   els.rawPixelCleanupReset?.addEventListener("click", async () => {
-    if (!els.rawRemoveHotPixels?.checked) return;
+    if (!els.rawRemoveHotPixels?.checked && !els.rawEvenOutSpecks?.checked && Number(els.rawSpeckThreshold?.value || 2.5) === 2.5) return;
     els.rawRemoveHotPixels.checked = false;
+    els.rawEvenOutSpecks.checked = false;
+    els.rawSpeckThreshold.value = "2.5";
+    renderRawSpeckControls();
     await applyRawImportSettings();
   });
   els.rawHighlightBypass?.addEventListener("click", async () => {

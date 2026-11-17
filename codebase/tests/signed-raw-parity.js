@@ -9,7 +9,7 @@ const helper = path.join(__dirname, process.argv.includes('--pixel-cleanup')
   ? 'helpers/raw_pixel_cleanup_fixture.py' : 'helpers/signed_raw_fixture.py');
 
 (async () => {
-  const cases = JSON.parse(execFileSync(python, [helper], {encoding: 'utf8', maxBuffer: 4 << 20}));
+  const cases = JSON.parse(execFileSync(python, [helper], {encoding: 'utf8', maxBuffer: 12 << 20}));
   const folder = fs.mkdtempSync(path.join(os.tmpdir(), 'hdr-signed-raw-'));
   let browser;
   try {
@@ -32,6 +32,9 @@ const helper = path.join(__dirname, process.argv.includes('--pixel-cleanup')
         })};
       }, test);
       assert.deepEqual(result.errors, []);
+      if (test.identical_to !== undefined)
+        assert.deepEqual(result.planes, results[test.identical_to].planes,
+          'Off must keep identical GPU pixels for old and explicitly disabled saved recipes');
       results.push(result);
     }
     const receipt = path.join(folder, 'parity.json');

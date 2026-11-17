@@ -1027,6 +1027,8 @@ class RawPixelCleanupSettings(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     remove_hot_pixels: bool = False
+    even_out_specks: bool = False
+    speck_threshold: float = Field(default=2.5, ge=2.0, le=4.0, allow_inf_nan=False)
 
 
 class RawImportSettings(BaseModel):
