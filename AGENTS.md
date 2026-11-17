@@ -630,6 +630,9 @@ Completed UI polish round 3 (pending visual sign-off): `docs/technical/archive/b
   shadow-speck retention, tests informative-block/gain adapters on signed
   primary and clipped secondary inputs, and records quality, crops, native
   CPU costs and the partial-fix/GPU-qualification limits.
+  `demosaic-noise.md` separates signed demosaic changes from light per-CFA
+  smoothing, with fixed-shadow tails, clean-detail/held-out comparisons,
+  native CPU costs, decision crops and unmeasured GPU-integration limits.
   `raw-pixel-cleanup.md` records historical calibration-backed cleanup and
   the November 17 map-free single-photo hot-pixel trial: real-light risks,
   unconfirmed candidates, held-out/seen results, native cost and kernel

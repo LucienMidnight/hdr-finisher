@@ -27,6 +27,54 @@ recipe, ISO, noise fits, clipping fractions and RNG seeds are recorded.
 
 ## Inputs
 
+### Signed demosaic/noise separation (November 17 research)
+
+`candidates/demosaic_noise.py` implements signed bilinear interpolation, an
+independently written directional linear-MMSE-style trial, light signed
+variance-stabilised same-CFA Wiener smoothing before AHD, and their combination.
+`lmmse` is a research label, **not the upstream RawTherapee LMMSE algorithm**.
+All eight factories keep shipping Denoise controls; `_fix` adds the existing
+`dark_noise` informative-calibration repair. No production imports or weights
+are added. Missing four-plane noise metadata refuses smoothing, not a guessed
+profile. RawNIND remains the separate existing Bayer-only comparator.
+
+From `codebase`, supply a frozen prior receipt containing `inventory`:
+
+```sh
+PYTHONPATH=backend .venv/bin/python tools/gpu-run-lock.py --label demosaic-quick -- \
+  .venv/bin/python -m tools.denoise_eval.candidates.guard \
+  --receipt output/denoise-v1/demosaic-noise/quick-guard.json --seconds 1200 -- \
+  .venv/bin/python -m tools.denoise_eval.candidates.demosaic_measure \
+  --inventory <frozen-results.json> --phase quick
+```
+
+Phases: `quick`, `decision`, `review`, `heldout`, `clean`, `clean-crops`, `full`, `seen`, `safety`,
+`native --photo IMG_0790.CR2` (also `2025_0730_1331_3.arw`), and `probe`.
+All run serially through the lock and guard. Reuse the documented dataset/model
+stores through local links; no automatic downloads or photo copies. Optional
+`--no-rawnind` explicitly omits that comparator. Signed noisy **and clean**
+Bayer use the preceding signed adapter; masks and public capture gains stay
+fixed. Synthetic signed noise is regenerated and re-clipping must reproduce
+the original frozen mosaic exactly. The signed-primary `decision` phase
+overwrites twelve 288px rows in `output/denoise-v1/demosaic-noise/decision/`
+(13 MB maximum). Registered `demosaic_*` columns also work with the general
+`decision_crops` command, whose original Off/current columns remain clipped;
+do not mistake that mixed page for the signed-primary comparison.
+`review` rebuilds only the retained signed-primary page, losslessly sharing
+byte-identical PNGs within a row to keep the existing 13 MB budget. Its manifest
+maps each displayed column to its retained image. `clean-crops` writes four
+separate no-noise subjects for inspecting demosaic artifacts without Denoise.
+
+`clean` separately scores clean demosaic against signed AHD and the analytic
+chart (camera-gamut clipping retained). `safety` lifts exposure **after sensor
+development**, before Denoise, through ±6 stops; it does not qualify unclipped
+RAW highlights, production delivery or GPU parity. `probe` saves Canon
+pre-Denoise crops on the identical signed-AHD shadow support. Native phases
+stream the entire photo with even CFA origins, 32px development context and
+66px Denoise context; retain small crops/JSON only. Clocks include bounded
+research reconstruction, not a live cache or screen wait. Findings and
+unmeasured integration requirements: `docs/technical/research/denoise-v1-2026-11-16/demosaic-noise.md`.
+
 ### Dark-noise calibration and strength (signed-primary research)
 
 `candidates/dark_noise.py:factory` jointly repairs censored brightness fits
