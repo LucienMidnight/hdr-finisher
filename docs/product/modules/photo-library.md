@@ -7,7 +7,8 @@ now reject hidden/occluded documents instead of waiting for the outer deadline;
 the existing 130-second deadline and all acceptance limits stay unchanged.
 Bounded renderer progress, native window state, cache location and backend
 address survive profile cleanup, including timeout failures. No drawing is
-simulated, background throttling disabled or other app closed to obtain a pass.
+simulated; the check does not disable background throttling or close other apps
+to obtain a pass.
 The Denoise v1 brief log records the investigation and validation limits.
 
 ### November 15, 2026: final-review ownership and publication repairs (P1–P3, L1)

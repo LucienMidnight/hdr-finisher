@@ -234,8 +234,25 @@ https://claude.ai/artifact/4ZcqC4Ht2fJ67Nu6F2S4t9 (1:1 crops, blind mode):
   app; ordinary launches across worktrees do share the normal user profile.
   Added bounded renderer/native diagnostics retained on timeout and explicit
   hidden/occluded-frame failure, not fake drawing or a longer timeout.
-  Focused Node checks: 20 pass; full Node: 1,107 pass / one skip. Full Python
-  and final real-app checks follow; no production rendering or limits changed.
+  Fix committed as `f65abf62`; 20 focused and 1,107 full Node checks pass
+  (one skipped). No production rendering or limits changed.
+
+- 2026-11-17: final validation of `f65abf62`: Python 4,215 pass / 155 skips /
+  one non-strict xpass (existing Starlette warning). Plain and ten-step Single
+  were attempted sequentially at 1408x794 through the shared GPU lock: both
+  fail explicitly because the window becomes hidden/occluded, not by timeout.
+  Plain also fails the unchanged system-reserve and settled-memory checks;
+  no further memory investigation or guard relaxation. No clean pass can be
+  claimed in this desktop/session state. Reports and diagnostics:
+  `codebase/output/quick-library-check/observe-final-{plain,single}/`;
+  fast logs are `fast-{node,python}.log` in the parent folder. Steve's original
+  app (PID 45413) remains running, on port 62368; test backends used 57040 /
+  57101 with separate disposable profiles/caches. Physical GPU/RAM are still
+  shared; this does not attribute the reserve failure to a particular app.
+  All three protected project hashes unchanged across final checks. Owned
+  temporary profiles/scratch removed; retained small referenced evidence only.
+  Output 13.2 GB (start and end), below 100 GB; no push. About six minutes of
+  slow checks total, with no attempts to force windows over Safari or close it.
 
 - 2026-11-17: focused follow-up from `c3b7a3ed`, same minimum Mac and locked
   1408x794 window. Corrected the earlier attribution: Lensfun CPU vignetting
