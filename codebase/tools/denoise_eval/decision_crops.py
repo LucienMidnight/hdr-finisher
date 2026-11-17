@@ -56,6 +56,8 @@ COLUMNS = (
     ('off', 'off'),
     ('denoise_v2', 'denoise_v2'),
     ('denoise_v2_app', PREFIX + 'denoise_v2_appdefault:factory'),
+    ('pixel_cleanup', PREFIX + 'pixel_cleanup:alone'),
+    ('pixel_cleanup_denoise', PREFIX + 'pixel_cleanup:with_denoise'),
     ('speck_cleanup', PREFIX + 'speck_cleanup:factory'),
     ('denoise_v2_tuned', PREFIX + 'denoise_v2_tuned:factory'),
     ('pilot_wiener_bayer_both', PREFIX + 'pilot_wiener:bayer_both'),
