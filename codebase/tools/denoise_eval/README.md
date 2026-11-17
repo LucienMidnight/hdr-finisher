@@ -27,6 +27,60 @@ recipe, ISO, noise fits, clipping fractions and RNG seeds are recorded.
 
 ## Inputs
 
+### Early outlier taming (November 17, research only)
+
+`candidates/early_outlier.py` soft-clamps signed same-CFA samples or signed
+camera RGB after AHD, **before** shipping-default Denoise with the existing
+`dark_noise` calibration repair. It never replaces a sample with its median.
+Factories compare local support on/off, RAW versus RGB, a stronger RAW trial,
+4-sigma RAW clusters limited to one/two same-colour samples, and combined
+RAW/RGB clamping. No production module imports these adapters.
+
+From `codebase`, use a frozen prior harness receipt containing `inventory`:
+
+```sh
+PYTHONPATH=backend .venv/bin/python tools/gpu-run-lock.py --label early-outlier-quick -- \
+  .venv/bin/python -m tools.denoise_eval.candidates.guard \
+  --receipt output/denoise-v1/early-outlier/quick-guard.json --seconds 1400 -- \
+  .venv/bin/python -m tools.denoise_eval.candidates.early_outlier_measure \
+  --inventory <frozen-results.json> --phase quick
+```
+
+Phases: `quick`, `full`, `heldout`, `seen`, `decision`, `gallery`, `stars`,
+`clean-safety`, `native --photo IMG_0790.CR2` (also
+`2025_0730_1331_3.arw`), and `review`. `gallery` additionally requires
+`--gallery <original-speck-gallery-directory>`, with its original `cases*.json`
+files; coordinates and the original 6× zoom spots are fixed, not reselected.
+Gallery manifests copy every coordinate and source path plus coordinate-file
+hashes. Prepared public pairs/models use the documented read-only shared
+stores; install optional CPU `onnxruntime==1.32.0`. `--no-ai` explicitly omits
+the RawNIND comparator. There are no downloads in the measurement runner.
+
+Every quality phase re-develops both noisy and clean Bayer with signed AHD,
+keeps frozen noise seeds/masks and records the exact controls/source hashes.
+The gallery additionally reproduces the coordinator's 5×5 same-CFA-MAD
+sensor-origin diagnostic independently; it does not read the temporary
+coordinator receipt. The 547-speck flat-window subset excludes the three
+detail-bearing rows `IMG_0790-2`, `MuseeL-Saint-Pierre-C500D_ISO3200-2`,
+`Blombukett_ISO6400-2`; all 14 rows remain visible and measured.
+
+`stars` uses noiseless/noisy Gaussian optical profiles, FWHM 1.88/2.83/4.24
+sensor pixels, twelve amplitude/subpixel-phase combinations per width, not
+isolated artificial delta spikes and not real astronomical captures.
+`clean-safety` measures all nine full-size clean targets, including binned
+low-ISO photographic inputs, and every integer exposure from −6 to +6.
+Its 1000-nit display cap is **not** production HDR/highlight qualification.
+Native runs stream complete real frames and include signed development,
+calibration and reconstruction, not a measured live UI wait.
+
+Output is overwritten in `output/denoise-v1/early-outlier/`: compact
+`index.html`, full-column `ablations.html`, 288px decision/gallery PNGs,
+48px nearest-neighbour 6× zooms, star adversaries and JSON receipts. No
+dataset, RAW, model, generated image or review output belongs in Git.
+Focused tests: `tests/test_denoise_early_outlier.py`. Method, failures,
+controls and unmeasured CPU/GPU integration gates are in
+`docs/technical/research/denoise-v1-2026-11-16/early-outlier-taming.md`.
+
 ### Signed demosaic/noise separation (November 17 research)
 
 `candidates/demosaic_noise.py` implements signed bilinear interpolation, an
