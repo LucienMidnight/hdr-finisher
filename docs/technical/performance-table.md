@@ -4040,3 +4040,9 @@ descriptive allowance, no cross-machine comparison or speedup claim.
 The stable fit does not clean the lifted Canon shadows and is not proposed for
 shipping. Quality findings, final crop evidence and integration limits:
 `research/denoise-v1-2026-11-16/noise-model-and-raw-specks.md`.
+
+### Library check environment investigation — November 17, 2026
+
+| Action | Observation | Conditions / evidence |
+| --- | --- | --- |
+| Plain Library observation at `2db4de36` | Outer 130 s deadline; diagnostic reproduction reaches the final animation-frame wait, but its last frame is over 110 s old | MacBook Neo A18 Pro / 8 GB / 1408×794, shared GPU lock, fresh isolated profiles, frozen v1. Safari fullscreen on the active desktop; Library document hidden after 20 frames, native window visible/non-minimized but unfocused. This is an invalid drawing measurement, not a Library speed regression or speed comparison. `output/quick-library-check/observe-diagnostic-progress/{report.json,quick-diagnostic.json,backend.log}`. |

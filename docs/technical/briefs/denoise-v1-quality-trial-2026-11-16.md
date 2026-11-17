@@ -225,6 +225,18 @@ https://claude.ai/artifact/4ZcqC4Ht2fJ67Nu6F2S4t9 (1:1 crops, blind mode):
 
 ## 8. Log
 
+- 2026-11-17: `observe` timeout investigation from `2db4de36`: reproduced
+  the 130-second stop, then localized it to the final animation-frame wait.
+  Safari was fullscreen on the active Mac desktop; the Library document
+  stayed hidden after 20 frames while backend pictures completed. Native
+  `isVisible()` alone missed this. Quick-check profiles, Library/source caches,
+  backend ports and singleton locks are separate from Steve's still-running
+  app; ordinary launches across worktrees do share the normal user profile.
+  Added bounded renderer/native diagnostics retained on timeout and explicit
+  hidden/occluded-frame failure, not fake drawing or a longer timeout.
+  Focused Node checks: 20 pass; full Node: 1,107 pass / one skip. Full Python
+  and final real-app checks follow; no production rendering or limits changed.
+
 - 2026-11-17: focused follow-up from `c3b7a3ed`, same minimum Mac and locked
   1408x794 window. Corrected the earlier attribution: Lensfun CPU vignetting
   discarded negative channels; it was not the sampled lens-coordinate error.
