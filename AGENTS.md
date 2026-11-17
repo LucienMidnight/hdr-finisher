@@ -633,6 +633,9 @@ Completed UI polish round 3 (pending visual sign-off): `docs/technical/archive/b
   `demosaic-noise.md` separates signed demosaic changes from light per-CFA
   smoothing, with fixed-shadow tails, clean-detail/held-out comparisons,
   native CPU costs, decision crops and unmeasured GPU-integration limits.
+  `lmmse-demosaic.md` evaluates the faithful pinned RawTherapee LMMSE port on
+  signed Bayer: calibration-repaired comparisons, clean-input risks, fixed
+  shadow tails, native CPU costs, decision crops and shipping/GPU requirements.
   `raw-pixel-cleanup.md` records historical calibration-backed cleanup and
   the November 17 map-free single-photo hot-pixel trial: real-light risks,
   unconfirmed candidates, held-out/seen results, native cost and kernel
