@@ -164,5 +164,3 @@ def test_noise_estimation_keeps_four_sensor_phases_and_is_repeatable():
 def test_cancelled_cleanup_does_not_process_a_strip():
     with pytest.raises(InterruptedError, match='cancelled'):
         cleanup.apply(np.full((48, 48), 1120, np.uint16), config(), cancelled=lambda: True)
-
-

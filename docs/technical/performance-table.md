@@ -1,7 +1,7 @@
 ## November 17: production Pixel cleanup CPU step
 
-MacBook Neo / A18 Pro / 8 GB, November 17, 2026, this Pixel cleanup integration
-commit. Shared machine lock, NumPy/BLAS one thread, one observation per source;
+MacBook Neo / A18 Pro / 8 GB, November 17, 2026, sensor implementation
+`63196460`. Shared machine lock, NumPy/BLAS one thread, one observation per source;
 inherited ±10% descriptive allowance. Production `configuration` plus `apply`,
 using the approved original RAWs after unpack, signed per-phase normalization,
 256-row repair strips and no saved camera profile. No full-size photo copies or
@@ -17,6 +17,8 @@ open/unpack, AHD, highlight reconstruction, rendering and delivery are excluded.
 Integration fast-check clocks on the same Mac: complete Node suite 14.79 s
 (1,103 passed / one skipped), complete Python suite 270.46 s (4,125 passed /
 155 skipped / one xpassed). These are validation durations, not app waits.
+Final focused filter/state checks take 1.08/1.49 s (20/4 passed) after the added
+fixture cases and mechanical test-file split, on the same Mac.
 
 ## November 17: signed Bayer production-helper development cost
 

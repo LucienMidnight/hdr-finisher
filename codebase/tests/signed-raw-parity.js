@@ -5,7 +5,8 @@ const path = require('node:path');
 const {execFileSync} = require('node:child_process');
 const {chromium} = require('playwright');
 const python = require('../tools/lib/platform.cjs').pythonExecutable();
-const helper = path.join(__dirname, 'helpers/signed_raw_fixture.py');
+const helper = path.join(__dirname, process.argv.includes('--pixel-cleanup')
+  ? 'helpers/raw_pixel_cleanup_fixture.py' : 'helpers/signed_raw_fixture.py');
 
 (async () => {
   const cases = JSON.parse(execFileSync(python, [helper], {encoding: 'utf8', maxBuffer: 4 << 20}));

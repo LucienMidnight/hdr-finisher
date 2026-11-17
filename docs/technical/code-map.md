@@ -1,5 +1,22 @@
 # Code map
 
+## November 17: optional RAW Pixel cleanup
+
+`backend/hdr_finisher/raw_pixel_cleanup.py` owns the provisional per-phase noise
+fit, fixed bright-only detection and bounded DN repair. `raw_import.py` and
+`library_cpu_bands.py` run it before highlight evidence/AHD; `library_gpu_raw.py`
+passes the shared profile/thresholds to the optional normalization shader in
+`frontend/library-gpu-raw.js`. `session-import.js` / `app-boot.js` own the
+existing-token checkbox and re-development, while `sessions.py` /
+`edit-commands.js` restore RAW source pixels on Undo/Redo. The saved
+`RawImportSettings.pixel_cleanup` participates in the existing recipe identities
+and selective Library paste. `test_raw_pixel_cleanup.py`,
+`test_raw_pixel_cleanup_state.py` and
+`raw-pixel-cleanup.test.js` exercise behavior; `raw-pixel-cleanup.js` /
+`helpers/raw_pixel_cleanup_fixture.py` await real-GPU parity validation.
+`raw-pixel-cleanup-delivery.js` reuses the real-RAW Edge colour/Library/delivery
+driver with cleanup enabled and checks that the checkbox restores on opening.
+
 ## November 17: signed Bayer RAW integration
 
 `backend/hdr_finisher/signed_ahd.c` implements bounded signed AHD;

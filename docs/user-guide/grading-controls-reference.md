@@ -10,6 +10,17 @@ Units are optional. For example, `100`, `100 nit`, and `100 nits` all set a nit 
 
 The sliders intentionally cover the useful everyday range. Some slider ranges become narrower for sources classified as Medium or Narrow latitude, which makes fine adjustments easier. Direct entry provides controlled extra room without making the slider less precise.
 
+## RAW Pixel cleanup
+
+The source/RAW controls include a collapsed **Pixel cleanup** section with one
+checkbox, **Remove hot pixels** (off by default). It fixes isolated stuck bright
+sensor pixels before demosaic, not general image noise. No strength slider,
+cold/dead-pixel mode or defect maps. **Reset** turns it off. Changing it or
+undoing the change re-develops the RAW; the saved setting applies to both
+renditions and delivery. Only supported Bayer RAWs enable it. It can sometimes
+remove a real tiny star or glint, so inspect those details before keeping it on.
+See [Import](import.md#pixel-cleanup-bayer-raw-only).
+
 ## Checking Blacks and Whites clipping
 
 Hold **Option** on Mac or **Alt** on Windows while dragging **Whites** or

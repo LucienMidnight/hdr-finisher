@@ -21,16 +21,33 @@ CPU import and Library band development share the bounded sensor filter. The
 existing GPU RAW route applies the same backend thresholds/profile during
 normalization, before clipping evidence, without another full-frame buffer.
 Off skips estimation/filtering and keeps the previous pixel path exactly.
-The per-photo RAW recipe and its existing source/development identities carry
-the new setting. No memory budget changes. The source UI, history and focused
-GPU drivers follow in the next local implementation commit.
+The checkbox is disabled with a reason for X-Trans, linear DNG and non-RAW
+sources. The UI uses the existing collapsed source-module and checkbox styles,
+with Reset and a modified marker; no design tokens or budgets change.
+
+The saved per-photo RAW recipe carries the setting through projects, sidecars,
+selective grade copy/paste and RAW-containing saved recipes; rendition-only
+grading presets remain rendition-only. Source/development identities include
+the recipe. Changing the checkbox re-develops the source while preserving the
+grade, and Undo/Redo re-develops the previous/next recipe. Library, Grade,
+Proof, export and batch consume those same developed pixels/recipes.
 
 **Not GPU-qualified or release-ready.** Fast result tests cover detection,
-light/clipping/border preservation, Off equality, strip seams and placement
-before clipping evidence/AHD. Finished SDR ΔE2000 / HDR ΔE ITP agreement must
-remain mean <1 and p99 <3. Real-device UI/re-development, memory and end-to-end
-delivery remain part of Steve's combined signed-RAW/noise-measurement/cleanup
-validation; no GPU/Electron check was run for this implementation.
+light/clipping/border preservation, Off equality, strip seams, placement before
+clipping evidence/AHD, saved identity, copy/paste and undo failure rollback.
+Full Node: 1,103 passed / one skipped; full Python: 4,125 passed / 155 skipped /
+one xpassed, no failures. The existing Starlette/httpx deprecation warning stays.
+Final focused filter/state checks pass 20/4 tests after the fixture additions and
+test-file split. The CPU fixture generator also passes all 32 cases.
+
+The new `raw-pixel-cleanup.js` driver is registered but deliberately not run:
+production GPU normalization/Opposed/AHD/WB on four Bayer layouts, both states
+and four orientations, with finished SDR ΔE2000 / HDR ΔE ITP mean <1 and
+p99 <3 at −6/0/+6 EV. `raw-pixel-cleanup-delivery.js` adds the enabled saved
+recipe and restored checkbox to the existing real-RAW Edge colour/Library/
+Proof/export checks. Real-device UI/re-development, memory and delivery remain
+part of Steve's combined signed-RAW/noise-measurement/cleanup validation;
+no GPU/Electron check was run for this implementation.
 The production CPU step cost is recorded separately in the performance table;
 it is not a measurement of the whole UI wait.
 

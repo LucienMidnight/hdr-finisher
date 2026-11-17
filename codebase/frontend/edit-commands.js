@@ -108,9 +108,27 @@ function queueEditCommand(commandType, payload = {}, targetId = null, { refreshP
     const creativeBefore=stablePreviewJson([state.adjustments,state.editDocument?.local_adjustments,
       state.editDocument?.repairs,state.editDocument?.denoise,state.editDocument?.hdr_reference_white_nits]);
     const previousRepairs = JSON.stringify(state.editDocument?.repairs || []);
+    const rawChanged = JSON.stringify(state.editDocument?.source?.raw_import_settings) !== JSON.stringify(result.document.source?.raw_import_settings);
     state.editRevision = result.revision;
     state.editDocument = result.document;
     state.session.repair_rendering = result.repair_rendering || [];
+    if (rawChanged) {
+      const response = await fetch(`/api/session/${sessionId}`);
+      if (!response.ok) throw new Error("Could not refresh the re-developed RAW source.");
+      const session = await safeJson(response);
+      if (state.session?.session_id !== sessionId || state.editRevision !== result.revision) return false;
+      state.session = session;
+      state.renderCoordinator?.noteSource(sessionId);
+      state.gpuPreview?.resetSession(sessionId);
+      state.gpuPreparedLane = { hdr: false, sdr: false };
+      resetLocalSourceMasks();
+      clearNavigationThumbnail();
+      for (const lane of ["hdr", "sdr"]) {
+        const runtime = state.denoiseRuntime?.[lane];
+        if (runtime) { runtime.dirty = true; runtime.generation += 1; runtime.analysisInFlight = null; }
+      }
+      renderRawImportControls(session);
+    }
     await resetRepairSource(previousRepairs, result.document);
     if (state.session?.session_id !== sessionId || state.editRevision !== result.revision) return false;
     recordAcknowledgedLocals(result.document);
@@ -158,10 +176,10 @@ function queueEditCommand(commandType, payload = {}, targetId = null, { refreshP
     // start a new render generation for values already on screen, both during
     // a drag (the scope pass saves) and after release, where it cost a
     // duplicate render and the settle debounce before the settled pass.
-    const previewInputsChanged = refreshPreview === "if-changed"
+    const previewInputsChanged = rawChanged || (refreshPreview === "if-changed"
       ? stablePreviewJson([state.adjustments, state.editDocument?.local_adjustments]) !== shownInputs
-      : refreshPreview;
-    const framingOnlyHistory=["undo","redo"].includes(commandType) && creativeBefore===stablePreviewJson([
+      : refreshPreview);
+    const framingOnlyHistory=!rawChanged && ["undo","redo"].includes(commandType) && creativeBefore===stablePreviewJson([
       state.adjustments,state.editDocument?.local_adjustments,state.editDocument?.repairs,
       state.editDocument?.denoise,state.editDocument?.hdr_reference_white_nits]);
     if (typeof window.HDRPhotoFramingUI!=="undefined") {
@@ -228,15 +246,7 @@ async function resetRepairSource(previousRepairs, documentState) {
   state.repairSourceGeneration = (state.repairSourceGeneration || 0) + 1;
   const sessionId = state.session.session_id, revision = state.editRevision;
   state.gpuPreparedLane = { hdr: false, sdr: false };
-  state.localMaskDraftController?.abort();
-  state.localMaskDraftGeneration += 1;
-  for (const pending of localAuthoritativeMaskRequests.values()) pending.controller?.abort();
-  localAuthoritativeMaskRequests.clear();
-  for (const pending of localComparisonMaskRequests.values()) pending.controller?.abort();
-  localComparisonMaskRequests.clear();
-  localAuthoritativeMaskCache.clear();
-  localComparisonMaskCache.clear();
-  localComparisonCompositeCache.clear();
+  resetLocalSourceMasks();
   clearNavigationThumbnail();
   for (const lane of ["hdr", "sdr"]) {
     const runtime = state.denoiseRuntime?.[lane];
@@ -259,6 +269,18 @@ async function resetRepairSource(previousRepairs, documentState) {
     records: reordered ? [...oldRepairs, ...newRepairs] : [...changedRepairs(oldRepairs, newRepairs), ...changedRepairs(newRepairs, oldRepairs)],
     isCurrent: () => state.session?.session_id === sessionId && state.editRevision === revision,
   });
+}
+
+function resetLocalSourceMasks() {
+  state.localMaskDraftController?.abort();
+  state.localMaskDraftGeneration += 1;
+  for (const pending of localAuthoritativeMaskRequests.values()) pending.controller?.abort();
+  localAuthoritativeMaskRequests.clear();
+  for (const pending of localComparisonMaskRequests.values()) pending.controller?.abort();
+  localComparisonMaskRequests.clear();
+  localAuthoritativeMaskCache.clear();
+  localComparisonMaskCache.clear();
+  localComparisonCompositeCache.clear();
 }
 
 async function refreshEditState({ preserveLocalDraft = false } = {}) {

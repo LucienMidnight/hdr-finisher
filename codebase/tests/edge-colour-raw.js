@@ -4,6 +4,7 @@
 const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
 const {execFileSync}=require('node:child_process'),{chromium}=require('playwright');
 const {photosPath}=require('./helpers/photos-root.cjs');
+const pixelCleanup=process.argv.includes('--pixel-cleanup');
 const root=path.resolve(__dirname,'..'),python=require('../tools/lib/platform.cjs').pythonExecutable();
 const folder=path.join(root,'output/edge-colour-raw',String(Date.now()));fs.mkdirSync(folder,{recursive:true});
 const samples=[require('./helpers/photos-root.cjs').photosPath('D:/Photos/HDR Test Images/DSC00264.ARW'),require('./helpers/photos-root.cjs').photosPath('D:/Photos/HDR Test Images/IMG_3129.CR2')].map(file=>photosPath(file));
@@ -20,17 +21,24 @@ assert.equal(photos.length,2,'Both requested clipped-highlight photos must be av
    const row={photo};
    for(const cpu of [true,false]){
     await page.request.post(new URL('/api/delivery/preferences',process.env.HDR_FINISHER_URL).href,{data:{force_cpu:cpu}});
-    const result=await page.evaluate(async({photo,cpu})=>{
+    const result=await page.evaluate(async({photo,cpu,pixelCleanup})=>{
      const start=performance.now();__edgeFrames.length=0;
      const grant=await desktop.grantSourcePath(photo);
-     const created=await projectIo.createImportJob(fetch,{grant:grant.grant,rawImportSettings:{highlight_reconstruction:{enabled:true,method:'edge_colour_v1',edge_colour_expand_percent:.5}}});
+     const created=await projectIo.createImportJob(fetch,{grant:grant.grant,rawImportSettings:{pixel_cleanup:{remove_hot_pixels:pixelCleanup},highlight_reconstruction:{enabled:true,method:'edge_colour_v1',edge_colour_expand_percent:.5}}});
      let job=created.payload;if(!created.response.ok)throw Error(JSON.stringify(job));
      while(!['ready','error','cancelled'].includes(job.state)){await new Promise(r=>setTimeout(r,100));job=(await projectIo.pollImportJob(fetch,job.job_id)).payload;}
      if(job.state!=='ready')throw Error(JSON.stringify(job));
      const session=(await projectIo.fetchSession(fetch,job.session_id)).payload.session;
      await activateDesktopSession(session,'');
      return {start,session,job};
-    },{photo,cpu});
+    },{photo,cpu,pixelCleanup});
+    if(pixelCleanup){
+     assert.equal(result.session.edit_document.source.raw_import_settings.pixel_cleanup.remove_hot_pixels,true);
+     assert.equal(result.session.metadata.extra.raw_pixel_cleanup.enabled,true);
+     assert.equal(result.session.metadata.extra.raw_pixel_cleanup.supported,true);
+     assert.equal(await page.locator('#raw-remove-hot-pixels').isChecked(),true);
+     assert.equal(await page.locator('#raw-remove-hot-pixels').isEnabled(),true);
+    }
     await page.waitForFunction(()=>__edgeFrames.some(e=>e.generation===state.previewGeneration[state.currentView]&&e.lane===state.currentView)&&state.acceptedPresentation?.exact&&viewerState().status==='ready',null,{timeout:180000});
     const timing=await page.evaluate(start=>({firstFrameMs:__edgeFrames.find(e=>e.generation===state.previewGeneration[state.currentView]&&e.lane===state.currentView).at-start,exactMs:performance.now()-start}),result.start);
     const proxy=await page.request.get(new URL(`/api/session/${result.session.session_id}/proxy/hdr?long_edge=2560&format=rgba32f`,process.env.HDR_FINISHER_URL).href);

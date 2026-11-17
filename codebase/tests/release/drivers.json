@@ -17,6 +17,7 @@
     "D:/Photos/HDR Test Images/Projects/DSC00950.hdrfinisher"
   ],
   "sourceAreas": [
+    {"pattern":"^codebase/backend/hdr_finisher/raw_pixel_cleanup\\.py$","areas":["library","preview","export-proof"]},
     {"pattern":"^codebase/(backend/hdr_finisher/signed_(raw\\.py|ahd\\.c)|tools/build_signed_ahd\\.py)$","areas":["library","preview","export-proof"]},
     {"pattern":"^codebase/frontend/(shortcut-labels|floating-surfaces)\\.(js|css)$","areas":["ui"]},
     {"pattern":"^codebase/(backend/hdr_finisher/tone\\.py|frontend/tone-engine\\.js)$","areas":["preview","export-proof","library"]},
@@ -271,6 +272,10 @@
     }
   ],
   "drivers": [
+    {"path":"tests/raw-pixel-cleanup-delivery.js","areas":["library","preview","export-proof","ui"],"tier":"area",
+      "protects":"Real Bayer RAW cleanup enabled in Grade, restored checkbox, CPU/GPU Edge colour, saved Library GPU development and identical encoded Proof/export; inherits the existing edge-colour delivery comparison guards.","launch":{"method":"electron"}},
+    {"path":"tests/raw-pixel-cleanup.js","areas":["library","preview","export-proof"],"tier":"area",
+      "protects":"Optional hot-pixel sensor cleanup integrated with production GPU normalization, Opposed color, signed AHD and WB, four CFA patterns/orientations and both saved checkbox states; finished SDR DeltaE2000/HDR DeltaE ITP mean <1 and p99 <3 at -6/0/+6 EV.","launch":{"method":"electron"}},
     {"path":"tests/signed-raw-parity.js","areas":["library","preview","export-proof"],"tier":"area",
       "protects":"Signed Bayer AHD on all four CFA phases and orientations, finite negative scene values, and finished SDR/HDR CPU/GPU colour at -6/0/+6 EV.","launch":{"method":"electron"}},
     {

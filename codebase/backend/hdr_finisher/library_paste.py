@@ -45,6 +45,7 @@ def setting_label(path):
 
 
 SETTING_LABELS = {
+    'pixel_cleanup':'Pixel cleanup', 'remove_hot_pixels':'Remove hot pixels',
     'enabled':'Enabled', 'tone_section_enabled':'Tone enabled',
     'highlight_section_enabled':'Highlight compression enabled',
     'tone_equalizer_section_enabled':'Exposure bands enabled',
