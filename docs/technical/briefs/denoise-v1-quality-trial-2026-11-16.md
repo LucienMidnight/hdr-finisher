@@ -225,6 +225,14 @@ https://claude.ai/artifact/4ZcqC4Ht2fJ67Nu6F2S4t9 (1:1 crops, blind mode):
 
 ## 8. Log
 
+- 2026-11-17: Steve decided a separate RAW development step, **Pixel
+  cleanup** (named so it can gain features later), that repairs genuine
+  sensor defects (hot, stuck and dead pixels, sensor errors) on sensor data
+  before demosaicing, like highlight reconstruction. First scope: real
+  defects only, then measure the effect on real photos and on Denoise.
+  Research started (`raw-pixel-cleanup.md`); the noise-model worker now
+  covers only the degenerate per-frame noise fit.
+
 - 2026-11-17: post-demosaic speck/blotch cleanup failed (+0.06 dB held-out,
   Canon specks remain, fine text regresses; 14–16 s extra at 18 MP); not
   shipped. See `speck-cleanup.md`. Next experiment started: fix the degenerate
