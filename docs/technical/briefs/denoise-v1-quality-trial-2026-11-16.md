@@ -225,6 +225,15 @@ https://claude.ai/artifact/4ZcqC4Ht2fJ67Nu6F2S4t9 (1:1 crops, blind mode):
 
 ## 8. Log
 
+- 2026-11-17: Steve approved building signed RAW development: "I think we
+  should build it because it's more technically accurate and probably how we
+  should be handling the data. But it might also make the rest of our Denoise
+  work more critical." Build started on a worker branch; it stays on
+  `feat/denoise-v1` and does not reach `main` until Denoise handles the
+  more visible specks on signed input. The dark-noise experiment now uses
+  signed development as its primary baseline. Hot pixel filter result
+  (optional, default off) is the next decision for Steve.
+
 - 2026-11-17: next experiment started: why current Denoise barely reduces
   very dark, very noisy areas next to bright ones (lifted flame edge), and
   the smallest classical fix (`dark-noise-strength.md`).
