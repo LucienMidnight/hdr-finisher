@@ -44,7 +44,7 @@ looser CPU/host agreement test.
 If no informative brightness bin or fewer than eight informative blocks
 remain, **both** shape and band selection fall back to the previous estimator;
 there is no recursive retry or mix of repaired shape and censored calibration.
-`adaptive-measure-informative-v3` invalidates CPU model and managed GPU/source
+`adaptive-measure-informative-v4` invalidates CPU model and managed GPU/source
 measurement caches without changing saved sliders or the returned model layout.
 
 Result-based fast regressions cover signed and positive flame reproductions,
@@ -55,6 +55,20 @@ shadow-only versus flame-context predicted finest-band sigma allows 10% for
 different finite sample counts; this is not a relaxed finished-image limit.
 Existing research tests now expect shipping output to match the approved
 adapter rather than to denoise less than it. No existing tolerance is loosened.
+
+**Combined validation repair, November 17:** the GPU histogram now preserves
+exact brightness quantiles when all values in the selected bucket are equal.
+Its former within-bucket interpolation moved a clipped plateau boundary upward,
+mixed plateau and shadow observations, then rejected the whole bin. The existing
+13 boundaries are refined through compact min/max reductions in the same
+histogram; bin count, measurement allowance, CPU estimator, filter and tolerances
+are unchanged. Revision v4 invalidates models made with the faulty boundary.
+The existing driver's `--synthetic-only` mode exercises its same three generated
+cases without the unrelated missing EXR dependency; it skips the real corpus
+and 42 MP timing and is explicitly partial coverage. All 12 finished comparisons
+and exact finished HDR caps pass; the formerly failing bright-flame HDR tail at
+Amount 0.85 falls from 5.319 to 0.226 (limit <3). The full corpus remains blocked
+by the missing noise-free EXR.
 
 **GPU validation pending:** do not infer parity from the unchanged resolve
 shaders. Include `gpu-denoise-measurement.js` (now also generates clipped flame,

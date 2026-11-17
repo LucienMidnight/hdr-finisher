@@ -2,7 +2,7 @@
  * Measurement is independent of finishing controls and rendition names.
  */
 (() => {
-  const VERSION = "adaptive-measure-informative-v3";
+  const VERSION = "adaptive-measure-informative-v4";
   const shader = `
 struct Params { w:u32, h:u32, count:u32, op:u32, step:u32, axis:u32, stride:u32, pad:u32, a:f32, b:f32, c:f32, extra:f32 }
 @group(0) @binding(0) var<storage,read> src:array<vec4f>;
@@ -113,6 +113,10 @@ struct P {mode:u32,n:u32,sets:u32,pad:u32}
 fn bucket(v:f32)->u32 {return min(bitcast<u32>(max(v,0.))>>16u,65535u);}
 @compute @workgroup_size(128) fn histogram(@builtin(global_invocation_id) id:vec3u){
  let i=id.x;if(i>=p.n){return;}let v=src[i];if(!(v.x>0.)){return;}
+ if(p.mode==4u){
+  let bits=bitcast<u32>(v.x);let bin=bucket(v.x);
+  for(var k=0u;k<13u;k++){if(bin==u32(thresholds[k])){atomicMax(&hist[k*2u],~bits);atomicMax(&hist[k*2u+1u],bits);}}return;
+ }
  if(p.mode==0u){atomicAdd(&hist[bucket(v.x)],1u);return;}
  var bin=12u;for(var k=0u;k<12u;k++){if(v.x>=thresholds[k]&&v.x<thresholds[k+1u]){bin=k;break;}}
  if(bin==12u){return;}
@@ -136,7 +140,7 @@ var<workgroup> sums:array<u32,256>;
    let low=bitcast<f32>(index<<16u);let high=bitcast<f32>((index+1u)<<16u);
    let fraction=(f32(rank-before)+.5)/f32(c);
    var zeros=0.;if(p.mode==2u&&group.x<12u){zeros=f32(atomicLoad(&hist[24u*65536u+group.x]));}
-   result[group.x]=vec4f(low+(high-low)*fraction,f32(count),zeros,0);break;}before+=c;}
+   result[group.x]=vec4f(low+(high-low)*fraction,f32(count),zeros,f32(index));break;}before+=c;}
  }
 }`;
   const histogramPipelines=new WeakMap();
@@ -158,7 +162,22 @@ var<workgroup> sums:array<u32,256>;
         pass.setPipeline(pipe);pass.setBindGroup(0,bind);pass.dispatchWorkgroups(stage===0?Math.ceil(length/128):groups);pass.end();
       }
       device.queue.submit([encoder.finish()]);last=await read(output,groups*16);
-      if(mode===0){positiveCount=last[1];thresholds.splice(0,13,...Array.from({length:13},(_,i)=>last[i*4]));}
+      if(mode===0){
+        positiveCount=last[1];
+        // A plateau has an exact quantile. Interpolating within its histogram
+        // bucket moves the boundary above it and mixes clipped pixels into a
+        // shadow bin. Refine ties only, retaining the existing approximation
+        // for populated ranges and the same histogram allocation.
+        device.queue.writeBuffer(input,0,new Float32Array(Array.from({length:13},(_,i)=>last[i*4+3])));
+        device.queue.writeBuffer(params,0,new Uint32Array([4,length,sets,0]));
+        const encoder=device.createCommandEncoder();encoder.clearBuffer(hist);
+        const pass=encoder.beginComputePass(),pipe=pipes[0],buffers=[stats,hist,input,output,params];
+        const bind=device.createBindGroup({layout:pipe.getBindGroupLayout(0),entries:[0,1,2,4].map(binding=>({binding,resource:{buffer:buffers[binding]}}))});
+        pass.setPipeline(pipe);pass.setBindGroup(0,bind);pass.dispatchWorkgroups(Math.ceil(length/128));pass.end();device.queue.submit([encoder.finish()]);
+        const ties=new Uint32Array((await read(hist,13*8)).buffer);
+        thresholds.splice(0,13,...Array.from({length:13},(_,i)=>{const low=(~ties[i*2])>>>0,high=ties[i*2+1];
+          return high&&low===high?new Float32Array(new Uint32Array([low]).buffer)[0]:last[i*4];}));
+      }
       if(mode===1){population=Array.from({length:12},(_,i)=>last[i*4+1]);thresholds.splice(13,12,...Array.from({length:12},(_,i)=>last[i*4]));}
       hist.destroy();input.destroy();output.destroy();params.destroy();
     }
