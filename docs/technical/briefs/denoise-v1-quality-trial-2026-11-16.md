@@ -225,6 +225,13 @@ https://claude.ai/artifact/4ZcqC4Ht2fJ67Nu6F2S4t9 (1:1 crops, blind mode):
 
 ## 8. Log
 
+- 2026-11-17: noise-measurement fix merged (`e3e72205`, cache revision
+  `adaptive-measure-informative-v3`): CPU and GPU exclude uninformative bins
+  and blocks together. Node 1,101 / Python 4,105 pass. GPU drivers for the
+  combined validation: gpu-denoise-measurement.js, denoise-adaptive-parity.js,
+  gpu-delivery-smoke.js. Protected projects have Denoise off: unchanged.
+  Hot-pixel checkbox build started.
+
 - 2026-11-17: speck gallery for Steve (14 lifted high-ISO windows with 6×
   zooms; https://claude.ai/artifact/MqmCM9u6KMSJQ5eDd98HKy; script and window
   list in `codebase/output/denoise-v1/speck-gallery/`). Specks are rare up to
