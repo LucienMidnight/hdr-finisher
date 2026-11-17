@@ -140,6 +140,7 @@ modules:
       - install -d /app/hdr-finisher
       - cp -a source/codebase/dist-electron/linux-unpacked/. /app/hdr-finisher/
       - install -d /app/hdr-finisher-runtime/bin
+      - cc -O3 -std=c11 -ffp-contract=off -fPIC -shared source/codebase/backend/hdr_finisher/signed_ahd.c -lm -o /app/hdr-finisher-runtime/bin/signed_ahd.so
       - cp -a source/codebase/backend source/codebase/frontend source/codebase/samples /app/hdr-finisher-runtime/
       - cp -a source/docs /app/hdr-finisher-runtime/docs
       - install -m644 source/codebase/run_app.py /app/hdr-finisher-runtime/run_app.py

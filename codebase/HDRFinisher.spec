@@ -5,6 +5,9 @@ from PyInstaller.utils.hooks import collect_all, collect_submodules
 
 block_cipher = None
 
+import runpy
+runpy.run_path("tools/build_signed_ahd.py", run_name="__main__")
+
 datas = [
     ("frontend", "frontend"),
     ("samples", "samples"),

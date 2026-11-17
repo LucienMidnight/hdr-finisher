@@ -43,6 +43,9 @@ codebase/desktop/node_modules/
 codebase/node_modules/
 
 # Locally built platform-native encoder tools
+codebase/bin/signed_ahd.dll
+codebase/bin/signed_ahd.dylib
+codebase/bin/signed_ahd.so
 codebase/bin/avifenc
 codebase/bin/avifdec
 codebase/bin/avifgainmaputil

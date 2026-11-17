@@ -153,6 +153,7 @@ def main():
         run([sys.executable, '-m', 'venv', CODEBASE / '.venv'])
     run([python, '-c', 'import sys; assert sys.version_info[:2] >= (3, 12), "Recreate .venv with Python 3.12 or newer"'])
     run([python, '-m', 'pip', 'install', '-r', CODEBASE / 'requirements-dev.txt'])
+    run([python, CODEBASE / 'tools/build_signed_ahd.py'])
     npm = shutil.which('npm')
     # npm.cmd needs cmd.exe on Windows; no shell interpretation of user paths.
     for cwd in (CODEBASE, CODEBASE / 'desktop'):
