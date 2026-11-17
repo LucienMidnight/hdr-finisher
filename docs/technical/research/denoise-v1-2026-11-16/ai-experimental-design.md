@@ -9,6 +9,27 @@ approval of the Wiener hybrid, the linear-RGB model, a new cache allowance,
 or relaxed delivery safeguards. Recommendations requiring Steve's decision
 are collected in section 9; discuss them one at a time during implementation.
 
+## 0. Steve's revisions, November 17, 2026 (override the sections below)
+
+1. **Never on initial development.** AI Denoise never runs on import,
+   Library indexing, first development or any background preparation. It is
+   chosen only inside the Denoise module for one photo, and choosing it
+   re-develops that RAW, the same way Edge colour reconstruction's Expand
+   already re-develops (Import/RAW module PRD). The wait happens only after
+   the user asks for it, with the existing progress and Cancel. Library and
+   other consumers show the AI result only after that re-development has
+   finished; sections 2 and 3 are to be read with this restriction.
+2. **Highlight reconstruction and AI are built together from the start.**
+   The "Highlight reconstruction off" restriction (section 2, D3) is
+   rejected: "I'd rather delay the AI denoise and sort that out than ship
+   with this weird compromise." A combined sensor/RGB contract must be
+   designed and measured first (for example: clipped areas carry no
+   removable noise, so they could take the normal reconstructed result with
+   a feathered transition), covering Opposed color and Edge colour.
+3. **Priority.** The classical Denoise (Experimental) work comes first. AI
+   Denoise waits for the highlight question; if it is not solved in time, it
+   ships after v1.
+
 ## 1. Contract and evidence
 
 Use the corrected Bayer adapter in
@@ -589,8 +610,9 @@ the remaining design choices; recommendations are not implementation approval.
    selection/wait per chosen photo, and reducing Strength restores noise
    along with normal detail. What could break: auto-on would change existing
    photos and make ordinary browsing unexpectedly slow.
-3. **D3 — Start with ordinary Bayer RAW and simple Bayer DNG, with Highlight
-   reconstruction off.** Recommend explicitly disabling unsupported DNG
+3. **D3 — Superseded by section 0: highlight reconstruction must work with
+   AI from the start.** (Original proposal: start with ordinary Bayer RAW and simple Bayer DNG, with Highlight
+   reconstruction off.) Recommend explicitly disabling unsupported DNG
    corrections and highlight combinations until separately qualified.
    Trade-off: because highlight reconstruction defaults on, Steve must turn
    it off to try AI; some Bayer DNGs remain unavailable. What could break:

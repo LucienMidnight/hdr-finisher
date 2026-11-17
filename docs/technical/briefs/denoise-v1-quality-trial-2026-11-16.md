@@ -5,7 +5,9 @@
   `feat/watermark-and-library-polish`). Keep all work on this branch; another
   coordinator is working on Grade performance, Film Look and export in the
   main checkout, so do not touch those areas.
-- **Status:** Phase 3, D1 approved and implemented November 17; waiting on D2 (section 7).
+- **Status:** D1 built (November 17). D2 replaced by Steve's November 17
+  decisions (section 7): classical "Denoise (Experimental)" first; AI Denoise
+  (Experimental) deferred until it works together with highlight reconstruction.
 
 ## 1. Goal (Steve, November 16, 2026)
 
@@ -194,6 +196,24 @@ https://claude.ai/artifact/4ZcqC4Ht2fJ67Nu6F2S4t9 (1:1 crops, blind mode):
   other sources keep current Denoise. Held-out pairs 35.52 dB / ΔE 2.83; best
   in lifted shadows; erases tiny detail at ISO 25600. Recommended: yes, with
   Steve's own by-eye trial before release; otherwise ship D1 only.
+- **D2. Replaced by Steve, November 17, 2026** after the blind review: he
+  preferred retuned current Denoise or RawNIND alone over the hybrid in almost
+  all crops. Decisions:
+  - Keep current Denoise (with D1) unchanged and add a separate classical
+    **Denoise (Experimental)** method that finds and tones down leftover
+    specks and colour blotches. This is the first priority; Steve focuses his
+    testing here.
+  - Add **AI Denoise (Experimental)** (RawNIND Bayer alone, labelled as still
+    being refined) only when it is done properly:
+    - Never on initial development, Library indexing or import. The user
+      chooses it inside the Denoise module, which then re-develops the RAW
+      (as Edge colour reconstruction's Expand already re-develops).
+    - It must work together with highlight reconstruction from the start.
+      Requiring reconstruction off was rejected: "I'd rather delay the AI
+      denoise and sort that out than ship with this weird compromise."
+    - If that is not solved in time, AI Denoise waits until after v1.
+  - Design: [ai-experimental-design.md](../research/denoise-v1-2026-11-16/ai-experimental-design.md)
+    (section 0 records these revisions; its D3 is superseded).
 - **Proposed tolerance change for Steve:** the 0.90 MTF50 limit applies at
   ISO 6400 and below; no method (including shipping Denoise, 0.63) reaches it
   at ISO 25600.
@@ -204,6 +224,12 @@ https://claude.ai/artifact/4ZcqC4Ht2fJ67Nu6F2S4t9 (1:1 crops, blind mode):
   and D1/D2 numbers use the shipping default.
 
 ## 8. Log
+
+- 2026-11-17: Steve replaced D2 (see section 7): classical Denoise
+  (Experimental) first; AI Denoise (Experimental) only from the Denoise
+  module by re-development, never on initial development, and only once it
+  works with highlight reconstruction. Design written
+  (`ai-experimental-design.md`); speck/blotch cleanup research started.
 
 - 2026-11-17: implemented Steve's D1 shipping defaults (Amount/Color Noise
   0.75, Detail Recovery 0.5) across CPU/GPU defaults, new documents, reset and
