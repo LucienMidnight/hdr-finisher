@@ -3868,3 +3868,26 @@ No comparison speedup or cross-machine inference is claimed.
 | Check | Result | Conditions |
 | --- | --- | --- |
 | Library viewport smoke | 90 s; first picture 0.4 s; all 9 requested pictures, no errors; independent app peak 2.458 GB | Neo / 8 GB / 1408×794, plain Electron, shared lock, frozen v1 unchanged. `output/quick-library-check/jxl-high-fidelity/report.json`; not whole-folder qualification. |
+
+### Noise-model research — November 17, 2026
+
+Research revision `8b818d38`, not a shipping speed change. Every measurement
+uses the MacBook Neo A18 Pro / 8 GB, CPU one native thread, shared GPU lock
+and unchanged 2.5 GB research process-tree guard. Native clocks cover RAW
+open through all resolved pixels in bounded AHD/filter tiles; they exclude
+UI, live-control cache and disk persistence. Model-analysis subclocks overlap
+AHD and must not be summed. One observation per condition; existing ±10%
+descriptive allowance, no cross-machine comparison or speedup claim.
+
+| Action / input | Current → corrected | Conditions / evidence |
+| --- | --- | --- |
+| Native 18.02 MP Canon RAW to Denoise result | 6.878 → 7.564 s; model analysis 1.737 → 2.002 s; filtering 3.496 → 3.770 s; peak RSS .662 → .666 GB | Neo A18 Pro / 8 GB / CPU one thread; `output/denoise-v1/noise-model-raw-specks/native-{current,corrected}-IMG_0790.json` |
+| Native 42.39 MP Sony RAW to Denoise result | 15.266 → 15.819 s; model analysis 1.994 → 2.022 s; filtering 9.434 → 9.877 s; peak RSS .715 → .714 GB | Neo A18 Pro / 8 GB / CPU one thread; same folder, `native-{current,corrected}-2025_0730_1331_3.json` |
+| Corpus audit / synthetic quick / synthetic full | Guard walls 45.125 / 37.553 / 165.868 s; full peak tree RSS 1.569 GB | Neo A18 Pro / 8 GB / CPU one thread; `audit-guard.json`, `quick-guard.json`, `full-guard.json`; all adapters including historical RAW handoff |
+| Public held-out / seen matrices | Guard walls 94.621 / 165.609 s; peak tree RSS 1.135 / 1.102 GB | Neo A18 Pro / 8 GB / CPU one thread; `heldout-guard.json`, `seen-guard.json`; separate groups, not speed benchmarks |
+| Historical RAW-stage prototype, stopped for separate agent | Canon total 8.249 s / repair .434 s; Sony total 17.028 s / repair .961 s; clean probes 51.105 s guard wall | Neo A18 Pro / 8 GB / CPU one thread; `native-raw-*.json`, `clean-guard.json`; completed before scope change, no further RAW work or shipping recommendation |
+| Final model-only decision crops | 36.238 s guard wall; 1.117 GB peak tree RSS; 8.916 MB retained | Neo A18 Pro / 8 GB / CPU one thread; `decision-model-only-guard.json`, `output/denoise-v1/decision/manifest.json`; 12 fixed 256-pixel rows, historical RAW columns removed |
+
+The stable fit does not clean the lifted Canon shadows and is not proposed for
+shipping. Quality findings, final crop evidence and integration limits:
+`research/denoise-v1-2026-11-16/noise-model-and-raw-specks.md`.

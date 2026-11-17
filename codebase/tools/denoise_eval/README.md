@@ -421,7 +421,7 @@ than treating cached-frame slicing as evidence of preparation-grid equality.
 for public pairs). `decision_crops` adds `speck_cleanup.png` and a fixed +4-stop flame-edge row;
 its existing current/RawNIND/clean columns and fixed display rules are retained.
 
-## Noise-model / pre-AHD outlier trial (November 17)
+## Noise-model trial (November 17)
 
 `candidates.noise_model_specks` is own GPL-3 CPU research, never imported by
 the app. `factory` drops uninformative zero-variance brightness bins and
@@ -429,12 +429,9 @@ normalises the existing nonnegative quadratic fit before solving; existing
 band and clumping calibration is remeasured unchanged. `poisson_gaussian`
 also removes the quadratic term. These are brightness-shape repairs, not
 laboratory camera calibration. ISO plus black/white metadata does not establish
-conversion gain/read variance. `raw` repairs isolated **dark** 2.5-sigma outliers
-in four separate CFA-position planes before normal AHD/current Denoise;
-`raw_corrected` combines the two experiments. The profile comes from the same
-sensor fit already in the harness, not the clean reference. Positive points
-and adjacent dark support are preserved; real isolated dark dots can still be
-removed. No separate RAW chroma smoothing is included.
+conversion gain/read variance. RAW adapters (`raw`, `raw_corrected`) and their
+already-completed receipts are preserved for the separate RAW development agent;
+they are no longer decision-crop columns or part of this task's recommendation.
 
 Run each command serially through `tools/gpu-run-lock.py` and
 `candidates.guard` (2.5 GB tree RSS guard), using the venv Python:
@@ -445,12 +442,11 @@ Run each command serially through `tools/gpu-run-lock.py` and
 .venv/bin/python -m tools.denoise_eval.candidates.noise_specks_measure heldout
 .venv/bin/python -m tools.denoise_eval.candidates.noise_specks_measure full
 .venv/bin/python -m tools.denoise_eval.candidates.noise_specks_measure seen
-.venv/bin/python -m tools.denoise_eval.candidates.noise_specks_measure clean
 .venv/bin/python -m tools.denoise_eval.candidates.noise_specks_measure native --photo IMG_0790.CR2 --method corrected
 .venv/bin/python -m tools.denoise_eval.candidates.noise_specks_report
 ```
 
-`native` accepts `--method current|corrected|raw`; repeat for
+For noise-model comparisons use `native --method current|corrected`; repeat for
 `2025_0730_1331_3.arw`. It processes every 18/42 MP pixel in bounded sensor/AHD
 tiles, and removes arrays instead of retaining full-frame scratch. Its clocks
 include RAW open, development, model measurement and adaptive filtering; model
@@ -459,12 +455,11 @@ live-control cache, disk persistence, GPU or action-to-screen timing. Keep the
 existing ±10% descriptive allowance; no quality/timing limit changes.
 
 Outputs are fixed under `output/denoise-v1/noise-model-raw-specks/`.
-`decision_crops` adds corrected-model, RAW/combined and native-model columns.
+`decision_crops` adds corrected-model and two native-model columns.
 Run `audit` first: the last two deliberately reuse that same source's measured
 native-frame model (scaled for the fixed display lift), isolating the real
 global-fit defect from a crop-local estimate. Synthetic/public cases retain
 their crop-local baseline in those two columns; no native profile is borrowed.
-Shifted RAW adapter diagnostics are cached-frame slicing, **not** independent
-RAW+AHD tiling qualification. The standalone local RAW repair does have an
-independent halo test. Bayer exposure probes keep the inherited clipped-DNG
-bridge and can fail; do not present them as HDR exposure qualification.
+Historical RAW adapter diagnostics are not independent RAW+AHD tiling
+qualification. Bayer exposure probes keep the inherited clipped-DNG bridge
+and can fail; do not present them as HDR exposure qualification.

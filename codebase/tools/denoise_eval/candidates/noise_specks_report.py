@@ -32,7 +32,8 @@ def main():
         if phase=='full':
             report['real'] = [case for case in results['cases'] if not case['clean']]
             report['diagnostics'] = results['diagnostics']
-    report['native'] = [json.loads(path.read_text()) for path in sorted(OUTPUT.glob('native-*.json'))]
+    report['native'] = [json.loads(path.read_text()) for path in sorted(OUTPUT.glob('native-*.json'))
+                        if not path.name.endswith('-guard.json')]
     report['guards'] = {path.stem:json.loads(path.read_text()) for path in sorted(OUTPUT.glob('*-guard.json'))}
     decision = json.loads((ROOT/'output/denoise-v1/decision/manifest.json').read_text())
     report['decision'] = [dict(id=case['id'], columns=case['columns']) for case in decision['cases']]

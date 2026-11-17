@@ -58,8 +58,6 @@ COLUMNS = (
     ('denoise_v2_app', PREFIX + 'denoise_v2_appdefault:factory'),
     ('speck_cleanup', PREFIX + 'speck_cleanup:factory'),
     ('noise_model_corrected', PREFIX + 'noise_model_specks:factory'),
-    ('raw_specks', PREFIX + 'noise_model_specks:raw'),
-    ('raw_specks_corrected', PREFIX + 'noise_model_specks:raw_corrected'),
     ('native_model_current', PREFIX + 'noise_model_specks:native_current'),
     ('native_model_corrected', PREFIX + 'noise_model_specks:native_corrected'),
     ('denoise_v2_tuned', PREFIX + 'denoise_v2_tuned:factory'),
