@@ -617,6 +617,9 @@ Completed UI polish round 3 (pending visual sign-off): `docs/technical/archive/b
   adapters, full/half-resolution fidelity including held-out/seen public
   pairs, live-control sweeps, native CPU time/memory, review crops and
   per-variant quality-contract verdicts.
+  `speck-cleanup.md` records residual-outlier and shadow-colour classical
+  cleanup variants, lifted-shadow tails, detail failures, native CPU costs
+  and the GPU/CPU integration limits; current Denoise stays unchanged.
 - `docs/technical/briefs/tone-endpoints-design-2026-11-15.md`: proposed
   five-control Tone block (Blacks/Whites endpoints, broad zones, fixed
   Highlight Compression cap) with open decisions T1-b to T1-f.

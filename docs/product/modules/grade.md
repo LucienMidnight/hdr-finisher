@@ -1,3 +1,17 @@
+## November 17: residual-noise cleanup trial (research only)
+
+Committed CPU research adapters `994152ca` / `f8f6e22b` retain current Denoise
+and its approved D1 defaults. Four classical outlier/chroma variants were
+measured; the conservative surrounding-brightness version gains only .062 dB
+on held-out scene-weighted pairs, still loses fine text and leaves the Canon
+ringed shadow specks. It is **not selected for shipping** as Denoise
+(Experimental). No requirement, tolerance, model dependency, cache allowance
+or production rendering changed. Native Mac research costs and the proposed
+GPU/CPU path are in
+[speck-cleanup.md](../../technical/research/denoise-v1-2026-11-16/speck-cleanup.md).
+The harness gains explicit lifted-shadow residual tails and twelve fixed
+review rows with an experimental column; D2 and the wider trial remain open.
+
 ## November 17, 2026: Denoise shipping defaults (Steve's decision D1)
 
 Steve approved Amount 0.75, Color Noise 0.75 and Detail Recovery 0.5 for

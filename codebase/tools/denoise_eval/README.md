@@ -404,6 +404,7 @@ Run each separately under `tools/gpu-run-lock.py` and `candidates/guard.py`:
 .venv/bin/python -m tools.denoise_eval.candidates.speck_measure heldout
 .venv/bin/python -m tools.denoise_eval.candidates.speck_measure full
 .venv/bin/python -m tools.denoise_eval.candidates.speck_measure seen
+.venv/bin/python -m tools.denoise_eval.candidates.speck_measure controls
 .venv/bin/python -m tools.denoise_eval.candidates.speck_measure native --photo IMG_0790.CR2
 .venv/bin/python -m tools.denoise_eval.candidates.speck_measure native --photo 2025_0730_1331_3.arw
 ```
