@@ -617,6 +617,9 @@ Completed UI polish round 3 (pending visual sign-off): `docs/technical/archive/b
   adapters, full/half-resolution fidelity including held-out/seen public
   pairs, live-control sweeps, native CPU time/memory, review crops and
   per-variant quality-contract verdicts.
+  `ai-experimental-design.md` proposes the standalone experimental Bayer
+  RawNIND integration: shared RAW source, eligibility, live Strength, offline
+  packaging, cache/memory choices, work packages and decisions for Steve.
 - `docs/technical/briefs/tone-endpoints-design-2026-11-15.md`: proposed
   five-control Tone block (Blacks/Whites endpoints, broad zones, fixed
   Highlight Compression cap) with open decisions T1-b to T1-f.
