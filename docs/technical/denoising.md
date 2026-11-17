@@ -9,6 +9,16 @@
 **Pipeline baseline:** `95060fa`; see [Image Processing Pipeline](image-processing-pipeline.md).
 **Research archive:** [Denoising Technology Watch — August 2026](denoising-technology-watch-2026.md) is background only and is not an implementation plan.
 
+## November 17, 2026: approved shipping defaults (D1)
+
+For `adaptive-atrous-v1`, Amount and Color Noise start at 0.75; Detail
+Recovery, Luminance and the four noise-size controls start at 0.5. Denoise
+still starts disabled in both lanes. New documents/photos, the Default preset,
+group reset, slider double-click reset and CPU/GPU fallback controls agree.
+Saved grades and user presets retain their explicit values, with no migration.
+This changes starting controls only; the algorithm and all tolerances stay fixed.
+See [decision D1](briefs/denoise-v1-quality-trial-2026-11-16.md#7-open-questions-for-steve-collected-asked-together).
+
 ## October 26, 2026: GPU noise measurement
 
 The shared renderer now measures the adaptive model on WebGPU. Actual source

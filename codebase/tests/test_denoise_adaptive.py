@@ -43,12 +43,13 @@ def test_alpha_passes_through() -> None:
     np.testing.assert_array_equal(out[..., 3], rgba[..., 3])
 
 
-def test_defaults_are_the_measured_result() -> None:
+def test_approved_defaults_and_measured_control_mapping() -> None:
     controls = da.AdaptiveControls()
-    assert controls.strengths() == (1.0, 1.0)
+    assert controls.strengths() == (1.5, 2.25)
     assert controls.fine_band_multiplier() == 1.0
     assert controls.fine_band_floor() == 0.0
-    assert da.AdaptiveControls(amount=1.0).strengths() == (2.0, 2.0)
+    assert da.AdaptiveControls(amount=1.0).strengths() == (2.0, 3.0)
+    assert da.AdaptiveControls(amount=0.5, color_noise=0.5).strengths() == (1.0, 1.0)
     assert da.AdaptiveControls(detail_recovery=1.0).fine_band_floor() == pytest.approx(0.3)
     assert da.AdaptiveControls(detail_recovery=0.0).fine_band_multiplier() == pytest.approx(1.5)
 

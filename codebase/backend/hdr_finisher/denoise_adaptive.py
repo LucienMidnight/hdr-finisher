@@ -102,7 +102,7 @@ class AdaptiveNoiseModel:
 
 @dataclass(frozen=True)
 class AdaptiveControls:
-    """The live controls, mapped so that 0.5 everywhere is the measured result.
+    """Shipping live controls; 0.5 everywhere maps to the measured result.
 
     ``amount`` 0.5 removes the measured noise and 1.0 twice that. ``luminance``
     and ``color_noise`` scale their own components the same way. Detail
@@ -115,9 +115,9 @@ class AdaptiveControls:
     (~16-32 px). 0 leaves that size alone.
     """
 
-    amount: float = 0.5
+    amount: float = 0.75
     luminance: float = 0.5
-    color_noise: float = 0.5
+    color_noise: float = 0.75
     detail_recovery: float = 0.5
     finest_noise: float = 0.5
     fine_noise: float = 0.5

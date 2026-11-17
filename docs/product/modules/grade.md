@@ -1,3 +1,16 @@
+## November 17, 2026: Denoise shipping defaults (Steve's decision D1)
+
+Steve approved Amount 0.75, Color Noise 0.75 and Detail Recovery 0.5 for
+`adaptive-atrous-v1`, from the November 16 quality trial. Luminance and all
+four noise-size controls stay at 0.5; Denoise starts off. Backend, frontend,
+GPU fallback, new-photo/project values, the Default preset, group reset and
+double-click reset use these values. Saved grades and user presets keep their
+explicit values; there is no migration or change to the algorithm or tolerances.
+The CPU research shipping-default adapter follows the document model; earlier
+research measurements remain historical results with their recorded controls.
+D2 and the remaining quality-trial work stay open in
+[the brief](../../technical/briefs/denoise-v1-quality-trial-2026-11-16.md).
+
 ## November 16: Denoise quality-trial measurement harness
 
 Phase 1 CPU-only research tooling is committed in `da0d5ace`: bounded Bayer

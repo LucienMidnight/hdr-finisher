@@ -701,14 +701,14 @@
                schema before the presets are measured against the corpus, and
                that measurement is deferred with DENOISE-01 -- so renaming it
                now would be the one thing 6.3 rules out. -->
-          <div class="control-row"><div class="control-heading"><label for="denoise-amount">Amount</label><output id="denoise-amount-value">50%</output></div><input id="denoise-amount" type="range" min="0" max="1" step="0.01" value="0.5"></div>
-          <div class="control-row"><div class="control-heading"><label for="denoise-detail">Detail Recovery</label><output id="denoise-detail-value">0%</output></div><input id="denoise-detail" type="range" min="0" max="1" step="0.01" value="0"></div>
+          <div class="control-row"><div class="control-heading"><label for="denoise-amount">Amount</label><output id="denoise-amount-value">75%</output></div><input id="denoise-amount" type="range" min="0" max="1" step="0.01" value="0.75"></div>
+          <div class="control-row"><div class="control-heading"><label for="denoise-detail">Detail Recovery</label><output id="denoise-detail-value">50%</output></div><input id="denoise-detail" type="range" min="0" max="1" step="0.01" value="0.5"></div>
           <button id="denoise-advanced-toggle" class="disclosure-trigger" type="button" aria-expanded="false" aria-controls="denoise-advanced-panel">
             <span>Advanced</span>
           </button>
           <div id="denoise-advanced-panel" class="disclosure-content hidden">
             <div class="control-row"><div class="control-heading"><label for="denoise-luminance">Luminance</label><output id="denoise-luminance-value">50%</output></div><input id="denoise-luminance" type="range" min="0" max="1" step="0.01" value="0.5"></div>
-            <div class="control-row"><div class="control-heading"><label for="denoise-color">Color Noise</label><output id="denoise-color-value">50%</output></div><input id="denoise-color" type="range" min="0" max="1" step="0.01" value="0.5"></div>
+            <div class="control-row"><div class="control-heading"><label for="denoise-color">Color Noise</label><output id="denoise-color-value">75%</output></div><input id="denoise-color" type="range" min="0" max="1" step="0.01" value="0.75"></div>
             <div id="denoise-size-controls" class="denoise-size-controls">
               <p class="denoise-size-heading tooltip-trigger" data-tooltip="How strongly each size of noise is removed. 50% is the measured amount; 0% leaves that size alone. Luminance and Color Noise still decide brightness versus colour.">Noise size</p>
               <div class="control-row"><div class="control-heading"><label for="denoise-finest">Finest · 1–2 px</label><output id="denoise-finest-value">50%</output></div><input id="denoise-finest" type="range" min="0" max="1" step="0.01" value="0.5"></div>
