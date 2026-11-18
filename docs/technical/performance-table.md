@@ -1,3 +1,32 @@
+## November 18 — Relative colour and patch repair (Denoise research)
+
+MacBook Neo, A18 Pro, 8 GB, research code `c2364570`. Native 18.02 MP Canon
+IMG_0790.CR2 and 42.39 MP Sony _DSC7970.ARW. Three full-frame CPU runs per
+photo through the shared lock with the app CPU pool and one thread per
+OpenCV/BLAS operation. Seconds are medians and observed ranges. Signed RAW
+development and the noise model are ready before these clocks start.
+Even keep includes its whole-photo grain fit. Added times after Even keep
+include reading and writing the complete result. The order of those passes
+reverses on the middle run.
+
+| Action | Canon 18.02 MP | Sony 42.39 MP | Conditions |
+| --- | ---: | ---: | --- |
+| Today, full CPU Denoise resolve | 3.29 (2.85–3.66) | 9.11 (7.54–9.12) | MacBook Neo, shipping Denoise, tamed RAW ready |
+| Even keep brightness 18 px | 6.13 (4.90–6.46) | 14.43 (13.49–15.04) | MacBook Neo, grain fit + resolve |
+| Green/magenta channel balance (strong) | +0.82 (0.77–0.89) | +2.06 (2.01–2.16) | MacBook Neo, after Even keep |
+| Relative colour cleanup (gentle) | +0.57 (0.48–0.59) | +1.34 (1.30–1.38) | MacBook Neo, after Even keep |
+| Relative colour cleanup (strong) | +0.59 (0.47–0.65) | +1.32 (1.32–1.45) | MacBook Neo, after Even keep |
+| Relative colour cleanup (large splotches) | +1.07 (0.89–1.20) | +2.50 (2.47–2.54) | MacBook Neo, after Even keep |
+| Nearby patch healing | +3.19 (2.20–3.21) | +5.83 (5.78–5.98) | MacBook Neo, after Even keep |
+| Whole-area patch averaging | +6.68 (5.65–8.17) | +15.97 (15.26–16.04) | MacBook Neo, after Even keep |
+| Large-splotch colour cleanup + nearby healing | +3.63 (3.12–3.93) | +8.32 (8.23–9.42) | MacBook Neo, both passes after Even keep |
+| Even keep 18 px + large-splotch colour cleanup + nearby healing | 9.76 (8.01–10.39) | 22.75 (21.72–24.47) | MacBook Neo, sum per run, tamed RAW and model ready |
+| AI Denoise reference | 11.16 | 29.88 | MacBook Neo, one guarded Bayer AI render each, including RAW preparation and highlight blending, Canon reused from round 4 and Sony disk-backed |
+
+Noisy is the developed source with Denoise off. This is an offline study and
+the clocks exclude app interaction, display conversion and writing review
+images. [Round 5 results](research/denoise-v1-2026-11-16/round5-relative-colour-and-patch.md)
+
 ## November 18 — Even keep brightness and targeted specks (research)
 
 MacBook Neo, A18 Pro, 8 GB, base `f2e57fef` with the research tools in this
