@@ -225,6 +225,8 @@ https://claude.ai/artifact/4ZcqC4Ht2fJ67Nu6F2S4t9 (1:1 crops, blind mode):
 
 ## 8. Log
 
+- 2026-11-18 — [Speck R&D proposal](../research/denoise-v1-2026-11-16/speck-rnd-proposal.md). With sensor taming on, 4 of 17 flat Canon spots showed a same-sign peak made more conspicuous by Denoise. The first proposed trial targets regional green/magenta excess while holding brightness fixed.
+
 **November 17 — optional sensor speck control, implementation and qualification.**
 Steve approved the protected 2.5σ soft clamp (envelope1.5, strength.75,
 area5, similarity veto always on), threshold2–4, default off. Timing tolerance

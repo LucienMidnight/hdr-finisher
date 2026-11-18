@@ -659,6 +659,9 @@ Completed UI polish round 3 (pending visual sign-off): `docs/technical/archive/b
   and luminance-preserving green–magenta repairs on approved 2.5σ taming,
   fixed gallery/clean-colour risks, held-out/seen fidelity, native CPU cost
   and the limits of colour-only cleanup; research only, no app changes.
+  `speck-rnd-proposal.md` maps noise to its correction stage and ranks the next
+  four trials. Its six-RAW diagnostic tests whether Denoise makes existing
+  peaks more conspicuous, with same-site evidence on the Canon night photo.
 - `docs/technical/briefs/denoise-speck-rnd-prompt-2026-11-18.md`: prompt for the
   next Denoise speck R&D proposal (whole-workflow stage map, what was tried,
   earlier research limitations, constraints); proposal only, no app changes.
