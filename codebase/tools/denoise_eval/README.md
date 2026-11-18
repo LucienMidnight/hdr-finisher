@@ -25,6 +25,31 @@ intermediates. Infinite PSNR is JSON `null`; other nulls mean unavailable or
 undefined, never a pass. All measurements, controls, crop coordinates, mask
 recipe, ISO, noise fits, clipping fractions and RNG seeds are recorded.
 
+## Steve's fixed-area baseline marking page
+
+After setup, run from `codebase`:
+
+```sh
+PYTHONPATH=backend HDR_CPU_THREADS=1 OPENBLAS_NUM_THREADS=1 VECLIB_MAXIMUM_THREADS=1 \
+.venv/bin/python tools/gpu-run-lock.py --label denoise-baseline-marking --minutes 70 -- \
+  .venv/bin/python -m tools.denoise_eval.marking_page
+```
+
+On Windows, use `.venv/Scripts/python.exe` and set the same environment
+variables in PowerShell. Open `output/denoise-v1/marking/index.html` in a browser.
+The generator uses Steve's frozen sensor coordinates and hash-verified originals.
+It runs production signed AHD, as-shot colour and Opposed highlight recovery
+with lens corrections off to keep the sensor coordinates aligned. Denoise
+measures the full developed photo separately with cleanup off and on.
+
+All three views share a display lift based on the noisy shadow areas and a
+highlight roll-off. The grey strips show any part of a chosen area outside
+the visible sensor. At 1×, one image pixel occupies one browser CSS pixel.
+Zoom and pan are linked across the three pictures. Export saves both points
+and quick answers to `steve-marks.json`. Import merges points and applies
+the answers in the imported file. The adjacent manifest records the source
+hashes, sensor areas, settings and lifts.
+
 ## Inputs
 
 ### Early outlier taming (November 17, research only)
