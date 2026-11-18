@@ -665,6 +665,8 @@ Completed UI polish round 3 (pending visual sign-off): `docs/technical/archive/b
   peaks more conspicuous, with same-site evidence on the Canon night photo.
   `colour-speck-trials.md` traces Steve's 238 marked spots, compares the two
   colour-only methods across all 54 areas and records native CPU costs.
+  `canon-speck-ladder.md` compares strength ladders and protected Bayer AI
+  on Steve's six Canon areas, with 38 marked-site readings and native CPU costs.
 - `docs/technical/briefs/denoise-speck-rnd-prompt-2026-11-18.md`: prompt for the
   next Denoise speck R&D proposal (whole-workflow stage map, what was tried,
   earlier research limitations, constraints); proposal only, no app changes.

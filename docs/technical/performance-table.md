@@ -1,3 +1,24 @@
+## November 18 — Canon speck strength ladders (research)
+
+MacBook Neo, A18 Pro, 8 GB. Two opposite-order single-worker CPU sweeps under
+the shared lock on the same 18.02 MP `IMG_0790.CR2` frame, started from
+`a20dd944` with the research scripts in this commit. The observed baseline
+spread exceeds the earlier ±10% descriptive allowance. Ranges describe these
+runs. The timings measure native filtering with the developed frame and model
+already available, except for AI’s separate original-RAW route.
+
+| Action | Observed seconds | Conditions |
+| --- | ---: | --- |
+| Signed AHD with Even out ×2.5, and shared noise measurement | 3.23 and 1.65 | One preparation before both sweeps |
+| Shipping Denoise | 4.86–5.80 | Native baseline resolve |
+| Even keep, energy-matched / band removal | 13.30–19.78 / 3.74–4.30 | Energy-matched timing includes 9.66–10.40 s of whole-frame calibration |
+| Stronger Denoise | 3.92–5.84 | Fine and Medium resolve, all tested targets and strengths |
+| Fill pits inside / after Denoise | 6.47–8.22 / 7.14–8.58 | Native resolve plus fill. Brightness-only post-pass takes 2.26–2.55 s |
+| Whole-image smoothing | 4.90–6.00 | Shipping resolve plus smoothing. Combined 8-pixel step adds 0.14 s |
+| RawNIND Bayer with protected Opposed reconstruction | 14.40 | One cold original-RAW run. Model stage 9.69 s, child sampled peak 1.53 GB |
+
+[Canon speck strength ladders](research/denoise-v1-2026-11-16/canon-speck-ladder.md)
+
 ## November 18 — Marked colour speck trials (research)
 
 Paired native CPU resolve timings use the existing ±10% descriptive allowance
