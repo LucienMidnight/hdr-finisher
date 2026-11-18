@@ -157,6 +157,34 @@ each resolution and the cost of each pass with the input and model held
 in common. The review and receipts are capped together at 25 MB.
 [Results](../../../docs/technical/research/denoise-v1-2026-11-16/even-keep-round4.md)
 
+## Round 5 relative colour and patch repair
+
+Run from `codebase` after setup. The review has six Canon fire-dancer areas
+and five Sony boy-portrait areas with matching row numbers. Use the Round 4
+output folder to reuse its Canon AI pictures and scores. The Sony AI reference
+uses the existing pinned `model_bayer.onnx` and optional
+`onnxruntime==1.32.0`. Either reference can be omitted.
+
+```sh
+.venv/bin/python tools/output_size.py
+OPENBLAS_NUM_THREADS=1 VECLIB_MAXIMUM_THREADS=1 \
+.venv/bin/python tools/gpu-run-lock.py --label denoise-round5 -- \
+  .venv/bin/python -m tools.denoise_eval.speck_round5 all \
+  --round4 "/path/to/codebase/output/denoise-v1/round4" \
+  --model-root "/path/to/rawdenoise-nind"
+.venv/bin/python tools/output_size.py
+```
+
+On Windows use `.venv/Scripts/python.exe` and set the thread variables in
+PowerShell. Open `output/denoise-v1/round5/index.html`. Review runs replace
+the images in that folder. `canon.json` and `portrait.json` record the 38 and
+25 fixed-mark scores and possible new spots. `timing.json` records the three
+CPU runs at each native size, using these same two photos. Use `review` or
+`timing` to run either part individually.
+`--colour` and `--patch` choose the pair in the final tile. The candidates
+are standalone CPU research filters.
+[Results](../../../docs/technical/research/denoise-v1-2026-11-16/round5-relative-colour-and-patch.md)
+
 ## Inputs
 
 ### Early outlier taming (November 17, research only)

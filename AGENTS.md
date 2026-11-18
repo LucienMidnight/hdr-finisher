@@ -669,6 +669,9 @@ Completed UI polish round 3 (pending visual sign-off): `docs/technical/archive/b
   on Steve's six Canon areas, with 38 marked-site readings and native CPU costs.
   `even-keep-round4.md` compares brightness grain, local hue range, dark clump
   breakup and the 54-area edge-case check, with native CPU timings.
+  `round5-relative-colour-and-patch.md` compares relative colour cleanup,
+  nearby healing and whole-area patch averaging on the Canon and Sony,
+  with marked-site results, visible artefacts and native CPU timings.
 - `docs/technical/briefs/denoise-speck-rnd-prompt-2026-11-18.md`: prompt for the
   next Denoise speck R&D proposal (whole-workflow stage map, what was tried,
   earlier research limitations, constraints); proposal only, no app changes.
