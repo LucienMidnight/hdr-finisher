@@ -1,3 +1,9 @@
+## November 18 — Denoise keep-factor diagnostic
+
+| Action | Observed wall time | Conditions |
+| --- | ---: | --- |
+| Produce the six-photo same-site attribution receipt | 18.83 s | MacBook Neo, A18 Pro, 8 GB, `c91546bc`, shared lock, single-worker CPU, one complete receipt run. Native-size noise sample windows plus 512 px test crops, seven whole-photo noise fits, exact CPU reconstruction check. Research command to JSON only. Peak process-tree RSS 0.814 GB. [Receipt](research/denoise-v1-2026-11-16/keep-survivors-receipt.json). |
+
 ## November 17: optional harsh-speck sensor clamp (minimum Mac)
 
 MacBook Neo / A18 Pro / 8 GB, shared GPU lock, window setting 1408×794,
