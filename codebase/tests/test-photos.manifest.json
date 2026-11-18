@@ -98,6 +98,11 @@
       "sha256": "ca4c17d91ec75939cc1e59f98288849e6af47ddc07e552b9738e395a13ad23f1"
     },
     {
+      "name": "DSC05293.ARW",
+      "bytes": 43186688,
+      "sha256": "3015478393e0a155e9f8a18a5d42f047fce1175f887e89f8c8bddfe4a495a057"
+    },
+    {
       "name": "DSC05622.ARW",
       "bytes": 43014656,
       "sha256": "a0d61864b5282e03a7cabb8cb68b52ef69ae662397ce9674e031106e3be482f6"
@@ -111,6 +116,11 @@
       "name": "DSC06615.ARW.hdrf",
       "bytes": 78662,
       "sha256": "82fea6bfd0044bf82ec6a9b8d916247ea086d8034adf242754909e0de838a6e2"
+    },
+    {
+      "name": "DSC08360.ARW",
+      "bytes": 24870912,
+      "sha256": "a17f52727e69f805ba9423711fcaccf494cddeb9ef86643e91920833cda2a335"
     },
     {
       "name": "DSC08883.avif",
@@ -198,6 +208,16 @@
       "sha256": "ac1c95573033cab13927eb4d800a97bab9ec2ffa13e8c7d7840118e63c5b7b68"
     },
     {
+      "name": "P7310446.ORF",
+      "bytes": 19966865,
+      "sha256": "85eb26b652a65809a7fa5eb684584e35f2ff1a51323af774511126afa328062a"
+    },
+    {
+      "name": "P7310465.ORF",
+      "bytes": 13619254,
+      "sha256": "96751ad4b98830881c0ccf7e1e79ad3f298ab97028b931bb6e536ba2d50180bb"
+    },
+    {
       "name": "PA310516.ORF",
       "bytes": 16633849,
       "sha256": "28c22e328bee6421534d6b03caa831976e1aea923d1895abfbfed4852dc2e37a"
@@ -226,6 +246,11 @@
       "name": "_DSC6510-1.png",
       "bytes": 223274840,
       "sha256": "03aae6a086dfe163be325c076774dfdffb962feed73b2cbd5434e9a53a2fc6c0"
+    },
+    {
+      "name": "_DSC7970.ARW",
+      "bytes": 85586944,
+      "sha256": "83e66735827ca571f4cf706f9b10c3482038bde261f31a981f1654b7bd0c2f93"
     },
     {
       "name": "e053a5bf16a9398eaa3da890-900x1200.jxl",

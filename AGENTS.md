@@ -368,7 +368,8 @@ speed comparison is finished. Still open:
    copies.
 
 **Test photos added on the Mac (November 18):** copy `DSC00512.ARW`,
-`DSC00786.ARW`, `DSC05622.ARW`, `PA310516.ORF` and `PC131157.ORF` (noisy RAWs
+`DSC00786.ARW`, `DSC05293.ARW`, `DSC05622.ARW`, `DSC08360.ARW`, `_DSC7970.ARW`,
+`P7310446.ORF`, `P7310465.ORF`, `PA310516.ORF` and `PC131157.ORF` (noisy RAWs
 for Denoise research) into the PC's `HDR Test Images`; setup checks them against
 the manifest.
 
