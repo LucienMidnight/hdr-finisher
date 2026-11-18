@@ -1,0 +1,572 @@
+{
+ "chosen": "2026-11-18, with Steve",
+ "coordinates": "raw_image_visible (unrotated sensor) top-left x,y, even-aligned; square size in sensor pixels",
+ "kinds": {
+  "speck": "noise/speck problem area to clean",
+  "detail": "real detail that must survive"
+ },
+ "photos": {
+  "IMG_0790.CR2": [
+   {
+    "id": "D4",
+    "kind": "detail",
+    "what": "railing/fence lines in shadow (earlier test window)",
+    "sensor_xy": [
+     4064,
+     2164
+    ],
+    "size": 512
+   },
+   {
+    "id": "S2",
+    "kind": "speck",
+    "what": "flame edge against dark background (earlier detail test window)",
+    "sensor_xy": [
+     600,
+     1500
+    ],
+    "size": 512
+   },
+   {
+    "id": "D1",
+    "kind": "detail",
+    "what": "centre dancer's face",
+    "sensor_xy": [
+     2270,
+     970
+    ],
+    "size": 512
+   },
+   {
+    "id": "D2",
+    "kind": "detail",
+    "what": "left dancer's face and hair",
+    "sensor_xy": [
+     1490,
+     1342
+    ],
+    "size": 512
+   },
+   {
+    "id": "D3",
+    "kind": "detail",
+    "what": "grass skirt strands",
+    "sensor_xy": [
+     2678,
+     2828
+    ],
+    "size": 512
+   },
+   {
+    "id": "S1",
+    "kind": "speck",
+    "what": "flat dark background",
+    "sensor_xy": [
+     3906,
+     40
+    ],
+    "size": 512
+   }
+  ],
+  "DSC05293.ARW": [
+   {
+    "id": "S1",
+    "kind": "speck",
+    "what": "dark booth seat",
+    "sensor_xy": [
+     6174,
+     3726
+    ],
+    "size": 512
+   },
+   {
+    "id": "D1",
+    "kind": "detail",
+    "what": "'BLACK ROSS' sign lettering",
+    "sensor_xy": [
+     5208,
+     2008
+    ],
+    "size": 512
+   },
+   {
+    "id": "D2",
+    "kind": "detail",
+    "what": "small string lights",
+    "sensor_xy": [
+     3158,
+     1792
+    ],
+    "size": 512
+   },
+   {
+    "id": "D3",
+    "kind": "detail",
+    "what": "'140' table sign",
+    "sensor_xy": [
+     2248,
+     3442
+    ],
+    "size": 512
+   },
+   {
+    "id": "D4",
+    "kind": "detail",
+    "what": "barista's face",
+    "sensor_xy": [
+     6288,
+     2020
+    ],
+    "size": 512
+   }
+  ],
+  "_DSC7970.ARW": [
+   {
+    "id": "D1",
+    "kind": "detail",
+    "what": "eyelashes",
+    "sensor_xy": [
+     4666,
+     1024
+    ],
+    "size": 512
+   },
+   {
+    "id": "D2",
+    "kind": "detail",
+    "what": "hair",
+    "sensor_xy": [
+     5036,
+     198
+    ],
+    "size": 512
+   },
+   {
+    "id": "D3",
+    "kind": "detail",
+    "what": "ear",
+    "sensor_xy": [
+     2134,
+     596
+    ],
+    "size": 512
+   },
+   {
+    "id": "S1",
+    "kind": "speck",
+    "what": "blurred grey background",
+    "sensor_xy": [
+     6288,
+     2872
+    ],
+    "size": 512
+   },
+   {
+    "id": "S2",
+    "kind": "speck",
+    "what": "dark shirt",
+    "sensor_xy": [
+     1736,
+     4580
+    ],
+    "size": 512
+   }
+  ],
+  "DSC08360.ARW": [
+   {
+    "id": "D1",
+    "kind": "detail",
+    "what": "Pleiades star cluster",
+    "sensor_xy": [
+     3142,
+     754
+    ],
+    "size": 512
+   },
+   {
+    "id": "D2",
+    "kind": "detail",
+    "what": "isolated coloured stars",
+    "sensor_xy": [
+     1636,
+     668
+    ],
+    "size": 512
+   },
+   {
+    "id": "D3",
+    "kind": "detail",
+    "what": "tree line foliage",
+    "sensor_xy": [
+     3400,
+     2928
+    ],
+    "size": 512
+   },
+   {
+    "id": "D4",
+    "kind": "detail",
+    "what": "fence wire",
+    "sensor_xy": [
+     130,
+     2886
+    ],
+    "size": 512
+   },
+   {
+    "id": "S1",
+    "kind": "speck",
+    "what": "dark field",
+    "sensor_xy": [
+     4046,
+     3530
+    ],
+    "size": 512
+   }
+  ],
+  "P7310446.ORF": [
+   {
+    "id": "S1",
+    "kind": "speck",
+    "what": "flat sky",
+    "sensor_xy": [
+     606,
+     42
+    ],
+    "size": 512
+   },
+   {
+    "id": "D4",
+    "kind": "detail",
+    "what": "dark rocks (fine real detail)",
+    "sensor_xy": [
+     1202,
+     1068
+    ],
+    "size": 512
+   },
+   {
+    "id": "D1",
+    "kind": "detail",
+    "what": "person and camera",
+    "sensor_xy": [
+     3090,
+     1134
+    ],
+    "size": 512
+   },
+   {
+    "id": "D2",
+    "kind": "detail",
+    "what": "sand texture",
+    "sensor_xy": [
+     1202,
+     2890
+    ],
+    "size": 512
+   },
+   {
+    "id": "D3",
+    "kind": "detail",
+    "what": "surf line",
+    "sensor_xy": [
+     1732,
+     804
+    ],
+    "size": 512
+   }
+  ],
+  "P7310465.ORF": [
+   {
+    "id": "D1",
+    "kind": "detail",
+    "what": "small orange light",
+    "sensor_xy": [
+     3946,
+     2090
+    ],
+    "size": 512
+   },
+   {
+    "id": "D2",
+    "kind": "detail",
+    "what": "lit building window",
+    "sensor_xy": [
+     1766,
+     1732
+    ],
+    "size": 512
+   },
+   {
+    "id": "D3",
+    "kind": "detail",
+    "what": "moon",
+    "sensor_xy": [
+     2230,
+     124
+    ],
+    "size": 512
+   },
+   {
+    "id": "D4",
+    "kind": "detail",
+    "what": "dark beach ground (real texture)",
+    "sensor_xy": [
+     1202,
+     2890
+    ],
+    "size": 512
+   },
+   {
+    "id": "S2",
+    "kind": "speck",
+    "what": "dusk sky",
+    "sensor_xy": [
+     42,
+     604
+    ],
+    "size": 512
+   }
+  ],
+  "DSC00512.ARW": [
+   {
+    "id": "D1",
+    "kind": "detail",
+    "what": "red glowing logo",
+    "sensor_xy": [
+     2218,
+     1712
+    ],
+    "size": 512
+   },
+   {
+    "id": "D2",
+    "kind": "detail",
+    "what": "antler texture",
+    "sensor_xy": [
+     1008,
+     362
+    ],
+    "size": 512
+   },
+   {
+    "id": "S1",
+    "kind": "speck",
+    "what": "dark shadow in skull",
+    "sensor_xy": [
+     2948,
+     2132
+    ],
+    "size": 512
+   },
+   {
+    "id": "S2",
+    "kind": "speck",
+    "what": "blurred background",
+    "sensor_xy": [
+     -4,
+     812
+    ],
+    "size": 512
+   }
+  ],
+  "DSC00786.ARW": [
+   {
+    "id": "D1",
+    "kind": "detail",
+    "what": "red 'T*' lettering on black",
+    "sensor_xy": [
+     5322,
+     198
+    ],
+    "size": 512
+   },
+   {
+    "id": "D2",
+    "kind": "detail",
+    "what": "'MENU' lettering",
+    "sensor_xy": [
+     6004,
+     2816
+    ],
+    "size": 512
+   },
+   {
+    "id": "D3",
+    "kind": "detail",
+    "what": "blue 'S' lettering",
+    "sensor_xy": [
+     4866,
+     2134
+    ],
+    "size": 512
+   },
+   {
+    "id": "D4",
+    "kind": "detail",
+    "what": "'4K Shot INFO' text",
+    "sensor_xy": [
+     3442,
+     1622
+    ],
+    "size": 512
+   },
+   {
+    "id": "S1",
+    "kind": "speck",
+    "what": "dark camera body",
+    "sensor_xy": [
+     3158,
+     198
+    ],
+    "size": 512
+   },
+   {
+    "id": "S2",
+    "kind": "speck",
+    "what": "dark lower camera body (E6)",
+    "sensor_xy": [
+     4222,
+     4620
+    ],
+    "size": 512
+   }
+  ],
+  "DSC05622.ARW": [
+   {
+    "id": "D1",
+    "kind": "detail",
+    "what": "eyelashes",
+    "sensor_xy": [
+     4126,
+     1450
+    ],
+    "size": 512
+   },
+   {
+    "id": "D2",
+    "kind": "detail",
+    "what": "hair strands",
+    "sensor_xy": [
+     3386,
+     710
+    ],
+    "size": 512
+   },
+   {
+    "id": "D3",
+    "kind": "detail",
+    "what": "knit collar",
+    "sensor_xy": [
+     6858,
+     4750
+    ],
+    "size": 512
+   },
+   {
+    "id": "S1",
+    "kind": "speck",
+    "what": "blurred background",
+    "sensor_xy": [
+     1166,
+     2872
+    ],
+    "size": 512
+   }
+  ],
+  "PA310516.ORF": [
+   {
+    "id": "D1",
+    "kind": "detail",
+    "what": "red and green leaves (real magenta and green)",
+    "sensor_xy": [
+     2328,
+     538
+    ],
+    "size": 512
+   },
+   {
+    "id": "D2",
+    "kind": "detail",
+    "what": "striped leaf edges",
+    "sensor_xy": [
+     1234,
+     1732
+    ],
+    "size": 512
+   },
+   {
+    "id": "S1",
+    "kind": "speck",
+    "what": "concrete wall",
+    "sensor_xy": [
+     2926,
+     2328
+    ],
+    "size": 512
+   },
+   {
+    "id": "D3",
+    "kind": "detail",
+    "what": "dense dark foliage under leaves (preserve)",
+    "sensor_xy": [
+     1864,
+     1666
+    ],
+    "size": 512
+   }
+  ],
+  "PC131157.ORF": [
+   {
+    "id": "D1",
+    "kind": "detail",
+    "what": "dog's eye and fur",
+    "sensor_xy": [
+     2162,
+     1002
+    ],
+    "size": 512
+   },
+   {
+    "id": "D2",
+    "kind": "detail",
+    "what": "scratches on red table",
+    "sensor_xy": [
+     1234,
+     2262
+    ],
+    "size": 512
+   },
+   {
+    "id": "D3",
+    "kind": "detail",
+    "what": "white fur",
+    "sensor_xy": [
+     1798,
+     1598
+    ],
+    "size": 512
+   },
+   {
+    "id": "S1",
+    "kind": "speck",
+    "what": "dark background",
+    "sensor_xy": [
+     3488,
+     2328
+    ],
+    "size": 512
+   },
+   {
+    "id": "D4",
+    "kind": "detail",
+    "what": "dark jacket fabric in foreground (preserve)",
+    "sensor_xy": [
+     2394,
+     2262
+    ],
+    "size": 512
+   }
+  ]
+ }
+}
