@@ -223,8 +223,12 @@ unacceptable loss of detail.
 - **Speed is judged by the whole wait the user feels.** Propose a GPU route only
   when it pays (about 50% faster or more).
 - **Photo sources.**
-  - Use photos only from `<photosRoot>/HDR Test Images`. Steve is adding some
-    extra noisy RAWs there; use them once they are in the manifest.
+  - Use photos only from `<photosRoot>/HDR Test Images`. Steve added five
+    noisy RAWs on November 18 (in the manifest): `DSC00512.ARW` (Sony A7 III,
+    ISO 6400), `DSC00786.ARW` (A7R III, ISO 12800), `DSC05622.ARW` (A7R III,
+    ISO 10000), `PA310516.ORF` (Olympus E-P5, ISO 3200) and `PC131157.ORF`
+    (E-P5, ISO 10000). Use them alongside `IMG_0790.CR2` and the earlier
+    gallery windows.
   - The public RawNIND pairs are research-only and are never committed.
   - Never save over the read-only test projects.
 - **Licensing.** GPL-3 codebase. Record the licence of any ported technique.
