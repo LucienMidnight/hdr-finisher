@@ -663,6 +663,8 @@ Completed UI polish round 3 (pending visual sign-off): `docs/technical/archive/b
   `speck-rnd-proposal.md` maps noise to its correction stage and ranks the next
   four trials. Its six-RAW diagnostic tests whether Denoise makes existing
   peaks more conspicuous, with same-site evidence on the Canon night photo.
+  `colour-speck-trials.md` traces Steve's 238 marked spots, compares the two
+  colour-only methods across all 54 areas and records native CPU costs.
 - `docs/technical/briefs/denoise-speck-rnd-prompt-2026-11-18.md`: prompt for the
   next Denoise speck R&D proposal (whole-workflow stage map, what was tried,
   earlier research limitations, constraints); proposal only, no app changes.

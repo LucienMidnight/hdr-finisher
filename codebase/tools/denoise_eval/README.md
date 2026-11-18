@@ -50,6 +50,42 @@ and quick answers to `steve-marks.json`. Import merges points and applies
 the answers in the imported file. The adjacent manifest records the source
 hashes, sensor areas, settings and lifts.
 
+## Steve’s marked colour speck trials
+
+Run these from `codebase` after setup. On Windows use
+`.venv/Scripts/python.exe` and set the environment variables in PowerShell.
+Run `tools/output_size.py` before and after. The shared lock gives each heavy
+command its own turn.
+
+```sh
+export PYTHONPATH=backend HDR_CPU_THREADS=3 OPENBLAS_NUM_THREADS=1 VECLIB_MAXIMUM_THREADS=1
+.venv/bin/python tools/gpu-run-lock.py --label denoise-colour-attribution --minutes 25 -- \
+  .venv/bin/python -m tools.denoise_eval.colour_speck_marks
+.venv/bin/python tools/gpu-run-lock.py --label denoise-colour-review --minutes 25 -- \
+  .venv/bin/python -m tools.denoise_eval.colour_speck_trials
+.venv/bin/python tools/gpu-run-lock.py --label denoise-colour-native --minutes 20 -- \
+  .venv/bin/python -m tools.denoise_eval.colour_speck_trials \
+  --timing output/denoise-v1/colour-speck-timing.json
+```
+
+The attribution command uses the frozen marks to define the fixed positions,
+direction and grain rings for signed RAW/Denoise comparisons. The review command
+checks those baseline readings against full-frame CPU Denoise. It renders A at
+both placements and B from the same tamed, signed development and whole-photo
+model, verifies held linear luminance and records area and mark measurements.
+It measures the named colour edges and details from the native 4:4:4 review
+pictures. To repeat just that step, run `-m tools.denoise_eval.colour_speck_features`
+with the same Python. Native timings start after RAW development and
+model fitting and use the same CPU tile pool for the baseline and candidates.
+
+Open `output/denoise-v1/colour-trials/index.html` for the local comparison.
+Choose A’s placement in the toolbar. Select a mark to zoom all four pictures
+to the same 6× spot. The marks switch hides the original overlay. Candidate
+answers are stored separately for each placement and can be exported as JSON.
+The adjacent files contain the per-mark and per-feature measurements. The
+review is capped at 20 MB and lives under ignored output.
+[Reported findings](../../../docs/technical/research/denoise-v1-2026-11-16/colour-speck-trials.md)
+
 ## Inputs
 
 ### Early outlier taming (November 17, research only)
