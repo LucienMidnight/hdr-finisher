@@ -123,6 +123,40 @@ the same developed frame and noise model. The AI process has a separate
 The output is local, with a 20 MB cap applied before publication to the review
 folder. [Results](../../../docs/technical/research/denoise-v1-2026-11-16/canon-speck-ladder.md)
 
+## Even keep brightness and targeted specks
+
+Round 4 uses the same signed development, sensor clamp, shipping CPU Denoise,
+whole-photo noise model, exposure lifts and frozen crop files as the Canon
+ladder and colour trials. The Canon page adds the protected RawNIND Bayer
+reference, four brightness averaging distances with the prior energy match,
+two local-only controls, three colour methods and two dark-clump methods at
+two strengths. The 54-area page shows Today, Even keep brightness, and both
+extra passes with the selected settings. The static rows use native-size
+4:4:4 JPEG crops and pre-rendered lossless 6× close-ups. The score receipts use
+pixels before JPEG encoding.
+
+Run from `codebase` after setup, with the existing pinned
+`model_bayer.onnx` and optional `onnxruntime==1.32.0` in the venv. On Windows
+use `.venv/Scripts/python.exe` and set the same variables in PowerShell.
+
+```sh
+.venv/bin/python tools/output_size.py
+export PYTHONPATH=backend HDR_CPU_THREADS=3 OPENBLAS_NUM_THREADS=1 VECLIB_MAXIMUM_THREADS=1 OMP_NUM_THREADS=1
+.venv/bin/python tools/gpu-run-lock.py --label denoise-round4 --minutes 30 -- \
+  .venv/bin/python -m tools.denoise_eval.even_keep_round4 all \
+  --model-root "/path/to/rawdenoise-nind"
+.venv/bin/python tools/output_size.py
+```
+
+Open `output/denoise-v1/round4/index.html`. Use the individual `canon`,
+`corpus` or `timing` phase to replace that part of the output. `canon.json`
+holds all 38 readings, both grain references, channel checks and the 18 px
+comparison with the prior ladder. `corpus.json` holds the crop and named
+feature checks, including the contribution of each extra pass. `timing.json` holds three alternating native CPU runs at
+each resolution and the cost of each pass with the input and model held
+in common. The review and receipts are capped together at 25 MB.
+[Results](../../../docs/technical/research/denoise-v1-2026-11-16/even-keep-round4.md)
+
 ## Inputs
 
 ### Early outlier taming (November 17, research only)

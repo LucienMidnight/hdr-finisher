@@ -1,3 +1,28 @@
+## November 18 — Even keep brightness and targeted specks (research)
+
+MacBook Neo, A18 Pro, 8 GB, base `f2e57fef` with the research tools in this
+commit. Three paired native runs with the shared CPU pool and the shared lock.
+The same signed, tamed frame and Denoise noise model are already available at
+each size. Canon IMG_0790.CR2 and Sony DSC04375.ARW. Numbers are medians with
+observed ranges in seconds. Small differences inside the timing spread describe
+the sample. These are CPU resolve and post-pass times.
+
+| Action | 18.02 MP | 42.39 MP | Conditions |
+| --- | ---: | ---: | --- |
+| Today, full CPU resolve | 3.59 (2.97–3.86) | 9.46 (8.30–9.52) | MacBook Neo, production baseline |
+| Even keep 18 px, local average only | +0.09 (0.04–0.32) | +0.08 (0.06–0.95) | MacBook Neo, paired against Today |
+| Even keep 18 px, local grain-weighted | +0.16 (0.02–0.58) | +0.60 (0.51–1.37) | MacBook Neo, paired against Today |
+| Even keep 18 px, grain-matched, including fit | +2.92 (2.69–3.55) | +6.31 (6.16–7.33) | MacBook Neo, paired against Today |
+| Grain fit only | 2.57 (2.30–2.62) | 6.08 (6.02–6.08) | MacBook Neo, per-photo grain adjustment |
+| Hue unify, strong | +3.66 (3.34–3.68) | +8.75 (8.71–8.83) | MacBook Neo, direct extra pass |
+| Green/magenta cleanup, strong | +0.88 (0.81–0.95) | +2.14 (2.11–2.47) | MacBook Neo, direct extra pass |
+| Green/magenta channel balance, strong | +0.88 (0.80–0.98) | +2.16 (2.13–2.40) | MacBook Neo, direct extra pass |
+| Dark clump breakup, strong | +0.43 (0.41–0.45) | +1.29 (0.98–1.30) | MacBook Neo, direct extra pass |
+| Dark clump breakup, Medium only, strong | +0.62 (0.55–0.62) | +1.48 (1.45–1.50) | MacBook Neo, direct extra pass |
+| Grain-matched 18 px + strong channel balance + strong clump breakup | +4.13 (4.02–4.96) | +9.78 (9.54–10.74) | MacBook Neo, summed incremental costs against Today |
+
+[Round 4 results](research/denoise-v1-2026-11-16/even-keep-round4.md)
+
 ## November 18 — Canon speck strength ladders (research)
 
 MacBook Neo, A18 Pro, 8 GB. Two opposite-order single-worker CPU sweeps under
