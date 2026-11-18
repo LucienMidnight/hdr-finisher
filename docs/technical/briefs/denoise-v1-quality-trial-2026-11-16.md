@@ -225,6 +225,7 @@ https://claude.ai/artifact/4ZcqC4Ht2fJ67Nu6F2S4t9 (1:1 crops, blind mode):
 
 ## 8. Log
 
+- 2026-11-18 — An 8-pixel blur visibly clears isolated specks on the Canon at a substantial cost in detail. RawNIND preserves more texture and shifts the shadow colour. Steve’s visual verdict is pending. [Canon speck strength ladders](../research/denoise-v1-2026-11-16/canon-speck-ladder.md)
 - 2026-11-18 — [Marked colour speck trials](../research/denoise-v1-2026-11-16/colour-speck-trials.md). The wide reference barely moved the 238 marked spots. Brightness-guided shrinkage lowered median marked colour by 29% and visibly softened real colour. Both failed the trial. Paired native timings and all 54 review areas are recorded.
 - 2026-11-18 — Speck R&D step 1 baseline marking page rendered all 54 chosen areas across 11 RAWs in three production CPU views. Two areas retain grey strips beyond the visible sensor: `DSC08360.ARW` S1 (18 bottom rows) and `DSC00512.ARW` S2 (four left columns). Page, images and manifest are in `codebase/output/denoise-v1/marking/`.
 - 2026-11-18 — [Speck R&D proposal](../research/denoise-v1-2026-11-16/speck-rnd-proposal.md). With sensor taming on, 4 of 17 flat Canon spots showed a same-sign peak made more conspicuous by Denoise. The first proposed trial targets regional green/magenta excess while holding brightness fixed.

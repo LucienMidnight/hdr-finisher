@@ -86,6 +86,43 @@ The adjacent files contain the per-mark and per-feature measurements. The
 review is capped at 20 MB and lives under ignored output.
 [Reported findings](../../../docs/technical/research/denoise-v1-2026-11-16/colour-speck-trials.md)
 
+## Canon speck strength ladders
+
+This CPU research page compares even keep, stronger Fine/Medium Denoise, pit
+fill at two placements, and deliberate whole-image smoothing on `IMG_0790.CR2`.
+The six fixed areas and 38 original marks come from Steve's November 18
+files. Noisy is signed development with Even out off. The baseline is signed
+development with Even out ×2.5 and shipping Denoise. The original photo is read
+from the approved corpus and checked against its SHA-256 in the manifest.
+
+From `codebase` on macOS, after repository setup, supply the directory with the
+existing pinned Bayer weights. Install optional `onnxruntime==1.32.0` in the
+research venv for the AI reference. Omit `--model-root` to generate the page
+without AI. On Windows, use the venv's `Scripts/python.exe` and set the same
+environment variables in the shell.
+
+```sh
+.venv/bin/python tools/output_size.py
+HDR_CPU_THREADS=1 OPENBLAS_NUM_THREADS=1 VECLIB_MAXIMUM_THREADS=1 OMP_NUM_THREADS=1 \
+PYTHONPATH=backend .venv/bin/python tools/gpu-run-lock.py --label canon-speck-ladder -- \
+  .venv/bin/python -m tools.denoise_eval.candidates.guard \
+  --receipt output/denoise-v1/canon-ladder/guard.json --seconds 5400 --bytes 2800000000 -- \
+  .venv/bin/python -m tools.denoise_eval.canon_ladder \
+  --model-root "/path/to/rawdenoise-nind"
+.venv/bin/python tools/output_size.py
+```
+
+Open `output/denoise-v1/canon-ladder/index.html` locally. Every method keeps the
+same Noisy, Baseline and AI columns. Choose a mark for a lossless 6× comparison,
+or select Fit crop to see the full areas. Export the original marks and the first
+step judged clean with its detail-cost answer as JSON. The page itself measures
+no image scores. `metrics.json` holds the 38 site readings, per-step counts,
+native CPU clocks and AI evidence. The two native sweeps use opposite order and
+the same developed frame and noise model. The AI process has a separate
+180-second, 2.5 GB guard and uses the earlier Opposed color highlight protection.
+The output is local, with a 20 MB cap applied before publication to the review
+folder. [Results](../../../docs/technical/research/denoise-v1-2026-11-16/canon-speck-ladder.md)
+
 ## Inputs
 
 ### Early outlier taming (November 17, research only)
