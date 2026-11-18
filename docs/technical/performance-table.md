@@ -1,3 +1,20 @@
+## November 18 — Marked colour speck trials (research)
+
+Paired native CPU resolve timings use the existing ±10% descriptive allowance
+because timings vary between runs on the same machine. The trial goal is about
+1 second added at 18 MP. The scope starts with the developed image and a shared
+noise model and ends at the reconstructed colour-only result. App slider latency
+is a separate gate.
+
+| Action | 18.02 MP, seconds | 42.39 MP, seconds | Conditions |
+| --- | ---: | ---: | --- |
+| Today + Even out source, Denoise resolve | 3.51 (3.05–3.62) | 8.66 (8.59–8.96) | November 18, MacBook Neo A18 Pro/8 GB, `f0bb2405` with research scripts in this commit. IMG_0790.CR2 and DSC04375.ARW, same tamed source and noise model, shared CPU pool, three alternated runs under the shared lock. |
+| A, wide colour after Denoise | +1.16 (+1.06–1.29) | +3.05 (+2.34–3.33) | Same Mac, median and range of paired differences against today. |
+| A, wide colour before Denoise | +4.86 (+4.79–5.37) | +12.21 (+11.40–12.68) | Same Mac and pairing. Includes the second resolve needed to hold baseline luminance. |
+| B, brightness-guided colour inside Denoise | +0.58 (+0.23–0.85) | +0.67 (+0.36–0.68) | Same Mac and pairing. One wavelet solve. |
+
+[Trial and review](research/denoise-v1-2026-11-16/colour-speck-trials.md)
+
 ## November 18 — Denoise keep-factor diagnostic
 
 | Action | Observed wall time | Conditions |

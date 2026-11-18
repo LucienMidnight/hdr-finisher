@@ -1,0 +1,251 @@
+<!doctype html>
+<html lang="en" data-theme="modern-dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Denoise colour speck trials</title>
+<link rel="stylesheet" href="../../../frontend/visual-tokens.css">
+<style>
+/* MARKING_STYLE */
+.area { grid-template-columns: 180px repeat(4, minmax(0, 1fr)); }
+.crop-image { cursor: grab; }
+.point { pointer-events: none; }
+body.marks-hidden .marked-points { display: none; }
+@media (max-width: 880px) {
+  .area { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .view { height: min(420px, 55vh); }
+}
+@media (max-width: 580px) {
+  .area { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .view { height: min(300px, 40vh); }
+}
+</style>
+</head>
+<body>
+<header><div class="wrap">
+  <h1>Denoise colour speck trials</h1>
+  <div class="toolbar">
+    <label>Jump to <select id="photos-select"><option value="">Choose a photo</option></select></label>
+    <label>A placement <select id="placement">
+      <option value="a_after">After Denoise</option><option value="a_before">Before Denoise</option>
+    </select></label>
+    <label><input type="checkbox" id="marks" checked> Show Steve’s original marks</label>
+    <button type="button" id="export">Export answers</button>
+    <span id="status" role="status"></span>
+  </div>
+  <p>Compare A and B with Today + Even out. Drag or scroll to move the pictures together, or choose a mark and zoom in.</p>
+</div></header>
+<main class="wrap" id="photos"></main>
+<template id="area-template">
+  <article class="area">
+    <aside>
+      <h3></h3><small class="description"></small><small class="meta"></small>
+      <div class="thumbnail"><img alt="Whole photo in sensor orientation" loading="lazy"><span class="outline"></span></div>
+      <label>Zoom <select class="zoom">
+        <option value="1">1×</option><option value="2">2×</option><option value="3">3×</option>
+        <option value="4">4×</option><option value="6">6×</option>
+      </select></label>
+      <label class="mark-picker" hidden>Go to <select class="mark-select"><option value="">Choose a mark</option></select></label>
+      <fieldset class="ask-a"><legend>A vs baseline</legend><div class="question"></div></fieldset>
+      <fieldset class="ask-b"><legend>B vs baseline</legend><div class="question"></div></fieldset>
+    </aside>
+  </article>
+</template>
+<template id="comparison-template">
+  <figure class="comparison">
+    <figcaption></figcaption>
+    <div class="view" tabindex="0"><div class="frame">
+      <img class="crop-image" loading="lazy" draggable="false" alt="">
+      <div class="unavailable-pixels" aria-hidden="true"></div>
+      <div class="marked-points" aria-hidden="true"></div>
+    </div></div>
+  </figure>
+</template>
+<script>
+"use strict";
+const review = /* REVIEW_DATA */;
+const get = id => document.getElementById(id);
+const key = "hdr-finisher.denoise-colour-trials." + review.area_hash;
+let answers = {};
+let storageAvailable = true;
+try {
+  answers = JSON.parse(localStorage.getItem(key) || "{}") || {};
+} catch {
+  storageAvailable = false;
+}
+const status = get("status");
+function updateStatus(message = "") {
+  status.textContent = [message, Object.values(answers).flatMap(Object.keys).length + " comparisons answered",
+    storageAvailable ? "" : "Browser storage unavailable. Export to save."].filter(Boolean).join(" · ");
+}
+get("marks").addEventListener("change", event => {
+  document.body.classList.toggle("marks-hidden", !event.target.checked);
+});
+get("export").addEventListener("click", () => {
+  const data = {version: 1, area_set_sha256: review.area_hash, answers: Object.entries(answers).map(([id, comparisons]) => {
+    const [file, area_id] = JSON.parse(id);
+    return {file, area_id, ...comparisons};
+  })};
+  const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2) + "\n"], {type: "application/json"}));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = "steve-colour-trial-answers.json";
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  updateStatus("Exported answers");
+});
+function box(node, x, y, w, h, width, height) {
+  node.style.left = 100 * x / width + "%";
+  node.style.top = 100 * y / height + "%";
+  node.style.width = 100 * w / width + "%";
+  node.style.height = 100 * h / height + "%";
+}
+function buildArea(photo, area) {
+  const row = get("area-template").content.firstElementChild.cloneNode(true);
+  const [x, y] = area.sensor_xy;
+  const [left, top, right, bottom] = area.visible_xyxy;
+  const size = area.size;
+  const id = JSON.stringify([photo.file, area.id]);
+  row.querySelector("h3").textContent = area.id + " · " + (area.kind === "speck" ? "Noise" : "Detail");
+  row.querySelector(".description").textContent = area.what;
+  row.querySelector(".meta").textContent = `(${x}, ${y}) · ${size} × ${size}`;
+  row.querySelector(".thumbnail img").src = photo.thumbnail;
+  box(row.querySelector(".outline"), left, top, right-left, bottom-top, ...photo.sensor_wh);
+
+  const views = [];
+  const synced = new WeakMap();
+  function move(view, left, top) {
+    view.scrollTo(left, top);
+    synced.set(view, [view.scrollLeft, view.scrollTop]);
+  }
+  let updateA;
+  for (const column of ["noisy", "baseline", "a_after", "b"]) {
+    const figure = get("comparison-template").content.firstElementChild.cloneNode(true);
+    row.append(figure);
+    const caption = figure.querySelector("figcaption");
+    const view = figure.querySelector(".view");
+    const frame = figure.querySelector(".frame");
+    const img = figure.querySelector("img");
+    const setPicture = slot => {
+      img.src = area.images[slot];
+      caption.textContent = review.columns[slot];
+      view.setAttribute("aria-label", `${review.columns[slot]}, ${photo.file} ${area.id}`);
+    };
+    setPicture(column);
+    if (column === "a_after") updateA = setPicture;
+    const overlay = figure.querySelector(".marked-points");
+    for (const [sx, sy] of area.marks) {
+      const point = document.createElement("span");
+      point.className = "point";
+      point.style.left = 100 * (sx-x+.5) / size + "%";
+      point.style.top = 100 * (sy-y+.5) / size + "%";
+      overlay.append(point);
+    }
+    const unavailable = figure.querySelector(".unavailable-pixels");
+    for (const [gx, gy, w, h] of [[0, 0, left-x, size], [right-x, 0, x+size-right, size],
+                                  [0, 0, size, top-y], [0, bottom-y, size, y+size-bottom]]) {
+      if (!w || !h) continue;
+      const strip = document.createElement("span");
+      box(strip, gx, gy, w, h, size, size);
+      unavailable.append(strip);
+    }
+    views.push([view, frame]);
+    frame.style.width = frame.style.height = size + "px";
+    let drag = null;
+    img.addEventListener("pointerdown", event => {
+      if (event.button !== 0 || event.pointerType === "touch") return;
+      img.setPointerCapture(event.pointerId);
+      drag = [event.clientX, event.clientY, view.scrollLeft, view.scrollTop];
+      view.classList.add("panning");
+    });
+    img.addEventListener("pointermove", event => {
+      if (drag) view.scrollTo(drag[2] + drag[0] - event.clientX, drag[3] + drag[1] - event.clientY);
+    });
+    img.addEventListener("lostpointercapture", () => { drag = null; view.classList.remove("panning"); });
+    view.addEventListener("scroll", () => {
+      const {scrollLeft, scrollTop} = view;
+      const last = synced.get(view);
+      if (last?.[0] === scrollLeft && last?.[1] === scrollTop) return;
+      synced.set(view, [scrollLeft, scrollTop]);
+      for (const [other] of views) if (other !== view) move(other, scrollLeft, scrollTop);
+    });
+  }
+  const zoom = row.querySelector(".zoom");
+  let scale = 1;
+  function moveAll(cx, cy, next) {
+    scale = next;
+    for (const [view, frame] of views) {
+      frame.style.width = frame.style.height = size * scale + "px";
+      move(view, cx * scale - Math.min(view.clientWidth, size * scale) / 2,
+                 cy * scale - Math.min(view.clientHeight, size * scale) / 2);
+    }
+  }
+  zoom.addEventListener("change", () => {
+    const [first] = views[0];
+    moveAll((first.scrollLeft + Math.min(first.clientWidth, size * scale) / 2) / scale,
+            (first.scrollTop + Math.min(first.clientHeight, size * scale) / 2) / scale,
+            Number(zoom.value));
+  });
+  const markPicker = row.querySelector(".mark-select");
+  if (area.marks.length) row.querySelector(".mark-picker").hidden = false;
+  area.marks.forEach(([sx, sy], i) => markPicker.add(new Option(`Mark ${i+1} (${sx}, ${sy})`, i)));
+  markPicker.addEventListener("change", () => {
+    if (markPicker.value === "") return;
+    const [sx, sy] = area.marks[Number(markPicker.value)];
+    zoom.value = "6";
+    moveAll(sx-x+.5, sy-y+.5, 6);
+  });
+
+  function questions(field, slot, label) {
+    const buttons = field.querySelector(".question");
+    const options = [["better", label + " better"], ["same", "Looks the same"], ["worse", "Baseline better"]];
+    buttons.replaceChildren(...options.map(([value, text]) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.textContent = text;
+      button.setAttribute("aria-pressed", String(answers[id]?.[slot] === value));
+      button.addEventListener("click", () => {
+        const current = answers[id] || {};
+        if (current[slot] === value) delete current[slot];
+        else current[slot] = value;
+        if (Object.keys(current).length) answers[id] = current;
+        else delete answers[id];
+        try { localStorage.setItem(key, JSON.stringify(answers)); }
+        catch { storageAvailable = false; }
+        questions(field, slot, label);
+        [...buttons.children].find(other => other.textContent === text)?.focus();
+        updateStatus();
+      });
+      return button;
+    }));
+  }
+  const updatePlacement = () => {
+    const slot = get("placement").value;
+    updateA(slot);
+    questions(row.querySelector(".ask-a"), slot, "A");
+  };
+  get("placement").addEventListener("change", updatePlacement);
+  updatePlacement();
+  questions(row.querySelector(".ask-b"), "b", "B");
+  return row;
+}
+review.photos.forEach((photo, i) => {
+  const group = document.createElement("section");
+  group.className = "group";
+  group.id = "photo-" + i;
+  const heading = document.createElement("h2");
+  heading.textContent = `${photo.file} · +${photo.lift_ev.toFixed(2)} EV display lift`;
+  group.append(heading, ...photo.areas.map(area => buildArea(photo, area)));
+  get("photos").append(group);
+  get("photos-select").add(new Option(photo.file, group.id));
+});
+get("photos-select").addEventListener("change", event => {
+  if (event.target.value) get(event.target.value).scrollIntoView();
+  event.target.selectedIndex = 0;
+});
+const header = document.querySelector("header");
+new ResizeObserver(() => document.body.style.setProperty("--header-height", header.offsetHeight + 8 + "px")).observe(header);
+updateStatus();
+</script>
+</body>
+</html>
