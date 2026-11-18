@@ -48,6 +48,16 @@
       "sha256": "5757b930b89a03055232070e82eec88b8c99e95f5ef49f5a2fbcea927d5b7ccf"
     },
     {
+      "name": "DSC00512.ARW",
+      "bytes": 21829632,
+      "sha256": "fb77ead9db1b550df33a1d28ae5b90ebb9be91a473e84d80d40cfffada8bb6f3"
+    },
+    {
+      "name": "DSC00786.ARW",
+      "bytes": 43014656,
+      "sha256": "6b9781a0fa86cb8df93980f5b61f0bd6f86d185053ec731f67278fe5dd83f068"
+    },
+    {
       "name": "DSC00950.ARW",
       "bytes": 36667392,
       "sha256": "91762691cba4b6653848eef8deebf30d956bab9b7c44192272fc008ba9e4b5e4"
@@ -86,6 +96,11 @@
       "name": "DSC04375_DxO_clipped_target.tif",
       "bytes": 253253558,
       "sha256": "ca4c17d91ec75939cc1e59f98288849e6af47ddc07e552b9738e395a13ad23f1"
+    },
+    {
+      "name": "DSC05622.ARW",
+      "bytes": 43014656,
+      "sha256": "a0d61864b5282e03a7cabb8cb68b52ef69ae662397ce9674e031106e3be482f6"
     },
     {
       "name": "DSC06615.ARW",
@@ -181,6 +196,16 @@
       "name": "P1150601.RW2",
       "bytes": 24188928,
       "sha256": "ac1c95573033cab13927eb4d800a97bab9ec2ffa13e8c7d7840118e63c5b7b68"
+    },
+    {
+      "name": "PA310516.ORF",
+      "bytes": 16633849,
+      "sha256": "28c22e328bee6421534d6b03caa831976e1aea923d1895abfbfed4852dc2e37a"
+    },
+    {
+      "name": "PC131157.ORF",
+      "bytes": 16882570,
+      "sha256": "cb6cea13065d7aece43c8b6a4862e06581b372c2b2a3d7db56e4761ed9541bb6"
     },
     {
       "name": "Projects/DSC00950.hdrfinisher",

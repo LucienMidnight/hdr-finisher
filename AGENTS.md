@@ -367,6 +367,11 @@ speed comparison is finished. Still open:
    (`EISDIR` on `link`). Needs a tooling fix that still avoids per-run RAW
    copies.
 
+**Test photos added on the Mac (November 18):** copy `DSC00512.ARW`,
+`DSC00786.ARW`, `DSC05622.ARW`, `PA310516.ORF` and `PC131157.ORF` (noisy RAWs
+for Denoise research) into the PC's `HDR Test Images`; setup checks them against
+the manifest.
+
 **PC confirmation from the 0.9.3 focused Mac release check (November 14):**
 
 0.9.3 was released after the three Mac memory regressions in item 4 were fixed
