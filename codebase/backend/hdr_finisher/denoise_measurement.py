@@ -31,6 +31,7 @@ class _GrainPreparation:
     signature: tuple
     fit_signature: tuple
     rgb_signature: tuple
+    authored_sdr: bool
     has_colour: bool
     token: str
     fit: tuple[tuple[float, float], ...] | None
@@ -39,6 +40,14 @@ class _GrainPreparation:
     def close(self):
         if self.corrections is not None:
             self.corrections.close()
+
+
+def _uses_authored_sdr(frame, kind):
+    return (
+        kind == PreviewKind.SDR
+        and frame.sdr_reference_image is not None
+        and frame.adjustments.sdr.use_authored_base
+    )
 
 
 def source_identity(frame):
@@ -86,7 +95,7 @@ def _context(store, session_id, kind, long_edge, edit_revision, geometry_signatu
             raise HTTPException(404, str(exc)) from exc
         geometry = frame.adjustments.shared.geometry.model_dump(mode="json")
         revision = frame.edit_revision
-        authored = kind == PreviewKind.SDR and frame.sdr_reference_image is not None and frame.adjustments.sdr.use_authored_base
+        authored = _uses_authored_sdr(frame, kind)
         native = long_edge >= max(frame.image.shape[:2]) and not authored
         source = source_identity(frame)
         path = str(getattr(frame, "source_path", ""))
@@ -223,22 +232,19 @@ def create_router(store):
         frame = frame if frame is not None else library_session(session_id)
         if frame is None:
             raise HTTPException(404, "The Denoise source is unavailable.")
-        image = frame.sdr_reference_image if (
-            kind == PreviewKind.SDR and frame.sdr_reference_image is not None
-            and frame.adjustments.sdr.use_authored_base
-        ) else frame.image
+        authored_sdr = _uses_authored_sdr(frame, kind)
+        image = frame.sdr_reference_image if authored_sdr else frame.image
         native_edge = max(256, *image.shape[:2])
         key, _, _, fields = _context(store, session_id, kind, native_edge, edit_revision, geometry_signature)
         cached_model = _get(key)
         cache = frame.render_cache
         epoch = cache.source_epoch
         geometry = frame.adjustments.shared.geometry
-        authored_sdr = frame.adjustments.sdr.use_authored_base
 
         def is_current():
             if cache.source_epoch != epoch or frame.adjustments.shared.geometry != geometry:
                 return False
-            if kind == PreviewKind.SDR and frame.adjustments.sdr.use_authored_base != authored_sdr:
+            if _uses_authored_sdr(frame, kind) != authored_sdr:
                 return False
             if meta is not None:
                 return True
@@ -256,11 +262,11 @@ def create_router(store):
         fit_signature = (*base_signature, tuple((k, v) for k, v in options.items()
                                                if k not in {"method", "grain_evenness", "splotch_size"}))
         with cache.grain_preparation_lock:
+            if not is_current():
+                raise HTTPException(409, "A newer edit replaced the Denoise preparation.")
             previous = cache.grain_preparation
             if previous is not None and previous.signature == signature:
                 return {"fit": previous.fit, "token": previous.token if previous.corrections else None}
-            if not is_current():
-                raise HTTPException(409, "A newer edit replaced the Denoise preparation.")
             request = (kind, native_edge, frame.adjustments)
             direct = cache.native_source_stream(*request)
             if direct is not None:
@@ -310,7 +316,7 @@ def create_router(store):
                 if corrections is not None and not reuse_rgb:
                     corrections.close()
                 raise HTTPException(409, "A newer edit replaced the Denoise preparation.")
-            preparation = _GrainPreparation(signature, fit_signature, rgb_signature, has_colour,
+            preparation = _GrainPreparation(signature, fit_signature, rgb_signature, authored_sdr, has_colour,
                                             uuid4().hex, fit, corrections)
             cache.grain_preparation = preparation
             if not is_current():
@@ -334,7 +340,8 @@ def create_router(store):
         _, frame, _, _ = _context(store, session_id, kind, 1600, None, None)
         frame = frame if frame is not None else library_session(session_id)
         preparation = frame.render_cache.grain_preparation if frame is not None else None
-        if preparation is None or preparation.token != token or preparation.corrections is None:
+        if (preparation is None or preparation.token != token or preparation.corrections is None
+                or preparation.authored_sdr != _uses_authored_sdr(frame, kind)):
             raise HTTPException(409, "The Clean Grain preparation was replaced.")
         try:
             body = preparation.corrections.region(y, x, height, width, frame_height, frame_width,

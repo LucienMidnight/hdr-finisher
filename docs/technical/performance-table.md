@@ -1,3 +1,21 @@
+## November 20 — Grade Grain reuse between HDR and SDR
+
+MacBook Neo A18 Pro, 8 GB, 1408 × 794 points. Separate Electron profiles
+under the shared GPU lock. Canon IMG_0790.CR2 at Fit. Same Fine Grain
+preparation controls on both renditions, with SDR generated from the same
+source. Each wait ends at the exact WebGPU picture. These are single runs.
+
+| Grade action | Before | After | Result |
+| --- | ---: | ---: | --- |
+| Enable Fine Grain in SDR after HDR is ready | 0.92 s | 0.91 s | Both reuse the existing preparation. |
+| Switch to SDR after Recalculate in HDR | 13.34 s | 0.33 s | SDR reuses the refreshed result. Previously it spent 12.07 s preparing the same source again. |
+| Maximum sampled whole-app memory across the sequence | 1.63 GB | 1.55 GB | Both below the 4 GB ceiling. |
+
+Before is the `3411e81e` app. After is the implementation in this commit.
+Different preparation settings and an authored SDR base each need their
+own preparation. The locked Denoise delivery smoke returned the same
+perceptual metrics before and after.
+
 ## November 19 ? Windows Automatic Match certification
 
 Windows PC, separate Electron profiles at 2560?1440 under the shared GPU lock.

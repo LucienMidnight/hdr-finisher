@@ -85,7 +85,9 @@ The status line also shows **Recalculating**, or **Error** if the measurement fa
 
 ## HDR and SDR
 
-Denoise is separate for the HDR and SDR renditions. Set it on each one you want cleaned. When you use **Match entire HDR grade** for SDR, your HDR Denoise settings are copied across once. After that, the two stay independent.
+HDR and SDR offer the same three Denoise methods (Steve’s decision, November 20, 2026). In Grade, the two renditions reuse Fine Grain or Clean Grain preparation when they use the same source pixels and preparation settings. An authored SDR base has its own preparation.
+
+Set Denoise separately for each rendition you want cleaned. **Match entire HDR grade** copies the HDR settings to SDR. While SDR is linked to HDR, it follows the HDR settings. An independent SDR grade keeps the copied settings as its starting point and can be adjusted separately.
 
 ## Where it fits in your workflow
 

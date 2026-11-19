@@ -2283,6 +2283,7 @@ that draws the preview belongs to [preview-and-gpu](preview-and-gpu.md).
 | Decision | Date |
 | --- | --- |
 | HDR and SDR are independent branches after source interpretation. An HDR control never changes the SDR side, and the reverse. | 2026-08 |
+| “Let's share methods between HDR and SDR for now.” Both renditions offer the same Denoise methods and use the same preparation code. Grade reuses Grain preparation for identical source pixels and preparation settings, including after Recalculate. Authored SDR has its own preparation. Denoise settings remain per rendition, with the existing Match and linked-grade behaviour. | Steve, 2026-11-20 |
 | HDR controls stay continuous at neutral, keep luminance order and add no hidden ceiling. Values above the curve range pass through. | 2026-08 |
 | Detail (Texture, Clarity, Sharpen) is corrective and separate from Film Look's fixed-scale character. Global Detail runs after the colour grade and before local adjustments; local Detail runs inside each local grade. | 2026-09 |
 | Match entire HDR grade captures the whole HDR recipe (global, locals, Detail, Film Look, vignette, grain) and builds an SDR base from it. SDR controls stay as trims. Rematch and Revert are single history steps. | 2026-09 |

@@ -166,6 +166,37 @@ test('cold Grade Fit prepares Grain with the native noise measurement', async ()
   assert.deepEqual(h.calls.renders, []);
 });
 
+test('Grade shares a Grain recalculation across generated renditions and isolates an authored SDR base', async () => {
+  const h = harness();
+  h.state.denoise.hdr.controls.method = 'clean_grain';
+  h.state.denoise.sdr = structuredClone(h.state.denoise.hdr);
+  h.state.denoiseRuntime.sdr = { generation: 0 };
+  h.state.adjustments.sdr = { use_authored_base: true };
+  const calls = [];
+  h.state.gpuPreview.analyzeDenoiseProxy = async (_, lane, _grade, _edge, _revision, _source, _controls, refresh) => {
+    calls.push([lane, refresh]);
+    return true;
+  };
+  const calculate = (lane, force = false) => h.context.recalculateDenoise(lane, { force, renderAfter: false });
+
+  assert.equal(await calculate('hdr', true), true);
+  assert.equal(await calculate('sdr'), true);
+  h.state.editDocument = { source: { luminance: { sdr_rendition: 'authored' } } };
+  assert.equal(await calculate('sdr'), true);
+  assert.equal(await calculate('sdr', true), true);
+  assert.equal(await calculate('hdr'), true);
+  h.state.adjustments.sdr.use_authored_base = false;
+  assert.equal(await calculate('sdr', true), true);
+  assert.equal(await calculate('hdr'), true);
+  h.replace();
+  assert.equal(await calculate('hdr'), true);
+
+  assert.deepEqual(calls, [
+    ['hdr', 1], ['sdr', 1], ['sdr', 0], ['sdr', 1],
+    ['hdr', 1], ['sdr', 2], ['hdr', 2], ['hdr', 0],
+  ]);
+});
+
 test('expired Grain tile is cancelled and the replacement can be read', async () => {
   const requests = [];
   const uploads = [];

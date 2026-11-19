@@ -20,7 +20,7 @@ def context(tmp_path,monkeypatch):
         adjustments=AdjustmentState(),edit_revision=0,render_cache=SessionRenderCache(image,None))
     dm._models.clear()
     monkeypatch.setattr(dm,"_cache",lambda:LibraryCache(tmp_path))
-    app=FastAPI();app.include_router(dm.create_router(SimpleNamespace(get=lambda _:frame)))
+    app=FastAPI();app.include_router(dm.create_router(SimpleNamespace(get=lambda _:frame, current=lambda:frame)))
     with TestClient(app) as client:
         yield client,frame
     dm._models.clear()
@@ -79,6 +79,42 @@ def test_authored_sdr_is_separate_only_when_used(context):
     assert client.get(url.replace("/hdr?","/sdr?")).status_code==204
     frame.adjustments.sdr.use_authored_base=False
     assert client.get(url.replace("/hdr?","/sdr?")).json()==MODEL
+
+
+@pytest.mark.parametrize("method", ["fine_grain", "clean_grain"])
+def test_grain_preparation_is_shared_only_for_the_same_source_and_controls(context, method):
+    client, frame = context
+    controls = {"method": method, "color_splotches": .55}
+    base = "/api/session/test-photo/denoise-grain/"
+    region = "?x=0&y=0&width=32&height=32&frame_width=96&frame_height=64"
+
+    def prepare(lane, controls):
+        response = client.post(base + lane + "?long_edge=640&refresh=1", json=controls)
+        assert response.status_code == 200, response.text
+        token = response.json()["token"]
+        assert token
+        return token
+
+    try:
+        hdr = prepare("hdr", controls)
+        sdr = prepare("sdr", {**controls, "color_splotches": .15})
+        assert sdr == hdr
+        scene = client.get(base + f"hdr/{hdr}" + region)
+        shared = client.get(base + f"sdr/{sdr}" + region)
+        assert scene.status_code == shared.status_code == 200
+        assert scene.content == shared.content
+
+        separate = prepare("sdr", {**controls, "amount": .4})
+        assert separate != hdr
+        frame.sdr_reference_image = frame.image * .5
+        frame.render_cache.sdr_reference_image = frame.sdr_reference_image
+        assert client.get(base + f"sdr/{separate}" + region).status_code == 409
+        authored = prepare("sdr", controls)
+        assert authored != separate
+        assert client.get(base + f"sdr/{authored}" + region).status_code == 200
+        assert client.get(base + f"hdr/{authored}" + region).status_code == 409
+    finally:
+        frame.render_cache.discard_grain_preparation()
 
 
 def test_size_and_measured_geometry_keep_separate_results(context):

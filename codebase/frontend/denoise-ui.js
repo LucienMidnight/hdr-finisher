@@ -231,7 +231,18 @@ async function recalculateDenoise(lane = state.currentView, options = {}) {
   const settings = state.denoise[lane];
   if (!state.session || !settings.enabled || !state.gpuPreview?.available) return false;
   const runtime = state.denoiseRuntime[lane];
-  if (options.force && settings.controls.method !== "standard") runtime.refresh = (runtime.refresh || 0) + 1;
+  const sessionId = state.session.session_id;
+  const authored = lane === "sdr" && state.adjustments?.sdr?.use_authored_base
+    && state.editDocument?.source?.luminance?.sdr_rendition === "authored";
+  const pixels = authored ? "authoredSdr" : "scene";
+  // Recalculate replaces preparation for these pixels. Both generated
+  // renditions can use the new result, including after a switch of lane.
+  if (state.denoiseGrainRefresh?.sessionId !== sessionId) {
+    state.denoiseGrainRefresh = { sessionId, scene: 0, authoredSdr: 0 };
+  }
+  const refreshes = state.denoiseGrainRefresh;
+  if (options.force && settings.controls.method !== "standard") refreshes[pixels]++;
+  const refresh = refreshes[pixels];
   const longEdge = options.longEdge || refinementProxyLongEdge();
   const { color_splotches, ...preparationControls } = settings.controls;
   const nativePreparation = preparationControls.amount
@@ -239,15 +250,15 @@ async function recalculateDenoise(lane = state.currentView, options = {}) {
     && (preparationControls.method === "clean_grain"
       || (preparationControls.method === "fine_grain" && preparationControls.grain_evenness));
   const key = JSON.stringify([
-    state.session.session_id, lane, nativePreparation ? "native" : longEdge, geometrySignature(),
-    "source", state.repairSourceGeneration || 0, settings.analysis, runtime.refresh || 0,
+    sessionId, lane, nativePreparation ? "native" : longEdge, geometrySignature(),
+    pixels, state.repairSourceGeneration || 0, settings.analysis, refresh,
     settings.controls.method === "standard" ? "standard" : preparationControls,
   ]);
   // Pan, enable and the first edit can all ask for the same setup. Sharing it
   // keeps them from repeatedly replacing the selector and measuring again.
   let pending = runtime.analysisInFlight;
   if (pending?.key !== key) {
-    pending = { key, promise: recalculateDenoiseAnalysis(lane, { longEdge, renderAfter: false }) };
+    pending = { key, promise: recalculateDenoiseAnalysis(lane, { longEdge, refresh, renderAfter: false }) };
     runtime.analysisInFlight = pending;
   }
   let ready;
@@ -288,7 +299,7 @@ async function recalculateDenoiseAnalysis(lane = state.currentView, options = {}
       state.editRevision,
       "source",
       denoiseRendererControls(settings.controls),
-      runtime.refresh || 0,
+      options.refresh ?? 0,
       Math.max(256, state.session.source?.width || 0, state.session.source?.height || 0),
     );
     if (!isCurrent()) return false;
