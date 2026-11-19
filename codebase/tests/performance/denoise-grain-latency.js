@@ -59,7 +59,7 @@ async function measurePicture(page, button, method, { pan = false } = {}) {
           return;
         }
         final = {
-          serial: detail.serial, width: accepted.width, height: accepted.height, edge: detail.longEdge,
+          accepted, width: accepted.width, height: accepted.height, edge: detail.longEdge,
           execution: detail.execution, samePreparation: samePreparation(),
         };
       };
@@ -86,7 +86,7 @@ async function measurePicture(page, button, method, { pan = false } = {}) {
         // drained so a later replacement can never be scored as the final one.
         if (final && final.at === undefined) final.at = performance.now();
         const idle = ++frames >= 3 && !state.zoomRefinementTimer && previewIdleNow();
-        if (idle && final && final.serial === state.gpuRenderSerial) {
+        if (idle && final && final.accepted === state.acceptedPresentation) {
           finish(resolve, { ...final, presented: true, observedAt: performance.now() });
         } else if (idle && pan && first === undefined) {
           // The compositor can reposition a complete canvas without a draw.
@@ -160,8 +160,19 @@ async function measurePicture(page, button, method, { pan = false } = {}) {
         const backend = backendLog(harness, result.timeStart, result.timeEnd, method);
         console.log(JSON.stringify({ name, method, action, ...result, ...backend }));
       };
-      for (const method of ["fine_grain", "clean_grain"]) {
-        for (const zoom of ["Fit", "100%"]) {
+      const setZoom = async target => {
+        if (await page.locator(target).evaluate(el => el.classList.contains("active"))) return;
+        await page.locator(target).click();
+        await page.waitForFunction(() => state.acceptedPresentation?.exact
+          && state.acceptedPresentation.processedLongEdge === requiredProcessingLongEdge()
+          && previewIdleNow(), null, { timeout: 90000 });
+      };
+      const onlyExport = process.argv.includes("--export-only");
+      const nativeOnly = process.argv.includes("--native-only");
+      const methods = process.argv.includes("--clean-only") ? ["clean_grain"] : ["fine_grain", "clean_grain"];
+      for (const method of methods) {
+        const zooms = onlyExport ? [] : (nativeOnly ? ["100%"] : ["Fit", "100%"]);
+        for (const zoom of zooms) {
           await page.evaluate(async method => {
             if (state.denoise[state.currentView].enabled) await setDenoiseEnabled(false);
             await commitDenoiseControl("method", method);
@@ -171,10 +182,7 @@ async function measurePicture(page, button, method, { pan = false } = {}) {
             runtime.refresh = (runtime.refresh || 0) + 1;
             runtime.dirty = true;
           }, method);
-          const targetZoom = zoom === "Fit" ? "#zoom-fit" : "#zoom-actual";
-          if (!await page.locator(targetZoom).evaluate(el => el.classList.contains("active"))) {
-            await measurePicture(page, targetZoom, null);
-          }
+          await setZoom(zoom === "Fit" ? "#zoom-fit" : "#zoom-actual");
           await record(method, `first preparation at ${zoom}`, "#denoise-bypass");
           if (zoom === "Fit") await record(method, "Recalculate at Fit", "recalculate");
           if (zoom === "100%") {
@@ -183,11 +191,12 @@ async function measurePicture(page, button, method, { pan = false } = {}) {
             await record(method, "pan at 100%", null, { pan: true });
           }
         }
-        if (!process.argv.includes("--export")) continue;
-        await page.evaluate(() => setDenoiseEnabled(false));
-        if (!await page.locator("#zoom-fit").evaluate(el => el.classList.contains("active"))) {
-          await measurePicture(page, "#zoom-fit", null);
-        }
+        if (!(onlyExport || process.argv.includes("--export"))) continue;
+        await page.evaluate(async method => {
+          if (state.denoise[state.currentView].enabled) await setDenoiseEnabled(false);
+          await commitDenoiseControl("method", method);
+        }, method);
+        await setZoom("#zoom-fit");
         await measurePicture(page, "#denoise-bypass", method);
         const target = path.join(output, `${name}-${method}.jpg`);
         await harness.selectExportPath(target);
