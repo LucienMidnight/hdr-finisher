@@ -20,8 +20,8 @@ def install():
     render = exporters._render_export_branch
     execute = exporters._execute_export
 
-    def capture_branch(session, settings, kind, adjustments):
-        pixels = render(session, settings, kind, adjustments)
+    def capture_branch(session, settings, kind, adjustments, **kwargs):
+        pixels = render(session, settings, kind, adjustments, **kwargs)
         folder = current.get()
         if folder is not None:
             np.save(folder / f"{kind.value}.npy", pixels, allow_pickle=False)
