@@ -45,9 +45,10 @@ fixing it.
 - The specks the control was approved for are still evened out. Keep the
   research counts and marked-spot results within a stated tolerance, and
   report them.
-- **Not allowed:** the old two-similar-neighbours "pattern" check must not
-  become a veto for removal. A cross-channel test of whether the light is
-  real is fine.
+- Keep the existing two-similar-neighbours rule and its test unchanged; they
+  are part of the November 17 approved control. Do not fix this by adding or
+  widening neighbour-similarity vetoes. Add a cross-channel test of whether
+  the light is real, alongside the existing rule, as an extra protection.
 
 This touches RAW development for every photo with the control on: Grade,
 Library, Proof and export. Run every check that covers it.
