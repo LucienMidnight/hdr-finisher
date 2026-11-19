@@ -12,9 +12,14 @@ STRENGTH = .75
 MAX_AREA = 5
 BORDER = 4  # Same-phase pixels, as in the research (eight sensor pixels).
 CONTEXT = 24  # Two medians + a six-sample component witness, in sensor rows.
+LIGHT_SIGMA = 3.5
+LIGHT_FLOOR = .005
+LIGHT_NEIGHBOURHOOD = np.ones((3, 3), np.uint8)
+LIGHT_MARGIN = np.ones((5, 5), np.uint8)
 
 
-def tame_plane(plane, shot, read, threshold=2.5, *, absolute_floor=ABSOLUTE_FLOOR):
+def tame_plane(plane, shot, read, threshold=2.5, *, absolute_floor=ABSOLUTE_FLOOR,
+               light_evidence=None):
     """Soften both signed tails, never replace a median.
 
     The floor can be overridden for qualification, not through the app. Count component
@@ -34,6 +39,8 @@ def tame_plane(plane, shot, read, threshold=2.5, *, absolute_floor=ABSOLUTE_FLOO
     np.maximum(sigma, np.float32(1e-12), out=sigma)
     residual = source - centre
     distance = np.abs(residual) / sigma
+    if light_evidence is not None:
+        light_evidence[:] = (residual > LIGHT_FLOOR) & (distance > LIGHT_SIGMA)
     candidates = distance > threshold
     candidates &= ~cv2.dilate((source >= .98).astype('uint8'), np.ones((5, 5), 'uint8')).astype(bool)
     candidates[:BORDER] = candidates[-BORDER:] = False
@@ -69,10 +76,21 @@ def filter_sensor(mosaic, config, threshold=2.5, *, absolute_floor=ABSOLUTE_FLOO
         return result
     if len(config['noise']) != 4 or sorted(config['colours']) != [0, 1, 1, 2]:
         raise ValueError('Four Bayer noise phases required')
-    for phase, noise in enumerate(config['noise']):
+    evidence = np.zeros((3, *image.shape), dtype=np.uint8)
+    for phase, (noise, colour) in enumerate(zip(config['noise'], config['colours'])):
         rows, columns = slice(phase // 2, None, 2), slice(phase % 2, None, 2)
         result[rows, columns] = tame_plane(image[rows, columns], noise['a'], noise['b'], threshold,
-                                          absolute_floor=absolute_floor)
+                                          absolute_floor=absolute_floor,
+                                          light_evidence=evidence[colour, rows, columns])
+    # Bayer samples are staggered. Look for positive detail in all three
+    # colours within one sensor pixel, then protect the edge of that light.
+    light = cv2.dilate(evidence[0], LIGHT_NEIGHBOURHOOD)
+    for channel in evidence[1:]:
+        light &= cv2.dilate(channel, LIGHT_NEIGHBOURHOOD)
+    light = cv2.dilate(light, LIGHT_MARGIN).astype(bool)
+    # Only restore readings reduced by the positive clamp. Dark specks still
+    # use the original rule, even beside a light.
+    np.copyto(result, image, where=light & (result < image))
     return result
 
 

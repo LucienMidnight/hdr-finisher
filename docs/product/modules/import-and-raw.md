@@ -10,25 +10,31 @@ blobs can remain. Raising the threshold is not a guarantee of protecting stars:
 the research's component detector can split a feature at higher thresholds.
 Denoise defaults and the original hot-pixel algorithm are unchanged.
 
-**Open, November 19 (Steve's app test):** at ×2.5 the control turns a small
-light on the railing pole (top left of the screenshots) a harsh, saturated
-blue. With the control off the same light is soft and purplish. Likely cause,
-to be confirmed: the clamp treats each colour channel's sensor pixels
-separately. On a light only a few pixels wide, it pulls one channel (here
-probably red) down more than the others, which shifts the light's colour.
-Real light is bright in every channel at once; a noise speck usually is not.
-Fix this before the control can leave Experimental. Steve's screenshots:
-`/Users/stevenfuncke/.t3/userdata/attachments/mcp-launch-1e3062f0b0c5ee8fd004b6d058f3254fda6b3cf735f8d4aaa82bddf74453a430-a600ace9-a0c3-475a-af2b-b85b88ad1948.png`
-(on) and
-`/Users/stevenfuncke/.t3/userdata/attachments/mcp-launch-1e3062f0b0c5ee8fd004b6d058f3254fda6b3cf735f8d4aaa82bddf74453a430-ee8d4b0c-d125-42bb-9c00-a19e8869ce19.png`
-(off).
+**November 19 (Steve’s app test):** on the atrium RAW `DSC01212.ARW`,
+the old clamp reduced real signal in all three channels around a small railing
+light, by different amounts across the Bayer samples. The finished SDR centre
+went from soft purple (95, 89, 127) to saturated blue (42, 82, 138). Positive
+signals in red, green and blue now protect the light and the pixels immediately
+around it. The centre returns to (95, 89, 127), and the 9×9 finished SDR
+window goes from ΔE 2000 mean 7.93 / p95 30.41 against Off to 0.00 / 0.00.
+Four nearby lights also match Off in their 9×9 windows. Cached developments
+and noise fits for recipes with the option on use a fresh source identity.
+On the noisy reference set, the additional protection spares 172 of 208,976
+previously changed Canon readings, 31 of 338,068 Sony readings and 35 of
+417,576 portrait readings. All three retain over 99.6% of the total absolute
+correction. The atrium itself spares 14,830 of 49,120 previously changed
+readings. Those are whole-photo sensor changes, including changes on real
+features. The fixed marked-spot comparison lost no successes, and Clean Grain
+brought two more Canon colour spots to grain level.
 
 Order: optional hot-pixel removal → optional signed per-phase soft clamp →
 Opposed-color evidence/reconstruction → signed AHD → WB/camera transform →
 Edge colour → Denoise. The clamp uses the 5×5 same-phase median, sensor-model
 noise floor raised by residual MAD, smoothstep threshold ramp, fixed envelope
 1.5 and strength .75, both signs, eight-connected same-sign area ≤5 counted
-before the always-on two-similar-neighbours veto. Preserve the research's
+before the always-on two-similar-neighbours veto. After the existing clamp,
+only positive reductions are restored around the confirmed three-colour light.
+Preserve the research's
 outer four same-phase samples (eight sensor pixels), and near-saturation
 ≥.98 with its 5×5 same-phase context. No median replacement or zero floor.
 Changed readings are encoded into the existing DN buffer, retaining signed

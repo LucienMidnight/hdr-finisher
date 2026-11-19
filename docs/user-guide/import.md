@@ -86,7 +86,8 @@ Check important details at 100%. It is an optional aid, not a Denoise replacemen
 **Reset** turns both options off and restores Threshold to ×2.5.
 
 The filter works before the RAW is demosaiced or highlights are reconstructed.
-It protects nearby signs of real light and clipped areas, but can occasionally
+It protects small lights that show up across red, green and blue sensor
+readings, and clipped areas. It can still occasionally
 remove a real tiny light, such as a star or a glint. Check those details at
 100% and leave it off when it is not needed. It does not fix cold/dead pixels
 or use a camera defect map. X-Trans, linear DNG and finished images show the

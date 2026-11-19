@@ -11,6 +11,13 @@
 
 ## November 19, 2026: experimental grain methods
 
+When Even out harsh specks is enabled, Bayer development now protects small
+lights before signed AHD. Positive residuals above 3.5 local sigma and
+0.005 sensor units in red, green and blue must agree within the same 3×3
+sensor neighborhood. The two-pixel margin around that support restores only
+readings lowered by the clamp. The existing same-phase speck rules and dark
+correction still apply. All three Denoise methods receive the protected source.
+
 `DenoiseLiveControls.method` selects the reconstruction. Standard retains its
 `adaptive-atrous-v1` model, control mapping, shaders and tile margin. The
 experimental methods share its noise measurement. The backend fits scale and

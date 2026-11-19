@@ -30,6 +30,25 @@ def test_supported_gaussian_star_and_large_features_are_preserved():
     np.testing.assert_array_equal(specks.filter_sensor(source, config()), source)
 
 
+@pytest.mark.parametrize("colours", [[0, 1, 1, 2], [1, 2, 0, 1]])
+def test_small_light_keeps_its_colour_and_isolated_specks_are_still_tamed(colours):
+    settings = {**config(), "colours": colours}
+    source = np.zeros((64, 64), np.float32)
+    light = np.s_[30:32, 30:32]
+    source[light] = np.take([.06, .10, .08], colours).reshape(2, 2)
+    source[28, 30] = -.04
+    source[20, 20] = .10
+    actual = specks.filter_sensor(source, settings)
+    np.testing.assert_array_equal(actual[light], source[light])
+    assert source[28, 30] < actual[28, 30] < 0
+    assert 0 < actual[20, 20] < source[20, 20]
+
+    # Two greens still count as one colour, so losing blue removes protection.
+    row, column = divmod(colours.index(2), 2)
+    source[30 + row, 30 + column] = 0
+    assert np.max(specks.filter_sensor(source, settings)[light]) < np.max(source[light])
+
+
 def test_near_saturation_context_and_research_border_are_untouched():
     source = np.zeros((64, 64), np.float32)
     source[24, 24], source[24, 26], source[40, 40], source[6, 20] = .98, .1, 1.1, .2
