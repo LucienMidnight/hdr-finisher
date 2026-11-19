@@ -1,3 +1,56 @@
+## November 19, 2026: Denoise zoom and delivery memory
+
+Native Denoise zoom now draws only the visible region and its pan margin.
+The viewer keeps the last complete picture until the new one is ready. JPEG
+Ultra HDR can use the existing bounded CPU grade when its GPU delivery would
+exceed the memory ceiling and the graph supports strips. JPEG Ultra HDR
+input packing and decoded peak verification work in rows. The wait and
+memory results, including any remaining overages, are in the
+[performance table](../../technical/performance-table.md).
+
+Warm native zoom and the isolated full-size Standard export of the Sony
+passed the 4 GB gate. Sony Standard full-size Proof still exceeds the gate
+while building its decoded reference views. Fine and Clean Sony delivery
+needs a fresh-profile check after the full-size Proof memory work, and Canon
+Standard delivery needs rechecking with the final GPU admission estimate.
+
+Fine-to-Clean Grain now reuses the native Fine Grain pixels for the same
+source, geometry, noise fit and base controls. The 110% switch took 2.63 s on
+the Canon and 5.05 s on the Sony, from 13.54 s and 32.96 s. Changing a base
+control still prepares fresh pixels. The app publishes the Clean Grain
+result when the colour pass completes.
+
+The four-photo comparison covers 54 fixed crops across all three methods.
+The finished CPU crops from the Standard and Fine Grain preparations were
+identical to the reference. Clean Grain's largest crop mean and p99 were
+0.00037 and 0.0051 for SDR ΔE 2000, and 0.00112 and 0.0169 for HDR ΔE ITP.
+Every marked count held. Clean Grain retained 13 colour spots and 1 pit on
+the Canon, 22 and 2 on the Sony, and 13 and 4 on the portrait.
+
+### Whole-photo GPU preparation estimate
+
+The trial stopped at the estimate. The candidate would reduce grain energy
+across the whole photo, then filter tiles and read back their finished
+pixels to the native scratch file. Clean Grain would add colour cleanup on
+the same native grid. The existing 110% Fine Grain writer held its lock for
+6.17 s Canon and 19.47 s Sony. It could overlap GPU filtering, but it starts
+after the grain fit and still has to finish before the final draw.
+
+Using Standard's measured whole-image GPU draw of 0.55 s Canon and 1.72 s
+Sony as a planning proxy for the fit pass, and the observed 0.57 s and
+0.81 s from the end of preparation to the final frame, makes the estimate
+with the current writer **7.5–9 s Canon and 22–26 s Sony**. The Sony write
+time alone exceeds the 17 s goal. For cold Clean Grain the corresponding
+estimate is **8.5–12 s Canon and 22–29 s Sony**. Its 110% baseline spent
+7.46 s and 18.99 s in the locked writer. The range allows for the GPU colour
+pass to overlap writing once the global fit is ready.
+
+A native input and prepared output on the GPU at once would add about
+0.58 GB Canon or 1.36 GB Sony. Bounded tiles would need an estimated
+0.12–0.20 GB of additional GPU scratch, transfers and readback on this
+unified-memory Mac. These are projections, with measured native scratch
+writing as the limiting step.
+
 ## November 19, 2026: Denoise speed baseline and acceptance
 
 The Denoise reference covers Standard, Fine Grain and Clean Grain at

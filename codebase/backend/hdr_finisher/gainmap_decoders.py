@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import contextmanager
 import math
 import json
 import mmap
@@ -90,6 +91,27 @@ def parse_jpeg_gain_map_probe(text: str, *, strict: bool = True) -> JPEGGainMapP
     )
 
 
+@contextmanager
+def reconstructed_ultrahdr_rgba(path, width, height, *, cancelled=None):
+    """Open the native decoder's half-float HDR plane without loading it."""
+    ultrahdr = resolve_binary("ultrahdr_app")
+    if ultrahdr is None:
+        raise GainMapDecodeError("JPEG Ultra HDR input requires the bundled ultrahdr_app decoder.")
+    # Bundled libultrahdr 1.4.0 CLI has no jobs option; retain its native scheduler.
+    with TemporaryDirectory(prefix="hdr_finisher_ultrahdr_decode_") as temp_name:
+        raw_path = Path(temp_name) / "hdr-linear-rgba-f16.raw"
+        _run([str(ultrahdr), "-m", "1", "-j", str(path), "-o", "0", "-O", "4", "-z", str(raw_path)],
+             cancelled=cancelled)
+        expected_values = width * height * 4
+        with raw_path.open("rb") as raw:
+            actual_size = raw_path.stat().st_size
+            if actual_size != expected_values * 2:
+                raise GainMapDecodeError(
+                    f"libultrahdr returned {actual_size // 2} half-float values; expected {expected_values}."
+                )
+            yield raw
+
+
 def decode_ultrahdr_jpeg(
     path: Path,
     *,
@@ -106,8 +128,6 @@ def decode_ultrahdr_jpeg(
     if progress:
         progress("metadata", "Inspecting JPEG Ultra HDR gain-map metadata")
     gain = inspect_jpeg_gain_map(path)
-    ultrahdr = resolve_binary("ultrahdr_app")
-    assert ultrahdr is not None  # inspect_jpeg_gain_map already enforced this.
 
     with Image.open(path) as image:
         raw_width, raw_height = image.size
@@ -136,33 +156,10 @@ def decode_ultrahdr_jpeg(
         encoded_sdr, _srgb_eotf, cancelled=cancelled
     )
 
-    # Bundled libultrahdr 1.4.0 CLI has no jobs option; retain its native scheduler.
-    with TemporaryDirectory(prefix="hdr_finisher_ultrahdr_decode_") as temp_name:
-        raw_path = Path(temp_name) / "hdr-linear-rgba-f16.raw"
-        if progress:
-            progress("hdr_reconstruction", "Reconstructing JPEG Ultra HDR gain map")
-        _run(
-            [
-                str(ultrahdr),
-                "-m",
-                "1",
-                "-j",
-                str(path),
-                "-o",
-                "0",
-                "-O",
-                "4",
-                "-z",
-                str(raw_path),
-            ],
-            cancelled=cancelled,
-        )
-        expected_values = raw_width * raw_height * 4
-        decoded = np.fromfile(raw_path, dtype="<f2")
-        if decoded.size != expected_values:
-            raise GainMapDecodeError(
-                f"libultrahdr returned {decoded.size} half-float values; expected {expected_values}."
-            )
+    if progress:
+        progress("hdr_reconstruction", "Reconstructing JPEG Ultra HDR gain map")
+    with reconstructed_ultrahdr_rgba(path, raw_width, raw_height, cancelled=cancelled) as raw:
+        decoded = np.fromfile(raw, dtype="<f2")
         decoded = decoded.astype(np.float32).reshape(raw_height, raw_width, 4)[..., :3]
 
     # libultrahdr's linear output uses 1.0 == 203 nits. Normalize once into

@@ -30,6 +30,8 @@ _lock = RLock()
 class _GrainPreparation:
     signature: tuple
     fit_signature: tuple
+    rgb_signature: tuple
+    has_colour: bool
     token: str
     fit: tuple[tuple[float, float], ...] | None
     corrections: object | None
@@ -246,8 +248,12 @@ def create_router(store):
             return store.current() is frame
 
         options = controls.model_dump(exclude={"color_splotches"})
-        signature = (key, epoch, geometry_signature, refresh, tuple(options.items()))
-        fit_signature = (*signature[:-1], tuple((k, v) for k, v in options.items()
+        model_signature = json.dumps(cached_model["model"], sort_keys=True) if cached_model else None
+        base_signature = (key, epoch, geometry.model_dump_json(), refresh, model_signature)
+        signature = (*base_signature, tuple(options.items()))
+        rgb_signature = (*base_signature, tuple((k, v) for k, v in options.items()
+                                               if k not in {"method", "splotch_size"}))
+        fit_signature = (*base_signature, tuple((k, v) for k, v in options.items()
                                                if k not in {"method", "grain_evenness", "splotch_size"}))
         with cache.grain_preparation_lock:
             previous = cache.grain_preparation
@@ -272,6 +278,9 @@ def create_router(store):
                 model = AdaptiveNoiseModel(value["a"], value["b"], value["c"],
                                            tuple(tuple(row) for row in value["band_sigmas"]))
             settings = AdaptiveControls(**controls.model_dump())
+            has_colour = settings.method == "clean_grain"
+            reuse_rgb = (has_colour and previous is not None and not previous.has_colour
+                         and previous.rgb_signature == rgb_signature and previous.corrections is not None)
             fit = None
             fit_started = perf_counter()
             if settings.grain_evenness and settings.amount and settings.luminance:
@@ -281,19 +290,26 @@ def create_router(store):
                     fit = fit_grain(height, width, read, model, settings)
             fitted = perf_counter()
             corrections = None
-            cache.discard_grain_preparation()
-            if settings.amount and (settings.luminance or settings.color_noise):
-                try:
-                    corrections = GrainPreparation(height, width, read, model, settings, fit, is_current, _cache())
-                except InterruptedError as error:
-                    raise HTTPException(409, str(error)) from error
-                except OSError as error:
-                    raise HTTPException(507, str(error)) from error
+            tile_timings = {}
+            try:
+                if reuse_rgb:
+                    corrections = previous.corrections
+                    tile_timings = corrections.add_colour(settings, is_current)
+                else:
+                    cache.discard_grain_preparation()
+                    if settings.amount and (settings.luminance or settings.color_noise):
+                        corrections = GrainPreparation(height, width, read, model, settings, fit, is_current, _cache())
+                        tile_timings = corrections.tile_timing_ms
+            except InterruptedError as error:
+                raise HTTPException(409, str(error)) from error
+            except OSError as error:
+                raise HTTPException(507, str(error)) from error
             if not is_current():
-                if corrections is not None:
+                if corrections is not None and not reuse_rgb:
                     corrections.close()
                 raise HTTPException(409, "A newer edit replaced the Denoise preparation.")
-            preparation = _GrainPreparation(signature, fit_signature, uuid4().hex, fit, corrections)
+            preparation = _GrainPreparation(signature, fit_signature, rgb_signature, has_colour,
+                                            uuid4().hex, fit, corrections)
             cache.grain_preparation = preparation
             if not is_current():
                 cache.discard_grain_preparation()
@@ -301,7 +317,7 @@ def create_router(store):
         finished = perf_counter()
         log("denoise_grain_prepared", **fields, method=settings.method, width=width, height=height,
             duration_ms=(finished-started)*1000, fit_ms=(fitted-fit_started)*1000,
-            filter_ms=(finished-fitted)*1000, tile_worker_ms=corrections.tile_timing_ms if corrections else {},
+            filter_ms=(finished-fitted)*1000, tile_worker_ms=tile_timings, reused_rgb=reuse_rgb,
             disk_bytes=width * height * 16 if corrections else 0)
         return {"fit": preparation.fit, "token": preparation.token if corrections else None}
 
@@ -319,7 +335,8 @@ def create_router(store):
         if preparation is None or preparation.token != token or preparation.corrections is None:
             raise HTTPException(409, "The Clean Grain preparation was replaced.")
         try:
-            body = preparation.corrections.region(y, x, height, width, frame_height, frame_width)
+            body = preparation.corrections.region(y, x, height, width, frame_height, frame_width,
+                                                 colour=preparation.has_colour)
         except ValueError as error:
             raise HTTPException(400, str(error)) from error
         except InterruptedError as error:

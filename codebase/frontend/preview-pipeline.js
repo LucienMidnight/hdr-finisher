@@ -482,6 +482,7 @@ function applyRawPreview(frame) {
   }
   canvas.width = frame.width;
   canvas.height = frame.height;
+  canvas.hdrFrameRegion = null;
   context.putImageData(new ImageData(frame.raw, frame.width, frame.height), 0, 0);
   els.previewImage.style.display = "none";
   canvas.style.display = "block";
@@ -649,6 +650,13 @@ async function renderGpuDraftInner(
     : state.previewGeneration[lane];
   const requestedGeometrySignature = geometrySignature();
   if (state.denoise?.[lane]?.enabled && !state.denoiseRuntime?.[lane]?.showOriginal) {
+    if (!allowInactive) {
+      const regionOnly = Boolean(request.viewport && nativeDenoiseViewport(lane)
+        && longEdge === requiredProcessingLongEdge() && state.gpuPreview.executionOverride !== "direct");
+      if (regionOnly) state.panSourceController?.abort();
+      await state.gpuPreview.retireDenoiseZoomResources?.(sessionId, lane, longEdge, regionOnly);
+      if (request.isCurrent?.() === false) return refuse("superseded-before-denoise-preparation");
+    }
     const expectedIdentity = `${sessionId}:${lane}:${longEdge}:${requestedGeometrySignature}:source`;
     const denoise = state.gpuPreview?.diagnosticsSnapshot?.().denoise;
     const runtime = state.denoiseRuntime[lane];
@@ -674,16 +682,23 @@ async function renderGpuDraftInner(
     ? []
     : JSON.parse(JSON.stringify(localAdjustments()));
   const maskOverlay = gpuLumaMaskOverlayOptions();
+  const frameSize = geometrySignature() === requestedGeometrySignature ? gpuFrameSizeAt(longEdge) : null;
+  const boundedPresentation = !allowInactive && nativeDenoiseViewport(lane) && Boolean(request.viewport);
+  // A scroll event can run while the old Fit bitmap is still mounted. Use
+  // the requested processing dimensions for this native viewport.
+  const viewport = boundedPresentation && frameSize
+    ? visibleOutputRect(frameSize.width, frameSize.height) : request.viewport;
   const sourceOptions = {
     tier,
     applicationGeneration: generation,
-    viewport: request.viewport || null,
+    viewport: viewport || null,
     // The frame this pass will produce, so that the first magnified pass can
     // fetch only the region it draws.
-    frameSize: geometrySignature() === requestedGeometrySignature ? gpuFrameSizeAt(longEdge) : null,
+    frameSize,
     roiCatchUp,
     panPass,
     noiseView: denoiseNoiseViewActive(lane),
+    boundedPresentation,
     // Adaptive reconstruction reads ungraded source pixels. A slider changes
     // the render, but leaves these pixels useful to its replacement. Keep the
     // load alive while the photo and geometry remain the same.
@@ -775,7 +790,8 @@ async function renderGpuDraftInner(
     // upload and that upload is exactly the cost the coarse frame buys down.
     state.previewLatencyController?.record({ graph: previewGraphTimingKey(lane), edge: longEdge,
       exactEdge, visiblePixels: visibleEdge * visibleEdge, elapsedMs: performance.now() - renderStartedAt });
-    setZoomMode(state.zoomMode);
+    if (state.zoomMode === "custom" && boundedPresentation) applyZoomGeometry();
+    else setZoomMode(state.zoomMode);
     renderReadouts();
       if (hideStatus) hidePreviewMessage();
       const submittedAt = performance.now();
@@ -873,7 +889,19 @@ function clearPreviewImage() {
 
 function activePreviewElement() {
   if (els.chromeProofImage?.style.display !== "none") return els.chromeProofImage;
-  return els.previewCanvas.style.display !== "none" ? els.previewCanvas : els.previewImage;
+  if (els.previewCanvas.style.display === "none") return els.previewImage;
+  return els.previewCanvas.hdrFrameRegion ? els.previewCanvas.parentElement : els.previewCanvas;
+}
+
+function previewCanvasFrameSize() {
+  const canvas = els.previewCanvas;
+  return { width: canvas.hdrFrameRegion?.frameWidth || canvas.width,
+    height: canvas.hdrFrameRegion?.frameHeight || canvas.height };
+}
+
+function visiblePreviewCanvasRect() {
+  const { width, height } = previewCanvasFrameSize();
+  return visibleOutputRect(width, height);
 }
 
 /**
@@ -891,7 +919,7 @@ function visibleOutputRect(outputWidth, outputHeight) {
   const width = Math.max(1, Math.floor(Number(outputWidth) || 0));
   const height = Math.max(1, Math.floor(Number(outputHeight) || 0));
   const canvas = els.previewCanvas;
-  const box = canvas.getBoundingClientRect();
+  const box = (canvas.hdrFrameRegion ? canvas.parentElement : canvas).getBoundingClientRect();
   if (!(box.width > 0 && box.height > 0)) return null;
   const viewport = els.dropzone.getBoundingClientRect();
   const left = Math.max(box.left, viewport.left);
@@ -1169,7 +1197,7 @@ function prepareInactivePreview({ immediate = false } = {}) {
 async function holdSourceForPanning(lane, longEdge) {
   // The view may have left this size since the catch-up was armed.
   if (!state.session || lane !== state.currentView || !gpuPreviewEligible(lane)
-    || nativeGrainViewport(lane) || requiredProcessingLongEdge() !== longEdge
+    || nativeDenoiseViewport(lane) || requiredProcessingLongEdge() !== longEdge
     || !state.gpuPreview?.holdSourceForPanning) return;
   const sessionId = state.session.session_id;
   const signature = geometrySignature();

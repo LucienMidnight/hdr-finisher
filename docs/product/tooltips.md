@@ -529,8 +529,8 @@ Clipped lane, scope, preview and filename labels use their visible text; dynamic
 | Control / visible name | Text | Flags | ID and source |
 | --- | --- | --- | --- |
 | handle aria-label | &#96;${orientation} guide ${guideIndex + 1} ${pointName}. Use arrow keys to move; Shift moves ten pixels.&#96; | dynamic expression | codebase/frontend/geometry-tools.js:427 · [source](../../codebase/frontend/geometry-tools.js#L427) |
-| geometryReset.title | Reset all Crop & Rotate values | fixed | codebase/frontend/geometry-tools.js:1307 · [source](../../codebase/frontend/geometry-tools.js#L1307) |
-| geometryReset aria-label | Reset all Crop & Rotate values | name only (fallback candidate) | codebase/frontend/geometry-tools.js:1308 · [source](../../codebase/frontend/geometry-tools.js#L1308) |
+| geometryReset.title | Reset all Crop & Rotate values | fixed | codebase/frontend/geometry-tools.js:1308 · [source](../../codebase/frontend/geometry-tools.js#L1308) |
+| geometryReset aria-label | Reset all Crop & Rotate values | name only (fallback candidate) | codebase/frontend/geometry-tools.js:1309 · [source](../../codebase/frontend/geometry-tools.js#L1309) |
 
 ### grade paste
 
@@ -1200,7 +1200,7 @@ Clipped lane, scope, preview and filename labels use their visible text; dynamic
 
 | Control / visible name | Text | Flags | ID and source |
 | --- | --- | --- | --- |
-| replacement aria-label | canvas.getAttribute("aria-label") &#124;&#124; "Settled comparison preview" | dynamic expression | codebase/frontend/preview-pipeline.js:505 · [source](../../codebase/frontend/preview-pipeline.js#L505) |
+| replacement aria-label | canvas.getAttribute("aria-label") &#124;&#124; "Settled comparison preview" | dynamic expression | codebase/frontend/preview-pipeline.js:506 · [source](../../codebase/frontend/preview-pipeline.js#L506) |
 
 ### range controls
 

@@ -264,9 +264,9 @@ function initializePreviewScheduler() {
       // when that costs the backend nothing. With a hard-edged mask in play it
       // would compile that mask for the whole image, which is the stall this
       // route exists to remove; the pan pass draws what the view reaches.
-      // Native grain can read its finished source from disk as the view
-      // reaches it. Avoid a second full GPU frame for that follow-up.
-      canCatchUp: (lane, longEdge) => !nativeGrainViewport(lane) && (
+      // Native Denoise can reconstruct or read the next visible region as
+      // the view reaches it. Avoid a whole native source and follow-up draw.
+      canCatchUp: (lane, longEdge) => !nativeDenoiseViewport(lane) && (
         state.roiPreviewMode === "refinement" || Boolean(
           state.session && state.gpuPreview?.catchUpNeedsNoBackendMasks?.(
             state.session.session_id, lane, longEdge, geometrySignature(),
@@ -384,7 +384,7 @@ function initializePreviewScheduler() {
       refusal: state.lastGpuDraftRefusal,
     }),
     panRefinement: () => requestRoiPanRefinement(),
-    visibleOutputRect: () => visibleOutputRect(els.previewCanvas.width, els.previewCanvas.height),
+    visibleOutputRect: visiblePreviewCanvasRect,
     // Diagnostic view of the immutable viewport contract. The renderer builds
     // its own frame-anchored request from the actual proxy and composed halo;
     // this app-level version uses the selected tier and is for inspection.
@@ -1004,10 +1004,9 @@ function bindEvents() {
     // The pan itself is compositor-only; this updates the coordinator's
     // viewport model and schedules the deferred follow-up that refines a newly
     // exposed strip.
-    state.renderCoordinator?.noteViewport(
-      state.currentView,
-      visibleOutputRect(els.previewCanvas.width, els.previewCanvas.height),
-    );
+    const edge = requiredProcessingLongEdge();
+    const frame = gpuFrameSizeAt(edge) || approximateGpuFrameSizeAt(edge);
+    state.renderCoordinator?.noteViewport(state.currentView, visibleOutputRect(frame.width, frame.height));
     noteViewerPan();
   }, { passive: true });
   // Press and drag pans continuously; keyboard activation centres the view.

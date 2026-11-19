@@ -233,7 +233,7 @@ class GrainPreparation:
         margin = LARGE_COLOUR_MARGIN if broad else SMALL_COLOUR_MARGIN
         size = adaptive.TILE_SIZE - 2 * margin
 
-        def run(origin):
+        def resolve(origin):
             if not is_current():
                 raise InterruptedError("A newer source replaced the Denoise preparation.")
             start = perf_counter()
@@ -244,29 +244,63 @@ class GrainPreparation:
             rows = _pack(rgb[inner], delta)
             if not np.isfinite(rgb[inner]).all():
                 raise FloatingPointError("Grain Denoise produced invalid samples.")
-            y, x = origin
             packed = perf_counter()
-            with self._lock:
-                writing = perf_counter()
-                for dy, row in enumerate(rows):
-                    self._file.seek(((y + dy) * width + x) * 16)
-                    self._file.write(row)
-                written = perf_counter()
-            return (resolved - start, coloured - resolved, packed - coloured,
-                    writing - packed, written - writing)
+            waiting, writing = self._write(origin, rows)
+            return (resolved - start, coloured - resolved, packed - coloured, waiting, writing)
 
         try:
-            with CpuExecutor() as pool:
-                tile_timings = tuple(pool.map(run, _origins(height, width, size)))
+            self.tile_timing_ms = self._run_tiles(resolve, size)
         except BaseException:
             self.close()
             raise
+
+    def _run_tiles(self, process, size):
+        with CpuExecutor() as pool:
+            tile_timings = tuple(pool.map(process, _origins(self.height, self.width, size)))
         # These sums span parallel workers. The caller also logs the elapsed
         # wall time so concurrent work is never counted twice in the wait.
-        self.tile_timing_ms = dict(zip(
-            ("wavelet", "colour", "pack", "write_wait", "write"),
+        return dict(zip(
+            ("wavelet", "colour", "pack", "write_wait", "write", "read"),
             (sum(stage) * 1000 for stage in zip(*tile_timings)),
         ))
+
+    def add_colour(self, controls, is_current):
+        """Fill the reserved correction fields using neighbouring Fine Grain RGB."""
+        broad = controls.splotch_size == "large"
+        margin = LARGE_COLOUR_MARGIN if broad else SMALL_COLOUR_MARGIN
+        size = adaptive.TILE_SIZE - 2 * margin
+
+        def read(y, x, bottom, right):
+            fields = self._read(y, x, bottom - y, right - x)
+            return fields.view("<f4")[..., :3].copy()
+
+        def colour(origin):
+            if not is_current():
+                raise InterruptedError("A newer source replaced the Denoise preparation.")
+            start = perf_counter()
+            rgb, core, _ = _region(read, self.height, self.width, origin, size, margin)
+            loaded = perf_counter()
+            delta = colour_delta(rgb, broad)[core]
+            coloured = perf_counter()
+            rows = _pack(rgb[core], delta)
+            packed = perf_counter()
+            waiting, writing = self._write(origin, rows)
+            return 0.0, coloured - loaded, packed - coloured, waiting, writing, loaded - start
+
+        return self._run_tiles(colour, size)
+
+    def _write(self, origin, rows):
+        y, x = origin
+        start = perf_counter()
+        with self._lock:
+            if self._file.closed:
+                raise InterruptedError("The Denoise preparation was replaced.")
+            writing = perf_counter()
+            for dy, row in enumerate(rows):
+                self._file.seek(((y + dy) * self.width + x) * 16)
+                self._file.write(row)
+            written = perf_counter()
+        return writing - start, written - writing
 
     def close(self):
         with self._lock:
@@ -288,11 +322,14 @@ class GrainPreparation:
                         raise OSError("Incomplete Grain Denoise source.")
         return rows
 
-    def region(self, y, x, height, width, frame_height, frame_width):
+    def region(self, y, x, height, width, frame_height, frame_width, *, colour=None):
         if min(y, x) < 0 or min(height, width) < 1 or y + height > frame_height or x + width > frame_width:
             raise ValueError("Grain Denoise region exceeds the requested frame.")
         if self.height == frame_height and self.width == frame_width:
-            return self._read(y, x, height, width).tobytes()
+            fields = self._read(y, x, height, width)
+            if colour is False:
+                fields[..., 3] = 0
+            return fields.tobytes()
 
         sx, sy = self.width / frame_width, self.height / frame_height
         block = max(1, ceil(max(sx, sy)))
@@ -315,6 +352,8 @@ class GrainPreparation:
             count = min(target_rows, height - row)
             top, bottom, y0, y1, ys = axis(y + row, count, sy, self.height)
             fields = self._read(top, left, bottom - top, right - left)
+            if colour is False:
+                fields[..., 3] = 0
             result[row:row + count] = _resize_window(fields, (x0, y0, x1, y1), (width, count),
                                                      (left, top), (block, xs, ys))
         return result.tobytes()

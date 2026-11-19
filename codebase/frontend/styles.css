@@ -1239,6 +1239,7 @@ body[data-active-lane="sdr"] .lane-dot {
 
 #preview-image,
 #preview-canvas,
+#preview-canvas-frame[data-region],
 #chrome-proof-image,
 #comparison-image,
 #comparison-canvas {
@@ -1286,6 +1287,20 @@ body[data-active-lane="sdr"] .lane-dot {
 
 #preview-canvas {
   image-rendering: auto;
+}
+
+#preview-canvas-frame:not([data-region]) {
+  display: contents;
+}
+
+#preview-canvas-frame[data-region] {
+  display: block;
+  z-index: 1;
+  pointer-events: none;
+}
+
+#preview-canvas-frame[data-region] > #preview-canvas {
+  transform: none;
 }
 
 #comparison-canvas {

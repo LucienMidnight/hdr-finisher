@@ -5,15 +5,17 @@ from html import escape
 import json
 from pathlib import Path
 import subprocess
+from tempfile import TemporaryDirectory
 
 import numpy as np
 from PIL import Image
 
-from hdr_finisher import denoise_adaptive as adaptive, raw_speck_cleanup
+from hdr_finisher import denoise_adaptive as adaptive, denoise_grain, raw_speck_cleanup
 from hdr_finisher.adjustments import _srgb_encode
 from hdr_finisher.color import acescg_to_linear_bt2020
 from hdr_finisher.color_context import RenderColorContext, scene_linear_to_nits
 from hdr_finisher.cpu_strips import render_in_strips
+from hdr_finisher.library_cache import LibraryCache
 from hdr_finisher.models import AdjustmentState, DenoiseLiveControls, PreviewKind
 from tools.denoise_eval import canon_ladder, colour_speck_marks as marks
 from tools.denoise_eval import even_keep_round4 as round4, marking_page as marking
@@ -52,7 +54,7 @@ def resolve(source, model, method):
     return adaptive.resolve_adaptive(source, model, adaptive.AdaptiveControls(**controls.model_dump()))
 
 
-def save_crops(folder, method, scene, flip, areas):
+def finished_crops(scene, flip, areas):
     views = {area["id"]: {"scene_acescg": marking.extract(marking.sensor_view(scene, flip), area).copy()}
              for area in areas}
     for lane in (PreviewKind.SDR, PreviewKind.HDR):
@@ -70,6 +72,11 @@ def save_crops(folder, method, scene, flip, areas):
                     raise ValueError("HDR crop exceeded its highlight target")
                 reference["hdr_rec2020_nits"] = nits
         del output
+    return views
+
+
+def save_crops(folder, method, scene, flip, areas):
+    views = finished_crops(scene, flip, areas)
     for area in areas:
         stem = folder / f'{area["id"]}-{method}'
         reference = views[area["id"]]
@@ -92,6 +99,93 @@ def score(points):
                          for p in cohort) for key in points[0]["results"]},
         )
     return result
+
+
+def compare_crops(candidate, reference):
+    import colour
+
+    maximums = {}
+    for field, lane in (("sdr_linear_srgb", "sdr"), ("hdr_rec2020_nits", "hdr")):
+        before, after = reference[field], candidate[field]
+        if np.array_equal(before, after):
+            maximums[lane] = {"mean": 0.0, "p99": 0.0}
+            continue
+        if lane == "sdr":
+            converted = [colour.XYZ_to_Lab(colour.RGB_to_XYZ(np.clip(frame, 0, 1),
+                         colour.RGB_COLOURSPACES["sRGB"])) for frame in (before, after)]
+            delta = colour.difference.delta_E_CIE2000(*converted)
+        else:
+            converted = [colour.RGB_to_ICtCp(np.maximum(frame, 0), method="ITU-R BT.2100-2 PQ")
+                         for frame in (before, after)]
+            delta = colour.difference.delta_E_ITP(*converted)
+        maximums[lane] = {"mean": float(np.mean(delta)), "p99": float(np.percentile(delta, 99))}
+    return maximums
+
+
+def cached_scene(preparation, method, controls):
+    """Read the same packed native regions the preview receives."""
+    height, width = preparation.height, preparation.width
+    scene = np.empty((height, width, 3), dtype=np.float32)
+    for row in range(0, height, 128):
+        count = min(128, height - row)
+        packed = preparation.region(row, 0, count, width, height, width, colour=method == "clean_grain")
+        fields = np.frombuffer(packed, dtype="<u4").reshape(count, width, 4)
+        rgb = fields[..., :3].view("<f4")
+        if method == "clean_grain":
+            delta = np.ascontiguousarray(fields[..., 3]).view("<f2").reshape(count, width, 2).astype(np.float32)
+            rgb = denoise_grain.apply_colour(rgb, delta, controls.color_splotches)
+        scene[row:row + count] = rgb
+    return scene
+
+
+def compare_reference(folder, cache, photo=None):
+    baseline = json.loads((folder / "reference.json").read_text(encoding="utf-8"))
+    passed = True
+    for name, record in baseline["photos"].items():
+        if photo is not None and name != photo:
+            continue
+        source, _ = marking.develop(check_source(name, record["source_sha256"]), cleanup=True)
+        height, width = source.shape[:2]
+        model = adaptive.estimate_adaptive_model(source, workers=1)
+        read = lambda y, x, bottom, right: source[y:bottom, x:right]
+        areas, flip = record["areas"], record["libraw_flip"]
+        points = record.get("marks")
+
+        def check(scene, method, route):
+            nonlocal passed
+            views = finished_crops(scene, flip, areas)
+            worst = {lane: {"mean": 0.0, "p99": 0.0} for lane in ("hdr", "sdr")}
+            for area in areas:
+                stem = folder / Path(name).stem / f'{area["id"]}-{method}.npz'
+                with np.load(stem) as reference:
+                    for lane, values in compare_crops(views[area["id"]], reference).items():
+                        worst[lane] = {stat: max(value, worst[lane][stat]) for stat, value in values.items()}
+            counts = {}
+            count_pass = True
+            if points:
+                canon_ladder.score_views(marking.sensor_view(scene, flip), areas, points,
+                                         record["size"], record["lift_ev"], "candidate")
+                for field, value in score(points).items():
+                    prior = record["counts"][field][f"fixed-{method}"]
+                    counts[field] = [prior, value["candidate"]]
+                    count_pass &= value["candidate"] >= prior
+            ok = count_pass and all(value["mean"] < 1 and value["p99"] < 3 for value in worst.values())
+            passed &= ok
+            print(json.dumps(dict(photo=name, method=method, route=route, delta_e=worst, counts=counts,
+                                  passed=ok)), flush=True)
+
+        check(resolve(source, model, "standard"), "standard", "CPU preparation and bounded finishing")
+        fine, clean = (adaptive.AdaptiveControls(**DenoiseLiveControls(method=method).model_dump())
+                       for method in ("fine_grain", "clean_grain"))
+        fit = denoise_grain.fit_grain(height, width, read, model, fine)
+        preparation = denoise_grain.GrainPreparation(height, width, read, model, fine, fit, lambda: True, cache)
+        try:
+            check(cached_scene(preparation, "fine_grain", fine), "fine_grain", "native preview preparation")
+            preparation.add_colour(clean, lambda: True)
+            check(cached_scene(preparation, "clean_grain", clean), "clean_grain", "reused native preview preparation")
+        finally:
+            preparation.close()
+    return passed
 
 
 def photo_record(path, folder, areas, original, previous, verify, guard):
@@ -183,10 +277,19 @@ in the unrotated sensor orientation used for the spot measurements.</p>
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--compare-to", type=Path, metavar="REFERENCE_FOLDER")
+    parser.add_argument("--photo", choices=PHOTOS, help="Compare only this photo when resuming a reference check")
     parser.add_argument("--verify-guard", type=Path, metavar="RECEIPT")
     parser.add_argument("--guard-receipt", type=Path, metavar="RECEIPT",
                         help="Keep the original mark positions and grain thresholds from the guard comparison")
     args = parser.parse_args()
+    if args.photo and not args.compare_to:
+        parser.error("--photo requires --compare-to")
+    if args.compare_to:
+        with TemporaryDirectory(prefix="hdr-denoise-reference-") as scratch:
+            if not compare_reference(args.compare_to, LibraryCache(Path(scratch)), args.photo):
+                raise SystemExit(1)
+        return
     previous = old_cleanup() if args.verify_guard else None
     guard = json.loads(args.guard_receipt.read_text(encoding="utf-8"))["photos"] if args.guard_receipt else {}
     area_set, feedback = marks.inputs()

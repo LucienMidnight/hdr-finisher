@@ -164,7 +164,7 @@ async function runRoiParity(options = {}) {
   if (geometryDraftActive()) return { ok: false, reason: "geometry-draft-active" };
   if (!state.gpuPreview?.readPresentationRegion) return { ok: false, reason: "no-readback" };
   const longEdge = Number(options.longEdge) > 0 ? Number(options.longEdge) : refinementProxyLongEdge();
-  const visible = visibleOutputRect(els.previewCanvas.width, els.previewCanvas.height);
+  const visible = visiblePreviewCanvasRect();
   if (!visible) return { ok: false, reason: "fit-has-no-roi" };
   const capture = () => state.gpuPreview.readPresentationRegion(
     visible.width,

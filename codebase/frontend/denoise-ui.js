@@ -222,10 +222,9 @@ async function setDenoiseEnabled(enabled) {
   await recalculateDenoise(lane);
 }
 
-function nativeGrainViewport(lane) {
-  if (state.zoomMode !== "custom" || state.zoomPercent < 100) return false;
-  const controls = state.denoise[lane]?.controls;
-  return controls?.method === "clean_grain" || (controls?.method === "fine_grain" && controls.grain_evenness > 0);
+function nativeDenoiseViewport(lane) {
+  return state.zoomMode === "custom" && state.zoomPercent >= 100
+    && Boolean(state.denoise[lane]?.enabled);
 }
 
 async function recalculateDenoise(lane = state.currentView, options = {}) {

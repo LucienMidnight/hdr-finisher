@@ -57,8 +57,7 @@ def channel_nits(image: np.ndarray, reference_white_nits: float = 203) -> np.nda
 def decoded_channel_nits(path: Path, format_name: str) -> np.ndarray:
     """Decode a delivery the way the import decoders do (0.18 == 203 nits)."""
     if format_name == "jpeg_ultrahdr":
-        from .gainmap_decoders import decode_ultrahdr_jpeg
-        image, _, _ = decode_ultrahdr_jpeg(path)
+        return _ultrahdr_channel_nits(path)
     elif format_name == "avif_gain_map":
         from .gainmap_decoders import decode_avif
         image, _, _ = decode_avif(path)
@@ -70,6 +69,31 @@ def decoded_channel_nits(path: Path, format_name: str) -> np.ndarray:
     if image.size == 0 or not np.all(np.isfinite(image)):
         raise CeilingError("The HDR file decoded to empty or non-finite pixels.")
     return channel_nits(image, 203)
+
+
+def _ultrahdr_channel_nits(path: Path) -> np.ndarray:
+    """Check the same decoded HDR samples without materializing either RGB rendition."""
+    from PIL import Image
+    from .color import linear_bt2020_to_acescg, linear_srgb_to_acescg
+    from .gainmap_decoders import _apply_exif_orientation, inspect_jpeg_gain_map, reconstructed_ultrahdr_rgba
+
+    gain = inspect_jpeg_gain_map(path)
+    transform = linear_srgb_to_acescg if gain.use_base_color_space else linear_bt2020_to_acescg
+    with Image.open(path) as primary:
+        width, height = primary.size
+        orientation = int(primary.getexif().get(274, 1))
+    nits = np.empty((height, width), dtype=np.float32)
+    with reconstructed_ultrahdr_rgba(path, width, height) as raw:
+        for top in range(0, height, 128):
+            rows = min(128, height - top)
+            rgba = np.fromfile(raw, dtype="<f2", count=rows * width * 4).reshape(rows, width, 4)
+            hdr = rgba[..., :3].astype(np.float32)
+            hdr *= np.float32(0.18)
+            hdr = np.maximum(transform(hdr), np.float32(0))
+            if not np.isfinite(hdr).all():
+                raise CeilingError("The HDR file decoded to non-finite pixels.")
+            nits[top:top + rows] = channel_nits(hdr, 203)
+    return _apply_exif_orientation(nits[..., None], orientation)[..., 0]
 
 
 def _correction(ratio: np.ndarray, margin: float) -> np.ndarray:

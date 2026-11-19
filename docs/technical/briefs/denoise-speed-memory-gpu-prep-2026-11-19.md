@@ -3,7 +3,7 @@
 **Date:** November 19, 2026
 **Branch:** start from `feat/denoise-v1` (baseline merged at `184ccd3b`).
 **Owner:** Steve (not a coder). Report in plain language.
-**Builds on:** `docs/technical/briefs/denoise-harsh-specks-baseline-speed-2026-11-19.md`
+**Builds on:** `docs/technical/archive/briefs/denoise-harsh-specks-baseline-speed-2026-11-19.md`
 and the ranked speed plan in `docs/product/modules/grade.md`.
 
 ## Steve's decision (November 19)
@@ -147,3 +147,15 @@ Update the Grade module PRD, `docs/technical/denoising.md`, the
 performance table and the AGENTS.md documentation map in the same work.
 Move the finished harsh-speck baseline brief to
 `docs/technical/archive/briefs/` and update its map entry.
+
+## Implementation outcome
+
+The branch has a bounded Grade drawing surface, bounded JPEG Ultra HDR
+delivery for eligible grades, and same-source Fine-to-Clean Grain reuse.
+The supplied crops and marked counts passed. The preparation trial ended at
+the Fine Grain estimate of 7.5–9 s Canon and 22–26 s Sony with the current
+scratch writer. Cold Clean Grain projected 8.5–12 s and 22–29 s.
+Full-size Sony Proof still needs memory work in its decoded reference views.
+See the [Grade module](../../product/modules/grade.md) and
+[MacBook measurements](../performance-table.md) for the verified cases and
+remaining delivery checks.

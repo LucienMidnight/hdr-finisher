@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import ExitStack
 from dataclasses import dataclass, field
 from io import BytesIO
 import os
@@ -163,28 +164,42 @@ def _experimental_delivery_filter(session, kind):
     return resolve
 
 
-def _render_export_branch(session, settings, kind, adjustments):
+def _render_export_branch(session, settings, kind, adjustments, *, denoise_source=None, allocate_output=None):
     from .watermark import apply_watermark
-    image = _render_unwatermarked_branch(session, settings, kind, adjustments)
+    image = (_render_unwatermarked_branch(session, settings, kind, adjustments, denoise_source=denoise_source,
+                                        allocate_output=allocate_output)
+             if denoise_source else _render_unwatermarked_branch(session, settings, kind, adjustments))
     return apply_watermark(image, settings.watermark, kind.value,
         getattr(session, "hdr_reference_white_nits", 203), delivery_ceiling_nits(adjustments))
 
 
 def _render_unwatermarked_branch(
-    session: object, settings: ExportSettings, kind: PreviewKind, adjustments: AdjustmentState
+    session: object, settings: ExportSettings, kind: PreviewKind, adjustments: AdjustmentState,
+    *, denoise_source=None, allocate_output=None,
 ) -> np.ndarray:
     from .gpu_delivery import render_pair
     object.__setattr__(settings, "_last_cpu_strips", False)
-    if _bounded_export_eligible(session, settings, kind, adjustments):
+    bounded = _bounded_export_eligible(session, settings, kind, adjustments, prepared_denoise=denoise_source is not None)
+    if bounded and (denoise_source is None or all(
+        _bounded_export_eligible(session, settings, lane, adjustments, prepared_denoise=True)
+        for lane in (PreviewKind.HDR, PreviewKind.SDR)
+    )):
         from . import app_memory
         height, width = session.image.shape[:2]
         from .finishing import geometry_output_dimensions
         output = geometry_output_dimensions(width, height, adjustments.shared.geometry)
         gpu_required = width * height * 12 + output[0] * output[1] * 76 + 288 * 1024**2
-        # Ordinary delivery has no new census/lease side effects. The fixed
-        # starting footprint already proves these native GPU jobs cannot fit;
-        # high fidelity additionally owns its measured whole-app admission.
-        if app_memory.STARTING + gpu_required > app_memory.CEILING:
+        # The hidden renderer has its own working set on top of the current
+        # Grade window. Don't allocate its shared input and output arrays when
+        # the measured desktop already leaves too little room for them.
+        starting = app_memory.STARTING
+        if denoise_source is not None and os.environ.get("HDR_FINISHER_DESKTOP_PID"):
+            memory = app_memory.snapshot()
+            starting = max(starting, memory["totalBytes"] + memory["reservedBytes"])
+            # The hidden renderer's readback and the main process's mapped
+            # upload can coexist for the current float32 RGBA rendition.
+            gpu_required += output[0] * output[1] * 2 * 16
+        if starting + gpu_required > app_memory.CEILING:
             object.__setattr__(settings, "_bounded_cpu_delivery", True)
     pair = render_pair(session, settings, adjustments)
     if pair is not None:
@@ -195,11 +210,16 @@ def _render_unwatermarked_branch(
             settings._exact_measurements[kind.value] = {"peak": peak}
         return result
     color_context = getattr(session, "color_context", RenderColorContext(getattr(session, "hdr_reference_white_nits", 203)))
-    if _bounded_export_eligible(session, settings, kind, adjustments):
+    if bounded:
         from .cpu_strips import render_in_strips
         object.__setattr__(settings, "_last_cpu_strips", True)
-        image, report = render_in_strips(session.image, adjustments, kind,
-            sdr_reference_image=getattr(session, "sdr_reference_image", None), color_context=color_context)
+        reference = getattr(session, "sdr_reference_image", None)
+        source, strip_adjustments = session.image, adjustments
+        if denoise_source is not None:
+            source, reference, strip_adjustments = denoise_source(kind)
+        image, report = render_in_strips(source, strip_adjustments, kind,
+            sdr_reference_image=reference, color_context=color_context,
+            allocate_output=allocate_output if getattr(settings, "_bounded_cpu_delivery", False) else None)
         if kind.value in settings.editing_measurements:
             peak = report.scope_peak_value
             if kind == PreviewKind.HDR:
@@ -262,7 +282,7 @@ def _render_unwatermarked_branch(
     return result
 
 
-def _bounded_export_eligible(session, settings, kind, adjustments):
+def _bounded_export_eligible(session, settings, kind, adjustments, *, prepared_denoise=False):
     """Use the already-qualified exact strip graph only when finishing is identity."""
     from .cpu_strips import strip_execution_refusals
     from .finishing import geometry_output_dimensions, resolve_output_dimensions
@@ -275,8 +295,47 @@ def _bounded_export_eligible(session, settings, kind, adjustments):
         return False
     return not strip_execution_refusals(adjustments, kind,
         local_adjustments=adjustments.enabled_locals(getattr(session, "local_adjustments", None)),
-        denoise_active=denoise_settings_for_export(session, kind) is not None,
+        denoise_active=not prepared_denoise and denoise_settings_for_export(session, kind) is not None,
         source_width=width, source_height=height)
+
+
+def _jpeg_denoise_source(session, adjustments):
+    """Hand the strip renderer one prepared source, shared by equal renditions."""
+    from .finishing import apply_geometry
+    from .models import GeometryAdjustments
+
+    last_key = None
+    last_pixels = None
+    geometry = adjustments.shared.geometry
+    fixed_adjustments = adjustments.model_copy(update={"shared": adjustments.shared.model_copy(
+        update={"geometry": GeometryAdjustments()})})
+
+    def prepared(kind):
+        nonlocal last_key, last_pixels
+        reference = getattr(session, "sdr_reference_image", None)
+        lane = denoise_settings_for_export(session, kind)
+        if lane is None:
+            return session.image, reference, adjustments
+        source_filter = _experimental_delivery_filter(session, kind)
+        authored = (source_filter is not None and reference is not None and kind == PreviewKind.SDR
+                    and adjustments.sdr.use_authored_base and not adjustments.sdr.linked_to_hdr)
+        key = (authored, lane.controls.model_dump_json())
+        if key != last_key:
+            last_pixels = None
+            if source_filter is not None:
+                last_pixels = source_filter(apply_geometry(reference if authored else session.image, geometry), authored)
+            else:
+                last_pixels = _denoised_export_source(session, kind)
+            last_key = key
+        if source_filter is None:
+            return last_pixels, reference, adjustments
+        if authored:
+            return apply_geometry(session.image, geometry), last_pixels, fixed_adjustments
+        if reference is not None and kind == PreviewKind.SDR and adjustments.sdr.use_authored_base:
+            reference = apply_geometry(reference, geometry)
+        return last_pixels, reference, fixed_adjustments
+
+    return prepared
 
 
 @dataclass(frozen=True)
@@ -628,12 +687,19 @@ def _write_jpeg_gainmap_once(staged_output, hdr_image, sdr_image, settings, refe
         sdr_jpeg_path = temp_dir / "sdr_primary.jpg"
         unfiltered_path = temp_dir / "unfiltered_ultrahdr.jpg"
         exif_path = _write_temporary_exif(temp_dir, exif_payload)
-        hdr_rgba, target_peak_nits = _prepare_hdr_linear_rgba_f16(
-            hdr_image, reference_white_nits
-        )
-        hdr_raw_path.write_bytes(hdr_rgba.tobytes(order="C"))
-        sdr_rgb = _linear_to_srgb8(sdr_image[..., :3], dither=settings.dithering)
-        sdr_rgb = _floor_ultrahdr_base(sdr_rgb, hdr_image)
+        height = hdr_image.shape[0]
+        target_peak_nits = 203.0
+        sdr_rgb = np.empty((*sdr_image.shape[:2], 3), dtype=np.uint8)
+        with hdr_raw_path.open("wb") as hdr_raw:
+            for top in range(0, height, 128):
+                rows = slice(top, top + 128)
+                hdr_rgba, peak = _prepare_hdr_linear_rgba_f16(hdr_image[rows], reference_white_nits)
+                hdr_raw.write(memoryview(hdr_rgba).cast("B"))
+                target_peak_nits = max(target_peak_nits, peak)
+                sdr_rgb[rows] = _floor_ultrahdr_base(
+                    _linear_to_srgb8(sdr_image[rows, :, :3], dither=settings.dithering, top=top),
+                    hdr_image[rows],
+                )
         _write_sdr_jpeg_pixels(
             sdr_jpeg_path,
             sdr_rgb,
@@ -648,6 +714,7 @@ def _write_jpeg_gainmap_once(staged_output, hdr_image, sdr_image, settings, refe
             with Image.open(sdr_jpeg_path) as primary:
                 sdr_rgb = np.asarray(primary.convert("RGB"))
         _write_sdr_rgba8888_pixels(sdr_raw_path, sdr_rgb)
+        del sdr_rgb
         command = _build_ultrahdr_encode_command(
             ultrahdr_app,
             hdr_raw_path,
@@ -749,11 +816,31 @@ class JPEGUltraHDRExportBackend(ExportBackend):
                 message="JPEG Ultra HDR export requires a working ultrahdr_app binary in bin/ or on PATH.",
             )
 
+        scratch = ExitStack()
+
+        def allocate_output(shape):
+            from .config import APP_DATA_DIR
+            from .library_cache import LibraryCache
+            size = shape[0] * shape[1] * shape[2] * np.dtype(np.float32).itemsize
+            handle, release = LibraryCache(APP_DATA_DIR).open_grade_scratch(size)
+            scratch.callback(release)
+            output = np.memmap(handle, mode="r+", shape=shape, dtype=np.float32)
+            scratch.callback(output._mmap.close)
+            return output
+
         def prepare() -> _PreparedExport:
             notes: list[str] = []
             finishing_adjustments = _finishing_adjustments_for_export(session)
-            hdr_image = _render_export_branch(session, settings, PreviewKind.HDR, finishing_adjustments)
-            sdr_image = _render_export_branch(session, settings, PreviewKind.SDR, finishing_adjustments)
+            lanes = (PreviewKind.HDR, PreviewKind.SDR)
+            if any(denoise_settings_for_export(session, lane) is not None for lane in lanes):
+                denoise_source = _jpeg_denoise_source(session, finishing_adjustments)
+                hdr_image, sdr_image = (_render_export_branch(session, settings, lane, finishing_adjustments,
+                                                              denoise_source=denoise_source,
+                                                              allocate_output=allocate_output) for lane in lanes)
+                del denoise_source
+            else:
+                hdr_image, sdr_image = (_render_export_branch(session, settings, lane, finishing_adjustments)
+                                        for lane in lanes)
             if hdr_image.shape != sdr_image.shape or hdr_image.ndim != 3 or hdr_image.shape[2] < 3:
                 raise ExportProcessError(
                     "The independently authored HDR and SDR renditions must have matching RGB dimensions."
@@ -777,15 +864,16 @@ class JPEGUltraHDRExportBackend(ExportBackend):
                 notes,
             )
 
-        return _execute_export(
-            self,
-            session,
-            settings,
-            suffix=".jpg",
-            prepare=prepare,
-            success_message=lambda path, validation: f"JPEG Ultra HDR exported to {path}. {validation}",
-            failure_prefix="JPEG Ultra HDR export failed",
-        )
+        with scratch:
+            return _execute_export(
+                self,
+                session,
+                settings,
+                suffix=".jpg",
+                prepare=prepare,
+                success_message=lambda path, validation: f"JPEG Ultra HDR exported to {path}. {validation}",
+                failure_prefix="JPEG Ultra HDR export failed",
+            )
 
 
 class JPEGXLHDRExportBackend(ExportBackend):
@@ -987,12 +1075,12 @@ def _write_sdr_jpeg_pixels(
         raise ExportProcessError(f"The SDR JPEG encoder could not write {width:,} x {height:,} pixels: {exc}") from exc
 
 
-def _linear_to_srgb8(image: np.ndarray, *, dither: bool | str = False) -> np.ndarray:
+def _linear_to_srgb8(image: np.ndarray, *, dither: bool | str = False, top: int = 0) -> np.ndarray:
     clipped = np.clip(image.astype(np.float32, copy=False), 0.0, 1.0)
     srgb = np.where(clipped <= 0.0031308, clipped * 12.92, 1.055 * np.power(clipped, 1.0 / 2.4) - 0.055)
     dither_mode = "auto" if dither is True else "off" if dither is False else str(dither)
     if dither_mode != "off":
-        _dither_srgb_in_place(srgb, amplitude_lsb=0.5 if dither_mode == "subtle" else 1.0)
+        _dither_srgb_in_place(srgb, amplitude_lsb=0.5 if dither_mode == "subtle" else 1.0, top=top)
     return np.clip(np.round(srgb * 255.0), 0.0, 255.0).astype(np.uint8)
 
 
@@ -1003,14 +1091,14 @@ def _linear_to_srgb16(image: np.ndarray) -> np.ndarray:
 
 
 def _dither_srgb_in_place(
-    srgb: np.ndarray, *, amplitude_lsb: float = 1.0, chunk_rows: int = 256
+    srgb: np.ndarray, *, amplitude_lsb: float = 1.0, chunk_rows: int = 256, top: int = 0
 ) -> None:
     """Apply decorrelated, repeatable one-LSB RGB dither with bounded scratch memory."""
     height, width, channel_count = srgb.shape
     x = np.arange(width, dtype=np.uint32)[None, :]
     for row_start in range(0, height, chunk_rows):
         row_end = min(height, row_start + chunk_rows)
-        y = np.arange(row_start, row_end, dtype=np.uint32)[:, None]
+        y = np.arange(top + row_start, top + row_end, dtype=np.uint32)[:, None]
         for channel in range(channel_count):
             channel_seed = np.uint32(((channel + 1) * 0x9E3779B9) & 0xFFFFFFFF)
             value = x * np.uint32(0x1F123BB5) ^ y * np.uint32(0x5F356495) ^ channel_seed
@@ -1074,9 +1162,13 @@ def _floor_ultrahdr_base(sdr_rgb: np.ndarray, hdr_image: np.ndarray) -> np.ndarr
 
 def _write_sdr_rgba8888_pixels(path: Path, rgb: np.ndarray) -> None:
     """Write already-quantized sRGB pixels as libultrahdr's RGBA intent."""
-    alpha = np.full((*rgb.shape[:2], 1), 255, dtype=np.uint8)
-    rgba = np.concatenate([rgb, alpha], axis=-1)
-    path.write_bytes(rgba.tobytes(order="C"))
+    with path.open("wb") as handle:
+        for top in range(0, rgb.shape[0], 128):
+            rows = rgb[top:top + 128]
+            rgba = np.empty((*rows.shape[:2], 4), dtype=np.uint8)
+            rgba[..., :3] = rows
+            rgba[..., 3] = 255
+            handle.write(memoryview(rgba).cast("B"))
 
 
 def _prepare_hdr_linear_rgba_f16(

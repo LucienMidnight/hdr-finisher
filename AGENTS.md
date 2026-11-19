@@ -681,13 +681,14 @@ Completed UI polish round 3 (pending visual sign-off): `docs/technical/archive/b
   fixes after Steve's first app test. Native preparation, the removal of Dark
   Specks and the Fine Grain edge finding are recorded in the Grade PRD.
   The colour-mark and detail acceptance work remains open.
-- `docs/technical/briefs/denoise-harsh-specks-baseline-speed-2026-11-19.md`:
+- `docs/technical/archive/briefs/denoise-harsh-specks-baseline-speed-2026-11-19.md`:
   railing-light fix, the three-method crop reference and MacBook baseline
   with 110% measurements. Lists the remaining Canon timing cases. The Grade
   PRD records the ranked speed plan and the memory failures.
 - `docs/technical/briefs/denoise-speed-memory-gpu-prep-2026-11-19.md`: Denoise
-  speed round 1: 4 GB memory fix, Fine-to-Clean Grain reuse and a GPU
-  preparation trial with a go threshold of about half the first wait.
+  speed round 1: bounded zoom and JPEG delivery, Fine-to-Clean Grain reuse,
+  and a GPU estimate that missed the go threshold. Full-size Proof memory
+  and the remaining delivery checks are open.
 - `docs/technical/briefs/denoise-speck-rnd-prompt-2026-11-18.md`: prompt for the
   next Denoise speck R&D proposal (whole-workflow stage map, what was tried,
   earlier research limitations, constraints); proposal only, no app changes.

@@ -1,3 +1,4 @@
+from contextlib import contextmanager
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -11,7 +12,7 @@ from hdr_finisher.exporters import build_export_backends
 
 
 @pytest.mark.parametrize("format_name,decoder_module,decoder_name", [
-    ("jpeg_ultrahdr", "gainmap_decoders", "decode_ultrahdr_jpeg"),
+    ("jpeg_ultrahdr", "gainmap_decoders", "reconstructed_ultrahdr_rgba"),
     ("avif_gain_map", "gainmap_decoders", "decode_avif"),
     ("jpegxl_hdr", "jpegxl", "decode_jpegxl"),
 ])
@@ -23,11 +24,30 @@ def test_decoded_ceiling_accepts_rounding_but_rejects_one_over_allowance_pixel(
     def decode(_):
         return (image, {}) if decoder_module == "jpegxl" else (image, None, {})
     module = importlib.import_module("hdr_finisher." + decoder_module)
-    monkeypatch.setattr(module, decoder_name, decode)
     path = tmp_path / "fixture"
-    assert hdr_delivery.check_decoded_hdr_ceiling(path, format_name, 1000) == pytest.approx(990, abs=.01)
+    expected = lambda nits: nits
+    if format_name == "jpeg_ultrahdr":
+        from PIL import Image
+
+        Image.new("RGB", (8, 8)).save(path, format="JPEG")
+        monkeypatch.setattr(module, "inspect_jpeg_gain_map", lambda _: SimpleNamespace(use_base_color_space=False))
+
+        @contextmanager
+        def decode_rgba(_, width, height):
+            rgba = np.ones((height, width, 4), dtype="<f2")
+            rgba[..., :3] = image / np.float32(.18)
+            with (tmp_path / "decoded.rgba").open("w+b") as raw:
+                rgba.tofile(raw)
+                raw.seek(0)
+                yield raw
+
+        monkeypatch.setattr(module, decoder_name, decode_rgba)
+        expected = lambda nits: float(np.float16(nits / 203)) * 203
+    else:
+        monkeypatch.setattr(module, decoder_name, decode)
+    assert hdr_delivery.check_decoded_hdr_ceiling(path, format_name, 1000) == pytest.approx(expected(990), abs=.01)
     image[0, 0] = 1009 * .18 / 203
-    assert hdr_delivery.check_decoded_hdr_ceiling(path, format_name, 1000) == pytest.approx(1009, abs=.01)
+    assert hdr_delivery.check_decoded_hdr_ceiling(path, format_name, 1000) == pytest.approx(expected(1009), abs=.01)
     image[0, 0] = 1011 * .18 / 203
     with pytest.raises(ValueError, match="exceeds"):
         hdr_delivery.check_decoded_hdr_ceiling(path, format_name, 1000)

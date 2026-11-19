@@ -9,11 +9,18 @@ function setZoomMode(mode) {
   }
   const changed = state.zoomMode !== "fit";
   state.zoomMode = "fit";
-  els.dropzone.scrollLeft = 0;
-  els.dropzone.scrollTop = 0;
+  if (!holdingNativeDenoisePictureForFit()) {
+    els.dropzone.scrollLeft = 0;
+    els.dropzone.scrollTop = 0;
+  }
   applyZoomGeometry();
   scheduleNavigationThumbnail();
   if (changed) scheduleZoomRefinement();
+}
+
+function holdingNativeDenoisePictureForFit() {
+  return state.zoomMode === "fit" && els.previewCanvas.style.display !== "none"
+    && Boolean(els.previewCanvas.hdrFrameRegion) && els.chromeProofImage?.style.display === "none";
 }
 
 const navigationThumbnail = { timer: 0, controller: null, key: "", url: "", inflightKey: "" };
@@ -78,8 +85,8 @@ function updateNavigationViewport() {
   els.navigationThumb.classList.toggle("hidden", !visible);
   if (!visible) return;
   const preview = activePreviewElement();
-  const frameWidth = preview instanceof HTMLCanvasElement ? preview.width : preview.naturalWidth;
-  const frameHeight = preview instanceof HTMLCanvasElement ? preview.height : preview.naturalHeight;
+  const { width: frameWidth, height: frameHeight } = preview === els.previewCanvas.parentElement
+    ? previewCanvasFrameSize() : { width: preview.naturalWidth || preview.width, height: preview.naturalHeight || preview.height };
   if (!(frameWidth > 0 && frameHeight > 0)) return;
   // Start at bottom-right; a dragged window stays inside the picture area,
   // clear of scroll bars, as the viewer or overview changes size.
@@ -220,7 +227,7 @@ function scheduleZoomRefinement({ continuous = false } = {}) {
     const sessionId = state.session.session_id;
     if (state.acceptedPresentation?.processedLongEdge !== target) {
       const decision = interactiveScaleDecision(lane);
-      if (decision.coarse && decision.edge < target) {
+      if (decision.coarse && decision.edge < target && !state.denoise[lane]?.enabled) {
         // Zoom can require the tiled renderer even for its reduced pass.
         // Interactive tier explicitly refuses tiles; refinement tier accepts
         // them while the coarse flag keeps the presentation truthful.
@@ -283,6 +290,7 @@ function setCustomZoom(percent, anchor = null, { continuous = false } = {}) {
 }
 
 function applyZoomGeometry() {
+  if (holdingNativeDenoisePictureForFit()) return;
   const preview = activePreviewElement();
   const visible = previewIsVisible();
   els.dropzone.classList.toggle("zoom-custom", state.zoomMode === "custom");
@@ -301,8 +309,9 @@ function applyZoomGeometry() {
   // Geometry can change the rendered frame's dimensions. Size the viewer from
   // the current bitmap, not the original source, or a crop is stretched back
   // into the source aspect ratio after it is applied.
-  const renderedWidth = preview instanceof HTMLCanvasElement ? preview.width : preview.naturalWidth;
-  const renderedHeight = preview instanceof HTMLCanvasElement ? preview.height : preview.naturalHeight;
+  const canvasActive = preview === els.previewCanvas || preview === els.previewCanvas.parentElement;
+  const { width: renderedWidth, height: renderedHeight } = canvasActive
+    ? previewCanvasFrameSize() : { width: preview.naturalWidth, height: preview.naturalHeight };
   const renderedFrameWidth = Math.max(1, renderedWidth || state.session.source.width);
   const renderedFrameHeight = Math.max(1, renderedHeight || state.session.source.height);
   const renderedAspect = renderedFrameWidth / renderedFrameHeight;
@@ -313,7 +322,7 @@ function applyZoomGeometry() {
   const interactiveRotationSwapsAxes = interactiveQuarterTurns % 2 === 1;
   const sessionId = state.session?.session_id || null;
   const geometrySignature = JSON.stringify(state.adjustments?.shared?.geometry || {});
-  const previewFrameReady = preview instanceof HTMLCanvasElement
+  const previewFrameReady = canvasActive
     ? Boolean(state.gpuPreparedLane[state.currentView])
     : Boolean(preview.complete && preview.naturalWidth > 0);
   if (previewFrameReady && !interactiveRotationSwapsAxes && (
@@ -397,8 +406,23 @@ function applyZoomGeometry() {
   els.previewStage.style.height = `${Math.max(frameHeight, stageContentHeight)}px`;
   els.previewImage.style.width = `${displayWidth}px`;
   els.previewImage.style.height = `${displayHeight}px`;
-  els.previewCanvas.style.width = `${displayWidth}px`;
-  els.previewCanvas.style.height = `${displayHeight}px`;
+  const pictureCanvas = els.previewCanvas;
+  const pictureFrame = pictureCanvas.parentElement;
+  const region = pictureCanvas.hdrFrameRegion;
+  pictureFrame.toggleAttribute("data-region", Boolean(region));
+  if (region) {
+    pictureFrame.style.width = `${displayWidth}px`;
+    pictureFrame.style.height = `${displayHeight}px`;
+    pictureCanvas.style.left = `${100 * region.x / region.frameWidth}%`;
+    pictureCanvas.style.top = `${100 * region.y / region.frameHeight}%`;
+    pictureCanvas.style.width = `${100 * region.width / region.frameWidth}%`;
+    pictureCanvas.style.height = `${100 * region.height / region.frameHeight}%`;
+  } else {
+    pictureCanvas.style.left = "";
+    pictureCanvas.style.top = "";
+    pictureCanvas.style.width = `${displayWidth}px`;
+    pictureCanvas.style.height = `${displayHeight}px`;
+  }
   els.comparisonImage.style.width = `${displayWidth}px`;
   els.comparisonImage.style.height = `${displayHeight}px`;
   els.comparisonCanvas.style.width = `${displayWidth}px`;
