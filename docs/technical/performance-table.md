@@ -10,10 +10,10 @@ preceding 500 ms. Compare timing movements against the existing 5% band.
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
 | Canon | Standard | 1.54 → 0.41 | 2.43 → 2.10 | 0.26 | 0.40 | 0.37 | 1.87 |
 | Canon | Fine Grain | 14.40 → 11.52 | 2.73 → 2.01 | 1.25 | 0.68 | 0.25 | 1.78 |
-| Canon | Clean Grain | 13.54 | 2.68 → 1.81 | 0.97 | 0.60 | 0.21 | 1.79 |
+| Canon | Clean Grain | 13.54 → 2.63 | 2.68 → 1.81 | 0.97 | 0.60 | 0.21 | 1.79 |
 | Sony | Standard | 2.85 → 0.46 | 4.45 → 3.78 | 0.28 | 0.42 | 0.35 | 3.78 |
 | Sony | Fine Grain | 34.06 → 25.69 | 4.69 → 2.28 | 2.21 | 0.63 | 0.21 | 2.14 |
-| Sony | Clean Grain | 32.96 | 4.52 → 2.14 | 1.87 | 0.56 | 0.24 | 2.14 |
+| Sony | Clean Grain | 32.96 → 5.05 | 4.52 → 2.14 | 1.87 | 0.56 | 0.24 | 2.14 |
 
 On both photos, the final native drawing surfaced the visible region at each
 zoom and passed the viewer coverage check. The display buffer at 110% was
@@ -21,6 +21,10 @@ about 2430 × 1015, about 20 MB per HDR surface. The 42 MP full drawing buffer
 would use 339 MB per HDR surface. Standard's shorter last-picture wait
 includes the removal of a whole-image catch-up render after the viewport was
 already drawn. Cold Fine Grain timing varies with preparation and I/O.
+
+The Clean Grain switch reused the whole-photo fit and native Fine Grain RGB
+and ran zero wavelet tiles. It was faster than the projected 6–8 s Canon
+and 13–17 s Sony.
 
 The intermediate two-photo run repeated cold Fit and 100%, one Detail
 Recovery drag and 100% → Fit and back for each method. Its native surface was

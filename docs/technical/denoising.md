@@ -68,6 +68,13 @@ source replacement and preparation replacement release the reservation.
 Startup reclaims abandoned scratch. Cached GPU regions still use the
 existing Denoise tile allowance.
 
+On a Fine-to-Clean switch, the same scratch file supplies the neighbouring
+native RGB for each colour tile. Only the packed colour fields gain new
+values. The existing Fine Grain token serves zero correction until the
+completed Clean Grain token is available. Source, geometry, noise model,
+Recalculate and RGB-affecting controls are part of the reuse identity.
+The Small and Large colour passes keep their original native margins.
+
 Grade and Show noise use WebGPU. Proof and export use the same GPU reconstruction
 when admitted and retain the CPU fallback. The experimental CPU delivery filters
 geometry-fixed pixels before grading. HDR limiting is still downstream. Scene

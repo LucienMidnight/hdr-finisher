@@ -60,3 +60,30 @@ def test_grain_settings_round_trip_with_standard_default():
         "splotch_size": "large",
     }}})
     assert DenoiseDocumentSettings.model_validate_json(grade.model_dump_json()) == grade
+
+
+def test_clean_grain_reuses_native_fine_grain_across_tile_edges(tmp_path):
+    from hdr_finisher.library_cache import LibraryCache
+
+    source = np.random.default_rng(41).normal(.025, .006, (575, 601, 3)).astype(np.float32)
+    height, width = source.shape[:2]
+    model = adaptive.AdaptiveNoiseModel(.0003, .00008, 0, ((1., .6, .36, .21, .12),) * 3)
+    fine = adaptive.AdaptiveControls(method="fine_grain")
+    clean = replace(fine, method="clean_grain", splotch_size="large")
+    read = lambda top, left, bottom, right: source[top:bottom, left:right]
+    fit = grain.fit_grain(height, width, read, model, fine)
+    cache = LibraryCache(tmp_path)
+    current = lambda: True
+    prepared = grain.GrainPreparation(height, width, read, model, fine, fit, current, cache)
+    expected = grain.GrainPreparation(height, width, read, model, clean, fit, current, cache)
+    try:
+        native = (0, 0, height, width, height, width)
+        reduced = (0, 0, 161, 168, 161, 168)
+        original = [prepared.region(*region, colour=False) for region in (native, reduced)]
+        prepared.add_colour(clean, current)
+        for region, fine_bytes in zip((native, reduced), original):
+            assert prepared.region(*region, colour=False) == fine_bytes
+            assert prepared.region(*region, colour=True) == expected.region(*region)
+    finally:
+        prepared.close()
+        expected.close()

@@ -14,6 +14,19 @@ while building its decoded reference views. Fine and Clean Sony delivery
 needs a fresh-profile check after the full-size Proof memory work, and Canon
 Standard delivery needs rechecking with the final GPU admission estimate.
 
+Fine-to-Clean Grain now reuses the native Fine Grain pixels for the same
+source, geometry, noise fit and base controls. The 110% switch took 2.63 s on
+the Canon and 5.05 s on the Sony, from 13.54 s and 32.96 s. Changing a base
+control still prepares fresh pixels. The app publishes the Clean Grain
+result when the colour pass completes.
+
+The four-photo comparison covers 54 fixed crops across all three methods.
+The finished CPU crops from the Standard and Fine Grain preparations were
+identical to the reference. Clean Grain's largest crop mean and p99 were
+0.00037 and 0.0051 for SDR ΔE 2000, and 0.00112 and 0.0169 for HDR ΔE ITP.
+Every marked count held. Clean Grain retained 13 colour spots and 1 pit on
+the Canon, 22 and 2 on the Sony, and 13 and 4 on the portrait.
+
 ## November 19, 2026: Denoise speed baseline and acceptance
 
 The Denoise reference covers Standard, Fine Grain and Clean Grain at
