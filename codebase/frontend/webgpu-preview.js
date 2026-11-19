@@ -2680,8 +2680,13 @@
           if (!response.ok) throw new Error(`Clean Grain source request failed (${response.status}).`);
           const body = await response.arrayBuffer();
           if (body.byteLength !== width * count * 16) throw new Error("Clean Grain returned an incomplete region.");
+          const started = this.instrumentationEnabled ? performance.now() : 0;
           this.device.queue.writeTexture({ texture, origin: { x: 0, y: offset } }, body,
             { bytesPerRow: width * 16 }, { width, height: count });
+          if (this.instrumentationEnabled) {
+            this.recordStage("denoise-tile-upload", { bytes: body.byteLength,
+              durationMs: performance.now() - started });
+          }
         }
       })();
       try {

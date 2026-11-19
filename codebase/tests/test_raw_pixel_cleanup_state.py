@@ -10,6 +10,25 @@ from hdr_finisher.models import EditCommand, EditDocument, RawImportSettings
 from test_library_grades import setup
 
 
+def test_light_guard_replaces_only_enabled_cached_developments(setup, monkeypatch):
+    from hdr_finisher import loader, sessions
+    from hdr_finisher.library_live import quality
+
+    _, _, session, _, _ = setup
+
+    def identities():
+        return sessions._source_mip_identity(session), quality(session.edit_document().model_dump(mode="json"))
+
+    off = identities()
+    session.raw_import_settings.pixel_cleanup.even_out_specks = True
+    enabled = identities()
+    for module in (loader, sessions):
+        monkeypatch.setattr(module, "source_decoder_version", lambda _: loader.SOURCE_DECODER_VERSION)
+    assert all(current != old for current, old in zip(enabled, identities(), strict=True))
+    session.raw_import_settings.pixel_cleanup.even_out_specks = False
+    assert identities() == off
+
+
 @pytest.mark.parametrize('field,value', [('remove_hot_pixels', True), ('even_out_specks', True), ('speck_threshold', 3.1)])
 def test_saved_recipe_copy_selection_and_development_identity(tmp_path, field, value):
     from hdr_finisher.library_live import quality

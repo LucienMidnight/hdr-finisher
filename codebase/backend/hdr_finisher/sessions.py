@@ -17,7 +17,7 @@ from .import_defaults import apply_import_defaults, starting_adjustments, sync_h
 from .capabilities import probe_capabilities
 from .color_context import DEFAULT_HDR_REFERENCE_WHITE_NITS, RenderColorContext
 from .import_bands import grade_import_bands
-from .loader import SOURCE_COLOR_TRANSFORM_VERSION, SOURCE_DECODER_VERSION, load_image
+from .loader import SOURCE_COLOR_TRANSFORM_VERSION, load_image, source_decoder_version
 from .metadata import extract_metadata
 from .models import (
     AdjustmentState,
@@ -82,7 +82,7 @@ def _source_mip_identity(session: "LoadedSession", lane: str = "hdr") -> SourceM
         byte_size=session.source_byte_size,
         width=int(session.image.shape[1]),
         height=int(session.image.shape[0]),
-        decoder_version=SOURCE_DECODER_VERSION,
+        decoder_version=source_decoder_version(session.raw_import_settings.pixel_cleanup.even_out_specks),
         color_transform_version=SOURCE_COLOR_TRANSFORM_VERSION,
         orientation=1,
         lane=lane,

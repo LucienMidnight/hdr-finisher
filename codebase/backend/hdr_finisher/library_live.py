@@ -41,8 +41,9 @@ def recipe(document):
 
 
 def _quality(inputs):
-    from .loader import SOURCE_DECODER_VERSION, SOURCE_COLOR_TRANSFORM_VERSION
-    identity = {"recipe": inputs, "decoder": SOURCE_DECODER_VERSION,
+    from .loader import SOURCE_COLOR_TRANSFORM_VERSION, source_decoder_version
+    specks_enabled = inputs["raw_import_settings"].get("pixel_cleanup", {}).get("even_out_specks", False)
+    identity = {"recipe": inputs, "decoder": source_decoder_version(specks_enabled),
                 "colour": SOURCE_COLOR_TRANSFORM_VERSION, "rgb_adapter": "library-rgb-reduced-v5"}
     return "live-scene-v2:" + sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()
 

@@ -6,6 +6,7 @@ brightness gains, then each tile runs the same reconstruction and cleanup.
 from itertools import islice, product
 from math import ceil, floor
 from threading import Lock
+from time import perf_counter
 from weakref import finalize
 
 import cv2
@@ -235,23 +236,37 @@ class GrainPreparation:
         def run(origin):
             if not is_current():
                 raise InterruptedError("A newer source replaced the Denoise preparation.")
+            start = perf_counter()
             rgb, inner = _resolved_tile(read, height, width, origin, size, margin, model, controls, fit)
+            resolved = perf_counter()
             delta = colour_delta(rgb, broad)[inner] if controls.method == "clean_grain" else None
+            coloured = perf_counter()
             rows = _pack(rgb[inner], delta)
             if not np.isfinite(rgb[inner]).all():
                 raise FloatingPointError("Grain Denoise produced invalid samples.")
             y, x = origin
+            packed = perf_counter()
             with self._lock:
+                writing = perf_counter()
                 for dy, row in enumerate(rows):
                     self._file.seek(((y + dy) * width + x) * 16)
                     self._file.write(row)
+                written = perf_counter()
+            return (resolved - start, coloured - resolved, packed - coloured,
+                    writing - packed, written - writing)
 
         try:
             with CpuExecutor() as pool:
-                list(pool.map(run, _origins(height, width, size)))
+                tile_timings = tuple(pool.map(run, _origins(height, width, size)))
         except BaseException:
             self.close()
             raise
+        # These sums span parallel workers. The caller also logs the elapsed
+        # wall time so concurrent work is never counted twice in the wait.
+        self.tile_timing_ms = dict(zip(
+            ("wavelet", "colour", "pack", "write_wait", "write"),
+            (sum(stage) * 1000 for stage in zip(*tile_timings)),
+        ))
 
     def close(self):
         with self._lock:
