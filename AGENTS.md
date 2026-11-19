@@ -677,6 +677,9 @@ Completed UI polish round 3 (pending visual sign-off): `docs/technical/archive/b
   completed experimental Fine Grain and Clean Grain implementation beside
   Standard. MacBook timings and the open visual review are in the Grade and
   performance documents. The AI method stays deferred to v2.
+- `docs/technical/briefs/denoise-clean-grain-fixes-2026-11-19.md`: Clean Grain
+  fixes after Steve's first app test (specular halos, real-colour changes,
+  Dark Specks rework or removal, slider fill, Fine Grain edge finding).
 - `docs/technical/briefs/denoise-speck-rnd-prompt-2026-11-18.md`: prompt for the
   next Denoise speck R&D proposal (whole-workflow stage map, what was tried,
   earlier research limitations, constraints); proposal only, no app changes.
