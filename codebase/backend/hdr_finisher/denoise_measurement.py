@@ -301,7 +301,8 @@ def create_router(store):
         finished = perf_counter()
         log("denoise_grain_prepared", **fields, method=settings.method, width=width, height=height,
             duration_ms=(finished-started)*1000, fit_ms=(fitted-fit_started)*1000,
-            filter_ms=(finished-fitted)*1000, disk_bytes=width * height * 16 if corrections else 0)
+            filter_ms=(finished-fitted)*1000, tile_worker_ms=corrections.tile_timing_ms if corrections else {},
+            disk_bytes=width * height * 16 if corrections else 0)
         return {"fit": preparation.fit, "token": preparation.token if corrections else None}
 
     @router.get("/api/session/{session_id}/denoise-grain/{kind}/{token}")
