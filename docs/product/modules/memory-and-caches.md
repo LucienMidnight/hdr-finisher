@@ -1250,9 +1250,13 @@ holds and [technical/photo-library.md](../../technical/photo-library.md)
 section 9 for file layout.
 
 Grade's temporary native Fine Grain and Clean Grain result uses the existing
-full-size scene allowance. The ledger reserves the file's full logical size
-before allocation and releases it with the photo or when preparation is
-replaced. Startup releases abandoned reservations. The 42.39 MP Sony uses
+full-size scene allowance. If it is short, Grade removes the oldest
+disposable full-size previews until the reservation fits. It keeps protected
+pictures, the selected photo's detail scene and all active scratch files.
+Grade reports whether the drive or the allowance is short of room. The ledger
+reserves the file's full logical size before allocation and releases it with
+the photo or when preparation is replaced. Startup releases abandoned
+reservations. The 42.39 MP Sony uses
 678,236,160 bytes on disk at 16 bytes per pixel. Reads and writes use bounded
 tiles and the original stays resident. The 600 MB Grade retention cap and
 all disk settings retain their prior values. A Sony 100%-to-Fit draw still

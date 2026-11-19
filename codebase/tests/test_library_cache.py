@@ -1,9 +1,11 @@
 """Behaviour checks for the shared Library cache and its JPEG transport."""
+from concurrent.futures import ThreadPoolExecutor
 import os
+from threading import Barrier
 from pathlib import Path
 import numpy as np
 import pytest
-from hdr_finisher.library_cache import LibraryCache
+from hdr_finisher.library_cache import GrainScratchSpaceError, LibraryCache
 from hdr_finisher.library_thumbnail_codec import encode
 from helpers.library_gainmap import jpeg_renditions
 from hdr_finisher.color import linear_srgb_to_acescg, acescg_to_linear_srgb
@@ -45,6 +47,110 @@ def test_grade_scratch_uses_full_size_allowance_and_closes(tmp_path):
         close()
     assert not file.exists()
     assert cache.usage()['full_size_used_bytes'] == 0
+
+
+@pytest.fixture
+def grain_cache(tmp_path, monkeypatch):
+    cache = LibraryCache(tmp_path / "profile")
+    preferences = cache.preferences() | {"full_size_limit_gb": 128 / 1024**3}
+    monkeypatch.setattr(cache, "preferences", lambda: preferences)
+    return cache
+
+
+def publish_grain_candidate(cache, name, size, source, age):
+    cache.prepare()
+    directory = cache.directory("library-full-pictures")
+    directory.mkdir(exist_ok=True)
+    temporary = directory / (name + ".tmp")
+    temporary.write_bytes(bytes(size))
+    os.utime(temporary, (age, age))
+    file = directory / (name + ".npz")
+    cache.publish(temporary, file, source, cache.publication_epoch(source))
+    return file
+
+
+def test_grain_scratch_leaves_previews_when_it_fits(grain_cache, tmp_path):
+    old = publish_grain_candidate(grain_cache, "old", 48, tmp_path / "old.raw", 1)
+    handle, close = grain_cache.open_grade_scratch(80, grain_source=tmp_path / "selected.raw")
+    try:
+        assert old.is_file()
+        assert Path(handle.name).stat().st_size == 80
+        assert grain_cache.usage()["full_size_used_bytes"] == 128
+    finally:
+        close()
+
+
+def test_grain_scratch_evicts_only_enough_oldest_previews(grain_cache, tmp_path, capsys):
+    old = publish_grain_candidate(grain_cache, "old", 24, tmp_path / "old.raw", 1)
+    middle = publish_grain_candidate(grain_cache, "middle", 24, tmp_path / "middle.raw", 2)
+    recent = publish_grain_candidate(grain_cache, "recent", 48, tmp_path / "recent.raw", 3)
+    _, close = grain_cache.open_grade_scratch(56, grain_source=tmp_path / "selected.raw")
+    try:
+        assert not old.exists()
+        assert middle.is_file() and recent.is_file()
+        assert grain_cache.usage()["full_size_used_bytes"] == 128
+        logged = capsys.readouterr().err
+        assert '"evicted_bytes": 24' in logged
+        assert '"outcome": "reserved"' in logged
+    finally:
+        close()
+
+
+def test_grain_scratch_protects_kept_previews_selected_scene_and_active_scratch(grain_cache, tmp_path):
+    selected = tmp_path / "selected.raw"
+    held, close_held = grain_cache.open_grade_scratch(24, grain_source=selected)
+    try:
+        kept = publish_grain_candidate(grain_cache, "kept-one", 20, tmp_path / "kept.raw", 1)
+        protected = publish_grain_candidate(grain_cache, "protected", 20, tmp_path / "protected.raw", 2)
+        grain_cache.index_refresh_file(protected, tmp_path / "protected.raw", "screen_previews", protected=True)
+        scene = publish_grain_candidate(grain_cache, "selected", 20, selected, 3)
+        disposable = publish_grain_candidate(grain_cache, "disposable", 24, tmp_path / "spare.raw", 4)
+        _, close = grain_cache.open_grade_scratch(44, grain_source=selected)
+        try:
+            assert not disposable.exists()
+            assert all(file.is_file() for file in (kept, protected, scene, Path(held.name)))
+            with pytest.raises(GrainScratchSpaceError, match="cache allowance"):
+                grain_cache.open_grade_scratch(1, grain_source=selected)
+        finally:
+            close()
+    finally:
+        close_held()
+
+
+def test_grain_scratch_refuses_full_drive_without_evicting(grain_cache, tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    from hdr_finisher import library_cache
+
+    old = publish_grain_candidate(grain_cache, "old", 80, tmp_path / "old.raw", 1)
+    monkeypatch.setattr(library_cache.shutil, "disk_usage", lambda _: SimpleNamespace(free=16))
+    with pytest.raises(GrainScratchSpaceError, match="cache drive is too full"):
+        grain_cache.open_grade_scratch(80, grain_source=tmp_path / "selected.raw")
+    assert old.is_file()
+    assert grain_cache.usage()["full_size_used_bytes"] == 80
+
+
+def test_grain_scratch_racing_reservations_cannot_claim_the_same_room(grain_cache, tmp_path):
+    preview = publish_grain_candidate(grain_cache, "old", 80, tmp_path / "old.raw", 1)
+    start = Barrier(2)
+
+    def reserve(_):
+        start.wait(timeout=5)
+        try:
+            return grain_cache.open_grade_scratch(80, grain_source=tmp_path / "selected.raw")
+        except GrainScratchSpaceError as error:
+            return error
+
+    with ThreadPoolExecutor(2) as pool:
+        results = list(pool.map(reserve, range(2)))
+    active = [result for result in results if isinstance(result, tuple)]
+    try:
+        assert len(active) == 1
+        assert any("cache allowance" in str(result) for result in results if isinstance(result, OSError))
+        assert not preview.exists()
+        assert grain_cache.usage()["full_size_used_bytes"] == 80
+    finally:
+        for _, close in active:
+            close()
 
 
 def test_grade_scratch_startup_removes_an_abandoned_result(tmp_path, monkeypatch):

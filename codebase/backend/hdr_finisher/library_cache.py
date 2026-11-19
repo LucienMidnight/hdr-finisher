@@ -1,4 +1,5 @@
 """Separate Library disk allowances in one managed folder. Only marked, app-owned cache directories are cleared."""
+import errno
 import json
 import os
 from pathlib import Path
@@ -17,6 +18,10 @@ LIMITS = (1, 2, 5, 10, 20)
 _LOCK = RLock()
 _LEDGERS = {}
 MARKER = '.hdr-finisher-cache'
+
+
+class GrainScratchSpaceError(OSError):
+    pass
 
 
 class LibraryCache:
@@ -499,9 +504,48 @@ class LibraryCache:
                         if Path(filename).parent == directory and not _parent_is_alive(pid):
                             db.execute("DELETE FROM grade_scratch WHERE path=?", (filename,))
 
-    def open_grade_scratch(self, size):
+    def _evict_for_grain(self, db, directory, selected_source, needed):
+        # Publication and this scan share one SQLite write transaction. Keep
+        # companions together, including any companion of a protected picture.
+        rows = db.execute(
+            "SELECT files.path, files.size, sources.source, refresh_files.source, refresh_files.protected "
+            "FROM files LEFT JOIN ages USING(path) LEFT JOIN sources USING(path) "
+            "LEFT JOIN refresh_files USING(path) WHERE category='full_size' "
+            "ORDER BY COALESCE(ages.stamp,0), files.path"
+        ).fetchall()
+        families = {}
+        kept = set()
+        for filename, size, source, refresh_source, protected in rows:
+            file = Path(filename)
+            if file.parent != directory:
+                continue
+            families.setdefault(file.stem, []).append((file, size))
+            if (protected or (selected_source and selected_source in (source, refresh_source))
+                    or file.name.startswith("kept-") or file.suffix == ".tmp" or file.is_symlink()):
+                kept.add(file.stem)
+        for stem, family in families.items():
+            if stem in kept:
+                continue
+            for file, size in family:
+                try:
+                    file.unlink(missing_ok=True)
+                except PermissionError:
+                    # A reader that holds the file open may still need it.
+                    continue
+                self._record(db, file)
+                db.execute("DELETE FROM refresh_files WHERE path=?", (str(file),))
+                db.execute("DELETE FROM pending_deletes WHERE path=?", (str(file),))
+                needed -= size
+            if needed <= 0:
+                break
+
+    def open_grade_scratch(self, size, *, grain_source=None):
         """Reserve the full logical byte size before writing any Grade samples."""
         from uuid import uuid4
+        from .library_diagnostics import log
+
+        grain = grain_source is not None
+        selected = os.path.normcase(str(Path(grain_source).resolve())) if grain_source else None
         with _LOCK:
             db = self._ledger()
             directory = self.directory("library-full-pictures")
@@ -510,16 +554,53 @@ class LibraryCache:
             limit = preferences["full_size_limit_gb"] * 1024**3
             file = directory / f"grade-grain-{os.getpid()}-{uuid4().hex}.tmp"
             handle = None
+            failure = None
+            drive_message = "The cache drive is too full for Grain Denoise."
+            allowance_message = "The full-size preview cache allowance has too little room for Grain Denoise."
+            reason = "enough space"
             try:
                 with db:
                     db.execute("BEGIN IMMEDIATE")
-                    room = min(limit - self._used(db)["full_size"], shutil.disk_usage(directory).free)
-                    if size > room:
-                        raise OSError(f"Full-size disk cache has {max(0, room):,} bytes free. "
-                                      f"Grain Denoise needs {size:,} bytes.")
-                    db.execute("INSERT INTO grade_scratch VALUES (?, ?, ?)", (str(file), size, os.getpid()))
-                    handle = file.open("x+b", buffering=0)
-                    handle.truncate(size)
+                    before = limit - self._used(db)["full_size"]
+                    drive_free = shutil.disk_usage(directory).free
+                    evicted = 0
+                    try:
+                        if grain:
+                            if size > drive_free:
+                                reason = "drive space"
+                                raise GrainScratchSpaceError(drive_message)
+                            if before < size <= limit:
+                                try:
+                                    self._evict_for_grain(db, directory, selected, size - before)
+                                finally:
+                                    evicted = limit - self._used(db)["full_size"] - before
+                            if size > before + evicted:
+                                reason = "full-size allowance"
+                                raise GrainScratchSpaceError(allowance_message)
+                        elif size > min(before, drive_free):
+                            room = min(before, drive_free)
+                            raise OSError(f"Full-size disk cache has {max(0, room):,} bytes free. "
+                                          f"Grain Denoise needs {size:,} bytes.")
+                        db.execute("INSERT INTO grade_scratch VALUES (?, ?, ?)", (str(file), size, os.getpid()))
+                        handle = file.open("x+b", buffering=0)
+                        handle.truncate(size)
+                    except OSError as error:
+                        # Already-unlinked previews must also leave the ledger
+                        # when opening or allocating scratch fails.
+                        db.execute("DELETE FROM grade_scratch WHERE path=?", (str(file),))
+                        if not isinstance(error, GrainScratchSpaceError):
+                            reason = "drive space" if error.errno == errno.ENOSPC else "cache I/O error"
+                            if grain and reason == "drive space":
+                                error = GrainScratchSpaceError(drive_message)
+                        failure = error
+                if grain:
+                    log("denoise_grain_scratch", path=str(grain_source), needed_bytes=size,
+                        allowance_room_before_bytes=before,
+                        allowance_room_after_bytes=before + evicted - (size if failure is None else 0),
+                        evicted_bytes=evicted, drive_free_bytes=drive_free,
+                        outcome="reserved" if failure is None else "refused", reason=reason)
+                if failure is not None:
+                    raise failure
             except BaseException:
                 if handle is not None:
                     handle.close()

@@ -223,11 +223,11 @@ def _resize_window(fields, box, size, bounds, ranges):
 class GrainPreparation:
     """The selected source's native denoised RGB and live colour correction."""
 
-    def __init__(self, height, width, read, model, controls, fit, is_current, disk_cache):
+    def __init__(self, height, width, read, model, controls, fit, is_current, disk_cache, source_path=None):
         self.height = height
         self.width = width
         self._lock = Lock()
-        self._file, close = disk_cache.open_grade_scratch(height * width * 16)
+        self._file, close = disk_cache.open_grade_scratch(height * width * 16, grain_source=source_path)
         self._close = finalize(self, close)
         broad = controls.splotch_size == "large"
         margin = LARGE_COLOUR_MARGIN if broad else SMALL_COLOUR_MARGIN

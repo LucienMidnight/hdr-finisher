@@ -298,7 +298,9 @@ def create_router(store):
                 else:
                     cache.discard_grain_preparation()
                     if settings.amount and (settings.luminance or settings.color_noise):
-                        corrections = GrainPreparation(height, width, read, model, settings, fit, is_current, _cache())
+                        source_path = (fields["path"] or "") if fields["usage"] == "Grade" else None
+                        corrections = GrainPreparation(height, width, read, model, settings, fit,
+                                                       is_current, _cache(), source_path=source_path)
                         tile_timings = corrections.tile_timing_ms
             except InterruptedError as error:
                 raise HTTPException(409, str(error)) from error

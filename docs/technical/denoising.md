@@ -62,7 +62,12 @@ colour blend live. Zero-evenness Fine Grain uses the Standard path.
 
 The temporary result holds float32 RGB and two float16 opponent corrections
 packed into 16 bytes per pixel. It is reserved under the existing full-size
-disk allowance before preparation starts. Reads and writes use bounded
+disk allowance before preparation starts. Grade checks physical free space
+and, if the allowance is short, evicts only as many oldest disposable
+full-size previews as it needs. Eviction and reservation share the ledger's
+publication transaction. Protected previews, the open photo's detail scene
+and active scratch are excluded. The backend records the reservation decision
+and Grade shows which storage limit refused it. Reads and writes use bounded
 regions. Grade retains the original for bypass and Show noise. Closing,
 source replacement and preparation replacement release the reservation.
 Startup reclaims abandoned scratch. Cached GPU regions still use the

@@ -6070,7 +6070,10 @@
             grain_evenness: controls.grainEvenness, splotch_size: controls.splotchSize,
           }),
         });
-        if (!response.ok) throw new Error(`Denoise preparation failed (${response.status}).`);
+        if (!response.ok) {
+          const detail = response.status === 507 ? (await response.json().catch(() => null))?.detail : null;
+          throw new Error(typeof detail === "string" ? detail : `Denoise preparation failed (${response.status}).`);
+        }
         grain = { ...await response.json(), url, controls: { ...controls } };
         await this.ensureGrainPipelines();
       }
