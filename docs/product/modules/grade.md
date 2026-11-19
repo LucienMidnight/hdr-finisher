@@ -4,8 +4,11 @@ Native Denoise zoom draws a sharp patch over a display-sized picture of
 the whole photo. During a drag or Navigate jump, newly exposed areas show
 the softer picture immediately. A completed patch takes over only if it
 covers the current view. Both layers use the same geometry and rendition.
-The viewer keeps the last complete picture until the new one is ready. JPEG
-Ultra HDR can use the existing bounded CPU grade when its GPU delivery would
+The last complete picture stays on screen until its replacement is ready,
+including while the softer layer is refreshed after a grade change. Both
+Grain layers share highlight measurements from the same native preparation,
+so rebuilding the softer layer cannot trigger another measurement and redraw.
+JPEG Ultra HDR can use the existing bounded CPU grade when its GPU delivery would
 exceed the memory ceiling and the graph supports strips. JPEG Ultra HDR
 input packing and decoded peak verification work in rows. The wait and
 memory results, including any remaining overages, are in the

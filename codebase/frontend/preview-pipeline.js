@@ -738,6 +738,12 @@ async function renderGpuDraftInner(
   if (boundedPresentation && !viewport) return refuse("superseded-before-viewport");
   let viewportMoved = false;
   const replacingDetail = !allowInactive && Boolean(canvas.hdrFrameRegion);
+  // Refreshing the lower layer of the same picture must leave the previous
+  // patch mounted until a new sharp patch is ready, even across grade edits.
+  const retainedDetail = request.underlayerOnly && replacingDetail
+    && state.acceptedPresentation?.lane === lane
+    && state.acceptedPresentation.geometrySignature === requestedGeometrySignature
+    ? canvas.hdrFrameRegion : null;
   const sourceOptions = {
     tier,
     applicationGeneration: generation,
@@ -757,7 +763,7 @@ async function renderGpuDraftInner(
       return !viewportMoved;
     } : null,
     onFrameSubmitted: boundedPresentation || request.underlayerOnly || replacingDetail ? (region, hdr) => {
-      if (region) canvas.hdrFrameRegion = region;
+      if (region || retainedDetail) canvas.hdrFrameRegion = region || retainedDetail;
       else clearDenoiseDetail();
       if (request.underlayerOnly) {
         els.previewImage.style.display = "none";
@@ -765,7 +771,7 @@ async function renderGpuDraftInner(
         els.emptyState.style.display = "none";
         state.gpuPreparedLane[lane] = true;
         setGpuSurfaceHdr(lane, hdr);
-        acceptPreviewGeometry(canvas.width, canvas.height, longEdge);
+        if (!retainedDetail) acceptPreviewGeometry(canvas.width, canvas.height, longEdge);
       } else {
         applyZoomGeometry();
       }

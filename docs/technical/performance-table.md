@@ -94,6 +94,34 @@ the whole picture mounted, including 112 Fine and 124 Clean frames that
 needed the softer layer. Across 3,400 samples there were no blank viewers or
 error statuses.
 
+## November 19 — Windows Grade Denoise picture stability
+
+Windows PC, Electron at 2560 × 1440 under the shared GPU lock, Canon
+`IMG_0790.CR2` in Grade HDR with Highlight Compression Peak Fit (Maximum)
+and Even out harsh specks at ×2.5. Baseline: `91406215`. The holds ran for
+31 seconds at each zoom. The baseline samples started five seconds after
+the first exact picture. The fixed samples also waited for initial highlight
+and scope work to finish. Soft swaps after one +0.25 EV exposure change
+were counted over the next ten seconds at 100%.
+
+| Method | Fit requests before → after (source / Grain / proxy) | 100% requests before → after (source / Grain / proxy) | Soft swaps while still at 100% | Soft swaps after exposure change |
+| --- | --- | --- | ---: | ---: |
+| Standard | 35 / 0 / 0 → 0 / 0 / 0 | 0 / 0 / 0 → 0 / 0 / 0 | 0 → 0 | 3 → 0 |
+| Fine Grain | 0 / 0 / 0 → 0 / 0 / 0 | 662 / 329 / 19 → 0 / 0 / 0 | 9 → 0 | 4 → 0 |
+| Clean Grain | 0 / 0 / 0 → 0 / 0 / 0 | 892 / 471 / 27 → 0 / 0 / 0 | 14 → 0 | 4 → 0 |
+
+The app requested zero new Grain preparations during the holds in both
+builds. The fixed run had no 507 responses and peaked at 1.96 GB whole-app
+memory. Scroll and Navigate tests kept the whole photo visible in 1,315
+sampled pan frames and reached sharp coverage at each stop. The soft layer
+covered newly exposed areas in 100 Standard, 148 Fine and 145 Clean frames.
+
+Single waits with the fix were 0.52 s to enable Standard at Fit and 14.14 s
+to switch from Standard to Fine at 100%. Fine to Clean at 100% took 4.04 s
+and finished without an error. Fit to 100% took 0.67 s for Standard, 1.73 s
+for Fine and 1.76 s for Clean. Fine and Clean returned from 100% to Fit in
+1.19 s and 1.13 s.
+
 ## November 19 — Denoise after the railing-light fix
 
 MacBook Neo, A18 Pro, 8 GB, Electron at 1408×794 under the shared GPU lock.

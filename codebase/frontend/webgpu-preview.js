@@ -1544,7 +1544,14 @@
      */
     highlightSourceToken(proxy) {
       const selector = this.denoiseSourceSelector;
-      if (selector?.selected === "resolved") return `denoise:${selector.identity}:${selector.resolvedVersion ?? 0}:${JSON.stringify(selector.controls || {})}`;
+      if (selector?.selected === "resolved") {
+        const controls = JSON.stringify(selector.controls || {});
+        // Both zoom layers reconstruct from the same native Grain preparation.
+        // Retargeting or uploading a fresh texture does not change those pixels.
+        const grain = selector.cache?.grain?.token;
+        if (grain) return `grain:${grain}:${controls}`;
+        return `denoise:${selector.identity}:${selector.resolvedVersion ?? 0}:${controls}`;
+      }
       if (selector?.resolved && proxy === selector.resolved) return `denoise:${selector.resolvedVersion ?? 0}`;
       return "original";
     }

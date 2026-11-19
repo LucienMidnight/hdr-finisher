@@ -50,6 +50,7 @@ async function checkPanCoverage(page, name, method, { scroll = false } = {}) {
       if (window.denoisePanSamples !== samples) return;
       const soft = els.previewCanvas;
       const patch = soft.hdrFrameRegion;
+      if (!previewIsVisible()) samples.push({ underlayer: false });
       if (patch) {
         const visible = visibleOutputRect(patch.frameWidth, patch.frameHeight, { includeWhole: true });
         const frame = soft.parentElement.getBoundingClientRect();
@@ -115,6 +116,63 @@ async function checkPanCoverage(page, name, method, { scroll = false } = {}) {
     softFrames: samples.filter(sample => !sample.covered).length, memory: peak?.bytes ?? null }));
 }
 
+async function checkStillPicture(page, method, action, { changeExposure = false, reportOnly = false } = {}) {
+  const counts = { sourceTile: 0, grainTile: 0, proxy: 0, grainPreparation: 0 };
+  const count = request => {
+    const pathname = new URL(request.url()).pathname;
+    if (request.method() === "POST" && /\/denoise-grain\/hdr$/.test(pathname)) counts.grainPreparation++;
+    if (request.method() !== "GET") return;
+    if (/\/source-tile\/hdr$/.test(pathname)) counts.sourceTile++;
+    if (/\/denoise-grain\/hdr\/[^/]+$/.test(pathname)) counts.grainTile++;
+    if (/\/proxy(?:-stream)?\/hdr$/.test(pathname)) counts.proxy++;
+  };
+  page.on("request", count);
+  let picture;
+  try {
+    picture = await page.evaluate(async changeExposure => {
+      const start = performance.now();
+      const original = state.acceptedPresentation;
+      let frames = 0, blanks = 0, softSwaps = 0, lastSharp = true;
+      const errors = new Set();
+      const needsPatch = state.zoomMode === "custom";
+      if (changeExposure) commitAdjustmentValue("hdr.exposure", state.adjustments.hdr.exposure + 0.25, { manual: true });
+      await new Promise(resolve => {
+        const sample = () => {
+          frames++;
+          const canvas = els.previewCanvas;
+          const patch = canvas.hdrFrameRegion;
+          const sharp = !needsPatch || (patch && HDRViewportRequest.covers(patch,
+            visibleOutputRect(patch.frameWidth, patch.frameHeight, { includeWhole: true })));
+          if (!sharp && lastSharp) softSwaps++;
+          lastSharp = sharp;
+          if (!previewIsVisible()) blanks++;
+          const error = state.previewUnavailableReason || state.denoiseRuntime.hdr.error;
+          if (error) errors.add(error);
+          if (performance.now() - start >= (changeExposure ? 10000 : 31000)) resolve();
+          else requestAnimationFrame(sample);
+        };
+        requestAnimationFrame(sample);
+      });
+      return { frames, blanks, softSwaps, sharp: Boolean(lastSharp), errors: [...errors],
+        replaced: state.acceptedPresentation !== original, ready: viewerState().status === "ready" };
+    }, changeExposure);
+  } finally {
+    page.off("request", count);
+  }
+  console.log(JSON.stringify({ method, action, ...counts, ...picture }));
+  if (reportOnly) return;
+  assert.ok(picture.frames > 0 && picture.sharp && picture.ready, action);
+  assert.deepEqual(picture.errors, [], action);
+  assert.equal(picture.blanks, 0, action);
+  assert.equal(picture.softSwaps, 0, action);
+  if (changeExposure) {
+    assert.ok(picture.replaced, "The exposure change never presented.");
+  } else {
+    assert.equal(picture.replaced, false, action);
+    assert.deepEqual(counts, { sourceTile: 0, grainTile: 0, proxy: 0, grainPreparation: 0 }, action);
+  }
+}
+
 function backendLog(harness, start, end, method) {
   const log = fs.readFileSync(path.join(harness.userDataDirectory, "logs/backend.log"), "utf8");
   const preparation = [];
@@ -136,8 +194,8 @@ function backendLog(harness, start, end, method) {
 }
 
 async function measurePicture(page, button, method, { pan = false, switchMethod = false,
-  drag = false, release = false, trace = false } = {}) {
-  return page.evaluate(async ({ button, method, pan, switchMethod, drag, release, trace }) => {
+  drag = false, release = false, trace = false, reportOnly = false } = {}) {
+  return page.evaluate(async ({ button, method, pan, switchMethod, drag, release, trace, reportOnly }) => {
     const gpu = state.gpuPreview;
     const startingGrain = gpu.denoiseSourceSelector?.cache?.grain;
     const samePreparation = () => {
@@ -240,7 +298,7 @@ async function measurePicture(page, button, method, { pan = false, switchMethod 
         // drained so a later replacement can never be scored as the final one.
         if (final && final.at === undefined) final.at = performance.now();
         const idle = ++frames >= 3 && !state.zoomRefinementTimer
-          && (liveDrag ? !state.denoiseInputQueue?.busy && !state.gpuDraftInFlight : previewIdleNow());
+          && (reportOnly || (liveDrag ? !state.denoiseInputQueue?.busy && !state.gpuDraftInFlight : previewIdleNow()));
         if (idle && final && final.accepted === state.acceptedPresentation) {
           finish(resolve, { ...final, presented: true, observedAt: performance.now() });
         } else if (idle && pan && first === undefined) {
@@ -290,7 +348,7 @@ async function measurePicture(page, button, method, { pan = false, switchMethod 
         renders: gpu.performanceMetrics.renders.filter(event => event.serial === done.serial),
       } : {}),
     };
-  }, { button, method, pan, switchMethod, drag, release, trace });
+  }, { button, method, pan, switchMethod, drag, release, trace, reportOnly });
 }
 
 async function measureDelivery(page, harness, name, method, record, proofOnly = false) {
@@ -541,6 +599,8 @@ async function measureBaseline(page, harness, name, record, setZoom) {
     const panCoverage = process.argv.includes("--pan-coverage");
     const cachePressure = process.argv.includes("--grain-cache-pressure");
     const nativeGrainSwitch = process.argv.includes("--native-grain-switch");
+    const stillPicture = process.argv.includes("--native-grain-still");
+    const reportOnly = process.argv.includes("--report-only");
     await page.evaluate(baseline => {
       performance.setResourceTimingBufferSize(2000);
       if (!baseline) return;
@@ -551,16 +611,16 @@ async function measureBaseline(page, harness, name, record, setZoom) {
         if (Number.isFinite(bytes)) window.denoiseBaselineMemory.push({ at: Date.now(), bytes,
           processes: event.data.value.processes });
       });
-    }, baseline || panCoverage || nativeGrainSwitch);
+    }, baseline || panCoverage || nativeGrainSwitch || stillPicture);
     const names = process.argv.includes("--atrium-only") ? ["DSC01212.ARW"]
       : process.argv.includes("--42-only") ? ["_DSC7970.ARW"]
       : process.argv.includes("--18-only") ? ["IMG_0790.CR2"] : ["IMG_0790.CR2", "_DSC7970.ARW"];
     for (const name of names) {
       // The native switch check can run in an isolated worktree whose shared
       // test-photo folder points into another checkout. Keep its autosaves local.
-      const file = nativeGrainSwitch ? path.join(output, name)
+      const file = nativeGrainSwitch || stillPicture ? path.join(output, name)
         : reusePhoto(name, path.resolve(__dirname, "../../output/gpu-raw", name));
-      if (nativeGrainSwitch) fs.copyFileSync(reusePhoto.source(name), file);
+      if (nativeGrainSwitch || stillPicture) fs.copyFileSync(reusePhoto.source(name), file);
       await page.evaluate(async ({ file, baseline }) => {
         const selection = await desktop.grantSourcePath(file);
         await openStagedDesktopSource({ ...selection, rawImportSettings: {
@@ -611,6 +671,43 @@ async function measureBaseline(page, harness, name, record, setZoom) {
           && state.acceptedPresentation.processedLongEdge === requiredProcessingLongEdge()
           && previewIdleNow(), null, { timeout: 90000 });
       };
+      if (stillPicture) {
+        const denied = [];
+        const checkAdmission = response => { if (response.status() === 507) denied.push(new URL(response.url()).pathname); };
+        page.on("response", checkAdmission);
+        await page.evaluate(() => commitAdjustmentValue("hdr.highlight_section_enabled", true));
+        await page.waitForFunction(() => viewerState().status === "ready" && previewIdleNow());
+        const waitForStill = async () => {
+          // Allow the initial highlight measurement and overview to finish.
+          // The baseline may be unable to settle, so observe it after 5 s.
+          await page.waitForTimeout(5000);
+          if (!reportOnly) await page.waitForFunction(() => previewIdleNow()
+            && !pendingHighlightAnchors.size && !exactHighlightAnchorInflight.size
+            && !state.previewScheduler.frameInFlight
+            && !state.gpuScopeRequestInFlight && !state.scopeRequestInFlight
+            && !navigationThumbnail.inflightKey, null, { timeout: 20000 });
+        };
+        for (const method of baselineMethods) {
+          if (method === "standard") {
+            await record(method, "enable at Fit", "#denoise-bypass", { reportOnly });
+          } else {
+            await record(method, "switch at 100%", null, { switchMethod: true, reportOnly });
+            await record(method, "100% to Fit", "#zoom-fit", { reportOnly });
+          }
+          await waitForStill();
+          await checkStillPicture(page, method, "Fit still", { reportOnly });
+          await record(method, "Fit to 100%", "#zoom-actual", { reportOnly });
+          await waitForStill();
+          await checkStillPicture(page, method, "100% still", { reportOnly });
+          await checkStillPicture(page, method, "100% after one exposure change", { changeExposure: true, reportOnly });
+          if (!reportOnly) await checkPanCoverage(page, name, method, { scroll: true });
+        }
+        page.off("response", checkAdmission);
+        const memory = await page.evaluate(() => Math.max(0, ...window.denoiseBaselineMemory.map(sample => sample.bytes)));
+        console.log(JSON.stringify({ name, stillPicture: { denied, peakAppBytes: memory } }));
+        if (!reportOnly) assert.deepEqual(denied, [], "The app refused memory admission.");
+        continue;
+      }
       if (nativeGrainSwitch) {
         await page.evaluate(() => {
           const check = window.nativeGrainCheck = { frames: 0, blank: 0, errors: [] };
