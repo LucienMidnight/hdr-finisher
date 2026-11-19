@@ -120,7 +120,10 @@ def test_roi_refinement_is_opt_in_and_tier_limited() -> None:
     javascript = frontend_scripts()
 
     # A fully visible frame reports no viewport: Fit has nothing to skip.
-    assert "if (x === 0 && y === 0 && visibleWidth >= width && visibleHeight >= height) return null;" in javascript
+    # Only the native Denoise underlayer opts in to the whole-frame rectangle.
+    assert ("if (!includeWhole && x === 0 && y === 0 && visibleWidth >= width && visibleHeight >= height)"
+            " return null;") in javascript
+    assert "function visibleOutputRect(outputWidth, outputHeight, { includeWhole = false } = {})" in javascript
 
 
 def test_display_scale_pan_cache_is_generation_aware() -> None:
