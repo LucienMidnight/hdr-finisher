@@ -40,9 +40,8 @@ async function seedGrainCachePressure(harness) {
   return { old, newer };
 }
 
-async function checkPanCoverage(page, name, method, { scroll = false } = {}) {
+async function checkPanCoverage(page, name, method) {
   const start = Date.now();
-  const home = await page.locator("#dropzone").boundingBox();
   await page.evaluate(() => {
     const samples = [];
     window.denoisePanSamples = samples;
@@ -79,16 +78,10 @@ async function checkPanCoverage(page, name, method, { scroll = false } = {}) {
   for (const distance of [80, 540]) {
     const previous = await position();
     const direction = previous[0] >= distance ? 1 : -1;
-    const x = home.x + home.width * .5;
-    const y = home.y + home.height * .45;
-    if (scroll) {
-      await page.evaluate(delta => { els.dropzone.scrollLeft -= delta; }, direction * distance);
-    } else {
-      await page.mouse.move(x, y);
-      await page.mouse.down();
-      await page.mouse.move(x + direction * distance, y, { steps: 6 });
-      await page.mouse.up();
-    }
+    // Grade pans through the scroll container and Navigate. Dragging the
+    // photo itself does not move the scroll container.
+    await page.evaluate(delta => { els.dropzone.scrollLeft -= delta; }, direction * distance);
+    assert.notDeepEqual(await position(), previous, "Scrolling did not pan the Grade viewport.");
     await waitForSharp(previous);
   }
   const previous = await position();
@@ -700,7 +693,7 @@ async function measureBaseline(page, harness, name, record, setZoom) {
           await waitForStill();
           await checkStillPicture(page, method, "100% still", { reportOnly });
           await checkStillPicture(page, method, "100% after one exposure change", { changeExposure: true, reportOnly });
-          if (!reportOnly) await checkPanCoverage(page, name, method, { scroll: true });
+          if (!reportOnly) await checkPanCoverage(page, name, method);
         }
         page.off("response", checkAdmission);
         const memory = await page.evaluate(() => Math.max(0, ...window.denoiseBaselineMemory.map(sample => sample.bytes)));
@@ -726,9 +719,9 @@ async function measureBaseline(page, harness, name, record, setZoom) {
         await page.evaluate(() => commitDenoiseControl("method", "fine_grain"));
         await record("fine_grain", "enable at Fit", "#denoise-bypass", { trace: true });
         await record("fine_grain", "Fit to 100%", "#zoom-actual", { trace: true });
-        await checkPanCoverage(page, name, "fine_grain", { scroll: true });
+        await checkPanCoverage(page, name, "fine_grain");
         await record("clean_grain", "Fine to Clean at 100%", null, { switchMethod: true, trace: true });
-        await checkPanCoverage(page, name, "clean_grain", { scroll: true });
+        await checkPanCoverage(page, name, "clean_grain");
         await record("clean_grain", "100% to Fit", "#zoom-fit", { trace: true });
         const check = await page.evaluate(() => {
           const result = window.nativeGrainCheck;
@@ -761,6 +754,10 @@ async function measureBaseline(page, harness, name, record, setZoom) {
         if (panCoverage) {
           // Apply the normal Grade geometry tools before checking the layers
           // again, then switch to an independently denoised SDR rendition.
+          const geometryGroup = page.locator('[data-group="geometry"]');
+          if (await geometryGroup.evaluate(element => element.classList.contains("collapsed"))) {
+            await geometryGroup.locator(".group-toggle").click();
+          }
           await page.locator("#rotate-tool-toggle").click();
           await page.locator("#rotate-right").click();
           await page.evaluate(() => closeRotateMode(true));
