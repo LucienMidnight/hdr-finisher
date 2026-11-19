@@ -1,3 +1,32 @@
+## November 20 — Byte-identical CPU speedups for Denoise Grain
+
+| Action | Canon IMG_0790.CR2 | Sony _DSC7970.ARW | Conditions |
+| --- | ---: | ---: | --- |
+| First Fine Grain switch at 110%, estimated whole wait | 11.52 → 8.32 s (28% less wait) | 25.69 → 15.87 s (38% less wait) | MacBook Neo, A18 Pro / 6 cores / 8 GB, macOS 27.0.1, plugged in. CPU fit plus preparation and scratch writes: 5.53 → 2.33 s Canon, 15.24 → 5.42 s Sony, medians of three alternating A/B runs per RAW against `c96d6e7e`. Same verified RAW per photo, already developed, same model and controls, six tile workers, OpenCV configured for six threads, OMP/BLAS limited to one. Shared machine, 1-minute load 1.66–6.61; allow 5% timing noise. |
+
+The estimate subtracts the measured CPU time saved from the November 19
+110% action-to-picture readings, holding the rest of the wait fixed. It is
+not a new whole-app median. The Clean Grain CPU export-source step went from
+6.46 to 2.96 s (Canon) and 17.30 to 7.54 s (Sony); this excludes rendering
+and encoding the export.
+
+The locked Electron spot check (1408 × 794, one run on the shared checkout)
+reached the exact Fine Grain picture in 4.42 s Canon / 9.65 s Sony. Clean
+Grain reused Fine Grain RGB, with no wavelet work, at 3.92 / 7.12 s. These
+are unpaired observations with other edits in the checkout; they do not
+replace the estimates or establish a Clean Grain switch speedup. Fine Grain
+peaked at 2.13 / 2.56 GB; the Sony Standard enable sampled 4.17 GB, above
+the unchanged 4 GB gate. The separate locked CPU/GPU JPEG Ultra HDR
+delivery and full-size Proof identity smoke passed for all three methods.
+
+Both approved RAWs had identical stored fit bytes, packed Fine and Clean
+preview hashes (whole frame, native region, reduced image), and full-resolution
+Clean CPU export-source hashes at each step. Large-splotch direct Clean
+preparation also matched before and after. All five existing Grain tests
+passed on both versions with identical captured outputs. The one-channel
+matrix shortcut was excluded because it changed Sony's stored fit.
+[Local A/B receipts and exact-check scripts](../../codebase/output/denoise-exact-speed-2026-11-20).
+
 ## November 20 — Grade Grain reuse between HDR and SDR
 
 MacBook Neo A18 Pro, 8 GB, 1408 × 794 points. Separate Electron profiles

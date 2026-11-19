@@ -3,7 +3,7 @@
 All neighbourhood work stays in linear light. A whole-image reduction fits two
 brightness gains, then each tile runs the same reconstruction and cleanup.
 """
-from itertools import islice, product
+from itertools import product
 from math import ceil, floor
 from threading import Lock
 from time import perf_counter
@@ -43,20 +43,29 @@ def _region(read, height, width, origin, size, margin):
 
 
 def fit_grain(height, width, read, model, controls):
-    """Fit scale and offset to retain the original wavelet energy in each band."""
+    """Fit two brightness gains with the same RGB projection as reconstruction."""
     size = adaptive.TILE_SIZE
+    luma_strength, _ = controls.strengths()
+    fine_multiplier = controls.fine_band_multiplier()
+    fine_floor = np.float32(controls.fine_band_floor())
 
     def sums(origin):
         pixels, core, edges = _region(read, height, width, origin, size, 17 + GRAIN_RADIUS)
-        result = np.zeros((2, 4), dtype=np.float64)
-        for level, (band, gains, _) in enumerate(islice(adaptive._bands(pixels, model, controls, edges), 3)):
-            if level == 0:
-                continue
-            power = np.square(band[core][..., 0], dtype=np.float64)
-            original = gains[0][core]
-            averaged = _box(gains[0], GRAIN_RADIUS)[core]
+        variance = adaptive._noise_variance(pixels @ adaptive.ACESCG_LUMINANCE, model, edges)
+        current = adaptive._atrous((pixels @ adaptive.OPPONENT.T)[..., 0], 0, edges)
+        result = np.empty((2, 4), dtype=np.float64)
+        for level in (1, 2):
+            smooth = adaptive._atrous(current, level, edges)
+            band = current - smooth
+            energy = adaptive._box(band * band, adaptive.WIENER_RADIUS)
+            gain = adaptive._band_gain(energy, variance, luma_strength * controls.size_multiplier(level),
+                                       model.band_sigmas[0][level], level, fine_multiplier, fine_floor)
+            power = np.square(band[core], dtype=np.float64)
+            original = gain[core]
+            averaged = _box(gain, GRAIN_RADIUS)[core]
             result[level - 1] = (power.sum(), np.sum(power * original * original),
                                  np.sum(power * averaged), np.sum(power * averaged * averaged))
+            current = smooth
         return result
 
     with CpuExecutor() as pool:
@@ -229,8 +238,9 @@ class GrainPreparation:
         self._lock = Lock()
         self._file, close = disk_cache.open_grade_scratch(height * width * 16, grain_source=source_path)
         self._close = finalize(self, close)
+        clean = controls.method == "clean_grain"
         broad = controls.splotch_size == "large"
-        margin = LARGE_COLOUR_MARGIN if broad else SMALL_COLOUR_MARGIN
+        margin = (LARGE_COLOUR_MARGIN if broad else SMALL_COLOUR_MARGIN) if clean else 0
         size = adaptive.TILE_SIZE - 2 * margin
 
         def resolve(origin):
@@ -239,7 +249,7 @@ class GrainPreparation:
             start = perf_counter()
             rgb, inner = _resolved_tile(read, height, width, origin, size, margin, model, controls, fit)
             resolved = perf_counter()
-            delta = colour_delta(rgb, broad)[inner] if controls.method == "clean_grain" else None
+            delta = colour_delta(rgb, broad)[inner] if clean else None
             coloured = perf_counter()
             rows = _pack(rgb[inner], delta)
             if not np.isfinite(rgb[inner]).all():
