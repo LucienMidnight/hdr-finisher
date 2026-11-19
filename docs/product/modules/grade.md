@@ -2422,6 +2422,15 @@ Sharpen review below are v1. Item 2 waits on Steve's recorded photo. Item 4
   starting point for methods that amplify noise less: deconvolution/capture
   sharpening, edge or noise masking, and darktable’s diffuse-or-sharpen
   approach. Compare quality and processing cost before choosing.
+- **V2: consider a Defringe tool (Steve, November 19, 2026).** In the Canon
+  night test, lit edges keep an orange-yellow colour fringe in Standard and
+  Fine Grain. Clean Grain removes it, but only as a side effect of its colour
+  cleanup. A dedicated Defringe tool would act only along high-contrast edges,
+  as defringe tools in other editors do. It would let a Fine Grain photo get
+  clean edges without Clean Grain's other changes. Not v1; no design yet. The
+  Clean Grain fixes round reports whether Fine Grain strengthens these edges
+  or keeps what is already there
+  ([brief](../../technical/briefs/denoise-clean-grain-fixes-2026-11-19.md)).
 
 1. **Built October 27:** Highlight and Shadow Desaturation in Color
    (COLOR-DESAT-01), awaiting Steve’s by-eye review; see section 4.
