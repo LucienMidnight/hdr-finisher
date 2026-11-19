@@ -67,6 +67,33 @@ fresh-profile memory qualification for those combinations remains open.
 
 [Real-app timing driver](../../codebase/tests/performance/denoise-grain-latency.js)
 
+## November 19 — Windows Grade Grain preparation race
+
+The live log from `4479f494` shows two Fine Grain preparations for the same
+Canon 5202 × 3464 HDR source. They took 18.12 s and 15.69 s. The first draw
+measured noise at the 1611 px Fit size and the backend fitted the native
+source separately. Publishing the native noise measurement led to a second
+preparation and expired the token the viewer was still using. Scratch
+reservation succeeded both times. These are observations from Steve's
+Windows session at 2560 × 1440.
+
+The fix was checked on the same Canon RAW in HDR on Windows, Electron at
+2560 × 1440 under the shared GPU lock. The disposable grade used default
+Grade settings and Even out harsh specks at ×2.5. These are single
+input-to-picture observations.
+
+| Action | Wait |
+| --- | ---: |
+| Enable Fine Grain at Fit | 17.57 s |
+| Fine Grain Fit → 100% | 1.80 s |
+| Fine → Clean Grain at 100% | 4.20 s |
+| Clean Grain 100% → Fit | 1.09 s |
+
+The Clean switch reused the Fine Grain RGB. The pan and Navigate checks kept
+the whole picture mounted, including 112 Fine and 124 Clean frames that
+needed the softer layer. Across 3,400 samples there were no blank viewers or
+error statuses.
+
 ## November 19 — Denoise after the railing-light fix
 
 MacBook Neo, A18 Pro, 8 GB, Electron at 1408×794 under the shared GPU lock.

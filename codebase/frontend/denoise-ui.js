@@ -289,9 +289,13 @@ async function recalculateDenoiseAnalysis(lane = state.currentView, options = {}
       "source",
       denoiseRendererControls(settings.controls),
       runtime.refresh || 0,
+      Math.max(256, state.session.source?.width || 0, state.session.source?.height || 0),
     );
     if (!isCurrent()) return false;
-    if (!ready) throw new Error("The denoise analysis was replaced before completion.");
+    if (!ready) {
+      runtime.dirty = true;
+      return false;
+    }
     runtime.status = "ready";
     runtime.dirty = false;
     runtime.showOriginal = false;
@@ -304,6 +308,10 @@ async function recalculateDenoiseAnalysis(lane = state.currentView, options = {}
     return true;
   } catch (error) {
     if (!isCurrent()) return false;
+    if (error?.name === "AbortError") {
+      runtime.dirty = true;
+      return false;
+    }
     runtime.status = "error";
     runtime.error = error?.message || error?.detail || JSON.stringify(error) || "Denoise analysis failed.";
     console.warn("Denoise analysis failed.", error);

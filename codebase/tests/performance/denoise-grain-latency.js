@@ -40,7 +40,7 @@ async function seedGrainCachePressure(harness) {
   return { old, newer };
 }
 
-async function checkPanCoverage(page, name, method) {
+async function checkPanCoverage(page, name, method, { scroll = false } = {}) {
   const start = Date.now();
   const home = await page.locator("#dropzone").boundingBox();
   await page.evaluate(() => {
@@ -80,10 +80,14 @@ async function checkPanCoverage(page, name, method) {
     const direction = previous[0] >= distance ? 1 : -1;
     const x = home.x + home.width * .5;
     const y = home.y + home.height * .45;
-    await page.mouse.move(x, y);
-    await page.mouse.down();
-    await page.mouse.move(x + direction * distance, y, { steps: 6 });
-    await page.mouse.up();
+    if (scroll) {
+      await page.evaluate(delta => { els.dropzone.scrollLeft -= delta; }, direction * distance);
+    } else {
+      await page.mouse.move(x, y);
+      await page.mouse.down();
+      await page.mouse.move(x + direction * distance, y, { steps: 6 });
+      await page.mouse.up();
+    }
     await waitForSharp(previous);
   }
   const previous = await position();
@@ -536,6 +540,7 @@ async function measureBaseline(page, harness, name, record, setZoom) {
     const baseline = process.argv.includes("--speed-baseline");
     const panCoverage = process.argv.includes("--pan-coverage");
     const cachePressure = process.argv.includes("--grain-cache-pressure");
+    const nativeGrainSwitch = process.argv.includes("--native-grain-switch");
     await page.evaluate(baseline => {
       performance.setResourceTimingBufferSize(2000);
       if (!baseline) return;
@@ -546,12 +551,16 @@ async function measureBaseline(page, harness, name, record, setZoom) {
         if (Number.isFinite(bytes)) window.denoiseBaselineMemory.push({ at: Date.now(), bytes,
           processes: event.data.value.processes });
       });
-    }, baseline || panCoverage);
+    }, baseline || panCoverage || nativeGrainSwitch);
     const names = process.argv.includes("--atrium-only") ? ["DSC01212.ARW"]
       : process.argv.includes("--42-only") ? ["_DSC7970.ARW"]
       : process.argv.includes("--18-only") ? ["IMG_0790.CR2"] : ["IMG_0790.CR2", "_DSC7970.ARW"];
     for (const name of names) {
-      const file = reusePhoto(name, path.resolve(__dirname, "../../output/gpu-raw", name));
+      // The native switch check can run in an isolated worktree whose shared
+      // test-photo folder points into another checkout. Keep its autosaves local.
+      const file = nativeGrainSwitch ? path.join(output, name)
+        : reusePhoto(name, path.resolve(__dirname, "../../output/gpu-raw", name));
+      if (nativeGrainSwitch) fs.copyFileSync(reusePhoto.source(name), file);
       await page.evaluate(async ({ file, baseline }) => {
         const selection = await desktop.grantSourcePath(file);
         await openStagedDesktopSource({ ...selection, rawImportSettings: {
@@ -602,6 +611,39 @@ async function measureBaseline(page, harness, name, record, setZoom) {
           && state.acceptedPresentation.processedLongEdge === requiredProcessingLongEdge()
           && previewIdleNow(), null, { timeout: 90000 });
       };
+      if (nativeGrainSwitch) {
+        await page.evaluate(() => {
+          const check = window.nativeGrainCheck = { frames: 0, blank: 0, errors: [] };
+          const sample = () => {
+            if (window.nativeGrainCheck !== check) return;
+            check.frames++;
+            const pictureVisible = [els.previewCanvas, els.previewImage].some(picture =>
+              getComputedStyle(picture).display !== "none" && picture.getBoundingClientRect().width > 0);
+            if (!pictureVisible) check.blank++;
+            const error = state.previewUnavailableReason || state.denoiseRuntime.hdr.error;
+            if (error && !check.errors.includes(error)) check.errors.push(error);
+            requestAnimationFrame(sample);
+          };
+          sample();
+        });
+        await page.evaluate(() => commitDenoiseControl("method", "fine_grain"));
+        await record("fine_grain", "enable at Fit", "#denoise-bypass", { trace: true });
+        await record("fine_grain", "Fit to 100%", "#zoom-actual", { trace: true });
+        await checkPanCoverage(page, name, "fine_grain", { scroll: true });
+        await record("clean_grain", "Fine to Clean at 100%", null, { switchMethod: true, trace: true });
+        await checkPanCoverage(page, name, "clean_grain", { scroll: true });
+        await record("clean_grain", "100% to Fit", "#zoom-fit", { trace: true });
+        const check = await page.evaluate(() => {
+          const result = window.nativeGrainCheck;
+          window.nativeGrainCheck = null;
+          return result;
+        });
+        assert.ok(check.frames > 0);
+        assert.equal(check.blank, 0);
+        assert.deepEqual(check.errors, []);
+        console.log(JSON.stringify({ name, nativeGrainSwitch: check }));
+        continue;
+      }
       if (panCoverage || cachePressure) {
         const files = cachePressure ? await seedGrainCachePressure(harness) : null;
         const methods = panCoverage ? baselineMethods : baselineMethods.slice(1);

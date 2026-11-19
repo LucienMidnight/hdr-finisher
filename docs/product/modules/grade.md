@@ -23,6 +23,10 @@ the Canon and 5.05 s on the Sony, from 13.54 s and 32.96 s. Changing a base
 control still prepares fresh pixels. The app publishes the Clean Grain
 result when the colour pass completes.
 
+Grade measures Grain noise from the native source on the first render,
+including when the photo opens at Fit. If an edit replaces the preparation,
+Grade keeps the last complete picture while it requests the current one.
+
 The four-photo comparison covers 54 fixed crops across all three methods.
 The finished CPU crops from the Standard and Fine Grain preparations were
 identical to the reference. Clean Grain's largest crop mean and p99 were

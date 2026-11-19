@@ -4,6 +4,8 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 const path = require('node:path');
 const { HDRLatestWorkQueue } = require('../frontend/latest-work-queue.js');
+const { HDRRenderFailurePolicy } = require('../frontend/render-failure.js');
+const { frontendSource } = require('./frontend-source.js');
 
 function deferred() {
   let resolve, reject;
@@ -129,4 +131,65 @@ test('replacing a document in the same session invalidates its old Denoise analy
   analysis.resolve(true);
   assert.equal(await pending, false);
   assert.deepEqual(h.calls.renders, []);
+});
+
+function renderer(fetch) {
+  const context = vm.createContext({ window: {}, performance, console, fetch, DOMException, URLSearchParams,
+    GPUTextureUsage: { TEXTURE_BINDING: 1, COPY_DST: 2 } });
+  for (const file of ['webgpu-shaders.js', 'webgpu-preview.js']) {
+    vm.runInContext(frontendSource(file), context);
+  }
+  return new context.window.HDRWebGPUPreview(null);
+}
+
+test('cold Grade Fit prepares Grain with the native noise measurement', async () => {
+  const h = harness();
+  const requests = [];
+  h.state.session.source = { width: 5202, height: 3464 };
+  h.state.denoise.hdr.controls.method = 'clean_grain';
+  const gpu = h.state.gpuPreview = renderer(async (url, options) => {
+    requests.push([url, options?.method]);
+    return url.includes('/denoise-measurement/')
+      ? Response.json({ a: 0, b: 0, c: 0 }) : new Response(null, { status: 409 });
+  });
+  gpu.available = true;
+  gpu.sessionId = 'first';
+  gpu.deferDenoiseWarm = true;
+  assert.equal(await h.context.recalculateDenoise(), false);
+  assert.equal(requests.length, 2);
+  assert.match(requests[0][0], /denoise-measurement\/hdr\?long_edge=5202&/);
+  assert.match(requests[1][0], /denoise-grain\/hdr\?long_edge=1024&/);
+  assert.equal(requests[1][1], 'POST');
+  assert.equal(h.state.denoiseRuntime.hdr.status, 'preparing');
+  assert.equal(h.state.denoiseRuntime.hdr.error, '');
+  assert.equal(h.state.denoiseRuntime.hdr.dirty, true);
+  assert.deepEqual(h.calls.renders, []);
+});
+
+test('expired Grain tile is cancelled and the replacement can be read', async () => {
+  const requests = [];
+  const uploads = [];
+  let destroyed = 0;
+  const gpu = renderer(async url => {
+    requests.push(url);
+    return url.includes('/old?') ? new Response(null, { status: 409 }) : new Response(new Uint8Array(64));
+  });
+  gpu.device = {
+    createTexture: () => ({ destroy: () => { destroyed++; } }),
+    queue: { writeTexture: (_, body) => uploads.push(body.byteLength) },
+  };
+  gpu.denoiseTileBudget = () => 0;
+  const before = { url: '/denoise-grain/hdr', token: 'old' };
+  const after = { url: before.url, token: 'new' };
+  const frame = { width: 2, height: 2 };
+  const tile = { x: 0, y: 0, ...frame };
+  const load = grain => gpu.preparedGrainTile(grain, tile, frame);
+  const policy = new HDRRenderFailurePolicy();
+  await assert.rejects(load(before), error => policy.record(error).kind === 'superseded');
+  await assert.rejects(load(before), { name: 'AbortError' });
+  assert.equal(requests.length, 1);
+  assert.equal(destroyed, 1);
+  assert.deepEqual(uploads, []);
+  assert.equal((await load(after)).grainToken, 'new');
+  assert.deepEqual(uploads, [64]);
 });

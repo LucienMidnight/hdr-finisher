@@ -325,7 +325,7 @@ async function renderPreviewForLaneInner(
       const reasons = Array.isArray(payload.refusals) && payload.refusals.length
         ? ` ${payload.refusals.join(", ")}.`
         : "";
-      markPreviewUnavailable(`${payload.detail || "Bounded Full preview is unavailable for this graph."}${reasons}`);
+      markStripPreviewUnavailable(lane, payload, reasons);
     } else if (displayWhenReady && showProgress && requestIsCurrent()) {
       setPreviewMessage("A newer adjustment replaced this render.", progressSteps[0]);
     }
@@ -432,7 +432,7 @@ async function renderRawPreviewForLane(lane, displayWhenReady, longEdge, { showP
       const reasons = Array.isArray(payload.refusals) && payload.refusals.length
         ? ` ${payload.refusals.join(", ")}.`
         : "";
-      markPreviewUnavailable(`${payload.detail || "Bounded Full preview is unavailable for this graph."}${reasons}`);
+      markStripPreviewUnavailable(lane, payload, reasons);
     }
     return false;
   }
@@ -631,6 +631,12 @@ function denoiseUnderlayerEdge() {
     * Math.min(1, width / native.width, height / native.height)));
 }
 
+function markStripPreviewUnavailable(lane, payload, reasons) {
+  markPreviewUnavailable(state.denoise?.[lane]?.enabled
+    ? "Denoise couldn’t finish this view. The last picture is still displayed."
+    : `${payload.detail || "Bounded Full preview is unavailable for this graph."}${reasons}`);
+}
+
 async function renderGpuDraftInner(
   lane = state.currentView,
   request = {},
@@ -701,15 +707,16 @@ async function renderGpuDraftInner(
     const expectedIdentity = `${sessionId}:${lane}:${longEdge}:${requestedGeometrySignature}:source`;
     const denoise = state.gpuPreview?.diagnosticsSnapshot?.().denoise;
     const runtime = state.denoiseRuntime[lane];
-    if (runtime.dirty || !denoise?.cacheReady || denoise.identity !== expectedIdentity) {
-      const retarget = () => !runtime.dirty && state.gpuPreview.retargetPreparedDenoise?.(
+    if (runtime.analysisInFlight || runtime.dirty || !denoise?.cacheReady || denoise.identity !== expectedIdentity) {
+      const retarget = () => !runtime.analysisInFlight && !runtime.dirty && state.gpuPreview.retargetPreparedDenoise?.(
         sessionId, lane, longEdge, requestedGeometrySignature, "source");
       if (!retarget()) {
         const waiting = "Preparing Denoise for this view…";
         if (hideStatus && lane === state.currentView) setIndeterminatePreviewMessage(waiting);
         const ready = await recalculateDenoise(lane, { longEdge, renderAfter: false });
         if (state.previewStatusEntry?.message === waiting) hidePreviewMessage();
-        if (!ready) return refuse("denoise-scale-analysis-unavailable");
+        if (!ready) return refuse(runtime.status === "error"
+          ? "denoise-scale-analysis-unavailable" : "superseded-denoise-preparation");
         retarget();
       }
     }
@@ -905,6 +912,14 @@ async function renderGpuDraftInner(
       });
       return true;
   } catch (error) {
+    if (error?.name === "AbortError" && error.grainPreparationReplaced) {
+      // A render can lose its preparation after it has begun fetching tiles.
+      // Re-enter through setup once, keeping the complete picture mounted.
+      if (!request.grainPreparationRetried && sourceOptions.isCurrent()) {
+        return renderGpuDraftInner(lane, { ...request, grainPreparationRetried: true });
+      }
+      return refuse("superseded-denoise-preparation");
+    }
     const verdict = state.gpuFailurePolicy
       ? state.gpuFailurePolicy.record(error, { superseded: Boolean(error?.recoverable), work: state.session?.session_id ?? null })
       : {

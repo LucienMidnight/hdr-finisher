@@ -1212,7 +1212,7 @@
           selectedSource: this.denoiseSourceSelector?.selected || "original",
           identity: this.denoiseSourceSelector?.identity || null,
           resolvedResident: Boolean(this.denoiseSourceSelector?.resolved),
-          cacheReady: Boolean(this.denoiseSourceSelector?.cache),
+          cacheReady: Boolean(this.denoiseSourceSelector?.cache && !this.denoiseSourceSelector.cache.grain?.stale),
           algorithmVersion: this.denoiseSourceSelector?.cache?.algorithmVersion || null,
           controls: this.denoiseSourceSelector?.controls
             ? { ...this.denoiseSourceSelector.controls }
@@ -2689,6 +2689,9 @@
     }
 
     async preparedGrainTile(grain, region, source) {
+      const replaced = () => Object.assign(new DOMException("Grain preparation was replaced.", "AbortError"),
+        { grainPreparationReplaced: true });
+      if (grain.stale) throw replaced();
       const { x, y, width, height } = region;
       const key = `grain|${grain.token}|${source.width}x${source.height}|${x},${y},${width},${height}`;
       const previous = this.denoiseTiles.get(key);
@@ -2715,6 +2718,10 @@
           const query = new URLSearchParams({ x, y: y + offset, width, height: count,
             frame_width: source.width, frame_height: source.height });
           const response = await fetch(`${grain.url}/${grain.token}?${query}`);
+          if (response.status === 409) {
+            grain.stale = true;
+            throw replaced();
+          }
           if (!response.ok) throw new Error(`Clean Grain source request failed (${response.status}).`);
           const body = await response.arrayBuffer();
           if (body.byteLength !== width * count * 16) throw new Error("Clean Grain returned an incomplete region.");
@@ -5887,7 +5894,7 @@
      * for it. A render reconstructs from the source it loads for itself, which
      * zoomed in is only the part on screen.
      */
-    async analyzeDenoiseProxy(sessionId, lane, adjustments, longEdge, editRevision = 0, sourceIdentity = "source", controls = {}, refresh = 0) {
+    async analyzeDenoiseProxy(sessionId, lane, adjustments, longEdge, editRevision = 0, sourceIdentity = "source", controls = {}, refresh = 0, nativeEdge = null) {
       if (!this.available || !sessionId) return false;
       const generation = ++this.denoiseSelectorGeneration;
       const geometrySignature = JSON.stringify(adjustments?.shared?.geometry || {});
@@ -5905,7 +5912,7 @@
         grainEvenness: controls.grainEvenness ?? controls.grain_evenness ?? 1,
         colorSplotches: controls.colorSplotches ?? controls.color_splotches ?? 1,
         splotchSize: controls.splotchSize ?? controls.splotch_size ?? "small",
-      }, refresh);
+      }, refresh, nativeEdge);
     }
 
     async ensureAdaptiveDenoisePipelines(beforeNext = null) {
@@ -6029,11 +6036,13 @@
       const started = performance.now();
       const cached = await fetch(measurementURL);
       if (cached.status === 200) return cached.json();
+      if (cached.status === 409) throw new DOMException("Denoise preparation was replaced.", "AbortError");
       if (!cached.ok) throw new Error(`Denoise measurement request failed (${cached.status}).`);
       return HDRDenoiseMeasurement.acquire(cached.headers.get("X-Denoise-Measurement-Key") || measurementURL, async () => {
       let description;
       try {
         const response = await fetch(measurementURL + (measurementURL.includes("?") ? "&" : "?") + "source=true");
+        if (response.status === 409) throw new DOMException("Denoise preparation was replaced.", "AbortError");
         if (!response.ok) throw Error(`Denoise source request failed (${response.status}).`);
         if (response.headers.get("content-type")?.includes("application/json")) return response.json();
         const body = await response.arrayBuffer(), length = new DataView(body).getUint32(0,true);
@@ -6046,11 +6055,13 @@
         const stored = await fetch(measurementURL,{method:"POST",headers:{"Content-Type":"application/json"},
           body:JSON.stringify({...result,key:description.key,width:description.source_width,height:description.source_height,
             gpu_ms:result.duration_ms,duration_ms:performance.now()-started})});
+        if (stored.status === 409) throw new DOMException("Denoise preparation was replaced.", "AbortError");
         if (!stored.ok) throw Error(`Denoise measurement publication failed (${stored.status}).`);
         return stored.json();
       } catch (error) {
-        if (/request failed|publication failed|source request/.test(error.message)) throw error;
+        if (error.name === "AbortError" || /request failed|publication failed|source request/.test(error.message)) throw error;
         const response = await fetch(url + (url.includes("?") ? "&" : "?") + "fallback_reason=" + encodeURIComponent(error.message));
+        if (response.status === 409) throw new DOMException("Denoise preparation was replaced.", "AbortError");
         if (!response.ok) throw new Error(`Denoise CPU fallback failed (${response.status}).`);
         const model = await response.json();
         if (description) {
@@ -6059,6 +6070,7 @@
               width:description.source_width,height:description.source_height,
               measured_pixels:Math.min(description.source_width*description.source_height,4*1024*1024),
               duration_ms:performance.now()-started,reason:error.message})});
+          if (stored.status === 409) throw new DOMException("Denoise preparation was replaced.", "AbortError");
           if (!stored.ok) throw Error(`Denoise fallback publication failed (${stored.status}).`);
         }
         return model;
@@ -6066,15 +6078,17 @@
       });
     }
 
-    async analyzeAdaptiveDenoise(sessionId, lane, frame, longEdge, editRevision, geometrySignature, generation, controls, refresh) {
+    async analyzeAdaptiveDenoise(sessionId, lane, frame, longEdge, editRevision, geometrySignature, generation, controls, refresh, nativeEdge) {
       const startedAt = performance.now();
       this.denoiseCounters.analysisCalls += 1;
       this.recordStage("denoise-analysis", { state: "started", generation, longEdge, algorithm: ADAPTIVE_DENOISE_ALGORITHM_VERSION });
       const query = `long_edge=${longEdge}&edit_revision=${editRevision}&geometry_signature=${encodeURIComponent(geometrySignature)}`;
       const experimental = controls.method === "clean_grain"
         || (controls.method === "fine_grain" && controls.grainEvenness);
-      const native = this.maskSourceSize?.sessionId === sessionId
-        ? Math.max(256, this.maskSourceSize.width, this.maskSourceSize.height) : longEdge;
+      // Grade can start analysis before the first render sets maskSourceSize.
+      // Measure the native source the Grain preparation will actually use.
+      const native = (experimental ? nativeEdge : null) ?? (this.maskSourceSize?.sessionId === sessionId
+        ? Math.max(256, this.maskSourceSize.width, this.maskSourceSize.height) : longEdge);
       const modelQuery = experimental ? query.replace(`long_edge=${longEdge}`, `long_edge=${native}`) : query;
       const model = await this.fetchDenoiseModel(`/api/session/${sessionId}/denoise-model/${lane}?${modelQuery}`);
 
@@ -6091,6 +6105,7 @@
             grain_evenness: controls.grainEvenness, splotch_size: controls.splotchSize,
           }),
         });
+        if (response.status === 409) throw new DOMException("Grain preparation was replaced.", "AbortError");
         if (!response.ok) {
           const detail = response.status === 507 ? (await response.json().catch(() => null))?.detail : null;
           throw new Error(typeof detail === "string" ? detail : `Denoise preparation failed (${response.status}).`);
@@ -6174,7 +6189,7 @@
 
     retargetPreparedDenoise(sessionId, lane, longEdge, geometrySignature, sourceIdentity) {
       const selector = this.denoiseSourceSelector;
-      if (!selector?.cache?.grain?.token || selector.cache.preparedFrame
+      if (!selector?.cache?.grain?.token || selector.cache.grain.stale || selector.cache.preparedFrame
           !== JSON.stringify([sessionId, lane, geometrySignature, sourceIdentity])) return false;
       const identity = `${sessionId}:${lane}:${longEdge}:${geometrySignature}:${sourceIdentity}`;
       if (selector.identity !== identity) {
