@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from .cpu_budget import CpuExecutor
 from dataclasses import dataclass, replace
+from typing import Callable
 
 import numpy as np
 
@@ -125,6 +126,7 @@ def apply_adjustments(
     source_pixel_scale: float = 1.0,
     highlight_anchor: HighlightAnchor | None = None,
     apply_output_clamp: bool = True,
+    source_filter: Callable[[np.ndarray, bool], np.ndarray] | None = None,
 ) -> np.ndarray:
     color_context = color_context or RenderColorContext()
     geometry = adjustments.shared.geometry
@@ -146,6 +148,11 @@ def apply_adjustments(
         and adjustments.sdr.use_authored_base
         else None
     )
+    if source_filter is not None:
+        if fixed_reference is not None and not adjustments.sdr.linked_to_hdr:
+            fixed_reference = source_filter(fixed_reference, True)
+        else:
+            fixed_source = source_filter(fixed_source, False)
     return apply_fixed_source_adjustments(
         fixed_source,
         adjustments,

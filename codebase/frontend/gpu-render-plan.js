@@ -119,6 +119,7 @@ const GPU_PARAMS = window.HDRGpuParamLayout.indices;
     BLACK_AND_WHITE_PARAM,
     PEAK_REDUCTION_SHADER_SOURCE,
     ADAPTIVE_DENOISE_SHADER_SOURCE,
+    GRAIN_DENOISE_SHADER_SOURCE,
     SHADER_SOURCE,
     LUMA_MASK_SHADER_SOURCE,
   } = shaderSources();
@@ -163,6 +164,18 @@ const GPU_PARAMS = window.HDRGpuParamLayout.indices;
       if (!Number.isFinite(value) || value < 0 || value > 1) throw new Error(`${name} must be between 0 and 1`);
       return [name, value];
     }));
+  }
+
+  function adaptiveResolveOptions(controls) {
+    const sizes = adaptiveDenoiseSizes(controls);
+    if (!controls.method || controls.method === "standard") return sizes;
+    const options = { ...sizes, method: controls.method, splotchSize: controls.splotchSize ?? "large" };
+    for (const key of ["grainEvenness", "colorSplotches", "darkSpecks"]) {
+      const value = Number(controls[key] ?? 1);
+      if (!Number.isFinite(value) || value < 0 || value > 1) throw new Error(`${key} must be between 0 and 1`);
+      options[key] = value;
+    }
+    return options;
   }
 
   // The grid a tile's halo and a region's origin are rounded to while Denoise
@@ -507,6 +520,9 @@ const GPU_PARAMS = window.HDRGpuParamLayout.indices;
       add("tile-denoise-resolved", "denoise", "resident", denoise.resolvedBytes, { tile: true });
       add("tile-denoise-scratch", "denoise", "transient", denoise.reconstructionScratchBytes, { tile: true });
     }
+    if (options.cleanGrain) {
+      add("tile-clean-grain", "denoise", "transient", workPixels * 16 * 4, { tiles: 4 });
+    }
     add("tile-result-cache", "tile-cache", "cached",
       Math.max(0, Math.floor(Number(options.tileCacheBytes) || 0)), { tile: true });
     add("upload-staging", "staging", "transient", Math.max(0, Math.floor(Number(options.stagingBytes) || 0)));
@@ -604,6 +620,7 @@ const GPU_PARAMS = window.HDRGpuParamLayout.indices;
       add("denoise-resolved", "denoise", "resident", denoise.resolvedBytes);
       add("denoise-reconstruction-scratch", "denoise", "transient", denoise.reconstructionScratchBytes);
     }
+    if (options.cleanGrain) add("clean-grain", "denoise", "cached", pixels * 16);
 
     add("cpu-mask-leaves", "mask", "cached", pixels * maskCount, { masks: maskCount });
     add("boolean-mask-nodes", "mask", "resident", pixels * 2 * booleanMaskPasses, { passes: booleanMaskPasses });

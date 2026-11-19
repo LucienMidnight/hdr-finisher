@@ -26,6 +26,7 @@ function encoding({ cancelled = false, throws = false } = {}) {
     presentation: { release: () => released++ }, presentationTarget: null,
     localBuffers: [{ buffer: { destroy: () => freed++ } }],
     denoiseParamBuffers: [{ destroy: () => freed++ }],
+    cleanGrainTransientTextures: cancelled || throws ? [{ destroy: () => freed++ }] : [],
     denoiseTilesUnsubmitted: ['unwritten'], denoiseTilesCreated: ['unwritten'], denoiseTilesUsed: [],
     denoiseTileKey: () => null, denoiseSource: null, denoiseControls: {}, noiseView: false,
     detailResultView: {}, clarityFrame: null, plan: { tiles: [] }, foregroundTiles: [],
@@ -37,7 +38,7 @@ function encoding({ cancelled = false, throws = false } = {}) {
 test('Cancellation closes validation scope, releases peak target and temporary buffers', async () => {
   const f = encoding({ cancelled: true });
   assert.equal((await f.run).rendered, false);
-  assert.deepEqual(f.counts(), { scopes: 0, released: 1, freed: 2, submissions: 0 });
+  assert.deepEqual(f.counts(), { scopes: 0, released: 1, freed: 3, submissions: 0 });
   assert.equal(f.peakTarget.busy, false);
   assert.deepEqual(f.dropped, ['unwritten']);
 });
@@ -45,7 +46,7 @@ test('Cancellation closes validation scope, releases peak target and temporary b
 test('An encoder exception receives the same cleanup and still propagates', async () => {
   const f = encoding({ throws: true });
   await assert.rejects(f.run, /encode failure/);
-  assert.deepEqual(f.counts(), { scopes: 0, released: 1, freed: 2, submissions: 0 });
+  assert.deepEqual(f.counts(), { scopes: 0, released: 1, freed: 3, submissions: 0 });
   assert.equal(f.peakTarget.busy, false);
   assert.deepEqual(f.dropped, ['unwritten']);
 });

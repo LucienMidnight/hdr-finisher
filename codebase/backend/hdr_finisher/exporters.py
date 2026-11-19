@@ -141,17 +141,26 @@ def _denoised_export_source(session: object, kind: PreviewKind) -> np.ndarray:
     return denoise_adaptive.resolve_adaptive(
         image,
         model,
-        denoise_adaptive.AdaptiveControls(
-            amount=controls.amount,
-            luminance=controls.luminance,
-            color_noise=controls.color_noise,
-            detail_recovery=controls.detail_recovery,
-            finest_noise=controls.finest_noise,
-            fine_noise=controls.fine_noise,
-            medium_noise=controls.medium_noise,
-            coarse_noise=controls.coarse_noise,
-        ),
+        denoise_adaptive.AdaptiveControls(**controls.model_dump()),
     )
+
+
+def _experimental_delivery_filter(session, kind):
+    """The experimental resolve operates on the geometry-fixed preview source."""
+    lane = denoise_settings_for_export(session, kind)
+    if lane is None or lane.controls.method == "standard":
+        return None
+    controls = denoise_adaptive.AdaptiveControls(**lane.controls.model_dump())
+    if not controls.grain_evenness and (controls.method == "fine_grain"
+            or not (controls.color_splotches or controls.dark_specks)):
+        return None
+
+    def resolve(image, authored):
+        from .denoise_measurement import cpu_delivery_model
+        model = cpu_delivery_model(session, authored_image=image if authored else None)
+        return denoise_adaptive.resolve_adaptive(image, model, controls)
+
+    return resolve
 
 
 def _render_export_branch(session, settings, kind, adjustments):
@@ -203,7 +212,8 @@ def _render_unwatermarked_branch(
                     measurement["anchor"] = measured * .18 / color_context.hdr_reference_white_nits if kind == PreviewKind.HDR else measured
             settings._exact_measurements[kind.value] = measurement
         return image
-    source = _denoised_export_source(session, kind)
+    source_filter = _experimental_delivery_filter(session, kind)
+    source = session.image if source_filter else _denoised_export_source(session, kind)
     image = apply_adjustments(
         source,
         adjustments,
@@ -213,6 +223,7 @@ def _render_unwatermarked_branch(
         include_output_highlight_compression=False,
         local_adjustments=adjustments.enabled_locals(getattr(session, "local_adjustments", None)),
         color_context=color_context,
+        source_filter=source_filter,
     )
     # Grain now develops inside the negative, before print and scan. Delivery
     # resizing/sharpening therefore resamples the completed film, like a scan.
