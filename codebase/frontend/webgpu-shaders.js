@@ -644,6 +644,9 @@ fn adaptivePreparedMain(@builtin(global_invocation_id) id: vec3u) {
     const GAMUT_MATH_EPS: f32 = 0.000001;
     const GAMUT_RESIDUE_EPS: f32 = 0.00002;
     const GAMUT_NEUTRAL_RGB_EPS: f32 = 0.001;
+    const SIGNED_SHADOW_FULL: f32 = 0.08;
+    const SIGNED_SHADOW_END: f32 = 0.16;
+    const SIGNED_SHADOW_TOE: f32 = 0.001;
 
     struct GamutCusp {
       lightness: f32,
@@ -786,8 +789,20 @@ fn adaptivePreparedMain(@builtin(global_invocation_id) id: vec3u) {
       }
       return parameter;
     }
-    fn compressSrgbGamut(input: vec3f) -> vec3f {
-      if (all(input >= vec3f(0.0)) && all(input <= vec3f(1.0))) { return input; }
+    fn compressSrgbGamut(rgb: vec3f) -> vec3f {
+      if (all(rgb >= vec3f(0.0)) && all(rgb <= vec3f(1.0))) { return rgb; }
+      let floor = min(rgb.r, min(rgb.g, rgb.b));
+      let peak = max(rgb.r, max(rgb.g, rgb.b));
+      var input = rgb;
+      if (floor < 0.0 && peak < SIGNED_SHADOW_END) {
+        // Match the CPU's smooth signed-shadow toe before the OKLab projection.
+        let positive = max(rgb, vec3f(0.0));
+        let knee = min(-floor, SIGNED_SHADOW_TOE);
+        let t = min(positive, vec3f(knee)) / knee;
+        let toe = positive * t * (2.0 - t);
+        let weight = smoothstep(SIGNED_SHADOW_FULL, SIGNED_SHADOW_END, peak);
+        input = toe + weight * (rgb - toe);
+      }
       if (all(input >= vec3f(-(GAMUT_RESIDUE_EPS + GAMUT_MATH_EPS)))
           && all(input <= vec3f(1.0 + GAMUT_RESIDUE_EPS + GAMUT_MATH_EPS))) {
         return clamp(input, vec3f(0.0), vec3f(1.0));

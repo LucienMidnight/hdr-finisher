@@ -19,6 +19,8 @@ for (let index = 0; index <= 256; index += 1) {
   const offset = -0.002 + (0.004 * index / 256);
   push(offset, 0, 1);
   push(1 + offset, 0.2, 0.1);
+  push(0.024, offset, -0.039);
+  push(-0.039, 0.17 * index / 256, -0.011);
 }
 
 function cpuReference(input) {

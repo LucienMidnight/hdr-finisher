@@ -20,6 +20,13 @@ MATH_EPS = np.float32(1e-6)
 GAMUT_EPS = np.float32(2e-5)
 NEUTRAL_RGB_EPS = np.float32(1e-3)
 
+# Linear sRGB. Keep the signed-shadow toe below the midtone range, and
+# confine its effect on positive channels to the first few sRGB code values.
+SIGNED_SHADOW_FULL = np.float32(0.08)
+SIGNED_SHADOW_END = np.float32(0.16)
+SIGNED_SHADOW_TOE = np.float32(0.001)
+SDR_GAMUT_CACHE_SUFFIX = ":signed-shadow-toe-v1"
+
 # Selected by the HDR Finisher corpus sweep.  The qualification harness may
 # override this argument while evaluating the predeclared candidates.
 SDR_GAMUT_ALPHA = np.float32(5.0)
@@ -223,7 +230,7 @@ def _find_gamut_intersection(
     return parameter
 
 
-def _map_oog_pixels(source: np.ndarray, alpha: float | np.ndarray) -> np.ndarray:
+def _project_oog_pixels(source: np.ndarray, alpha: float) -> np.ndarray:
     """Map a compact N-by-3 array known to require perceptual clipping."""
     lab = linear_srgb_to_oklab(source)
     lightness = lab[:, 0]
@@ -320,6 +327,44 @@ def _map_oog_pixels(source: np.ndarray, alpha: float | np.ndarray) -> np.ndarray
     return np.clip(mapped, np.float32(0.0), np.float32(1.0)).astype(np.float32, copy=False)
 
 
+def _map_oog_pixels(source: np.ndarray, alpha: float) -> np.ndarray:
+    """Prepare compact out-of-gamut pixels before the OKLab projection."""
+    peak = np.max(source, axis=-1)
+    floor = np.min(source, axis=-1)
+    shadows = (floor < 0.0) & (peak < SIGNED_SHADOW_END)
+    if np.any(shadows):
+        # Signed cube roots can turn below-black opponent values into strong
+        # OKLab chroma. The adaptive cusp projection then adds lightness to
+        # fit that hue. Roll signed shadows into legal RGB before either step.
+        # The toe joins zero and identity with continuous slopes; its width
+        # tends to zero as the pixel returns to the legal side of the cube.
+        signed = source[shadows]
+        positive = np.maximum(signed, np.float32(0.0))
+        knee = np.minimum(-floor[shadows], SIGNED_SHADOW_TOE)[:, None]
+        t = np.minimum(positive, knee) / knee
+        toe = positive * t * (np.float32(2.0) - t)
+        blend = np.clip(
+            (peak[shadows] - SIGNED_SHADOW_FULL) / (SIGNED_SHADOW_END - SIGNED_SHADOW_FULL),
+            np.float32(0.0), np.float32(1.0),
+        )[:, None]
+        weight = blend * blend * (np.float32(3.0) - np.float32(2.0) * blend)
+        prepared = toe + weight * (signed - toe)
+        source[shadows] = prepared
+        peak[shadows] = np.max(prepared, axis=-1)
+        floor[shadows] = np.min(prepared, axis=-1)
+
+    # Inclusive gamut and float32 residue need no perceptual projection.
+    residue = GAMUT_EPS + MATH_EPS
+    project = ((floor < -residue) | (peak > np.float32(1.0) + residue)) & (
+        peak - floor >= NEUTRAL_RGB_EPS
+    )
+    if np.all(project):
+        return _project_oog_pixels(source, alpha)
+    if np.any(project):
+        source[project] = _project_oog_pixels(source[project], alpha)
+    return np.clip(source, np.float32(0.0), np.float32(1.0), out=source)
+
+
 def compress_to_srgb_gamut(image: np.ndarray, *, alpha: float = float(SDR_GAMUT_ALPHA)) -> np.ndarray:
     """Clip linear sRGB to its cube along hue-preserving adaptive OKLCh rays."""
     rgb = np.asarray(image, dtype=np.float32)
@@ -332,29 +377,8 @@ def compress_to_srgb_gamut(image: np.ndarray, *, alpha: float = float(SDR_GAMUT_
     if not np.any(needs_mapping):
         return output
 
-    # Values no farther outside the cube than float32 residue do not need a
-    # perceptual projection. Snapping only those channels avoids injecting
-    # solver noise where an upstream matrix lands a boundary neutral a few
-    # ULPs above one.
-    residue = finite & np.all(
-        (rgb >= -(GAMUT_EPS + MATH_EPS))
-        & (rgb <= np.float32(1.0) + GAMUT_EPS + MATH_EPS),
-        axis=-1,
-    )
-    residue &= needs_mapping
-    output[residue] = np.clip(rgb[residue], np.float32(0.0), np.float32(1.0))
-    needs_mapping &= ~residue
-    near_neutral = finite & (
-        np.max(rgb, axis=-1) - np.min(rgb, axis=-1) < NEUTRAL_RGB_EPS
-    )
-    near_neutral &= needs_mapping
-    output[near_neutral] = np.clip(rgb[near_neutral], np.float32(0.0), np.float32(1.0))
-    needs_mapping &= ~near_neutral
-    if not np.any(needs_mapping):
-        return output
-
     source = np.nan_to_num(
-        rgb[needs_mapping], nan=np.float32(0.0), posinf=np.float32(1.0), neginf=np.float32(0.0)
+        rgb[needs_mapping], copy=False, nan=np.float32(0.0), posinf=np.float32(1.0), neginf=np.float32(0.0)
     ).astype(np.float32, copy=False)
     if source.shape[0] >= 262_144 and _GAMUT_WORKERS > 1:
         chunks = [chunk for chunk in np.array_split(source, _GAMUT_WORKERS) if chunk.size]

@@ -18,6 +18,17 @@ all independent SDR pre-Film controls and locals. HDR's output stage is unchange
 Linked ordering alone measures inversions beyond those already in the Match
 target using the same eight bins and .005 allowance. [Current Match contract](sdr-match.md#current-recipe-and-output-contract).
 
+## November 19: signed shadows at the SDR gamut boundary
+
+After the SDR shoulder, negative channels in dark out-of-gamut pixels ease
+into black before conversion to OKLab. Signed cube roots and the adaptive
+projection toward the gamut cusp could otherwise add chroma and brightness
+to sensor noise. The shared CPU and WebGPU toe only affects pixels that
+contain a negative channel and fades out as the brightest linear sRGB
+component rises from 0.08 to 0.16. Legal dark colours bypass it. The same
+placement applies to generated, authored and Linked SDR. It leaves the
+signed editing stages and HDR output ceiling intact.
+
 ## November 16 N2: global Tone and aligned wheel ranges
 
 Global Tone is now one frozen-guide operation: Blacks, Shadows, Midtones,

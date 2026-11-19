@@ -13,6 +13,7 @@ from .library_cache import LibraryCache
 from .library_copies import source
 from .library_documents import identity as grade_identity
 from .library_pictures import PICTURE_VERSION
+from .sdr_gamut import SDR_GAMUT_CACHE_SUFFIX
 
 VERSION = "finished-thumbnail-v7:" + PICTURE_VERSION
 
@@ -39,13 +40,14 @@ class FinishedThumbnails:
         finally:
             db.close()
         result = {}
+        version = VERSION + (SDR_GAMUT_CACHE_SUFFIX if lane == "sdr" else "")
         for path in paths:
             row = files.get(source(path))
             if row is None:
                 continue
             state = json.loads(states[path]) if path in states else {}
             grade = state.get("desired") if state.get("pending") else state.get("indexed_grade", state.get("baseline"))
-            value = dict(version=VERSION, path=path, lane=lane, format=format,
+            value = dict(version=version, path=path, lane=lane, format=format,
                          bytes=row[0], mtime_ns=row[1], grade=grade_identity(grade),
                          cache_epoch=self.cache.publication_epoch(source(path)))
             key = sha256(json.dumps(value, sort_keys=True).encode()).hexdigest()

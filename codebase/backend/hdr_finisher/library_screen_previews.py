@@ -14,6 +14,7 @@ from .library_documents import atomic_json
 from .library_copies import source
 from .library_live import quality
 from .library_pictures import picture_key, PICTURE_VERSION
+from .sdr_gamut import SDR_GAMUT_CACHE_SUFFIX
 
 VERSION = 'stored-screen-preview-jxl-v7:' + PICTURE_VERSION
 LIMIT_BYTES = 10 * 1024**3
@@ -54,7 +55,8 @@ class StoredScreenPreviews:
             stamp = [stat.st_size, stat.st_mtime_ns]
             source_key = picture_key(physical, 2560, quality(document))
         grade = sha256(json.dumps(document, sort_keys=True).encode()).hexdigest()
-        identity = dict(version=VERSION, path=str(path), lane=lane,
+        version = VERSION + (SDR_GAMUT_CACHE_SUFFIX if lane == "sdr" else "")
+        identity = dict(version=version, path=str(path), lane=lane,
             display_width=display_width, display_height=display_height,
             source_key=source_key,
             stamp=stamp, grade_identity=grade, cache_epoch=self.cache.publication_epoch(physical))
