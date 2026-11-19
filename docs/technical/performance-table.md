@@ -1,32 +1,50 @@
 ## November 19 — Experimental Denoise in the app
 
-MacBook Neo, A18 Pro, 8 GB, 1408×794 Electron window and the shared GPU lock.
-Code in the commit containing this note. One run on each native RAW with
-Even out harsh specks at ×2.5. Grade used Fit, at 1288×858 on the 18.02 MP
-Canon IMG_0790.CR2 and 1285×858 on the 42.39 MP Sony _DSC7970.ARW.
-Preparation and Recalculate run from the action to the drawn picture. Each
-drag range covers three input values to the next accepted GPU frame.
-Export runs from request to validated native-size JPEG Ultra HDR on the
-GPU, quality 90, with the 1000-nit target. These are starting baselines.
+MacBook Neo, A18 Pro, 8 GB, Electron at 1408×794, shared GPU lock. Native
+18.02 MP Canon IMG_0790.CR2 and 42.39 MP Sony _DSC7970.ARW, with Even out
+harsh specks at ×2.5. Fit used 1288×858 and 1285×858, respectively. Preparation
+runs from the control action to the exact picture at the requested zoom.
+The first preview can be a different picture that appears while work runs.
+These are single action-to-screen measurements, with the photo already open.
+
+### Original build (ea6aaaef)
+
+The earlier 1.68 s Clean Grain preparation readings were measured at Fit.
+The updated driver reproduced Steve's 30-second wait at 100%.
 
 | Action | 18 MP Canon | 42 MP Sony |
 | --- | ---: | ---: |
-| Fine Grain, first preparation | 0.68 s | 1.41 s |
+| Fine Grain, first preparation at Fit | 1.17 s | 0.46 s |
+| Fine Grain, first preparation at 100% | 3.83 s | 9.95 s |
+| Fine Grain, Recalculate at Fit | 0.46 s | 0.29 s |
+| Fine Grain, 100% to Fit | 0.28 s | 0.44 s |
+| Fine Grain, Fit to 100% | 3.92 s | 9.77 s |
+| Clean Grain, first preparation at Fit | 2.03 s | 2.41 s |
+| Clean Grain, first preparation at 100% | 33.86 s | 74.83 s |
+| Clean Grain, Recalculate at Fit | 1.70 s | 1.63 s |
+| Clean Grain, 100% to Fit | 35.99 s | 100.10 s |
+| Clean Grain, Fit to 100% | 31.43 s | 82.16 s |
+
+At 100%, backend Clean Grain preparation took 32.31 s of the Canon's
+33.86 s and 72.91 s of the Sony's 74.83 s. On the Canon, the 18 correction
+requests transferred 72 MiB and took 0.92 s in total. The zoom-out runs
+each rebuilt the Fit result, repeated native preparation, and then rebuilt
+Fit again. The sampled pans reused their preparation. The Sony pan drew
+in 0.53 s. One Canon pan stalled for 88.78 s during reported system memory
+pressure, with two correction reads totaling 0.12 s and no preparation.
+
+The earlier drag and native export trials used this build. The drag clock
+ran to the next accepted frame. Native JPEG Ultra HDR export used the GPU,
+quality 90, with the 1000-nit target.
+
+| Action | 18 MP Canon | 42 MP Sony |
+| --- | ---: | ---: |
 | Fine Grain, Amount drag | 98–102 ms | 98–348 ms |
-| Fine Grain, Recalculate | 0.30 s | 0.32 s |
-| Fine Grain, native export | 16.56 s | 45.21 s |
-| Clean Grain, first preparation | 1.68 s | 1.68 s |
 | Clean Grain, Color Splotches drag | 100–117 ms | 100–115 ms |
 | Clean Grain, Dark Specks drag | 100–110 ms | 97–102 ms |
-| Clean Grain, Recalculate | 2.25 s | 2.46 s |
+| Fine Grain, native export | 16.56 s | 45.21 s |
 | Clean Grain, native export | 43.18 s | 124.81 s |
 
-The generated 1290–1293-pixel-wide source check also passed GPU/CPU scene agreement
-for all methods, exact Standard versus Fine Grain at zero evenness, and
-both live blends off. The click-to-readback clocks in that diagnostic
-include copying the complete synthetic frame through the test runner.
-They were 1.81–1.99 s for Fine Grain preparation, 2.71–2.98 s for
-Clean Grain preparation and 1.62–1.80 s for the Clean Grain blend check.
 [Timing driver](../../codebase/tests/performance/denoise-grain-latency.js)
 
 ## November 18 — Relative colour and patch repair (Denoise research)

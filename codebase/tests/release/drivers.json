@@ -637,7 +637,7 @@
       "path": "tests/performance/denoise-grain-latency.js",
       "areas": ["detail", "export-proof"],
       "tier": "full",
-      "protects": "MacBook Neo experimental Denoise preparation, first drawn slider response, recalculation and native export on 18 MP and 42 MP RAWs.",
+      "protects": "Experimental Denoise action-to-final-picture preparation, Recalculate, Fit/native zoom changes and pan on 18 MP and 42 MP RAWs. Opt-in native export timing.",
       "launch": { "method": "electron" }
     },
     {
