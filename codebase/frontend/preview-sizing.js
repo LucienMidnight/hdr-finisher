@@ -291,6 +291,10 @@ function dragLatencyPreference() {
 
 function interactiveScaleDecision(lane = state.currentView, { interacting = true } = {}) {
   const exactEdge = refinementProxyLongEdge();
+  const denoise = state.denoise[lane];
+  if (denoise?.enabled && denoise.controls.method !== "standard") {
+    return { edge: exactEdge, coarse: false, scale: 1 };
+  }
   const visibleEdge = Math.min(exactEdge, Math.max(1, displayedLongEdge()));
   return state.previewLatencyController?.choose({
     preference: dragLatencyPreference(),

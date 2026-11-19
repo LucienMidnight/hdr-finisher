@@ -46,6 +46,14 @@ function renderDenoiseControls() {
   const group = els.denoiseBypass.closest(".control-group");
   const defaults = defaultDenoiseDocument()[lane];
   const modified = !valuesEqual(settings.controls, defaults.controls);
+  const experimental = settings.controls.method !== "standard";
+  const ready = ["ready", "dirty"].includes(runtime.status);
+  els.denoiseMethod.value = settings.controls.method;
+  els.denoiseMethod.disabled = ["preparing", "recalculating"].includes(runtime.status);
+  els.denoiseGrainControls.classList.toggle("hidden", !experimental);
+  els.denoiseCleanControls.classList.toggle("hidden", settings.controls.method !== "clean_grain");
+  els.denoiseSplotchSize.value = settings.controls.splotch_size;
+  els.denoiseSplotchSize.disabled = !enabled || !ready;
   els.denoiseBypass.classList.toggle("bypassed", !enabled);
   els.denoiseBypass.setAttribute("aria-pressed", String(enabled));
   group?.classList.toggle("bypassed", !enabled);
@@ -59,11 +67,14 @@ function renderDenoiseControls() {
     [els.denoiseFine, els.denoiseFineValue, settings.controls.fine_noise ?? 0.5],
     [els.denoiseMedium, els.denoiseMediumValue, settings.controls.medium_noise ?? 0.5],
     [els.denoiseCoarse, els.denoiseCoarseValue, settings.controls.coarse_noise ?? 0.5],
+    [els.denoiseEvenness, els.denoiseEvennessValue, settings.controls.grain_evenness],
+    [els.denoiseSplotches, els.denoiseSplotchesValue, settings.controls.color_splotches],
+    [els.denoiseSpecks, els.denoiseSpecksValue, settings.controls.dark_specks],
   ];
   for (const [input, output, value] of controls) {
     input.value = String(value);
     output.textContent = `${Math.round(value * 100)}%`;
-    input.disabled = !enabled || !["ready", "dirty"].includes(runtime.status);
+    input.disabled = !enabled || !ready;
     updateRangeVisual(input);
   }
   els.denoiseRecalculate.disabled = !enabled || ["preparing", "recalculating"].includes(runtime.status);
@@ -73,7 +84,9 @@ function renderDenoiseControls() {
   if (els.denoiseState) els.denoiseState.textContent = labels[runtime.status] || runtime.status;
   els.denoiseStatus.textContent = runtime.error || ({
     off: "Denoise is off.",
-    preparing: "Preparing the denoise cache; the original remains interactive.",
+    preparing: experimental
+      ? "Preparing grain from the whole photo. You can keep viewing the current picture."
+      : "Preparing the denoise cache; the original remains interactive.",
     ready: "Denoise cache ready.",
     dirty: "The view changed. The previous valid result remains visible until recalculated.",
     recalculating: "Recalculating; the previous valid result remains interactive.",
@@ -214,10 +227,13 @@ async function recalculateDenoise(lane = state.currentView, options = {}) {
   const settings = state.denoise[lane];
   if (!state.session || !settings.enabled || !state.gpuPreview?.available) return false;
   const runtime = state.denoiseRuntime[lane];
+  if (options.force && settings.controls.method !== "standard") runtime.refresh = (runtime.refresh || 0) + 1;
   const longEdge = options.longEdge || refinementProxyLongEdge();
+  const { color_splotches, dark_specks, ...preparationControls } = settings.controls;
   const key = JSON.stringify([
     state.session.session_id, lane, longEdge, geometrySignature(),
-    "source", state.repairSourceGeneration || 0, settings.analysis,
+    "source", state.repairSourceGeneration || 0, settings.analysis, runtime.refresh || 0,
+    settings.controls.method === "standard" ? "standard" : preparationControls,
   ]);
   // Pan, enable and the first edit can all ask for the same setup. Sharing it
   // keeps them from repeatedly replacing the selector and measuring again.
@@ -261,6 +277,7 @@ async function recalculateDenoiseAnalysis(lane = state.currentView, options = {}
       state.editRevision,
       "source",
       denoiseRendererControls(settings.controls),
+      runtime.refresh || 0,
     );
     if (!isCurrent()) return false;
     if (!ready) throw new Error("The denoise analysis was replaced before completion.");
@@ -290,6 +307,7 @@ async function updateLiveDenoiseControl(key, value) {
   const runtime = state.denoiseRuntime[lane];
   settings.controls[key] = clamp(value, 0, 1);
   renderDenoiseControls();
+  if (key === "grain_evenness") return;
   if (!settings.enabled || runtime.status !== "ready" || runtime.showOriginal) return;
   // Section 5.6: reconstruction is coalesced to one in-flight run plus one
   // latest pending state, so dragging a control costs runs rather than input
@@ -300,6 +318,25 @@ async function updateLiveDenoiseControl(key, value) {
     generation: runtime.generation,
     controls: denoiseRendererControls(settings.controls),
   });
+}
+
+async function commitDenoiseControl(key, value) {
+  const lane = state.currentView;
+  const settings = state.denoise[lane];
+  const runtime = state.denoiseRuntime[lane];
+  const sessionId = state.session?.session_id;
+  if (value !== undefined) settings.controls[key] = value;
+  const needsPreparation = key === "method" || (settings.controls.method !== "standard"
+    && !["color_splotches", "dark_specks"].includes(key));
+  if (!needsPreparation) return persistDenoiseSettings();
+  runtime.generation++;
+  runtime.dirty = true;
+  runtime.status = settings.enabled ? "recalculating" : "off";
+  renderDenoiseControls();
+  if (await persistDenoiseSettings() && settings.enabled && state.session?.session_id === sessionId
+    && state.denoiseRuntime[lane] === runtime) {
+    await recalculateDenoise(lane);
+  }
 }
 
 /** The renderer's names for a lane's live denoise controls. */
@@ -313,6 +350,11 @@ function denoiseRendererControls(controls) {
     fineNoise: controls.fine_noise ?? 0.5,
     mediumNoise: controls.medium_noise ?? 0.5,
     coarseNoise: controls.coarse_noise ?? 0.5,
+    method: controls.method,
+    grainEvenness: controls.grain_evenness,
+    colorSplotches: controls.color_splotches,
+    splotchSize: controls.splotch_size,
+    darkSpecks: controls.dark_specks,
   };
 }
 

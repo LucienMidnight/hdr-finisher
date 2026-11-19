@@ -415,6 +415,7 @@ async function applyGroupPreset(preset) {
   const context = state.groupPresetContext;
   if (!context || preset.groupId !== context.groupId || !preset.values || typeof preset.values !== "object") return;
   const isDenoise = context.group === "denoise";
+  const previousDenoiseMethod = isDenoise ? state.denoise[context.lane].controls.method : null;
   const candidate = isDenoise ? {denoise:JSON.parse(JSON.stringify(state.denoise))} : JSON.parse(JSON.stringify(state.adjustments));
   for (const path of Object.keys(preset.values)) {
     if (!presetPathAllowed(context,path)) throw Error("This preset contains settings for another group.");
@@ -445,6 +446,11 @@ async function applyGroupPreset(preset) {
     setGroupPresetPathValue(context, path, value);
   });
   if (context.group === "denoise") {
+    if (previousDenoiseMethod !== "standard" || state.denoise[context.lane].controls.method !== "standard") {
+      closeGroupPresetDialog();
+      await commitDenoiseControl("method");
+      return;
+    }
     const runtime = state.denoiseRuntime[context.lane];
     runtime.dirty = true;
     runtime.status = state.denoise[context.lane].enabled ? "dirty" : "off";

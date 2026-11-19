@@ -15,13 +15,23 @@ Find it in **Grade**, in the **Denoise** group. It works the same way for camera
 
 1. Open the **Denoise** group.
 2. Click the round switch at the right of the group header. It lights up when Denoise is on.
-3. Wait a moment. The status line under the controls reads **Preparing** while the app measures the noise, then **Ready**. You can keep working on the original while it prepares.
+3. Choose a **Method** and give it time to prepare. The status line under the controls reads **Preparing**, then **Ready**. The current picture stays visible while it prepares.
 
 Click the switch again to compare. Turning Denoise off shows the original picture.
 
 If you open another photo while Denoise is preparing or updating, the old work is discarded; it cannot change the new photo’s settings or status.
 
-**Reset** in the group header and the **Default** preset restore Amount and Color Noise to 75%, and Detail Recovery, Luminance and all four noise-size sliders to 50%. Double-click a slider to reset just that control. Saved grades keep their saved values; these defaults apply to new photos and resets. Denoise still starts off.
+**Reset** in the group header and the **Default** preset select Standard, restore Amount and Color Noise to 75%, and set Detail Recovery, Luminance and all four noise-size sliders to 50%. They restore the experimental controls to 100% and Splotch Size to Large. Saved grades and presets carry the method and its settings. Denoise starts off for new photos.
+
+## Choose a method
+
+- **Standard** uses the original Denoise. It is the default for new photos and older grades.
+- **Fine Grain · Experimental** evens out the remaining brightness grain. Use **Grain Evenness** to blend between Standard at 0% and the grain-matched 18-pixel setting at 100%.
+- **Clean Grain · Experimental** adds **Color Splotches** and **Dark Specks**. Color Splotches pulls coloured blotches toward the nearby colour. **Splotch Size** adds a wider reach for Large or uses only the nearby sample for Small. Dark Specks fills pits with brightness and grain from nearby matching patches. Both sliders switch off their own correction at 0% and blend live after preparation. The 100% settings with Large reproduce the approved starting look.
+
+All the Standard controls work in each method. Grain Evenness and Splotch Size can trigger preparation on release. For RAW photos, the experimental methods work best with **Even out harsh specks** enabled at **×2.5** in Pixel cleanup.
+
+Check bright coloured edges, faces, lashes and fine dark hair at 100% zoom. Clean Grain can introduce pink-orange rims or soften those details. Use **Show noise** to check what it removed, lower the affected control, or compare with Standard.
 
 ## Basic controls
 
@@ -53,7 +63,7 @@ Click **Show noise**. The picture turns grey and shows only what Denoise is taki
 - Even, grain-like speckle is what you want to see.
 - Visible edges, lettering or outlines mean real detail is being removed. Lower **Amount** or raise **Detail Recovery**.
 
-**Show noise** is available once Denoise is on and ready. It needs the GPU preview. Scopes keep showing your normal picture and update when you click **Hide noise**.
+Grade preview and **Show noise** use WebGPU for all three methods. Proof and export can use the CPU when GPU delivery is unavailable. Scopes keep showing your normal picture and update when you click **Hide noise**.
 
 ## Recalculate Denoise
 
