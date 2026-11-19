@@ -34,6 +34,10 @@ class _GrainPreparation:
     fit: tuple[tuple[float, float], ...] | None
     corrections: object | None
 
+    def close(self):
+        if self.corrections is not None:
+            self.corrections.close()
+
 
 def source_identity(frame):
     explicit = getattr(frame, "denoise_source_identity", None)
@@ -209,23 +213,30 @@ def create_router(store):
                       long_edge: int = Query(ge=256, le=16384), edit_revision: int | None = None,
                       geometry_signature: str | None = None, refresh: int = 0):
         from .denoise_adaptive import AdaptiveControls, AdaptiveNoiseModel
-        from .denoise_grain import CleanGrainPreparation, fit_grain
+        from .denoise_grain import GrainPreparation, fit_grain
         from .library_live import session as library_session
 
         started = perf_counter()
-        key, frame, meta, fields = _context(store, session_id, kind, long_edge, edit_revision, geometry_signature)
-        cached_model = _get(key)
-        if cached_model is None:
-            raise HTTPException(409, "The noise measurement is unavailable.")
+        _, frame, meta, _ = _context(store, session_id, kind, long_edge, edit_revision, geometry_signature)
         frame = frame if frame is not None else library_session(session_id)
         if frame is None:
             raise HTTPException(404, "The Denoise source is unavailable.")
+        image = frame.sdr_reference_image if (
+            kind == PreviewKind.SDR and frame.sdr_reference_image is not None
+            and frame.adjustments.sdr.use_authored_base
+        ) else frame.image
+        native_edge = max(256, *image.shape[:2])
+        key, _, _, fields = _context(store, session_id, kind, native_edge, edit_revision, geometry_signature)
+        cached_model = _get(key)
         cache = frame.render_cache
         epoch = cache.source_epoch
-        revision = frame.edit_revision
+        geometry = frame.adjustments.shared.geometry
+        authored_sdr = frame.adjustments.sdr.use_authored_base
 
         def is_current():
-            if cache.source_epoch != epoch or frame.edit_revision != revision:
+            if cache.source_epoch != epoch or frame.adjustments.shared.geometry != geometry:
+                return False
+            if kind == PreviewKind.SDR and frame.adjustments.sdr.use_authored_base != authored_sdr:
                 return False
             if meta is not None:
                 return True
@@ -234,8 +245,8 @@ def create_router(store):
                 return delivery_session(session_id) is frame
             return store.current() is frame
 
-        options = controls.model_dump(exclude={"color_splotches", "dark_specks"})
-        signature = (key, epoch, long_edge, geometry_signature, refresh, tuple(options.items()))
+        options = controls.model_dump(exclude={"color_splotches"})
+        signature = (key, epoch, geometry_signature, refresh, tuple(options.items()))
         fit_signature = (*signature[:-1], tuple((k, v) for k, v in options.items()
                                                if k not in {"method", "grain_evenness", "splotch_size"}))
         with cache.grain_preparation_lock:
@@ -244,47 +255,59 @@ def create_router(store):
                 return {"fit": previous.fit, "token": previous.token if previous.corrections else None}
             if not is_current():
                 raise HTTPException(409, "A newer edit replaced the Denoise preparation.")
-            value = cached_model["model"]
-            model = AdaptiveNoiseModel(value["a"], value["b"], value["c"],
-                                       tuple(tuple(row) for row in value["band_sigmas"]))
-            settings = AdaptiveControls(**controls.model_dump())
-            request = (kind, long_edge, frame.adjustments)
+            request = (kind, native_edge, frame.adjustments)
             direct = cache.native_source_stream(*request)
             if direct is not None:
                 pixels = direct[0]
                 height, width = pixels.shape[:2]
                 read = lambda y, x, b, r: pixels[y:b, x:r]
             else:
-                windows = cache.geometry_source_windows(*request, is_current=is_current)
-                if windows is None:
-                    pixels = cache.geometry_source_proxy(*request, is_current=is_current)[0]
-                    height, width = pixels.shape[:2]
-                    read = lambda y, x, b, r: pixels[y:b, x:r]
-                else:
-                    height, width, read = windows
+                windows = cache.geometry_source_windows(*request, is_current=is_current, native=True)
+                height, width, read = windows
+            if cached_model is None:
+                from .denoise_adaptive import estimate_adaptive_model_from_windows
+                model = estimate_adaptive_model_from_windows(height, width, read)
+            else:
+                value = cached_model["model"]
+                model = AdaptiveNoiseModel(value["a"], value["b"], value["c"],
+                                           tuple(tuple(row) for row in value["band_sigmas"]))
+            settings = AdaptiveControls(**controls.model_dump())
             fit = None
+            fit_started = perf_counter()
             if settings.grain_evenness and settings.amount and settings.luminance:
                 if previous is not None and previous.fit_signature == fit_signature and previous.fit is not None:
                     fit = previous.fit
                 else:
                     fit = fit_grain(height, width, read, model, settings)
+            fitted = perf_counter()
             corrections = None
-            if settings.method == "clean_grain" and settings.amount and (settings.luminance or settings.color_noise):
+            cache.discard_grain_preparation()
+            if settings.amount and (settings.luminance or settings.color_noise):
                 try:
-                    corrections = CleanGrainPreparation(height, width, read, model, settings, fit, is_current)
+                    corrections = GrainPreparation(height, width, read, model, settings, fit, is_current, _cache())
                 except InterruptedError as error:
                     raise HTTPException(409, str(error)) from error
+                except OSError as error:
+                    raise HTTPException(507, str(error)) from error
             if not is_current():
+                if corrections is not None:
+                    corrections.close()
                 raise HTTPException(409, "A newer edit replaced the Denoise preparation.")
             preparation = _GrainPreparation(signature, fit_signature, uuid4().hex, fit, corrections)
             cache.grain_preparation = preparation
+            if not is_current():
+                cache.discard_grain_preparation()
+                raise HTTPException(409, "A newer edit replaced the Denoise preparation.")
+        finished = perf_counter()
         log("denoise_grain_prepared", **fields, method=settings.method, width=width, height=height,
-            duration_ms=(perf_counter()-started)*1000)
+            duration_ms=(finished-started)*1000, fit_ms=(fitted-fit_started)*1000,
+            filter_ms=(finished-fitted)*1000, disk_bytes=width * height * 16 if corrections else 0)
         return {"fit": preparation.fit, "token": preparation.token if corrections else None}
 
     @router.get("/api/session/{session_id}/denoise-grain/{kind}/{token}")
     def grain_region(session_id: str, kind: PreviewKind, token: str, x: int, y: int,
-                     width: int, height: int):
+                     width: int, height: int, frame_width: int = Query(gt=0, le=32768),
+                     frame_height: int = Query(gt=0, le=32768)):
         from .library_live import session as library_session
 
         if min(width, height) < 1 or width*height > 1024*1024:
@@ -295,9 +318,11 @@ def create_router(store):
         if preparation is None or preparation.token != token or preparation.corrections is None:
             raise HTTPException(409, "The Clean Grain preparation was replaced.")
         try:
-            body = preparation.corrections.region(y, x, height, width)
+            body = preparation.corrections.region(y, x, height, width, frame_height, frame_width)
         except ValueError as error:
             raise HTTPException(400, str(error)) from error
+        except InterruptedError as error:
+            raise HTTPException(409, str(error)) from error
         return Response(body, media_type="application/octet-stream")
 
     @router.get("/api/session/{session_id}/denoise-measurement/{kind}")

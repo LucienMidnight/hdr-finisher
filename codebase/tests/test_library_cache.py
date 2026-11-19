@@ -30,6 +30,39 @@ def test_allowances_evict_only_their_own_lru_and_never_source(tmp_path, allowanc
     assert source.read_bytes() == b'original'
 
 
+def test_grade_scratch_uses_full_size_allowance_and_closes(tmp_path):
+    cache = LibraryCache(tmp_path / 'profile')
+    with pytest.raises(OSError, match='Full-size disk cache'):
+        cache.open_grade_scratch(11 * 1024**3)
+    handle, close = cache.open_grade_scratch(8192)
+    file = Path(handle.name)
+    try:
+        assert file.stat().st_size == 8192
+        assert cache.usage()['full_size_used_bytes'] == 8192
+        cache.remove_abandoned_grade_scratch()
+        assert file.is_file()
+    finally:
+        close()
+    assert not file.exists()
+    assert cache.usage()['full_size_used_bytes'] == 0
+
+
+def test_grade_scratch_startup_removes_an_abandoned_result(tmp_path, monkeypatch):
+    from hdr_finisher import launcher
+
+    cache = LibraryCache(tmp_path / 'profile')
+    handle, close = cache.open_grade_scratch(8192)
+    file = Path(handle.name)
+    handle.close()
+    monkeypatch.setattr(launcher, '_parent_is_alive', lambda pid: False)
+    try:
+        cache.remove_abandoned_grade_scratch()
+        assert not file.exists()
+        assert cache.usage()['full_size_used_bytes'] == 0
+    finally:
+        close()
+
+
 def test_folder_change_leaves_old_and_clear_requires_selected_managed_root(tmp_path):
     cache = LibraryCache(tmp_path/'profile'); old = cache.prepare()
     directory=cache.directory('library-pictures'); directory.mkdir()

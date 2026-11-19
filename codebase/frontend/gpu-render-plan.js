@@ -169,8 +169,8 @@ const GPU_PARAMS = window.HDRGpuParamLayout.indices;
   function adaptiveResolveOptions(controls) {
     const sizes = adaptiveDenoiseSizes(controls);
     if (!controls.method || controls.method === "standard") return sizes;
-    const options = { ...sizes, method: controls.method, splotchSize: controls.splotchSize ?? "large" };
-    for (const key of ["grainEvenness", "colorSplotches", "darkSpecks"]) {
+    const options = { ...sizes, method: controls.method, splotchSize: controls.splotchSize ?? "small" };
+    for (const key of ["grainEvenness", "colorSplotches"]) {
       const value = Number(controls[key] ?? 1);
       if (!Number.isFinite(value) || value < 0 || value > 1) throw new Error(`${key} must be between 0 and 1`);
       options[key] = value;

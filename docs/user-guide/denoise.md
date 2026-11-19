@@ -21,17 +21,24 @@ Click the switch again to compare. Turning Denoise off shows the original pictur
 
 If you open another photo while Denoise is preparing or updating, the old work is discarded; it cannot change the new photo’s settings or status.
 
-**Reset** in the group header and the **Default** preset select Standard, restore Amount and Color Noise to 75%, and set Detail Recovery, Luminance and all four noise-size sliders to 50%. They restore the experimental controls to 100% and Splotch Size to Large. Saved grades and presets carry the method and its settings. Denoise starts off for new photos.
+**Reset** in the group header and the **Default** preset select Standard, restore Amount and Color Noise to 75%, and set Detail Recovery, Luminance and all four noise-size sliders to 50%. They restore Grain Evenness and Color Splotches to 100% and Splotch Size to Small. Saved grades and presets carry the method and its settings. Denoise starts off for new photos.
 
 ## Choose a method
 
 - **Standard** uses the original Denoise. It is the default for new photos and older grades.
 - **Fine Grain · Experimental** evens out the remaining brightness grain. Use **Grain Evenness** to blend between Standard at 0% and the grain-matched 18-pixel setting at 100%.
-- **Clean Grain · Experimental** adds **Color Splotches** and **Dark Specks**. Color Splotches pulls coloured blotches toward the nearby colour. **Splotch Size** adds a wider reach for Large or uses only the nearby sample for Small. Dark Specks fills pits with brightness and grain from nearby matching patches. Both sliders switch off their own correction at 0% and blend live after preparation. The 100% settings with Large reproduce the approved starting look.
+- **Clean Grain · Experimental** adds **Color Splotches**, which pulls coloured blotches toward the nearby colour. **Splotch Size** starts at Small. Choose Large for a wider reach. Color Splotches blends live after preparation and switches off at 0%.
 
 All the Standard controls work in each method. Grain Evenness and Splotch Size can trigger preparation on release. For RAW photos, the experimental methods work best with **Even out harsh specks** enabled at **×2.5** in Pixel cleanup.
 
-Check bright coloured edges, faces, lashes and fine dark hair at 100% zoom. Clean Grain can introduce pink-orange rims or soften those details. Use **Show noise** to check what it removed, lower the affected control, or compare with Standard.
+Fine Grain and Clean Grain prepare the full photo when you enable the method
+or change a setting that affects the preparation. You can then zoom and pan
+using that result. The first preparation at Fit can take as long as at 100%.
+
+Check bright edges, faces, lashes and fine dark hair at 100%. Clean Grain
+reduces wide colour pulls around bright lights and still works on narrow
+fringes. Some noisy colour marks can remain. Use **Show noise** to see what
+was removed, lower Color Splotches, or compare with Fine Grain.
 
 ## Basic controls
 

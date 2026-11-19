@@ -264,11 +264,15 @@ function initializePreviewScheduler() {
       // when that costs the backend nothing. With a hard-edged mask in play it
       // would compile that mask for the whole image, which is the stall this
       // route exists to remove; the pan pass draws what the view reaches.
-      canCatchUp: (lane, longEdge) => state.roiPreviewMode === "refinement" || Boolean(
-        state.session && state.gpuPreview?.catchUpNeedsNoBackendMasks?.(
-          state.session.session_id, lane, longEdge, geometrySignature(),
-          localsBypassed() ? [] : localAdjustments(),
-        ),
+      // Native grain can read its finished source from disk as the view
+      // reaches it. Avoid a second full GPU frame for that follow-up.
+      canCatchUp: (lane, longEdge) => !nativeGrainViewport(lane) && (
+        state.roiPreviewMode === "refinement" || Boolean(
+          state.session && state.gpuPreview?.catchUpNeedsNoBackendMasks?.(
+            state.session.session_id, lane, longEdge, geometrySignature(),
+            localsBypassed() ? [] : localAdjustments(),
+          ),
+        )
       ),
       // The frame is not completed, but its source can still be held on the
       // device so the pans that follow fetch nothing.
@@ -827,7 +831,6 @@ function bindEvents() {
     [els.denoiseCoarse, "coarse_noise"],
     [els.denoiseEvenness, "grain_evenness"],
     [els.denoiseSplotches, "color_splotches"],
-    [els.denoiseSpecks, "dark_specks"],
   ];
   for (const [control, key] of denoiseSliders) {
     // Capture phase: the instrument slider's own pointerdown moves the value

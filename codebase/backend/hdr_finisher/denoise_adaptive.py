@@ -136,8 +136,7 @@ class AdaptiveControls:
     method: str = "standard"
     grain_evenness: float = 1.0
     color_splotches: float = 1.0
-    splotch_size: str = "large"
-    dark_specks: float = 1.0
+    splotch_size: str = "small"
 
     def size_multiplier(self, level: int) -> float:
         value = (self.finest_noise, self.fine_noise, self.medium_noise)[level] if level < 3 else self.coarse_noise

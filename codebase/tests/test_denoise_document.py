@@ -29,7 +29,6 @@ def test_denoise_settings_are_versioned_undoable_and_project_persistent(
     settings.hdr.controls.grain_evenness = .77
     settings.hdr.controls.color_splotches = .39
     settings.hdr.controls.splotch_size = "small"
-    settings.hdr.controls.dark_specks = .66
 
     changed = store.apply_edit_commands(
         payload.session_id,
@@ -76,8 +75,7 @@ def test_new_denoise_settings_use_approved_d1_defaults() -> None:
     expected = dict(amount=0.75, luminance=0.5, color_noise=0.75,
                     detail_recovery=0.5, finest_noise=0.5, fine_noise=0.5,
                     medium_noise=0.5, coarse_noise=0.5, method="standard",
-                    grain_evenness=1, color_splotches=1, splotch_size="large",
-                    dark_specks=1)
+                    grain_evenness=1, color_splotches=1, splotch_size="small")
     assert DenoiseLiveControls().model_dump() == expected
     assert asdict(AdaptiveControls()) == expected
     assert asdict(AppDefault().controls) == expected

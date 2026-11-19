@@ -470,20 +470,17 @@ fn adaptiveGrainAccumulateMain(@builtin(global_invocation_id) id: vec3u) {
   textureStore(dstTex, p, vec4f(sum + band * gain, 0.0));
 }
 
+@group(0) @binding(8) var preparedTex: texture_2d<u32>;
+
 @compute @workgroup_size(8, 8)
-fn adaptiveCleanFinalMain(@builtin(global_invocation_id) id: vec3u) {
-  let local = vec2i(id.xy);
-  let frameAt = scratchOrigin() + local;
-  let tile = vec4i(ap.tile);
-  if (frameAt.x < tile.x || frameAt.y < tile.y || frameAt.x >= tile.x + tile.z || frameAt.y >= tile.y + tile.w) { return; }
-  let opponent = textureLoad(srcTex, local, 0).xyz + textureLoad(auxTex, local, 0).xyz;
-  let fields = textureLoad(aux2Tex, frameAt - vec2i(ap.dest.zw), 0);
-  var rgb = fromOpponent(opponent);
-  let delta = fromOpponent(vec3f(0.0, fields.xy * ap.strength.x));
-  rgb += delta - vec3f(dot(delta, ACES_LUMA));
-  rgb += ap.strength.y * (vec3f(fields.z) + (rgb - vec3f(dot(rgb, ACES_LUMA))) * fields.w);
-  let storeAt = frameAt - vec2i(ap.dest.xy);
-  textureStore(outTex, storeAt, vec4f(rgb, 1.0));
+fn adaptivePreparedMain(@builtin(global_invocation_id) id: vec3u) {
+  if (id.x >= u32(ap.tile.z) || id.y >= u32(ap.tile.w)) { return; }
+  let p = vec2i(id.xy);
+  let fields = textureLoad(preparedTex, p, 0);
+  let base = bitcast<vec3f>(fields.xyz);
+  let delta = fromOpponent(vec3f(0.0, unpack2x16float(fields.w) * ap.strength.x));
+  let storeAt = vec2i(ap.tile.xy) + p - vec2i(ap.dest.xy);
+  textureStore(outTex, storeAt, vec4f(base + delta - vec3f(dot(delta, ACES_LUMA)), 1.0));
 }`;
 
   const LENS_FILTERS = ((typeof window !== "undefined" && window.HDRLensFilters)

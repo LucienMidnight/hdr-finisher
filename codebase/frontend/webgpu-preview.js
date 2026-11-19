@@ -2650,9 +2650,9 @@
       return { ...entry, hit: false };
     }
 
-    async cleanGrainTile(grain, region) {
+    async preparedGrainTile(grain, region, source) {
       const { x, y, width, height } = region;
-      const key = `clean-grain|${grain.token}|${x},${y},${width},${height}`;
+      const key = `grain|${grain.token}|${source.width}x${source.height}|${x},${y},${width},${height}`;
       const previous = this.denoiseTiles.get(key);
       if (previous) {
         this.denoiseTiles.delete(key);
@@ -2663,9 +2663,9 @@
       const byteSize = width * height * 16;
       const cached = this.trimDenoiseTiles([], byteSize) + byteSize <= this.denoiseTileBudget();
       const texture = this.device.createTexture({
-        label: "clean-grain-corrections",
+        label: "prepared-grain",
         size: { width, height },
-        format: "rgba32float",
+        format: "rgba32uint",
         usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
       });
       const entry = { texture, width, height, byteSize, grainToken: grain.token, transient: !cached };
@@ -2674,7 +2674,8 @@
         const rows = Math.max(1, Math.floor(1024 * 1024 / width));
         for (let offset = 0; offset < height; offset += rows) {
           const count = Math.min(rows, height - offset);
-          const query = new URLSearchParams({ x, y: y + offset, width, height: count });
+          const query = new URLSearchParams({ x, y: y + offset, width, height: count,
+            frame_width: source.width, frame_height: source.height });
           const response = await fetch(`${grain.url}/${grain.token}?${query}`);
           if (!response.ok) throw new Error(`Clean Grain source request failed (${response.status}).`);
           const body = await response.arrayBuffer();
@@ -5806,7 +5807,7 @@
       if (!this.available || !sessionId) return false;
       const generation = ++this.denoiseSelectorGeneration;
       const geometrySignature = JSON.stringify(adjustments?.shared?.geometry || {});
-      const frame = { identity: `${sessionId}:${lane}:${longEdge}:${geometrySignature}:${sourceIdentity}` };
+      const frame = { identity: `${sessionId}:${lane}:${longEdge}:${geometrySignature}:${sourceIdentity}`, sourceIdentity };
       return this.analyzeAdaptiveDenoise(sessionId, lane, frame, longEdge, editRevision, geometrySignature, generation, {
         amount: controls.amount ?? 0.75,
         luminance: controls.luminance ?? 0.5,
@@ -5819,8 +5820,7 @@
         method: controls.method ?? "standard",
         grainEvenness: controls.grainEvenness ?? controls.grain_evenness ?? 1,
         colorSplotches: controls.colorSplotches ?? controls.color_splotches ?? 1,
-        splotchSize: controls.splotchSize ?? controls.splotch_size ?? "large",
-        darkSpecks: controls.darkSpecks ?? controls.dark_specks ?? 1,
+        splotchSize: controls.splotchSize ?? controls.splotch_size ?? "small",
       }, refresh);
     }
 
@@ -5873,13 +5873,27 @@
       if (!pipelines.grainPipelines) {
         const module = this.device.createShaderModule({ code: GRAIN_DENOISE_SHADER_SOURCE });
         const layout = this.device.createPipelineLayout({ bindGroupLayouts: [pipelines.layout] });
-        const names = ["grainGain", "grainBox", "grainAccumulate", "cleanFinal"];
-        pipelines.grainPipelines = Promise.all(names.map(async (name) => {
-          const pipeline = await this.device.createComputePipelineAsync({
-            layout, compute: { module, entryPoint: `adaptive${name[0].toUpperCase()}${name.slice(1)}Main` },
-          });
-          pipelines[name] = pipeline;
-        })).catch(error => {
+        const compute = GPUShaderStage.COMPUTE;
+        const preparedLayout = this.device.createBindGroupLayout({ entries: [
+          { binding: 5, visibility: compute, storageTexture: { format: "rgba16float" } },
+          { binding: 6, visibility: compute, buffer: { type: "uniform" } },
+          { binding: 8, visibility: compute, texture: { sampleType: "uint" } },
+        ] });
+        const names = ["grainGain", "grainBox", "grainAccumulate"];
+        pipelines.grainPipelines = Promise.all([
+          ...names.map(async (name) => {
+            pipelines[name] = await this.device.createComputePipelineAsync({
+              layout, compute: { module, entryPoint: `adaptive${name[0].toUpperCase()}${name.slice(1)}Main` },
+            });
+          }),
+          this.device.createComputePipelineAsync({
+            layout: this.device.createPipelineLayout({ bindGroupLayouts: [preparedLayout] }),
+            compute: { module, entryPoint: "adaptivePreparedMain" },
+          }).then(pipeline => {
+            pipelines.prepared = pipeline;
+            pipelines.preparedLayout = preparedLayout;
+          }),
+        ]).catch(error => {
           pipelines.grainPipelines = null;
           throw error;
         });
@@ -5973,10 +5987,15 @@
       this.denoiseCounters.analysisCalls += 1;
       this.recordStage("denoise-analysis", { state: "started", generation, longEdge, algorithm: ADAPTIVE_DENOISE_ALGORITHM_VERSION });
       const query = `long_edge=${longEdge}&edit_revision=${editRevision}&geometry_signature=${encodeURIComponent(geometrySignature)}`;
-      const model = await this.fetchDenoiseModel(`/api/session/${sessionId}/denoise-model/${lane}?${query}`);
+      const experimental = controls.method === "clean_grain"
+        || (controls.method === "fine_grain" && controls.grainEvenness);
+      const native = this.maskSourceSize?.sessionId === sessionId
+        ? Math.max(256, this.maskSourceSize.width, this.maskSourceSize.height) : longEdge;
+      const modelQuery = experimental ? query.replace(`long_edge=${longEdge}`, `long_edge=${native}`) : query;
+      const model = await this.fetchDenoiseModel(`/api/session/${sessionId}/denoise-model/${lane}?${modelQuery}`);
+
       let grain = null;
-      if ((controls.method === "fine_grain" || controls.method === "clean_grain")
-          && generation === this.denoiseSelectorGeneration) {
+      if (experimental && generation === this.denoiseSelectorGeneration) {
         const url = `/api/session/${sessionId}/denoise-grain/${lane}`;
         const response = await fetch(`${url}?${query}&refresh=${refresh}`, {
           method: "POST", headers: { "Content-Type": "application/json" },
@@ -5989,14 +6008,12 @@
           }),
         });
         if (!response.ok) throw new Error(`Denoise preparation failed (${response.status}).`);
-        grain = { ...await response.json(), url };
+        grain = { ...await response.json(), url, controls: { ...controls } };
         await this.ensureGrainPipelines();
       }
       // The full-size model is one measurement per source, about a second on a
       // 42 MP frame. Asking for it now, from a smaller view, means the first
       // zoom to 100% finds it already made.
-      const native = this.maskSourceSize?.sessionId === sessionId
-        ? Math.max(this.maskSourceSize.width, this.maskSourceSize.height) : 0;
       if (native > longEdge) void this.warmDenoiseModel(sessionId, lane, native);
       if (generation !== this.denoiseSelectorGeneration || this.sessionId !== sessionId) {
         this.recordStage("denoise-analysis", { state: "stale", generation });
@@ -6006,6 +6023,7 @@
       if (previous?.cache?.grain?.token !== grain?.token) {
         this.dropDenoiseTiles([...this.denoiseTiles].filter(([, entry]) => entry.grainToken).map(([key]) => key));
       }
+      const preparedFrame = JSON.stringify([sessionId, lane, geometrySignature, frame.sourceIdentity]);
       const setupIdentity=this.denoiseSetupIdentity?.(lane,longEdge,geometrySignature) || frame.identity;
       const cacheIdentity = `${frame.identity}|${ADAPTIVE_DENOISE_ALGORITHM_VERSION}|${JSON.stringify(model)}${grain ? "|" + JSON.stringify(grain) : ""}`;
       if (this.reuseDenoiseSetup && previous?.setupIdentity === setupIdentity
@@ -6017,6 +6035,7 @@
         if (previous.cache.identity !== cacheIdentity) previous.resolvedFor = null;
         previous.cache.identity = cacheIdentity;
         previous.cache.grain = grain;
+        previous.cache.preparedFrame = preparedFrame;
         previous.original = this.proxies.get(frame.identity) || null;
         previous.generation = generation;
         previous.selected = "resolved";
@@ -6033,6 +6052,7 @@
         model,
         identity: cacheIdentity,
         grain,
+        preparedFrame,
         tiles: [],
         levels: [],
         resolveScratch: [],
@@ -6065,6 +6085,51 @@
       return true;
     }
 
+    retargetPreparedDenoise(sessionId, lane, longEdge, geometrySignature, sourceIdentity) {
+      const selector = this.denoiseSourceSelector;
+      if (!selector?.cache?.grain?.token || selector.cache.preparedFrame
+          !== JSON.stringify([sessionId, lane, geometrySignature, sourceIdentity])) return false;
+      const identity = `${sessionId}:${lane}:${longEdge}:${geometrySignature}:${sourceIdentity}`;
+      if (selector.identity !== identity) {
+        const resolved = selector.resolved;
+        if (resolved) this.destroyAfterActiveRenders(() => resolved.texture.destroy());
+        selector.resolved = null;
+        selector.resolvedFor = null;
+        selector.identity = identity;
+        selector.cache.identity = `${identity}|grain:${selector.cache.grain.token}`;
+        selector.original = this.proxies.get(identity) || null;
+      }
+      selector.selected = "resolved";
+      return true;
+    }
+
+    encodePreparedDenoise(encoder, prepared, target, candidate, origin, strength) {
+      const { preparedLayout, prepared: pipeline } = this.adaptiveDenoisePipelines;
+      const paramBuffer = this.device.createBuffer({
+        size: ADAPTIVE_DENOISE_SLOT, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+      });
+      this.device.queue.writeBuffer(paramBuffer, 0, new Float32Array([
+        0, 0, 0, 0, // scratch
+        0, 0, 0, 0, // frame
+        target.x, target.y, target.width, target.height,
+        origin.x, origin.y, 0, 0,
+        0, 0, 0, 0, // model
+        strength, 0, 0, 0,
+        0, 0, 0, 0, // sigma
+      ]));
+      const bindGroup = this.device.createBindGroup({ layout: preparedLayout, entries: [
+        { binding: 5, resource: candidate.texture.createView() },
+        { binding: 6, resource: { buffer: paramBuffer, size: 112 } },
+        { binding: 8, resource: prepared.texture.createView() },
+      ] });
+      const pass = encoder.beginComputePass();
+      pass.setPipeline(pipeline);
+      pass.setBindGroup(0, bindGroup);
+      pass.dispatchWorkgroups(Math.ceil(target.width / 8), Math.ceil(target.height / 8));
+      pass.end();
+      return { paramBuffer, dispatches: 1, tiles: 1 };
+    }
+
     /**
      * Encode the adaptive reconstruction of `target` into `candidate`.
      *
@@ -6074,7 +6139,7 @@
      * load, the noise map's two smoothing levels, five bands of blur, energy
      * and accumulation, and the final write.
      */
-    encodeAdaptiveDenoise(encoder, selector, weights, sizes, target, candidate, destinationOrigin, source, corrections) {
+    encodeAdaptiveDenoise(encoder, selector, weights, sizes, target, candidate, destinationOrigin, source) {
       const pipelines = this.adaptiveDenoisePipelines;
       const { model, grain } = selector.cache;
       const scratch = selector.cache.adaptiveScratch.textures;
@@ -6181,15 +6246,7 @@
           [current, next] = [next, current];
         }
         const output = { src: sum.createView(), aux: current, out: candidate.texture };
-        if (corrections) {
-          dispatch(pipelines.cleanFinal, { ...output, aux2: corrections },
-            common(0, 0, undefined, {
-              weights: [sizes.colorSplotches, sizes.darkSpecks, 0, 0],
-              origin: [destinationOrigin.x, destinationOrigin.y, target.x, target.y],
-            }), region);
-        } else {
-          dispatch(pipelines.final, output, common(0, 0), region);
-        }
+        dispatch(pipelines.final, output, common(0, 0), region);
       }
       this.device.queue.writeBuffer(paramBuffer, 0, slots);
       return { paramBuffer, dispatches: slot, tiles: tiles.length };
@@ -6220,16 +6277,23 @@
       let cleanGrainTransient = null;
       try {
         const grain = selector.cache.grain;
-        const corrections = grain?.token && (sizes.colorSplotches || sizes.darkSpecks)
-          ? await this.cleanGrainTile(grain, target) : null;
-        if (corrections?.transient) cleanGrainTransient = corrections.texture;
-        if (corrections && !sharedEncoder && (generation !== this.denoiseSelectorGeneration
+        const live = { amount: weights[0], luminance: weights[1], colorNoise: weights[2], detailRecovery: weights[3], ...sizes };
+        // A drag can give immediate wavelet feedback before release commits
+        // a new native preparation. Color Splotches only changes the blend.
+        const matches = grain?.token && Object.entries(grain.controls).every(([key, value]) => (
+          key === "colorSplotches" || live[key] === value
+        ));
+        const prepared = matches ? await this.preparedGrainTile(grain, target, source) : null;
+        if (prepared?.transient) cleanGrainTransient = prepared.texture;
+        if (prepared && !sharedEncoder && (generation !== this.denoiseSelectorGeneration
             || selector !== this.denoiseSourceSelector)) {
           if (candidateIsNew) candidate.texture.destroy();
           return false;
         }
         const encoder = sharedEncoder || this.device.createCommandEncoder();
-        const encoded = this.encodeAdaptiveDenoise(encoder, selector, weights, sizes, target, candidate, destinationOrigin, source, corrections?.texture);
+        const encoded = prepared
+          ? this.encodePreparedDenoise(encoder, prepared, target, candidate, destinationOrigin, sizes.colorSplotches)
+          : this.encodeAdaptiveDenoise(encoder, selector, weights, sizes, target, candidate, destinationOrigin, source);
         paramBuffer = encoded.paramBuffer;
         this.denoiseCounters.resolveDispatches += encoded.dispatches;
         this.denoiseCounters.resolveTiles += encoded.tiles;

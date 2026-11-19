@@ -347,6 +347,7 @@ def test_memory_polls_never_wait_for_grade_lock(tmp_path, monkeypatch):
     from types import SimpleNamespace
     from fastapi import FastAPI
     from hdr_finisher.sessions import SessionStore
+    from hdr_finisher.render_cache import SessionRenderCache
     from hdr_finisher.library_api import create_library_router
     from hdr_finisher.library_worker import LibraryWorker
     from hdr_finisher.media_browser import MediaBrowserStore
@@ -354,6 +355,7 @@ def test_memory_polls_never_wait_for_grade_lock(tmp_path, monkeypatch):
     pixels = np.ones((4, 4, 3), dtype=np.float32)
     session = SimpleNamespace(image=pixels, retouch_original=pixels, sdr_reference_image=None,
                               source=SimpleNamespace(filename='test.raw'), to_payload=lambda: None,
+                              render_cache=SessionRenderCache(pixels, None),
                               owns_source_path=False, retouch_worker=None)
     store.activate_session(session)
     assert store._retained_session_bytes() == pixels.nbytes

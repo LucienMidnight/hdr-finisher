@@ -811,13 +811,20 @@ class SessionRenderCache:
         result.update(working_space="linear-srgb" if authored else "acescg", source_epoch=self._source_epoch)
         return result
 
+    def discard_grain_preparation(self):
+        # Do not wait for an unfinished fit. It detects the new source epoch
+        # or session before publishing and disposes of its own scratch.
+        preparation, self.grain_preparation = self.grain_preparation, None
+        if preparation is not None:
+            preparation.close()
+
     def set_color_context(self, context: RenderColorContext) -> None:
         with self._lock:
             if context == self.color_context:
                 return
             self.color_context = context
             self._source_epoch += 1
-            self.grain_preparation = None
+            self.discard_grain_preparation()
             self._frames.clear()
             self._frame_scope_peaks.clear()
             self._scopes.clear()
@@ -845,7 +852,7 @@ class SessionRenderCache:
             self.source_identity = identity
             self.sdr_identity = sdr_identity
             self._source_epoch += 1
-            self.grain_preparation = None
+            self.discard_grain_preparation()
             self._source_proxies.clear()
             self._sdr_proxies.clear()
             self._source_ranges.clear()
@@ -951,6 +958,7 @@ class SessionRenderCache:
         long_edge: int,
         adjustments: AdjustmentState,
         is_current: Callable[[], bool] | None = None,
+        *, native: bool = False,
     ) -> tuple[int, int, Callable[[int, int, int, int], np.ndarray]] | None:
         """The size of ``geometry_source_proxy``'s frame and a reader of
         rectangles of it, without building the frame.
@@ -962,7 +970,7 @@ class SessionRenderCache:
         """
         edge = max(256, int(long_edge))
         geometry = adjustments.shared.geometry
-        source, sdr_reference = self._proxies(edge, is_current=is_current)
+        source, sdr_reference = (self.image, self.sdr_reference_image) if native else self._proxies(edge, is_current=is_current)
         use_authored_sdr = (
             kind == PreviewKind.SDR
             and sdr_reference is not None
@@ -973,11 +981,11 @@ class SessionRenderCache:
         with self._lock:
             source_epoch = self._source_epoch
         output_width, output_height = geometry_output_dimensions(base.shape[1], base.shape[0], geometry)
-        if max(output_width, output_height) > edge:
+        if not native and max(output_width, output_height) > edge:
             return None
 
-        native = self.sdr_reference_image if use_authored_sdr else self.image
-        reduced = edge < max(native.shape[:2])
+        original = self.sdr_reference_image if use_authored_sdr else self.image
+        reduced = not native and edge < max(original.shape[:2])
 
         def read(y0: int, x0: int, y1: int, x1: int) -> np.ndarray:
             window = apply_geometry_region(

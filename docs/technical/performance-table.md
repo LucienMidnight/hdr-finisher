@@ -25,7 +25,7 @@ The updated driver reproduced Steve's 30-second wait at 100%.
 | Clean Grain, 100% to Fit | 35.99 s | 100.10 s |
 | Clean Grain, Fit to 100% | 31.43 s | 82.16 s |
 
-At 100%, backend Clean Grain preparation took 32.31 s of the Canon's
+At 100%, backend Clean Grain preparation took 32.32 s of the Canon's
 33.86 s and 72.91 s of the Sony's 74.83 s. On the Canon, the 18 correction
 requests transferred 72 MiB and took 0.92 s in total. The zoom-out runs
 each rebuilt the Fit result, repeated native preparation, and then rebuilt
@@ -44,6 +44,43 @@ quality 90, with the 1000-nit target.
 | Clean Grain, Dark Specks drag | 100–110 ms | 97–102 ms |
 | Fine Grain, native export | 16.56 s | 45.21 s |
 | Clean Grain, native export | 43.18 s | 124.81 s |
+
+### Native grain preparation
+
+Same MacBook Neo, RAWs, settings, window and lock. These action-to-screen
+samples cover the disk-backed implementation in this branch. Canon samples
+precede the visible-region-only follow-up. Sony Clean Grain's 100% and
+navigation samples use the follow-up. The Sony Fine Grain run precedes it.
+The cases that moved by more than 10% are shown with the zoom and pan waits.
+
+| Action | 18 MP Canon | 42 MP Sony |
+| --- | ---: | ---: |
+| Fine Grain, first preparation at Fit | 13.25 s | 26.70 s |
+| Fine Grain, first preparation at 100% | 14.27 s | 38.19 s |
+| Fine Grain, Recalculate at Fit | 12.32 s | 27.90 s |
+| Fine Grain, 100% to Fit | 0.92 s | 2.02 s |
+| Fine Grain, Fit to 100% | 1.07 s | 5.15 s |
+| Fine Grain, pan at 100% | 0.90 s | 0.90 s |
+| Clean Grain, first preparation at Fit | 15.50 s | 35.61 s |
+| Clean Grain, first preparation at 100% | 18.22 s | 31.86 s |
+| Clean Grain, Recalculate at Fit | 15.57 s | 33.30 s |
+| Clean Grain, 100% to Fit | 1.24 s | 2.79 s |
+| Clean Grain, Fit to 100% | 1.04 s | 0.13 s |
+| Clean Grain, pan at 100% | 0.90 s | 0.45 s |
+
+Every sampled experimental pan and zoom reused the same native result.
+A Fit photo fills the viewer and does not take a pan. Canon Clean Grain
+at Fit spent 3.00 s fitting the grain and 11.53 s filtering and writing
+the temporary result. At 100% those stages took 3.07 s and 12.47 s.
+The shortest candidate for further CPU savings is to render each wavelet
+tile once and reuse its neighbouring finished pixels for the colour pass,
+cutting repeated work in tile overlaps. This is a proposed optimization.
+
+The Sony result occupies 678,236,160 bytes on disk. Its native source is
+508,677,120 bytes. In the visible-region follow-up, the whole-app physical
+footprint still reached 4,547,194,712 bytes during 100%-to-Fit. The disk
+allowance passed. The 4 GB whole-app memory limit remains a failing gate.
+Native RAW export timings for this revision are unmeasured.
 
 [Timing driver](../../codebase/tests/performance/denoise-grain-latency.js)
 

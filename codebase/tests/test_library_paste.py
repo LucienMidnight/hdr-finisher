@@ -361,7 +361,7 @@ def test_sdr_only_denoise_saved_count_and_undo(setup, enabled):
     paste.clipboard['grade']['denoise']['sdr']['enabled'] = enabled
     paste.clipboard['grade']['denoise']['hdr']['enabled'] = True
     controls = dict(method='clean_grain', grain_evenness=.7, color_splotches=.3,
-                    splotch_size='small', dark_specks=.8)
+                    splotch_size='large')
     paste.clipboard['grade']['denoise']['sdr']['controls'].update(controls)
     selection = {'lanes': ['sdr'], 'settings': ['denoise.hdr.enabled', 'denoise.sdr.enabled',
         *('denoise.sdr.controls.' + field for field in controls)]}

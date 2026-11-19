@@ -1249,6 +1249,17 @@ protected previews. See [photo-library](photo-library.md) for what each cache
 holds and [technical/photo-library.md](../../technical/photo-library.md)
 section 9 for file layout.
 
+Grade's temporary native Fine Grain and Clean Grain result uses the existing
+full-size scene allowance. The ledger reserves the file's full logical size
+before allocation and releases it with the photo or when preparation is
+replaced. Startup releases abandoned reservations. The 42.39 MP Sony uses
+678,236,160 bytes on disk at 16 bytes per pixel. Reads and writes use bounded
+tiles and the original stays resident. The 600 MB Grade retention cap and
+all disk settings retain their prior values. A Sony 100%-to-Fit draw still
+sampled 4.55 GB for the whole app, so this change remains unqualified
+against the 4 GB ceiling. See the
+[performance table](../../technical/performance-table.md).
+
 ## 6. GPU memory (VRAM)
 
 VRAM is a separate budget, set per device in `gpu-budget.js` and
