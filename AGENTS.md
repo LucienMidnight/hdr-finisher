@@ -534,7 +534,8 @@ module PRD for the area you touch, then `docs/technical/code-map.md`.
 - `docs/technical/local-adjustments.md`: local adjustment data and edge
   controls.
 - `docs/technical/sdr-match.md`: HDR-to-SDR Match.
-- `docs/technical/denoising.md`: Denoise v2 implementation contract.
+- `docs/technical/denoising.md`: Denoise implementation contract, including
+  the Standard, Fine Grain and Clean Grain reconstruction and delivery paths.
 - `docs/technical/denoise-accuracy-review-plan-2026-10-04.md`,
   `denoise-followups-2026-10-04.md`: Denoise review history.
 - `docs/technical/denoising-technology-watch-2026.md`: denoise research.
@@ -672,9 +673,10 @@ Completed UI polish round 3 (pending visual sign-off): `docs/technical/archive/b
   `round5-relative-colour-and-patch.md` compares relative colour cleanup,
   nearby healing and whole-area patch averaging on the Canon and Sony,
   with marked-site results, visible artefacts and native CPU timings.
-- `docs/technical/briefs/denoise-experimental-grain-modes-2026-11-19.md`: build
-  experimental Fine Grain and Clean Grain Denoise methods next to Standard,
-  with controls for Steve's testing; AI method tabled for v2.
+- `docs/technical/archive/briefs/denoise-experimental-grain-modes-2026-11-19.md`:
+  completed experimental Fine Grain and Clean Grain implementation beside
+  Standard. MacBook timings and the open visual review are in the Grade and
+  performance documents. The AI method stays deferred to v2.
 - `docs/technical/briefs/denoise-speck-rnd-prompt-2026-11-18.md`: prompt for the
   next Denoise speck R&D proposal (whole-workflow stage map, what was tried,
   earlier research limitations, constraints); proposal only, no app changes.

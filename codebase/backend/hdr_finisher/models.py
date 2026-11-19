@@ -940,12 +940,17 @@ class DenoiseLiveControls(BaseModel):
     fine_noise: float = Field(default=0.5, ge=0.0, le=1.0)
     medium_noise: float = Field(default=0.5, ge=0.0, le=1.0)
     coarse_noise: float = Field(default=0.5, ge=0.0, le=1.0)
+    method: Literal["standard", "fine_grain", "clean_grain"] = "standard"
+    grain_evenness: float = Field(default=1.0, ge=0.0, le=1.0)
+    color_splotches: float = Field(default=1.0, ge=0.0, le=1.0)
+    splotch_size: Literal["small", "large"] = "large"
+    dark_specks: float = Field(default=1.0, ge=0.0, le=1.0)
 
 
 class DenoiseAnalysisSettings(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    # The one method; it measures the noise itself.
+    # All methods share the same noise measurement.
     algorithm_version: Literal["adaptive-atrous-v1"] = "adaptive-atrous-v1"
 
 

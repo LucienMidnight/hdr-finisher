@@ -430,6 +430,62 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
   textureStore(outTex, storeAt, vec4f(fromOpponent(opponent), 1.0));
 }`;
 
+  const GRAIN_DENOISE_SHADER_SOURCE = ADAPTIVE_DENOISE_SHADER_SOURCE + `
+@compute @workgroup_size(8, 8)
+fn adaptiveGrainGainMain(@builtin(global_invocation_id) id: vec3u) {
+  if (!inScratch(id)) { return; }
+  let p = vec2i(id.xy);
+  let energy = textureLoad(aux2Tex, p, 0).xyz;
+  let variance = textureLoad(aux3Tex, p, 0).x;
+  let fine = ap.frame.z < 2.0;
+  var strength = vec3f(ap.strength.x, ap.strength.y, ap.strength.y);
+  if (fine) { strength *= ap.strength.z; }
+  let noise = (strength * ap.sigma.xyz) * (strength * ap.sigma.xyz) * variance;
+  var gain = max(energy - noise, vec3f(0.0)) / max(energy, vec3f(1e-20));
+  if (fine && ap.strength.w > 0.0) { gain = max(gain, vec3f(ap.strength.w)); }
+  textureStore(dstTex, p, vec4f(gain, 0.0));
+}
+
+@compute @workgroup_size(8, 8)
+fn adaptiveGrainBoxMain(@builtin(global_invocation_id) id: vec3u) {
+  if (!inScratch(id)) { return; }
+  let p = vec2i(id.xy);
+  let axis = select(vec2i(0, 1), vec2i(1, 0), ap.frame.w < 0.5);
+  var total = 0.0;
+  for (var tap = -18; tap <= 18; tap++) {
+    total += textureLoad(srcTex, clampLocal(p + axis * tap), 0).x;
+  }
+  textureStore(dstTex, p, vec4f(total / 37.0, 0.0, 0.0, 0.0));
+}
+
+@compute @workgroup_size(8, 8)
+fn adaptiveGrainAccumulateMain(@builtin(global_invocation_id) id: vec3u) {
+  if (!inScratch(id)) { return; }
+  let p = vec2i(id.xy);
+  let band = textureLoad(srcTex, p, 0).xyz - textureLoad(auxTex, p, 0).xyz;
+  var gain = textureLoad(aux2Tex, p, 0).xyz;
+  let fitted = clamp(textureLoad(aux3Tex, p, 0).x * ap.model.w + ap.sigma.w, 0.0, 1.0);
+  gain.x = mix(gain.x, fitted, ap.dest.x);
+  let sum = textureLoad(sumTex, p, 0).xyz;
+  textureStore(dstTex, p, vec4f(sum + band * gain, 0.0));
+}
+
+@compute @workgroup_size(8, 8)
+fn adaptiveCleanFinalMain(@builtin(global_invocation_id) id: vec3u) {
+  let local = vec2i(id.xy);
+  let frameAt = scratchOrigin() + local;
+  let tile = vec4i(ap.tile);
+  if (frameAt.x < tile.x || frameAt.y < tile.y || frameAt.x >= tile.x + tile.z || frameAt.y >= tile.y + tile.w) { return; }
+  let opponent = textureLoad(srcTex, local, 0).xyz + textureLoad(auxTex, local, 0).xyz;
+  let fields = textureLoad(aux2Tex, frameAt - vec2i(ap.dest.zw), 0);
+  var rgb = fromOpponent(opponent);
+  let delta = fromOpponent(vec3f(0.0, fields.xy * ap.strength.x));
+  rgb += delta - vec3f(dot(delta, ACES_LUMA));
+  rgb += ap.strength.y * (vec3f(fields.z) + (rgb - vec3f(dot(rgb, ACES_LUMA))) * fields.w);
+  let storeAt = frameAt - vec2i(ap.dest.xy);
+  textureStore(outTex, storeAt, vec4f(rgb, 1.0));
+}`;
+
   const LENS_FILTERS = ((typeof window !== "undefined" && window.HDRLensFilters)
     || (typeof module !== "undefined" && module.exports && require("./lens-filters.js")));
   const LENS_COMPONENTS_WGSL = LENS_FILTERS.components.slice(1).flat().map(([sigma,weights]) =>
@@ -3281,6 +3337,7 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
     PEAK_REDUCTION_SHADER_SOURCE,
     SCALED_FILM_PEAK_REDUCTION_SHADER_SOURCE,
     ADAPTIVE_DENOISE_SHADER_SOURCE,
+    GRAIN_DENOISE_SHADER_SOURCE,
     SHADER_SOURCE,
     LUMA_MASK_SHADER_SOURCE,
   });

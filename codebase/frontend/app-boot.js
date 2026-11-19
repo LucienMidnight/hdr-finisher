@@ -814,6 +814,8 @@ function bindEvents() {
   document.getElementById("hdr-compression-use-display")?.addEventListener("click", useHighlightDisplayPeak);
   els.denoiseBypass?.addEventListener("click", () => setDenoiseEnabled(!state.denoise[state.currentView].enabled));
   els.denoiseShowNoise?.addEventListener("click", toggleDenoiseNoiseView);
+  els.denoiseMethod?.addEventListener("change", () => commitDenoiseControl("method", els.denoiseMethod.value));
+  els.denoiseSplotchSize?.addEventListener("change", () => commitDenoiseControl("splotch_size", els.denoiseSplotchSize.value));
   const denoiseSliders = [
     [els.denoiseAmount, "amount"],
     [els.denoiseLuminance, "luminance"],
@@ -823,6 +825,9 @@ function bindEvents() {
     [els.denoiseFine, "fine_noise"],
     [els.denoiseMedium, "medium_noise"],
     [els.denoiseCoarse, "coarse_noise"],
+    [els.denoiseEvenness, "grain_evenness"],
+    [els.denoiseSplotches, "color_splotches"],
+    [els.denoiseSpecks, "dark_specks"],
   ];
   for (const [control, key] of denoiseSliders) {
     // Capture phase: the instrument slider's own pointerdown moves the value
@@ -838,11 +843,11 @@ function bindEvents() {
           state.denoiseWholeFrameStale = null;
           void denoiseInputQueue().submit({ ...stale, wholeFrame: true });
         }
-        if (eventName === "change") void persistDenoiseSettings();
+        if (eventName === "change") void commitDenoiseControl(key);
       });
     }
   }
-  els.denoiseRecalculate?.addEventListener("click", () => recalculateDenoise());
+  els.denoiseRecalculate?.addEventListener("click", () => recalculateDenoise(state.currentView, { force: true }));
   // PRD 6.3 progressive disclosure. Purely a matter of what is on screen:
   // the controls keep their values and keep applying while the panel is shut,
   // because `renderDenoiseControls` writes to them either way.

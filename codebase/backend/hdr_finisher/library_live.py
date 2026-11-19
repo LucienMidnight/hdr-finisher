@@ -483,7 +483,7 @@ def fallback_picture(root, path, document, edge, cancelled=None, progress=None):
     from .library_pictures import check_cancelled
     from .library_thumbnail_codec import encode
     from .adjustments import apply_adjustments, apply_hdr_output_highlight_compression, apply_sdr_output_highlight_compression
-    from .exporters import _denoised_export_source
+    from .exporters import _denoised_export_source, _experimental_delivery_filter
     from .models import PreviewKind
     cache = LibraryPictureCache(root)
     metadata = develop_cpu(root, path, document, edge, cancelled, progress=progress)
@@ -496,10 +496,13 @@ def fallback_picture(root, path, document, edge, cancelled=None, progress=None):
     adjustments.hdr.highlight_compression_target_nits = 1000
     def render(kind):
         check_cancelled(cancelled)
-        image = apply_adjustments(_denoised_export_source(frame, kind), adjustments, kind,
+        source_filter = _experimental_delivery_filter(frame, kind)
+        source = frame.image if source_filter else _denoised_export_source(frame, kind)
+        image = apply_adjustments(source, adjustments, kind,
             sdr_reference_image=frame.sdr_reference_image, include_grain=True,
             include_output_highlight_compression=False,
-            local_adjustments=adjustments.enabled_locals(frame.local_adjustments), color_context=frame.color_context)
+            local_adjustments=adjustments.enabled_locals(frame.local_adjustments), color_context=frame.color_context,
+            source_filter=source_filter)
         check_cancelled(cancelled)
         return (apply_hdr_output_highlight_compression(image, adjustments, color_context=frame.color_context)
             if kind == PreviewKind.HDR else apply_sdr_output_highlight_compression(image, adjustments))

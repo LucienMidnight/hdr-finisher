@@ -360,11 +360,16 @@ def test_sdr_only_denoise_saved_count_and_undo(setup, enabled):
     paste = LibraryPaste(grades); paste.copy(str(photo))
     paste.clipboard['grade']['denoise']['sdr']['enabled'] = enabled
     paste.clipboard['grade']['denoise']['hdr']['enabled'] = True
-    selection = {'lanes': ['sdr'], 'settings': ['denoise.hdr.enabled', 'denoise.sdr.enabled']}
+    controls = dict(method='clean_grain', grain_evenness=.7, color_splotches=.3,
+                    splotch_size='small', dark_specks=.8)
+    paste.clipboard['grade']['denoise']['sdr']['controls'].update(controls)
+    selection = {'lanes': ['sdr'], 'settings': ['denoise.hdr.enabled', 'denoise.sdr.enabled',
+        *('denoise.sdr.controls.' + field for field in controls)]}
     assert paste.paste([str(photo)], selection, preview=True)['count'] == 1
     assert paste.paste([str(photo)], selection)['count'] == 1
     marks.writer.drain()
     expected = deepcopy(before); expected['denoise']['sdr']['enabled'] = enabled
+    expected['denoise']['sdr']['controls'].update(controls)
     assert settings(photo)['grade'] == expected
     assert paste.paste([str(photo)], selection, preview=True)['count'] == 0
     marks.undo(); marks.writer.drain()

@@ -63,8 +63,8 @@ function halfToFloat(bits) {
     await page.waitForFunction(() => viewerState().status === "ready", null, { timeout: 300000 });
     await page.waitForTimeout(900);
 
-    assert(await page.evaluate(() => state.denoise[state.currentView].analysis.algorithm_version) === "adaptive-atrous-v1",
-      "New denoise does not default to the adaptive method.");
+    assert(await page.evaluate(() => state.denoise[state.currentView].controls.method) === "standard",
+      "New Denoise does not default to Standard.");
     await page.evaluate(() => {
       const group = document.querySelector(".denoise-group .group-toggle");
       if (group.getAttribute("aria-expanded") !== "true") group.click();
@@ -101,12 +101,23 @@ function halfToFloat(bits) {
       && document.getElementById("denoise-coarse-value").textContent === "95%"),
     "The noise size controls are not showing their values under Adaptive.");
 
-    const context = await page.evaluate(async () => {
+    const readResult = () => page.evaluate(async () => {
+      const renderer = state.gpuPreview;
       const selector = state.gpuPreview.denoiseSourceSelector;
-      const region = await state.gpuPreview.readDenoiseResolvedRegion(selector.original.width, selector.original.height, 0, 0);
+      const geometry = JSON.stringify(state.adjustments.shared?.geometry || {});
+      const edge = refinementProxyLongEdge();
+      const original = await renderer.loadProxy(state.session.session_id, state.currentView, edge, geometry, state.editRevision, "source");
+      // The regular screen draw can supersede this diagnostic resolve while
+      // the first Clean Grain region is still uploading. Let that draw
+      // finish and read the same prepared controls after it settles.
+      for (let attempt = 0; attempt < 5; attempt++) {
+        if (await renderer.resolveDenoiseProxy(selector.controls, { source: original })) break;
+        await new Promise(resolve => requestAnimationFrame(resolve));
+      }
+      const region = await renderer.readDenoiseResolvedRegion(original.width, original.height, 0, 0);
       let gpu=null;
       if(region){
-        const bytes=new Uint8Array(region.values.buffer,region.values.byteOffset,region.values.byteLength);
+        const bytes = new Uint8Array(Float32Array.from(region.values).buffer);
         let binary='';for(let offset=0;offset<bytes.length;offset+=32768)binary+=String.fromCharCode(...bytes.subarray(offset,offset+32768));
         gpu=btoa(binary);
       }
@@ -115,14 +126,15 @@ function halfToFloat(bits) {
         lane: state.currentView,
         editRevision: state.editRevision,
         geometry: JSON.stringify(state.adjustments.shared?.geometry || {}),
-        width: selector.original.width,
-        height: selector.original.height,
+        width: original.width,
+        height: original.height,
         algorithm: selector.cache.algorithmVersion,
         model: selector.cache.model,
         controls: selector.controls,
         gpu,
       };
     });
+    const context = await readResult();
     assert(context.algorithm === "adaptive-atrous-v1", `The GPU ran ${context.algorithm}.`);
     assert(context.gpu, "The GPU result could not be read back.");
     const gpuBytes=Buffer.from(context.gpu,'base64');delete context.gpu;
@@ -151,8 +163,9 @@ function halfToFloat(bits) {
     const inputPath = path.join(scratch, "proxy.f32");
     const outputPath = path.join(scratch, "reference.f32");
     fs.writeFileSync(inputPath, Buffer.from(pixels.buffer));
-    fs.writeFileSync(path.join(scratch, "model.json"), JSON.stringify({ ...context.model, controls: context.controls }));
-    execFileSync(PYTHON, ["-c", `
+    function compare(method, context, gpuPixels) {
+      fs.writeFileSync(path.join(scratch, "model.json"), JSON.stringify({ ...context.model, controls: context.controls }));
+      execFileSync(PYTHON, ["-c", `
 import json, sys
 import numpy as np
 sys.path.insert(0, ${JSON.stringify(path.join(ROOT, "backend"))})
@@ -161,36 +174,100 @@ spec = json.load(open(${JSON.stringify(path.join(scratch, "model.json"))}))
 image = np.fromfile(${JSON.stringify(inputPath)}, dtype=np.float32).reshape(${context.height}, ${context.width}, 4)
 model = da.AdaptiveNoiseModel(a=spec["a"], b=spec["b"], c=spec["c"], band_sigmas=tuple(tuple(row) for row in spec["band_sigmas"]))
 c = spec["controls"]
-controls = da.AdaptiveControls(amount=c["amount"], luminance=c["luminance"], color_noise=c["colorNoise"], detail_recovery=c["detailRecovery"], finest_noise=c["finestNoise"], fine_noise=c["fineNoise"], medium_noise=c["mediumNoise"], coarse_noise=c["coarseNoise"])
+controls = da.AdaptiveControls(amount=c["amount"], luminance=c["luminance"], color_noise=c["colorNoise"], detail_recovery=c["detailRecovery"], finest_noise=c["finestNoise"], fine_noise=c["fineNoise"], medium_noise=c["mediumNoise"], coarse_noise=c["coarseNoise"],
+  method=c.get("method","standard"), grain_evenness=c.get("grainEvenness",1),
+  color_splotches=c.get("colorSplotches",1), splotch_size=c.get("splotchSize","large"), dark_specks=c.get("darkSpecks",1))
 da.resolve_adaptive(image, model, controls).astype(np.float32).tofile(${JSON.stringify(outputPath)})
-`], { stdio: "inherit" });
-    const reference = new Float32Array(fs.readFileSync(outputPath).buffer.slice(0));
+  `], { stdio: "inherit" });
+      const reference = new Float32Array(fs.readFileSync(outputPath).buffer.slice(0));
 
-    // Compare RGB only; the GPU writes an opaque alpha.
-    let worst = 0;
-    let beyond = 0;
-    let removedEnergy = 0;
-    let count = 0;
-    for (let index = 0; index < reference.length; index += 4) {
-      for (let channel = 0; channel < 3; channel += 1) {
-        const expected = reference[index + channel];
-        const produced = gpuPixels[index + channel];
-        const error = Math.abs(produced - expected);
-        // Half precision rounds at about 1e-3 of the value.
-        const allowance = 2e-3 * Math.abs(expected) + 1e-4;
-        worst = Math.max(worst, error / allowance);
-        if (error > allowance) beyond += 1;
-        const removed = pixels[index + channel] - expected;
-        removedEnergy += removed * removed;
-        count += 1;
+      // Compare RGB only; the GPU writes an opaque alpha.
+      let worst = 0;
+      let beyond = 0;
+      let removedEnergy = 0;
+      let count = 0;
+      for (let index = 0; index < reference.length; index += 4) {
+        for (let channel = 0; channel < 3; channel += 1) {
+          const expected = reference[index + channel];
+          const produced = gpuPixels[index + channel];
+          const error = Math.abs(produced - expected);
+          // Half precision rounds at about 1e-3 of the value.
+          const allowance = 2e-3 * Math.abs(expected) + 1e-4;
+          worst = Math.max(worst, error / allowance);
+          if (error > allowance) beyond += 1;
+          const removed = pixels[index + channel] - expected;
+          removedEnergy += removed * removed;
+          count += 1;
+        }
       }
+      const fraction = beyond / count;
+      console.log(`${method}: GPU vs Python on ${context.width}x${context.height}: worst ${worst.toFixed(2)}x the half-float allowance, `
+        + `${(fraction * 100).toFixed(4)}% of samples beyond it; removed RMS ${Math.sqrt(removedEnergy / count).toExponential(3)}`);
+      assert(Math.sqrt(removedEnergy / count) > 1e-5, "The reference removed nothing, so parity would prove nothing.");
+      assert(fraction < 1e-4 && worst < 8,
+        `The GPU adaptive denoise disagrees with the Python reference beyond half-float precision.`);
     }
-    const fraction = beyond / count;
-    console.log(`GPU vs Python on ${context.width}x${context.height}: worst ${worst.toFixed(2)}x the half-float allowance, `
-      + `${(fraction * 100).toFixed(4)}% of samples beyond it; removed RMS ${Math.sqrt(removedEnergy / count).toExponential(3)}`);
-    assert(Math.sqrt(removedEnergy / count) > 1e-5, "The reference removed nothing, so parity would prove nothing.");
-    assert(fraction < 1e-4 && worst < 8,
-      `The GPU adaptive denoise disagrees with the Python reference beyond half-float precision.`);
+    compare("Standard", context, gpuPixels);
+
+    const waitReady = () => page.waitForFunction(() => {
+      const runtime = state.denoiseRuntime[state.currentView];
+      if (runtime.status === "error") throw Error(runtime.error);
+      return runtime.status === "ready" && viewerState().status === "ready";
+    }, null, { timeout: 90000 });
+    const change = (id, value, release = true) => page.evaluate(([id, value, release]) => {
+      const control = document.getElementById(id);
+      control.value = value;
+      control.dispatchEvent(new Event(release ? "change" : "input", { bubbles: true }));
+    }, [id, value, release]);
+    const nextPixels = result => {
+      assert(result.width === proxy.width && result.height === proxy.height, "Denoise changed the proxy resolution.");
+      assert(result.gpu, "The prepared GPU result could not be read.");
+      const bytes = Buffer.from(result.gpu, "base64");
+      return new Float32Array(bytes.buffer, bytes.byteOffset, bytes.byteLength / 4);
+    };
+
+    await change("denoise-evenness", 0, false);
+    await change("denoise-method", "fine_grain");
+    await waitReady();
+    const zero = nextPixels(await readResult());
+    assert(Buffer.from(zero.buffer, zero.byteOffset, zero.byteLength).equals(gpuBytes),
+      "Fine Grain at zero evenness differs from Standard.");
+
+    const fineStart = performance.now();
+    await change("denoise-evenness", 1, false);
+    await change("denoise-evenness", 1);
+    await waitReady();
+    const fine = await readResult();
+    console.log("Fine Grain preview preparation and readback ms", Math.round(performance.now() - fineStart));
+    const finePixels = nextPixels(fine);
+    compare("Fine Grain", fine, finePixels);
+
+    const cleanStart = performance.now();
+    await change("denoise-method", "clean_grain");
+    await waitReady();
+    const clean = await readResult();
+    console.log("Clean Grain preview preparation and readback ms", Math.round(performance.now() - cleanStart));
+    compare("Clean Grain", clean, nextPixels(clean));
+    const prepToken = await page.evaluate(() => state.gpuPreview.denoiseSourceSelector.cache.grain.token);
+    const dragStart = performance.now();
+    await change("denoise-splotches", 0, false);
+    await change("denoise-specks", 0, false);
+    await page.waitForFunction(() => {
+      const controls = state.gpuPreview.denoiseSourceSelector?.controls;
+      return controls?.colorSplotches === 0 && controls?.darkSpecks === 0;
+    }, null, { timeout: 30000 });
+    const off = nextPixels(await readResult());
+    console.log("Clean Grain blend preview and readback ms", Math.round(performance.now() - dragStart));
+    assert(Buffer.from(off.buffer, off.byteOffset, off.byteLength).equals(
+      Buffer.from(finePixels.buffer, finePixels.byteOffset, finePixels.byteLength)), "Clean Grain with both corrections off differs from Fine Grain.");
+    assert(prepToken === await page.evaluate(() => state.gpuPreview.denoiseSourceSelector.cache.grain.token),
+      "A live blend rebuilt the preparation.");
+    await page.evaluate(() => document.querySelector("#denoise-show-noise").click());
+    await page.waitForFunction(() => !document.querySelector("#noise-view-badge").classList.contains("hidden"));
+    await page.evaluate(() => document.querySelector("#denoise-recalculate").click());
+    await waitReady();
+    assert(prepToken !== await page.evaluate(() => state.gpuPreview.denoiseSourceSelector.cache.grain.token),
+      "Recalculate did not replace the grain preparation.");
     assert(pageErrors.length === 0, "Page errors: " + JSON.stringify(pageErrors));
     console.log("Adaptive denoise: the GPU preview matches the export's Python to half-float precision.");
   } finally {

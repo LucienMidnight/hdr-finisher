@@ -1,3 +1,29 @@
+## November 19, 2026: experimental Fine Grain and Clean Grain
+
+Steve chose to add Fine Grain and Clean Grain next to Standard for hands-on
+testing. Fine Grain uses the 18-pixel brightness-grain match from round 4.
+Clean Grain defaults to the round 5 combination of large colour splotch cleanup
+and nearby dark-pit repair. All three share the noise model and the eight
+existing controls. Method and added controls belong to the same saved settings,
+copy/paste and presets. Standard stays the default for new and existing grades.
+
+Steve approved a whole-photo grain fit before preview and a preparation wait
+shown in the status line. Color Splotches and Dark Specks blend live after
+preparation. Grain Evenness prepares again after release when needed. Grade and
+Show Noise use WebGPU, as they do for Standard. Proof and export retain their CPU
+fallback at the existing perceptual tolerance. Signed RAW and Pixel cleanup
+stay in place. The guide recommends Even out harsh specks at ×2.5 for RAWs.
+The experiment exposes the observed coloured rims and softer faces, lashes
+and fine hair. Steve's visual acceptance and any decision to ship remain open.
+The AI method stays deferred to v2.
+
+The two default experimental CPU results match the research rows exactly on
+the full signed 18 MP Canon and 42 MP Sony inputs. The MacBook Neo timings are
+in the [performance table](../../technical/performance-table.md). The
+three-fixture synthetic GPU measurement comparison passes all 36 finished
+comparisons. The full measurement corpus still needs a noise-free linear
+EXR render at least 540×540 in HDR Test Images.
+
 ## November 17, 2026: informative Denoise measurement (Steve's decision)
 
 Steve approved excluding uninformative brightness bins **and** quiet calibration

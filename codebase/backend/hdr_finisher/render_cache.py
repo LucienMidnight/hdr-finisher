@@ -9,7 +9,7 @@ import os
 from pathlib import Path
 import shutil
 import struct
-from threading import Event, RLock, get_ident
+from threading import Event, Lock, RLock, get_ident
 import time
 from typing import Any, Callable
 import zlib
@@ -769,6 +769,8 @@ class SessionRenderCache:
     _singleflight_waits: int = field(default=0, init=False, repr=False)
     _stale_cancellations: int = field(default=0, init=False, repr=False)
     _source_epoch: int = field(default=0, init=False, repr=False)
+    grain_preparation_lock: Lock = field(default_factory=Lock, init=False, repr=False)
+    grain_preparation: tuple | None = field(default=None, init=False, repr=False)
     # The last answer each source edge received, for the transport headers:
     # ``native`` (the decoded frame itself), ``memory``/``disk`` (warm mip),
     # ``built`` (cold mip build) or ``session`` (no persistent store).
@@ -815,6 +817,7 @@ class SessionRenderCache:
                 return
             self.color_context = context
             self._source_epoch += 1
+            self.grain_preparation = None
             self._frames.clear()
             self._frame_scope_peaks.clear()
             self._scopes.clear()
@@ -842,6 +845,7 @@ class SessionRenderCache:
             self.source_identity = identity
             self.sdr_identity = sdr_identity
             self._source_epoch += 1
+            self.grain_preparation = None
             self._source_proxies.clear()
             self._sdr_proxies.clear()
             self._source_ranges.clear()

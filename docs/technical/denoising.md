@@ -9,6 +9,32 @@
 **Pipeline baseline:** `95060fa`; see [Image Processing Pipeline](image-processing-pipeline.md).
 **Research archive:** [Denoising Technology Watch — August 2026](denoising-technology-watch-2026.md) is background only and is not an implementation plan.
 
+## November 19, 2026: experimental grain methods
+
+`DenoiseLiveControls.method` selects the reconstruction. Standard retains its
+`adaptive-atrous-v1` model, control mapping, shaders and tile margin. The
+experimental methods share its noise measurement. The backend fits scale and
+offset for the radius-18 brightness gain averages on bands 1 and 2 by reducing
+the retained energy over the frame. The WebGPU resolve reuses its existing
+scratch textures for the two separable box filters. Zero evenness uses the
+Standard accumulation pass.
+
+Clean Grain stages colour relative to the local light, preserves scene Y, and
+matches a nearby donor against a ring surrounding the damaged centre. The
+bounded CPU preparation writes one temporary region-readable correction image
+for the active render cache. WebGPU uploads correction regions under the
+existing Denoise tile-cache allowance. The final shader blends the opponent
+colour change and the brightness/colour repair. The two blend sliders keep the
+preparation. Control changes that affect the base or the splotch reach request
+a new preparation. Grain Evenness applies on release. No detail-protection veto
+is used. Files expire with the source preparation.
+
+Grade and Show noise use WebGPU. Proof and export use the same GPU reconstruction
+when admitted and retain the CPU fallback. The experimental CPU delivery filters
+geometry-fixed pixels before grading. HDR limiting is still downstream. Scene
+reference tests use absolute 0.000002 and relative 0.00001 tolerances. Finished
+SDR uses ΔE 2000 and HDR uses ΔE ITP, mean < 1 and p99 < 3. See [round 5](research/denoise-v1-2026-11-16/round5-relative-colour-and-patch.md).
+
 ## November 17, 2026: informative noise calibration
 
 Steve approved the joint brightness-bin and calibration-block repair from

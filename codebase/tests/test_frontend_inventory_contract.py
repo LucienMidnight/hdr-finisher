@@ -41,5 +41,7 @@ def test_frontend_contract_split_preserves_the_reviewed_inventory() -> None:
     # Peak estimate opt-in was removed in favor of automatic measurement.
     # November 15, 2026: two tooltip source-wording checks were replaced by
     # real-app coverage of the shared tooltip controller (sprint item L1).
-    assert len(test_names) == 84
+    # November 19: the Denoise setup source match is covered by the Electron
+    # preparation, live blend, and recalculation checks.
+    assert len(test_names) == 83
     assert len(test_names) == len(set(test_names))

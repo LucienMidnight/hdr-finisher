@@ -3,6 +3,10 @@
 **Date:** November 19, 2026
 **Branch:** start from `feat/denoise-v1` (round 5 merged at `ac38a25f`).
 **Owner:** Steve (not a coder). Report in plain language.
+**Outcome:** Built for testing. Both defaults matched the full Canon and Sony
+research references exactly on the CPU. Grade uses WebGPU, and export and
+Proof retain their CPU fallback. See the Grade module and performance table
+for the remaining corpus fixture and MacBook Neo timings.
 
 ## Goal
 
@@ -135,6 +139,20 @@ each method, wait times on the MacBook for preview and export, what was run
 and what failed, and anything that differs from the research results.
 
 ## Questions protocol
+
+November 19 implementation decision. Grade preview and Show noise keep
+Standard's WebGPU requirement. Export and Proof keep the CPU fallback.
+Prepare the whole-photo gain fit before resolving and allow a longer
+Preparing/Recalculating state for the experimental modes. Color Splotches
+and Dark Specks blend live after preparation. Grain Evenness may prepare
+again on release.
+
+For reference comparisons on signed float32 scene data, use absolute
+tolerance 0.000002 and relative tolerance 0.00001. This allows float32
+rounding when filtering a tile with different dimensions. Standard and
+zero-evenness Fine Grain must be bit-identical. Finished HDR/SDR use the
+perceptual limits above. The new MacBook times are baselines, with a 5%
+run-to-run band when repeating the same action on the same machine.
 
 If this brief conflicts with the existing code (for example the Denoise
 controls schema or the GPU resolve layout makes a requirement expensive),

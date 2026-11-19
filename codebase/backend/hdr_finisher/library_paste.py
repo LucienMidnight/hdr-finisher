@@ -113,6 +113,8 @@ SETTING_LABELS = {
     'local_adjustments':'Local adjustments and masks', 'local_adjustments_enabled':'Local adjustments enabled',
     'luminance':'Luminance noise', 'color_noise':'Colour noise', 'detail_recovery':'Detail recovery',
     'finest_noise':'Finest noise', 'fine_noise':'Fine noise', 'medium_noise':'Medium noise', 'coarse_noise':'Coarse noise',
+    'grain_evenness':'Grain Evenness', 'color_splotches':'Color Splotches',
+    'splotch_size':'Splotch Size', 'dark_specks':'Dark Specks',
 }
 
 

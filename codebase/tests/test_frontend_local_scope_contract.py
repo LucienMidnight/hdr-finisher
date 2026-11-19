@@ -295,20 +295,7 @@ def test_denoise_phase_zero_selector_remains_lazy_and_outside_the_base_shader() 
     assert 'denoiseTextures: (this.denoiseSourceSelector?.resolved ? 1 : 0)' in preview
 
 
-def test_denoise_setup_fetches_a_model_and_resolve_is_reconstruction_only() -> None:
-    preview = frontend_scripts()
-    app_script = frontend_scripts()
-
-    # One method. The wavelet method's analysis, shader and identity are gone.
-    assert "analyzeDenoiseProxy(sessionId, lane, adjustments, longEdge, editRevision = 0, sourceIdentity = \"source\", controls = {})" in preview
-
-    # The reconstruction-only contract, asserted on behaviour rather than on the
-    # shape of a cleanup block: resolve must never reach for the analysis
-    # pipeline, however the two are arranged.
-    assert "runtime.generation += 1;" in app_script
-
-
-def test_denoise_exposes_one_method_and_its_live_controls() -> None:
+def test_denoise_keeps_its_existing_controls_and_group_position() -> None:
     html = (FRONTEND / "index.html").read_text(encoding="utf-8")
 
     for control_id in ("denoise-amount", "denoise-luminance", "denoise-color", "denoise-detail"):
@@ -318,8 +305,7 @@ def test_denoise_exposes_one_method_and_its_live_controls() -> None:
     assert 'data-reset-group="denoise"' in html
     assert 'id="denoise-enabled"' not in html
     assert 'id="denoise-ab"' not in html
-    # One method: no selector, and none of the removed wavelet method's controls.
-    for removed in ("denoise-algorithm", "denoise-method", "denoise-levels", "denoise-threshold",
+    for removed in ("denoise-algorithm", "denoise-levels", "denoise-threshold",
                     "denoise-luma-sigma", "denoise-chroma-sigma"):
         assert f'id="{removed}"' not in html
     assert '>Denoise <span class="module-modified-marker" aria-hidden="true"></span></button>' in html

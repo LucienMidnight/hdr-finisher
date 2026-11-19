@@ -6,7 +6,7 @@ function setup() {
  let resolve;
  const work = new Promise(r => {resolve=r;});
  const calls=[];const renders=[];
- const state={session:{session_id:'photo'},gpuPreview:{available:true},denoise:{hdr:{enabled:true,analysis:{algorithm_version:'adaptive'}}},denoiseRuntime:{hdr:{}},currentView:'hdr'};
+ const state={session:{session_id:'photo'},gpuPreview:{available:true},denoise:{hdr:{enabled:true,controls:{method:'standard'},analysis:{algorithm_version:'adaptive'}}},denoiseRuntime:{hdr:{}},currentView:'hdr'};
  const context=vm.createContext({state,geometrySignature:()=> '{}',refinementProxyLongEdge:()=>7968,recalculateDenoiseAnalysis:(...args)=>{calls.push(args);return work;},renderGpuDraft:(...args)=>renders.push(args),debounceOverlayAndScopes:()=>{}});
  vm.runInContext(declarations('recalculateDenoise'),context);
  return {context,state,calls,renders,resolve};
