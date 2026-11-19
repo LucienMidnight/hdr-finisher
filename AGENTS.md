@@ -682,8 +682,9 @@ Completed UI polish round 3 (pending visual sign-off): `docs/technical/archive/b
   Specks and the Fine Grain edge finding are recorded in the Grade PRD.
   The colour-mark and detail acceptance work remains open.
 - `docs/technical/briefs/denoise-harsh-specks-baseline-speed-2026-11-19.md`:
-  fix the harsh-speck colour shift on small lights, record the Denoise look and
-  speed baseline for all three methods, then plan the speed work.
+  railing-light fix, the three-method crop reference and MacBook baseline
+  with 110% measurements. Lists the remaining Canon timing cases. The Grade
+  PRD records the ranked speed plan and the memory failures.
 - `docs/technical/briefs/denoise-speck-rnd-prompt-2026-11-18.md`: prompt for the
   next Denoise speck R&D proposal (whole-workflow stage map, what was tried,
   earlier research limitations, constraints); proposal only, no app changes.
@@ -765,6 +766,9 @@ Completed UI polish round 5 (pending visual sign-off):
 
 - `codebase/tools/denoise_eval/README.md`: CPU-only Denoise quality harness,
   adapters, sensor calibration, fixed display transforms and metric definitions.
+- `codebase/tools/denoise_eval/speed_baseline.py`: fixed Denoise crop and marked
+  spot references for the minimum-Mac speed work. Generates the local review
+  under `codebase/output/review/denoise-speed-baseline/`.
 
 - `codebase/bin/README.md` (bundled encoders) and `codebase/bin/licenses/`.
 - `codebase/samples/README.md`: generated HDR reference samples.

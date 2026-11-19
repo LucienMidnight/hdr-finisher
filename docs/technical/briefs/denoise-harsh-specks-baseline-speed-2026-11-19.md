@@ -47,7 +47,8 @@ fixing it.
   and its three-pixel test exactly as they are. Add cross-channel light
   protection alongside it. The protection may only spare existing candidates.
 - **Comparison tolerance:** keep at least 95% of both the changed sensor sample
-  count and the total absolute sensor correction per noisy reference photo.
+  count and the total absolute sensor correction on the noisy reference set
+  (Canon, Sony and marked portrait), per photo.
   Allow at most one fewer marked colour spot and one fewer marked pit to
   reach grain level per photo and method. Sensor counts include all changes,
   including any real lights the fix should spare. Marks are small integer sets.
@@ -99,7 +100,8 @@ actually feels, from the action to the final picture on screen:
 
 Also break the first preparation into its parts: grain fit, each filter
 step, writing to disk, upload and drawing. Put the rows in
-`docs/technical/performance-table.md`.
+`docs/technical/performance-table.md`. Use the earlier round's 5% run-to-run
+band when comparing the same action on this MacBook.
 
 ## Step 3: speed plan only (report, do not build)
 
@@ -152,3 +154,20 @@ In plain language:
 Update the user guide (if behaviour changes), the RAW import and Grade module
 PRDs, `docs/technical/denoising.md` and the AGENTS.md documentation map in
 the same work.
+
+## Outcome
+
+The light fix was committed at `5d04daa0`. Five 9×9 light windows matched
+cleanup Off. The noisy reference set passed the sensor and marked-spot
+checks. The checked-in marks file contains 18 spots for `DSC05622.ARW`.
+Each was included in the comparison. The review page holds the 54 native
+crop sets for the four photos and three methods.
+
+The 110% sequence on all three photos and the complete Sony timing set
+are in the performance table. The extra timing window ended with these
+Canon cases still open: Fine Grain full export and Proof, and Clean Grain
+at Fit and 100%, including Recalculate, zoom, pan, slider drags, full export
+and Proof. A first attempt at the Canon Proof submitted an invalid target
+from the timing driver. The corrected Standard Proof, plus all three Sony
+Proofs, reached the final picture. The Sony zoom and delivery memory failures
+remain open. The ranked speed plan is recorded in the Grade module PRD.

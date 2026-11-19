@@ -23,9 +23,11 @@ On the noisy reference set, the additional protection spares 172 of 208,976
 previously changed Canon readings, 31 of 338,068 Sony readings and 35 of
 417,576 portrait readings. All three retain over 99.6% of the total absolute
 correction. The atrium itself spares 14,830 of 49,120 previously changed
-readings. Those are whole-photo sensor changes, including changes on real
-features. The fixed marked-spot comparison lost no successes, and Clean Grain
-brought two more Canon colour spots to grain level.
+readings. The clean ISO 100 reference DSC04375 spares 167 of 10,670,
+retaining 94.6% of the absolute correction. Those are whole-photo sensor
+changes, including changes on real features. The fixed marked-spot comparison
+lost no successes, and Clean Grain brought two more Canon colour spots to
+grain level.
 
 Order: optional hot-pixel removal → optional signed per-phase soft clamp →
 Opposed-color evidence/reconstruction → signed AHD → WB/camera transform →

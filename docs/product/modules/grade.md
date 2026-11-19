@@ -1,3 +1,65 @@
+## November 19, 2026: Denoise speed baseline and acceptance
+
+The Denoise reference covers Standard, Fine Grain and Clean Grain at
+defaults, with Even out harsh specks ×2.5. It uses the fixed railing-light
+RAW `DSC01212.ARW`, the Canon `IMG_0790.CR2`, the Sony `_DSC7970.ARW` and the
+marked portrait `DSC05622.ARW`. The review page uses the fixed areas and
+1:1 Retina SDR crops. The downloadable native crop arrays include
+scene-linear ACEScg, finished linear SDR and finished BT.2020 HDR in nits.
+The MacBook Neo waits and timing conditions are in the [performance table](../../technical/performance-table.md).
+
+Future speed changes must match these reference crops with finished SDR
+ΔE 2000 and HDR ΔE ITP mean < 1 and p99 < 3. The marked colour and pit counts
+must hold for each method and photo. The usual Proof/export agreement and
+the exact pre-encode HDR target still apply. The 4 GB whole-app ceiling on
+the MacBook Neo remains the first item for the speed work.
+
+### Proposed speed work in order
+
+These ranges are projections from the [MacBook waits](../../technical/performance-table.md).
+Repeat the same action with the same zoom, source and method before taking
+a speed claim.
+
+1. **Keep zoom and delivery inside 4 GB.** Drop textures tied to the old
+   zoom dimensions before loading the next ones. Keep the last complete
+   picture visible through the change and use a drawing surface sized to
+   the display. At 42 MP a single full-size RGBA16F surface is about 339 MB.
+   The corresponding display-sized surface is at most 36 MB on this Mac.
+   The Sony Fine Grain zoom-out reached 4.87 GB, so releasing the surface
+   alone covers only part of the 0.87 GB excess. Check live and retiring
+   source buffers and the retained tiles together. Budget separately for
+   native delivery, where the Sony Standard CPU fallback reached 6.82 GB.
+   With the same region read, Fine Grain zoom-out would still take about
+   **1.1–1.3 s Canon / 3.1–3.4 s Sony**. Retiring a texture too early could
+   briefly show an old frame or leave an area blank.
+2. **Reuse Fine Grain pixels when switching to Clean Grain.** The same
+   grain fit is already reused. Reuse the resolved RGB for the same source,
+   controls and geometry too, then calculate the colour correction from
+   those native pixels. Publish the new result only when complete and stay
+   inside the existing scratch allowance. The observed 110% switch was
+   13.54 s Canon / 32.96 s Sony. Removing repeated wavelet work and allowing
+   time to read the saved tiles projects **6–8 s Canon / 13–17 s Sony**.
+   Stale RGB or missing neighbours could change grain or create seams.
+3. **Compute each wavelet core once on a fresh preparation.** Fine Grain
+   currently pays for the downstream colour margin. Clean Grain can share
+   finished pixels across adjacent colour tiles. Preserve the filter reads
+   across every boundary. On the Fine Grain 110% preparation, roughly 28%
+   less wavelet tile work projects **12–13 s Canon / 28–30 s Sony** from
+   14.40 / 34.06 s. The risk is rounding differences at seams or a shift in
+   fine grain.
+4. **Reuse already drawn Fit pixels on warm zoom-out.** Reading the
+   correction took about 1.05 s on the Canon and 3.09 s on the Sony during
+   the Fine Grain zoom-out. Reuse a Fit result for the unchanged recipe
+   within the existing allowances when one is ready. Project **0.3–0.8 s
+   Canon / 0.6–1.3 s Sony** on that warm action. A changed zoom target or
+   grade could pick stale pixels. Compare both native and Fit results.
+
+The 110% correction uploads used about 0.04–0.05 s of submission time. The
+CPU filter work is the larger opportunity. Reassess a new GPU filter route
+after the CPU changes and the memory fix. To justify it against this Fine
+Grain 110% baseline, the whole wait would need to land near 7 s on the Canon
+and 17 s on the Sony. A GPU port adds CPU/GPU parity and unified-memory risk.
+
 ## November 19, 2026: Clean Grain app-test follow-up
 
 Steve requested halo and colour protection after testing Clean Grain. Small

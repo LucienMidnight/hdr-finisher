@@ -1,3 +1,133 @@
+## November 19 — Denoise after the railing-light fix
+
+MacBook Neo, A18 Pro, 8 GB, Electron at 1408×794 under the shared GPU lock.
+The decoded-pixel baseline is commit `5d04daa0`. The runs add timing diagnostics
+around the existing rendering paths. The input RAWs are the 18.02 MP Canon
+`IMG_0790.CR2`, 42.39 MP Sony `_DSC7970.ARW` and 42.39 MP atrium
+`DSC01212.ARW`, with lens correction Off and Even out harsh specks at ×2.5.
+Fit drew 1288×858 on the Canon and 1285×858 on the Sony. The marked portrait
+`DSC05622.ARW` is part of the image reference.
+
+Each value is one observation. Times are seconds from the action to the last
+accepted picture, or to completion shown in Export. Export uses full-size
+quality 90 JPEG Ultra HDR, with the method applied to both renditions. Proof
+builds and visibly presents a reduced 1200 px JPEG Ultra HDR at a 1000-nit
+display target. Memory is the app's sampled physical footprint in decimal GB,
+with the usual 500 ms census. A sub-sample peak can be higher.
+
+| Photo | Method | Fit first | 100% first | 110% enable / switch | Recalculate at Fit | 100% → Fit | Fit → 100% | Pan at 100% | Full export | Reduced Proof | Peak GB |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Atrium | Standard | — | — | 2.77 | — | — | — | — | — | — | 4.11 |
+| Atrium | Fine Grain | — | — | 32.85 | — | — | — | — | — | — | 4.31 |
+| Atrium | Clean Grain | — | — | 32.72 | — | — | — | — | — | — | 4.23 |
+| Canon | Standard | 0.28 | 1.55 | 1.54 | 0.08 | 0.10 | 1.05 | 0.91 | 20.45 | 5.73 | 4.76 |
+| Canon | Fine Grain | 11.22 | 13.81 | 14.40 | 12.99 | 1.16 | 0.50 | 0.41 | — | — | 2.73 |
+| Canon | Clean Grain | — | — | 13.54 | — | — | — | — | — | — | 2.68 |
+| Sony | Standard | 0.36 | 2.67 | 2.85 | 0.09 | 0.10 | 1.87 | 0.89 | 69.32 | 3.83 | 6.82 |
+| Sony | Fine Grain | 31.13 | 31.49 | 34.06 | 30.97 | 3.19 | 0.64 | 1.00 | 90.22 | 3.75 | 6.57 |
+| Sony | Clean Grain | 38.76 | 38.88 | 32.96 | 38.02 | 2.64 | 0.16 | 0.58 | 111.39 | 3.85 | 6.63 |
+
+### First preparation breakdown
+
+Model requests are time spent in network requests for the noise model. Setup
+includes the noise model and, for experimental methods, native backend setup.
+Grain fit and filter plus writes are elapsed backend stages inside setup. The
+four worker values are cumulative time across parallel tiles and overlap.
+File-write time measures submitting bytes to the scratch file. Region reads
+cover the request intervals without double-counting overlapping requests.
+Upload is time spent submitting texture writes. Tile rendering can include
+some of those reads and uploads. Paint delay is the time after the final
+submit to the observed frame.
+
+| Photo | Method | First action | Rendering route | Whole wait | Model requests | Setup | Grain fit | Filter + writes | Worker wavelet / colour / pack / write | Region reads | Upload | GPU resolve | Render / submit | Paint delay |
+| --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Atrium | Standard | 110% | Tiled (streamed) | 2.77 | 0.12 | 0.13 | — | — | — | — | — | — | 1.662 | 0.017 |
+| Atrium | Fine Grain | 110% | Tiled (streamed) | 32.85 | 0.01 | 31.94 | 8.28 | 23.60 | 117.57 / 0.00 / 0.94 / 15.17 | 0.94 | 0.047 | — | 0.841 | 0.013 |
+| Atrium | Clean Grain | 110% | Tiled (streamed) | 32.72 | 0.61 | 31.84 | 0.00 | 31.17 | 114.41 / 34.77 / 1.37 / 20.28 | 1.36 | 0.042 | — | 0.816 | 0.005 |
+| Canon | Standard | Fit | direct | 0.28 | 0.09 | 0.18 | — | — | — | — | — | 0.05 | 0.000 | 0.008 |
+| Canon | Standard | 100% | Tiled (streamed) | 1.55 | 0.00 | 0.00 | — | — | — | — | — | — | 0.568 | 0.016 |
+| Canon | Standard | 110% | Tiled (streamed) | 1.54 | 0.00 | 0.01 | — | — | — | — | — | — | 0.546 | 0.030 |
+| Canon | Fine Grain | Fit | direct | 11.22 | 0.00 | 10.35 | 2.22 | 8.12 | 39.95 / 0.00 / 0.29 / 5.18 | 0.80 | 0.007 | 0.82 | 0.000 | 0.026 |
+| Canon | Fine Grain | 100% | Tiled (region) | 13.81 | 0.00 | 13.04 | 3.10 | 9.93 | 43.10 / 0.00 / 0.34 / 6.84 | 0.48 | 0.042 | — | 0.524 | 0.013 |
+| Canon | Fine Grain | 110% | Tiled (streamed) | 14.40 | 0.01 | 13.84 | 3.96 | 9.87 | 47.82 / 0.00 / 0.38 / 6.17 | 0.40 | 0.040 | — | 0.486 | 0.025 |
+| Canon | Clean Grain | 110% | Tiled (streamed) | 13.54 | 0.00 | 12.99 | 0.00 | 12.98 | 48.69 / 14.89 / 0.61 / 7.46 | 0.40 | 0.038 | — | 0.490 | 0.027 |
+| Sony | Standard | Fit | direct | 0.36 | 0.16 | 0.27 | — | — | — | — | — | 0.06 | 0.000 | 0.003 |
+| Sony | Standard | 100% | Tiled (streamed) | 2.67 | 0.01 | 0.01 | — | — | — | — | — | — | 1.664 | 0.019 |
+| Sony | Standard | 110% | Tiled (streamed) | 2.85 | 0.12 | 0.13 | — | — | — | — | — | — | 1.722 | 0.010 |
+| Sony | Fine Grain | Fit | direct | 31.13 | 0.00 | 29.09 | 6.71 | 22.37 | 107.14 / 0.00 / 0.89 / 16.50 | 1.96 | 0.010 | 1.98 | 0.000 | 0.025 |
+| Sony | Fine Grain | 100% | Tiled (region) | 31.49 | 0.01 | 30.41 | 7.72 | 22.67 | 111.97 / 0.00 / 0.83 / 14.03 | 0.47 | 0.046 | — | 0.741 | 0.023 |
+| Sony | Fine Grain | 110% | Tiled (streamed) | 34.06 | 0.02 | 33.30 | 8.03 | 25.23 | 120.41 / 0.00 / 0.99 / 19.47 | 0.50 | 0.045 | — | 0.689 | 0.008 |
+| Sony | Clean Grain | Fit | direct | 38.76 | 0.00 | 35.82 | 6.96 | 28.85 | 109.02 / 35.87 / 1.33 / 19.16 | 2.44 | 0.423 | 2.88 | 0.000 | 0.015 |
+| Sony | Clean Grain | 100% | Tiled (region) | 38.88 | 0.00 | 37.65 | 7.60 | 30.04 | 117.14 / 36.33 / 1.39 / 17.61 | 0.53 | 0.044 | — | 0.850 | 0.025 |
+| Sony | Clean Grain | 110% | Tiled (streamed) | 32.96 | 0.09 | 32.06 | 0.00 | 31.97 | 119.45 / 36.55 / 1.42 / 18.99 | 0.63 | 0.042 | — | 0.843 | 0.008 |
+
+### Each slider at Fit
+
+The three input samples span about 80 ms. Standard and Color Splotches are
+timed through release. The common sliders in Fine Grain and Clean Grain show
+their last live feedback while held. Grain Evenness draws its first changed
+picture after release. Recalculate above shows a complete experimental rebuild
+with the selected method.
+
+| Slider at Fit | Canon Standard | Canon Fine | Canon Clean | Sony Standard | Sony Fine | Sony Clean |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Amount | 0.13 | 0.19 | — | 0.17 | 0.24 | 0.13 |
+| Detail Recovery | 0.12 | 0.15 | — | 0.17 | 0.14 | 0.15 |
+| Luminance | 0.23 | 0.15 | — | 0.15 | 0.15 | 0.14 |
+| Color Noise | 0.20 | 0.14 | — | 0.12 | 0.14 | 0.19 |
+| Finest | 0.18 | 0.14 | — | 0.13 | 0.15 | 0.14 |
+| Fine | 0.12 | 0.13 | — | 0.22 | 0.14 | 0.13 |
+| Medium | 0.17 | 0.13 | — | 0.17 | 0.14 | 0.15 |
+| Coarse | 0.25 | 0.14 | — | 0.12 | 0.18 | 0.14 |
+| Grain Evenness | — | 12.59 | — | — | 26.78 | 33.16 |
+| Color Splotches | — | — | — | — | — | 0.15 |
+
+### Memory at 110%, zoom-out and export
+
+The gate is 4.00 GB. The 4.55 GB Sony Clean Grain zoom-out from the earlier
+native-preparation run remains a failure. The fresh measurements below include
+the earlier Denoise action in the 500 ms sampling window at very short actions.
+
+| Measured memory | Standard | Fine Grain | Clean Grain |
+| --- | ---: | ---: | ---: |
+| Canon 110% | 2.43 | 2.73 | 2.68 |
+| Sony 110% | 4.45 | 4.69 | 4.52 |
+| Atrium 110% | 4.11 | 4.31 | 4.23 |
+| Canon 100% → Fit | 2.66 | 2.67 | — |
+| Sony 100% → Fit | 4.38 | 4.87 | 4.34 |
+| Canon full export | 4.76 | — | — |
+| Sony full export | 6.82 | 6.57 | 6.63 |
+
+At 110% each action started one client preparation, with zero cancellations,
+stale preparations or restarts in the trace. Standard showed Preparing then
+Ready. Both method switches showed Recalculating then Ready, with the previous
+picture available while work ran. Fine Grain and Clean Grain each issued one
+successful native preparation request. Clean Grain reused the whole-photo
+grain fit from Fine Grain.
+
+Both 100% and 110% requested the native processing edge. The 110% sequence
+used tiled streaming from Standard through both switches. The fresh 100%
+experimental activations used tiled visible-region transport. Fit used the
+direct renderer with downsampled reads from the same type of native
+preparation. The sequence and the percentage both differ between the
+samples. On the Sony, Fine Grain spent 33.25 of 34.06 s inside setup at 110%,
+and the last tiled render used 0.69 s. A repeated preparation did not account
+for the long wait in the observed run.
+
+All three Sony full exports completed on CPU after GPU memory admission.
+They reached 6.57–6.82 GB. The Sony Fine Grain zoom-out reached 4.87 GB,
+and the Sony Clean Grain zoom-out reached 4.34 GB on this run. Both cross
+the 4 GB gate. Canon Standard export completed on GPU and reached 4.76 GB.
+
+The timed extension stopped at the agreed cutoff. Open cases are Canon
+Fine Grain full export and Proof, and Canon Clean Grain at Fit and 100%,
+including Recalculate, zoom, pan, slider drags, full export and Proof.
+The atrium was timed at 110%. The portrait was used for image comparison.
+
+[Timing driver](../../codebase/tests/performance/denoise-grain-latency.js) ·
+[Reference review](../../codebase/output/review/denoise-speed-baseline/index.html) ·
+[Local timing receipts](../../codebase/output/denoise-validation)
+
 ## November 19 — Experimental Denoise in the app
 
 MacBook Neo, A18 Pro, 8 GB, Electron at 1408×794, shared GPU lock. Native
