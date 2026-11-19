@@ -1,3 +1,56 @@
+## November 19, 2026: Clean Grain app-test follow-up
+
+Steve requested halo and colour protection after testing Clean Grain. Small
+is the new default. Clean Grain pulls less broadly around bright lights
+and large colour differences, with a narrow pass for edge fringes. Dark
+Specks is removed. The one isolation trial required a dark centre to have
+brighter samples on every side and brought 7 of 12 Canon pits and 4 of 5
+Sony pits to grain level. The three sampled Canon and Sony shadow groups,
+plus the Sony shirt, were within the proposed colour tolerance. The Canon
+pit count missed the required 10, so the slider and preparation were removed.
+Previously saved Clean Grain grades using Dark Specks lose that correction.
+
+Both experimental methods had been fitting the source at the current
+preview size. At Fit, Clean Grain's native-pixel reaches covered several
+times as much of the scene. The renderer now reuses one prepared native
+result from disk across zoom and pan. The existing Grade memory limit and
+full-size disk allowance apply. Fit versus native and real MacBook waits
+are recorded with the associated checks. The Sony zoom-out still sampled
+above the 4 GB whole-app ceiling. See the [performance table](../../technical/performance-table.md).
+
+Fine Grain's colour gains match Standard's. Its changed brightness gain can
+make the existing colour more conspicuous when the scene is mapped to the
+screen. In Steve's aligned screenshots the planter rim increased from
+13.5 to 14.5 display code values in red-minus-blue contrast, while its peak
+brightness gradient fell from 24.4 to 22.3 codes per screenshot pixel.
+The screenshots show a planter, while the approved IMG_0790.CR2 fixture is
+the fire-dancer photo. The planter measurements therefore use the supplied
+screenshots. An edge-aware brightness gain could preserve Standard's
+brightness behaviour on steep edges. Fine Grain's filter is unchanged.
+
+On the round 5 mark set, Small at 100% brought **11/28 Canon** and
+**22/24 Sony** colour marks to grain level. Canon's target was 20. Six
+Canon colour marks rendered black from negative scene luminance. A
+colour-only correction cannot lift their centres. The same fixed SDR
+views gave these ΔE 2000 readings against Fine Grain.
+
+| Area | Mean | p95 |
+| --- | ---: | ---: |
+| Canon highlight rings, pooled | 0.083 | 0.392 |
+| Sony highlight rings, pooled | 0.204 | 1.091 |
+| Canon flame | 0.243 | 1.293 |
+| Canon centre face | 0.407 | 2.243 |
+| Canon left face and hair | 0.474 | 2.938 |
+| Canon grass skirt | 0.615 | 3.214 |
+| Sony eye and lashes | 0.506 | 2.161 |
+| Sony hair | 0.806 | 2.948 |
+| Sony ear | 0.389 | 1.710 |
+
+All 20 Canon rings and 19 of 20 Sony rings meet the per-ring mean <1 and
+p95 <3 limits. The Canon skirt misses the detail tail limit. The actual
+planter's after-fix result still needs the source photo. Colour acceptance
+remains open under the [follow-up brief](../../technical/briefs/denoise-clean-grain-fixes-2026-11-19.md).
+
 ## November 19, 2026: experimental Fine Grain and Clean Grain
 
 Steve chose to add Fine Grain and Clean Grain next to Standard for hands-on

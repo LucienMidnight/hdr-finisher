@@ -710,7 +710,7 @@
             <button id="denoise-show-noise" class="local-overlay-toggle" type="button" aria-pressed="false" disabled data-tooltip="Shows only what Denoise removes, as gray with the removed noise on top. Even grain is safe; visible edges, lettering or texture mean detail is being lost."><span class="local-overlay-icon" aria-hidden="true"></span><span>Show noise</span></button>
           </div>
           <div class="control-row">
-            <label for="denoise-method" data-tooltip="Standard uses the existing noise reduction. Fine Grain evens out the brightness grain. Clean Grain also reduces colour splotches and repairs dark specks.">Method</label>
+            <label for="denoise-method" data-tooltip="Standard uses the existing noise reduction. Fine Grain evens out the brightness grain. Clean Grain also reduces colour splotches.">Method</label>
             <select id="denoise-method">
               <option value="standard">Standard</option>
               <option value="fine_grain">Fine Grain · Experimental</option>
@@ -733,9 +733,8 @@
             <div class="control-row"><div class="control-heading"><label for="denoise-splotches" data-tooltip="Pulls coloured blotches toward their surroundings while preserving scene brightness. 0% switches off this correction.">Color Splotches</label><output id="denoise-splotches-value">100%</output></div><input id="denoise-splotches" type="range" min="0" max="1" step="0.01" value="1"></div>
             <div class="control-row">
               <label for="denoise-splotch-size" data-tooltip="Small samples colour about 12 pixels away. Large also samples about 28 pixels away to reach beyond wider blotches.">Splotch Size</label>
-              <select id="denoise-splotch-size"><option value="small">Small</option><option value="large" selected>Large</option></select>
+              <select id="denoise-splotch-size"><option value="small" selected>Small</option><option value="large">Large</option></select>
             </div>
-            <div class="control-row"><div class="control-heading"><label for="denoise-specks" data-tooltip="Fills dark pits with brightness and grain from nearby matching patches. 0% switches off this correction.">Dark Specks</label><output id="denoise-specks-value">100%</output></div><input id="denoise-specks" type="range" min="0" max="1" step="0.01" value="1"></div>
           </div>
           <button id="denoise-advanced-toggle" class="disclosure-trigger" type="button" aria-expanded="false" aria-controls="denoise-advanced-panel">
             <span>Advanced</span>

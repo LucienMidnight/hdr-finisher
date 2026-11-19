@@ -152,7 +152,7 @@ def _experimental_delivery_filter(session, kind):
         return None
     controls = denoise_adaptive.AdaptiveControls(**lane.controls.model_dump())
     if not controls.grain_evenness and (controls.method == "fine_grain"
-            or not (controls.color_splotches or controls.dark_specks)):
+            or not controls.color_splotches):
         return None
 
     def resolve(image, authored):

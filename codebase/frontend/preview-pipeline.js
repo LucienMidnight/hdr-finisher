@@ -651,14 +651,18 @@ async function renderGpuDraftInner(
   if (state.denoise?.[lane]?.enabled && !state.denoiseRuntime?.[lane]?.showOriginal) {
     const expectedIdentity = `${sessionId}:${lane}:${longEdge}:${requestedGeometrySignature}:source`;
     const denoise = state.gpuPreview?.diagnosticsSnapshot?.().denoise;
-    if (state.denoiseRuntime[lane].dirty || !denoise?.cacheReady || denoise.identity !== expectedIdentity) {
-      // At 100% on a large frame this is several seconds with the previous
-      // picture still up, so say what the wait is.
-      const waiting = "Preparing Denoise for this view…";
-      if (hideStatus && lane === state.currentView) setIndeterminatePreviewMessage(waiting);
-      const ready = await recalculateDenoise(lane, { longEdge, renderAfter: false });
-      if (state.previewStatusEntry?.message === waiting) hidePreviewMessage();
-      if (!ready) return refuse("denoise-scale-analysis-unavailable");
+    const runtime = state.denoiseRuntime[lane];
+    if (runtime.dirty || !denoise?.cacheReady || denoise.identity !== expectedIdentity) {
+      const retarget = () => !runtime.dirty && state.gpuPreview.retargetPreparedDenoise?.(
+        sessionId, lane, longEdge, requestedGeometrySignature, "source");
+      if (!retarget()) {
+        const waiting = "Preparing Denoise for this view…";
+        if (hideStatus && lane === state.currentView) setIndeterminatePreviewMessage(waiting);
+        const ready = await recalculateDenoise(lane, { longEdge, renderAfter: false });
+        if (state.previewStatusEntry?.message === waiting) hidePreviewMessage();
+        if (!ready) return refuse("denoise-scale-analysis-unavailable");
+        retarget();
+      }
     }
   }
   // A magnified pass fetches a region of the frame it will produce, so it has
@@ -1165,7 +1169,8 @@ function prepareInactivePreview({ immediate = false } = {}) {
 async function holdSourceForPanning(lane, longEdge) {
   // The view may have left this size since the catch-up was armed.
   if (!state.session || lane !== state.currentView || !gpuPreviewEligible(lane)
-    || requiredProcessingLongEdge() !== longEdge || !state.gpuPreview?.holdSourceForPanning) return;
+    || nativeGrainViewport(lane) || requiredProcessingLongEdge() !== longEdge
+    || !state.gpuPreview?.holdSourceForPanning) return;
   const sessionId = state.session.session_id;
   const signature = geometrySignature();
   const controller = new AbortController();

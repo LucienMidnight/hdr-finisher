@@ -69,7 +69,6 @@ function renderDenoiseControls() {
     [els.denoiseCoarse, els.denoiseCoarseValue, settings.controls.coarse_noise ?? 0.5],
     [els.denoiseEvenness, els.denoiseEvennessValue, settings.controls.grain_evenness],
     [els.denoiseSplotches, els.denoiseSplotchesValue, settings.controls.color_splotches],
-    [els.denoiseSpecks, els.denoiseSpecksValue, settings.controls.dark_specks],
   ];
   for (const [input, output, value] of controls) {
     input.value = String(value);
@@ -223,15 +222,25 @@ async function setDenoiseEnabled(enabled) {
   await recalculateDenoise(lane);
 }
 
+function nativeGrainViewport(lane) {
+  if (state.zoomMode !== "custom" || state.zoomPercent < 100) return false;
+  const controls = state.denoise[lane]?.controls;
+  return controls?.method === "clean_grain" || (controls?.method === "fine_grain" && controls.grain_evenness > 0);
+}
+
 async function recalculateDenoise(lane = state.currentView, options = {}) {
   const settings = state.denoise[lane];
   if (!state.session || !settings.enabled || !state.gpuPreview?.available) return false;
   const runtime = state.denoiseRuntime[lane];
   if (options.force && settings.controls.method !== "standard") runtime.refresh = (runtime.refresh || 0) + 1;
   const longEdge = options.longEdge || refinementProxyLongEdge();
-  const { color_splotches, dark_specks, ...preparationControls } = settings.controls;
+  const { color_splotches, ...preparationControls } = settings.controls;
+  const nativePreparation = preparationControls.amount
+    && (preparationControls.luminance || preparationControls.color_noise)
+    && (preparationControls.method === "clean_grain"
+      || (preparationControls.method === "fine_grain" && preparationControls.grain_evenness));
   const key = JSON.stringify([
-    state.session.session_id, lane, longEdge, geometrySignature(),
+    state.session.session_id, lane, nativePreparation ? "native" : longEdge, geometrySignature(),
     "source", state.repairSourceGeneration || 0, settings.analysis, runtime.refresh || 0,
     settings.controls.method === "standard" ? "standard" : preparationControls,
   ]);
@@ -250,7 +259,10 @@ async function recalculateDenoise(lane = state.currentView, options = {}) {
   }
   if (!ready || !settings.enabled || state.denoiseRuntime[lane] !== runtime) return false;
   if (options.renderAfter !== false) {
-    await renderGpuDraft(lane, { longEdge });
+    const currentEdge = nativePreparation ? refinementProxyLongEdge() : longEdge;
+    state.gpuPreview.retargetPreparedDenoise?.(state.session.session_id, lane, currentEdge,
+      geometrySignature(), "source");
+    await renderGpuDraft(lane, { longEdge: currentEdge });
     if (state.denoiseRuntime[lane] !== runtime || !settings.enabled) return false;
     debounceOverlayAndScopes();
   }
@@ -327,7 +339,7 @@ async function commitDenoiseControl(key, value) {
   const sessionId = state.session?.session_id;
   if (value !== undefined) settings.controls[key] = value;
   const needsPreparation = key === "method" || (settings.controls.method !== "standard"
-    && !["color_splotches", "dark_specks"].includes(key));
+    && key !== "color_splotches");
   if (!needsPreparation) return persistDenoiseSettings();
   runtime.generation++;
   runtime.dirty = true;
@@ -354,7 +366,6 @@ function denoiseRendererControls(controls) {
     grainEvenness: controls.grain_evenness,
     colorSplotches: controls.color_splotches,
     splotchSize: controls.splotch_size,
-    darkSpecks: controls.dark_specks,
   };
 }
 

@@ -4,7 +4,7 @@ All neighbourhood work stays in linear light. A whole-image reduction fits two
 brightness gains, then each tile runs the same reconstruction and cleanup.
 """
 from itertools import islice, product
-from tempfile import TemporaryFile
+from math import ceil, floor
 from threading import Lock
 from weakref import finalize
 
@@ -15,13 +15,10 @@ from . import denoise_adaptive as adaptive
 from .cpu_budget import CpuExecutor
 
 GRAIN_RADIUS = 18
-COLOUR_MARGIN = 68
-HEAL_MARGIN = 28
+SMALL_COLOUR_MARGIN = 40
+LARGE_COLOUR_MARGIN = 76
 LUMA = adaptive.ACESCG_LUMINANCE
 CHROMA = adaptive.OPPONENT[1:]
-CLEAN_TILE_SIZE = adaptive.TILE_SIZE - 2 * (COLOUR_MARGIN + HEAL_MARGIN)
-DONORS = tuple((y * step, x * step) for step in (4, 8, 12, 16)
-               for y, x in product((-1, 0, 1), repeat=2) if x or y)
 
 
 def _box(values, radius):
@@ -102,31 +99,73 @@ def _shift(padded, shape, y, x):
     return padded[y:y+height, x:x+width]
 
 
-def _surround(field, reach, tap):
-    """Average opposite directions, omitting the two extreme pairs."""
+def _colour_pairs(field, reach, tap):
+    """Pairs of colour samples on opposite sides of the centre."""
     padded = cv2.copyMakeBorder(_box(field, tap), reach, reach, reach, reach, cv2.BORDER_REFLECT_101)
     diagonal = round(reach / np.sqrt(2))
     shape = field.shape[:2]
-    pairs = []
     for y, x in ((0, reach), (reach, 0), (diagonal, diagonal), (diagonal, -diagonal)):
-        pairs.append(.5 * (_shift(padded, shape, reach+y, reach+x)
-                            + _shift(padded, shape, reach-y, reach-x)))
+        yield (_shift(padded, shape, reach+y, reach+x),
+               _shift(padded, shape, reach-y, reach-x))
+
+
+def _colour_pass(chroma, noise, limit, dark, reach, tap, centre):
+    core = _box(chroma, centre)
+    closest = np.full_like(noise, np.inf)
+    pairs = []
+    for first, second in _colour_pairs(chroma, reach, tap):
+        np.minimum(closest, np.minimum(_magnitude(core - first), _magnitude(core - second)), out=closest)
+        pairs.append(.5 * (first + second))
     low = np.minimum(np.minimum(pairs[0], pairs[1]), np.minimum(pairs[2], pairs[3]))
     high = np.maximum(np.maximum(pairs[0], pairs[1]), np.maximum(pairs[2], pairs[3]))
-    return .5 * (sum(pairs) - low - high)
+    surrounding = .5 * (sum(pairs) - low - high)
+    delta = core - surrounding
+    pixel_delta = chroma - surrounding
+    signal = _magnitude(delta)
+    relative = signal / noise
+    pixel_relative = _magnitude(pixel_delta) / noise
+    isolated = _ramp(closest / np.maximum(signal, 1e-7), .1, .65)
+    # A large difference that repeats on one side is more likely real colour.
+    protection = 1 - (1 - isolated) * _ramp(relative, 5, 12)
+    strength = np.maximum(_ramp(relative, 1.5, 5),
+                          _ramp(pixel_relative, 2.5, 5) * _ramp(relative, .65, 2.5))
+    fine_weight = .8 * _ramp(pixel_relative, 1, 4)
+    correction = (delta + fine_weight[..., None] * (chroma - core))
+    moderate = correction * (strength * protection * limit)[..., None]
+
+    # Permit a stronger repair at compact peaks in the darkest patches.
+    peak = cv2.dilate(pixel_relative, np.ones((7, 7), dtype=np.uint8))
+    isolated_dark = dark * _ramp(pixel_relative / np.maximum(peak, 1e-6), .55, .95) * _ramp(pixel_relative, 1.8, 4)
+    return moderate + isolated_dark[..., None] * (pixel_delta * limit[..., None] - moderate)
 
 
 def colour_delta(rgb, broad):
     """Full-strength opponent-colour correction, leaving scene luminance alone."""
     y = rgb @ LUMA
-    light = np.maximum(_box(y, 1), 0) + 2 * _grain(y)
+    local = _box(y, 1)
+    luma_noise = _grain(y)
+    light = np.maximum(local, 0) + 2 * luma_noise
     original = rgb @ CHROMA.T
     chroma = original / light[..., None]
     noise = _grain(chroma, chroma=True)
-    for reach, tap, centre in ((12, 2, 1), (28, 4, 3)) if broad else ((12, 2, 1),):
-        delta = _box(chroma, centre) - _surround(chroma, reach, tap)
-        weight = .9 * _ramp(_magnitude(delta) / noise, .65, 2.5)
-        chroma -= delta * weight[..., None]
+
+    # Broad colour pulls must not follow very bright neighbours into dark
+    # pixels. Keep a narrow pass for thin colour fringes on bright edges.
+    peak = cv2.dilate(np.maximum(local, 0), np.ones((41, 41), dtype=np.uint8))
+    highlight = _ramp(peak, .065, .125)
+    background = np.maximum(_box(local, 12), 0)
+    texture = _box(np.abs(local - _box(local, 5)), 4) / np.maximum(background + 3 * luma_noise, 1e-6)
+    limit = (1 - .97 * highlight) * (1 - _ramp(texture, .045, .15) * _ramp(background, .004, .015))
+    dark = 1 - _ramp(np.maximum(local, 0), .006, .014)
+    channels = cv2.split(chroma)
+    median = cv2.merge([cv2.medianBlur(channel, 5) for channel in channels])
+    fringe = chroma - median
+    sharpness = _ramp(np.abs(local - _box(local, 3)) /
+                      np.maximum(np.maximum(local, 0) + 4 * luma_noise, 1e-6), .06, .24)
+    edge_weight = .45 * highlight * sharpness * _ramp(_magnitude(fringe) / noise, 3, 8)
+    chroma -= _colour_pass(chroma, noise, limit, dark, 12, 2, 1) + fringe * edge_weight[..., None]
+    if broad:
+        chroma -= _colour_pass(chroma, noise, limit, dark, 28, 4, 3)
     return chroma * light[..., None] - original
 
 
@@ -134,52 +173,6 @@ def apply_colour(rgb, delta, blend):
     output = rgb + (delta * np.float32(blend)) @ CHROMA
     output += ((rgb @ LUMA) - (output @ LUMA))[..., None]
     return output
-
-
-def patch_fields(y):
-    """Prepare the lift and its relative light scale for a live repair blend."""
-    centre = _box(y, 1)
-    target = .5 * (_surround(y, 8, 2) + _surround(y, 13, 3))
-    noise = _grain(y)
-    weight = _ramp((target - centre) / noise, .45, 1.7)
-
-    reach = 16
-    shape = y.shape
-    coarse = _box(y, 2)
-    padded_guide = cv2.copyMakeBorder(coarse, reach, reach, reach, reach, cv2.BORDER_REFLECT_101)
-    padded_y = cv2.copyMakeBorder(y, reach, reach, reach, reach, cv2.BORDER_REFLECT_101)
-    best = np.full_like(y, np.inf)
-    donor = y.copy()
-    donor_coarse = coarse.copy()
-    for dy, dx in DONORS:
-        guide = _shift(padded_guide, shape, reach+dy, reach+dx)
-        context = np.square(guide - coarse)
-        # The centre is excluded from the matching ring.
-        distance = (361 * _box(context, 9) - 81 * _box(context, 4)) / 280
-        distance += .40 * np.square(guide - target)
-        distance += .015 * (dy*dy + dx*dx) / reach**2 * noise**2
-        better = distance < best
-        np.copyto(donor, _shift(padded_y, shape, reach+dy, reach+dx), where=better)
-        np.copyto(donor_coarse, guide, where=better)
-        np.minimum(best, distance, out=best)
-
-    replacement = _box(donor_coarse, 1) + .75 * (donor - donor_coarse)
-    lift = _box(weight, 1) * (replacement - y)
-    return lift, np.maximum(lift / (np.maximum(centre, 0) + 2 * noise), -1)
-
-
-def apply_patches(rgb, fields, blend):
-    lift, saturation = fields
-    y = rgb @ LUMA
-    return rgb + (lift * blend)[..., None] + (rgb - y[..., None]) * (saturation * blend)[..., None]
-
-
-def clean_fields(rgb, broad):
-    delta = colour_delta(rgb, broad)
-    # Use the fully corrected colour for the reference luminance calculation.
-    # Colour strength preserves scene luminance, so the donor can stay fixed.
-    lift, saturation = patch_fields(apply_colour(rgb, delta, 1) @ LUMA)
-    return delta, lift, saturation
 
 
 def _resolved_tile(read, height, width, origin, size, downstream, model, controls, fit):
@@ -192,28 +185,62 @@ def _resolved_tile(read, height, width, origin, size, downstream, model, control
     return base[top:end_y, left:end_x], inner
 
 
-class CleanGrainPreparation:
-    """One temporary, region-readable correction image owned by a source cache."""
+def _pack(rgb, delta=None):
+    """Three float32 channels and two signed float16 corrections in 16 bytes."""
+    fields = np.empty((*rgb.shape[:2], 4), dtype="<u4")
+    fields[..., :3].view("<f4")[:] = rgb
+    fields[..., 3] = 0
+    if delta is not None:
+        half = np.ascontiguousarray(delta, dtype="<f2")
+        if not np.isfinite(half).all():
+            raise FloatingPointError("Clean Grain produced an invalid colour correction.")
+        fields[..., 3] = half.view("<u4")[..., 0]
+    return fields
 
-    def __init__(self, height, width, read, model, controls, fit, is_current):
+
+def _resize_window(fields, box, size, bounds, ranges):
+    from PIL import Image
+    from .preview import _block_reduce, _neighbour_reduce
+
+    left, top = bounds
+    block, x, y = ranges
+    channels = [*np.moveaxis(fields[..., :3].view("<f4"), -1, 0),
+                *np.moveaxis(np.ascontiguousarray(fields[..., 3]).view("<f2").reshape(*fields.shape[:2], 2), -1, 0)]
+    resized = []
+    for channel in channels:
+        channel = channel.astype(np.float32, copy=False)
+        value = np.asarray(Image.fromarray(channel).resize(size, Image.Resampling.LANCZOS, box=box))
+        limits = []
+        for reduce in (np.minimum, np.maximum):
+            coarse = _block_reduce(reduce, _block_reduce(reduce, channel, block, 0), block, 1)
+            coarse = _neighbour_reduce(reduce, _neighbour_reduce(reduce, coarse, 0), 1)
+            limits.append(coarse[np.ix_(y - top // block, x - left // block)])
+        resized.append(np.clip(value, *limits))
+    return _pack(np.stack(resized[:3], axis=-1), np.stack(resized[3:], axis=-1))
+
+
+class GrainPreparation:
+    """The selected source's native denoised RGB and live colour correction."""
+
+    def __init__(self, height, width, read, model, controls, fit, is_current, disk_cache):
         self.height = height
         self.width = width
         self._lock = Lock()
-        self._file = TemporaryFile()
-        self._close = finalize(self, self._file.close)
-        self._file.truncate(height * width * 16)
-        size = CLEAN_TILE_SIZE
+        self._file, close = disk_cache.open_grade_scratch(height * width * 16)
+        self._close = finalize(self, close)
+        broad = controls.splotch_size == "large"
+        margin = LARGE_COLOUR_MARGIN if broad else SMALL_COLOUR_MARGIN
+        size = adaptive.TILE_SIZE - 2 * margin
 
         def run(origin):
             if not is_current():
                 raise InterruptedError("A newer source replaced the Denoise preparation.")
-            rgb, inner = _resolved_tile(read, height, width, origin, size, COLOUR_MARGIN + HEAL_MARGIN,
-                                        model, controls, fit)
-            fields = np.dstack(clean_fields(rgb, controls.splotch_size == "large"))[inner]
-            if not np.isfinite(fields).all():
-                raise FloatingPointError("Clean Grain produced invalid corrections.")
+            rgb, inner = _resolved_tile(read, height, width, origin, size, margin, model, controls, fit)
+            delta = colour_delta(rgb, broad)[inner] if controls.method == "clean_grain" else None
+            rows = _pack(rgb[inner], delta)
+            if not np.isfinite(rgb[inner]).all():
+                raise FloatingPointError("Grain Denoise produced invalid samples.")
             y, x = origin
-            rows = np.ascontiguousarray(fields, dtype="<f4")
             with self._lock:
                 for dy, row in enumerate(rows):
                     self._file.seek(((y + dy) * width + x) * 16)
@@ -222,52 +249,84 @@ class CleanGrainPreparation:
         try:
             with CpuExecutor() as pool:
                 list(pool.map(run, _origins(height, width, size)))
-            self._file.flush()
         except BaseException:
-            self._close()
+            self.close()
             raise
 
-    def region(self, y, x, height, width):
-        if min(y, x) < 0 or min(height, width) < 1 or y + height > self.height or x + width > self.width:
-            raise ValueError("Clean Grain region exceeds the prepared source.")
-        rows = bytearray(height * width * 16)
-        stride = width * 16
+    def close(self):
         with self._lock:
-            for dy in range(height):
-                self._file.seek(((y + dy) * self.width + x) * 16)
-                self._file.readinto(memoryview(rows)[dy*stride:(dy+1)*stride])
-        return bytes(rows)
+            self._close()
+
+    def _read(self, y, x, height, width):
+        rows = np.empty((height, width, 4), dtype="<u4")
+        with self._lock:
+            if self._file.closed:
+                raise InterruptedError("The Denoise preparation was replaced.")
+            if width == self.width:
+                self._file.seek(y * width * 16)
+                if self._file.readinto(rows) != rows.nbytes:
+                    raise OSError("Incomplete Grain Denoise source.")
+            else:
+                for dy, row in enumerate(rows):
+                    self._file.seek(((y + dy) * self.width + x) * 16)
+                    if self._file.readinto(row) != row.nbytes:
+                        raise OSError("Incomplete Grain Denoise source.")
+        return rows
+
+    def region(self, y, x, height, width, frame_height, frame_width):
+        if min(y, x) < 0 or min(height, width) < 1 or y + height > frame_height or x + width > frame_width:
+            raise ValueError("Grain Denoise region exceeds the requested frame.")
+        if self.height == frame_height and self.width == frame_width:
+            return self._read(y, x, height, width).tobytes()
+
+        sx, sy = self.width / frame_width, self.height / frame_height
+        block = max(1, ceil(max(sx, sy)))
+
+        def axis(start, count, ratio, native):
+            stop = start + count
+            indices = ((np.arange(start, stop) + .5) * ratio).astype(np.intp) // block
+            support = ceil(3 * max(1, ratio))
+            first = min(floor(start * ratio) - support, (indices[0] - 1) * block)
+            last = max(ceil(stop * ratio) + support, (indices[-1] + 2) * block)
+            low = max(0, first // block * block)
+            high = min(native, ceil(last / block) * block)
+            return low, high, start * ratio - low, stop * ratio - low, indices
+
+        left, right, x0, x1, xs = axis(x, width, sx, self.width)
+        # Bounded source reads even when the full Fit picture occupies one response.
+        target_rows = max(1, floor(128 / max(1, sy)))
+        result = np.empty((height, width, 4), dtype="<u4")
+        for row in range(0, height, target_rows):
+            count = min(target_rows, height - row)
+            top, bottom, y0, y1, ys = axis(y + row, count, sy, self.height)
+            fields = self._read(top, left, bottom - top, right - left)
+            result[row:row + count] = _resize_window(fields, (x0, y0, x1, y1), (width, count),
+                                                     (left, top), (block, xs, ys))
+        return result.tobytes()
 
 
 def resolve_grain(source, model, controls):
     evenness = controls.grain_evenness
     splotches = controls.color_splotches
     broad = controls.splotch_size == "large"
-    specks = controls.dark_specks
-    clean = controls.method == "clean_grain" and (splotches > 0 or specks > 0)
+    clean = controls.method == "clean_grain" and splotches > 0
     if (not clean and not evenness) or controls.amount <= 0 or not (controls.luminance or controls.color_noise):
         return adaptive._resolve_standard(source, model, controls)
     height, width = source.shape[:2]
     result = source.copy()
     read = lambda y, x, b, r: source[y:b, x:r]
     fit = fit_grain(height, width, read, model, controls) if evenness else None
-    size = CLEAN_TILE_SIZE if clean else adaptive.TILE_SIZE
     # Stage only the core and the pixels the next stage will read.
-    downstream = (COLOUR_MARGIN if splotches and clean else 0) + (HEAL_MARGIN if specks and clean else 0)
+    margin = LARGE_COLOUR_MARGIN if broad else SMALL_COLOUR_MARGIN
+    downstream = margin if clean else 0
+    size = adaptive.TILE_SIZE - 2 * downstream
 
     def run(origin):
         base, core = _resolved_tile(read, height, width, origin, size, downstream, model, controls, fit)
         y, x = origin
         rgb = base
         if clean:
-            delta = colour_delta(base, broad) if splotches else None
-            if delta is not None:
-                rgb = apply_colour(base, delta, splotches)
-            if specks:
-                patch_base = rgb
-                if delta is not None and splotches != 1:
-                    patch_base = apply_colour(base, delta, 1)
-                rgb = apply_patches(rgb, patch_fields(patch_base @ LUMA), specks)
+            rgb = apply_colour(base, colour_delta(base, broad), splotches)
         result[y:min(y+size, height), x:min(x+size, width), :3] = rgb[core]
 
     with CpuExecutor() as pool:

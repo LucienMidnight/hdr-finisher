@@ -380,8 +380,10 @@ class SessionStore:
             self._publish_retained_session_bytes()
         if previous is not None and previous.owns_source_path:
             _remove_owned_source(previous.source_path)
-        if previous is not None and previous.retouch_worker is not None:
-            previous.retouch_worker.close()
+        if previous is not None:
+            previous.render_cache.discard_grain_preparation()
+            if previous.retouch_worker is not None:
+                previous.retouch_worker.close()
         return payload
 
     def redevelop_session(self, session_id: str, developed: LoadedSession) -> SessionPayload:
@@ -428,6 +430,7 @@ class SessionStore:
             payload = developed.to_payload()
             self._current = developed
             self._publish_retained_session_bytes()
+            current.render_cache.discard_grain_preparation()
             if current.retouch_worker is not None:
                 current.retouch_worker.close()
             if getattr(self, "grade_recovery_observer", None):
@@ -464,8 +467,10 @@ class SessionStore:
             self._publish_retained_session_bytes()
         if previous is not None and previous.owns_source_path:
             _remove_owned_source(previous.source_path)
-        if previous is not None and previous.retouch_worker is not None:
-            previous.retouch_worker.close()
+        if previous is not None:
+            previous.render_cache.discard_grain_preparation()
+            if previous.retouch_worker is not None:
+                previous.retouch_worker.close()
 
     def get(self, session_id: str) -> LoadedSession:
         from .library_live import session as library_session

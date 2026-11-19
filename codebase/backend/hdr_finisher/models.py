@@ -943,8 +943,7 @@ class DenoiseLiveControls(BaseModel):
     method: Literal["standard", "fine_grain", "clean_grain"] = "standard"
     grain_evenness: float = Field(default=1.0, ge=0.0, le=1.0)
     color_splotches: float = Field(default=1.0, ge=0.0, le=1.0)
-    splotch_size: Literal["small", "large"] = "large"
-    dark_specks: float = Field(default=1.0, ge=0.0, le=1.0)
+    splotch_size: Literal["small", "large"] = "small"
 
 
 class DenoiseAnalysisSettings(BaseModel):

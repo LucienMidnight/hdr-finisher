@@ -19,15 +19,29 @@ the retained energy over the frame. The WebGPU resolve reuses its existing
 scratch textures for the two separable box filters. Zero evenness uses the
 Standard accumulation pass.
 
-Clean Grain stages colour relative to the local light, preserves scene Y, and
-matches a nearby donor against a ring surrounding the damaged centre. The
-bounded CPU preparation writes one temporary region-readable correction image
-for the active render cache. WebGPU uploads correction regions under the
-existing Denoise tile-cache allowance. The final shader blends the opponent
-colour change and the brightness/colour repair. The two blend sliders keep the
-preparation. Control changes that affect the base or the splotch reach request
-a new preparation. Grain Evenness applies on release. No detail-protection veto
-is used. Files expire with the source preparation.
+Clean Grain compares colour against the local light and preserves scene Y.
+The 12-pixel Small reach is the default. Large adds a 28-pixel pass. A large
+colour difference that persists in a surrounding direction gets less cleanup.
+The wide pass pulls less colour around bright features and in structured
+areas. A separate five-pixel median residual keeps a narrow bright-fringe
+correction. Dark Specks and its patch search have been removed.
+
+Fine Grain and Clean Grain prepare native geometry-fixed pixels once per
+decoded source, rendition and preparation recipe. The first request uses
+the native noise model. Zoom and pan request regions of the same result.
+Fit regions use the usual Lanczos filter and local range limit. The screen
+draw applies the stored correction strength on the GPU. During an Amount
+or other base-setting drag, wavelet feedback remains available until the
+new preparation commits on release. Color Splotches updates the prepared
+colour blend live. Zero-evenness Fine Grain uses the Standard path.
+
+The temporary result holds float32 RGB and two float16 opponent corrections
+packed into 16 bytes per pixel. It is reserved under the existing full-size
+disk allowance before preparation starts. Reads and writes use bounded
+regions. Grade retains the original for bypass and Show noise. Closing,
+source replacement and preparation replacement release the reservation.
+Startup reclaims abandoned scratch. Cached GPU regions still use the
+existing Denoise tile allowance.
 
 Grade and Show noise use WebGPU. Proof and export use the same GPU reconstruction
 when admitted and retain the CPU fallback. The experimental CPU delivery filters

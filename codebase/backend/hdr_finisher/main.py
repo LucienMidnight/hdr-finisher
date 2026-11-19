@@ -114,6 +114,13 @@ from .test_pattern import build_delivery_proof_pattern
 async def library_lifecycle(_app):
     from .library_diagnostics import startup_phase
     async def start_helper():
+        from .config import APP_DATA_DIR
+        from .library_cache import LibraryCache
+        try:
+            await run_in_threadpool(LibraryCache(APP_DATA_DIR).remove_abandoned_grade_scratch)
+        except (OSError, ValueError) as error:
+            from .library_diagnostics import log
+            log("grade_scratch_cleanup_failed", reason=str(error))
         try:
             with startup_phase("helper_start"):
                 await run_in_threadpool(library_worker.start)

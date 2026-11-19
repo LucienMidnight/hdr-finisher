@@ -4,9 +4,11 @@ import os
 from pathlib import Path
 from threading import RLock
 import sqlite3
+import shutil
 from tempfile import NamedTemporaryFile
 import time
 from zipfile import BadZipFile
+import contextlib
 from contextlib import contextmanager
 
 DIRECTORIES = ('library-pictures', 'library-full-pictures', 'library-raw-thumbnails', 'library-thumbnails')
@@ -106,6 +108,7 @@ class LibraryCache:
                 CREATE TABLE IF NOT EXISTS refresh_files(path TEXT PRIMARY KEY, source TEXT, kind TEXT, protected INTEGER);
                 CREATE INDEX IF NOT EXISTS refresh_source ON refresh_files(source);
                 CREATE TABLE IF NOT EXISTS pending_deletes(path TEXT PRIMARY KEY, size INTEGER, stamp INTEGER);
+                CREATE TABLE IF NOT EXISTS grade_scratch(path TEXT PRIMARY KEY, size INTEGER, pid INTEGER);
             """)
             _LEDGERS[key] = db
             try:
@@ -468,8 +471,74 @@ class LibraryCache:
                 db.execute('DELETE FROM sources WHERE path=?', (str(file),))
                 db.execute('DELETE FROM source_generations WHERE path=?', (str(file),))
 
+    def remove_abandoned_grade_scratch(self):
+        """Recover app-owned scratch in current and former cache locations."""
+        from .launcher import _parent_is_alive
+        preferences = self.preferences()
+        for root in (preferences["location"], *preferences["old_locations"]):
+            cache_root = Path(root)
+            directory = cache_root / "library-full-pictures"
+            ledger = cache_root / ".library-cache-size.sqlite3"
+            if (cache_root.is_symlink() or directory.is_symlink() or
+                    getattr(directory, "is_junction", lambda: False)() or not (cache_root / MARKER).is_file()
+                    or not ledger.is_file()):
+                continue
+            with _LOCK, contextlib.closing(sqlite3.connect(ledger, timeout=30)) as db, db:
+                db.execute("BEGIN IMMEDIATE")
+                tracked = db.execute("SELECT 1 FROM sqlite_master WHERE name='grade_scratch'").fetchone()
+                for file in directory.glob("grade-grain-*.tmp"):
+                    pid, _, token = file.stem.removeprefix("grade-grain-").partition("-")
+                    if pid.isdecimal() and len(token) == 32 and not _parent_is_alive(int(pid)):
+                        file.unlink(missing_ok=True)
+                        if tracked:
+                            db.execute("DELETE FROM grade_scratch WHERE path=?", (str(file),))
+                if tracked:
+                    # A forced shutdown can occur after unlink and before the
+                    # reservation is released, so also reclaim lost entries.
+                    for filename, pid in db.execute("SELECT path, pid FROM grade_scratch").fetchall():
+                        if Path(filename).parent == directory and not _parent_is_alive(pid):
+                            db.execute("DELETE FROM grade_scratch WHERE path=?", (filename,))
+
+    def open_grade_scratch(self, size):
+        """Reserve the full logical byte size before writing any Grade samples."""
+        from uuid import uuid4
+        with _LOCK:
+            db = self._ledger()
+            directory = self.directory("library-full-pictures")
+            directory.mkdir(parents=True, exist_ok=True)
+            preferences = self.preferences()
+            limit = preferences["full_size_limit_gb"] * 1024**3
+            file = directory / f"grade-grain-{os.getpid()}-{uuid4().hex}.tmp"
+            handle = None
+            try:
+                with db:
+                    db.execute("BEGIN IMMEDIATE")
+                    room = min(limit - self._used(db)["full_size"], shutil.disk_usage(directory).free)
+                    if size > room:
+                        raise OSError(f"Full-size disk cache has {max(0, room):,} bytes free. "
+                                      f"Grain Denoise needs {size:,} bytes.")
+                    db.execute("INSERT INTO grade_scratch VALUES (?, ?, ?)", (str(file), size, os.getpid()))
+                    handle = file.open("x+b", buffering=0)
+                    handle.truncate(size)
+            except BaseException:
+                if handle is not None:
+                    handle.close()
+                    file.unlink(missing_ok=True)
+                raise
+
+        def close():
+            with _LOCK, db:
+                db.execute("BEGIN IMMEDIATE")
+                handle.close()
+                file.unlink(missing_ok=True)
+                db.execute("DELETE FROM grade_scratch WHERE path=?", (str(file),))
+
+        return handle, close
+
     def _used(self, db):
-        return {**{name: 0 for name in ALLOWANCES}, **dict(db.execute('SELECT category, size FROM totals'))}
+        used = {**{name: 0 for name in ALLOWANCES}, **dict(db.execute('SELECT category, size FROM totals'))}
+        used["full_size"] += db.execute("SELECT COALESCE(SUM(size),0) FROM grade_scratch").fetchone()[0]
+        return used
 
     def usage(self):
         with _LOCK:
