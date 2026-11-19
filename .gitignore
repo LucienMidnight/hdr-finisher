@@ -46,6 +46,9 @@ codebase/node_modules/
 codebase/bin/signed_ahd.dll
 codebase/bin/signed_ahd.dylib
 codebase/bin/signed_ahd.so
+codebase/bin/denoise_filters.dll
+codebase/bin/denoise_filters.dylib
+codebase/bin/denoise_filters.so
 codebase/bin/avifenc
 codebase/bin/avifdec
 codebase/bin/avifgainmaputil

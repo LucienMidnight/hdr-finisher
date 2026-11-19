@@ -2,10 +2,33 @@
 
 from __future__ import annotations
 
+from itertools import product
+
 import numpy as np
 import pytest
 
 from hdr_finisher import denoise_adaptive as da
+
+
+def test_native_separable_filters_match_numpy_bytes(monkeypatch) -> None:
+    native = da.denoise_filters.library()
+    if native is None:
+        pytest.skip("Native Denoise filters have not been built")
+    rng = np.random.default_rng(101)
+    rgb = rng.standard_normal((83, 207, 3)).astype(np.float32)
+    rgb[0, 0] = (0.0, -0.0, 1e-39)
+    values = (rgb, rgb[..., 0], rgb[:, ::2], rgb[:1, :5], rgb[:16, :33, 0])
+    for source in values:
+        def results():
+            yield da._box(source, da.WIENER_RADIUS).tobytes()
+            for edges in product((False, True), repeat=4):
+                for level in range(da.LEVELS):
+                    yield da._atrous(source, level, da._Edges(*edges, *source.shape[:2])).tobytes()
+
+        actual = tuple(results())
+        with monkeypatch.context() as fallback:
+            fallback.setattr(da.denoise_filters, "library", lambda: None)
+            assert tuple(results()) == actual
 
 
 def _scene(height: int = 300, width: int = 700, seed: int = 3) -> tuple[np.ndarray, np.ndarray]:

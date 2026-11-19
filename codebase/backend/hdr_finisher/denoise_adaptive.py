@@ -40,6 +40,8 @@ _ESTIMATION_WORKERS = ContextVar("denoise_estimation_workers", default=None)
 
 import numpy as np
 
+from . import denoise_filters
+
 ALGORITHM_VERSION = "adaptive-atrous-v1"
 MEASUREMENT_VERSION = "adaptive-measure-informative-v4"
 CALIBRATION_RULES = {
@@ -191,6 +193,14 @@ class _Edges:
 def _atrous(values: np.ndarray, level: int, edges: _Edges) -> np.ndarray:
     step = 2 ** level
     reach = 2 * step
+    native = denoise_filters.library()
+    if (native is not None and denoise_filters.supports(values)
+            and isinstance(step, int) and min(values.shape[:2]) > reach):
+        return denoise_filters.apply(
+            native.atrous, values, step,
+            edges.top and edges.frame_height > reach, edges.bottom and edges.frame_height > reach,
+            edges.left and edges.frame_width > reach, edges.right and edges.frame_width > reach,
+        )
     out = values
     for axis, low, high, extent in ((0, edges.top, edges.bottom, edges.frame_height), (1, edges.left, edges.right, edges.frame_width)):
         padded = _pad_axis(out, axis, reach, low, high, extent)
@@ -206,6 +216,9 @@ def _atrous(values: np.ndarray, level: int, edges: _Edges) -> np.ndarray:
 
 def _box(values: np.ndarray, radius: int) -> np.ndarray:
     """Mean over a (2r+1)^2 window, edge-replicated at every boundary."""
+    native = denoise_filters.library()
+    if radius == 3 and native is not None and denoise_filters.supports(values):
+        return denoise_filters.apply(native.box7, values)
     out = values
     width = 2 * radius + 1
     for axis in (0, 1):
@@ -227,6 +240,16 @@ def _noise_variance(luminance: np.ndarray, model: AdaptiveNoiseModel, edges: _Ed
     return np.maximum(np.float32(model.c) * y * y + np.float32(model.a) * y + np.float32(model.b), np.float32(1e-20))
 
 
+def _band_gain(energy, variance, strength, sigma, level, fine_multiplier, fine_floor):
+    if level < 2:
+        strength *= fine_multiplier
+    noise = np.float32((strength * sigma) ** 2) * variance
+    gain = np.maximum(energy - noise, 0.0) / np.maximum(energy, np.float32(1e-20))
+    if level < 2 and fine_floor > 0:
+        gain = np.maximum(gain, fine_floor)
+    return gain
+
+
 def _bands(rgb, model, controls, edges):
     luma_strength, chroma_strength = controls.strengths()
     fine_multiplier = controls.fine_band_multiplier()
@@ -240,14 +263,8 @@ def _bands(rgb, model, controls, edges):
         gains = []
         for component in range(3):
             strength = (luma_strength if component == 0 else chroma_strength) * controls.size_multiplier(level)
-            if level < 2:
-                strength *= fine_multiplier
-            noise = np.float32((strength * model.band_sigmas[component][level]) ** 2) * variance
-            e = energy[..., component]
-            gain = np.maximum(e - noise, 0.0) / np.maximum(e, np.float32(1e-20))
-            if level < 2 and fine_floor > 0:
-                gain = np.maximum(gain, fine_floor)
-            gains.append(gain)
+            gains.append(_band_gain(energy[..., component], variance, strength, model.band_sigmas[component][level],
+                                    level, fine_multiplier, fine_floor))
         yield band, gains, smooth
         current = smooth
 
