@@ -1,3 +1,34 @@
+## November 19 — Experimental Denoise in the app
+
+MacBook Neo, A18 Pro, 8 GB, 1408×794 Electron window and the shared GPU lock.
+Code in the commit containing this note. One run on each native RAW with
+Even out harsh specks at ×2.5. Grade used Fit, at 1288×858 on the 18.02 MP
+Canon IMG_0790.CR2 and 1285×858 on the 42.39 MP Sony _DSC7970.ARW.
+Preparation and Recalculate run from the action to the drawn picture. Each
+drag range covers three input values to the next accepted GPU frame.
+Export runs from request to validated native-size JPEG Ultra HDR on the
+GPU, quality 90, with the 1000-nit target. These are starting baselines.
+
+| Action | 18 MP Canon | 42 MP Sony |
+| --- | ---: | ---: |
+| Fine Grain, first preparation | 0.68 s | 1.41 s |
+| Fine Grain, Amount drag | 98–102 ms | 98–348 ms |
+| Fine Grain, Recalculate | 0.30 s | 0.32 s |
+| Fine Grain, native export | 16.56 s | 45.21 s |
+| Clean Grain, first preparation | 1.68 s | 1.68 s |
+| Clean Grain, Color Splotches drag | 100–117 ms | 100–115 ms |
+| Clean Grain, Dark Specks drag | 100–110 ms | 97–102 ms |
+| Clean Grain, Recalculate | 2.25 s | 2.46 s |
+| Clean Grain, native export | 43.18 s | 124.81 s |
+
+The generated 1290–1293-pixel-wide source check also passed GPU/CPU scene agreement
+for all methods, exact Standard versus Fine Grain at zero evenness, and
+both live blends off. The click-to-readback clocks in that diagnostic
+include copying the complete synthetic frame through the test runner.
+They were 1.81–1.99 s for Fine Grain preparation, 2.71–2.98 s for
+Clean Grain preparation and 1.62–1.80 s for the Clean Grain blend check.
+[Timing driver](../../codebase/tests/performance/denoise-grain-latency.js)
+
 ## November 18 — Relative colour and patch repair (Denoise research)
 
 MacBook Neo, A18 Pro, 8 GB, research code `c2364570`. Native 18.02 MP Canon

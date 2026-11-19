@@ -628,10 +628,17 @@
         "detail"
       ],
       "tier": "area",
-      "protects": "Adaptive denoise: the WebGPU preview against the Python the export runs.",
+      "protects": "Standard and experimental Denoise preview against the CPU reference, exact zero-evenness, live blends and recalculation.",
       "launch": {
         "method": "electron"
       }
+    },
+    {
+      "path": "tests/performance/denoise-grain-latency.js",
+      "areas": ["detail", "export-proof"],
+      "tier": "full",
+      "protects": "MacBook Neo experimental Denoise preparation, first drawn slider response, recalculation and native export on 18 MP and 42 MP RAWs.",
+      "launch": { "method": "electron" }
     },
     {
       "path": "tests/denoise-noise-view.js",
@@ -4063,7 +4070,7 @@
         "export-proof"
       ],
       "tier": "core",
-      "protects": "Small GPU and forced-CPU export, delivery resize/sharpening, watermarked full-size Proof byte identity, decoded perceptual limits and HDR peak.",
+      "protects": "Small GPU and forced-CPU export for all three Denoise methods, delivery resize/sharpening, watermarked full-size Proof byte identity, finished perceptual limits and HDR peak.",
       "launch": {
         "method": "electron"
       }

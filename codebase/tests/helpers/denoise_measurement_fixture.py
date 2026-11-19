@@ -52,24 +52,25 @@ else:
             return da.AdaptiveNoiseModel(a=value["a"],b=value["b"],c=value["c"],band_sigmas=tuple(tuple(row) for row in value["band_sigmas"]))
         row={k:item[k] for k in ("name","cpu_ms","gpu_ms","reuse_ms")}
         row["differences"]=[]
-        for amount in (.5,.85):
-            controls=da.AdaptiveControls(amount=amount,luminance=.7,color_noise=.8,detail_recovery=.3)
-            reference=da.resolve_adaptive(image,model(item["cpu"]),controls)
-            measured=da.resolve_adaptive(image,model(item["gpu"]),controls)
-            grade=AdjustmentState()
-            grade.hdr.exposure=1.5
-            grade.hdr.highlight_section_enabled=True
-            grade.hdr.highlight_compression_target_nits=1000
-            for lane in (PreviewKind.HDR,PreviewKind.SDR):
-                a=apply_adjustments(reference,grade,lane,include_grain=False)
-                b=apply_adjustments(measured,grade,lane,include_grain=False)
-                result={"lane":lane.value,"amount":amount,**compare(a,b,lane.value)}
-                row["differences"].append(result)
-                if lane==PreviewKind.HDR:
-                    from hdr_finisher.color import acescg_to_linear_bt2020
-                    from hdr_finisher.color_context import scene_linear_to_nits
-                    peak=float(np.max(scene_linear_to_nits(acescg_to_linear_bt2020(b),203)))
-                    assert peak<=1000,(item["name"],peak)
+        for method in ("standard", "fine_grain", "clean_grain"):
+            for amount in (.5,.85):
+                controls=da.AdaptiveControls(method=method,amount=amount,luminance=.7,color_noise=.8,detail_recovery=.3)
+                reference=da.resolve_adaptive(image,model(item["cpu"]),controls)
+                measured=da.resolve_adaptive(image,model(item["gpu"]),controls)
+                grade=AdjustmentState()
+                grade.hdr.exposure=1.5
+                grade.hdr.highlight_section_enabled=True
+                grade.hdr.highlight_compression_target_nits=1000
+                for lane in (PreviewKind.HDR,PreviewKind.SDR):
+                    a=apply_adjustments(reference,grade,lane,include_grain=False)
+                    b=apply_adjustments(measured,grade,lane,include_grain=False)
+                    result={"method":method,"lane":lane.value,"amount":amount,**compare(a,b,lane.value)}
+                    row["differences"].append(result)
+                    if lane==PreviewKind.HDR:
+                        from hdr_finisher.color import acescg_to_linear_bt2020
+                        from hdr_finisher.color_context import scene_linear_to_nits
+                        peak=float(np.max(scene_linear_to_nits(acescg_to_linear_bt2020(b),203)))
+                        assert peak<=1000,(item["name"],peak)
         results.append(row)
         print(json.dumps(row),flush=True)
     (root/"result.json").write_text(json.dumps(results,indent=2))
