@@ -147,3 +147,15 @@ Update the Grade module PRD, `docs/technical/denoising.md`, the
 performance table and the AGENTS.md documentation map in the same work.
 Move the finished harsh-speck baseline brief to
 `docs/technical/archive/briefs/` and update its map entry.
+
+## Implementation outcome
+
+The branch has a bounded Grade drawing surface, bounded JPEG Ultra HDR
+delivery for eligible grades, and same-source Fine-to-Clean Grain reuse.
+The supplied crops and marked counts passed. The preparation trial ended at
+the Fine Grain estimate of 7.5–9 s Canon and 22–26 s Sony with the current
+scratch writer. Cold Clean Grain projected 8.5–12 s and 22–29 s.
+Full-size Sony Proof still needs memory work in its decoded reference views.
+See the [Grade module](../../product/modules/grade.md) and
+[MacBook measurements](../performance-table.md) for the verified cases and
+remaining delivery checks.

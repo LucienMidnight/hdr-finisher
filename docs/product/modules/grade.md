@@ -27,6 +27,30 @@ identical to the reference. Clean Grain's largest crop mean and p99 were
 Every marked count held. Clean Grain retained 13 colour spots and 1 pit on
 the Canon, 22 and 2 on the Sony, and 13 and 4 on the portrait.
 
+### Whole-photo GPU preparation estimate
+
+The trial stopped at the estimate. The candidate would reduce grain energy
+across the whole photo, then filter tiles and read back their finished
+pixels to the native scratch file. Clean Grain would add colour cleanup on
+the same native grid. The existing 110% Fine Grain writer held its lock for
+6.17 s Canon and 19.47 s Sony. It could overlap GPU filtering, but it starts
+after the grain fit and still has to finish before the final draw.
+
+Using Standard's measured whole-image GPU draw of 0.55 s Canon and 1.72 s
+Sony as a planning proxy for the fit pass, and the observed 0.57 s and
+0.81 s from the end of preparation to the final frame, makes the estimate
+with the current writer **7.5–9 s Canon and 22–26 s Sony**. The Sony write
+time alone exceeds the 17 s goal. For cold Clean Grain the corresponding
+estimate is **8.5–12 s Canon and 22–29 s Sony**. Its 110% baseline spent
+7.46 s and 18.99 s in the locked writer. The range allows for the GPU colour
+pass to overlap writing once the global fit is ready.
+
+A native input and prepared output on the GPU at once would add about
+0.58 GB Canon or 1.36 GB Sony. Bounded tiles would need an estimated
+0.12–0.20 GB of additional GPU scratch, transfers and readback on this
+unified-memory Mac. These are projections, with measured native scratch
+writing as the limiting step.
+
 ## November 19, 2026: Denoise speed baseline and acceptance
 
 The Denoise reference covers Standard, Fine Grain and Clean Grain at
