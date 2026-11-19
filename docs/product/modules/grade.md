@@ -1,14 +1,14 @@
-## November 19, 2026: Signed shadows in SDR output
+## November 19, 2026: Signed channels in SDR output
 
-The final SDR gamut mapping eases signed shadow channels into display black
-before calculating perceptual hue. The old projection could brighten dark
-sensor noise and turn it into coloured spots or patches. Legal dark colours
-pass through unchanged. The toe fades out before midtones and preserves the
-existing highlight mapping. Grade, Proof and export share the rule on CPU
-and GPU. RAW keeps its signed editing data, and HDR uses its existing path.
-Finished SDR Library thumbnails and screen previews get a new cache identity.
-Previously built SDR screen previews can be rebuilt when the originals are
-available.
+The final SDR gamut mapping eases negative channels into display black at
+any brightness before calculating perceptual hue. The same rule covers dark
+sensor noise and saturated midtones such as fire-lit skin. Legal colours
+pass through unchanged. Pixels above SDR white still use the highlight
+projection, now calculated from the prepared colour. Grade, Proof and export
+share the rule on CPU and GPU. RAW retains signed editing data and HDR uses
+its existing path. Finished SDR Library thumbnails and screen previews get a
+new cache identity. Previously built SDR screen previews can be rebuilt when
+the originals are available.
 
 ## November 19, 2026: Denoise zoom and delivery memory
 

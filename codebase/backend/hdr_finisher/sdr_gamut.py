@@ -20,12 +20,9 @@ MATH_EPS = np.float32(1e-6)
 GAMUT_EPS = np.float32(2e-5)
 NEUTRAL_RGB_EPS = np.float32(1e-3)
 
-# Linear sRGB. Keep the signed-shadow toe below the midtone range, and
-# confine its effect on positive channels to the first few sRGB code values.
-SIGNED_SHADOW_FULL = np.float32(0.08)
-SIGNED_SHADOW_END = np.float32(0.16)
-SIGNED_SHADOW_TOE = np.float32(0.001)
-SDR_GAMUT_CACHE_SUFFIX = ":signed-shadow-toe-v1"
+# Linear sRGB. Keep the toe within the first few sRGB code values.
+SIGNED_CHANNEL_TOE = np.float32(0.001)
+SDR_GAMUT_CACHE_SUFFIX = ":signed-channel-toe-v2"
 
 # Selected by the HDR Finisher corpus sweep.  The qualification harness may
 # override this argument while evaluating the predeclared candidates.
@@ -89,10 +86,14 @@ def oklab_to_linear_srgb(lab: np.ndarray) -> np.ndarray:
 
 
 def _compute_max_saturation(aa: np.ndarray, bb: np.ndarray) -> np.ndarray:
-    red_sector = -np.float32(1.88170328) * aa - np.float32(0.80936493) * bb > np.float32(1.0)
-    green_sector = (~red_sector) & (
-        np.float32(1.81444104) * aa - np.float32(1.19445276) * bb > np.float32(1.0)
-    )
+    red_boundary = -np.float32(1.88170328) * aa - np.float32(0.80936493) * bb
+    # The nonnegative side of the blue vertex approaches the green-limited
+    # cusp. Pick that side at a float32 tie so exact blue stays continuous
+    # with nearby legal hues and the CPU and shader pick the same cusp.
+    blue_vertex = (bb < 0) & (np.abs(red_boundary - np.float32(1.0)) <= GAMUT_EPS)
+    red_sector = (red_boundary > np.float32(1.0)) & ~blue_vertex
+    green_boundary = np.float32(1.81444104) * aa - np.float32(1.19445276) * bb
+    green_sector = ~red_sector & ((green_boundary > np.float32(1.0)) | blue_vertex)
 
     k0 = np.where(red_sector, np.float32(1.19086277), np.where(green_sector, np.float32(0.73956515), np.float32(1.35733652)))
     k1 = np.where(red_sector, np.float32(1.76576728), np.where(green_sector, np.float32(-0.45954404), np.float32(-0.00915799)))
@@ -329,35 +330,22 @@ def _project_oog_pixels(source: np.ndarray, alpha: float) -> np.ndarray:
 
 def _map_oog_pixels(source: np.ndarray, alpha: float) -> np.ndarray:
     """Prepare compact out-of-gamut pixels before the OKLab projection."""
-    peak = np.max(source, axis=-1)
     floor = np.min(source, axis=-1)
-    shadows = (floor < 0.0) & (peak < SIGNED_SHADOW_END)
-    if np.any(shadows):
-        # Signed cube roots can turn below-black opponent values into strong
-        # OKLab chroma. The adaptive cusp projection then adds lightness to
-        # fit that hue. Roll signed shadows into legal RGB before either step.
-        # The toe joins zero and identity with continuous slopes; its width
-        # tends to zero as the pixel returns to the legal side of the cube.
-        signed = source[shadows]
-        positive = np.maximum(signed, np.float32(0.0))
-        knee = np.minimum(-floor[shadows], SIGNED_SHADOW_TOE)[:, None]
+    has_negative = floor < 0.0
+    if np.any(has_negative):
+        # Keep signed channels out of the hue calculation at every brightness.
+        # The toe joins zero and identity with continuous slopes. Its width
+        # shrinks to zero as the pixel comes back into the nonnegative range.
+        positive = np.maximum(source[has_negative], np.float32(0.0))
+        knee = np.minimum(-floor[has_negative], SIGNED_CHANNEL_TOE)[:, None]
         t = np.minimum(positive, knee) / knee
-        toe = positive * t * (np.float32(2.0) - t)
-        blend = np.clip(
-            (peak[shadows] - SIGNED_SHADOW_FULL) / (SIGNED_SHADOW_END - SIGNED_SHADOW_FULL),
-            np.float32(0.0), np.float32(1.0),
-        )[:, None]
-        weight = blend * blend * (np.float32(3.0) - np.float32(2.0) * blend)
-        prepared = toe + weight * (signed - toe)
-        source[shadows] = prepared
-        peak[shadows] = np.max(prepared, axis=-1)
-        floor[shadows] = np.min(prepared, axis=-1)
+        source[has_negative] = positive * t * (np.float32(2.0) - t)
+        floor[has_negative] = np.float32(0.0)
 
-    # Inclusive gamut and float32 residue need no perceptual projection.
+    # Only excursions above SDR white still need perceptual projection.
+    peak = np.max(source, axis=-1)
     residue = GAMUT_EPS + MATH_EPS
-    project = ((floor < -residue) | (peak > np.float32(1.0) + residue)) & (
-        peak - floor >= NEUTRAL_RGB_EPS
-    )
+    project = (peak > np.float32(1.0) + residue) & (peak - floor >= NEUTRAL_RGB_EPS)
     if np.all(project):
         return _project_oog_pixels(source, alpha)
     if np.any(project):
@@ -366,7 +354,7 @@ def _map_oog_pixels(source: np.ndarray, alpha: float) -> np.ndarray:
 
 
 def compress_to_srgb_gamut(image: np.ndarray, *, alpha: float = float(SDR_GAMUT_ALPHA)) -> np.ndarray:
-    """Clip linear sRGB to its cube along hue-preserving adaptive OKLCh rays."""
+    """Bring negative channels to black and project SDR highlights into gamut."""
     rgb = np.asarray(image, dtype=np.float32)
     if rgb.shape[-1] != 3:
         raise ValueError("linear-sRGB input must have three channels")

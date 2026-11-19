@@ -21,6 +21,11 @@ for (let index = 0; index <= 256; index += 1) {
   push(1 + offset, 0.2, 0.1);
   push(0.024, offset, -0.039);
   push(-0.039, 0.17 * index / 256, -0.011);
+  push(0.44, 0.1, offset);
+  push(1.2, offset, -0.004);
+  push(offset, 0.95, -0.004);
+  push(offset, -0.003, 1 + index / 128);
+  push(-0.003, offset, 1 + index / 128);
 }
 
 function cpuReference(input) {

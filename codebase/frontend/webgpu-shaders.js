@@ -644,9 +644,7 @@ fn adaptivePreparedMain(@builtin(global_invocation_id) id: vec3u) {
     const GAMUT_MATH_EPS: f32 = 0.000001;
     const GAMUT_RESIDUE_EPS: f32 = 0.00002;
     const GAMUT_NEUTRAL_RGB_EPS: f32 = 0.001;
-    const SIGNED_SHADOW_FULL: f32 = 0.08;
-    const SIGNED_SHADOW_END: f32 = 0.16;
-    const SIGNED_SHADOW_TOE: f32 = 0.001;
+    const SIGNED_CHANNEL_TOE: f32 = 0.001;
 
     struct GamutCusp {
       lightness: f32,
@@ -691,10 +689,13 @@ fn adaptivePreparedMain(@builtin(global_invocation_id) id: vec3u) {
       var k3: f32;
       var k4: f32;
       var weights: vec3f;
-      if (-1.88170328 * aa - 0.80936493 * bb > 1.0) {
+      // Keep the blue vertex on the green-limited side at a float32 tie.
+      let redBoundary = -1.88170328 * aa - 0.80936493 * bb;
+      let blueVertex = bb < 0.0 && abs(redBoundary - 1.0) <= GAMUT_RESIDUE_EPS;
+      if (redBoundary > 1.0 && !blueVertex) {
         k0 = 1.19086277; k1 = 1.76576728; k2 = 0.59662641; k3 = 0.75515197; k4 = 0.56771245;
         weights = vec3f(4.0767416621, -3.3077115913, 0.2309699292);
-      } else if (1.81444104 * aa - 1.19445276 * bb > 1.0) {
+      } else if (1.81444104 * aa - 1.19445276 * bb > 1.0 || blueVertex) {
         k0 = 0.73956515; k1 = -0.45954404; k2 = 0.08285427; k3 = 0.12541070; k4 = 0.14503204;
         weights = vec3f(-1.2684380046, 2.6097574011, -0.3413193965);
       } else {
@@ -792,19 +793,15 @@ fn adaptivePreparedMain(@builtin(global_invocation_id) id: vec3u) {
     fn compressSrgbGamut(rgb: vec3f) -> vec3f {
       if (all(rgb >= vec3f(0.0)) && all(rgb <= vec3f(1.0))) { return rgb; }
       let floor = min(rgb.r, min(rgb.g, rgb.b));
-      let peak = max(rgb.r, max(rgb.g, rgb.b));
       var input = rgb;
-      if (floor < 0.0 && peak < SIGNED_SHADOW_END) {
-        // Match the CPU's smooth signed-shadow toe before the OKLab projection.
+      if (floor < 0.0) {
+        // Match the CPU toe before calculating hue, at every brightness.
         let positive = max(rgb, vec3f(0.0));
-        let knee = min(-floor, SIGNED_SHADOW_TOE);
+        let knee = min(-floor, SIGNED_CHANNEL_TOE);
         let t = min(positive, vec3f(knee)) / knee;
-        let toe = positive * t * (2.0 - t);
-        let weight = smoothstep(SIGNED_SHADOW_FULL, SIGNED_SHADOW_END, peak);
-        input = toe + weight * (rgb - toe);
+        input = positive * t * (2.0 - t);
       }
-      if (all(input >= vec3f(-(GAMUT_RESIDUE_EPS + GAMUT_MATH_EPS)))
-          && all(input <= vec3f(1.0 + GAMUT_RESIDUE_EPS + GAMUT_MATH_EPS))) {
+      if (all(input <= vec3f(1.0 + GAMUT_RESIDUE_EPS + GAMUT_MATH_EPS))) {
         return clamp(input, vec3f(0.0), vec3f(1.0));
       }
       if (max(input.r, max(input.g, input.b)) - min(input.r, min(input.g, input.b)) < GAMUT_NEUTRAL_RGB_EPS) {
