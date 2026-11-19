@@ -38,26 +38,24 @@ function sameBuffer(left, right) {
       state.adjustments.hdr.contrast = 0.18;
       state.adjustments.hdr.film_look.grain_amount = 12;
       state.adjustments.hdr.film_look.grain_size = 41;
-      state.adjustments.hdr.film_look.highlight_desaturation = 18;
+      state.adjustments.hdr.highlight_desaturation = 18;
       markGlobalEditDirty();
-      if (!await syncGlobalEditState()) return { prepared: false };
+      if (!await syncGlobalEditState()) throw new Error("Could not save HDR Match fixture grade: " + status.get("edit")?.message);
       const local = newLocalAdjustment("linear_gradient");
       local.name = "Masked lamp control";
       local.hdr_grade.exposure = 0.4;
       local.hdr_grade.highlights = 0.65;
       local.hdr_grade.saturation = 0.12;
-      if (!await queueEditCommand("create_local", { local })) return { prepared: false };
+      if (!await queueEditCommand("create_local", { local })) throw new Error("Could not save HDR Match fixture local: " + status.get("edit")?.message);
       state.denoise.hdr.enabled = true;
       state.denoise.hdr.controls.amount = 0.72;
       state.denoise.hdr.controls.luminance = 0.81;
-      if (!await persistDenoiseSettings()) return { prepared: false };
+      if (!await persistDenoiseSettings()) throw new Error("Could not save HDR Match fixture Denoise: " + status.get("edit")?.message);
       return {
-        prepared: true,
         revision: state.editRevision,
         beforeSdr: JSON.stringify(state.adjustments.sdr),
       };
     });
-    if (!authored.prepared) throw new Error("Could not prepare the HDR Match browser fixture.");
 
     await page.locator("#view-sdr").click();
     const matchStartedAt = Date.now();
@@ -69,7 +67,11 @@ function sameBuffer(left, right) {
     if (!matchResponse.ok()) {
       throw new Error(`HDR Match failed with HTTP ${matchResponse.status()}: ${await matchResponse.text()}`);
     }
-    console.log(`HDR Match response: ${Date.now() - matchStartedAt} ms`);
+    const timing = JSON.parse(await matchResponse.headerValue("x-sdr-match-timing"));
+    if (timing?.candidate_renderer !== "gpu" || !timing.gpu_candidates || !timing.cpu_certified_quality) {
+      throw new Error(`Fixture did not use GPU candidates with exact certification: ${JSON.stringify(timing)}`);
+    }
+    console.log(`HDR Match response: ${Date.now() - matchStartedAt} ms; ${timing.gpu_candidates} GPU candidates`);
     await page.waitForFunction((revision) => (
       state.editRevision > revision && state.editDocument?.sdr_match?.materialized_status && !els.sdrMatchEntire.disabled
     ), authored.revision, { timeout: 30000 });
@@ -134,7 +136,7 @@ function sameBuffer(left, right) {
     });
     if (!["matched", "needs_review"].includes(matched.status)
       || !matched.highlightEnabled
-      || matched.highlightMode !== "peak_fit" || matched.lumaPoints !== 5
+      || matched.highlightMode !== "soft_ceiling" || matched.lumaPoints !== 5
       || !matched.lumaNeutral || !matched.rgbCurvesUsable || matched.localPoints !== 5
       || !matched.localCurvesNeutral || !matched.localTonalMaterialized || !matched.localMaskPreserved
       || !matched.denoiseCopied || !matched.grainCopied

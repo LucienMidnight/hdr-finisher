@@ -1,3 +1,30 @@
+## November 19 ? Windows Automatic Match certification
+
+Windows PC, separate Electron profiles at 2560?1440 under the shared GPU lock.
+Median of three trials on each side, from button click to the exact SDR picture
+on screen. Import was complete before timing. The update changes the tests only.
+
+| Photo | Before ? after | Route and exact P95 OKLab |
+| --- | ---: | --- |
+| IMG_0790.CR2, HDR exposure +0.2 EV | 3.16 ? 3.41 s | Linked SDR, 0.00170 |
+| DSC04375.ARW, HDR exposure +2 EV | 4.09 ? 4.24 s | Independent fit, 12 GPU candidates, 0.00618 |
+
+Both routes passed their existing checks in every timed run and stayed within
+the existing 10% Grade timing tolerance. The independent fit never fell back.
+The baseline is `0ce4eaec`. Evidence in `codebase/output`:
+`sdr-match-baseline.log`, `sdr-match-parity.log` and `sdr-match-final-timing.log`.
+The Canon's independent route remains unqualified. A separate +1 EV HDR
+grade with 120/300-nit highlight compression was refused after CPU fitting
+gave 0.061 exact P95 OKLab against the 0.050 gate.
+
+In the calibrated TIFF diagnostic, linking was bypassed to match the Python
+bridge fixture. All 25 real GPU candidates were compared to their exact CPU
+renders. For CPU-black pixels, the GPU's worst per-candidate 99th percentile
+was zero. Worst per-candidate P95 GPU-to-CPU OKLab was 0.00053. Exact Match
+certification was 0.02561 OKLab against 0.050, with median luma error 0.01614
+(the CPU-only fixture fit measures 0.01593). The mock's artificial 0.002
+black lift instead gave 0.05454 exact OKLab and correctly triggered fallback.
+
 ## November 19 — Denoise zoom and JPEG Ultra HDR on the minimum Mac
 
 MacBook Neo, A18 Pro, 8 GB, Electron at 1408×794 under the shared GPU lock.

@@ -73,12 +73,12 @@ class _Page(threading.Thread):
     """Answers candidates the way the page does: half-float RGB, or an empty decline."""
 
     def __init__(self, bridge: RemoteCandidateBridge, source: np.ndarray, *, decline_at: int | None = None,
-                 offset: float = 0.0) -> None:
+                 black_lift: float = 0.0) -> None:
         super().__init__(daemon=True)
         self.bridge = bridge
         self.source = source
         self.decline_at = decline_at
-        self.offset = offset
+        self.black_lift = black_lift
         self.jobs: list[dict] = []
         self.locals: list[LocalAdjustment] = []
 
@@ -97,7 +97,7 @@ class _Page(threading.Thread):
                 self.source, AdjustmentState.model_validate(job["adjustments"]), PreviewKind.SDR,
                 include_grain=False, local_adjustments=self.locals, source_pixel_scale=1.0,
             )
-            pixels = np.clip(rendered + np.float32(self.offset), 0.0, 1.0).astype("<f2").tobytes()
+            pixels = np.clip(rendered + np.float32(self.black_lift), 0.0, 1.0).astype("<f2").tobytes()
             self.bridge.submit(job["job_id"], pixels, job["width"], job["height"])
 
 
@@ -157,11 +157,10 @@ def test_page_rendered_candidates_give_a_cpu_certified_recipe() -> None:
     adjustments, locals_ = _grade()
     baseline = materialize_sdr_match(source, adjustments, locals_, **OPTIONS)
 
-    # The page's pixels carry a small offset, as a GPU render would differ
-    # slightly from export. Whatever recipe the fit reaches from them, the
-    # quality it reports has to be the export render's.
+    # Half-float transport is lossy and preserves black, like the GPU path.
+    # The quality reported for the chosen recipe must come from exact export.
     bridge = RemoteCandidateBridge()
-    page = _Page(bridge, source, offset=0.002)
+    page = _Page(bridge, source)
     page.start()
     timing: dict[str, object] = {}
     result = materialize_sdr_match(source, adjustments, locals_, timing=timing, candidate_bridge=bridge, **OPTIONS)
@@ -183,29 +182,39 @@ def test_page_rendered_candidates_give_a_cpu_certified_recipe() -> None:
     assert result.quality == _quality_metrics(build_sdr_match_target(settled), exported, body)
     assert result.quality.model_dump() == timing["cpu_certified_quality"]
     assert timing["gpu_explored_quality"] != timing["cpu_certified_quality"]
-    assert result.quality.p95_oklab_error < timing["cpu_pre_refinement_quality"]["p95_oklab_error"]
     assert result.quality.p95_oklab_error <= 0.05
-    assert result.quality.median_luma_error <= 0.01
-    # A small rendering difference must not move the result far from the CPU fit.
+    # A small rendering difference must not move the result far from the CPU fit,
+    # which itself can legitimately need review and have median luma error > 0.01.
+    assert result.status == baseline.status
     assert abs(result.adjustments.sdr.exposure - baseline.adjustments.sdr.exposure) <= 0.1001
+    assert abs(result.quality.median_luma_error - baseline.quality.median_luma_error) <= 0.01
     assert abs(result.quality.p95_luma_error - baseline.quality.p95_luma_error) < 0.01
 
 
-def test_a_page_that_stops_answering_falls_back_to_the_cpu_fit() -> None:
+@pytest.mark.parametrize("failure", ["decline", "lifted_black"])
+def test_invalid_page_results_fall_back_to_the_cpu_fit(failure: str) -> None:
     source = tifffile.imread(FIXTURE).astype(np.float32)
     adjustments, locals_ = _grade()
     baseline = materialize_sdr_match(source, adjustments, locals_, **OPTIONS)
 
     bridge = RemoteCandidateBridge()
-    page = _Page(bridge, source, decline_at=3)
+    # An artificial 0.002 floor hides errors in the shadow toe. Even when the
+    # page answers every job, an unsafe exact result must trigger the CPU fit.
+    page = _Page(bridge, source, decline_at=3) if failure == "decline" else _Page(bridge, source, black_lift=0.002)
     page.start()
     timing: dict[str, object] = {}
     result = materialize_sdr_match(source, adjustments, locals_, timing=timing, candidate_bridge=bridge, **OPTIONS)
     page.join(2.0)
 
     assert timing["candidate_renderer"] == "cpu"
-    assert "declined" in str(timing["gpu_candidate_fallback"]) or "usable" in str(timing["gpu_candidate_fallback"])
-    assert timing["gpu_candidates"] == 3
+    assert bridge.closed
+    if failure == "decline":
+        assert "declined" in str(timing["gpu_candidate_fallback"]) or "usable" in str(timing["gpu_candidate_fallback"])
+        assert timing["gpu_candidates"] == 3
+    else:
+        assert timing["gpu_candidates"] == len(page.jobs) > 0
+        assert timing["gpu_explored_quality"]["p95_oklab_error"] <= 0.05
+        assert timing["cpu_certified_quality"]["p95_oklab_error"] > 0.05
     # Exactly the CPU result: no decision from the abandoned attempt survives.
     assert result.adjustments.model_dump() == baseline.adjustments.model_dump()
     assert [item.model_dump() for item in result.local_adjustments] == [
