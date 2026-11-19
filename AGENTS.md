@@ -672,6 +672,9 @@ Completed UI polish round 3 (pending visual sign-off): `docs/technical/archive/b
   `round5-relative-colour-and-patch.md` compares relative colour cleanup,
   nearby healing and whole-area patch averaging on the Canon and Sony,
   with marked-site results, visible artefacts and native CPU timings.
+- `docs/technical/briefs/denoise-experimental-grain-modes-2026-11-19.md`: build
+  experimental Fine Grain and Clean Grain Denoise methods next to Standard,
+  with controls for Steve's testing; AI method tabled for v2.
 - `docs/technical/briefs/denoise-speck-rnd-prompt-2026-11-18.md`: prompt for the
   next Denoise speck R&D proposal (whole-workflow stage map, what was tried,
   earlier research limitations, constraints); proposal only, no app changes.
