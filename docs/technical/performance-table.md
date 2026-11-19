@@ -1,3 +1,68 @@
+## November 19 — Denoise zoom and JPEG Ultra HDR on the minimum Mac
+
+MacBook Neo, A18 Pro, 8 GB, Electron at 1408×794 under the shared GPU lock.
+Same approved RAWs, Grade defaults and RAW cleanup as the baseline below.
+The figures are single elapsed observations. Memory is the maximum sampled
+whole-app physical footprint in decimal GB. The sample window includes the
+preceding 500 ms. Compare timing movements against the existing 5% band.
+
+| Photo | Method | 110% wait before → after (s) | 110% memory before → after (GB) | 110% → Fit (s) | Fit → 100% (s) | 100% → 110% (s) | Warm zoom peak (GB) |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Canon | Standard | 1.54 → 0.41 | 2.43 → 2.10 | 0.26 | 0.40 | 0.37 | 1.87 |
+| Canon | Fine Grain | 14.40 → 11.52 | 2.73 → 2.01 | 1.25 | 0.68 | 0.25 | 1.78 |
+| Canon | Clean Grain | 13.54 | 2.68 → 1.81 | 0.97 | 0.60 | 0.21 | 1.79 |
+| Sony | Standard | 2.85 → 0.46 | 4.45 → 3.78 | 0.28 | 0.42 | 0.35 | 3.78 |
+| Sony | Fine Grain | 34.06 → 25.69 | 4.69 → 2.28 | 2.21 | 0.63 | 0.21 | 2.14 |
+| Sony | Clean Grain | 32.96 | 4.52 → 2.14 | 1.87 | 0.56 | 0.24 | 2.14 |
+
+On both photos, the final native drawing surfaced the visible region at each
+zoom and passed the viewer coverage check. The display buffer at 110% was
+about 2430 × 1015, about 20 MB per HDR surface. The 42 MP full drawing buffer
+would use 339 MB per HDR surface. Standard's shorter last-picture wait
+includes the removal of a whole-image catch-up render after the viewport was
+already drawn. Cold Fine Grain timing varies with preparation and I/O.
+
+The intermediate two-photo run repeated cold Fit and 100%, one Detail
+Recovery drag and 100% → Fit and back for each method. Its native surface was
+still full size. These are timing observations from that intermediate build.
+
+| Photo | Method | Fit first (s) | 100% first (s) | Detail Recovery drag (s) | 100% → Fit (s) |
+| --- | --- | ---: | ---: | ---: | ---: |
+| Canon | Standard | 0.31 | 0.26 | 0.12 | 0.10 |
+| Canon | Fine Grain | 12.37 | 13.45 | 0.17 | 0.85 |
+| Canon | Clean Grain | 16.24 | 16.43 | 0.12 | 0.98 |
+| Sony | Standard | 1.16 | 0.40 | 0.12 | 0.24 |
+| Sony | Fine Grain | 31.78 | 34.72 | 0.20 | 1.89 |
+| Sony | Clean Grain | 40.54 | 41.81 | 0.16 | 1.86 |
+
+### JPEG Ultra HDR delivery
+
+Full-size quality 90 exports with Denoise enabled for both renditions.
+Reduced Proof uses a 1200 px artifact at a 1000-nit display target. Time and
+whole-app peak appear together below. A dash marks a missing baseline.
+
+| Photo | Method | Export before (s / GB) | Export after (s / GB) | Reduced Proof before → after (s) | Reduced Proof after (GB) |
+| --- | --- | ---: | ---: | ---: | ---: |
+| Canon | Standard | 20.45 / 4.76 | 12.57 / 4.23 | 5.73 → 2.72 | 3.25 |
+| Canon | Fine Grain | — | 27.76 / 3.14 | — → 3.10 | 2.88 |
+| Canon | Clean Grain | — | 34.10 / 3.50 | — → 2.89 | 2.98 |
+| Sony | Standard | 69.32 / 6.82 | 38.67 / 3.75 | 3.83 → 2.60 | 3.77 |
+| Sony | Fine Grain | 90.22 / 6.57 | 45.56 / 5.91 | 3.75 → 4.67 | 4.77 |
+| Sony | Clean Grain | 111.39 / 6.63 | 52.84 / 5.96 | 3.85 → 3.48 | 4.39 |
+
+Canon Standard ran on the GPU before the last change to account for overlapping
+readback and upload arrays in admission. The final Canon Standard delivery
+route still needs a measured check. Canon Fine and Clean used file-backed CPU
+strips. Sony Standard reduced Proof was measured in the earlier bounded-zoom
+run. The last Sony run reached **119.12 s / 13.50 GB** for Standard full-size
+Proof. The spike came from decoded Proof reconstruction after encoding. The
+subsequent Sony Fine and Clean export and reduced Proof peaks include memory
+left by full-size Proof. The earlier Sony measurements also exceeded 4 GB for
+those modes, before the file-backed export destination was built. The final
+fresh-profile memory qualification for those combinations remains open.
+
+[Real-app timing driver](../../codebase/tests/performance/denoise-grain-latency.js)
+
 ## November 19 — Denoise after the railing-light fix
 
 MacBook Neo, A18 Pro, 8 GB, Electron at 1408×794 under the shared GPU lock.

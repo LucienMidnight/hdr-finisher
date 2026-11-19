@@ -168,6 +168,22 @@ def test_a_session_without_a_document_exports_undenoised() -> None:
     assert _denoised_export_source(session, PreviewKind.HDR) is image
 
 
+def test_standard_denoise_jpeg_strips_preserve_finished_pixels(monkeypatch):
+    from hdr_finisher import exporters, gpu_delivery
+    from hdr_finisher.models import ExportSettings
+
+    monkeypatch.setattr(gpu_delivery, "render_pair", lambda *args: None)
+    session = _session(_document(), _noisy())
+    adjustments = AdjustmentState()
+    settings = ExportSettings(format="jpeg_ultrahdr")
+    prepare = exporters._jpeg_denoise_source(session, adjustments)
+    for lane in (PreviewKind.HDR, PreviewKind.SDR):
+        whole = exporters._render_unwatermarked_branch(session, settings, lane, adjustments)
+        strips = exporters._render_unwatermarked_branch(session, settings, lane, adjustments,
+                                                         denoise_source=prepare)
+        np.testing.assert_array_equal(strips, whole)
+
+
 def test_the_export_branch_actually_renders_the_denoised_source() -> None:
     """The helper above is only useful if the export graph calls it.
 

@@ -606,6 +606,7 @@ def test_base_floor_keeps_hdr_shadows_recoverable() -> None:
 def test_real_no_headroom_export_and_proof_preserve_both_renditions(tmp_path, hdr_exposure, sdr_exposure):
     from hdr_finisher.render_cache import SessionRenderCache
     from hdr_finisher.gainmap_decoders import decode_ultrahdr_jpeg, inspect_jpeg_gain_map
+    from hdr_finisher.hdr_ceiling import channel_nits, decoded_channel_nits
     from hdr_finisher.models import ProofArtifactRequest
     from hdr_finisher.proofing import ProofArtifactStore
     capability=capability_module._ultrahdr_status()
@@ -624,6 +625,7 @@ def test_real_no_headroom_export_and_proof_preserve_both_renditions(tmp_path, hd
     assert metadata.hdr_capacity_max>metadata.hdr_capacity_min==1
     assert metadata.hdr_capacity_max==pytest.approx(1.00001,abs=1e-7)
     hdr,sdr,_=decode_ultrahdr_jpeg(path)
+    np.testing.assert_array_equal(decoded_channel_nits(path, "jpeg_ultrahdr"), channel_nits(hdr))
     finishing=exporter_module._finishing_adjustments_for_export(session)
     for lane,decoded in [(PreviewKind.HDR,hdr),(PreviewKind.SDR,sdr)]:
         expected=exporter_module._render_export_branch(session,settings,lane,finishing)

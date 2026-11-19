@@ -1,3 +1,19 @@
+## November 19, 2026: Denoise zoom and delivery memory
+
+Native Denoise zoom now draws only the visible region and its pan margin.
+The viewer keeps the last complete picture until the new one is ready. JPEG
+Ultra HDR can use the existing bounded CPU grade when its GPU delivery would
+exceed the memory ceiling and the graph supports strips. JPEG Ultra HDR
+input packing and decoded peak verification work in rows. The wait and
+memory results, including any remaining overages, are in the
+[performance table](../../technical/performance-table.md).
+
+Warm native zoom and the isolated full-size Standard export of the Sony
+passed the 4 GB gate. Sony Standard full-size Proof still exceeds the gate
+while building its decoded reference views. Fine and Clean Sony delivery
+needs a fresh-profile check after the full-size Proof memory work, and Canon
+Standard delivery needs rechecking with the final GPU admission estimate.
+
 ## November 19, 2026: Denoise speed baseline and acceptance
 
 The Denoise reference covers Standard, Fine Grain and Clean Grain at

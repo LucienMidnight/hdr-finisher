@@ -15,7 +15,7 @@ const sliders = {
 
 function peakBetween(samples, start, end) {
   const readings = samples.filter(sample => sample.at >= start - 500 && sample.at <= end);
-  return readings.length ? Math.max(...readings.map(sample => sample.bytes)) : null;
+  return readings.reduce((peak, sample) => !peak || sample.bytes > peak.bytes ? sample : peak, null);
 }
 
 function backendLog(harness, start, end, method) {
@@ -32,7 +32,7 @@ function backendLog(harness, start, end, method) {
     } else if (event.method === method) {
       preparation.push({ edge: event.edge, width: event.width, height: event.height, ms: event.duration_ms,
         fitMs: event.fit_ms, filterMs: event.filter_ms, tileWorkerMs: event.tile_worker_ms,
-        diskBytes: event.disk_bytes });
+        diskBytes: event.disk_bytes, reusedRgb: event.reused_rgb });
     }
   }
   return { preparation, peakAppBytes };
@@ -87,10 +87,14 @@ async function measurePicture(page, button, method, { pan = false, switchMethod 
           final = undefined;
           return;
         }
+        const region = els.previewCanvas.hdrFrameRegion || null;
+        const visible = region && visibleOutputRect(region.frameWidth, region.frameHeight);
         final = {
           accepted, width: accepted.width, height: accepted.height, edge: detail.longEdge,
           execution: detail.execution, samePreparation: samePreparation(),
           serial: detail.serial, submittedAt: detail.submittedAt,
+          backingWidth: els.previewCanvas.width, backingHeight: els.previewCanvas.height,
+          region, visible,
         };
       };
       const timer = setTimeout(() => finish(reject, Error(JSON.stringify({
@@ -125,6 +129,9 @@ async function measurePicture(page, button, method, { pan = false, switchMethod 
         }
       } else if (button === "recalculate") {
         void recalculateDenoise(state.currentView, { force: true });
+      } else if (button === "110%") {
+        els.zoomReadout.value = button;
+        commitZoomReadout();
       } else {
         document.querySelector(button).click();
       }
@@ -171,6 +178,10 @@ async function measurePicture(page, button, method, { pan = false, switchMethod 
       releaseToPictureMs: releasedAt === undefined ? null : done.at - releasedAt,
       submitToPaintMs: done.submittedAt === undefined ? null : done.at - done.submittedAt,
       edge: done.edge, width: done.width, height: done.height, execution: done.execution,
+      backingWidth: done.backingWidth, backingHeight: done.backingHeight, region: done.region,
+      viewportCovered: !done.region || Boolean(done.visible && done.region.x <= done.visible.x
+        && done.region.y <= done.visible.y && done.region.x + done.region.width >= done.visible.x + done.visible.width
+        && done.region.y + done.region.height >= done.visible.y + done.visible.height),
       samePreparation: done.samePreparation,
       requests,
       ...(trace ? {
@@ -218,22 +229,23 @@ async function measureDelivery(page, harness, name, method, record, proofOnly = 
     fs.rmSync(target);
   }
 
-  await page.evaluate(() => {
+  const fullProof = method === "standard" && process.argv.includes("--speed-memory-full-proof");
+  await page.evaluate(fullSize => {
     activateWorkflowTab("proof");
     state.proofFormat = "jpeg_ultrahdr";
-    state.proofSize = "reduced";
+    state.proofSize = fullSize ? "full" : "reduced";
     state.proofTarget = "custom";
     state.proofCustomNits = 1000;
-  });
+  }, fullProof);
   const proofStart = await page.evaluate(() => {
     const start = performance.timeOrigin + performance.now();
     els.chromeProofRefresh.click();
     return start;
   });
-  await page.waitForFunction(() => els.chromeProofStatus.dataset.state === "error"
-    || (state.proofArtifact && !state.proofDirty && els.chromeProofImage.complete
+  await page.waitForFunction(fullSize => els.chromeProofStatus.dataset.state === "error"
+    || (state.proofArtifact?.full_size === fullSize && !state.proofDirty && els.chromeProofImage.complete
       && els.chromeProofImage.naturalWidth > 0 && els.chromeProofImage.style.display !== "none"),
-  null, { timeout: 120000 });
+  fullProof, { timeout: 120000 });
   const proof = await page.evaluate(async start => {
     if (els.chromeProofStatus.dataset.state === "error") throw Error(els.chromeProofStatus.textContent);
     await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
@@ -242,7 +254,7 @@ async function measureDelivery(page, harness, name, method, record, proofOnly = 
       status: els.chromeProofStatus.textContent,
       renderer: state.proofArtifact.renderer, width: state.proofArtifact.width, height: state.proofArtifact.height };
   }, proofStart);
-  await record("reduced JPEG Ultra HDR Proof", proof);
+  await record(`${fullProof ? "full-size" : "reduced"} JPEG Ultra HDR Proof`, proof);
   await page.evaluate(async () => {
     activateWorkflowTab("grade");
     state.denoise.sdr.enabled = false;
@@ -251,6 +263,8 @@ async function measureDelivery(page, harness, name, method, record, proofOnly = 
 }
 
 async function measureBaseline(page, harness, name, record, setZoom) {
+  const memoryRun = process.argv.includes("--speed-memory");
+  const warmOnly = process.argv.includes("--speed-memory-warm-only");
   await page.evaluate(() => {
     state.gpuPreview?.setInstrumentationEnabled(true);
     els.denoiseBypass.closest(".control-group").querySelector(".group-toggle")
@@ -262,7 +276,13 @@ async function measureBaseline(page, harness, name, record, setZoom) {
       const standard = method === "standard";
       await record(method, standard ? "enable at 110%" : "switch at 110%",
         standard ? "#denoise-bypass" : null, { switchMethod: !standard, trace: true });
+      if (warmOnly) {
+        await record(method, "110% to Fit", "#zoom-fit", { trace: true });
+        await record(method, "Fit to 100%", "#zoom-actual", { trace: true });
+        await record(method, "100% to 110%", "110%", { trace: true });
+      }
     }
+    if (warmOnly) await setZoom("#zoom-fit");
     await page.evaluate(() => setDenoiseEnabled(false));
   }
   if (name === "DSC01212.ARW" || process.argv.includes("--baseline-110-only")) return;
@@ -271,7 +291,9 @@ async function measureBaseline(page, harness, name, record, setZoom) {
   const deliveryRecord = method => async (action, result) => {
     const backend = backendLog(harness, result.timeStart, result.timeEnd, method);
     const samples = await page.evaluate(() => window.denoiseBaselineMemory);
-    backend.peakAppBytes = peakBetween(samples, result.timeStart, result.timeEnd) ?? backend.peakAppBytes;
+    const peak = peakBetween(samples, result.timeStart, result.timeEnd);
+    backend.peakAppBytes = peak?.bytes ?? backend.peakAppBytes;
+    backend.peakProcesses = peak?.processes;
     console.log(JSON.stringify({ name, method, action, ...result, ...backend }));
   };
   const runDelivery = async (method, proofOnly) => {
@@ -289,6 +311,21 @@ async function measureBaseline(page, harness, name, record, setZoom) {
   };
   const methods = resumeFineDelivery ? ["standard", "clean_grain", "fine_grain"] : baselineMethods;
   for (const method of methods) {
+    if (warmOnly) {
+      if (process.argv.includes("--baseline-delivery")) {
+        await setZoom("#zoom-fit");
+        await page.evaluate(async method => {
+          if (state.denoise.hdr.enabled) await setDenoiseEnabled(false);
+          await commitDenoiseControl("method", method);
+          // Delivery reads the authored settings from both lanes. Grade is
+          // already covered by the zoom sequence above.
+          state.denoise.hdr.enabled = true;
+          await persistDenoiseSettings();
+        }, method);
+        await runDelivery(method, false);
+      }
+      continue;
+    }
     if (resumeAfterStandard && method === "standard") {
       await page.evaluate(() => setDenoiseEnabled(true));
       await runDelivery(method, true);
@@ -314,7 +351,18 @@ async function measureBaseline(page, harness, name, record, setZoom) {
       await setZoom(zoom === "Fit" ? "#zoom-fit" : "#zoom-actual");
       await record(method, `first preparation at ${zoom}`, "#denoise-bypass", { trace: true });
       if (zoom === "Fit") {
-        await record(method, "Recalculate at Fit", "recalculate", { trace: true });
+        if (!memoryRun) await record(method, "Recalculate at Fit", "recalculate", { trace: true });
+        if (memoryRun) {
+          const value = await page.locator("#denoise-detail").evaluate(el => Number(el.value));
+          await record(method, "detail_recovery drag", "#denoise-detail",
+            { drag: true, release: method === "standard", trace: true });
+          await page.evaluate(async value => {
+            state.previewScheduler?.endInteraction();
+            state.denoiseWholeFrameStale = null;
+            await updateLiveDenoiseControl("detail_recovery", value);
+            if (state.denoise.hdr.controls.method === "standard") await persistDenoiseSettings();
+          }, value);
+        }
         if (process.argv.includes("--baseline-drags")) {
           for (const [id, key] of Object.entries(sliders)) {
             if (id === "evenness" && method === "standard" || id === "splotches" && method !== "clean_grain") continue;
@@ -342,9 +390,14 @@ async function measureBaseline(page, harness, name, record, setZoom) {
           }
         }
       } else {
+        if (memoryRun) {
+          await record(method, "100% to 110%", "110%", { trace: true });
+          await record(method, "110% to Fit", "#zoom-fit", { trace: true });
+          await record(method, "Fit to 100%", "#zoom-actual", { trace: true });
+        }
         await record(method, "100% to Fit", "#zoom-fit", { trace: true });
         await record(method, "Fit to 100%", "#zoom-actual", { trace: true });
-        await record(method, "pan at 100%", null, { pan: true, trace: true });
+        if (!memoryRun) await record(method, "pan at 100%", null, { pan: true, trace: true });
       }
     }
     if (process.argv.includes("--baseline-delivery")) {
@@ -394,7 +447,8 @@ async function measureBaseline(page, harness, name, record, setZoom) {
       window.addEventListener("message", event => {
         if (event.origin !== location.origin || event.data?.type !== "hdr-memory-pressure") return;
         const bytes = event.data.value?.totalBytes;
-        if (Number.isFinite(bytes)) window.denoiseBaselineMemory.push({ at: Date.now(), bytes });
+        if (Number.isFinite(bytes)) window.denoiseBaselineMemory.push({ at: Date.now(), bytes,
+          processes: event.data.value.processes });
       });
     }, baseline);
     const names = process.argv.includes("--atrium-only") ? ["DSC01212.ARW"]
@@ -420,10 +474,13 @@ async function measureBaseline(page, harness, name, record, setZoom) {
         tracedRequests = options?.trace ? [] : null;
         try {
           const result = await measurePicture(page, button, method, options);
+          assert.ok(result.viewportCovered, "The native drawing surface did not cover the viewer.");
           const backend = backendLog(harness, result.timeStart, result.timeEnd, method);
           if (options?.trace) {
             const samples = await page.evaluate(() => window.denoiseBaselineMemory);
-            backend.peakAppBytes = peakBetween(samples, result.timeStart, result.timeEnd) ?? backend.peakAppBytes;
+            const peak = peakBetween(samples, result.timeStart, result.timeEnd);
+            backend.peakAppBytes = peak?.bytes ?? backend.peakAppBytes;
+            backend.peakProcesses = peak?.processes;
           }
           console.log(JSON.stringify({ name, method, action, ...result, ...backend,
             ...(tracedRequests ? { preparationRequests: tracedRequests } : {}) }));

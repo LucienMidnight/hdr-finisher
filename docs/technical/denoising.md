@@ -9,6 +9,24 @@
 **Pipeline baseline:** `95060fa`; see [Image Processing Pipeline](image-processing-pipeline.md).
 **Research archive:** [Denoising Technology Watch — August 2026](denoising-technology-watch-2026.md) is background only and is not an implementation plan.
 
+## November 19, 2026: bounded native zoom and JPEG Ultra HDR delivery
+
+At 100% and higher, tiled Grade Denoise composites the padded visible region
+into a viewport-sized surface. Tile positions and the photo's display size
+still use native coordinates. The renderer releases the old processing-size
+target, source and resolved tiles before allocating the replacement. The
+viewer's swap chain keeps the last submitted picture until the new one copies
+to it. Returning to Fit keeps the native picture in place until the Fit draw.
+
+JPEG Ultra HDR selects the existing strip renderer when the finishing graph
+supports it and a native GPU job will exceed the current whole-app budget.
+The CPU uses the same Denoise stage and can share that preparation between
+HDR and SDR with identical source and settings. The two finished renditions
+use file-backed arrays under the existing full-size scratch allowance on
+this route. The JPEG writer prepares its codec input in rows. The decoded
+ceiling check reads the native HDR samples in bands and applies the same
+colour conversion and peak test.
+
 ## November 19, 2026: experimental grain methods
 
 When Even out harsh specks is enabled, Bayer development now protects small

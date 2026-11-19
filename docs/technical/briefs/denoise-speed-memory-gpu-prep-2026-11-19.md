@@ -3,7 +3,7 @@
 **Date:** November 19, 2026
 **Branch:** start from `feat/denoise-v1` (baseline merged at `184ccd3b`).
 **Owner:** Steve (not a coder). Report in plain language.
-**Builds on:** `docs/technical/briefs/denoise-harsh-specks-baseline-speed-2026-11-19.md`
+**Builds on:** `docs/technical/archive/briefs/denoise-harsh-specks-baseline-speed-2026-11-19.md`
 and the ranked speed plan in `docs/product/modules/grade.md`.
 
 ## Steve's decision (November 19)

@@ -907,6 +907,44 @@
       this.surfaceKeys = new WeakMap();
     }
 
+    async retireDenoiseZoomResources(sessionId, lane, longEdge, regionOnly) {
+      const previous = this.lastPresentedFrame;
+      if (previous?.sessionId !== sessionId || previous.lane !== lane) return;
+      const scaleChanged = previous.longEdge !== longEdge;
+      if (!scaleChanged && !regionOnly) return;
+      // The swap chain still shows the last completed picture. Its backing
+      // render target, source proxies and resolved tiles are no longer needed
+      // for the next processing size.
+      const target = scaleChanged ? this.presentationTarget : null;
+      if (target) {
+        this.presentationTarget = null;
+        this.gpuAllocator?.unregister(target.allocatorEntry);
+        this.destroyAfterActiveRenders(() => target.texture.destroy());
+      }
+      if (scaleChanged) {
+        this.dropDenoiseTiles();
+        this.denoiseTileIdentity = null;
+      }
+      let retiredProxy = false;
+      for (const [key, proxy] of this.proxies) {
+        if (proxy.sessionId === sessionId && proxy.lane === lane
+          && (proxy.longEdge !== longEdge || (regionOnly && !proxy.region))) {
+          const selector = this.denoiseSourceSelector;
+          if (proxy === selector?.original) {
+            if (!this.adaptiveDenoiseSelected()) continue;
+            const resolved = selector.resolved;
+            selector.original = null;
+            selector.resolved = null;
+            selector.resolvedFor = null;
+            if (resolved) this.destroyAfterActiveRenders(() => resolved.texture.destroy());
+          }
+          this.evictGpuCacheEntry("source-proxy", key);
+          retiredProxy = true;
+        }
+      }
+      if (target || retiredProxy) await this.waitForSubmittedWork();
+    }
+
     destroyAfterActiveRenders(callback) {
       if (this.activeRenderCount > 0 || this.activeScopeCount > 0) this.deferredDestroy.push(callback);
       else callback();
@@ -3935,18 +3973,20 @@
       // tile is processed exactly as before.
       const Contract = typeof window !== "undefined" ? window.HDRViewportRequest : null;
       const viewport = viewportRequest.fit ? null : viewportRequest.visible;
+      const foregroundRegion = viewport ? viewportRequest.roi : null;
+      const pictureRegion = options.boundedPresentation && foregroundRegion ? foregroundRegion : null;
       // The retained target holds the accepted frame between generations, so a
       // viewport pass can load it and process only its foreground tiles.
       const presentationTarget = measureOnly
         ? null
-        : this.ensurePresentationTarget(proxy.width, proxy.height, surface.format);
+        : this.ensurePresentationTarget(pictureRegion?.width || proxy.width,
+          pictureRegion?.height || proxy.height, surface.format, pictureRegion);
       // Pad the request by a fraction of itself before selecting foreground
       // tiles. Without the padding a small pan exposes the previous pass's
       // boundary as a seam inside the viewport, because the newly visible strip
       // was never refined. The padding is a mitigation, not a fix: an edit that
       // moves the view further than the padding, or leaves the frame at all,
       // still needs progressive catch-up before the rest of the image matches.
-      const foregroundRegion = viewport ? viewportRequest.roi : null;
       // Whether the target behind this pass still holds the accepted frame at
       // this exact size, identity and format. This is about the frame, not the
       // request: a whole-frame catch-up retains too, it just has no region to
@@ -4149,14 +4189,15 @@
 
       const alignment = 256;
       const stride = Math.ceil(params.byteLength / alignment) * alignment;
-      const required = stride * (plan.tileCount + clarityChunks);
+      const compositeStart = plan.tileCount + clarityChunks;
+      const required = stride * (compositeStart + (pictureRegion ? foregroundTiles.length : 0));
       if (!this.tileCompositeParamBuffer || this.tileCompositeParamBuffer.size < required) {
         this.tileCompositeParamBuffer?.destroy();
         this.tileCompositeParamBuffer = this.device.createBuffer({
           size: required, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
         });
       }
-      const slots = new Float32Array((stride / 4) * (plan.tileCount + clarityChunks));
+      const slots = new Float32Array(required / 4);
       // The Clarity pre-pass's regions take the slots after the tiles'.
       (clarityFrame?.chunks || []).forEach(({ region }, index) => {
         const base = (plan.tileCount + index) * (stride / 4);
@@ -4190,6 +4231,14 @@
         // passes do. Nothing else in the render graph reads them.
         slots[base + GPU_PARAMS.SCOPE_WIDTH] = SCOPE_PEAK_GRID;
         slots[base + GPU_PARAMS.SCOPE_HEIGHT] = SCOPE_PEAK_GRID;
+      });
+      const planIndexOf = new Map(plan.tiles.map((tile, index) => [tile, index]));
+      if (pictureRegion) foregroundTiles.forEach((tile, index) => {
+        const source = planIndexOf.get(tile) * stride / 4;
+        const destination = (compositeStart + index) * stride / 4;
+        slots.copyWithin(destination, source, source + stride / 4);
+        slots[destination + GPU_PARAMS.TILE_ORIGIN_X] -= pictureRegion.x;
+        slots[destination + GPU_PARAMS.TILE_ORIGIN_Y] -= pictureRegion.y;
       });
       this.device.queue.writeBuffer(this.tileCompositeParamBuffer, 0, slots);
 
@@ -4266,10 +4315,6 @@
           ? await this.presentationGate.acquire(
             canvas,
             () => options.serial === this.renderSerials.get(canvas) && isCurrent(),
-            () => {
-              if (canvas.width !== proxy.width) canvas.width = proxy.width;
-              if (canvas.height !== proxy.height) canvas.height = proxy.height;
-            },
           )
           : { current: () => true, release: () => {} };
         if (!presentation) {
@@ -4278,7 +4323,6 @@
           this.recordStage("tiled-refused", { lane, longEdge, refusals: ["superseded-before-presentation"] });
           return { rendered: false, refusals: ["superseded-before-presentation"] };
         }
-        this.configureSurface(canvas, context, lane === "hdr");
       }
       // Tiles never reuse a selection: each recomputes over its own halo. The
       // scratch is sized once for the largest region, so it never grows while
@@ -4383,7 +4427,7 @@
       const canvasView = presentationTarget ? presentationTarget.texture.createView() : null;
       let placeholderDrawn = false;
       if (regionOnly && canvasView) {
-        const placeholder = options.allowPlaceholder && !noiseView
+        const placeholder = options.allowPlaceholder && !noiseView && !pictureRegion
           ? this.placeholderFor(canvas, options.sessionId, lane, options.geometrySignature || "{}")
           : null;
         const fill = encoder.beginRenderPass({
@@ -4482,7 +4526,6 @@
       // Denoise reconstructs into the same encoder, one tile at a time, so this
       // loop has to be able to wait for it. Command order is call order, and
       // every tile is reconstructed before the copy that reads it.
-      const planIndexOf = new Map(plan.tiles.map((candidate, index) => [candidate, index]));
       const foregroundEntries = foregroundTiles.map((tile) => ({ tile, index: planIndexOf.get(tile) }));
       for (const [position, { tile, index }] of foregroundEntries.entries()) {
         // A superseded generation stops at a tile boundary. Nothing has been
@@ -4689,7 +4732,10 @@
           const overlayView = options.overlayIndex >= 0
             ? maskMatrix[index][options.overlayIndex].texture.createView()
             : sourceView;
-          const compositeBind = bind(noiseView ? baseView : finishView, sourceView, overlayView);
+          const binding = pictureRegion ? {
+            buffer: this.tileCompositeParamBuffer, offset: (compositeStart + position) * stride, size: params.byteLength,
+          } : parameterBinding;
+          const compositeBind = bind(noiseView ? baseView : finishView, sourceView, overlayView, binding);
           const compositePass = encoder.beginRenderPass({
             colorAttachments: [{
               view: canvasView,
@@ -4699,7 +4745,9 @@
               clearValue: { r: 0, g: 0, b: 0, a: 1 }, storeOp: "store",
             }],
           });
-          compositePass.setScissorRect(tile.rect.x, tile.rect.y, tile.rect.width, tile.rect.height);
+          const rect = pictureRegion ? intersect(tile.rect, pictureRegion) : tile.rect;
+          compositePass.setScissorRect(rect.x - (pictureRegion?.x || 0), rect.y - (pictureRegion?.y || 0),
+            rect.width, rect.height);
           compositePass.setPipeline(pipelines.composite);
           compositePass.setBindGroup(0, compositeBind);
           compositePass.draw(3);
@@ -4722,6 +4770,11 @@
       // A superseded generation stops before the next batch is submitted: the
       // batches already submitted finish, and nothing further is encoded or
       // presented.
+      if (!cancelled) {
+        const grainSubmitted = flushTiles();
+        if (grainSubmitted) await grainSubmitted;
+        cancelled = Boolean(presentationTarget && (!presentation.current() || !isCurrent()));
+      }
       if (cancelled) {
         floatPeakRead?.destroy();
         // Some of the map's pre-pass may never be submitted, so its record of
@@ -4732,16 +4785,19 @@
         });
         return { rendered: false, refusals: ["superseded-during-encode"] };
       }
-      const grainSubmitted = flushTiles();
-      if (grainSubmitted) await grainSubmitted;
       if (presentationTarget) {
+        const { width, height } = presentationTarget;
+        canvas.hdrFrameRegion = pictureRegion ? { ...pictureRegion, frameWidth: proxy.width, frameHeight: proxy.height } : null;
+        if (canvas.width !== width) canvas.width = width;
+        if (canvas.height !== height) canvas.height = height;
+        this.configureSurface(canvas, context, lane === "hdr");
         // One copy hands the completed frame to the canvas: the swap chain is
         // never presented cleared or half-written, whatever the pass did to
         // the target.
         encoder.copyTextureToTexture(
           { texture: presentationTarget.texture },
           { texture: context.getCurrentTexture() },
-          { width: proxy.width, height: proxy.height },
+          { width, height },
         );
         presentationTarget.valid = true;
       }
@@ -5258,6 +5314,7 @@
           // placeholder's output mapping reads.
           allowPlaceholder: true,
           panPass: sourceOptions?.panPass,
+          boundedPresentation: sourceOptions?.boundedPresentation,
           lane,
           longEdge,
           editRevision,
@@ -5601,6 +5658,7 @@
             && resourceGeneration === this.resourceGeneration
             && sourceOptions?.isCurrent?.() !== false,
           () => {
+            canvas.hdrFrameRegion = null;
             if (canvas.width !== proxy.width) canvas.width = proxy.width;
             if (canvas.height !== proxy.height) canvas.height = proxy.height;
           },
@@ -6565,8 +6623,8 @@
     async readPresentationRegion(width = 16, height = 16, x = 0, y = 0) {
       const target = this.presentationTarget;
       if (!target?.texture || !target.valid) return null;
-      const originX = Math.min(Math.max(0, Math.trunc(Number(x) || 0)), target.width - 1);
-      const originY = Math.min(Math.max(0, Math.trunc(Number(y) || 0)), target.height - 1);
+      const originX = Math.min(Math.max(0, Math.trunc(Number(x) || 0) - (target.region?.x || 0)), target.width - 1);
+      const originY = Math.min(Math.max(0, Math.trunc(Number(y) || 0) - (target.region?.y || 0)), target.height - 1);
       const copyWidth = Math.min(Math.max(1, Number(width) || 1), target.width - originX);
       const copyHeight = Math.min(Math.max(1, Number(height) || 1), target.height - originY);
       const bytesPerTexel = String(target.format).includes("16float") ? 8 : 4;
@@ -7018,9 +7076,10 @@
      * frame to the canvas. It is tiled-only, sized to the processed output, and
      * freed with the session.
      */
-    ensurePresentationTarget(width, height, format) {
+    ensurePresentationTarget(width, height, format, region) {
       const existing = this.presentationTarget;
-      if (existing && existing.width === width && existing.height === height && existing.format === format) {
+      if (existing && existing.width === width && existing.height === height && existing.format === format
+        && existing.region?.x === region?.x && existing.region?.y === region?.y) {
         return existing;
       }
       if (existing) {
@@ -7041,6 +7100,7 @@
         width,
         height,
         format,
+        region,
         byteSize: width * height * (format === "rgba16float" ? 8 : 4),
         valid: false,
       };

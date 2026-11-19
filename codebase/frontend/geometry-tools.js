@@ -662,6 +662,7 @@ async function renderPerspectiveGpuDraft() {
     state.perspectiveDraftFrame = { ...result, signature: geometrySignature() };
     els.previewImage.style.display = "none";
     els.previewCanvas.style.display = "block";
+    els.previewCanvas.hdrFrameRegion = null;
     els.emptyState.style.display = "none";
     setGpuSurfaceHdr(lane, result.hdr);
     setZoomMode(state.zoomMode);
@@ -858,7 +859,7 @@ function updateStraightenInteractive(value) {
   // the authoritative render applies the largest valid-pixel crop on release.
   // Scaling to cover the old frame here made portrait images appear to zoom by
   // 25% or more and did not match the backend's variable-aspect safe crop.
-  [els.previewImage, els.previewCanvas, els.previewOverlay, els.localMaskOverlay, els.chromeProofImage].forEach((preview) => {
+  [els.previewImage, els.previewCanvas, els.previewCanvas.parentElement, els.previewOverlay, els.localMaskOverlay, els.chromeProofImage].forEach((preview) => {
     preview?.style.setProperty("--interactive-straighten-angle", `${-delta}deg`);
     preview?.style.setProperty("--interactive-straighten-scale", "1");
     if (preview) preview.style.clipPath = "";
@@ -945,7 +946,7 @@ function clearInteractiveStraightenPreview() {
   }
   state.straightenPreviewBaseAngle = null;
   state.straightenPreviewFrameRect = null;
-  [els.previewImage, els.previewCanvas, els.previewOverlay, els.localMaskOverlay, els.chromeProofImage].forEach((preview) => {
+  [els.previewImage, els.previewCanvas, els.previewCanvas.parentElement, els.previewOverlay, els.localMaskOverlay, els.chromeProofImage].forEach((preview) => {
     preview?.style.removeProperty("--interactive-straighten-angle");
     preview?.style.removeProperty("--interactive-straighten-scale");
     if (preview) preview.style.clipPath = "";
@@ -989,7 +990,7 @@ function renderRotateDraftTransform({ reflow = false } = {}) {
     if (reflow) applyZoomGeometry();
     return;
   }
-  [els.previewImage, els.previewCanvas, els.chromeProofImage].forEach((preview) => {
+  [els.previewImage, els.previewCanvas, els.previewCanvas.parentElement, els.chromeProofImage].forEach((preview) => {
     preview?.style.setProperty("--interactive-rotate-angle", `${delta}deg`);
     preview?.style.setProperty("--interactive-flip-x", String(flipX));
     preview?.style.setProperty("--interactive-flip-y", String(flipY));
@@ -1021,7 +1022,7 @@ function applySourceOverlayGeometryTransform(original, current) {
 }
 
 function clearRotateDraftTransformProperties() {
-  [els.previewImage, els.previewCanvas, els.previewOverlay, els.localMaskOverlay, els.chromeProofImage].forEach((preview) => {
+  [els.previewImage, els.previewCanvas, els.previewCanvas.parentElement, els.previewOverlay, els.localMaskOverlay, els.chromeProofImage].forEach((preview) => {
     preview?.style.removeProperty("--interactive-rotate-angle");
     preview?.style.removeProperty("--interactive-flip-x");
     preview?.style.removeProperty("--interactive-flip-y");

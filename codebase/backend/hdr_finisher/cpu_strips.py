@@ -307,6 +307,7 @@ def render_in_strips(
     denoise_active: bool = False,
     budget_bytes: int = DEFAULT_STRIP_BUDGET_BYTES,
     is_current: Callable[[], bool] | None = None,
+    allocate_output: Callable[[tuple[int, int, int]], np.ndarray] | None = None,
 ) -> tuple[np.ndarray, StripReport]:
     """Render the selected lane strip by strip and return the whole frame.
 
@@ -351,7 +352,8 @@ def render_in_strips(
         """Where this strip sits in the frame, for the stages that are placed."""
         return FrameWindow(left=0, top=top, width=output_width, height=output_height)
 
-    output = np.empty((output_height, output_width, 3), dtype=np.float32)
+    shape = (output_height, output_width, 3)
+    output = np.empty(shape, dtype=np.float32) if allocate_output is None else allocate_output(shape)
     passes: list[str] = []
     anchor: HighlightAnchor | None = None
 
@@ -409,6 +411,8 @@ def render_in_strips(
 
     report.passes = tuple(passes)
     report.anchor = anchor
+    if isinstance(output, np.memmap):
+        output.flush()
     output.setflags(write=False)
     return output, report
 
