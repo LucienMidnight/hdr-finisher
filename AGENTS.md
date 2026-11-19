@@ -681,6 +681,9 @@ Completed UI polish round 3 (pending visual sign-off): `docs/technical/archive/b
   fixes after Steve's first app test. Native preparation, the removal of Dark
   Specks and the Fine Grain edge finding are recorded in the Grade PRD.
   The colour-mark and detail acceptance work remains open.
+- `docs/technical/briefs/denoise-harsh-specks-baseline-speed-2026-11-19.md`:
+  fix the harsh-speck colour shift on small lights, record the Denoise look and
+  speed baseline for all three methods, then plan the speed work.
 - `docs/technical/briefs/denoise-speck-rnd-prompt-2026-11-18.md`: prompt for the
   next Denoise speck R&D proposal (whole-workflow stage map, what was tried,
   earlier research limitations, constraints); proposal only, no app changes.
