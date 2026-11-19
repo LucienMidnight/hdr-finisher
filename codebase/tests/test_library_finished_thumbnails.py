@@ -43,6 +43,17 @@ def test_exact_finished_bytes_survive_restart_and_offline_source(tmp_path, monke
     assert restarted.read(str(source),"hdr","rgba16float") is None
 
 
+def test_hdr_surface_cannot_survive_a_source_decoder_change(tmp_path, monkeypatch):
+    from hdr_finisher import loader
+
+    source, _, cache, meta = setup_cache(tmp_path)
+    body = bytes(range(256)) * 2
+    assert cache.write(str(source), "hdr", "rgba16float", meta, body, 2, 2, 256)
+    assert cache.read(str(source), "hdr", "rgba16float")[1] == body
+    monkeypatch.setattr(loader, "source_decoder_version", lambda *_: "different-source-decoder")
+    assert cache.read(str(source), "hdr", "rgba16float") is None
+
+
 def test_known_source_and_pending_grade_changes_reject_old_surfaces(tmp_path):
     source, marks, cache, meta = setup_cache(tmp_path)
     body=bytes(512)
