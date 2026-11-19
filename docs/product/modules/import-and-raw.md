@@ -10,14 +10,14 @@ blobs can remain. Raising the threshold is not a guarantee of protecting stars:
 the research's component detector can split a feature at higher thresholds.
 Denoise defaults and the original hot-pixel algorithm are unchanged.
 
-**Open, November 19 (Steve's app test):** at ×2.5 the control gives a small
-specular highlight a strong green rim. The rim was soft and nearly neutral
-with the control off. The pole lights beside it gain green and magenta edges.
-Likely cause, to be confirmed: the clamp treats each colour channel's sensor
-pixels separately. At the edge of a small bright light it pulls some colour
-channels down more than others, which turns a neutral rim green. Real light
-is bright in every channel at once; a noise speck usually is not. Fix this
-before the control can leave Experimental. Steve's screenshots:
+**Open, November 19 (Steve's app test):** at ×2.5 the control turns a small
+light on the railing pole (top left of the screenshots) a harsh, saturated
+blue. With the control off the same light is soft and purplish. Likely cause,
+to be confirmed: the clamp treats each colour channel's sensor pixels
+separately. On a light only a few pixels wide, it pulls one channel (here
+probably red) down more than the others, which shifts the light's colour.
+Real light is bright in every channel at once; a noise speck usually is not.
+Fix this before the control can leave Experimental. Steve's screenshots:
 `/Users/stevenfuncke/.t3/userdata/attachments/mcp-launch-1e3062f0b0c5ee8fd004b6d058f3254fda6b3cf735f8d4aaa82bddf74453a430-a600ace9-a0c3-475a-af2b-b85b88ad1948.png`
 (on) and
 `/Users/stevenfuncke/.t3/userdata/attachments/mcp-launch-1e3062f0b0c5ee8fd004b6d058f3254fda6b3cf735f8d4aaa82bddf74453a430-ee8d4b0c-d125-42bb-9c00-a19e8869ce19.png`
