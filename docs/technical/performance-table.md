@@ -16,6 +16,26 @@ Different preparation settings and an authored SDR base each need their
 own preparation. The locked Denoise delivery smoke returned the same
 perceptual metrics before and after.
 
+## November 20 — Canon zoom, Library and Match on the minimum Mac
+
+MacBook Neo A18 Pro, 8 GB, 1408 × 794 points and the shared GPU lock.
+Canon IMG_0790.CR2 unless named otherwise. These are observations from
+the November 20 checks on the `3411e81e` app with the driver fixes, plus
+the confirmed Match case after the Grade reuse change. PC timings have
+their own baseline.
+
+| Action | Mac time | Conditions |
+| --- | ---: | --- |
+| Canon SDR at Fit, with Denoise off / Standard / Fine / Clean | 0.06 / 0.25 / 13.04 / 5.22 s | First settled view for each state, starting with an already open RAW. Fine-to-Clean uses the existing preparation. |
+| Canon SDR Fit → 100%, off / Standard / Fine / Clean | 2.34 / 2.89 / 3.13 / 1.31 s | Maximum whole-app footprint 2.03 GB across the SDR check, below the 4 GB ceiling. |
+| Canon HDR Fit → 100%, Standard / Fine / Clean | 0.51 / 0.80 / 0.62 s | Exact viewport presentation, after Fit has prepared the method. All pan stops and the cropped and rotated SDR run passed. |
+| 640-pixel HDR Library Grain, Fine / Clean | 0.48 / 0.35 s to error | Live draw never received the completed correction region. Existing CPU fallback graph took 3.36 / 2.82 s including decode and missed the colour gate. |
+| 640-pixel HDR Library trials, Fine / Clean | 0.59 / 0.73 s for warm Grade result; 0.67 / 0.55 s at 1280; 4.41 / 7.17 s exact | CPU probes start with a decoded RAW. Warm Grade reading also excludes the original preparation. Only the exact export route agrees with export. No Library rendering change shipped. |
+| Match to the exact SDR picture | Canon linked 4.09 s; hibiscus independent 3.71 s; separately edited Canon independent 5.47 s | Photographs already open, one run each. The 5.47 s case uses the Canon at +1 EV with a 120/450-nit HDR compression range. |
+| Match refusal, Canon +1 EV and 120/300 nits | 9.27 s | Prior SDR grade preserved. P95 colour 0.077 against the 0.050 safety limit. |
+
+[November 20 Mac report](briefs/denoise-mac-open-items-2026-11-20.md)
+
 ## November 19 ? Windows Automatic Match certification
 
 Windows PC, separate Electron profiles at 2560?1440 under the shared GPU lock.
