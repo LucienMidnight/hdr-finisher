@@ -18,6 +18,99 @@ function peakBetween(samples, start, end) {
   return readings.reduce((peak, sample) => !peak || sample.bytes > peak.bytes ? sample : peak, null);
 }
 
+async function seedGrainCachePressure(harness) {
+  const route = "/api/library/cache-settings";
+  const limit = 1024 ** 3;
+  const reply = await harness.fetch(route, { method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ full_size_limit_gb: 1 }) });
+  assert.ok(reply.ok);
+  const initial = await reply.json();
+  const directory = path.join(initial.location, "library-full-pictures");
+  fs.mkdirSync(directory, { recursive: true });
+  const old = path.join(directory, "grain-test-old.npz");
+  const newer = path.join(directory, "grain-test-recent.npz");
+  for (const [file, bytes, age] of [[old, limit - initial.full_size_used_bytes - 208 * 1024 ** 2, 1],
+    [newer, 64 * 1024 ** 2, 2]]) {
+    const handle = fs.openSync(file, "wx");
+    try { fs.ftruncateSync(handle, bytes); } finally { fs.closeSync(handle); }
+    fs.utimesSync(file, age, age);
+  }
+  const usage = await (await harness.fetch(route)).json();
+  assert.equal(limit - usage.full_size_used_bytes, 144 * 1024 ** 2);
+  return { old, newer };
+}
+
+async function checkPanCoverage(page, name, method) {
+  const start = Date.now();
+  const home = await page.locator("#dropzone").boundingBox();
+  await page.evaluate(() => {
+    const samples = [];
+    window.denoisePanSamples = samples;
+    function sample() {
+      if (window.denoisePanSamples !== samples) return;
+      const soft = els.previewCanvas;
+      const patch = soft.hdrFrameRegion;
+      if (patch) {
+        const visible = visibleOutputRect(patch.frameWidth, patch.frameHeight, { includeWhole: true });
+        const frame = soft.parentElement.getBoundingClientRect();
+        const layer = soft.getBoundingClientRect();
+        samples.push({
+          scroll: [els.dropzone.scrollLeft, els.dropzone.scrollTop],
+          covered: HDRViewportRequest.covers(patch, visible),
+          underlayer: soft.style.display === "block" && layer.width > 0 && layer.height > 0
+            && Math.abs(frame.left - layer.left) < 1 && Math.abs(frame.top - layer.top) < 1
+            && Math.abs(frame.width - layer.width) < 1 && Math.abs(frame.height - layer.height) < 1,
+          backing: [soft.width, soft.height],
+          native: [patch.frameWidth, patch.frameHeight],
+        });
+      }
+      requestAnimationFrame(sample);
+    }
+    requestAnimationFrame(sample);
+  });
+  const waitForSharp = previous => page.waitForFunction(previous => {
+    const region = els.previewCanvas.hdrFrameRegion;
+    return region && previewIdleNow() && state.acceptedPresentation?.exact
+      && (els.dropzone.scrollLeft !== previous[0] || els.dropzone.scrollTop !== previous[1])
+      && HDRViewportRequest.covers(region, visibleOutputRect(region.frameWidth, region.frameHeight, { includeWhole: true }));
+  }, previous, { timeout: 90000 });
+  const position = () => page.evaluate(() => [els.dropzone.scrollLeft, els.dropzone.scrollTop]);
+  for (const distance of [80, 540]) {
+    const previous = await position();
+    const direction = previous[0] >= distance ? 1 : -1;
+    const x = home.x + home.width * .5;
+    const y = home.y + home.height * .45;
+    await page.mouse.move(x, y);
+    await page.mouse.down();
+    await page.mouse.move(x + direction * distance, y, { steps: 6 });
+    await page.mouse.up();
+    await waitForSharp(previous);
+  }
+  const previous = await position();
+  const navigation = page.locator("#navigation-thumb-image");
+  await navigation.waitFor({ state: "visible", timeout: 15000 });
+  const box = await navigation.boundingBox();
+  const { nearLeft, nearTop } = await page.evaluate(() => ({
+    nearLeft: els.dropzone.scrollLeft < (els.dropzone.scrollWidth - els.dropzone.clientWidth) / 2,
+    nearTop: els.dropzone.scrollTop < (els.dropzone.scrollHeight - els.dropzone.clientHeight) / 2,
+  }));
+  await page.mouse.click(box.x + box.width * (nearLeft ? .93 : .07), box.y + box.height * (nearTop ? .93 : .07));
+  await waitForSharp(previous);
+  const samples = await page.evaluate(() => {
+    const values = window.denoisePanSamples;
+    window.denoisePanSamples = null;
+    return values;
+  });
+  assert.ok(samples.length > 0);
+  assert.ok(samples.every(sample => sample.underlayer), "A pan frame did not have a whole-photo underlayer.");
+  assert.ok(samples.some(sample => !sample.covered), "No pan escaped the sharp patch.");
+  assert.ok(samples.every(sample => sample.backing[0] < sample.native[0] && sample.backing[1] < sample.native[1]),
+    "The soft picture used a native-sized surface.");
+  const peak = peakBetween(await page.evaluate(() => window.denoiseBaselineMemory), start, Date.now());
+  console.log(JSON.stringify({ name, method, action: "pan coverage at 100%", frames: samples.length,
+    softFrames: samples.filter(sample => !sample.covered).length, memory: peak?.bytes ?? null }));
+}
+
 function backendLog(harness, start, end, method) {
   const log = fs.readFileSync(path.join(harness.userDataDirectory, "logs/backend.log"), "utf8");
   const preparation = [];
@@ -93,7 +186,8 @@ async function measurePicture(page, button, method, { pan = false, switchMethod 
           accepted, width: accepted.width, height: accepted.height, edge: detail.longEdge,
           execution: detail.execution, samePreparation: samePreparation(),
           serial: detail.serial, submittedAt: detail.submittedAt,
-          backingWidth: els.previewCanvas.width, backingHeight: els.previewCanvas.height,
+          backingWidth: (region ? els.previewDenoiseDetail : els.previewCanvas).width,
+          backingHeight: (region ? els.previewDenoiseDetail : els.previewCanvas).height,
           region, visible,
         };
       };
@@ -440,6 +534,8 @@ async function measureBaseline(page, harness, name, record, setZoom) {
   try {
     await page.goto(process.env.HDR_FINISHER_URL);
     const baseline = process.argv.includes("--speed-baseline");
+    const panCoverage = process.argv.includes("--pan-coverage");
+    const cachePressure = process.argv.includes("--grain-cache-pressure");
     await page.evaluate(baseline => {
       performance.setResourceTimingBufferSize(2000);
       if (!baseline) return;
@@ -450,7 +546,7 @@ async function measureBaseline(page, harness, name, record, setZoom) {
         if (Number.isFinite(bytes)) window.denoiseBaselineMemory.push({ at: Date.now(), bytes,
           processes: event.data.value.processes });
       });
-    }, baseline);
+    }, baseline || panCoverage);
     const names = process.argv.includes("--atrium-only") ? ["DSC01212.ARW"]
       : process.argv.includes("--42-only") ? ["_DSC7970.ARW"]
       : process.argv.includes("--18-only") ? ["IMG_0790.CR2"] : ["IMG_0790.CR2", "_DSC7970.ARW"];
@@ -506,6 +602,59 @@ async function measureBaseline(page, harness, name, record, setZoom) {
           && state.acceptedPresentation.processedLongEdge === requiredProcessingLongEdge()
           && previewIdleNow(), null, { timeout: 90000 });
       };
+      if (panCoverage || cachePressure) {
+        const files = cachePressure ? await seedGrainCachePressure(harness) : null;
+        const methods = panCoverage ? baselineMethods : baselineMethods.slice(1);
+        await setZoom("#zoom-fit");
+        await page.evaluate(() => {
+          state.gpuPreview.setInstrumentationEnabled(true);
+          els.denoiseBypass.closest(".control-group").querySelector(".group-toggle")
+            ?.setAttribute("aria-expanded", "true");
+        });
+        for (const [index, method] of methods.entries()) {
+          if (!index) await page.evaluate(method => commitDenoiseControl("method", method), method);
+          await record(method, "prepare at Fit", index ? null : "#denoise-bypass",
+            { switchMethod: index > 0, trace: panCoverage });
+          await record(method, "Fit to 100%", "#zoom-actual", { trace: panCoverage });
+          if (panCoverage) await checkPanCoverage(page, name, method);
+          await record(method, "100% to Fit", "#zoom-fit", { trace: panCoverage });
+        }
+        if (panCoverage) {
+          // Apply the normal Grade geometry tools before checking the layers
+          // again, then switch to an independently denoised SDR rendition.
+          await page.locator("#rotate-tool-toggle").click();
+          await page.locator("#rotate-right").click();
+          await page.evaluate(() => closeRotateMode(true));
+          await page.waitForFunction(() => previewIdleNow() && !state.geometryPresentationPending);
+          await page.locator("#crop-tool-toggle").click();
+          await page.locator("#crop-ratio").selectOption("1:1");
+          await page.locator("#crop-done").click();
+          await page.waitForFunction(() => previewIdleNow() && !state.geometryPresentationPending);
+          await page.locator("#view-sdr").click();
+          await page.waitForFunction(() => state.currentView === "sdr" && previewIdleNow());
+          await record("standard", "prepare cropped and rotated SDR at Fit", "#denoise-bypass", { trace: true });
+          await record("standard", "cropped and rotated SDR at 100%", "#zoom-actual", { trace: true });
+          await checkPanCoverage(page, name, "standard cropped and rotated SDR");
+          await record("standard", "cropped and rotated SDR to Fit", "#zoom-fit", { trace: true });
+          await page.evaluate(() => setDenoiseEnabled(false));
+          await page.locator("#view-hdr").click();
+          await page.waitForFunction(() => state.currentView === "hdr" && previewIdleNow());
+        }
+        if (files) {
+          assert.equal(fs.existsSync(files.old), false);
+          assert.equal(fs.existsSync(files.newer), true);
+          const log = fs.readFileSync(path.join(harness.userDataDirectory, "logs/backend.log"), "utf8");
+          const reservation = log.split(/\r?\n/).find(line => line.includes("denoise_grain_scratch")
+            && line.includes('"outcome": "reserved"') && !line.includes('"evicted_bytes": 0'));
+          assert.ok(reservation, "The backend did not log the eviction.");
+          console.log(reservation);
+        }
+        await page.evaluate(async () => {
+          await setDenoiseEnabled(false);
+          await commitDenoiseControl("method", "standard");
+        });
+        continue;
+      }
       if (baseline) {
         await measureBaseline(page, harness, name, record, setZoom);
         continue;

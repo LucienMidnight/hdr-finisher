@@ -1090,6 +1090,7 @@ const els = {
   previewPrimaryPane: document.getElementById("preview-primary-pane"),
   previewSecondaryPane: document.getElementById("preview-secondary-pane"),
   previewCanvas: document.getElementById("preview-canvas"),
+  previewDenoiseDetail: document.getElementById("preview-denoise-detail"),
   previewImage: document.getElementById("preview-image"),
   comparisonCanvas: document.getElementById("comparison-canvas"),
   comparisonImage: document.getElementById("comparison-image"),

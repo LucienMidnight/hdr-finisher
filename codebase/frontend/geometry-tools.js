@@ -662,7 +662,8 @@ async function renderPerspectiveGpuDraft() {
     state.perspectiveDraftFrame = { ...result, signature: geometrySignature() };
     els.previewImage.style.display = "none";
     els.previewCanvas.style.display = "block";
-    els.previewCanvas.hdrFrameRegion = null;
+    clearDenoiseDetail();
+    els.previewCanvas.hdrWholeFrame = null;
     els.emptyState.style.display = "none";
     setGpuSurfaceHdr(lane, result.hdr);
     setZoomMode(state.zoomMode);

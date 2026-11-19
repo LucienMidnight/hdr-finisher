@@ -3974,7 +3974,7 @@
       const Contract = typeof window !== "undefined" ? window.HDRViewportRequest : null;
       const viewport = viewportRequest.fit ? null : viewportRequest.visible;
       const foregroundRegion = viewport ? viewportRequest.roi : null;
-      const pictureRegion = options.boundedPresentation && foregroundRegion ? foregroundRegion : null;
+      const pictureRegion = options.boundedPresentation ? viewportRequest.roi : null;
       // The retained target holds the accepted frame between generations, so a
       // viewport pass can load it and process only its foreground tiles.
       const presentationTarget = measureOnly
@@ -4348,7 +4348,7 @@
       let batchTiles = 0;
       let submissions = 0;
       try {
-      if (!measureOnly) this.scopeSources.delete(canvas);
+      if (!measureOnly) this.scopeSources.delete(pictureRegion ? this.canvas : canvas);
       this.device.pushErrorScope("validation");
       validationScopeOpen = true;
       let encoder = this.device.createCommandEncoder();
@@ -4775,6 +4775,18 @@
         if (grainSubmitted) await grainSubmitted;
         cancelled = Boolean(presentationTarget && (!presentation.current() || !isCurrent()));
       }
+      if (!cancelled && pictureRegion) {
+        validationScopeOpen = false;
+        validationError = await this.device.popErrorScope();
+        cancelled = !presentation.current() || !isCurrent()
+          || options.coversViewport?.(pictureRegion, proxy.width, proxy.height) === false;
+        if (validationError && !cancelled) {
+          floatPeakRead?.destroy();
+          this.dropDenoiseTiles(denoiseTilesCreated);
+          if (peakTarget) peakTarget.busy = false;
+          return { rendered: false, refusals: [`validation: ${validationError.message}`] };
+        }
+      }
       if (cancelled) {
         floatPeakRead?.destroy();
         // Some of the map's pre-pass may never be submitted, so its record of
@@ -4811,6 +4823,7 @@
       if (floatPeak) encoder.copyBufferToBuffer(floatPeakResult,0,floatPeakRead,0,4);
       submissions += 1;
       this.device.queue.submit([encoder.finish()]);
+      if (presentationTarget) options.onFrameSubmitted?.(canvas.hdrFrameRegion, surface.hdr);
       denoiseTilesUnsubmitted.length = 0;
       this.recordSubmission(lane, options, 0);
       } catch (error) {
@@ -5089,7 +5102,12 @@
       let masks = [];
       let masksReadyAt = proxyReadyAt;
 
-      let surface = this.configureSurface(canvas, context, lane === "hdr" && !sourceOptions?.forceSdrSurface);
+      // A lane switch can change swap-chain format. Probe on a one-pixel
+      // canvas while the mounted whole-photo layer still shows the old frame.
+      const surfaceCanvas = sourceOptions?.deferSurface ? this.surfaceProbeCanvas() : canvas;
+      const surfaceContext = surfaceCanvas === canvas ? context : surfaceCanvas.getContext("webgpu");
+      const wantsHdr = lane === "hdr" && !sourceOptions?.forceSdrSurface;
+      let surface = this.configureSurface(surfaceCanvas, surfaceContext, wantsHdr);
       if (this.prepareLibraryPipelines) await this.prepareLibraryPipelines(surface.format);
       let pipelines = this.pipelineFor(surface.format);
       const sourcePixelScale = this.sourcePixelScaleFor(proxy, sourceSize);
@@ -5232,7 +5250,7 @@
       // intermediate graph to build and passes to encode; clearing before then
       // would leave the viewer with nothing if the encode failed or was
       // superseded. The presentation gate below is the only place that resizes.
-      const presentationSurface = this.configureSurface(canvas, context, lane === "hdr" && !sourceOptions?.forceSdrSurface);
+      const presentationSurface = this.configureSurface(surfaceCanvas, surfaceContext, wantsHdr);
       if (presentationSurface.format !== surface.format || presentationSurface.hdr !== surface.hdr) {
         surface = presentationSurface;
         if (this.prepareLibraryPipelines) await this.prepareLibraryPipelines(surface.format);
@@ -5315,6 +5333,8 @@
           allowPlaceholder: true,
           panPass: sourceOptions?.panPass,
           boundedPresentation: sourceOptions?.boundedPresentation,
+          coversViewport: sourceOptions?.coversViewport,
+          onFrameSubmitted: sourceOptions?.onFrameSubmitted,
           lane,
           longEdge,
           editRevision,
@@ -5697,6 +5717,7 @@
       this.device.queue.submit([encoder.finish()]);
       if (lensGlowKey) intermediate.lensGlowKey = lensGlowKey;
       sourceOptions?.onPresented?.(context.getCurrentTexture());
+      if (!sourceOptions?.measureOnly) sourceOptions?.onFrameSubmitted?.(null, presentationSurface.hdr);
       if (hslSelection) {
         hslEngine.commit(hslSelection.token);
         if (hslEngine.retired.length) this.destroyAfterActiveRenders(() => hslEngine.dropRetired());
@@ -7009,6 +7030,11 @@
         resources.resolveBuffer.destroy();
         resources.readBuffer.destroy();
       });
+    }
+
+    surfaceProbeCanvas() {
+      this.surfaceProbe ??= new OffscreenCanvas(1, 1);
+      return this.surfaceProbe;
     }
 
     configureSurface(canvas, context, wantsHdr) {

@@ -1300,7 +1300,19 @@ body[data-active-lane="sdr"] .lane-dot {
 }
 
 #preview-canvas-frame[data-region] > #preview-canvas {
+  inset: 0;
   transform: none;
+  image-rendering: auto;
+}
+
+#preview-denoise-detail {
+  display: none;
+  position: absolute;
+  dynamic-range-limit: no-limit;
+}
+
+#preview-canvas-frame[data-region] > #preview-denoise-detail {
+  display: block;
 }
 
 #comparison-canvas {
@@ -1309,6 +1321,7 @@ body[data-active-lane="sdr"] .lane-dot {
 
 /* Above 100% zoom each source pixel is drawn as a sharp square. */
 #preview-canvas.pixel-magnified,
+#preview-denoise-detail.pixel-magnified,
 #comparison-canvas.pixel-magnified,
 #preview-image.pixel-magnified,
 #comparison-image.pixel-magnified {

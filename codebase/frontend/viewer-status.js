@@ -222,27 +222,7 @@ function acceptPresentation(lane, schedulerTier, width, height, transport, fallb
   }
   if (exact) state.previewUnavailableReason = "";
   if (lane === state.currentView && width && height) {
-    if (state.geometryTransformHandoffSignature === geometrySignature()) {
-      state.geometryTransformHandoffSignature = null;
-      clearRotateDraftTransformProperties();
-      clearInteractiveStraightenPreview();
-    }
-    const sessionId = state.session?.session_id || null;
-    state.zoomReferenceFrame = {
-      sessionId,
-      geometrySignature: geometrySignature(),
-      // Proxy resolution can change between interactive, settled, and refined
-      // presentations. Preserve the session's display scale while accepting
-      // the authoritative aspect ratio of the newly presented geometry.
-      longEdge: state.zoomReferenceFrame?.sessionId === sessionId
-        ? state.zoomReferenceFrame.longEdge
-        : longEdge,
-      aspect: Number(width) / Number(height),
-    };
-    state.geometryPresentationPending = false;
-    applyZoomGeometry();
-    if (state.adjustments.shared.geometry.perspective_horizontal
-      || state.adjustments.shared.geometry.perspective_vertical) void ensureGeometryCoordinateMap();
+    acceptPreviewGeometry(width, height, longEdge);
   }
   renderCurrentPreviewSize();
   renderReadouts();
@@ -254,6 +234,30 @@ function acceptPresentation(lane, schedulerTier, width, height, transport, fallb
   // candidate, catch-up freshness) read one source of truth.
   state.renderCoordinator?.noteAccepted(state.acceptedPresentation);
   refreshScopesAfterPresentation(lane);
+}
+
+function acceptPreviewGeometry(width, height, longEdge) {
+  if (state.geometryTransformHandoffSignature === geometrySignature()) {
+    state.geometryTransformHandoffSignature = null;
+    clearRotateDraftTransformProperties();
+    clearInteractiveStraightenPreview();
+  }
+  const sessionId = state.session?.session_id || null;
+  state.zoomReferenceFrame = {
+    sessionId,
+    geometrySignature: geometrySignature(),
+    // Proxy resolution can change between interactive, settled, and refined
+    // presentations. Preserve the session's display scale while accepting
+    // the authoritative aspect ratio of the newly presented geometry.
+    longEdge: state.zoomReferenceFrame?.sessionId === sessionId
+      ? state.zoomReferenceFrame.longEdge
+      : longEdge,
+    aspect: Number(width) / Number(height),
+  };
+  state.geometryPresentationPending = false;
+  applyZoomGeometry();
+  if (state.adjustments.shared.geometry.perspective_horizontal
+    || state.adjustments.shared.geometry.perspective_vertical) void ensureGeometryCoordinateMap();
 }
 
 // Response details arrive as text, {message}, or FastAPI's list of

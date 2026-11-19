@@ -413,13 +413,14 @@ function applyZoomGeometry() {
   if (region) {
     pictureFrame.style.width = `${displayWidth}px`;
     pictureFrame.style.height = `${displayHeight}px`;
-    pictureCanvas.style.left = `${100 * region.x / region.frameWidth}%`;
-    pictureCanvas.style.top = `${100 * region.y / region.frameHeight}%`;
-    pictureCanvas.style.width = `${100 * region.width / region.frameWidth}%`;
-    pictureCanvas.style.height = `${100 * region.height / region.frameHeight}%`;
+    const detail = els.previewDenoiseDetail;
+    detail.style.left = `${100 * region.x / region.frameWidth}%`;
+    detail.style.top = `${100 * region.y / region.frameHeight}%`;
+    detail.style.width = `${100 * region.width / region.frameWidth}%`;
+    detail.style.height = `${100 * region.height / region.frameHeight}%`;
+    pictureCanvas.style.width = "100%";
+    pictureCanvas.style.height = "100%";
   } else {
-    pictureCanvas.style.left = "";
-    pictureCanvas.style.top = "";
     pictureCanvas.style.width = `${displayWidth}px`;
     pictureCanvas.style.height = `${displayHeight}px`;
   }
@@ -439,7 +440,7 @@ function applyZoomGeometry() {
   // a flat square, the way an inspection zoom should; at and below 100% the
   // compositor keeps its smooth filtering so Fit does not alias.
   const magnified = percent > 100.5;
-  for (const element of [els.previewCanvas, els.comparisonCanvas, els.previewImage, els.comparisonImage]) {
+  for (const element of [els.previewCanvas, els.previewDenoiseDetail, els.comparisonCanvas, els.previewImage, els.comparisonImage]) {
     element.classList.toggle("pixel-magnified", magnified);
   }
   state.zoomPercent = percent;

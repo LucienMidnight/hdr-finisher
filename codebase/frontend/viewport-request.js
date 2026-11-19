@@ -286,6 +286,12 @@
       return { cached, pending };
     }
 
+    static covers(region, visible) {
+      return Boolean(region && visible && region.x <= visible.x && region.y <= visible.y
+        && region.x + region.width >= visible.x + visible.width
+        && region.y + region.height >= visible.y + visible.height);
+    }
+
     static sameRect(a, b) {
       return Boolean(a && b) && sameRect(a, b);
     }

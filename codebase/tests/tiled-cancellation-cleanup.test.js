@@ -6,7 +6,7 @@ const source = frontendSource('webgpu-preview.js');
 const begin = source.indexOf('      let encodeError = null;', source.indexOf('async encodeTiledGeneration'));
 const end = source.indexOf('      if (validationError) {', begin);
 
-function encoding({ cancelled = false, throws = false } = {}) {
+function encoding({ cancelled = false, throws = false, patchCoversViewport = null } = {}) {
   let scopes = 0, released = 0, freed = 0, submissions = 0;
   const dropped = [];
   const renderer = {
@@ -22,8 +22,10 @@ function encoding({ cancelled = false, throws = false } = {}) {
   const peakTarget = { busy: true };
   const context = vm.createContext({ renderer, cancelled, peakTarget,
     floatPeak:false, floatPeakRead:null,
-    lane: 'hdr', longEdge: 1600, options: {}, measureOnly: true, regionOnly: false,
-    presentation: { release: () => released++ }, presentationTarget: null,
+    lane: 'hdr', longEdge: 1600, options: { coversViewport: () => patchCoversViewport },
+    measureOnly: true, regionOnly: false, pictureRegion: patchCoversViewport === null ? null : {},
+    canvas: {}, proxy: { width: 1600, height: 1200 }, isCurrent: () => true,
+    presentation: { current: () => true, release: () => released++ }, presentationTarget: null,
     localBuffers: [{ buffer: { destroy: () => freed++ } }],
     denoiseParamBuffers: [{ destroy: () => freed++ }],
     cleanGrainTransientTextures: cancelled || throws ? [{ destroy: () => freed++ }] : [],
@@ -57,6 +59,14 @@ test('Success balances the scope and keeps the peak reserved for readback', asyn
   assert.equal(f.peakTarget.busy, true);
   // The final submission wrote every tile, so none is forgotten.
   assert.deepEqual(f.dropped, []);
+});
+
+test('A native patch left behind by a pan does not submit a replacement picture', async () => {
+  const f = encoding({ patchCoversViewport: false });
+  assert.equal((await f.run).rendered, false);
+  assert.equal(f.counts().submissions, 0);
+  assert.equal(f.counts().scopes, 0);
+  assert.equal(f.peakTarget.busy, false);
 });
 
 const trimStart = source.indexOf('    scheduleTileCacheTrim()');

@@ -469,6 +469,7 @@ async function renderRawPreviewForLane(lane, displayWhenReady, longEdge, { showP
 }
 
 function applyRawPreview(frame) {
+  clearDenoiseDetail();
   let canvas = els.previewCanvas;
   let context = canvas.getContext("2d");
   if (!context) {
@@ -482,7 +483,7 @@ function applyRawPreview(frame) {
   }
   canvas.width = frame.width;
   canvas.height = frame.height;
-  canvas.hdrFrameRegion = null;
+  canvas.hdrWholeFrame = null;
   context.putImageData(new ImageData(frame.raw, frame.width, frame.height), 0, 0);
   els.previewImage.style.display = "none";
   canvas.style.display = "block";
@@ -548,6 +549,7 @@ async function applyPreviewUrl(url, isCurrent = () => true) {
   if (!isCurrent()) return false;
   els.previewImage.src = url;
 
+  clearDenoiseDetail();
   els.previewCanvas.style.display = "none";
   els.previewImage.style.display = "block";
   els.emptyState.style.display = "none";
@@ -610,6 +612,25 @@ function renderGpuDraft(lane = state.currentView, options = {}) {
   return pending;
 }
 
+function clearDenoiseDetail() {
+  const canvas = els.previewCanvas;
+  if (!canvas.hdrFrameRegion && !canvas.parentElement.hasAttribute("data-region")) return;
+  canvas.hdrFrameRegion = null;
+  canvas.parentElement.removeAttribute("data-region");
+  // Release the old swap chain when only the whole picture is showing.
+  els.previewDenoiseDetail.width = 1;
+  els.previewDenoiseDetail.height = 1;
+}
+
+function denoiseUnderlayerEdge() {
+  const dpr = Math.max(1, window.devicePixelRatio || 1);
+  const native = approximateGpuFrameSizeAt(previewTargetLongEdge("full"));
+  const width = els.dropzone.clientWidth * dpr / (state.compareLayout === "side-horizontal" ? 2 : 1);
+  const height = els.dropzone.clientHeight * dpr / (state.compareLayout === "side-vertical" ? 2 : 1);
+  return Math.max(256, Math.floor(previewTargetLongEdge("full")
+    * Math.min(1, width / native.width, height / native.height)));
+}
+
 async function renderGpuDraftInner(
   lane = state.currentView,
   request = {},
@@ -649,6 +670,26 @@ async function renderGpuDraftInner(
     ? Number(request.applicationGeneration)
     : state.previewGeneration[lane];
   const requestedGeometrySignature = geometrySignature();
+  const canvas = els.previewCanvas;
+  const boundedPresentation = !allowInactive && nativeDenoiseViewport(lane)
+    && Boolean(request.viewport) && state.gpuPreview.executionOverride !== "direct";
+  const wholeFrameKey = JSON.stringify([sessionId, lane, requestedGeometrySignature, generation,
+    state.editRevision, state.repairSourceGeneration, state.denoise[lane], state.denoiseRuntime[lane]?.showOriginal,
+    denoiseNoiseViewActive(lane), gpuLumaMaskOverlayOptions(), projectReferenceWhiteNits(),
+    Boolean(window.matchMedia?.("(dynamic-range: high)").matches)]);
+  if (boundedPresentation) {
+    const softEdge = denoiseUnderlayerEdge();
+    const reusable = canvas.hdrWholeFrame?.key === wholeFrameKey && canvas.hdrWholeFrame.edge <= softEdge + 1
+      && canvas.style.display !== "none";
+    if (!reusable) {
+      const drawn = await renderGpuDraftInner(lane, {
+        ...request, longEdge: softEdge, viewport: null, panPass: false, roiCatchUp: false, underlayerOnly: true,
+      });
+      if (!drawn) return false;
+      if (request.isCurrent?.() === false || state.session?.session_id !== sessionId
+        || !nativeDenoiseViewport(lane) || lane !== state.currentView) return refuse("superseded-after-underlayer");
+    }
+  }
   if (state.denoise?.[lane]?.enabled && !state.denoiseRuntime?.[lane]?.showOriginal) {
     if (!allowInactive) {
       const regionOnly = Boolean(request.viewport && nativeDenoiseViewport(lane)
@@ -683,11 +724,13 @@ async function renderGpuDraftInner(
     : JSON.parse(JSON.stringify(localAdjustments()));
   const maskOverlay = gpuLumaMaskOverlayOptions();
   const frameSize = geometrySignature() === requestedGeometrySignature ? gpuFrameSizeAt(longEdge) : null;
-  const boundedPresentation = !allowInactive && nativeDenoiseViewport(lane) && Boolean(request.viewport);
   // A scroll event can run while the old Fit bitmap is still mounted. Use
   // the requested processing dimensions for this native viewport.
   const viewport = boundedPresentation && frameSize
-    ? visibleOutputRect(frameSize.width, frameSize.height) : request.viewport;
+    ? visibleOutputRect(frameSize.width, frameSize.height, { includeWhole: true }) : request.viewport;
+  if (boundedPresentation && !viewport) return refuse("superseded-before-viewport");
+  let viewportMoved = false;
+  const replacingDetail = !allowInactive && Boolean(canvas.hdrFrameRegion);
   const sourceOptions = {
     tier,
     applicationGeneration: generation,
@@ -699,6 +742,27 @@ async function renderGpuDraftInner(
     panPass,
     noiseView: denoiseNoiseViewActive(lane),
     boundedPresentation,
+    deferSurface: request.underlayerOnly || (replacingDetail && !boundedPresentation && !viewport),
+    coversViewport: boundedPresentation ? (region, width, height) => {
+      if (!nativeDenoiseViewport(lane)) return false;
+      const visible = visibleOutputRect(width, height, { includeWhole: true });
+      viewportMoved = !window.HDRViewportRequest.covers(region, visible);
+      return !viewportMoved;
+    } : null,
+    onFrameSubmitted: boundedPresentation || request.underlayerOnly || replacingDetail ? (region, hdr) => {
+      if (region) canvas.hdrFrameRegion = region;
+      else clearDenoiseDetail();
+      if (request.underlayerOnly) {
+        els.previewImage.style.display = "none";
+        canvas.style.display = "block";
+        els.emptyState.style.display = "none";
+        state.gpuPreparedLane[lane] = true;
+        setGpuSurfaceHdr(lane, hdr);
+        acceptPreviewGeometry(canvas.width, canvas.height, longEdge);
+      } else {
+        applyZoomGeometry();
+      }
+    } : null,
     // Adaptive reconstruction reads ungraded source pixels. A slider changes
     // the render, but leaves these pixels useful to its replacement. Keep the
     // load alive while the photo and geometry remain the same.
@@ -732,7 +796,10 @@ async function renderGpuDraftInner(
       && !(request.coarse && request.reason === "drag-coarse" && !state.previewScheduler?.interacting),
   };
   try {
-    const result = await state.gpuPreview.render(
+    const renderer = state.gpuPreview;
+    const draw = boundedPresentation
+      ? renderer.renderTo.bind(renderer, els.previewDenoiseDetail) : renderer.render.bind(renderer);
+    const result = await draw(
       sessionId,
       lane,
       adjustmentsSnapshot,
@@ -745,8 +812,16 @@ async function renderGpuDraftInner(
       { width: state.session.source.width, height: state.session.source.height },
       sourceOptions,
     );
-    if (!result) return refuse(state.gpuPreview.lastRenderRefusal?.reason || "renderer-returned-nothing");
+    if (!result) {
+      if (viewportMoved && sourceOptions.isCurrent()
+        && !state.renderCoordinator?.notePan(lane)) scheduleZoomRefinement({ continuous: true });
+      return refuse(state.gpuPreview.lastRenderRefusal?.reason || "renderer-returned-nothing");
+    }
     if (!sourceOptions.isCurrent()) return refuse("superseded-during-render");
+    if (!allowInactive && !boundedPresentation) {
+      canvas.hdrWholeFrame = !viewport || result.execution === "direct" ? { key: wholeFrameKey, edge: longEdge } : null;
+    }
+    if (request.underlayerOnly) return true;
     state.gpuRenderRetries = 0;
     state.gpuFailurePolicy?.noteSuccess(state.session?.session_id ?? null);
     // The coordinator arms the whole-frame catch-up once this pass presents,
@@ -878,6 +953,8 @@ async function renderGpuDraftInner(
 }
 
 function clearPreviewImage() {
+  clearDenoiseDetail();
+  els.previewCanvas.hdrWholeFrame = null;
   els.previewImage.onload = null;
   els.previewImage.onerror = null;
   els.previewImage.removeAttribute("src");
@@ -914,7 +991,7 @@ function visiblePreviewCanvasRect() {
  * fully visible frame is deliberate: a Fit viewport has no offscreen tiles to
  * skip and must keep the whole-frame path.
  */
-function visibleOutputRect(outputWidth, outputHeight) {
+function visibleOutputRect(outputWidth, outputHeight, { includeWhole = false } = {}) {
   if (!previewIsVisible()) return null;
   const width = Math.max(1, Math.floor(Number(outputWidth) || 0));
   const height = Math.max(1, Math.floor(Number(outputHeight) || 0));
@@ -931,10 +1008,12 @@ function visibleOutputRect(outputWidth, outputHeight) {
   const scaleY = height / box.height;
   const x = Math.max(0, Math.floor((left - box.left) * scaleX));
   const y = Math.max(0, Math.floor((top - box.top) * scaleY));
-  const visibleWidth = Math.min(width - x, Math.ceil((right - left) * scaleX));
-  const visibleHeight = Math.min(height - y, Math.ceil((bottom - top) * scaleY));
+  const visibleWidth = Math.min(width - x, includeWhole
+    ? Math.ceil((right - box.left) * scaleX) - x : Math.ceil((right - left) * scaleX));
+  const visibleHeight = Math.min(height - y, includeWhole
+    ? Math.ceil((bottom - box.top) * scaleY) - y : Math.ceil((bottom - top) * scaleY));
   if (!(visibleWidth > 0 && visibleHeight > 0)) return null;
-  if (x === 0 && y === 0 && visibleWidth >= width && visibleHeight >= height) return null;
+  if (!includeWhole && x === 0 && y === 0 && visibleWidth >= width && visibleHeight >= height) return null;
   return { x, y, width: visibleWidth, height: visibleHeight };
 }
 
