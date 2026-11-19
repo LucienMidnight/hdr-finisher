@@ -133,6 +133,11 @@ class AdaptiveControls:
     fine_noise: float = 0.5
     medium_noise: float = 0.5
     coarse_noise: float = 0.5
+    method: str = "standard"
+    grain_evenness: float = 1.0
+    color_splotches: float = 1.0
+    splotch_size: str = "large"
+    dark_specks: float = 1.0
 
     def size_multiplier(self, level: int) -> float:
         value = (self.finest_noise, self.fine_noise, self.medium_noise)[level] if level < 3 else self.coarse_noise
@@ -223,17 +228,17 @@ def _noise_variance(luminance: np.ndarray, model: AdaptiveNoiseModel, edges: _Ed
     return np.maximum(np.float32(model.c) * y * y + np.float32(model.a) * y + np.float32(model.b), np.float32(1e-20))
 
 
-def _filter_region(rgb: np.ndarray, model: AdaptiveNoiseModel, controls: AdaptiveControls, edges: _Edges) -> np.ndarray:
+def _bands(rgb, model, controls, edges):
     luma_strength, chroma_strength = controls.strengths()
     fine_multiplier = controls.fine_band_multiplier()
     fine_floor = np.float32(controls.fine_band_floor())
     variance = _noise_variance(rgb @ ACESCG_LUMINANCE, model, edges)
     current = rgb @ OPPONENT.T
-    out = np.zeros_like(current)
     for level in range(LEVELS):
         smooth = _atrous(current, level, edges)
         band = current - smooth
         energy = _box(band * band, WIENER_RADIUS)
+        gains = []
         for component in range(3):
             strength = (luma_strength if component == 0 else chroma_strength) * controls.size_multiplier(level)
             if level < 2:
@@ -243,8 +248,20 @@ def _filter_region(rgb: np.ndarray, model: AdaptiveNoiseModel, controls: Adaptiv
             gain = np.maximum(e - noise, 0.0) / np.maximum(e, np.float32(1e-20))
             if level < 2 and fine_floor > 0:
                 gain = np.maximum(gain, fine_floor)
-            out[..., component] += band[..., component] * gain
+            gains.append(gain)
+        yield band, gains, smooth
         current = smooth
+
+
+def _filter_region(rgb: np.ndarray, model: AdaptiveNoiseModel, controls: AdaptiveControls, edges: _Edges,
+                   evenness=0.0, grain_fit=None) -> np.ndarray:
+    out = np.zeros_like(rgb)
+    for level, (band, gains, current) in enumerate(_bands(rgb, model, controls, edges)):
+        for component, gain in enumerate(gains):
+            if grain_fit is not None and evenness and component == 0 and level in (1, 2):
+                from .denoise_grain import grain_gain
+                gain = grain_gain(gain, evenness, grain_fit[level - 1])
+            out[..., component] += band[..., component] * gain
     out += current
     return (out @ OPPONENT).astype(np.float32)
 
@@ -254,6 +271,13 @@ def resolve_adaptive(image: np.ndarray, model: AdaptiveNoiseModel, controls: Ada
     source = np.asarray(image, dtype=np.float32)
     if source.ndim != 3 or source.shape[2] not in (3, 4):
         raise ValueError("Denoise input must be an H x W scene-linear RGB or RGBA array.")
+    if controls.method != "standard":
+        from .denoise_grain import resolve_grain
+        return resolve_grain(source, model, controls)
+    return _resolve_standard(source, model, controls)
+
+
+def _resolve_standard(source, model, controls):
     if controls.amount <= 0.0 or (controls.luminance <= 0.0 and controls.color_noise <= 0.0):
         return source.copy()
     height, width = source.shape[:2]
