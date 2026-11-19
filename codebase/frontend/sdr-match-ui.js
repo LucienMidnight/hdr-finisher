@@ -134,8 +134,6 @@ async function setSdrMatch() {
       ? refinementProxyLongEdge()
       : settledProxyLongEdge();
     const previewTier = previewLongEdge >= refinementProxyLongEdge() ? "refinement" : "settled";
-    if (state.denoise.sdr.enabled) await recalculateDenoise("sdr");
-    if (!isCurrent()) return false;
     const gpuOptions = {
       hideStatus: false,
       longEdge: previewLongEdge,
@@ -368,6 +366,7 @@ async function presentMatchedSdrPreview(options) {
     }
     await renderPreviewForLane("sdr", state.currentView === "sdr", options.longEdge, {
       progressSteps: [20, 60, 90],
+      denoiseFallback: state.denoise?.sdr?.enabled,
     });
   }
   return false;

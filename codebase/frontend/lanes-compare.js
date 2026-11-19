@@ -168,18 +168,17 @@ async function switchLane(lane) {
   renderCurveChannelTabs();
   drawCurveEditor();
   renderReadouts();
-  const previewTask = (async () => {
-    const rendered = gpuPreviewEligible(lane)
-      ? await renderGpuDraft(lane, { longEdge: settledProxyLongEdge() })
-      : false;
-    if (rendered) return true;
-    if (cacheReady(lane)) return showCachedPreview(lane);
-    return renderPreviewForLane(lane, true, settledProxyLongEdge(), { showProgress: false });
-  })();
-  await previewTask;
+  const attemptedGpu = gpuPreviewEligible(lane);
+  const rendered = attemptedGpu && await renderGpuDraft(lane, { longEdge: settledProxyLongEdge() });
+  if (switchGeneration !== state.laneSwitchGeneration || lane !== state.currentView) return;
+  const denoiseFallback = !rendered && state.denoise[lane].enabled && (!attemptedGpu || !transientGpuRefusal());
+  if (!rendered && !(cacheReady(lane) && await showCachedPreview(lane, { skipGpu: denoiseFallback }))) {
+    if (switchGeneration !== state.laneSwitchGeneration || lane !== state.currentView) return;
+    await renderPreviewForLane(lane, true, settledProxyLongEdge(), { showProgress: false, denoiseFallback });
+  }
   if (switchGeneration !== state.laneSwitchGeneration || lane !== state.currentView) return;
   const denoiseIdentity = state.gpuPreview?.diagnosticsSnapshot?.().denoise?.identity || "";
-  if (state.denoise[lane].enabled && !denoiseIdentity.includes(`:${lane}:`)) {
+  if (!denoiseFallback && state.denoise[lane].enabled && !denoiseIdentity.includes(`:${lane}:`)) {
     state.denoiseRuntime[lane].status = "dirty";
     await recalculateDenoise();
     if (switchGeneration !== state.laneSwitchGeneration || lane !== state.currentView) return;
@@ -194,7 +193,7 @@ async function switchLane(lane) {
     await renderComparisonPreview(other, { force: true });
   }
   prepareInactivePreview();
-  if (previewNeedsRefinement()) debouncePreview(lane);
+  if (!denoiseFallback && previewNeedsRefinement()) debouncePreview(lane);
 }
 
 function arrangeLaneControlGroups(lane) {
@@ -419,6 +418,7 @@ async function renderComparisonPreview(lane, { force = false } = {}) {
   }
   if (!state.session || state.compareLayout === "single" || lane === state.currentView) return false;
   const generation = state.previewGeneration[lane];
+  const sourceIdentity = gradeSourceIdentity(lane);
   const signature = geometrySignature();
   const alreadyRendered = state.comparisonRenderedLane === lane
     && state.comparisonRenderedGeneration === generation
@@ -441,8 +441,10 @@ async function renderComparisonPreview(lane, { force = false } = {}) {
         null,
         projectReferenceWhiteNits(),
         { width: state.session.source.width, height: state.session.source.height },
+        { identity: sourceIdentity },
       );
-      if (result && lane !== state.currentView && generation === state.previewGeneration[lane]) {
+      if (result && lane !== state.currentView && generation === state.previewGeneration[lane]
+        && gradeSourceIdentity(lane) === sourceIdentity) {
         state.gpuPreparedLane[lane] = true;
         els.comparisonImage.style.display = "none";
         els.comparisonCanvas.style.display = "block";

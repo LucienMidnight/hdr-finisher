@@ -864,7 +864,8 @@
       && !geometry.perspective_rotate && crop.x === 0 && crop.y === 0 && crop.width === 1 && crop.height === 1;
     const retained = new Map();
     if (untransformed) for (const [key, proxy] of renderer.proxies) {
-      if (proxy.sessionId === sessionId && (!proxy.region || proxy.regionTransport) && proxy.sourceIdentity === "source"
+      if (proxy.sessionId === sessionId && (!proxy.region || proxy.regionTransport)
+          && ["source", "generated-sdr", "authored-sdr"].includes(proxy.sourceIdentity)
           && proxy.width === width && proxy.height === height && proxy.longEdge >= Math.max(width, height)
           && ["rgba16float", "rgba32float"].includes(proxy.pixelFormat)) {
         retained.set(key, proxy);
@@ -908,6 +909,7 @@
           if (!current() || headers.get("X-Geometry-Signature") !== proxy.geometrySignature
               || Number(headers.get("X-Edit-Revision")) !== editRevision
               || headers.get("X-Pixel-Format") !== proxy.pixelFormat
+              || (proxy.workingSpace && headers.get("X-Working-Space") !== proxy.workingSpace)
               || Number(headers.get("X-Tile-X")) !== left || Number(headers.get("X-Tile-Y")) !== top
               || Number(headers.get("X-Tile-Width")) !== right-left || Number(headers.get("X-Tile-Height")) !== bottom-top
               || Number(headers.get("X-Output-Width")) !== width || Number(headers.get("X-Output-Height")) !== height) {

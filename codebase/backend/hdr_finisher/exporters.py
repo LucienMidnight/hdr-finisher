@@ -146,22 +146,35 @@ def _denoised_export_source(session: object, kind: PreviewKind) -> np.ndarray:
     )
 
 
-def _experimental_delivery_filter(session, kind):
-    """The experimental resolve operates on the geometry-fixed preview source."""
+def _authored_sdr_base(session, kind, adjustments):
+    return (kind == PreviewKind.SDR and getattr(session, "sdr_reference_image", None) is not None
+            and adjustments.sdr.use_authored_base and not adjustments.sdr.linked_to_hdr)
+
+
+def _delivery_source_filter(session, kind, adjustments, *, authored):
     lane = denoise_settings_for_export(session, kind)
-    if lane is None or lane.controls.method == "standard":
+    if lane is None:
         return None
     controls = denoise_adaptive.AdaptiveControls(**lane.controls.model_dump())
-    if not controls.grain_evenness and (controls.method == "fine_grain"
-            or not controls.color_splotches):
+    experimental = (controls.method == "fine_grain" and controls.grain_evenness
+                    or controls.method == "clean_grain" and (controls.grain_evenness or controls.color_splotches))
+    if not authored and not experimental:
         return None
 
     def resolve(image, authored):
         from .denoise_measurement import cpu_delivery_model
-        model = cpu_delivery_model(session, authored_image=image if authored else None)
+        model = cpu_delivery_model(session, authored_image=image if authored else None,
+                                   geometry=adjustments.shared.geometry)
         return denoise_adaptive.resolve_adaptive(image, model, controls)
 
     return resolve
+
+
+def delivery_denoise_inputs(session, kind, adjustments):
+    authored = _authored_sdr_base(session, kind, adjustments)
+    source_filter = _delivery_source_filter(session, kind, adjustments, authored=authored)
+    source = session.image if source_filter else _denoised_export_source(session, kind)
+    return source, getattr(session, "sdr_reference_image", None), source_filter
 
 
 def _render_export_branch(session, settings, kind, adjustments, *, denoise_source=None, allocate_output=None):
@@ -232,13 +245,12 @@ def _render_unwatermarked_branch(
                     measurement["anchor"] = measured * .18 / color_context.hdr_reference_white_nits if kind == PreviewKind.HDR else measured
             settings._exact_measurements[kind.value] = measurement
         return image
-    source_filter = _experimental_delivery_filter(session, kind)
-    source = session.image if source_filter else _denoised_export_source(session, kind)
+    source, reference, source_filter = delivery_denoise_inputs(session, kind, adjustments)
     image = apply_adjustments(
         source,
         adjustments,
         kind,
-        sdr_reference_image=getattr(session, "sdr_reference_image", None),
+        sdr_reference_image=reference,
         include_grain=True,
         include_output_highlight_compression=False,
         local_adjustments=adjustments.enabled_locals(getattr(session, "local_adjustments", None)),
@@ -316,9 +328,8 @@ def _jpeg_denoise_source(session, adjustments):
         lane = denoise_settings_for_export(session, kind)
         if lane is None:
             return session.image, reference, adjustments
-        source_filter = _experimental_delivery_filter(session, kind)
-        authored = (source_filter is not None and reference is not None and kind == PreviewKind.SDR
-                    and adjustments.sdr.use_authored_base and not adjustments.sdr.linked_to_hdr)
+        authored = _authored_sdr_base(session, kind, adjustments)
+        source_filter = _delivery_source_filter(session, kind, adjustments, authored=authored)
         key = (authored, lane.controls.model_dump_json())
         if key != last_key:
             last_pixels = None

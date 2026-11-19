@@ -61,34 +61,34 @@ Clipped lane, scope, preview and filename labels use their visible text; dynamic
 | Activity | Library Activity | fixed | codebase/frontend/photo-library.html::#index-status · [source](../../codebase/frontend/photo-library.html#L15) |
 | Resize details panel | Resize details panel | name only (fallback) | codebase/frontend/photo-library.html::#library-right-splitter · [source](../../codebase/frontend/photo-library.html#L16) |
 | Collapse details | Collapse details | name only (fallback) | codebase/frontend/photo-library.html::#collapse-right · [source](../../codebase/frontend/photo-library.html#L17) |
-| note.title | &#96;Shown as ${assumed}. Choose its colour in Grade.&#96; | dynamic expression | codebase/frontend/photo-library.js:608 · [source](../../codebase/frontend/photo-library.js#L608) |
-| name.title | photo.name | dynamic expression; name/status supplied at runtime | codebase/frontend/photo-library.js:660 · [source](../../codebase/frontend/photo-library.js#L660) |
-| element.title | Online-only. Open this photo to download it. | fixed | codebase/frontend/photo-library.js:786 · [source](../../codebase/frontend/photo-library.js#L786) |
-| element aria-label | Photo row loading | name only (fallback candidate) | codebase/frontend/photo-library.js:834 · [source](../../codebase/frontend/photo-library.js#L834) |
-| element.title | name | dynamic expression | codebase/frontend/photo-library.js:934 · [source](../../codebase/frontend/photo-library.js#L934) |
-| reviewMarks aria-label | Photo marks | name only (fallback candidate) | codebase/frontend/photo-library.js:1199 · [source](../../codebase/frontend/photo-library.js#L1199) |
-| button.title | warning.reason | dynamic expression | codebase/frontend/photo-library.js:1207 · [source](../../codebase/frontend/photo-library.js#L1207) |
-| next aria-label | Detail preview | name only (fallback candidate) | codebase/frontend/photo-library.js:1442 · [source](../../codebase/frontend/photo-library.js#L1442) |
-| .title | place.kind === "smart" ? "Smart album · saved filter across the indexed library" : place.kind === "album" ? "Album. Photos stay where they are." : place.kind ? "Every connected photo that carries this tag" : path | dynamic expression | codebase/frontend/photo-library.js:1585 · [source](../../codebase/frontend/photo-library.js#L1585) |
-| path — text used by dynamic tooltips | place.path &#124;&#124; "" | dynamic supporting definition | codebase/frontend/photo-library.js:1569 · [source](../../codebase/frontend/photo-library.js#L1569) |
-| expand aria-label | &#96;Expand ${folder.name}&#96; | dynamic expression | codebase/frontend/photo-library.js:1869 · [source](../../codebase/frontend/photo-library.js#L1869) |
-| name.title | folder.path | dynamic expression; name/status supplied at runtime | codebase/frontend/photo-library.js:1870 · [source](../../codebase/frontend/photo-library.js#L1870) |
-| ) aria-label | &#96;${closed ? "Expand" : "Collapse"} ${side === "left" ? "folders" : "details"}&#96; | dynamic expression | codebase/frontend/photo-library.js:2113 · [source](../../codebase/frontend/photo-library.js#L2113) |
-| closed — text used by dynamic tooltips | !(library.classList.contains("library-left-closed") && library.classList.contains("library-right-closed")) | dynamic supporting definition | codebase/frontend/photo-library.js:2571 · [source](../../codebase/frontend/photo-library.js#L2571) |
+| note.title | &#96;Shown as ${assumed}. Choose its colour in Grade.&#96; | dynamic expression | codebase/frontend/photo-library.js:619 · [source](../../codebase/frontend/photo-library.js#L619) |
+| name.title | photo.name | dynamic expression; name/status supplied at runtime | codebase/frontend/photo-library.js:671 · [source](../../codebase/frontend/photo-library.js#L671) |
+| element.title | Online-only. Open this photo to download it. | fixed | codebase/frontend/photo-library.js:798 · [source](../../codebase/frontend/photo-library.js#L798) |
+| element aria-label | Photo row loading | name only (fallback candidate) | codebase/frontend/photo-library.js:846 · [source](../../codebase/frontend/photo-library.js#L846) |
+| element.title | name | dynamic expression | codebase/frontend/photo-library.js:946 · [source](../../codebase/frontend/photo-library.js#L946) |
+| reviewMarks aria-label | Photo marks | name only (fallback candidate) | codebase/frontend/photo-library.js:1211 · [source](../../codebase/frontend/photo-library.js#L1211) |
+| button.title | warning.reason | dynamic expression | codebase/frontend/photo-library.js:1219 · [source](../../codebase/frontend/photo-library.js#L1219) |
+| next aria-label | Detail preview | name only (fallback candidate) | codebase/frontend/photo-library.js:1454 · [source](../../codebase/frontend/photo-library.js#L1454) |
+| .title | place.kind === "smart" ? "Smart album · saved filter across the indexed library" : place.kind === "album" ? "Album. Photos stay where they are." : place.kind ? "Every connected photo that carries this tag" : path | dynamic expression | codebase/frontend/photo-library.js:1597 · [source](../../codebase/frontend/photo-library.js#L1597) |
+| path — text used by dynamic tooltips | place.path &#124;&#124; "" | dynamic supporting definition | codebase/frontend/photo-library.js:1581 · [source](../../codebase/frontend/photo-library.js#L1581) |
+| expand aria-label | &#96;Expand ${folder.name}&#96; | dynamic expression | codebase/frontend/photo-library.js:1881 · [source](../../codebase/frontend/photo-library.js#L1881) |
+| name.title | folder.path | dynamic expression; name/status supplied at runtime | codebase/frontend/photo-library.js:1882 · [source](../../codebase/frontend/photo-library.js#L1882) |
+| ) aria-label | &#96;${closed ? "Expand" : "Collapse"} ${side === "left" ? "folders" : "details"}&#96; | dynamic expression | codebase/frontend/photo-library.js:2125 · [source](../../codebase/frontend/photo-library.js#L2125) |
+| closed — text used by dynamic tooltips | !(library.classList.contains("library-left-closed") && library.classList.contains("library-right-closed")) | dynamic supporting definition | codebase/frontend/photo-library.js:2583 · [source](../../codebase/frontend/photo-library.js#L2583) |
 | library — text used by dynamic tooltips | $("library") | dynamic supporting definition | codebase/frontend/photo-library.js:7 · [source](../../codebase/frontend/photo-library.js#L7) |
-| .title | &#96;Sorted by ${item.textContent.toLowerCase()}&#96; | dynamic expression | codebase/frontend/photo-library.js:2142 · [source](../../codebase/frontend/photo-library.js#L2142) |
-| item — text used by dynamic tooltips | event.target.closest("[data-sort]") | dynamic supporting definition | codebase/frontend/photo-library.js:2160 · [source](../../codebase/frontend/photo-library.js#L2160) |
-| event — text used by dynamic tooltips | JSON.parse(pending.join("")) | dynamic supporting definition | codebase/frontend/photo-library.js:1656 · [source](../../codebase/frontend/photo-library.js#L1656) |
-| ) aria-label | label | dynamic expression; name/status supplied at runtime | codebase/frontend/photo-library.js:2145 · [source](../../codebase/frontend/photo-library.js#L2145) |
-| label — text used by dynamic tooltips | state.descending ? "Descending. Switch to ascending" : "Ascending. Switch to descending" | dynamic supporting definition | codebase/frontend/photo-library.js:2144 · [source](../../codebase/frontend/photo-library.js#L2144) |
+| .title | &#96;Sorted by ${item.textContent.toLowerCase()}&#96; | dynamic expression | codebase/frontend/photo-library.js:2154 · [source](../../codebase/frontend/photo-library.js#L2154) |
+| item — text used by dynamic tooltips | event.target.closest("[data-sort]") | dynamic supporting definition | codebase/frontend/photo-library.js:2172 · [source](../../codebase/frontend/photo-library.js#L2172) |
+| event — text used by dynamic tooltips | JSON.parse(pending.join("")) | dynamic supporting definition | codebase/frontend/photo-library.js:1668 · [source](../../codebase/frontend/photo-library.js#L1668) |
+| ) aria-label | label | dynamic expression; name/status supplied at runtime | codebase/frontend/photo-library.js:2157 · [source](../../codebase/frontend/photo-library.js#L2157) |
+| label — text used by dynamic tooltips | state.descending ? "Descending. Switch to ascending" : "Ascending. Switch to descending" | dynamic supporting definition | codebase/frontend/photo-library.js:2156 · [source](../../codebase/frontend/photo-library.js#L2156) |
 | state — text used by dynamic tooltips | { photos: [], allPhotos: [], reading: false, hdr: false, zoom: false, zoomX: .5, zoomY: .5, zoomScale: 1, native: null, nativeMeta: null, nativeLoading: false, fitMeta: null, displayEpoch: 0, scanError: "", sort: "time", descending: false, filters: {}, index: -1, path: "", view: "grid", review: false, beforeReview: "grid", pins: [], cells: new Map(), filmCells: new Map(), size: 190, selection: new Set(), anchor: -1, scan: null, single: null, active: true, timing: false, picker: null, hiddenFiles: 0, folderSelection: new Set(), folderAnchor: "", collection: null, smartFilters: null, allFacts: false, labelNames: {}, indexing: null } | dynamic supporting definition | codebase/frontend/photo-library.js:8 · [source](../../codebase/frontend/photo-library.js#L8) |
-| .title | label | dynamic expression; name/status supplied at runtime | codebase/frontend/photo-library.js:2145::2 · [source](../../codebase/frontend/photo-library.js#L2145) |
-| ) aria-label | Dock Library | name only (fallback candidate) | codebase/frontend/photo-library.js:2650 · [source](../../codebase/frontend/photo-library.js#L2650) |
-| .title | Return Library to the main window | fixed | codebase/frontend/photo-library.js:2651 · [source](../../codebase/frontend/photo-library.js#L2651) |
-| notice.title | job.stage | dynamic expression | codebase/frontend/photo-library.js:2681 · [source](../../codebase/frontend/photo-library.js#L2681) |
-| job — text used by dynamic tooltips | jobs.filter(j=&gt;j.path===cell.dataset.path && j.kind!=="quick" && j.reason==="needs more memory").sort((a,b)=&gt;b.estimate-a.estimate)[0] | dynamic supporting definition | codebase/frontend/photo-library.js:2677 · [source](../../codebase/frontend/photo-library.js#L2677) |
-| stage — text used by dynamic tooltips | $("single-stage") | dynamic supporting definition | codebase/frontend/photo-library.js:1461 · [source](../../codebase/frontend/photo-library.js#L1461) |
-| notice aria-label | job.stage+" Open memory settings" | dynamic expression | codebase/frontend/photo-library.js:2682 · [source](../../codebase/frontend/photo-library.js#L2682) |
+| .title | label | dynamic expression; name/status supplied at runtime | codebase/frontend/photo-library.js:2157::2 · [source](../../codebase/frontend/photo-library.js#L2157) |
+| ) aria-label | Dock Library | name only (fallback candidate) | codebase/frontend/photo-library.js:2662 · [source](../../codebase/frontend/photo-library.js#L2662) |
+| .title | Return Library to the main window | fixed | codebase/frontend/photo-library.js:2663 · [source](../../codebase/frontend/photo-library.js#L2663) |
+| notice.title | job.stage | dynamic expression | codebase/frontend/photo-library.js:2693 · [source](../../codebase/frontend/photo-library.js#L2693) |
+| job — text used by dynamic tooltips | jobs.filter(j=&gt;j.path===cell.dataset.path && j.kind!=="quick" && j.reason==="needs more memory").sort((a,b)=&gt;b.estimate-a.estimate)[0] | dynamic supporting definition | codebase/frontend/photo-library.js:2689 · [source](../../codebase/frontend/photo-library.js#L2689) |
+| stage — text used by dynamic tooltips | $("single-stage") | dynamic supporting definition | codebase/frontend/photo-library.js:1473 · [source](../../codebase/frontend/photo-library.js#L1473) |
+| notice aria-label | job.stage+" Open memory settings" | dynamic expression | codebase/frontend/photo-library.js:2694 · [source](../../codebase/frontend/photo-library.js#L2694) |
 
 ### library albums
 
@@ -580,9 +580,9 @@ Clipped lane, scope, preview and filename labels use their visible text; dynamic
 | unlink data-tooltip | Returns to the independent SDR grade. Match SDR tries to link again. Undo restores the link. | fixed | codebase/frontend/sdr-match-ui.js:26 · [source](../../codebase/frontend/sdr-match-ui.js#L26) |
 | input aria-label | SDR output exposure in stops | name only (fallback candidate) | codebase/frontend/sdr-match-ui.js:37 · [source](../../codebase/frontend/sdr-match-ui.js#L37) |
 | input data-tooltip | Changes SDR brightness after the shared HDR Film Look. Keeps this photo linked. | fixed | codebase/frontend/sdr-match-ui.js:38 · [source](../../codebase/frontend/sdr-match-ui.js#L38) |
-| button data-tooltip | explanation | dynamic expression | codebase/frontend/sdr-match-ui.js:208 · [source](../../codebase/frontend/sdr-match-ui.js#L208) |
-| explanation — text used by dynamic tooltips | state.adjustments?.sdr?.linked_to_hdr ? "Fits this adjustment in independent SDR. A changed result unlinks this photo; no change keeps the link. The mask stays unchanged." : "Matches this adjustment only. Global grade and mask stay unchanged." | dynamic supporting definition | codebase/frontend/sdr-match-ui.js:204 · [source](../../codebase/frontend/sdr-match-ui.js#L204) |
-| button aria-label | &#96;Match SDR for ${local?.name &#124;&#124; "selected adjustment"}&#96; | dynamic expression | codebase/frontend/sdr-match-ui.js:209 · [source](../../codebase/frontend/sdr-match-ui.js#L209) |
+| button data-tooltip | explanation | dynamic expression | codebase/frontend/sdr-match-ui.js:206 · [source](../../codebase/frontend/sdr-match-ui.js#L206) |
+| explanation — text used by dynamic tooltips | state.adjustments?.sdr?.linked_to_hdr ? "Fits this adjustment in independent SDR. A changed result unlinks this photo; no change keeps the link. The mask stays unchanged." : "Matches this adjustment only. Global grade and mask stay unchanged." | dynamic supporting definition | codebase/frontend/sdr-match-ui.js:202 · [source](../../codebase/frontend/sdr-match-ui.js#L202) |
+| button aria-label | &#96;Match SDR for ${local?.name &#124;&#124; "selected adjustment"}&#96; | dynamic expression | codebase/frontend/sdr-match-ui.js:207 · [source](../../codebase/frontend/sdr-match-ui.js#L207) |
 
 ### tone preview ui
 
@@ -1178,9 +1178,9 @@ Clipped lane, scope, preview and filename labels use their visible text; dynamic
 
 | Control / visible name | Text | Flags | ID and source |
 | --- | --- | --- | --- |
-| els.viewerBranchNote.textContent | branchCopy[lane] | dynamic expression | codebase/frontend/lanes-compare.js:241 · [source](../../codebase/frontend/lanes-compare.js#L241) |
-| els.viewerBranchNote.textContent | &#96;${branchCopy[other]} Release V to return to the authored preview.&#96; | dynamic expression | codebase/frontend/lanes-compare.js:373 · [source](../../codebase/frontend/lanes-compare.js#L373) |
-| other — text used by dynamic tooltips | state.currentView === "hdr" ? "sdr" : "hdr" | dynamic supporting definition | codebase/frontend/lanes-compare.js:397 · [source](../../codebase/frontend/lanes-compare.js#L397) |
+| els.viewerBranchNote.textContent | branchCopy[lane] | dynamic expression | codebase/frontend/lanes-compare.js:240 · [source](../../codebase/frontend/lanes-compare.js#L240) |
+| els.viewerBranchNote.textContent | &#96;${branchCopy[other]} Release V to return to the authored preview.&#96; | dynamic expression | codebase/frontend/lanes-compare.js:372 · [source](../../codebase/frontend/lanes-compare.js#L372) |
+| other — text used by dynamic tooltips | state.currentView === "hdr" ? "sdr" : "hdr" | dynamic supporting definition | codebase/frontend/lanes-compare.js:396 · [source](../../codebase/frontend/lanes-compare.js#L396) |
 
 ### overlay ui
 
@@ -1200,7 +1200,7 @@ Clipped lane, scope, preview and filename labels use their visible text; dynamic
 
 | Control / visible name | Text | Flags | ID and source |
 | --- | --- | --- | --- |
-| replacement aria-label | canvas.getAttribute("aria-label") &#124;&#124; "Settled comparison preview" | dynamic expression | codebase/frontend/preview-pipeline.js:507 · [source](../../codebase/frontend/preview-pipeline.js#L507) |
+| replacement aria-label | canvas.getAttribute("aria-label") &#124;&#124; "Settled comparison preview" | dynamic expression | codebase/frontend/preview-pipeline.js:517 · [source](../../codebase/frontend/preview-pipeline.js#L517) |
 
 ### range controls
 

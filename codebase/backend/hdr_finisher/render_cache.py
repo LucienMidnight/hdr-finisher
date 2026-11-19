@@ -1364,11 +1364,14 @@ class SessionRenderCache:
         is_current: Callable[[], bool] | None = None,
         local_adjustments: list[LocalAdjustment] | None = None,
         _record_diagnostics: bool = True,
+        *, denoise_controls=None,
     ) -> np.ndarray:
         edge = max(256, int(long_edge))
         with self._lock:
             source_epoch = self._source_epoch
         signature = adjustment_signature(adjustments) + local_adjustment_signature(local_adjustments) + repr(self.color_context.cache_key)
+        if denoise_controls is not None:
+            signature += denoise_controls.model_dump_json()
         key = (source_epoch, kind.value, edge, signature)
         flight_key = ("frame", *key)
         cached, flight = self._acquire_frame_flight(
@@ -1388,6 +1391,16 @@ class SessionRenderCache:
                 source_epoch=source_epoch,
             )
             from .grain_work import render_work
+            source_filter = None
+            if denoise_controls is not None:
+                from .denoise_adaptive import AdaptiveControls, estimate_adaptive_model, resolve_adaptive
+
+                def source_filter(pixels, authored):
+                    model = estimate_adaptive_model(pixels)
+                    if is_current is not None and not is_current():
+                        raise StaleRender("A newer adjustment replaced this render.")
+                    return resolve_adaptive(pixels, model, AdaptiveControls(**denoise_controls.model_dump()))
+
             with render_work(is_current):
                 processed = apply_adjustments(
                     source,
@@ -1398,6 +1411,7 @@ class SessionRenderCache:
                     compiled_local_masks=compiled_masks,
                     color_context=self.color_context,
                     source_pixel_scale=min(1.0, edge / max(self.image.shape[:2])),
+                    source_filter=source_filter,
                 )
             processed = downsample_image(processed, edge)
             if is_current is not None and not is_current():

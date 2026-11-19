@@ -4,7 +4,6 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 const path = require('node:path');
 const { HDRLatestWorkQueue } = require('../frontend/latest-work-queue.js');
-const { HDRRenderFailurePolicy } = require('../frontend/render-failure.js');
 const { frontendSource } = require('./frontend-source.js');
 
 function deferred() {
@@ -28,6 +27,7 @@ function harness() {
     window: { HDRLatestWorkQueue, setTimeout },
     refinementProxyLongEdge: () => 1024, geometrySignature: () => '',
     renderGpuDraft: async lane => { calls.renders.push(lane); },
+    renderPreviewForLane: async () => true,
     renderLaneChrome() {}, clamp: (x, a, b) => Math.min(b, Math.max(a, x)),
     debounceOverlayAndScopes: () => { calls.scopes++; },
     queueEditCommand: async (...args) => { calls.saves.push({ sessionId: state.session?.session_id, args }); return true; },
@@ -108,6 +108,21 @@ test('Denoise analysis and toggle still finish for their original photo', async 
   assert.equal(h.calls.saves.length, 2);
 });
 
+test('Recalculate retries a failed save when enabling Denoise', async () => {
+  const h = harness();
+  let saves = 0;
+  h.context.queueEditCommand = async () => {
+    if (++saves === 1) throw Error('The save failed');
+    return true;
+  };
+  await h.context.setDenoiseEnabled(true);
+  assert.equal(h.state.denoiseRuntime.hdr.status, 'error');
+  assert.match(h.state.denoiseRuntime.hdr.error, /try Recalculate/i);
+  assert.equal(await h.context.recalculateDenoise('hdr', { force: true }), true);
+  assert.equal(saves, 2);
+  assert.equal(h.state.denoiseRuntime.hdr.status, 'ready');
+});
+
 test('Denoise enable retains its lane when the save spans a lane switch', async () => {
   const h = harness(), save = deferred();
   h.state.denoise.sdr = { enabled: true, controls: {}, analysis: {} };
@@ -134,7 +149,7 @@ test('replacing a document in the same session invalidates its old Denoise analy
 });
 
 function renderer(fetch) {
-  const context = vm.createContext({ window: {}, performance, console, fetch, DOMException, URLSearchParams,
+  const context = vm.createContext({ window: {}, performance, console, fetch, AbortController, DOMException, URLSearchParams,
     GPUTextureUsage: { TEXTURE_BINDING: 1, COPY_DST: 2 } });
   for (const file of ['webgpu-shaders.js', 'webgpu-preview.js']) {
     vm.runInContext(frontendSource(file), context);
@@ -160,8 +175,8 @@ test('cold Grade Fit prepares Grain with the native noise measurement', async ()
   assert.match(requests[0][0], /denoise-measurement\/hdr\?long_edge=5202&/);
   assert.match(requests[1][0], /denoise-grain\/hdr\?long_edge=1024&/);
   assert.equal(requests[1][1], 'POST');
-  assert.equal(h.state.denoiseRuntime.hdr.status, 'preparing');
-  assert.equal(h.state.denoiseRuntime.hdr.error, '');
+  assert.equal(h.state.denoiseRuntime.hdr.status, 'error');
+  assert.match(h.state.denoiseRuntime.hdr.error, /Try Recalculate again/);
   assert.equal(h.state.denoiseRuntime.hdr.dirty, true);
   assert.deepEqual(h.calls.renders, []);
 });
@@ -197,7 +212,7 @@ test('Grade shares a Grain recalculation across generated renditions and isolate
   ]);
 });
 
-test('expired Grain tile is cancelled and the replacement can be read', async () => {
+test('expired Grain tiles are not user cancels and a fresh preparation can be read', async () => {
   const requests = [];
   const uploads = [];
   let destroyed = 0;
@@ -215,9 +230,9 @@ test('expired Grain tile is cancelled and the replacement can be read', async ()
   const frame = { width: 2, height: 2 };
   const tile = { x: 0, y: 0, ...frame };
   const load = grain => gpu.preparedGrainTile(grain, tile, frame);
-  const policy = new HDRRenderFailurePolicy();
-  await assert.rejects(load(before), error => policy.record(error).kind === 'superseded');
-  await assert.rejects(load(before), { name: 'AbortError' });
+  const expired = error => error.grainPreparationReplaced && error.name !== 'AbortError';
+  await assert.rejects(load(before), expired);
+  await assert.rejects(load(before), expired);
   assert.equal(requests.length, 1);
   assert.equal(destroyed, 1);
   assert.deepEqual(uploads, []);

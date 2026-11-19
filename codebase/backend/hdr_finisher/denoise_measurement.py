@@ -8,14 +8,14 @@ from dataclasses import asdict, dataclass
 from hashlib import sha256
 import json
 import struct
-from threading import RLock
+from threading import RLock, Timer
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 from time import perf_counter
 from uuid import uuid4
 
 import numpy as np
-from fastapi import APIRouter, HTTPException, Query, Body
+from fastapi import APIRouter, HTTPException, Query, Body, Request
 from fastapi.responses import Response
 from .models import DenoiseLiveControls, PreviewKind
 from .library_diagnostics import log
@@ -186,7 +186,7 @@ def _validate(model):
     return model
 
 
-def cpu_delivery_model(frame, *, authored_image=None):
+def cpu_delivery_model(frame, *, authored_image=None, geometry=None):
     """No usable GPU: retain the native source measurement for later delivery."""
     from .denoise_adaptive import AdaptiveNoiseModel, estimate_adaptive_model, measurement_usage
     started = perf_counter()
@@ -197,7 +197,7 @@ def cpu_delivery_model(frame, *, authored_image=None):
         key = sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()
     else:
         native_edge = max(frame.image.shape[:2])
-        geometry = frame.adjustments.shared.geometry.model_dump(mode="json")
+        geometry = (geometry if geometry is not None else frame.adjustments.shared.geometry).model_dump(mode="json")
         identity = {"version": VERSION, "source": source_identity(frame),
             "pixels": "authored-sdr", "size": max(256, native_edge), "geometry": geometry}
         key = sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()
@@ -217,12 +217,57 @@ def cpu_delivery_model(frame, *, authored_image=None):
 
 
 def create_router(store):
+    from .instrument_work import InstrumentWork
+    from .render_cache import StaleRender
+
     router = APIRouter()
+    work = InstrumentWork(background=False)
+    library_draws = {}
+
+    def release_draw(key, owner=None):
+        with _lock:
+            held = library_draws.get(key)
+            if held is None or (owner is not None and held[1] is not owner):
+                return
+            preparation, timer = library_draws.pop(key)
+            timer.cancel()
+        preparation.close()
+
+    def hold_draw(key, preparation):
+        timer = Timer(30, lambda: release_draw(key, timer))
+        timer.daemon = True
+        with _lock:
+            previous = library_draws.get(key)
+            if previous is not None:
+                previous[1].cancel()
+            library_draws[key] = preparation, timer
+        timer.start()
 
     @router.post("/api/session/{session_id}/denoise-grain/{kind}")
-    def prepare_grain(session_id: str, kind: PreviewKind, controls: DenoiseLiveControls,
+    async def prepare_grain(request: Request, session_id: str, kind: PreviewKind, controls: DenoiseLiveControls,
                       long_edge: int = Query(ge=256, le=16384), edit_revision: int | None = None,
                       geometry_signature: str | None = None, refresh: int = 0):
+        draw_key = None
+
+        def build(current):
+            nonlocal draw_key
+            preparation = _prepare_grain(session_id, kind, controls, long_edge, edit_revision,
+                                         geometry_signature, refresh, current)
+            if session_id.startswith("live-") and preparation.corrections is not None:
+                draw_key = session_id, kind, preparation.token
+                hold_draw(draw_key, preparation)
+            return {"fit": preparation.fit, "token": preparation.token if preparation.corrections else None}
+
+        try:
+            return await work.run((session_id, kind), request, build)
+        except StaleRender as error:
+            release_draw(draw_key)
+            raise HTTPException(409, str(error)) from error
+        except BaseException:
+            release_draw(draw_key)
+            raise
+
+    def _prepare_grain(session_id, kind, controls, long_edge, edit_revision, geometry_signature, refresh, current):
         from .denoise_adaptive import AdaptiveControls, AdaptiveNoiseModel
         from .denoise_grain import GrainPreparation, fit_grain
         from .library_live import session as library_session
@@ -242,7 +287,7 @@ def create_router(store):
         geometry = frame.adjustments.shared.geometry
 
         def is_current():
-            if cache.source_epoch != epoch or frame.adjustments.shared.geometry != geometry:
+            if not current() or cache.source_epoch != epoch or frame.adjustments.shared.geometry != geometry:
                 return False
             if _uses_authored_sdr(frame, kind) != authored_sdr:
                 return False
@@ -266,7 +311,7 @@ def create_router(store):
                 raise HTTPException(409, "A newer edit replaced the Denoise preparation.")
             previous = cache.grain_preparation
             if previous is not None and previous.signature == signature:
-                return {"fit": previous.fit, "token": previous.token if previous.corrections else None}
+                return previous
             request = (kind, native_edge, frame.adjustments)
             direct = cache.native_source_stream(*request)
             if direct is not None:
@@ -293,7 +338,11 @@ def create_router(store):
                 if previous is not None and previous.fit_signature == fit_signature and previous.fit is not None:
                     fit = previous.fit
                 else:
+                    if not is_current():
+                        raise HTTPException(409, "A newer edit replaced the Denoise preparation.")
                     fit = fit_grain(height, width, read, model, settings)
+            if not is_current():
+                raise HTTPException(409, "A newer edit replaced the Denoise preparation.")
             fitted = perf_counter()
             corrections = None
             tile_timings = {}
@@ -318,30 +367,37 @@ def create_router(store):
                 raise HTTPException(409, "A newer edit replaced the Denoise preparation.")
             preparation = _GrainPreparation(signature, fit_signature, rgb_signature, authored_sdr, has_colour,
                                             uuid4().hex, fit, corrections)
-            cache.grain_preparation = preparation
-            if not is_current():
-                cache.discard_grain_preparation()
-                raise HTTPException(409, "A newer edit replaced the Denoise preparation.")
+            if meta is None:
+                cache.grain_preparation = preparation
+                if not is_current():
+                    cache.discard_grain_preparation()
+                    raise HTTPException(409, "A newer edit replaced the Denoise preparation.")
         finished = perf_counter()
         log("denoise_grain_prepared", **fields, method=settings.method, width=width, height=height,
             duration_ms=(finished-started)*1000, fit_ms=(fitted-fit_started)*1000,
             filter_ms=(finished-fitted)*1000, tile_worker_ms=tile_timings, reused_rgb=reuse_rgb,
             disk_bytes=width * height * 16 if corrections else 0)
-        return {"fit": preparation.fit, "token": preparation.token if corrections else None}
+        return preparation
 
     @router.get("/api/session/{session_id}/denoise-grain/{kind}/{token}")
     def grain_region(session_id: str, kind: PreviewKind, token: str, x: int, y: int,
                      width: int, height: int, frame_width: int = Query(gt=0, le=32768),
                      frame_height: int = Query(gt=0, le=32768)):
-        from .library_live import session as library_session
-
         if min(width, height) < 1 or width*height > 1024*1024:
             raise HTTPException(400, "Invalid Clean Grain region size.")
-        _, frame, _, _ = _context(store, session_id, kind, 1600, None, None)
-        frame = frame if frame is not None else library_session(session_id)
-        preparation = frame.render_cache.grain_preparation if frame is not None else None
-        if (preparation is None or preparation.token != token or preparation.corrections is None
-                or preparation.authored_sdr != _uses_authored_sdr(frame, kind)):
+        if session_id.startswith("live-"):
+            draw_key = session_id, kind, token
+            with _lock:
+                held = library_draws.get(draw_key)
+                preparation = held[0] if held is not None else None
+                if preparation is not None:
+                    hold_draw(draw_key, preparation)
+        else:
+            _, frame, _, _ = _context(store, session_id, kind, 1600, None, None)
+            preparation = frame.render_cache.grain_preparation
+            if preparation is not None and preparation.authored_sdr != _uses_authored_sdr(frame, kind):
+                preparation = None
+        if preparation is None or preparation.token != token or preparation.corrections is None:
             raise HTTPException(409, "The Clean Grain preparation was replaced.")
         try:
             body = preparation.corrections.region(y, x, height, width, frame_height, frame_width,
@@ -351,6 +407,11 @@ def create_router(store):
         except InterruptedError as error:
             raise HTTPException(409, str(error)) from error
         return Response(body, media_type="application/octet-stream")
+
+    @router.delete("/api/session/{session_id}/denoise-grain/{kind}/{token}", status_code=204)
+    def release_grain(session_id: str, kind: PreviewKind, token: str):
+        release_draw((session_id, kind, token))
+        return Response(status_code=204)
 
     @router.get("/api/session/{session_id}/denoise-measurement/{kind}")
     def measurement(session_id: str, kind: PreviewKind,

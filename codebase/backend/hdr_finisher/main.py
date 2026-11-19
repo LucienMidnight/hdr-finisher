@@ -32,7 +32,7 @@ from . import denoise_adaptive
 from .capabilities import probe_capabilities
 from .config import APP_NAME, APP_VERSION, DEFAULT_HOST, DEFAULT_PORT, DOCS_DIR, EXPORTS_DIR, FRONTEND_DIR, SAMPLES_DIR
 from .desktop_security import DesktopPathGrants, secret_matches
-from .exporters import ExportOverwriteRequired, build_export_backends
+from .exporters import ExportOverwriteRequired, build_export_backends, denoise_settings_for_export
 from .film_stock import available_film_stocks, film_stock_path, read_film_stock_payload, controlled_stock_payload
 from .folder_picker import pick_directory
 from .loader import LoaderError
@@ -951,22 +951,24 @@ def _render_selected_execution(session, request, kind, adjustments, preview_long
         if request.include_locals
         else []
     )
-    if request.execution == "strips":
+    denoise = denoise_settings_for_export(session, kind)
+    if request.execution == "strips" and denoise is None:
         processed, report = session.render_cache.adjusted_frame_in_strips(
             adjustments,
             kind,
             preview_long_edge,
             is_current=is_current,
             local_adjustments=local_adjustments,
-            denoise_active=_denoise_is_active(session, kind),
         )
         return processed, report
+    kwargs = {"denoise_controls": denoise.controls} if denoise is not None else {}
     processed = session.render_cache.adjusted_frame(
         adjustments,
         kind,
         preview_long_edge,
         is_current=is_current,
         local_adjustments=local_adjustments,
+        **kwargs,
     )
     return processed, None
 
@@ -981,10 +983,11 @@ def _strip_report_headers(report) -> dict[str, str]:
     return headers
 
 
-def _denoise_is_active(session, kind: PreviewKind) -> bool:
-    denoise = getattr(session, "denoise", None)
-    lane = getattr(denoise, kind.value, None) if denoise is not None else None
-    return bool(getattr(lane, "enabled", False))
+def _cpu_preview_edge(session, kind, request, requested_edge):
+    if requested_edge > FULL_PREVIEW_BASELINE_DIMENSION and denoise_settings_for_export(session, kind):
+        if request.execution == "strips" or not _preview_resource_payload(session, requested_edge)["allowed"]:
+            return FULL_PREVIEW_BASELINE_DIMENSION
+    return requested_edge
 
 
 def _strip_execution_conflict(exc: StripExecutionRefused) -> JSONResponse:
@@ -1044,7 +1047,8 @@ def preview(session_id: str, kind: PreviewKind, request: PreviewRequest) -> Resp
     except RevisionConflictError as exc:
         raise _revision_conflict(exc) from exc
 
-    preview_long_edge = request.long_edge or session.preview.long_edge
+    requested_edge = request.long_edge or session.preview.long_edge
+    preview_long_edge = _cpu_preview_edge(session, kind, request, requested_edge)
     _guard_preview_resources(session, preview_long_edge)
     _log_cpu_preview(session, kind, preview_long_edge, request)
     token = store.next_preview_token(session_id, kind)
@@ -1073,6 +1077,8 @@ def preview(session_id: str, kind: PreviewKind, request: PreviewRequest) -> Resp
     if not store.is_preview_current(session_id, kind, token):
         return JSONResponse(status_code=409, content={"detail": "Stale preview request dropped."})
     headers = _strip_report_headers(strip_report)
+    if preview_long_edge < requested_edge:
+        headers["X-Preview-Reduced-Edge"] = str(preview_long_edge)
     return Response(content=body, media_type=media_type, headers=headers)
 
 
@@ -1099,7 +1105,8 @@ def preview_raw(session_id: str, kind: PreviewKind, request: PreviewRequest) -> 
     except RevisionConflictError as exc:
         raise _revision_conflict(exc) from exc
 
-    preview_long_edge = request.long_edge or (768 if kind == PreviewKind.SDR else 960)
+    requested_edge = request.long_edge or (768 if kind == PreviewKind.SDR else 960)
+    preview_long_edge = _cpu_preview_edge(session, kind, request, requested_edge)
     _guard_preview_resources(session, preview_long_edge)
     _log_cpu_preview(session, kind, preview_long_edge, request)
     token = store.next_preview_token(session_id, kind)
@@ -1130,6 +1137,7 @@ def preview_raw(session_id: str, kind: PreviewKind, request: PreviewRequest) -> 
             "X-Preview-Lane": kind.value,
             "X-Display-Interpretation": "srgb-rgba8",
             "X-Cache-Identity": f"{session_id}:{kind.value}:{token}",
+            **({"X-Preview-Reduced-Edge": str(preview_long_edge)} if preview_long_edge < requested_edge else {}),
             **_strip_report_headers(strip_report),
         },
     )

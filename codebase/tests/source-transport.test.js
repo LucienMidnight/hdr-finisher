@@ -36,6 +36,8 @@ function loadPreview(fetchImpl) {
     console,
     fetch: fetchImpl,
     AbortController,
+    DOMException,
+    URLSearchParams,
     // The streaming transport races a pending read against a currency tick so a
     // superseded stream cancels its reader; the sandbox supplies the timers
     // that race needs.
@@ -58,6 +60,46 @@ function loadPreview(fetchImpl) {
   vm.runInContext(source, context);
   return context.window.HDRWebGPUPreview;
 }
+
+test('Grain skips uploads and further reads when a region becomes obsolete during readback', async () => {
+  let current = true;
+  let reads = 0, uploads = 0, destroyed = 0;
+  const Renderer = loadPreview(async () => {
+    reads++;
+    return { ok: true, arrayBuffer: async () => {
+      current = false;
+      return new ArrayBuffer(1024 * 1024 * 16);
+    } };
+  });
+  const renderer = Object.create(Renderer.prototype);
+  Object.assign(renderer, { denoiseTiles: new Map(), trimDenoiseTiles: () => 0,
+    denoiseTileBudget: () => 0, device: { createTexture: () => ({ destroy: () => destroyed++ }),
+      queue: { writeTexture: () => uploads++ } } });
+  const region = { x: 0, y: 0, width: 2048, height: 1024 };
+  await assert.rejects(renderer.preparedGrainTile({ token: 'draw', url: '/grain' }, region, region,
+    () => current), { name: 'AbortError' });
+  assert.deepEqual({ reads, uploads, destroyed }, { reads: 1, uploads: 0, destroyed: 1 });
+});
+
+test('Wide panorama Grain at Fit requests a measurement the API can serve', async () => {
+  let measurementEdge;
+  const Renderer = loadPreview(async () => ({ ok: true, json: async () => ({ fit: null, token: null }) }));
+  const renderer = Object.create(Renderer.prototype);
+  Object.assign(renderer, { available: true, sessionId: 'photo', denoiseSelectorGeneration: 0,
+    denoiseCounters: { analysisCalls: 0, cacheBuilds: 0 }, recordStage() {},
+    denoiseTiles: new Map(), proxies: new Map(), destroyDenoiseSelector() {},
+    ensureGrainPipelines: async () => {}, warmDenoiseModel() {}, ensureAdaptiveDenoisePipelines: async () => {},
+    createAdaptiveDenoiseScratch: () => ({ byteSize: 0, textureCount: 0 }),
+    async fetchDenoiseModel(url) {
+      measurementEdge = Number(new URL(url, 'http://local').searchParams.get('long_edge'));
+      if (measurementEdge > 16384) throw Error('Measurement request failed (422)');
+      return { a: .01, b: 0, c: 0, band_sigmas: Array.from({ length: 3 }, () => [1, 1, 1, 1, 1]) };
+    },
+  });
+  assert.equal(await renderer.analyzeDenoiseProxy('photo', 'hdr', {}, 1600, 0, 'source',
+    { method: 'fine_grain', grainEvenness: 1 }, 0, 18001), true);
+  assert.equal(measurementEdge, 1600);
+});
 
 function alignRow(bytes) {
   return Math.ceil(bytes / 256) * 256;

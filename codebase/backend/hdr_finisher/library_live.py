@@ -484,7 +484,7 @@ def fallback_picture(root, path, document, edge, cancelled=None, progress=None):
     from .library_pictures import check_cancelled
     from .library_thumbnail_codec import encode
     from .adjustments import apply_adjustments, apply_hdr_output_highlight_compression, apply_sdr_output_highlight_compression
-    from .exporters import _denoised_export_source, _experimental_delivery_filter
+    from .exporters import delivery_denoise_inputs
     from .models import PreviewKind
     cache = LibraryPictureCache(root)
     metadata = develop_cpu(root, path, document, edge, cancelled, progress=progress)
@@ -493,14 +493,12 @@ def fallback_picture(root, path, document, edge, cancelled=None, progress=None):
     service.cache = cache
     service.document = lambda _: document
     frame = service.frame(service.describe(path, metadata))
-    adjustments = frame.adjustments.model_copy(deep=True)
-    adjustments.hdr.highlight_compression_target_nits = 1000
+    adjustments = frame.adjustments
     def render(kind):
         check_cancelled(cancelled)
-        source_filter = _experimental_delivery_filter(frame, kind)
-        source = frame.image if source_filter else _denoised_export_source(frame, kind)
+        source, reference, source_filter = delivery_denoise_inputs(frame, kind, adjustments)
         image = apply_adjustments(source, adjustments, kind,
-            sdr_reference_image=frame.sdr_reference_image, include_grain=True,
+            sdr_reference_image=reference, include_grain=True,
             include_output_highlight_compression=False,
             local_adjustments=adjustments.enabled_locals(frame.local_adjustments), color_context=frame.color_context,
             source_filter=source_filter)

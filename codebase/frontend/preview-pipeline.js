@@ -156,7 +156,7 @@ async function settlePreview(lane = state.currentView, task = {}) {
       if (rendered) await refreshOverlay(longEdge);
       else if (!supersededByScheduledWork(task) && !transientGpuRefusal()) {
         state.cpuFallbacks.settle.push(state.lastGpuDraftRefusal?.reason || "unknown");
-        await renderPreviewForLane(lane, true, longEdge, { showProgress: false });
+        await renderPreviewForLane(lane, true, longEdge, { showProgress: false, denoiseFallback: state.denoise?.[lane]?.enabled });
       }
     } else {
       await renderPreviewForLane(lane, true, longEdge, { showProgress: false });
@@ -189,7 +189,7 @@ async function refinePreview(lane, task = {}) {
   if (rendered || geometryDraftActive() || !previewNeedsRefinement() || lane !== state.currentView || targetLongEdge !== refinementProxyLongEdge()) return;
   if (transientGpuRefusal()) return;
   state.cpuFallbacks.refine.push(state.lastGpuDraftRefusal?.reason || "unknown");
-  await renderPreviewForLane(lane, true, targetLongEdge, { showProgress: false });
+  await renderPreviewForLane(lane, true, targetLongEdge, { showProgress: false, denoiseFallback: state.denoise?.[lane]?.enabled });
   if (generation !== state.previewGeneration[lane] || signature !== geometrySignature() || !previewNeedsRefinement()) return;
 }
 
@@ -231,7 +231,7 @@ async function renderPreviewForLane(
   if (geometryDraftActive()) return false;
   const raw = options.raw ?? !state.gpuPreview?.available;
   const key = JSON.stringify([sessionId, state.editRevision, state.previewGeneration[lane],
-    geometrySignature(), longEdge, displayWhenReady, raw, localsBypassed(),
+    geometrySignature(), longEdge, displayWhenReady, raw, Boolean(options.denoiseFallback), localsBypassed(),
     state.localPreviewDirty && !localsBypassed() ? localAdjustments() : null]);
   const inflight = state.cpuPreviewInflight ||= new Map();
   const previous = inflight.get(lane);
@@ -266,7 +266,7 @@ async function renderPreviewForLaneInner(
   lane,
   displayWhenReady,
   longEdge = 1600,
-  { showProgress = true, progressSteps = [12, 76, 92], raw = !state.gpuPreview?.available } = {},
+  { showProgress = true, progressSteps = [12, 76, 92], raw = !state.gpuPreview?.available, denoiseFallback = false } = {},
 ) {
   // Perspective owns its transient preview until Apply/Cancel. Revision-based
   // renders still contain the committed geometry, even when the controls reset.
@@ -281,7 +281,7 @@ async function renderPreviewForLaneInner(
   const signature = geometrySignature();
   if (cached?.generation === generation && cached.geometrySignature === signature
     && (cached.requestedLongEdge || cached.longEdge || 0) >= longEdge) {
-    if (displayWhenReady && state.currentView === lane && !state.comparePeekActive) showCachedPreview(lane);
+    if (displayWhenReady && state.currentView === lane && !state.comparePeekActive) showCachedPreview(lane, { skipGpu: denoiseFallback });
     renderCompareStatus();
     return true;
   }
@@ -350,6 +350,8 @@ async function renderPreviewForLaneInner(
 
   if (displayWhenReady && showProgress) setPreviewMessage("Processing complete. Decoding preview...", progressSteps[1]);
   const previewInfo = previewInfoFromResponse(response, lane);
+  const reducedEdge = Number(response.headers.get("X-Preview-Reduced-Edge")) || null;
+  const processedEdge = reducedEdge || longEdge;
   let width = Number(response.headers.get("X-Image-Width"));
   let height = Number(response.headers.get("X-Image-Height"));
   const scopePeakHeader = response.headers.get("X-Scope-Peak");
@@ -371,10 +373,10 @@ async function renderPreviewForLaneInner(
   }
   const previous = state.previewCache[lane];
   if (previous?.url) URL.revokeObjectURL(previous.url);
-  state.previewCache[lane] = { url, generation, longEdge: Math.max(width, height) || longEdge, requestedLongEdge: longEdge, width, height, geometrySignature: signature, scopePeak: Number.isFinite(responseScopePeak) ? responseScopePeak : null };
+  state.previewCache[lane] = { url, generation, longEdge: Math.max(width, height) || longEdge, requestedLongEdge: longEdge, reducedEdge, width, height, geometrySignature: signature, scopePeak: Number.isFinite(responseScopePeak) ? responseScopePeak : null };
   if (displayWhenReady && state.currentView === lane && !state.comparePeekActive) {
     if (showProgress) setPreviewMessage("Presenting preview...", progressSteps[2]);
-    const keptGpuSurface = shouldKeepHdrGpuSurface(lane)
+    const keptGpuSurface = !denoiseFallback && !reducedEdge && shouldKeepHdrGpuSurface(lane)
       && await renderGpuDraft(lane)
       && state.gpuSurfaceHdr;
     if (!requestIsCurrent()) return false;
@@ -383,7 +385,8 @@ async function renderPreviewForLaneInner(
       state.previewInfoByLane[lane] = previewInfo;
       if (!await applyPreviewUrl(url, requestIsCurrent)) return false;
       state.previewInfo = previewInfo;
-      acceptPresentation(lane, longEdge >= refinementProxyLongEdge() ? "refinement" : "settled", width, height, previewInfo.transport, gpuPreviewEligible(lane) ? "" : "CPU/backend", null, generation, null, longEdge, responseScopePeak);
+      describeReducedDenoisePreview(reducedEdge);
+      acceptPresentation(lane, processedEdge >= refinementProxyLongEdge() ? "refinement" : "settled", width, height, previewInfo.transport, denoiseFallback || !gpuPreviewEligible(lane) ? "CPU/backend" : "", null, generation, null, processedEdge, responseScopePeak);
       els.scopeKindLabel.textContent = lane.toUpperCase();
       renderReadouts();
     }
@@ -399,7 +402,8 @@ async function renderRawPreviewForLane(lane, displayWhenReady, longEdge, { showP
   const generation = state.previewGeneration[lane];
   const signature = geometrySignature();
   const cached = state.previewCache[lane];
-  if (cached?.raw && cached.generation === generation && cached.geometrySignature === signature && cached.longEdge >= longEdge) {
+  if (cached?.raw && cached.generation === generation && cached.geometrySignature === signature
+    && (cached.requestedLongEdge || cached.longEdge) >= longEdge) {
     if (displayWhenReady && lane === state.currentView) applyRawPreview(cached);
     return true;
   }
@@ -449,12 +453,13 @@ async function renderRawPreviewForLane(lane, displayWhenReady, longEdge, { showP
   const width = Number(response.headers.get("X-Image-Width"));
   const height = Number(response.headers.get("X-Image-Height"));
   const rawGeneration = Number(response.headers.get("X-Generation"));
+  const reducedEdge = Number(response.headers.get("X-Preview-Reduced-Edge")) || null;
   const scopePeakHeader = response.headers.get("X-Scope-Peak");
   const responseScopePeak = scopePeakHeader === null ? null : Number(scopePeakHeader);
   const data = new Uint8ClampedArray(await response.arrayBuffer());
   if (geometryDraftActive() || controller !== state.previewControllers[lane]
     || generation !== state.previewGeneration[lane] || rawGeneration !== generation || signature !== geometrySignature()) return false;
-  const frame = { raw: data, width, height, generation, longEdge: Math.max(width, height) || longEdge, requestedLongEdge: longEdge, geometrySignature: signature, scopePeak: Number.isFinite(responseScopePeak) ? responseScopePeak : null };
+  const frame = { raw: data, width, height, generation, longEdge: Math.max(width, height) || longEdge, requestedLongEdge: longEdge, reducedEdge, geometrySignature: signature, scopePeak: Number.isFinite(responseScopePeak) ? responseScopePeak : null };
   state.previewCache[lane] = frame;
   state.previewInfoByLane[lane] = {
     mediaType: "application/octet-stream",
@@ -466,6 +471,10 @@ async function renderRawPreviewForLane(lane, displayWhenReady, longEdge, { showP
   };
   if (displayWhenReady && lane === state.currentView && !state.comparePeekActive) applyRawPreview(frame);
   return true;
+}
+
+function describeReducedDenoisePreview(edge) {
+  if (edge) state.previewUnavailableReason = `Full CPU Denoise is unavailable. Showing a denoised ${edge}px preview.`;
 }
 
 function applyRawPreview(frame) {
@@ -494,7 +503,8 @@ function applyRawPreview(frame) {
   clearInteractiveStraightenPreview();
   applyZoomGeometry();
   renderReadouts();
-  const rawProcessedEdge = frame.requestedLongEdge || frame.longEdge;
+  describeReducedDenoisePreview(frame.reducedEdge);
+  const rawProcessedEdge = frame.reducedEdge || frame.requestedLongEdge || frame.longEdge;
   acceptPresentation(state.currentView, rawProcessedEdge >= refinementProxyLongEdge() ? "refinement" : "settled", frame.width, frame.height, "Raw RGBA8", "CPU/backend", null, frame.generation, null, rawProcessedEdge, frame.scopePeak);
 }
 
@@ -676,10 +686,11 @@ async function renderGpuDraftInner(
     ? Number(request.applicationGeneration)
     : state.previewGeneration[lane];
   const requestedGeometrySignature = geometrySignature();
+  const sourceIdentity = gradeSourceIdentity(lane);
   const canvas = els.previewCanvas;
   const boundedPresentation = !allowInactive && nativeDenoiseViewport(lane)
     && Boolean(request.viewport) && state.gpuPreview.executionOverride !== "direct";
-  const wholeFrameKey = JSON.stringify([sessionId, lane, requestedGeometrySignature, generation,
+  const wholeFrameKey = JSON.stringify([sessionId, lane, requestedGeometrySignature, generation, sourceIdentity,
     state.editRevision, state.repairSourceGeneration, state.denoise[lane], state.denoiseRuntime[lane]?.showOriginal,
     denoiseNoiseViewActive(lane), gpuLumaMaskOverlayOptions(), projectReferenceWhiteNits(),
     Boolean(window.matchMedia?.("(dynamic-range: high)").matches)]);
@@ -704,12 +715,12 @@ async function renderGpuDraftInner(
       await state.gpuPreview.retireDenoiseZoomResources?.(sessionId, lane, longEdge, regionOnly);
       if (request.isCurrent?.() === false) return refuse("superseded-before-denoise-preparation");
     }
-    const expectedIdentity = `${sessionId}:${lane}:${longEdge}:${requestedGeometrySignature}:source`;
+    const expectedIdentity = `${sessionId}:${lane}:${longEdge}:${requestedGeometrySignature}:${sourceIdentity}`;
     const denoise = state.gpuPreview?.diagnosticsSnapshot?.().denoise;
     const runtime = state.denoiseRuntime[lane];
     if (runtime.analysisInFlight || runtime.dirty || !denoise?.cacheReady || denoise.identity !== expectedIdentity) {
       const retarget = () => !runtime.analysisInFlight && !runtime.dirty && state.gpuPreview.retargetPreparedDenoise?.(
-        sessionId, lane, longEdge, requestedGeometrySignature, "source");
+        sessionId, lane, longEdge, requestedGeometrySignature, sourceIdentity);
       if (!retarget()) {
         const waiting = "Preparing Denoise for this view…";
         if (hideStatus && lane === state.currentView) setIndeterminatePreviewMessage(waiting);
@@ -745,6 +756,7 @@ async function renderGpuDraftInner(
     && state.acceptedPresentation.geometrySignature === requestedGeometrySignature
     ? canvas.hdrFrameRegion : null;
   const sourceOptions = {
+    identity: sourceIdentity,
     tier,
     applicationGeneration: generation,
     viewport: viewport || null,
@@ -781,6 +793,7 @@ async function renderGpuDraftInner(
     // load alive while the photo and geometry remain the same.
     isSourceCurrent: state.denoise?.[lane]?.enabled
       ? () => !geometryDraftActive() && state.session?.session_id === sessionId
+        && gradeSourceIdentity(lane) === sourceIdentity
         && requestedGeometrySignature === geometrySignature()
         && repairSourceGeneration === (state.repairSourceGeneration || 0)
       : null,
@@ -799,6 +812,7 @@ async function renderGpuDraftInner(
     isCurrent: () => (typeof request.isCurrent === "function" ? request.isCurrent() : true)
       && !geometryDraftActive()
       && state.session?.session_id === sessionId
+      && gradeSourceIdentity(lane) === sourceIdentity
       && (generation === state.previewGeneration[lane]
         || (request.interactiveSnapshot && state.previewScheduler?.interacting))
       && requestedGeometrySignature === geometrySignature()
@@ -918,13 +932,10 @@ async function renderGpuDraftInner(
       });
       return true;
   } catch (error) {
-    if (error?.name === "AbortError" && error.grainPreparationReplaced) {
-      // A render can lose its preparation after it has begun fetching tiles.
-      // Re-enter through setup once, keeping the complete picture mounted.
-      if (!request.grainPreparationRetried && sourceOptions.isCurrent()) {
-        return renderGpuDraftInner(lane, { ...request, grainPreparationRetried: true });
-      }
-      return refuse("superseded-denoise-preparation");
+    if (!sourceOptions.isCurrent() || error?.name === "AbortError") return refuse("superseded-during-render");
+    if (error?.grainPreparationReplaced) {
+      denoiseRetryError(lane, "Grain preparation expired.");
+      return refuse("denoise-preparation-expired");
     }
     const verdict = state.gpuFailurePolicy
       ? state.gpuFailurePolicy.record(error, { superseded: Boolean(error?.recoverable), work: state.session?.session_id ?? null })
@@ -1206,7 +1217,7 @@ function cacheReady(lane) {
   );
 }
 
-async function showCachedPreview(lane) {
+async function showCachedPreview(lane, { skipGpu = false } = {}) {
   if (geometryDraftActive()) return false;
   const sessionId = state.session?.session_id;
   const cached = state.previewCache[lane];
@@ -1215,7 +1226,7 @@ async function showCachedPreview(lane) {
   // comparison/peek or cancelling Perspective, with no scheduler task left to
   // refine it again. Request the selected quality explicitly; geometry may
   // make the returned bitmap smaller than the requested proxy edge.
-  if (gpuPreviewEligible(lane) && state.gpuPreparedLane[lane] && await renderGpuDraft(lane, {
+  if (!skipGpu && !cached?.reducedEdge && gpuPreviewEligible(lane) && state.gpuPreparedLane[lane] && await renderGpuDraft(lane, {
     allowInactive: lane !== state.currentView,
     longEdge: refinementProxyLongEdge(),
     tier: "refinement",
@@ -1227,12 +1238,13 @@ async function showCachedPreview(lane) {
   if (cached.raw) applyRawPreview(cached);
   else if (cached.url) {
     if (!await applyPreviewUrl(cached.url, isCurrent)) return false;
-    const cachedProcessedEdge = cached.requestedLongEdge || cached.longEdge;
+    describeReducedDenoisePreview(cached.reducedEdge);
+    const cachedProcessedEdge = cached.reducedEdge || cached.requestedLongEdge || cached.longEdge;
     acceptPresentation(lane, cachedProcessedEdge >= refinementProxyLongEdge() ? "refinement" : "settled", cached.width, cached.height, state.previewInfoByLane[lane].transport, "CPU/backend", null, cached.generation, null, cachedProcessedEdge, cached.scopePeak);
   }
   state.previewInfo = state.previewInfoByLane[lane];
   renderReadouts();
-  if (lane === state.currentView && !state.comparePeekActive
+  if (!skipGpu && lane === state.currentView && !state.comparePeekActive
     && (cached.requestedLongEdge || cached.longEdge || 0) < refinementProxyLongEdge()) {
     debouncePreview(lane);
   }
@@ -1300,6 +1312,7 @@ async function holdSourceForPanning(lane, longEdge) {
     || nativeDenoiseViewport(lane) || requiredProcessingLongEdge() !== longEdge
     || !state.gpuPreview?.holdSourceForPanning) return;
   const sessionId = state.session.session_id;
+  const sourceIdentity = gradeSourceIdentity(lane);
   const signature = geometrySignature();
   const controller = new AbortController();
   state.panSourceController?.abort();
@@ -1307,8 +1320,9 @@ async function holdSourceForPanning(lane, longEdge) {
   try {
     await state.gpuPreview.holdSourceForPanning(
       sessionId, lane, longEdge, signature, state.editRevision, approximateGpuFrameSizeAt(longEdge),
-      { signal: controller.signal, isCurrent: () => !controller.signal.aborted
+      { identity: sourceIdentity, signal: controller.signal, isCurrent: () => !controller.signal.aborted
         && state.session?.session_id === sessionId && state.currentView === lane
+        && gradeSourceIdentity(lane) === sourceIdentity
         && geometrySignature() === signature && requiredProcessingLongEdge() === longEdge },
     );
   } catch (error) {
@@ -1328,6 +1342,7 @@ async function preloadInactiveLane(lane, generation) {
   const controller = new AbortController();
   state.inactiveSourceController?.abort();
   state.inactiveSourceController = controller;
+  const sourceIdentity = gradeSourceIdentity(lane);
   try {
     await state.gpuPreview.loadProxy(
       state.session.session_id,
@@ -1335,8 +1350,9 @@ async function preloadInactiveLane(lane, generation) {
       settledProxyLongEdge(),
       geometrySignature(),
       state.editRevision,
-      "source",
+      sourceIdentity,
       { signal: controller.signal, isCurrent: () => !controller.signal.aborted
+        && gradeSourceIdentity(lane) === sourceIdentity
         && generation === state.previewGeneration[lane] },
     );
     if (controller.signal.aborted || generation !== state.previewGeneration[lane]) return;

@@ -192,29 +192,38 @@ async function setDenoiseEnabled(enabled) {
     state.gpuPreview?.cancelDenoiseProcessing?.({ selectOriginal: true });
     // Save while this photo still owns the action; a Full redraw can outlast
     // the switch to another photo.
-    void persistDenoiseSettings();
+    const saved = persistDenoiseSettings().catch(() => false);
     renderDenoiseControls();
-    await renderGpuDraft(lane, { longEdge: refinementProxyLongEdge() });
+    const longEdge = refinementProxyLongEdge();
+    const rendered = await renderGpuDraft(lane, { longEdge });
+    if (rendered === false && !transientGpuRefusal() && await saved && isCurrent() && lane === state.currentView) {
+      await renderPreviewForLane(lane, true, longEdge, { denoiseFallback: true });
+    }
     if (!isCurrent()) return;
     renderDenoiseControls();
     return;
   }
-  const applied = await persistDenoiseSettings();
+  const applied = await persistDenoiseSettings().catch(() => false);
   if (!isCurrent()) return;
+  runtime.saveFailed = !applied;
   if (!applied) {
-    runtime.status = "error";
-    runtime.error = "Denoise settings could not be saved";
-    renderDenoiseControls();
+    denoiseRetryError(lane, "Denoise settings could not be saved.");
     return;
   }
   const denoise = state.gpuPreview?.diagnosticsSnapshot?.().denoise;
-  const expectedIdentity = `${state.session?.session_id}:${lane}:${refinementProxyLongEdge()}:${JSON.stringify(state.adjustments.shared?.geometry || {})}:source`;
+  const expectedIdentity = `${state.session?.session_id}:${lane}:${refinementProxyLongEdge()}:${JSON.stringify(state.adjustments.shared?.geometry || {})}:${gradeSourceIdentity(lane)}`;
   if (!runtime.dirty && denoise?.cacheReady && denoise.identity === expectedIdentity) {
     state.gpuPreview.selectDenoiseSelectorSource(true);
     runtime.status = "ready";
     runtime.showOriginal = false;
-    await renderGpuDraft(lane, { longEdge: refinementProxyLongEdge() });
+    const longEdge = refinementProxyLongEdge();
+    const rendered = await renderGpuDraft(lane, { longEdge });
     if (!isCurrent()) return;
+    if (rendered === false && lane === state.currentView && !transientGpuRefusal()) {
+      denoiseRetryError(lane, "The GPU could not draw the denoised preview.");
+      await renderPreviewForLane(lane, true, longEdge, { denoiseFallback: true });
+      return;
+    }
     debounceOverlayAndScopes();
     renderDenoiseControls();
     return;
@@ -227,14 +236,46 @@ function nativeDenoiseViewport(lane) {
     && Boolean(state.denoise[lane]?.enabled);
 }
 
+function gradeSourceIdentity(lane) {
+  if (lane !== "sdr") return "source";
+  return state.adjustments?.sdr?.use_authored_base !== false
+    && state.editDocument?.source?.luminance?.sdr_rendition === "authored" ? "authored-sdr" : "generated-sdr";
+}
+
+function denoiseRetryError(lane, detail) {
+  const runtime = state.denoiseRuntime[lane];
+  runtime.dirty = true;
+  runtime.status = "error";
+  runtime.error = `${detail} Try Recalculate again.`;
+  if (lane === state.currentView) renderDenoiseControls();
+  return false;
+}
+
 async function recalculateDenoise(lane = state.currentView, options = {}) {
   const settings = state.denoise[lane];
-  if (!state.session || !settings.enabled || !state.gpuPreview?.available) return false;
+  if (!state.session || !settings.enabled) return false;
   const runtime = state.denoiseRuntime[lane];
   const sessionId = state.session.session_id;
-  const authored = lane === "sdr" && state.adjustments?.sdr?.use_authored_base
-    && state.editDocument?.source?.luminance?.sdr_rendition === "authored";
-  const pixels = authored ? "authoredSdr" : "scene";
+  const sourceIdentity = gradeSourceIdentity(lane);
+  const current = () => state.session?.session_id === sessionId && state.denoiseRuntime[lane] === runtime
+    && settings.enabled && gradeSourceIdentity(lane) === sourceIdentity;
+  if (options.force && runtime.saveFailed) {
+    const generation = ++runtime.generation;
+    runtime.status = "recalculating";
+    renderDenoiseControls();
+    const saved = await persistDenoiseSettings().catch(() => false);
+    if (!current() || generation !== runtime.generation) return false;
+    runtime.saveFailed = !saved;
+    if (!saved) return denoiseRetryError(lane, "Denoise settings could not be saved.");
+  }
+  if (!state.gpuPreview?.available) {
+    denoiseRetryError(lane, "The GPU is unavailable.");
+    if (options.renderAfter !== false && lane === state.currentView) {
+      await renderPreviewForLane(lane, true, options.longEdge || refinementProxyLongEdge(), { denoiseFallback: true });
+    }
+    return false;
+  }
+  const pixels = sourceIdentity === "authored-sdr" ? "authoredSdr" : "scene";
   // Recalculate replaces preparation for these pixels. Both generated
   // renditions can use the new result, including after a switch of lane.
   if (state.denoiseGrainRefresh?.sessionId !== sessionId) {
@@ -267,13 +308,24 @@ async function recalculateDenoise(lane = state.currentView, options = {}) {
   } finally {
     if (runtime.analysisInFlight === pending) runtime.analysisInFlight = null;
   }
-  if (!ready || !settings.enabled || state.denoiseRuntime[lane] !== runtime) return false;
+  if (!current()) return false;
+  if (!ready) {
+    if (options.renderAfter !== false && lane === state.currentView && runtime.status === "error") {
+      await renderPreviewForLane(lane, true, longEdge, { denoiseFallback: true });
+    }
+    return false;
+  }
   if (options.renderAfter !== false) {
     const currentEdge = nativePreparation ? refinementProxyLongEdge() : longEdge;
     state.gpuPreview.retargetPreparedDenoise?.(state.session.session_id, lane, currentEdge,
-      geometrySignature(), "source");
-    await renderGpuDraft(lane, { longEdge: currentEdge });
-    if (state.denoiseRuntime[lane] !== runtime || !settings.enabled) return false;
+      geometrySignature(), sourceIdentity);
+    const rendered = await renderGpuDraft(lane, { longEdge: currentEdge });
+    if (!current()) return false;
+    if (rendered === false && lane === state.currentView && !transientGpuRefusal()) {
+      denoiseRetryError(lane, "The GPU could not draw the denoised preview.");
+      await renderPreviewForLane(lane, true, currentEdge, { denoiseFallback: true });
+      return false;
+    }
     debounceOverlayAndScopes();
   }
   return true;
@@ -285,8 +337,10 @@ async function recalculateDenoiseAnalysis(lane = state.currentView, options = {}
   const sessionId = state.session.session_id;
   const runtime = state.denoiseRuntime[lane];
   const generation = ++runtime.generation;
+  const sourceIdentity = gradeSourceIdentity(lane);
   const isCurrent = () => state.session?.session_id === sessionId
-    && state.denoiseRuntime[lane] === runtime && generation === runtime.generation;
+    && state.denoiseRuntime[lane] === runtime && generation === runtime.generation
+    && gradeSourceIdentity(lane) === sourceIdentity;
   runtime.status = state.gpuPreview.diagnosticsSnapshot().denoise.cacheReady ? "recalculating" : "preparing";
   runtime.error = "";
   if (lane === state.currentView) renderDenoiseControls();
@@ -297,16 +351,14 @@ async function recalculateDenoiseAnalysis(lane = state.currentView, options = {}
       JSON.parse(JSON.stringify(state.adjustments)),
       options.longEdge || refinementProxyLongEdge(),
       state.editRevision,
-      "source",
+      sourceIdentity,
       denoiseRendererControls(settings.controls),
       options.refresh ?? 0,
       Math.max(256, state.session.source?.width || 0, state.session.source?.height || 0),
+      { isCurrent },
     );
     if (!isCurrent()) return false;
-    if (!ready) {
-      runtime.dirty = true;
-      return false;
-    }
+    if (!ready) return denoiseRetryError(lane, "Denoise preparation did not finish.");
     runtime.status = "ready";
     runtime.dirty = false;
     runtime.showOriginal = false;
@@ -319,15 +371,8 @@ async function recalculateDenoiseAnalysis(lane = state.currentView, options = {}
     return true;
   } catch (error) {
     if (!isCurrent()) return false;
-    if (error?.name === "AbortError") {
-      runtime.dirty = true;
-      return false;
-    }
-    runtime.status = "error";
-    runtime.error = error?.message || error?.detail || JSON.stringify(error) || "Denoise analysis failed.";
-    console.warn("Denoise analysis failed.", error);
-    if (lane === state.currentView) renderDenoiseControls();
-    return false;
+    if (error?.name !== "AbortError") console.warn("Denoise analysis failed.", error);
+    return denoiseRetryError(lane, error?.message || error?.detail || "Denoise analysis failed.");
   }
 }
 
@@ -359,14 +404,17 @@ async function commitDenoiseControl(key, value) {
   const needsPreparation = key === "method" || (settings.controls.method !== "standard"
     && key !== "color_splotches");
   if (!needsPreparation) return persistDenoiseSettings();
-  runtime.generation++;
+  const generation = ++runtime.generation;
   runtime.dirty = true;
   runtime.status = settings.enabled ? "recalculating" : "off";
   renderDenoiseControls();
-  if (await persistDenoiseSettings() && settings.enabled && state.session?.session_id === sessionId
-    && state.denoiseRuntime[lane] === runtime) {
-    await recalculateDenoise(lane);
-  }
+  const saved = await persistDenoiseSettings().catch(() => false);
+  if (state.session?.session_id !== sessionId || state.denoiseRuntime[lane] !== runtime
+    || runtime.generation !== generation) return;
+  runtime.saveFailed = !saved;
+  if (!settings.enabled) return;
+  if (!saved) return denoiseRetryError(lane, "Denoise settings could not be saved.");
+  await recalculateDenoise(lane);
 }
 
 /** The renderer's names for a lane's live denoise controls. */

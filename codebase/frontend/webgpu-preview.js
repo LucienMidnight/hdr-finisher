@@ -807,6 +807,7 @@
 
     resetSession(sessionId = null) {
       this.resourceGeneration += 1;
+      this.denoisePreparationController?.abort();
       this.releaseHslSelection();
       this.denoiseModelWarm = null;
       this.editingCandidateCache?.clear();
@@ -2695,9 +2696,13 @@
       return { ...entry, hit: false };
     }
 
-    async preparedGrainTile(grain, region, source) {
-      const replaced = () => Object.assign(new DOMException("Grain preparation was replaced.", "AbortError"),
+    async preparedGrainTile(grain, region, source, isCurrent = () => true, signal = this.librarySignal) {
+      const replaced = () => Object.assign(new Error("Grain preparation expired or was replaced."),
         { grainPreparationReplaced: true });
+      const check = () => {
+        if (!isCurrent() || signal?.aborted) throw new DOMException("Grain draw cancelled.", "AbortError");
+      };
+      check();
       if (grain.stale) throw replaced();
       const { x, y, width, height } = region;
       const key = `grain|${grain.token}|${source.width}x${source.height}|${x},${y},${width},${height}`;
@@ -2705,8 +2710,15 @@
       if (previous) {
         this.denoiseTiles.delete(key);
         this.denoiseTiles.set(key, previous);
-        await previous.ready;
-        return previous;
+        try {
+          await previous.ready;
+          check();
+          return previous;
+        } catch (error) {
+          check();
+          if (error?.name !== "AbortError") throw error;
+          return this.preparedGrainTile(grain, region, source, isCurrent, signal);
+        }
       }
       const byteSize = width * height * 16;
       const cached = this.trimDenoiseTiles([], byteSize) + byteSize <= this.denoiseTileBudget();
@@ -2721,16 +2733,19 @@
       entry.ready = (async () => {
         const rows = Math.max(1, Math.floor(1024 * 1024 / width));
         for (let offset = 0; offset < height; offset += rows) {
+          check();
           const count = Math.min(rows, height - offset);
           const query = new URLSearchParams({ x, y: y + offset, width, height: count,
             frame_width: source.width, frame_height: source.height });
-          const response = await fetch(`${grain.url}/${grain.token}?${query}`);
+          const response = await fetch(`${grain.url}/${grain.token}?${query}`, { signal });
+          check();
           if (response.status === 409) {
             grain.stale = true;
             throw replaced();
           }
           if (!response.ok) throw new Error(`Clean Grain source request failed (${response.status}).`);
           const body = await response.arrayBuffer();
+          check();
           if (body.byteLength !== width * count * 16) throw new Error("Clean Grain returned an incomplete region.");
           const started = this.instrumentationEnabled ? performance.now() : 0;
           this.device.queue.writeTexture({ texture, origin: { x: 0, y: offset } }, body,
@@ -2745,8 +2760,8 @@
         await entry.ready;
         return entry;
       } catch (error) {
-        if (cached) this.dropDenoiseTiles([key]);
-        else texture.destroy();
+        if (cached && this.denoiseTiles.get(key) === entry) this.dropDenoiseTiles([key]);
+        else if (!cached) texture.destroy();
         throw error;
       }
     }
@@ -4403,6 +4418,7 @@
         // The reconstruction reads the original at its true frame position,
         // so the pixels are the ones the whole-frame resolve would produce.
         const resolved = await this.resolveDenoiseProxy(denoiseControls, {
+          isCurrent,
           region: { ...region },
           destination: {
             texture: graph.denoiseResolvedTexture,
@@ -5194,7 +5210,9 @@
       }
       // Direct grades one whole-frame texture, so adaptive Denoise fills its
       // reconstruction here, the first time this frame is drawn that way.
-      if (plan.decision.mode !== "tiled" && await this.ensureDenoiseResolved(proxy)) {
+      if (plan.decision.mode !== "tiled" && await this.ensureDenoiseResolved(proxy, () =>
+        resourceGeneration === this.resourceGeneration && serial === this.renderSerials.get(canvas)
+          && sourceOptions?.isCurrent?.() !== false)) {
         if (resourceGeneration !== this.resourceGeneration
           || serial !== this.renderSerials.get(canvas)
           || sourceOptions?.isCurrent?.() === false) return this.refuseRender("superseded-before-proxy");
@@ -5876,13 +5894,13 @@
      * Fill adaptive Denoise's whole-frame reconstruction of `proxy` if it is
      * missing or was made with other controls. Returns whether it did any work.
      */
-    async ensureDenoiseResolved(proxy) {
+    async ensureDenoiseResolved(proxy, isCurrent) {
       if (!proxy || proxy.region || !this.adaptiveDenoiseFor(proxy)) return false;
       const selector = this.denoiseSourceSelector;
       if (selector.identity !== proxy.identity) return false;
       if (selector.original !== proxy) selector.original = proxy;
       if (selector.resolved && selector.resolvedFor === JSON.stringify(selector.controls || {})) return false;
-      await this.resolveDenoiseProxy(selector.controls || {}, { source: proxy });
+      await this.resolveDenoiseProxy(selector.controls || {}, { source: proxy, isCurrent });
       return true;
     }
 
@@ -5901,25 +5919,35 @@
      * for it. A render reconstructs from the source it loads for itself, which
      * zoomed in is only the part on screen.
      */
-    async analyzeDenoiseProxy(sessionId, lane, adjustments, longEdge, editRevision = 0, sourceIdentity = "source", controls = {}, refresh = 0, nativeEdge = null) {
+    async analyzeDenoiseProxy(sessionId, lane, adjustments, longEdge, editRevision = 0, sourceIdentity = "source", controls = {}, refresh = 0, nativeEdge = null, options = {}) {
       if (!this.available || !sessionId) return false;
       const generation = ++this.denoiseSelectorGeneration;
+      this.denoisePreparationController?.abort();
+      const controller = new AbortController();
+      this.denoisePreparationController = controller;
       const geometrySignature = JSON.stringify(adjustments?.shared?.geometry || {});
       const frame = { identity: `${sessionId}:${lane}:${longEdge}:${geometrySignature}:${sourceIdentity}`, sourceIdentity };
-      return this.analyzeAdaptiveDenoise(sessionId, lane, frame, longEdge, editRevision, geometrySignature, generation, {
-        amount: controls.amount ?? 0.75,
-        luminance: controls.luminance ?? 0.5,
-        colorNoise: controls.colorNoise ?? controls.color_noise ?? 0.75,
-        detailRecovery: controls.detailRecovery ?? controls.detail_recovery ?? 0.5,
-        finestNoise: controls.finestNoise ?? controls.finest_noise ?? 0.5,
-        fineNoise: controls.fineNoise ?? controls.fine_noise ?? 0.5,
-        mediumNoise: controls.mediumNoise ?? controls.medium_noise ?? 0.5,
-        coarseNoise: controls.coarseNoise ?? controls.coarse_noise ?? 0.5,
-        method: controls.method ?? "standard",
-        grainEvenness: controls.grainEvenness ?? controls.grain_evenness ?? 1,
-        colorSplotches: controls.colorSplotches ?? controls.color_splotches ?? 1,
-        splotchSize: controls.splotchSize ?? controls.splotch_size ?? "small",
-      }, refresh, nativeEdge);
+      try {
+        const settings = {
+          amount: controls.amount ?? 0.75,
+          luminance: controls.luminance ?? 0.5,
+          colorNoise: controls.colorNoise ?? controls.color_noise ?? 0.75,
+          detailRecovery: controls.detailRecovery ?? controls.detail_recovery ?? 0.5,
+          finestNoise: controls.finestNoise ?? controls.finest_noise ?? 0.5,
+          fineNoise: controls.fineNoise ?? controls.fine_noise ?? 0.5,
+          mediumNoise: controls.mediumNoise ?? controls.medium_noise ?? 0.5,
+          coarseNoise: controls.coarseNoise ?? controls.coarse_noise ?? 0.5,
+          method: controls.method ?? "standard",
+          grainEvenness: controls.grainEvenness ?? controls.grain_evenness ?? 1,
+          colorSplotches: controls.colorSplotches ?? controls.color_splotches ?? 1,
+          splotchSize: controls.splotchSize ?? controls.splotch_size ?? "small",
+        };
+        const signal = options.signal ? AbortSignal.any([options.signal, controller.signal]) : controller.signal;
+        return await this.analyzeAdaptiveDenoise(sessionId, lane, frame, longEdge, editRevision, geometrySignature,
+          generation, settings, refresh, nativeEdge, { ...options, signal });
+      } finally {
+        if (this.denoisePreparationController === controller) this.denoisePreparationController = null;
+      }
     }
 
     async ensureAdaptiveDenoisePipelines(beforeNext = null) {
@@ -6085,25 +6113,29 @@
       });
     }
 
-    async analyzeAdaptiveDenoise(sessionId, lane, frame, longEdge, editRevision, geometrySignature, generation, controls, refresh, nativeEdge) {
+    async analyzeAdaptiveDenoise(sessionId, lane, frame, longEdge, editRevision, geometrySignature, generation, controls, refresh, nativeEdge, { signal, isCurrent, onGrain } = {}) {
       const startedAt = performance.now();
       this.denoiseCounters.analysisCalls += 1;
       this.recordStage("denoise-analysis", { state: "started", generation, longEdge, algorithm: ADAPTIVE_DENOISE_ALGORITHM_VERSION });
-      const query = `long_edge=${longEdge}&edit_revision=${editRevision}&geometry_signature=${encodeURIComponent(geometrySignature)}`;
+      const apiEdge = Math.min(longEdge, 16384);
+      const query = `long_edge=${apiEdge}&edit_revision=${editRevision}&geometry_signature=${encodeURIComponent(geometrySignature)}`;
       const experimental = controls.method === "clean_grain"
         || (controls.method === "fine_grain" && controls.grainEvenness);
       // Grade can start analysis before the first render sets maskSourceSize.
       // Measure the native source the Grain preparation will actually use.
       const native = (experimental ? nativeEdge : null) ?? (this.maskSourceSize?.sessionId === sessionId
         ? Math.max(256, this.maskSourceSize.width, this.maskSourceSize.height) : longEdge);
-      const modelQuery = experimental ? query.replace(`long_edge=${longEdge}`, `long_edge=${native}`) : query;
+      const modelQuery = experimental && native <= 16384 ? query.replace(`long_edge=${apiEdge}`, `long_edge=${native}`) : query;
+      const current = () => !signal?.aborted && isCurrent?.() !== false && generation === this.denoiseSelectorGeneration;
+      if (!current()) return false;
       const model = await this.fetchDenoiseModel(`/api/session/${sessionId}/denoise-model/${lane}?${modelQuery}`);
 
       let grain = null;
-      if (experimental && generation === this.denoiseSelectorGeneration) {
+      if (!current()) return false;
+      if (experimental) {
         const url = `/api/session/${sessionId}/denoise-grain/${lane}`;
         const response = await fetch(`${url}?${query}&refresh=${refresh}`, {
-          method: "POST", headers: { "Content-Type": "application/json" },
+          method: "POST", signal, headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             method: controls.method, amount: controls.amount, luminance: controls.luminance,
             color_noise: controls.colorNoise, detail_recovery: controls.detailRecovery,
@@ -6112,19 +6144,24 @@
             grain_evenness: controls.grainEvenness, splotch_size: controls.splotchSize,
           }),
         });
-        if (response.status === 409) throw new DOMException("Grain preparation was replaced.", "AbortError");
+        if (response.status === 409) {
+          if (!current()) return false;
+          throw Object.assign(new Error("Grain preparation expired or was replaced."), { grainPreparationReplaced: true });
+        }
         if (!response.ok) {
           const detail = response.status === 507 ? (await response.json().catch(() => null))?.detail : null;
           throw new Error(typeof detail === "string" ? detail : `Denoise preparation failed (${response.status}).`);
         }
         grain = { ...await response.json(), url, controls: { ...controls } };
+        onGrain?.(grain);
+        if (!current()) return false;
         await this.ensureGrainPipelines();
       }
       // The full-size model is one measurement per source, about a second on a
       // 42 MP frame. Asking for it now, from a smaller view, means the first
       // zoom to 100% finds it already made.
-      if (native > longEdge) void this.warmDenoiseModel(sessionId, lane, native);
-      if (generation !== this.denoiseSelectorGeneration || this.sessionId !== sessionId) {
+      if (native > longEdge && native <= 16384 && current()) void this.warmDenoiseModel(sessionId, lane, native);
+      if (!current() || this.sessionId !== sessionId) {
         this.recordStage("denoise-analysis", { state: "stale", generation });
         return false;
       }
@@ -6153,6 +6190,7 @@
         return true;
       }
       await this.ensureAdaptiveDenoisePipelines();
+      if (!current()) return false;
       const settings = { name: "Adaptive", algorithm: ADAPTIVE_DENOISE_ALGORITHM_VERSION, levels: 1 };
       const scratch = this.createAdaptiveDenoiseScratch();
       const cache = {
@@ -6361,7 +6399,7 @@
       return { paramBuffer, dispatches: slot, tiles: tiles.length };
     }
 
-    async resolveAdaptiveDenoise(selector, weights, sizes, generation, startedAt, region, destination, sharedEncoder, source) {
+    async resolveAdaptiveDenoise(selector, weights, sizes, generation, startedAt, region, destination, sharedEncoder, source, isCurrent) {
       await this.ensureAdaptiveDenoisePipelines();
       const frame = { x: 0, y: 0, width: source.width, height: source.height };
       const held = source.region || frame;
@@ -6392,13 +6430,11 @@
         const matches = grain?.token && Object.entries(grain.controls).every(([key, value]) => (
           key === "colorSplotches" || live[key] === value
         ));
-        const prepared = matches ? await this.preparedGrainTile(grain, target, source) : null;
+        const current = () => isCurrent?.() !== false && selector === this.denoiseSourceSelector
+          && (sharedEncoder || generation === this.denoiseSelectorGeneration);
+        const prepared = matches ? await this.preparedGrainTile(grain, target, source, current) : null;
         if (prepared?.transient) cleanGrainTransient = prepared.texture;
-        if (prepared && !sharedEncoder && (generation !== this.denoiseSelectorGeneration
-            || selector !== this.denoiseSourceSelector)) {
-          if (candidateIsNew) candidate.texture.destroy();
-          return false;
-        }
+        if (!current()) throw new DOMException("Denoise draw cancelled.", "AbortError");
         const encoder = sharedEncoder || this.device.createCommandEncoder();
         const encoded = prepared
           ? this.encodePreparedDenoise(encoder, prepared, target, candidate, destinationOrigin, sizes.colorSplotches)
@@ -6486,7 +6522,7 @@
       return true;
     }
 
-    async resolveDenoiseProxy(controls = {}, { region = null, destination = null, encoder: sharedEncoder = null, source = null } = {}) {
+    async resolveDenoiseProxy(controls = {}, { region = null, destination = null, encoder: sharedEncoder = null, source = null, isCurrent } = {}) {
       const selector = this.denoiseSourceSelector;
       if (!selector?.cache) return false;
       // Reconstruction reads the original's pixels; adopt the live copy if the
@@ -6511,7 +6547,7 @@
       });
       return this.resolveAdaptiveDenoise(
         selector, weights, adaptiveResolveOptions(controls), generation, startedAt, region, destination, sharedEncoder,
-        source || selector.original,
+        source || selector.original, isCurrent,
       );
     }
 
@@ -6590,6 +6626,7 @@
 
     cancelDenoiseProcessing({ selectOriginal = true } = {}) {
       const generation = ++this.denoiseSelectorGeneration;
+      this.denoisePreparationController?.abort();
       if (selectOriginal && this.denoiseSourceSelector) {
         this.denoiseSourceSelector.selected = "original";
       }
@@ -7847,9 +7884,10 @@
      */
     async holdSourceForPanning(sessionId, lane, longEdge, geometrySignature, editRevision, frame, options = {}) {
       const transport = sourceTransport();
-      if (this.proxies.has(transport.panStoreKey(sessionId, lane, longEdge, geometrySignature, "source"))) return true;
+      const sourceIdentity = options.identity || "source";
+      if (this.proxies.has(transport.panStoreKey(sessionId, lane, longEdge, geometrySignature, sourceIdentity))) return true;
       // The whole frame under its own key already serves every region.
-      if (this.wholeSourceResident(sessionId, lane, longEdge, geometrySignature)) return false;
+      if (this.wholeSourceResident(sessionId, lane, longEdge, geometrySignature, sourceIdentity)) return false;
       const bytes = Math.max(0, Number(frame?.width) || 0) * Math.max(0, Number(frame?.height) || 0) * 8;
       if (!this.gpuAllocator || !bytes
         || this.gpuAllocator.usedBytes() + bytes > this.memoryBudgetBytes() * this.panStoreBudgetShare) {
@@ -7857,7 +7895,7 @@
         return false;
       }
       return Boolean(await transport.loadPanStore(this, {
-        sessionId, lane, longEdge, geometrySignature, editRevision, options,
+        sessionId, lane, longEdge, geometrySignature, editRevision, sourceIdentity, options,
       }));
     }
 

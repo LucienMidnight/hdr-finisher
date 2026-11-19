@@ -185,7 +185,9 @@
   const pictureIdentity = photo => `${photo.path}|${photo.grade_identity || ""}|${photo.bytes}|${photo.mtime_ns}`;
   function pictureMode(img, hdr) {
     img.style.dynamicRangeLimit = hdr ? 'no-limit' : 'standard';
-    img.dataset.rendition = hdr ? 'hdr' : 'sdr'; img.dataset.peakNits = hdr ? '1000' : '203';
+    img.dataset.rendition = hdr ? 'hdr' : 'sdr';
+    if (!hdr) img.dataset.peakNits = '203';
+    else if (img.tagName === 'IMG') delete img.dataset.peakNits;
   }
   // One thumbnail scene size, scaled to fit any grid or filmstrip cell.
   const thumbnailEdge = () => 640;
@@ -496,13 +498,14 @@
     $("library-diagnostic").textContent = message;
     HDRLibraryStopwatch("picture_diagnostic",{...window.HDRLibraryPictureLog?.(meta),path:photo.path,duration_ms:elapsed});
   }
-  async function loadAndShow(photo, edge, canvas, controller, isCurrent, priority = 10, prepared = null, trace = null) {
+  async function loadAndShow(photo, edge, canvas, controller, isCurrent, priority = 10, prepared = null, trace = null, priorFailure = null) {
     const started = performance.now();
     let fallback = null;
     const restore = edge > 640 ? borrowStandIn(photo,canvas.parentNode,controller,isCurrent,trace) : null;
     try {
       while (isCurrent() && !controller.signal.aborted) {
         try {
+          if (priorFailure) { const error = priorFailure; priorFailure = null; throw error; }
           const meta = await (prepared || HDRLibraryScenes.load(photo.path,edge,controller.signal,priority,trace));
           prepared = null;
           if (!isCurrent()) return;
@@ -522,7 +525,7 @@
           prepared = null;
           if (aborted(error) || !isCurrent()) return;
           if (error.libraryYield) { await sleep(50,controller.signal); continue; }
-          if (error.libraryError || (!error.gpuUnavailable && !HDRLibraryPictures.lost?.())) throw error;
+          if (!error.grainPreparationReplaced && (error.libraryError || (!error.gpuUnavailable && !HDRLibraryPictures.lost?.()))) throw error;
           if (!fallback) {
             const meta = await api("/api/library/fallback-picture",{path:photo.path,edge},controller.signal);
             if (!isCurrent()) return;
@@ -532,6 +535,14 @@
             if (!isCurrent()) return;
             canvas.after(fallback); canvas.style.visibility = "hidden";
             pictureMode(fallback,HDRLibraryQuery.displayHDR(photo,state.hdr));
+          }
+          if (error.grainPreparationReplaced) {
+            const picture = fallback;
+            controller.signal.addEventListener("abort", () => { picture.remove(); canvas.style.visibility = ""; }, { once: true });
+            fallback = null;
+            status(`Showing a CPU preview · ${photo.name}`);
+            HDRLibraryTrace.present(trace,isCurrent,{route:"grain-cpu-fallback"});
+            return;
           }
           await sleep(2000,controller.signal);
         }
@@ -768,7 +779,7 @@
           } catch(error) {
             if (aborted(error) || !current()) return;
             if (error.libraryYield) { await sleep(50,cell.controller.signal); continue; }
-            if (error.libraryError || (!error.gpuUnavailable && !HDRLibraryPictures.lost?.())) throw error;
+            if (!error.grainPreparationReplaced && (error.libraryError || (!error.gpuUnavailable && !HDRLibraryPictures.lost?.()))) throw error;
             if (!cpuShown) {
               const meta = await api("/api/library/fallback-picture",{path:photo.path,edge:cell.edge},cell.controller.signal);
               if (!current()) return;
@@ -780,6 +791,7 @@
               window.HDRLibraryFolderPresented?.({view:container === space ? "grid" : "filmstrip",path:photo.path});
             cpuShown=true;
             }
+            if (error.grainPreparationReplaced) return;
             await sleep(2000,cell.controller.signal);
           }
         }
@@ -1348,8 +1360,8 @@
         overlays?.attach(photo,value.canvas,meta,controller,current);
       } catch (error) {
         if (!current()) return;
-        if (!aborted(error) && !error.libraryYield && HDRLibraryPictures.usable()) throw error;
-        meta = await loadAndShow(photo,2560,$("single-picture"),controller,current,0,null,trace);
+        if (!aborted(error) && !error.libraryYield && !error.grainPreparationReplaced && HDRLibraryPictures.usable()) throw error;
+        meta = await loadAndShow(photo,2560,$("single-picture"),controller,current,0,null,trace,error.grainPreparationReplaced ? error : null);
         if (meta) $("single-picture").dataset.readyIdentity = readyKey(photo);
       }
       if (!meta || !current()) return;

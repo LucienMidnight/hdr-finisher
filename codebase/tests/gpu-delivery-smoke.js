@@ -5,6 +5,106 @@ const root=fs.mkdtempSync(path.join(os.tmpdir(),"hdr-gpu-smoke-"));
 const python=require('../tools/lib/platform.cjs').pythonExecutable();
 const helper=path.join(__dirname,"helpers/gpu_delivery_fixture.py");
 const env={...process.env,PYTHONPATH:path.resolve(__dirname,"../backend")};
+async function authoredSdr(page, api) {
+  const assert = require("node:assert/strict");
+  const fixture = path.join(root,"authored.jpg");
+  execFileSync(python,[helper,"make-authored",path.join(root,"fixture.tiff"),fixture],{env});
+  const upload = await page.request.post(api("/api/session"),{multipart:{file:{name:"authored.jpg",mimeType:"image/jpeg",buffer:fs.readFileSync(fixture)}}});
+  assert.ok(upload.ok(),await upload.text());
+  const {session} = await upload.json();
+  await page.evaluate(async session => {
+    await activateDesktopSession(session, "");
+    await switchLane("sdr");
+  },session);
+  await page.waitForFunction(()=>state.currentView === "sdr" && previewIdleNow() && state.gpuPreview?.available);
+  assert.equal(await page.evaluate(()=>gradeSourceIdentity("sdr")),"authored-sdr");
+  const settings = {format:"jpeg_ultrahdr",quality:95,jpeg_chroma_subsampling:"444",
+    jpeg_gain_map_quality:95,jpeg_gain_map_scale:"full",dithering:"off",guarantee_hdr_peak:true};
+  const route = part => api(`/api/session/${session.session_id}/${part}`);
+  await page.request.post(api("/api/delivery/preferences"),{data:{force_cpu:true}});
+  for (const name of ["off","on"]) {
+    if (name === "on") {
+      await page.evaluate(async ()=>{
+        state.denoise.sdr.controls.amount = 1;
+        state.denoise.sdr.controls.luminance = 1;
+        await setDenoiseEnabled(true);
+        applyExecutionOverride("tiled");
+      });
+      await page.waitForFunction(()=>state.acceptedPresentation?.lane === "sdr"
+        && state.acceptedPresentation.transport === "WebGPU" && state.acceptedPresentation.execution === "tiled"
+        && state.denoiseRuntime.sdr.status === "ready" && previewIdleNow());
+      const grade = await page.evaluate(async ()=>{
+        const gpu=state.gpuPreview, target=gpu.presentationTarget;
+        return {...await gpu.readPresentationRegion(target.width,target.height),format:target.format};
+      });
+      fs.writeFileSync(path.join(root,"grade.json"),JSON.stringify(grade));
+    }
+    const target = path.join(root,`${name}.jpg`);
+    await global.HDRFinisherElectronTestHarness.selectExportPath(target);
+    const grant = await page.evaluate(()=>window.hdrFinisherDesktop.chooseExportPath({extension:"jpg",suggestedName:"authored.jpg"}));
+    const response = await page.request.post(route("export"),{data:{...settings,output_path:target,path_grant:grant.grant}});
+    const result = await response.json();
+    assert.equal(result.renderer,"cpu",JSON.stringify(result));
+    if (name === "on") {
+      const proofResponse = await page.request.post(route("proof/artifact"),{data:{...settings,full_size:true}});
+      const proof = await proofResponse.json();
+      assert.ok(proofResponse.ok(),JSON.stringify(proof));
+      assert.equal(proof.renderer,"cpu");
+      assert.equal(proof.sha256,createHash("sha256").update(fs.readFileSync(target)).digest("hex"));
+    }
+  }
+  const agreement = execFileSync(python,[helper,"compare-authored",root],{env,encoding:"utf8"});
+  console.log("Authored SDR Grade versus CPU export and byte-identical Proof",agreement.trim());
+
+  const authoredProxy = await page.evaluate(()=>[...state.gpuPreview.proxies.values()].find(proxy=>
+    proxy.lane === "sdr" && proxy.sourceIdentity === "authored-sdr")?.workingSpace);
+  assert.equal(authoredProxy,"linear-srgb");
+  const switched = await page.evaluate(async ()=>{
+    const confirm = window.HDRDialogs.confirm;
+    window.HDRDialogs.confirm = async ()=>true;
+    try { return await setSdrMatch(); }
+    finally { window.HDRDialogs.confirm = confirm; }
+  });
+  assert.equal(switched,true,await page.evaluate(()=>status.get("match")?.message));
+  const waitForSdr = ()=>page.waitForFunction(()=>state.acceptedPresentation?.lane === "sdr"
+    && state.acceptedPresentation.transport === "WebGPU" && state.acceptedPresentation.exact
+    && state.acceptedPresentation.generation === state.previewGeneration.sdr && previewIdleNow());
+  await waitForSdr();
+  const matched = await page.evaluate(()=>({
+    identity:gradeSourceIdentity("sdr"),
+    space:[...state.gpuPreview.proxies.values()].find(proxy=>proxy.lane === "sdr" && proxy.sourceIdentity === "generated-sdr")?.workingSpace,
+  }));
+  assert.deepEqual(matched,{identity:"generated-sdr",space:"acescg"});
+  assert.equal(await page.evaluate(()=>queueEditCommand("undo")),true);
+  await waitForSdr();
+  assert.equal(await page.evaluate(()=>gradeSourceIdentity("sdr")),"authored-sdr");
+  assert.match(await page.evaluate(()=>state.gpuPreview.denoiseSourceSelector.identity),/:authored-sdr$/);
+  console.log("Authored Match/Undo: linear sRGB → ACEScg → authored linear sRGB");
+
+  await page.evaluate(()=>commitDenoiseControl("method","fine_grain"));
+  await page.waitForFunction(()=>state.gpuPreview.denoiseSourceSelector?.cache?.grain?.token && previewIdleNow());
+  const fallback = await page.evaluate(async ()=>{
+    const gpu = state.gpuPreview, render = gpu.renderTo;
+    let attempts = 0;
+    gpu.renderTo = function(canvas, session, lane, ...args) {
+      if (lane === "sdr" && (canvas === els.previewCanvas || canvas === els.previewDenoiseDetail)) {
+        attempts++;
+        throw new GPUValidationError("Injected Grade Denoise validation failure");
+      }
+      return render.call(this,canvas,session,lane,...args);
+    };
+    try {
+      await recalculateDenoise("sdr",{force:true});
+      return {attempts,renderer:state.acceptedPresentation.renderer,
+        transport:state.acceptedPresentation.transport, status:state.denoiseRuntime.sdr.status};
+    } finally { gpu.renderTo = render; }
+  });
+  assert.equal(fallback.attempts,1,JSON.stringify(fallback));
+  assert.notEqual(fallback.transport,"WebGPU");
+  assert.equal(fallback.status,"error");
+  console.log("Grade validation failure: one GPU attempt, then CPU",JSON.stringify(fallback));
+}
+
 (async()=>{
   execFileSync(python,[helper,"make",path.join(root,"fixture.tiff"),"denoise"],{env});
   const browser=await chromium.launch();
@@ -72,5 +172,6 @@ const env={...process.env,PYTHONPATH:path.resolve(__dirname,"../backend")};
       if(!result.hdr.passed||!result.sdr.passed)throw Error("Finished renderer agreement exceeds mean < 1 / P99.9 <= 3.");
       if(!result.hdr.denoise_passed||!result.sdr.denoise_passed)throw Error("Denoise delivery perceptual limits exceeded.");
     }
+    await authoredSdr(page,api);
   }finally{await page.request.post(api("/api/delivery/preferences"),{data:{force_cpu:false}}).catch(()=>{});await browser.close();fs.rmSync(root,{recursive:true,force:true});}
 })().catch(error=>{console.error(error);process.exitCode=1;});

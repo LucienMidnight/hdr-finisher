@@ -185,3 +185,51 @@ def test_library_native_reads_same_pixels_without_grade_frame_setup(context, mon
     length=struct.unpack("<I",response.content[:4])[0]
     pixels=np.frombuffer(response.content[4+length:],dtype="<f4").reshape(64,96,4)
     np.testing.assert_array_equal(pixels[...,:3],frame.image.astype(np.float16).astype(np.float32))
+
+
+def test_library_thumbnail_keeps_grain_until_the_draw_releases_it(context, monkeypatch, tmp_path):
+    from hdr_finisher import library_live
+
+    client, frame = context
+    live = library_live.LivePictures(tmp_path, None)
+    meta = {"key": "live-grain-test", "edge": 640, "path": "test-photo", "source_key": "stored",
+            "adjustments": frame.adjustments.model_dump(mode="json"), "scene_width": 96, "scene_height": 64}
+
+    def build(_):
+        return SimpleFrame(session_id=meta["key"], image=frame.image, sdr_reference_image=None,
+                           adjustments=frame.adjustments, render_cache=SessionRenderCache(frame.image, None))
+
+    class SimpleFrame(SimpleNamespace):
+        pass
+
+    monkeypatch.setattr(live, "_frame", build)
+    monkeypatch.setitem(library_live._registry, meta["key"], (live, meta))
+    url = f"/api/session/{meta['key']}/denoise-grain/hdr"
+    prepared = client.post(url + "?long_edge=640", json={"method": "clean_grain", "grain_evenness": 0})
+    assert prepared.status_code == 200
+    region = url + "/" + prepared.json()["token"]
+    query = "?x=0&y=0&width=8&height=8&frame_width=96&frame_height=64"
+    response = client.get(region + query)
+    assert response.status_code == 200
+    assert len(response.content) == 8 * 8 * 16
+    assert client.delete(region).status_code == 204
+    assert client.get(region + query).status_code == 409
+
+
+def test_replaced_grain_fit_never_starts_tile_work(context, monkeypatch):
+    from hdr_finisher import denoise_grain
+
+    client, frame = context
+
+    def replace_during_fit(*args):
+        frame.render_cache._source_epoch += 1
+        return None
+
+    def unexpected_tiles(*args, **kwargs):
+        pytest.fail("An obsolete fit reached tile work")
+
+    monkeypatch.setattr(denoise_grain, "fit_grain", replace_during_fit)
+    monkeypatch.setattr(denoise_grain, "GrainPreparation", unexpected_tiles)
+    response = client.post("/api/session/test-photo/denoise-grain/hdr?long_edge=640",
+                           json={"method": "fine_grain", "grain_evenness": 1})
+    assert response.status_code == 409

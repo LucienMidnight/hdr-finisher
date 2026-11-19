@@ -1,7 +1,55 @@
 const assert = require("node:assert/strict");
 const { test } = require("node:test");
 const vm = require("node:vm");
-const { frontendSource } = require("./frontend-source.js");
+const { frontendSource, declarations } = require("./frontend-source.js");
+
+test("the reduced CPU Denoise image is presented at its actual size without another GPU render", async () => {
+  for (const reduced of [null, 4096]) {
+    const state = { session: { session_id: "photo" }, currentView: "hdr", gpuPreview: { available: true },
+      previewCache: {}, previewGeneration: { hdr: 1 }, previewControllers: {}, previewInfoByLane: {} };
+    const edge = reduced || 5202;
+    const presentation = [];
+    let gpuAttempts = 0;
+    const context = vm.createContext({ state, AbortController, URL, els: { scopeKindLabel: {} },
+      geometryDraftActive: () => false, geometrySignature: () => "{}", syncGlobalEditState: async () => true,
+      cpuPreviewReason: () => "gpu-failed:validation", localsBypassed: () => false,
+      previewExecutionForTier: () => "strips", mediaQueryMatch: () => true,
+      fetch: async () => new Response(new Blob(["pixels"]), { headers: {
+        "X-Image-Width": edge, "X-Image-Height": 3000, ...(reduced ? { "X-Preview-Reduced-Edge": reduced } : {}),
+      } }),
+      previewInfoFromResponse: () => ({ transport: "JPEG" }), shouldKeepHdrGpuSurface: () => true,
+      renderGpuDraft: async () => { gpuAttempts++; }, gpuPreviewEligible: () => true,
+      setGpuSurfaceHdr() {}, applyPreviewUrl: async () => true, refinementProxyLongEdge: () => 5202,
+      renderCompareStatus() {}, renderReadouts() {}, acceptPresentation: (...args) => presentation.push(args),
+      CPU_PREVIEW_MAX_LONG_EDGE: 16384 });
+    vm.runInContext(declarations("renderPreviewForLaneInner", "describeReducedDenoisePreview"), context);
+    assert.equal(await context.renderPreviewForLaneInner("hdr", true, 5202, { showProgress: false, denoiseFallback: true }), true);
+    assert.equal(gpuAttempts, 0);
+    assert.equal(presentation[0][9], edge);
+    assert.equal(presentation[0][5], "CPU/backend");
+    if (reduced) assert.match(state.previewUnavailableReason, /4096px/);
+    URL.revokeObjectURL(state.previewCache.hdr.url);
+  }
+});
+
+test("switching lanes after a hard Denoise failure uses the CPU without another GPU try", async () => {
+  const state = { currentView: "hdr", laneSwitchGeneration: 0, compareLayout: "single",
+    denoise: { sdr: { enabled: true } }, denoiseRuntime: { sdr: {} } };
+  const calls = [];
+  const context = vm.createContext({ state, syncGlobalEditState: async () => true, cacheReady: () => true,
+    gpuPreviewEligible: () => true, renderGpuDraft: async () => { calls.push("gpu"); return false; },
+    transientGpuRefusal: () => false, showCachedPreview: async (_, options) => {
+      calls.push(options?.skipGpu ? "cpu-cache" : "gpu-cache"); return false;
+    }, renderPreviewForLane: async (_, __, ___, options) => { calls.push(options.denoiseFallback ? "denoised-cpu" : "cpu"); },
+    recalculateDenoise: async () => calls.push("gpu-recalculate"), debouncePreview: () => calls.push("refine"),
+    currentCurveValues: () => [], settledProxyLongEdge: () => 1600, scopeLongEdge: () => 640,
+    previewNeedsRefinement: () => true, endBeforePeek() {}, abandonPerspectiveDraft() {}, suspendGradeInstruments() {},
+    renderLaneChrome() {}, renderLocalAdjustments() {}, syncCurveControlsFromState() {}, renderCurveChannelTabs() {},
+    drawCurveEditor() {}, renderReadouts() {}, refreshOverlay() {}, refreshScopes() {}, prepareInactivePreview() {} });
+  vm.runInContext(declarations("switchLane"), context);
+  await context.switchLane("sdr");
+  assert.deepEqual(calls, ["gpu", "cpu-cache", "denoised-cpu"]);
+});
 
 for (const method of ["standard", "fine_grain", "clean_grain"]) {
   test(`${method} keeps the sharp patch mounted while the replacement is drawn`, async () => {
@@ -52,6 +100,7 @@ for (const method of ["standard", "fine_grain", "clean_grain"]) {
       renderReadouts: noop, hidePreviewMessage: noop, requestAnimationFrame: noop,
     });
     vm.runInContext(frontendSource("preview-pipeline.js"), context);
+    vm.runInContext(declarations("gradeSourceIdentity"), context);
     context.denoiseUnderlayerEdge = () => 1600;
     context.visibleOutputRect = () => previous;
     assert.equal(await context.renderGpuDraftInner("hdr", { longEdge: 5202, viewport: previous }), true);

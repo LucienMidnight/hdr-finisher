@@ -127,6 +127,28 @@ def test_live_geometry_and_visible_cpu_fallback_keep_the_saved_grade(tmp_path):
     assert fallback_picture(root,path,saved,640)["url"].startswith("data:image/jpeg;base64,")
 
 
+def test_library_cpu_picture_respects_saved_hdr_peak(tmp_path, monkeypatch):
+    from hdr_finisher import library_thumbnail_codec
+    from hdr_finisher.adjustments import hdr_output_transport_signal
+    from hdr_finisher.color_context import scene_linear_to_nits
+    from hdr_finisher.library_live import fallback_picture
+    from hdr_finisher.sessions import SessionStore
+
+    path = photo(tmp_path)
+    saved = SessionStore().prepare_session(path, owns_source_path=False).edit_document().model_dump(mode="json")
+    saved["global_adjustments"]["hdr"].update(exposure=4, highlight_section_enabled=True,
+                                               highlight_compression_start_nits=120, highlight_compression_target_nits=400)
+    peaks = []
+
+    def encode(hdr, sdr, white):
+        peaks.append(float(scene_linear_to_nits(hdr_output_transport_signal(hdr).max(), white)))
+        return b"test picture"
+
+    monkeypatch.setattr(library_thumbnail_codec, "encode", encode)
+    fallback_picture(tmp_path / "cache", path, saved, 640)
+    assert peaks[0] <= 400
+
+
 def test_save_revert_and_copy_do_not_launch_finished_picture_work(tmp_path):
     from hdr_finisher.sessions import SessionStore
     from hdr_finisher.library_grades import LibraryGrades

@@ -184,6 +184,49 @@ def test_standard_denoise_jpeg_strips_preserve_finished_pixels(monkeypatch):
         np.testing.assert_array_equal(strips, whole)
 
 
+@pytest.mark.parametrize("method", ["standard", "fine_grain", "clean_grain"])
+def test_authored_sdr_standard_and_equivalent_grain_render_the_reference(monkeypatch, method):
+    from hdr_finisher import exporters, gpu_delivery
+    from hdr_finisher.models import ExportSettings
+
+    monkeypatch.setattr(gpu_delivery, "render_pair", lambda *args: None)
+    session = _session(_document("sdr"), _noisy())
+    session.sdr_reference_image = _noisy(seed=3) * .55
+    lane = session.denoise.sdr
+    lane.controls.method = method
+    lane.controls.grain_evenness = lane.controls.color_splotches = 0
+    kind = PreviewKind.SDR
+    settings = ExportSettings(format="jpeg_ultrahdr")
+    adjustments = session.adjustments
+    renderer = exporters._render_unwatermarked_branch
+    whole = renderer(session, settings, kind, adjustments)
+    strips = renderer(session, settings, kind, adjustments,
+                      denoise_source=exporters._jpeg_denoise_source(session, adjustments))
+    lane.enabled = False
+    plain = renderer(session, settings, kind, adjustments)
+    assert not np.array_equal(whole, plain)
+    np.testing.assert_array_equal(strips, whole)
+
+
+def test_cpu_grade_fallback_renders_grain_even_when_full_strips_are_requested():
+    from hdr_finisher.main import _render_selected_execution
+    from hdr_finisher.models import PreviewRequest
+    from hdr_finisher.render_cache import SessionRenderCache
+
+    session = _session(_document("sdr"), _noisy())
+    session.sdr_reference_image = _noisy(seed=5) * .55
+    session.render_cache = SessionRenderCache(session.image, session.sdr_reference_image)
+    kind = PreviewKind.SDR
+    settings = session.denoise.sdr
+    settings.controls.method = "fine_grain"
+    request = PreviewRequest(execution="strips")
+    denoised, _ = _render_selected_execution(session, request, kind, session.adjustments, 640, lambda: True)
+    settings.enabled = False
+    plain, _ = _render_selected_execution(session, request, kind, session.adjustments, 640, lambda: True)
+    assert denoised.shape == plain.shape
+    assert not np.array_equal(denoised, plain)
+
+
 def test_the_export_branch_actually_renders_the_denoised_source() -> None:
     """The helper above is only useful if the export graph calls it.
 
