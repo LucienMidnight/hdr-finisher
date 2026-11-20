@@ -239,7 +239,8 @@ def _render_unwatermarked_branch(
             source, reference, strip_adjustments = denoise_source(kind)
         image, report = render_in_strips(source, strip_adjustments, kind,
             sdr_reference_image=reference, color_context=color_context,
-            allocate_output=allocate_output if getattr(settings, "_bounded_cpu_delivery", False) else None)
+            allocate_output=allocate_output if getattr(settings, "_bounded_cpu_delivery", False) else None,
+            parallel_sdr_output=True)
         if kind.value in settings.editing_measurements:
             peak = report.scope_peak_value
             if kind == PreviewKind.HDR:

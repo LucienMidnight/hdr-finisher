@@ -1457,20 +1457,11 @@ def _compress_sdr_highlights(
         return _fixed_cap(result, start, target)
     if mode == "clip":
         return np.clip(result, 0.0, target).astype(np.float32, copy=False)
-    luma = _linear_luma(result)
-    positive_luma = np.clip(luma, 0.0, None)
-
     if mode == "peak_fit":
         color_handling = str(getattr(sdr, "highlight_compression_color_handling", "smooth_rolloff"))
         smooth_rolloff = color_handling == "smooth_rolloff"
         grouped_channels = color_handling == "path_to_white"
         attenuate = color_handling == "agx_attenuate"
-        measured_signal = sdr_highlight_peak_signal(result, sdr)
-        compression_signal = (
-            np.max(np.clip(result, 0.0, None), axis=-1)
-            if smooth_rolloff or grouped_channels or attenuate
-            else positive_luma
-        )
         measurement = str(getattr(sdr, "highlight_compression_peak_measurement", "maximum"))
         if measurement == "manual":
             peak = np.float32(
@@ -1480,16 +1471,18 @@ def _compress_sdr_highlights(
                 peak *= np.float32(2.0 ** float(getattr(sdr, "exposure", 0.0)))
         elif peak_override is not None:
             peak = np.float32(peak_override)
-        elif measured_signal is not None and measured_signal.size:
-            peak = np.float32(
-                np.quantile(measured_signal, 0.9999)
-                if measurement == "robust"
-                else np.max(measured_signal)
-            )
         else:
-            peak = np.float32(
-                max(float(getattr(sdr, "highlight_compression_source_peak_percent", 100.0)) / 100.0, 0.01)
-            )
+            measured_signal = sdr_highlight_peak_signal(result, sdr)
+            if measured_signal is not None and measured_signal.size:
+                peak = np.float32(
+                    np.quantile(measured_signal, 0.9999)
+                    if measurement == "robust"
+                    else np.max(measured_signal)
+                )
+            else:
+                peak = np.float32(
+                    max(float(getattr(sdr, "highlight_compression_source_peak_percent", 100.0)) / 100.0, 0.01)
+                )
         if peak <= target:
             return image
 
@@ -1524,6 +1517,7 @@ def _compress_sdr_highlights(
             return np.where(signal > params.effective_start, mapped, signal), u
 
         if attenuate:
+            compression_signal = np.max(np.clip(result, 0.0, None), axis=-1)
             mapped = _agx_attenuate(
                 result,
                 REC709_LUMA_WEIGHTS,
@@ -1545,6 +1539,13 @@ def _compress_sdr_highlights(
             # compression stays purely per-channel, so channels under the
             # shoulder are untouched there and both lanes develop one grain.
             high = np.max(result, axis=-1, keepdims=True)
+            active = high[..., 0] > params.effective_start
+            if not np.any(active):
+                return result
+            full = result
+            if not np.all(active):
+                result = result[active]
+                high = high[active]
             low = np.min(result, axis=-1, keepdims=True)
             safe_high = np.maximum(high, np.float32(1e-8))
             # Brightest channel on the shoulder as set; the others keep their
@@ -1561,8 +1562,15 @@ def _compress_sdr_highlights(
                 SDR_ROLLOFF_HUE_KEEP_START_STOPS, SDR_ROLLOFF_HUE_KEEP_FULL_STOPS, compression_stops
             )
             mapped = per_channel + hue_weight * (hue_kept - per_channel)
-            return np.where(high > params.effective_start, mapped, result).astype(np.float32, copy=False)
+            if full is result:
+                return mapped.astype(np.float32, copy=False)
+            full[active] = mapped
+            return full
 
+        compression_signal = (
+            np.max(np.clip(result, 0.0, None), axis=-1)
+            if grouped_channels else np.clip(_linear_luma(result), 0.0, None)
+        )
         target_signal, progress = map_signal(compression_signal)
         active = compression_signal[..., None] > params.effective_start
         mapped = _peak_fit_ratio_application(result, compression_signal, target_signal, active)
@@ -1570,6 +1578,7 @@ def _compress_sdr_highlights(
             mapped = _peak_fit_group_channels(mapped, target_signal[..., None], progress, active)
         return mapped.astype(np.float32, copy=False)
 
+    positive_luma = np.clip(_linear_luma(result), 0.0, None)
     span = target - start
     excess = np.maximum(positive_luma - start, 0.0)
     normalized = excess / span

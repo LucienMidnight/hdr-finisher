@@ -50,6 +50,7 @@ from .adjustments import (
     apply_sdr_output_highlight_compression,
 )
 from .color_context import RenderColorContext
+from .cpu_budget import CpuExecutor
 from .detail import detail_is_neutral
 from .finishing import apply_geometry_region, geometry_output_dimensions, geometry_resample_stage
 from .models import AdjustmentState, LocalAdjustment, PreviewKind
@@ -308,6 +309,7 @@ def render_in_strips(
     budget_bytes: int = DEFAULT_STRIP_BUDGET_BYTES,
     is_current: Callable[[], bool] | None = None,
     allocate_output: Callable[[tuple[int, int, int]], np.ndarray] | None = None,
+    parallel_sdr_output: bool = False,
 ) -> tuple[np.ndarray, StripReport]:
     """Render the selected lane strip by strip and return the whole frame.
 
@@ -359,6 +361,8 @@ def render_in_strips(
 
     if kind == PreviewKind.SDR:
         passes.append("render")
+        sdr = adjustments.sdr
+        reducer = _PeakReducer(plan.width * plan.height, robust=sdr.highlight_compression_peak_measurement == "robust")
         for index, (top, bottom) in enumerate(plan.strips):
             check(index)
             reference = region(sdr_reference_image, top, bottom) if authored_reference else None
@@ -373,22 +377,31 @@ def render_in_strips(
                 frame_window=window(top),
             )
             report.strips_rendered += 1
-        sdr = adjustments.sdr
-        reducer = _PeakReducer(plan.width * plan.height, robust=sdr.highlight_compression_peak_measurement == "robust")
-        measured = False
-        if sdr.highlight_section_enabled:
-            for index, (top, bottom) in enumerate(plan.strips):
-                check(index)
+            if sdr.highlight_section_enabled:
                 signal = sdr_highlight_peak_signal(output[top:bottom], sdr)
                 if signal is not None:
                     reducer.observe(signal)
-                    measured = True
-        anchor = HighlightAnchor(sdr_peak=reducer.value()) if measured else None
-        if measured:
+        measured = reducer.value()
+        if measured is not None:
+            anchor = HighlightAnchor(sdr_peak=measured)
             passes.append("sdr-anchor")
-        for index, (top, bottom) in enumerate(plan.strips):
-            check(index)
-            output[top:bottom] = apply_sdr_output_highlight_compression(output[top:bottom], adjustments, anchor=anchor)
+
+        def finish(rows: slice) -> np.ndarray:
+            return apply_sdr_output_highlight_compression(output[rows], adjustments, anchor=anchor)
+
+        with CpuExecutor() as pool:
+            for index, (top, bottom) in enumerate(plan.strips):
+                check(index)
+                if parallel_sdr_output and bottom - top > 1:
+                    # Two half-strips fit the existing one-strip scratch budget.
+                    middle = (top + bottom) // 2
+                    bands = (slice(top, middle), slice(middle, bottom))
+                    for rows, pixels in zip(bands, pool.map(finish, bands)):
+                        output[rows] = pixels
+                    del pixels
+                else:
+                    rows = slice(top, bottom)
+                    output[rows] = finish(rows)
         passes.append("sdr-output")
     else:
         anchor, passes_used = _render_hdr_strips(

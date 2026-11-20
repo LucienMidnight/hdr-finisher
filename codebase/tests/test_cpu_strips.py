@@ -163,7 +163,7 @@ def test_strip_report_carries_the_exact_peak_of_the_pixels_it_presented(kind):
 @pytest.mark.parametrize("kind", [PreviewKind.HDR, PreviewKind.SDR])
 @pytest.mark.parametrize("mode", ["peak_fit", "soft_ceiling", "clip", "fixed_cap"])
 @pytest.mark.parametrize("measurement", ["maximum", "robust", "manual"])
-@pytest.mark.parametrize("color_handling", ["smooth_rolloff", "path_to_white", "luminance"])
+@pytest.mark.parametrize("color_handling", ["smooth_rolloff", "path_to_white", "agx_attenuate", "luminance"])
 def test_every_highlight_configuration_is_exact(kind, mode, measurement, color_handling):
     """The highlight stages are the only whole-frame reductions in this graph.
 
@@ -181,9 +181,11 @@ def test_every_highlight_configuration_is_exact(kind, mode, measurement, color_h
     image = _source(height=37, width=29, seed=5)
 
     reference = apply_adjustments(image, state, kind)
-    strips, report = render_in_strips(image, state, kind, budget_bytes=4096)
+    strips, report = render_in_strips(
+        image, state, kind, budget_bytes=32 * 1024, parallel_sdr_output=kind == PreviewKind.SDR,
+    )
 
-    assert report.plan.strip_count > 1, "the corpus must actually be divided"
+    assert 1 < report.plan.strip_rows < len(image), "exercise multi-row strips"
     np.testing.assert_array_equal(
         strips, reference, err_msg=f"{kind}/{mode}/{measurement}/{color_handling}"
     )
@@ -227,7 +229,8 @@ def test_authored_sdr_base_is_exact():
 
     reference = apply_adjustments(image, state, PreviewKind.SDR, sdr_reference_image=reference_image)
     strips, report = render_in_strips(
-        image, state, PreviewKind.SDR, sdr_reference_image=reference_image, budget_bytes=4096
+        image, state, PreviewKind.SDR, sdr_reference_image=reference_image,
+        budget_bytes=128 * 1024, parallel_sdr_output=True,
     )
 
     assert report.plan.strip_count > 1
