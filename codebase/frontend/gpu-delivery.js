@@ -171,16 +171,19 @@
       // must not be refused for sharpening buffers it never allocates.
       const resizeBytes=(width!==job.output[0]||height!==job.output[1])
         ?16*(filmPixels+job.output[0]*height+outputPixels):0;
-      const reserve=Math.max(filmPixels*24,resizeBytes,
-        outputPixels*(job.finishing.sharpening==="off"?32:96))+(job.framing?outputPixels*16:0)+32*1024*1024;
+      const reserve=job.streamed ? filmPixels*8+width*32*16*2+32*1024*1024 :
+        Math.max(filmPixels*24,resizeBytes,
+          outputPixels*(job.finishing.sharpening==="off"?32:96))+(job.framing?outputPixels*16:0)+32*1024*1024;
       if(reserve>job.budget*.8)throw Error("GPU delivery finishing exceeds the available memory budget.");
       const lease=await fetch(`/api/delivery/gpu/${job.id}/reserve`,{method:"POST",
         headers:{"Content-Type":"application/json"},body:JSON.stringify({bytes:job.budget})});
+      if(lease.status===507)throw Error("GPU delivery working set does not fit the app memory ceiling.");
       if(!lease.ok)throw yielded("Grade needs the shared GPU memory budget.");
       const creativeBudget=job.budget-reserve;
       if(creativeBudget<256*1024*1024)throw Error("Insufficient memory for the delivery graph.");
       gpu.setMemoryBudget(creativeBudget/(1024**3));
-      finishing=new HDRGpuDeliveryFinishing(gpu,permit);await finishing.initialize();
+      finishing=new HDRGpuDeliveryFinishing(gpu,permit);
+      if(!job.streamed)await finishing.initialize();
       gpu.device.pushErrorScope("out-of-memory");gpu.device.pushErrorScope("validation");
       stamp("setup_ms");
       try{
@@ -190,7 +193,7 @@
         // alias carries no bytes of its own so memory is not counted twice.
         const sharedSource=!(job.authored_sdr&&job.adjustments.sdr?.use_authored_base&&!job.adjustments.sdr?.linked_to_hdr);let hdrSource=null;
         const edge=Math.max(256,width,height);
-        for(const lane of ["hdr","sdr"]){
+        for(const lane of job.lanes||["hdr","sdr"]){
           await permit();
           const signature=JSON.stringify(job.adjustments.shared.geometry);
           const sourceIdentity=lane==="sdr"&&!sharedSource?"authored-sdr":"source";
@@ -218,13 +221,22 @@
           if(!result?.rendered && result?.execution!=="direct")throw Error(`GPU delivery refused the grade: ${result?.reason||JSON.stringify(result?.refusals)}`);
           if(!delivery.params)throw Error("GPU delivery produced no finished image.");job.params=delivery.params;
           stamp("creative_ms",lane);
-          const texture=await finishing.finish(capture,job,lane);stamp("finishing_ms",lane);
           const endpoint=`/api/delivery/gpu/${job.id}/pixels/${lane}`;
-          if(job.grain_reconstruction){
-            await finishing.read(texture,async(row,rows,pixels)=>{
-              const uploaded=await fetch(`${endpoint}?row=${row}&rows=${rows}`,{method:"POST",body:new Blob([pixels])});
-              if(!uploaded.ok)throw Error("GPU encoder strip handoff failed.");
+          const sendRows=async(row,rows,pixels)=>{
+            const uploaded=await fetch(`${endpoint}?row=${row}&rows=${rows}`,{
+              method:"POST",body:job.streamed?pixels:new Blob([pixels]),
             });
+            if(!uploaded.ok)throw Error("GPU encoder strip handoff failed.");
+          };
+          if(job.streamed){
+            gpu.resetSession(job.id);hdrSource=null;
+            await finishing.finishRows(capture,job,lane,sendRows);
+            stamp("finish_readback_and_handoff_ms",lane);
+            continue;
+          }
+          const texture=await finishing.finish(capture,job,lane);stamp("finishing_ms",lane);
+          if(job.grain_reconstruction){
+            await finishing.read(texture,sendRows);
             stamp("readback_and_handoff_ms",lane);
             continue;
           }

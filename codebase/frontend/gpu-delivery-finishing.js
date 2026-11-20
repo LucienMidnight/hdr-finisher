@@ -181,6 +181,61 @@ fn lanczos(v:f32)->f32 { if(abs(v)>=3.){return 0.;} return sinc(v)*sinc(v/3.); }
     }finally{buffer.destroy();this.release(photo);}
     return canvas;
   }
+  async finishRows(capture,job,lane,sendRows){
+    const {gpu,device}=this,P=window.HDRGpuParamLayout.indices;
+    const {SHADER_SOURCE,PEAK_REDUCTION_SHADER_SOURCE}=window.HDRWebGPUShaders;
+    const width=capture.width,height=capture.height,rows=Math.min(32,height);
+    const stride=Math.ceil(width*16/256)*256;
+    const params=new Float32Array(job.params);
+    params[P.TILE_VALID_WIDTH]=params[P.FRAME_WIDTH]=width;
+    params[P.TILE_VALID_HEIGHT]=params[P.FRAME_HEIGHT]=height;
+    params[P.TILE_ORIGIN_X]=params[P.TILE_ORIGIN_Y]=0;
+    const measurement=job.adjustments[lane].highlight_compression_peak_measurement;
+    if(params[P.HIGHLIGHT_MODE]===1 && measurement!=="manual"){
+      const module=device.createShaderModule({code:PEAK_REDUCTION_SHADER_SOURCE+`
+@compute @workgroup_size(8,8) fn deliveryPeak(@builtin(global_invocation_id) id:vec3u){
+  if(any(id.xy>=textureDimensions(peakSource))){return;}
+  let stored=textureLoad(peakSource,vec2i(id.xy),0);
+  let sdrV2=(peakParams[${P.HDR_LANE}]<0.5 || peakParams[${P.LINKED_SDR}]>0.5) && peakParams[${P.SDR_PEAK_LANE}]>0.5;
+  recordPeak(peakSignalOf(stored.rgb*stored.a,sdrV2));
+}`});
+      const pipeline=await device.createComputePipelineAsync({layout:"auto",compute:{module,entryPoint:"deliveryPeak"}});
+      await this.permit();
+      params[P.HIGHLIGHT_ANCHOR]=await gpu.runPeakReduction(pipeline,capture,width,height,params,measurement,`${job.id}:${lane}:delivery`);
+    }
+    const module=device.createShaderModule({code:SHADER_SOURCE+`
+@fragment fn deliveryStrip(input:VertexOut)->@location(0) vec4f {
+  return vec4f(scopeOutputAt(frameCoordinate(vec2i(input.position.xy))),1.0);
+}`});
+    const pipeline=await device.createRenderPipelineAsync({layout:gpu.pipelineLayout,vertex:{module,entryPoint:"vertexMain"},
+      fragment:{module,entryPoint:"deliveryStrip",targets:[{format:"rgba32float"}]},primitive:{topology:"triangle-list"}});
+    const strip=this.texture(width,rows),dummy=this.texture(1,1,"rgba16float");
+    const buffer=gpu.createStorageBuffer(params);
+    const readback=device.createBuffer({size:stride*rows,usage:GPUBufferUsage.COPY_DST|GPUBufferUsage.MAP_READ});
+    const output=new Float32Array(width*rows*4);
+    const bind=gpu.bindGraphResources(capture.createView(),dummy.createView(),{buffer},dummy.createView());
+    try{
+      for(let row=0;row<height;row+=rows){
+        await this.permit();
+        const count=Math.min(rows,height-row);
+        params[P.TILE_ORIGIN_Y]=row;
+        device.queue.writeBuffer(buffer,0,params);
+        const encoder=device.createCommandEncoder();
+        const pass=encoder.beginRenderPass({colorAttachments:[{view:strip.createView(),loadOp:"clear",storeOp:"store"}]});
+        pass.setScissorRect(0,0,width,count);pass.setPipeline(pipeline);pass.setBindGroup(0,bind);pass.draw(3);pass.end();
+        encoder.copyTextureToBuffer({texture:strip},{buffer:readback,bytesPerRow:stride},[width,count]);
+        device.queue.submit([encoder.finish()]);
+        await readback.mapAsync(GPUMapMode.READ);
+        const mapped=new Float32Array(readback.getMappedRange());
+        for(let offset=0;offset<count;offset++)output.set(mapped.subarray(offset*stride/4,offset*stride/4+width*4),offset*width*4);
+        readback.unmap();
+        await sendRows(row,count,output.subarray(0,width*count*4));
+      }
+    }finally{
+      buffer.destroy();readback.destroy();
+      for(const texture of [strip,dummy,capture])this.release(texture);
+    }
+  }
   async read(texture,sendRows){
     const width=texture.width,height=texture.height,stride=Math.ceil(width*16/256)*256;
     const rows=Math.max(1,Math.min(sendRows?32:128,Math.floor(this.device.limits.maxBufferSize/stride)));

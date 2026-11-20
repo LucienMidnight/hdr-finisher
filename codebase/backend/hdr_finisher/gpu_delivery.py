@@ -16,6 +16,7 @@ from types import SimpleNamespace
 from uuid import uuid4
 from threading import RLock
 from functools import wraps
+from weakref import finalize
 import numpy as np
 from fastapi import APIRouter, HTTPException, Request, Response
 from .color_context import RenderColorContext
@@ -26,7 +27,12 @@ from .delivery_memory import DeliveryMemory
 
 ROOT_ENV = "HDR_FINISHER_GPU_DELIVERY_SPOOL"
 GRAIN_TRIAL_ENV = "HDR_FINISHER_GPU_GRAIN_DELIVERY"
+STREAMED_TRIAL_ENV = "HDR_FINISHER_GPU_STREAMED_DELIVERY"
+STREAMED_HOST_BYTES = 160 * 1024**2
+STREAMED_WRITE_ROWS = 32
 _sessions = {}
+_borrowed_sources = {}
+_router_pid = None
 _lock = RLock()
 _clients = {}
 _activity = {"until": 0., "bytes": 0, "budget": 536870912}
@@ -110,6 +116,61 @@ def grain_delivery_enabled(frame):
     return os.environ.get(GRAIN_TRIAL_ENV) == "1" and _uses_grain_reconstruction(frame)
 
 
+def streamed_delivery_enabled(frame, settings, adjustments):
+    from .finishing import resolve_output_dimensions
+    from .models import GeometryAdjustments
+    from .photo_framing import delivery_layout
+
+    if (os.environ.get(STREAMED_TRIAL_ENV) != "1" or
+            settings.format not in {"jpeg_ultrahdr", "sdr_jpeg"} or
+            adjustments.shared.geometry != GeometryAdjustments() or
+            settings.output_finishing.sharpening != "off" or getattr(frame, "raw_development", None)):
+        return False
+    watermark = settings.watermark
+    if watermark.mode != "off" and watermark.opacity and (watermark.text.strip() or watermark.mode == "rendition_test"):
+        return False
+    height, width = frame.image.shape[:2]
+    reference = getattr(frame, "sdr_reference_image", None)
+    return (frame.image.dtype == np.float32
+            and (reference is None or reference.dtype == np.float32)
+            and getattr(frame, "framing_source_size", None) in (None, (width, height))
+            and max(width, height) <= 16384
+            and resolve_output_dimensions(width, height, settings.output_finishing) == (width, height)
+            and delivery_layout(frame, settings, adjustments) is None)
+
+
+def _open_delivery_file(shape):
+    from .config import APP_DATA_DIR
+    from .library_cache import LibraryCache
+
+    handle, release = LibraryCache(APP_DATA_DIR).open_grade_scratch(int(np.prod(shape)) * 4)
+    return {"file": str(handle.name), "shape": shape}, handle, release
+
+
+def _stage_delivery_source(image, resources):
+    if image is None:
+        return None
+    description, handle, release = _open_delivery_file(image.shape)
+    resources.append(release)
+    for top in range(0, image.shape[0], STREAMED_WRITE_ROWS):
+        band = np.ascontiguousarray(image[top:top + STREAMED_WRITE_ROWS], dtype="<f4")
+        if handle.write(memoryview(band).cast("B")) != band.nbytes:
+            raise OSError("Incomplete GPU source staging write.")
+    return description
+
+
+def _map_delivery_output(description, release):
+    pixels = np.memmap(description["file"], mode="r", dtype="<f4", shape=tuple(description["shape"]))
+    mapping = pixels._mmap
+
+    def cleanup():
+        mapping.close()
+        release()
+
+    finalize(pixels, cleanup)
+    return pixels
+
+
 def _uses_grain_reconstruction(frame):
     from .exporters import denoise_settings_for_export
     from .models import PreviewKind
@@ -141,7 +202,9 @@ def _render_pair(frame, owner, settings, adjustments):
     native_size = getattr(frame, "framing_source_size", None) or geometry_output_dimensions(
         frame.image.shape[1], frame.image.shape[0], adjustments.shared.geometry)
     grain_reconstruction = _uses_grain_reconstruction(frame)
-    grain_trial = grain_reconstruction and os.environ.get(GRAIN_TRIAL_ENV) == "1"
+    streamed = streamed_delivery_enabled(frame, settings, adjustments)
+    grain_trial = grain_reconstruction and (streamed or os.environ.get(GRAIN_TRIAL_ENV) == "1")
+    lanes = ("sdr",) if streamed and settings.format == "sdr_jpeg" else ("hdr", "sdr")
     # Full-size Proof states this size and passes only enabled locals; export
     # derives the same size and passes all locals. Key on what is rendered so
     # both share one finished pair and one CPU fallback decision.
@@ -150,7 +213,7 @@ def _render_pair(frame, owner, settings, adjustments):
         repr(getattr(frame, "denoise", None)), getattr(frame, "hdr_reference_white_nits", 203),
         settings.output_finishing.model_dump_json(), policy["effective_force_cpu"],
         settings.export_with_frame, repr(getattr(frame, "framing", None)),
-        native_size, getattr(frame, "framing_output_limit", None), grain_trial)
+        native_size, getattr(frame, "framing_output_limit", None), grain_trial, streamed, lanes)
     cached = getattr(owner, "_delivery_cache", None)
     if cached and cached[0] == signature:
         frame._delivery_record = cached[2]
@@ -161,6 +224,7 @@ def _render_pair(frame, owner, settings, adjustments):
     directory = None
     cacheable = True
     memory = DeliveryMemory()
+    resources = []
     try:
         if policy["effective_force_cpu"]:
             return None
@@ -185,7 +249,7 @@ def _render_pair(frame, owner, settings, adjustments):
         if layout:
             output = (layout.width, layout.height)
         raw = getattr(frame, "raw_development", None)
-        if grain_trial:
+        if grain_trial and not streamed:
             from . import app_memory
 
             census = app_memory.snapshot()
@@ -201,22 +265,37 @@ def _render_pair(frame, owner, settings, adjustments):
         identity = "delivery-" + uuid4().hex
         directory = root / identity
         directory.mkdir()
-        source_memory, _ = memory.allocate(frame.image.shape, None if raw else frame.image)
+        output_releases = {}
+        file_sources = None
+        if streamed:
+            if _router_pid == os.getpid():
+                with _lock: _borrowed_sources[identity] = (frame.image, reference)
+            else:
+                file_sources = [_stage_delivery_source(image, resources) for image in (frame.image, reference)]
+            source_memory = reference_memory = None
+            lane_memory = {}
+            for lane in lanes:
+                lane_memory[lane], _, release = _open_delivery_file((output[1], output[0], 3))
+                resources.append(release)
+                output_releases[lane] = release
+        else:
+            source_memory, _ = memory.allocate(frame.image.shape, None if raw else frame.image)
+            reference_memory = memory.allocate(reference.shape, reference)[0] if reference is not None else None
+            lane_memory = {lane: memory.allocate((output[1], output[0], 4))[0] for lane in lanes}
         raw_memory = None
         if raw:
             sensor_body = raw["body"]
             raw_memory, data = memory.allocate((len(sensor_body) // 4,))
             data.view(np.uint8)[:] = np.frombuffer(sensor_body, dtype=np.uint8)
-        reference_memory = memory.allocate(reference.shape, reference)[0] if reference is not None else None
         framing = None if layout is None else dict(layout.as_dict(), colors={
             lane: [color.tolist() for color in layer_colors(frame.framing, lane,
                 getattr(frame, "hdr_reference_white_nits", 203), delivery_ceiling_nits(adjustments))]
             for lane in ("hdr", "sdr")})
-        lane_memory = {lane: memory.allocate((output[1], output[0], 4))[0] for lane in ("hdr", "sdr")}
         denoise = getattr(frame, "denoise", None) or DenoiseDocumentSettings()
         from .denoise_measurement import source_identity
         _atomic(directory / "request.json", {
             "memory": {"source": source_memory, "reference": reference_memory, "raw": raw_memory, **lane_memory},
+            "file_sources": file_sources, "streamed": streamed, "lanes": lanes,
             "raw": {key: value for key, value in raw.items() if key != "body"} if raw else None,
             "id": identity, "width": width, "height": height, "output": output,
             "photo_output": photo_output, "framing": framing,
@@ -229,7 +308,7 @@ def _render_pair(frame, owner, settings, adjustments):
             "finishing": settings.output_finishing.model_dump(mode="json"),
             "priority": getattr(frame, "delivery_priority", 20), "created": time.time()})
         reply = _wait_for_result(directory, root, frame)
-        while reply.get("error") in PREEMPTED_REASONS:
+        if reply.get("error") in PREEMPTED_REASONS:
             # Give the GPU back, then wait for another turn with the same
             # request (and its original queue time).
             for name in ("result.json", "claimed"):
@@ -237,12 +316,18 @@ def _render_pair(frame, owner, settings, adjustments):
             reply = _wait_for_result(directory, root, frame)
         if reply.get("error"):
             raise RuntimeError(reply["error"])
-        result = {}
-        for lane in ("hdr", "sdr"):
-            image = memory.attach(lane_memory[lane])[..., :3].copy()
-            if not np.isfinite(image).all():
-                raise ValueError("GPU delivery returned invalid pixels.")
-            result[lane] = image
+        images = {}
+        for lane in lanes:
+            if streamed:
+                release = output_releases[lane]
+                image = _map_delivery_output(lane_memory[lane], release)
+                resources.remove(release)
+            else:
+                image = memory.attach(lane_memory[lane])[..., :3].copy()
+                if not np.isfinite(image).all():
+                    raise ValueError("GPU delivery returned invalid pixels.")
+            images[lane] = image
+        result = images
         frame._delivery_timings = reply.get("timings_ms", {})
         frame._raw_measurements = reply.get("raw_measurements")
         record = {"renderer": "gpu", "fallback_reason": None}
@@ -255,10 +340,13 @@ def _render_pair(frame, owner, settings, adjustments):
         if directory is not None:
             with _lock:
                 _sessions.pop(directory.name, None)
+                _borrowed_sources.pop(directory.name, None)
             try: (directory / "cancelled").touch()
             except OSError: pass
             shutil.rmtree(directory, ignore_errors=True)
         memory.close()
+        for release in resources:
+            release()
         frame._delivery_record = record
         owner._delivery_record = record
         frame._delivery_cache = owner._delivery_cache = (signature, result, record) if cacheable else None
@@ -286,6 +374,8 @@ def _wait_for_result(directory, root, frame):
 def create_gpu_delivery_router():
     # Set before any Library/batch children are spawned; they inherit this one
     # app-owned spool, including in frozen builds.
+    global _router_pid
+    _router_pid = os.getpid()
     root = Path(tempfile.mkdtemp(prefix="hdr-gpu-delivery-"))
     os.environ[ROOT_ENV] = str(root)
     _remove_stale_roots(root)
@@ -293,6 +383,7 @@ def create_gpu_delivery_router():
     router = APIRouter(prefix="/api/delivery/gpu")
     active = {}
     raw_jobs = {}
+    from . import app_memory
     from .library_scheduler import scheduler
     budget_lock = scheduler.lock
     scheduler.gpu_draw_room = 640*640*64 + 64*1024*1024
@@ -327,6 +418,8 @@ def create_gpu_delivery_router():
             if not directory.exists() or (directory / "cancelled").exists():
                 active.pop(key, None)
                 with _lock: _sessions.pop(key, None)
+                if value.get("streamed"):
+                    app_memory.admit(key, 0, release=True)
         _sweep(root, active)
         deliveries = list(waiting_deliveries())
         if deliveries or active or time.monotonic() < _activity["until"]:
@@ -445,6 +538,8 @@ def create_gpu_delivery_router():
                         break
                 except (OSError, ValueError, KeyError): continue
         preempt = time.monotonic() < _activity["until"] or higher
+        if identity in active and active[identity][1].get("streamed") and active[identity][1].get("reservation"):
+            app_memory.admit(identity, active[identity][1]["reservation"] + STREAMED_HOST_BYTES)
         return {"cancelled": bool(identity and identity not in active),
             "reason": priority_reason if higher else "GPU delivery released the shared memory budget for Grade.",
             "preempt": preempt, "ready": not preempt,
@@ -477,8 +572,16 @@ def create_gpu_delivery_router():
             value["budget"] = max(0, _activity["budget"] - _activity["bytes"])
             return {key: item for key, item in value.items() if key != "memory"}
         memory = DeliveryMemory()
-        image = memory.attach(value["memory"]["source"])
-        reference = memory.attach(value["memory"]["reference"]) if value["memory"]["reference"] else None
+        if value.get("streamed"):
+            with _lock: borrowed = _borrowed_sources.get(value["id"])
+            if borrowed is not None:
+                image, reference = borrowed
+            else:
+                image, reference = (np.memmap(source["file"], mode="r", dtype="<f4", shape=tuple(source["shape"]))
+                                    if source else None for source in value["file_sources"])
+        else:
+            image = memory.attach(value["memory"]["source"])
+            reference = memory.attach(value["memory"]["reference"]) if value["memory"]["reference"] else None
         context = RenderColorContext(value["white"])
         from .models import EditDocument
         saved = validate_saved(EditDocument, {
@@ -501,7 +604,14 @@ def create_gpu_delivery_router():
         with _lock: _sessions[value["id"]] = frame
         active[value["id"]] = (directory, value)
         value["budget"] = max(0, _activity["budget"] - _activity["bytes"])
-        return {key: item for key, item in value.items() if key != "memory"}
+        if value.get("streamed"):
+            census = app_memory.snapshot()
+            starting = max(app_memory.STARTING, census["totalBytes"] + census["reservedBytes"])
+            value["budget"] = min(value["budget"], max(0, app_memory.CEILING - starting - STREAMED_HOST_BYTES))
+            from .library_diagnostics import log
+            log("gpu_delivery_streamed_admission", starting_bytes=starting, host_transfer_bytes=STREAMED_HOST_BYTES,
+                gpu_budget_bytes=value["budget"], ceiling_bytes=app_memory.CEILING)
+        return {key: item for key, item in value.items() if key not in {"memory", "file_sources"}}
 
     @router.get("/{identity}/dng-source")
     def dng_source(identity: str):
@@ -568,7 +678,11 @@ def create_gpu_delivery_router():
             if identity not in active: raise HTTPException(404, "GPU delivery job expired.")
             if requested > max(0, _activity["budget"] - _activity["bytes"]):
                 raise HTTPException(409, "Grade needs the shared GPU budget.")
-            active[identity][1]["reservation"] = requested
+            value = active[identity][1]
+            if value.get("streamed") and (requested > value["budget"] or
+                    not app_memory.admit(identity, requested + STREAMED_HOST_BYTES)["granted"]):
+                raise HTTPException(507, "GPU delivery working set does not fit the app memory ceiling.")
+            value["reservation"] = requested
             return {}
 
     @router.post("/{identity}/pixels/{lane}")
@@ -578,6 +692,45 @@ def create_gpu_delivery_router():
         directory, value = active[identity]
         if lane not in value["memory"]:
             raise HTTPException(400, "Unexpected delivery lane.")
+        if value.get("streamed"):
+            width, height = value["output"]
+            next_rows = value.setdefault("next_rows", {})
+            uploading = value.setdefault("uploading", set())
+            if (lane in uploading or row is None or rows is None or row != next_rows.get(lane, 0)
+                    or not 1 <= rows <= STREAMED_WRITE_ROWS or row + rows > height):
+                raise HTTPException(400, "Incorrect delivery pixel rows.")
+            uploading.add(lane)
+            try:
+                body = bytearray(rows * width * 16)
+                offset = 0
+                async for chunk in request.stream():
+                    if offset + len(chunk) > len(body):
+                        raise HTTPException(400, "Incorrect delivery pixel size.")
+                    body[offset:offset + len(chunk)] = chunk
+                    offset += len(chunk)
+                if offset != len(body):
+                    raise HTTPException(400, "Incorrect delivery pixel size.")
+                rgb = np.ascontiguousarray(np.frombuffer(body, dtype="<f4").reshape(rows, width, 4)[..., :3])
+                if not np.isfinite(rgb).all():
+                    raise HTTPException(400, "GPU delivery returned invalid pixels.")
+                if lane == "hdr":
+                    from .adjustments import _enforce_exact_hdr_output_target
+                    from .hdr_ceiling import delivery_ceiling_nits
+
+                    frame = session(identity)
+                    if frame is None:
+                        raise HTTPException(404, "GPU delivery job expired.")
+                    rgb = _enforce_exact_hdr_output_target(rgb, delivery_ceiling_nits(frame.adjustments), value["white"])
+                with open(value["memory"][lane]["file"], "r+b", buffering=0) as stream:
+                    stream.seek(row * width * 12)
+                    if stream.write(memoryview(rgb).cast("B")) != rgb.nbytes:
+                        raise OSError("Incomplete GPU encoder input write.")
+                next_rows[lane] = row + rows
+                if next_rows[lane] == height:
+                    value.setdefault("received", []).append(lane)
+                return Response(status_code=204)
+            finally:
+                uploading.remove(lane)
         if (row is not None or rows is not None) != bool(value.get("grain_reconstruction")):
             raise HTTPException(400, "Incorrect delivery pixel transport.")
         if row is not None or rows is not None:
@@ -611,13 +764,15 @@ def create_gpu_delivery_router():
         if item:
             with _lock: _sessions.pop(identity, None)
             directory, value = item
+            if value.get("streamed"):
+                app_memory.admit(identity, 0, release=True)
             reply = await request.json()
             if value.get("raw") and not reply.get("error"):
                 if not value.get("raw_measurements"):
                     reply = {"error": "GPU RAW development was incomplete."}
                 else:
                     reply["raw_measurements"] = value["raw_measurements"]
-            expected = {"retouch"} if value.get("operation") == "retouch" else {"dng"} if value.get("operation") == "dng_correction" else {"edge"} if value.get("operation") == "edge_colour" else {"hdr", "sdr"}
+            expected = {"retouch"} if value.get("operation") == "retouch" else {"dng"} if value.get("operation") == "dng_correction" else {"edge"} if value.get("operation") == "edge_colour" else set(value.get("lanes", ("hdr", "sdr")))
             if not reply.get("error") and set(value.get("received", [])) != expected:
                 reply = {"error": "GPU delivery returned incomplete lanes."}
             # Batch workers are separate processes whose log lines don't reach

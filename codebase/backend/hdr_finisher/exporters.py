@@ -203,10 +203,10 @@ def _render_unwatermarked_branch(
     session: object, settings: ExportSettings, kind: PreviewKind, adjustments: AdjustmentState,
     *, denoise_source=None, allocate_output=None,
 ) -> np.ndarray:
-    from .gpu_delivery import grain_delivery_enabled, render_pair
+    from .gpu_delivery import grain_delivery_enabled, render_pair, streamed_delivery_enabled
     object.__setattr__(settings, "_last_cpu_strips", False)
     bounded = _bounded_export_eligible(session, settings, kind, adjustments, prepared_denoise=denoise_source is not None)
-    if bounded and (denoise_source is None or settings.format == "sdr_jpeg" or all(
+    if bounded and not streamed_delivery_enabled(session, settings, adjustments) and (denoise_source is None or settings.format == "sdr_jpeg" or all(
         _bounded_export_eligible(session, settings, lane, adjustments, prepared_denoise=True)
         for lane in (PreviewKind.HDR, PreviewKind.SDR)
     )):
@@ -229,15 +229,23 @@ def _render_unwatermarked_branch(
         if starting + gpu_required > app_memory.CEILING:
             object.__setattr__(settings, "_bounded_cpu_delivery", True)
     pair = render_pair(session, settings, adjustments)
-    if pair is not None:
+    if pair is not None and kind.value in pair:
         result = pair[kind.value]
         if kind.value in settings.editing_measurements:
             from .scopes import scope_peak_value
-            peak = scope_peak_value(result, kind, session.color_context) * .18 / session.hdr_reference_white_nits if kind == PreviewKind.HDR else float(np.max(result @ np.array([.2126, .7152, .0722], dtype=np.float32)))
+            bands = (result[top:top + 128] for top in range(0, len(result), 128))
+            if kind == PreviewKind.HDR:
+                peak = (max(scope_peak_value(band, kind, session.color_context) for band in bands)
+                        * .18 / session.hdr_reference_white_nits)
+            else:
+                weights = np.array([.2126, .7152, .0722], dtype=np.float32)
+                peak = max(float(np.max(band @ weights)) for band in bands)
             settings._exact_measurements[kind.value] = {"peak": peak}
         return result
     color_context = getattr(session, "color_context", RenderColorContext(getattr(session, "hdr_reference_white_nits", 203)))
     if bounded:
+        if streamed_delivery_enabled(session, settings, adjustments):
+            object.__setattr__(settings, "_bounded_cpu_delivery", True)
         from .cpu_strips import render_in_strips
         object.__setattr__(settings, "_last_cpu_strips", True)
         reference = getattr(session, "sdr_reference_image", None)
@@ -940,12 +948,19 @@ class JPEGUltraHDRExportBackend(ExportBackend):
                 owns_hdr = any(hdr_image is output for output in strip_outputs)
                 if owns_hdr:
                     hdr_image.setflags(write=True)
-                write_jpeg_gainmap_renditions(staged_output, hdr_image, sdr_image, settings,
-                    getattr(session, "hdr_reference_white_nits", 203), ultrahdr_app=ultrahdr_app,
-                    exif_payload=None,
-                    ceiling_nits=_peak_ceiling(settings, finishing_adjustments),
-                    encoding_allowance=_peak_allowance(finishing_adjustments), notes=notes, photo_rect=photo_rect,
-                    correct_in_place=owns_hdr)
+                with ExitStack() as encoder_input:
+                    hdr = hdr_image
+                    if isinstance(hdr_image, np.memmap) and hdr_image.mode == "r" and not hdr_image.flags.writeable:
+                        hdr = np.memmap(hdr_image.filename, mode="c", dtype=hdr_image.dtype,
+                                        offset=hdr_image.offset, shape=hdr_image.shape)
+                        encoder_input.callback(hdr._mmap.close)
+                        owns_hdr = True
+                    write_jpeg_gainmap_renditions(staged_output, hdr, sdr_image, settings,
+                        getattr(session, "hdr_reference_white_nits", 203), ultrahdr_app=ultrahdr_app,
+                        exif_payload=None,
+                        ceiling_nits=_peak_ceiling(settings, finishing_adjustments),
+                        encoding_allowance=_peak_allowance(finishing_adjustments), notes=notes, photo_rect=photo_rect,
+                        correct_in_place=owns_hdr)
 
             return _PreparedExport(
                 ".ultrahdr.tmp.jpg",

@@ -198,6 +198,58 @@ def _frame(priority=20):
         adjustments=AdjustmentState(), denoise=DenoiseDocumentSettings(), delivery_priority=priority)
 
 
+@pytest.mark.parametrize("same_process", [True, False])
+@pytest.mark.parametrize("format,lanes", [("jpeg_ultrahdr", ("hdr", "sdr")), ("sdr_jpeg", ("sdr",))])
+def test_streamed_delivery_returns_encoder_rgb_without_shared_arrays(tmp_path, monkeypatch, same_process, format, lanes):
+    from hdr_finisher import config
+    from hdr_finisher.hdr_ceiling import channel_nits, delivery_ceiling_nits
+
+    app = _broker(tmp_path, monkeypatch)
+    monkeypatch.setattr(config, "APP_DATA_DIR", tmp_path)
+    monkeypatch.setenv(gpu_delivery.STREAMED_TRIAL_ENV, "1")
+    if not same_process:
+        monkeypatch.setattr(gpu_delivery, "_router_pid", None)
+    monkeypatch.setattr(app_memory, "snapshot", lambda: {"totalBytes": 0, "reservedBytes": 0})
+    monkeypatch.setattr(gpu_delivery.DeliveryMemory, "allocate", lambda *args: pytest.fail("Allocated shared pixels"))
+    frame = _frame()
+    input_pixels = np.arange(96, dtype="<f4").reshape(4, 6, 4) / 100
+    hdr_pixels = input_pixels.copy()
+    hdr_pixels[0, 0, :3] = 12
+    with TestClient(app) as client, ThreadPoolExecutor(max_workers=1) as worker:
+        client.get("/api/delivery/gpu/permit")
+        pending = worker.submit(gpu_delivery.render_pair, frame, ExportSettings(format=format), frame.adjustments)
+        deadline = time.monotonic() + 5
+        while (job := client.get("/api/delivery/gpu/next").json()) is None:
+            assert time.monotonic() < deadline and not pending.done()
+            time.sleep(.01)
+        assert job["lanes"] == list(lanes)
+        assert {"file_sources", "memory"}.isdisjoint(job)
+        assert (gpu_delivery.session(job["id"]).image is frame.image) == same_process
+        np.testing.assert_array_equal(gpu_delivery.session(job["id"]).image, frame.image)
+        for lane in lanes:
+            path = f"/api/delivery/gpu/{job['id']}/pixels/{lane}"
+            pixels = hdr_pixels if lane == "hdr" else input_pixels
+            assert client.post(f"{path}?row=2&rows=2", content=pixels[2:].tobytes()).status_code == 400
+            bad_strip = pixels[:2].copy()
+            bad_strip[0, 0, 1] = np.nan
+            assert client.post(f"{path}?row=0&rows=2", content=bad_strip.tobytes()).status_code == 400
+            assert client.post(f"{path}?row=0&rows=2", content=pixels[:2].tobytes()).status_code == 204
+            assert client.post(f"{path}?row=2&rows=2", content=pixels[2:].tobytes()).status_code == 204
+        client.post(f"/api/delivery/gpu/{job['id']}/complete", json={})
+        pair = pending.result(timeout=5)
+        assert set(pair) == set(lanes)
+        for lane in lanes:
+            assert isinstance(pair[lane], np.memmap)
+            assert not pair[lane].flags.writeable
+            if lane == "hdr":
+                peak = float(channel_nits(pair[lane]).max())
+                ceiling = delivery_ceiling_nits(frame.adjustments)
+                assert ceiling - .01 < peak <= ceiling
+                np.testing.assert_array_equal(pair[lane].reshape(-1, 3)[1:], input_pixels[..., :3].reshape(-1, 3)[1:])
+            else:
+                np.testing.assert_array_equal(pair[lane], input_pixels[..., :3])
+
+
 def test_raw_reservation_yields_without_releasing_live_memory(tmp_path, monkeypatch):
     app = _broker(tmp_path, monkeypatch)
     with TestClient(app) as client:
