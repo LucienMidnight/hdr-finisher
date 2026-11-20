@@ -690,19 +690,20 @@ async function renderGpuDraftInner(
   const canvas = els.previewCanvas;
   const boundedPresentation = !allowInactive && nativeDenoiseViewport(lane)
     && Boolean(request.viewport) && state.gpuPreview.executionOverride !== "direct";
-  const liveFineGrain = liveFineGrainSelected(lane);
+  const liveGpuGrain = liveGradeGrainSelected(lane);
+  const denoiseActive = state.denoise?.[lane]?.enabled && !state.denoiseRuntime?.[lane]?.showOriginal;
   const underlayerDenoise = state.denoise[lane];
-  const underlayerEdit = liveFineGrain ? [state.adjustments, localAdjustments(), localsBypassed()] : generation;
+  const underlayerEdit = liveGpuGrain ? [state.adjustments, localAdjustments(), localsBypassed()] : generation;
   const wholeFrameKey = JSON.stringify([sessionId, lane, requestedGeometrySignature, underlayerEdit, sourceIdentity,
-    state.editRevision, state.repairSourceGeneration, liveFineGrain ? {
-      ...underlayerDenoise, controls: { ...underlayerDenoise.controls, grain_evenness: undefined },
+    state.editRevision, state.repairSourceGeneration, liveGpuGrain ? {
+      ...underlayerDenoise, controls: { ...underlayerDenoise.controls, grain_evenness: undefined, color_splotches: undefined, splotch_size: undefined },
     } : underlayerDenoise, state.denoiseRuntime[lane]?.showOriginal,
     denoiseNoiseViewActive(lane), gpuLumaMaskOverlayOptions(), projectReferenceWhiteNits(),
     Boolean(window.matchMedia?.("(dynamic-range: high)").matches)]);
   if (boundedPresentation) {
     const softEdge = denoiseUnderlayerEdge();
     const accepted = state.acceptedPresentation;
-    const samePicturePan = liveFineGrain && panPass && canvas.hdrFrameRegion && accepted?.exact
+    const samePicturePan = liveGpuGrain && panPass && canvas.hdrFrameRegion && accepted?.exact
       && accepted.lane === lane && accepted.generation === generation
       && accepted.geometrySignature === requestedGeometrySignature;
     const reusable = canvas.hdrWholeFrame && canvas.style.display !== "none"
@@ -716,7 +717,7 @@ async function renderGpuDraftInner(
         || !nativeDenoiseViewport(lane) || lane !== state.currentView) return refuse("superseded-after-underlayer");
     }
   }
-  if (state.denoise?.[lane]?.enabled && !state.denoiseRuntime?.[lane]?.showOriginal) {
+  if (denoiseActive) {
     if (!allowInactive) {
       const regionOnly = Boolean(request.viewport && nativeDenoiseViewport(lane)
         && longEdge === requiredProcessingLongEdge() && state.gpuPreview.executionOverride !== "direct");
@@ -727,10 +728,11 @@ async function renderGpuDraftInner(
     const expectedIdentity = `${sessionId}:${lane}:${longEdge}:${requestedGeometrySignature}:${sourceIdentity}`;
     const denoise = state.gpuPreview?.diagnosticsSnapshot?.().denoise;
     const runtime = state.denoiseRuntime[lane];
-    if (runtime.analysisInFlight || runtime.dirty || !denoise?.cacheReady || denoise.identity !== expectedIdentity) {
+    const staleGrainRoute = state.gpuPreview.denoiseSourceSelector?.cache?.grain?.gpu && !gradeGrainGpuEnabled(lane);
+    if (staleGrainRoute || runtime.analysisInFlight || runtime.dirty || !denoise?.cacheReady || denoise.identity !== expectedIdentity) {
       const retarget = () => !runtime.analysisInFlight && !runtime.dirty && state.gpuPreview.retargetPreparedDenoise?.(
         sessionId, lane, longEdge, requestedGeometrySignature, sourceIdentity);
-      if (!retarget()) {
+      if (staleGrainRoute || !retarget()) {
         const waiting = "Preparing Denoise for this view…";
         if (hideStatus && lane === state.currentView) setIndeterminatePreviewMessage(waiting);
         const ready = await recalculateDenoise(lane, { longEdge, renderAfter: false });
@@ -774,11 +776,13 @@ async function renderGpuDraftInner(
     frameSize,
     roiCatchUp,
     panPass,
-    minimumRoiFraction: boundedPresentation && liveFineGrainSelected(lane) ? 0.18 : undefined,
+    minimumRoiFraction: boundedPresentation && liveGradeGrainSelected(lane) ? 0.18 : undefined,
     noiseView: denoiseNoiseViewActive(lane),
     boundedPresentation,
     fineGrainUnderlayer: request.underlayerOnly,
-    fineGrainGrade: gradeFineGrainGpuTrial(lane),
+    fineGrainGrade: liveGradeGrainSelected(lane),
+    originalSource: !denoiseActive && state.activeWorkflow === "grade"
+      && Boolean(state.gpuPreview.denoiseSourceSelector?.cache?.grain?.gpu),
     deferSurface: request.underlayerOnly || (replacingDetail && !boundedPresentation && !viewport),
     coversViewport: boundedPresentation ? (region, width, height) => {
       if (!nativeDenoiseViewport(lane)) return false;
@@ -825,6 +829,7 @@ async function renderGpuDraftInner(
       && !geometryDraftActive()
       && state.session?.session_id === sessionId
       && gradeSourceIdentity(lane) === sourceIdentity
+      && denoiseActive === (state.denoise?.[lane]?.enabled && !state.denoiseRuntime?.[lane]?.showOriginal)
       && (generation === state.previewGeneration[lane]
         || (request.interactiveSnapshot && state.previewScheduler?.interacting))
       && requestedGeometrySignature === geometrySignature()
@@ -835,7 +840,8 @@ async function renderGpuDraftInner(
       && !(request.coarse && request.reason === "drag-coarse" && !state.previewScheduler?.interacting),
   };
   const renderer = state.gpuPreview;
-  const fineGrain = liveFineGrainSelected(lane) && renderer.denoiseSourceSelector.cache.grain;
+  const gpuGrain = liveGradeGrainSelected(lane) && renderer.denoiseSourceSelector.cache.grain;
+  if (!sourceOptions.isCurrent()) return refuse("superseded-before-render");
   try {
     const draw = boundedPresentation
       ? renderer.renderTo.bind(renderer, els.previewDenoiseDetail) : renderer.render.bind(renderer);
@@ -854,7 +860,9 @@ async function renderGpuDraftInner(
     );
     if (!result) {
       const reason = renderer.lastRenderRefusal?.reason;
-      if (fineGrain && reason?.startsWith("tiled-encode-failed:validation:")) throw new Error(reason);
+      if (gpuGrain && (reason?.startsWith("tiled-encode-failed:validation:")
+        || reason === "tiled-encode-failed:tile graph allocation failed"
+        || reason === "intermediate-allocation-failed")) throw new Error(reason);
       if (viewportMoved && sourceOptions.isCurrent()
         && !state.renderCoordinator?.notePan(lane)) scheduleZoomRefinement({ continuous: true });
       return refuse(reason || "renderer-returned-nothing");
@@ -948,7 +956,7 @@ async function renderGpuDraftInner(
       return true;
   } catch (error) {
     if (!sourceOptions.isCurrent() || error?.name === "AbortError") return refuse("superseded-during-render");
-    if (renderer.refuseFineGrainFit(fineGrain, error)) {
+    if (renderer.refuseFineGrainFit(gpuGrain, error)) {
       state.denoiseRuntime[lane].dirty = true;
       return renderGpuDraftInner(lane, request);
     }

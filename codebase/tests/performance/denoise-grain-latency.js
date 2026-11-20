@@ -12,6 +12,7 @@ const fullProofMethod = process.argv.find(arg => arg.startsWith("--full-proof-me
 const phaseTwo = process.argv.find(arg => arg.startsWith("--phase2="))?.split("=")[1];
 const phaseOne = phaseTwo || process.argv.find(arg => arg.startsWith("--phase1="))?.split("=")[1];
 const ceilingOnly = process.argv.includes("--ceiling-only");
+const cleanGrade = process.argv.find(arg => arg.startsWith("--clean-grade="))?.split("=")[1];
 const phaseOneMemoryFailures = [];
 const sliders = {
   amount: "amount", detail: "detail_recovery", luminance: "luminance", color: "color_noise",
@@ -193,8 +194,8 @@ function backendLog(harness, start, end, method) {
 }
 
 async function measurePicture(page, button, method, { pan = false, switchMethod = false,
-  drag = false, release = false, trace = false, reportOnly = false } = {}) {
-  return page.evaluate(async ({ button, method, pan, switchMethod, drag, release, trace, reportOnly }) => {
+  drag = false, release = false, trace = false, reportOnly = false, splotchSize } = {}) {
+  return page.evaluate(async ({ button, method, pan, switchMethod, drag, release, trace, reportOnly, splotchSize }) => {
     const gpu = state.gpuPreview;
     const startingGrain = gpu.denoiseSourceSelector?.cache?.grain;
     const samePreparation = () => {
@@ -275,6 +276,9 @@ async function measurePicture(page, button, method, { pan = false, switchMethod 
       } else if (switchMethod) {
         els.denoiseMethod.value = method;
         els.denoiseMethod.dispatchEvent(new Event("change", { bubbles: true }));
+      } else if (splotchSize) {
+        els.denoiseSplotchSize.value = splotchSize;
+        els.denoiseSplotchSize.dispatchEvent(new Event("change", { bubbles: true }));
       } else if (drag) {
         const control = document.querySelector(button);
         const value = Number(control.value);
@@ -312,8 +316,12 @@ async function measurePicture(page, button, method, { pan = false, switchMethod 
         } else if (idle && pan && first === undefined) {
           // The compositor can reposition a complete canvas without a draw.
           const region = els.previewCanvas.hdrFrameRegion || null;
-          finish(resolve, { edge: state.acceptedPresentation.processedLongEdge, region,
-            visible: region && visibleOutputRect(region.frameWidth, region.frameHeight, { includeWhole: true }),
+          const visible = region && visibleOutputRect(region.frameWidth, region.frameHeight, { includeWhole: true });
+          if (region && !window.HDRViewportRequest.covers(region, visible)) {
+            requestAnimationFrame(settle);
+            return;
+          }
+          finish(resolve, { edge: state.acceptedPresentation.processedLongEdge, region, visible,
             samePreparation: samePreparation(), observedAt: performance.now() });
         } else {
           requestAnimationFrame(settle);
@@ -358,7 +366,7 @@ async function measurePicture(page, button, method, { pan = false, switchMethod 
         renders: gpu.performanceMetrics.renders.filter(event => event.serial === done.serial),
       } : {}),
     };
-  }, { button, method, pan, switchMethod, drag, release, trace, reportOnly });
+  }, { button, method, pan, switchMethod, drag, release, trace, reportOnly, splotchSize });
 }
 
 async function captureFinishedGrade(page, destination) {
@@ -415,10 +423,11 @@ async function measurePhaseOne(page, name, record, setZoom) {
   const captures = path.resolve(process.env.HDR_FINISHER_GRAIN_CAPTURES || (phaseTwo ? "output/denoise-grain-phase2" : "output/denoise-grain-phase1"));
   fs.mkdirSync(captures, { recursive: true });
   const gpuRoute = phaseOne === "gpu";
-  const method = "fine_grain";
-  await page.evaluate(({ enableGpu, capturePixels }) => {
+  const method = cleanGrade ? "clean_grain" : "fine_grain";
+  await page.evaluate(({ enableGpu, capturePixels, cleanGrade }) => {
     const gpu = state.gpuPreview;
-    gpu.enableGradeFineGrainGpu = enableGpu;
+    if (!enableGpu) gpu.enableGradeFineGrainGpu = false;
+    if (cleanGrade) gpu.enableGradeCleanGrainGpu = enableGpu;
     gpu.setInstrumentationEnabled(true);
     if (!capturePixels || gpu.captureFineGrainGradeInstalled) return;
     gpu.captureFineGrainGradeInstalled = true;
@@ -431,7 +440,8 @@ async function measurePhaseOne(page, name, record, setZoom) {
         ...options,
         onFrameSubmitted: (region, hdr) => {
           options.onFrameSubmitted?.(region, hdr);
-          if (lane !== state.currentView || !state.denoise[lane].enabled || longEdge !== requiredProcessingLongEdge()) return;
+          if (lane !== state.currentView || (!state.denoise[lane].enabled && !window.captureGrainOriginal)
+            || longEdge !== requiredProcessingLongEdge()) return;
           const source = canvas.getContext("webgpu").getCurrentTexture();
           const prior = window.fineGrainCapture?.texture;
           const { width, height, format } = source;
@@ -445,7 +455,11 @@ async function measurePhaseOne(page, name, record, setZoom) {
         },
       });
     };
-  }, { enableGpu: gpuRoute, capturePixels: process.env.HDR_FINISHER_GRAIN_NO_CAPTURE !== "1" });
+  }, { enableGpu: gpuRoute, capturePixels: process.env.HDR_FINISHER_GRAIN_NO_CAPTURE !== "1", cleanGrade });
+  const selectMethod = () => page.evaluate(async ({ method, cleanGrade }) => {
+    if (cleanGrade) await commitDenoiseControl("splotch_size", cleanGrade);
+    await commitDenoiseControl("method", method);
+  }, { method, cleanGrade });
   const check = async (action, button, options = {}, fallback = false) => {
     const result = await record(method, `${phaseOne}: ${action}`, button, { trace: true, ...options });
     assert.ok(result.peakAppBytes > 0, `${action}: missing app memory sample`);
@@ -495,7 +509,7 @@ async function measurePhaseOne(page, name, record, setZoom) {
         primitive: { topology: "triangle-list" },
       });
     });
-    await page.evaluate(() => commitDenoiseControl("method", "fine_grain"));
+    await selectMethod();
     for (const zoom of ["110%", "Fit"]) {
       await setZoom(zoom === "Fit" ? "#zoom-fit" : zoom);
       await check(`ceiling at ${zoom}`, "#denoise-bypass");
@@ -513,7 +527,7 @@ async function measurePhaseOne(page, name, record, setZoom) {
     if (phaseTwo && lane === "sdr") await page.evaluate(() => {
       state.denoise.sdr.controls = structuredClone(state.denoise.hdr.controls);
     });
-    await page.evaluate(() => commitDenoiseControl("method", "fine_grain"));
+    await selectMethod();
     const capture = zoom => captureFinishedGrade(page, path.join(captures, `${name}-${lane}-${zoom}-${phaseOne}`));
     for (const zoom of ["110%", "Fit"]) {
       await setZoom(zoom === "Fit" ? "#zoom-fit" : zoom);
@@ -539,12 +553,43 @@ async function measurePhaseOne(page, name, record, setZoom) {
         if (phaseTwo) {
           await check("pan outside the sharp patch at 110%", null, { pan: "outside" });
           if (gpuRoute && process.env.HDR_FINISHER_GRAIN_NO_CAPTURE !== "1") await capture("pan-wide");
+          if (cleanGrade) {
+            const strength = await page.evaluate(() => state.denoise.hdr.controls.color_splotches);
+            const blend = await check("Color Splotches drag at 110%", "#denoise-splotches", { drag: true, release: true });
+            assert.ok(blend.samePreparation, "Color Splotches replaced preparation.");
+            const otherSize = cleanGrade === "small" ? "large" : "small";
+            const size = await check(`Splotch Size to ${otherSize} at 110%`, null, { splotchSize: otherSize });
+            if (gpuRoute) assert.ok(size.samePreparation, "Splotch Size replaced the whole-photo measurement.");
+            await page.evaluate(async strength => {
+              await updateLiveDenoiseControl("color_splotches", strength);
+              await commitDenoiseControl("color_splotches");
+            }, strength);
+          }
           await page.evaluate(async evenness => {
             await setDenoiseEnabled(false);
             await commitDenoiseControl("grain_evenness", evenness);
           }, originalEvenness);
           await page.waitForFunction(() => previewIdleNow());
+          if (cleanGrade) await selectMethod();
           continue;
+        }
+      }
+      if (cleanGrade && lane === "hdr" && zoom === "Fit") {
+        const strength = await page.evaluate(() => state.denoise.hdr.controls.color_splotches);
+        const blend = await check("Color Splotches drag at Fit", "#denoise-splotches", { drag: true, release: true });
+        assert.ok(blend.samePreparation, "Fit blend replaced preparation.");
+        if (gpuRoute) assert.ok(!blend.stages.some(event => event.stage === "fine-grain-reduced"),
+          "Fit blend reduced the native photo again.");
+        await page.evaluate(async strength => {
+          await updateLiveDenoiseControl("color_splotches", strength);
+          await commitDenoiseControl("color_splotches");
+        }, strength);
+        await page.waitForFunction(() => previewIdleNow() && !state.denoiseInputQueue?.busy);
+        if (gpuRoute && cleanGrade === "small" && name === "IMG_0790.CR2") {
+          const size = await check("Splotch Size to large at Fit", null, { splotchSize: "large" });
+          assert.ok(size.samePreparation, "Fit size replaced the whole-photo measurement.");
+          await page.evaluate(() => commitDenoiseControl("splotch_size", "small"));
+          await page.waitForFunction(() => previewIdleNow() && !state.denoiseInputQueue?.busy);
         }
       }
       if (phaseTwo && zoom === "Fit" && gpuRoute) {
@@ -554,6 +599,69 @@ async function measurePhaseOne(page, name, record, setZoom) {
       }
       await page.evaluate(() => setDenoiseEnabled(false));
       await page.waitForFunction(() => previewIdleNow());
+    }
+    if (cleanGrade && lane === "hdr") {
+      const originalEvenness = await page.evaluate(() => state.denoise.hdr.controls.grain_evenness);
+      await page.evaluate(async () => {
+        // Use a fresh Evenness so the measurement times a first Clean
+        // reconstruction from Fine, with no matching old Clean tile.
+        await commitDenoiseControl("grain_evenness", 0.92);
+        await commitDenoiseControl("method", "fine_grain");
+      });
+      await setZoom("110%");
+      await page.evaluate(() => setDenoiseEnabled(true));
+      await page.waitForFunction(() => previewIdleNow() && !state.denoiseInputQueue?.busy
+        && state.denoiseRuntime.hdr.status === "ready" && !state.denoiseRuntime.hdr.analysisInFlight);
+      const switched = await check("Fine Grain to Clean Grain at 110%", null, { switchMethod: true });
+      if (gpuRoute) {
+        assert.ok(switched.samePreparation, "Switching Grain methods replaced the whole-photo measurement.");
+        assert.ok(switched.stages.some(event => event.stage === "tiled-render" && event.denoiseTileResolves > 0),
+          "The first Fine to Clean switch reused older Clean Grain tiles.");
+      }
+      await page.evaluate(async evenness => {
+        await setDenoiseEnabled(false);
+        await commitDenoiseControl("grain_evenness", evenness);
+      }, originalEvenness);
+      await setZoom("#zoom-fit");
+    }
+    if (phaseTwo && !cleanGrade && lane === "hdr" && gpuRoute && name === "IMG_0790.CR2"
+        && process.env.HDR_FINISHER_GRAIN_NO_CAPTURE !== "1") {
+      const before = path.join(captures, `${name}-hdr-bypass-before`);
+      const after = path.join(captures, `${name}-hdr-bypass-after`);
+      const draw = () => page.evaluate(async () => {
+        window.captureGrainOriginal = true;
+        invalidatePreview("hdr", { markDirty: false });
+        if (!await renderGpuDraft("hdr", { longEdge: refinementProxyLongEdge() })) {
+          throw Error("The original picture did not draw.");
+        }
+        window.captureGrainOriginal = false;
+      });
+      await draw();
+      await captureFinishedGrade(page, before);
+      const original = fs.readFileSync(`${before}.rgba`);
+      assert.ok(!fs.readFileSync(`${path.join(captures, name)}-hdr-Fit-gpu.rgba`).equals(original),
+        "Fine Grain must change the finished pixels for this photo.");
+      await page.evaluate(async () => {
+        await setDenoiseEnabled(true);
+        if (!state.gpuPreview.denoiseSourceSelector.cache.grain?.gpu) throw Error("Missing GPU Grain result.");
+        state.denoiseRuntime.hdr.showOriginal = true;
+      });
+      await page.waitForFunction(() => previewIdleNow());
+      await draw();
+      await captureFinishedGrade(page, after);
+      assert.ok(fs.readFileSync(`${after}.rgba`).equals(original),
+        "Show original must restore the original Grade pixels with a cached GPU correction");
+      await page.evaluate(() => setDenoiseEnabled(false));
+      await page.waitForFunction(() => previewIdleNow());
+      await draw();
+      await captureFinishedGrade(page, after);
+      assert.ok(fs.readFileSync(`${after}.rgba`).equals(original),
+        "Bypassing GPU Fine Grain must restore the original Grade pixels");
+      console.log("Fine Grain Show original and bypass matched the finished undenoised Grade pixels.");
+      for (const base of [before, after]) {
+        fs.rmSync(`${base}.rgba`);
+        fs.rmSync(`${base}.json`);
+      }
     }
     if (lane === "sdr" && gpuRoute && name === "IMG_0790.CR2") {
       await page.evaluate(() => {
@@ -567,6 +675,9 @@ async function measurePhaseOne(page, name, record, setZoom) {
         state.denoiseGrainRefresh.scene++;
       });
       await check("injected failure at Fit", "#denoise-bypass", {}, true);
+      if (cleanGrade && process.env.HDR_FINISHER_GRAIN_NO_CAPTURE !== "1") {
+        await captureFinishedGrade(page, path.join(captures, `${name}-sdr-Fit-fallback`));
+      }
       await page.evaluate(() => setDenoiseEnabled(false));
       await page.waitForFunction(() => previewIdleNow());
     }
@@ -834,6 +945,7 @@ async function measureBaseline(page, harness, name, record, setZoom) {
   try {
     if (phaseOne) {
       assert.ok(["cpu", "gpu"].includes(phaseOne));
+      assert.ok(!cleanGrade || ["small", "large"].includes(cleanGrade));
       await page.addInitScript(() => {
         const match = window.matchMedia.bind(window);
         window.matchMedia = query => query === "(dynamic-range: high)" ? { matches: true } : match(query);

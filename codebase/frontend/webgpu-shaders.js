@@ -540,7 +540,278 @@ fn adaptivePreparedMain(@builtin(global_invocation_id) id: vec3u) {
   textureStore(outTex, storeAt, vec4f(base + delta - vec3f(dot(delta, ACES_LUMA)), 1.0));
 }`;
 
-  const GRAIN_RESIZE_SHADER_SOURCE = `
+  const CLEAN_GRAIN_SHADER_SOURCE = ADAPTIVE_DENOISE_SHADER_SOURCE + `
+// Clean Grain runs on the resolved Fine values, including a colour-only
+// border. Once it starts, the wavelet textures can be reused for its guides.
+fn cleanRead(p: vec2i) -> vec4f { return textureLoad(srcTex, clampLocal(p), 0); }
+fn cleanRamp(value: f32, low: f32, high: f32) -> f32 {
+  return clamp((value - low) / (high - low), 0.0, 1.0);
+}
+
+@compute @workgroup_size(8, 8)
+fn cleanBaseMain(@builtin(global_invocation_id) id: vec3u) {
+  if (any(id.xy >= vec2u(ap.tile.zw))) { return; }
+  let p = vec2i(id.xy) + vec2i(ap.tile.xy) - scratchOrigin();
+  let rgb = fromOpponent(textureLoad(srcTex, p, 0).xyz + textureLoad(auxTex, p, 0).xyz);
+  textureStore(dstTex, vec2i(id.xy), vec4f(rgb, dot(rgb, ACES_LUMA)));
+}
+
+@compute @workgroup_size(8, 8)
+fn cleanLumaMain(@builtin(global_invocation_id) id: vec3u) {
+  if (!inScratch(id)) { return; }
+  let p = vec2i(id.xy);
+  var local = 0.0;
+  var fine = 0.0;
+  for (var y = -2; y <= 2; y++) {
+    for (var x = -2; x <= 2; x++) {
+      let v = cleanRead(p + vec2i(x, y)).w;
+      fine += v;
+      if (abs(x) <= 1 && abs(y) <= 1) { local += v; }
+    }
+  }
+  textureStore(dstTex, p, vec4f(local / 9.0, abs(cleanRead(p).w - fine / 25.0), 0.0, 0.0));
+}
+
+// One invocation averages sixteen consecutive pixels along a line. The
+// running sum is rebased in each invocation to limit accumulated error.
+@compute @workgroup_size(8, 8)
+fn cleanBoxMain(@builtin(global_invocation_id) id: vec3u) {
+  let vertical = ap.frame.w > 0.5;
+  let axis = select(vec2i(1, 0), vec2i(0, 1), vertical);
+  let start = vec2i(id.xy) * (vec2i(1) + axis * 15);
+  if (any(start >= scratchSize())) { return; }
+  let radius = i32(ap.frame.z);
+  let scale = 1.0 / f32(radius * 2 + 1);
+  var sum = vec4f(0.0);
+  for (var k = -radius; k <= radius; k++) { sum += cleanRead(start + axis * k); }
+  for (var k = 0; k < 16; k++) {
+    let p = start + k * axis;
+    if (any(p >= scratchSize())) { break; }
+    textureStore(dstTex, p, sum * scale);
+    sum += cleanRead(p + axis * (radius + 1)) - cleanRead(p - axis * radius);
+  }
+}
+
+@compute @workgroup_size(8, 8)
+fn cleanNormalizeMain(@builtin(global_invocation_id) id: vec3u) {
+  if (!inScratch(id)) { return; }
+  let p = vec2i(id.xy);
+  let local = max(textureLoad(auxTex, p, 0).x, 0.0);
+  let noise = max(1.25 * textureLoad(aux2Tex, p, 0).y, 1e-7);
+  let light = local + 2.0 * noise;
+  textureStore(dstTex, p, vec4f(toOpponent(cleanRead(p).rgb).yz / light, light, noise));
+}
+
+@compute @workgroup_size(8, 8)
+fn cleanChromaResidualMain(@builtin(global_invocation_id) id: vec3u) {
+  if (!inScratch(id)) { return; }
+  let p = vec2i(id.xy);
+  let mean = textureLoad(auxTex, p, 0).xy;
+  textureStore(dstTex, p, vec4f(length(cleanRead(p).xy - mean), 0.0, 0.0, 0.0));
+}
+
+// Three replicated boxes for the luminance guides, computed together.
+@compute @workgroup_size(8, 8)
+fn cleanContextMain(@builtin(global_invocation_id) id: vec3u) {
+  if (!inScratch(id)) { return; }
+  let p = vec2i(id.xy);
+  let row = ap.frame.w < 0.5;
+  let axis = select(vec2i(0, 1), vec2i(1, 0), row);
+  var sum = vec3f(0.0);
+  for (var k = -12; k <= 12; k++) {
+    let input = cleanRead(p + axis * k);
+    let values = select(input.xyz, input.xxx, row);
+    sum += values * vec3f(select(0.0, 1.0, abs(k) <= 3), select(0.0, 1.0, abs(k) <= 5), 1.0);
+  }
+  textureStore(dstTex, p, vec4f(sum / vec3f(7.0, 11.0, 25.0), 0.0));
+}
+
+@compute @workgroup_size(8, 8)
+fn cleanTextureMain(@builtin(global_invocation_id) id: vec3u) {
+  if (!inScratch(id)) { return; }
+  let p = vec2i(id.xy);
+  let local = cleanRead(p).x;
+  let means = textureLoad(auxTex, p, 0).xyz;
+  textureStore(dstTex, p, vec4f(abs(local - means.y), max(means.z, 0.0), abs(local - means.x), 0.0));
+}
+
+@compute @workgroup_size(8, 8)
+fn cleanMaxMain(@builtin(global_invocation_id) id: vec3u) {
+  if (!inScratch(id)) { return; }
+  let p = vec2i(id.xy);
+  let axis = select(vec2i(0, 1), vec2i(1, 0), ap.frame.w < 0.5);
+  let radius = i32(ap.frame.z);
+  var peak = 0.0;
+  for (var k = -radius; k <= radius; k++) { peak = max(peak, cleanRead(p + k * axis).x); }
+  textureStore(dstTex, p, vec4f(peak, 0.0, 0.0, 0.0));
+}
+
+@compute @workgroup_size(8, 8)
+fn cleanGuidesMain(@builtin(global_invocation_id) id: vec3u) {
+  if (!inScratch(id)) { return; }
+  let p = vec2i(id.xy);
+  let local = max(cleanRead(p).x, 0.0);
+  let noise = textureLoad(auxTex, p, 0).w;
+  let context = textureLoad(aux2Tex, p, 0);
+  let texture = textureLoad(aux3Tex, p, 0).x / max(context.y + 3.0 * noise, 1e-6);
+  let peak = textureLoad(sumTex, p, 0).x;
+  let highlight = cleanRamp(peak, .065, .125);
+  let limit = (1.0 - .97 * highlight) * (1.0 - cleanRamp(texture, .045, .15) * cleanRamp(context.y, .004, .015));
+  let dark = 1.0 - cleanRamp(local, .006, .014);
+  let sharpness = cleanRamp(context.z / max(local + 4.0 * noise, 1e-6), .06, .24);
+  textureStore(dstTex, p, vec4f(limit, dark, .45 * highlight * sharpness, 0.0));
+}
+
+@compute @workgroup_size(8, 8)
+fn cleanTapsMain(@builtin(global_invocation_id) id: vec3u) {
+  if (!inScratch(id)) { return; }
+  let p = vec2i(id.xy);
+  let row = ap.frame.w < 0.5;
+  let axis = select(vec2i(0, 1), vec2i(1, 0), row);
+  let radius = i32(ap.frame.z);
+  var outer = vec2f(0.0);
+  var inner = vec2f(0.0);
+  for (var k = -radius; k <= radius; k++) {
+    let v = cleanRead(p + k * axis);
+    outer += v.xy;
+    if (abs(k) < radius) { inner += select(v.zw, v.xy, row); }
+  }
+  textureStore(dstTex, p, vec4f(outer / f32(2 * radius + 1), inner / f32(2 * radius - 1)));
+}
+
+fn cleanReflect(at: i32, extent: i32) -> i32 {
+  if (extent < 2) { return 0; }
+  let period = 2 * (extent - 1);
+  let t = abs(at) % period;
+  return min(t, period - t);
+}
+
+fn cleanTap(p: vec2i) -> vec2f {
+  let at = p + scratchOrigin();
+  let reflected = vec2i(cleanReflect(at.x, i32(ap.frame.x)), cleanReflect(at.y, i32(ap.frame.y)));
+  return textureLoad(auxTex, clampLocal(reflected - scratchOrigin()), 0).xy;
+}
+
+@compute @workgroup_size(8, 8)
+fn cleanPairsMain(@builtin(global_invocation_id) id: vec3u) {
+  if (!inScratch(id)) { return; }
+  let p = vec2i(id.xy);
+  let reach = i32(ap.frame.z);
+  let d = select(8, 20, reach == 28);
+  let offsets = array<vec2i, 4>(vec2i(reach, 0), vec2i(0, reach), vec2i(d), vec2i(-d, d));
+  let core = textureLoad(auxTex, p, 0).zw;
+  var closest = 1e30;
+  var total = vec2f(0.0);
+  var low = vec2f(1e30);
+  var high = vec2f(-1e30);
+  for (var k = 0; k < 4; k++) {
+    let first = cleanTap(p + offsets[k]);
+    let second = cleanTap(p - offsets[k]);
+    closest = min(closest, min(length(core - first), length(core - second)));
+    let pair = .5 * (first + second);
+    total += pair;
+    low = min(low, pair);
+    high = max(high, pair);
+  }
+  let surrounding = .5 * (total - low - high);
+  let delta = core - surrounding;
+  let grain = max(1.25 * textureLoad(aux2Tex, p, 0).x, 1e-7);
+  let signal = length(delta);
+  let relative = signal / grain;
+  let pixel = cleanRead(p).xy;
+  let pixelRelative = length(pixel - surrounding) / grain;
+  let isolated = cleanRamp(closest / max(signal, 1e-7), .1, .65);
+  let protection = 1.0 - (1.0 - isolated) * cleanRamp(relative, 5.0, 12.0);
+  let strength = max(cleanRamp(relative, 1.5, 5.0), cleanRamp(pixelRelative, 2.5, 5.0) * cleanRamp(relative, .65, 2.5));
+  let fine = .8 * cleanRamp(pixelRelative, 1.0, 4.0);
+  let limit = textureLoad(aux3Tex, p, 0).x;
+  let moderate = (delta + fine * (pixel - core)) * (strength * protection * limit);
+  textureStore(dstTex, p, vec4f(moderate, surrounding));
+}
+
+@compute @workgroup_size(8, 8)
+fn cleanRelativeMain(@builtin(global_invocation_id) id: vec3u) {
+  if (!inScratch(id)) { return; }
+  let p = vec2i(id.xy);
+  let surrounding = textureLoad(auxTex, p, 0).zw;
+  let noise = max(1.25 * textureLoad(aux2Tex, p, 0).x, 1e-7);
+  textureStore(dstTex, p, vec4f(length(cleanRead(p).xy - surrounding) / noise, 0.0, 0.0, 0.0));
+}
+
+fn cleanMedian(p: vec2i) -> vec2f {
+  // Keep the lowest thirteen values independently for both channels.
+  var lower: array<vec2f, 13>;
+  for (var k = 0; k < 13; k++) { lower[k] = vec2f(1e30); }
+  for (var y = -2; y <= 2; y++) {
+    for (var x = -2; x <= 2; x++) {
+      var value = cleanRead(p + vec2i(x, y)).xy;
+      for (var k = 0; k < 13; k++) {
+        let next = max(value, lower[k]);
+        lower[k] = min(value, lower[k]);
+        value = next;
+      }
+    }
+  }
+  return lower[12];
+}
+
+@compute @workgroup_size(8, 8)
+fn cleanRepairMain(@builtin(global_invocation_id) id: vec3u) {
+  if (!inScratch(id)) { return; }
+  let p = vec2i(id.xy);
+  let relative = textureLoad(aux2Tex, p, 0).x;
+  let guides = textureLoad(aux3Tex, p, 0).xyz;
+  let pair = textureLoad(auxTex, p, 0);
+  let input = cleanRead(p).xy;
+  var correction = pair.xy;
+  if (guides.y > 0.0 && relative > 1.8) {
+    var peak = 0.0;
+    for (var y = -3; y <= 3; y++) {
+      for (var x = -3; x <= 3; x++) {
+        peak = max(peak, textureLoad(aux2Tex, clampLocal(p + vec2i(x, y)), 0).x);
+      }
+    }
+    let darkPeak = guides.y * cleanRamp(relative / max(peak, 1e-6), .55, .95) * cleanRamp(relative, 1.8, 4.0);
+    correction = mix(correction, (input - pair.zw) * guides.x, darkPeak);
+  }
+  if (ap.frame.z == 12.0 && guides.z > 0.0) {
+    let fringe = input - cleanMedian(p);
+    let grain = max(1.25 * textureLoad(sumTex, p, 0).x, 1e-7);
+    correction += fringe * (guides.z * cleanRamp(length(fringe) / grain, 3.0, 8.0));
+  }
+  textureStore(dstTex, p, vec4f(input - correction, 0.0, 0.0));
+}
+
+fn cleanCorrection(p: vec2i, base: vec3f) -> vec2f {
+  let fixed = textureLoad(auxTex, p, 0).xy;
+  let light = textureLoad(aux2Tex, p, 0).z;
+  return fixed * light - toOpponent(base).yz;
+}
+
+@compute @workgroup_size(8, 8)
+fn cleanOutputMain(@builtin(global_invocation_id) id: vec3u) {
+  if (any(id.xy >= vec2u(ap.tile.zw))) { return; }
+  let at = vec2i(ap.tile.xy) + vec2i(id.xy);
+  let p = at - scratchOrigin();
+  let base = cleanRead(p).rgb;
+  let delta = fromOpponent(vec3f(0.0, cleanCorrection(p, base) * ap.strength.x));
+  textureStore(outTex, at - vec2i(ap.dest.xy), vec4f(base + delta - vec3f(dot(delta, ACES_LUMA)), 1.0));
+}
+
+@group(0) @binding(8) var cleanPacked: texture_storage_2d<rgba32uint, write>;
+
+@compute @workgroup_size(8, 8)
+fn cleanPackMain(@builtin(global_invocation_id) id: vec3u) {
+  if (any(id.xy >= vec2u(ap.tile.zw))) { return; }
+  let at = vec2i(ap.tile.xy) + vec2i(id.xy);
+  let p = at - scratchOrigin();
+  let base = cleanRead(p).rgb;
+  let delta = cleanCorrection(p, base);
+  textureStore(cleanPacked, at - vec2i(ap.dest.xy), vec4u(bitcast<vec3u>(base), pack2x16float(delta)));
+}`;
+
+  function grainResizeShader(clean) {
+    return `
 struct Resize {
   sizes: vec4f,
   strip: vec4f,
@@ -553,7 +824,12 @@ struct Resize {
 @group(0) @binding(4) var sampled: texture_storage_2d<rgba32float, write>;
 @group(0) @binding(5) var minValues: texture_storage_2d<rgba32float, write>;
 @group(0) @binding(6) var maxValues: texture_storage_2d<rgba32float, write>;
-@group(0) @binding(7) var resizedPixels: texture_storage_2d<rgba16float, write>;
+${clean ? `
+@group(0) @binding(7) var resizedFields: texture_storage_2d<rgba32uint, write>;
+@group(0) @binding(8) var nativeFields: texture_2d<u32>;
+@group(0) @binding(9) var baseStripOut: texture_storage_2d<rgba32float, write>;
+@group(0) @binding(10) var baseStrip: texture_2d<f32>;
+` : "@group(0) @binding(7) var resizedPixels: texture_storage_2d<rgba16float, write>;"}
 
 fn sinc(x: f32) -> f32 {
   if (abs(x) < 1e-5) { return 1.0; }
@@ -585,7 +861,9 @@ fn fineGrainResizeHorizontal(@builtin(global_invocation_id) id: vec3u) {
   var minimum = vec3f(65504.0);
   var maximum = vec3f(-65504.0);
   for (var col = min(taps.x, bounds.x); col < max(taps.y, bounds.y); col++) {
-    let value = textureLoad(pixels, vec2i(col, row), 0).rgb;
+    ${clean ? `let fields = textureLoad(nativeFields, vec2i(col, row), 0);
+    let value = select(bitcast<vec3f>(fields.xyz), vec3f(unpack2x16float(fields.w), 0.0), resize.block.y > 0.5);`
+      : "let value = textureLoad(pixels, vec2i(col, row), 0).rgb;"}
     if (col >= taps.x && col < taps.y) {
       let weight = lanczos((f32(col) + 0.5 - center) / max(1.0, ratio));
       sum += value * weight;
@@ -602,10 +880,7 @@ fn fineGrainResizeHorizontal(@builtin(global_invocation_id) id: vec3u) {
   textureStore(maxValues, dst, vec4f(maximum, 1.0));
 }
 
-@compute @workgroup_size(8, 8)
-fn fineGrainResizeVertical(@builtin(global_invocation_id) id: vec3u) {
-  if (id.x >= u32(resize.sizes.z) || id.y >= u32(resize.strip.w)) { return; }
-  let destination = vec2i(i32(id.x), i32(resize.strip.z) + i32(id.y));
+fn resizeVertical(destination: vec2i) -> vec3f {
   let ratio = resize.sizes.y / resize.sizes.w;
   let center = (f32(destination.y) + 0.5) * ratio;
   let taps = support(center, max(1.0, ratio), resize.sizes.y);
@@ -626,8 +901,29 @@ fn fineGrainResizeVertical(@builtin(global_invocation_id) id: vec3u) {
       maximum = max(maximum, textureLoad(high, sourcePoint, 0).rgb);
     }
   }
-  textureStore(resizedPixels, destination, vec4f(clamp(sum / weightSum, minimum, maximum), 1.0));
-}`;
+  return clamp(sum / weightSum, minimum, maximum);
+}
+
+@compute @workgroup_size(8, 8)
+fn fineGrainResizeVertical(@builtin(global_invocation_id) id: vec3u) {
+  if (id.x >= u32(resize.sizes.z) || id.y >= u32(resize.strip.w)) { return; }
+  let destination = vec2i(i32(id.x), i32(resize.strip.z) + i32(id.y));
+  let value = resizeVertical(destination);
+  ${clean ? `let base = textureLoad(baseStrip, vec2i(id.xy), 0).rgb;
+  textureStore(resizedFields, destination, vec4u(bitcast<vec3u>(base), pack2x16float(value.xy)));`
+    : "textureStore(resizedPixels, destination, vec4f(value, 1.0));"}
+}
+${clean ? `
+@compute @workgroup_size(8, 8)
+fn fineGrainResizeBase(@builtin(global_invocation_id) id: vec3u) {
+  if (id.x >= u32(resize.sizes.z) || id.y >= u32(resize.strip.w)) { return; }
+  let destination = vec2i(i32(id.x), i32(resize.strip.z) + i32(id.y));
+  textureStore(baseStripOut, vec2i(id.xy), vec4f(resizeVertical(destination), 1.0));
+}
+` : ""}`;
+  }
+  const GRAIN_RESIZE_SHADER_SOURCE = grainResizeShader(false);
+  const CLEAN_GRAIN_RESIZE_SHADER_SOURCE = grainResizeShader(true);
 
   const LENS_FILTERS = ((typeof window !== "undefined" && window.HDRLensFilters)
     || (typeof module !== "undefined" && module.exports && require("./lens-filters.js")));
@@ -3493,6 +3789,7 @@ fn fineGrainResizeVertical(@builtin(global_invocation_id) id: vec3u) {
     SCALED_FILM_PEAK_REDUCTION_SHADER_SOURCE,
     ADAPTIVE_DENOISE_SHADER_SOURCE,
     GRAIN_DENOISE_SHADER_SOURCE, GRAIN_DENOISE_BANDS, GRAIN_DENOISE_RADIUS, GRAIN_FIT_BLOCK, GRAIN_RESIZE_SHADER_SOURCE,
+    CLEAN_GRAIN_SHADER_SOURCE, CLEAN_GRAIN_RESIZE_SHADER_SOURCE,
     SHADER_SOURCE,
     LUMA_MASK_SHADER_SOURCE,
   });

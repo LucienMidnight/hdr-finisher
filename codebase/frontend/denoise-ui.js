@@ -228,17 +228,27 @@ async function setDenoiseEnabled(enabled) {
     renderDenoiseControls();
     return;
   }
+  runtime.showOriginal = false;
   await recalculateDenoise(lane);
 }
 
 function nativeDenoiseViewport(lane) {
+  // Keep the original picture bounded at native zoom too. It can stay on
+  // screen while Grain starts, without keeping a native-sized canvas alive.
   return state.zoomMode === "custom" && state.zoomPercent >= 100
-    && (Boolean(state.denoise[lane]?.enabled) || gradeFineGrainGpuTrial(lane));
+    && (Boolean(state.denoise[lane]?.enabled) || gradeGrainGpuPreferred(lane));
 }
 
-function gradeFineGrainGpuTrial(lane) {
-  return state.activeWorkflow === "grade" && state.gpuPreview?.enableGradeFineGrainGpu === true
-    && state.denoise[lane]?.controls.method === "fine_grain";
+function gradeGrainGpuPreferred(lane) {
+  if (state.activeWorkflow !== "grade" || !state.gpuPreview) return false;
+  const method = state.denoise[lane]?.controls.method;
+  if (method === "clean_grain") return state.gpuPreview.enableGradeCleanGrainGpu === true;
+  return method === "fine_grain" && state.gpuPreview.enableGradeFineGrainGpu !== false;
+}
+
+function gradeGrainGpuEnabled(lane) {
+  return Boolean(state.denoise[lane]?.enabled) && !state.denoiseRuntime[lane]?.showOriginal
+    && gradeGrainGpuPreferred(lane);
 }
 
 function gradeSourceIdentity(lane) {
@@ -258,12 +268,12 @@ function denoiseRetryError(lane, detail) {
 
 async function recalculateDenoise(lane = state.currentView, options = {}) {
   const settings = state.denoise[lane];
-  if (!state.session || !settings.enabled) return false;
+  if (!state.session || !settings.enabled || state.denoiseRuntime[lane]?.showOriginal) return false;
   const runtime = state.denoiseRuntime[lane];
   const sessionId = state.session.session_id;
   const sourceIdentity = gradeSourceIdentity(lane);
   const current = () => state.session?.session_id === sessionId && state.denoiseRuntime[lane] === runtime
-    && settings.enabled && gradeSourceIdentity(lane) === sourceIdentity;
+    && settings.enabled && !runtime.showOriginal && gradeSourceIdentity(lane) === sourceIdentity;
   if (options.force && runtime.saveFailed) {
     const generation = ++runtime.generation;
     runtime.status = "recalculating";
@@ -298,7 +308,7 @@ async function recalculateDenoise(lane = state.currentView, options = {}) {
   const key = JSON.stringify([
     sessionId, lane, nativePreparation ? "native" : longEdge, geometrySignature(),
     pixels, state.repairSourceGeneration || 0, settings.analysis, refresh,
-    settings.controls.method === "standard" ? "standard" : preparationControls,
+    settings.controls.method === "standard" ? "standard" : [gradeGrainGpuEnabled(lane), preparationControls],
   ]);
   // Pan, enable and the first edit can all ask for the same setup. Sharing it
   // keeps them from repeatedly replacing the selector and measuring again.
@@ -338,19 +348,21 @@ async function recalculateDenoise(lane = state.currentView, options = {}) {
 
 async function recalculateDenoiseAnalysis(lane = state.currentView, options = {}) {
   const settings = state.denoise[lane];
-  if (!state.session || !settings.enabled || !state.gpuPreview?.available) return false;
+  if (!state.session || !settings.enabled || state.denoiseRuntime[lane]?.showOriginal
+    || !state.gpuPreview?.available) return false;
   const sessionId = state.session.session_id;
   const runtime = state.denoiseRuntime[lane];
   const generation = ++runtime.generation;
   const sourceIdentity = gradeSourceIdentity(lane);
+  const gradeGpuGrain = gradeGrainGpuEnabled(lane);
   const isCurrent = () => state.session?.session_id === sessionId
     && state.denoiseRuntime[lane] === runtime && generation === runtime.generation
-    && gradeSourceIdentity(lane) === sourceIdentity;
+    && settings.enabled && !runtime.showOriginal && gradeSourceIdentity(lane) === sourceIdentity
+    && (!gradeGpuGrain || gradeGrainGpuEnabled(lane));
   runtime.status = state.gpuPreview.diagnosticsSnapshot().denoise.cacheReady ? "recalculating" : "preparing";
   runtime.error = "";
   if (lane === state.currentView) renderDenoiseControls();
-  const gradeFineGrain = gradeFineGrainGpuTrial(lane);
-  if (gradeFineGrain && lane === state.currentView && nativeDenoiseViewport(lane)) {
+  if (gradeGpuGrain && lane === state.currentView && nativeDenoiseViewport(lane)) {
     state.panSourceController?.abort();
   }
   try {
@@ -364,7 +376,7 @@ async function recalculateDenoiseAnalysis(lane = state.currentView, options = {}
       denoiseRendererControls(settings.controls),
       options.refresh ?? 0,
       Math.max(256, state.session.source?.width || 0, state.session.source?.height || 0),
-      { isCurrent, gradeFineGrain, repairGeneration: state.repairSourceGeneration || 0 },
+      { isCurrent, gradeGpuGrain, repairGeneration: state.repairSourceGeneration || 0 },
     );
     if (!isCurrent()) return false;
     if (!ready) return denoiseRetryError(lane, "Denoise preparation did not finish.");
@@ -391,7 +403,7 @@ async function updateLiveDenoiseControl(key, value) {
   const runtime = state.denoiseRuntime[lane];
   settings.controls[key] = clamp(value, 0, 1);
   renderDenoiseControls();
-  if (key === "grain_evenness" && !liveFineGrainSelected(lane)) return;
+  if (key === "grain_evenness" && !liveGradeGrainSelected(lane)) return;
   if (!settings.enabled || runtime.status !== "ready" || runtime.showOriginal) return;
   // Section 5.6: reconstruction is coalesced to one in-flight run plus one
   // latest pending state, so dragging a control costs runs rather than input
@@ -401,15 +413,20 @@ async function updateLiveDenoiseControl(key, value) {
     sessionId: state.session?.session_id,
     generation: runtime.generation,
     controls: denoiseRendererControls(settings.controls),
-    evennessOnly: key === "grain_evenness",
+    liveGrainControl: liveGrainControl(key, lane) ? key : null,
   });
 }
 
-function liveFineGrainSelected(lane) {
+function liveGradeGrainSelected(lane) {
   const selector = state.gpuPreview?.denoiseSourceSelector;
-  return state.activeWorkflow === "grade" && state.denoise[lane].controls.method === "fine_grain"
-    && selector?.cache?.grain?.gpu && selector.selected === "resolved"
+  return gradeGrainGpuEnabled(lane) && selector?.cache?.grain?.gpu && selector.selected === "resolved"
+    && selector.controls?.method === state.denoise[lane].controls.method
     && selector.cache.preparedFrame === JSON.stringify([state.session?.session_id, lane, geometrySignature(), gradeSourceIdentity(lane)]);
+}
+
+function liveGrainControl(key, lane) {
+  return key === "grain_evenness" || (state.denoise[lane].controls.method === "clean_grain"
+    && (key === "color_splotches" || key === "splotch_size"));
 }
 
 async function commitDenoiseControl(key, value) {
@@ -418,19 +435,26 @@ async function commitDenoiseControl(key, value) {
   const runtime = state.denoiseRuntime[lane];
   const sessionId = state.session?.session_id;
   if (value !== undefined) settings.controls[key] = value;
-  if (key === "grain_evenness" && settings.enabled && liveFineGrainSelected(lane)) {
+  if (liveGrainControl(key, lane) && liveGradeGrainSelected(lane)) {
     const saved = await persistDenoiseSettings().catch(() => false);
     if (state.session?.session_id !== sessionId || state.denoiseRuntime[lane] !== runtime) return;
     runtime.saveFailed = !saved;
     if (!saved) return denoiseRetryError(lane, "Denoise settings could not be saved.");
-    if (nativeDenoiseViewport(lane)) {
-      if (state.gpuPreview.denoiseSourceSelector.controls.grainEvenness !== settings.controls.grain_evenness) {
-        await updateLiveDenoiseControl(key, settings.controls.grain_evenness);
+    const controls = denoiseRendererControls(settings.controls);
+    const current = state.gpuPreview.denoiseSourceSelector.controls;
+    const viewport = nativeDenoiseViewport(lane);
+    const exactBlend = key === "color_splotches" && state.gpuPreview.hasReducedCleanGrain();
+    if ((!viewport && !exactBlend) || controls.grainEvenness !== current.grainEvenness
+      || controls.colorSplotches !== current.colorSplotches || controls.splotchSize !== current.splotchSize) {
+      const render = { lane, sessionId, generation: runtime.generation, controls, liveGrainControl: key };
+      const queue = denoiseInputQueue();
+      if (!viewport && key === "splotch_size") {
+        await queue.submit({ ...render, provisional: true });
+        // Let the quick picture reach the screen before the exact draw takes over.
+        await new Promise(resolve => requestAnimationFrame(resolve));
+        if (settings.controls.splotch_size !== controls.splotchSize) return;
       }
-    } else {
-      state.gpuPreview.setDenoiseControls(denoiseRendererControls(settings.controls));
-      invalidatePreview(lane, { markDirty: false });
-      debouncePreview(lane);
+      await queue.submit({ ...render, wholeFrame: true });
     }
     return;
   }
@@ -499,19 +523,25 @@ function liveDenoiseRegion() {
   };
 }
 
-async function runLiveDenoise({ lane, sessionId, generation, controls, wholeFrame = false, evennessOnly = false }) {
+async function runLiveDenoise({ lane, sessionId, generation, controls, wholeFrame = false, liveGrainControl = null, provisional = false }) {
   const isCurrent = () => sessionId === state.session?.session_id
-    && generation === state.denoiseRuntime[lane]?.generation && state.denoise[lane]?.enabled;
+    && generation === state.denoiseRuntime[lane]?.generation && state.denoise[lane]?.enabled
+    && !state.denoiseRuntime[lane]?.showOriginal;
   if (!isCurrent()) return;
-  if (evennessOnly && lane === state.currentView && nativeDenoiseViewport(lane) && liveFineGrainSelected(lane)) {
+  const viewport = nativeDenoiseViewport(lane);
+  const interacting = !wholeFrame && Boolean(state.previewScheduler?.interacting);
+  if (liveGrainControl && lane === state.currentView && liveGradeGrainSelected(lane)
+    && (viewport || wholeFrame || controls.method === "clean_grain")) {
     state.gpuPreview.setDenoiseControls(controls);
     invalidatePreview(lane, { markDirty: false });
-    await renderGpuDraft(lane, { longEdge: refinementProxyLongEdge(), viewport: true, reason: "fine-grain-evenness" });
+    const exactBlend = liveGrainControl === "color_splotches" && state.gpuPreview.hasReducedCleanGrain();
+    await renderGpuDraft(lane, { longEdge: refinementProxyLongEdge(), viewport,
+      tier: (provisional || interacting) && !viewport && !exactBlend ? "interactive" : "settled",
+      reason: "grade-grain-control" });
     if (isCurrent()) debounceOverlayAndScopes();
     return;
   }
   const startedAt = performance.now();
-  const interacting = !wholeFrame && Boolean(state.previewScheduler?.interacting);
   // NEXT-01 #4. During a drag only what is on screen is reconstructed: a
   // tiled render (Full, or zoomed in) reconstructs each tile it draws itself,
   // and a whole-frame render zoomed in needs only the visible region. At 200%

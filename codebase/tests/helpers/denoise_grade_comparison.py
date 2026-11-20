@@ -1,4 +1,4 @@
-"""Compare finished Grade captures from the Fine Grain real-app driver."""
+"""Compare finished Grade captures from the Grain real-app driver."""
 
 import json
 from pathlib import Path
@@ -65,6 +65,29 @@ def compare_pan(root, photo, pan):
     return compare(earlier, later, True, first["format"])
 
 
+def compare_joins(first, cpu, second, gpu, native, hdr):
+    """Check two pixels on each side of the GPU tile and Fit strip joins."""
+    tile = 512
+    if second["region"]:
+        a, b = first["region"], second["region"]
+        x, y = max(a["x"], b["x"]), max(a["y"], b["y"])
+        columns = [position - x for position in range(tile, native["frameWidth"], tile)]
+        rows = [position - y for position in range(tile, native["frameHeight"], tile)]
+    else:
+        ratio_x = native["frameWidth"] / second["width"]
+        ratio_y = native["frameHeight"] / second["height"]
+        columns = [round(position / ratio_x) for position in range(tile, native["frameWidth"], tile)]
+        rows = range(max(1, int(tile / ratio_y)), second["height"], max(1, int(tile / ratio_y)))
+
+    def strips(pixels):
+        return np.concatenate(
+            [pixels[:, i - 2:i + 2].reshape(-1, 4) for i in columns if 2 <= i <= pixels.shape[1] - 2]
+            + [pixels[i - 2:i + 2].reshape(-1, 4) for i in rows if 2 <= i <= pixels.shape[0] - 2]
+        )[None, ...]
+
+    return compare(strips(cpu), strips(gpu), hdr, first["format"])
+
+
 def check_ceiling(root, photos, target=600):
     failed = []
     for photo in photos:
@@ -89,10 +112,11 @@ def check_ceiling(root, photos, target=600):
     assert not failed, f"Ceiling failed or was not reached: {', '.join(failed)}"
 
 
-def main(root, photos):
+def main(root, photos, check_joins=False):
     failed = []
     for photo in photos:
         results = []
+        native = capture(root, f"{photo}-hdr-110%-gpu")[0]["region"] if check_joins else None
         for lane in ("hdr", "sdr"):
             for zoom in ("110%", "Fit"):
                 stem = f"{photo}-{lane}-{zoom}"
@@ -100,6 +124,16 @@ def main(root, photos):
                 second, gpu = capture(root, f"{stem}-gpu")
                 cpu, gpu = shared_pixels(first, cpu, second, gpu)
                 results.append((stem, compare(cpu, gpu, lane == "hdr", first["format"])))
+                if check_joins:
+                    results.append((f"{stem}-tile-joins", compare_joins(first, cpu, second, gpu, native, lane == "hdr")))
+                if (root / f"{stem}-fallback.json").exists():
+                    meta, fallback = capture(root, f"{stem}-fallback")
+                    reference_meta, reference = capture(root, f"{stem}-cpu")
+                    reference, fallback = shared_pixels(reference_meta, reference, meta, fallback)
+                    identical = np.array_equal(reference, fallback)
+                    print(json.dumps({"case": f"{stem}-fallback", "cpu_pixels_identical": identical}), flush=True)
+                    if not identical:
+                        failed.append(f"{stem}-fallback")
         results.append((f"{photo}-hdr-pan-overlap", compare_pan(root, photo, "pan")))
         if (root / f"{photo}-hdr-pan-wide-gpu.json").exists():
             results.append((f"{photo}-hdr-pan-wide-overlap", compare_pan(root, photo, "pan-wide")))
@@ -108,10 +142,14 @@ def main(root, photos):
             print(json.dumps({"case": case, **values, "passed": passed}), flush=True)
             if not passed:
                 failed.append(case)
-    assert not failed, f"Finished colour outside tolerance: {', '.join(failed)}"
+    assert not failed, f"Finished colour or fallback comparison failed: {', '.join(failed)}"
 
 
 if __name__ == "__main__":
     arguments = sys.argv[2:]
-    action = check_ceiling if "--ceiling" in arguments else main
-    action(Path(sys.argv[1]), [arg for arg in arguments if arg != "--ceiling"] or ["IMG_0790.CR2", "_DSC7970.ARW"])
+    root = Path(sys.argv[1])
+    photos = [arg for arg in arguments if not arg.startswith("--")] or ["IMG_0790.CR2", "_DSC7970.ARW"]
+    if "--ceiling" in arguments:
+        check_ceiling(root, photos)
+    else:
+        main(root, photos, check_joins="--seams" in arguments)

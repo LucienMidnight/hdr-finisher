@@ -1,3 +1,109 @@
+## November 20 — Fine Grain enabled in Grade
+
+MacBook Neo with A18 Pro, 8 GB unified memory and macOS 27.0.1 on AC.
+Unpackaged Electron at 1408 × 794 points under the shared GPU lock.
+Canon `IMG_0790.CR2` and Sony `_DSC7970.ARW`, signed RAW development,
+lens correction off and harsh-speck cleanup at ×2.5. The CPU figures are
+the same-machine baseline in `b675f81a`. The GPU figures come from a fresh
+default-on run after the memory incident, with the fast suites idle.
+Times run from the action to the finished picture. Peak memory is sampled
+for the whole app, in decimal GB.
+
+| Wait or peak | Canon CPU → default GPU | Sony CPU → default GPU |
+| --- | ---: | ---: |
+| HDR first sharp at 110% (s) | 5.564 → 1.612 | 13.307 → 4.411 |
+| HDR Fit (s) | 4.594 → 2.214 | 9.483 → 4.593 |
+| HDR Evenness drag settled (s) | 5.303 → 0.128 | 11.495 → 0.133 |
+| HDR small pan (s) | 0.203 → 0.030 | 0.407 → 0.026 |
+| HDR wide pan (s) | 0.439 → 0.350 | 0.642 → 0.526 |
+| Generated SDR at 110% (s) | 2.434 → 0.314 | 4.182 → 0.348 |
+| Generated SDR Fit (s) | 1.083 → 0.110 | 2.181 → 0.106 |
+| Peak whole app (GB) | 2.807 → 1.964 | 4.356 → 3.015 |
+
+Fine Grain is on by default in Grade when selected and enabled. The
+original picture stays bounded at native zoom, with the Grain preparation
+and final colour processing skipped when bypassed. The Canon Show original
+and bypass captures matched the undenoised Grade pixels byte for byte.
+One injected Canon failure called the CPU preparation once and showed the
+CPU picture in 4.654 seconds. The repeated quick Library check showed all
+9 viewport pictures, with a first picture in 0.4 seconds and a 2.781 GB
+whole-app peak. The pre-repeat Library run and incomplete Fine Grain
+runs were discarded as rollout evidence.
+
+The paired finished-colour results from `b675f81a` still apply to the
+same Fine Grain reconstruction. The worst mean / p99 was 0.059 / 0.187
+ΔE ITP in HDR and 0.121 / 0.766 ΔE 2000 in SDR. The default-on ceiling
+recheck found zero finished pixels above 600 nits on both photos, at Fit
+and 110%. The exact counts are in the Clean Grain trial section below.
+
+## November 20 — Clean Grain GPU trial in Grade
+
+MacBook Neo with A18 Pro, 8 GB unified memory and macOS 27.0.1 on AC.
+Unpackaged Electron at 1408 × 794 points under the shared GPU lock, with
+the fast suites idle. Canon `IMG_0790.CR2` and Sony `_DSC7970.ARW`, signed
+RAW development, lens correction off and harsh-speck cleanup ×2.5. Each
+figure is one action-to-picture observation. Both routes capture finished
+pixels. The physical footprint includes Electron, the GPU process, Python
+and helpers, and the preceding 500 ms of each timed wait. The Fine-to-Clean
+switch uses a fresh Evenness value at 92% on both routes so there is no
+matching Clean tile. Small and wide pans move 180 and 550 screen pixels.
+
+| Wait or peak | Small Canon CPU → GPU | Small Sony CPU → GPU | Large Canon CPU → GPU | Large Sony CPU → GPU |
+| --- | ---: | ---: | ---: | ---: |
+| HDR first sharp at 110% (s) | 8.620 → 1.880 | 23.045 → 3.480 | 12.929 → 2.169 | 30.082 → 3.733 |
+| HDR Fit (s) | 7.985 → 3.013 | 18.702 → 7.510 | 12.077 → 4.017 | 32.059 → 9.983 |
+| HDR Evenness drag settled (s) | 8.231 → 1.419 | 18.787 → 1.349 | 11.794 → 1.819 | 28.651 → 1.825 |
+| HDR small pan (s) | 0.200 → 0.024 | 0.427 → 0.036 | 0.204 → 0.027 | 0.391 → 0.028 |
+| HDR wide pan (s) | 0.459 → 0.375 | 0.479 → 0.494 | 0.452 → 0.455 | 0.459 → 0.573 |
+| Color Splotches drag at 110% (s) | 2.872 → 0.137 | 5.544 → 0.127 | 2.916 → 0.123 | 5.466 → 0.134 |
+| Color Splotches drag at Fit (s) | 0.120 → 0.116 | 0.130 → 0.118 | 0.146 → 0.112 | 0.164 → 0.116 |
+| Splotch Size change at 110% (s) | 11.357 → 0.881 | 27.904 → 1.192 | 7.381 → 0.749 | 17.059 → 0.865 |
+| Fine Grain to Clean Grain at 110% (s) | 3.933 → 0.881 | 7.651 → 0.883 | 6.399 → 1.065 | 15.818 → 1.084 |
+| Generated SDR at 110% (s) | 8.666 → 0.569 | 20.704 → 0.634 | 12.752 → 0.589 | 30.611 → 0.820 |
+| Generated SDR Fit (s) | 1.116 → 0.127 | 2.035 → 0.105 | 0.991 → 0.120 | 2.269 → 0.109 |
+| Peak whole app (GB) | 2.606 → 2.553 | 4.259 → 2.938 | 2.693 → 2.539 | 4.782 → 3.002 |
+
+**Off by default.** The Sony Large wide pan took 25% longer than the CPU.
+That misses the agreed 5% timing band. The GPU finished the two first
+sharp pictures 78–88% sooner across the two sizes and stayed under 4 GB.
+The largest GPU peak in the separate +3 EV ceiling checks was 3.244 GB
+(Sony Large Fit).
+
+Both reaches reuse the Fine Grain whole-photo fit. The GPU computes
+visible padded tiles at native zoom and filters bounded strips at Fit.
+Fit reduces the base picture and signed colour delta separately, so
+the viewer can blend the delta live at any strength. The GPU checks
+recorded no CPU Grain preparation requests on a successful draw.
+Small and Large share the same measurement, and generated SDR reuses
+matching results from HDR. In the focused Canon Fit size check,
+Small to Large showed the first update in 0.170 s and settled in 4.160 s.
+The whole-photo fit was reused throughout that change.
+
+All 16 Clean Grain finished-picture comparisons passed. The worst mean /
+p99 was 0.012 / 0.143 ΔE ITP in HDR and 0.116 / 0.624 ΔE 2000 in SDR,
+against limits of <1 / <3. Samples around tile and strip joins also
+passed (worst p99 0.136 HDR and 0.630 SDR). The overlapping HDR pan pixels
+were identical on both photos with each reach. An injected Canon fault
+made one GPU attempt and one CPU preparation for each reach. Both
+fallback pictures were byte-identical to their normal CPU SDR Fit capture.
+
+The HDR ceiling checks ran at +3 EV with a 600-nit target. For each of
+Fine Grain, Clean Grain Small and Clean Grain Large, **0 of 7,609,384**
+finished HDR pixels exceeded 600 nits on Canon and Sony at Fit and 110%.
+The highest was 599.999939 nits in every capture, measured before the
+display transform or encoding.
+
+The full suites ran separately under the lock. JavaScript passed 1,126
+with one skipped. Python passed 4,316 with 150 skipped and one unexpected
+pass. The repeated Library and Fine Grain results and the paired Clean
+Grain runs replace the measurements taken during the memory incident.
+
+Reproduce from `codebase` with `--phase2=cpu` and `--phase2=gpu` and the
+same capture folder for both runs. Use `--clean-grade=small` or
+`--clean-grade=large`, and use `--ceiling-only` with the GPU route for
+the exact HDR check. [Latency driver](../../codebase/tests/performance/denoise-grain-latency.js) ·
+[Finished-pixel comparator](../../codebase/tests/helpers/denoise_grade_comparison.py)
+
 ## November 20 — Fine Grain GPU reuse in Grade
 
 MacBook Neo, A18 Pro, 8 GB, macOS 27.0.1, on AC. Unpackaged Electron at

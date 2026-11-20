@@ -100,7 +100,7 @@ for (const method of ["standard", "fine_grain", "clean_grain"]) {
       renderReadouts: noop, hidePreviewMessage: noop, requestAnimationFrame: noop,
     });
     vm.runInContext(frontendSource("preview-pipeline.js"), context);
-    vm.runInContext(declarations("gradeFineGrainGpuTrial", "gradeSourceIdentity", "liveFineGrainSelected"), context);
+    vm.runInContext(declarations("gradeGrainGpuPreferred", "gradeGrainGpuEnabled", "gradeSourceIdentity", "liveGradeGrainSelected"), context);
     context.denoiseUnderlayerEdge = () => 1600;
     context.visibleOutputRect = () => previous;
     assert.equal(await context.renderGpuDraftInner("hdr", { longEdge: 5202, viewport: previous }), true);
