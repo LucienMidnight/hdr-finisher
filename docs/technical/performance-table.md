@@ -24,6 +24,43 @@ for the forecast. Peak figures are sampled process-tree physical footprint.
 
 [Recommendations and evidence](briefs/export-speed-plan-2026-11-20.md)
 
+## November 20 — Micro Grain Grade feasibility
+
+MacBook Neo, A18 Pro, 8 GB unified memory, macOS 27.0.1, AC power.
+Branch checkout at `e30b7c0d`. Electron 1408 × 794 under the shared
+GPU lock, with the full suites idle. Canon `IMG_0790.CR2` and Sony
+`_DSC7970.ARW`, Bayer highlights reconstructed, harsh-speck cleanup ×2.5,
+lens correction off. Probe times use a native core of about 2430 × 1024
+plus the round 3 haloes. Each GPU run fences submitted work. The figures
+exclude UI and are warm medians unless a range is shown.
+
+| Stage or action | Canon | Sony | Conditions |
+| --- | ---: | ---: | --- |
+| Signed AHD, CPU | 120 ms | 182 ms | Already prepared Bayer input. |
+| Signed AHD, WebGPU | 8.9 ms | 7.1 ms | Resident input, four passes with shared Lab votes, about 116 MB logical allocation. |
+| Round 3 late passes, 512 px tiles | 260 ms | 256 ms | Resident demosaiced viewport, default Color, about 144 MB logical allocation. |
+| Round 3 late passes, 1280 px tiles | 202 ms | 203 ms | Same viewport and default Color, about 364 MB logical allocation. |
+| Round 3 late passes, 1024 px tiles, Color 0% | 120 ms | 117 ms | No Small repair, about 274 MB logical allocation. |
+| Round 3 late passes, simulated Fit | 1.78 s | 4.42 s | Repeated 512-pixel-tiled viewport over the approximate frame area. Bayer, transfer, reduction and Grade are additional. |
+| Round 3 complete CPU viewport update | 0.94–1.22 s | 1.04–1.27 s | Three Luminance edits, one CPU thread, includes exact demosaic and filtering after 123 / 105 ms initial Bayer setup. |
+
+The two isolated GPU stages passed finished HDR ΔE ITP and SDR ΔE 2000
+at +3 EV. The higher mean / p99 for the late comparisons was 0.038 /
+0.084 HDR and 0.010 / 0.028 SDR. The fixed comparison finish kept HDR
+at or below 1000 nits. The allocations above are GPU resources in the
+probe. The 4 GB whole-app gate for Micro Grain remains unverified.
+
+The exact viewport probe was above the 150 ms warm first-picture
+target before upstream Bayer work and the Grade draw. A live blend of
+closely spaced exact samples also missed the colour gates. This stopped
+the app integration. [Design and quality results](briefs/denoise-micro-grain-app-2026-11-20.md)
+
+Both attempts to time Standard and Clean Grain in the same Grade session
+were stopped by macOS memory pressure during app startup. In the earlier
+MacBook Neo Grade trial, Clean Grain colour drags at 110% settled in
+123–137 ms. Those are historical app waits and the values above cover
+only the isolated GPU or CPU work.
+
 ## November 20 — Denoise export and full-size Proof attribution
 
 MacBook Neo, A18 Pro, 6 cores, 8 GB unified memory, macOS 27.0.1, AC
