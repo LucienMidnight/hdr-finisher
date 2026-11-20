@@ -4,7 +4,7 @@ from types import SimpleNamespace
 import time
 import numpy as np
 import pytest
-from fastapi import FastAPI
+from fastapi import FastAPI, WebSocketDisconnect
 from fastapi.testclient import TestClient
 from hdr_finisher import app_memory, gpu_delivery, delivery
 from hdr_finisher.models import AdjustmentState, DenoiseDocumentSettings, ExportSettings
@@ -207,6 +207,7 @@ def test_streamed_delivery_returns_encoder_rgb_without_shared_arrays(tmp_path, m
     app = _broker(tmp_path, monkeypatch)
     monkeypatch.setattr(config, "APP_DATA_DIR", tmp_path)
     monkeypatch.setenv(gpu_delivery.STREAMED_TRIAL_ENV, "1")
+    monkeypatch.setenv("HDR_FINISHER_DESKTOP_SECRET", "delivery-test-secret")
     if not same_process:
         monkeypatch.setattr(gpu_delivery, "_router_pid", None)
     monkeypatch.setattr(app_memory, "snapshot", lambda: {"totalBytes": 0, "reservedBytes": 0})
@@ -227,14 +228,24 @@ def test_streamed_delivery_returns_encoder_rgb_without_shared_arrays(tmp_path, m
         assert (gpu_delivery.session(job["id"]).image is frame.image) == same_process
         np.testing.assert_array_equal(gpu_delivery.session(job["id"]).image, frame.image)
         for lane in lanes:
-            path = f"/api/delivery/gpu/{job['id']}/pixels/{lane}"
+            path = f"/api/delivery/gpu/{job['id']}/rows/{lane}"
+            headers = {"x-hdr-finisher-token": "delivery-test-secret"}
+            with pytest.raises(WebSocketDisconnect), client.websocket_connect(path):
+                pytest.fail("Accepted an unauthenticated stream")
+            with pytest.raises(WebSocketDisconnect), client.websocket_connect(path,
+                    headers={**headers, "origin": "http://outside.invalid"}):
+                pytest.fail("Accepted a cross-origin stream")
             pixels = hdr_pixels if lane == "hdr" else input_pixels
-            assert client.post(f"{path}?row=2&rows=2", content=pixels[2:].tobytes()).status_code == 400
             bad_strip = pixels[:2].copy()
             bad_strip[0, 0, 1] = np.nan
-            assert client.post(f"{path}?row=0&rows=2", content=bad_strip.tobytes()).status_code == 400
-            assert client.post(f"{path}?row=0&rows=2", content=pixels[:2].tobytes()).status_code == 204
-            assert client.post(f"{path}?row=2&rows=2", content=pixels[2:].tobytes()).status_code == 204
+            for row, strip in ((2, pixels[2:]), (0, bad_strip)):
+                with client.websocket_connect(path, headers=headers) as socket:
+                    socket.send_bytes(row.to_bytes(4, "little") + strip.tobytes())
+                    assert socket.receive() == {"type": "websocket.close", "code": 1008, "reason": ""}
+            with client.websocket_connect(path, headers=headers) as socket:
+                for row in (0, 2):
+                    socket.send_bytes(row.to_bytes(4, "little") + pixels[row:row + 2].tobytes())
+                    assert socket.receive_text() == ""
         client.post(f"/api/delivery/gpu/{job['id']}/complete", json={})
         pair = pending.result(timeout=5)
         assert set(pair) == set(lanes)

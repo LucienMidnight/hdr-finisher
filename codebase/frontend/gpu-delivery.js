@@ -31,6 +31,33 @@
       if(value.preempt)throw yielded(value.reason);
       if(value.ready){permitted=performance.now();return;}await pause(30);}
   }
+  async function finishStreamedLane(job,lane,capture,finishing){
+    let socket,packet,reply;
+    try{
+      await finishing.finishRows(capture,job,lane,async(row,rows,pixels)=>{
+        if(!socket){
+          const url=new URL(`/api/delivery/gpu/${job.id}/rows/${lane}`,location.href);
+          url.protocol=url.protocol==="https:"?"wss:":"ws:";
+          socket=new WebSocket(url);
+          await new Promise((resolve,reject)=>{
+            socket.onopen=resolve;
+            socket.onclose=()=>reject(Error("GPU encoder strip connection failed."));
+          });
+          socket.onmessage=()=>reply?.resolve();
+          socket.onclose=()=>reply?.reject(Error("GPU encoder strip handoff failed."));
+          packet=new Uint8Array(pixels.byteLength+4);
+        }
+        if(socket.readyState!==WebSocket.OPEN)throw Error("GPU encoder strip connection closed.");
+        new DataView(packet.buffer).setUint32(0,row,true);
+        packet.set(new Uint8Array(pixels.buffer,pixels.byteOffset,pixels.byteLength),4);
+        await new Promise((resolve,reject)=>{
+          reply={resolve,reject};
+          socket.send(packet.subarray(0,pixels.byteLength+4));
+        });
+        reply=null;
+      });
+    }finally{socket?.close();}
+  }
   // Finish this async frame before polling again: a suspended polling frame
   // otherwise keeps the completed photo in its parameters and registers.
   async function runJob(job){
@@ -221,19 +248,17 @@
           if(!result?.rendered && result?.execution!=="direct")throw Error(`GPU delivery refused the grade: ${result?.reason||JSON.stringify(result?.refusals)}`);
           if(!delivery.params)throw Error("GPU delivery produced no finished image.");job.params=delivery.params;
           stamp("creative_ms",lane);
-          const endpoint=`/api/delivery/gpu/${job.id}/pixels/${lane}`;
-          const sendRows=async(row,rows,pixels)=>{
-            const uploaded=await fetch(`${endpoint}?row=${row}&rows=${rows}`,{
-              method:"POST",body:job.streamed?pixels:new Blob([pixels]),
-            });
-            if(!uploaded.ok)throw Error("GPU encoder strip handoff failed.");
-          };
           if(job.streamed){
             gpu.resetSession(job.id);hdrSource=null;
-            await finishing.finishRows(capture,job,lane,sendRows);
+            await finishStreamedLane(job,lane,capture,finishing);
             stamp("finish_readback_and_handoff_ms",lane);
             continue;
           }
+          const endpoint=`/api/delivery/gpu/${job.id}/pixels/${lane}`;
+          const sendRows=async(row,rows,pixels)=>{
+            const uploaded=await fetch(`${endpoint}?row=${row}&rows=${rows}`,{method:"POST",body:new Blob([pixels])});
+            if(!uploaded.ok)throw Error("GPU encoder strip handoff failed.");
+          };
           const texture=await finishing.finish(capture,job,lane);stamp("finishing_ms",lane);
           if(job.grain_reconstruction){
             await finishing.read(texture,sendRows);

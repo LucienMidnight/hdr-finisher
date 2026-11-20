@@ -6,6 +6,7 @@ succeed together or the ordinary CPU graph renders both.
 """
 from __future__ import annotations
 import atexit
+import asyncio
 import json
 import os
 from pathlib import Path
@@ -18,8 +19,9 @@ from threading import RLock
 from functools import wraps
 from weakref import finalize
 import numpy as np
-from fastapi import APIRouter, HTTPException, Request, Response
+from fastapi import APIRouter, HTTPException, Request, Response, WebSocket, WebSocketDisconnect
 from .color_context import RenderColorContext
+from .desktop_security import secret_matches
 from .models import AdjustmentState, DenoiseDocumentSettings, LocalAdjustment
 from .projects import validate_saved
 from .render_cache import SessionRenderCache
@@ -685,52 +687,67 @@ def create_gpu_delivery_router():
             value["reservation"] = requested
             return {}
 
+    @router.websocket("/{identity}/rows/{lane}")
+    async def stream_pixels(identity: str, lane: str, socket: WebSocket):
+        from .adjustments import _enforce_exact_hdr_output_target
+        from .hdr_ceiling import delivery_ceiling_nits
+
+        secret = os.environ.get("HDR_FINISHER_DESKTOP_SECRET")
+        origin = socket.headers.get("origin")
+        item = active.get(identity)
+        frame = session(identity)
+        if ((secret and not secret_matches(socket.headers.get("x-hdr-finisher-token"), secret))
+                or (origin and origin.split("://", 1)[-1] != socket.headers.get("host"))
+                or not item or frame is None or not item[1].get("streamed") or lane not in item[1]["lanes"]):
+            await socket.close(code=1008)
+            return
+        _, value = item
+        received = value.setdefault("received", [])
+        if value.get("uploading") or value["lanes"][len(received):len(received) + 1] != [lane]:
+            await socket.close(code=1008)
+            return
+        value["uploading"] = lane
+        try:
+            await socket.accept()
+            width, height = value["output"]
+            next_row = 0
+            ceiling = delivery_ceiling_nits(frame.adjustments) if lane == "hdr" else None
+            with open(value["memory"][lane]["file"], "r+b", buffering=0) as stream:
+                while next_row < height:
+                    body = await asyncio.wait_for(socket.receive_bytes(), timeout=20)
+                    rows, remainder = divmod(len(body) - 4, width * 16)
+                    row = int.from_bytes(body[:4], "little")
+                    if (identity not in active or remainder or row != next_row
+                            or not 1 <= rows <= STREAMED_WRITE_ROWS or row + rows > height):
+                        raise ValueError("Incorrect delivery pixel rows.")
+                    rgb = np.ascontiguousarray(np.frombuffer(body, dtype="<f4", offset=4).reshape(rows, width, 4)[..., :3])
+                    if not np.isfinite(rgb).all():
+                        raise ValueError("GPU delivery returned invalid pixels.")
+                    if ceiling is not None:
+                        rgb = _enforce_exact_hdr_output_target(rgb, ceiling, value["white"])
+                    if stream.write(memoryview(rgb).cast("B")) != rgb.nbytes:
+                        raise OSError("Incomplete GPU encoder input write.")
+                    next_row += rows
+                    if next_row == height:
+                        received.append(lane)
+                        value["uploading"] = None
+                    await socket.send_text("")
+            await socket.close()
+        except WebSocketDisconnect:
+            pass
+        except (KeyError, OSError, ValueError):
+            await socket.close(code=1008)
+        finally:
+            if value.get("uploading") == lane:
+                value["uploading"] = None
+
     @router.post("/{identity}/pixels/{lane}")
     async def pixels(identity: str, lane: str, request: Request, row: int | None = None, rows: int | None = None):
         if identity not in active or lane not in {"hdr", "sdr", "edge", "dng", "retouch"}:
             raise HTTPException(404, "GPU delivery job expired.")
-        directory, value = active[identity]
-        if lane not in value["memory"]:
+        _, value = active[identity]
+        if value.get("streamed") or lane not in value["memory"]:
             raise HTTPException(400, "Unexpected delivery lane.")
-        if value.get("streamed"):
-            width, height = value["output"]
-            next_rows = value.setdefault("next_rows", {})
-            uploading = value.setdefault("uploading", set())
-            if (lane in uploading or row is None or rows is None or row != next_rows.get(lane, 0)
-                    or not 1 <= rows <= STREAMED_WRITE_ROWS or row + rows > height):
-                raise HTTPException(400, "Incorrect delivery pixel rows.")
-            uploading.add(lane)
-            try:
-                body = bytearray(rows * width * 16)
-                offset = 0
-                async for chunk in request.stream():
-                    if offset + len(chunk) > len(body):
-                        raise HTTPException(400, "Incorrect delivery pixel size.")
-                    body[offset:offset + len(chunk)] = chunk
-                    offset += len(chunk)
-                if offset != len(body):
-                    raise HTTPException(400, "Incorrect delivery pixel size.")
-                rgb = np.ascontiguousarray(np.frombuffer(body, dtype="<f4").reshape(rows, width, 4)[..., :3])
-                if not np.isfinite(rgb).all():
-                    raise HTTPException(400, "GPU delivery returned invalid pixels.")
-                if lane == "hdr":
-                    from .adjustments import _enforce_exact_hdr_output_target
-                    from .hdr_ceiling import delivery_ceiling_nits
-
-                    frame = session(identity)
-                    if frame is None:
-                        raise HTTPException(404, "GPU delivery job expired.")
-                    rgb = _enforce_exact_hdr_output_target(rgb, delivery_ceiling_nits(frame.adjustments), value["white"])
-                with open(value["memory"][lane]["file"], "r+b", buffering=0) as stream:
-                    stream.seek(row * width * 12)
-                    if stream.write(memoryview(rgb).cast("B")) != rgb.nbytes:
-                        raise OSError("Incomplete GPU encoder input write.")
-                next_rows[lane] = row + rows
-                if next_rows[lane] == height:
-                    value.setdefault("received", []).append(lane)
-                return Response(status_code=204)
-            finally:
-                uploading.remove(lane)
         if (row is not None or rows is not None) != bool(value.get("grain_reconstruction")):
             raise HTTPException(400, "Incorrect delivery pixel transport.")
         if row is not None or rows is not None:

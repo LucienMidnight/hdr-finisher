@@ -85,7 +85,8 @@ class LauncherServer:
             port = int(listener.getsockname()[1])
         self.url = server_url(host, port)
         self.listener = listener
-        config = uvicorn.Config(app, host=host, port=port, log_level=log_level)
+        config = uvicorn.Config(app, host=host, port=port, log_level=log_level,
+            ws_per_message_deflate=os.environ.get("HDR_FINISHER_GPU_STREAMED_DELIVERY") != "1")
         self.server = uvicorn.Server(config)
         self.thread = threading.Thread(
             target=self._run,
