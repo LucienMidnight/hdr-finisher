@@ -297,6 +297,7 @@ async function renderPreviewForLaneInner(
     body: JSON.stringify({
       edit_revision: state.editRevision,
       include_locals: !localsBypassed(),
+      ...microGrainPreviewRequest(lane),
       local_adjustments: state.localPreviewDirty && !localsBypassed()
         ? JSON.parse(JSON.stringify(localAdjustments()))
         : null,
@@ -397,6 +398,14 @@ async function renderPreviewForLaneInner(
   return true;
 }
 
+function microGrainPreviewRequest(lane) {
+  const controls = state.denoise?.[lane]?.controls;
+  return controls?.method === "micro_grain" ? {
+    micro_grain_original: Boolean(state.denoiseRuntime[lane]?.showOriginal),
+    micro_grain_controls: controls,
+  } : {};
+}
+
 async function renderRawPreviewForLane(lane, displayWhenReady, longEdge, { showProgress = false } = {}) {
   if (!state.session || geometryDraftActive()) return false;
   const generation = state.previewGeneration[lane];
@@ -417,6 +426,7 @@ async function renderRawPreviewForLane(lane, displayWhenReady, longEdge, { showP
     body: JSON.stringify({
       edit_revision: state.editRevision,
       include_locals: !localsBypassed(),
+      ...microGrainPreviewRequest(lane),
       cpu_fallback_reason: cpuPreviewReason(lane),
       long_edge: Math.min(longEdge, CPU_PREVIEW_MAX_LONG_EDGE),
       generation,
@@ -692,6 +702,11 @@ async function renderGpuDraftInner(
     && Boolean(request.viewport) && state.gpuPreview.executionOverride !== "direct";
   const liveGpuGrain = liveGradeGrainSelected(lane);
   const denoiseActive = state.denoise?.[lane]?.enabled && !state.denoiseRuntime?.[lane]?.showOriginal;
+  const microSelected = state.denoise[lane]?.controls.method === "micro_grain";
+  const micro = denoiseActive && microSelected && state.activeWorkflow === "grade" && !microGrainUnavailable(lane);
+  const microControls = micro ? denoiseRendererControls(state.denoise[lane].controls) : null;
+  const microStillCurrent = () => !micro || microGrainControlsMatch(lane, microControls);
+  if (micro && state.denoiseRuntime[lane].microCpu) return refuse("micro-grain-cpu");
   const underlayerDenoise = state.denoise[lane];
   const underlayerEdit = liveGpuGrain ? [state.adjustments, localAdjustments(), localsBypassed()] : generation;
   const wholeFrameKey = JSON.stringify([sessionId, lane, requestedGeometrySignature, underlayerEdit, sourceIdentity,
@@ -708,7 +723,8 @@ async function renderGpuDraftInner(
       && accepted.geometrySignature === requestedGeometrySignature;
     const reusable = canvas.hdrWholeFrame && canvas.style.display !== "none"
       && (samePicturePan || (canvas.hdrWholeFrame.key === wholeFrameKey && canvas.hdrWholeFrame.edge <= softEdge + 1));
-    if (!reusable) {
+    if (!reusable && !(micro && canvas.hdrWholeFrame && state.acceptedPresentation?.lane === lane
+      && state.acceptedPresentation?.geometrySignature === requestedGeometrySignature)) {
       const drawn = await renderGpuDraftInner(lane, {
         ...request, longEdge: softEdge, viewport: null, panPass: false, roiCatchUp: false, underlayerOnly: true,
       });
@@ -717,7 +733,7 @@ async function renderGpuDraftInner(
         || !nativeDenoiseViewport(lane) || lane !== state.currentView) return refuse("superseded-after-underlayer");
     }
   }
-  if (denoiseActive) {
+  if (denoiseActive && (!microSelected || micro)) {
     if (!allowInactive) {
       const regionOnly = Boolean(request.viewport && nativeDenoiseViewport(lane)
         && longEdge === requiredProcessingLongEdge() && state.gpuPreview.executionOverride !== "direct");
@@ -737,11 +753,17 @@ async function renderGpuDraftInner(
         if (hideStatus && lane === state.currentView) setIndeterminatePreviewMessage(waiting);
         const ready = await recalculateDenoise(lane, { longEdge, renderAfter: false });
         if (state.previewStatusEntry?.message === waiting) hidePreviewMessage();
-        if (!ready) return refuse(runtime.status === "error"
+        if (!ready) return refuse(runtime.microCpu ? "micro-grain-cpu" : runtime.status === "error"
           ? "denoise-scale-analysis-unavailable" : "superseded-denoise-preparation");
         retarget();
       }
     }
+  }
+  const fitSize = micro ? gpuFrameSizeAt(longEdge) : null;
+  if (micro && !allowInactive && state.zoomMode === "fit" && !request.microQuick && tier !== "interactive"
+    && !state.gpuPreview.hasReducedMicroGrain(fitSize?.width, fitSize?.height)) {
+    const quick = await renderGpuDraftInner(lane, { ...request, microQuick: true });
+    if (!quick || !microStillCurrent() || request.isCurrent?.() === false) return refuse("superseded-after-micro-quick");
   }
   // A magnified pass fetches a region of the frame it will produce, so it has
   // to know that frame's exact size first.
@@ -780,9 +802,10 @@ async function renderGpuDraftInner(
     noiseView: denoiseNoiseViewActive(lane),
     boundedPresentation,
     fineGrainUnderlayer: request.underlayerOnly,
+    microQuick: Boolean(request.microQuick),
     fineGrainGrade: liveGradeGrainSelected(lane),
-    originalSource: !denoiseActive && state.activeWorkflow === "grade"
-      && Boolean(state.gpuPreview.denoiseSourceSelector?.cache?.grain?.gpu),
+    originalSource: (microSelected && !micro) || ((!denoiseActive || (micro && !(microControls.microLuminance || microControls.microColor)))
+      && state.activeWorkflow === "grade" && Boolean(state.gpuPreview.denoiseSourceSelector?.cache?.grain?.gpu)),
     deferSurface: request.underlayerOnly || (replacingDetail && !boundedPresentation && !viewport),
     coversViewport: boundedPresentation ? (region, width, height) => {
       if (!nativeDenoiseViewport(lane)) return false;
@@ -826,6 +849,7 @@ async function renderGpuDraftInner(
     // coordinator's token covers generations and cancellation; these are the
     // app-domain facts it cannot know.
     isCurrent: () => (typeof request.isCurrent === "function" ? request.isCurrent() : true)
+      && microStillCurrent()
       && !geometryDraftActive()
       && state.session?.session_id === sessionId
       && gradeSourceIdentity(lane) === sourceIdentity
@@ -904,7 +928,7 @@ async function renderGpuDraftInner(
       result.processedLongEdge || longEdge,
       null,
       request.coarse,
-      result.approximate,
+      result.approximate || Boolean(request.microQuick || (micro && tier === "interactive" && !boundedPresentation)),
     );
     const exactEdge = refinementProxyLongEdge();
     const visibleEdge = Math.min(exactEdge, Math.max(1, displayedLongEdge()));
@@ -956,6 +980,10 @@ async function renderGpuDraftInner(
       return true;
   } catch (error) {
     if (!sourceOptions.isCurrent() || error?.name === "AbortError") return refuse("superseded-during-render");
+    if (micro) {
+      useMicroGrainCpu(lane, error);
+      return refuse("micro-grain-cpu", error?.message);
+    }
     if (renderer.refuseFineGrainFit(gpuGrain, error)) {
       state.denoiseRuntime[lane].dirty = true;
       return renderGpuDraftInner(lane, request);

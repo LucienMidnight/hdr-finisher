@@ -223,6 +223,57 @@ def create_router(store):
     router = APIRouter()
     work = InstrumentWork(background=False)
     library_draws = {}
+    micro_work = InstrumentWork(background=False)
+
+    @router.get("/api/session/{session_id}/denoise-micro")
+    async def prepare_micro(request: Request, session_id: str):
+        from .denoise_micro_grain import MicroGrainUnavailable, prepare_source
+
+        def build(current):
+            frame = store.get(session_id)
+            if frame.metadata.get("lens_correction", {}).get("applied"):
+                raise MicroGrainUnavailable("Micro Grain uses the CPU with lens correction.")
+            source = prepare_source(frame, cancelled=lambda: not current())
+            height, width = source.shape
+            return {"width": width, "height": height, "gain": float(source.gain), "model": source.model.as_dict()}
+
+        try:
+            return await micro_work.run(session_id, request, build)
+        except KeyError as error:
+            raise HTTPException(404, str(error)) from error
+        except (StaleRender, InterruptedError) as error:
+            raise HTTPException(409, str(error)) from error
+        except MicroGrainUnavailable as error:
+            raise HTTPException(422, str(error)) from error
+
+    @router.post("/api/session/{session_id}/denoise-micro/region")
+    async def micro_region(request: Request, session_id: str, controls: DenoiseLiveControls,
+                           x: int, y: int, width: int, height: int, revision: int, retain: bool = True):
+        from .denoise_micro_grain import MicroGrainControls, MicroGrainUnavailable, prepare_source
+
+        if min(x, y) < 0 or min(width, height) < 1 or width * height > 4 * 1024 * 1024:
+            raise HTTPException(400, "Invalid Micro Grain region size.")
+
+        def build(current):
+            frame = store.get(session_id)
+            if frame.edit_revision != revision:
+                raise StaleRender("A newer edit replaced Micro Grain.")
+            source = prepare_source(frame, cancelled=lambda: not current())
+            right, bottom = x+width, y+height
+            if bottom > source.shape[0] or right > source.shape[1]:
+                raise HTTPException(400, "Micro Grain region exceeds the Bayer source.")
+            with _lock:
+                return source.gpu_region((x, y, right, bottom), MicroGrainControls.from_settings(controls), retain=retain)
+
+        try:
+            body = await micro_work.run(session_id, request, build)
+            return Response(body, media_type="application/octet-stream")
+        except KeyError as error:
+            raise HTTPException(404, str(error)) from error
+        except (StaleRender, InterruptedError) as error:
+            raise HTTPException(409, str(error)) from error
+        except MicroGrainUnavailable as error:
+            raise HTTPException(422, str(error)) from error
 
     def release_draw(key, owner=None):
         with _lock:

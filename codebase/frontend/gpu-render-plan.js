@@ -171,6 +171,10 @@ const GPU_PARAMS = window.HDRGpuParamLayout.indices;
   function adaptiveResolveOptions(controls) {
     const sizes = adaptiveDenoiseSizes(controls);
     if (!controls.method || controls.method === "standard") return sizes;
+    if (controls.method === "micro_grain") {
+      return { ...sizes, method: controls.method, microLuminance: controls.microLuminance ?? 0.5,
+        microColor: controls.microColor ?? 0.5, microDetail: controls.microDetail ?? 0.5 };
+    }
     const options = { ...sizes, method: controls.method, splotchSize: controls.splotchSize ?? "small" };
     for (const key of ["grainEvenness", "colorSplotches"]) {
       const value = Number(controls[key] ?? 1);

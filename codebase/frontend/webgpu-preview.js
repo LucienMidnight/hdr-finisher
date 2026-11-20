@@ -10,6 +10,7 @@
     return controls.splotchSize === "large" ? CLEAN_GRAIN_LARGE_MARGIN : CLEAN_GRAIN_SMALL_MARGIN;
   }
   const FINE_GRAIN_REDUCED_CACHE_SIZE = 2;
+  const MICRO_GRAIN_MARGIN = 112;
   const FINE_GRAIN_HDR_NITS_ROUNDING_GUARD = 1 - 2 ** -22;
 
   function fineGrainPixelControls(controls, endpoints = false) {
@@ -4131,11 +4132,13 @@
       // for each would fill the budget with tiles nothing will read again.
       const gpuGrain = adaptiveDenoise && denoiseSelector.cache.grain?.gpu;
       const colourMargin = gpuGrain ? cleanGrainMargin(denoiseControls) : 0;
-      const cacheGrainEndpoints = gpuGrain && options.boundedPresentation && !noiseView;
+      const micro = adaptiveDenoise && denoiseSelector.cache.grain?.micro && !options.microQuick;
+      const microControls = micro ? denoiseSelector.controls : null;
+      const cacheGrainEndpoints = gpuGrain && !denoiseSelector.cache.grain?.micro && options.boundedPresentation && !noiseView;
       const cacheColourDelta = cacheGrainEndpoints && colourMargin > 0;
       const denoiseTileControls = cacheGrainEndpoints ? fineGrainPixelControls(denoiseControls, true) : denoiseControls;
       const denoiseTileIdentity = adaptiveDenoise && !noiseView && !measureOnly
-        ? `${cacheGrainEndpoints ? `${denoiseSelector.cache.grain.fitKey}|${proxy.width}x${proxy.height}|${proxy.workingSpace}`
+        ? `${cacheGrainEndpoints || micro ? `${denoiseSelector.cache.grain.fitKey}|${proxy.width}x${proxy.height}|${proxy.workingSpace}`
           : denoiseSelector.cache.identity}|${JSON.stringify(denoiseTileControls)}`
         : null;
       const denoiseStateSeen = denoiseTileIdentity !== null && this.denoiseTileIdentity === denoiseTileIdentity;
@@ -4146,7 +4149,7 @@
         )).map(([key]) => key));
         this.denoiseTileIdentity = denoiseTileIdentity;
       }
-      const denoiseTilePrefix = denoiseStateSeen || cacheGrainEndpoints ? denoiseTileIdentity : null;
+      const denoiseTilePrefix = denoiseStateSeen || cacheGrainEndpoints || micro ? denoiseTileIdentity : null;
       const denoiseHeld = proxy.region || { x: 0, y: 0, width: proxy.width, height: proxy.height };
       const denoiseTileKey = (region) => {
         if (!denoiseTilePrefix) return null;
@@ -4155,8 +4158,8 @@
           Math.max(0, start - margin) >= heldStart
           && Math.min(frameSize, start + size + margin) <= heldStart + heldSize
         );
-        if (!reaches(region.x, region.width, denoiseHeld.x, denoiseHeld.width, proxy.width)
-          || !reaches(region.y, region.height, denoiseHeld.y, denoiseHeld.height, proxy.height)) return null;
+        if (!micro && (!reaches(region.x, region.width, denoiseHeld.x, denoiseHeld.width, proxy.width)
+          || !reaches(region.y, region.height, denoiseHeld.y, denoiseHeld.height, proxy.height))) return null;
         return `${denoiseTilePrefix}|${region.x},${region.y},${region.width},${region.height}`;
       };
       // Tiles this pass created, and those whose fill is still in an encoder
@@ -4166,6 +4169,17 @@
       const denoiseTilesUnsubmitted = [];
       const denoiseTilesUsed = [];
       let denoiseTileHits = 0;
+      const microBands = new Map();
+      const microBandSources = new Map();
+      if (micro && pictureRegion && !options.panPass) {
+        for (const { haloRect } of foregroundTiles) {
+          const { x, y, width, height } = haloRect;
+          const band = microBands.get(y);
+          const left = Math.min(x, band?.x ?? x);
+          microBands.set(y, { x: left, y, width: Math.max(x + width, band ? band.x + band.width : 0) - left,
+            height: Math.max(height, band?.height ?? 0) });
+        }
+      }
       // Tiles are grouped by local and sent as bounded batches: one HTTP
       // request and one coordinator slot per batch, and one mask identity per
       // batch for the backend to compile once.
@@ -4467,6 +4481,26 @@
         if (kept) {
           denoiseTilesCreated.push(key);
           denoiseTilesUnsubmitted.push(key);
+        }
+        if (micro) {
+          const texture = graph.denoiseResolvedTexture;
+          const current = () => isCurrent() && denoiseSelector === this.denoiseSourceSelector
+            && microControls === denoiseSelector.controls;
+          const band = microBands.get(region.y);
+          let prepared = microBandSources.get(region.y);
+          if (!prepared && band && band.width > region.width
+              && (band.width + 2 * MICRO_GRAIN_MARGIN) * (band.height + 2 * MICRO_GRAIN_MARGIN) <= 3000000) {
+            prepared = await this.developMicroGrainRegion(denoiseSelector, band, options.editRevision, current, true);
+            microBandSources.set(region.y, prepared);
+          }
+          const encoded = await this.writeMicroGrainRegion(denoiseSelector, region, { texture }, region,
+            options.editRevision, current, encoder, prepared, !measureOnly);
+          denoiseParamBuffers.push(encoded.paramBuffer);
+          if (!prepared) cleanGrainTransientTextures.push(encoded.source);
+          if (!noiseView) encoder.copyTextureToTexture({ texture, origin }, { texture: graph.sourceTexture, origin }, extent);
+          if (kept) encoder.copyTextureToTexture({ texture, origin }, { texture: kept.texture, origin }, extent);
+          denoiseTileResolves += 1;
+          return;
         }
         // Reconstruct only this region, into a texture the size of one tile,
         // and into the same encoder so the generation stays one submission.
@@ -4921,6 +4955,7 @@
         localBuffers.forEach((entry) => entry.buffer.destroy());
         denoiseParamBuffers.forEach((buffer) => buffer.destroy());
         cleanGrainTransientTextures.forEach(texture => texture.destroy());
+        for (const source of microBandSources.values()) source.texture.destroy();
         // A cancelled or failed pass never submitted its last encoder.
         this.dropDenoiseTiles(denoiseTilesUnsubmitted);
         if (cancelled || encodeError) {
@@ -5230,8 +5265,12 @@
       // device will actually hold for this render.
       if (!sourceOptions?.scopeAnalysis && !sourceOptions?.keepProxies) this.evictStaleProxies({ sessionId, lane, geometrySignature, sourceIdentity, keep: proxy.identity });
       const cleanGrain = this.adaptiveDenoiseFor(proxy) ? this.denoiseSourceSelector.cache.grain : null;
+      const useMicro = cleanGrain?.micro && !sourceOptions?.originalSource;
+      const microNative = useMicro && proxy.width === cleanGrain.width && proxy.height === cleanGrain.height;
+      const microQuick = useMicro && !microNative && (sourceOptions?.microQuick || sourceOptions?.fineGrainUnderlayer
+        || sourceOptions?.tier === "interactive" || sourceOptions?.measureOnly || sourceOptions?.scopeAnalysis);
       const plan = this.planRender(proxy.width, proxy.height, {
-        executionOverride: this.executionOverrideFor(sourceOptions),
+        executionOverride: microNative ? "tiled" : this.executionOverrideFor(sourceOptions),
         // A region proxy covers only the visible area; if Direct is admitted
         // the whole frame is loaded below, so admission charges it now.
         pendingSourceBytes: proxy.region ? proxy.width * proxy.height * (proxy.pixelFormat === "rgba16float" ? 8 : 16) : 0,
@@ -5274,7 +5313,7 @@
       // reconstruction here, the first time this frame is drawn that way.
       const currentRender = () => resourceGeneration === this.resourceGeneration && serial === this.renderSerials.get(canvas)
         && sourceOptions?.isCurrent?.() !== false;
-      const reducedGrain = !sourceOptions?.fineGrainUnderlayer && !sourceOptions?.originalSource
+      const reducedGrain = !microQuick && !sourceOptions?.fineGrainUnderlayer && !sourceOptions?.originalSource
         && !sourceOptions?.delivery && !sourceOptions?.frameAnchor && !sourceOptions?.measureOnly
         ? await this.ensureFineGrainReduced(proxy, editRevision, currentRender, sourceOptions?.tier === "interactive") : null;
       if (reducedGrain?.cleanGrainDelta) {
@@ -5427,6 +5466,7 @@
         // hands Tiled the original even when a whole-frame resolve is resident.
         const tiled = await this.encodeTiledGeneration(canvas, context, noiseView ? proxy : sourceProxy, surface, pipelines, params, {
           fineGrainReduced,
+          microQuick,
           originalSource: sourceOptions?.originalSource,
           delivery: sourceOptions?.delivery,
           beforeDeliverySubmit: sourceOptions?.beforeDeliverySubmit,
@@ -6021,6 +6061,9 @@
           grainEvenness: controls.grainEvenness ?? controls.grain_evenness ?? 1,
           colorSplotches: controls.colorSplotches ?? controls.color_splotches ?? 1,
           splotchSize: controls.splotchSize ?? controls.splotch_size ?? "small",
+          microLuminance: controls.microLuminance ?? controls.micro_luminance ?? 0.5,
+          microColor: controls.microColor ?? controls.micro_color ?? 0.5,
+          microDetail: controls.microDetail ?? controls.micro_detail ?? 0.5,
         };
         const signal = options.signal ? AbortSignal.any([options.signal, controller.signal]) : controller.signal;
         return await this.analyzeAdaptiveDenoise(sessionId, lane, frame, longEdge, editRevision, geometrySignature,
@@ -6140,6 +6183,24 @@
       await adaptive.cleanGrainPipelines;
     }
 
+    async ensureMicroGrainPipelines() {
+      await this.ensureCleanGrainPipelines();
+      await window.HDRMicroGrainGpu.ahdPipelines(this.device);
+      const adaptive = this.adaptiveDenoisePipelines;
+      if (!adaptive.microGrainPipelines) {
+        const { device } = this;
+        const module = device.createShaderModule({ code: window.HDRWebGPUShaders.MICRO_GRAIN_SHADER_SOURCE });
+        const layout = device.createPipelineLayout({ bindGroupLayouts: [adaptive.layout] });
+        const names = { accumulate: "Accumulate", gate: "Gate", base: "Base",
+          colourDelta: "ColourDelta", output: "Output" };
+        adaptive.microGrainPipelines = Promise.all(Object.entries(names).map(async ([key, name]) => [
+          key, await device.createComputePipelineAsync({ layout, compute: { module, entryPoint: `micro${name}Main` } }),
+        ])).then(pairs => { adaptive.micro = Object.fromEntries(pairs); })
+          .catch(error => { adaptive.microGrainPipelines = null; throw error; });
+      }
+      await adaptive.microGrainPipelines;
+    }
+
     async ensureGrainFitPipeline() {
       await this.ensureGrainPipelines();
       const pipelines = this.adaptiveDenoisePipelines;
@@ -6252,7 +6313,15 @@
     reducedGrainKey(proxy, selector) {
       const { controls } = selector;
       return JSON.stringify([selector.cache.grain.fitKey, proxy.width, proxy.height, proxy.workingSpace,
-        fineGrainPixelControls(controls, controls.method === "clean_grain")]);
+        selector.cache.grain.micro ? [controls.microLuminance, controls.microColor, controls.microDetail]
+          : fineGrainPixelControls(controls, controls.method === "clean_grain")]);
+    }
+
+    hasReducedMicroGrain(width, height) {
+      const selector = this.denoiseSourceSelector;
+      const proxy = selector?.original;
+      return Boolean(proxy && proxy.width === width && proxy.height === height && selector.cache?.grain?.micro
+        && this.fineGrainReduced.has(this.reducedGrainKey(proxy, selector)));
     }
 
     hasReducedCleanGrain() {
@@ -6308,10 +6377,65 @@
       upload.texture?.destroy();
     }
 
+    async developMicroGrainRegion(selector, core, revision, current, retain) {
+      const { grain } = selector.cache;
+      const controls = selector.controls;
+      const x = Math.max(0, core.x - MICRO_GRAIN_MARGIN);
+      const y = Math.max(0, core.y - MICRO_GRAIN_MARGIN);
+      const region = { x, y,
+        width: Math.min(grain.width, core.x + core.width + MICRO_GRAIN_MARGIN) - x,
+        height: Math.min(grain.height, core.y + core.height + MICRO_GRAIN_MARGIN) - y };
+      const reservation = this.reserveFineGrain("micro-grain-region", {
+        bayer: (region.width + 26) * (region.height + 26) * 36,
+      });
+      try {
+        if (this.injectMicroGrainFailure) {
+          this.injectMicroGrainFailure = false;
+          throw new Error("Injected Micro Grain GPU failure.");
+        }
+        return await window.HDRMicroGrainGpu.develop(this.device, grain, region, controls, revision, current, retain);
+      } finally {
+        if (reservation) this.gpuAllocator.releaseReservation(reservation);
+      }
+    }
+
+    async writeMicroGrainRegion(selector, core, candidate, destination, revision, current, sharedEncoder = null, prepared = null, retainSource = Boolean(sharedEncoder)) {
+      const start = performance.now();
+      const { grain } = selector.cache;
+      const controls = selector.controls;
+      let source, encoded, retained = false;
+      try {
+        source = prepared || await this.developMicroGrainRegion(selector, core, revision, current, retainSource);
+        const encoder = sharedEncoder || this.device.createCommandEncoder();
+        const { device } = this;
+        device.pushErrorScope("validation");
+        try {
+          encoded = this.encodeAdaptiveDenoise(encoder, selector, [], controls, core, candidate, destination, source, null, {
+            luminance: controls.microLuminance, color: controls.microColor, detail: controls.microDetail, gain: grain.gain,
+          });
+          if (!sharedEncoder) device.queue.submit([encoder.finish()]);
+        } finally {
+          const fault = await device.popErrorScope();
+          if (fault) throw new Error(fault.message);
+        }
+        if (!sharedEncoder) await device.queue.onSubmittedWorkDone();
+        if (!current()) throw new DOMException("Micro Grain was replaced.", "AbortError");
+        retained = Boolean(sharedEncoder);
+        this.recordStage("micro-grain-region", { durationMs: performance.now() - start, ...core });
+        return { ...encoded, source: source.texture };
+      } finally {
+        if (!retained) {
+          encoded?.paramBuffer.destroy();
+          if (!prepared) source?.texture.destroy();
+        }
+      }
+    }
+
     async resizeNativeFineGrain(proxy, revision, selector, current, key) {
       const start = performance.now();
       const controls = selector.controls;
       const clean = controls.method === "clean_grain";
+      const micro = selector.cache.grain.micro;
       const [horizontal, vertical, baseVertical] = await this.ensureFineGrainResizePipelines(clean);
       const device = this.device;
       const grain = selector.cache.grain;
@@ -6321,10 +6445,10 @@
       const stride = Math.max(1, Math.floor(ADAPTIVE_DENOISE_TILE / ratio));
       const resizeMargin = 3 * box + 1;
       const maxRows = Math.min(height, Math.ceil(stride * ratio) + 2 * resizeMargin + 2);
-      const margin = ADAPTIVE_DENOISE_MARGIN + cleanGrainMargin(controls);
+      const margin = micro ? MICRO_GRAIN_MARGIN : ADAPTIVE_DENOISE_MARGIN + cleanGrainMargin(controls);
       const stripUpload = fineGrainStripUpload(maxRows + 2 * margin);
       const reservation = this.reserveFineGrain("fine-grain-resize", {
-        sourceStrip: width * stripUpload.maxRows * 8,
+        sourceStrip: micro ? (768 + 2 * margin + 26) * (maxRows + 2 * margin + 26) * 36 : width * stripUpload.maxRows * 8,
         filteredStrip: width * maxRows * (clean ? 16 : 8),
         resizeScratch: proxy.width * (maxRows * 48 + (clean ? stride * 16 : 0)),
         reducedPicture: proxy.width * proxy.height * (clean ? 24 : 8),
@@ -6372,19 +6496,25 @@
           const bottom = Math.min(height, Math.ceil((row + count) * ratio) + resizeMargin);
           const target = { x: 0, y, width, height: bottom - y };
           const top = Math.max(0, y - margin);
-          const source = await this.loadProxyRegion(proxy.sessionId, proxy.lane, grain.nativeEdge, proxy.geometrySignature,
+          if (micro) {
+            for (let x = 0; x < width; x += 768) {
+              const core = { ...target, x, width: Math.min(768, width-x) };
+              await this.writeMicroGrainRegion(selector, core, native, target, revision, current);
+            }
+          }
+          const source = micro ? null : await this.loadProxyRegion(proxy.sessionId, proxy.lane, grain.nativeEdge, proxy.geometrySignature,
             revision, proxy.sourceIdentity, null, { x: 0, y: top, width, height: bottom + margin - top },
             { isCurrent: current, transient: true, stripUpload });
-          if (!source) throw Error("The native Fine Grain source is not available for reduction.");
+          if (!micro && !source) throw Error("The native Fine Grain source is not available for reduction.");
           let encoded;
           try {
             assertCurrent();
-            if (source.width !== width || source.height !== height) throw Error("The native Fine Grain source size changed.");
+            if (source && (source.width !== width || source.height !== height)) throw Error("The native Fine Grain source size changed.");
             device.pushErrorScope("validation");
             let validation;
             try {
               const encoder = device.createCommandEncoder();
-              encoded = this.encodeAdaptiveDenoise(encoder, selector, weights, sizes, target, native, target, source);
+              if (source) encoded = this.encodeAdaptiveDenoise(encoder, selector, weights, sizes, target, native, target, source);
               const dimensions = [width, height, proxy.width, proxy.height, y, target.height, row, count, box];
               device.queue.writeBuffer(params, 0, new Float32Array([...dimensions, 0, 0, 0]));
               const horizontalBindings = [[clean ? 8 : 1, native.texture], [4, samples], [5, low], [6, high]];
@@ -6418,7 +6548,7 @@
           evict: () => this.releaseFineGrainReduced(key) });
         this.fineGrainReduced.set(key, entry);
         owned.shift();
-        this.recordStage("fine-grain-reduced", { durationMs: performance.now() - start, width, height });
+        this.recordStage(micro ? "micro-grain-fit-exact" : "fine-grain-reduced", { durationMs: performance.now() - start, width, height });
         return { ...proxy, ...entry, bindGroups: new Map() };
       } finally {
         owned.forEach(resource => resource.destroy());
@@ -6616,7 +6746,8 @@
     }
 
     async analyzeAdaptiveDenoise(sessionId, lane, frame, longEdge, editRevision, geometrySignature, generation, controls, refresh, nativeEdge,
-      { signal, isCurrent, onGrain, gradeGpuGrain, repairGeneration, deliveryGrainSource, beforeDeliverySubmit } = {}) {
+      { signal, isCurrent, onGrain, gradeGpuGrain, repairGeneration, deliveryGrainSource, beforeDeliverySubmit,
+        libraryApproximation } = {}) {
       const startedAt = performance.now();
       this.denoiseCounters.analysisCalls += 1;
       this.recordStage("denoise-analysis", { state: "started", generation, longEdge, algorithm: ADAPTIVE_DENOISE_ALGORITHM_VERSION });
@@ -6636,10 +6767,26 @@
       const modelQuery = (experimental || gpuFine) && native <= 16384 ? query.replace(`long_edge=${apiEdge}`, `long_edge=${native}`) : query;
       const current = () => !signal?.aborted && isCurrent?.() !== false && generation === this.denoiseSelectorGeneration;
       if (!current()) return false;
-      const model = await this.fetchDenoiseModel(`/api/session/${sessionId}/denoise-model/${lane}?${modelQuery}`,
-        { allowCpuFallback: !deliveryGrainSource });
-
       let grain = null;
+      let model;
+      const micro = controls.method === "micro_grain";
+      if (micro && !libraryApproximation) {
+        if (!gradeGpuGrain || this.fineGrainFailedSources.has(sourceKey)) throw new Error("Micro Grain uses the CPU for this source.");
+        if (!window.HDRGeometryMath.geometryTransformIsNeutral(JSON.parse(geometrySignature))) {
+          throw new Error("Micro Grain uses the CPU with a crop or geometry adjustment.");
+        }
+        const url = `/api/session/${sessionId}/denoise-micro`;
+        const response = await fetch(url, { signal });
+        if (!response.ok) throw new Error((await response.json().catch(() => null))?.detail || "Micro Grain preparation failed.");
+        const { width, height, gain, model: measured } = await response.json();
+        await this.ensureMicroGrainPipelines();
+        grain = { gpu: true, micro: true, fitKey: `${sessionId}|micro|${repairGeneration}|${refresh}`, sourceKey,
+          width, height, gain, url, nativeEdge: Math.max(width, height) };
+        model = measured;
+      } else {
+        model = await this.fetchDenoiseModel(`/api/session/${sessionId}/denoise-model/${lane}?${modelQuery}`,
+          { allowCpuFallback: !deliveryGrainSource });
+      }
       if (!current()) return false;
       if (gpuFine) {
         const fitKey = JSON.stringify([sessionId, geometrySignature, frame.sourceIdentity === "authored-sdr", native,
@@ -6714,7 +6861,7 @@
       const preparedFrame = JSON.stringify([sessionId, lane, geometrySignature, frame.sourceIdentity]);
       const setupIdentity=this.denoiseSetupIdentity?.(lane,longEdge,geometrySignature) || frame.identity;
       const cacheIdentity = `${frame.identity}|${ADAPTIVE_DENOISE_ALGORITHM_VERSION}|${JSON.stringify(model)}${grain ? "|" + JSON.stringify(grain) : ""}`;
-      const cleanMargin = grain?.gpu && controls.method === "clean_grain"
+      const cleanMargin = micro ? MICRO_GRAIN_MARGIN : grain?.gpu && controls.method === "clean_grain"
         ? ADAPTIVE_DENOISE_MARGIN + CLEAN_GRAIN_LARGE_MARGIN : undefined;
       if (this.reuseDenoiseSetup && previous?.setupIdentity === setupIdentity
           && (!cleanMargin || previous.cache?.adaptiveScratch?.margin >= cleanMargin)
@@ -6832,7 +6979,7 @@
      * load, the noise map's two smoothing levels, five bands of blur, energy
      * and accumulation, and the final write.
      */
-    encodeAdaptiveDenoise(encoder, selector, weights, sizes, target, candidate, destinationOrigin, source, reduction = null) {
+    encodeAdaptiveDenoise(encoder, selector, weights, sizes, target, candidate, destinationOrigin, source, reduction = null, micro = null) {
       const pipelines = this.adaptiveDenoisePipelines;
       const { model, grain } = selector.cache;
       const scratch = selector.cache.adaptiveScratch.textures;
@@ -6844,15 +6991,18 @@
       const held = source.region || { x: 0, y: 0, width: frameWidth, height: frameHeight };
       const strengths = adaptiveDenoiseStrengths({
         amount: weights[0], luminance: weights[1], colorNoise: weights[2], detailRecovery: weights[3], ...sizes,
+        ...(sizes.method === "micro_grain" && !micro ? { amount: .75, luminance: .4 * sizes.microLuminance,
+          colorNoise: .8 * sizes.microColor, detailRecovery: sizes.microDetail } : {}),
       });
       const tiles = [];
       const colourMargin = !reduction && grain?.gpu ? cleanGrainMargin(sizes) : 0;
       const clean = pipelines.clean;
-      const margin = reduction?.margin ?? ADAPTIVE_DENOISE_MARGIN + colourMargin;
-      for (let y = target.y; y < target.y + target.height; y += ADAPTIVE_DENOISE_TILE) {
-        for (let x = target.x; x < target.x + target.width; x += ADAPTIVE_DENOISE_TILE) {
-          const width = Math.min(ADAPTIVE_DENOISE_TILE, target.x + target.width - x);
-          const height = Math.min(ADAPTIVE_DENOISE_TILE, target.y + target.height - y);
+      const margin = micro ? MICRO_GRAIN_MARGIN : reduction?.margin ?? ADAPTIVE_DENOISE_MARGIN + colourMargin;
+      const tileSize = ADAPTIVE_DENOISE_TILE;
+      for (let y = target.y; y < target.y + target.height; y += tileSize) {
+        for (let x = target.x; x < target.x + target.width; x += tileSize) {
+          const width = Math.min(tileSize, target.x + target.width - x);
+          const height = Math.min(tileSize, target.y + target.height - y);
           const x0 = Math.max(held.x, x - margin);
           const y0 = Math.max(held.y, y - margin);
           const x1 = Math.min(held.x + held.width, x + width + margin);
@@ -6865,7 +7015,8 @@
       // The colour passes replace the final wavelet write with the base,
       // then encode the guides, Small repair and output. Large adds five passes.
       const colourDispatches = colourMargin ? 23 + (sizes.splotchSize === "large" ? 5 : 0) : 0;
-      const dispatchesPerTile = 1 + 5 + ADAPTIVE_DENOISE_LEVELS * 5 + 1 + (evenness ? 6 : 0) + colourDispatches;
+      const dispatchesPerTile = 1 + 5 + ADAPTIVE_DENOISE_LEVELS * 5 + 1
+        + (evenness ? 6 : 0) + (micro ? 30 : colourDispatches);
       const paramBuffer = this.device.createBuffer({
         size: Math.max(ADAPTIVE_DENOISE_SLOT, tiles.length * dispatchesPerTile * ADAPTIVE_DENOISE_SLOT),
         usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
@@ -6905,7 +7056,8 @@
       for (const { tile, scratch: region } of tiles) {
         const common = (level, axis, sigmas = [0, 0, 0], {
           origin = [destinationOrigin.x, destinationOrigin.y, held.x, held.y],
-          weights = [strengths.luma, strengths.chroma, strengths.fineMultiplier, strengths.fineFloor],
+          weights = micro ? [.6 * micro.luminance, 5.4 * micro.color, .52 - .20 * micro.detail, .85 + .30 * micro.detail]
+            : [strengths.luma, strengths.chroma, strengths.fineMultiplier, strengths.fineFloor],
           scale = 0, offset = 0,
         } = {}) => [
           region.x, region.y, region.width, region.height,
@@ -6956,7 +7108,7 @@
                 common(level, 0, sigmas, { origin: [evenness, 0, 0, 0], scale, offset }), region);
             }
           } else {
-            dispatch(pipelines.accumulate, {
+            dispatch(micro ? pipelines.micro.accumulate : pipelines.accumulate, {
               src: current.createView(), aux: next, aux2: scratch.energy, aux3: scratch.noise, sum: level > 0 ? sum : null, dst: nextSum,
             }, common(level, 0, sigmas), region);
           }
@@ -6965,6 +7117,9 @@
         }
         if (reduction) {
           partialOffset += Math.ceil(tile.width / GRAIN_FIT_BLOCK) * Math.ceil(tile.height / GRAIN_FIT_BLOCK);
+        } else if (micro) {
+          this.encodeMicroGrain(dispatch, pipelines, scratch, region, tile, destinationOrigin,
+            { width: frameWidth, height: frameHeight }, source.texture, sum, candidate, micro, common(0, 0));
         } else if (colourMargin) {
           const x = Math.max(held.x, tile.x - colourMargin);
           const y = Math.max(held.y, tile.y - colourMargin);
@@ -6985,7 +7140,37 @@
       return { paramBuffer, dispatches: slot, tiles: tiles.length };
     }
 
-    encodeCleanGrain(dispatch, clean, scratch, area, tile, destination, frame, candidate, controls) {
+    encodeMicroGrain(dispatch, pipelines, scratch, area, tile, destination,
+      frame, source, sum, candidate, controls, params) {
+      const { micro, clean } = pipelines;
+      const box = (src, intermediate, dst) => {
+        const values = [...params];
+        values[6] = 32;
+        dispatch(clean.box, { src: src.createView(), dst: intermediate }, values,
+          { width: Math.ceil(area.width / 16), height: area.height });
+        const vertical = [...values];
+        vertical[7] = 1;
+        dispatch(clean.box, { src: intermediate.createView(), dst }, vertical,
+          { width: area.width, height: Math.ceil(area.height / 16) });
+      };
+      dispatch(micro.gate, { src: sum.createView(), aux: source, dst: scratch.energy }, params, area);
+      box(scratch.energy, scratch.energyRow, scratch.noise);
+      const base = scratch.blur;
+      dispatch(micro.base, { src: source.createView(), aux: scratch.energy, aux2: scratch.noise, dst: base }, params, area);
+      if (controls.color > 0) {
+        this.encodeCleanGrain(dispatch, clean, scratch, area, tile, destination, frame, candidate,
+          { splotchSize: "small", colorSplotches: 2 * controls.color }, micro.colourDelta);
+        box(scratch.energy, scratch.next, scratch.current);
+      }
+      const outputParams = [...params];
+      outputParams[20] = 2 * controls.color;
+      outputParams[21] = controls.gain;
+      const correction = controls.color > 0 ? { aux: scratch.energy, aux2: scratch.current }
+        : { aux: pipelines.dummySampled, aux2: pipelines.dummySampled };
+      dispatch(micro.output, { src: base.createView(), ...correction, out: candidate.texture }, outputParams, tile);
+    }
+
+    encodeCleanGrain(dispatch, clean, scratch, area, tile, destination, frame, candidate, controls, microDelta = null) {
       const { blur: base, energyRow: luma, noise: normalized, current: row, next: column,
         energy: context, sumA: grain, sumB: guides } = scratch;
       const run = (pipeline, src, dst, inputs = {}, radius = 0, axis = 0, size = area, domain = area) => {
@@ -7036,10 +7221,11 @@
         run(clean.repair, input, output, { aux: column, aux2: guides, aux3: row, sum: grain }, reach, 0, outputRect, outputRect);
       };
       const large = controls.splotchSize === "large";
-      repair(normalized, luma, 12, 2, large ? expand(tile, 3 + 28 + 4) : tile);
+      repair(normalized, luma, 12, 2, microDelta ? area : large ? expand(tile, 3 + 28 + 4) : tile);
       if (large) repair(luma, context, 28, 4, tile);
       const color = { aux: large ? context : luma, aux2: normalized };
-      if (candidate.cleanGrainDelta) run(clean.pack, base, null, { ...color, packed: candidate.texture }, 0, 0, tile);
+      if (microDelta) run(microDelta, base, context, color);
+      else if (candidate.cleanGrainDelta) run(clean.pack, base, null, { ...color, packed: candidate.texture }, 0, 0, tile);
       else run(clean.output, base, null, { ...color, out: candidate.texture }, 0, 0, tile);
     }
 

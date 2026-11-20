@@ -952,7 +952,16 @@ def _render_selected_execution(session, request, kind, adjustments, preview_long
         else []
     )
     denoise = denoise_settings_for_export(session, kind)
-    if request.execution == "strips" and denoise is None:
+    micro = None
+    settings = session.denoise.hdr if kind == PreviewKind.HDR else session.denoise.sdr
+    if settings.enabled and settings.controls.method == "micro_grain":
+        controls = request.micro_grain_controls or settings.controls
+        denoise = None
+        authored = (kind == PreviewKind.SDR and session.sdr_reference_image is not None
+                    and adjustments.sdr.use_authored_base and not adjustments.sdr.linked_to_hdr)
+        if not request.micro_grain_original and not authored and (controls.micro_luminance or controls.micro_color):
+            micro = controls
+    if request.execution == "strips" and denoise is None and micro is None:
         processed, report = session.render_cache.adjusted_frame_in_strips(
             adjustments,
             kind,
@@ -962,6 +971,17 @@ def _render_selected_execution(session, request, kind, adjustments, preview_long
         )
         return processed, report
     kwargs = {"denoise_controls": denoise.controls} if denoise is not None else {}
+    if micro is not None:
+        from .denoise_micro_grain import MicroGrainControls, resolve_source
+
+        def micro_source():
+            try:
+                return resolve_source(session, MicroGrainControls.from_settings(micro),
+                                      cancelled=lambda: not is_current())
+            except InterruptedError as error:
+                raise StaleRender(str(error)) from error
+
+        kwargs.update(denoise_controls=micro, native_source=micro_source)
     processed = session.render_cache.adjusted_frame(
         adjustments,
         kind,

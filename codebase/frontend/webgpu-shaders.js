@@ -821,6 +821,61 @@ fn cleanPackMain(@builtin(global_invocation_id) id: vec3u) {
   textureStore(cleanPacked, at - vec2i(ap.dest.xy), vec4u(bitcast<vec3u>(base), pack2x16float(delta)));
 }`;
 
+  const MICRO_GRAIN_SHADER_SOURCE = CLEAN_GRAIN_SHADER_SOURCE + `
+@compute @workgroup_size(8, 8)
+fn microAccumulateMain(@builtin(global_invocation_id) id: vec3u) {
+  if (!inScratch(id)) { return; }
+  let p = vec2i(id.xy);
+  let band = textureLoad(srcTex, p, 0).xyz - textureLoad(auxTex, p, 0).xyz;
+  let energy = textureLoad(aux2Tex, p, 0).xyz;
+  let variance = textureLoad(aux3Tex, p, 0).x;
+  let strength = vec3f(ap.strength.x, ap.strength.y, ap.strength.y) * ap.sigma.xyz;
+  let gain = max(energy - strength * strength * variance, vec3f(0.)) / max(energy, vec3f(1e-20));
+  var sum = vec3f(0.);
+  if (ap.frame.z > 0.) { sum = textureLoad(sumTex, p, 0).xyz; }
+  let fine = select(1., ap.strength.z, ap.frame.z == 0.);
+  textureStore(dstTex, p, vec4f(sum + band * (gain - 1.) * vec3f(fine, 1., 1.), 0.));
+}
+
+@compute @workgroup_size(8, 8)
+fn microGateMain(@builtin(global_invocation_id) id: vec3u) {
+  if (!inScratch(id)) { return; }
+  let p = vec2i(id.xy);
+  let source = textureLoad(auxTex, p + scratchOrigin() - vec2i(ap.dest.zw), 0);
+  let correction = textureLoad(srcTex, p, 0).xyz;
+  let keep = clamp(1. - ap.strength.w * (1. - source.a), 0., 1.);
+  textureStore(dstTex, p, vec4f(correction.x * keep, correction.yz, 0.));
+}
+
+@compute @workgroup_size(8, 8)
+fn microBaseMain(@builtin(global_invocation_id) id: vec3u) {
+  if (!inScratch(id)) { return; }
+  let p = vec2i(id.xy);
+  let source = textureLoad(srcTex, p + scratchOrigin() - vec2i(ap.dest.zw), 0).rgb;
+  let correction = textureLoad(auxTex, p, 0).xyz - textureLoad(aux2Tex, p, 0).xyz;
+  let chroma = fromOpponent(vec3f(0., correction.yz));
+  let rgb = source + chroma + vec3f(correction.x * INV_SQRT3 - dot(chroma, ACES_LUMA));
+  textureStore(dstTex, p, vec4f(rgb, dot(rgb, ACES_LUMA)));
+}
+
+@compute @workgroup_size(8, 8)
+fn microColourDeltaMain(@builtin(global_invocation_id) id: vec3u) {
+  if (any(id.xy >= vec2u(ap.model.zw))) { return; }
+  let p = vec2i(ap.model.xy) + vec2i(id.xy);
+  textureStore(dstTex, p, vec4f(cleanCorrection(p, cleanRead(p).rgb), 0., 0.));
+}
+
+@compute @workgroup_size(8, 8)
+fn microOutputMain(@builtin(global_invocation_id) id: vec3u) {
+  if (any(id.xy >= vec2u(ap.tile.zw))) { return; }
+  let at = vec2i(ap.tile.xy) + vec2i(id.xy);
+  let p = at - scratchOrigin();
+  let base = textureLoad(srcTex, p, 0).rgb;
+  let colour = textureLoad(auxTex, p, 0).xy - textureLoad(aux2Tex, p, 0).xy;
+  let delta = fromOpponent(vec3f(0., colour * ap.strength.x));
+  textureStore(outTex, at - vec2i(ap.dest.xy), vec4f((base + delta - vec3f(dot(delta, ACES_LUMA))) * ap.strength.y, 1.));
+}`;
+
   function grainResizeShader(clean) {
     return `
 struct Resize {
@@ -3801,6 +3856,7 @@ fn fineGrainResizeBase(@builtin(global_invocation_id) id: vec3u) {
     ADAPTIVE_DENOISE_SHADER_SOURCE,
     GRAIN_DENOISE_SHADER_SOURCE, GRAIN_DENOISE_BANDS, GRAIN_DENOISE_RADIUS, GRAIN_FIT_BLOCK, GRAIN_RESIZE_SHADER_SOURCE,
     CLEAN_GRAIN_SHADER_SOURCE, CLEAN_GRAIN_RESIZE_SHADER_SOURCE,
+    MICRO_GRAIN_SHADER_SOURCE,
     SHADER_SOURCE,
     LUMA_MASK_SHADER_SOURCE,
   });

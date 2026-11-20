@@ -457,10 +457,10 @@ const HDRLibraryPictureFactory = (quick = false) => {
           {width:meta.width,height:meta.height},{isCurrent,beforeDeliverySubmit:lease.check});
       }
       const edge = native ? Math.max(meta.scene_width,meta.scene_height,meta.width,meta.height) : Math.max(256,meta.edge);
-      if (denoise?.enabled) {
+      if (denoise?.enabled && !(denoise.controls.method === "micro_grain" && identity === "authored-sdr")) {
         const analysis = performance.now();
         if (!await gpu.analyzeDenoiseProxy(meta.key,lane,adjustments,edge,0,identity,denoise.controls,0,null,
-          {signal,isCurrent,onGrain:value=>{grain=value;}})) {
+          {signal,isCurrent,libraryApproximation: true,onGrain:value=>{grain=value;}})) {
           if (!isCurrent()) return;
           throw Error("Library Denoise analysis failed.");
         }

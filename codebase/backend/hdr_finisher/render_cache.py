@@ -1364,7 +1364,7 @@ class SessionRenderCache:
         is_current: Callable[[], bool] | None = None,
         local_adjustments: list[LocalAdjustment] | None = None,
         _record_diagnostics: bool = True,
-        *, denoise_controls=None,
+        *, denoise_controls=None, native_source=None,
     ) -> np.ndarray:
         edge = max(256, int(long_edge))
         with self._lock:
@@ -1383,6 +1383,8 @@ class SessionRenderCache:
         try:
             with self._lock:
                 source, sdr_reference = self._proxies_locked(edge)
+            if native_source is not None:
+                source = downsample_image(native_source(), edge)
             compiled_masks = self._compiled_masks(
                 source,
                 adjustments,
@@ -1392,7 +1394,7 @@ class SessionRenderCache:
             )
             from .grain_work import render_work
             source_filter = None
-            if denoise_controls is not None:
+            if denoise_controls is not None and native_source is None:
                 from .denoise_adaptive import AdaptiveControls, estimate_adaptive_model, resolve_adaptive
 
                 def source_filter(pixels, authored):

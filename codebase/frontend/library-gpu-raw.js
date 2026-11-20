@@ -462,6 +462,69 @@
     if (li < 3u) { atomicMax(&peaks[li], atomicLoad(&wgPeak[li])); }
   }`;
 
+  function microAhdSources() {
+    const normalize = COMMON + /* wgsl */ `
+      @group(0) @binding(1) var<storage, read> mosaic: array<u32>;
+      @group(0) @binding(2) var<storage, read_write> ints: array<i32>;
+      @compute @workgroup_size(16, 16)
+      fn main(@builtin(global_invocation_id) gid: vec3u) {
+        let col = i32(gid.x); let row = i32(gid.y);
+        if (col >= W() || row >= H()) { return; }
+        let index = u32(row * W() + col);
+        let raw = (mosaic[index >> 1u] >> ((index & 1u) * 16u)) & 0xffffu;
+        ints[index] = i32(raw) - i32(p.raw_black[RAWCH(row,col)]);
+      }`;
+    const votes = HOMOGENEITY
+      .replace("@compute @workgroup_size(16, 16)", "var<workgroup> tile: array<array<vec3i,324>,2>;\n  @compute @workgroup_size(16, 16)")
+      .replace("g0: vec3<u32>)", "g0: vec3<u32>, @builtin(local_invocation_index) thread: u32, @builtin(workgroup_id) group: vec3u)")
+      .replace("    if (c >= W() || r >= H()) { return; }", /* wgsl */ `
+        for (var index = thread; index < 324u; index += 256u) {
+          let col = i32(group.x*16u + index%18u) - 1;
+          let row = i32(group.y*16u + index/18u) - 1;
+          if (row >= 3 && col >= 3 && row < H()-3 && col < W()-3) {
+            tile[0][index] = lab(rgbd(row,col,0u));
+            tile[1][index] = lab(rgbd(row,col,1u));
+          }
+        }
+        workgroupBarrier();
+        if (c >= W() || r >= H()) { return; }
+        let local = (i32(g.y % 16u)+1)*18+i32(g.x % 16u)+1;
+      `)
+      .replace("lab(rgbd(r, c, d))", "tile[d][local]")
+      .replace("lab(rgbd(r + offs[k].x, c + offs[k].y, d))", "tile[d][local+18*offs[k].x+offs[k].y]");
+    const combine = COMMON + AHD_RGB + TURN
+      + COMBINE.slice(COMBINE.indexOf("  @group(0) @binding(3) var<storage, read> homo:"), COMBINE.lastIndexOf("  @compute")) + /* wgsl */ `
+      @group(0) @binding(4) var output: texture_storage_2d<rgba32float, write>;
+      @group(0) @binding(5) var<storage, read> gate: array<f32>;
+      @compute @workgroup_size(16, 16)
+      fn main(@builtin(global_invocation_id) gid: vec3u) {
+        let r = i32(gid.y); let c = i32(gid.x);
+        let local = vec2i(c,r) - vec2i(p.dims2.xy);
+        let crop = vec2i(p.dims2.zw);
+        if (any(local < vec2i(0)) || any(local >= crop)) { return; }
+        var cam: vec3i;
+        if (r >= 5 && c >= 5 && r < H()-5 && c < W()-5) {
+          var hm = vec2u(0u);
+          for (var y = r-1; y <= r+1; y++) {
+            for (var x = c-1; x <= c+1; x++) {
+              let vote = homo[u32(y * W() + x)];
+              hm += vec2u(vote & 255u, (vote >> 8u) & 255u);
+            }
+          }
+          if (hm.x != hm.y) { cam = rgbd(r,c,select(0u,1u,hm.y > hm.x)); }
+          else { cam = (rgbd(r,c,0u) + rgbd(r,c,1u)) >> vec3u(1u); }
+        } else { cam = border(r,c); }
+        let rgb = vec3f(cam) * p.inv_range.xyz * p.wb.xyz;
+        var at = local;
+        if (p.dims.z == 3u) { at = crop - 1 - local; }
+        if (p.dims.z == 5u) { at = vec2i(local.y,crop.x-1-local.x); }
+        if (p.dims.z == 6u) { at = vec2i(crop.y-1-local.y,local.x); }
+        let keep = gate[u32(r/2) * p.dims.w + u32(c/2)];
+        textureStore(output, at, vec4f(dot(p.m0.xyz,rgb),dot(p.m1.xyz,rgb),dot(p.m2.xyz,rgb),keep));
+      }`;
+    return [normalize, GREEN, votes, combine];
+  }
+
   const EDGE_FINISH = COMMON + TURN + LENS + FINISHING + /* wgsl */ `
   @group(0) @binding(1) var<storage, read> inR: array<f32>;
   @group(0) @binding(2) var<storage, read> inG: array<f32>;
@@ -1599,5 +1662,6 @@
   }
   const exported = Object.freeze({ reclaimDecoded:async(needed)=>{let released=0;for(const [key,value] of decodedSources){if(released>=needed)break;released+=value.body.byteLength;await dropDecoded(key);}for(const [key,entry] of directScenes){if(released>=needed)break;released+=entry.bytes;entry.dispose();directScenes.delete(key);}return released;}, checkNativePlanes, nativeBytes:()=>[...directScenes.values()].reduce((n,e)=>n+(e.native?e.bytes:0),0), preflight, cachedDirect, forgetDirect, selectDirect, releaseNative, releaseSource, directBytes, rawBudget, handoffBody, shared:Object.freeze({gpu,preparePipelines,COMMON,TURN,FINISHING,reducedSize,dngFootprint,uploadBuffer,yieldToWindow}), developRaw, thumbnail, enabled, quantile, reducedSize, warmup, liveScene:(path, edge, signal, importance, sceneIdentity, grant, edges) => thumbnail(path, edge, signal, {liveScene:true,nativeMode:edge===100000,importance,sceneIdentity,grant,edges}) });
   root.HDRLibraryGpuRaw = exported;
+  root.HDRMicroGrainAhdSources = microAhdSources;
   root.developRaw = developRaw;
 })(typeof window === "undefined" ? globalThis : window);

@@ -831,6 +831,7 @@ function bindEvents() {
     [els.denoiseCoarse, "coarse_noise"],
     [els.denoiseEvenness, "grain_evenness"],
     [els.denoiseSplotches, "color_splotches"],
+    ...els.denoiseMicroSliders,
   ];
   for (const [control, key] of denoiseSliders) {
     // Capture phase: the instrument slider's own pointerdown moves the value

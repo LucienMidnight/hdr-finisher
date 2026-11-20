@@ -281,6 +281,11 @@ def unavailable_reason(frame):
     metadata = getattr(owner, "metadata", {})
     if not metadata.get("raw_development", {}).get("signed_sensor_samples") or metadata.get("dng_input"):
         return "Micro Grain needs an ordinary Bayer RAW."
+    if any(edge % 2 for edge in owner.image.shape[:2]):
+        return "Micro Grain needs complete Bayer cells at the sensor edges."
+    highlights = owner.raw_import_settings.highlight_reconstruction
+    if highlights.enabled and highlights.method == "edge_colour_v1":
+        return "Micro Grain is not available with Edge Colour highlight reconstruction."
     if getattr(owner, "repairs", None):
         return "Micro Grain is not available with retouch repairs."
     return None
@@ -337,9 +342,16 @@ class MicroGrainSource:
         return signed_raw.orient((rgb @ profile.acescg.T)[_inset(rect, outer)], self.flip)
 
     def develop_region(self, rect, controls, *, retain=False, cancelled=None):
+        raw, outer, demosaic, sensor_rect = self.bayer_region(rect, controls, retain=retain)
+        rgb, gate = develop_tile(raw, self.profile, controls, outer, demosaic, sensor_rect, cancelled)
+        return signed_raw.orient(rgb, self.flip), signed_raw.orient(gate, self.flip)
+
+    def bayer_region(self, rect, controls, *, retain):
         sensor_rect = _sensor_rect(rect, self.sensor.shape, self.flip)
         demosaic = _expand(sensor_rect, self.sensor.shape, DEMOSAIC_MARGIN, even=True)
         outer = _expand(demosaic, self.sensor.shape, BAYER_MARGIN, even=True)
+        if not retain and (rect[2] - rect[0]) * (rect[3] - rect[1]) > 512 * 512:
+            self.tiles.clear()
         raw = self.tiles.pop(outer, None) if retain else None
         if raw is None:
             raw = BayerTile(self.sensor[_inset(outer, (0, 0, 0, 0))], self.profile, color=retain or bool(controls.color))
@@ -347,8 +359,25 @@ class MicroGrainSource:
             self.tiles[outer] = raw
             while len(self.tiles) > 2:
                 self.tiles.popitem(last=False)
-        rgb, gate = develop_tile(raw, self.profile, controls, outer, demosaic, sensor_rect, cancelled)
-        return signed_raw.orient(rgb, self.flip), signed_raw.orient(gate, self.flip)
+        return raw, outer, demosaic, sensor_rect
+
+    def gpu_region(self, rect, controls, *, retain):
+        from .library_gpu_raw import frame
+
+        raw, outer, demosaic, sensor_rect = self.bayer_region(rect, controls, retain=retain)
+        cells = _inset(demosaic, outer, step=2)
+        mosaic = raw.apply(controls, cells)
+        gate = np.ascontiguousarray(raw.detail_gate[cells], dtype="<f4")
+        height, width = mosaic.shape
+        profile = self.profile
+        return frame({"width": width, "height": height, "flip": self.flip,
+                      "offset": [sensor_rect[0]-demosaic[0], sensor_rect[1]-demosaic[1]],
+                      "crop": [sensor_rect[2]-sensor_rect[0], sensor_rect[3]-sensor_rect[1]],
+                      "phase_width": gate.shape[1], "mosaic_bytes": mosaic.nbytes,
+                      "cfa": profile.cfa.ravel().tolist(), "black": profile.black.tolist(),
+                      "wb": profile.white_balance.tolist(), "inv_range": profile.inverse_range.tolist(),
+                      "aces": profile.acescg.tolist(), "lab": profile.lab.tolist()},
+                     mosaic.astype("<u2", copy=False).tobytes(), b"\0" * (-mosaic.nbytes % 4), gate.tobytes())
 
     def render(self, controls, *, cancelled=None):
         height, width = self.shape
@@ -398,6 +427,7 @@ def resolve_source(frame, controls, *, cancelled=None):
     if unavailable_reason(owner) or not (controls.luminance or controls.color):
         return frame.image
     source = prepare_source(owner, cancelled=cancelled, retain=False)
+    source.tiles.clear()
     result = source.render(controls, cancelled=cancelled)
     metadata = owner.metadata
     if metadata.get("lens_correction", {}).get("applied"):

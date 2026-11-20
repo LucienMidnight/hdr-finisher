@@ -1230,6 +1230,8 @@ class PreviewRequest(BaseModel):
     long_edge: int | None = Field(default=None, ge=256, le=16384)
     hdr_display: bool = True
     include_locals: bool = True
+    micro_grain_controls: DenoiseLiveControls | None = None
+    micro_grain_original: bool = False
     local_adjustments: list[LocalAdjustment] | None = None
     scope_region: ScopeRegion | None = None
     # Engineering-only. "whole" is the shipped route; "strips" asks for the
