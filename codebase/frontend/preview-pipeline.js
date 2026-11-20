@@ -717,7 +717,8 @@ async function renderGpuDraftInner(
     && Boolean(request.viewport) && state.gpuPreview.executionOverride !== "direct";
   const liveGpuGrain = liveGradeGrainSelected(lane);
   const denoiseActive = state.denoise?.[lane]?.enabled && !state.denoiseRuntime?.[lane]?.showOriginal;
-  const microSelected = state.denoise[lane]?.controls.method === "micro_grain";
+  const denoiseMethod = state.denoise[lane]?.controls.method;
+  const microSelected = denoiseMethod === "micro_grain";
   const micro = denoiseActive && microSelected && state.activeWorkflow === "grade" && !microGrainUnavailable(lane);
   const microControls = micro ? denoiseRendererControls(state.denoise[lane].controls) : null;
   const microStillCurrent = () => !micro || microGrainControlsMatch(lane, microControls);
@@ -819,8 +820,7 @@ async function renderGpuDraftInner(
     fineGrainUnderlayer: request.underlayerOnly,
     microQuick: Boolean(request.microQuick),
     fineGrainGrade: liveGradeGrainSelected(lane),
-    originalSource: (microSelected && !micro) || ((!denoiseActive || (micro && !(microControls.microLuminance || microControls.microColor)))
-      && state.activeWorkflow === "grade" && Boolean(state.gpuPreview.denoiseSourceSelector?.cache?.grain?.gpu)),
+    originalSource: !denoiseActive || (microSelected && (!micro || !(microControls.microLuminance || microControls.microColor))),
     deferSurface: request.underlayerOnly || (replacingDetail && !boundedPresentation && !viewport),
     coversViewport: boundedPresentation ? (region, width, height) => {
       if (!nativeDenoiseViewport(lane)) return false;
@@ -845,7 +845,7 @@ async function renderGpuDraftInner(
     // Adaptive reconstruction reads ungraded source pixels. A slider changes
     // the render, but leaves these pixels useful to its replacement. Keep the
     // load alive while the photo and geometry remain the same.
-    isSourceCurrent: state.denoise?.[lane]?.enabled
+    isSourceCurrent: state.denoise?.[lane]?.enabled || boundedPresentation
       ? () => !geometryDraftActive() && state.session?.session_id === sessionId
         && gradeSourceIdentity(lane) === sourceIdentity
         && requestedGeometrySignature === geometrySignature()
@@ -868,6 +868,7 @@ async function renderGpuDraftInner(
       && !geometryDraftActive()
       && state.session?.session_id === sessionId
       && gradeSourceIdentity(lane) === sourceIdentity
+      && denoiseMethod === state.denoise[lane]?.controls.method
       && denoiseActive === (state.denoise?.[lane]?.enabled && !state.denoiseRuntime?.[lane]?.showOriginal)
       && (generation === state.previewGeneration[lane]
         || (request.interactiveSnapshot && state.previewScheduler?.interacting))

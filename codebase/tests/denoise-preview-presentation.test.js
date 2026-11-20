@@ -3,6 +3,46 @@ const { test } = require("node:test");
 const vm = require("node:vm");
 const { frontendSource, declarations } = require("./frontend-source.js");
 
+test("bypass draws the original against the acknowledged edit revision for each method", async () => {
+  for (const method of ["standard", "fine_grain", "clean_grain", "micro_grain"]) {
+    const state = { session: { session_id: "photo" }, currentView: "hdr", editRevision: 1,
+      denoise: { hdr: { enabled: true, controls: { method } } }, denoiseRuntime: { hdr: { generation: 0 } } };
+    const draws = [];
+    const context = vm.createContext({ state, refinementProxyLongEdge: () => 5202,
+      renderDenoiseControls() {}, invalidatePreview() {}, debounceOverlayAndScopes() {},
+      persistDenoiseSettings: async () => { await Promise.resolve(); state.editRevision++; return true; },
+      renderGpuDraft: async () => {
+        draws.push({ revision: state.editRevision, original: state.denoiseRuntime.hdr.showOriginal });
+        return state.editRevision === 2;
+      },
+      transientGpuRefusal: () => true });
+    vm.runInContext(declarations("setDenoiseEnabled"), context);
+    await context.setDenoiseEnabled(false);
+    assert.equal(draws.at(-1)?.revision, 2, method);
+    assert.equal(draws.at(-1)?.original, true, method);
+  }
+});
+
+test("switching methods while enabling does not leave the original selected", async () => {
+  const controls = { method: "standard" };
+  const runtime = { generation: 0, showOriginal: true, status: "off" };
+  const state = { session: { session_id: "photo" }, currentView: "hdr", denoise: { hdr: { enabled: false, controls } },
+    denoiseRuntime: { hdr: runtime } };
+  const saves = [];
+  const pictures = [];
+  const context = vm.createContext({ state, renderDenoiseControls() {}, invalidatePreview() {},
+    liveGrainControl: () => false, persistDenoiseSettings: () => new Promise(resolve => saves.push(resolve)),
+    recalculateDenoise: async () => { if (!runtime.showOriginal) pictures.push(controls.method); } });
+  vm.runInContext(declarations("setDenoiseEnabled", "commitDenoiseControl"), context);
+  const enable = context.setDenoiseEnabled(true);
+  const change = context.commitDenoiseControl("method", "micro_grain");
+  saves[0](true);
+  await enable;
+  saves[1](true);
+  await change;
+  assert.deepEqual(pictures, ["micro_grain"]);
+});
+
 test("the reduced CPU Denoise image is presented at its actual size without another GPU render", async () => {
   for (const { reduced, stale } of [{}, { reduced: 4096 }, { reduced: 4096, stale: true }]) {
     const state = { session: { session_id: "photo" }, currentView: "hdr", gpuPreview: { available: true },

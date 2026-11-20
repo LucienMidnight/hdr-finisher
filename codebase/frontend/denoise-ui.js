@@ -227,18 +227,19 @@ async function setDenoiseEnabled(enabled) {
   const isCurrent = () => state.session?.session_id === sessionId
     && state.denoiseRuntime[lane] === runtime && generation === runtime.generation;
   runtime.error = "";
+  runtime.showOriginal = !enabled;
+  invalidatePreview(lane, { markDirty: false });
   if (!enabled) {
     runtime.status = "off";
-    runtime.showOriginal = true;
     state.denoiseNoiseView = false;
     state.gpuPreview?.cancelDenoiseProcessing?.({ selectOriginal: true });
-    // Save while this photo still owns the action; a Full redraw can outlast
-    // the switch to another photo.
-    const saved = persistDenoiseSettings().catch(() => false);
     renderDenoiseControls();
+    const saved = await persistDenoiseSettings().catch(() => false);
+    if (!isCurrent() || lane !== state.currentView) return;
+    runtime.saveFailed = !saved;
     const longEdge = refinementProxyLongEdge();
     const rendered = await renderGpuDraft(lane, { longEdge });
-    if (rendered === false && !transientGpuRefusal() && await saved && isCurrent() && lane === state.currentView) {
+    if (rendered === false && !transientGpuRefusal() && saved && isCurrent() && lane === state.currentView) {
       await renderPreviewForLane(lane, true, longEdge, { denoiseFallback: true });
     }
     if (!isCurrent()) return;
@@ -253,12 +254,15 @@ async function setDenoiseEnabled(enabled) {
     return;
   }
   const denoise = state.gpuPreview?.diagnosticsSnapshot?.().denoise;
-  const expectedIdentity = `${state.session?.session_id}:${lane}:${refinementProxyLongEdge()}:${JSON.stringify(state.adjustments.shared?.geometry || {})}:${gradeSourceIdentity(lane)}`;
-  if (!runtime.dirty && denoise?.cacheReady && denoise.identity === expectedIdentity) {
+  const longEdge = refinementProxyLongEdge();
+  const geometry = geometrySignature();
+  const source = gradeSourceIdentity(lane);
+  const expectedIdentity = `${sessionId}:${lane}:${longEdge}:${geometry}:${source}`;
+  const cachedMethod = state.gpuPreview?.denoiseSourceSelector?.controls?.method || "standard";
+  if (!runtime.dirty && denoise?.cacheReady && cachedMethod === state.denoise[lane].controls.method
+    && (denoise.identity === expectedIdentity || state.gpuPreview.retargetPreparedDenoise?.(sessionId, lane, longEdge, geometry, source))) {
     state.gpuPreview.selectDenoiseSelectorSource(true);
     runtime.status = "ready";
-    runtime.showOriginal = false;
-    const longEdge = refinementProxyLongEdge();
     const rendered = await renderGpuDraft(lane, { longEdge });
     if (!isCurrent()) return;
     if (rendered === false && lane === state.currentView && !transientGpuRefusal()) {
@@ -270,7 +274,6 @@ async function setDenoiseEnabled(enabled) {
     renderDenoiseControls();
     return;
   }
-  runtime.showOriginal = false;
   await recalculateDenoise(lane);
 }
 
@@ -278,7 +281,8 @@ function nativeDenoiseViewport(lane) {
   // Keep the original picture bounded at native zoom too. It can stay on
   // screen while Grain starts, without keeping a native-sized canvas alive.
   return state.zoomMode === "custom" && state.zoomPercent >= 100
-    && (Boolean(state.denoise[lane]?.enabled) || gradeGrainGpuPreferred(lane));
+    && (Boolean(state.denoise[lane]?.enabled) || gradeGrainGpuPreferred(lane)
+      || (state.activeWorkflow === "grade" && lane === state.currentView && Boolean(els.previewCanvas.hdrFrameRegion)));
 }
 
 function gradeGrainGpuPreferred(lane) {
@@ -498,8 +502,13 @@ async function commitDenoiseControl(key, value) {
   const settings = state.denoise[lane];
   const runtime = state.denoiseRuntime[lane];
   const sessionId = state.session?.session_id;
+  if (key === "method" && value === settings.controls.method) return;
   if (value !== undefined) settings.controls[key] = value;
-  if (key === "method") runtime.microCpu = false;
+  if (key === "method") {
+    runtime.microCpu = false;
+    runtime.showOriginal = !settings.enabled;
+    invalidatePreview(lane, { markDirty: false });
+  }
   if (key.startsWith("micro_") && runtime.microCpu) {
     if (await persistDenoiseSettings() && settings.enabled && !runtime.showOriginal && lane === state.currentView) {
       invalidatePreview(lane, { markDirty: false });
