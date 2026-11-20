@@ -82,6 +82,46 @@ def test_sdr_jpeg_export_uses_sdr_branch_quality_and_jpg_suffix(monkeypatch, tmp
     assert Path(observed["path"]).name.endswith(".sdr.tmp.jpg")
 
 
+@pytest.mark.parametrize(
+    ("method", "authored", "resize"),
+    [("fine_grain", False, False), ("clean_grain", True, False), ("fine_grain", False, True)],
+)
+def test_standalone_sdr_jpeg_with_denoise_matches_the_whole_frame(
+    monkeypatch, tmp_path, method, authored, resize,
+):
+    from hdr_finisher import gpu_delivery
+    from hdr_finisher.models import DenoiseDocumentSettings, OutputFinishingSettings
+
+    monkeypatch.setattr(gpu_delivery, "render_pair", lambda *args: None)
+    session = _session()
+    random = np.random.default_rng(19)
+    session.image = random.random((269, 151, 3), dtype=np.float32) * np.float32(1.4)
+    session.denoise = DenoiseDocumentSettings()
+    session.denoise.sdr.enabled = True
+    session.denoise.sdr.controls.method = method
+    if authored:
+        session.sdr_reference_image = session.image * np.float32(.65)
+        session.adjustments.sdr.use_authored_base = True
+    if resize:
+        finishing = OutputFinishingSettings(resize_mode="long_edge", long_edge=219)
+    else:
+        finishing = OutputFinishingSettings()
+    output = tmp_path / "delivery.jpg"
+    settings = ExportSettings(format="sdr_jpeg", output_path=str(output), output_finishing=finishing)
+    whole = exporter_module._render_export_branch(session, settings, PreviewKind.SDR, session.adjustments)
+    reference = tmp_path / "reference.jpg"
+    exporter_module._write_sdr_jpeg_pixels(
+        reference, exporter_module._linear_to_srgb8(whole, dither=settings.dithering),
+        quality=settings.quality, chroma_subsampling=settings.jpeg_chroma_subsampling,
+    )
+
+    result = SDRJPEGExportBackend(_available_capability()).export(session, settings)
+
+    assert result.accepted, result.message
+    assert settings._last_cpu_strips is (not resize)
+    assert output.read_bytes() == reference.read_bytes()
+
+
 @pytest.mark.parametrize("format_name", ["sdr_jpeg", "sdr_png"])
 def test_sdr_export_failure_preserves_existing_output(monkeypatch, tmp_path: Path, format_name: str) -> None:
     output = tmp_path / ("existing.jpg" if format_name == "sdr_jpeg" else "existing.png")

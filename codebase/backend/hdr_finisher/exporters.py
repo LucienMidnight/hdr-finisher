@@ -199,7 +199,7 @@ def _render_unwatermarked_branch(
     from .gpu_delivery import grain_delivery_enabled, render_pair
     object.__setattr__(settings, "_last_cpu_strips", False)
     bounded = _bounded_export_eligible(session, settings, kind, adjustments, prepared_denoise=denoise_source is not None)
-    if bounded and (denoise_source is None or all(
+    if bounded and (denoise_source is None or settings.format == "sdr_jpeg" or all(
         _bounded_export_eligible(session, settings, lane, adjustments, prepared_denoise=True)
         for lane in (PreviewKind.HDR, PreviewKind.SDR)
     )):
@@ -317,6 +317,18 @@ def _bounded_export_eligible(session, settings, kind, adjustments, *, prepared_d
         local_adjustments=adjustments.enabled_locals(getattr(session, "local_adjustments", None)),
         denoise_active=not prepared_denoise and denoise_settings_for_export(session, kind) is not None,
         source_width=width, source_height=height)
+
+
+def _allocate_export_strip_output(scratch: ExitStack, shape: tuple[int, int, int]) -> np.memmap:
+    from .config import APP_DATA_DIR
+    from .library_cache import LibraryCache
+
+    size = shape[0] * shape[1] * shape[2] * np.dtype(np.float32).itemsize
+    handle, release = LibraryCache(APP_DATA_DIR).open_grade_scratch(size)
+    scratch.callback(release)
+    output = np.memmap(handle, mode="r+", shape=shape, dtype=np.float32)
+    scratch.callback(output._mmap.close)
+    return output
 
 
 def _jpeg_denoise_source(session, adjustments):
@@ -561,9 +573,19 @@ class SDRJPEGExportBackend(ExportBackend):
         if self.capability.status != CapabilityStatus.AVAILABLE:
             return ExportResponse(accepted=False, backend=self.name, message=self.capability.detail)
 
+        scratch = ExitStack()
+
         def prepare() -> _PreparedExport:
             finishing_adjustments = _finishing_adjustments_for_export(session)
-            image = _render_export_branch(session, settings, PreviewKind.SDR, finishing_adjustments)
+            kind = PreviewKind.SDR
+            if denoise_settings_for_export(session, kind) is not None:
+                image = _render_export_branch(
+                    session, settings, kind, finishing_adjustments,
+                    denoise_source=_jpeg_denoise_source(session, finishing_adjustments),
+                    allocate_output=lambda shape: _allocate_export_strip_output(scratch, shape),
+                )
+            else:
+                image = _render_export_branch(session, settings, kind, finishing_adjustments)
             exif_payload = None
             return _PreparedExport(
                 ".sdr.tmp.jpg",
@@ -578,15 +600,16 @@ class SDRJPEGExportBackend(ExportBackend):
                 _validate_pillow_output,
             )
 
-        return _execute_export(
-            self,
-            session,
-            settings,
-            suffix=".jpg",
-            prepare=prepare,
-            success_message=lambda path, _validation: f"SDR JPEG exported to {path}",
-            failure_prefix="SDR JPEG export failed",
-        )
+        with scratch:
+            return _execute_export(
+                self,
+                session,
+                settings,
+                suffix=".jpg",
+                prepare=prepare,
+                success_message=lambda path, _validation: f"SDR JPEG exported to {path}",
+                failure_prefix="SDR JPEG export failed",
+            )
 
 
 class SDRJPEGXLExportBackend(ExportBackend):
@@ -880,13 +903,7 @@ class JPEGUltraHDRExportBackend(ExportBackend):
         strip_outputs: list[np.memmap] = []
 
         def allocate_output(shape):
-            from .config import APP_DATA_DIR
-            from .library_cache import LibraryCache
-            size = shape[0] * shape[1] * shape[2] * np.dtype(np.float32).itemsize
-            handle, release = LibraryCache(APP_DATA_DIR).open_grade_scratch(size)
-            scratch.callback(release)
-            output = np.memmap(handle, mode="r+", shape=shape, dtype=np.float32)
-            scratch.callback(output._mmap.close)
+            output = _allocate_export_strip_output(scratch, shape)
             strip_outputs.append(output)
             return output
 
@@ -1090,7 +1107,10 @@ def _write_sdr_jpeg(
     dithering: str = "off",
     exif_payload: bytes | None = None,
 ) -> None:
-    image_8bit = _linear_to_srgb8(image[..., :3], dither=dithering)
+    image_8bit = np.empty((*image.shape[:2], 3), dtype=np.uint8)
+    for top in range(0, len(image), 128):
+        rows = slice(top, top + 128)
+        image_8bit[rows] = _linear_to_srgb8(image[rows, :, :3], dither=dithering, top=top)
     _write_sdr_jpeg_pixels(
         path,
         image_8bit,
