@@ -47,7 +47,7 @@ if os.environ.get('HDR_CEILING_BENCHMARK_MODE'):
             start=time.perf_counter()
             image=decode(delivery)
             row['decode_s'] += time.perf_counter()-start
-            row['peaks'].append(float(image.max()))
+            row['peaks'].append(float(image.max()) if hasattr(image, 'max') else image.peak)
             return image
         if os.environ['HDR_CEILING_BENCHMARK_MODE']=='checked':
             result=original(hdr,white,enc,dec,ceiling,notes,**kwargs)
@@ -164,7 +164,7 @@ def main():
                             start = perf_counter()
                             pixels = decode(delivery)
                             active['decode_s'] += perf_counter() - start
-                            active['peaks'].append(float(pixels.max()))
+                            active['peaks'].append(float(pixels.max()) if hasattr(pixels, 'max') else pixels.peak)
                             return pixels
                         if active['checked']:
                             return real_check(hdr, white, measured_encode, measured_decode, ceiling, notes, **kwargs)

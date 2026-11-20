@@ -355,7 +355,7 @@ def fixture(binary, output):
             result["delivered"][renderer] = delivered_fidelity(path, arrays[f"{renderer}_hdr"], arrays[f"{renderer}_sdr"], binary)[0]
         result["repeat"] = encode(folder / "repeat", binary, hdr, sdr)["path"].read_bytes() == cpu["path"].read_bytes()
         shipping_path = folder / "shipping.jpg"
-        writer._write_jpeg_gainmap_once(shipping_path, hdr, sdr, settings)
+        writer.write_jpeg_gainmap_renditions(shipping_path, hdr, sdr, settings)
         result["instrumented_encoder_equals_shipping_bytes"] = shipping_path.read_bytes() == cpu["path"].read_bytes()
     (output / "fixture.json").write_text(json.dumps(result, indent=2))
     return result
