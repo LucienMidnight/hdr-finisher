@@ -9,6 +9,8 @@ const reusePhoto = require("../helpers/reuse-test-photo.cjs");
 const output = fs.mkdtempSync(path.join(os.tmpdir(), "hdr-finish-denoise-grain-"));
 const baselineMethods = ["standard", "fine_grain", "clean_grain"];
 const fullProofMethod = process.argv.find(arg => arg.startsWith("--full-proof-method="))?.split("=")[1];
+const phaseOne = process.argv.find(arg => arg.startsWith("--phase1="))?.split("=")[1];
+const phaseOneMemoryFailures = [];
 const sliders = {
   amount: "amount", detail: "detail_recovery", luminance: "luminance", color: "color_noise",
   finest: "finest_noise", fine: "fine_noise", medium: "medium_noise", coarse: "coarse_noise",
@@ -195,6 +197,7 @@ async function measurePicture(page, button, method, { pan = false, switchMethod 
     const startingGrain = gpu.denoiseSourceSelector?.cache?.grain;
     const samePreparation = () => {
       const current = gpu.denoiseSourceSelector?.cache?.grain;
+      if (startingGrain?.gpu) return startingGrain.fitKey === current?.fitKey;
       return startingGrain?.token ? startingGrain.token === current?.token : startingGrain === current;
     };
     performance.clearResourceTimings();
@@ -338,12 +341,166 @@ async function measurePicture(page, button, method, { pan = false, switchMethod 
       ...(trace ? {
         zoom: state.zoomPercent, statuses,
         stages: gpu.performanceMetrics.stages.filter(event => event.at >= start
-          && ["denoise-analysis", "denoise-cancel", "denoise-resolve", "tiled-render",
-            "denoise-tile-upload", "tiled-cancelled", "grading"].includes(event.stage)),
+          && (event.stage.startsWith("fine-grain-") || ["denoise-analysis", "denoise-cancel", "denoise-resolve",
+            "tiled-render", "denoise-tile-upload", "tiled-cancelled", "grading"].includes(event.stage))),
         renders: gpu.performanceMetrics.renders.filter(event => event.serial === done.serial),
       } : {}),
     };
   }, { button, method, pan, switchMethod, drag, release, trace, reportOnly });
+}
+
+async function captureFinishedGrade(page, destination) {
+  const metadata = await page.evaluate(() => {
+    const target = window.fineGrainCapture;
+    if (!target || target.lane !== state.currentView || target.longEdge !== requiredProcessingLongEdge()) {
+      throw Error("Missing matching finished presentation texture.");
+    }
+    const { width, height, format } = target.texture;
+    return { width, height, region: target.region, format };
+  });
+  assert.equal(metadata.format === "rgba16float", destination.includes("-hdr-"), "Wrong presentation colour format.");
+  const descriptor = fs.openSync(`${destination}.rgba`, "w");
+  try {
+    for (let row = 0; row < metadata.height; row += 96) {
+      const data = await page.evaluate(async ({ row, metadata }) => {
+        const gpu = state.gpuPreview;
+        const target = window.fineGrainCapture;
+        const { width, height: fullHeight, format } = target.texture;
+        if (width !== metadata.width || fullHeight !== metadata.height
+            || format !== metadata.format || JSON.stringify(target.region) !== JSON.stringify(metadata.region)) {
+          throw Error("The finished presentation changed during capture.");
+        }
+        const height = Math.min(96, fullHeight - row);
+        const rowBytes = width * (format === "rgba16float" ? 8 : 4);
+        const bytesPerRow = Math.ceil(rowBytes / 256) * 256;
+        const buffer = gpu.device.createBuffer({ size: bytesPerRow * height,
+          usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ });
+        try {
+          const encoder = gpu.device.createCommandEncoder();
+          encoder.copyTextureToBuffer({ texture: target.texture, origin: { y: row } }, { buffer, bytesPerRow },
+            { width, height });
+          gpu.device.queue.submit([encoder.finish()]);
+          await buffer.mapAsync(GPUMapMode.READ);
+          const bytes = new Uint8Array(buffer.getMappedRange());
+          const tight = new Uint8Array(rowBytes * height);
+          for (let index = 0; index < height; index++) {
+            tight.set(bytes.subarray(index * bytesPerRow, index * bytesPerRow + rowBytes), index * rowBytes);
+          }
+          return tight.toBase64();
+        } finally {
+          buffer.destroy();
+        }
+      }, { row, metadata });
+      fs.writeSync(descriptor, Buffer.from(data, "base64"));
+    }
+    fs.writeFileSync(`${destination}.json`, JSON.stringify(metadata));
+  } finally {
+    fs.closeSync(descriptor);
+  }
+}
+
+async function measurePhaseOne(page, name, record, setZoom) {
+  const captures = path.resolve(process.env.HDR_FINISHER_GRAIN_CAPTURES || "output/denoise-grain-phase1");
+  fs.mkdirSync(captures, { recursive: true });
+  const gpuRoute = phaseOne === "gpu";
+  const method = "fine_grain";
+  await page.evaluate(({ enableGpu, capturePixels }) => {
+    const gpu = state.gpuPreview;
+    gpu.enableGradeFineGrainGpu = enableGpu;
+    gpu.setInstrumentationEnabled(true);
+    if (!capturePixels || gpu.captureFineGrainGradeInstalled) return;
+    gpu.captureFineGrainGradeInstalled = true;
+    const render = gpu.renderTo;
+    gpu.renderTo = function (canvas, session, lane, adjustments, sampler, longEdge, locals, revision, overlay, white, size, options) {
+      if (options?.applicationGeneration === undefined || options.fineGrainUnderlayer || options.measureOnly) {
+        return render.apply(this, arguments);
+      }
+      return render.call(this, canvas, session, lane, adjustments, sampler, longEdge, locals, revision, overlay, white, size, {
+        ...options,
+        onFrameSubmitted: (region, hdr) => {
+          options.onFrameSubmitted?.(region, hdr);
+          if (lane !== state.currentView || !state.denoise[lane].enabled || longEdge !== requiredProcessingLongEdge()) return;
+          const source = canvas.getContext("webgpu").getCurrentTexture();
+          const prior = window.fineGrainCapture?.texture;
+          const { width, height, format } = source;
+          const texture = prior?.width === width && prior.height === height && prior.format === format ? prior
+            : this.device.createTexture({ size: [width, height], format, usage: GPUTextureUsage.COPY_SRC | GPUTextureUsage.COPY_DST });
+          if (texture !== prior) prior?.destroy();
+          const encoder = this.device.createCommandEncoder();
+          encoder.copyTextureToTexture({ texture: source }, { texture }, { width, height });
+          this.device.queue.submit([encoder.finish()]);
+          window.fineGrainCapture = { texture, region, lane, longEdge };
+        },
+      });
+    };
+  }, { enableGpu: gpuRoute, capturePixels: process.env.HDR_FINISHER_GRAIN_NO_CAPTURE !== "1" });
+  const check = async (action, button, options = {}, fallback = false) => {
+    const result = await record(method, `${phaseOne}: ${action}`, button, { trace: true, ...options });
+    assert.ok(result.peakAppBytes > 0, `${action}: missing app memory sample`);
+    if (gpuRoute && result.peakAppBytes >= 4e9) {
+      phaseOneMemoryFailures.push(`${name}, ${action}: ${result.peakAppBytes} app bytes`);
+    }
+    const grain = await page.evaluate(() => {
+      const grain = state.gpuPreview.denoiseSourceSelector.cache.grain;
+      return { gpu: Boolean(grain?.gpu), token: grain?.token };
+    });
+    assert.equal(grain.gpu, gpuRoute && !fallback, action);
+    const preparations = result.preparationRequests.filter(request => request.route.startsWith("denoise-grain/"));
+    if (gpuRoute && !fallback) assert.deepEqual(preparations, [], action);
+    else assert.ok(grain.token, `${action}: missing CPU Fine Grain correction`);
+    if (fallback) {
+      assert.equal(result.stages.filter(event => event.stage === "fine-grain-fallback").length, 1);
+      assert.equal(preparations.length, 1);
+    }
+    return result;
+  };
+  for (const lane of ["hdr", "sdr"]) {
+    if (await page.evaluate(() => state.currentView) !== lane) {
+      await page.locator(`#view-${lane}`).click();
+      await page.waitForFunction(lane => state.currentView === lane && previewIdleNow(), lane);
+    }
+    await page.evaluate(() => commitDenoiseControl("method", "fine_grain"));
+    const capture = zoom => captureFinishedGrade(page, path.join(captures, `${name}-${lane}-${zoom}-${phaseOne}`));
+    for (const zoom of ["110%", "Fit"]) {
+      await setZoom(zoom === "Fit" ? "#zoom-fit" : zoom);
+      await page.evaluate(() => {
+        state.gpuPreview.fineGrainFit = null;
+        if (state.denoiseGrainRefresh) state.denoiseGrainRefresh.scene++;
+      });
+      const result = await check(`first preparation at ${zoom}`, "#denoise-bypass");
+      if (zoom === "110%") assert.ok(result.region && result.zoom === 110, "Expected a bounded 110% picture.");
+      if (process.env.HDR_FINISHER_GRAIN_NO_CAPTURE !== "1") await capture(zoom);
+      if (zoom === "110%" && lane === "hdr") {
+        const drag = await check("Evenness drag at 110%", "#denoise-evenness", { drag: true, release: true });
+        if (gpuRoute) assert.ok(drag.samePreparation, "Evenness replaced the whole-photo measurement.");
+        const evenness = await page.evaluate(() => ({ value: state.denoise.hdr.controls.grain_evenness,
+          rendered: state.gpuPreview.denoiseSourceSelector.controls.grainEvenness,
+          pending: state.denoiseInputQueue?.busy }));
+        assert.equal(evenness.rendered, evenness.value);
+        assert.equal(Boolean(evenness.pending), false);
+        if (gpuRoute && process.env.HDR_FINISHER_GRAIN_NO_CAPTURE !== "1") await capture("post-drag");
+        await check("pan at 110%", null, { pan: true });
+        if (process.env.HDR_FINISHER_GRAIN_NO_CAPTURE !== "1") await capture("pan");
+      }
+      await page.evaluate(() => setDenoiseEnabled(false));
+      await page.waitForFunction(() => previewIdleNow());
+    }
+    if (lane === "sdr" && gpuRoute && name === "IMG_0790.CR2") {
+      await page.evaluate(() => {
+        const renderer = state.gpuPreview;
+        renderer.releaseFineGrainReduced(renderer.denoiseSourceSelector);
+        const original = renderer.resizeNativeFineGrain;
+        renderer.resizeNativeFineGrain = function (...args) {
+          this.resizeNativeFineGrain = original;
+          throw Error("Injected Fine Grain resize failure");
+        };
+        state.denoiseGrainRefresh.scene++;
+      });
+      await check("injected failure at Fit", "#denoise-bypass", {}, true);
+      await page.evaluate(() => setDenoiseEnabled(false));
+      await page.waitForFunction(() => previewIdleNow());
+    }
+  }
 }
 
 async function measureDelivery(page, harness, name, method, record, proofOnly = false) {
@@ -605,6 +762,13 @@ async function measureBaseline(page, harness, name, record, setZoom) {
     return result;
   };
   try {
+    if (phaseOne) {
+      assert.ok(["cpu", "gpu"].includes(phaseOne));
+      await page.addInitScript(() => {
+        const match = window.matchMedia.bind(window);
+        window.matchMedia = query => query === "(dynamic-range: high)" ? { matches: true } : match(query);
+      });
+    }
     await page.goto(process.env.HDR_FINISHER_URL);
     assert.ok(!fullProofMethod || baselineMethods.includes(fullProofMethod), "Unknown Denoise method");
     if (fullProofMethod) await api("/api/delivery/preferences", { force_cpu: true });
@@ -624,7 +788,7 @@ async function measureBaseline(page, harness, name, record, setZoom) {
         if (Number.isFinite(bytes)) window.denoiseBaselineMemory.push({ at: Date.now(), bytes,
           processes: event.data.value.processes });
       });
-    }, baseline || panCoverage || nativeGrainSwitch || stillPicture);
+    }, baseline || panCoverage || nativeGrainSwitch || stillPicture || Boolean(phaseOne));
     const names = process.argv.includes("--atrium-only") ? ["DSC01212.ARW"]
       : process.argv.includes("--42-only") ? ["_DSC7970.ARW"]
       : process.argv.includes("--18-only") ? ["IMG_0790.CR2"] : ["IMG_0790.CR2", "_DSC7970.ARW"];
@@ -640,7 +804,7 @@ async function measureBaseline(page, harness, name, record, setZoom) {
           pixel_cleanup: { even_out_specks: true, speck_threshold: 2.5 },
           ...(baseline ? { lens: { mode: "off" } } : {}),
         } });
-      }, { file, baseline });
+      }, { file, baseline: baseline || Boolean(phaseOne) });
       await page.waitForFunction(() => viewerState().status === "ready", null, { timeout: 90000 });
       const photo = await page.evaluate(() => ({
         id: state.session?.session_id, width: state.session?.source.width, height: state.session?.source.height,
@@ -660,8 +824,10 @@ async function measureBaseline(page, harness, name, record, setZoom) {
             backend.peakAppBytes = peak?.bytes ?? backend.peakAppBytes;
             backend.peakProcesses = peak?.processes;
           }
-          console.log(JSON.stringify({ name, method, action, ...result, ...backend,
+          const lane = options?.trace ? await page.evaluate(() => state.currentView) : undefined;
+          console.log(JSON.stringify({ name, method, action, lane, ...result, ...backend,
             ...(tracedRequests ? { preparationRequests: tracedRequests } : {}) }));
+          return { ...result, ...backend, preparationRequests: tracedRequests };
         } catch (error) {
           console.log(JSON.stringify({ name, method, action, error: error.message,
             preparationRequests: tracedRequests }));
@@ -684,6 +850,10 @@ async function measureBaseline(page, harness, name, record, setZoom) {
           && state.acceptedPresentation.processedLongEdge === requiredProcessingLongEdge()
           && previewIdleNow(), null, { timeout: 90000 });
       };
+      if (phaseOne) {
+        await measurePhaseOne(page, name, record, setZoom);
+        continue;
+      }
       if (stillPicture) {
         const denied = [];
         const checkAdmission = response => { if (response.status() === 507) denied.push(new URL(response.url()).pathname); };
@@ -876,6 +1046,7 @@ async function measureBaseline(page, harness, name, record, setZoom) {
         await commitDenoiseControl("method", "standard");
       });
     }
+    assert.deepEqual(phaseOneMemoryFailures, [], "Fine Grain exceeded the 4 GB whole-app ceiling.");
   } finally {
     await browser.close();
     fs.rmSync(output, { recursive: true, force: true });

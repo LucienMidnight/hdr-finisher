@@ -355,7 +355,8 @@ async function recalculateDenoiseAnalysis(lane = state.currentView, options = {}
       denoiseRendererControls(settings.controls),
       options.refresh ?? 0,
       Math.max(256, state.session.source?.width || 0, state.session.source?.height || 0),
-      { isCurrent },
+      { isCurrent, gradeFineGrain: state.activeWorkflow === "grade" && state.gpuPreview.enableGradeFineGrainGpu === true,
+        repairGeneration: state.repairSourceGeneration || 0 },
     );
     if (!isCurrent()) return false;
     if (!ready) return denoiseRetryError(lane, "Denoise preparation did not finish.");
@@ -382,7 +383,7 @@ async function updateLiveDenoiseControl(key, value) {
   const runtime = state.denoiseRuntime[lane];
   settings.controls[key] = clamp(value, 0, 1);
   renderDenoiseControls();
-  if (key === "grain_evenness") return;
+  if (key === "grain_evenness" && !liveFineGrainSelected(lane)) return;
   if (!settings.enabled || runtime.status !== "ready" || runtime.showOriginal) return;
   // Section 5.6: reconstruction is coalesced to one in-flight run plus one
   // latest pending state, so dragging a control costs runs rather than input
@@ -392,7 +393,15 @@ async function updateLiveDenoiseControl(key, value) {
     sessionId: state.session?.session_id,
     generation: runtime.generation,
     controls: denoiseRendererControls(settings.controls),
+    evennessOnly: key === "grain_evenness",
   });
+}
+
+function liveFineGrainSelected(lane) {
+  const selector = state.gpuPreview?.denoiseSourceSelector;
+  return state.activeWorkflow === "grade" && state.denoise[lane].controls.method === "fine_grain"
+    && selector?.cache?.grain?.gpu && selector.selected === "resolved"
+    && selector.cache.preparedFrame === JSON.stringify([state.session?.session_id, lane, geometrySignature(), gradeSourceIdentity(lane)]);
 }
 
 async function commitDenoiseControl(key, value) {
@@ -401,6 +410,22 @@ async function commitDenoiseControl(key, value) {
   const runtime = state.denoiseRuntime[lane];
   const sessionId = state.session?.session_id;
   if (value !== undefined) settings.controls[key] = value;
+  if (key === "grain_evenness" && settings.enabled && liveFineGrainSelected(lane)) {
+    const saved = await persistDenoiseSettings().catch(() => false);
+    if (state.session?.session_id !== sessionId || state.denoiseRuntime[lane] !== runtime) return;
+    runtime.saveFailed = !saved;
+    if (!saved) return denoiseRetryError(lane, "Denoise settings could not be saved.");
+    if (nativeDenoiseViewport(lane)) {
+      if (state.gpuPreview.denoiseSourceSelector.controls.grainEvenness !== settings.controls.grain_evenness) {
+        await updateLiveDenoiseControl(key, settings.controls.grain_evenness);
+      }
+    } else {
+      state.gpuPreview.setDenoiseControls(denoiseRendererControls(settings.controls));
+      invalidatePreview(lane, { markDirty: false });
+      debouncePreview(lane);
+    }
+    return;
+  }
   const needsPreparation = key === "method" || (settings.controls.method !== "standard"
     && key !== "color_splotches");
   if (!needsPreparation) return persistDenoiseSettings();
@@ -466,10 +491,17 @@ function liveDenoiseRegion() {
   };
 }
 
-async function runLiveDenoise({ lane, sessionId, generation, controls, wholeFrame = false }) {
+async function runLiveDenoise({ lane, sessionId, generation, controls, wholeFrame = false, evennessOnly = false }) {
   const isCurrent = () => sessionId === state.session?.session_id
     && generation === state.denoiseRuntime[lane]?.generation && state.denoise[lane]?.enabled;
   if (!isCurrent()) return;
+  if (evennessOnly && lane === state.currentView && nativeDenoiseViewport(lane) && liveFineGrainSelected(lane)) {
+    state.gpuPreview.setDenoiseControls(controls);
+    invalidatePreview(lane, { markDirty: false });
+    await renderGpuDraft(lane, { longEdge: refinementProxyLongEdge(), viewport: true, reason: "fine-grain-evenness" });
+    if (isCurrent()) debounceOverlayAndScopes();
+    return;
+  }
   const startedAt = performance.now();
   const interacting = !wholeFrame && Boolean(state.previewScheduler?.interacting);
   // NEXT-01 #4. During a drag only what is on screen is reconstructed: a

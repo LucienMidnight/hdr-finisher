@@ -413,9 +413,9 @@ fn adaptiveAccumulateMain(@builtin(global_invocation_id) id: vec3u) {
   let noise = (strength * ap.sigma.xyz) * (strength * ap.sigma.xyz) * variance;
   var gain = max(energy - noise, vec3f(0.0)) / max(energy, vec3f(1e-20));
   if (fine && ap.strength.w > 0.0) { gain = max(gain, vec3f(ap.strength.w)); }
-  var sum = vec3f(0.0);
-  if (level > 0) { sum = textureLoad(sumTex, p, 0).xyz; }
-  textureStore(dstTex, p, vec4f(sum + band * gain, 0.0));
+  var sum = vec4f(0.0);
+  if (level > 0) { sum = textureLoad(sumTex, p, 0); }
+  textureStore(dstTex, p, sum + vec4f(band * gain, 0.0));
 }
 
 // src = the band sum, aux = the coarsest smooth. Writes only the tile.
@@ -430,6 +430,9 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
   textureStore(outTex, storeAt, vec4f(fromOpponent(opponent), 1.0));
 }`;
 
+  const GRAIN_DENOISE_BANDS = [1, 2];
+  const GRAIN_DENOISE_RADIUS = 18;
+  const GRAIN_FIT_BLOCK = 32;
   const GRAIN_DENOISE_SHADER_SOURCE = ADAPTIVE_DENOISE_SHADER_SOURCE + `
 @compute @workgroup_size(8, 8)
 fn adaptiveGrainGainMain(@builtin(global_invocation_id) id: vec3u) {
@@ -452,10 +455,47 @@ fn adaptiveGrainBoxMain(@builtin(global_invocation_id) id: vec3u) {
   let p = vec2i(id.xy);
   let axis = select(vec2i(0, 1), vec2i(1, 0), ap.frame.w < 0.5);
   var total = 0.0;
-  for (var tap = -18; tap <= 18; tap++) {
+  for (var tap = -${GRAIN_DENOISE_RADIUS}; tap <= ${GRAIN_DENOISE_RADIUS}; tap++) {
     total += textureLoad(srcTex, clampLocal(p + axis * tap), 0).x;
   }
-  textureStore(dstTex, p, vec4f(total / 37.0, 0.0, 0.0, 0.0));
+  textureStore(dstTex, p, vec4f(total / ${GRAIN_DENOISE_RADIUS * 2 + 1}.0, 0.0, 0.0, 0.0));
+}
+
+@group(0) @binding(9) var<storage, read_write> grainPartials: array<vec4f>;
+var<workgroup> grainBlock: array<vec4f, 64>;
+
+@compute @workgroup_size(8, 8)
+fn adaptiveGrainFitMain(@builtin(local_invocation_id) local: vec3u,
+                        @builtin(local_invocation_index) index: u32,
+                        @builtin(workgroup_id) group: vec3u) {
+  let block = group.xy * ${GRAIN_FIT_BLOCK}u;
+  let tileSize = vec2u(ap.tile.zw);
+  let tileOrigin = vec2i(ap.tile.xy) - scratchOrigin();
+  var terms = vec4f(0.0);
+  for (var row = local.y; row < ${GRAIN_FIT_BLOCK}u; row += 8u) {
+    for (var col = local.x; col < ${GRAIN_FIT_BLOCK}u; col += 8u) {
+      let relative = block + vec2u(col, row);
+      if (all(relative < tileSize)) {
+        let p = tileOrigin + vec2i(relative);
+        let band = textureLoad(srcTex, p, 0).x - textureLoad(auxTex, p, 0).x;
+        let original = textureLoad(aux2Tex, p, 0).x;
+        let mean = textureLoad(aux3Tex, p, 0).x;
+        let power = band * band;
+        let complement = 1.0 - mean;
+        terms += power * vec4f(original * original, mean * mean, mean * complement, complement * complement);
+      }
+    }
+  }
+  grainBlock[index] = terms;
+  workgroupBarrier();
+  for (var stride = 32u; stride > 0u; stride /= 2u) {
+    if (index < stride) { grainBlock[index] += grainBlock[index + stride]; }
+    workgroupBarrier();
+  }
+  if (index == 0u) {
+    let pitch = (tileSize.x + ${GRAIN_FIT_BLOCK - 1}u) / ${GRAIN_FIT_BLOCK}u;
+    grainPartials[u32(ap.dest.x) + group.y * pitch + group.x] = grainBlock[0];
+  }
 }
 
 @compute @workgroup_size(8, 8)
@@ -465,9 +505,26 @@ fn adaptiveGrainAccumulateMain(@builtin(global_invocation_id) id: vec3u) {
   let band = textureLoad(srcTex, p, 0).xyz - textureLoad(auxTex, p, 0).xyz;
   var gain = textureLoad(aux2Tex, p, 0).xyz;
   let fitted = clamp(textureLoad(aux3Tex, p, 0).x * ap.model.w + ap.sigma.w, 0.0, 1.0);
-  gain.x = mix(gain.x, fitted, ap.dest.x);
-  let sum = textureLoad(sumTex, p, 0).xyz;
-  textureStore(dstTex, p, vec4f(sum + band * gain, 0.0));
+  let difference = select(0.0, band.x * (fitted - gain.x) * INV_SQRT3, ap.dest.x < 0.0);
+  gain.x = mix(gain.x, fitted, max(0.0, ap.dest.x));
+  let sum = textureLoad(sumTex, p, 0);
+  textureStore(dstTex, p, sum + vec4f(band * gain, difference));
+}
+
+@compute @workgroup_size(8, 8)
+fn adaptiveGrainEndpointsMain(@builtin(global_invocation_id) id: vec3u) {
+  if (any(id.xy >= vec2u(ap.tile.zw))) { return; }
+  let local = vec2i(ap.tile.xy) + vec2i(id.xy) - scratchOrigin();
+  let sum = textureLoad(srcTex, local, 0);
+  let rgb = fromOpponent(sum.xyz + textureLoad(auxTex, local, 0).xyz);
+  textureStore(outTex, vec2i(ap.tile.xy - ap.dest.xy) + vec2i(id.xy), vec4f(rgb, sum.a));
+}
+
+@compute @workgroup_size(8, 8)
+fn adaptiveGrainMixMain(@builtin(global_invocation_id) id: vec3u) {
+  if (any(id.xy >= vec2u(ap.tile.zw))) { return; }
+  let packed = textureLoad(srcTex, vec2i(id.xy), 0);
+  textureStore(outTex, vec2i(id.xy), vec4f(packed.rgb + vec3f(ap.dest.x * packed.a), 1.0));
 }
 
 @group(0) @binding(8) var preparedTex: texture_2d<u32>;
@@ -481,6 +538,95 @@ fn adaptivePreparedMain(@builtin(global_invocation_id) id: vec3u) {
   let delta = fromOpponent(vec3f(0.0, unpack2x16float(fields.w) * ap.strength.x));
   let storeAt = vec2i(ap.tile.xy) + p - vec2i(ap.dest.xy);
   textureStore(outTex, storeAt, vec4f(base + delta - vec3f(dot(delta, ACES_LUMA)), 1.0));
+}`;
+
+  const GRAIN_RESIZE_SHADER_SOURCE = `
+struct Resize {
+  sizes: vec4f,
+  strip: vec4f,
+  block: vec4f,
+};
+@group(0) @binding(0) var<uniform> resize: Resize;
+@group(0) @binding(1) var pixels: texture_2d<f32>;
+@group(0) @binding(2) var low: texture_2d<f32>;
+@group(0) @binding(3) var high: texture_2d<f32>;
+@group(0) @binding(4) var sampled: texture_storage_2d<rgba32float, write>;
+@group(0) @binding(5) var minValues: texture_storage_2d<rgba32float, write>;
+@group(0) @binding(6) var maxValues: texture_storage_2d<rgba32float, write>;
+@group(0) @binding(7) var resizedPixels: texture_storage_2d<rgba16float, write>;
+
+fn sinc(x: f32) -> f32 {
+  if (abs(x) < 1e-5) { return 1.0; }
+  let angle = x * 3.141592653589793;
+  return sin(angle) / angle;
+}
+fn lanczos(x: f32) -> f32 {
+  return select(sinc(x) * sinc(x / 3.0), 0.0, abs(x) >= 3.0);
+}
+fn support(center: f32, ratio: f32, extent: f32) -> vec2i {
+  return vec2i(clamp(vec2f(center - 3.0 * ratio + 0.5, center + 3.0 * ratio + 0.5), vec2f(0.0), vec2f(extent)));
+}
+fn rangeWindow(center: f32, extent: f32) -> vec2i {
+  let block = resize.block.x;
+  let anchor = floor(center / block) * block;
+  return vec2i(clamp(vec2f(anchor - block, anchor + 2.0 * block), vec2f(0.0), vec2f(extent)));
+}
+
+@compute @workgroup_size(8, 8)
+fn fineGrainResizeHorizontal(@builtin(global_invocation_id) id: vec3u) {
+  if (id.x >= u32(resize.sizes.z) || id.y >= u32(resize.strip.y)) { return; }
+  let row = i32(id.y);
+  let ratio = resize.sizes.x / resize.sizes.z;
+  let center = (f32(id.x) + 0.5) * ratio;
+  let taps = support(center, max(1.0, ratio), resize.sizes.x);
+  let bounds = rangeWindow(center, resize.sizes.x);
+  var sum = vec3f(0.0);
+  var weightSum = 0.0;
+  var minimum = vec3f(65504.0);
+  var maximum = vec3f(-65504.0);
+  for (var col = min(taps.x, bounds.x); col < max(taps.y, bounds.y); col++) {
+    let value = textureLoad(pixels, vec2i(col, row), 0).rgb;
+    if (col >= taps.x && col < taps.y) {
+      let weight = lanczos((f32(col) + 0.5 - center) / max(1.0, ratio));
+      sum += value * weight;
+      weightSum += weight;
+    }
+    if (col >= bounds.x && col < bounds.y) {
+      minimum = min(minimum, value);
+      maximum = max(maximum, value);
+    }
+  }
+  let dst = vec2i(id.xy);
+  textureStore(sampled, dst, vec4f(sum / weightSum, 1.0));
+  textureStore(minValues, dst, vec4f(minimum, 1.0));
+  textureStore(maxValues, dst, vec4f(maximum, 1.0));
+}
+
+@compute @workgroup_size(8, 8)
+fn fineGrainResizeVertical(@builtin(global_invocation_id) id: vec3u) {
+  if (id.x >= u32(resize.sizes.z) || id.y >= u32(resize.strip.w)) { return; }
+  let destination = vec2i(i32(id.x), i32(resize.strip.z) + i32(id.y));
+  let ratio = resize.sizes.y / resize.sizes.w;
+  let center = (f32(destination.y) + 0.5) * ratio;
+  let taps = support(center, max(1.0, ratio), resize.sizes.y);
+  let bounds = rangeWindow(center, resize.sizes.y);
+  var sum = vec3f(0.0);
+  var weightSum = 0.0;
+  var minimum = vec3f(65504.0);
+  var maximum = vec3f(-65504.0);
+  for (var row = min(taps.x, bounds.x); row < max(taps.y, bounds.y); row++) {
+    let sourcePoint = vec2i(destination.x, row - i32(resize.strip.x));
+    if (row >= taps.x && row < taps.y) {
+      let weight = lanczos((f32(row) + 0.5 - center) / max(1.0, ratio));
+      sum += textureLoad(pixels, sourcePoint, 0).rgb * weight;
+      weightSum += weight;
+    }
+    if (row >= bounds.x && row < bounds.y) {
+      minimum = min(minimum, textureLoad(low, sourcePoint, 0).rgb);
+      maximum = max(maximum, textureLoad(high, sourcePoint, 0).rgb);
+    }
+  }
+  textureStore(resizedPixels, destination, vec4f(clamp(sum / weightSum, minimum, maximum), 1.0));
 }`;
 
   const LENS_FILTERS = ((typeof window !== "undefined" && window.HDRLensFilters)
@@ -3346,7 +3492,7 @@ fn adaptivePreparedMain(@builtin(global_invocation_id) id: vec3u) {
     PEAK_REDUCTION_SHADER_SOURCE,
     SCALED_FILM_PEAK_REDUCTION_SHADER_SOURCE,
     ADAPTIVE_DENOISE_SHADER_SOURCE,
-    GRAIN_DENOISE_SHADER_SOURCE,
+    GRAIN_DENOISE_SHADER_SOURCE, GRAIN_DENOISE_BANDS, GRAIN_DENOISE_RADIUS, GRAIN_FIT_BLOCK, GRAIN_RESIZE_SHADER_SOURCE,
     SHADER_SOURCE,
     LUMA_MASK_SHADER_SOURCE,
   });

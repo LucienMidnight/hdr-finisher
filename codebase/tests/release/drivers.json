@@ -637,7 +637,7 @@
       "path": "tests/performance/denoise-grain-latency.js",
       "areas": ["detail", "export-proof"],
       "tier": "full",
-      "protects": "Denoise action-to-final-picture preparation, Recalculate, Fit/native zoom changes and pan on 18 MP and 42 MP RAWs. Opt-in Standard and experimental baseline with 110% sequence, slider, native export and Proof timings.",
+      "protects": "Denoise action-to-final-picture preparation, Recalculate, Fit/native zoom changes and pan on 18 MP and 42 MP RAWs. Opt-in Fine Grain Grade GPU trial measures timing, memory, CPU fallback and finished HDR/SDR captures. Separate baseline covers native export and Proof timings.",
       "launch": { "method": "electron" }
     },
     {

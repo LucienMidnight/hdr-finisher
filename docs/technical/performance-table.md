@@ -1,3 +1,56 @@
+## November 20 — Phase 1 Fine Grain on the GPU in Grade
+
+MacBook Neo, A18 Pro, 8 GB, macOS 27.0.1 on AC. Unpackaged Electron at
+1408×794 under the shared GPU lock. Canon `IMG_0790.CR2` (fire-dancer) and
+Sony `_DSC7970.ARW` (portrait), with the same Grade controls on both routes.
+These are single real-app observations, including finished-pixel capture,
+not isolated filter timings. The HDR display capability override is test-only.
+Memory is the sampled whole-app physical footprint, in decimal GB, including
+the GPU process and backend. The sample window includes the preceding 500 ms.
+
+| Photo | Lane | First sharp 110%, CPU → GPU (s) | Settled Fit, CPU → GPU (s) | Evenness drag settled (first GPU response), CPU → GPU (s) | Pan, CPU → GPU (s) | Peak whole app, CPU → GPU (GB) |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| Canon | HDR | 5.61 → 1.78 | 4.41 → 3.01 | 4.81 → 0.130 (0.079) | 0.207 → 0.601 | 2.62 → 2.57 |
+| Sony | HDR | 12.50 → 4.56 | 13.94 → 7.02 | 12.02 → 0.132 (0.066) | 0.412 → 0.684 | 3.91 → **4.74** |
+| Canon | SDR | 6.08 → 2.05 | 0.95 with CPU reuse → 3.14 without GPU reuse | — | — | 2.47 → 2.43 |
+| Sony | SDR | 12.44 → 3.51 | 1.99 with CPU reuse → 7.04 without GPU reuse | — | — | 2.74 → 3.04 |
+
+The measured CPU waits replace the design's 8.32 s / 15.87 s estimates
+for this comparison. HDR 110% was 68% faster for Canon and 64% for Sony.
+HDR Fit was 32% faster for Canon and about 50% for Sony. SDR Fit is not a
+cold-to-cold comparison: the CPU already had matching preparation from
+110%; the GPU still had to filter at native resolution and reduce. Both
+HDR pans regressed. A separate repeated Sony HDR 110% run also exceeded
+4 GB (4.72 GB). **The trial remains disabled by default.**
+
+| Photo | Lane and metric | Fit mean / p99 | 110% mean / p99 |
+| --- | --- | ---: | ---: |
+| Canon | HDR, ΔE ITP | 0.041 / 0.171 | 0.049 / 0.187 |
+| Sony | HDR, ΔE ITP | 0.055 / 0.161 | 0.059 / 0.185 |
+| Canon | SDR, ΔE 2000 | 0.008 / 0.370 | 0.121 / 0.624 |
+| Sony | SDR, ΔE 2000 | 0.031 / 0.766 | 0.029 / 0.687 |
+
+All eight finished-pixel comparisons met mean <1 and p99 <3. The shared
+area before and after each HDR pan was pixel-identical, and the sharp
+area covered the viewport. This checks for seams across tiles in those
+views, not every pan direction or an independent visual sign-off. The
+existing HDR limiter was unchanged; the exact pre-encode ceiling was not
+independently qualified. Successful GPU draws used no CPU Fine Grain
+preparation. An injected GPU failure at Canon SDR Fit made one attempt,
+then one successful CPU Grain preparation and presented the CPU picture
+in 4.42 s.
+
+Reproduce from `codebase`: run the
+[real-app driver](../../codebase/tests/performance/denoise-grain-latency.js)
+once per route by substituting `cpu` and `gpu` for `ROUTE`, then compare
+the captures. The GPU driver records both photos before returning failure
+when it observes a memory overage.
+
+```sh
+HDR_FINISHER_ELECTRON_WINDOW_SIZE=1408x794 .venv/bin/python tools/gpu-run-lock.py --label fine-grain-ROUTE --minutes 10 -- node tests/run-in-electron.js tests/performance/denoise-grain-latency.js --phase1=ROUTE
+.venv/bin/python tests/helpers/denoise_grade_comparison.py output/denoise-grain-phase1
+```
+
 ## November 20 — Native JPEG Ultra HDR Proof on the 8 GB MacBook Neo
 
 Baseline `8632bfa2` versus the bounded JPEG Proof change. MacBook Neo A18 Pro

@@ -500,7 +500,7 @@
     delivered.width = Math.max(0, Math.min(region.x + region.width, outputWidth) - delivered.x);
     delivered.height = Math.max(0, Math.min(region.y + region.height, outputHeight) - delivered.y);
     if (!(delivered.width > 0 && delivered.height > 0)) return null;
-    if (delivered.width * delivered.height >= outputWidth * outputHeight * 0.9) return null;
+    if (!options.transient && delivered.width * delivered.height >= outputWidth * outputHeight * 0.9) return null;
 
     // The whole frame held for panning (`holdSourceForPanning`) is these same
     // pixels: the region is then copied on the device and nothing is fetched.
@@ -612,6 +612,7 @@
       sourceIdentity, identity: key, byteSize, streamed: true, regionTransport: true,
       bindGroups: new Map(),
     };
+    if (options.transient) return proxy;
     renderer.proxies.set(key, proxy);
     renderer.sourceTransportMetrics = {
       route: "region", width: outputWidth, height: outputHeight, region: { ...delivered },

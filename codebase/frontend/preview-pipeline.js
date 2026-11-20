@@ -690,8 +690,13 @@ async function renderGpuDraftInner(
   const canvas = els.previewCanvas;
   const boundedPresentation = !allowInactive && nativeDenoiseViewport(lane)
     && Boolean(request.viewport) && state.gpuPreview.executionOverride !== "direct";
-  const wholeFrameKey = JSON.stringify([sessionId, lane, requestedGeometrySignature, generation, sourceIdentity,
-    state.editRevision, state.repairSourceGeneration, state.denoise[lane], state.denoiseRuntime[lane]?.showOriginal,
+  const liveFineGrain = liveFineGrainSelected(lane);
+  const underlayerDenoise = state.denoise[lane];
+  const underlayerEdit = liveFineGrain ? [state.adjustments, localAdjustments(), localsBypassed()] : generation;
+  const wholeFrameKey = JSON.stringify([sessionId, lane, requestedGeometrySignature, underlayerEdit, sourceIdentity,
+    state.editRevision, state.repairSourceGeneration, liveFineGrain ? {
+      ...underlayerDenoise, controls: { ...underlayerDenoise.controls, grain_evenness: undefined },
+    } : underlayerDenoise, state.denoiseRuntime[lane]?.showOriginal,
     denoiseNoiseViewActive(lane), gpuLumaMaskOverlayOptions(), projectReferenceWhiteNits(),
     Boolean(window.matchMedia?.("(dynamic-range: high)").matches)]);
   if (boundedPresentation) {
@@ -767,6 +772,7 @@ async function renderGpuDraftInner(
     panPass,
     noiseView: denoiseNoiseViewActive(lane),
     boundedPresentation,
+    fineGrainUnderlayer: request.underlayerOnly,
     deferSurface: request.underlayerOnly || (replacingDetail && !boundedPresentation && !viewport),
     coversViewport: boundedPresentation ? (region, width, height) => {
       if (!nativeDenoiseViewport(lane)) return false;
@@ -822,8 +828,9 @@ async function renderGpuDraftInner(
       // canvas; the settled pass that follows the release draws full detail.
       && !(request.coarse && request.reason === "drag-coarse" && !state.previewScheduler?.interacting),
   };
+  const renderer = state.gpuPreview;
+  const fineGrain = liveFineGrainSelected(lane) && renderer.denoiseSourceSelector.cache.grain;
   try {
-    const renderer = state.gpuPreview;
     const draw = boundedPresentation
       ? renderer.renderTo.bind(renderer, els.previewDenoiseDetail) : renderer.render.bind(renderer);
     const result = await draw(
@@ -840,9 +847,11 @@ async function renderGpuDraftInner(
       sourceOptions,
     );
     if (!result) {
+      const reason = renderer.lastRenderRefusal?.reason;
+      if (fineGrain && reason?.startsWith("tiled-encode-failed:validation:")) throw new Error(reason);
       if (viewportMoved && sourceOptions.isCurrent()
         && !state.renderCoordinator?.notePan(lane)) scheduleZoomRefinement({ continuous: true });
-      return refuse(state.gpuPreview.lastRenderRefusal?.reason || "renderer-returned-nothing");
+      return refuse(reason || "renderer-returned-nothing");
     }
     if (!sourceOptions.isCurrent()) return refuse("superseded-during-render");
     if (!allowInactive && !boundedPresentation) {
@@ -933,6 +942,10 @@ async function renderGpuDraftInner(
       return true;
   } catch (error) {
     if (!sourceOptions.isCurrent() || error?.name === "AbortError") return refuse("superseded-during-render");
+    if (renderer.refuseFineGrainFit(fineGrain, error)) {
+      state.denoiseRuntime[lane].dirty = true;
+      return renderGpuDraftInner(lane, request);
+    }
     if (error?.grainPreparationReplaced) {
       denoiseRetryError(lane, "Grain preparation expired.");
       return refuse("denoise-preparation-expired");
