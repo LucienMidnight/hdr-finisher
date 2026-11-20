@@ -47,6 +47,46 @@ def test_only_the_neighbourhood_of_the_overshoot_changes():
     assert hdr_ceiling.channel_nits(delivered, 203).max() > 0.85 * 1000
 
 
+def test_disk_backed_jpeg_correction_matches_whole_image_over_multiple_retries(tmp_path):
+    from hdr_finisher.hdr_ceiling import BLOCK, MARGINS
+
+    size = (261, 35)
+    rgba = np.random.default_rng(13).random((*size, 4), dtype=np.float32)
+    output = np.memmap(tmp_path / "hdr.raw", dtype="f4", mode="w+", shape=rgba.shape)
+    output[:] = rgba
+    peaks = [np.full(size, 900, dtype=np.float32) for _ in range(3)]
+    peaks[0][127, 15] = 1118
+    peaks[0][-1, -1] = 1025
+    peaks[1][128, 16] = 1072
+    delivered_pixels = []
+    finished = hdr_ceiling.encode_within_ceiling(
+        output, 203, lambda pixels: delivered_pixels.append(np.array(pixels)) or len(delivered_pixels),
+        lambda attempt: peaks[attempt - 1], 1000, correct_in_place=True, encoding_allowance=0.01,
+    )
+    assert finished == 3
+    expected = rgba.copy()
+    np.testing.assert_array_equal(delivered_pixels[0], expected)
+    for attempt, decoded in enumerate(peaks[:2]):
+        yy, xx = np.indices(size, dtype=np.float32)
+        blocks_y, blocks_x = (-(-axis // BLOCK) for axis in size)
+        padded = np.pad(np.maximum(decoded / np.float32(1000), 1.0),
+                        [(0, blocks_y * BLOCK - size[0]), (0, blocks_x * BLOCK - size[1])],
+                        constant_values=1)
+        grid = padded.reshape(blocks_y, BLOCK, blocks_x, BLOCK).max(axis=(1, 3))
+        halo = np.pad(grid, 1, constant_values=1)
+        grid = np.max([halo[y:y + blocks_y, x:x + blocks_x] for y in range(3) for x in range(3)], axis=0)
+        y = np.clip((yy[:, 0] + 0.5) / BLOCK - 0.5, 0, blocks_y - 1)
+        x = np.clip((xx[0] + 0.5) / BLOCK - 0.5, 0, blocks_x - 1)
+        y0, x0 = y.astype(int), x.astype(int)
+        dy, dx = (y - y0).astype(np.float32), (x - x0).astype(np.float32)
+        rows = grid[y0] * (1 - dy[:, None]) + grid[np.minimum(y0 + 1, blocks_y - 1)] * dy[:, None]
+        spread = rows[:, x0] * (1 - dx) + rows[:, np.minimum(x0 + 1, blocks_x - 1)] * dx
+        correction = np.where(spread > 1.0, 1.0 / (spread ** 2.0 * (1.0 + MARGINS[attempt])), 1.0)
+        expected[..., :3] *= correction[..., None]
+        np.testing.assert_array_equal(delivered_pixels[attempt + 1], expected)
+    np.testing.assert_array_equal(output, expected)
+
+
 def test_a_clean_codec_is_encoded_once_and_left_alone():
     calls = []
     original = scene()

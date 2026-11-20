@@ -96,18 +96,20 @@ def _ultrahdr_channel_nits(path: Path) -> np.ndarray:
     return _apply_exif_orientation(nits[..., None], orientation)[..., 0]
 
 
-def _correction(ratio: np.ndarray, margin: float) -> np.ndarray:
-    """A smooth multiplier that brings every over-ceiling pixel under it.
-
-    Block maxima are widened by one block, so bilinear upsampling at any
-    overshooting pixel interpolates only values at least as large as its own
-    ratio. That guarantees coverage while fading gently to 1 elsewhere.
-    """
-    height, width = ratio.shape
+def _correct_bands(current: np.ndarray, decoded: np.ndarray, ceiling: float, margin: float) -> None:
+    """Apply the same widened block grid using global interpolation coordinates."""
+    height, width = decoded.shape
     blocks_y, blocks_x = -(-height // BLOCK), -(-width // BLOCK)
-    padded = np.ones((blocks_y * BLOCK, blocks_x * BLOCK), dtype=np.float32)
-    padded[:height, :width] = np.maximum(ratio, 1.0)
-    grid = padded.reshape(blocks_y, BLOCK, blocks_x, BLOCK).max(axis=(1, 3))
+    band_rows = 128
+    grid = np.empty((blocks_y, blocks_x), dtype=np.float32)
+    for top in range(0, height, band_rows):
+        decoded_band = decoded[top:top + band_rows]
+        rows = len(decoded_band)
+        band_blocks = -(-rows // BLOCK)
+        padded = np.ones((band_blocks * BLOCK, blocks_x * BLOCK), dtype=np.float32)
+        padded[:rows, :width] = np.maximum(decoded_band / np.float32(ceiling), 1.0)
+        grid[top // BLOCK:top // BLOCK + band_blocks] = padded.reshape(
+            band_blocks, BLOCK, blocks_x, BLOCK).max(axis=(1, 3))
     widened = np.pad(grid, 1, constant_values=1.0)
     grid = np.max([widened[dy:dy + blocks_y, dx:dx + blocks_x] for dy in range(3) for dx in range(3)], axis=0)
 
@@ -118,9 +120,12 @@ def _correction(ratio: np.ndarray, margin: float) -> np.ndarray:
 
     y0, y1, wy = axis_weights(height, blocks_y)
     x0, x1, wx = axis_weights(width, blocks_x)
-    rows = grid[y0] * (1 - wy)[:, None] + grid[y1] * wy[:, None]
-    spread = rows[:, x0] * (1 - wx)[None, :] + rows[:, x1] * wx[None, :]
-    return np.where(spread > 1.0, 1.0 / (spread ** STRENGTH * (1.0 + margin)), 1.0).astype(np.float32)
+    for top in range(0, height, band_rows):
+        band = slice(top, top + band_rows)
+        rows = grid[y0[band]] * (1 - wy[band, None]) + grid[y1[band]] * wy[band, None]
+        spread = rows[:, x0] * (1 - wx)[None, :] + rows[:, x1] * wx[None, :]
+        correction = np.where(spread > 1.0, 1.0 / (spread ** STRENGTH * (1.0 + margin)), 1.0).astype(np.float32)
+        current[band, :, :3] *= correction[..., None]
 
 
 def encode_within_ceiling(
@@ -132,6 +137,7 @@ def encode_within_ceiling(
     notes: list[str] | None = None,
     *,
     encoding_allowance: float = 0.0,
+    correct_in_place: bool = False,
 ) -> T:
     """Encode, check every decoded pixel, and correct only where it overshot.
 
@@ -141,6 +147,8 @@ def encode_within_ceiling(
     Initial encodes within ``encoding_allowance`` are unchanged. Corrections
     aim at the target itself; only the final round may use the allowance.
     An over-allowance or invalid delivery is never returned as successful.
+    Only a caller that owns a private writable render may opt into correction
+    in place, and its encoder must return a separate delivery.
     """
     current = hdr_image
     delivery = encode(current)
@@ -164,7 +172,8 @@ def encode_within_ceiling(
                 f"HDR peak remains {peak:.3f} nits, above the {ceiling:g}-nit target after local correction; "
                 "no file was delivered."
             )
-        ratio = decoded / np.float32(ceiling)
-        current = current.copy()
-        current[..., :3] *= _correction(ratio, MARGINS[attempt])[..., None]
+        if not correct_in_place:
+            current = current.copy()
+        _correct_bands(current, decoded, ceiling, MARGINS[attempt])
+        del decoded
         delivery = encode(current)

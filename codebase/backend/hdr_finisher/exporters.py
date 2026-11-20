@@ -671,7 +671,7 @@ def _write_avif_gainmap_once(staged_output, hdr_image, sdr_image, settings, refe
         )
         timings_ms["encode"] = round((perf_counter() - started) * 1000.0, 3)
 
-def write_jpeg_gainmap_renditions(staged_output, hdr_image, sdr_image, settings, reference_white_nits=203, *, ultrahdr_app=None, exif_payload=None, ceiling_nits=None, encoding_allowance=0.0, notes=None, photo_rect=None):
+def write_jpeg_gainmap_renditions(staged_output, hdr_image, sdr_image, settings, reference_white_nits=203, *, ultrahdr_app=None, exif_payload=None, ceiling_nits=None, encoding_allowance=0.0, notes=None, photo_rect=None, correct_in_place=False):
     """Encode finished renditions with the same writer as JPEG export.
 
     The decoded peak is checked with the selected encoding allowance (hdr_ceiling).
@@ -686,7 +686,7 @@ def write_jpeg_gainmap_renditions(staged_output, hdr_image, sdr_image, settings,
         return Path(staged_output)
     encode_within_ceiling(hdr_image, reference_white_nits, encode,
         lambda written: decoded_channel_nits(written, "jpeg_ultrahdr"), ceiling_nits, notes,
-        encoding_allowance=encoding_allowance)
+        encoding_allowance=encoding_allowance, correct_in_place=correct_in_place)
 
 
 def _write_jpeg_gainmap_once(staged_output, hdr_image, sdr_image, settings, reference_white_nits=203, *, ultrahdr_app=None, exif_payload=None, photo_rect=None):
@@ -828,6 +828,7 @@ class JPEGUltraHDRExportBackend(ExportBackend):
             )
 
         scratch = ExitStack()
+        strip_outputs: list[np.memmap] = []
 
         def allocate_output(shape):
             from .config import APP_DATA_DIR
@@ -837,6 +838,7 @@ class JPEGUltraHDRExportBackend(ExportBackend):
             scratch.callback(release)
             output = np.memmap(handle, mode="r+", shape=shape, dtype=np.float32)
             scratch.callback(output._mmap.close)
+            strip_outputs.append(output)
             return output
 
         def prepare() -> _PreparedExport:
@@ -862,11 +864,15 @@ class JPEGUltraHDRExportBackend(ExportBackend):
             photo_rect = layout.photo if layout is not None and layout.inset else None
 
             def write(staged_output: Path) -> None:
+                owns_hdr = any(hdr_image is output for output in strip_outputs)
+                if owns_hdr:
+                    hdr_image.setflags(write=True)
                 write_jpeg_gainmap_renditions(staged_output, hdr_image, sdr_image, settings,
                     getattr(session, "hdr_reference_white_nits", 203), ultrahdr_app=ultrahdr_app,
                     exif_payload=None,
                     ceiling_nits=_peak_ceiling(settings, finishing_adjustments),
-                    encoding_allowance=_peak_allowance(finishing_adjustments), notes=notes, photo_rect=photo_rect)
+                    encoding_allowance=_peak_allowance(finishing_adjustments), notes=notes, photo_rect=photo_rect,
+                    correct_in_place=owns_hdr)
 
             return _PreparedExport(
                 ".ultrahdr.tmp.jpg",
