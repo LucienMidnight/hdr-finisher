@@ -262,7 +262,7 @@ async function setDenoiseEnabled(enabled) {
     const rendered = await renderGpuDraft(lane, { longEdge });
     if (!isCurrent()) return;
     if (rendered === false && lane === state.currentView && !transientGpuRefusal()) {
-      denoiseRetryError(lane, "The GPU could not draw the denoised preview.");
+      if (!runtime.microCpu) denoiseRetryError(lane, "The GPU could not draw the denoised preview.");
       await renderPreviewForLane(lane, true, longEdge, { denoiseFallback: true });
       return;
     }
