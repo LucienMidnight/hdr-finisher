@@ -32,6 +32,7 @@ GRAIN_TRIAL_ENV = "HDR_FINISHER_GPU_GRAIN_DELIVERY"
 STREAMED_TRIAL_ENV = "HDR_FINISHER_GPU_STREAMED_DELIVERY"
 STREAMED_HOST_BYTES = 160 * 1024**2
 STREAMED_WRITE_ROWS = 32
+CLEAN_LARGE_SDR_DEFAULT_MAX_PIXELS = 5202 * 3464
 _sessions = {}
 _borrowed_sources = {}
 _router_pid = None
@@ -119,12 +120,12 @@ def grain_delivery_enabled(frame):
 
 
 def streamed_delivery_enabled(frame, settings, adjustments):
+    from .exporters import denoise_settings_for_export
     from .finishing import resolve_output_dimensions
-    from .models import GeometryAdjustments
+    from .models import GeometryAdjustments, PreviewKind
     from .photo_framing import delivery_layout
 
-    if (os.environ.get(STREAMED_TRIAL_ENV) != "1" or
-            settings.format not in {"jpeg_ultrahdr", "sdr_jpeg"} or
+    if (settings.format not in {"jpeg_ultrahdr", "sdr_jpeg"} or
             adjustments.shared.geometry != GeometryAdjustments() or
             settings.output_finishing.sharpening != "off" or getattr(frame, "raw_development", None)):
         return False
@@ -132,6 +133,12 @@ def streamed_delivery_enabled(frame, settings, adjustments):
     if watermark.mode != "off" and watermark.opacity and (watermark.text.strip() or watermark.mode == "rendition_test"):
         return False
     height, width = frame.image.shape[:2]
+    if os.environ.get(STREAMED_TRIAL_ENV) != "1":
+        if settings.format != "sdr_jpeg" or width * height > CLEAN_LARGE_SDR_DEFAULT_MAX_PIXELS:
+            return False
+        lane = denoise_settings_for_export(frame, PreviewKind.SDR)
+        if lane is None or lane.controls.method != "clean_grain" or lane.controls.splotch_size != "large":
+            return False
     reference = getattr(frame, "sdr_reference_image", None)
     return (frame.image.dtype == np.float32
             and (reference is None or reference.dtype == np.float32)

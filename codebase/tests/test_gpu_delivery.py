@@ -198,6 +198,25 @@ def _frame(priority=20):
         adjustments=AdjustmentState(), denoise=DenoiseDocumentSettings(), delivery_priority=priority)
 
 
+@pytest.mark.parametrize("format,method,size,amount,dimensions,expected", [
+    ("sdr_jpeg", "clean_grain", "large", .75, (3464, 5202), True),
+    ("sdr_jpeg", "clean_grain", "large", .75, (3465, 5202), False),
+    ("sdr_jpeg", "clean_grain", "large", 0, (3464, 5202), False),
+    ("sdr_jpeg", "clean_grain", "small", .75, (3464, 5202), False),
+    ("sdr_jpeg", "fine_grain", "large", .75, (3464, 5202), False),
+    ("sdr_jpeg", "micro_grain", "large", .75, (3464, 5202), False),
+    ("jpeg_ultrahdr", "clean_grain", "large", .75, (3464, 5202), False),
+])
+def test_streamed_delivery_default_selection(monkeypatch, format, method, size, amount, dimensions, expected):
+    monkeypatch.delenv(gpu_delivery.STREAMED_TRIAL_ENV, raising=False)
+    frame = _frame()
+    frame.image = np.broadcast_to(np.float32(.18), (*dimensions, 3))
+    frame.denoise = DenoiseDocumentSettings(sdr={"enabled": True,
+        "controls": {"method": method, "splotch_size": size, "amount": amount}})
+    settings = ExportSettings(format=format)
+    assert gpu_delivery.streamed_delivery_enabled(frame, settings, frame.adjustments) is expected
+
+
 @pytest.mark.parametrize("same_process", [True, False])
 @pytest.mark.parametrize("format,lanes", [("jpeg_ultrahdr", ("hdr", "sdr")), ("sdr_jpeg", ("sdr",))])
 def test_streamed_delivery_returns_encoder_rgb_without_shared_arrays(tmp_path, monkeypatch, same_process, format, lanes):
@@ -206,13 +225,19 @@ def test_streamed_delivery_returns_encoder_rgb_without_shared_arrays(tmp_path, m
 
     app = _broker(tmp_path, monkeypatch)
     monkeypatch.setattr(config, "APP_DATA_DIR", tmp_path)
-    monkeypatch.setenv(gpu_delivery.STREAMED_TRIAL_ENV, "1")
+    if format == "jpeg_ultrahdr":
+        monkeypatch.setenv(gpu_delivery.STREAMED_TRIAL_ENV, "1")
+    else:
+        monkeypatch.delenv(gpu_delivery.STREAMED_TRIAL_ENV, raising=False)
     monkeypatch.setenv("HDR_FINISHER_DESKTOP_SECRET", "delivery-test-secret")
     if not same_process:
         monkeypatch.setattr(gpu_delivery, "_router_pid", None)
     monkeypatch.setattr(app_memory, "snapshot", lambda: {"totalBytes": 0, "reservedBytes": 0})
     monkeypatch.setattr(gpu_delivery.DeliveryMemory, "allocate", lambda *args: pytest.fail("Allocated shared pixels"))
     frame = _frame()
+    if format == "sdr_jpeg":
+        frame.denoise = DenoiseDocumentSettings(sdr={"enabled": True,
+            "controls": {"method": "clean_grain", "splotch_size": "large"}})
     input_pixels = np.arange(96, dtype="<f4").reshape(4, 6, 4) / 100
     hdr_pixels = input_pixels.copy()
     hdr_pixels[0, 0, :3] = 12
