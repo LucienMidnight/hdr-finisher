@@ -24,7 +24,7 @@ from .binaries import resolve_binary
 from .subprocess_utils import hidden_window_options
 from .color import acescg_to_linear_bt2020
 from .color_context import RenderColorContext, scene_linear_to_nits
-from . import denoise_adaptive
+from . import denoise_adaptive, gainmap_filter
 from .config import EXPORTS_DIR, SAMPLES_DIR
 from .finishing import apply_output_finishing
 from .peak_accuracy import measurement_warnings
@@ -1259,7 +1259,11 @@ def _split_ultrahdr_jpegs(payload: bytes) -> tuple[bytes, bytes]:
 
 
 def _box_blur_float(values: np.ndarray, radius: int) -> np.ndarray:
-    """Small float box blur without adding a SciPy/OpenCV runtime dependency."""
+    """Ordered float32 box blur with edge padding."""
+    if radius == 2:
+        filtered = gainmap_filter.box5(values)
+        if filtered is not None:
+            return filtered
     window = radius * 2 + 1
     horizontal_padding = np.pad(values, ((0, 0), (radius, radius)), mode="edge")
     horizontal_sum = np.pad(

@@ -303,6 +303,33 @@ def test_ultrahdr_gain_map_denoise_reduces_smooth_region_noise_and_preserves_edg
     assert after_edge > before_edge * 0.9
 
 
+def test_native_gain_map_filter_matches_the_missing_build_fallback(monkeypatch, tmp_path):
+    from hdr_finisher import gainmap_filter
+
+    native = gainmap_filter._load_box5()
+    if native is None:
+        pytest.skip("Optional gain-map filter build is unavailable")
+    random = np.random.default_rng(635)
+    planes = [random.standard_normal(shape, dtype=np.float32) for shape in ((1, 1), (2, 7), (9, 2), (59, 133))]
+    planes.extend((planes[-1][:, ::-2], np.full((3, 9), -0.0, dtype=np.float32)))
+    primary, gain = io.BytesIO(), io.BytesIO()
+    for buffer in (primary, gain):
+        Image.fromarray(random.integers(0, 256, (49, 41, 3), dtype=np.uint8)).save(buffer, format="JPEG")
+    inputs = (primary.getvalue(), gain.getvalue())
+    native_planes = [_box_blur_float(plane, 2) for plane in planes]
+    native_jpeg = _denoised_ultrahdr_gain_map_jpeg(*inputs, quality=90, stripe_rows=17)
+    gainmap_filter._load_box5.cache_clear()
+    try:
+        with monkeypatch.context() as patch:
+            patch.setattr(gainmap_filter, "BIN_DIR", tmp_path)
+            assert gainmap_filter._load_box5() is None
+            for plane, native_plane in zip(planes, native_planes):
+                np.testing.assert_array_equal(native_plane.view(np.uint32), _box_blur_float(plane, 2).view(np.uint32))
+            assert native_jpeg == _denoised_ultrahdr_gain_map_jpeg(*inputs, quality=90, stripe_rows=17)
+    finally:
+        gainmap_filter._load_box5.cache_clear()
+
+
 def test_parallel_gain_map_channels_match_serial_filter_exactly() -> None:
     random = np.random.default_rng(31)
     guide = random.random((41, 57), dtype=np.float32)
