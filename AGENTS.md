@@ -492,6 +492,8 @@ module PRD for the area you touch, then `docs/technical/code-map.md`.
   cache or size.
 - `docs/product/modules/grade.md`: the Grade editor (tools, tone, local
   adjustments, retouch, HSL).
+- Denoise work starts by reading `docs/product/modules/denoise.md`. Add new
+  methods tried, problems found and Steve's decisions there.
 - `docs/product/modules/preview-and-gpu.md`: GPU preview, render planning,
   VRAM budgets, tiles.
 - `docs/product/modules/export-and-proof.md`: export formats, metadata,

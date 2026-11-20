@@ -1,5 +1,7 @@
 # Denoising v2: Wavelet Cache Implementation Contract
 
+Start with the [Denoise module PRD](../product/modules/denoise.md) for current behaviour, decisions, trial history and open work.
+
 **Status:** Approved implementation direction. Phases 0 and 1 are accepted on `feature/denoising`. Phase 2 WebGPU analysis/resolve and Phase 3 UI/document integration are implemented and pass the measured correctness, isolation, viewport, and packaged-Electron timing gates described below.
 
 **The Phase 2 memory stop gate is closed, September 20, 2026.** It was open because sections 7 and 10 required an explicit per-device GPU byte budget that this contract did not define and that the browser WebGPU API does not expose. The [Stable Exact Preview sprint](../product/archive/Stable_Exact_Full_Preview_Sprint_PRD_2026-09-19.md) supplied the missing piece in its Phase 2: a user-controllable `maximumGpuMemoryGiB` budget with an `auto` default, an admission planner that enumerates every resource a render would hold and refuses Direct execution that does not fit, and categorized resident/transient/cached/peak diagnostics. The budget is a *configured* one rather than a driver heap reading, which is the honest form of the requirement — the API still does not expose heap usage, and nothing here pretends otherwise.

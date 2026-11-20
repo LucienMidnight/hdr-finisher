@@ -12,6 +12,8 @@ the originals are available.
 
 ## November 19, 2026: Denoise zoom and delivery memory
 
+Start with the [Denoise module PRD](denoise.md) for current behaviour, decisions, trial history and open work.
+
 Native Denoise zoom draws a sharp patch over a display-sized picture of
 the whole photo. During a drag or Navigate jump, newly exposed areas show
 the softer picture immediately. A completed patch takes over only if it
