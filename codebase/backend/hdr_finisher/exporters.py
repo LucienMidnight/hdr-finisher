@@ -39,7 +39,13 @@ from .jpegxl import (
     verify_lossless_jpegxl,
 )
 from .test_pattern import build_hdr_test_pattern
-from .hdr_ceiling import ENCODING_ALLOWANCE, decoded_channel_nits, delivery_ceiling_nits, encode_within_ceiling
+from .hdr_ceiling import (
+    ENCODING_ALLOWANCE,
+    decoded_channel_nits,
+    decoded_ultrahdr_ceiling,
+    delivery_ceiling_nits,
+    encode_within_ceiling,
+)
 
 
 SDR_WHITE_NITS = 203.0
@@ -694,7 +700,7 @@ def write_jpeg_gainmap_renditions(staged_output, hdr_image, sdr_image, settings,
             return Path(staged_output)
 
         encode_within_ceiling(hdr_image, reference_white_nits, encode,
-            lambda written: decoded_channel_nits(written, "jpeg_ultrahdr"), ceiling_nits, notes,
+            lambda written: decoded_ultrahdr_ceiling(written, ceiling_nits), ceiling_nits, notes,
             encoding_allowance=encoding_allowance, correct_in_place=correct_in_place)
 
 

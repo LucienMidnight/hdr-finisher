@@ -87,6 +87,48 @@ def test_disk_backed_jpeg_correction_matches_whole_image_over_multiple_retries(t
     np.testing.assert_array_equal(output, expected)
 
 
+@pytest.mark.parametrize("orientation", [1, 6])
+@pytest.mark.parametrize("use_base_color_space", [False, True])
+def test_ultrahdr_decoded_peak_and_correction_match_the_per_pixel_route(
+    monkeypatch, tmp_path, orientation, use_base_color_space,
+):
+    from types import SimpleNamespace
+    from PIL import Image
+    from hdr_finisher import gainmap_decoders
+
+    random = np.random.default_rng(793)
+    width, height = 35, 261
+    rgba = random.random((height, width, 4), dtype=np.float32).astype("<f2")
+    rgba[127, 15, :3] = [4.1, 5.5, 2.4]
+    rgba[-1, -1, :3] = [5.2, 1.9, 4.7]
+    raw_path = tmp_path / "decoded.raw"
+    rgba.tofile(raw_path)
+    jpeg = tmp_path / "primary.jpg"
+    exif = Image.Exif()
+    exif[274] = orientation
+    Image.new("RGB", (width, height)).save(jpeg, exif=exif.tobytes())
+    monkeypatch.setattr(gainmap_decoders, "inspect_jpeg_gain_map",
+                        lambda path: SimpleNamespace(use_base_color_space=use_base_color_space))
+    monkeypatch.setattr(gainmap_decoders, "reconstructed_ultrahdr_rgba",
+                        lambda *args: raw_path.open("rb"))
+
+    full = hdr_ceiling.decoded_channel_nits(jpeg, "jpeg_ultrahdr")
+    reduced = hdr_ceiling.decoded_ultrahdr_ceiling(jpeg, 1000)
+    assert full.shape == reduced.shape
+    if orientation == 1:
+        assert reduced.peak == float(full.max()) > 1010
+        assert reduced.block_maxima.nbytes < full.nbytes
+    else:
+        np.testing.assert_array_equal(reduced, full)
+
+    initial = random.random((*full.shape, 4), dtype=np.float32)
+    for margin in hdr_ceiling.MARGINS:
+        expected, actual = initial.copy(), initial.copy()
+        hdr_ceiling._correct_bands(expected, full, 1000, margin)
+        hdr_ceiling._correct_bands(actual, reduced, 1000, margin)
+        np.testing.assert_array_equal(actual, expected)
+
+
 def test_a_clean_codec_is_encoded_once_and_left_alone():
     calls = []
     original = scene()
@@ -194,6 +236,7 @@ def test_only_active_highlights_get_the_encoding_allowance(monkeypatch, tmp_path
     def decoded(*args):
         return np.full((96, 128), 10050.0, np.float32)
     monkeypatch.setattr(exporters, "decoded_channel_nits", decoded)
+    monkeypatch.setattr(exporters, "decoded_ultrahdr_ceiling", decoded)
     monkeypatch.setattr(exporters, "_decoded_jpegxl_channel_nits", decoded)
     adjustments = AdjustmentState()
     adjustments.hdr.highlight_section_enabled = highlights
