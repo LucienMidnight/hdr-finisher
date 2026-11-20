@@ -532,15 +532,15 @@
       return true;
     }
 
-    notePan(lane) {
+    notePan(lane, delayMs = this.panDelayMs) {
       if (!this.followUpsEnabled()) return false;
       if (!this.panCandidate(lane)) return false;
       this.cancelPan(lane);
       const st = this.laneState(lane);
       st.panTimer = this.setTimer(() => {
         st.panTimer = null;
-        void this.requestPanRefinement(lane);
-      }, this.panDelayMs);
+        void this.requestPanRefinement(lane, delayMs);
+      }, delayMs);
       return true;
     }
 
@@ -561,7 +561,7 @@
      * already holding the device instead of superseding it, and re-arms
      * itself while that work finishes.
      */
-    async requestPanRefinement(lane) {
+    async requestPanRefinement(lane, delayMs = this.panDelayMs) {
       if (!this.followUpsEnabled()) return false;
       if (!this.panCandidate(lane)) return false;
       const st = this.laneState(lane);
@@ -569,8 +569,8 @@
         if (st.panTimer === null) {
           st.panTimer = this.setTimer(() => {
             st.panTimer = null;
-            void this.requestPanRefinement(lane);
-          }, this.panDelayMs);
+            void this.requestPanRefinement(lane, delayMs);
+          }, delayMs);
         }
         return false;
       }

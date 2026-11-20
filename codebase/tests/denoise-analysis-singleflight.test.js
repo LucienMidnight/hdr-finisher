@@ -14,7 +14,7 @@ test('Denoise method controls recover after a rejected save, missing GPU, or exp
       persistDenoiseSettings: async () => scenario !== 'save', refinementProxyLongEdge: () => 1600,
       geometrySignature: () => '{}', denoiseRendererControls: controls => controls,
       renderPreviewForLane: async () => true });
-    vm.runInContext(declarations('gradeSourceIdentity', 'denoiseRetryError', 'recalculateDenoise', 'recalculateDenoiseAnalysis', 'commitDenoiseControl'), context);
+    vm.runInContext(declarations('gradeFineGrainGpuTrial', 'gradeSourceIdentity', 'denoiseRetryError', 'recalculateDenoise', 'recalculateDenoiseAnalysis', 'commitDenoiseControl'), context);
     await context.commitDenoiseControl('method', 'clean_grain');
     assert.equal(runtime.status, 'error', scenario);
     assert.match(runtime.error, /try|retry|again/i, scenario);
@@ -31,7 +31,7 @@ test('Match and Undo select separate Denoise preparations at the same SDR size',
       analyzeDenoiseProxy: async (...args) => { identities.push(args[5]); return true; } } };
   const context = vm.createContext({ state, console, renderDenoiseControls: () => {},
     refinementProxyLongEdge: () => 1600, geometrySignature: () => '{}', denoiseRendererControls: controls => controls });
-  vm.runInContext(declarations('gradeSourceIdentity', 'recalculateDenoiseAnalysis'), context);
+  vm.runInContext(declarations('gradeFineGrainGpuTrial', 'gradeSourceIdentity', 'recalculateDenoiseAnalysis'), context);
   await context.recalculateDenoiseAnalysis('sdr', { renderAfter: false });
   state.adjustments.sdr.use_authored_base = false;
   await context.recalculateDenoiseAnalysis('sdr', { renderAfter: false });

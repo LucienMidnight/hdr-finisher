@@ -370,10 +370,12 @@ test("the pan follow-up waits for busy work, re-arms, and re-arms the catch-up",
   coordinator.cancelCatchUp("hdr");
   const busySubmit = coordinator.submit({ lane: "hdr", reason: "settle", longEdge: 1000 });
   await flush();
-  coordinator.notePan("hdr");
+  coordinator.notePan("hdr", 70);
+  assert.equal(timers.lastDelay(), 70);
   timers.fireAll();
   await flush();
   assert.equal(coordinator.panPending("hdr"), true, "the follow-up re-arms while the device is busy");
+  assert.equal(timers.lastDelay(), 70);
   assert.equal(dispatches.length, 2, "the pan pass did not supersede the busy render");
 
   dispatch.queue[1].resolve({ rendered: true, execution: "tiled" });

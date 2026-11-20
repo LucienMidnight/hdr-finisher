@@ -1,6 +1,18 @@
 (function () {
   // Local hue masks: selection pixels per band; larger frames are banded.
   const HUE_MASK_BAND_PIXELS = 4 * 1024 * 1024;
+  const FINE_GRAIN_FIT_CACHE_SIZE = 4;
+  const FINE_GRAIN_REDUCED_CACHE_SIZE = 2;
+  const FINE_GRAIN_HDR_NITS_ROUNDING_GUARD = 1 - 2 ** -22;
+
+  function fineGrainPixelControls(controls, endpoints = false) {
+    const { grainEvenness, colorSplotches, splotchSize, ...core } = controls;
+    return endpoints ? core : { ...core, grainEvenness };
+  }
+
+  function fineGrainStripUpload(maxRows) {
+    return { maxRows, slots: 2, chunkBytes: 8 * 1024 * 1024, ring: [], retired: [] };
+  }
   function maskHasHueLeaf(expression) {
     if (!expression) return false;
     if (expression.operator === "leaf") return expression.leaf?.type === "hue_range";
@@ -809,7 +821,9 @@
     resetSession(sessionId = null) {
       this.resourceGeneration += 1;
       this.denoisePreparationController?.abort();
-      this.fineGrainFit = null;
+      this.fineGrainFits = new Map();
+      this.releaseFineGrainReduced();
+      this.fineGrainReduced = new Map();
       this.fineGrainFailedSources = new Set();
       this.releaseHslSelection();
       this.denoiseModelWarm = null;
@@ -919,13 +933,13 @@
       // The swap chain still shows the last completed picture. Its backing
       // render target, source proxies and resolved tiles are no longer needed
       // for the next processing size.
-      const target = scaleChanged ? this.presentationTarget : null;
+      const target = scaleChanged || (regionOnly && !this.presentationTarget?.region) ? this.presentationTarget : null;
       if (target) {
         this.presentationTarget = null;
         this.gpuAllocator?.unregister(target.allocatorEntry);
         this.destroyAfterActiveRenders(() => target.texture.destroy());
       }
-      if (scaleChanged) {
+      if (scaleChanged && !this.denoiseSourceSelector?.cache?.grain?.gpu) {
         this.dropDenoiseTiles();
         this.denoiseTileIdentity = null;
       }
@@ -1127,6 +1141,7 @@
         denoiseEvidenceBytes,
         denoiseReconstructionScratchBytes,
         denoiseResolvedBytes,
+        fineGrainReducedBytes: [...(this.fineGrainReduced?.values() || [])].reduce((total, entry) => total + entry.byteSize, 0),
         parameterBufferBytes,
         presentationSurfaceBytes,
       };
@@ -2694,7 +2709,7 @@
         usage: GPUTextureUsage.COPY_DST | GPUTextureUsage.COPY_SRC
           | (endpoints ? GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.STORAGE_BINDING : 0),
       });
-      entry = { texture, width, height, byteSize: width * height * 8 };
+      entry = { texture, width, height, byteSize: width * height * 8, endpoints };
       this.denoiseTiles.set(key, entry);
       this.denoiseTileCounters.misses += 1;
       return { ...entry, hit: false };
@@ -4101,15 +4116,16 @@
       // new zoom level changes the state every pass, and keeping a set of tiles
       // for each would fill the budget with tiles nothing will read again.
       const cacheGrainEndpoints = adaptiveDenoise && denoiseSelector.cache.grain?.gpu && options.boundedPresentation;
-      const denoiseTileControls = cacheGrainEndpoints ? { ...denoiseControls, grainEvenness: undefined } : denoiseControls;
+      const denoiseTileControls = cacheGrainEndpoints ? fineGrainPixelControls(denoiseControls, true) : denoiseControls;
       const denoiseTileIdentity = adaptiveDenoise && !noiseView && !measureOnly
-        ? `${denoiseSelector.cache.identity}|${JSON.stringify(denoiseTileControls)}`
+        ? `${cacheGrainEndpoints ? `${denoiseSelector.cache.grain.fitKey}|${proxy.width}x${proxy.height}|${proxy.workingSpace}`
+          : denoiseSelector.cache.identity}|${JSON.stringify(denoiseTileControls)}`
         : null;
       const denoiseStateSeen = denoiseTileIdentity !== null && this.denoiseTileIdentity === denoiseTileIdentity;
       if (denoiseTileIdentity !== null && !denoiseStateSeen) {
         const grainToken = denoiseSelector.cache.grain?.token;
         this.dropDenoiseTiles([...this.denoiseTiles].filter(([, entry]) => (
-          !entry.grainToken || entry.grainToken !== grainToken
+          (!entry.grainToken || entry.grainToken !== grainToken) && !entry.endpoints
         )).map(([key]) => key));
         this.denoiseTileIdentity = denoiseTileIdentity;
       }
@@ -5321,6 +5337,9 @@
         );
         params[GPU_PARAMS.HIGHLIGHT_ANCHOR] = measuredPeak;
       }
+      if (sourceOptions?.fineGrainGrade && lane === "hdr" && params[GPU_PARAMS.HIGHLIGHT_MODE] > 0) {
+        params[GPU_PARAMS.HIGHLIGHT_TARGET_NITS] *= FINE_GRAIN_HDR_NITS_ROUNDING_GUARD;
+      }
       const overlayIndex = maskOverlay?.localId
         ? activeLocals.findIndex((local) => local.id === maskOverlay.localId)
         : -1;
@@ -5379,6 +5398,7 @@
           beforeDeliverySubmit: sourceOptions?.beforeDeliverySubmit,
           tileBatchSize: sourceOptions?.delivery ? 4 : undefined,
           tileSize: sourceOptions?.tileSize,
+          minimumRoiFraction: sourceOptions?.minimumRoiFraction,
           serial,
           viewport: sourceOptions?.viewport || null,
           // The app's own passes reach the encoder here, not through
@@ -6126,14 +6146,15 @@
       return this.fineGrainResizePipelines;
     }
 
-    releaseFineGrainReduced(selector) {
-      const entry = selector?.cache?.fineGrainReduced;
-      if (!entry) return;
-      selector.cache.fineGrainReduced = null;
-      this.destroyAfterActiveRenders(() => {
-        entry.texture.destroy();
+    releaseFineGrainReduced(key) {
+      const cache = this.fineGrainReduced;
+      for (const id of key === undefined ? [...(cache?.keys() || [])] : [key]) {
+        const entry = cache?.get(id);
+        if (!entry) continue;
+        cache.delete(id);
         this.gpuAllocator?.unregister(entry.allocatorEntry);
-      });
+        this.destroyAfterActiveRenders(() => entry.texture.destroy());
+      }
     }
 
     async ensureFineGrainReduced(proxy, revision, isCurrent) {
@@ -6142,9 +6163,16 @@
       const grain = selector.cache.grain;
       if (!grain?.gpu || (proxy.width === grain.width && proxy.height === grain.height)) return null;
       const controls = selector.controls;
-      const key = JSON.stringify([proxy.identity, grain.fitKey, controls]);
-      const cached = selector.cache.fineGrainReduced;
-      if (cached?.key === key) return cached;
+      const key = JSON.stringify([grain.fitKey, proxy.width, proxy.height, proxy.workingSpace, fineGrainPixelControls(controls)]);
+      const cached = this.fineGrainReduced.get(key);
+      if (cached) {
+        this.fineGrainReduced.delete(key);
+        this.fineGrainReduced.set(key, cached);
+        this.gpuAllocator?.touch(cached.allocatorEntry);
+        this.recordStage("fine-grain-reduced-hit", { lane: proxy.lane, width: proxy.width, height: proxy.height });
+        return { ...proxy, ...cached, bindGroups: new Map() };
+      }
+      this.recordStage("fine-grain-reduced-miss", { lane: proxy.lane, width: proxy.width, height: proxy.height });
       const current = () => isCurrent() && selector === this.denoiseSourceSelector && selector.controls === controls;
       return this.resizeNativeFineGrain(proxy, revision, selector, current, key);
     }
@@ -6155,6 +6183,21 @@
       this.fineGrainFailedSources.add(grain.sourceKey);
       this.recordStage("fine-grain-fallback", { reason: error.message });
       return true;
+    }
+
+    reserveFineGrain(kind, allocations) {
+      const bytes = Object.values(allocations).reduce((total, value) => total + value, 0);
+      const resident = this.resourceMemorySnapshot().resident;
+      if (Math.max(resident.totalBytes, this.gpuAllocator?.usedBytes() || 0) + bytes > 0.9 * this.memoryBudgetBytes()) {
+        throw new Error(`Insufficient graphics memory for ${kind}.`);
+      }
+      this.recordStage("fine-grain-reservation", { kind, bytes, allocations, resident: resident.categories });
+      return this.gpuAllocator?.reserve({ kind, bytes });
+    }
+
+    async releaseFineGrainStrip(upload) {
+      await sourceTransport().releaseStaging(this, upload.ring, upload.retired);
+      upload.texture?.destroy();
     }
 
     async resizeNativeFineGrain(proxy, revision, selector, current, key) {
@@ -6168,12 +6211,14 @@
       const stride = Math.max(1, Math.floor(ADAPTIVE_DENOISE_TILE / ratio));
       const resizeMargin = 3 * box + 1;
       const maxRows = Math.min(height, Math.ceil(stride * ratio) + 2 * resizeMargin + 2);
-      const bytes = width * ((maxRows + 2 * ADAPTIVE_DENOISE_MARGIN) * 16 + maxRows * 8)
-        + proxy.width * (maxRows * 48 + proxy.height * 8) + 4 * this.maxSourceChunkBytes;
-      if (bytes + this.resourceMemorySnapshot().resident.totalBytes > 0.9 * this.memoryBudgetBytes()) {
-        throw new Error("Insufficient graphics memory for reduced Fine Grain.");
-      }
-      const reservation = this.gpuAllocator?.reserve({ kind: "fine-grain-resize", bytes });
+      const stripUpload = fineGrainStripUpload(maxRows + 2 * ADAPTIVE_DENOISE_MARGIN);
+      const reservation = this.reserveFineGrain("fine-grain-resize", {
+        sourceStrip: width * stripUpload.maxRows * 8,
+        filteredStrip: width * maxRows * 8,
+        resizeScratch: proxy.width * maxRows * 48,
+        reducedPicture: proxy.width * proxy.height * 8,
+        uploadAndResponses: 2 * stripUpload.slots * stripUpload.chunkBytes,
+      });
       const controls = selector.controls;
       const weights = [controls.amount, controls.luminance, controls.colorNoise, controls.detailRecovery];
       const sizes = adaptiveResolveOptions(controls);
@@ -6210,7 +6255,7 @@
           const top = Math.max(0, y - ADAPTIVE_DENOISE_MARGIN);
           const source = await this.loadProxyRegion(proxy.sessionId, proxy.lane, grain.nativeEdge, proxy.geometrySignature,
             revision, proxy.sourceIdentity, null, { x: 0, y: top, width, height: bottom + ADAPTIVE_DENOISE_MARGIN - top },
-            { isCurrent: current, transient: true });
+            { isCurrent: current, transient: true, stripUpload });
           if (!source) throw Error("The native Fine Grain source is not available for reduction.");
           let encoded;
           try {
@@ -6234,19 +6279,22 @@
             await device.queue.onSubmittedWorkDone();
           } finally {
             encoded?.paramBuffer.destroy();
-            source.texture.destroy();
           }
         }
         assertCurrent();
-        const entry = { ...proxy, ...result, key, bindGroups: new Map() };
-        entry.allocatorEntry = this.gpuAllocator?.register({ kind: "fine-grain-reduced", bytes: result.byteSize, pinned: true });
-        this.releaseFineGrainReduced(selector);
-        selector.cache.fineGrainReduced = entry;
+        const entry = { ...result };
+        if (this.fineGrainReduced.size >= FINE_GRAIN_REDUCED_CACHE_SIZE) {
+          this.releaseFineGrainReduced(this.fineGrainReduced.keys().next().value);
+        }
+        entry.allocatorEntry = this.gpuAllocator?.register({ kind: "fine-grain-reduced", key, bytes: result.byteSize,
+          evict: () => this.releaseFineGrainReduced(key) });
+        this.fineGrainReduced.set(key, entry);
         owned.shift();
-        this.recordStage("fine-grain-reduced", { durationMs: performance.now() - start, width, height, bytes });
-        return entry;
+        this.recordStage("fine-grain-reduced", { durationMs: performance.now() - start, width, height });
+        return { ...proxy, ...entry, bindGroups: new Map() };
       } finally {
         owned.forEach(resource => resource.destroy());
+        await this.releaseFineGrainStrip(stripUpload);
         if (reservation) this.gpuAllocator.releaseReservation(reservation);
       }
     }
@@ -6255,16 +6303,18 @@
       const started = performance.now();
       const grainFit = await this.ensureGrainFitPipeline();
       const device = this.device;
-      const scratchBytes = 8 * ADAPTIVE_DENOISE_SCRATCH ** 2 * 16;
       const margin = 17 + GRAIN_DENOISE_RADIUS;
       const rows = ADAPTIVE_DENOISE_TILE;
-      const bytes = scratchBytes + native * (rows + 2 * margin) * 16 + 4 * this.maxSourceChunkBytes;
-      if (native > 8192 || bytes + this.resourceMemorySnapshot().resident.totalBytes > 0.9 * this.memoryBudgetBytes()) {
-        throw new Error("Insufficient graphics memory for Fine Grain calibration.");
-      }
-      const reservation = this.gpuAllocator?.register({ kind: "fine-grain-fit", bytes, pinned: true });
-      const adaptiveScratch = this.createAdaptiveDenoiseScratch();
-      const selector = { cache: { model, adaptiveScratch } };
+      const stripUpload = fineGrainStripUpload(rows + 2 * margin);
+      const blocks = Math.ceil(native / GRAIN_FIT_BLOCK) * Math.ceil(rows / GRAIN_FIT_BLOCK);
+      if (native > 8192) throw new Error("Fine Grain calibration exceeds the supported source size.");
+      const reservation = this.reserveFineGrain("fine-grain-fit", {
+        measurementScratch: 6 * stripUpload.maxRows ** 2 * 16,
+        sourceStrip: native * stripUpload.maxRows * 8,
+        uploadAndResponses: 2 * stripUpload.slots * stripUpload.chunkBytes,
+        partialsAndReadback: 2 * GRAIN_DENOISE_BANDS.length * blocks * 16,
+      });
+      let adaptiveScratch;
       const weights = [controls.amount, controls.luminance, controls.colorNoise, controls.detailRecovery];
       const sizes = adaptiveResolveOptions(controls);
       const totals = GRAIN_DENOISE_BANDS.map(() => [0, 0, 0, 0]);
@@ -6275,12 +6325,14 @@
       let width = null;
       let stripCount = 0;
       try {
+        adaptiveScratch = this.createAdaptiveDenoiseScratch(margin, true);
+        const selector = { cache: { model, adaptiveScratch } };
         for (let y = 0; height === null || y < height; y += rows) {
           assertCurrent();
           const top = Math.max(0, y - margin);
           const source = await this.loadProxyRegion(sessionId, lane, native, geometry, revision, sourceIdentity, null,
             { x: 0, y: top, width: width ?? native, height: y + rows + margin - top },
-            { signal, isCurrent: current, transient: true });
+            { signal, isCurrent: current, transient: true, stripUpload });
           if (!source) throw new Error("The native Fine Grain source is not available in strips.");
           let partials;
           let readback;
@@ -6322,7 +6374,6 @@
             encoded?.paramBuffer.destroy();
             readback?.destroy();
             partials?.destroy();
-            source.texture.destroy();
           }
         }
         assertCurrent();
@@ -6337,24 +6388,26 @@
           if (offset > 1 || scale < 0 || !Number.isFinite(scale)) throw new Error("Invalid GPU Fine Grain coefficients.");
           return [Math.fround(scale), Math.fround(offset)];
         });
-        this.recordStage("fine-grain-fit", { durationMs: performance.now() - started, width, height, stripCount, bytes, fit });
+        this.recordStage("fine-grain-fit", { durationMs: performance.now() - started, width, height, stripCount, fit });
         return { fit, width, height, nativeEdge: native };
       } finally {
-        Object.values(adaptiveScratch.textures).forEach(texture => texture.destroy());
-        if (reservation) this.gpuAllocator.unregister(reservation);
+        Object.values(adaptiveScratch?.textures || {}).forEach(texture => texture.destroy());
+        await this.releaseFineGrainStrip(stripUpload);
+        if (reservation) this.gpuAllocator.releaseReservation(reservation);
       }
     }
 
     /** One tile's worth of scratch, reused by every tile of every resolve. */
-    createAdaptiveDenoiseScratch() {
-      const size = ADAPTIVE_DENOISE_SCRATCH;
+    createAdaptiveDenoiseScratch(margin = ADAPTIVE_DENOISE_MARGIN, measurementOnly = false) {
+      const size = ADAPTIVE_DENOISE_TILE + 2 * margin;
       const make = (label) => this.device.createTexture({
         label,
         size: { width: size, height: size },
         format: "rgba32float",
         usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.STORAGE_BINDING,
       });
-      const names = ["current", "next", "blur", "energyRow", "energy", "noise", "sumA", "sumB"];
+      const names = ["current", "next", "blur", "energyRow", "energy", "noise"];
+      if (!measurementOnly) names.push("sumA", "sumB");
       const textures = Object.fromEntries(names.map((name) => [name, make(`adaptive-denoise-${name}`)]));
       return { textures, byteSize: names.length * size * size * 16, textureCount: names.length };
     }
@@ -6458,20 +6511,28 @@
         const fitKey = JSON.stringify([sessionId, geometrySignature, frame.sourceIdentity === "authored-sdr", native,
           repairGeneration, refresh, model, controls.amount, controls.luminance, controls.detailRecovery,
           controls.fineNoise, controls.mediumNoise]);
-        if (this.fineGrainFit?.key !== fitKey) {
+        let calibration = this.fineGrainFits.get(fitKey);
+        if (!calibration) {
           try {
-            const calibration = await this.measureFineGrain(sessionId, lane, native, geometrySignature, editRevision,
+            if (longEdge === native && this.canvas.hdrFrameRegion == null) {
+              await this.retireDenoiseZoomResources(sessionId, lane, longEdge, true);
+            }
+            if (!current()) return false;
+            calibration = await this.measureFineGrain(sessionId, lane, native, geometrySignature, editRevision,
               frame.sourceIdentity, model, controls, signal, current);
             if (!current()) return false;
-            this.fineGrainFit = { key: fitKey, calibration };
           } catch (error) {
             if (!current() || error.name === "AbortError") return false;
-            this.fineGrainFit = { key: fitKey, calibration: null };
             this.fineGrainFailedSources.add(sourceKey);
             this.recordStage("fine-grain-fallback", { reason: error.message });
           }
+        } else this.recordStage("fine-grain-fit-hit", { lane });
+        if (calibration) {
+          this.fineGrainFits.delete(fitKey);
+          this.fineGrainFits.set(fitKey, calibration);
+          if (this.fineGrainFits.size > FINE_GRAIN_FIT_CACHE_SIZE) this.fineGrainFits.delete(this.fineGrainFits.keys().next().value);
+          grain = { gpu: true, fitKey, sourceKey, ...calibration };
         }
-        if (this.fineGrainFit.calibration) grain = { gpu: true, fitKey, sourceKey, ...this.fineGrainFit.calibration };
       }
       if (experimental && !grain) {
         const url = `/api/session/${sessionId}/denoise-grain/${lane}`;
@@ -7272,7 +7333,6 @@
 
     destroyDenoiseSelector(selector) {
       if (!selector) return;
-      this.releaseFineGrainReduced(selector);
       selector.resolved?.texture?.destroy();
       for (const level of selector.cache?.levels || []) {
         for (const item of level.evidence || []) item.texture?.destroy();

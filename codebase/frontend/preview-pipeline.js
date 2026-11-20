@@ -701,8 +701,12 @@ async function renderGpuDraftInner(
     Boolean(window.matchMedia?.("(dynamic-range: high)").matches)]);
   if (boundedPresentation) {
     const softEdge = denoiseUnderlayerEdge();
-    const reusable = canvas.hdrWholeFrame?.key === wholeFrameKey && canvas.hdrWholeFrame.edge <= softEdge + 1
-      && canvas.style.display !== "none";
+    const accepted = state.acceptedPresentation;
+    const samePicturePan = liveFineGrain && panPass && canvas.hdrFrameRegion && accepted?.exact
+      && accepted.lane === lane && accepted.generation === generation
+      && accepted.geometrySignature === requestedGeometrySignature;
+    const reusable = canvas.hdrWholeFrame && canvas.style.display !== "none"
+      && (samePicturePan || (canvas.hdrWholeFrame.key === wholeFrameKey && canvas.hdrWholeFrame.edge <= softEdge + 1));
     if (!reusable) {
       const drawn = await renderGpuDraftInner(lane, {
         ...request, longEdge: softEdge, viewport: null, panPass: false, roiCatchUp: false, underlayerOnly: true,
@@ -770,9 +774,11 @@ async function renderGpuDraftInner(
     frameSize,
     roiCatchUp,
     panPass,
+    minimumRoiFraction: boundedPresentation && liveFineGrainSelected(lane) ? 0.18 : undefined,
     noiseView: denoiseNoiseViewActive(lane),
     boundedPresentation,
     fineGrainUnderlayer: request.underlayerOnly,
+    fineGrainGrade: gradeFineGrainGpuTrial(lane),
     deferSurface: request.underlayerOnly || (replacingDetail && !boundedPresentation && !viewport),
     coversViewport: boundedPresentation ? (region, width, height) => {
       if (!nativeDenoiseViewport(lane)) return false;

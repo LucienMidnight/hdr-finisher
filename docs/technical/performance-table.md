@@ -1,3 +1,80 @@
+## November 20 — Fine Grain GPU reuse in Grade
+
+MacBook Neo, A18 Pro, 8 GB, macOS 27.0.1, on AC. Unpackaged Electron at
+1408×794 under the shared GPU lock, using `IMG_0790.CR2` (Canon) and
+`_DSC7970.ARW` (Sony). The same Grade settings ran with the CPU and GPU
+Fine Grain routes. Each timing is one real-app observation including the
+finished-pixel capture; pan waits end when the visible area is fully sharp.
+The pans move 180 and 550 screen pixels respectively. Memory is the sampled
+whole-app physical footprint, in decimal GB, including the preceding 500 ms
+and the settle after the picture. The HDR capability override is test-only.
+
+| Wait or peak | Canon CPU → GPU | Sony CPU → GPU |
+| --- | ---: | ---: |
+| HDR first sharp at 110% (s) | 5.564 → 2.127 | 13.307 → 5.444 |
+| HDR Fit (s) | 4.594 → 2.706 | 9.483 → 6.412 |
+| HDR Evenness drag, settled (s) | 5.303 → 0.133 | 11.495 → 0.136 |
+| HDR small pan (s) | 0.203 → 0.016 | 0.407 → 0.033 |
+| HDR wide pan (s) | 0.439 → 0.395 | 0.642 → 0.490 |
+| Generated SDR at 110% (s) | 2.434 → 0.735 | 4.182 → 0.866 |
+| Generated SDR Fit (s) | 1.083 → 0.113 | 2.181 → 0.128 |
+| Peak whole app (GB) | 2.807 → 2.086 | 4.356 → 2.568 |
+
+The whole-photo measurement survived zoom, Fit, a matching HDR/SDR switch
+and Evenness changes. HDR Fit still filters and reduces the native photo on
+its first visit; generated SDR at the same settings reuses that reduced
+picture. The SDR rows are warm from HDR, not the cold SDR 110% comparison
+in Phase 1. First Evenness feedback took 121 ms Canon and 71 ms Sony in the
+final run (77/129 ms in the preceding bounded run). Small pans stayed
+inside the existing sharp patch. Wide pans retained the whole-photo picture
+while filling the newly visible area. In the first bounded run the Canon
+wide pan was 0.460 s; with the trial's wait after scrolling shortened from
+140 to 70 ms, the final run beat CPU on both photos.
+
+Phase 1 reached 4.74 GB on Sony; its repeat reached 4.216 GB. The first
+strip-bounded run still hit 4.216 GB during calibration: about 1.914 GB in
+the GPU helper, 1.520 GB in the Python backend and 0.496 GB in the main
+renderer, with 0.286 GB in other processes. The full-size source and render
+targets from the bypassed zoom view could overlap calibration. The
+trial now keeps that view bounded and retires unused targets before
+measurement. Sony calibration reserves 103.43 MB: 37.10 MB for the source
+strip, 32.52 MB for scratch, 33.55 MB for upload staging and responses,
+and 0.25 MB for statistics and readback. HDR Fit reserves 155.78 MB for its
+source, filtered strip, resize scratch, output and uploads. These logical
+reservations do not include the driver or backend footprint. Both photos
+passed 4 GB on both bounded passes (highest: Canon 2.167 GB, Sony 2.598 GB).
+In the final Sony pass the largest sample was during first measurement,
+including 1.184 GB in Python, 0.563 GB in the GPU helper and 0.536 GB in
+the main renderer.
+
+All eight finished-picture comparisons passed (worst HDR mean/p99:
+0.059/0.187 ΔE ITP; SDR: 0.121/0.766 ΔE 2000). The shared areas of both
+pans were pixel-identical on each photo. At +3 EV, the first exact check
+found a float rounding overshoot of 600.000061 nits. A trial-only rounding
+guard corrected it: **0 of 7,609,384 finished HDR pixels** exceeded 600 nits
+across Fit and the sharp 110% patch on both photos; the maximum was
+599.999939 nits in all four captures, measured before display or encoding.
+An injected Canon GPU failure used one CPU preparation and showed its
+picture in 6.471 s. Proof and export did not change.
+
+**Off by default.** The final GPU run beat the paired CPU run on each timed
+wait, but the first sharp HDR picture was slower than the previous GPU
+trial (1.78/4.56 s in Phase 1 vs 2.127/5.444 s). Keep the bounded route
+available for development without trading away that first-picture gain.
+Next: Clean Grain in Grade.
+
+Reproduce from `codebase` with the commands below, replacing `ROUTE` with
+`cpu` and `gpu` for the first command. Fast checks: 1,125 JavaScript passed
+(one skipped); 4,316 Python passed (150 skipped, one unexpected pass); quick
+Library check passed.
+
+```sh
+HDR_FINISHER_ELECTRON_WINDOW_SIZE=1408x794 .venv/bin/python tools/gpu-run-lock.py --label fine-grain-ROUTE --minutes 10 -- node tests/run-in-electron.js tests/performance/denoise-grain-latency.js --phase2=ROUTE
+.venv/bin/python tests/helpers/denoise_grade_comparison.py output/denoise-grain-phase2
+HDR_FINISHER_ELECTRON_WINDOW_SIZE=1408x794 .venv/bin/python tools/gpu-run-lock.py --label fine-grain-ceiling --minutes 10 -- node tests/run-in-electron.js tests/performance/denoise-grain-latency.js --phase2=gpu --ceiling-only
+.venv/bin/python tests/helpers/denoise_grade_comparison.py output/denoise-grain-phase2 --ceiling
+```
+
 ## November 20 — Phase 1 Fine Grain on the GPU in Grade
 
 MacBook Neo, A18 Pro, 8 GB, macOS 27.0.1 on AC. Unpackaged Electron at

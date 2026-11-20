@@ -137,7 +137,17 @@ function cancelRoiPanRefinement() {
  * after a pan still converges the rest of the image.
  */
 function noteViewerPan() {
-  state.renderCoordinator?.notePan(state.currentView);
+  const lane = state.currentView;
+  const region = els.previewCanvas.hdrFrameRegion;
+  const accepted = state.acceptedPresentation;
+  const liveFineGrain = liveFineGrainSelected(lane);
+  if (region && accepted?.exact && accepted.lane === lane && accepted.generation === state.previewGeneration[lane]
+      && liveFineGrain && window.HDRViewportRequest.covers(region,
+        visibleOutputRect(region.frameWidth, region.frameHeight, { includeWhole: true }))) {
+    state.renderCoordinator?.cancelPan(lane);
+    return;
+  }
+  state.renderCoordinator?.notePan(lane, liveFineGrain ? 70 : undefined);
 }
 
 async function requestRoiPanRefinement() {

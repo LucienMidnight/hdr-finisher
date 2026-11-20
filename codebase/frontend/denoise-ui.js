@@ -233,7 +233,12 @@ async function setDenoiseEnabled(enabled) {
 
 function nativeDenoiseViewport(lane) {
   return state.zoomMode === "custom" && state.zoomPercent >= 100
-    && Boolean(state.denoise[lane]?.enabled);
+    && (Boolean(state.denoise[lane]?.enabled) || gradeFineGrainGpuTrial(lane));
+}
+
+function gradeFineGrainGpuTrial(lane) {
+  return state.activeWorkflow === "grade" && state.gpuPreview?.enableGradeFineGrainGpu === true
+    && state.denoise[lane]?.controls.method === "fine_grain";
 }
 
 function gradeSourceIdentity(lane) {
@@ -344,6 +349,10 @@ async function recalculateDenoiseAnalysis(lane = state.currentView, options = {}
   runtime.status = state.gpuPreview.diagnosticsSnapshot().denoise.cacheReady ? "recalculating" : "preparing";
   runtime.error = "";
   if (lane === state.currentView) renderDenoiseControls();
+  const gradeFineGrain = gradeFineGrainGpuTrial(lane);
+  if (gradeFineGrain && lane === state.currentView && nativeDenoiseViewport(lane)) {
+    state.panSourceController?.abort();
+  }
   try {
     const ready = await state.gpuPreview.analyzeDenoiseProxy(
       state.session.session_id,
@@ -355,8 +364,7 @@ async function recalculateDenoiseAnalysis(lane = state.currentView, options = {}
       denoiseRendererControls(settings.controls),
       options.refresh ?? 0,
       Math.max(256, state.session.source?.width || 0, state.session.source?.height || 0),
-      { isCurrent, gradeFineGrain: state.activeWorkflow === "grade" && state.gpuPreview.enableGradeFineGrainGpu === true,
-        repairGeneration: state.repairSourceGeneration || 0 },
+      { isCurrent, gradeFineGrain, repairGeneration: state.repairSourceGeneration || 0 },
     );
     if (!isCurrent()) return false;
     if (!ready) return denoiseRetryError(lane, "Denoise preparation did not finish.");

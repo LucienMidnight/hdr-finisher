@@ -472,20 +472,29 @@
       + `&x=${rect.x}&y=${rect.y}&width=${rect.width}&height=${rect.height}&halo=0`
       + (epoch === undefined ? "" : `&source_epoch=${epoch}`);
 
-    const probe = await fetch(query({ x: region.x, y: region.y, width: 1, height: 1 }), { signal });
-    if (!probe.ok) {
+    const strip = options.stripUpload;
+    let metadata = strip?.metadata;
+    if (!metadata) {
+      const probe = await fetch(query({ x: region.x, y: region.y, width: 1, height: 1 }), { signal });
+      if (!probe.ok) {
+        await probe.arrayBuffer().catch(() => null);
+        return null;
+      }
+      metadata = {
+        outputWidth: Number(probe.headers.get("X-Output-Width")),
+        outputHeight: Number(probe.headers.get("X-Output-Height")),
+        pixelFormat: probe.headers.get("X-Pixel-Format") || "rgba16float",
+        workingSpace: probe.headers.get("X-Working-Space") || "acescg",
+        acceptedGeometry: probe.headers.get("X-Geometry-Signature") || "{}",
+        sourceEpoch: Number(probe.headers.get("X-Source-Epoch")),
+      };
       await probe.arrayBuffer().catch(() => null);
-      return null;
+      if (strip) strip.metadata = metadata;
     }
-    const outputWidth = Number(probe.headers.get("X-Output-Width"));
-    const outputHeight = Number(probe.headers.get("X-Output-Height"));
-    const pixelFormat = probe.headers.get("X-Pixel-Format") || "rgba16float";
-    const workingSpace = probe.headers.get("X-Working-Space") || "acescg";
-    const acceptedGeometry = probe.headers.get("X-Geometry-Signature") || "{}";
-    const sourceEpoch = Number(probe.headers.get("X-Source-Epoch"));
-    await probe.arrayBuffer().catch(() => null);
+    const { outputWidth, outputHeight, pixelFormat, workingSpace, acceptedGeometry, sourceEpoch } = metadata;
     assertCurrent("ROI source region probe was superseded");
     if (!(outputWidth > 0 && outputHeight > 0)) return null;
+    if (strip && pixelFormat !== "rgba16float") throw new Error("Fine Grain strips require 16-bit source textures");
     if (acceptedGeometry !== geometrySignature) {
       const error = new Error("Stale WebGPU geometry region rejected");
       error.recoverable = true;
@@ -509,13 +518,18 @@
       && held.width === outputWidth && held.height === outputHeight ? held : null;
 
     const bytesPerPixel = pixelFormat === "rgba16float" ? 8 : 16;
-    let texture;
+    let texture = strip?.texture;
     try {
-      texture = renderer.device.createTexture({
-        size: { width: delivered.width, height: delivered.height },
+      if (strip && (delivered.width !== outputWidth || delivered.height > strip.maxRows)) {
+        throw new Error("Fine Grain strip exceeded its reserved source texture");
+      }
+      texture ||= renderer.device.createTexture({
+        label: strip ? "fine-grain-source-strip" : undefined,
+        size: { width: delivered.width, height: strip ? Math.min(strip.maxRows, outputHeight) : delivered.height },
         format: pixelFormat,
         usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.COPY_SRC,
       });
+      if (strip) strip.texture = texture;
     } catch (error) {
       renderer.recordAllocationFailure("source-proxy", error, {
         width: delivered.width, height: delivered.height,
@@ -524,12 +538,13 @@
     }
 
     const rowBytes = Math.max(1, delivered.width * bytesPerPixel);
+    const chunkBytes = strip?.chunkBytes ?? renderer.maxSourceChunkBytes;
     const rowsPerChunk = Math.max(1, Math.min(delivered.height,
-      Math.floor(renderer.maxSourceChunkBytes / rowBytes)));
+      Math.floor(chunkBytes / (Math.ceil(rowBytes / 256) * 256))));
     const chunkTotal = Math.ceil(delivered.height / rowsPerChunk);
-    const ringSize = Math.max(1, Math.min(UPLOAD_RING_SIZE, chunkTotal));
-    const stagingRing = [];
-    const retiredStaging = [];
+    const ringSize = Math.max(1, Math.min(strip?.slots ?? UPLOAD_RING_SIZE, chunkTotal));
+    const stagingRing = strip?.ring ?? [];
+    const retiredStaging = strip?.retired ?? [];
     let transferredBytes = 0;
     let chunkCount = 0;
     let firstTileMs = null;
@@ -564,13 +579,15 @@
             height: Number(response.headers.get("X-Tile-Height")),
           };
           const bytesPerRow = Number(response.headers.get("X-Bytes-Per-Row"));
+          if (strip && (response.headers.get("X-Pixel-Format") !== pixelFormat
+              || bytesPerRow < rowBytes || bytesPerRow * rows > strip.chunkBytes)) {
+            throw new Error("Fine Grain source chunk exceeded its reserved upload format or size");
+          }
           const data = await response.arrayBuffer();
           if (failure) return;
-          if (!(chunk.width > 0 && chunk.height > 0)) throw new Error("A source region chunk arrived empty");
-          if (chunk.x < delivered.x || chunk.y < delivered.y
-            || chunk.x + chunk.width > delivered.x + delivered.width
-            || chunk.y + chunk.height > delivered.y + delivered.height) {
-            throw new Error("A source region chunk arrived outside its region");
+          if (chunk.x !== delivered.x || chunk.y !== delivered.y + top
+            || chunk.width !== delivered.width || chunk.height !== rows || data.byteLength !== bytesPerRow * rows) {
+            throw new Error("A source region chunk did not cover its requested rows");
           }
           if (firstTileMs === null) firstTileMs = performance.now() - startedAt;
           transferredBytes += data.byteLength;
@@ -598,10 +615,10 @@
       })));
       if (failure) throw failure;
     } catch (error) {
-      renderer.destroyAfterActiveRenders(() => texture.destroy());
+      if (!strip) renderer.destroyAfterActiveRenders(() => texture.destroy());
       throw error;
     } finally {
-      await releaseStaging(renderer, stagingRing, retiredStaging);
+      if (!strip) await releaseStaging(renderer, stagingRing, retiredStaging);
     }
 
     const byteSize = delivered.width * delivered.height * bytesPerPixel;
