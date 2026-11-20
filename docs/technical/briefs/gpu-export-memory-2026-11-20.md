@@ -102,6 +102,42 @@ Sony files stayed below the selected ceiling. A correct brightness limit
 does not make the colours match, and these measurements do not establish
 the cause of the differences. Codec and gain-map maths were left alone.
 
+### Canon Large: where the saved files differ
+
+The original CPU and GPU runs each encoded four candidates and applied three
+local ceiling corrections, with the same margins (0.3%, 0.6%, 1.2%). Equal
+pass counts do not mean equal corrections: the first CPU candidate decoded
+to 1,498.54 nits, and the first GPU candidate to 1,342.53 nits.
+
+| Decoded candidate peak (nits) | CPU | GPU |
+| --- | ---: | ---: |
+| First encode, before retries | 1,498.54 | 1,342.53 |
+| After correction 1 | 1,012.38 | 1,038.56 |
+| After correction 2 | 1,013.19 | 1,022.36 |
+| After correction 3, saved | 999.59 | 998.87 |
+
+The final tags have the same gain bounds (0.0625× to 16×), gamma (1),
+SDR and HDR offsets (both 0.0000001), minimum display capacity (1), and
+reconstruction colour space (sRGB). Maximum display capacity differs
+slightly (CPU 4.20214, GPU 4.20150). An eighth-resolution JPEG decode shows
+where the larger difference lives: the saved SDR base differs by just
+0.37 code values per channel on average, while the saved gain map differs
+by 10.64 (p99 70), on the same 0–255 scale. That identifies different
+gain-map samples, not a large difference in the metadata. The discrepancy
+is larger in the dark parts of the SDR base: the mean map difference is
+17.06 codes where both bases are below code 16 in all channels, versus
+1.83 where either base reaches code 128. The saved files and pass logs
+alone do not establish which encoding stage first introduced that
+difference or how many input pixels the corrections changed.
+
+The no-capture Sony follow-up checked normal macOS pressure before waiting,
+but did not acquire the shared lock within about ten minutes. The Micro
+Grain demo was deliberately left open for review and held the lock. It was
+left untouched. The Canon own-intent check and correction-footprint counts
+need a fresh CPU/GPU pair because the original uncompressed captures were
+removed after the first comparison. Neither that pair nor the final full
+suite rerun started while the lock was held.
+
 ## Checks and next step
 
 The initial streamed change passed the locked full Node suite (1,127 passed,
