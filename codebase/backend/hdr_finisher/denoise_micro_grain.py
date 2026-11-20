@@ -18,6 +18,7 @@ from . import denoise_adaptive as wave, denoise_grain, signed_raw
 BAYER_MARGIN = 80
 DEMOSAIC_MARGIN = 12
 SCENE_MARGIN = 112
+VIEWPORT_BAYER_CACHE_BYTES = 256 * 1024**2
 _STRIDES = (1, 2, 4, 8, 16)
 _BRIGHTNESS_WEIGHTS = (0.16, 1.35, 4.5, 7.0, 8.0)
 _OPPONENT = np.array(((.25, .25, .25, .25), (1, -.5, -.5, 0),
@@ -152,6 +153,11 @@ def _packed_cells(sensor, profile):
 class BayerTile:
     """Sensor coefficients for one bounded, phase-aligned native tile."""
 
+    @staticmethod
+    def retained_nbytes(width, height):
+        planes = 4 + 2 + 3 * len(_STRIDES) + 4
+        return width * height // 4 * (1 + planes * np.dtype(np.float32).itemsize)
+
     def __init__(self, sensor, profile, *, color=True):
         self.profile = profile
         self.cells = _packed_cells(sensor, profile)
@@ -178,6 +184,12 @@ class BayerTile:
             luma = low
         self.chroma = (_lift_chroma(field[..., 1:], pilot, variance, gate ** 2 * ~self.guard)
                        @ profile.inverse[:, 1:].T) if color else None
+
+    @property
+    def nbytes(self):
+        return (self.cells.nbytes + self.guard.nbytes + self.detail_gate.nbytes + self.brightness_gate.nbytes
+                + sum(band.nbytes + noise.nbytes + local.nbytes for band, noise, local, _ in self.bands)
+                + (self.chroma.nbytes if self.chroma is not None else 0))
 
     def apply(self, controls, central):
         """Return the encoded mosaic and packed structure gate for the AHD tile."""
@@ -330,6 +342,11 @@ class MicroGrainSource:
         self.gain = np.float32(2 ** (RAW_CALIBRATION_EV + {200: 1, 400: 2}.get(fuji_dynamic_range(path), 0)))
         self.model = wave.estimate_adaptive_model_from_windows(*self.shape, self.read_unfiltered, workers=1)
         self.tiles = OrderedDict()
+        self.tiles_lock = RLock()
+
+    def clear_bayer_cache(self):
+        with self.tiles_lock:
+            self.tiles.clear()
 
     def read_unfiltered(self, top, left, bottom, right):
         rect = _sensor_rect((left, top, right, bottom), self.sensor.shape, self.flip)
@@ -350,15 +367,21 @@ class MicroGrainSource:
         sensor_rect = _sensor_rect(rect, self.sensor.shape, self.flip)
         demosaic = _expand(sensor_rect, self.sensor.shape, DEMOSAIC_MARGIN, even=True)
         outer = _expand(demosaic, self.sensor.shape, BAYER_MARGIN, even=True)
-        if not retain and (rect[2] - rect[0]) * (rect[3] - rect[1]) > 512 * 512:
-            self.tiles.clear()
-        raw = self.tiles.pop(outer, None) if retain else None
-        if raw is None:
-            raw = BayerTile(self.sensor[_inset(outer, (0, 0, 0, 0))], self.profile, color=retain or bool(controls.color))
-        if retain:
-            self.tiles[outer] = raw
-            while len(self.tiles) > 2:
-                self.tiles.popitem(last=False)
+        with self.tiles_lock:
+            if not retain and (rect[2] - rect[0]) * (rect[3] - rect[1]) > 512 * 512:
+                self.tiles.clear()
+            raw = self.tiles.get(outer) if retain else None
+            if raw is not None:
+                self.tiles.move_to_end(outer)
+            else:
+                if retain:
+                    size = BayerTile.retained_nbytes(outer[2] - outer[0], outer[3] - outer[1])
+                    while self.tiles and size + sum(tile.nbytes for tile in self.tiles.values()) > VIEWPORT_BAYER_CACHE_BYTES:
+                        self.tiles.popitem(last=False)
+                raw = BayerTile(self.sensor[_inset(outer, (0, 0, 0, 0))], self.profile,
+                                color=retain or bool(controls.color))
+                if retain and raw.nbytes <= VIEWPORT_BAYER_CACHE_BYTES:
+                    self.tiles[outer] = raw
         return raw, outer, demosaic, sensor_rect
 
     def gpu_region(self, rect, controls, *, retain):
@@ -427,7 +450,7 @@ def resolve_source(frame, controls, *, cancelled=None):
     if unavailable_reason(owner) or not (controls.luminance or controls.color):
         return frame.image
     source = prepare_source(owner, cancelled=cancelled, retain=False)
-    source.tiles.clear()
+    source.clear_bayer_cache()
     result = source.render(controls, cancelled=cancelled)
     metadata = owner.metadata
     if metadata.get("lens_correction", {}).get("applied"):

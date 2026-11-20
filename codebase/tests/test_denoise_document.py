@@ -120,6 +120,37 @@ def test_micro_grain_controls_round_trip_without_reusing_standard_values() -> No
     assert restored.hdr.controls.color_noise == restored.sdr.controls.color_noise == 0.75
 
 
+def test_micro_grain_retains_three_bayer_bands_and_evicts_by_bytes(monkeypatch) -> None:
+    from collections import OrderedDict
+    from threading import RLock
+
+    from hdr_finisher import denoise_micro_grain as micro
+
+    sensor = np.random.default_rng(21).integers(100, 400, (800, 280), dtype=np.uint16)
+    phases = np.ones(4, dtype=np.float32)
+    profile = micro.BayerProfile(phases * 64, phases * 1024, phases * .01, phases * .01,
+                                 np.eye(4, dtype=np.float32), np.eye(4, dtype=np.float32),
+                                 np.array(((0, 1), (1, 2))), np.eye(3), np.ones(3), np.ones(3), np.eye(3))
+    source = SimpleNamespace(sensor=sensor, profile=profile, flip=0, tiles=OrderedDict(), tiles_lock=RLock())
+    controls = micro.MicroGrainControls(0, 0, .5)
+    changed = micro.MicroGrainControls(.61, .78, .7)
+    rects = [(106, row, 174, row + 32) for row in (130, 290, 450, 610)]
+    get = lambda rect, settings, retain: micro.MicroGrainSource.bayer_region(source, rect, settings, retain=retain)
+    bound = 3 * micro.BayerTile.retained_nbytes(252, 216)
+    monkeypatch.setattr(micro, "VIEWPORT_BAYER_CACHE_BYTES", bound)
+    cold = [get(rect, controls, True)[0] for rect in rects[:3]]
+    for rect, cached in zip(rects[:3], cold):
+        tile, outer, demosaic, _ = get(rect, changed, True)
+        uncached = get(rect, changed, False)[0]
+        central = micro._inset(demosaic, outer, step=2)
+        assert cached is tile
+        assert cached.nbytes == micro.BayerTile.retained_nbytes(252, 216)
+        np.testing.assert_array_equal(tile.apply(changed, central), uncached.apply(changed, central))
+    get(rects[3], changed, True)
+    assert len(source.tiles) == 3
+    assert next(iter(source.tiles.values())) is cold[1]
+
+
 def test_a_live_edit_refuses_the_removed_wavelet_fields() -> None:
     # Strict in a running session; a saved project drops them on open instead
     # (tests/test_project_open_tolerance.py).

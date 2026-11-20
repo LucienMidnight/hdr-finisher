@@ -1,5 +1,21 @@
 (function () {
   const pipelinesByDevice = new WeakMap();
+  const labTablesByDevice = new WeakMap();
+
+  function ahdLabTable(device) {
+    if (!labTablesByDevice.has(device)) {
+      const floats = new Float32Array(65536);
+      const round = Math.fround;
+      for (let index = 0; index < floats.length; index++) {
+        const code = round(index / 65535);
+        floats[index] = code > round(.008856) ? Math.pow(code, round(1/3)) : round(round(round(7.787)*code)+round(16/116));
+      }
+      const table = device.createBuffer({ size: floats.byteLength, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST });
+      device.queue.writeBuffer(table, 0, floats);
+      labTablesByDevice.set(device, table);
+    }
+    return labTablesByDevice.get(device);
+  }
 
   function ahdPipelines(device) {
     if (!pipelinesByDevice.has(device)) {
@@ -13,7 +29,7 @@
     return pipelinesByDevice.get(device);
   }
 
-  async function develop(device, grain, region, controls, revision, current, retain) {
+  async function readBayer(grain, region, controls, revision, current, retain) {
     const { x, y, width, height } = region;
     const request = new URLSearchParams({ x, y, width, height, revision, retain });
     const response = await fetch(`${grain.url}/region?${request}`, {
@@ -24,7 +40,11 @@
     });
     if (!current() || response.status === 409) throw new DOMException("Micro Grain was replaced.", "AbortError");
     if (!response.ok) throw new Error(`Micro Grain could not read Bayer samples (${response.status}).`);
-    const body = await response.arrayBuffer();
+    return response.arrayBuffer();
+  }
+
+  async function develop(device, grain, region, body, current) {
+    const { width, height } = region;
     const headerSize = new DataView(body).getUint32(0, true);
     const meta = JSON.parse(new TextDecoder().decode(new Uint8Array(body, 4, headerSize)));
     const pixels = meta.width * meta.height;
@@ -46,13 +66,7 @@
       const gateAt = 4 + headerSize + padded;
       const gate = make(body.byteLength - gateAt);
       const [ints, horizontal, vertical, votes] = Array.from({ length: 4 }, () => make(pixels * 4));
-      const floats = new Float32Array(65536);
-      const round = Math.fround;
-      for (let index = 0; index < floats.length; index++) {
-        const code = round(index / 65535);
-        floats[index] = code > round(.008856) ? Math.pow(code, round(1/3)) : round(round(round(7.787)*code)+round(16/116));
-      }
-      const labTable = make(floats.byteLength);
+      const labTable = ahdLabTable(device);
       const params = new ArrayBuffer(22 * 16);
       const uint = new Uint32Array(params), float = new Float32Array(params);
       uint.set([meta.width, meta.height, meta.flip, meta.phase_width, ...meta.offset, ...meta.crop], 0);
@@ -69,7 +83,6 @@
       device.queue.writeBuffer(uniform, 0, params);
       device.queue.writeBuffer(mosaic, 0, body, 4 + headerSize, padded);
       device.queue.writeBuffer(gate, 0, body, gateAt);
-      device.queue.writeBuffer(labTable, 0, floats);
       const bindings = [
         [uniform, mosaic, ints], [uniform, ints, horizontal, vertical],
         [uniform, ints, horizontal, votes, labTable, , , , , , vertical],
@@ -99,5 +112,5 @@
     }
   }
 
-  window.HDRMicroGrainGpu = Object.freeze({ develop, ahdPipelines });
+  window.HDRMicroGrainGpu = Object.freeze({ readBayer, develop, ahdPipelines });
 })();

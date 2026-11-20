@@ -6377,14 +6377,18 @@
       upload.texture?.destroy();
     }
 
-    async developMicroGrainRegion(selector, core, revision, current, retain) {
+    microGrainSourceRegion(selector, core) {
       const { grain } = selector.cache;
-      const controls = selector.controls;
       const x = Math.max(0, core.x - MICRO_GRAIN_MARGIN);
       const y = Math.max(0, core.y - MICRO_GRAIN_MARGIN);
-      const region = { x, y,
+      return { x, y,
         width: Math.min(grain.width, core.x + core.width + MICRO_GRAIN_MARGIN) - x,
         height: Math.min(grain.height, core.y + core.height + MICRO_GRAIN_MARGIN) - y };
+    }
+
+    async developMicroGrainRegion(selector, core, revision, current, retain, bayer = null) {
+      const { grain } = selector.cache;
+      const region = this.microGrainSourceRegion(selector, core);
       const reservation = this.reserveFineGrain("micro-grain-region", {
         bayer: (region.width + 26) * (region.height + 26) * 36,
       });
@@ -6393,7 +6397,9 @@
           this.injectMicroGrainFailure = false;
           throw new Error("Injected Micro Grain GPU failure.");
         }
-        return await window.HDRMicroGrainGpu.develop(this.device, grain, region, controls, revision, current, retain);
+        const gpu = window.HDRMicroGrainGpu;
+        const body = bayer || await gpu.readBayer(grain, region, selector.controls, revision, current, retain);
+        return await gpu.develop(this.device, grain, region, body, current);
       } finally {
         if (reservation) this.gpuAllocator.releaseReservation(reservation);
       }
@@ -6497,9 +6503,26 @@
           const target = { x: 0, y, width, height: bottom - y };
           const top = Math.max(0, y - margin);
           if (micro) {
-            for (let x = 0; x < width; x += 768) {
-              const core = { ...target, x, width: Math.min(768, width-x) };
-              await this.writeMicroGrainRegion(selector, core, native, target, revision, current);
+            const coreWidth = 768;
+            const bandFor = left => ({ ...target, x: left, width: Math.min(2 * coreWidth, width - left) });
+            const fetchBand = left => window.HDRMicroGrainGpu.readBayer(grain, this.microGrainSourceRegion(selector, bandFor(left)),
+              controls, revision, current, false).then(body => ({ body }), error => ({ error }));
+            let nextBayer = fetchBand(0);
+            for (let left = 0; left < width; left += 2 * coreWidth) {
+              const right = Math.min(width, left + 2 * coreWidth);
+              const { body, error } = await nextBayer;
+              if (error) throw error;
+              assertCurrent();
+              if (right < width) nextBayer = fetchBand(right);
+              const prepared = await this.developMicroGrainRegion(selector, bandFor(left), revision, current, false, body);
+              try {
+                for (let x = left; x < right; x += coreWidth) {
+                  const core = { ...target, x, width: Math.min(coreWidth, width - x) };
+                  await this.writeMicroGrainRegion(selector, core, native, target, revision, current, null, prepared);
+                }
+              } finally {
+                prepared.texture.destroy();
+              }
             }
           }
           const source = micro ? null : await this.loadProxyRegion(proxy.sessionId, proxy.lane, grain.nativeEdge, proxy.geometrySignature,
@@ -7073,8 +7096,9 @@
         // The noise map reads luminance smoothed by bands 0 and 1, carried in
         // alpha through the same blur the bands use.
         blur(0, scratch.current, scratch.next);
-        blur(1, scratch.next, scratch.energyRow);
-        dispatch(pipelines.noise, { src: scratch.energyRow.createView(), dst: scratch.noise }, common(0, 0), region);
+        const noiseLowpass = micro ? scratch.sumA : scratch.energyRow;
+        blur(1, scratch.next, noiseLowpass);
+        dispatch(pipelines.noise, { src: noiseLowpass.createView(), dst: scratch.noise }, common(0, 0), region);
         let current = scratch.current;
         let next = scratch.next;
         let sum = scratch.sumA;
@@ -7085,7 +7109,7 @@
           const sigmas = [0, 1, 2].map((component) => (
             (Number(model.band_sigmas[component][level]) || 0) * strengths.sizeMultiplier(level)
           ));
-          blur(level, current, next);
+          if (!micro || level >= 2) blur(level, current, next);
           const grainBand = GRAIN_DENOISE_BANDS.indexOf(level);
           if (reduction && grainBand < 0) {
             [current, next] = [next, current];
@@ -7113,7 +7137,12 @@
             }, common(level, 0, sigmas), region);
           }
           [sum, nextSum] = [nextSum, sum];
-          [current, next] = [next, current];
+          if (micro && level === 0) {
+            [current, next] = [next, noiseLowpass];
+            nextSum = scratch.current;
+          } else {
+            [current, next] = [next, current];
+          }
         }
         if (reduction) {
           partialOffset += Math.ceil(tile.width / GRAIN_FIT_BLOCK) * Math.ceil(tile.height / GRAIN_FIT_BLOCK);

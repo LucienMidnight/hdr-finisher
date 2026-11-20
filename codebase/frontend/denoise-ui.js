@@ -468,7 +468,9 @@ async function updateLiveDenoiseControl(key, value) {
   const lane = state.currentView;
   const settings = state.denoise[lane];
   const runtime = state.denoiseRuntime[lane];
-  settings.controls[key] = clamp(value, 0, 1);
+  const next = clamp(value, 0, 1);
+  if (settings.controls.method === "micro_grain" && key.startsWith("micro_") && settings.controls[key] === next) return;
+  settings.controls[key] = next;
   renderDenoiseControls();
   if (key === "grain_evenness" && !liveGradeGrainSelected(lane)) return;
   if (!settings.enabled || runtime.status !== "ready" || runtime.showOriginal) return;
@@ -525,6 +527,9 @@ async function commitDenoiseControl(key, value) {
     const current = state.gpuPreview.denoiseSourceSelector.controls;
     const viewport = nativeDenoiseViewport(lane);
     if (controls.method === "micro_grain") {
+      if (viewport && !runtime.microUpdating && state.acceptedPresentation?.exact
+        && controls.microLuminance === current.microLuminance && controls.microColor === current.microColor
+        && controls.microDetail === current.microDetail) return;
       await denoiseInputQueue().submit({ lane, sessionId, generation: runtime.generation,
         controls, liveGrainControl: key, wholeFrame: true });
       return;
