@@ -516,6 +516,25 @@
     const held = renderer.proxies.get(panStoreKey(sessionId, lane, longEdge, geometrySignature, sourceIdentity));
     const store = held && held.pixelFormat === pixelFormat
       && held.width === outputWidth && held.height === outputHeight ? held : null;
+    let overlap = null;
+    let missing = delivered;
+    if (!store && options.reuseRegionOverlap && !options.transient && Number.isFinite(sourceEpoch)) {
+      const end = delivered.x + delivered.width;
+      for (const previous of renderer.proxies.values()) {
+        const old = previous.region;
+        if (!old || !previous.regionTransport || previous.sessionId !== sessionId || previous.lane !== lane
+          || previous.longEdge !== longEdge || previous.geometrySignature !== geometrySignature
+          || previous.sourceIdentity !== sourceIdentity || previous.sourceEpoch !== sourceEpoch
+          || previous.pixelFormat !== pixelFormat || previous.workingSpace !== workingSpace
+          || previous.width !== outputWidth || previous.height !== outputHeight
+          || old.y > delivered.y || old.y + old.height < delivered.y + delivered.height) continue;
+        const left = Math.max(old.x, delivered.x);
+        const right = Math.min(old.x + old.width, end);
+        if (left >= right || (left > delivered.x && right < end) || right - left <= (overlap?.width ?? 0)) continue;
+        overlap = { previous, x: left, width: right - left };
+        missing = { ...delivered, x: left > delivered.x ? delivered.x : right, width: delivered.width - overlap.width };
+      }
+    }
 
     const bytesPerPixel = pixelFormat === "rgba16float" ? 8 : 16;
     let texture = strip?.texture;
@@ -537,7 +556,7 @@
       throw error;
     }
 
-    const rowBytes = Math.max(1, delivered.width * bytesPerPixel);
+    const rowBytes = Math.max(1, missing.width * bytesPerPixel);
     const chunkBytes = strip?.chunkBytes ?? renderer.maxSourceChunkBytes;
     const rowsPerChunk = Math.max(1, Math.min(delivered.height,
       Math.floor(chunkBytes / (Math.ceil(rowBytes / 256) * 256))));
@@ -563,7 +582,7 @@
           nextTop += rows;
           assertCurrent("ROI source region stream was superseded");
           const response = await fetch(query({
-            x: delivered.x, y: delivered.y + top, width: delivered.width, height: rows,
+            x: missing.x, y: missing.y + top, width: missing.width, height: rows,
           }, sourceEpoch), { signal });
           if (!response.ok) {
             const payload = await response.json().catch(() => null);
@@ -585,8 +604,8 @@
           }
           const data = await response.arrayBuffer();
           if (failure) return;
-          if (chunk.x !== delivered.x || chunk.y !== delivered.y + top
-            || chunk.width !== delivered.width || chunk.height !== rows || data.byteLength !== bytesPerRow * rows) {
+          if (chunk.x !== missing.x || chunk.y !== missing.y + top
+            || chunk.width !== missing.width || chunk.height !== rows || data.byteLength !== bytesPerRow * rows) {
             throw new Error("A source region chunk did not cover its requested rows");
           }
           if (firstTileMs === null) firstTileMs = performance.now() - startedAt;
@@ -607,10 +626,19 @@
           { width: delivered.width, height: delivered.height },
         );
         renderer.device.queue.submit([encoder.finish()]);
+      } else if (overlap) {
+        const { previous, x, width } = overlap;
+        const encoder = renderer.device.createCommandEncoder();
+        encoder.copyTextureToTexture(
+          { texture: previous.texture, origin: { x: x - previous.region.x, y: delivered.y - previous.region.y } },
+          { texture, origin: { x: x - delivered.x, y: 0 } },
+          { width, height: delivered.height },
+        );
+        renderer.device.queue.submit([encoder.finish()]);
       }
       // Every lane stops before the partial texture is released: a copy into
       // a destroyed texture must not be left in flight.
-      await Promise.all(Array.from({ length: store ? 0 : ringSize }, (_, slot) => lane(slot).catch((error) => {
+      await Promise.all(Array.from({ length: store || !missing.width ? 0 : ringSize }, (_, slot) => lane(slot).catch((error) => {
         failure ||= error;
       })));
       if (failure) throw failure;
@@ -626,7 +654,7 @@
       texture, width: outputWidth, height: outputHeight, region: { ...delivered },
       textureWidth: delivered.width, textureHeight: delivered.height,
       sessionId, lane, longEdge, workingSpace, pixelFormat, geometrySignature,
-      sourceIdentity, identity: key, byteSize, streamed: true, regionTransport: true,
+      sourceIdentity, sourceEpoch, identity: key, byteSize, streamed: true, regionTransport: true,
       bindGroups: new Map(),
     };
     if (options.transient) return proxy;
@@ -642,7 +670,7 @@
     });
     renderer.recordStage("proxy-request", {
       lane, longEdge, cacheHit: false, route: "region", chunkCount, region: { ...delivered },
-      fromPanStore: Boolean(store),
+      fromPanStore: Boolean(store), reusedSourcePixels: (overlap?.width || 0) * delivered.height,
       durationMs: renderer.sourceTransportMetrics.totalMs,
       timeToFirstTileMs: firstTileMs, bytes: transferredBytes,
     });
@@ -798,7 +826,7 @@
       if (region) {
         const regional = await renderer.loadProxyRegion(
           sessionId, lane, longEdge, geometrySignature, editRevision, sourceIdentity, key, region,
-          { signal, isCurrent },
+          { signal, isCurrent, reuseRegionOverlap: options.reuseRegionOverlap },
         );
         if (regional) return regional;
         // Scene-qualified masks on an authored SDR region may request a

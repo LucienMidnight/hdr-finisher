@@ -5176,6 +5176,9 @@
           isCurrent: () => this.sourceLoadIsCurrent(canvas, serial, resourceGeneration, sourceOptions),
           onProgress: sourceOptions?.onSourceProgress,
           region,
+          reuseRegionOverlap: this.adaptiveDenoiseSelected()
+            && this.denoiseSourceSelector.cache.grain?.gpu
+            && this.denoiseSourceSelector.controls.method === "clean_grain",
         },
       );
       const proxyReadyAt = performance.now();
@@ -6424,7 +6427,8 @@
       }
     }
 
-    async measureFineGrain(sessionId, lane, native, geometry, revision, sourceIdentity, model, controls, signal, current) {
+    async measureFineGrain(sessionId, lane, native, geometry, revision, sourceIdentity, model, controls, signal, current,
+      { residentSource, beforeSubmit } = {}) {
       const started = performance.now();
       const grainFit = await this.ensureGrainFitPipeline();
       const device = this.device;
@@ -6435,8 +6439,8 @@
       if (native > 8192) throw new Error("Fine Grain calibration exceeds the supported source size.");
       const reservation = this.reserveFineGrain("fine-grain-fit", {
         measurementScratch: 6 * stripUpload.maxRows ** 2 * 16,
-        sourceStrip: native * stripUpload.maxRows * 8,
-        uploadAndResponses: 2 * stripUpload.slots * stripUpload.chunkBytes,
+        sourceStrip: residentSource ? 0 : native * stripUpload.maxRows * 8,
+        uploadAndResponses: residentSource ? 0 : 2 * stripUpload.slots * stripUpload.chunkBytes,
         partialsAndReadback: 2 * GRAIN_DENOISE_BANDS.length * blocks * 16,
       });
       let adaptiveScratch;
@@ -6455,7 +6459,7 @@
         for (let y = 0; height === null || y < height; y += rows) {
           assertCurrent();
           const top = Math.max(0, y - margin);
-          const source = await this.loadProxyRegion(sessionId, lane, native, geometry, revision, sourceIdentity, null,
+          const source = residentSource || await this.loadProxyRegion(sessionId, lane, native, geometry, revision, sourceIdentity, null,
             { x: 0, y: top, width: width ?? native, height: y + rows + margin - top },
             { signal, isCurrent: current, transient: true, stripUpload });
           if (!source) throw new Error("The native Fine Grain source is not available in strips.");
@@ -6467,9 +6471,11 @@
             width = source.width;
             height = source.height;
             const target = { x: 0, y, width, height: Math.min(rows, height - y) };
-            if (source.region.width !== width || source.region.y + source.region.height < y + target.height) {
+            if (source.region && (source.region.width !== width || source.region.y + source.region.height < y + target.height)) {
               throw new Error("Incomplete Fine Grain calibration strip.");
             }
+            await beforeSubmit?.();
+            assertCurrent();
             const stride = Math.ceil(width / GRAIN_FIT_BLOCK) * Math.ceil(target.height / GRAIN_FIT_BLOCK);
             const size = totals.length * stride * 16;
             device.pushErrorScope("validation");
@@ -6562,7 +6568,7 @@
      * hands it, which is what keeps a 42 MP frame's denoise from holding
      * evidence, or the frame, at all.
      */
-    async fetchDenoiseModel(url) {
+    async fetchDenoiseModel(url, { allowCpuFallback = true } = {}) {
       const measurementURL = url.replace("/denoise-model/", "/denoise-measurement/");
       const started = performance.now();
       const cached = await fetch(measurementURL);
@@ -6590,7 +6596,7 @@
         if (!stored.ok) throw Error(`Denoise measurement publication failed (${stored.status}).`);
         return stored.json();
       } catch (error) {
-        if (error.name === "AbortError" || /request failed|publication failed|source request/.test(error.message)) throw error;
+        if (!allowCpuFallback || error.name === "AbortError" || /request failed|publication failed|source request/.test(error.message)) throw error;
         const response = await fetch(url + (url.includes("?") ? "&" : "?") + "fallback_reason=" + encodeURIComponent(error.message));
         if (response.status === 409) throw new DOMException("Denoise preparation was replaced.", "AbortError");
         if (!response.ok) throw new Error(`Denoise CPU fallback failed (${response.status}).`);
@@ -6610,7 +6616,7 @@
     }
 
     async analyzeAdaptiveDenoise(sessionId, lane, frame, longEdge, editRevision, geometrySignature, generation, controls, refresh, nativeEdge,
-      { signal, isCurrent, onGrain, gradeGpuGrain, repairGeneration } = {}) {
+      { signal, isCurrent, onGrain, gradeGpuGrain, repairGeneration, deliveryGrainSource, beforeDeliverySubmit } = {}) {
       const startedAt = performance.now();
       this.denoiseCounters.analysisCalls += 1;
       this.recordStage("denoise-analysis", { state: "started", generation, longEdge, algorithm: ADAPTIVE_DENOISE_ALGORITHM_VERSION });
@@ -6620,7 +6626,7 @@
         || (controls.method === "fine_grain" && controls.grainEvenness);
       const sourceKey = JSON.stringify([sessionId, geometrySignature, frame.sourceIdentity === "authored-sdr", repairGeneration,
         controls.method]);
-      const gpuFine = gradeGpuGrain && !this.fineGrainFailedSources?.has(sourceKey)
+      const gpuFine = (gradeGpuGrain || deliveryGrainSource) && !this.fineGrainFailedSources?.has(sourceKey)
         && (controls.method === "fine_grain" || controls.method === "clean_grain")
         && controls.amount > 0 && (controls.luminance > 0 || controls.colorNoise > 0);
       // Grade can start analysis before the first render sets maskSourceSize.
@@ -6630,7 +6636,8 @@
       const modelQuery = (experimental || gpuFine) && native <= 16384 ? query.replace(`long_edge=${apiEdge}`, `long_edge=${native}`) : query;
       const current = () => !signal?.aborted && isCurrent?.() !== false && generation === this.denoiseSelectorGeneration;
       if (!current()) return false;
-      const model = await this.fetchDenoiseModel(`/api/session/${sessionId}/denoise-model/${lane}?${modelQuery}`);
+      const model = await this.fetchDenoiseModel(`/api/session/${sessionId}/denoise-model/${lane}?${modelQuery}`,
+        { allowCpuFallback: !deliveryGrainSource });
 
       let grain = null;
       if (!current()) return false;
@@ -6643,15 +6650,17 @@
           if (controls.method === "clean_grain") await this.ensureCleanGrainPipelines();
           if (!current()) return false;
           if (!calibration) {
-            if (longEdge === native && this.canvas.hdrFrameRegion == null) {
+            if (!deliveryGrainSource && longEdge === native && this.canvas.hdrFrameRegion == null) {
               await this.retireDenoiseZoomResources(sessionId, lane, longEdge, true);
             }
             if (!current()) return false;
             calibration = await this.measureFineGrain(sessionId, lane, native, geometrySignature, editRevision,
-              frame.sourceIdentity, model, controls, signal, current);
+              frame.sourceIdentity, model, controls, signal, current,
+              { residentSource: deliveryGrainSource, beforeSubmit: beforeDeliverySubmit });
             if (!current()) return false;
           } else this.recordStage("fine-grain-fit-hit", { lane });
         } catch (error) {
+          if (deliveryGrainSource) throw error;
           if (!current() || error.name === "AbortError") return false;
           calibration = null;
           this.fineGrainFailedSources.add(sourceKey);
@@ -6665,6 +6674,7 @@
         }
       }
       if (experimental && !grain) {
+        if (deliveryGrainSource) throw new Error("GPU Grain delivery could not prepare this rendition.");
         const url = `/api/session/${sessionId}/denoise-grain/${lane}`;
         const response = await fetch(`${url}?${query}&refresh=${refresh}`, {
           method: "POST", signal, headers: { "Content-Type": "application/json" },
@@ -6978,13 +6988,14 @@
     encodeCleanGrain(dispatch, clean, scratch, area, tile, destination, frame, candidate, controls) {
       const { blur: base, energyRow: luma, noise: normalized, current: row, next: column,
         energy: context, sumA: grain, sumB: guides } = scratch;
-      const run = (pipeline, src, dst, inputs = {}, radius = 0, axis = 0, size = area) => {
+      const run = (pipeline, src, dst, inputs = {}, radius = 0, axis = 0, size = area, domain = area) => {
         const params = [
           area.x, area.y, area.width, area.height,
           frame.width, frame.height, radius, axis,
           tile.x, tile.y, tile.width, tile.height,
           destination.x, destination.y, 0, 0,
-          0, 0, 0, 0, controls.colorSplotches, 0, 0, 0,
+          domain.x - area.x, domain.y - area.y, domain.width, domain.height,
+          controls.colorSplotches, 0, 0, 0,
           0, 0, 0, 0,
         ];
         dispatch(pipeline, { src: src.createView(), dst, ...inputs }, params, size);
@@ -6992,6 +7003,12 @@
       const box = (src, dst, radius) => {
         run(clean.box, src, row, {}, radius, 0, { width: Math.ceil(area.width / 16), height: area.height });
         run(clean.box, row, dst, {}, radius, 1, { width: area.width, height: Math.ceil(area.height / 16) });
+      };
+      const expand = (rect, horizontal, vertical = horizontal) => {
+        const x = Math.max(area.x, rect.x - horizontal);
+        const y = Math.max(area.y, rect.y - vertical);
+        return { x, y, width: Math.min(area.x + area.width, rect.x + rect.width + horizontal) - x,
+          height: Math.min(area.y + area.height, rect.y + rect.height + vertical) - y };
       };
       run(clean.luma, base, luma);
       box(luma, column, 16);
@@ -7003,21 +7020,24 @@
       run(clean.context, row, column, {}, 0, 1);
       run(clean.texture, luma, context, { aux: column });
       box(context, column, 4);
-      run(clean.max, luma, row, {}, 20);
+      run(clean.max, luma, row, {}, 20, 0, { width: Math.ceil(area.width / 16), height: area.height });
       // The chroma pass will reuse this intermediate once the guides are ready.
-      run(clean.max, row, guides, {}, 20, 1);
+      run(clean.max, row, guides, {}, 20, 1, { width: area.width, height: Math.ceil(area.height / 16) });
       run(clean.guides, luma, row, { aux: normalized, aux2: context, aux3: column, sum: guides });
 
-      const repair = (input, output, reach, tap) => {
-        run(clean.taps, input, column, {}, tap);
-        run(clean.taps, column, context, {}, tap, 1);
-        run(clean.pairs, input, column, { aux: context, aux2: grain, aux3: row }, reach);
-        run(clean.relative, input, guides, { aux: column, aux2: grain });
-        run(clean.repair, input, output, { aux: column, aux2: guides, aux3: row, sum: grain }, reach);
+      const repair = (input, output, reach, tap, outputRect) => {
+        const relative = expand(outputRect, 3);
+        const taps = expand(relative, reach);
+        const rows = expand(taps, 0, tap);
+        run(clean.taps, input, column, {}, tap, 0, rows, rows);
+        run(clean.taps, column, context, {}, tap, 1, taps, taps);
+        run(clean.pairs, input, column, { aux: context, aux2: grain, aux3: row }, reach, 0, relative, relative);
+        run(clean.relative, input, guides, { aux: column, aux2: grain }, 0, 0, relative, relative);
+        run(clean.repair, input, output, { aux: column, aux2: guides, aux3: row, sum: grain }, reach, 0, outputRect, outputRect);
       };
-      repair(normalized, luma, 12, 2);
       const large = controls.splotchSize === "large";
-      if (large) repair(luma, context, 28, 4);
+      repair(normalized, luma, 12, 2, large ? expand(tile, 3 + 28 + 4) : tile);
+      if (large) repair(luma, context, 28, 4, tile);
       const color = { aux: large ? context : luma, aux2: normalized };
       if (candidate.cleanGrainDelta) run(clean.pack, base, null, { ...color, packed: candidate.texture }, 0, 0, tile);
       else run(clean.output, base, null, { ...color, out: candidate.texture }, 0, 0, tile);

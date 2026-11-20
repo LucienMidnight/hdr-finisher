@@ -637,13 +637,23 @@ fn cleanTextureMain(@builtin(global_invocation_id) id: vec3u) {
 
 @compute @workgroup_size(8, 8)
 fn cleanMaxMain(@builtin(global_invocation_id) id: vec3u) {
-  if (!inScratch(id)) { return; }
-  let p = vec2i(id.xy);
-  let axis = select(vec2i(0, 1), vec2i(1, 0), ap.frame.w < 0.5);
+  let vertical = ap.frame.w > 0.5;
+  let axis = select(vec2i(1, 0), vec2i(0, 1), vertical);
+  let start = vec2i(id.xy) * (vec2i(1) + axis * 15);
+  if (any(start >= scratchSize())) { return; }
   let radius = i32(ap.frame.z);
-  var peak = 0.0;
-  for (var k = -radius; k <= radius; k++) { peak = max(peak, cleanRead(p + k * axis).x); }
-  textureStore(dstTex, p, vec4f(peak, 0.0, 0.0, 0.0));
+  var sharedPeak = 0.0;
+  for (var k = 15 - radius; k <= radius; k++) { sharedPeak = max(sharedPeak, cleanRead(start + k * axis).x); }
+  var left: array<f32, 16>;
+  left[15] = sharedPeak;
+  for (var k = 14; k >= 0; k--) { left[k] = max(left[k + 1], cleanRead(start + (k - radius) * axis).x); }
+  var right = sharedPeak;
+  for (var k = 0; k < 16; k++) {
+    let p = start + k * axis;
+    if (any(p >= scratchSize())) { break; }
+    if (k > 0) { right = max(right, cleanRead(p + radius * axis).x); }
+    textureStore(dstTex, p, vec4f(max(left[k], right), 0.0, 0.0, 0.0));
+  }
 }
 
 @compute @workgroup_size(8, 8)
@@ -664,8 +674,8 @@ fn cleanGuidesMain(@builtin(global_invocation_id) id: vec3u) {
 
 @compute @workgroup_size(8, 8)
 fn cleanTapsMain(@builtin(global_invocation_id) id: vec3u) {
-  if (!inScratch(id)) { return; }
-  let p = vec2i(id.xy);
+  if (any(id.xy >= vec2u(ap.model.zw))) { return; }
+  let p = vec2i(ap.model.xy) + vec2i(id.xy);
   let row = ap.frame.w < 0.5;
   let axis = select(vec2i(0, 1), vec2i(1, 0), row);
   let radius = i32(ap.frame.z);
@@ -680,6 +690,7 @@ fn cleanTapsMain(@builtin(global_invocation_id) id: vec3u) {
 }
 
 fn cleanReflect(at: i32, extent: i32) -> i32 {
+  if (at >= 0 && at < extent) { return at; }
   if (extent < 2) { return 0; }
   let period = 2 * (extent - 1);
   let t = abs(at) % period;
@@ -694,8 +705,8 @@ fn cleanTap(p: vec2i) -> vec2f {
 
 @compute @workgroup_size(8, 8)
 fn cleanPairsMain(@builtin(global_invocation_id) id: vec3u) {
-  if (!inScratch(id)) { return; }
-  let p = vec2i(id.xy);
+  if (any(id.xy >= vec2u(ap.model.zw))) { return; }
+  let p = vec2i(ap.model.xy) + vec2i(id.xy);
   let reach = i32(ap.frame.z);
   let d = select(8, 20, reach == 28);
   let offsets = array<vec2i, 4>(vec2i(reach, 0), vec2i(0, reach), vec2i(d), vec2i(-d, d));
@@ -731,8 +742,8 @@ fn cleanPairsMain(@builtin(global_invocation_id) id: vec3u) {
 
 @compute @workgroup_size(8, 8)
 fn cleanRelativeMain(@builtin(global_invocation_id) id: vec3u) {
-  if (!inScratch(id)) { return; }
-  let p = vec2i(id.xy);
+  if (any(id.xy >= vec2u(ap.model.zw))) { return; }
+  let p = vec2i(ap.model.xy) + vec2i(id.xy);
   let surrounding = textureLoad(auxTex, p, 0).zw;
   let noise = max(1.25 * textureLoad(aux2Tex, p, 0).x, 1e-7);
   textureStore(dstTex, p, vec4f(length(cleanRead(p).xy - surrounding) / noise, 0.0, 0.0, 0.0));
@@ -757,8 +768,8 @@ fn cleanMedian(p: vec2i) -> vec2f {
 
 @compute @workgroup_size(8, 8)
 fn cleanRepairMain(@builtin(global_invocation_id) id: vec3u) {
-  if (!inScratch(id)) { return; }
-  let p = vec2i(id.xy);
+  if (any(id.xy >= vec2u(ap.model.zw))) { return; }
+  let p = vec2i(ap.model.xy) + vec2i(id.xy);
   let relative = textureLoad(aux2Tex, p, 0).x;
   let guides = textureLoad(aux3Tex, p, 0).xyz;
   let pair = textureLoad(auxTex, p, 0);

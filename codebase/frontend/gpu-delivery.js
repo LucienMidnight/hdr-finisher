@@ -188,36 +188,50 @@
         // pixels (render_cache.geometry_source_proxy), so the SDR lane reuses the
         // HDR upload instead of fetching ~0.9 s of identical pixels again. The
         // alias carries no bytes of its own so memory is not counted twice.
-        const sharedSource=!(job.authored_sdr&&job.adjustments.sdr?.use_authored_base);let hdrSource=null;
+        const sharedSource=!(job.authored_sdr&&job.adjustments.sdr?.use_authored_base&&!job.adjustments.sdr?.linked_to_hdr);let hdrSource=null;
+        const edge=Math.max(256,width,height);
         for(const lane of ["hdr","sdr"]){
           await permit();
           const signature=JSON.stringify(job.adjustments.shared.geometry);
+          const sourceIdentity=lane==="sdr"&&!sharedSource?"authored-sdr":"source";
           if(lane==="sdr"&&sharedSource&&hdrSource&&gpu.proxies.get(hdrSource.identity)===hdrSource){
             const prefix=`${job.id}:hdr:`,identity=`${job.id}:sdr:`+hdrSource.identity.slice(prefix.length);
             if(hdrSource.identity.startsWith(prefix)&&!gpu.proxies.has(identity))
               gpu.proxies.set(identity,{...hdrSource,lane,identity,byteSize:0,bindGroups:new Map()});
           }
-          const proxy=await gpu.loadProxy(job.id,lane,Math.max(256,job.width,job.height),signature,0,"source");
+          const proxy=await gpu.loadProxy(job.id,lane,edge,signature,0,sourceIdentity);
           if(lane==="hdr")hdrSource=proxy;
           stamp("source_ms",lane);
-          const capture=finishing.texture(proxy.width,proxy.height,"rgba16float"),delivery={texture:capture};
           const denoise=job.denoise[lane];
-          if(denoise?.enabled){
-            if(!await gpu.analyzeDenoiseProxy(job.id,lane,job.adjustments,Math.max(256,job.width,job.height),0,"source",denoise.controls))
+          const controls=denoise?.controls;
+          if(denoise?.enabled&&controls.amount>0&&(controls.luminance>0||controls.color_noise>0)){
+            const grain=job.grain_reconstruction&&(controls.method==="clean_grain"||(controls.method==="fine_grain"&&controls.grain_evenness));
+            if(!await gpu.analyzeDenoiseProxy(job.id,lane,job.adjustments,edge,0,sourceIdentity,controls,0,edge,
+              grain?{deliveryGrainSource:proxy,beforeDeliverySubmit:permit}:{}))
               throw Error("GPU Denoise analysis failed.");
           }
           else gpu.denoiseSourceSelector && (gpu.denoiseSourceSelector.selected="original");
           stamp("denoise_ms",lane);
-          const result=await gpu.renderTo(canvas,job.id,lane,job.adjustments,sampleCurvePoints,Math.max(256,job.width,job.height),job.locals,0,null,job.white,
-            {width:job.width,height:job.height},{delivery,beforeDeliverySubmit:permit,measureOnly:true});
+          const capture=finishing.texture(proxy.width,proxy.height,"rgba16float"),delivery={texture:capture};
+          const result=await gpu.renderTo(canvas,job.id,lane,job.adjustments,sampleCurvePoints,edge,job.locals,0,null,job.white,
+            {width:job.width,height:job.height},{identity:sourceIdentity,delivery,beforeDeliverySubmit:permit,measureOnly:true});
           if(!result?.rendered && result?.execution!=="direct")throw Error(`GPU delivery refused the grade: ${result?.reason||JSON.stringify(result?.refusals)}`);
           if(!delivery.params)throw Error("GPU delivery produced no finished image.");job.params=delivery.params;
           stamp("creative_ms",lane);
           const texture=await finishing.finish(capture,job,lane);stamp("finishing_ms",lane);
+          const endpoint=`/api/delivery/gpu/${job.id}/pixels/${lane}`;
+          if(job.grain_reconstruction){
+            await finishing.read(texture,async(row,rows,pixels)=>{
+              const uploaded=await fetch(`${endpoint}?row=${row}&rows=${rows}`,{method:"POST",body:new Blob([pixels])});
+              if(!uploaded.ok)throw Error("GPU encoder strip handoff failed.");
+            });
+            stamp("readback_and_handoff_ms",lane);
+            continue;
+          }
           const pixels=await finishing.read(texture);stamp("readback_ms",lane);
           // A Blob body sends the same bytes but stays out of DevTools request events, which a
           // test connection copies in full and can overflow (release README, October 18).
-          const uploaded=await fetch(`/api/delivery/gpu/${job.id}/pixels/${lane}`,{method:"POST",body:new Blob([pixels])});
+          const uploaded=await fetch(endpoint,{method:"POST",body:new Blob([pixels])});
           if(!uploaded.ok)throw Error("GPU encoder handoff failed.");
           stamp("handoff_ms",lane);
         }

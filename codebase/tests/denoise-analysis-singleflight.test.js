@@ -21,9 +21,10 @@ test('Denoise method controls recover after a rejected save, missing GPU, or exp
   }
 });
 
-test('Grade only prepares GPU Fine Grain while its correction is enabled', async () => {
+for (const [method, toggle] of [['fine_grain', 'enableGradeFineGrainGpu'], ['clean_grain', 'enableGradeCleanGrainGpu']]) {
+test(`Grade only prepares GPU ${method} while its correction is enabled`, async () => {
   const routes = [];
-  const settings = { enabled: true, controls: { method: 'fine_grain' } };
+  const settings = { enabled: true, controls: { method } };
   const runtime = { generation: 0 };
   const gpuPreview = {
     available: true,
@@ -42,9 +43,9 @@ test('Grade only prepares GPU Fine Grain while its correction is enabled', async
     'gradeSourceIdentity', 'recalculateDenoiseAnalysis'), context);
   const prepare = () => context.recalculateDenoiseAnalysis('hdr', { renderAfter: false });
   assert.equal(await prepare(), true);
-  gpuPreview.enableGradeFineGrainGpu = false;
+  gpuPreview[toggle] = false;
   assert.equal(await prepare(), true);
-  delete gpuPreview.enableGradeFineGrainGpu;
+  delete gpuPreview[toggle];
   runtime.showOriginal = true;
   assert.equal(await prepare(), false);
   runtime.showOriginal = false;
@@ -52,6 +53,7 @@ test('Grade only prepares GPU Fine Grain while its correction is enabled', async
   assert.equal(await prepare(), false);
   assert.deepEqual(routes, [true, false]);
 });
+}
 
 test('Match and Undo select separate Denoise preparations at the same SDR size', async () => {
   const identities = [];

@@ -1,4 +1,5 @@
 const {chromium}=require("playwright");
+const assert=require("node:assert/strict");
 const fs=require("node:fs"),os=require("node:os"),path=require("node:path"),{execFileSync}=require("node:child_process");
 const { createHash } = require("node:crypto");
 const root=fs.mkdtempSync(path.join(os.tmpdir(),"hdr-gpu-smoke-"));
@@ -6,7 +7,6 @@ const python=require('../tools/lib/platform.cjs').pythonExecutable();
 const helper=path.join(__dirname,"helpers/gpu_delivery_fixture.py");
 const env={...process.env,PYTHONPATH:path.resolve(__dirname,"../backend")};
 async function authoredSdr(page, api) {
-  const assert = require("node:assert/strict");
   const fixture = path.join(root,"authored.jpg");
   execFileSync(python,[helper,"make-authored",path.join(root,"fixture.tiff"),fixture],{env});
   const upload = await page.request.post(api("/api/session"),{multipart:{file:{name:"authored.jpg",mimeType:"image/jpeg",buffer:fs.readFileSync(fixture)}}});
@@ -81,7 +81,10 @@ async function authoredSdr(page, api) {
   assert.match(await page.evaluate(()=>state.gpuPreview.denoiseSourceSelector.identity),/:authored-sdr$/);
   console.log("Authored Match/Undo: linear sRGB → ACEScg → authored linear sRGB");
 
-  await page.evaluate(()=>commitDenoiseControl("method","fine_grain"));
+  await page.evaluate(()=>{
+    state.gpuPreview.enableGradeFineGrainGpu=false;
+    return commitDenoiseControl("method","fine_grain");
+  });
   await page.waitForFunction(()=>state.gpuPreview.denoiseSourceSelector?.cache?.grain?.token && previewIdleNow());
   const fallback = await page.evaluate(async ()=>{
     const gpu = state.gpuPreview, render = gpu.renderTo;
@@ -117,15 +120,17 @@ async function authoredSdr(page, api) {
     if(!upload.ok())throw Error(await upload.text());
     console.log("fixture uploaded");
     const session=(await upload.json()).session;
-    for (const method of ["standard", "fine_grain", "clean_grain"]) {
-      const output = path.join(root, method);
+    for (const [method, size] of [["standard", "small"], ["fine_grain", "small"], ["clean_grain", "small"], ["clean_grain", "large"]]) {
+      const output = path.join(root, `${method}-${size}`);
       fs.mkdirSync(output);
-      console.log("Denoise delivery", method);
+      console.log("Denoise delivery", method, size);
       const edits=await page.request.get(api(`/api/session/${session.session_id}/edit-state`));
       const editState=await edits.json();
       for (const lane of ["hdr", "sdr"]) {
         editState.document.denoise[lane].enabled = true;
         editState.document.denoise[lane].controls.method = method;
+        editState.document.denoise[lane].controls.splotch_size = size;
+        editState.document.denoise[lane].controls.grain_evenness = method === "fine_grain" ? 0.65 : 0;
       }
       // The clipped calibration fixture exceeds 1000 nits without an authored cap.
       editState.document.global_adjustments.hdr.highlight_section_enabled=true;
@@ -137,11 +142,19 @@ async function authoredSdr(page, api) {
         await global.HDRFinisherElectronTestHarness.selectExportPath(target);
         const grant=await page.evaluate(()=>window.hdrFinisherDesktop.chooseExportPath({extension:"jpg",suggestedName:"fixture.jpg"}));
         console.log("export requested",forced);
+        const backendLog=path.join(global.HDRFinisherElectronTestHarness.userDataDirectory,"logs/backend.log");
+        const logStart=fs.existsSync(backendLog)?fs.readFileSync(backendLog,"utf8").length:0;
         const response=await page.request.post(api(`/api/session/${session.session_id}/export`),{data:{format:"jpeg_ultrahdr",quality:95,
           jpeg_chroma_subsampling:"444",jpeg_gain_map_quality:95,jpeg_gain_map_scale:"full",dithering:"off",guarantee_hdr_peak:true,
           output_path:target,path_grant:grant.grant,output_finishing:{resize_mode:"long_edge",long_edge:72,sharpening:"standard"}},timeout:240000});
         const result=await response.json();console.log(JSON.stringify(result));
         if(!result.accepted || result.renderer!==(forced?"cpu":"gpu"))throw Error(`Wrong renderer: ${JSON.stringify(result)}`);
+        if(!forced && method!=="standard"){
+          const events=fs.readFileSync(backendLog,"utf8").slice(logStart).split("\n").filter(Boolean);
+          assert.ok(events.some(line=>line.includes("gpu_delivery_rendered")&&line.includes('"readback_and_handoff_ms"')),
+            "GPU Grain did not use the strip handoff");
+          assert.ok(!events.some(line=>line.includes("denoise_grain_prepared")), "GPU Grain used CPU preparation");
+        }
         const proofResponse=await page.request.post(api(`/api/session/${session.session_id}/proof/artifact`),{data:{
           format:"jpeg_ultrahdr",quality:95,jpeg_chroma_subsampling:"444",jpeg_gain_map_quality:95,
           jpeg_gain_map_scale:"full",dithering:"off",guarantee_hdr_peak:true,full_size:true,

@@ -5,7 +5,8 @@ import sys
 
 import numpy as np
 
-from delivery_comparison import compare_delivery
+from delivery_comparison import compare_delivery, finished_capture
+from hdr_finisher.hdr_ceiling import channel_nits
 from hdr_finisher.hdr_delivery import check_decoded_hdr_ceiling
 
 if sys.argv[1] == "make":
@@ -31,7 +32,7 @@ elif sys.argv[1] == "make-authored":
     result = backend.export(session, ExportSettings(format="jpeg_ultrahdr", output_path=sys.argv[3], dithering="off"))
     assert result.accepted, result
 elif sys.argv[1] == "compare-authored":
-    from delivery_comparison import finished_capture, metric, percentile99
+    from delivery_comparison import metric, percentile99
 
     root = Path(sys.argv[2])
     exports = {}
@@ -53,6 +54,11 @@ else:
     result = compare_delivery(root / "gpu.jpg", root / "cpu.jpg")
     for lane, agreement in result["renderer_agreement"].items():
         result[lane] = dict(agreement, denoise_passed=agreement["passed"] and agreement["p99"] < 3)
+    result["finished_peak_nits"] = {}
+    for renderer in ("gpu", "cpu"):
+        folder, metadata = finished_capture(root / f"{renderer}.jpg")
+        result["finished_peak_nits"][renderer] = float(channel_nits(
+            np.load(folder / "hdr.npy"), metadata["reference_white_nits"]).max())
     result["peak_nits"] = max(check_decoded_hdr_ceiling(root / f"{renderer}.jpg", "jpeg_ultrahdr", 1000)
                               for renderer in ("gpu", "cpu"))
     print(json.dumps(result))

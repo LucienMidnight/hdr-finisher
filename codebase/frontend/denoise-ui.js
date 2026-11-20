@@ -242,7 +242,7 @@ function nativeDenoiseViewport(lane) {
 function gradeGrainGpuPreferred(lane) {
   if (state.activeWorkflow !== "grade" || !state.gpuPreview) return false;
   const method = state.denoise[lane]?.controls.method;
-  if (method === "clean_grain") return state.gpuPreview.enableGradeCleanGrainGpu === true;
+  if (method === "clean_grain") return state.gpuPreview.enableGradeCleanGrainGpu !== false;
   return method === "fine_grain" && state.gpuPreview.enableGradeFineGrainGpu !== false;
 }
 

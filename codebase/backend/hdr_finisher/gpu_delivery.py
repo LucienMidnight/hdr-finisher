@@ -25,6 +25,7 @@ from .render_cache import SessionRenderCache
 from .delivery_memory import DeliveryMemory
 
 ROOT_ENV = "HDR_FINISHER_GPU_DELIVERY_SPOOL"
+GRAIN_TRIAL_ENV = "HDR_FINISHER_GPU_GRAIN_DELIVERY"
 _sessions = {}
 _lock = RLock()
 _clients = {}
@@ -105,6 +106,23 @@ def render_pair(frame, settings, adjustments):
         return _render_pair(frame, owner, settings, adjustments)
 
 
+def grain_delivery_enabled(frame):
+    return os.environ.get(GRAIN_TRIAL_ENV) == "1" and _uses_grain_reconstruction(frame)
+
+
+def _uses_grain_reconstruction(frame):
+    from .exporters import denoise_settings_for_export
+    from .models import PreviewKind
+
+    for kind in (PreviewKind.HDR, PreviewKind.SDR):
+        lane = denoise_settings_for_export(frame, kind)
+        if lane is not None and (lane.controls.method == "clean_grain" or (
+            lane.controls.method == "fine_grain" and lane.controls.grain_evenness
+        )):
+            return True
+    return False
+
+
 def _render_pair(frame, owner, settings, adjustments):
     from .delivery import preferences, renderer_record
     try:
@@ -115,6 +133,8 @@ def _render_pair(frame, owner, settings, adjustments):
     from .finishing import geometry_output_dimensions
     native_size = getattr(frame, "framing_source_size", None) or geometry_output_dimensions(
         frame.image.shape[1], frame.image.shape[0], adjustments.shared.geometry)
+    grain_reconstruction = _uses_grain_reconstruction(frame)
+    grain_trial = grain_reconstruction and os.environ.get(GRAIN_TRIAL_ENV) == "1"
     # Full-size Proof states this size and passes only enabled locals; export
     # derives the same size and passes all locals. Key on what is rendered so
     # both share one finished pair and one CPU fallback decision.
@@ -123,7 +143,7 @@ def _render_pair(frame, owner, settings, adjustments):
         repr(getattr(frame, "denoise", None)), getattr(frame, "hdr_reference_white_nits", 203),
         settings.output_finishing.model_dump_json(), policy["effective_force_cpu"],
         settings.export_with_frame, repr(getattr(frame, "framing", None)),
-        native_size, getattr(frame, "framing_output_limit", None))
+        native_size, getattr(frame, "framing_output_limit", None), grain_trial)
     cached = getattr(owner, "_delivery_cache", None)
     if cached and cached[0] == signature:
         frame._delivery_record = cached[2]
@@ -141,21 +161,13 @@ def _render_pair(frame, owner, settings, adjustments):
             record = {"renderer": "cpu", "fallback_reason":
                 "Native GPU delivery working set does not fit the existing app memory ceiling; using bounded CPU strips."}
             return None
+        if grain_reconstruction and not grain_trial:
+            record = {"renderer": "cpu", "fallback_reason": "GPU Grain delivery has not qualified for default use."}
+            return None
         if root is None or not (root / "heartbeat").exists() or time.time() - (root / "heartbeat").stat().st_mtime > 5:
             cacheable = False
             raise RuntimeError("The GPU delivery renderer is unavailable.")
-        identity = "delivery-" + uuid4().hex
-        directory = root / identity
-        directory.mkdir()
-        raw = getattr(frame, "raw_development", None)
-        source_memory, _ = memory.allocate(frame.image.shape, None if raw else frame.image)
-        raw_memory = None
-        if raw:
-            sensor_body = raw["body"]
-            raw_memory, data = memory.allocate((len(sensor_body) // 4,))
-            data.view(np.uint8)[:] = np.frombuffer(sensor_body, dtype=np.uint8)
         reference = getattr(frame, "sdr_reference_image", None)
-        reference_memory = memory.allocate(reference.shape, reference)[0] if reference is not None else None
         from .finishing import geometry_output_dimensions, resolve_output_dimensions
         height, width = frame.image.shape[:2]
         output = resolve_output_dimensions(*geometry_output_dimensions(width, height, adjustments.shared.geometry), settings.output_finishing)
@@ -165,6 +177,30 @@ def _render_pair(frame, owner, settings, adjustments):
         photo_output = list(layout.photo[2:]) if layout else list(output)
         if layout:
             output = (layout.width, layout.height)
+        raw = getattr(frame, "raw_development", None)
+        if grain_trial:
+            from . import app_memory
+
+            census = app_memory.snapshot()
+            starting = max(app_memory.STARTING, census["totalBytes"] + census["reservedBytes"])
+            required = (frame.image.nbytes + 288 * 1024**2
+                        + 76 * max(width * height, output[0] * output[1])
+                        + (reference.nbytes if reference is not None else 0)
+                        + (len(raw["body"]) if raw else 0))
+            if starting + required > app_memory.CEILING:
+                record = {"renderer": "cpu", "fallback_reason":
+                    "GPU Grain delivery working set does not fit the app memory ceiling."}
+                return None
+        identity = "delivery-" + uuid4().hex
+        directory = root / identity
+        directory.mkdir()
+        source_memory, _ = memory.allocate(frame.image.shape, None if raw else frame.image)
+        raw_memory = None
+        if raw:
+            sensor_body = raw["body"]
+            raw_memory, data = memory.allocate((len(sensor_body) // 4,))
+            data.view(np.uint8)[:] = np.frombuffer(sensor_body, dtype=np.uint8)
+        reference_memory = memory.allocate(reference.shape, reference)[0] if reference is not None else None
         framing = None if layout is None else dict(layout.as_dict(), colors={
             lane: [color.tolist() for color in layer_colors(frame.framing, lane,
                 getattr(frame, "hdr_reference_white_nits", 203), delivery_ceiling_nits(adjustments))]
@@ -182,6 +218,7 @@ def _render_pair(frame, owner, settings, adjustments):
             "white": getattr(frame, "hdr_reference_white_nits", 203), "adjustments": adjustments.model_dump(mode="json"),
             "locals": [v.model_dump(mode="json") for v in adjustments.enabled_locals(getattr(frame, "local_adjustments", []))],
             "denoise": denoise.model_dump(mode="json"), "denoise_source_identity": source_identity(frame),
+            "grain_reconstruction": grain_trial,
             "finishing": settings.output_finishing.model_dump(mode="json"),
             "priority": getattr(frame, "delivery_priority", 20), "created": time.time()})
         reply = _wait_for_result(directory, root, frame)
@@ -528,14 +565,25 @@ def create_gpu_delivery_router():
             return {}
 
     @router.post("/{identity}/pixels/{lane}")
-    async def pixels(identity: str, lane: str, request: Request):
+    async def pixels(identity: str, lane: str, request: Request, row: int | None = None, rows: int | None = None):
         if identity not in active or lane not in {"hdr", "sdr", "edge", "dng", "retouch"}:
             raise HTTPException(404, "GPU delivery job expired.")
         directory, value = active[identity]
         if lane not in value["memory"]:
             raise HTTPException(400, "Unexpected delivery lane.")
+        if (row is not None or rows is not None) != bool(value.get("grain_reconstruction")):
+            raise HTTPException(400, "Incorrect delivery pixel transport.")
+        if row is not None or rows is not None:
+            width, height = value["output"]
+            next_rows = value.setdefault("next_rows", {})
+            if (lane not in {"hdr", "sdr"} or row is None or rows is None
+                or row != next_rows.get(lane, 0) or not (1 <= rows <= 32) or row + rows > height):
+                raise HTTPException(400, "Incorrect delivery pixel rows.")
+            start, stop = row * width * 16, (row + rows) * width * 16
+        else:
+            start, stop = 0, None
         with DeliveryMemory() as memory:
-            pixels = memory.attach(value["memory"][lane]).view(np.uint8).reshape(-1)
+            pixels = memory.attach(value["memory"][lane]).view(np.uint8).reshape(-1)[start:stop]
             offset = 0
             async for body in request.stream():
                 if offset + len(body) > pixels.size:
@@ -544,7 +592,10 @@ def create_gpu_delivery_router():
                 offset += len(body)
             if offset != pixels.size:
                 raise HTTPException(400, "Incorrect delivery pixel size.")
-        value.setdefault("received", []).append(lane)
+        if row is not None:
+            next_rows[lane] = row + rows
+        if row is None or next_rows[lane] == height:
+            value.setdefault("received", []).append(lane)
         return Response(status_code=204)
 
     @router.post("/{identity}/complete")

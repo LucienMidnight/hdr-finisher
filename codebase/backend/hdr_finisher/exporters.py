@@ -190,7 +190,7 @@ def _render_unwatermarked_branch(
     session: object, settings: ExportSettings, kind: PreviewKind, adjustments: AdjustmentState,
     *, denoise_source=None, allocate_output=None,
 ) -> np.ndarray:
-    from .gpu_delivery import render_pair
+    from .gpu_delivery import grain_delivery_enabled, render_pair
     object.__setattr__(settings, "_last_cpu_strips", False)
     bounded = _bounded_export_eligible(session, settings, kind, adjustments, prepared_denoise=denoise_source is not None)
     if bounded and (denoise_source is None or all(
@@ -211,7 +211,8 @@ def _render_unwatermarked_branch(
             starting = max(starting, memory["totalBytes"] + memory["reservedBytes"])
             # The hidden renderer's readback and the main process's mapped
             # upload can coexist for the current float32 RGBA rendition.
-            gpu_required += output[0] * output[1] * 2 * 16
+            if not grain_delivery_enabled(session):
+                gpu_required += output[0] * output[1] * 2 * 16
         if starting + gpu_required > app_memory.CEILING:
             object.__setattr__(settings, "_bounded_cpu_delivery", True)
     pair = render_pair(session, settings, adjustments)

@@ -6,12 +6,13 @@ import numpy as np
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from hdr_finisher import gpu_delivery, delivery
+from hdr_finisher import app_memory, gpu_delivery, delivery
 from hdr_finisher.models import AdjustmentState, DenoiseDocumentSettings, ExportSettings
 
 
 @pytest.mark.parametrize("worker_ready_at_first_request", [True, False])
-def test_paired_handoff_reuses_compatible_versions_and_proof_owner(tmp_path, monkeypatch, worker_ready_at_first_request):
+@pytest.mark.parametrize("grain", [False, True])
+def test_paired_handoff_reuses_compatible_versions_and_proof_owner(tmp_path, monkeypatch, worker_ready_at_first_request, grain):
     monkeypatch.setattr(delivery, "PREFERENCES_PATH", tmp_path / "policy.json")
     monkeypatch.delenv(delivery.FORCE_CPU_ENV, raising=False)
     monkeypatch.setattr(gpu_delivery, "_clients", {})
@@ -19,6 +20,11 @@ def test_paired_handoff_reuses_compatible_versions_and_proof_owner(tmp_path, mon
     app = FastAPI(); app.include_router(gpu_delivery.create_gpu_delivery_router())
     frame = SimpleNamespace(image=np.full((4,6,3), .18, dtype=np.float32), local_adjustments=[],
         adjustments=AdjustmentState(), denoise=DenoiseDocumentSettings())
+    if grain:
+        frame.denoise.hdr.enabled = True
+        frame.denoise.hdr.controls.method = "clean_grain"
+        monkeypatch.setenv(gpu_delivery.GRAIN_TRIAL_ENV, "1")
+        monkeypatch.setattr(app_memory, "snapshot", lambda: {"totalBytes": 0, "reservedBytes": 0})
     settings=ExportSettings()
     with TestClient(app) as client, ThreadPoolExecutor(max_workers=1) as worker:
         if not worker_ready_at_first_request:
@@ -34,7 +40,14 @@ def test_paired_handoff_reuses_compatible_versions_and_proof_owner(tmp_path, mon
             time.sleep(.01)
         for lane, value in (("hdr", .18), ("sdr", .3)):
             pixels=np.full((4,6,4), value, dtype="<f4").tobytes()
-            assert client.post(f"/api/delivery/gpu/{job['id']}/pixels/{lane}", content=pixels).status_code==204
+            endpoint = f"/api/delivery/gpu/{job['id']}/pixels/{lane}"
+            if grain:
+                assert client.post(endpoint, content=pixels).status_code == 400
+                assert client.post(f"{endpoint}?row=2&rows=2", content=pixels[192:]).status_code == 400
+                assert client.post(f"{endpoint}?row=0&rows=2", content=pixels[:192]).status_code == 204
+                assert client.post(f"{endpoint}?row=2&rows=2", content=pixels[192:]).status_code == 204
+            else:
+                assert client.post(endpoint, content=pixels).status_code == 204
         assert client.post(f"/api/delivery/gpu/{job['id']}/complete", json={}).status_code==200
         pair=pending.result(timeout=5)
         np.testing.assert_allclose(pair["hdr"], .18)

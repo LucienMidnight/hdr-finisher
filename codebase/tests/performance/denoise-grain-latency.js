@@ -9,6 +9,8 @@ const reusePhoto = require("../helpers/reuse-test-photo.cjs");
 const output = fs.mkdtempSync(path.join(os.tmpdir(), "hdr-finish-denoise-grain-"));
 const baselineMethods = ["standard", "fine_grain", "clean_grain"];
 const fullProofMethod = process.argv.find(arg => arg.startsWith("--full-proof-method="))?.split("=")[1];
+const fullDeliveryRoute = process.argv.find(arg => arg.startsWith("--full-delivery-route="))?.split("=")[1];
+const coldProofOnly = process.argv.includes("--cold-proof-only");
 const phaseTwo = process.argv.find(arg => arg.startsWith("--phase2="))?.split("=")[1];
 const phaseOne = phaseTwo || process.argv.find(arg => arg.startsWith("--phase1="))?.split("=")[1];
 const ceilingOnly = process.argv.includes("--ceiling-only");
@@ -176,21 +178,24 @@ async function checkStillPicture(page, method, action, { changeExposure = false,
 function backendLog(harness, start, end, method) {
   const log = fs.readFileSync(path.join(harness.userDataDirectory, "logs/backend.log"), "utf8");
   const preparation = [];
+  const deliveryTurns = [];
   let peakAppBytes = null;
   for (const line of log.split(/\r?\n/)) {
-    const match = line.match(/\[library\] (denoise_grain_prepared|app_memory) (\{.*\})/);
+    const match = line.match(/\[library\] (denoise_grain_prepared|app_memory|gpu_delivery_turn) (\{.*\})/);
     if (!match) continue;
     const event = JSON.parse(match[2]);
     if (event.time * 1000 < start || event.time * 1000 > end) continue;
     if (match[1] === "app_memory") {
       peakAppBytes = Math.max(peakAppBytes ?? 0, event.totalBytes);
+    } else if (match[1] === "gpu_delivery_turn") {
+      deliveryTurns.push(event);
     } else if (event.method === method) {
-      preparation.push({ edge: event.edge, width: event.width, height: event.height, ms: event.duration_ms,
+      preparation.push({ usage: event.usage, edge: event.edge, width: event.width, height: event.height, ms: event.duration_ms,
         fitMs: event.fit_ms, filterMs: event.filter_ms, tileWorkerMs: event.tile_worker_ms,
         diskBytes: event.disk_bytes, reusedRgb: event.reused_rgb });
     }
   }
-  return { preparation, peakAppBytes };
+  return { preparation, peakAppBytes, ...(deliveryTurns.length ? { deliveryTurns } : {}) };
 }
 
 async function measurePicture(page, button, method, { pan = false, switchMethod = false,
@@ -427,7 +432,7 @@ async function measurePhaseOne(page, name, record, setZoom) {
   await page.evaluate(({ enableGpu, capturePixels, cleanGrade }) => {
     const gpu = state.gpuPreview;
     if (!enableGpu) gpu.enableGradeFineGrainGpu = false;
-    if (cleanGrade) gpu.enableGradeCleanGrainGpu = enableGpu;
+    if (cleanGrade && !enableGpu) gpu.enableGradeCleanGrainGpu = false;
     gpu.setInstrumentationEnabled(true);
     if (!capturePixels || gpu.captureFineGrainGradeInstalled) return;
     gpu.captureFineGrainGradeInstalled = true;
@@ -553,6 +558,7 @@ async function measurePhaseOne(page, name, record, setZoom) {
         if (phaseTwo) {
           await check("pan outside the sharp patch at 110%", null, { pan: "outside" });
           if (gpuRoute && process.env.HDR_FINISHER_GRAIN_NO_CAPTURE !== "1") await capture("pan-wide");
+          if (process.argv.includes("--wide-pan-only")) return;
           if (cleanGrade) {
             const strength = await page.evaluate(() => state.denoise.hdr.controls.color_splotches);
             const blend = await check("Color Splotches drag at 110%", "#denoise-splotches", { drag: true, release: true });
@@ -624,7 +630,7 @@ async function measurePhaseOne(page, name, record, setZoom) {
       }, originalEvenness);
       await setZoom("#zoom-fit");
     }
-    if (phaseTwo && !cleanGrade && lane === "hdr" && gpuRoute && name === "IMG_0790.CR2"
+    if (phaseTwo && lane === "hdr" && gpuRoute && name === "IMG_0790.CR2"
         && process.env.HDR_FINISHER_GRAIN_NO_CAPTURE !== "1") {
       const before = path.join(captures, `${name}-hdr-bypass-before`);
       const after = path.join(captures, `${name}-hdr-bypass-after`);
@@ -640,24 +646,30 @@ async function measurePhaseOne(page, name, record, setZoom) {
       await captureFinishedGrade(page, before);
       const original = fs.readFileSync(`${before}.rgba`);
       assert.ok(!fs.readFileSync(`${path.join(captures, name)}-hdr-Fit-gpu.rgba`).equals(original),
-        "Fine Grain must change the finished pixels for this photo.");
+        `${method} must change the finished pixels for this photo.`);
       await page.evaluate(async () => {
         await setDenoiseEnabled(true);
-        if (!state.gpuPreview.denoiseSourceSelector.cache.grain?.gpu) throw Error("Missing GPU Grain result.");
+        if (!gradeGrainGpuEnabled("hdr") || !state.gpuPreview.denoiseSourceSelector.cache.grain?.gpu) {
+          throw Error("Missing default GPU Grain result.");
+        }
         state.denoiseRuntime.hdr.showOriginal = true;
+        if (gradeGrainGpuEnabled("hdr")) throw Error("Show original did not switch off GPU Grain.");
       });
       await page.waitForFunction(() => previewIdleNow());
       await draw();
       await captureFinishedGrade(page, after);
       assert.ok(fs.readFileSync(`${after}.rgba`).equals(original),
         "Show original must restore the original Grade pixels with a cached GPU correction");
-      await page.evaluate(() => setDenoiseEnabled(false));
+      await page.evaluate(async () => {
+        await setDenoiseEnabled(false);
+        if (gradeGrainGpuEnabled("hdr")) throw Error("Denoise off did not switch off GPU Grain.");
+      });
       await page.waitForFunction(() => previewIdleNow());
       await draw();
       await captureFinishedGrade(page, after);
       assert.ok(fs.readFileSync(`${after}.rgba`).equals(original),
-        "Bypassing GPU Fine Grain must restore the original Grade pixels");
-      console.log("Fine Grain Show original and bypass matched the finished undenoised Grade pixels.");
+        "Bypassing GPU Grain must restore the original Grade pixels");
+      console.log(`${method}: Show original and bypass matched the finished undenoised Grade pixels.`);
       for (const base of [before, after]) {
         fs.rmSync(`${base}.rgba`);
         fs.rmSync(`${base}.json`);
@@ -689,9 +701,10 @@ async function measureDelivery(page, harness, name, method, record, proofOnly = 
   let exportSha256;
   if (!proofOnly) await harness.selectExportPath(target);
   await page.evaluate(async measureFullProof => {
+    if (measureFullProof) activateWorkflowTab("export");
     state.denoise.sdr = structuredClone(state.denoise.hdr);
     if (!await persistDenoiseSettings()) throw Error("Could not save the SDR Denoise method.");
-    activateWorkflowTab("export");
+    if (!measureFullProof) activateWorkflowTab("export");
     els.exportFormat.value = "jpeg_ultrahdr";
     els.exportQuality.value = "90";
     els.exportResizeMode.value = "original";
@@ -757,7 +770,7 @@ async function measureDelivery(page, harness, name, method, record, proofOnly = 
     }
   }
   await record(`${fullProof ? "full-size" : "reduced"} JPEG Ultra HDR Proof`, proof);
-  if (fullProofMethod) assert.equal(proof.artifactSha256, exportSha256, "Full-size Proof differs from export");
+  if (fullProofMethod && !proofOnly) assert.equal(proof.artifactSha256, exportSha256, "Full-size Proof differs from export");
   await page.evaluate(async () => {
     activateWorkflowTab("grade");
     state.denoise.sdr.enabled = false;
@@ -953,7 +966,9 @@ async function measureBaseline(page, harness, name, record, setZoom) {
     }
     await page.goto(process.env.HDR_FINISHER_URL);
     assert.ok(!fullProofMethod || baselineMethods.includes(fullProofMethod), "Unknown Denoise method");
-    if (fullProofMethod) await api("/api/delivery/preferences", { force_cpu: true });
+    assert.ok(!fullDeliveryRoute || fullProofMethod && ["cpu", "gpu"].includes(fullDeliveryRoute), "Unknown full delivery route");
+    assert.ok(!coldProofOnly || fullProofMethod, "Cold Proof needs a full Proof method");
+    if (fullProofMethod) await api("/api/delivery/preferences", { force_cpu: fullDeliveryRoute !== "gpu" });
     const baseline = Boolean(fullProofMethod) || process.argv.includes("--speed-baseline");
     const panCoverage = process.argv.includes("--pan-coverage");
     const cachePressure = process.argv.includes("--grain-cache-pressure");
@@ -1171,11 +1186,14 @@ async function measureBaseline(page, harness, name, record, setZoom) {
         }
         await page.waitForFunction(() => state.acceptedPresentation?.exact && previewIdleNow());
         await page.evaluate(method => {
+          activateWorkflowTab("export");
+          state.denoiseRuntime.hdr.showOriginal = true;
+          state.denoiseRuntime.sdr.showOriginal = true;
           state.denoise.hdr.controls.method = method;
           state.denoise.hdr.enabled = true;
         }, fullProofMethod);
         await measureDelivery(page, harness, name, fullProofMethod,
-          deliveryRecorder(page, harness, name, fullProofMethod));
+          deliveryRecorder(page, harness, name, fullProofMethod), coldProofOnly);
         continue;
       }
       if (baseline) {

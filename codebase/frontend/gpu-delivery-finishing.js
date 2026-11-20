@@ -181,16 +181,17 @@ fn lanczos(v:f32)->f32 { if(abs(v)>=3.){return 0.;} return sinc(v)*sinc(v/3.); }
     }finally{buffer.destroy();this.release(photo);}
     return canvas;
   }
-  async read(texture){
+  async read(texture,sendRows){
     const width=texture.width,height=texture.height,stride=Math.ceil(width*16/256)*256;
-    const output=new Float32Array(width*height*4);
-    const rows=Math.max(1,Math.min(128,Math.floor(this.device.limits.maxBufferSize/stride)));
+    const rows=Math.max(1,Math.min(sendRows?32:128,Math.floor(this.device.limits.maxBufferSize/stride)));
+    const output=new Float32Array(width*(sendRows?rows:height)*4);
     const buffer=this.device.createBuffer({size:stride*rows,usage:GPUBufferUsage.COPY_DST|GPUBufferUsage.MAP_READ});
     try{for(let row=0;row<height;row+=rows){await this.permit();const count=Math.min(rows,height-row),encoder=this.device.createCommandEncoder();
       encoder.copyTextureToBuffer({texture,origin:[0,row]},{buffer,bytesPerRow:stride},[width,count]);this.device.queue.submit([encoder.finish()]);
       await buffer.mapAsync(GPUMapMode.READ);const mapped=new Float32Array(buffer.getMappedRange());
-      for(let y=0;y<count;y++)output.set(mapped.subarray(y*stride/4,y*stride/4+width*4),(row+y)*width*4);
-      buffer.unmap();}
+      for(let y=0;y<count;y++)output.set(mapped.subarray(y*stride/4,y*stride/4+width*4),((sendRows?0:row)+y)*width*4);
+      buffer.unmap();
+      if(sendRows)await sendRows(row,count,output.subarray(0,width*count*4));}
     }finally{buffer.destroy();this.release(texture);}return output;
   }
 };

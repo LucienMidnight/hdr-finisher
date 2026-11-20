@@ -1,3 +1,99 @@
+## November 20 — Fine and Clean Grain GPU delivery trial
+
+Export and full-size Proof can share the graphics-card reconstruction used
+in Grade. The admitted trial skips CPU Grain preparation and its disk
+scratch. It passes the finished HDR and SDR pixels to the encoder in
+32-row strips. If the job cannot use the GPU, both outputs use the CPU.
+The trial stays off by default: no measured case qualified on both the
+whole wait and the 4 GB memory cap. Standard and Fine Grain with zero Grain
+Evenness keep their existing delivery selection.
+
+MacBook Neo, A18 Pro, 8 GB unified memory, macOS 27.0.1, AC power.
+Unpackaged Electron at 1408 × 794 under the shared GPU lock, with the
+fast suites idle. Native JPEG Ultra HDR at quality 90, 1,000-nit Proof,
+HDR Highlight enabled, original dimensions, no metadata. Each entry is
+one action-to-result wait / sampled whole-app physical footprint. Proof
+was requested immediately after export, not measured from a cold start.
+
+| Photo and method | CPU export (s / GB) | Trial export (s / GB) | CPU full Proof (s / GB) | Trial full Proof (s / GB) |
+| --- | ---: | ---: | ---: | ---: |
+| Canon `IMG_0790.CR2`, Fine | 42.282 / 2.226 | 33.797 / 3.542 GPU | 52.453 / 1.914 | 39.895 / 3.062 GPU |
+| Canon, Clean | 47.313 / 2.396 | 27.156 / 3.702 GPU | 57.764 / 1.922 | 34.047 / 3.393 GPU |
+| Sony `_DSC7970.ARW`, Fine | 34.627 / 3.365 | 51.729 / 3.387 CPU fallback | 66.496 / 3.338 | 76.940 / 3.389 CPU fallback |
+| Sony, Clean | 43.329 / 3.360 | 64.429 / 3.355 CPU fallback | 72.844 / 3.319 | 87.213 / 3.392 CPU fallback |
+
+The Sony was refused before the GPU allocated its full-size working set.
+Those trial numbers show the CPU fallback stayed under the cap. The separate
+Grade preview could still start work in those earlier Sony trial sessions,
+so their times do not measure a GPU speedup or a fallback penalty. The
+isolated Canon pairs shortened export / Proof waits by 20% / 24% (Fine)
+and 43% / 41% (Clean); neither cut the wait approximately in half. The
+Canon's successful GPU turns took 5.173 s and 6.542 s, including about
+1.45 s each for readback and handoff, with no CPU Grain scratch. Fine
+yielded once to the shared GPU budget before completing. Focus next on
+full-image finishing, codec work and Proof display rather than just the
+Grain computation. The earlier Clean Grain baselines used different Grade
+or run conditions and are not the denominators for these speedups.
+
+On the delivery calibration fixture, Fine Grain and both Clean Grain
+sizes passed finished GPU-versus-CPU colour checks. Worst mean / p99:
+0.025 / 0.0563 ΔE ITP in HDR, below 1 / 3, and 0.0104 / 0.0332
+ΔE 2000 in SDR. Both routes stayed at or below 1,000 nits before encoding.
+The separate saved-RAW JPEG check reached 1,008.578 nits after encoding;
+the JPEG Ultra HDR, AVIF and JPEG XL ceiling checks peaked at 1,009.607 nits
+across both renderers, below the 1,010-nit allowance. Full-size Proof and
+export matched byte for byte within each tested renderer. Those byte checks
+do not compare the GPU's encoded bytes to the CPU's.
+
+Delivery smoke, Proof size, both fast suites and the quick Library check
+passed. The protected-project Proof identity driver could not open its
+Windows source path on this Mac; the fixture was not modified and all
+three protected SHA-256 hashes passed. Native Canon and Sony checks verify
+Proof/export identity independently. Receipts:
+`codebase/output/denoise-grain-delivery/`.
+
+## November 20 — Clean Grain Large pan and Grade rollout
+
+MacBook Neo, A18 Pro, 8 GB unified memory, macOS 27.0.1, AC power.
+Unpackaged Electron at 1408 × 794 under the shared GPU lock, with the
+fast suites idle. Canon `IMG_0790.CR2` and Sony `_DSC7970.ARW`; signed RAW
+development, harsh-speck cleanup ×2.5, both routes set to Large. Times
+are action-to-finished-picture; memory is the whole app's sampled
+physical footprint in decimal GB. Each row is one observation per route.
+
+| HDR wait or peak | Canon CPU → GPU | Sony CPU → GPU |
+| --- | ---: | ---: |
+| First sharp at 110% (s) | 12.509 → 2.049 | 35.989 → 3.698 |
+| Fit (s) | 12.101 → 3.815 | 30.068 → 8.900 |
+| Evenness drag (s) | 11.511 → 1.534 | 29.773 → 1.547 |
+| Small pan (s) | 0.200 → 0.033 | 0.418 → 0.028 |
+| Wide pan, with capture (s / GB) | 0.459 / 1.863 → 0.315 / 2.059 | 0.464 / 2.175 → 0.470 / 2.504 |
+| Wide pan, independent repeat without capture (s / GB) | — | 1.278 / 2.207 → 0.831 / 3.287 |
+| Peak across paired Grade checks (GB) | 2.751 → 2.501 | 4.231 → 3.034 |
+
+The original failing Sony result was 0.573 s on GPU versus 0.459 s on
+CPU. Large was running colour passes over halo pixels it did not need,
+and the pan fetched and uploaded pixels the graphics card already held.
+The current code keeps the same reach, filters only the pixels subsequent
+passes read, and fetches just the missing strip when a horizontal pan can
+reuse a source region from the same revision. The Sony transfer fell from
+48.92 MB to 22.36 MB. The captured pair was within 1.4% and the repeat was
+35% faster; the no-capture repeat spent more time drawing the underlying
+picture on both routes. Clean Grain is now enabled in Grade alongside Fine.
+With the GPU setting left at its default, wide pans took 0.339 s on
+Canon and 0.438 s on Sony. The highest sampled waits were 2.457 GB and
+2.976 GB, respectively. On Canon, Show original and bypass both restored
+the exact finished pixels of the undenoised picture, even after GPU Grain
+had been cached.
+
+Across finished Grade pixels and tile joins, the worst mean / p99 was
+0.012 / 0.143 ΔE ITP in HDR and 0.116 / 0.625 ΔE 2000 in SDR. Both
+GPU pan overlaps and the injected Canon SDR CPU fallback matched their
+reference pixels exactly. At +3 EV, the four Clean Large HDR ceiling
+captures (Fit and 110% on both photos) had zero pixels above 600 nits;
+the highest was 599.99994 nits. Receipts:
+`codebase/output/denoise-grain-delivery/`.
+
 ## November 20 — Fine Grain enabled in Grade
 
 MacBook Neo with A18 Pro, 8 GB unified memory and macOS 27.0.1 on AC.
