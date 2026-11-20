@@ -494,6 +494,16 @@ def fallback_picture(root, path, document, edge, cancelled=None, progress=None):
     service.document = lambda _: document
     frame = service.frame(service.describe(path, metadata))
     adjustments = frame.adjustments
+    for lane, settings in ((PreviewKind.HDR, frame.denoise.hdr), (PreviewKind.SDR, frame.denoise.sdr)):
+        if (lane == PreviewKind.SDR and frame.sdr_reference_image is not None
+                and adjustments.sdr.use_authored_base and not adjustments.sdr.linked_to_hdr):
+            continue
+        controls = settings.controls
+        if settings.enabled and controls.method == "micro_grain":
+            settings.controls = controls.model_copy(update={
+                "method": "standard", "amount": .75, "luminance": .4 * controls.micro_luminance,
+                "color_noise": .8 * controls.micro_color, "detail_recovery": controls.micro_detail,
+            })
     def render(kind):
         check_cancelled(cancelled)
         source, reference, source_filter = delivery_denoise_inputs(frame, kind, adjustments)

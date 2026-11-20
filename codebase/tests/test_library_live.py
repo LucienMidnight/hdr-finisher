@@ -149,6 +149,31 @@ def test_library_cpu_picture_respects_saved_hdr_peak(tmp_path, monkeypatch):
     assert peaks[0] <= 400
 
 
+def test_library_cpu_micro_grain_uses_the_reduced_scene_controls(tmp_path, monkeypatch):
+    from hdr_finisher import denoise_adaptive
+    from hdr_finisher.library_live import fallback_picture
+    from hdr_finisher.sessions import SessionStore
+
+    path = photo(tmp_path)
+    saved = SessionStore().prepare_session(path, owns_source_path=False).edit_document().model_dump(mode="json")
+    saved["denoise"]["hdr"]["enabled"] = True
+    saved["denoise"]["hdr"]["controls"].update(method="micro_grain", micro_luminance=.5, micro_color=.75, micro_detail=.7)
+    seen = []
+
+    def resolve(image, model, controls):
+        seen.append(controls)
+        return image
+
+    monkeypatch.setattr(denoise_adaptive, "resolve_adaptive", resolve)
+    fallback_picture(tmp_path / "cache", path, saved, 640)
+    assert len(seen) == 1
+    controls = seen[0]
+    assert (controls.method, controls.amount, controls.luminance) == ("standard", .75, .2)
+    assert abs(controls.color_noise - .6) < 1e-9
+    assert controls.detail_recovery == .7
+    assert saved["denoise"]["hdr"]["controls"]["method"] == "micro_grain"
+
+
 def test_save_revert_and_copy_do_not_launch_finished_picture_work(tmp_path):
     from hdr_finisher.sessions import SessionStore
     from hdr_finisher.library_grades import LibraryGrades
