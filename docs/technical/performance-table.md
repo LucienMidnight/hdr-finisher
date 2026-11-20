@@ -1,3 +1,39 @@
+## November 20 — Native JPEG Ultra HDR Proof on the 8 GB MacBook Neo
+
+Baseline `8632bfa2` versus the bounded JPEG Proof change. MacBook Neo A18 Pro
+(6 cores, 8 GB unified memory), macOS 27.0.1, AC power, 1408 × 794 Electron
+window, fresh profiles and the shared GPU lock. Full-size Q90 JPEG Ultra HDR
+with Denoise enabled for both renditions. CPU delivery was selected to use the
+same renderer and metadata was disabled for the source-file comparison. Each
+pair uses the same developed RAW, grade and measured Denoise model. Sony and
+Canon Standard had the 1,000-nit HDR limit enabled. Canon Fine Grain and
+Clean Grain used the RAW's default Highlights setting and the optional JPEG
+codec-limit check. All Proof views used the 1,000-nit display target.
+
+| Photo | Method | Proof peak before → after (GB) | Build Proof to painted picture (s) | Separate export before → after (s / GB) |
+| --- | --- | ---: | ---: | ---: |
+| Canon IMG_0790.CR2 | Standard | 5.84 → 2.57 | 92.57 → 73.08 | 51.28 / 2.69 → 50.33 / 2.55 |
+| Canon IMG_0790.CR2 | Fine Grain | 5.92 → 2.28 | 59.53 → 31.70 | 31.94 / 2.30 → 24.28 / 2.08 |
+| Canon IMG_0790.CR2 | Clean Grain | 6.19 → 2.11 | 62.33 → 37.14 | 31.55 / 2.23 → 32.33 / 2.09 |
+| Sony _DSC7970.ARW | Standard | 13.53 → 3.53 | 105.18 → 68.36 | 40.06 / 3.55 → 35.04 / 3.53 |
+| Sony _DSC7970.ARW | Fine Grain | 13.36 → 3.46 | 149.05 → 111.87 | 59.68 / 3.49 → 71.18 / 3.42 |
+| Sony _DSC7970.ARW | Clean Grain | 12.50 → 3.45 | 129.57 → 73.29 | 67.16 / 3.42 → 61.31 / 3.42 |
+
+One sample per cell, with the separate export before the Proof click. The app
+memory reading sums the Apple physical footprint of the Electron process tree,
+including codec helpers. The time includes encoding, reconstruction, decoding
+and presentation. Input and finished-pixel hashing added about 1–2 seconds to
+the measured delivery work in both builds. The Sony Fine Grain export varied
+with the time spent in native Denoise preparation (9.72 → 28.08 s). These
+single export samples give no export speed estimate.
+
+The export JPEG, Proof JPEG and both AVIF comparison images have identical
+SHA-256 hashes before and after in every row. The Canon Standard finished
+render reached 1,000 nits exactly. Its decoded retries matched at 1196.294,
+1065.454, 1002.068 and 999.965 nits, with only the final file delivered. The
+existing 4 GB cap and finished and encoded peak rules apply throughout.
+Evidence is in `codebase/output/full-proof-memory/comparison.json`.
+
 ## November 20 — Byte-identical CPU speedups for Denoise Grain
 
 | Action | Canon IMG_0790.CR2 | Sony _DSC7970.ARW | Conditions |

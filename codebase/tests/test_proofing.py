@@ -274,6 +274,33 @@ def test_jpeg_matrix_endpoints_publish_decode_atomically_for_concurrent_targets(
     assert final_path.stat().st_size == decoded_rgba.astype("<f2").nbytes
 
 
+def test_banded_jpeg_proof_matches_whole_image_tiles(tmp_path: Path) -> None:
+    if proofing_module.resolve_binary("avifenc") is None:
+        pytest.skip("AVIF preview encoder unavailable")
+    store = ProofArtifactStore()
+    width, height = 71, 263
+    rng = np.random.default_rng(34)
+    jpeg = tmp_path / "base.jpg"
+    Image.fromarray(rng.integers(0, 256, (height, width, 3), dtype=np.uint8)).save(jpeg)
+    raw = tmp_path / "decoded-strip-proof.rgba-f16.raw"
+    rgba = rng.random((height, width, 4), dtype=np.float32) * np.float32(6)
+    rgba[-1, -1, :3] = [10, 0, 12]  # The final partial band changes the global extrema.
+    rgba.astype("<f2").tofile(raw)
+    artifact = ProofArtifact(
+        artifact_id="strip-proof", format="jpeg_ultrahdr", path=jpeg, media_type="image/jpeg",
+        sha256="", width=width, height=height, quality=90, metadata_summary="", encoded_headroom=3,
+        reference_white_nits=100, hdr_authored=None, sdr_authored=None, jpeg_decoded=raw,
+    )
+    with Image.open(jpeg) as primary:
+        base = proofing_module._jpeg_base_endpoint(primary.convert("RGB"))
+    alternate = proofing_module._jpeg_alternate_endpoint(rgba.astype("<f2"), artifact.reference_white_nits, True)
+    for target in (1.75, 0.0, 3.0):
+        banded, peak, clipped = store._jpeg_target_tile(artifact, target)
+        whole = reconstruct_from_endpoints(base, alternate, artifact.encoded_headroom, target)
+        assert banded == proofing_module._encode_hdr_avif(whole, artifact.reference_white_nits, quality=proofing_module.PROOF_TILE_QUALITY)
+        assert (peak, clipped) == proofing_module._image_stats(whole, target, artifact.reference_white_nits)
+
+
 class _FakeBackend:
     def __init__(self) -> None:
         self.last_settings = None

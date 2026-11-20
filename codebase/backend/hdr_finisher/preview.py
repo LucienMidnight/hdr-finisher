@@ -224,56 +224,60 @@ def _encode_hdr_avif(
     reference_white_nits: int = DEFAULT_HDR_REFERENCE_WHITE_NITS,
     quality: int = 82,
 ) -> bytes:
-    avifenc = resolve_binary("avifenc")
-    if avifenc is None:
-        raise RuntimeError("avifenc is required for HDR AVIF preview rendering.")
-
     try:
         with TemporaryDirectory(prefix="hdr_finisher_preview_") as temp_dir_name:
             temp_dir = Path(temp_dir_name)
             y4m_path = temp_dir / "preview_hdr.y4m"
-            avif_path = temp_dir / "preview_hdr.avif"
             _write_hdr_y4m(y4m_path, image, reference_white_nits)
-            result = subprocess.run(
-                [
-                    str(avifenc),
-                    "--cicp",
-                    "9/16/9",
-                    "-d",
-                    "10",
-                    "-y",
-                    "444",
-                    "-s",
-                    "6",
-                    "-q",
-                    str(int(quality)),
-                    str(y4m_path),
-                    str(avif_path),
-                ],
-                capture_output=True,
-                text=True,
-                check=False,
-                **hidden_window_options(),
-            )
-            if result.returncode != 0:
-                detail = result.stderr.strip() or result.stdout.strip() or "avifenc failed to encode preview."
-                raise RuntimeError(detail)
-            return avif_path.read_bytes()
+            return _encode_hdr_avif_y4m(y4m_path, temp_dir / "preview_hdr.avif", quality)
     except OSError as exc:
         raise RuntimeError("Failed to encode HDR AVIF preview.") from exc
 
 
-def _write_hdr_y4m(path: Path, image: np.ndarray, reference_white_nits: int = DEFAULT_HDR_REFERENCE_WHITE_NITS) -> None:
-    yuv10 = _linear_to_bt2020_pq_yuv10(image, reference_white_nits)
-    height, width = yuv10.shape[:2]
-    header = f"YUV4MPEG2 W{width} H{height} F1:1 Ip A1:1 C444p10 XYSCSS=444P10\n".encode("ascii")
-    frame_header = b"FRAME\n"
+def _encode_hdr_avif_y4m(y4m_path: Path, avif_path: Path, quality: int) -> bytes:
+    avifenc = resolve_binary("avifenc")
+    if avifenc is None:
+        raise RuntimeError("avifenc is required for HDR AVIF preview rendering.")
+    result = subprocess.run(
+        [
+            str(avifenc),
+            "--cicp", "9/16/9",
+            "-d", "10",
+            "-y", "444",
+            "-s", "6",
+            "-q", str(int(quality)),
+            str(y4m_path),
+            str(avif_path),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+        **hidden_window_options(),
+    )
+    if result.returncode != 0:
+        detail = result.stderr.strip() or result.stdout.strip() or "avifenc failed to encode preview."
+        raise RuntimeError(detail)
+    return avif_path.read_bytes()
 
+
+def _write_hdr_y4m(path: Path, image: np.ndarray, reference_white_nits: int = DEFAULT_HDR_REFERENCE_WHITE_NITS) -> None:
+    _write_hdr_y4m_bands(path, *image.shape[:2], (image,), reference_white_nits)
+
+
+def _write_hdr_y4m_bands(path, height, width, bands, reference_white_nits):
+    header = f"YUV4MPEG2 W{width} H{height} F1:1 Ip A1:1 C444p10 XYSCSS=444P10\nFRAME\n".encode("ascii")
+    plane_bytes = height * width * 2
     with path.open("wb") as handle:
         handle.write(header)
-        handle.write(frame_header)
-        for plane_index in range(3):
-            handle.write(yuv10[..., plane_index].astype("<u2", copy=False).tobytes())
+        top = 0
+        for band in bands:
+            yuv10 = _linear_to_bt2020_pq_yuv10(band, reference_white_nits)
+            # Y4M stores complete planes, even though the pixels arrive in
+            # row bands. Place each band at its original position.
+            for plane_index in range(3):
+                handle.seek(len(header) + plane_index * plane_bytes + top * width * 2)
+                handle.write(yuv10[..., plane_index].astype("<u2", copy=False).tobytes())
+            top += len(band)
 
 
 def _linear_to_bt2020_pq_yuv10(image: np.ndarray, reference_white_nits: int = DEFAULT_HDR_REFERENCE_WHITE_NITS) -> np.ndarray:

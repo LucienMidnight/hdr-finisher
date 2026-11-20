@@ -1,14 +1,14 @@
 from __future__ import annotations
 
 import atexit
-from contextlib import suppress
+from contextlib import nullcontext, suppress
 from dataclasses import dataclass
 import hashlib
 import json
 import math
 from pathlib import Path
 import shutil
-from tempfile import mkdtemp
+from tempfile import TemporaryDirectory, mkdtemp
 from threading import Lock, RLock
 from types import SimpleNamespace
 from typing import Any
@@ -34,7 +34,7 @@ from .models import (
     ProofReconstructionResponse,
 )
 from .jpegxl import inspect_jpegxl
-from .preview import _encode_hdr_avif
+from .preview import _encode_hdr_avif, _encode_hdr_avif_y4m, _write_hdr_y4m_bands
 from .finishing import geometry_output_dimensions
 
 
@@ -64,8 +64,8 @@ class ProofArtifact:
     metadata_summary: str
     encoded_headroom: float
     reference_white_nits: int
-    hdr_authored: np.ndarray
-    sdr_authored: np.ndarray
+    hdr_authored: np.ndarray | None
+    sdr_authored: np.ndarray | None
     jpeg_gain_map: JPEGGainMapProofMetadata | None = None
     full_size: bool = False
     exact_measurements: dict | None = None
@@ -73,6 +73,8 @@ class ProofArtifact:
     fallback_reason: str | None = None
     delivery_cache: tuple | None = None
     delivery_notes: tuple[str, ...] = ()
+    jpeg_decoded: Path | None = None
+    jpeg_gain_range: tuple[np.ndarray, np.ndarray] | None = None
 
 
 @dataclass
@@ -138,25 +140,65 @@ def reconstruct_from_endpoints(
     offset_hdr: float = 1.0 / 64.0,
 ) -> np.ndarray:
     """Build an ISO-equivalent gain map from decoded endpoints and apply it."""
-    epsilon_sdr = np.full((3,), offset_sdr, dtype=np.float32)
-    epsilon_hdr = np.full((3,), offset_hdr, dtype=np.float32)
+    epsilon_sdr = np.float32(offset_sdr)
+    epsilon_hdr = np.float32(offset_hdr)
     base_rgb = np.clip(base[..., :3].astype(np.float32, copy=False), 0.0, None)
     alternate_rgb = np.clip(alternate[..., :3].astype(np.float32, copy=False), 0.0, None)
-    log_gain = np.log(alternate_rgb + epsilon_hdr) - np.log(base_rgb + epsilon_sdr)
+    log_gain = _endpoint_log_gain(base_rgb, alternate_rgb, epsilon_sdr, epsilon_hdr)
     gain_min = np.min(log_gain, axis=(0, 1)).astype(np.float32)
     gain_max = np.max(log_gain, axis=(0, 1)).astype(np.float32)
-    span = np.maximum(gain_max - gain_min, np.float32(1e-6))
-    normalized = np.clip((log_gain - gain_min) / span, 0.0, 1.0)
-    parameters = GainMapParameters(
+    parameters = _endpoint_gain_parameters(encoded_headroom, display_ratio_sdr, epsilon_sdr,
+                                           epsilon_hdr, gain_min, gain_max)
+    return _apply_endpoint_gain(base_rgb, log_gain, parameters, target)
+
+
+def _endpoint_log_gain(base, alternate, offset_sdr, offset_hdr):
+    return np.log(alternate + offset_hdr) - np.log(base + offset_sdr)
+
+
+def _endpoint_gain_parameters(encoded_headroom, display_ratio_sdr, offset_sdr, offset_hdr, gain_min, gain_max):
+    return GainMapParameters(
         display_ratio_sdr=max(float(display_ratio_sdr), 1e-8),
         display_ratio_hdr=float(2.0 ** max(encoded_headroom, 0.0)),
         gain_min=gain_min,
         gain_max=gain_max,
         gamma=np.ones((3,), dtype=np.float32),
-        epsilon_sdr=epsilon_sdr,
-        epsilon_hdr=epsilon_hdr,
+        epsilon_sdr=np.full((3,), offset_sdr, dtype=np.float32),
+        epsilon_hdr=np.full((3,), offset_hdr, dtype=np.float32),
     )
-    return apply_gain_map_formula(base_rgb, normalized, parameters, target)
+
+
+def _apply_endpoint_gain(base, log_gain, parameters, target):
+    span = np.maximum(parameters.gain_max - parameters.gain_min, np.float32(1e-6))
+    normalized = np.clip((log_gain - parameters.gain_min) / span, 0.0, 1.0)
+    return apply_gain_map_formula(base, normalized, parameters, target)
+
+
+def _jpeg_base_endpoint(rgb):
+    srgb = np.asarray(rgb, dtype=np.float32) / np.float32(255.0)
+    linear_srgb = np.where(srgb <= 0.04045, srgb / 12.92, np.power((srgb + 0.055) / 1.055, 2.4))
+    return np.clip(linear_srgb_to_acescg(linear_srgb) * np.float32(0.18), 0.0, None)
+
+
+def _jpeg_alternate_endpoint(rgba, reference_white_nits, use_base_color_space):
+    # libultrahdr linear output uses 1.0 == 203 nits.
+    decoded = rgba[..., :3].astype(np.float32) * np.float32(203.0)
+    decoded = nits_to_scene_linear(decoded, reference_white_nits)
+    transform = linear_srgb_to_acescg if use_base_color_space else linear_bt2020_to_acescg
+    return np.clip(transform(decoded), 0.0, None)
+
+
+def _jpeg_endpoint_bands(primary, raw, artifact):
+    use_base = artifact.jpeg_gain_map is None or artifact.jpeg_gain_map.use_base_color_space
+    raw.seek(0)
+    for top in range(0, artifact.height, 128):
+        bottom = min(top + 128, artifact.height)
+        rgb = primary.crop((0, top, artifact.width, bottom))
+        if rgb.mode != "RGB":
+            rgb = rgb.convert("RGB")
+        rgba = np.fromfile(raw, dtype="<f2", count=(bottom - top) * artifact.width * 4)
+        rgba = rgba.reshape(bottom - top, artifact.width, 4)
+        yield _jpeg_base_endpoint(rgb), _jpeg_alternate_endpoint(rgba, artifact.reference_white_nits, use_base)
 
 
 class ProofArtifactStore:
@@ -169,6 +211,7 @@ class ProofArtifactStore:
         self._target_cache: dict[str, ProofMatrixTile] = {}
         self._endpoint_cache: dict[str, tuple[np.ndarray, np.ndarray]] = {}
         self._endpoint_locks = {}
+        self._full_jpeg_tile_lock = Lock()
         atexit.register(self.clear)
 
     def clear(self) -> None:
@@ -253,8 +296,8 @@ class ProofArtifactStore:
             if not result.accepted or not result.output_path:
                 raise RuntimeError(result.message)
             output_path = Path(result.output_path)
-            payload = output_path.read_bytes()
-            digest = hashlib.sha256(payload).hexdigest()
+            with output_path.open("rb") as payload:
+                digest = hashlib.file_digest(payload, "sha256").hexdigest()
             artifact_id = digest[:24]
             final_path = self.root / f"{artifact_id}{suffix}"
             if output_path != final_path:
@@ -276,26 +319,6 @@ class ProofArtifactStore:
             with suppress(OSError):
                 staged.unlink(missing_ok=True)
 
-        finishing_adjustments = _finishing_adjustments_for_export(proxy_session)
-        hdr_authored = _render_export_branch(proxy_session, export_settings, PreviewKind.HDR, finishing_adjustments)
-        sdr_authored = _render_export_branch(proxy_session, export_settings, PreviewKind.SDR, finishing_adjustments)
-        # The SDR branch is display-linear sRGB where 1.0 is reference white.
-        # Matrix rendering uses the HDR working convention where 0.18 is
-        # 100-nit diffuse white, so normalize the endpoint before applying a
-        # gain map or encoding a PQ tile.
-        # A CPU strip result is a unique output owned by this build. Reuse it
-        # after rendering: it is never the source or a cached GPU lane. Convert
-        # in bands instead of holding three more native SDR frames at once.
-        reuse = (result.renderer == "cpu" and sdr_authored.flags.owndata
-                 and getattr(export_settings, "_last_cpu_strips", False))
-        sdr_matrix_endpoint = sdr_authored if reuse else np.empty_like(sdr_authored)
-        if reuse:
-            sdr_matrix_endpoint.setflags(write=True)
-        for row in range(0, sdr_authored.shape[0], 128):
-            encoded_sdr_linear = np.clip(sdr_authored[row:row + 128, :, :3], 0, 1)
-            sdr_matrix_endpoint[row:row + 128] = np.clip(
-                linear_srgb_to_acescg(encoded_sdr_linear) * np.float32(0.18), 0, None)
-        sdr_matrix_endpoint.setflags(write=False)
         encoded_headroom, metadata_summary = _inspect_artifact(final_path, request.format, context.hdr_reference_white_nits)
         jpeg_gain_map = None
         if request.format == "jpeg_ultrahdr":
@@ -303,7 +326,48 @@ class ProofArtifactStore:
                 jpeg_gain_map = _inspect_jpeg_gain_map(final_path)
             except (OSError, ValueError, RuntimeError):
                 jpeg_gain_map = _default_jpeg_gain_map_metadata(encoded_headroom)
-        height, width = hdr_authored.shape[:2]
+        jpeg_decoded = None
+        hdr_authored = sdr_matrix_endpoint = None
+        if full_size and request.format == "jpeg_ultrahdr":
+            # The real JPEG endpoints drive reconstruction. Only render the
+            # authored fallback if the native decoder cannot provide them.
+            from PIL import Image
+
+            try:
+                with Image.open(final_path) as primary:
+                    width, height = primary.size
+                    primary.load()
+                    primary.close()
+                with self._lock:
+                    endpoint_lock = self._endpoint_locks.setdefault(artifact_id, Lock())
+                with endpoint_lock:
+                    jpeg_decoded = self._decode_jpeg_endpoint(final_path, artifact_id, width, height)
+            except (OSError, ValueError, RuntimeError):
+                pass
+        if jpeg_decoded is None:
+            finishing_adjustments = _finishing_adjustments_for_export(proxy_session)
+            hdr_authored = _render_export_branch(proxy_session, export_settings, PreviewKind.HDR, finishing_adjustments)
+            sdr_authored = _render_export_branch(proxy_session, export_settings, PreviewKind.SDR, finishing_adjustments)
+            # The SDR branch is display-linear sRGB where 1.0 is reference white.
+            # Matrix rendering uses the HDR working convention where 0.18 is
+            # 100-nit diffuse white, so normalize the endpoint before applying a
+            # gain map or encoding a PQ tile.
+            # A CPU strip result is a unique output owned by this build. Reuse it
+            # after rendering: it is never the source or a cached GPU lane. Convert
+            # in bands instead of holding three more native SDR frames at once.
+            reuse = (result.renderer == "cpu" and sdr_authored.flags.owndata
+                     and getattr(export_settings, "_last_cpu_strips", False))
+            sdr_matrix_endpoint = sdr_authored if reuse else np.empty_like(sdr_authored)
+            if reuse:
+                sdr_matrix_endpoint.setflags(write=True)
+            for row in range(0, sdr_authored.shape[0], 128):
+                encoded_sdr_linear = np.clip(sdr_authored[row:row + 128, :, :3], 0, 1)
+                sdr_matrix_endpoint[row:row + 128] = np.clip(
+                    linear_srgb_to_acescg(encoded_sdr_linear) * np.float32(0.18), 0, None)
+            sdr_matrix_endpoint.setflags(write=False)
+            height, width = hdr_authored.shape[:2]
+            hdr_authored = np.ascontiguousarray(hdr_authored, dtype=np.float32)
+            sdr_matrix_endpoint = np.ascontiguousarray(sdr_matrix_endpoint, dtype=np.float32)
         artifact = ProofArtifact(
             artifact_id=artifact_id,
             format=request.format,
@@ -316,8 +380,9 @@ class ProofArtifactStore:
             metadata_summary=metadata_summary,
             encoded_headroom=encoded_headroom,
             reference_white_nits=context.hdr_reference_white_nits,
-            hdr_authored=np.ascontiguousarray(hdr_authored, dtype=np.float32),
-            sdr_authored=np.ascontiguousarray(sdr_matrix_endpoint, dtype=np.float32),
+            hdr_authored=hdr_authored,
+            sdr_authored=sdr_matrix_endpoint,
+            jpeg_decoded=jpeg_decoded,
             jpeg_gain_map=jpeg_gain_map,
             full_size=full_size,
             exact_measurements=export_settings._exact_measurements if full_size else None,
@@ -426,39 +491,45 @@ class ProofArtifactStore:
     ) -> ProofMatrixTile:
         resolved_target = min(max(float(target), 0.0), max(artifact.encoded_headroom, 0.0))
         cache_key = f"{artifact.artifact_id}:{resolved_target:.6f}"
-        with self._lock:
-            cached = self._target_cache.get(cache_key)
-        if cached is None:
-            base_endpoint, alternate_endpoint = self._matrix_endpoints(artifact)
-            reconstructed = reconstruct_from_endpoints(
-                base_endpoint,
-                alternate_endpoint,
-                max(artifact.encoded_headroom, 0.01),
-                resolved_target,
-                display_ratio_sdr=(artifact.jpeg_gain_map.hdr_capacity_min if artifact.jpeg_gain_map else 1.0),
-                offset_sdr=(artifact.jpeg_gain_map.offset_sdr if artifact.jpeg_gain_map else 1.0 / 64.0),
-                offset_hdr=(artifact.jpeg_gain_map.offset_hdr if artifact.jpeg_gain_map else 1.0 / 64.0),
-            )
-            tile_bytes = self._encoded_matrix_tile(artifact, resolved_target, reconstructed)
-            tile_hash = hashlib.sha256(tile_bytes).hexdigest()
-            tile_id = tile_hash[:24]
-            tile_path = self.root / f"tile-{tile_id}.avif"
-            if not tile_path.exists():
-                tile_path.write_bytes(tile_bytes)
+        # The two UI targets arrive together. Serialize full-size JPEG tile
+        # builds so their native encoders cannot overlap in memory.
+        with self._full_jpeg_tile_lock if artifact.jpeg_decoded is not None else nullcontext():
             with self._lock:
-                self._tiles[tile_id] = ProofTile(tile_id=tile_id, path=tile_path, media_type="image/avif")
-            peak_nits, clipped = _image_stats(reconstructed, resolved_target, artifact.reference_white_nits)
-            cached = ProofMatrixTile(
-                id=tile_id,
-                label=label,
-                target_headroom=round(resolved_target, 4),
-                url=f"/api/proof/tile/{tile_id}.avif",
-                peak_nits=round(peak_nits, 1),
-                clipped_percent=round(clipped, 3),
-                above_display_headroom=None,
-            )
-            with self._lock:
-                self._target_cache[cache_key] = cached
+                cached = self._target_cache.get(cache_key)
+            if cached is None:
+                if artifact.jpeg_decoded is not None:
+                    tile_bytes, peak_nits, clipped = self._jpeg_target_tile(artifact, resolved_target)
+                else:
+                    base_endpoint, alternate_endpoint = self._matrix_endpoints(artifact)
+                    reconstructed = reconstruct_from_endpoints(
+                        base_endpoint,
+                        alternate_endpoint,
+                        max(artifact.encoded_headroom, 0.01),
+                        resolved_target,
+                        display_ratio_sdr=(artifact.jpeg_gain_map.hdr_capacity_min if artifact.jpeg_gain_map else 1.0),
+                        offset_sdr=(artifact.jpeg_gain_map.offset_sdr if artifact.jpeg_gain_map else 1.0 / 64.0),
+                        offset_hdr=(artifact.jpeg_gain_map.offset_hdr if artifact.jpeg_gain_map else 1.0 / 64.0),
+                    )
+                    tile_bytes = self._encoded_matrix_tile(artifact, resolved_target, reconstructed)
+                    peak_nits, clipped = _image_stats(reconstructed, resolved_target, artifact.reference_white_nits)
+                tile_hash = hashlib.sha256(tile_bytes).hexdigest()
+                tile_id = tile_hash[:24]
+                tile_path = self.root / f"tile-{tile_id}.avif"
+                if not tile_path.exists():
+                    tile_path.write_bytes(tile_bytes)
+                with self._lock:
+                    self._tiles[tile_id] = ProofTile(tile_id=tile_id, path=tile_path, media_type="image/avif")
+                cached = ProofMatrixTile(
+                    id=tile_id,
+                    label=label,
+                    target_headroom=round(resolved_target, 4),
+                    url=f"/api/proof/tile/{tile_id}.avif",
+                    peak_nits=round(peak_nits, 1),
+                    clipped_percent=round(clipped, 3),
+                    above_display_headroom=None,
+                )
+                with self._lock:
+                    self._target_cache[cache_key] = cached
         return cached.model_copy(
             update={
                 "label": label,
@@ -475,6 +546,70 @@ class ProofArtifactStore:
         if artifact.format == "jpegxl_hdr":
             return "Direct JPEG XL HDR adapted from authored SDR/HDR reference endpoints"
         return "Encoded JPEG endpoints reconstructed with ISO/Skia weighting"
+
+    def _jpeg_target_tile(self, artifact: ProofArtifact, target: float) -> tuple[bytes, float, float]:
+        from PIL import Image
+
+        decoded_path = artifact.jpeg_decoded
+        assert decoded_path is not None
+        metadata = artifact.jpeg_gain_map
+        offset_sdr = np.float32(metadata.offset_sdr if metadata else 1.0 / 64.0)
+        offset_hdr = np.float32(metadata.offset_hdr if metadata else 1.0 / 64.0)
+        peak_nits = 0.0
+        clipped_pixels = 0
+        ceiling = float(artifact.reference_white_nits) * (2.0 ** max(target, 0.0))
+
+        def bands():
+            nonlocal peak_nits, clipped_pixels
+            with Image.open(artifact.path) as primary, decoded_path.open("rb") as raw:
+                if artifact.jpeg_gain_range is None:
+                    # Normalization uses whole-image channel extrema even
+                    # though reconstruction and conversion run strip by strip.
+                    gain_min = np.full(3, np.inf, dtype=np.float32)
+                    gain_max = np.full(3, -np.inf, dtype=np.float32)
+                    for base, alternate in _jpeg_endpoint_bands(primary, raw, artifact):
+                        log_gain = _endpoint_log_gain(base, alternate, offset_sdr, offset_hdr)
+                        gain_min = np.minimum(gain_min, np.min(log_gain, axis=(0, 1)))
+                        gain_max = np.maximum(gain_max, np.max(log_gain, axis=(0, 1)))
+                    artifact.jpeg_gain_range = gain_min, gain_max
+                parameters = _endpoint_gain_parameters(
+                    max(artifact.encoded_headroom, 0.01), metadata.hdr_capacity_min if metadata else 1.0,
+                    offset_sdr, offset_hdr, *artifact.jpeg_gain_range)
+                for base, alternate in _jpeg_endpoint_bands(primary, raw, artifact):
+                    log_gain = _endpoint_log_gain(base, alternate, offset_sdr, offset_hdr)
+                    pixels = _apply_endpoint_gain(base, log_gain, parameters, target)
+                    nits = _image_luma_nits(pixels, artifact.reference_white_nits)
+                    peak_nits = float(np.maximum(peak_nits, np.max(nits, initial=0.0)))
+                    clipped_pixels += np.count_nonzero(nits > ceiling)
+                    yield pixels
+
+        try:
+            with TemporaryDirectory(prefix="hdr_finisher_proof_tile_") as directory:
+                y4m = Path(directory) / "preview_hdr.y4m"
+                _write_hdr_y4m_bands(y4m, artifact.height, artifact.width, bands(), artifact.reference_white_nits)
+                tile = _encode_hdr_avif_y4m(y4m, y4m.with_suffix(".avif"), PROOF_TILE_QUALITY)
+        except (OSError, ValueError) as error:
+            raise RuntimeError("Could not reconstruct the full-size JPEG Proof.") from error
+        return tile, peak_nits, clipped_pixels / (artifact.height * artifact.width) * 100.0
+
+    def _decode_jpeg_endpoint(self, path: Path, artifact_id: str, width: int, height: int) -> Path:
+        ultrahdr = resolve_binary("ultrahdr_app")
+        if ultrahdr is None:
+            raise RuntimeError("libultrahdr is unavailable for JPEG Proof reconstruction.")
+        decoded_path = self.root / f"decoded-{artifact_id}.rgba-f16.raw"
+        expected_bytes = height * width * 4 * np.dtype("<f2").itemsize
+        if decoded_path.exists() and decoded_path.stat().st_size == expected_bytes:
+            return decoded_path
+        staged = self.root / f".decoded-{artifact_id}-{uuid4().hex}.rgba-f16.raw"
+        try:
+            _run_command([str(ultrahdr), "-m", "1", "-j", str(path), "-o", "0", "-O", "4", "-z", str(staged)])
+            actual_bytes = staged.stat().st_size if staged.exists() else 0
+            if actual_bytes != expected_bytes:
+                raise RuntimeError(f"libultrahdr returned {actual_bytes} decoded bytes; expected {expected_bytes}.")
+            staged.replace(decoded_path)
+            return decoded_path
+        finally:
+            staged.unlink(missing_ok=True)
 
     def _matrix_endpoints(self, artifact: ProofArtifact) -> tuple[np.ndarray, np.ndarray]:
         if artifact.format != "jpeg_ultrahdr":
@@ -497,53 +632,13 @@ class ProofArtifactStore:
                 from PIL import Image
 
                 with Image.open(artifact.path) as image:
-                    srgb = np.asarray(image.convert("RGB"), dtype=np.float32) / np.float32(255.0)
-                linear_srgb = np.where(
-                    srgb <= 0.04045,
-                    srgb / 12.92,
-                    np.power((srgb + 0.055) / 1.055, 2.4),
-                )
-                base = linear_srgb_to_acescg(linear_srgb) * np.float32(0.18)
-                decoded_path = self.root / f"decoded-{artifact.artifact_id}.rgba-f16.raw"
-                expected_bytes = artifact.height * artifact.width * 4 * np.dtype("<f2").itemsize
-                if decoded_path.exists() and decoded_path.stat().st_size != expected_bytes:
-                    decoded_path.unlink()
-                if not decoded_path.exists():
-                    staged_decoded = self.root / f".decoded-{artifact.artifact_id}-{uuid4().hex}.rgba-f16.raw"
-                    try:
-                        _run_command(
-                            [
-                                str(ultrahdr),
-                                "-m",
-                                "1",
-                                "-j",
-                                str(artifact.path),
-                                "-o",
-                                "0",
-                                "-O",
-                                "4",
-                                "-z",
-                                str(staged_decoded),
-                            ]
-                        )
-                        if not staged_decoded.exists() or staged_decoded.stat().st_size != expected_bytes:
-                            actual_bytes = staged_decoded.stat().st_size if staged_decoded.exists() else 0
-                            raise RuntimeError(
-                                f"libultrahdr returned {actual_bytes} decoded bytes; expected {expected_bytes}."
-                            )
-                        staged_decoded.replace(decoded_path)
-                    finally:
-                        staged_decoded.unlink(missing_ok=True)
-                decoded = np.fromfile(decoded_path, dtype="<f2").astype(np.float32)
-                decoded = decoded.reshape(artifact.height, artifact.width, 4)[..., :3]
-                # libultrahdr linear output uses 1.0 == 203 nits. Convert once
-                # into the proof artifact's project scene-linear scale.
-                decoded = nits_to_scene_linear(decoded * np.float32(203.0), artifact.reference_white_nits)
-                if artifact.jpeg_gain_map is None or artifact.jpeg_gain_map.use_base_color_space:
-                    alternate = linear_srgb_to_acescg(decoded)
-                else:
-                    alternate = linear_bt2020_to_acescg(decoded)
-                endpoints = np.clip(base, 0.0, None), np.clip(alternate, 0.0, None)
+                    base = _jpeg_base_endpoint(image.convert("RGB"))
+                decoded_path = self._decode_jpeg_endpoint(artifact.path, artifact.artifact_id,
+                                                          artifact.width, artifact.height)
+                decoded = np.fromfile(decoded_path, dtype="<f2").reshape(artifact.height, artifact.width, 4)
+                use_base = artifact.jpeg_gain_map is None or artifact.jpeg_gain_map.use_base_color_space
+                alternate = _jpeg_alternate_endpoint(decoded, artifact.reference_white_nits, use_base)
+                endpoints = base, alternate
                 with self._lock:
                     self._endpoint_cache[artifact.artifact_id] = endpoints
                 return endpoints
@@ -715,10 +810,14 @@ def _default_jpeg_gain_map_metadata(encoded_headroom: float) -> JPEGGainMapProof
     )
 
 
-def _image_stats(image: np.ndarray, target_headroom: float, reference_white_nits: int = 203) -> tuple[float, float]:
+def _image_luma_nits(image: np.ndarray, reference_white_nits: int) -> np.ndarray:
     bt2020 = np.clip(acescg_to_linear_bt2020(image[..., :3]), 0.0, None)
     luma = 0.2627 * bt2020[..., 0] + 0.6780 * bt2020[..., 1] + 0.0593 * bt2020[..., 2]
-    nits = scene_linear_to_nits(luma, reference_white_nits)
+    return scene_linear_to_nits(luma, reference_white_nits)
+
+
+def _image_stats(image: np.ndarray, target_headroom: float, reference_white_nits: int = 203) -> tuple[float, float]:
+    nits = _image_luma_nits(image, reference_white_nits)
     peak = float(np.max(nits, initial=0.0))
     ceiling = float(reference_white_nits) * (2.0 ** max(target_headroom, 0.0))
     clipped = float(np.count_nonzero(nits > ceiling) / max(nits.size, 1) * 100.0)

@@ -1,3 +1,20 @@
+## November 20 — Bounded native JPEG Ultra HDR Proof
+
+The existing exporter renders the grade for delivery. Full-size JPEG Proof
+uses the encoded JPEG to build its display images from the decoded base and
+alternate in 128-row bands.
+It computes the gain range across the entire picture, sends the reconstructed
+bands to the same AVIF encoder and builds one comparison image at a time.
+JPEG ceiling retries apply the original correction grid in bands and can
+reuse a private disk-backed HDR render.
+
+On the MacBook Neo, the six matched Sony/Canon Denoise comparisons peaked
+at 2.11–3.53 GB with full-size Proof, below the 4 GB cap. The
+export, Proof and both comparison images matched byte for byte. The Canon's
+1,000-nit test reached 1,000 nits before encoding and finished at 999.965 nits
+after four encodes. The existing 1% encoded allowance applies. Full conditions
+and times are in the [performance table](../../technical/performance-table.md).
+
 ## November 17: signed working input; delivery qualification open
 
 Signed RAW integration removes the incidental RGB floor from shared CPU

@@ -1,5 +1,6 @@
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
+const { createHash } = require("node:crypto");
 const os = require("node:os");
 const path = require("node:path");
 const { chromium } = require("playwright");
@@ -7,6 +8,7 @@ const reusePhoto = require("../helpers/reuse-test-photo.cjs");
 
 const output = fs.mkdtempSync(path.join(os.tmpdir(), "hdr-finish-denoise-grain-"));
 const baselineMethods = ["standard", "fine_grain", "clean_grain"];
+const fullProofMethod = process.argv.find(arg => arg.startsWith("--full-proof-method="))?.split("=")[1];
 const sliders = {
   amount: "amount", detail: "detail_recovery", luminance: "luminance", color: "color_noise",
   finest: "finest_noise", fine: "fine_noise", medium: "medium_noise", coarse: "coarse_noise",
@@ -346,8 +348,9 @@ async function measurePicture(page, button, method, { pan = false, switchMethod 
 
 async function measureDelivery(page, harness, name, method, record, proofOnly = false) {
   const target = path.join(output, `${name}-${method}.jpg`);
+  let exportSha256;
   if (!proofOnly) await harness.selectExportPath(target);
-  await page.evaluate(async () => {
+  await page.evaluate(async measureFullProof => {
     state.denoise.sdr = structuredClone(state.denoise.hdr);
     if (!await persistDenoiseSettings()) throw Error("Could not save the SDR Denoise method.");
     activateWorkflowTab("export");
@@ -355,7 +358,8 @@ async function measureDelivery(page, harness, name, method, record, proofOnly = 
     els.exportQuality.value = "90";
     els.exportResizeMode.value = "original";
     els.exportGuaranteePeak.checked = true;
-  });
+    if (measureFullProof) els.exportMetadataPolicy.value = "none";
+  }, Boolean(fullProofMethod));
   if (!proofOnly) {
     const deliveryResponse = page.waitForResponse(response => response.request().method() === "POST"
       && new URL(response.url()).pathname.endsWith("/export"), { timeout: 180000 });
@@ -375,10 +379,11 @@ async function measureDelivery(page, harness, name, method, record, proofOnly = 
       fallback: delivery.fallback_reason,
     });
     assert.ok(accepted, JSON.stringify(result));
+    if (fullProofMethod) exportSha256 = createHash("sha256").update(fs.readFileSync(target)).digest("hex");
     fs.rmSync(target);
   }
 
-  const fullProof = method === "standard" && process.argv.includes("--speed-memory-full-proof");
+  const fullProof = Boolean(fullProofMethod) || method === "standard" && process.argv.includes("--speed-memory-full-proof");
   await page.evaluate(fullSize => {
     activateWorkflowTab("proof");
     state.proofFormat = "jpeg_ultrahdr";
@@ -394,21 +399,42 @@ async function measureDelivery(page, harness, name, method, record, proofOnly = 
   await page.waitForFunction(fullSize => els.chromeProofStatus.dataset.state === "error"
     || (state.proofArtifact?.full_size === fullSize && !state.proofDirty && els.chromeProofImage.complete
       && els.chromeProofImage.naturalWidth > 0 && els.chromeProofImage.style.display !== "none"),
-  fullProof, { timeout: 120000 });
+  fullProof, { timeout: fullProofMethod ? 240000 : 120000 });
   const proof = await page.evaluate(async start => {
     if (els.chromeProofStatus.dataset.state === "error") throw Error(els.chromeProofStatus.textContent);
     await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
     const end = performance.timeOrigin + performance.now();
     return { pictureMs: end - start, timeStart: start, timeEnd: end,
       status: els.chromeProofStatus.textContent,
-      renderer: state.proofArtifact.renderer, width: state.proofArtifact.width, height: state.proofArtifact.height };
+      renderer: state.proofArtifact.renderer, width: state.proofArtifact.width, height: state.proofArtifact.height,
+      artifactSha256: state.proofArtifact.sha256,
+      hdrTile: state.proofReconstruction?.tile, sdrTile: state.proofSdrReconstruction?.tile };
   }, proofStart);
+  if (fullProofMethod) {
+    proof.exportSha256 = exportSha256;
+    for (const [key, tile] of [["hdrTileSha256", proof.hdrTile], ["sdrTileSha256", proof.sdrTile]]) {
+      const response = await harness.fetch(tile.url);
+      assert.ok(response.ok, tile.url);
+      proof[key] = createHash("sha256").update(Buffer.from(await response.arrayBuffer())).digest("hex");
+    }
+  }
   await record(`${fullProof ? "full-size" : "reduced"} JPEG Ultra HDR Proof`, proof);
+  if (fullProofMethod) assert.equal(proof.artifactSha256, exportSha256, "Full-size Proof differs from export");
   await page.evaluate(async () => {
     activateWorkflowTab("grade");
     state.denoise.sdr.enabled = false;
     await persistDenoiseSettings();
   });
+}
+
+function deliveryRecorder(page, harness, name, method) {
+  return async (action, result) => {
+    const backend = backendLog(harness, result.timeStart, result.timeEnd, method);
+    const samples = await page.evaluate(() => window.denoiseBaselineMemory);
+    const peak = peakBetween(samples, result.timeStart, result.timeEnd);
+    console.log(JSON.stringify({ name, method, action, ...result, ...backend,
+      peakAppBytes: peak?.bytes ?? backend.peakAppBytes, peakProcesses: peak?.processes }));
+  };
 }
 
 async function measureBaseline(page, harness, name, record, setZoom) {
@@ -437,17 +463,9 @@ async function measureBaseline(page, harness, name, record, setZoom) {
   if (name === "DSC01212.ARW" || process.argv.includes("--baseline-110-only")) return;
   const resumeAfterStandard = process.argv.includes("--baseline-after-standard-export");
   const resumeFineDelivery = process.argv.includes("--baseline-fine-delivery-only");
-  const deliveryRecord = method => async (action, result) => {
-    const backend = backendLog(harness, result.timeStart, result.timeEnd, method);
-    const samples = await page.evaluate(() => window.denoiseBaselineMemory);
-    const peak = peakBetween(samples, result.timeStart, result.timeEnd);
-    backend.peakAppBytes = peak?.bytes ?? backend.peakAppBytes;
-    backend.peakProcesses = peak?.processes;
-    console.log(JSON.stringify({ name, method, action, ...result, ...backend }));
-  };
   const runDelivery = async (method, proofOnly) => {
     try {
-      await measureDelivery(page, harness, name, method, deliveryRecord(method), proofOnly);
+      await measureDelivery(page, harness, name, method, deliveryRecorder(page, harness, name, method), proofOnly);
     } catch (error) {
       console.log(JSON.stringify({ name, method, action: "delivery", error: error.message }));
       process.exitCode = 1;
@@ -588,7 +606,9 @@ async function measureBaseline(page, harness, name, record, setZoom) {
   };
   try {
     await page.goto(process.env.HDR_FINISHER_URL);
-    const baseline = process.argv.includes("--speed-baseline");
+    assert.ok(!fullProofMethod || baselineMethods.includes(fullProofMethod), "Unknown Denoise method");
+    if (fullProofMethod) await api("/api/delivery/preferences", { force_cpu: true });
+    const baseline = Boolean(fullProofMethod) || process.argv.includes("--speed-baseline");
     const panCoverage = process.argv.includes("--pan-coverage");
     const cachePressure = process.argv.includes("--grain-cache-pressure");
     const nativeGrainSwitch = process.argv.includes("--native-grain-switch");
@@ -789,6 +809,20 @@ async function measureBaseline(page, harness, name, record, setZoom) {
           await setDenoiseEnabled(false);
           await commitDenoiseControl("method", "standard");
         });
+        continue;
+      }
+      if (fullProofMethod) {
+        await setZoom("#zoom-fit");
+        if (process.argv.includes("--full-proof-highlights")) {
+          await page.evaluate(() => commitAdjustmentValue("hdr.highlight_section_enabled", true));
+        }
+        await page.waitForFunction(() => state.acceptedPresentation?.exact && previewIdleNow());
+        await page.evaluate(method => {
+          state.denoise.hdr.controls.method = method;
+          state.denoise.hdr.enabled = true;
+        }, fullProofMethod);
+        await measureDelivery(page, harness, name, fullProofMethod,
+          deliveryRecorder(page, harness, name, fullProofMethod));
         continue;
       }
       if (baseline) {
