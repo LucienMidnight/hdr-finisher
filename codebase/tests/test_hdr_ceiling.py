@@ -199,23 +199,33 @@ def test_an_uncorrectable_codec_is_rejected():
     assert notes == []
 
 
-def test_an_export_that_stays_over_target_preserves_the_destination(monkeypatch, tmp_path):
+@pytest.mark.parametrize(
+    ("format_name", "suffix"), [("jpegxl_hdr", ".jxl"), ("jpeg_ultrahdr", ".jpg")],
+)
+def test_an_export_that_stays_over_target_preserves_the_destination(monkeypatch, tmp_path, format_name, suffix):
     from types import SimpleNamespace
     from hdr_finisher import exporters
     from hdr_finisher.capabilities import probe_capabilities
     from hdr_finisher.models import AdjustmentState, ExportSettings
-    backend = exporters.build_export_backends(probe_capabilities())["jpegxl_hdr"]
+    backend = exporters.build_export_backends(probe_capabilities())[format_name]
     if backend.capability.status.value != "available":
         pytest.skip(backend.capability.detail)
-    monkeypatch.setattr(exporters, "_decoded_jpegxl_channel_nits", lambda payload: np.full((96, 128), 1012.0, np.float32))
+    if format_name == "jpeg_ultrahdr":
+        readout = hdr_ceiling._DecodedCeiling(
+            (96, 128), 1012.0, np.full((6, 8), np.float32(1012) / 1000, np.float32),
+        )
+        monkeypatch.setattr(exporters, "decoded_ultrahdr_ceiling", lambda path, ceiling: readout)
+    else:
+        monkeypatch.setattr(exporters, "_decoded_jpegxl_channel_nits",
+                            lambda payload: np.full((96, 128), 1012.0, np.float32))
     adjustments = AdjustmentState()
     adjustments.hdr.highlight_section_enabled = True
     adjustments.hdr.highlight_compression_target_nits = 1000
     session = SimpleNamespace(session_id="note", image=scene(4000), adjustments=adjustments, hdr_reference_white_nits=203,
         sdr_reference_image=None, local_adjustments=[])
-    output = tmp_path / "existing.jxl"
+    output = tmp_path / f"existing{suffix}"
     output.write_bytes(b"previous export")
-    result = backend.export(session, ExportSettings(format="jpegxl_hdr", quality=90, overwrite=True,
+    result = backend.export(session, ExportSettings(format=format_name, quality=90, overwrite=True,
         output_path=str(output)))
     assert not result.accepted
     assert "1000-nit target" in result.message
