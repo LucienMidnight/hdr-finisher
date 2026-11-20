@@ -864,6 +864,7 @@ Settings rules (from v1.2 section 5, still in force):
 | Full encoded Proof carries selected export resize, output sharpening and frame inclusion, superseding the older finishing omission. | Photo framing brief, 2026-10-24 |
 | Do not change encoders or gain-map maths without asking. A whole-image dimming correction for the ceiling was rejected (it failed the perceptual limits). | 2026-10-18 |
 | **Proof: keep it simple.** Most users are unlikely to use Proof, so don't build complex code around it or work on its speed now. Fix it only if it is inaccurate or broken. **Export: make processing faster.** Speed up the export processing itself (encoding, ceiling checks, finishing, Denoise), not by reusing Proof results. [Export and Proof breakdown](../../technical/briefs/denoise-export-proof-breakdown-2026-11-20.md) | Steve, 2026-11-20 |
+| **GPU export within memory.** After the identical-output CPU speed-ups, make the GPU export route fit the 4 GB app limit for large photos like the Sony (today it estimates 5.3 GB and is refused), so export can run on the graphics card. [Export speed plan](../../technical/briefs/export-speed-plan-2026-11-20.md) | Steve, 2026-11-20 |
 
 ## 5. Current state (October 18, 2026)
 
