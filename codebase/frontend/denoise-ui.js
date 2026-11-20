@@ -445,7 +445,13 @@ async function recalculateDenoiseAnalysis(lane = state.currentView, options = {}
     return true;
   } catch (error) {
     if (!isCurrent()) return false;
-    if (settings.controls.method === "micro_grain" && error?.name !== "AbortError") {
+    if (settings.controls.method === "micro_grain") {
+      if (error?.name === "AbortError" || error?.status === 409) {
+        runtime.status = "dirty";
+        runtime.dirty = true;
+        if (lane === state.currentView) renderDenoiseControls();
+        return false;
+      }
       useMicroGrainCpu(lane, error);
       return false;
     }

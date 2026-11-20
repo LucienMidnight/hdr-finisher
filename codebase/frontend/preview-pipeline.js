@@ -979,7 +979,9 @@ async function renderGpuDraftInner(
       });
       return true;
   } catch (error) {
-    if (!sourceOptions.isCurrent() || error?.name === "AbortError") return refuse("superseded-during-render");
+    if (!sourceOptions.isCurrent() || error?.name === "AbortError" || (micro && error?.status === 409)) {
+      return refuse("superseded-during-render");
+    }
     if (micro) {
       useMicroGrainCpu(lane, error);
       return refuse("micro-grain-cpu", error?.message);
