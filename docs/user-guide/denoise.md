@@ -28,8 +28,14 @@ If you open another photo while Denoise is preparing or updating, the old work i
 - **Standard** uses the original Denoise. It is the default for new photos and older grades.
 - **Fine Grain · Experimental** evens out the remaining brightness grain. Use **Grain Evenness** to blend between Standard at 0% and the grain-matched 18-pixel setting at 100%.
 - **Clean Grain · Experimental** adds **Color Splotches**, which pulls coloured blotches toward the nearby colour. **Splotch Size** starts at Small. Choose Large for a wider reach. Color Splotches blends live after preparation and switches off at 0%.
+- **Micro Grain · Experimental** cleans noise in Bayer RAW sensor data before the app builds the colour image. It aims to leave finer brightness grain. It has three controls, all starting at 50%:
+  - **Luminance** reduces speckling in brightness.
+  - **Color** reduces coloured specks and blotches.
+  - **Detail** protects fine texture. Raise it if hair or fabric starts to look too smooth.
 
-All the Standard controls work in each method. Grain Evenness and Splotch Size can trigger preparation on release. For RAW photos, the experimental methods work best with **Even out harsh specks** enabled at **×2.5** in Pixel cleanup.
+The Standard controls also work in Fine Grain and Clean Grain. Grain Evenness and Splotch Size can trigger preparation on release. **Even out harsh specks** at **×2.5** in Pixel cleanup is an independent RAW setting used in the comparison tests.
+
+Micro Grain updates the visible area first when zoomed in, leaving the previous picture up while it works. At Fit it shows a quick preview before the more accurate picture. If the GPU cannot draw it, the status line tells you when it switches to the slower CPU route. Micro Grain is for supported Bayer RAWs only. It isn't available with an authored SDR base, retouch repairs or Edge Colour highlight reconstruction.
 
 Fine Grain and Clean Grain prepare the full photo when you enable the method
 or change a setting that affects the preparation. You can then zoom and pan
@@ -70,7 +76,7 @@ Click **Show noise**. The picture turns grey and shows only what Denoise is taki
 - Even, grain-like speckle is what you want to see.
 - Visible edges, lettering or outlines mean real detail is being removed. Lower **Amount** or raise **Detail Recovery**.
 
-Grade preview and **Show noise** use WebGPU for all three methods. Proof and export can use the CPU when GPU delivery is unavailable. Scopes keep showing your normal picture and update when you click **Hide noise**.
+Grade preview and **Show noise** use WebGPU. Micro Grain uses the CPU for full-size Proof and export, and Show noise is unavailable in its CPU preview. Scopes keep showing your normal picture and update when you click **Hide noise**.
 
 ## Recalculate Denoise
 
@@ -85,7 +91,7 @@ The status line also shows **Recalculating**, or **Error** if the measurement fa
 
 ## HDR and SDR
 
-HDR and SDR offer the same three Denoise methods (Steve’s decision, November 20, 2026). In Grade, the two renditions reuse Fine Grain or Clean Grain preparation when they use the same source pixels and preparation settings. An authored SDR base has its own preparation.
+HDR and generated SDR offer the same four Denoise methods. In Grade, the two renditions reuse Grain preparation when they use the same source pixels and preparation settings. An authored SDR base has its own preparation and cannot use Micro Grain because it has no sensor data.
 
 Set Denoise separately for each rendition you want cleaned. **Match entire HDR grade** copies the HDR settings to SDR. While SDR is linked to HDR, it follows the HDR settings. An independent SDR grade keeps the copied settings as its starting point and can be adjusted separately.
 
