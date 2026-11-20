@@ -1,3 +1,27 @@
+## November 20 — Micro Grain in Grade and delivery
+
+MacBook Neo, A18 Pro, 8 GB, macOS 27.0.1. Unpackaged Electron, 1408 × 794 window, lens correction off, signed AHD, harsh-speck cleanup ×2.5. One action-to-presented-picture observation per cell. The Canon Grade measurements are from the same session; the Sony run stopped on system memory pressure after Micro Grain, before the other methods. Peak is sampled whole-app physical footprint, in decimal GB.
+
+| RAW / method | Enable at 110% (s) | Slider at 110% (s) | 800 px pan (s) | Fit quick / exact (s) | Grade peak (GB) |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Canon IMG_0790.CR2 / Standard | 0.60 | 0.46 | 0.45 | — / 0.11 | 2.55 |
+| Canon / Clean Grain, Small | 1.58 | 0.05 | 0.27 | — / 2.52 | 2.20 |
+| Canon / Micro Grain | 5.52 | 1.26 | 0.82 | 0.08 / 6.07 | 2.09 |
+| Sony _DSC7970.ARW / Micro Grain | 7.27 | 1.24 | 1.20 | 0.10 / 16.00 | 2.81 |
+
+The dash means no separate quick presentation was observed. The single slider action changed Standard Luminance or Clean/Micro Color from its current value to 62%. Micro Grain keeps the previous picture until the new viewport is ready. Grouping adjacent Bayer tiles shortened the Canon slider wait from 1.76 s to 1.26 s, still above the isolated 0.25–0.30 s feasibility estimate.
+
+Original-size Ultra HDR JPEG delivery, Q90 and a 1,000-nit target. The three Sony export observations are from the same session and use the CPU. Canon Micro Grain delivery ran separately before the Grade Bayer band change, which does not affect delivery.
+
+| RAW / method | Export wait / peak | Full-size Proof wait / peak |
+| --- | ---: | ---: |
+| Canon / Micro Grain | 31.50 s / 2.68 GB | 46.11 s / 2.62 GB |
+| Sony / Standard | 22.72 s / 3.47 GB | — |
+| Sony / Clean Grain, Small | 29.24 s / 3.46 GB | — |
+| Sony / Micro Grain | 67.10 s / 3.49 GB | 95.57 s / 3.48 GB |
+
+Micro Grain Proof and export JPEGs are byte-identical on each RAW. [Design and validation](briefs/denoise-micro-grain-app-2026-11-20.md)
+
 ## November 20 — Integrated byte-identical CPU JPEG export changes
 
 MacBook Neo, A18 Pro, six cores, 8 GB, macOS 27.0.1 on AC. Unpackaged
