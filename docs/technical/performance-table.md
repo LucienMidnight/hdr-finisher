@@ -1,3 +1,29 @@
+## November 20 — CPU export speed prototypes
+
+MacBook Neo, Apple A18 Pro, six cores, 8 GB, macOS 27.0.1, AC power.
+App checkout `a217b2db`, shared GPU lock and macOS pressure/swap watcher.
+Native signed AHD RAWs with speck cleanup 2.5 and lens off. HDR JPEG Ultra
+HDR Q90, full-size map Q90, 4:2:0, auto dither, 1,000-nit Highlights and
+generated SDR. No sharpening or metadata. The timings below are backend
+stages with the RAW already open, except the two earlier app waits used
+for the forecast. Peak figures are sampled process-tree physical footprint.
+
+| Photo and action | Current | Prototype | Conditions and result |
+| --- | ---: | ---: | --- |
+| Canon `IMG_0790.CR2`, 5202 × 3464, Clean Grain Large, native HDR JPEG codec | 16.07–18.61 s | 12.00–12.13 s | Reused SDR inputs across retries, exact filter and compact decoded check. 4 passes in both, finished 1,000.00 nits, final decoded 999.00 nits, same JPEG bytes as app. Sampled 1.88 GB current and 1.65–1.74 GB exact bundle. |
+| Sony `_DSC7970.ARW`, 7968 × 5320, Clean Grain Small, native HDR JPEG filter/repack and ceiling decode | 5.60 s | 3.41 s | Exact filter and compact check from the same native unfiltered encode. One pass, same JPEG bytes as app. Finished peak 388.65 nits, decoded 397.76 nits. Separate preparation with finished peak scan 5.30 s, unchanged native helper 1.26 s and 1.92 GB. First helper run stopped on OS pressure. |
+| Canon native SDR finishing within Ultra HDR | 4.83 s | 2.12 s | Same denoised input, shared CPU pool, identical finished float bytes. HDR strip baseline 2.50 s. |
+| Sony native SDR finishing within Ultra HDR | 3.80 s | 3.30 s | Same denoised input, shared CPU pool, identical finished float bytes. More aggressive two-worker test reached 2.41 s, while threading the HDR strips moved 2.97 → 3.38 s. |
+| Canon native stand-alone SDR JPEG, Denoise off | 5.70 s | — | Completed current CPU export, Q90, 1.82 GB. Two attempts with native Fine Grain stopped on memory pressure and swap growth. |
+| Canon native stand-alone SDR JPEG, Fine Grain Small | Pressure stops | 7.95 s | Bounded strip rendering and quantization, Q90. Completed prototype at 1.24 GB. |
+| Canon 2601 × 1732 stand-alone SDR JPEG, Fine Grain Small | 3.61 s / 1.94 GB | 2.80 s / 0.67 GB | Same half-width and half-height input passed to both backends. Exact JPEG bytes. |
+| Canon HDR, stronger local ceiling correction | 12.00 s exact bundle, 4 passes | 9.47 s, 3 passes | Rejected. Decoded 994.44 nits, SDR exact, HDR ΔE ITP mean 0.321 and P99.9 10.754. |
+| Canon HDR, smoothing removed | 16.07–18.61 s, 4 passes | 9.93 s, 3 passes | Rejected. Initial peak rose from 1,224.88 to 1,561.60 nits. Final 993.67 nits. SDR exact, HDR ΔE ITP mean 11.26 and P99.9 48.97. File grew 12.05 → 22.25 MB. |
+| Sony HDR, smoothing removed, filter/repack | 3.61 s | 0.62 s | Rejected. First decoded peak stayed 397.76 nits. SDR exact, HDR ΔE ITP mean 0.505 and P99.9 3.187. |
+| Projected full Canon / Sony HDR export with exact changes | 46.91 / 43.33 s earlier real-app waits | About 39–41 s each | Forecast from same-Mac stage savings. Integrated app timing pending. |
+
+[Recommendations and evidence](briefs/export-speed-plan-2026-11-20.md)
+
 ## November 20 — Denoise export and full-size Proof attribution
 
 MacBook Neo, A18 Pro, 6 cores, 8 GB unified memory, macOS 27.0.1, AC
