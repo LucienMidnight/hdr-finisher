@@ -125,6 +125,13 @@ def _uses_grain_reconstruction(frame):
 
 def _render_pair(frame, owner, settings, adjustments):
     from .delivery import preferences, renderer_record
+    from .exporters import denoise_settings_for_export
+    from .models import PreviewKind
+
+    if any((lane := denoise_settings_for_export(frame, kind)) is not None and lane.controls.method == "micro_grain"
+           for kind in (PreviewKind.HDR, PreviewKind.SDR)):
+        frame._delivery_record = {"renderer": "cpu", "fallback_reason": "Micro Grain uses the CPU delivery source."}
+        return None
     try:
         policy = preferences()
     except (OSError, ValueError, AttributeError):
