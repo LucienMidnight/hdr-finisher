@@ -675,6 +675,8 @@ Completed UI polish round 3 (pending visual sign-off): `docs/technical/archive/b
   `round5-relative-colour-and-patch.md` compares relative colour cleanup,
   nearby healing and whole-area patch averaging on the Canon and Sony,
   with marked-site results, visible artefacts and native CPU timings.
+  `predemosaic-round4.md` records the quieter fine-grain trial, the six-step
+  luminance sweep, the native crops and the remaining hair and mark issues.
 - `docs/technical/archive/briefs/denoise-experimental-grain-modes-2026-11-19.md`:
   completed experimental Fine Grain and Clean Grain implementation beside
   Standard. MacBook timings and the open visual review are in the Grade and
