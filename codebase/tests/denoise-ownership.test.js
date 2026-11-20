@@ -28,7 +28,7 @@ function harness() {
     refinementProxyLongEdge: () => 1024, geometrySignature: () => '',
     renderGpuDraft: async lane => { calls.renders.push(lane); },
     renderPreviewForLane: async () => true,
-    renderLaneChrome() {}, clamp: (x, a, b) => Math.min(b, Math.max(a, x)),
+    renderLaneChrome() {}, invalidatePreview() {}, clamp: (x, a, b) => Math.min(b, Math.max(a, x)),
     debounceOverlayAndScopes: () => { calls.scopes++; },
     queueEditCommand: async (...args) => { calls.saves.push({ sessionId: state.session?.session_id, args }); return true; },
   });

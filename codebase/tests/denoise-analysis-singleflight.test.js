@@ -10,7 +10,7 @@ test('Denoise method controls recover after a rejected save, missing GPU, or exp
       denoise: { hdr: { enabled: true, controls: { method: 'standard' } } },
       gpuPreview: { available: scenario !== 'unavailable', diagnosticsSnapshot: () => ({ denoise: {} }),
         analyzeDenoiseProxy: async () => { throw new DOMException('Expired', 'AbortError'); } } };
-    const context = vm.createContext({ state, console, renderDenoiseControls: () => {},
+    const context = vm.createContext({ state, console, renderDenoiseControls: () => {}, invalidatePreview: () => {},
       persistDenoiseSettings: async () => scenario !== 'save', refinementProxyLongEdge: () => 1600,
       geometrySignature: () => '{}', denoiseRendererControls: controls => controls,
       renderPreviewForLane: async () => true });
