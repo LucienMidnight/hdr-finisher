@@ -1210,7 +1210,7 @@ Clipped lane, scope, preview and filename labels use their visible text; dynamic
 
 | Control / visible name | Text | Flags | ID and source |
 | --- | --- | --- | --- |
-| replacement aria-label | canvas.getAttribute("aria-label") &#124;&#124; "Settled comparison preview" | dynamic expression | codebase/frontend/preview-pipeline.js:527 · [source](../../codebase/frontend/preview-pipeline.js#L527) |
+| replacement aria-label | canvas.getAttribute("aria-label") &#124;&#124; "Settled comparison preview" | dynamic expression | codebase/frontend/preview-pipeline.js:542 · [source](../../codebase/frontend/preview-pipeline.js#L542) |
 
 ### range controls
 
