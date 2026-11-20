@@ -7,27 +7,41 @@ test("the reduced CPU Denoise image is presented at its actual size without anot
   for (const reduced of [null, 4096]) {
     const state = { session: { session_id: "photo" }, currentView: "hdr", gpuPreview: { available: true },
       previewCache: {}, previewGeneration: { hdr: 1 }, previewControllers: {}, previewInfoByLane: {} };
+    if (reduced) {
+      state.denoise = { hdr: { controls: { method: "micro_grain", micro_color: 0.62 } } };
+      state.denoiseRuntime = { hdr: { showOriginal: false } };
+    }
     const edge = reduced || 5202;
     const presentation = [];
+    let request;
     let gpuAttempts = 0;
     const context = vm.createContext({ state, AbortController, URL, els: { scopeKindLabel: {} },
       geometryDraftActive: () => false, geometrySignature: () => "{}", syncGlobalEditState: async () => true,
       cpuPreviewReason: () => "gpu-failed:validation", localsBypassed: () => false,
       previewExecutionForTier: () => "strips", mediaQueryMatch: () => true,
-      fetch: async () => new Response(new Blob(["pixels"]), { headers: {
-        "X-Image-Width": edge, "X-Image-Height": 3000, ...(reduced ? { "X-Preview-Reduced-Edge": reduced } : {}),
-      } }),
+      fetch: async (_, options) => {
+        request = JSON.parse(options.body);
+        return new Response(new Blob(["pixels"]), { headers: {
+          "X-Image-Width": edge, "X-Image-Height": 3000, ...(reduced ? { "X-Preview-Reduced-Edge": reduced } : {}),
+        } });
+      },
       previewInfoFromResponse: () => ({ transport: "JPEG" }), shouldKeepHdrGpuSurface: () => true,
       renderGpuDraft: async () => { gpuAttempts++; }, gpuPreviewEligible: () => true,
       setGpuSurfaceHdr() {}, applyPreviewUrl: async () => true, refinementProxyLongEdge: () => 5202,
       renderCompareStatus() {}, renderReadouts() {}, acceptPresentation: (...args) => presentation.push(args),
       CPU_PREVIEW_MAX_LONG_EDGE: 16384 });
-    vm.runInContext(declarations("renderPreviewForLaneInner", "describeReducedDenoisePreview"), context);
+    vm.runInContext(declarations("renderPreviewForLaneInner", "describeReducedDenoisePreview", "microGrainPreviewRequest"), context);
     assert.equal(await context.renderPreviewForLaneInner("hdr", true, 5202, { showProgress: false, denoiseFallback: true }), true);
     assert.equal(gpuAttempts, 0);
     assert.equal(presentation[0][9], edge);
     assert.equal(presentation[0][5], "CPU/backend");
-    if (reduced) assert.match(state.previewUnavailableReason, /4096px/);
+    if (reduced) {
+      assert.match(state.previewUnavailableReason, /4096px/);
+      assert.deepEqual(request.micro_grain_controls, state.denoise.hdr.controls);
+      assert.equal(request.micro_grain_original, false);
+    } else {
+      assert.equal(Object.hasOwn(request, "micro_grain_controls"), false);
+    }
     URL.revokeObjectURL(state.previewCache.hdr.url);
   }
 });

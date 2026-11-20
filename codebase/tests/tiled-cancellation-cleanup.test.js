@@ -6,7 +6,7 @@ const source = frontendSource('webgpu-preview.js');
 const begin = source.indexOf('      let encodeError = null;', source.indexOf('async encodeTiledGeneration'));
 const end = source.indexOf('      if (validationError) {', begin);
 
-function encoding({ cancelled = false, throws = false, patchCoversViewport = null } = {}) {
+function encoding({ cancelled = false, throws = false, patchCoversViewport = null, microBand = false } = {}) {
   let scopes = 0, released = 0, freed = 0, submissions = 0;
   const dropped = [];
   const renderer = {
@@ -29,6 +29,7 @@ function encoding({ cancelled = false, throws = false, patchCoversViewport = nul
     localBuffers: [{ buffer: { destroy: () => freed++ } }],
     denoiseParamBuffers: [{ destroy: () => freed++ }],
     cleanGrainTransientTextures: cancelled || throws ? [{ destroy: () => freed++ }] : [],
+    microBandSources: new Map(microBand ? [[0, { texture: { destroy: () => freed++ } }]] : []),
     denoiseTilesUnsubmitted: ['unwritten'], denoiseTilesCreated: ['unwritten'], denoiseTilesUsed: [],
     denoiseTileKey: () => null, denoiseSource: null, denoiseControls: {}, noiseView: false,
     detailResultView: {}, clarityFrame: null, plan: { tiles: [] }, foregroundTiles: [],
@@ -62,10 +63,11 @@ test('Success balances the scope and keeps the peak reserved for readback', asyn
 });
 
 test('A native patch left behind by a pan does not submit a replacement picture', async () => {
-  const f = encoding({ patchCoversViewport: false });
+  const f = encoding({ patchCoversViewport: false, microBand: true });
   assert.equal((await f.run).rendered, false);
   assert.equal(f.counts().submissions, 0);
   assert.equal(f.counts().scopes, 0);
+  assert.equal(f.counts().freed, 3);
   assert.equal(f.peakTarget.busy, false);
 });
 
