@@ -54,6 +54,64 @@ Original-size Ultra HDR JPEG delivery, Q90 and a 1,000-nit target. The three Son
 
 Micro Grain Proof and export JPEGs are byte-identical on each RAW. [Design and validation](briefs/denoise-micro-grain-app-2026-11-20.md)
 
+## November 20 — Denoise transitions and Micro Grain throughput
+
+MacBook Neo, A18 Pro, 8 GB, 1408 × 794. Normal `npm start` Electron with an isolated profile. Canon `IMG_0790.CR2`, 110%, signed AHD, lens off and speck cleanup ×2.5. Times are seconds to a matching exact Grade presentation, not completion of background scopes. A dash means no new picture during the observation. The transition comparison is pre-Micro `12a945bf`, `ccad5c92` before the fixes, and the transition fix with the initial speed patch, from `normal-prebuild-retry.log`, `normal-before.log` and `normal-canon-final.log`. Repeated observations are shown as ranges; cold numbers include initial preparation.
+
+| Method | Pre-Micro off / warm on | Off, before → after | Warm on, before → after |
+| --- | ---: | ---: | ---: |
+| Standard | 0.07 (another redraw at 1.41) / 0.45 | 0.09 (another redraw at 1.52) → 0.16 | 0.49 → 0.47 |
+| Fine Grain | no redraw / 0.27 | — → 0.11 | 0.33 → 0.29 |
+| Clean Grain | no redraw / 0.33 | — → 0.11 (another redraw at 0.25) | 0.37 → 0.33 |
+| Micro Grain | unavailable | 0.14 → 0.11 | 0.06 → 0.06 |
+
+| From → to, while enabled | Pre-Micro | Before | After transition fix |
+| --- | ---: | ---: | ---: |
+| Standard → Fine | 0.51 warm / 1.37 cold | 0.57 warm / 1.47 cold | 0.58–0.61 warm |
+| Fine → Standard | 0.44 | 0.50 | 0.51 |
+| Standard → Clean | 0.74 | 0.77 | 0.78 |
+| Clean → Standard | 0.45 | 0.50 | 0.49 |
+| Standard → Micro | unavailable | 5.47 cold | 5.58 cold |
+| Micro → Standard | unavailable | 0.50 | 0.55 |
+| Fine → Clean | 0.33–0.72 | 0.34–0.78 | 0.38–0.79 |
+| Clean → Fine | 0.29 | 0.30–0.34 | 0.33 |
+| Fine → Micro | unavailable | 1.36–1.37 | 1.33 |
+| Micro → Fine | unavailable | 0.32–0.36 | 0.31 |
+| Clean → Micro | unavailable | 1.34–1.37 | 1.33–1.35 |
+| Micro → Clean | unavailable | 0.35–0.37 | 0.49 |
+
+Cold Standard enable was 1.11 → 1.17 s. A same-turn Micro bypass-to-Clean selection then drew Clean at Fit in 0.06 s. The 12 settled directions all landed on the selected menu and source. No settled menu rollback or silent CPU fallback was observed in either matrix. The method race reproduced in a regression test and in the normal pre-Micro app: with a 0.25 s save delay, bypassing Clean then immediately enabling and selecting Fine left the menu and saved edit on Fine, but the Grade source on Clean/original, with no exact replacement in 40 s.
+
+| Micro Grain wait | Earlier integrated | Normal-app before | Normal-app optimized |
+| --- | ---: | ---: | ---: |
+| Canon Color at 110% (62%, 74%) | 1.26 | 1.35 / 1.55 | 0.80 / 0.70 |
+| Canon 800 px pan at 110% | 0.82 | 0.95 | 0.97 |
+| Canon quick / exact Fit | 0.08 / 6.07 | 0.10 / 6.82 | 0.11 / 4.45 |
+| Sony Color at 110% (62%, 74%) | 1.24 | — | 0.75 / 0.72 |
+| Sony 800 px pan at 110% | 1.20 | — | 1.31 |
+| Sony quick / exact Fit | 0.10 / 16.00 | — | 0.11 / 12.07 |
+
+| Canon Color profile at 110%, seconds | Before | Optimized |
+| --- | ---: | ---: |
+| Action to exact presentation, with profiling | 1.28–1.29 | 0.67–0.68 |
+| Three Bayer requests to headers (CPU correction plus request wait) | 0.81–0.82 | 0.17–0.18 |
+| Bayer response bodies | 0.021–0.022 | 0.022–0.023 |
+| AHD GPU pass intervals | 0.033–0.037 | 0.027 |
+| Late wavelet and repair GPU pass intervals | 0.495–0.497 | 0.476–0.480 |
+| Tiled Grade and other GPU pass intervals | 0.397–0.408 | 0.353–0.355 |
+| Small readbacks, wall time per map | 0.015–0.023 | 0.016–0.020; late map 0.432–0.438 |
+
+GPU rows combine overlapping Metal timestamp intervals within each category for work submitted before the exact presentation. The categories overlap one another and cannot be added or subtracted from elapsed time to estimate CPU idle, and the Grade group includes other renderer work. The three Bayer headers cost 0.86–1.06 s before and 0.17–0.24 s warm in separate runs. There is no full-pixel readback in the normal presentation; the small readback can wait behind queued GPU work, so the late map is not a transfer cost. For comparison, isolated 512-pixel tile probes measured AHD at 0.007–0.009 s and the late wavelet and repair at 0.255–0.260 s. The 0.30 s slider target and faster pans remain open. Receipts: `codebase/output/micro-grain-app/normal-{profile-before,canon-throughput,sony-throughput,profile-timing-after,profile-parity-before,profile-parity-after}.log`.
+
+| Fresh profile with finished-pixel capture | Before | Optimized |
+| --- | ---: | ---: |
+| Canon Color at 110% (62%, 74%) | 1.20 / 1.23 | 1.26 / 0.70 |
+| Canon quick / rebuilt exact Fit | 0.09 / 5.86 | 0.09 / 4.45 |
+| Sony Color at 110% (62%, 74%) | 1.40 / 1.25 | 0.99 / 0.79 |
+| Sony quick / rebuilt exact Fit | 0.09 / 15.90 | 0.12 / 12.86 |
+
+At 74% Color, all eight finished-pixel pairs matched byte for byte: Canon and Sony, HDR and SDR, at 110% and exact Fit. The reduced-source cache was dropped before Fit, and the HDR timings include a confirmed native reduction. The 110% captures were 2542 × 1068; Fit was 1294 × 862 on Canon and 1291 × 862 on Sony. This checks Grade parity, not a new encoded export ceiling measurement. Native delivery and its highlight limiter were not changed. The Canon throughput runs sampled up to 2.37 GB of total app memory; the logged samples are not a continuous peak measurement. Receipts: `codebase/output/micro-grain-app/cold-{IMG_0790.CR2,_DSC7970.ARW}-{before,after}.log`.
+
 ## November 20 — Integrated byte-identical CPU JPEG export changes
 
 MacBook Neo, A18 Pro, six cores, 8 GB, macOS 27.0.1 on AC. Unpackaged

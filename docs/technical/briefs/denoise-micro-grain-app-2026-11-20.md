@@ -16,7 +16,7 @@ The app keeps the corrected Bayer region and structure evidence separate from Gr
 
 The production CPU crop check reproduced 3.30–3.41 px brightness grain and a Canon skin measurement of 0.251 ΔE 2000. The Canon face had 880 scene-channel differences above the reference tolerance; the Sony mid check had 322. Worst finished disagreements against round 3 were HDR ΔE ITP 0.00064 mean / 0.0053 p99 and SDR ΔE 2000 0.00012 mean / 0.0014 p99 across the tested crops. These are CPU/reference crop results, not Grade-versus-delivery results.
 
-A Canon Grade check injected one GPU failure. The status reported the CPU switch and the viewer presented a denoised 4096-pixel CPU preview, with no second Micro Grain GPU attempt. In a separate smoke check, the Library drew the 640-pixel developed picture from a saved Micro Grain grade, and Grade restored the enabled method and custom Color value on reopen. The Library CPU fallback can omit Micro Grain because it has no Bayer data.
+A Canon Grade check injected one GPU failure. The status reported the CPU switch and the viewer presented a denoised 4096-pixel CPU preview, with no second Micro Grain GPU attempt. In a separate smoke check, the Library drew the 640-pixel developed picture from a saved Micro Grain grade, and Grade restored the enabled method and custom Color value on reopen. The Library CPU fallback now uses the reduced scene-wavelet controls instead of trying the native Bayer method on a cached RGB image.
 
 ## Controls and qualification
 
@@ -48,7 +48,13 @@ The final locked Node suite passed 1,127 tests with one skip. The monolithic Pyt
 
 Feasibility stopped with the method outside the app menu. The fastest exact candidate exceeded the provisional target before the rest of the pipeline ran. The tested interpolation failed on lifted shadows at native and half size. Steve subsequently directed that the GPU route be built with live sliders and no release-only mode.
 
-Lower-traffic GPU wavelet and repair passes remain a possible speed improvement. No additional filter tuning or flat-area-only stage was included.
+### Grade follow-up: bypass, switches and throughput
+
+Bypass used to race its settings save: the original-source request carried the old edit revision, so a 409 discarded the redraw without a replacement. A method selected during a delayed enable could supersede the enable before it cleared Show original. That left the picture on the original even though the new choice could remain in the menu. Grade now establishes original/resolved intent synchronously, rejects outgoing presentations, and redraws against the acknowledged edit. Settled Canon transitions did not reproduce a menu reset or GPU fallback. The affected sequencing already existed at `12a945bf`.
+
+At 110% the viewport needs three 3296 × 736 Bayer requests, before the additional sensor halo. The two-entry coefficient cache kept evicting a band before the next slider move. Cache admission now uses bytes (256 MiB maximum, one source) and retains all three warmed bands. AHD's immutable Lab table stays on the GPU; identical slider input does not start another reconstruction. Micro Grain's late pass reuses both lowpasses it already computed for noise estimation, without extra scratch or a change in filter strength. Exact Fit shares the Bayer preparation and AHD of adjacent 768-pixel cores, without changing the late tile grid. Only the next band's CPU request overlaps the current GPU work; it does not allocate another GPU band in advance.
+
+The whole wait still exceeds 0.30 s. Against `ccad5c92`, finished Grade pixels were byte-identical on the Canon and Sony in HDR and SDR at 110% and rebuilt exact Fit. Profile timings and the limitations of the stage counters are in the [performance table](../performance-table.md#november-20--denoise-transitions-and-micro-grain-throughput). No slider approximation, new filter tuning, or change to the native delivery or highlight limiter was included. The locked fast suites passed: Node 1,129 passed and 1 skipped; Python 4,372 passed, 150 skipped and 1 unexpected pass.
 
 Local receipts are available for the [CPU defaults](../../../codebase/output/micro-grain-app/default-metrics.jsonl), [signed AHD](../../../codebase/output/micro-grain-app/webgpu-ahd.jsonl), [late GPU tiles](../../../codebase/output/micro-grain-app/late-tiling.jsonl), [dense drag approximation](../../../codebase/output/micro-grain-app/dense-drag.jsonl) and [Grade retry](../../../codebase/output/micro-grain-app/grade-retry.jsonl).
 
