@@ -868,6 +868,13 @@ Settings rules (from v1.2 section 5, still in force):
 
 ## 5. Current state (October 18, 2026)
 
+- November 20: CPU JPEG delivery uses a faster exact gain-map filter,
+  reuses the SDR encoder inputs across eligible retries, and checks every
+  decoded HDR sample in bands. Eligible SDR JPEG grades with Denoise use
+  bounded finishing. Canon Clean Grain Large Ultra HDR fell from 48.03 s
+  to 32.70 s with identical bytes. The highest measured after-run peak was
+  3.382 GB across the completed native exports. [Export speed results](../../technical/briefs/export-speed-plan-2026-11-20.md#integrated-result)
+
 **Built**
 
 - October 22: Edge colour RAW source preparation uses the shared GPU worker

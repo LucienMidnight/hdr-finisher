@@ -1,3 +1,55 @@
+## November 20 — Integrated byte-identical CPU JPEG export changes
+
+MacBook Neo, A18 Pro, six cores, 8 GB, macOS 27.0.1 on AC. Unpackaged
+Electron at 1408 × 794. Before `12a945bf`, after `d3836494`. Both used
+the same Denoise code, CPU delivery, original dimensions, 0 EV, signed AHD,
+speck cleanup 2.5 and lens correction off. SDR used Q90. Ultra HDR used
+Q90, a full Q90 gain map, 4:2:0, automatic dither, a 1,000-nit target and
+matching generated SDR. Metadata and sharpening were off.
+
+One observation per completed case after Grade settled. Time starts with the
+Export click and ends when the saved file and success status are available.
+Whole-app peaks are sampled physical footprints in decimal GB. Interrupted
+rows show the last observed maximum through the stop. Each run used the shared
+GPU lock and stopped on system pressure, swap growth or the 4 GB app limit.
+
+| RAW and Denoise | Format | Before (s) | After (s) | Peak before → after (GB) | Byte comparison |
+| --- | --- | ---: | ---: | ---: | --- |
+| Canon, Denoise off | Ultra HDR | 30.65 | 20.55 | 2.62 → 2.50 | Identical |
+| Canon, Denoise off | SDR | 8.12 | 3.47 | 2.35 → 1.46 | Identical |
+| Canon, Fine Grain | Ultra HDR | 33.40 | 23.56 | 2.30 → 2.26 | Identical |
+| Canon, Fine Grain | SDR | 4 GB stop | 6.21 | 4.18 → 1.64 | No completed pair |
+| Canon, Clean Grain Small | Ultra HDR | 44.48 | 30.67 | 2.40 → 2.24 | Identical |
+| Canon, Clean Grain Small | SDR | 4 GB stop | 9.37 | 4.00 → 1.65 | No completed pair |
+| Canon, Clean Grain Large | Ultra HDR | 48.03 | 32.70 | 2.40 → 2.39 | Identical |
+| Canon, Clean Grain Large | SDR | Pressure stop | 14.05 | 3.58 → 1.65 | No completed pair |
+| Sony, Denoise off | Ultra HDR | Pressure stop | Pressure stop | 2.63 → 2.65 | No completed pair |
+| Sony, Denoise off | SDR | 16.81 | 6.05 | 3.40 → 2.12 | Identical |
+| Sony, Fine Grain | Ultra HDR | 33.32 | 26.73 | 3.34 → 3.38 | Identical |
+| Sony, Fine Grain | SDR | Pressure stop | 11.92 | 2.12 → 2.14 | No completed pair |
+| Sony, Clean Grain Small | Ultra HDR | 41.15 | 35.50 | 3.34 → 2.86 | Identical |
+| Sony, Clean Grain Small | SDR | Pressure stop | 21.35 | 3.92 → 2.37 | No completed pair |
+
+Canon is `IMG_0790.CR2` at 5202 × 3464 and Sony is `_DSC7970.ARW` at
+7968 × 5320. The six completed Ultra HDR pairs and both Denoise-off SDR
+pairs matched byte for byte. The five traced Ultra HDR pairs had identical
+decoded peak sequences and retry counts. The highest sampled peak for a
+completed after run was 3.382 GB.
+
+Canon Clean Grain Large saved 15.33 s (32%) and landed at 32.70 s, ahead of
+the plan's 39–41 s forecast from its earlier 46.9 s wait. Sony Clean Grain
+Small saved 5.65 s (14%) and landed at 35.50 s against the same forecast
+from its earlier 43.3 s wait.
+
+All five bounded stand-alone SDR Denoise runs completed at 1.64–2.37 GB.
+The legacy runs stopped before publication, leaving native byte parity open
+for those five cases. Sony Denoise-off Ultra HDR stopped on system pressure
+on both versions. The matching cases above use full-size exports from the
+two actual app versions.
+
+[Implementation and measured stages](briefs/export-speed-plan-2026-11-20.md#integrated-result) ·
+[Local timings, peaks and JPEG hashes](../../codebase/output/export-speed-app-2026-11-20/receipt.json)
+
 ## November 20 — CPU export speed prototypes
 
 MacBook Neo, Apple A18 Pro, six cores, 8 GB, macOS 27.0.1, AC power.
@@ -20,7 +72,7 @@ for the forecast. Peak figures are sampled process-tree physical footprint.
 | Canon HDR, stronger local ceiling correction | 12.00 s exact bundle, 4 passes | 9.47 s, 3 passes | Rejected. Decoded 994.44 nits, SDR exact, HDR ΔE ITP mean 0.321 and P99.9 10.754. |
 | Canon HDR, smoothing removed | 16.07–18.61 s, 4 passes | 9.93 s, 3 passes | Rejected. Initial peak rose from 1,224.88 to 1,561.60 nits. Final 993.67 nits. SDR exact, HDR ΔE ITP mean 11.26 and P99.9 48.97. File grew 12.05 → 22.25 MB. |
 | Sony HDR, smoothing removed, filter/repack | 3.61 s | 0.62 s | Rejected. First decoded peak stayed 397.76 nits. SDR exact, HDR ΔE ITP mean 0.505 and P99.9 3.187. |
-| Projected full Canon / Sony HDR export with exact changes | 46.91 / 43.33 s earlier real-app waits | About 39–41 s each | Forecast from same-Mac stage savings. Integrated app timing pending. |
+| Projected full Canon / Sony HDR export with exact changes | 46.91 / 43.33 s earlier real-app waits | About 39–41 s each | Forecast from same-Mac stage savings. Integrated app results are above. |
 
 [Recommendations and evidence](briefs/export-speed-plan-2026-11-20.md)
 

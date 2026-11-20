@@ -17,6 +17,28 @@ behaviour can all be kept. The two trials that changed the image failed the
 perceptual limits. I recommend proceeding with the exact changes once the
 Denoise work lands. [Earlier app waits and conditions](denoise-export-proof-breakdown-2026-11-20.md)
 
+## Integrated result
+
+The five changes are in `3c44dac7`, `4acaad90`, `2390eda3`, `73726933`
+and `d3836494`. The app used the same CPU delivery settings and Denoise code on
+both versions. Canon Clean Grain Large took **48.03 → 32.70 s** (32% less)
+and Sony Clean Grain Small took **41.15 → 35.50 s** (14% less). Both were
+byte-identical and came in below the forecast of 39–41 s. The eight completed
+pairs all matched. The highest sampled whole-app peak after the changes was
+**3.382 GB**. [Case-by-case timing and memory](../performance-table.md#november-20--integrated-byte-identical-cpu-jpeg-export-changes)
+
+| Priority | Status and measured result |
+| --- | --- |
+| 1. Existing gain-map filter | **Done.** Filter and repack across the Canon Clean Small four passes took **10.76 → 5.52 s**. Sony Clean Small's single pass took **5.69 → 2.61 s**. The optional Mac native loop produced the same float32 values and JPEG bytes as the NumPy path with the build absent. |
+| 2. Bounded SDR finishing | **Done.** Total SDR strip render for Canon Clean Small took **7.55 → 3.08 s**. Sony Clean Small took **5.50 → 3.64 s**. Grading records the whole-image peak and two half-strips share the existing worker pool and strip budget. Exact strip tests cover authored SDR and robust Peak Fit. |
+| 3. Reuse SDR encoder inputs | **Done.** Canon Clean Small wrote its SDR intent and primary JPEG once across four passes, saving about **216 MB** of logical SDR intent writes. The two writes together took **0.62 → 0.18 s**, excluding the avoided conversion. A changed positive HDR mask rebuilds both inputs and preserves flooring at black. |
+| 4. Banded decoded ceiling check | **Done.** Canon Clean Small's four checks took **5.51 → 4.41 s** and corrections **0.70 → 0.25 s**. Sony Clean Small's one check took **2.99 → 2.35 s**. Canon Clean Small decoded to **1,524.31, 1,065.45, 1,027.55 and 999.90 nits** in the same order on both versions. Tests compare the exact correction pixels, rotated EXIF fallback and preservation of the destination on refusal. |
+| 5. Stand-alone SDR JPEG with Denoise | **Done in code.** Native Canon Grain exports landed in **6.21–14.05 s** at **1.64–1.65 GB**, Sony in **11.92–21.35 s** at **2.14–2.37 GB**. Fixture tests match the whole-frame JPEGs exactly, including an authored SDR base. The five native whole-frame Denoise baselines stopped at the app limit or on OS pressure, so their native before/after byte comparisons remain open. |
+
+Sony Denoise-off Ultra HDR also stopped on macOS pressure in both app
+versions. The tested cutoff stays exact at finished HDR and retains the 1%
+encoding allowance. [Local receipts](../../../codebase/output/export-speed-app-2026-11-20/receipt.json)
+
 ## Ranked work
 
 | Priority | Change and saving in one export | Risk and memory | Steve’s approval |
