@@ -1130,6 +1130,12 @@ async function createWindow(role = "main") {
   });
   libraryStage("window_created", { role });
   window.webContents.on("did-finish-load", () => libraryStage("page_loaded", { role }));
+  window.webContents.on("console-message", ({ level, message, sourceId, lineNumber }) => {
+    const severity = { 2: "warning", 3: "error" }[level] || level;
+    if (severity !== "warning" && severity !== "error") return;
+    libraryStage("renderer_console", { role, level: severity, message: String(message).slice(0, 2000),
+      source: sourceId?.split(/[?#]/, 1)[0], line: lineNumber });
+  });
   const record = { role, window, ready: false, displayTimer: null };
   windows.set(role, record);
   if (isMain) {

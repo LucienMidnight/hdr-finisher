@@ -1313,6 +1313,7 @@ body[data-active-lane="sdr"] .lane-dot {
 
 #preview-canvas-frame[data-region] > #preview-denoise-detail {
   display: block;
+  z-index: 2;
 }
 
 #comparison-canvas {

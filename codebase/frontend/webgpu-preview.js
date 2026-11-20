@@ -9,7 +9,7 @@
     if (controls.method !== "clean_grain") return 0;
     return controls.splotchSize === "large" ? CLEAN_GRAIN_LARGE_MARGIN : CLEAN_GRAIN_SMALL_MARGIN;
   }
-  const FINE_GRAIN_REDUCED_CACHE_SIZE = 2;
+  const FINE_GRAIN_REDUCED_CACHE_SIZE = 3;
   const MICRO_GRAIN_MARGIN = 112;
   const FINE_GRAIN_HDR_NITS_ROUNDING_GUARD = 1 - 2 ** -22;
 
@@ -1153,7 +1153,7 @@
         denoiseEvidenceBytes,
         denoiseReconstructionScratchBytes,
         denoiseResolvedBytes,
-        fineGrainReducedBytes: [...(this.fineGrainReduced?.values() || [])].reduce((total, entry) => total + entry.byteSize, 0),
+        fineGrainReducedBytes: this.fineGrainReducedBytes(),
         parameterBufferBytes,
         presentationSurfaceBytes,
       };
@@ -2755,7 +2755,7 @@
         }
       }
       const byteSize = width * height * 16;
-      const cached = this.trimDenoiseTiles([], byteSize) + byteSize <= this.denoiseTileBudget();
+      const cached = this.trimDenoiseTiles([], byteSize) + byteSize <= this.denoiseTileBudget() - this.fineGrainReducedBytes();
       const texture = this.device.createTexture({
         label: "prepared-grain",
         size: { width, height },
@@ -2819,7 +2819,7 @@
       const snapshot = this.resourceMemorySnapshot();
       const categories = snapshot.resident?.categories || {};
       const cacheBytes = (categories.detailBandCacheBytes || 0) + (categories.maskTileBytes || 0)
-        + (categories.denoiseTileBytes || 0);
+        + (categories.denoiseTileBytes || 0) + (categories.fineGrainReducedBytes || 0);
       const nonCacheBytes = Math.max(0, (snapshot.resident?.totalBytes || 0) - cacheBytes);
       const free = Math.max(0, this.memoryBudgetBytes() * 0.9 - nonCacheBytes);
       return Math.max(64 * 1024 * 1024, Math.floor(free * 0.25));
@@ -2829,7 +2829,7 @@
       let bytes = [...this.denoiseTiles.values()].reduce((sum, entry) => sum + entry.byteSize, 0);
       if (!bytes) return 0;
       const protectedKeys = new Set(pinned);
-      const budget = this.denoiseTileBudget();
+      const budget = Math.max(0, this.denoiseTileBudget() - this.fineGrainReducedBytes());
       for (const [key, entry] of [...this.denoiseTiles]) {
         if (bytes + pendingBytes <= budget) break;
         if (protectedKeys.has(key) || (pendingBytes && this.activeRenderCount)) continue;
@@ -6292,6 +6292,10 @@
       }
     }
 
+    fineGrainReducedBytes() {
+      return [...(this.fineGrainReduced?.values() || [])].reduce((total, entry) => total + entry.byteSize, 0);
+    }
+
     blendReducedCleanGrain(entry, strength) {
       const { width, height } = entry;
       const target = this.createDenoiseTexture(width, height, "clean-grain-fit-blend");
@@ -6564,7 +6568,9 @@
         }
         assertCurrent();
         const entry = { ...result };
-        if (this.fineGrainReduced.size >= FINE_GRAIN_REDUCED_CACHE_SIZE) {
+        const budget = this.denoiseTileBudget();
+        while (this.fineGrainReduced.size && (this.fineGrainReduced.size >= FINE_GRAIN_REDUCED_CACHE_SIZE
+          || this.fineGrainReducedBytes() + entry.byteSize > budget)) {
           this.releaseFineGrainReduced(this.fineGrainReduced.keys().next().value);
         }
         entry.allocatorEntry = this.gpuAllocator?.register({ kind: "fine-grain-reduced", key, bytes: result.byteSize,

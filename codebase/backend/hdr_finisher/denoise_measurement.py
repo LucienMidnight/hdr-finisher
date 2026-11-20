@@ -227,13 +227,15 @@ def create_router(store):
 
     @router.get("/api/session/{session_id}/denoise-micro")
     async def prepare_micro(request: Request, session_id: str):
+        from .denoise_adaptive import measurement_usage
         from .denoise_micro_grain import MicroGrainUnavailable, prepare_source
 
         def build(current):
             frame = store.get(session_id)
             if frame.metadata.get("lens_correction", {}).get("applied"):
                 raise MicroGrainUnavailable("Micro Grain uses the CPU with lens correction.")
-            source = prepare_source(frame, cancelled=lambda: not current())
+            with measurement_usage("Grade Micro Grain Bayer source"):
+                source = prepare_source(frame, cancelled=lambda: not current())
             height, width = source.shape
             return {"width": width, "height": height, "gain": float(source.gain), "model": source.model.as_dict()}
 

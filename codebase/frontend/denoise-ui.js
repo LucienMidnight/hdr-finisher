@@ -80,12 +80,12 @@ function renderDenoiseControls() {
   const ready = ["ready", "dirty"].includes(runtime.status) && (!micro || !unavailable);
   const option = els.denoiseMethod.querySelector('option[value="micro_grain"]');
   if (option) {
-    option.disabled = Boolean(unavailable);
-    option.title = unavailable;
-    option.textContent = unavailable ? "Micro Grain · Unavailable" : "Micro Grain · Experimental";
+    const label = unavailable ? "Micro Grain · Unavailable" : "Micro Grain · Experimental";
+    if (option.disabled !== Boolean(unavailable)) option.disabled = Boolean(unavailable);
+    if (option.title !== unavailable) option.title = unavailable;
+    if (option.textContent !== label) option.textContent = label;
   }
-  els.denoiseMethod.value = settings.controls.method;
-  els.denoiseMethod.disabled = ["preparing", "recalculating"].includes(runtime.status);
+  if (els.denoiseMethod.value !== settings.controls.method) els.denoiseMethod.value = settings.controls.method;
   els.denoiseGrainControls.classList.toggle("hidden", !experimental || micro);
   els.denoiseMicroControls?.classList.toggle("hidden", !micro);
   els.denoiseAmount.closest(".control-row").classList.toggle("hidden", micro);
@@ -123,7 +123,12 @@ function renderDenoiseControls() {
   const labels = { off: "Off", preparing: "Preparing", ready: "Ready", dirty: "Dirty", recalculating: "Recalculating", error: "Error" };
   if (els.denoiseState) els.denoiseState.textContent = labels[runtime.status] || runtime.status;
   els.denoiseStatus.textContent = (micro && unavailable) || runtime.error
-    || (micro && runtime.microUpdating && "Updating Micro Grain. The previous picture stays on screen.") || ({
+    || (micro && enabled && !runtime.microCpu && !runtime.showOriginal && (
+      ["preparing", "recalculating"].includes(runtime.status) || runtime.microUpdating
+      || (runtime.status === "ready" && state.activeWorkflow === "grade"
+        && (state.acceptedPresentation?.lane !== lane || !state.acceptedPresentation.exact
+          || state.acceptedPresentation.generation !== state.previewGeneration[lane])))
+      && "Preparing Micro Grain. The first full-quality picture can take several seconds.") || ({
     off: "Denoise is off.",
     preparing: experimental
       ? "Preparing grain from the whole photo. You can keep viewing the current picture."
@@ -204,10 +209,16 @@ function renderDenoiseAdvancedVisibility() {
 
 async function persistDenoiseSettings() {
   if (!state.session) return false;
-  const applied = await queueEditCommand("set_denoise_settings", { denoise: JSON.parse(JSON.stringify(state.denoise)) }, null, { refreshPreview: false });
-  if (applied) {
-    if (state.adjustments?.sdr?.linked_to_hdr && !valuesEqual(state.denoise.sdr, state.denoise.hdr)) {
-      state.denoise.sdr = structuredClone(state.denoise.hdr);
+  const draft = state.denoise;
+  const denoise = structuredClone(draft);
+  if (state.currentView === "hdr" && state.adjustments?.sdr?.linked_to_hdr) {
+    denoise.sdr = structuredClone(denoise.hdr);
+  }
+  const applied = await queueEditCommand("set_denoise_settings", { denoise }, null, { refreshPreview: false });
+  if (applied && state.denoise === draft) {
+    if (state.adjustments?.sdr?.linked_to_hdr && valuesEqual(draft.hdr, denoise.hdr)
+      && !valuesEqual(draft.sdr, draft.hdr)) {
+      draft.sdr = structuredClone(draft.hdr);
       const runtime = state.denoiseRuntime.sdr;
       runtime.generation += 1; runtime.dirty = Boolean(state.denoise.sdr.enabled);
       runtime.status = runtime.dirty ? "dirty" : "off";
@@ -231,14 +242,20 @@ async function setDenoiseEnabled(enabled) {
   invalidatePreview(lane, { markDirty: false });
   if (!enabled) {
     runtime.status = "off";
+    runtime.analysisInFlight = null;
     state.denoiseNoiseView = false;
     state.gpuPreview?.cancelDenoiseProcessing?.({ selectOriginal: true });
     renderDenoiseControls();
-    const saved = await persistDenoiseSettings().catch(() => false);
+    const saving = persistDenoiseSettings().catch(() => false);
+    const revision = state.editRevision;
+    const longEdge = refinementProxyLongEdge();
+    let rendered = await renderGpuDraft(lane, { longEdge });
+    const saved = await saving;
     if (!isCurrent() || lane !== state.currentView) return;
     runtime.saveFailed = !saved;
-    const longEdge = refinementProxyLongEdge();
-    const rendered = await renderGpuDraft(lane, { longEdge });
+    if (rendered === false && saved && state.editRevision !== revision) {
+      rendered = await renderGpuDraft(lane, { longEdge });
+    }
     if (rendered === false && !transientGpuRefusal() && saved && isCurrent() && lane === state.currentView) {
       await renderPreviewForLane(lane, true, longEdge, { denoiseFallback: true });
     }
@@ -246,6 +263,8 @@ async function setDenoiseEnabled(enabled) {
     renderDenoiseControls();
     return;
   }
+  runtime.status = "preparing";
+  renderDenoiseControls();
   const applied = await persistDenoiseSettings().catch(() => false);
   if (!isCurrent()) return;
   runtime.saveFailed = !applied;
@@ -319,8 +338,10 @@ async function recalculateDenoise(lane = state.currentView, options = {}) {
   const runtime = state.denoiseRuntime[lane];
   const sessionId = state.session.session_id;
   const sourceIdentity = gradeSourceIdentity(lane);
+  const method = settings.controls.method;
   const current = () => state.session?.session_id === sessionId && state.denoiseRuntime[lane] === runtime
-    && settings.enabled && !runtime.showOriginal && gradeSourceIdentity(lane) === sourceIdentity;
+    && settings.enabled && !runtime.showOriginal && settings.controls.method === method
+    && gradeSourceIdentity(lane) === sourceIdentity;
   if (options.force && runtime.saveFailed) {
     const generation = ++runtime.generation;
     runtime.status = "recalculating";
@@ -371,7 +392,8 @@ async function recalculateDenoise(lane = state.currentView, options = {}) {
   // keeps them from repeatedly replacing the selector and measuring again.
   let pending = runtime.analysisInFlight;
   if (pending?.key !== key) {
-    pending = { key, promise: recalculateDenoiseAnalysis(lane, { longEdge, refresh, renderAfter: false }) };
+    const promise = recalculateDenoiseAnalysis(lane, { longEdge, refresh, renderAfter: false });
+    pending = { key, promise, generation: runtime.generation };
     runtime.analysisInFlight = pending;
   }
   let ready;
@@ -380,7 +402,7 @@ async function recalculateDenoise(lane = state.currentView, options = {}) {
   } finally {
     if (runtime.analysisInFlight === pending) runtime.analysisInFlight = null;
   }
-  if (!current()) return false;
+  if (!current() || pending.generation !== runtime.generation) return false;
   if (!ready) {
     if (options.renderAfter !== false && lane === state.currentView && (runtime.status === "error" || runtime.microCpu)) {
       await renderPreviewForLane(lane, true, longEdge, { denoiseFallback: true });
@@ -509,6 +531,8 @@ async function commitDenoiseControl(key, value) {
   if (key === "method") {
     runtime.microCpu = false;
     runtime.showOriginal = !settings.enabled;
+    runtime.analysisInFlight = null;
+    state.gpuPreview?.cancelDenoiseProcessing?.({ selectOriginal: false });
     invalidatePreview(lane, { markDirty: false });
   }
   if (key.startsWith("micro_") && runtime.microCpu) {

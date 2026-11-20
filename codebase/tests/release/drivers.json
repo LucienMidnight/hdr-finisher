@@ -465,6 +465,13 @@
       }
     },
     {
+      "path": "desktop/tests/denoise-library-clicks.js",
+      "areas": ["preview", "library"],
+      "tier": "full",
+      "protects": "Pointer-driven Grade Denoise switches, pixels and durable saves from the Library, at Fit and 110%.",
+      "launch": {"method": "node"}
+    },
+    {
       "path": "desktop/tests/renderer-crash.js",
       "areas": [
         "preview"

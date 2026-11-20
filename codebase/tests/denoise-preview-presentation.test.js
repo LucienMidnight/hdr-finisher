@@ -3,7 +3,7 @@ const { test } = require("node:test");
 const vm = require("node:vm");
 const { frontendSource, declarations } = require("./frontend-source.js");
 
-test("bypass draws the original against the acknowledged edit revision for each method", async () => {
+test("bypass draws the original without waiting and retries a stale source after acknowledgement", async () => {
   for (const method of ["standard", "fine_grain", "clean_grain", "micro_grain"]) {
     const state = { session: { session_id: "photo" }, currentView: "hdr", editRevision: 1,
       denoise: { hdr: { enabled: true, controls: { method } } }, denoiseRuntime: { hdr: { generation: 0 } } };
@@ -18,8 +18,7 @@ test("bypass draws the original against the acknowledged edit revision for each 
       transientGpuRefusal: () => true });
     vm.runInContext(declarations("setDenoiseEnabled"), context);
     await context.setDenoiseEnabled(false);
-    assert.equal(draws.at(-1)?.revision, 2, method);
-    assert.equal(draws.at(-1)?.original, true, method);
+    assert.deepEqual(draws, [{ revision: 1, original: true }, { revision: 2, original: true }], method);
   }
 });
 

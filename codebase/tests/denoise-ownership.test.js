@@ -23,7 +23,7 @@ function harness() {
       cancelDenoiseProcessing() {}, analyzeDenoiseProxy: async () => true,
       resolveDenoiseProxy: async controls => { calls.resolves.push(controls); return true; } },
   };
-  const context = vm.createContext({ state, els: {}, console, performance,
+  const context = vm.createContext({ state, els: {}, console, performance, structuredClone,
     window: { HDRLatestWorkQueue, setTimeout },
     refinementProxyLongEdge: () => 1024, geometrySignature: () => '',
     renderGpuDraft: async lane => { calls.renders.push(lane); },
@@ -41,7 +41,7 @@ function harness() {
   return { state, context, calls, replace };
 }
 
-test('Denoise off saves its own photo before a delayed redraw and photo switch', async () => {
+test('Denoise off starts saving its own photo alongside a delayed redraw', async () => {
   const h = harness(), redraw = deferred();
   h.context.renderGpuDraft = () => redraw.promise;
   const pending = h.context.setDenoiseEnabled(false);
@@ -51,6 +51,24 @@ test('Denoise off saves its own photo before a delayed redraw and photo switch',
   assert.equal(h.calls.saves.length, 1);
   assert.equal(h.calls.saves[0].sessionId, 'first');
   assert.equal(h.calls.saves[0].args[1].denoise.hdr.enabled, false);
+});
+
+test('a delayed Denoise save does not mirror a newer choice into linked SDR', async () => {
+  const h = harness(), save = deferred();
+  h.state.adjustments.sdr = { linked_to_hdr: true };
+  h.state.denoise.hdr.controls.method = 'micro_grain';
+  h.state.denoise.sdr = { enabled: true, controls: { method: 'standard' } };
+  h.context.valuesEqual = (first, second) => JSON.stringify(first) === JSON.stringify(second);
+  h.context.queueEditCommand = (command, payload) => {
+    h.calls.saves.push(payload.denoise);
+    return save.promise;
+  };
+  const pending = h.context.persistDenoiseSettings();
+  h.state.denoise.hdr.controls.method = 'clean_grain';
+  save.resolve(true);
+  assert.equal(await pending, true);
+  assert.equal(h.calls.saves[0].sdr.controls.method, 'micro_grain');
+  assert.equal(h.state.denoise.sdr.controls.method, 'standard');
 });
 
 test('Denoise enable does not start analysis for a replacement photo after saving', async () => {

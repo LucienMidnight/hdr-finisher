@@ -22,8 +22,8 @@ class GradePictures:
         # The local indexed saved/pending grade is the publication authority,
         # as for finished-thumbnail reads. Do not reread the source sidecar at
         # every encoder/cancellation checkpoint.
-        current = self.thumbnails.current(path, "sdr", "rgba8unorm")
-        return current is not None and current[0]["grade"] == grade
+        indexed = self.store.library_grades.indexed_grade(path)
+        return indexed is not None and identity(indexed) == grade
 
     def owner(self, session_id, grade, revision=None):
         with self.store._lock:
@@ -34,7 +34,10 @@ class GradePictures:
             document = self.live.document(path)
             if not self.current(path, grade) or identity(document) != grade:
                 raise HTTPException(409, "The Library has a newer grade.")
-            if quality(session.edit_document().model_dump(mode="json")) != quality(document):
+            live = session.edit_document().model_dump(mode="json")
+            if revision is not None and identity(live) != grade:
+                raise HTTPException(409, "Captured picture does not match the saved grade.")
+            if quality(live) != quality(document):
                 raise HTTPException(409, "The developed source changed.")
             return path, document, session
 
@@ -49,8 +52,6 @@ class GradePictures:
 
     def write(self, session_id, grade, revision, lane, body, width, height, stride, defer_screen=None, thumbnail_format=None):
         path, document, session = self.owner(session_id, grade, revision)
-        if identity(session.edit_document().model_dump(mode="json")) != grade:
-            raise HTTPException(409, "Captured picture does not match the saved grade.")
         hdr = document["global_adjustments"]["hdr"]
         if lane == "hdr" and hdr["highlight_section_enabled"] and hdr["highlight_compression_target_nits"] != 1000:
             raise HTTPException(409, "Library output target requires a finishing redraw.")
@@ -90,6 +91,8 @@ class GradePictures:
         return dict(path=path, grade_identity=grade, lane=lane, source="Grade picture")
 
     def write_thumbnails(self, path, document, session, lane, pixels, cache_epoch=None, requested_formats=None):
+        if self.thumbnails.current(path, lane, "rgba8unorm") is None:
+            return
         if cache_epoch is None:
             cache_epoch = self.thumbnails.cache.publication_epoch(source(path))
         from .color import acescg_to_linear_bt2020, acescg_to_linear_srgb

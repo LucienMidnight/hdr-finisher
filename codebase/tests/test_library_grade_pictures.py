@@ -8,11 +8,12 @@ from hdr_finisher.library_live import LivePictures
 from hdr_finisher.library_grade_pictures import GradePictures
 
 
-def service(setup):
+def service(setup, *, indexed=True):
     photo, store, session, marks, grades = setup
     stat = photo.stat()
-    with marks._connect() as db:
-        db.execute("INSERT OR REPLACE INTO files VALUES (?,?,?,NULL)", (str(photo), stat.st_size, stat.st_mtime_ns))
+    if indexed:
+        with marks._connect() as db:
+            db.execute("INSERT OR REPLACE INTO files VALUES (?,?,?,NULL)", (str(photo), stat.st_size, stat.st_mtime_ns))
     live = LivePictures(marks.database.parent, marks, LibraryDocuments(marks))
     return GradePictures(live, store)
 
@@ -21,6 +22,22 @@ def pixels():
     image = np.ones((16, 32, 4), dtype="<f2")
     image[..., :3] = np.linspace(.02, .8, 32, dtype="<f2")[None, :, None]
     return image
+
+
+def test_unindexed_photo_lends_the_saved_grade_source_but_refuses_old_tickets(setup):
+    photo, store, session, marks, grades = setup
+    cache = service(setup, indexed=False)
+    session_id = str(session.session_id)
+    edit(store, session)
+    first = grades.save(session_id)["picture"]["grade_identity"]
+    assert cache.sources(session_id, first)["scenes"][0]["adjustments"]["hdr"]["exposure"] == 1
+    marks.writer.drain()
+    edit(store, session, exposure=2)
+    second = grades.save(session_id)["picture"]["grade_identity"]
+    assert cache.sources(session_id, second)["scenes"][0]["adjustments"]["hdr"]["exposure"] == 2
+    with pytest.raises(HTTPException) as error:
+        cache.sources(session_id, first)
+    assert error.value.status_code == 409
 
 
 def test_unsaved_recovery_never_publishes_as_the_library_grade(setup):

@@ -818,7 +818,9 @@ function bindEvents() {
   document.getElementById("hdr-compression-use-display")?.addEventListener("click", useHighlightDisplayPeak);
   els.denoiseBypass?.addEventListener("click", () => setDenoiseEnabled(!state.denoise[state.currentView].enabled));
   els.denoiseShowNoise?.addEventListener("click", toggleDenoiseNoiseView);
-  els.denoiseMethod?.addEventListener("change", () => commitDenoiseControl("method", els.denoiseMethod.value));
+  for (const event of ["input", "change"]) {
+    els.denoiseMethod?.addEventListener(event, () => commitDenoiseControl("method", els.denoiseMethod.value));
+  }
   els.denoiseSplotchSize?.addEventListener("change", () => commitDenoiseControl("splotch_size", els.denoiseSplotchSize.value));
   const denoiseSliders = [
     [els.denoiseAmount, "amount"],

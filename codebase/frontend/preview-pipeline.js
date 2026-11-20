@@ -958,6 +958,7 @@ async function renderGpuDraftInner(
     if (state.zoomMode === "custom" && boundedPresentation) applyZoomGeometry();
     else setZoomMode(state.zoomMode);
     renderReadouts();
+    if (micro) renderDenoiseControls();
       if (hideStatus) hidePreviewMessage();
       const submittedAt = performance.now();
       requestAnimationFrame((animationFrameAt) => {

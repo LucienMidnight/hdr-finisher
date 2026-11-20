@@ -54,6 +54,32 @@ Original-size Ultra HDR JPEG delivery, Q90 and a 1,000-nit target. The three Son
 
 Micro Grain Proof and export JPEGs are byte-identical on each RAW. [Design and validation](briefs/denoise-micro-grain-app-2026-11-20.md)
 
+## November 20 — Denoise from the Library with real clicks
+
+MacBook Neo, A18 Pro, 8 GB, 1408 × 794. Normal `npm start` Electron with an isolated profile; Canon `IMG_0790.CR2` copied from HDR Test Images into scratch. Clicks use the real switch and menu. Times are milliseconds from the trusted click/selection to the matching exact WebGPU picture, not to the end of saving or Library thumbnail work. One sample per entry. Each step checked the visible centre pixels, the menu on successive frames, the acknowledged edit, and the sidecar on disk. The photo started without a grade, then reopened into a new session with its saved enabled Standard grade; it reopened again with enabled Micro. No source originals were modified.
+
+| Denoise method | Fit Off / warm On | 110% Off / warm On |
+| --- | ---: | ---: |
+| Standard | 36 / 31 | 131 / 484 |
+| Fine Grain | 22 / 34 | 212 / 333 |
+| Clean Grain | 24 / 32 | 111 / 332 |
+| Micro Grain | 162 / 31 | 136 / 99 |
+
+| From ↔ to, enabled | Fit forward / back | 110% forward / back |
+| --- | ---: | ---: |
+| Standard ↔ Fine | 46 / 88 | 614 / 598 |
+| Standard ↔ Clean | 47 / 100 | 919 / 577 |
+| Standard ↔ Micro | 49 / 81 | 849 / 580 |
+| Fine ↔ Clean | 45 / 47 | 990 / 499 |
+| Fine ↔ Micro | 46 / 47 | 835 / 449 |
+| Clean ↔ Micro | 48 / 50 | 850 / 598 |
+
+Fresh Standard On: 314 ms. First selection at Fit: Fine 3.00 s, Clean 2.82 s, Micro 7.98 s. First Micro selection at 110%: 1.57 s. Rapid Micro → Clean settled on Clean in 47 ms at Fit and 877 ms at 110%. Before the fix, the pointer could not make the second pick while the menu disabled itself, and at 110% the screenshot still showed the preceding method even when Micro's exact GPU frame was ready. After the fix, the pixels changed on all toggles and method pairs, and every pick kept its label through settlement. The measured app footprint peaked at 2.60 GB; exact native detail still needs more work than a cached Fit switch.
+
+Steve's November 20 Desktop session (started 19:01:50 local) saved `358187…` = Clean Off, `7ec8fc…` = Clean On, `99be63…` = Micro On, `eb04d4…` = Micro Off. The independent SDR grade stayed Fine On. Neither these identities nor the click tests showed a stale Standard save or undo. The source hand-off rejected his current grade because the Desktop photo had a saved grade in the Library database but no indexed file row. Current grades now qualify independently of that file row; genuinely stale hand-offs are still refused. This changes background Library work, not which method Grade loads. At 110% the Library can still finish its own whole-photo redraw because Grade only has a visible region.
+
+The 1.61 s CPU event in Steve's session was Bayer noise measurement, not CPU rendering of the Grade picture. His session logged 83 Micro region requests, 478 HDR source-tile requests and a 1.93 GB sample. The Micro region requests feed Bayer data to WebGPU; the HDR tile requests deliver developed source pixels. In the click run, first Fit Micro used 28 distinct Bayer requests; prepared Fit Micro switches needed none. At 110%, the measured Micro pair switches used 12–19 distinct Bayer regions, and other native switches commonly requested 36 distinct HDR tiles. The counts are not 36 retries of one tile, but returning to methods at 110% can still transfer source tiles again. The test passed 62 measured transitions. The separate plain Electron Library quick check pictured the scratch Canon. Receipts: `codebase/output/denoise-clicks-{rapid-before,trace,final,final-backend}.log`.
+
 ## November 20 — Denoise transitions and Micro Grain throughput
 
 MacBook Neo, A18 Pro, 8 GB, 1408 × 794. Normal `npm start` Electron with an isolated profile. Canon `IMG_0790.CR2`, 110%, signed AHD, lens off and speck cleanup ×2.5. Times are seconds to a matching exact Grade presentation, not completion of background scopes. A dash means no new picture during the observation. The transition comparison is pre-Micro `12a945bf`, `ccad5c92` before the fixes, and the transition fix with the initial speed patch, from `normal-prebuild-retry.log`, `normal-before.log` and `normal-canon-final.log`. Repeated observations are shown as ranges; cold numbers include initial preparation.

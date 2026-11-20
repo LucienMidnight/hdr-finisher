@@ -532,7 +532,7 @@ Clipped lane, scope, preview and filename labels use their visible text; dynamic
 
 | Control / visible name | Text | Flags | ID and source |
 | --- | --- | --- | --- |
-| option.title | unavailable | dynamic expression | codebase/frontend/denoise-ui.js:84 · [source](../../codebase/frontend/denoise-ui.js#L84) |
+| option.title | unavailable | dynamic expression | codebase/frontend/denoise-ui.js:85 · [source](../../codebase/frontend/denoise-ui.js#L85) |
 
 ### geometry tools
 
