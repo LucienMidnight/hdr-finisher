@@ -139,6 +139,9 @@ class AdaptiveControls:
     grain_evenness: float = 1.0
     color_splotches: float = 1.0
     splotch_size: str = "small"
+    micro_luminance: float = 0.5
+    micro_color: float = 0.5
+    micro_detail: float = 0.5
 
     def size_multiplier(self, level: int) -> float:
         value = (self.finest_noise, self.fine_noise, self.medium_noise)[level] if level < 3 else self.coarse_noise
@@ -287,6 +290,8 @@ def resolve_adaptive(image: np.ndarray, model: AdaptiveNoiseModel, controls: Ada
     source = np.asarray(image, dtype=np.float32)
     if source.ndim != 3 or source.shape[2] not in (3, 4):
         raise ValueError("Denoise input must be an H x W scene-linear RGB or RGBA array.")
+    if controls.method == "micro_grain":
+        return source
     if controls.method != "standard":
         from .denoise_grain import resolve_grain
         return resolve_grain(source, model, controls)

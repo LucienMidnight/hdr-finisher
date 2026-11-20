@@ -121,6 +121,8 @@ def denoise_settings_for_export(session: object, kind: PreviewKind) -> object | 
     if not lane.enabled:
         return None
     controls = lane.controls
+    if controls.method == "micro_grain":
+        return lane if controls.micro_luminance or controls.micro_color else None
     # The same short-circuit the reconstruction itself applies: zero amount, or
     # neither channel weighted, removes nothing.
     if controls.amount <= 0.0 or (controls.luminance <= 0.0 and controls.color_noise <= 0.0):
@@ -143,6 +145,9 @@ def _denoised_export_source(session: object, kind: PreviewKind) -> np.ndarray:
     if lane is None:
         return image
     controls = lane.controls
+    if controls.method == "micro_grain":
+        from .denoise_micro_grain import MicroGrainControls, resolve_source
+        return resolve_source(session, MicroGrainControls.from_settings(controls))
     from .denoise_measurement import cpu_delivery_model
     model = cpu_delivery_model(session)
     return denoise_adaptive.resolve_adaptive(
@@ -161,6 +166,8 @@ def _delivery_source_filter(session, kind, adjustments, *, authored):
     lane = denoise_settings_for_export(session, kind)
     if lane is None:
         return None
+    if lane.controls.method == "micro_grain":
+        return (lambda image, authored: image) if authored else None
     controls = denoise_adaptive.AdaptiveControls(**lane.controls.model_dump())
     experimental = (controls.method == "fine_grain" and controls.grain_evenness
                     or controls.method == "clean_grain" and (controls.grain_evenness or controls.color_splotches))
