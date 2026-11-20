@@ -728,3 +728,46 @@ def test_framed_jpeg_resolves_full_gain_map_without_mutating_version(monkeypatch
     assert calls == [("full", 100, (2, 2, 20, 12)), ("half", 95, None)]
     assert settings.jpeg_gain_map_scale == "half"
     assert any("full-resolution" in note for note in notes)
+
+
+@pytest.mark.parametrize("changes_positive_mask", [False, True])
+def test_ultrahdr_reuses_the_sdr_inputs_only_while_the_floor_is_unchanged(
+    monkeypatch, tmp_path, changes_positive_mask,
+):
+    paths = []
+    sdr_inputs = []
+    staged_writes = []
+    write_raw = exporter_module._write_sdr_rgba8888_pixels
+
+    def stage_raw(path, rgb):
+        staged_writes.append(path)
+        write_raw(path, rgb)
+
+    def run_helper(command):
+        primary = Path(command[command.index("-i") + 1])
+        raw = Path(command[command.index("-y") + 1])
+        paths.append((primary, raw))
+        sdr_inputs.append((primary.read_bytes(), raw.read_bytes()))
+
+    def retry(hdr, white, encode, decode, ceiling, notes, **kwargs):
+        encode(hdr)
+        corrected = hdr * np.float32(.9)
+        if changes_positive_mask:
+            corrected[0:16, 0:16, 0] = 0.0
+        return encode(corrected)
+
+    hdr = np.full((31, 33, 3), .18, dtype=np.float32)
+    sdr = np.zeros_like(hdr)
+    monkeypatch.setattr(exporter_module, "encode_within_ceiling", retry)
+    monkeypatch.setattr(exporter_module, "_run_command", run_helper)
+    monkeypatch.setattr(exporter_module, "_write_sdr_rgba8888_pixels", stage_raw)
+    monkeypatch.setattr(exporter_module, "_denoise_ultrahdr_gain_map", lambda *args, **kwargs: None)
+    exporter_module.write_jpeg_gainmap_renditions(
+        tmp_path / "out.jpg", hdr, sdr, ExportSettings(dithering="off"),
+        ultrahdr_app=Path("ultrahdr_app"), ceiling_nits=1000,
+    )
+
+    assert len(staged_writes) == 1 + changes_positive_mask
+    assert len(sdr_inputs) == 2
+    assert (sdr_inputs[0] != sdr_inputs[1]) == changes_positive_mask
+    assert all(not path.exists() for pair in paths for path in pair)

@@ -681,37 +681,77 @@ def write_jpeg_gainmap_renditions(staged_output, hdr_image, sdr_image, settings,
         settings = settings.model_copy(update={"jpeg_gain_map_scale": "full", "jpeg_gain_map_quality": 100})
         if notes is not None:
             notes.append("Framed Ultra HDR JPEG uses a full-resolution, maximum-quality gain map to preserve frame edges.")
-    def encode(hdr):
-        _write_jpeg_gainmap_once(staged_output, hdr, sdr_image, settings, reference_white_nits,
-            ultrahdr_app=ultrahdr_app, exif_payload=exif_payload, photo_rect=photo_rect)
-        return Path(staged_output)
-    encode_within_ceiling(hdr_image, reference_white_nits, encode,
-        lambda written: decoded_channel_nits(written, "jpeg_ultrahdr"), ceiling_nits, notes,
-        encoding_allowance=encoding_allowance, correct_in_place=correct_in_place)
-
-
-def _write_jpeg_gainmap_once(staged_output, hdr_image, sdr_image, settings, reference_white_nits=203, *, ultrahdr_app=None, exif_payload=None, photo_rect=None):
-    ultrahdr_app = ultrahdr_app or resolve_binary("ultrahdr_app")
     with TemporaryDirectory(prefix="hdr_finisher_ultrahdr_") as temp_dir_name:
         temp_dir = Path(temp_dir_name)
-        hdr_raw_path = temp_dir / "hdr_bt2020_linear_rgba_f16.raw"
-        sdr_raw_path = temp_dir / "sdr_srgb_rgba8888.raw"
-        sdr_jpeg_path = temp_dir / "sdr_primary.jpg"
-        unfiltered_path = temp_dir / "unfiltered_ultrahdr.jpg"
-        exif_path = _write_temporary_exif(temp_dir, exif_payload)
-        height = hdr_image.shape[0]
-        target_peak_nits = 203.0
+        inputs = _JpegGainMapInputs(
+            temp_dir, _write_temporary_exif(temp_dir, exif_payload),
+            track_floor=ceiling_nits is not None and float(ceiling_nits) > 0.0,
+        )
+
+        def encode(hdr):
+            _write_jpeg_gainmap_once(staged_output, hdr, sdr_image, settings, reference_white_nits,
+                inputs=inputs, ultrahdr_app=ultrahdr_app, exif_payload=exif_payload, photo_rect=photo_rect)
+            return Path(staged_output)
+
+        encode_within_ceiling(hdr_image, reference_white_nits, encode,
+            lambda written: decoded_channel_nits(written, "jpeg_ultrahdr"), ceiling_nits, notes,
+            encoding_allowance=encoding_allowance, correct_in_place=correct_in_place)
+
+
+_ULTRAHDR_INPUT_BAND_ROWS = 128
+
+
+@dataclass
+class _JpegGainMapInputs:
+    directory: Path
+    exif_path: Path | None
+    track_floor: bool
+    positive_mask: np.ndarray | None = None
+
+    def can_reuse_sdr(self, hdr_image: np.ndarray) -> bool:
+        if self.positive_mask is None:
+            return False
+        # The SDR base floor is the only part of staging that depends on HDR.
+        # Even a positive correction scale can round a tiny HDR channel to zero.
+        for top in range(0, hdr_image.shape[0], _ULTRAHDR_INPUT_BAND_ROWS):
+            rows = slice(top, top + _ULTRAHDR_INPUT_BAND_ROWS)
+            if not np.array_equal(_ultrahdr_positive_mask(hdr_image[rows]), self.positive_mask[rows]):
+                return False
+        return True
+
+
+def _ultrahdr_positive_mask(hdr_band: np.ndarray) -> np.ndarray:
+    return np.packbits(hdr_band[..., :3] > 0.0, axis=1)
+
+
+def _write_jpeg_gainmap_once(staged_output, hdr_image, sdr_image, settings, reference_white_nits=203, *, inputs: _JpegGainMapInputs, ultrahdr_app=None, exif_payload=None, photo_rect=None):
+    ultrahdr_app = ultrahdr_app or resolve_binary("ultrahdr_app")
+    hdr_raw_path = inputs.directory / "hdr_bt2020_linear_rgba_f16.raw"
+    sdr_raw_path = inputs.directory / "sdr_srgb_rgba8888.raw"
+    sdr_jpeg_path = inputs.directory / "sdr_primary.jpg"
+    unfiltered_path = inputs.directory / "unfiltered_ultrahdr.jpg"
+    height, width = hdr_image.shape[:2]
+    target_peak_nits = 203.0
+    sdr_rgb = None
+    if not inputs.can_reuse_sdr(hdr_image):
         sdr_rgb = np.empty((*sdr_image.shape[:2], 3), dtype=np.uint8)
-        with hdr_raw_path.open("wb") as hdr_raw:
-            for top in range(0, height, 128):
-                rows = slice(top, top + 128)
-                hdr_rgba, peak = _prepare_hdr_linear_rgba_f16(hdr_image[rows], reference_white_nits)
-                hdr_raw.write(memoryview(hdr_rgba).cast("B"))
-                target_peak_nits = max(target_peak_nits, peak)
+        if inputs.track_floor and inputs.positive_mask is None:
+            inputs.positive_mask = np.empty((height, (width + 7) // 8, 3), dtype=np.uint8)
+    with hdr_raw_path.open("wb") as hdr_raw:
+        for top in range(0, height, _ULTRAHDR_INPUT_BAND_ROWS):
+            rows = slice(top, top + _ULTRAHDR_INPUT_BAND_ROWS)
+            hdr_band = hdr_image[rows]
+            hdr_rgba, peak = _prepare_hdr_linear_rgba_f16(hdr_band, reference_white_nits)
+            hdr_raw.write(memoryview(hdr_rgba).cast("B"))
+            target_peak_nits = max(target_peak_nits, peak)
+            if sdr_rgb is not None:
                 sdr_rgb[rows] = _floor_ultrahdr_base(
                     _linear_to_srgb8(sdr_image[rows, :, :3], dither=settings.dithering, top=top),
-                    hdr_image[rows],
+                    hdr_band,
                 )
+                if inputs.positive_mask is not None:
+                    inputs.positive_mask[rows] = _ultrahdr_positive_mask(hdr_band)
+    if sdr_rgb is not None:
         _write_sdr_jpeg_pixels(
             sdr_jpeg_path,
             sdr_rgb,
@@ -727,28 +767,29 @@ def _write_jpeg_gainmap_once(staged_output, hdr_image, sdr_image, settings, refe
                 sdr_rgb = np.asarray(primary.convert("RGB"))
         _write_sdr_rgba8888_pixels(sdr_raw_path, sdr_rgb)
         del sdr_rgb
-        command = _build_ultrahdr_encode_command(
-            ultrahdr_app,
-            hdr_raw_path,
-            sdr_raw_path,
-            unfiltered_path,
-            sdr_jpeg_path=sdr_jpeg_path,
-            exif_path=exif_path,
-            width=int(hdr_image.shape[1]),
-            height=int(hdr_image.shape[0]),
-            quality=int(settings.quality),
-            gain_map_quality=100,
-            gain_map_scale=settings.jpeg_gain_map_scale,
-            target_peak_nits=target_peak_nits,
-        )
-        _run_command(command)
-        _denoise_ultrahdr_gain_map(
-            unfiltered_path,
-            staged_output,
-            ultrahdr_app,
-            gain_map_quality=int(settings.jpeg_gain_map_quality),
-            photo_rect=photo_rect,
-        )
+    command = _build_ultrahdr_encode_command(
+        ultrahdr_app,
+        hdr_raw_path,
+        sdr_raw_path,
+        unfiltered_path,
+        sdr_jpeg_path=sdr_jpeg_path,
+        exif_path=inputs.exif_path,
+        width=int(width),
+        height=int(height),
+        quality=int(settings.quality),
+        gain_map_quality=100,
+        gain_map_scale=settings.jpeg_gain_map_scale,
+        target_peak_nits=target_peak_nits,
+    )
+    _run_command(command)
+    _denoise_ultrahdr_gain_map(
+        unfiltered_path,
+        staged_output,
+        ultrahdr_app,
+        gain_map_quality=int(settings.jpeg_gain_map_quality),
+        photo_rect=photo_rect,
+    )
+
 
 class AVIFGainMapExportBackend(ExportBackend):
     name = "avif_gain_map"
