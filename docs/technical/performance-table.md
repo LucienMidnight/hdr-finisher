@@ -1,3 +1,35 @@
+## November 20 — Streamed GPU JPEG export trial
+
+MacBook Neo, 8 GB; original size, Q90, 1,000-nit Ultra HDR target, and the
+faster November 20 CPU route. Timing is Export click to saved file and success
+status. Peaks are sampled whole-app physical footprint in decimal GB. The
+asterisk marks the final uncompressed strip connection; other readings are
+from the first streamed implementation and its rechecks. A pressure stop
+is not a completed export.
+
+| RAW and Denoise | Format | CPU (s) | GPU (s) | GPU peak (GB) |
+| --- | --- | ---: | ---: | ---: |
+| Canon, off | Ultra HDR | 20.04 | 17.75 | 3.012 |
+| Canon, Fine Grain | Ultra HDR | 21.33 | 24.48 | 2.951 |
+| Canon, Clean Grain Small | Ultra HDR | 28.57 | 20.52 | 3.122 |
+| Canon, Clean Grain Large | Ultra HDR | 33.68 | 24.73 | 3.117 |
+| Canon, off | SDR JPEG | 3.85 | 2.64 | 1.967 |
+| Canon, Fine Grain | SDR JPEG | 6.27 | 16.61–38.22 | 2.74 or less |
+| Canon, Clean Grain Small | SDR JPEG | 9.26 | 4.94–39.28 | 2.71 or less |
+| Canon, Clean Grain Large | SDR JPEG | 13.45 | 4.89* (5.05–5.44 earlier) | 1.986* |
+| Sony, off | Ultra HDR | Pressure stop | Pressure stop* | No completed peak (last sample: 2.941*) |
+| Sony, Fine Grain | Ultra HDR | 25.38 | 26.49* | 3.771* |
+| Sony, Clean Grain Small | Ultra HDR | 32.60 | 31.19* | 3.761* |
+| Sony, off | SDR JPEG | 6.45 | 5.41 | 3.024 |
+| Sony, Fine Grain | SDR JPEG | 11.64 | 8.42 | 3.023 |
+| Sony, Clean Grain Small | SDR JPEG | 19.84 | 10.20–12.64 | 2.986 |
+
+Before this work, Canon Fine Grain/Small Clean Grain GPU Ultra HDR peaked at
+3.54/3.70 GB; Canon Large stopped. Sony was refused before upload at a **5.332 GB
+estimate**, not a measured peak. Only the Canon-size Clean Grain Large SDR
+case qualified for the new default: 60–64% shorter wait and passing colour
+checks. [Memory, parity and default decision](briefs/gpu-export-memory-2026-11-20.md)
+
 ## November 20 — Micro Grain in Grade and delivery
 
 MacBook Neo, A18 Pro, 8 GB, macOS 27.0.1. Unpackaged Electron, 1408 × 794 window, lens correction off, signed AHD, harsh-speck cleanup ×2.5. One action-to-presented-picture observation per cell. The Canon Grade measurements are from the same session; the Sony run stopped on system memory pressure after Micro Grain, before the other methods. Peak is sampled whole-app physical footprint, in decimal GB.

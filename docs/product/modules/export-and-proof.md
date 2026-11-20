@@ -868,6 +868,15 @@ Settings rules (from v1.2 section 5, still in force):
 
 ## 5. Current state (October 18, 2026)
 
+- November 20: The streamed GPU route is on by default only for native-size
+  SDR JPEG with active Clean Grain Large, up to the tested 18.02 MP, with
+  no geometry edits, frame, watermark or output sharpening. The CPU remains available
+  by preference and as fallback. Other streamed JPEG cases remain opt-in;
+  Sony Ultra HDR finished under 4 GB with Fine Grain and Clean Grain Small,
+  but stopped on system memory pressure with Denoise off. Ultra HDR Proof
+  still shares its export path. Encoders and gain-map maths are unchanged.
+  [GPU memory and timing results](../../technical/briefs/gpu-export-memory-2026-11-20.md)
+
 - November 20: CPU JPEG delivery uses a faster exact gain-map filter,
   reuses the SDR encoder inputs across eligible retries, and checks every
   decoded HDR sample in bands. Eligible SDR JPEG grades with Denoise use
