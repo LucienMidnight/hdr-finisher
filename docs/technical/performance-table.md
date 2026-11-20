@@ -1,3 +1,36 @@
+## November 20 — Denoise export and full-size Proof attribution
+
+MacBook Neo, A18 Pro, 6 cores, 8 GB unified memory, macOS 27.0.1, AC
+power. Unpackaged Electron at 1408 × 794 under the shared GPU lock.
+App code from `35b28d99`, measured in the `2aafece6` to `e8226aea`
+checkout. Default delivery selection unless marked trial. Original
+dimensions, JPEG Ultra HDR Q90, full gain map, 1,000-nit Highlights and
+Proof target, generated SDR with the same Grain controls, metadata and
+sharpening off. Native Bayer RAW with harsh-speck cleanup at 2.5 and lens
+correction off. Durations start at the UI action except where indicated.
+Memory is sampled whole-app physical footprint in decimal GB.
+
+| Photo and action | Wait (s) | Peak (GB) | Conditions and result |
+| --- | ---: | ---: | --- |
+| Canon opening RAW to a sharp Grade view | 4.41–5.55 | 1.22 highest sampled | Fresh profiles. About 1.7 s harsh-speck cleanup and 0.7 s signed AHD. Outside delivery wait. |
+| Sony opening RAW to a sharp Grade view | 9.17–10.30 | 1.32 sampled in trial open | Fresh profiles. Trial RAW development 7.79 s including 4.24 s cleanup and 2.58 s AHD. Outside delivery wait. |
+| Canon Fine Grain, full-size Proof, automatic CPU, 0 EV | 46.65–47.49 | 2.41 across warm-up and two repeats | Warm-up 45.01 s. Three JPEG encode/check passes per action. Three matching Proof JPEG hashes. |
+| Canon Fine Grain, full-size Proof, automatic CPU, +0.015 EV | 52.00 | 2.52 | Separate fresh artifact in continuous attempt, four JPEG codec passes. |
+| Canon Clean Grain Small, full-size Proof, automatic CPU, 0 EV | 51.45–54.34 | 2.48 | Two observations, four JPEG codec passes per action and identical Proof JPEG bytes. Spread just above 5%. |
+| Sony Clean Grain Small, trial HDR export, CPU fallback | Stopped after 25.6 from admission | 2.14 before stop | GPU refused before upload. Noise model 1.98 s, fit 0.96 s, remaining Grain 15.16 s and HDR strip render 6.17 s. System memory pressure stopped the SDR pass. |
+| Sony Fine and Clean Small, full-size Proof, automatic CPU | Stops during first build | — | Three startup attempts stopped on macOS system pressure, once with observed swap growth. Earlier completed Sony runs are below. |
+| Canon Fine Grain, full-size Proof memory review, automatic CPU | 610.01 monitoring, 47.49 first sharp | 1.958 | One fresh build and six HDR/SDR/delivered view changes. Highest after the first minute 1.529 GB, final 1.328 GB. Normal OS pressure and no swap growth throughout. |
+| Canon Fine and Clean Small, successive full-size Proof builds, automatic CPU | Stopped at about 3 min 20 s and 7 min in separate runs | 2.52 maximum on completed actions | Three and two builds completed, respectively. OS pressure stopped the next build in each. The 10-minute review above uses a single build. |
+| Canon Clean Grain Large, HDR export, automatic CPU | 46.91 | 2.402 | Four JPEG codec passes. CPU Grain plus whole-photo fit 8.17 s, native noise model 1.43 s. |
+| Canon Clean Grain Large, full-size Proof after export, automatic CPU | 59.95 | 2.378 | Four new JPEG codec passes. Identical bytes to export. |
+| Canon Clean Grain Large, HDR export, GPU trial | Two pressure stops | — | First stopped during GPU work, after one temporary yield to Grade. Retry also stopped before a finished result. |
+| Canon Clean Grain Large, HDR export, automatic CPU repeat | OS pressure stop | — | OS pressure stopped the second attempt. One completed run is listed above. |
+| Canon Fine and Clean Small, HDR export, GPU trial repeats | OS pressure stops | — | No new completed file. Earlier trial rows below include successful GPU exports and Proofs. |
+| Canon Fine Grain, stand-alone SDR JPEG export, automatic CPU | OS pressure stop | — | Swap grew during the attempt. No completed file. |
+| Sony Clean Grain, CPU backend-only RAW open | 7.41 | 1.28 process tree | Diagnostic without Electron. OS pressure stopped before export finished. |
+
+[Detailed breakdown, method and evidence](briefs/denoise-export-proof-breakdown-2026-11-20.md)
+
 ## November 20 — Fine and Clean Grain GPU delivery trial
 
 Export and full-size Proof can share the graphics-card reconstruction used

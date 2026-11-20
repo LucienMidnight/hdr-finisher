@@ -689,6 +689,9 @@ Completed UI polish round 3 (pending visual sign-off): `docs/technical/archive/b
   railing-light fix, the three-method crop reference and MacBook baseline
   with 110% measurements. Lists the remaining Canon timing cases. The Grade
   PRD records the ranked speed plan and the memory failures.
+- `docs/technical/briefs/denoise-export-proof-breakdown-2026-11-20.md`:
+  MacBook Neo delivery stage timings, whole-app Proof memory, Sony GPU
+  admission, and reuse opportunities for Fine Grain and Clean Grain.
 - `docs/technical/briefs/denoise-speed-memory-gpu-prep-2026-11-19.md`: Denoise
   speed round 1: bounded zoom and JPEG delivery, Fine-to-Clean Grain reuse,
   and a GPU estimate that missed the go threshold. Full-size Proof memory
