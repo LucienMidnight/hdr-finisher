@@ -279,7 +279,9 @@ async function renderPreviewForLaneInner(
   const cached = state.previewCache[lane];
   const generation = state.previewGeneration[lane];
   const signature = geometrySignature();
+  const microKey = microGrainPreviewKey(lane);
   if (cached?.generation === generation && cached.geometrySignature === signature
+    && (cached.microKey ?? null) === microKey
     && (cached.requestedLongEdge || cached.longEdge || 0) >= longEdge) {
     if (displayWhenReady && state.currentView === lane && !state.comparePeekActive) showCachedPreview(lane, { skipGpu: denoiseFallback });
     renderCompareStatus();
@@ -319,6 +321,7 @@ async function renderPreviewForLaneInner(
     && !geometryDraftActive()
     && state.session?.session_id === sessionId
     && generation === state.previewGeneration[lane]
+    && microKey === microGrainPreviewKey(lane)
     && signature === geometrySignature();
   if (response.status === 409) {
     const payload = await safeJson(response);
@@ -374,7 +377,7 @@ async function renderPreviewForLaneInner(
   }
   const previous = state.previewCache[lane];
   if (previous?.url) URL.revokeObjectURL(previous.url);
-  state.previewCache[lane] = { url, generation, longEdge: Math.max(width, height) || longEdge, requestedLongEdge: longEdge, reducedEdge, width, height, geometrySignature: signature, scopePeak: Number.isFinite(responseScopePeak) ? responseScopePeak : null };
+  state.previewCache[lane] = { url, generation, longEdge: Math.max(width, height) || longEdge, requestedLongEdge: longEdge, reducedEdge, width, height, microKey, geometrySignature: signature, scopePeak: Number.isFinite(responseScopePeak) ? responseScopePeak : null };
   if (displayWhenReady && state.currentView === lane && !state.comparePeekActive) {
     if (showProgress) setPreviewMessage("Presenting preview...", progressSteps[2]);
     const keptGpuSurface = !denoiseFallback && !reducedEdge && shouldKeepHdrGpuSurface(lane)
@@ -406,12 +409,23 @@ function microGrainPreviewRequest(lane) {
   } : {};
 }
 
+function microGrainPreviewKey(lane) {
+  const settings = state.denoise?.[lane];
+  const controls = settings?.controls;
+  return controls?.method === "micro_grain" ? JSON.stringify([
+    settings.enabled, state.denoiseRuntime?.[lane]?.showOriginal,
+    controls.micro_luminance, controls.micro_color, controls.micro_detail,
+  ]) : null;
+}
+
 async function renderRawPreviewForLane(lane, displayWhenReady, longEdge, { showProgress = false } = {}) {
   if (!state.session || geometryDraftActive()) return false;
   const generation = state.previewGeneration[lane];
   const signature = geometrySignature();
   const cached = state.previewCache[lane];
+  const microKey = microGrainPreviewKey(lane);
   if (cached?.raw && cached.generation === generation && cached.geometrySignature === signature
+    && (cached.microKey ?? null) === microKey
     && (cached.requestedLongEdge || cached.longEdge) >= longEdge) {
     if (displayWhenReady && lane === state.currentView) applyRawPreview(cached);
     return true;
@@ -439,7 +453,7 @@ async function renderRawPreviewForLane(lane, displayWhenReady, longEdge, { showP
     if (error.name !== "AbortError") console.error(error);
     return null;
   });
-  if (!response || controller !== state.previewControllers[lane]) return false;
+  if (!response || controller !== state.previewControllers[lane] || microKey !== microGrainPreviewKey(lane)) return false;
   if (response.status === 409) {
     const payload = await safeJson(response);
     if (payload?.code === "strip_execution_refused" && displayWhenReady && lane === state.currentView) {
@@ -468,8 +482,9 @@ async function renderRawPreviewForLane(lane, displayWhenReady, longEdge, { showP
   const responseScopePeak = scopePeakHeader === null ? null : Number(scopePeakHeader);
   const data = new Uint8ClampedArray(await response.arrayBuffer());
   if (geometryDraftActive() || controller !== state.previewControllers[lane]
+    || microKey !== microGrainPreviewKey(lane)
     || generation !== state.previewGeneration[lane] || rawGeneration !== generation || signature !== geometrySignature()) return false;
-  const frame = { raw: data, width, height, generation, longEdge: Math.max(width, height) || longEdge, requestedLongEdge: longEdge, reducedEdge, geometrySignature: signature, scopePeak: Number.isFinite(responseScopePeak) ? responseScopePeak : null };
+  const frame = { raw: data, width, height, generation, longEdge: Math.max(width, height) || longEdge, requestedLongEdge: longEdge, reducedEdge, microKey, geometrySignature: signature, scopePeak: Number.isFinite(responseScopePeak) ? responseScopePeak : null };
   state.previewCache[lane] = frame;
   state.previewInfoByLane[lane] = {
     mediaType: "application/octet-stream",

@@ -4,7 +4,7 @@ const vm = require("node:vm");
 const { frontendSource, declarations } = require("./frontend-source.js");
 
 test("the reduced CPU Denoise image is presented at its actual size without another GPU render", async () => {
-  for (const reduced of [null, 4096]) {
+  for (const { reduced, stale } of [{}, { reduced: 4096 }, { reduced: 4096, stale: true }]) {
     const state = { session: { session_id: "photo" }, currentView: "hdr", gpuPreview: { available: true },
       previewCache: {}, previewGeneration: { hdr: 1 }, previewControllers: {}, previewInfoByLane: {} };
     if (reduced) {
@@ -21,6 +21,7 @@ test("the reduced CPU Denoise image is presented at its actual size without anot
       previewExecutionForTier: () => "strips", mediaQueryMatch: () => true,
       fetch: async (_, options) => {
         request = JSON.parse(options.body);
+        if (stale) state.denoise.hdr.controls.micro_color = 0.7;
         return new Response(new Blob(["pixels"]), { headers: {
           "X-Image-Width": edge, "X-Image-Height": 3000, ...(reduced ? { "X-Preview-Reduced-Edge": reduced } : {}),
         } });
@@ -30,9 +31,15 @@ test("the reduced CPU Denoise image is presented at its actual size without anot
       setGpuSurfaceHdr() {}, applyPreviewUrl: async () => true, refinementProxyLongEdge: () => 5202,
       renderCompareStatus() {}, renderReadouts() {}, acceptPresentation: (...args) => presentation.push(args),
       CPU_PREVIEW_MAX_LONG_EDGE: 16384 });
-    vm.runInContext(declarations("renderPreviewForLaneInner", "describeReducedDenoisePreview", "microGrainPreviewRequest"), context);
-    assert.equal(await context.renderPreviewForLaneInner("hdr", true, 5202, { showProgress: false, denoiseFallback: true }), true);
+    vm.runInContext(declarations("renderPreviewForLaneInner", "describeReducedDenoisePreview", "microGrainPreviewRequest", "microGrainPreviewKey"), context);
+    assert.equal(await context.renderPreviewForLaneInner("hdr", true, 5202, { showProgress: false, denoiseFallback: true }), !stale);
     assert.equal(gpuAttempts, 0);
+    if (stale) {
+      assert.equal(request.micro_grain_controls.micro_color, 0.62);
+      assert.deepEqual(presentation, []);
+      assert.equal(state.previewCache.hdr, undefined);
+      continue;
+    }
     assert.equal(presentation[0][9], edge);
     assert.equal(presentation[0][5], "CPU/backend");
     if (reduced) {
