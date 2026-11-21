@@ -67,7 +67,7 @@ Three problems follow, and Steve approved all three on November 21:
 | INT | Integration, full checks, push and Steve's hand test | `feat/denoise-v1` | all | merged and checked on the PC Nov 21 (see Integration result); pushed Nov 21 (`deb2fc6f`). Mac hand test partial (Micro Grain only; see Round 2) |
 | TRI-1 | Mac triage: CPU Micro Grain reuse and reduced-preview wording | `t3/b289892f` | INT | done, merged Nov 21 (`79b10821`), byte-identical. PC: Exposure edit 81.2 → 2.0 s, HDR→SDR 79.2 → 2.4 s; first picture unchanged (~84 s, one core); peak RAM 3.86 → 3.58 GB |
 | MG-1 | Micro Grain CPU: all cores and lens correction in strips | `sprint/micro-cpu-speed` | TRI-1 | to do (PC, now) |
-| CG-2 | Clean Grain colour stage in C, one noise-model store | `sprint/clean-colour-native` | — | to do (PC, now) |
+| CG-2 | Clean Grain colour stage in C, one noise-model store | `sprint/clean-colour-native` | — | implemented on PC, 859 tiles byte-identical. Sony whole-photo 15.69 → 14.16 s, first sharp 4.25 → 4.19 s, RAM 2.33 → 2.42 GB. 30% target and Mac check still open |
 | GPU-2 | Faster GPU Micro Grain and Fit | `sprint/gpu-grain-speed` | — | to do (PC, now) |
 | ROUTE-1 | One Grain route state and clear route messages | `sprint/grain-route-ui` | — | to do (PC, now) |
 | MG-2 | Micro Grain CPU: visible area first | `sprint/micro-cpu-visible` | MG-1 merged | to do (PC, after MG-1) |
