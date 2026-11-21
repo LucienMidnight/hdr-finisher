@@ -1,4 +1,35 @@
 (function () {
+  // The Bayer endpoint caps the requested region at 2048² pixels.
+  // AHD adds 12 pixels per edge, rounded out to the Bayer phase.
+  const BAYER_REQUEST_PIXELS = 2048 ** 2;
+  const BAYER_PADDING = 26;
+
+  function bayerWorkLimit(device, width, height) {
+    const { maxComputeWorkgroupsPerDimension, maxBufferSize,
+      maxStorageBufferBindingSize, maxTextureDimension2D } = device.limits;
+    const maxEdge = 16 * maxComputeWorkgroupsPerDimension;
+    if (Math.max(width, height) > maxEdge) {
+      return { reason: "source_too_large", width_px: width, height_px: height, max_dispatch_dimension_px: maxEdge };
+    }
+    const requestedBytes = Math.max(width * height * 4, 65536 * 4);
+    const maxBytes = Math.min(maxBufferSize, maxStorageBufferBindingSize);
+    if (requestedBytes > maxBytes) {
+      return { reason: "source_too_large", requested_bytes: requestedBytes, max_buffer_bytes: maxBytes };
+    }
+    return null;
+  }
+
+  function regionLimit(device, { width, height }) {
+    const textureLimit = device.limits.maxTextureDimension2D;
+    if (Math.max(width, height) > textureLimit) {
+      return { reason: "source_too_large", width_px: width, height_px: height, max_texture_dimension_px: textureLimit };
+    }
+    if (width * height > BAYER_REQUEST_PIXELS) {
+      return { reason: "source_too_large", width_px: width, height_px: height, max_request_pixels: BAYER_REQUEST_PIXELS };
+    }
+    return bayerWorkLimit(device, width + BAYER_PADDING, height + BAYER_PADDING);
+  }
+
   const pipelinesByDevice = new WeakMap();
   const labTablesByDevice = new WeakMap();
 
@@ -35,7 +66,7 @@
     const response = await fetch(`${grain.url}/region?${request}`, {
       method: "POST",
       signal,
-      headers: globalThis.HDRDiagnostics?.headers(action, { "Content-Type": "application/json" })
+      headers: globalThis.HDRDiagnostics?.headers?.(action, { "Content-Type": "application/json" })
         ?? { "Content-Type": "application/json" },
       body: JSON.stringify({ method: "micro_grain", micro_luminance: controls.microLuminance,
         micro_color: controls.microColor, micro_detail: controls.microDetail }),
@@ -49,10 +80,21 @@
     const { width, height } = region;
     const headerSize = new DataView(body).getUint32(0, true);
     const meta = JSON.parse(new TextDecoder().decode(new Uint8Array(body, 4, headerSize)));
-    const pixels = meta.width * meta.height;
+    const { width: bayerWidth, height: bayerHeight } = meta;
+    const pixels = bayerWidth * bayerHeight;
     const padded = Math.ceil(meta.mosaic_bytes / 4) * 4;
-    if (!Number.isSafeInteger(pixels) || pixels < 4 || meta.mosaic_bytes !== pixels * 2
-      || 4 + headerSize + padded >= body.byteLength) throw new Error("Invalid Micro Grain Bayer samples.");
+    const gateBytes = body.byteLength - 4 - headerSize - padded;
+    const bayerFits = (w, h) => bayerWidth >= w && bayerHeight >= h
+      && bayerWidth <= w + BAYER_PADDING && bayerHeight <= h + BAYER_PADDING;
+    if (!Number.isSafeInteger(bayerWidth) || !Number.isSafeInteger(bayerHeight)
+      || (!bayerFits(width, height) && !bayerFits(height, width)) || meta.mosaic_bytes !== pixels * 2
+      || gateBytes !== pixels) throw new Error("Invalid Micro Grain Bayer samples.");
+    const limit = bayerWorkLimit(device, bayerWidth, bayerHeight);
+    if (limit) {
+      const error = new Error("Micro Grain Bayer samples exceed a device limit.");
+      error.grainLimit = limit;
+      throw error;
+    }
     const pipelines = await ahdPipelines(device);
     if (!current()) throw new DOMException("Micro Grain was replaced.", "AbortError");
     const owned = [];
@@ -114,5 +156,5 @@
     }
   }
 
-  window.HDRMicroGrainGpu = Object.freeze({ readBayer, develop, ahdPipelines });
+  window.HDRMicroGrainGpu = Object.freeze({ readBayer, develop, ahdPipelines, regionLimit, BAYER_PADDING });
 })();

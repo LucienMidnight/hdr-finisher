@@ -83,7 +83,9 @@ credentials, full requests and opaque payloads out of the log.
 | `gpu_budget_exceeded` | The request plus the greater of resident and allocator bytes exceeded 90% of the effective GPU budget. Temporary. |
 | `gpu_request_too_large` | The reservation by itself exceeds 90% of the configured budget. Sticky for this source key. |
 | `gpu_allocation_pressure` | The driver failed a GPU allocation. Retry only after more room becomes available or the device changes. |
-| `source_too_large` | A source, texture or strip dimension exceeds a hard limit. Sticky. |
+| `source_too_large` | A source, texture, strip, dispatch or buffer exceeds a hard limit. Sticky. |
+| `gpu_reservation_granted` | A calibration, Fit reduction or Bayer region reservation was admitted. See `requested_bytes` and `stage` in `grain_gpu_reserved`. |
+| `bounded_working_set` | Grain calibration or Fit reduction split the native work into bounded rectangles. |
 | `gpu_validation_error` | A shader, texture, readback or returned value failed a validity check. Sticky. |
 | `transport_timeout` | A timeout, network failure or transient server response interrupted a GPU request. Temporary. |
 | `device_lost` | Retry can follow a successful device rebuild. |

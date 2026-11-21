@@ -882,6 +882,7 @@ struct Resize {
   sizes: vec4f,
   strip: vec4f,
   block: vec4f,
+  source: vec4f,
 };
 @group(0) @binding(0) var<uniform> resize: Resize;
 @group(0) @binding(1) var pixels: texture_2d<f32>;
@@ -916,10 +917,10 @@ fn rangeWindow(center: f32, extent: f32) -> vec2i {
 
 @compute @workgroup_size(8, 8)
 fn fineGrainResizeHorizontal(@builtin(global_invocation_id) id: vec3u) {
-  if (id.x >= u32(resize.sizes.z) || id.y >= u32(resize.strip.y)) { return; }
+  if (id.x >= u32(resize.block.w) || id.y >= u32(resize.strip.y)) { return; }
   let row = i32(id.y);
   let ratio = resize.sizes.x / resize.sizes.z;
-  let center = (f32(id.x) + 0.5) * ratio;
+  let center = (resize.block.z + f32(id.x) + 0.5) * ratio;
   let taps = support(center, max(1.0, ratio), resize.sizes.x);
   let bounds = rangeWindow(center, resize.sizes.x);
   var sum = vec3f(0.0);
@@ -927,9 +928,9 @@ fn fineGrainResizeHorizontal(@builtin(global_invocation_id) id: vec3u) {
   var minimum = vec3f(65504.0);
   var maximum = vec3f(-65504.0);
   for (var col = min(taps.x, bounds.x); col < max(taps.y, bounds.y); col++) {
-    ${clean ? `let fields = textureLoad(nativeFields, vec2i(col, row), 0);
+    ${clean ? `let fields = textureLoad(nativeFields, vec2i(col - i32(resize.source.x), row), 0);
     let value = select(bitcast<vec3f>(fields.xyz), vec3f(unpack2x16float(fields.w), 0.0), resize.block.y > 0.5);`
-      : "let value = textureLoad(pixels, vec2i(col, row), 0).rgb;"}
+      : "let value = textureLoad(pixels, vec2i(col - i32(resize.source.x), row), 0).rgb;"}
     if (col >= taps.x && col < taps.y) {
       let weight = lanczos((f32(col) + 0.5 - center) / max(1.0, ratio));
       sum += value * weight;
@@ -972,17 +973,18 @@ fn resizeVertical(destination: vec2i) -> vec3f {
 
 @compute @workgroup_size(8, 8)
 fn fineGrainResizeVertical(@builtin(global_invocation_id) id: vec3u) {
-  if (id.x >= u32(resize.sizes.z) || id.y >= u32(resize.strip.w)) { return; }
+  if (id.x >= u32(resize.block.w) || id.y >= u32(resize.strip.w)) { return; }
   let destination = vec2i(i32(id.x), i32(resize.strip.z) + i32(id.y));
   let value = resizeVertical(destination);
+  let outputPoint = destination + vec2i(i32(resize.block.z), 0);
   ${clean ? `let base = textureLoad(baseStrip, vec2i(id.xy), 0).rgb;
-  textureStore(resizedFields, destination, vec4u(bitcast<vec3u>(base), pack2x16float(value.xy)));`
-    : "textureStore(resizedPixels, destination, vec4f(value, 1.0));"}
+  textureStore(resizedFields, outputPoint, vec4u(bitcast<vec3u>(base), pack2x16float(value.xy)));`
+    : "textureStore(resizedPixels, outputPoint, vec4f(value, 1.0));"}
 }
 ${clean ? `
 @compute @workgroup_size(8, 8)
 fn fineGrainResizeBase(@builtin(global_invocation_id) id: vec3u) {
-  if (id.x >= u32(resize.sizes.z) || id.y >= u32(resize.strip.w)) { return; }
+  if (id.x >= u32(resize.block.w) || id.y >= u32(resize.strip.w)) { return; }
   let destination = vec2i(i32(id.x), i32(resize.strip.z) + i32(id.y));
   textureStore(baseStripOut, vec2i(id.xy), vec4f(resizeVertical(destination), 1.0));
 }

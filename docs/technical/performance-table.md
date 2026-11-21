@@ -47,6 +47,36 @@ workers finished the Sony in 10.73 s and peaked at 1.53 GB in the offline
 backend. The same trial series measured 1.33 GB for the baseline backend.
 Twelve workers with 768-pixel tiles raised that peak to 2.32 GB for 10.64 s.
 The app keeps the existing 512-pixel tile size.
+## November 21 — Large-photo Grain in Grade
+
+Windows PC, unpackaged Electron at 2560 × 1440, 2 GiB graphics setting,
+device texture edge 16,384, HDR Grade and lens correction off. Measured
+once on the GPU-1 implementation based on `f424bbdd`, from action start
+through the settled picture. Fine Fit includes the first calibration.
+Clean Small Fit reused the calibration. The 110% rows are warm zoom
+transitions using a 2462 × 1332 native viewport. App peak is sampled
+whole-app memory. GPU peak is the larger of the renderer's logical estimate
+and the recorded resident-plus-reservation total, in bytes.
+
+| Input | Method | View | GPU wait (s) | Fit / reduction reservations (B) | GPU peak (B) | App peak (B) |
+| --- | --- | --- | ---: | --- | ---: | ---: |
+| DSC00636.ARW, 8660 × 5784 | Fine | Fit | 15.28 | 85,599,904 / 108,601,968 | 232,531,688 | 1,969,376,105 |
+| DSC00636.ARW | Fine | 110% | 1.80 | Reused | 284,674,512 | 2,117,039,245 |
+| DSC00636.ARW | Clean Small | Fit | 6.12 | Reused / 158,722,864 | 389,847,792 | 3,179,560,955 |
+| DSC00636.ARW | Clean Small | 110% | 1.30 | Reused | 406,139,312 | 2,202,131,890 |
+| Synthetic linear TIFF, 9504 × 6336 | Fine | Fit | 7.94 | 85,599,904 / 106,361,336 | 231,337,560 | 2,722,068,767 |
+| Synthetic linear TIFF | Fine | 110% | 2.02 | Reused | 323,593,752 | 3,219,134,752 |
+| Synthetic linear TIFF | Clean Small | Fit | 6.14 | Reused / 156,157,368 | 406,279,304 | 3,646,434,739 |
+| Synthetic linear TIFF | Clean Small | 110% | 1.32 | Reused | 483,514,248 | 2,529,585,441 |
+
+The prior calibration refused both sizes at either zoom before reserving
+GPU Grain memory. CPU fallback wait and memory were not measured in this
+run. In a separate locked Windows PC merge check at the same graphics setting,
+the Sony stayed on the GPU in Clean Small at Fit and 110%, and in Bayer Micro
+Grain at 110%. The correlated log recorded 85,599,904 B for calibration,
+158,722,864 B for Clean Fit reduction and 77,083,920 B per admitted Micro
+Bayer region. Finished-pixel CPU agreement and the large Bayer Micro Fit
+check remain open.
 
 ## November 21 — Denoise CPU fallback waits
 

@@ -70,6 +70,23 @@ correction and GPU draw paths still render the same pixels.
 CPU previews reuse a compact noise model across Exposure and other finishing edits. The model depends on the source pixels, rendition, geometry, processing size and measurement version. Concurrent previews share a measurement. The CPU Grain scratch reservation and the existing tile dimensions still apply. [Windows PC measurements](../../technical/performance-table.md#november-21--windows-pc-cpu-grain-sprint)
 
 On the Windows PC, the Sony reached its first sharp picture at 110% in 4.74 s, down from 21.94 s. Whole-photo preparation improved by 13–15% and peak app memory rose to 2.74 GB from 2.39 GB. The 30% whole-photo speed target and the baseline memory target remain open. [Windows PC measurements](../../technical/performance-table.md#november-21--windows-pc-cpu-grain-sprint)
+### November 21 — Grade Grain on large photos
+
+Fine and Clean Grain calibrate at native resolution in rectangles with the
+existing overlaps. The GPU sums only the non-overlapping core pixels, keeping
+the same block and tile order as the whole-width calibration. Grade's exact
+Fit picture reconstructs bounded native rectangles and resizes with the
+original full-frame sampling grid. Micro Grain retains its Bayer region
+requirements and uses smaller Fit bands when two cores cannot share a Bayer
+request. At 110%, Grade draws the native viewport and its reconstruction halos.
+
+Windows PC with a 2 GiB graphics setting, the 50 MP Sony and a synthetic
+61 MP linear TIFF each presented Fine and Clean Grain Small on the GPU at
+Fit and 110%. The merged Clean Small route passed again on the Sony and
+logged correlated reservations. Bayer Micro Grain also stayed on the GPU on
+that Sony at 110%. Finished HDR and SDR agreement with the CPU route, large
+Bayer Micro at Fit, and minimum-Mac validation remain open. See the
+[performance table](../../technical/performance-table.md#november-21--large-photo-grain-in-grade).
 
 ### RAW Pixel cleanup
 

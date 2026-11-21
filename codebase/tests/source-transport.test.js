@@ -311,6 +311,7 @@ function createDevice() {
         return {
           copyBufferToTexture(source, destination, size) {
             writes.push({
+              originX: destination.origin?.x ?? 0,
               originY: destination.origin?.y ?? 0,
               bytes: source.buffer.__data.byteLength,
               rows: size.height,
@@ -797,11 +798,11 @@ test("a changed halo reuses a containing source region without fetching", async 
 /** A region backend that answers after a delay and counts overlapping requests. */
 function createRegionBackend({ width, height, failAt = null, delayMs = 5 }) {
   const state = { requests: [], active: 0, peakActive: 0 };
-  const fetchImpl = async (url) => {
+  const fetchImpl = async (url, options) => {
     const parsed = new URL(url, "http://localhost");
     const rect = Object.fromEntries(["x", "y", "width", "height"].map((name) => [name, Number(parsed.searchParams.get(name))]));
     const probe = rect.width === 1 && rect.height === 1;
-    state.requests.push({ ...rect, probe, epoch: parsed.searchParams.get("source_epoch") });
+    state.requests.push({ ...rect, probe, epoch: parsed.searchParams.get("source_epoch"), headers: options.headers });
     if (!probe) {
       state.active += 1;
       state.peakActive = Math.max(state.peakActive, state.active);
@@ -886,4 +887,118 @@ test("a failed region chunk stops every lane before the partial texture is relea
   assert.equal(harness.textures[0].destroyed, true);
   // Lanes stop asking once one has failed: the tail of the region is never requested.
   assert.ok(backend.state.requests.filter((request) => !request.probe).length < 10);
+});
+
+
+test("a wide source region covers every output column within the wire and buffer limits", async () => {
+  const backend = createRegionBackend({ width: 9504, height: 6336 });
+  const region = { x: 177, y: 11, width: 9000, height: 100 };
+  const { preview, harness } = regionPreview(backend, 100, region.width);
+  const maxBufferSize = 512 * 1024;
+  harness.device.limits.maxBufferSize = maxBufferSize;
+  const headers = new Headers({ "X-HDR-Finisher-Action": "wide-photo" });
+  await preview.loadProxyRegion("session", "hdr", 9504, "{}", 0, "source", "wide", region, { headers });
+  assert.ok(backend.state.requests.every(request => request.headers?.get("X-HDR-Finisher-Action") === "wide-photo"));
+  const requested = backend.state.requests.filter(request => !request.probe);
+  assert.ok(requested.some(request => request.x > region.x));
+  assert.ok(requested.every(request => request.width <= 8192 && request.epoch === "7"));
+  assert.ok(harness.buffers.every(buffer => buffer.size <= maxBufferSize));
+  const coverage = new Uint8Array(region.width * region.height);
+  for (const { originX, originY, width, rows } of harness.writes) {
+    for (let y = originY; y < originY + rows; y++) {
+      for (let x = originX; x < originX + width; x++) coverage[y * region.width + x]++;
+    }
+  }
+  assert.ok(coverage.every(count => count === 1));
+});
+
+test("Fine Grain calibration matches the whole-width fit when GPU readback forces chunks", async () => {
+  const Renderer = loadPreview(async () => { throw new Error("Unexpected network request"); });
+  const width = 1457, height = 579;
+  async function fit(maxStorageBufferBindingSize) {
+    const renderer = Object.create(Renderer.prototype);
+    const targets = [];
+    const buffers = [];
+    const pixel = (x, y) => ((31 * x + 117 * y) % 257) / 256;
+    Object.assign(renderer, {
+      device: {
+        limits: { maxTextureDimension2D: 4096, maxBufferSize: 8 * 1024 * 1024, maxStorageBufferBindingSize },
+        pushErrorScope() {},
+        async popErrorScope() { return null; },
+        createBuffer({ size }) {
+          const data = new Float32Array(size / 4);
+          const buffer = { data, async mapAsync() {}, getMappedRange: () => data.buffer, destroy() { this.destroyed = true; } };
+          buffers.push(buffer);
+          return buffer;
+        },
+        createCommandEncoder: () => ({
+          copyBufferToBuffer(source, sourceOffset, target) { target.data.set(source.data); },
+          finish() {},
+        }),
+        queue: { submit() {} },
+      },
+      ensureGrainFitPipeline: async () => ({}),
+      createAdaptiveDenoiseScratch: () => ({ textures: {} }),
+      reserveFineGrain() {},
+      recordStage() {},
+      loadProxyRegion: async (session, lane, native, geometry, revision, identity, key, requested, { stripUpload }) => {
+        const region = { ...requested, width: Math.min(requested.width, width - requested.x),
+          height: Math.min(requested.height, height - requested.y) };
+        assert.ok(region.width <= stripUpload.maxWidth && region.height <= stripUpload.maxRows);
+        return { region, width, height };
+      },
+      encodeAdaptiveDenoise(encoder, selector, weights, sizes, target, candidate, destination, source, reduction) {
+        const { margin, stride, partials } = reduction;
+        const { region } = source;
+        targets.push(target);
+        assert.equal(region.x, Math.max(0, target.x - margin));
+        assert.equal(region.y, Math.max(0, target.y - margin));
+        assert.equal(region.x + region.width, Math.min(width, target.x + target.width + margin));
+        assert.equal(region.y + region.height, Math.min(height, target.y + target.height + margin));
+        for (let band = 0; band < 2; band++) {
+          let block = 0;
+          for (let tile = target.x; tile < target.x + target.width; tile += 512) {
+            const endX = Math.min(tile + 512, target.x + target.width);
+            for (let y = target.y; y < target.y + target.height; y += 32) {
+              for (let x = tile; x < endX; x += 32) {
+                // Emulate the shader's additive statistics for one core block
+                // using a local sample from the overlap where available.
+                const left = Math.max(region.x, x - margin);
+                const value = .25 + pixel(x, y) + pixel(left, y);
+                const area = Math.min(32, endX - x) * Math.min(32, target.y + target.height - y);
+                partials.data.set([value * area, value * area * .9, value * area * .2, value * area * .05],
+                  (band * stride + block++) * 4);
+              }
+            }
+          }
+          assert.equal(block, stride);
+        }
+        return { paramBuffer: { destroy() {} } };
+      },
+    });
+    const result = await renderer.measureFineGrain("photo", "hdr", width, "{}", 1, "source", {}, {}, null, () => true);
+    assert.ok(buffers.every(buffer => buffer.destroyed));
+    assert.ok(buffers.every(buffer => buffer.data.byteLength <= maxStorageBufferBindingSize));
+    return { result, targets };
+  }
+
+  const unchunked = await fit(64 * 1024);
+  const chunked = await fit(8 * 1024);
+  assert.deepEqual(unchunked.targets.map(target => target.width), [width, width]);
+  assert.equal(chunked.targets.length, 6);
+  assert.deepEqual(chunked.targets.map(target => target.x), [0, 512, 1024, 0, 512, 1024]);
+  assert.deepEqual(chunked.result, unchunked.result);
+});
+
+
+test("Micro Grain's Bayer work limit follows the padded region and device storage limit", () => {
+  const context = vm.createContext({ window: {} });
+  vm.runInContext(frontendSource("micro-grain-gpu.js"), context);
+  const { regionLimit } = context.window.HDRMicroGrainGpu;
+  const device = { limits: { maxTextureDimension2D: 8192, maxComputeWorkgroupsPerDimension: 65535,
+    maxBufferSize: 16 * 1024 * 1024, maxStorageBufferBindingSize: 4 * 1024 * 1024 } };
+  assert.equal(regionLimit(device, { width: 768, height: 720 }), null);
+  assert.equal(regionLimit(device, { width: 1536, height: 720 }).reason, "source_too_large");
+  assert.equal(regionLimit(device, { width: 2048, height: 2049 }).reason, "source_too_large");
+  assert.equal(regionLimit(device, { width: 8193, height: 128 }).reason, "source_too_large");
 });
