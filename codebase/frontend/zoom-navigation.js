@@ -9,18 +9,31 @@ function setZoomMode(mode) {
   }
   const changed = state.zoomMode !== "fit";
   state.zoomMode = "fit";
+  const cpuRegion = Boolean(els.previewCanvas.hdrCpuMicroRegion);
+  const hdrMicro = Boolean(els.previewCanvas.hdrCpuMicroUrls);
+  if (cpuRegion) {
+    const detail = hdrMicro ? els.previewMicroHdrDetail : els.previewMicroDetail;
+    detail.hidden = true;
+  }
   if (!holdingNativeDenoisePictureForFit()) {
     els.dropzone.scrollLeft = 0;
     els.dropzone.scrollTop = 0;
   }
   applyZoomGeometry();
+  if (cpuRegion) {
+    const base = hdrMicro ? els.previewMicroHdrUnderlayer : els.previewMicroUnderlayer;
+    acceptPresentation(state.currentView, "settled", base.naturalWidth || base.width, base.naturalHeight || base.height,
+      state.previewInfo.transport, "CPU/backend",
+      null, state.previewGeneration[state.currentView], null, 960, null, false, true);
+  }
   scheduleNavigationThumbnail();
   if (changed) scheduleZoomRefinement();
 }
 
 function holdingNativeDenoisePictureForFit() {
   return state.zoomMode === "fit" && els.previewCanvas.style.display !== "none"
-    && Boolean(els.previewCanvas.hdrFrameRegion) && els.chromeProofImage?.style.display === "none";
+    && Boolean(els.previewCanvas.hdrFrameRegion) && !els.previewCanvas.hdrCpuMicroRegion
+    && els.chromeProofImage?.style.display === "none";
 }
 
 const navigationThumbnail = { timer: 0, controller: null, key: "", url: "", inflightKey: "" };
@@ -207,7 +220,7 @@ async function refreshNavigationThumbnail() {
 }
 
 function scheduleZoomRefinement({ continuous = false } = {}) {
-  if (!state.session || !gpuPreviewEligible(state.currentView)) return;
+  if (!state.session || (!gpuPreviewEligible(state.currentView) && !cpuMicroPreviewSelected(state.currentView))) return;
   window.clearTimeout(state.zoomRefinementTimer);
   // A pending adjustment settle from the previous scale can otherwise race
   // this zoom and start a whole-frame CPU fallback at the new edge.
@@ -221,7 +234,7 @@ function scheduleZoomRefinement({ continuous = false } = {}) {
   // and slider input so a gesture replaces pending work instead of flooding it.
   state.zoomRefinementTimer = window.setTimeout(async () => {
     state.zoomRefinementTimer = 0;
-    if (!state.session || !gpuPreviewEligible(state.currentView)) return;
+    if (!state.session || (!gpuPreviewEligible(state.currentView) && !cpuMicroPreviewSelected(state.currentView))) return;
     const target = requiredProcessingLongEdge();
     const lane = state.currentView;
     const sessionId = state.session.session_id;
@@ -243,6 +256,9 @@ function scheduleZoomRefinement({ continuous = false } = {}) {
 }
 
 async function refineZoomView(action, target, lane, sessionId) {
+  if (cpuMicroPreviewSelected(lane)) {
+    return renderPreviewForLane(lane, true, target, { denoiseFallback: true, showProgress: false, action });
+  }
   let rendered = true;
   if (state.acceptedPresentation?.processedLongEdge !== target) {
     const decision = interactiveScaleDecision(lane);
@@ -432,7 +448,9 @@ function applyZoomGeometry() {
   if (region) {
     pictureFrame.style.width = `${displayWidth}px`;
     pictureFrame.style.height = `${displayHeight}px`;
-    const detail = els.previewDenoiseDetail;
+    const detail = pictureCanvas.hdrCpuMicroRegion
+      ? (pictureCanvas.hdrCpuMicroUrls ? els.previewMicroHdrDetail : els.previewMicroDetail)
+      : els.previewDenoiseDetail;
     detail.style.left = `${100 * region.x / region.frameWidth}%`;
     detail.style.top = `${100 * region.y / region.frameHeight}%`;
     detail.style.width = `${100 * region.width / region.frameWidth}%`;
@@ -459,7 +477,7 @@ function applyZoomGeometry() {
   // a flat square, the way an inspection zoom should; at and below 100% the
   // compositor keeps its smooth filtering so Fit does not alias.
   const magnified = percent > 100.5;
-  for (const element of [els.previewCanvas, els.previewDenoiseDetail, els.comparisonCanvas, els.previewImage, els.comparisonImage]) {
+  for (const element of [els.previewCanvas, els.previewDenoiseDetail, els.previewMicroDetail, els.previewMicroHdrDetail, els.comparisonCanvas, els.previewImage, els.comparisonImage]) {
     element.classList.toggle("pixel-magnified", magnified);
   }
   state.zoomPercent = percent;

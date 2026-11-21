@@ -93,6 +93,24 @@ prepared model remains in the Micro source for this round. Lensfun strip
 generation stays open because restarting the row coordinates changed pixels.
 [Windows PC measurements](../../technical/performance-table.md#november-21--cpu-micro-grain-tile-workers)
 
+### November 21: CPU Micro Grain visible area first
+
+At 100% or above, Grade can prepare just the native Bayer tiles needed for
+a visible CPU Micro Grain picture. Crop, quarter turns and flips map directly
+to indexed pixels. Lens correction checks all remap samples and channels on
+the viewport, including the edges, with eight output pixels of scroll padding
+and a two-pixel margin beyond the bilinear input footprint. Native tile
+dimensions and filter halos are the same as for the full photo.
+
+The viewer keeps a reduced original behind the native detail while panning
+and when returning to Fit. A lower-priority worker develops one offscreen tile at a
+time when app memory pressure allows it. Settled Fit consumes the retained
+tiles as it builds the whole frame and prepares any missing ones on demand.
+Grade operations that need full-frame statistics or spatial reconstruction,
+resampled geometry and extreme or non-finite lens maps fall back to the
+whole-photo route. HDR displays use the same AVIF preview encoder as the
+whole-photo CPU route. [Windows PC measurements](../../technical/performance-table.md#november-21--windows-pc-cpu-micro-grain-visible-area)
+
 ### November 21: Faster CPU Grain backup
 
 CPU previews reuse a compact noise model across Exposure and other finishing edits. The model depends on the source pixels, rendition, geometry, processing size and measurement version. Concurrent previews share a measurement. The CPU Grain scratch reservation and the existing tile dimensions still apply. [Windows PC measurements](../../technical/performance-table.md#november-21--windows-pc-cpu-grain-sprint)

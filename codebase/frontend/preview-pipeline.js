@@ -246,9 +246,11 @@ async function renderPreviewForLane(
     || workGeneration !== state.gradeWorkGeneration) return false;
   if (geometryDraftActive()) return false;
   const raw = options.raw ?? !state.gpuPreview?.available;
+  const viewport = displayWhenReady && cpuMicroPreviewSelected(lane, options.denoiseFallback)
+    ? cpuMicroViewport(lane) : null;
   const key = JSON.stringify([sessionId, state.editRevision, state.previewGeneration[lane],
     geometrySignature(), longEdge, displayWhenReady, raw, Boolean(options.denoiseFallback), localsBypassed(),
-    state.localPreviewDirty && !localsBypassed() ? localAdjustments() : null]);
+    state.localPreviewDirty && !localsBypassed() ? localAdjustments() : null, viewport]);
   const inflight = state.cpuPreviewInflight ||= new Map();
   const previous = inflight.get(lane);
   // Scheduler settle, scopes and lane preparation can ask for the same CPU
@@ -257,7 +259,13 @@ async function renderPreviewForLane(
   if (previous?.key === key) return previous.promise;
   const action = options.action ?? state.gradeOpen?.action;
   const record = { key, sessionId, generation: state.previewGeneration[lane], promise: null };
-  const render = () => renderPreviewForLaneInner(lane, displayWhenReady, longEdge, { ...options, raw, action });
+  const render = async () => {
+    if (viewport) {
+      const regional = await renderCpuMicroViewport(lane, viewport, action);
+      if (regional !== null) return regional;
+    }
+    return renderPreviewForLaneInner(lane, displayWhenReady, longEdge, { ...options, raw, action });
+  };
   const method = state.denoise?.[lane]?.enabled && !state.denoiseRuntime?.[lane]?.showOriginal && state.denoise[lane].controls.method;
   record.promise = method && displayWhenReady ? trackGrainCpuWork(lane, method, render) : render();
   inflight.set(lane, record);
@@ -427,6 +435,135 @@ async function renderPreviewForLaneInner(
   }
   renderCompareStatus();
   return true;
+}
+
+function cpuMicroPreviewSelected(lane, fallback = false) {
+  const settings = state.denoise?.[lane];
+  const runtime = state.denoiseRuntime?.[lane];
+  return state.activeWorkflow === "grade" && lane === state.currentView && !state.comparePeekActive
+    && settings?.enabled && settings.controls.method === "micro_grain" && !runtime?.showOriginal
+    && (settings.controls.micro_luminance || settings.controls.micro_color)
+    && (runtime?.microBackup || fallback || !gpuPreviewEligible(lane));
+}
+
+function cpuMicroViewportKey(lane) {
+  return JSON.stringify([state.session?.session_id, state.previewGeneration[lane], geometrySignature(), microGrainPreviewKey(lane)]);
+}
+
+function cpuMicroViewport(lane) {
+  if (state.zoomMode !== "custom" || state.zoomPercent < 100
+    || state.cpuMicroViewportRefused === cpuMicroViewportKey(lane)) return null;
+  const edge = previewTargetLongEdge("full");
+  const { width, height } = gpuFrameSizeAt(edge) || approximateGpuFrameSizeAt(edge);
+  const rect = visibleOutputRect(width, height, { element: activePreviewElement() });
+  return rect ? { x: rect.x / width, y: rect.y / height, width: rect.width / width, height: rect.height / height } : null;
+}
+
+async function renderCpuMicroViewport(lane, viewport, action) {
+  const key = cpuMicroViewportKey(lane);
+  const generation = state.previewGeneration[lane];
+  const controller = new AbortController();
+  state.previewControllers[lane]?.abort();
+  state.previewControllers[lane] = controller;
+  const isCurrent = () => state.previewControllers[lane] === controller
+    && key === cpuMicroViewportKey(lane) && lane === state.currentView
+    && !geometryDraftActive() && !state.comparePeekActive
+    && state.zoomMode === "custom" && state.zoomPercent >= 100;
+  const response = await fetch(`/api/session/${state.session.session_id}/preview-raw/${lane}`, {
+    method: "POST",
+    headers: grainCpuPreviewHeaders(lane, action),
+    body: JSON.stringify({
+      ...microGrainPreviewRequest(lane),
+      micro_grain_viewport: viewport,
+      hdr_display: lane === "hdr" && mediaQueryMatch("(dynamic-range: high)"),
+      edit_revision: state.editRevision,
+      include_locals: !localsBypassed(),
+      local_adjustments: state.localPreviewDirty && !localsBypassed() ? localAdjustments() : null,
+      generation,
+    }),
+    signal: controller.signal,
+  }).catch(error => {
+    if (error.name !== "AbortError") console.error(error);
+    return null;
+  });
+  if (!response || !isCurrent()) return false;
+  if (response.status === 204) {
+    state.cpuMicroViewportRefused = key;
+    return null;
+  }
+  if (!response.ok) return false;
+  const width = Number(response.headers.get("X-Image-Width"));
+  const height = Number(response.headers.get("X-Image-Height"));
+  const [x, y, frameWidth, frameHeight] = response.headers.get("X-Micro-Region").split(",").map(Number);
+  const [baseWidth, baseHeight] = response.headers.get("X-Micro-Underlayer").split(",").map(Number);
+  const mediaType = response.headers.get("X-Micro-Media-Type");
+  const region = { x, y, width, height, frameWidth, frameHeight };
+  const stillCovers = () => isCurrent() && window.HDRViewportRequest.covers(region,
+    visibleOutputRect(frameWidth, frameHeight, { includeWhole: true, element: activePreviewElement() }));
+  const canvas = els.previewCanvas;
+  if (mediaType) {
+    const body = await response.blob();
+    const split = Number(response.headers.get("X-Micro-Detail-Bytes"));
+    const urls = [body.slice(0, split, mediaType), body.slice(split, body.size, mediaType)]
+      .map(blob => URL.createObjectURL(blob));
+    try {
+      await Promise.all(urls.map(decodePreviewImage));
+    } catch (error) {
+      urls.forEach(url => URL.revokeObjectURL(url));
+      if (isCurrent()) console.error(error);
+      return isCurrent() ? null : false;
+    }
+    if (!stillCovers()) {
+      urls.forEach(url => URL.revokeObjectURL(url));
+      return false;
+    }
+    // A newer request may have finished decoding while this one was waiting.
+    releaseMicroPreviewUrls();
+    canvas.hdrCpuMicroUrls = urls;
+    els.previewMicroHdrDetail.src = urls[0];
+    els.previewMicroHdrDetail.hidden = false;
+    els.previewMicroHdrUnderlayer.src = urls[1];
+  } else {
+    const data = new Uint8ClampedArray(await response.arrayBuffer());
+    if (!stillCovers()) return false;
+    releaseMicroPreviewUrls();
+    const detail = els.previewMicroDetail;
+    const base = els.previewMicroUnderlayer;
+    detail.width = width;
+    detail.height = height;
+    base.width = baseWidth;
+    base.height = baseHeight;
+    const split = width * height * 4;
+    detail.getContext("2d").putImageData(new ImageData(data.subarray(0, split), width, height), 0, 0);
+    base.getContext("2d").putImageData(new ImageData(data.subarray(split), baseWidth, baseHeight), 0, 0);
+    detail.hidden = false;
+  }
+  canvas.hdrFrameRegion = region;
+  canvas.hdrCpuMicroRegion = key;
+  canvas.hdrWholeFrame = null;
+  canvas.parentElement.setAttribute("data-micro-region", mediaType ? "hdr" : "rgba");
+  els.previewImage.style.display = "none";
+  canvas.style.display = "block";
+  els.emptyState.style.display = "none";
+  setGpuSurfaceHdr(lane, false);
+  state.previewInfo = state.previewInfoByLane[lane] = mediaType
+    ? previewInfoFromResponse({ headers: { get: () => mediaType } }, lane)
+    : { mediaType: "application/octet-stream", transport: "Raw RGBA8", colorSpace: "sRGB", transfer: "sRGB", bitDepth: "8-bit" };
+  hidePreviewMessage();
+  applyZoomGeometry();
+  acceptPresentation(lane, "refinement", frameWidth, frameHeight, state.previewInfo.transport, "CPU/backend",
+    null, generation, "cpu-viewport", previewTargetLongEdge("full"), null, false, false, "", backendGrainFrame(lane, null));
+  renderReadouts();
+  return true;
+}
+
+function releaseMicroPreviewUrls() {
+  const canvas = els.previewCanvas;
+  if (!canvas.hdrCpuMicroUrls) return;
+  canvas.hdrCpuMicroUrls.forEach(url => URL.revokeObjectURL(url));
+  canvas.hdrCpuMicroUrls = null;
+  els.previewMicroHdrDetail.removeAttribute("src");
+  els.previewMicroHdrUnderlayer.removeAttribute("src");
 }
 
 function microGrainPreviewRequest(lane) {
@@ -708,6 +845,15 @@ function clearDenoiseDetail() {
   const canvas = els.previewCanvas;
   if (!canvas.hdrFrameRegion && !canvas.parentElement.hasAttribute("data-region")) return;
   canvas.hdrFrameRegion = null;
+  if (canvas.hdrCpuMicroRegion) {
+    canvas.hdrCpuMicroRegion = null;
+    canvas.parentElement.removeAttribute("data-micro-region");
+    releaseMicroPreviewUrls();
+    els.previewMicroDetail.width = 1;
+    els.previewMicroDetail.height = 1;
+    els.previewMicroUnderlayer.width = 1;
+    els.previewMicroUnderlayer.height = 1;
+  }
   canvas.parentElement.removeAttribute("data-region");
   // Release the old swap chain when only the whole picture is showing.
   els.previewDenoiseDetail.width = 1;
@@ -916,7 +1062,7 @@ async function renderGpuDraftForView(lane, request) {
   const replacingDetail = !allowInactive && Boolean(canvas.hdrFrameRegion);
   // Refreshing the lower layer of the same picture must leave the previous
   // patch mounted until a new sharp patch is ready, even across grade edits.
-  const retainedDetail = request.underlayerOnly && replacingDetail
+  const retainedDetail = request.underlayerOnly && replacingDetail && !canvas.hdrCpuMicroRegion
     && state.acceptedPresentation?.lane === lane
     && state.acceptedPresentation.geometrySignature === requestedGeometrySignature
     ? canvas.hdrFrameRegion : null;
@@ -950,6 +1096,7 @@ async function renderGpuDraftForView(lane, request) {
       return !viewportMoved;
     } : null,
     onFrameSubmitted: boundedPresentation || request.underlayerOnly || replacingDetail ? (region, hdr) => {
+      if (canvas.hdrCpuMicroRegion) clearDenoiseDetail();
       if (region || retainedDetail) canvas.hdrFrameRegion = region || retainedDetail;
       else clearDenoiseDetail();
       if (request.underlayerOnly) {
@@ -1269,12 +1416,12 @@ function visiblePreviewCanvasRect() {
  * fully visible frame is deliberate: a Fit viewport has no offscreen tiles to
  * skip and must keep the whole-frame path.
  */
-function visibleOutputRect(outputWidth, outputHeight, { includeWhole = false } = {}) {
+function visibleOutputRect(outputWidth, outputHeight, { includeWhole = false, element = null } = {}) {
   if (!previewIsVisible()) return null;
   const width = Math.max(1, Math.floor(Number(outputWidth) || 0));
   const height = Math.max(1, Math.floor(Number(outputHeight) || 0));
   const canvas = els.previewCanvas;
-  const box = (canvas.hdrFrameRegion ? canvas.parentElement : canvas).getBoundingClientRect();
+  const box = (element || (canvas.hdrFrameRegion ? canvas.parentElement : canvas)).getBoundingClientRect();
   if (!(box.width > 0 && box.height > 0)) return null;
   const viewport = els.dropzone.getBoundingClientRect();
   const left = Math.max(box.left, viewport.left);
