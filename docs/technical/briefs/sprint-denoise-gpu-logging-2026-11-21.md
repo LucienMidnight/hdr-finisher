@@ -73,6 +73,7 @@ Three problems follow, and Steve approved all three on November 21:
 | MG-2 | Micro Grain CPU: visible area first | `sprint/micro-cpu-visible` | MG-1 merged | to do (PC, after MG-1) |
 | MEM-1 | One memory budget on the MacBook Neo | `sprint/mac-memory` | MG-1, GPU-2 merged | to do (overnight; Mac measurements) |
 | QUAL-1 | Exposure-independent quality fixes (output changes) | `sprint/grain-quality` | CG-2 merged | to do; needs Steve's visual sign-off before any default changes |
+| FOLD-1 | Fine Grain folded into Clean Grain, with a cleaning checkbox | `sprint/fold-fine-grain` | CG-2, GPU-2, ROUTE-1 merged | to do (Steve approved R2-1) |
 | INT-2 | Round 2 integration, full checks, push and hand test | `feat/denoise-v1` | all round 2 | to do |
 
 LOG-1, CPU-1 and GPU-1 run in parallel on November 21. LOG-2 starts once
@@ -822,11 +823,10 @@ silent slowdowns.
 4. After GPU-2 is merged, use narrower formats for 1–2-channel Grain
    scratch textures where the device supports them as storage. The maths
    stays float32.
-5. **Proposals only, for Steve:**
-   - trimming Library cache shares while Grade has a large photo open on
-     8 GB (Decision R2-2);
-   - memory-mapped read-only sources (Decision R2-3).
-   Give the numbers and what could break.
+5. Trim the Library cache shares while Grade has a large photo open on an
+   8 GB machine (Steve approved R2-2). Restore them when Grade closes.
+   Record the shares and the trigger in `memory-and-caches.md`. Memory
+   mapping (R2-3) follows whatever the coordinator and reviewer agree.
 6. **On the Mac:**
    - capture the Clean Grain fallback cause from the new logs;
    - record `maxTextureDimension2D`, the Auto budget and 50 MP behaviour;
@@ -875,11 +875,40 @@ silent slowdowns.
 
 | ID | Question | Recommendation |
 | --- | --- | --- |
-| R2-1 | Fold Fine Grain into Clean Grain (Clean with Color Splotches at 0)? | Reviewer: yes, removes a method's worth of code and tests. Saved Fine Grain grades would open as Clean Grain at 0 (no compatibility code before 1.0). |
-| R2-2 | Trim Library cache shares while Grade has a large photo open on an 8 GB machine? | Decide on MEM-1's numbers. |
+| R2-1 | Fold Fine Grain into Clean Grain (Clean with Color Splotches at 0)? | **Steve, Nov 21: yes.** Clean Grain stays the default. A checkbox turns off the cleaning part, giving Fine-Grain-like results; they need not match today's Fine Grain exactly. Built by FOLD-1. |
+| R2-2 | Trim Library cache shares while Grade has a large photo open on an 8 GB machine? | **Steve, Nov 21: yes.** MEM-1 builds it and records the shares in `memory-and-caches.md`. |
 | R2-3 | Memory-map read-only sources on 8 GB machines? | Decide on MEM-1's proposal. |
 | R2-4 | Which QUAL-1 candidates become defaults? | Decide on the review page. |
 | R2-5 | Route label look and wording | Decide on ROUTE-1's screenshots. |
+
+### FOLD-1 · Fine Grain folded into Clean Grain (Steve, R2-1)
+
+**Goal.** One Grain method instead of two. Clean Grain stays the default.
+A checkbox in the Clean Grain controls turns off its cleaning part (the
+colour-splotch and fringe cleaning), which gives Fine-Grain-like results.
+They need not match today's Fine Grain exactly. This is an approved output
+change for the checkbox-off case only. Clean Grain with the checkbox on
+must stay byte-identical.
+
+**Build.**
+- Remove Fine Grain from the Method menu, saved settings, CPU, GPU and
+  delivery routes, and the Fine-to-Clean reuse path. Keep one preparation
+  path.
+- The checkbox is saved per rendition, like the other Denoise controls.
+- Follow "Design tokens always".
+- No compatibility code: saved Fine Grain grades may open differently.
+  Name the affected test projects in one line.
+- Update the tooltip catalogue, the user guide and `denoise.md`.
+
+**Starts** after CG-2, GPU-2 and ROUTE-1 are merged, because it touches all
+their files.
+
+**Done when:**
+- Fast tests pass.
+- With the checkbox off, CPU and GPU agree within the limits.
+- With it on, output is byte-identical to Clean Grain today.
+- Steve sees crops of off against today's Fine Grain on the Canon and Sony
+  marks.
 
 ### INT-2 · Round 2 integration
 
