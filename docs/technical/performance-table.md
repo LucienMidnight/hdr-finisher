@@ -1,3 +1,37 @@
+## November 21 — Windows PC GPU Grain Fit scheduling trial
+
+Windows PC, unpackaged Electron at 2560 × 1440 and a 2 GiB graphics
+setting. Sony `_DSC7970.ARW` (7968 × 5320), HDR Grade, lens correction
+off, harsh-speck cleanup ×2.5. One locked Electron run on base
+`411f0cc6`, first with the original renderer and then with the trial
+renderer. The second arm reused the backend process. In particular,
+the full cold Clean and Micro enable waits include startup and source
+preparation, and their differences cannot be attributed to the shaders
+or queue changes alone.
+
+| Action | Original renderer | Trial renderer | Timed stage |
+| --- | ---: | ---: | --- |
+| Micro Color at 110% (62%, 43%, 71%) | 1.94 / 1.68 / 1.65 s | 1.61 / 1.81 / 1.73 s | The three settled waits showed no consistent gain. |
+| Micro enable to exact Fit | 24.15 s | 12.67 s | Exact native reduction 15.02 → 12.47 s. |
+| Cold Clean Small enable to exact Fit | 8.79 s | 4.18 s | Native fit 1.79 → 1.86 s, native reduction 2.49 → 2.18 s. |
+
+The GPU produced matching full-frame SHA-256 hashes in all five pairs.
+The two Fit captures were 1610 × 1075 and included all four photo edges
+after the native strip reduction. The three native captures were 2462 ×
+1333 and included partial tiles. All five pairs stayed on the GPU. The run
+used wall-clock stage timing. It did not collect per-pass GPU timestamps.
+
+`bef10902` keeps the Fit scheduling change: two cores sharing one Bayer
+band submit together, and at most two Fit reduction rectangles are queued.
+Clean did not use the experimental halo trim, so its reduction stage
+isolates the scheduling change. The Micro trial also trimmed late colour
+work. That trim did not consistently improve the slider and was dropped.
+The timing of Micro Fit with the final scheduling-only patch still needs an
+isolated pair. AHD resource pooling, calibration fetch overlap and
+measurement-submit batching remain open without measured user-visible gains.
+On the MacBook Neo, profile the AHD, wavelet and colour passes separately,
+and check Fit queue overlap and peak app memory on both the Canon and Sony.
+
 ## November 21 — Adaptive Denoise parity check
 
 Unpackaged Electron on the Windows PC at 2560 × 1440, with a 1500 × 1000
