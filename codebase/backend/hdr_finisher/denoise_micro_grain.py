@@ -5,9 +5,11 @@ highlight stages. All neighbourhoods are local. The reader must supply the
 full sensor or an even-aligned window with the required halo.
 """
 from collections import OrderedDict
+from contextvars import Context
 from dataclasses import dataclass
 from pathlib import Path
 from threading import RLock
+import weakref
 
 import cv2
 import numpy as np
@@ -431,26 +433,35 @@ class MicroGrainSource:
                       "aces": profile.acescg.tolist(), "lab": profile.lab.tolist()},
                      mosaic.astype("<u2", copy=False).tobytes(), b"\0" * (-mosaic.nbytes % 4), gate.tobytes())
 
+    def render_core(self, controls, rect, *, cancelled=None):
+        if cancelled and cancelled():
+            raise InterruptedError("Micro Grain was replaced.")
+        height, width = self.shape
+        target = _expand(rect, self.shape, SCENE_MARGIN)
+        rgb, gate = self.develop_region(target, controls, cancelled=cancelled)
+        west, north, east, south = target
+        edges = wave._Edges(north == 0, south == height, west == 0, east == width, height, width)
+        return resolve_scene(rgb, self.model, controls, edges, gate)[_inset(rect, target)].copy()
+
+    def cores(self, rect):
+        left, top, right, bottom = rect
+        height, width = self.shape
+        return ((x, y, min(x + 768, width), min(y + 512, height))
+                for y in range(top // 512 * 512, bottom, 512)
+                for x in range(left // 768 * 768, right, 768))
+
     def render(self, controls, *, cancelled=None):
         height, width = self.shape
         result = np.empty((height, width, 3), np.float32)
 
         def render_core(rect):
-            if cancelled and cancelled():
-                raise InterruptedError("Micro Grain was replaced.")
             left, top, right, bottom = rect
-            target = _expand(rect, self.shape, SCENE_MARGIN)
-            rgb, gate = self.develop_region(target, controls, cancelled=cancelled)
-            west, north, east, south = target
-            edges = wave._Edges(north == 0, south == height, west == 0, east == width, height, width)
-            result[top:bottom, left:right] = resolve_scene(rgb, self.model, controls, edges, gate)[_inset(rect, target)]
+            result[top:bottom, left:right] = self.render_core(controls, rect, cancelled=cancelled)
 
         # Each job owns its scratch and writes a distinct rectangle. Keep all
         # futures until completion so cancellation joins every running writer.
-        cores = ((left, top, min(left + 768, width), min(top + 512, height))
-                 for top in range(0, height, 512) for left in range(0, width, 768))
         with CpuExecutor(work_limit=_TILE_WORK) as pool:
-            for _ in pool.map(render_core, cores):
+            for _ in pool.map(render_core, self.cores((0, 0, width, height))):
                 pass
         return result
 
@@ -503,21 +514,225 @@ def resolve_source(frame, controls, *, cancelled=None):
     return render_prepared_source(frame, source, controls, cancelled=cancelled)
 
 
-def render_prepared_source(frame, source, controls, *, cancelled=None):
+def _lens_inputs(owner):
+    exif = owner.metadata.get("raw_exif", {})
+    lens = owner.raw_import_settings.lens
+    lens = lens.model_copy(update={key: getattr(lens, key) or exif.get(key)
+                                  for key in ("focal_length_mm", "aperture", "focus_distance_m")})
+    return lens, dict(camera_maker=exif.get("camera_maker"), camera_model=exif.get("camera_model"),
+                      lens_maker=exif.get("lens_maker"), lens_name=exif.get("lens_model") or exif.get("lens_name"))
+
+
+def render_prepared_source(frame, source, controls, *, cancelled=None, render=None):
     from . import raw_import
     from .preview import downsample_image
 
     owner = getattr(frame, "delivery_owner", frame)
-    result = source.render(controls, cancelled=cancelled)
-    metadata = owner.metadata
-    if metadata.get("lens_correction", {}).get("applied"):
-        exif = metadata.get("raw_exif", {})
-        lens = owner.raw_import_settings.lens
-        lens = lens.model_copy(update={key: getattr(lens, key) or exif.get(key)
-                                      for key in ("focal_length_mm", "aperture", "focus_distance_m")})
-        result, _ = raw_import.apply_lens_correction(result, lens, camera_maker=exif.get("camera_maker"),
-            camera_model=exif.get("camera_model"), lens_maker=exif.get("lens_maker"),
-            lens_name=exif.get("lens_model") or exif.get("lens_name"), cancelled=cancelled, consume_input=True)
+    result = source.render(controls, cancelled=cancelled) if render is None else render(cancelled)
+    if owner.metadata.get("lens_correction", {}).get("applied"):
+        lens, profile = _lens_inputs(owner)
+        result, _ = raw_import.apply_lens_correction(
+            result, lens, **profile, cancelled=cancelled, consume_input=True
+        )
     result *= source.gain
     height, width = frame.image.shape[:2]
     return result if result.shape[:2] == (height, width) else downsample_image(result, max(height, width))
+
+
+class MicroRegionRefused(ValueError):
+    pass
+
+
+def _lens_region(frame, shape, rect):
+    """Return the source bounds and exact map for a lens-corrected output window."""
+    from .raw_import import _lens_modifier
+
+    if not frame.metadata.get("lens_correction", {}).get("applied"):
+        return rect, None, None, 0
+
+    lens, profile = _lens_inputs(frame)
+    modifier, metadata = _lens_modifier(shape, lens, **profile)
+    if modifier is None:
+        return rect, None, None, 0
+    vignette = modifier if metadata["vignetting"] and metadata["profile"]["vignetting"] else None
+    left, top, right, bottom = rect
+    height, width = shape
+    make_coordinates = (modifier.apply_subpixel_geometry_distortion if lens.chromatic_aberration
+                        else modifier.apply_geometry_distortion if lens.distortion else None)
+    if make_coordinates is None:
+        return rect, None, vignette, 0
+
+    # Lensfun accumulates float32 x and y starting at zero. Keep the original
+    # origin and row width (including the original SIMD tail), only omit rows
+    # below the viewport. Copy the viewport out so the prefix is released.
+    prefix = make_coordinates(height=bottom)
+    if prefix is None:
+        return rect, None, vignette, 0
+    coordinate_bytes = prefix.nbytes
+    coordinates = prefix[top:bottom, left:right].copy()
+    del prefix
+    if not np.isfinite(coordinates).all():
+        raise MicroRegionRefused("micro_unbounded_lens_mapping")
+
+    # Inspect every mapped sample, including all edges and all TCA channels.
+    # Include the bilinear neighbour and two spare pixels on each side.
+    ranges = [(float(coordinates[..., axis].min()), float(coordinates[..., axis].max()))
+              for axis in range(2)]
+    x0, x1 = np.clip(ranges[0], 0, width - 1).astype(int)
+    y0, y1 = np.clip(ranges[1], 0, height - 1).astype(int)
+    bounds = (max(0, x0 - 2), max(0, y0 - 2), min(width, x1 + 4), min(height, y1 + 4))
+    if (bounds[2] - bounds[0]) * (bounds[3] - bounds[1]) > 4 * (right - left) * (bottom - top):
+        raise MicroRegionRefused("micro_extreme_lens_mapping")
+    return bounds, coordinates, vignette, coordinate_bytes + coordinates.nbytes
+
+
+def _vignette_region(modifier, shape, rect, pixels):
+    # lensfunpy's float-image API requires the original shape, pitch and
+    # origin. Only the sampled pixels need input values or sign restoration.
+    left, top, right, bottom = rect
+    scratch = np.zeros((*shape, 3), dtype=np.float32)
+    window = scratch[top:bottom, left:right]
+    np.abs(pixels, out=window)
+    modifier.apply_color_modification(scratch)
+    np.copysign(window, pixels, out=pixels)
+
+
+def micro_background_allowed():
+    """MEM-1 can replace the pressure decision without changing tile ownership."""
+    return app_memory.snapshot(cached_only=True)["level"] == "none"
+
+
+class MicroPreviewTiles:
+    """One source and control setting, with one low-priority tile in flight."""
+
+    def __init__(self, source, controls):
+        self.source = weakref.ref(source)
+        self.controls = controls
+        self.pool = CpuExecutor(work_limit=_TILE_WORK)
+        self.lock = RLock()
+        self.ready = {}
+        self.inflight = {}
+        self.bytes = 0
+        self.closed = False
+        self.foreground = 0
+        self.consuming = False
+        self.fill = None
+        self.ram_key = f"micro-preview-tiles-{id(self)}"
+        app_memory.register(self.ram_key, "working", self.trim)
+
+    def trim(self, target):
+        with self.lock:
+            if target < self.bytes:
+                # Reclamation ends this fill. A later visible read can restart it.
+                self.fill = None
+            while self.ready and self.bytes > target:
+                _, tile = self.ready.popitem()
+                self.bytes -= tile.nbytes
+            app_memory.claim(self.ram_key, "working", self.bytes)
+
+    def close(self):
+        with self.lock:
+            self.closed = True
+            self.fill = None
+            self.pool.shutdown(wait=False, cancel_futures=True)
+            self.ready.clear()
+            self.bytes = 0
+            app_memory.forget(self.ram_key)
+
+    def _submit(self, source, core, *, background=False, retain=True):
+        if core in self.inflight:
+            return self.inflight[core]
+
+        def work():
+            return source.render_core(self.controls, core, cancelled=lambda: self.closed)
+
+        # A useful source tile can outlive the preview request that queued it.
+        # Isolate it from the request's grain cancellation and diagnostics.
+        future = Context().run(self.pool.submit_background if background else self.pool.submit, work)
+        self.inflight[core] = future
+        future.add_done_callback(lambda done: self._finished(core, done, background, retain))
+        return future
+
+    def _finished(self, core, future, background, retain):
+        with self.lock:
+            self.inflight.pop(core)
+            if self.closed or not retain or self.consuming or future.cancelled() or future.exception() is not None:
+                return
+            tile = future.result()
+            if app_memory.claim(self.ram_key, "working", self.bytes + tile.nbytes):
+                self.ready[core] = tile
+                self.bytes += tile.nbytes
+            else:
+                self.fill = None
+            if background:
+                self._fill_next()
+
+    def _fill_next(self):
+        if self.fill is None or self.foreground or self.inflight or self.closed:
+            return
+        source = self.source()
+        if source is None or not micro_background_allowed():
+            self.fill = None
+            return
+        core = next((item for item in self.fill if item not in self.ready), None)
+        if core is not None:
+            self._submit(source, core, background=True)
+
+    def start_fill(self, source):
+        with self.lock:
+            if self.fill is None:
+                height, width = source.shape
+                self.fill = iter(source.cores((0, 0, width, height)))
+            self._fill_next()
+
+    def read(self, source, rect, *, cancelled, consume=False):
+        from concurrent.futures import wait
+        from .render_cache import StaleRender
+
+        left, top, right, bottom = rect
+        output = np.empty((bottom - top, right - left, 3), dtype=np.float32)
+        with self.lock:
+            if self.closed:
+                raise StaleRender("The CPU Micro Grain source changed.")
+            self.foreground += 1
+            if consume:
+                self.consuming = True
+                self.fill = None
+        try:
+            # Submit only a worker batch at a time. Completed futures cannot
+            # hold an unaccounted whole frame alongside the destination.
+            from itertools import islice
+            cores = source.cores(rect)
+            while batch := list(islice(cores, _TILE_WORK.workers)):
+                if cancelled():
+                    raise StaleRender("The CPU Micro Grain preview was replaced.")
+                with self.lock:
+                    if self.closed:
+                        raise StaleRender("The CPU Micro Grain source changed.")
+                    pending = []
+                    for core in batch:
+                        tile = self.ready.pop(core, None) if consume else self.ready.get(core)
+                        if tile is not None:
+                            if consume:
+                                self.bytes -= tile.nbytes
+                            pending.append((core, tile, None))
+                        else:
+                            pending.append((core, None, self._submit(source, core, retain=not consume)))
+                    if consume:
+                        app_memory.claim(self.ram_key, "working", self.bytes)
+                for core, tile, future in pending:
+                    if future is not None:
+                        while not wait((future,), timeout=0.05).done:
+                            if cancelled():
+                                raise StaleRender("The CPU Micro Grain preview was replaced.")
+                        tile = future.result()
+                    x, y, end_x, end_y = core
+                    x0, y0, x1, y1 = max(left, x), max(top, y), min(right, end_x), min(bottom, end_y)
+                    output[y0-top:y1-top, x0-left:x1-left] = tile[y0-y:y1-y, x0-x:x1-x]
+            return output
+        finally:
+            with self.lock:
+                self.foreground -= 1
+                if consume:
+                    self.consuming = False
+                self._fill_next()

@@ -785,6 +785,7 @@ class SessionRenderCache:
     def __post_init__(self, eager_peak_candidates: bool) -> None:
         self._micro_prepared = {}
         self._micro_previews = {}
+        self._micro_tiles = None
         self._micro_flights = {}
         self._micro_condition = Condition(self._lock)
         self._micro_render_lock = Lock()
@@ -962,7 +963,7 @@ class SessionRenderCache:
                     edge_px=edge, outcome=outcome, duration_ms=round((time.perf_counter() - started) * 1000, 2))
 
     def _build_micro_preview(self, frame, controls, edge, epoch, source_key, needed):
-        from .denoise_micro_grain import MicroGrainSource, render_prepared_source
+        from .denoise_micro_grain import render_prepared_source
         from .grain_work import render_work
 
         def cancelled():
@@ -974,29 +975,147 @@ class SessionRenderCache:
                 raise StaleRender("The CPU Micro Grain preview was replaced.")
         try:
             with render_work(needed, shared=True):
-                with self._lock:
-                    source = self._micro_prepared.get(source_key)
-                    if source is not None:
-                        self._touch_ram_locked("_micro_prepared", source_key)
-                if source is None:
-                    source = MicroGrainSource(frame.source_path, frame.raw_import_settings, cancelled=cancelled)
-                    if cancelled():
-                        raise StaleRender("The CPU Micro Grain preview was replaced.")
-                    with self._lock:
-                        if self._micro_source_epoch != epoch or self._micro_closed:
-                            raise StaleRender("The CPU Micro Grain source changed.")
-                        self._micro_prepared.clear()
-                        self._micro_prepared[source_key] = source
-                        self._touch_ram_locked("_micro_prepared", source_key)
-                        self._rebalance_locked()
+                source = self._micro_source(frame, epoch, source_key, cancelled)
+                tiles = self._micro_tiles
+                render = None
+                if tiles is not None and tiles.source() is source and tiles.controls == controls:
+                    height, width = source.shape
+                    render = lambda stop: tiles.read(source, (0, 0, width, height), cancelled=stop, consume=True)
                 reduced = downsample_image(
-                    render_prepared_source(frame, source, controls, cancelled=cancelled),
+                    render_prepared_source(frame, source, controls, cancelled=cancelled, render=render),
                     edge, is_current=needed,
                 )
             reduced.setflags(write=False)
             return reduced
         finally:
             self._micro_render_lock.release()
+
+    def _micro_source(self, frame, epoch, source_key, cancelled):
+        from .denoise_micro_grain import MicroGrainSource
+
+        with self._lock:
+            source = self._micro_prepared.get(source_key)
+            if source is not None:
+                self._touch_ram_locked("_micro_prepared", source_key)
+        if source is None:
+            source = MicroGrainSource(frame.source_path, frame.raw_import_settings, cancelled=cancelled)
+            if cancelled():
+                raise StaleRender("The CPU Micro Grain preview was replaced.")
+            with self._lock:
+                if self._micro_source_epoch != epoch or self._micro_closed:
+                    raise StaleRender("The CPU Micro Grain source changed.")
+                self._micro_prepared.clear()
+                self._micro_prepared[source_key] = source
+                self._touch_ram_locked("_micro_prepared", source_key)
+                self._rebalance_locked()
+        return source
+
+    def micro_preview_region(self, frame, controls, adjustments, kind, viewport, local_adjustments, is_current):
+        from .adjustments import FrameWindow, apply_fixed_source_adjustments
+        from .denoise_micro_grain import MicroPreviewTiles, MicroRegionRefused, _lens_region, _vignette_region, unavailable_reason
+        from .diagnostics import log
+        from .finishing import _crop_bounds
+        from .grain_work import current_check
+        from .raw_import import _remap_bilinear_strips
+
+        geometry = adjustments.shared.geometry
+        if unavailable_reason(frame):
+            raise MicroRegionRefused("micro_unsupported_source")
+        if geometry_resample_stage(geometry) != "index":
+            raise MicroRegionRefused("micro_resampled_geometry")
+        if strip_execution_refusals(adjustments, kind, local_adjustments=local_adjustments):
+            raise MicroRegionRefused("micro_spatial_grade")
+        if (adjustments.hdr if kind == PreviewKind.HDR else adjustments.sdr).highlight_section_enabled:
+            # Global peak measurement and the HDR ceiling's frame-wide branch
+            # cannot be reproduced from a visible subset.
+            raise MicroRegionRefused("micro_whole_frame_highlight")
+        if kind == PreviewKind.SDR and frame.sdr_reference_image is not None and adjustments.sdr.use_authored_base:
+            raise MicroRegionRefused("micro_authored_sdr")
+
+        image_height, image_width = frame.image.shape[:2]
+        oriented_width, oriented_height = ((image_height, image_width) if geometry.rotation in (90, 270)
+                                           else (image_width, image_height))
+        left, top, right, bottom = _crop_bounds(oriented_width, oriented_height, geometry)
+        width, height = right - left, bottom - top
+        # Align to pixel boundaries after mapping from the displayed fraction.
+        # Eight pixels of view padding avoid a refresh on tiny scrolls.
+        x = max(0, int(np.floor(viewport.x * width)) - 8)
+        y = max(0, int(np.floor(viewport.y * height)) - 8)
+        end_x = min(width, int(np.ceil((viewport.x + viewport.width) * width)) + 8)
+        end_y = min(height, int(np.ceil((viewport.y + viewport.height) * height)) + 8)
+        if (end_x - x) * (end_y - y) >= width * height:
+            raise MicroRegionRefused("micro_whole_frame_viewport")
+
+        l, t, r, b = x + left, y + top, end_x + left, end_y + top
+        if geometry.flip_horizontal:
+            l, r = oriented_width - r, oriented_width - l
+        if geometry.flip_vertical:
+            t, b = oriented_height - b, oriented_height - t
+        rect = {
+            0: (l, t, r, b),
+            90: (t, image_height - r, b, image_height - l),
+            180: (image_width - r, image_height - b, image_width - l, image_height - t),
+            270: (image_width - b, l, image_width - t, r),
+        }[geometry.rotation]
+
+        path = Path(frame.source_path)
+        stat = path.stat()
+        source_key = (path, stat.st_mtime_ns, stat.st_size, frame.raw_import_settings.model_dump_json())
+        epoch = self._micro_source_epoch
+        parent = current_check()
+        started = time.perf_counter()
+
+        def cancelled():
+            return (self._micro_closed or self._micro_source_epoch != epoch
+                    or not is_current() or (parent is not None and not parent()))
+
+        while not self._micro_render_lock.acquire(timeout=0.05):
+            if cancelled():
+                raise StaleRender("The CPU Micro Grain preview was replaced.")
+        try:
+            if cancelled():
+                raise StaleRender("The CPU Micro Grain preview was replaced.")
+            source = self._micro_source(frame, epoch, source_key, cancelled)
+            if source.shape != (image_height, image_width):
+                raise MicroRegionRefused("micro_resized_source")
+            bounds, coordinates, vignette, coordinate_bytes = _lens_region(frame, source.shape, rect)
+            with self._lock:
+                if cancelled():
+                    raise StaleRender("The CPU Micro Grain preview was replaced.")
+                tiles = self._micro_tiles
+                if tiles is None or tiles.source() is not source or tiles.controls != controls:
+                    if tiles is not None:
+                        tiles.close()
+                    tiles = self._micro_tiles = MicroPreviewTiles(source, controls)
+            pixels = tiles.read(source, bounds, cancelled=cancelled)
+            if vignette is not None:
+                _vignette_region(vignette, source.shape, bounds, pixels)
+            if coordinates is not None:
+                pixels = _remap_bilinear_strips(
+                    pixels, coordinates, chromatic=coordinates.ndim == 4, cancelled=cancelled,
+                    frame_shape=source.shape, origin=bounds[:2],
+                )
+            del coordinates
+            pixels *= source.gain
+        except (InterruptedError, RuntimeError, ValueError) as error:
+            if cancelled():
+                raise StaleRender("The CPU Micro Grain preview was replaced.") from error
+            raise
+        finally:
+            self._micro_render_lock.release()
+        fixed = np.ascontiguousarray(_oriented_view(pixels, geometry))
+        result = apply_fixed_source_adjustments(
+            fixed, adjustments, kind, color_context=self.color_context,
+            frame_window=FrameWindow(left=x, top=y, width=width, height=height),
+        )
+        if cancelled():
+            raise StaleRender("The CPU Micro Grain preview was replaced.")
+        tiles.start_fill(source)
+        log("denoise", "micro_cpu_region", photo={"id": str(path), "name": path.name}, route="cpu",
+            reason="micro_visible_region", width_px=end_x - x, height_px=end_y - y,
+            coordinate_bytes=coordinate_bytes, vignette_scratch_bytes=image_width * image_height * 12 if vignette else 0,
+            duration_ms=round((time.perf_counter() - started) * 1000, 2))
+        return result, (x, y, width, height)
 
     def close_micro_preview(self):
         with self._micro_condition:
@@ -1006,6 +1125,9 @@ class SessionRenderCache:
 
     def _clear_micro_preview_locked(self):
         self._micro_source_epoch += 1
+        if self._micro_tiles is not None:
+            self._micro_tiles.close()
+            self._micro_tiles = None
         self._micro_prepared.clear()
         self._micro_previews.clear()
         self._micro_condition.notify_all()

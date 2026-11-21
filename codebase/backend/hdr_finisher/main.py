@@ -967,15 +967,10 @@ def _render_selected_execution(session, request, kind, adjustments, preview_long
         else []
     )
     denoise = denoise_settings_for_export(session, kind)
-    micro = None
+    micro = _preview_micro_controls(session, kind, request, adjustments)
     settings = session.denoise.hdr if kind == PreviewKind.HDR else session.denoise.sdr
     if settings.enabled and settings.controls.method == "micro_grain":
-        controls = request.micro_grain_controls or settings.controls
         denoise = None
-        authored = (kind == PreviewKind.SDR and session.sdr_reference_image is not None
-                    and adjustments.sdr.use_authored_base and not adjustments.sdr.linked_to_hdr)
-        if not request.micro_grain_original and not authored and (controls.micro_luminance or controls.micro_color):
-            micro = controls
     if request.execution == "strips" and denoise is None and micro is None:
         processed, report = session.render_cache.adjusted_frame_in_strips(
             adjustments,
@@ -997,6 +992,18 @@ def _render_selected_execution(session, request, kind, adjustments, preview_long
         **kwargs,
     )
     return processed, None
+
+
+def _preview_micro_controls(session, kind, request, adjustments):
+    settings = session.denoise.hdr if kind == PreviewKind.HDR else session.denoise.sdr
+    if not settings.enabled or settings.controls.method != "micro_grain" or request.micro_grain_original:
+        return None
+    controls = request.micro_grain_controls or settings.controls
+    authored = (kind == PreviewKind.SDR and session.sdr_reference_image is not None
+                and adjustments.sdr.use_authored_base and not adjustments.sdr.linked_to_hdr)
+    if not authored and (controls.micro_luminance or controls.micro_color):
+        return controls
+    return None
 
 
 def _strip_report_headers(report) -> dict[str, str]:
@@ -1150,6 +1157,13 @@ def preview_raw(session_id: str, kind: PreviewKind, request: PreviewRequest) -> 
         raise _revision_conflict(exc) from exc
 
     requested_edge = request.long_edge or (768 if kind == PreviewKind.SDR else 960)
+    if request.micro_grain_viewport is not None:
+        try:
+            region = _micro_preview_raw(session_id, session, kind, request, adjustments)
+        except StaleRender:
+            return JSONResponse(status_code=409, content={"detail": "Stale raw preview request dropped."})
+        return region if region is not None else Response(status_code=204)
+
     preview_long_edge = _cpu_preview_edge(session, kind, request, requested_edge)
     _guard_preview_resources(session, preview_long_edge)
     _log_cpu_preview(session, kind, preview_long_edge, request, requested_edge)
@@ -1183,6 +1197,64 @@ def preview_raw(session_id: str, kind: PreviewKind, request: PreviewRequest) -> 
             "X-Cache-Identity": f"{session_id}:{kind.value}:{token}",
             **({"X-Preview-Reduced-Edge": str(preview_long_edge)} if preview_long_edge < requested_edge else {}),
             **_strip_report_headers(strip_report),
+        },
+    )
+
+
+def _micro_preview_raw(session_id, session, kind, request, adjustments):
+    from .denoise_micro_grain import MicroGrainControls, MicroRegionRefused
+    from .diagnostics import log
+
+    controls = _preview_micro_controls(session, kind, request, adjustments)
+    if controls is None:
+        return None
+    locals_for_preview = adjustments.enabled_locals(
+        (request.local_adjustments if request.local_adjustments is not None else session.local_adjustments)
+        if request.include_locals else []
+    )
+    token = store.next_preview_token(session_id, kind)
+    current = lambda: store.is_preview_current(session_id, kind, token)
+    try:
+        pixels, (left, top, frame_width, frame_height) = session.render_cache.micro_preview_region(
+            session, MicroGrainControls.from_settings(controls), adjustments, kind,
+            request.micro_grain_viewport, locals_for_preview, current,
+        )
+    except MicroRegionRefused as error:
+        path = Path(session.source_path)
+        log("denoise", "micro_cpu_region", photo={"id": str(path), "name": path.name},
+            route="cpu_reduced", reason=str(error))
+        return None
+    # Ordinary bounded whole-picture underlayer for offscreen pixels, panning
+    # and Fit. The native detail is returned separately and kept at its pitch.
+    underlayer = session.render_cache.adjusted_frame(
+        adjustments, kind, 960, is_current=current, local_adjustments=locals_for_preview,
+    )
+    encoded_headers = {}
+    if kind == PreviewKind.HDR and request.hdr_display:
+        def encode(image):
+            return encode_processed_preview_bytes(
+                image, kind, hdr_display=True, reference_white_nits=session.hdr_reference_white_nits
+            )
+        detail, media_type = encode(pixels)
+        if not current():
+            raise StaleRender("The CPU Micro Grain preview was replaced.")
+        base, _ = encode(underlayer)
+        encoded_headers = {"X-Micro-Media-Type": media_type, "X-Micro-Detail-Bytes": str(len(detail))}
+        body = detail + base
+    else:
+        body = encode_processed_rgba8(pixels, kind) + encode_processed_rgba8(underlayer, kind)
+    if not current():
+        raise StaleRender("The CPU Micro Grain preview was replaced.")
+    height, width = pixels.shape[:2]
+    return Response(
+        content=body, media_type="application/octet-stream",
+        headers={
+            "X-Image-Width": str(width),
+            "X-Image-Height": str(height),
+            "X-Generation": str(request.generation if request.generation is not None else token),
+            "X-Micro-Region": f"{left},{top},{frame_width},{frame_height}",
+            "X-Micro-Underlayer": f"{underlayer.shape[1]},{underlayer.shape[0]}",
+            **encoded_headers,
         },
     )
 

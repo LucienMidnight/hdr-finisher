@@ -206,3 +206,129 @@ def test_parallel_measurement_reads_each_window_once():
             release.set()
         assert duplicate.result() is first_read.result()
     assert reads == [(0, 0), (0, 2)]
+
+
+@pytest.mark.parametrize("rotation,flip", [(0, False), (90, True), (180, False), (270, True)])
+def test_lens_corrected_micro_viewport_matches_full_grade(micro_frame, monkeypatch, rotation, flip):
+    from hdr_finisher.adjustments import apply_adjustments
+    from hdr_finisher.models import CropRectangle, LensCorrectionSettings, ScopeRegion
+    import lensfunpy
+
+    frame, controls, _, _ = micro_frame
+    rng = np.random.default_rng(158)
+    pixels = rng.uniform(-0.07, 1.4, frame.image.shape).astype(np.float32)
+    camera = lensfunpy.Database().find_cameras("Canon", "Canon EOS 5D Mark II")[0]
+    lens = lensfunpy.Database().find_lenses(camera, maker="Canon", lens="Canon EF 24-105mm f/4L IS USM")[0]
+    modifier = lensfunpy.Modifier(lens, camera.crop_factor, pixels.shape[1], pixels.shape[0])
+    flags = lensfunpy.ModifyFlags.SCALE | lensfunpy.ModifyFlags.DISTORTION | lensfunpy.ModifyFlags.TCA | lensfunpy.ModifyFlags.VIGNETTING
+    modifier.initialize(24, 4, 5, pixel_format=np.float32, flags=flags)
+
+    class Sensor:
+        shape = pixels.shape[:2]
+        gain = np.float32(.57)
+        prepared_nbytes = 0
+
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def cores(self, rect):
+            left, top, right, bottom = rect
+            return ((x, y, min(x + 64, self.shape[1]), min(y + 64, self.shape[0]))
+                    for y in range(top // 64 * 64, bottom, 64)
+                    for x in range(left // 64 * 64, right, 64))
+
+        def render_core(self, _, rect, **kwargs):
+            left, top, right, bottom = rect
+            return pixels[top:bottom, left:right].copy()
+
+    monkeypatch.setattr(denoise_micro_grain, "MicroGrainSource", Sensor)
+    monkeypatch.setattr(denoise_micro_grain, "micro_background_allowed", lambda: False)
+    monkeypatch.setattr(raw_import, "_lens_modifier", lambda *a, **kv: (modifier, {"vignetting": True, "profile": {"vignetting": True}}))
+    lens_settings = LensCorrectionSettings()
+    grade = AdjustmentState()
+    grade.hdr.exposure = .4
+    grade.shared.geometry.rotation = rotation
+    grade.shared.geometry.flip_horizontal = flip
+    grade.shared.geometry.crop = CropRectangle(x=.13, y=.14, width=.7, height=.7)
+    vignetted = pixels.copy()
+    raw_import._apply_signed_vignetting(modifier, vignetted)
+    corrected = raw_import._remap_bilinear_strips(
+        vignetted, modifier.apply_subpixel_geometry_distortion(), chromatic=lens_settings.chromatic_aberration,
+    )
+    full = apply_adjustments(corrected * Sensor.gain, grade, PreviewKind.HDR)
+    for viewport in (ScopeRegion(x=.07, y=.13, width=.39, height=.36),
+                     ScopeRegion(x=.61, y=.53, width=.38, height=.46)):
+        visible, (x, y, width, height) = frame.render_cache.micro_preview_region(
+            frame, MicroGrainControls.from_settings(controls), grade, PreviewKind.HDR, viewport, [], lambda: True,
+        )
+        assert (height, width) == full.shape[:2]
+        np.testing.assert_array_equal(visible, full[y:y + visible.shape[0], x:x + visible.shape[1]])
+
+
+def test_micro_fit_consumes_cached_tiles_and_memory_gate_blocks_background(monkeypatch):
+    from hdr_finisher.denoise_micro_grain import MicroPreviewTiles
+
+    calls = []
+    published = Event()
+
+    class Source:
+        shape = (3, 8)
+
+        def cores(self, rect):
+            return (core for core in [(0, 0, 4, 3), (4, 0, 8, 3)] if core[0] < rect[2] and core[2] > rect[0])
+
+        def render_core(self, _, core, **kwargs):
+            calls.append(core)
+            return np.full((3, 4, 3), core[0], dtype=np.float32)
+
+    def claim(_, __, size):
+        if size:
+            published.set()
+        return True
+
+    monkeypatch.setattr(app_memory, "claim", claim)
+    monkeypatch.setattr(denoise_micro_grain, "micro_background_allowed", lambda: False)
+    source = Source()
+    tiles = MicroPreviewTiles(source, MicroGrainControls())
+    try:
+        left = tiles.read(source, (0, 0, 4, 3), cancelled=lambda: False)
+        assert published.wait(3)
+        tiles.start_fill(source)
+        assert calls == [(0, 0, 4, 3)]
+        full = tiles.read(source, (0, 0, 8, 3), cancelled=lambda: False, consume=True)
+        np.testing.assert_array_equal(full[:, :4], left)
+        np.testing.assert_array_equal(full[:, 4:], 4)
+        assert calls == [(0, 0, 4, 3), (4, 0, 8, 3)]
+        assert tiles.bytes == 0
+    finally:
+        tiles.close()
+
+
+@pytest.mark.parametrize("hdr_display", [False, True])
+def test_micro_region_preview_uses_the_display_transport(micro_frame, monkeypatch, hdr_display):
+    from hdr_finisher import main
+    from hdr_finisher.models import ScopeRegion
+
+    frame, controls, _, _ = micro_frame
+    frame.hdr_reference_white_nits = 100
+    detail = frame.image[:32, :48].copy()
+    base = frame.image[:16, :24].copy()
+    monkeypatch.setattr(main.store, "next_preview_token", lambda *_: 4)
+    monkeypatch.setattr(main.store, "is_preview_current", lambda *_: True)
+    monkeypatch.setattr(frame.render_cache, "micro_preview_region", lambda *_: (detail, (8, 7, 320, 272)))
+    monkeypatch.setattr(frame.render_cache, "adjusted_frame", lambda *a, **kw: base)
+    request = PreviewRequest(micro_grain_viewport=ScopeRegion(x=.1, y=.15, width=.25, height=.2),
+                             hdr_display=hdr_display, micro_grain_controls=controls, generation=3)
+    response = main._micro_preview_raw("photo", frame, PreviewKind.HDR, request, AdjustmentState())
+    assert response.headers["x-micro-region"] == "8,7,320,272"
+    assert response.headers["x-generation"] == "3"
+    if hdr_display:
+        import imagecodecs
+
+        split = int(response.headers["x-micro-detail-bytes"])
+        assert response.headers["x-micro-media-type"] == "image/avif"
+        assert imagecodecs.avif_decode(response.body[:split]).shape[:2] == detail.shape[:2]
+        assert imagecodecs.avif_decode(response.body[split:]).shape[:2] == base.shape[:2]
+    else:
+        assert response.body == (main.encode_processed_rgba8(detail, PreviewKind.HDR)
+                                 + main.encode_processed_rgba8(base, PreviewKind.HDR))

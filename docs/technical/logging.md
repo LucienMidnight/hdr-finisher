@@ -95,6 +95,10 @@ credentials, full requests and opaque payloads out of the log.
 | `superseded` | The action was replaced and did not latch a failure. |
 | `rebuildable_cache_released`, `no_reclaimable_resources` | The eviction pass released cache entries or found none that it could safely release. |
 | `cpu_preparation_complete`, `cpu_scratch_refused`, `cpu_preparation_failed` | The backend reported success, a storage refusal or another preparation error. |
+| `micro_visible_region` | CPU Micro Grain rendered native viewport detail. The `micro_cpu_region` record includes time, output dimensions and Lensfun scratch sizes. |
+| `micro_unbounded_lens_mapping`, `micro_extreme_lens_mapping` | Lensfun produced a non-finite map or the source footprint exceeded four times the viewport area. |
+| `micro_resampled_geometry`, `micro_spatial_grade`, `micro_whole_frame_highlight` | Exact rendering needs resampling ranges, spatial processing or whole-frame highlight information. |
+| `micro_unsupported_source`, `micro_resized_source`, `micro_authored_sdr`, `micro_whole_frame_viewport` | This preview cannot use the indexed native Micro Grain region. |
 
 Temporary failure keys expire after 30 seconds. A temporary transport
 failure waits at least 150 ms before a single retry. A memory refusal waits

@@ -1207,7 +1207,7 @@ class SourceInterpretationOverride(BaseModel):
 
 
 class ScopeRegion(BaseModel):
-    """Normalized post-geometry rectangle used only for scope analysis."""
+    """Normalized post-geometry rectangle."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -1236,6 +1236,7 @@ class PreviewRequest(BaseModel):
     include_locals: bool = True
     micro_grain_controls: DenoiseLiveControls | None = None
     micro_grain_original: bool = False
+    micro_grain_viewport: ScopeRegion | None = None
     local_adjustments: list[LocalAdjustment] | None = None
     scope_region: ScopeRegion | None = None
     # Engineering-only. "whole" is the shipped route; "strips" asks for the
