@@ -30,3 +30,22 @@ def test_header_reaches_sync_route_and_legacy_lines(capsys):
     assert json.loads(legacy.split(" ", 2)[2])["action_id"] == record["action"]
     assert json.loads(unscoped)["seq"] > record["seq"]
     assert json.loads(unscoped)["action"] is None
+
+
+def test_cpu_preparation_finish_keeps_action(capsys):
+    app = FastAPI()
+    app.add_middleware(diagnostics.RequestAction)
+
+    @app.post("/api/session/session-1/denoise-grain/hdr")
+    def prepare():
+        return {"prepared": True}
+
+    response = TestClient(app).post("/api/session/session-1/denoise-grain/hdr",
+                                    headers={diagnostics.ACTION_HEADER: "cpu-fallback"})
+    assert response.status_code == 200
+    record = json.loads(capsys.readouterr().err)
+    assert record["action"] == "cpu-fallback"
+    assert record["route"] == "cpu"
+    assert record["event"] == "grain_cpu_prepare_finished"
+    assert record["photo"] == {"id": "session-1"}
+    assert record["duration_ms"] >= 0

@@ -337,6 +337,7 @@ async function recordSessionHeader() {
   desktopEvent("app", "session_started", {
     version: app.getVersion(), commit: commit?.trim() || null, platform: process.platform,
     arch: process.arch, system_ram_bytes: os.totalmem(), app_memory_setting_bytes: applicationPreferences.appMemoryBytes,
+    app_memory_ceiling_bytes: applicationPreferences.appMemoryBytes ?? 4_000_000_000,
     log_path: logPath,
   });
 }

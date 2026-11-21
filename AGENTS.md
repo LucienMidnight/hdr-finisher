@@ -523,6 +523,8 @@ module PRD for the area you touch, then `docs/technical/code-map.md`.
 - `docs/technical/reports/encoding-drift-jpeg-ultrahdr-2026-11-16.md`:
   non-shipping JPEG Ultra HDR sensitivity, stage and own-source fidelity research.
 
+- `docs/technical/logging.md`: rotating diagnostic logs, action correlation,
+  Grade Grain reason codes and timeline usage.
 - `docs/technical/code-map.md`: where things live in the code. Read before
   editing.
 - `docs/technical/library-grade-resource-map-2026-11-05.md`: Library/Grade

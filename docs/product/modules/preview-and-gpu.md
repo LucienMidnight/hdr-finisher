@@ -8,6 +8,16 @@
   scopes UI; backend `render_cache.py`, `cpu_strips.py`, `preview.py`,
   `scopes.py`, `overlay.py`, `peak_*.py`.
 
+## November 21: correlated Grade Grain decisions
+
+The desktop log includes the GPU configuration and the reason and memory
+snapshot for Grade Grain refusals and retries. Grade cancels replaced work
+without holding a failure against the source. Temporary failures can retry
+once after recovery, including after device rebuild. Sticky source failures
+go to the existing fallback. The timeline links preparation and the accepted
+route to the originating Grade action.
+[Diagnostic log and reason codes](../../technical/logging.md)
+
 ## November 15: CPU preview diagnostics and grain cancellation
 
 Grade CPU preview requests now write `grade_preview_cpu` to the existing backend

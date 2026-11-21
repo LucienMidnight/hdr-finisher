@@ -55,6 +55,16 @@ HDR and generated SDR share four methods and preparation code. Each rendition sa
 
 CPU filtering uses the app's worker pool. Standard and the experimental filters share ordered float32 native filters with a NumPy fallback. The GPU queue serializes measurement per device. Downstream Grade edits can reuse prepared Denoise pixels. Keep the picture in place through zoom, pan and preparation changes. [Technical contract](../../technical/denoising.md) · [CPU worker policy](../../../codebase/backend/hdr_finisher/cpu_budget.py) · [Export and Proof](export-and-proof.md) · [November 20 audit](../../technical/briefs/denoise-mac-open-items-2026-11-20.md#5-overnight-bug-fix-report--november-20-2026)
 
+### November 21: Grade Grain fallback and retry
+
+Grade records the Grain GPU decision, refusal, retry and final route with
+the same action ID as any CPU Grain preparation it starts. Temporary GPU
+memory, transport and device failures can get one retry after recovery.
+Temporary source keys expire after 30 seconds. Size, shader validation and
+unsupported inputs stay recorded for that source key. The existing CPU
+correction and GPU draw paths still render the same pixels.
+[Diagnostic log and reason codes](../../technical/logging.md)
+
 ### RAW Pixel cleanup
 
 Pixel cleanup belongs to the RAW source recipe, so changing it redevelops the source for Library, Grade, export and Proof. It runs before Bayer demosaicing and highlight reconstruction. **Remove hot pixels** is off by default and has no strength control. It targets isolated bright sensor readings. **Even out harsh specks (Experimental)** is also off by default. Its **Threshold** runs from ×2 to ×4, starts at **×2.5**, and applies on release. Lower values generally act more strongly. Both require eligible Bayer data. X-Trans, linear DNG and non-RAW inputs are ineligible.

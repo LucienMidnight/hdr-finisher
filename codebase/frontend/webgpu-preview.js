@@ -274,16 +274,18 @@
       return this.memoryBudgetBytes();
     }
 
+    configuredGpuBudgetBytes() {
+      return this.memoryBudget === "auto" && this.gpuBudget?.budgetBytes > 0
+        ? this.gpuBudget.budgetBytes : normalizeGpuBudgetBytes(this.memoryBudget);
+    }
+
     memoryBudgetBytes() {
-      const normalized = normalizeGpuBudgetBytes(this.memoryBudget);
       // An explicit setting is the user's number and stands, higher or lower
       // than Auto. Auto is the calibrated budget: half of the detected
       // dedicated video memory, or the stated fallback, lowered by verified
       // adapter facts and the allocation probe.
-      if (this.memoryBudget === "auto" && this.gpuBudget?.budgetBytes > 0) {
-        return Number.isFinite(this.deliveryBudgetBytes) ? Math.min(this.gpuBudget.budgetBytes, this.deliveryBudgetBytes) : this.gpuBudget.budgetBytes;
-      }
-      return Number.isFinite(this.deliveryBudgetBytes) ? Math.min(normalized, this.deliveryBudgetBytes) : normalized;
+      const configured = this.configuredGpuBudgetBytes();
+      return Number.isFinite(this.deliveryBudgetBytes) ? Math.min(configured, this.deliveryBudgetBytes) : configured;
     }
 
     async reportDeliveryActivity(active = this.activeRenderCount > 0 || this.activeScopeCount > 0 || this.deliveryWaitingCount > 0) {
@@ -818,7 +820,9 @@
       this.available = false;
       // Destroy session caches while the old device reference is still valid,
       // then replace everything the device owned.
+      const grainFailures = this._grainFailures;
       this.resetSession(sessionId);
+      this._grainFailures = grainFailures;
       this.device = null;
       this.adapter = null;
       this.adapterInfo = null;
@@ -870,7 +874,7 @@
       this.fineGrainFits = new Map();
       this.releaseFineGrainReduced();
       this.fineGrainReduced = new Map();
-      this.fineGrainFailedSources = new Set();
+      this._grainFailures = null;
       this.releaseHslSelection();
       this.denoiseModelWarm = null;
       this.editingCandidateCache?.clear();
@@ -4525,11 +4529,11 @@
           let prepared = microBandSources.get(region.y);
           if (!prepared && band && band.width > region.width
               && (band.width + 2 * MICRO_GRAIN_MARGIN) * (band.height + 2 * MICRO_GRAIN_MARGIN) <= 3000000) {
-            prepared = await this.developMicroGrainRegion(denoiseSelector, band, options.editRevision, current, true);
+            prepared = await this.developMicroGrainRegion(denoiseSelector, band, options.editRevision, current, true, null, options.action);
             microBandSources.set(region.y, prepared);
           }
           const encoded = await this.writeMicroGrainRegion(denoiseSelector, region, { texture }, region,
-            options.editRevision, current, encoder, prepared, !measureOnly);
+            options.editRevision, current, encoder, prepared, !measureOnly, options.action);
           denoiseParamBuffers.push(encoded.paramBuffer);
           if (!prepared) cleanGrainTransientTextures.push(encoded.source);
           if (!noiseView) encoder.copyTextureToTexture({ texture, origin }, { texture: graph.sourceTexture, origin }, extent);
@@ -5350,7 +5354,7 @@
         && sourceOptions?.isCurrent?.() !== false;
       const reducedGrain = !microQuick && !sourceOptions?.fineGrainUnderlayer && !sourceOptions?.originalSource
         && !sourceOptions?.delivery && !sourceOptions?.frameAnchor && !sourceOptions?.measureOnly
-        ? await this.ensureFineGrainReduced(proxy, editRevision, currentRender, sourceOptions?.tier === "interactive", sourceOptions?.signal) : null;
+        ? await this.ensureFineGrainReduced(proxy, editRevision, currentRender, sourceOptions?.tier === "interactive", sourceOptions?.signal, sourceOptions?.action) : null;
       if (!currentRender()) return this.refuseRender("superseded-before-grain-blend");
       if (reducedGrain?.cleanGrainDelta) {
         const strength = this.denoiseSourceSelector.controls.colorSplotches;
@@ -5503,6 +5507,7 @@
           fineGrainReduced,
           microQuick,
           signal: sourceOptions?.signal,
+          action: sourceOptions?.action,
           originalSource: sourceOptions?.originalSource,
           delivery: sourceOptions?.delivery,
           beforeDeliverySubmit: sourceOptions?.beforeDeliverySubmit,
@@ -6407,7 +6412,7 @@
         && this.fineGrainReduced.has(this.reducedGrainKey(proxy, selector)));
     }
 
-    async ensureFineGrainReduced(proxy, revision, isCurrent, interactive, signal) {
+    async ensureFineGrainReduced(proxy, revision, isCurrent, interactive, signal, action) {
       if (!this.adaptiveDenoiseFor(proxy)) return null;
       const selector = this.denoiseSourceSelector;
       const grain = selector.cache.grain;
@@ -6428,24 +6433,137 @@
       this.recordStage("fine-grain-reduced-miss", { lane: proxy.lane, width: proxy.width, height: proxy.height });
       const current = () => !signal?.aborted && isCurrent()
         && selector === this.denoiseSourceSelector && selector.controls === controls;
-      return this.resizeNativeFineGrain(proxy, revision, selector, current, key, signal);
+      return this.resizeNativeFineGrain(proxy, revision, selector, current, key, signal, action);
     }
 
-    refuseFineGrainFit(grain, error) {
-      if (!grain?.gpu || this.denoiseSourceSelector?.cache?.grain !== grain
-          || this.fineGrainFailedSources.has(grain.sourceKey)) return false;
-      this.fineGrainFailedSources.add(grain.sourceKey);
-      this.recordStage("fine-grain-fallback", { reason: error.message });
+    get grainFailures() {
+      return this._grainFailures ||= new globalThis.HDRGrainRoute.Failures();
+    }
+
+    grainMemorySnapshot(requestedBytes = null) {
+      const { totalBytes, categories } = this.resourceMemorySnapshot().resident;
+      return { requested_bytes: requestedBytes, budget_bytes: this.memoryBudgetBytes(),
+        reservation_limit_bytes: 0.9 * this.memoryBudgetBytes(), resident_bytes: totalBytes,
+        allocator_bytes: this.gpuAllocator?.usedBytes() || 0, resident_by_kind: categories };
+    }
+
+    grainEvent(event, route, reason, context, fields = {}) {
+      if (!context) return;
+      const { snapshot = this.grainMemorySnapshot(), ...detail } = fields;
+      globalThis.HDRDiagnostics?.event("denoise", event, { route, reason, ...snapshot, ...detail }, context);
+    }
+
+    async runGrainAttempt(key, action, current, run) {
+      const previous = this.grainFailures.get(key);
+      if (previous && !this.startGrainRetry(key, action)) {
+        this.grainEvent("grain_gpu_skipped", "cpu", "prior_failure_latched", action,
+          { prior_reason: previous.reason, temporary: previous.temporary, retry_used: previous.retried });
+        return null;
+      }
+      while (current()) {
+        try { return await run(); }
+        catch (error) {
+          if (!current()) {
+            this.grainEvent("grain_cancelled", "refused", "superseded", action);
+            throw error;
+          }
+          const failure = this.noteGrainFailure(key, error, action);
+          if (!failure) throw error;
+          if (!await this.recoverGrainFailure(key, failure, current, action)) return null;
+        }
+      }
+      return null;
+    }
+
+    grainFailureCanRun(key) {
+      const entry = this.grainFailures?.get(key);
+      return !entry || this.grainFailures.canRetry(entry, this.grainMemorySnapshot(), this.device, this.available);
+    }
+
+    noteGrainFailure(key, error, context) {
+      const reason = HDRGrainRoute.failureReason(error, this.deviceLost);
+      const snapshot = error.grainSnapshot || this.grainMemorySnapshot();
+      const failure = this.grainFailures.record(key, reason, snapshot, this.device);
+      this.grainEvent(failure ? "grain_gpu_refused" : "grain_cancelled", "refused", reason, context, {
+        snapshot, level: failure ? "warn" : "info", stage: error.grainStage, ...error.grainDetails,
+        temporary: failure?.temporary, retry_used: failure?.retried,
+      });
+      return failure;
+    }
+
+    startGrainRetry(key, context) {
+      const failure = this.grainFailures.get(key);
+      if (!failure) return false;
+      const snapshot = this.grainMemorySnapshot(failure.snapshot.requested_bytes);
+      if (!this.grainFailures.takeRetry(key, snapshot, this.device, this.available)) return false;
+      this.grainEvent("grain_retry", "gpu", failure.reason, context, { snapshot, attempt: 2 });
       return true;
     }
 
-    reserveFineGrain(kind, allocations) {
-      const bytes = Object.values(allocations).reduce((total, value) => total + value, 0);
-      const resident = this.resourceMemorySnapshot().resident;
-      if (Math.max(resident.totalBytes, this.gpuAllocator?.usedBytes() || 0) + bytes > 0.9 * this.memoryBudgetBytes()) {
-        throw new Error(`Insufficient graphics memory for ${kind}.`);
+    async recoverGrainFailure(key, failure, current, context) {
+      if (!failure?.temporary || failure.retried || !current()) return false;
+      if (failure.reason === "transport_timeout") {
+        await new Promise(resolve => setTimeout(resolve, Math.max(0, failure.retryAt - Date.now())));
       }
-      this.recordStage("fine-grain-reservation", { kind, bytes, allocations, resident: resident.categories });
+      if (failure.reason === "gpu_budget_exceeded" || failure.reason === "gpu_allocation_pressure") {
+        const snapshot = this.grainMemorySnapshot(failure.snapshot.requested_bytes);
+        if (this.reclaimGrainResources(snapshot, context)) await this.waitForSubmittedWork();
+      }
+      return current() && this.startGrainRetry(key, context);
+    }
+
+    reclaimGrainResources(before, context) {
+      // A render can still hold an unregistered texture in a local variable.
+      // Only reclaim here once the render/scope owners have released their use.
+      if (this.activeRenderCount || this.activeScopeCount) return false;
+      const visible = this.lastPresentedFrame;
+      const selector = this.denoiseSourceSelector;
+      const reclaimable = new Set(["source-proxy", "detail-band-tile", "mask-tile", "scene-luminance",
+        "local-mask", "oriented-luminance", "fine-grain-reduced"]);
+      const allocator = this.gpuAllocator;
+      let count = 0;
+      let released = 0;
+      // A live proxy lookup touches the allocator LRU. Take a snapshot so
+      // protected entries neither change order nor get re-visited here.
+      const proxies = new Map(this.proxies);
+      for (const entry of [...(allocator?.entries.values() || [])]) {
+        if (entry.pins || !entry.evict || !reclaimable.has(entry.kind)) continue;
+        if (entry.kind === "source-proxy") {
+          const proxy = proxies.get(entry.key);
+          if (!proxy || proxy === selector?.original || (proxy.lane === visible?.lane
+              && proxy.longEdge === visible.longEdge && proxy.geometrySignature === visible.geometrySignature)) continue;
+        }
+        entry.evict();
+        allocator.unregister(entry);
+        count++;
+        released += entry.bytes;
+        if (HDRGrainRoute.headroom(this.grainMemorySnapshot()) >= (before.requested_bytes ?? Infinity)) break;
+      }
+      this.grainEvent("grain_eviction", count ? "gpu" : "refused",
+        count ? "rebuildable_cache_released" : "no_reclaimable_resources", context, {
+          snapshot: this.grainMemorySnapshot(before.requested_bytes), evicted_count: count, evicted_bytes: released,
+          before_resident_bytes: before.resident_bytes, before_allocator_bytes: before.allocator_bytes,
+        });
+      return count > 0;
+    }
+
+    async reserveFineGrain(kind, allocations, context = null) {
+      const bytes = Object.values(allocations).reduce((total, value) => total + value, 0);
+      let snapshot = this.grainMemorySnapshot(bytes);
+      if (HDRGrainRoute.headroom(snapshot) < bytes && context) {
+        const generation = this.resourceGeneration;
+        if (this.reclaimGrainResources(snapshot, context)) await this.waitForSubmittedWork();
+        if (generation !== this.resourceGeneration) throw new DOMException("Grain reservation was replaced.", "AbortError");
+        snapshot = this.grainMemorySnapshot(bytes);
+      }
+      if (HDRGrainRoute.headroom(snapshot) < bytes) {
+        throw Object.assign(new Error(`Insufficient graphics memory for ${kind}.`), {
+          grainReason: bytes > snapshot.reservation_limit_bytes && bytes > 0.9 * this.configuredGpuBudgetBytes()
+            ? "gpu_request_too_large" : "gpu_budget_exceeded",
+          grainSnapshot: snapshot, grainStage: kind, grainDetails: { allocations_bytes: allocations },
+        });
+      }
+      this.recordStage("fine-grain-reservation", { kind, bytes, allocations, resident: snapshot.resident_by_kind });
       return this.gpuAllocator?.reserve({ kind, bytes });
     }
 
@@ -6463,32 +6581,33 @@
         height: Math.min(grain.height, core.y + core.height + MICRO_GRAIN_MARGIN) - y };
     }
 
-    async developMicroGrainRegion(selector, core, revision, current, retain, bayer = null) {
+    async developMicroGrainRegion(selector, core, revision, current, retain, bayer = null, action) {
       const { grain } = selector.cache;
       const region = this.microGrainSourceRegion(selector, core);
-      const reservation = this.reserveFineGrain("micro-grain-region", {
+      const reservation = await this.reserveFineGrain("micro-grain-region", {
         bayer: (region.width + 26) * (region.height + 26) * 36,
-      });
+      }, action);
       try {
         if (this.injectMicroGrainFailure) {
           this.injectMicroGrainFailure = false;
           throw new Error("Injected Micro Grain GPU failure.");
         }
         const gpu = window.HDRMicroGrainGpu;
-        const body = bayer || await gpu.readBayer(grain, region, selector.controls, revision, current, retain);
+        const body = bayer || await gpu.readBayer(grain, region, selector.controls, revision, current, retain, undefined, action);
         return await gpu.develop(this.device, grain, region, body, current);
       } finally {
         if (reservation) this.gpuAllocator.releaseReservation(reservation);
       }
     }
 
-    async writeMicroGrainRegion(selector, core, candidate, destination, revision, current, sharedEncoder = null, prepared = null, retainSource = Boolean(sharedEncoder)) {
+    async writeMicroGrainRegion(selector, core, candidate, destination, revision, current, sharedEncoder = null, prepared = null,
+      retainSource = Boolean(sharedEncoder), action) {
       const start = performance.now();
       const { grain } = selector.cache;
       const controls = selector.controls;
       let source, encoded, retained = false;
       try {
-        source = prepared || await this.developMicroGrainRegion(selector, core, revision, current, retainSource);
+        source = prepared || await this.developMicroGrainRegion(selector, core, revision, current, retainSource, null, action);
         const encoder = sharedEncoder || this.device.createCommandEncoder();
         const { device } = this;
         device.pushErrorScope("validation");
@@ -6514,7 +6633,7 @@
       }
     }
 
-    async resizeNativeFineGrain(proxy, revision, selector, current, key, signal) {
+    async resizeNativeFineGrain(proxy, revision, selector, current, key, signal, action) {
       const start = performance.now();
       const controls = selector.controls;
       const clean = controls.method === "clean_grain";
@@ -6531,13 +6650,13 @@
       const maxRows = Math.min(height, Math.ceil(stride * ratio) + 2 * resizeMargin + 2);
       const margin = micro ? MICRO_GRAIN_MARGIN : ADAPTIVE_DENOISE_MARGIN + cleanGrainMargin(controls);
       const stripUpload = fineGrainStripUpload(maxRows + 2 * margin);
-      const reservation = this.reserveFineGrain("fine-grain-resize", {
+      const reservation = await this.reserveFineGrain("fine-grain-resize", {
         sourceStrip: micro ? (768 + 2 * margin + 26) * (maxRows + 2 * margin + 26) * 36 : width * stripUpload.maxRows * 8,
         filteredStrip: width * maxRows * (clean ? 16 : 8),
         resizeScratch: proxy.width * (maxRows * 48 + (clean ? stride * 16 : 0)),
         reducedPicture: proxy.width * proxy.height * (clean ? 24 : 8),
         uploadAndResponses: 2 * stripUpload.slots * stripUpload.chunkBytes,
-      });
+      }, action);
       const weights = [controls.amount, controls.luminance, controls.colorNoise, controls.detailRecovery];
       const sizes = adaptiveResolveOptions(controls);
       const owned = [];
@@ -6584,7 +6703,7 @@
             const coreWidth = 768;
             const bandFor = left => ({ ...target, x: left, width: Math.min(2 * coreWidth, width - left) });
             const fetchBand = left => window.HDRMicroGrainGpu.readBayer(grain, this.microGrainSourceRegion(selector, bandFor(left)),
-              controls, revision, current, false, denoiseDeadline(signal, 15000)).then(body => ({ body }), error => ({ error }));
+              controls, revision, current, false, denoiseDeadline(signal, 15000), action).then(body => ({ body }), error => ({ error }));
             let nextBayer = fetchBand(0);
             for (let left = 0; left < width; left += 2 * coreWidth) {
               const right = Math.min(width, left + 2 * coreWidth);
@@ -6592,7 +6711,7 @@
               if (error) throw error;
               assertCurrent();
               if (right < width) nextBayer = fetchBand(right);
-              const prepared = await this.developMicroGrainRegion(selector, bandFor(left), revision, current, false, body);
+              const prepared = await this.developMicroGrainRegion(selector, bandFor(left), revision, current, false, body, action);
               try {
                 for (let x = left; x < right; x += coreWidth) {
                   const core = { ...target, x, width: Math.min(coreWidth, width - x) };
@@ -6605,7 +6724,8 @@
           }
           const source = micro ? null : await this.loadProxyRegion(proxy.sessionId, proxy.lane, grain.nativeEdge, proxy.geometrySignature,
             revision, proxy.sourceIdentity, null, { x: 0, y: top, width, height: bottom + margin - top },
-            { signal: denoiseDeadline(signal, 15000), isCurrent: current, transient: true, stripUpload });
+            { signal: denoiseDeadline(signal, 15000), isCurrent: current, transient: true, stripUpload,
+              headers: globalThis.HDRDiagnostics?.headers(action) });
           if (!micro && !source) throw Error("The native Fine Grain source is not available for reduction.");
           let encoded;
           try {
@@ -6661,7 +6781,7 @@
     }
 
     async measureFineGrain(sessionId, lane, native, geometry, revision, sourceIdentity, model, controls, signal, current,
-      { residentSource, beforeSubmit } = {}) {
+      { residentSource, beforeSubmit, action } = {}) {
       const started = performance.now();
       const grainFit = await this.ensureGrainFitPipeline();
       if (!current()) throw new DOMException("Grain fit was replaced.", "AbortError");
@@ -6670,13 +6790,16 @@
       const rows = ADAPTIVE_DENOISE_TILE;
       const stripUpload = fineGrainStripUpload(rows + 2 * margin);
       const blocks = Math.ceil(native / GRAIN_FIT_BLOCK) * Math.ceil(rows / GRAIN_FIT_BLOCK);
-      if (native > 8192) throw new Error("Fine Grain calibration exceeds the supported source size.");
-      const reservation = this.reserveFineGrain("fine-grain-fit", {
+      if (native > 8192) throw Object.assign(new Error("Fine Grain calibration exceeds the supported source size."), {
+        grainReason: "source_too_large", grainStage: "fine-grain-fit",
+        grainDetails: { width_limit_px: 8192, native_edge_px: native },
+      });
+      const reservation = await this.reserveFineGrain("fine-grain-fit", {
         measurementScratch: 6 * stripUpload.maxRows ** 2 * 16,
         sourceStrip: residentSource ? 0 : native * stripUpload.maxRows * 8,
         uploadAndResponses: residentSource ? 0 : 2 * stripUpload.slots * stripUpload.chunkBytes,
         partialsAndReadback: 2 * GRAIN_DENOISE_BANDS.length * blocks * 16,
-      });
+      }, action);
       let adaptiveScratch;
       const weights = [controls.amount, controls.luminance, controls.colorNoise, controls.detailRecovery];
       const sizes = adaptiveResolveOptions(controls);
@@ -6695,7 +6818,8 @@
           const top = Math.max(0, y - margin);
           const source = residentSource || await this.loadProxyRegion(sessionId, lane, native, geometry, revision, sourceIdentity, null,
             { x: 0, y: top, width: width ?? native, height: y + rows + margin - top },
-            { signal: denoiseDeadline(signal, 15000), isCurrent: current, transient: true, stripUpload });
+            { signal: denoiseDeadline(signal, 15000), isCurrent: current, transient: true, stripUpload,
+              headers: globalThis.HDRDiagnostics?.headers(action) });
           if (!source) throw new Error("The native Fine Grain source is not available in strips.");
           let partials;
           let readback;
@@ -6803,11 +6927,12 @@
      * hands it, which is what keeps a 42 MP frame's denoise from holding
      * evidence, or the frame, at all.
      */
-    async fetchDenoiseModel(url, { allowCpuFallback = true, signal } = {}) {
+    async fetchDenoiseModel(url, { allowCpuFallback = true, signal, action } = {}) {
+      const headers = initial => globalThis.HDRDiagnostics?.headers(action, initial) ?? initial;
       const measurementURL = url.replace("/denoise-model/", "/denoise-measurement/");
       const started = performance.now();
       const waiting = denoiseDeadline(signal, 30000);
-      const cached = await fetch(measurementURL, { signal: waiting });
+      const cached = await fetch(measurementURL, { signal: waiting, headers: headers() });
       if (cached.status === 200) return cached.json();
       if (cached.status === 409) throw new DOMException("Denoise preparation was replaced.", "AbortError");
       if (!cached.ok) throw new Error(`Denoise measurement request failed (${cached.status}).`);
@@ -6816,7 +6941,7 @@
       return HDRDenoiseMeasurement.acquire(device, key, waiting, async signal => {
         let description;
         try {
-          const response = await fetch(measurementURL + (measurementURL.includes("?") ? "&" : "?") + "source=true", { signal });
+          const response = await fetch(measurementURL + (measurementURL.includes("?") ? "&" : "?") + "source=true", { signal, headers: headers() });
           if (response.status === 409) throw new DOMException("Denoise preparation was replaced.", "AbortError");
           if (!response.ok) throw Error(`Denoise source request failed (${response.status}).`);
           if (response.headers.get("content-type")?.includes("application/json")) return response.json();
@@ -6828,7 +6953,7 @@
           const budget = Math.max(0, this.memoryBudgetBytes() - snapshot.totals.peakLogicalBytes);
           const result = await HDRDenoiseMeasurement.measure(device, description, pixels, budget, signal);
           signal.throwIfAborted();
-          const stored = await fetch(measurementURL, { method: "POST", signal, headers: { "Content-Type": "application/json" },
+          const stored = await fetch(measurementURL, { method: "POST", signal, headers: headers({ "Content-Type": "application/json" }),
             body: JSON.stringify({ ...result, key: description.key, width: description.source_width,
               height: description.source_height, gpu_ms: result.duration_ms, duration_ms: performance.now() - started }) });
           if (stored.status === 409) throw new DOMException("Denoise preparation was replaced.", "AbortError");
@@ -6837,12 +6962,13 @@
         } catch (error) {
           signal.throwIfAborted();
           if (!allowCpuFallback || error.name === "AbortError" || /request failed|publication failed|source request/.test(error.message)) throw error;
-          const response = await fetch(url + (url.includes("?") ? "&" : "?") + "fallback_reason=" + encodeURIComponent(error.message), { signal });
+          if (action) this.grainEvent("noise_measurement_cpu_fallback", "cpu", HDRGrainRoute.failureReason(error, this.deviceLost), action);
+          const response = await fetch(url + (url.includes("?") ? "&" : "?") + "fallback_reason=" + encodeURIComponent(error.message), { signal, headers: headers() });
           if (response.status === 409) throw new DOMException("Denoise preparation was replaced.", "AbortError");
           if (!response.ok) throw new Error(`Denoise CPU fallback failed (${response.status}).`);
           const model = await response.json();
           if (description) {
-            const stored = await fetch(measurementURL, { method: "POST", signal, headers: { "Content-Type": "application/json" },
+            const stored = await fetch(measurementURL, { method: "POST", signal, headers: headers({ "Content-Type": "application/json" }),
               body: JSON.stringify({ model, key: description.key, version: description.version, route: "CPU fallback",
                 width: description.source_width, height: description.source_height,
                 measured_pixels: Math.min(description.source_width * description.source_height, 4 * 1024 * 1024),
@@ -6855,9 +6981,13 @@
       });
     }
 
+    grainSourceKey(sessionId, geometry, sourceIdentity, generation, method) {
+      return JSON.stringify([sessionId, geometry, sourceIdentity === "authored-sdr", generation, method]);
+    }
+
     async analyzeAdaptiveDenoise(sessionId, lane, frame, longEdge, editRevision, geometrySignature, generation, controls, refresh, nativeEdge,
       { signal, isCurrent, onGrain, gradeGpuGrain, repairGeneration, deliveryGrainSource, beforeDeliverySubmit,
-        libraryApproximation } = {}) {
+        libraryApproximation, action } = {}) {
       const startedAt = performance.now();
       this.denoiseCounters.analysisCalls += 1;
       this.recordStage("denoise-analysis", { state: "started", generation, longEdge, algorithm: ADAPTIVE_DENOISE_ALGORITHM_VERSION });
@@ -6865,9 +6995,8 @@
       const query = `long_edge=${apiEdge}&edit_revision=${editRevision}&geometry_signature=${encodeURIComponent(geometrySignature)}`;
       const experimental = controls.method === "clean_grain"
         || (controls.method === "fine_grain" && controls.grainEvenness);
-      const sourceKey = JSON.stringify([sessionId, geometrySignature, frame.sourceIdentity === "authored-sdr", repairGeneration,
-        controls.method]);
-      const gpuFine = (gradeGpuGrain || deliveryGrainSource) && !this.fineGrainFailedSources?.has(sourceKey)
+      const sourceKey = this.grainSourceKey(sessionId, geometrySignature, frame.sourceIdentity, repairGeneration, controls.method);
+      const gpuFine = (gradeGpuGrain || deliveryGrainSource)
         && (controls.method === "fine_grain" || controls.method === "clean_grain")
         && controls.amount > 0 && (controls.luminance > 0 || controls.colorNoise > 0);
       // Grade can start analysis before the first render sets maskSourceSize.
@@ -6879,52 +7008,61 @@
       if (!current()) return false;
       let grain = null;
       let model;
+      const headers = initial => globalThis.HDRDiagnostics?.headers(action, initial) ?? initial;
       const micro = controls.method === "micro_grain";
       if (micro && !libraryApproximation) {
-        if (!gradeGpuGrain || this.fineGrainFailedSources.has(sourceKey)) throw new Error("Micro Grain uses the CPU for this source.");
-        if (!window.HDRGeometryMath.geometryTransformIsNeutral(JSON.parse(geometrySignature))) {
-          throw new Error("Micro Grain uses the CPU with a crop or geometry adjustment.");
-        }
+        if (!gradeGpuGrain) throw Object.assign(new Error("Micro Grain uses the CPU for this source."), {
+          grainReason: "unsupported_grain_source",
+        });
         const url = `/api/session/${sessionId}/denoise-micro`;
-        const response = await fetch(url, { signal: denoiseDeadline(signal, 30000) });
-        if (response.status === 409) throw new DOMException("Micro Grain preparation was replaced.", "AbortError");
-        if (!response.ok) throw new Error((await response.json().catch(() => null))?.detail || "Micro Grain preparation failed.");
-        const { width, height, gain, model: measured } = await response.json();
-        await this.ensureMicroGrainPipelines();
+        const prepared = await this.runGrainAttempt(sourceKey, action, current, async () => {
+          if (!window.HDRGeometryMath.geometryTransformIsNeutral(JSON.parse(geometrySignature))) {
+            throw new Error("Micro Grain uses the CPU with a crop or geometry adjustment.");
+          }
+          const response = await fetch(url, { signal: denoiseDeadline(signal, 30000), headers: headers() });
+          if (response.status === 409) throw new DOMException("Micro Grain preparation was replaced.", "AbortError");
+          if (!response.ok) throw Object.assign(
+            new Error((await response.json().catch(() => null))?.detail || "Micro Grain preparation failed."),
+            { status: response.status });
+          const result = await response.json();
+          if (current()) await this.ensureMicroGrainPipelines();
+          return result;
+        });
+        if (!current()) return false;
+        if (!prepared) throw Object.assign(new Error("Micro Grain uses the CPU for this source."), {
+          grainSourceKey: sourceKey, grainReason: this.grainFailures.get(sourceKey)?.reason,
+        });
+        const { width, height, gain, model: measured } = prepared;
         grain = { gpu: true, micro: true, fitKey: `${sessionId}|micro|${repairGeneration}|${refresh}`, sourceKey,
           width, height, gain, url, nativeEdge: Math.max(width, height) };
         model = measured;
       } else {
         model = await this.fetchDenoiseModel(`/api/session/${sessionId}/denoise-model/${lane}?${modelQuery}`,
-          { signal, allowCpuFallback: !deliveryGrainSource });
+          { signal, action, allowCpuFallback: !deliveryGrainSource });
       }
       if (!current()) return false;
       if (gpuFine) {
         const fitKey = JSON.stringify([sessionId, geometrySignature, frame.sourceIdentity === "authored-sdr", native,
           repairGeneration, refresh, model, controls.amount, controls.luminance, controls.detailRecovery,
           controls.fineNoise, controls.mediumNoise]);
-        let calibration = this.fineGrainFits.get(fitKey);
-        try {
+        const fit = async () => {
           if (controls.method === "clean_grain") await this.ensureCleanGrainPipelines();
-          if (!current()) return false;
-          if (!calibration) {
-            if (!deliveryGrainSource && longEdge === native && this.canvas.hdrFrameRegion == null) {
-              await this.retireDenoiseZoomResources(sessionId, lane, longEdge, true);
-            }
-            if (!current()) return false;
-            calibration = await this.measureFineGrain(sessionId, lane, native, geometrySignature, editRevision,
-              frame.sourceIdentity, model, controls, signal, current,
-              { residentSource: deliveryGrainSource, beforeSubmit: beforeDeliverySubmit });
-            if (!current()) return false;
-          } else this.recordStage("fine-grain-fit-hit", { lane });
-        } catch (error) {
-          if (deliveryGrainSource) throw error;
-          if (!current()) return false;
-          if (error.name === "AbortError" || error.status === 409) throw error;
-          calibration = null;
-          this.fineGrainFailedSources.add(sourceKey);
-          this.recordStage("fine-grain-fallback", { reason: error.message });
-        }
+          if (!current()) return null;
+          const cached = this.fineGrainFits.get(fitKey);
+          if (cached) {
+            this.recordStage("fine-grain-fit-hit", { lane });
+            return cached;
+          }
+          if (!deliveryGrainSource && longEdge === native && this.canvas.hdrFrameRegion == null) {
+            await this.retireDenoiseZoomResources(sessionId, lane, longEdge, true);
+          }
+          if (!current()) return null;
+          return this.measureFineGrain(sessionId, lane, native, geometrySignature, editRevision,
+            frame.sourceIdentity, model, controls, signal, current,
+            { residentSource: deliveryGrainSource, beforeSubmit: beforeDeliverySubmit, action });
+        };
+        const calibration = deliveryGrainSource ? await fit() : await this.runGrainAttempt(sourceKey, action, current, fit);
+        if (!current()) return false;
         if (calibration) {
           this.fineGrainFits.delete(fitKey);
           this.fineGrainFits.set(fitKey, calibration);
@@ -6935,8 +7073,10 @@
       if (experimental && !grain) {
         if (deliveryGrainSource) throw new Error("GPU Grain delivery could not prepare this rendition.");
         const url = `/api/session/${sessionId}/denoise-grain/${lane}`;
+        const fallbackReason = this._grainFailures?.get(sourceKey)?.reason || "gpu_grain_not_selected";
+        this.grainEvent("grain_cpu_prepare_started", "cpu", fallbackReason, action, { lane, method: controls.method });
         const response = await fetch(`${url}?${query}&refresh=${refresh}`, {
-          method: "POST", signal, headers: { "Content-Type": "application/json" },
+          method: "POST", signal, headers: headers({ "Content-Type": "application/json" }),
           body: JSON.stringify({
             method: controls.method, amount: controls.amount, luminance: controls.luminance,
             color_noise: controls.colorNoise, detail_recovery: controls.detailRecovery,
@@ -6947,6 +7087,8 @@
         });
         if (response.status === 409) throw new DOMException("Grain preparation was replaced.", "AbortError");
         if (!response.ok) {
+          this.grainEvent("grain_cpu_prepare_failed", "refused", response.status === 507 ? "cpu_scratch_refused" : "cpu_preparation_failed", action,
+            { level: "error", status: response.status, lane, method: controls.method });
           const detail = response.status === 507 ? (await response.json().catch(() => null))?.detail : null;
           throw new Error(typeof detail === "string" ? detail : `Denoise preparation failed (${response.status}).`);
         }
@@ -6955,6 +7097,10 @@
         if (!current()) return false;
         await this.ensureGrainPipelines();
       }
+      const fallback = !grain?.gpu && this._grainFailures?.get(sourceKey);
+      if (action) this.grainEvent("grain_route", grain?.gpu || !grain ? "gpu" : "cpu",
+        grain?.gpu ? "gpu_grain_selected" : fallback?.reason || (grain ? "gpu_grain_not_selected" : "gpu_adaptive_selected"),
+        action, { lane, method: controls.method, long_edge_px: longEdge });
       // The full-size model is one measurement per source, about a second on a
       // 42 MP frame. Asking for it now, from a smaller view, means the first
       // zoom to 100% finds it already made.
@@ -6982,6 +7128,7 @@
         if (previous.cache.identity !== cacheIdentity) previous.resolvedFor = null;
         previous.cache.identity = cacheIdentity;
         previous.cache.grain = grain;
+        previous.cache.grainFallbackKey = fallback ? sourceKey : null;
         previous.cache.preparedFrame = preparedFrame;
         previous.original = this.proxies.get(frame.identity) || null;
         previous.generation = generation;
@@ -7000,6 +7147,7 @@
         model,
         identity: cacheIdentity,
         grain,
+        grainFallbackKey: fallback ? sourceKey : null,
         preparedFrame,
         tiles: [],
         levels: [],

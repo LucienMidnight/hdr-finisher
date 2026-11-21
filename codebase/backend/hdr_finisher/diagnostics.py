@@ -82,5 +82,36 @@ class RequestAction:
             return
         header = ACTION_HEADER.lower().encode("ascii")
         action = next((value.decode("latin-1") for key, value in scope.get("headers", []) if key == header), None)
+        photo = None
+        stage = None
+        parts = scope.get("path", "").split("/")
+        if valid_action(action) and scope.get("method") == "POST" and len(parts) == 6 and parts[1:3] == ["api", "session"]:
+            if parts[4] == "denoise-grain":
+                stage = "prepared_grain"
+            elif (b"x-hdr-finisher-grain-fallback", b"micro") in scope.get("headers", []):
+                stage = {"preview": "cpu_preview", "preview-raw": "cpu_preview_raw"}.get(parts[4])
+            photo = {"id": parts[3]}
+        if not stage:
+            with action_scope(action):
+                await self.app(scope, receive, send)
+            return
+        started = time.perf_counter()
+        status = None
+
+        async def observed(message):
+            nonlocal status
+            if message["type"] == "http.response.start":
+                status = message["status"]
+            await send(message)
+
         with action_scope(action):
-            await self.app(scope, receive, send)
+            try:
+                await self.app(scope, receive, observed)
+            finally:
+                if status != 401:
+                    reason = ("cpu_preparation_complete" if status and status < 400 else "superseded" if status == 409
+                              else "cpu_scratch_refused" if status == 507 and stage == "prepared_grain" else "cpu_preparation_failed")
+                    event = "grain_cpu_prepare_finished" if reason == "cpu_preparation_complete" else "grain_cpu_prepare_failed"
+                    log("denoise", event, photo=photo, route="cpu" if event.endswith("finished") else "refused",
+                        reason=reason, level="info" if status and (status < 400 or status == 409) else "error",
+                        stage=stage, status=status, duration_ms=round((time.perf_counter() - started) * 1000, 2))
