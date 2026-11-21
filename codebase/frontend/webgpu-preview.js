@@ -6765,6 +6765,7 @@
       const assertCurrent = () => {
         if (!current()) throw new DOMException("Fine Grain reduction was replaced.", "AbortError");
       };
+      const inFlight = [];
       try {
         assertCurrent();
         const makePicture = clean ? packed : this.createDenoiseTexture.bind(this);
@@ -6818,12 +6819,30 @@
                   if (left + bandWidth < right) pending = fetchNext(left + bandWidth);
                   const band = bandFor(left);
                   const prepared = await this.developMicroGrainRegion(selector, band, revision, current, false, body, action);
+                  // Both cores use the same developed Bayer band. Each
+                  // encode has its own uniforms and the passes reuse scratch
+                  // in queue order, so one submission can finish the band.
+                  const buffers = [];
                   try {
-                    for (let coreX = left; coreX < left + band.width; coreX += microCoreWidth) {
-                      const core = { ...target, x: coreX, width: Math.min(microCoreWidth, left + band.width - coreX) };
-                      await this.writeMicroGrainRegion(selector, core, native, target, revision, current, null, prepared, false, action);
+                    device.pushErrorScope("validation");
+                    let validation;
+                    try {
+                      const encoder = device.createCommandEncoder();
+                      for (let coreX = left; coreX < left + band.width; coreX += microCoreWidth) {
+                        const core = { ...target, x: coreX, width: Math.min(microCoreWidth, left + band.width - coreX) };
+                        const encoded = await this.writeMicroGrainRegion(selector, core, native, target, revision, current, encoder,
+                          prepared, false, action);
+                        buffers.push(encoded.paramBuffer);
+                      }
+                      device.queue.submit([encoder.finish()]);
+                    } finally {
+                      validation = device.popErrorScope();
                     }
+                    const error = await validation;
+                    if (error) throw Error(error.message);
+                    await device.queue.onSubmittedWorkDone();
                   } finally {
+                    buffers.forEach(buffer => buffer.destroy());
                     prepared.texture.destroy();
                   }
                 }
@@ -6868,17 +6887,27 @@
                 }
                 encode(encoder, vertical, [...verticalBindings, [7, result.texture], ...(clean ? [[10, baseStrip]] : [])], cols, count);
                 device.queue.submit([encoder.finish()]);
+                // Start fetching or preparing the next rectangle while
+                // this one reduces. Queue order protects the shared strip,
+                // including its texture uploads and uniform writes.
+                inFlight.push(device.queue.onSubmittedWorkDone().then(() => null, error => error));
               } finally {
                 validation = device.popErrorScope();
               }
               const error = await validation;
               if (error) throw Error(error.message);
-              await device.queue.onSubmittedWorkDone();
+              if (inFlight.length === 2) {
+                const fault = await inFlight.shift();
+                if (fault) throw fault;
+              }
             } finally {
               encoded?.paramBuffer.destroy();
             }
           }
         }
+        const completion = inFlight.shift();
+        const fault = await completion;
+        if (fault) throw fault;
         assertCurrent();
         const entry = { ...result };
         const budget = this.denoiseTileBudget();
@@ -6897,6 +6926,7 @@
         });
         return { ...proxy, ...entry, bindGroups: new Map() };
       } finally {
+        await Promise.all(inFlight);
         owned.forEach(resource => resource.destroy());
         await this.releaseFineGrainStrip(stripUpload);
         if (reservation) this.gpuAllocator.releaseReservation(reservation);
