@@ -246,10 +246,12 @@ def _noise_variance(luminance: np.ndarray, model: AdaptiveNoiseModel, edges: _Ed
 def _band_gain(energy, variance, strength, sigma, level, fine_multiplier, fine_floor):
     if level < 2:
         strength *= fine_multiplier
-    noise = np.float32((strength * sigma) ** 2) * variance
-    gain = np.maximum(energy - noise, 0.0) / np.maximum(energy, np.float32(1e-20))
+    gain = np.float32((strength * sigma) ** 2) * variance
+    np.subtract(energy, gain, out=gain)
+    np.maximum(gain, 0.0, out=gain)
+    np.divide(gain, np.maximum(energy, np.float32(1e-20)), out=gain)
     if level < 2 and fine_floor > 0:
-        gain = np.maximum(gain, fine_floor)
+        np.maximum(gain, fine_floor, out=gain)
     return gain
 
 
@@ -280,7 +282,9 @@ def _filter_region(rgb: np.ndarray, model: AdaptiveNoiseModel, controls: Adaptiv
             if grain_fit is not None and evenness and component == 0 and level in (1, 2):
                 from .denoise_grain import grain_gain
                 gain = grain_gain(gain, evenness, grain_fit[level - 1])
-            out[..., component] += band[..., component] * gain
+            component_band = band[..., component]
+            np.multiply(component_band, gain, out=component_band)
+            out[..., component] += component_band
     out += current
     return (out @ OPPONENT).astype(np.float32)
 

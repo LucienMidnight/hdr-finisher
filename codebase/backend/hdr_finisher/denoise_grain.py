@@ -127,13 +127,20 @@ def _colour_pairs(field, reach, tap):
 def _colour_pass(chroma, noise, limit, dark, reach, tap, centre):
     core = _box(chroma, centre)
     closest = np.full_like(noise, np.inf)
-    pairs = []
+    total = np.zeros_like(core)
+    low = np.full_like(core, np.inf)
+    high = np.full_like(core, -np.inf)
     for first, second in _colour_pairs(chroma, reach, tap):
         np.minimum(closest, np.minimum(_magnitude(core - first), _magnitude(core - second)), out=closest)
-        pairs.append(.5 * (first + second))
-    low = np.minimum(np.minimum(pairs[0], pairs[1]), np.minimum(pairs[2], pairs[3]))
-    high = np.maximum(np.maximum(pairs[0], pairs[1]), np.maximum(pairs[2], pairs[3]))
-    surrounding = .5 * (sum(pairs) - low - high)
+        pair = first + second
+        pair *= .5
+        total += pair
+        np.minimum(low, pair, out=low)
+        np.maximum(high, pair, out=high)
+    total -= low
+    total -= high
+    total *= .5
+    surrounding = total
     delta = core - surrounding
     pixel_delta = chroma - surrounding
     signal = _magnitude(delta)
@@ -265,8 +272,11 @@ class GrainPreparation:
         self._current = is_current
         self._error = None
         self._closed = False
-        self._file, close = disk_cache.open_grade_scratch(height * width * 16, grain_source=source_path)
+        self._file, close = disk_cache.open_grade_scratch(height * width * 16, grain_source=source_path,
+                                                        preallocate=False)
         self._close = finalize(self, close)
+        self._tile_offsets = {}
+        self._written_bytes = 0
         clean = controls.method == "clean_grain"
         broad = controls.splotch_size == "large"
         margin = (LARGE_COLOUR_MARGIN if broad else SMALL_COLOUR_MARGIN) if clean else 0
@@ -418,14 +428,19 @@ class GrainPreparation:
             height, width = rows.shape[:2]
             size = self._base.size
             if y % size == x % size == 0 and height == min(size, self.height - y) and width == min(size, self.width - x):
-                # Native work writes one contiguous block per resolved tile.
-                self._file.seek((y * self.width + x * height) * 16)
+                # Append the visible tiles without reserving physical blocks
+                # for earlier rows. Upgrades can overwrite a ready tile.
+                offset = self._tile_offsets.get(origin, self._written_bytes)
+                self._file.seek(offset)
                 if self._file.write(rows) != rows.nbytes:
                     raise OSError("Incomplete Grain Denoise scratch write.")
+                if origin not in self._tile_offsets:
+                    self._tile_offsets[origin] = offset
+                    self._written_bytes += rows.nbytes
             else:
-                for offset, pixels, tile_width in self._pieces(y, x, height, width, rows):
+                for start, column, pixels, tile_width in self._pieces(y, x, height, width, rows):
                     for dy, row in enumerate(pixels):
-                        self._file.seek(offset + dy * tile_width * 16)
+                        self._file.seek(start + (dy * tile_width + column) * 16)
                         if self._file.write(row) != row.nbytes:
                             raise OSError("Incomplete Grain Denoise scratch write.")
             written = perf_counter()
@@ -440,8 +455,8 @@ class GrainPreparation:
             tile_width = min(size, self.width - left)
             y0, x0 = max(y, top), max(x, left)
             y1, x1 = min(bottom, top + tile_height), min(right, left + tile_width)
-            offset = top * self.width + left * tile_height + (y0 - top) * tile_width + x0 - left
-            yield offset * 16, rows[y0-y:y1-y, x0-x:x1-x], tile_width
+            offset = self._tile_offsets[top, left] + (y0 - top) * tile_width * 16
+            yield offset, x0 - left, rows[y0-y:y1-y, x0-x:x1-x], tile_width
 
     def close(self):
         with self._tiles_lock:
@@ -463,19 +478,19 @@ class GrainPreparation:
         with self._lock:
             if self._file.closed:
                 raise InterruptedError("The Denoise preparation was replaced.")
-            for offset, pixels, tile_width in self._pieces(y, x, height, width, rows):
-                if pixels.shape[1] == tile_width:
-                    block = pixels if pixels.flags.c_contiguous else np.empty(pixels.shape, dtype=rows.dtype)
-                    self._file.seek(offset)
+            for offset, column, pixels, tile_width in self._pieces(y, x, height, width, rows):
+                # One read for consecutive rows of a scratch tile, even
+                # when the viewport only uses some of its columns.
+                piece_width = pixels.shape[1]
+                for row in range(0, len(pixels), 128):
+                    target = pixels[row:row+128]
+                    block = target if piece_width == tile_width and target.flags.c_contiguous else np.empty(
+                        (len(target), tile_width, 4), dtype=rows.dtype)
+                    self._file.seek(offset + row * tile_width * 16)
                     if self._file.readinto(block) != block.nbytes:
                         raise OSError("Incomplete Grain Denoise source.")
-                    if block is not pixels:
-                        pixels[:] = block
-                else:
-                    for dy, row in enumerate(pixels):
-                        self._file.seek(offset + dy * tile_width * 16)
-                        if self._file.readinto(row) != row.nbytes:
-                            raise OSError("Incomplete Grain Denoise source.")
+                    if block is not target:
+                        target[:] = block[:, column:column+piece_width]
         return rows
 
     def _prepare_region(self, y, x, height, width, colour, *, fill_background=True):

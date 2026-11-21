@@ -58,7 +58,7 @@ Three problems follow, and Steve approved all three on November 21:
 | ID | Package | Branch | Depends on | Status |
 | --- | --- | --- | --- | --- |
 | LOG-1 | Logging foundation and GPU Grain route robustness | `sprint/logging-foundation` | — | not started |
-| CPU-1 | Faster CPU Grain backup: visible area first, then root speedups | `sprint/cpu-grain-speed` | — | Visible-first tiles, CPU noise-model reuse and exact scratch writes built; Canon/Sony byte checks passed. First PC run missed speed and RAM targets; final viewport batching awaits integration timing. |
+| CPU-1 | Faster CPU Grain backup: visible area first, then root speedups | `sprint/cpu-grain-speed` | — | PC first sharp picture 4.74 s (21.94 s baseline), Evenness release 3.11 s. Exact Canon/Sony checks passed. Whole-photo prep and peak RAM remain open. |
 | GPU-1 | Fine, Clean and Micro Grain on the GPU above 8,192 pixels | `sprint/gpu-large-photos` | — | not started |
 | LOG-2 | App-wide logging rollout | `sprint/logging-rollout` | LOG-1 merged | not started |
 | INT | Integration, full checks, push and Steve's hand test | `feat/denoise-v1` | all | not started |

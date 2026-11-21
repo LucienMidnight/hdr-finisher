@@ -1,6 +1,6 @@
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
-from threading import Event
+from threading import Barrier, Event
 
 import numpy as np
 
@@ -146,5 +146,36 @@ def test_native_warmup_does_not_fill_the_rest_and_visible_reads_share_work(tmp_p
         assert resolved.count((0, 2 * size)) == 1
     finally:
         release_background.set()
+        prepared.close()
+        pool.pool.shutdown()
+
+
+def test_native_warmup_runs_visible_tiles_together(tmp_path, monkeypatch):
+    from hdr_finisher import cpu_budget
+    from hdr_finisher.library_cache import LibraryCache
+
+    size = adaptive.TILE_SIZE
+    source = np.full((8, 3 * size, 3), .25, dtype=np.float32)
+    visible = Barrier(2, timeout=5)
+    resolved = []
+    pool = cpu_budget.PriorityCpuPool(2)
+
+    def resolve(read, height, width, origin, size, *_):
+        resolved.append(origin)
+        y, x = origin
+        assert x >= size
+        # This can only complete if both visible tiles are dispatched together.
+        visible.wait()
+        return read(y, x, height, min(x + size, width)), np.s_[:, :]
+
+    monkeypatch.setattr(cpu_budget, "_cpu_pool", pool)
+    monkeypatch.setattr(grain, "_resolved_tile", resolve)
+    read = lambda y, x, b, r: source[y:b, x:r]
+    settings = adaptive.AdaptiveControls(method="fine_grain")
+    prepared = grain.GrainPreparation(8, 3 * size, read, None, settings, None, lambda: True, LibraryCache(tmp_path))
+    try:
+        prepared.region(0, size, 8, 2 * size, 8, 3 * size, warm_only=True)
+        assert sorted(resolved) == [(0, size), (0, 2 * size)]
+    finally:
         prepared.close()
         pool.pool.shutdown()

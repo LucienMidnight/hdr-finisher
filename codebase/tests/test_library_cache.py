@@ -3,6 +3,7 @@ from concurrent.futures import ThreadPoolExecutor
 import os
 from threading import Barrier
 from pathlib import Path
+from types import SimpleNamespace
 import numpy as np
 import pytest
 from hdr_finisher.library_cache import GrainScratchSpaceError, LibraryCache
@@ -47,6 +48,29 @@ def test_grade_scratch_uses_full_size_allowance_and_closes(tmp_path):
         close()
     assert not file.exists()
     assert cache.usage()['full_size_used_bytes'] == 0
+
+
+def test_unwritten_grain_scratch_is_reserved_on_disk(tmp_path, monkeypatch):
+    from hdr_finisher import library_cache
+
+    cache = LibraryCache(tmp_path / "profile")
+    grain_source = tmp_path / "selected.raw"
+    free = 96
+    monkeypatch.setattr(library_cache.shutil, "disk_usage", lambda _: SimpleNamespace(free=free))
+    handle, close = cache.open_grade_scratch(64, grain_source=grain_source, preallocate=False)
+    try:
+        file = Path(handle.name)
+        assert file.stat().st_size == 0
+        assert cache.usage()["full_size_used_bytes"] == 64
+        with pytest.raises(GrainScratchSpaceError, match="drive is too full"):
+            cache.open_grade_scratch(40, grain_source=grain_source, preallocate=False)
+        handle.write(bytes(32))
+        free -= 32
+        with pytest.raises(GrainScratchSpaceError, match="drive is too full"):
+            cache.open_grade_scratch(40, grain_source=grain_source, preallocate=False)
+    finally:
+        close()
+    assert cache.usage()["full_size_used_bytes"] == 0
 
 
 @pytest.fixture
