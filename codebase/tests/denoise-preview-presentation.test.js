@@ -43,6 +43,27 @@ test("switching methods while enabling does not leave the original selected", as
   assert.deepEqual(pictures, ["micro_grain"]);
 });
 
+test("changing colour cleaning while bypassed prepares the new settings on enable", async () => {
+  const runtime = { generation: 0, showOriginal: true, status: "off" };
+  const controls = { method: "clean_grain", clean_color: false, grain_evenness: 0.65 };
+  const draws = [];
+  const state = { session: { session_id: "photo" }, currentView: "hdr", denoise: { hdr: { enabled: false, controls } },
+    denoiseRuntime: { hdr: runtime },
+    gpuPreview: { denoiseSourceSelector: { controls: { method: "clean_grain", cleanColor: false } },
+      diagnosticsSnapshot: () => ({ denoise: { cacheReady: true, identity: "photo:hdr:1600:{}:source" } }),
+      selectDenoiseSelectorSource: () => draws.push("stale") } };
+  const context = vm.createContext({ state, window: { setTimeout }, renderDenoiseControls() {}, invalidatePreview() {},
+    persistDenoiseSettings: async () => true, refinementProxyLongEdge: () => 1600,
+    geometrySignature: () => "{}", gradeSourceIdentity: () => "source",
+    recalculateDenoise: async () => draws.push({ ...controls }) });
+  vm.runInContext(declarations("restoreDenoiseStatus", "invalidateDenoisePreparation", "deferDenoisePreparation",
+    "setDenoiseEnabled", "commitDenoiseControl"), context);
+  await context.commitDenoiseControl("clean_color", true);
+  assert.deepEqual(draws, []);
+  await context.setDenoiseEnabled(true);
+  assert.deepEqual(draws, [{ method: "clean_grain", clean_color: true, grain_evenness: 0.65 }]);
+});
+
 test("the reduced CPU Denoise image is presented at its actual size without another GPU render", async () => {
   for (const { reduced, stale } of [{}, { reduced: 4096 }, { reduced: 4096, stale: true }]) {
     const state = { session: { session_id: "photo" }, currentView: "hdr", gpuPreview: { available: true },
