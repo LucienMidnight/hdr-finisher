@@ -71,7 +71,7 @@ Three problems follow, and Steve approved all three on November 21:
 | GPU-2 | Faster GPU Micro Grain and Fit | `sprint/gpu-grain-speed` | — | done, merged Nov 21 (`33063718`). PC Sony, finished frames byte-identical (5 pairs incl. edges and partial tiles): Fit reduction Micro 15.0 → 12.5 s, Clean 2.49 → 2.18 s. Micro slider unchanged (halo trim gave no consistent gain, dropped). AHD pooling and measurement batching not done (no measured gain). Isolated Micro Fit timing and Mac profiling open (INT-2, MEM-1) |
 | ROUTE-1 | One Grain route state and clear route messages | `sprint/grain-route-ui` | — | done, merged Nov 21: GPU / CPU backup / Reduced preview label beside Method, plain reason, Retry on GPU and Switch to Clean Grain actions, CPU progress after 2 s; sampled CPU preview bytes unchanged. Look awaits Steve (R2-5); lens-corrected Micro crop not captured |
 | MG-2 | Micro Grain CPU: visible area first | `sprint/micro-cpu-visible` | MG-1 merged | locally committed, Sony native regions byte-identical, PC RGBA8 110% first sharp 10.38 s and pan 3.81 s, Fit 27.30 s and 3.43 GB after the memory fix, native HDR timing open |
-| MEM-1 | One memory budget on the MacBook Neo | `sprint/mac-memory` | MG-1, GPU-2 merged | PC part done, merged Nov 21 (`62e602b4`). On the PC, with the machine acting as an 8 GB Mac, the locked replay passed: share trim and restore, admission, deferred reclaim, and identical calibration with 4.06 MB less scratch per tile. Finished-frame and export byte parity not yet run (INT-2). Lens strips measured only (see R2-6). Mac run pending (checklist under MEM-1) |
+| MEM-1 | One memory budget on the MacBook Neo | `sprint/mac-memory` | MG-1, GPU-2 merged | PC part done, merged Nov 21 (`62e602b4`). On the PC, with the machine acting as an 8 GB Mac, the locked replay passed: share trim and restore, admission, deferred reclaim, and identical calibration with 4.06 MB less scratch per tile. Finished-frame and export byte parity not yet run (INT-2). Lens strips measured only (see R2-6). MacBook Neo checked Nov 21 at `113a1c92`. Auto Clean and lens-off Micro stayed on GPU. Lens-on Micro hit 5.465 GB, CPU AVIF export 6.689 GB, full-size Proof 11.015 GB. Exact incident RAW, 50 MP RAW and Metal trace remain open |
 | QUAL-1 | Exposure-independent quality fixes (output changes) | `sprint/grain-quality` | CG-2 merged | to do; needs Steve's visual sign-off before any default changes |
 | FOLD-1 | Fine Grain folded into Clean Grain, with a cleaning checkbox | `sprint/fold-fine-grain` | CG-2, GPU-2, ROUTE-1 merged | done, merged Nov 21: "Clean color splotches and fringes" checkbox, on by default, saved per rendition. On: Sony HDR and SDR Fit byte-identical on each route. Off: CPU/GPU HDR ΔE ITP 0.055 / 0.161, SDR ΔE 2000 0.031 / 0.765 (mean / p99). Crops of off against old Fine Grain for Steve. Affected saved grade: Canon `IMG_0790.CR2.hdrf` |
 | DLV-1 | Share one Grain result across HDR and SDR in AVIF export and Proof | `sprint/delivery-grain-share` | — | done, merged Nov 21: shared when HDR and SDR have the same source and controls, bounded to one float32 frame (~509 MB). Sony Clean Small: AVIF export 54.5 → 44.9 s, full-size Proof 94.6 → 60.1 s, files byte-identical. Pre-existing: backend peak ~6.2 GB on both, over the 4 GB ceiling (MEM-1) |
@@ -929,6 +929,43 @@ xcrun xctrace record --template 'Metal System Trace' --attach "$GPU_PID" --time-
 .venv/bin/python tools/gpu-run-lock.py --label mem-1-mac-avif --minutes 10 -- node tests/run-in-electron.js tests/performance/denoise-grain-latency.js --42-only --full-proof-method=clean_grain --full-delivery-avif --full-delivery-route=cpu 2>&1 | tee output/mem-1-mac/avif-proof.jsonl
 .venv/bin/python tools/output_size.py
 ```
+
+**MacBook Neo, November 21, 2026 (`113a1c92`).** Auto Clean Small stayed
+on GPU in HDR Fit, at 110%, on pan and after Evenness on `_DSC7970.ARW`.
+The original fallback did not reproduce on that photo. The local
+`DSC00786.ARW` matches the test manifest (`6b9781a0…`), while the
+incident calls for `aa6b7118…`. Repeating the original incident needs that
+exact RAW. The 50 MP `DSC00636.ARW` is absent, so its HDR and SDR
+Fit, 110%, colour-cleaning and Micro checks remain open. Grade's
+`session_gpu_configuration` reports `maxTextureDimension2D=16384`, Auto
+`2147483648` bytes (`policy-fallback`) and a passed `268435456`-byte
+probe. A separate Library device logged 8192 px.
+
+With Custom 0.25 GiB, Clean Small switched to CPU preparation with a
+WebGPU draw. The first refusal and matching route were on action
+`c2f39042-b349-4b74-a7ad-3ef75ae02c38`. Graphics headroom is the 90%
+reservation limit less the larger of resident and allocator bytes.
+
+| Log event | Route and reason | Requested | Graphics headroom | App headroom | Pressure and retry |
+| --- | --- | ---: | ---: | ---: | --- |
+| `grain_gpu_refused`, `fine-grain-resize` | Refused, `gpu_budget_exceeded` | 215,580,960 B | 114,774,350 B | 2,175,972,400 B | `none`, temporary, `retry_used=false` |
+| `grain_gpu_skipped` | CPU, `prior_failure_latched`, prior reason `gpu_budget_exceeded` | — | 114,774,350 B | 2,175,972,400 B | `none`, temporary, `retry_used=false` |
+| `grain_route` | CPU, `gpu_budget_exceeded` | — | 114,774,350 B | 2,179,447,720 B | `none`, graphics headroom still short |
+
+No `grain_retry` was logged in the Custom run. The Custom preference was
+set in a disposable profile and later runs verified Auto.
+[Clean Custom backend log](../../../codebase/output/mem-1-mac/clean-custom-backend.log)
+
+Micro with the lens off stayed on GPU. Its cold Fit wait was mostly the
+Bayer source preparation and region fetches. The Metal trace could not run
+because `xcrun xctrace` returned `unable to find utility "xctrace", not a developer tool or in PATH`.
+Capturing that trace requires Xcode with Instruments on the Neo. With the
+lens on, CPU Micro at 78% described the picture as limited to 4,096 px,
+repeated preparation on Exposure and the first SDR switch, and reached
+5.465 GB. AVIF export and full-size Proof matched encoded bytes and reached
+6.689 GB and 11.015 GB whole-app respectively. The main backend was the
+largest owner at both delivery peaks.
+[Mac timings, stage attribution and memory owners](../performance-table.md#november-21-2026--macbook-neo-mem-1)
 
 ### QUAL-1 · Exposure-independent quality fixes (output changes)
 

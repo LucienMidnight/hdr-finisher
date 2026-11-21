@@ -1,3 +1,137 @@
+## November 21, 2026 — MacBook Neo MEM-1
+
+MacBook Neo, A18 Pro and 8 GB unified memory, app `0.9.3` at `113a1c92`.
+Unpackaged Electron at 1408 × 794 points under the shared GPU lock, disposable
+profiles, default 4,000,000,000-byte app ceiling and the unmodified 7968 × 5320
+Sony `_DSC7970.ARW` with harsh-speck cleanup ×2.5. GPU Auto selected 2 GiB
+except in the Custom run. Grade times end at the accepted sharp frame, or
+the accepted reduced frame for lens-on Micro. Slider times start at release.
+Memory is sampled macOS physical footprint, in decimal GB unless given in bytes.
+The frame time and peak sample can fall at different points within an action.
+A dash means the action finished between memory samples. [Run logs](../../codebase/output/mem-1-mac/)
+
+### Grade
+
+| Method and action | To picture | Accepted Grain route | Peak app RAM |
+| --- | ---: | --- | ---: |
+| Clean Small, Auto, enable at HDR Fit | 8.94–9.08 s | GPU, exact 1285 px | 2.34–2.37 GB |
+| Clean Small, Auto, zoom to 110% | 0.71–0.73 s | GPU, exact native region | 2.09–2.10 GB |
+| Clean Small, Auto, pan at 110% | 0.68–0.69 s | GPU, exact native region | 2.68–3.16 GB |
+| Clean Small, Auto, release Grain Evenness | 1.18 s | GPU, exact native region | 2.40 GB |
+| Clean Small, Custom 0.25 GiB, enable at HDR Fit | 18.75 s | CPU preparation, WebGPU draw, exact 1285 px | 2.00 GB |
+| Clean Small, Custom 0.25 GiB, zoom to 110% | 0.51 s | CPU preparation, WebGPU draw, exact native region | 1.73 GB |
+| Clean Small, Custom 0.25 GiB, pan at 110% | 1.02 s | CPU preparation, WebGPU draw, exact native region | 2.92 GB |
+| Clean Small, Custom 0.25 GiB, release Grain Evenness | 2.42 s | CPU preparation, WebGPU draw, exact native region | 2.00 GB |
+| Micro, Auto, lens off, cold enable at HDR Fit | 20.90 s | GPU, exact 1285 px | 2.19 GB |
+| Micro, Auto, lens off, zoom to 110% | 1.78 s | GPU, exact native region | 2.55 GB |
+| Micro, Auto, lens off, pan to second region | 1.63 s | GPU, exact native region | 3.06 GB |
+| Micro, Auto, lens off, release Luminance | 1.38 s | GPU, exact native region | 2.90 GB |
+| Micro, Auto, lens off, release Color | 0.81 s | GPU, exact native region | 2.83 GB |
+| Micro, Auto, lens off, release Detail | 0.78 s | GPU, exact native region | 2.71 GB |
+| Micro, Auto, lens off, return to Fit | 15.49 s | GPU, exact 1285 px | 2.64 GB |
+| Micro, Auto, lens off, Fit HDR → generated SDR | 0.054 s | GPU, exact 1285 px, reused Fit | — |
+| Micro, Auto, lens off, Fit generated SDR → HDR | 0.045 s | GPU, exact 1285 px, reused Fit | — |
+| Micro, Auto, Lensfun Auto, enable at 78% | 46.95 s | CPU, reduced 4096 px | **5.465 GB** |
+| Micro, Auto, Lensfun Auto, Exposure +0.25 EV at 78% | 46.99 s | CPU, reduced 4096 px, fresh preparation | **4.794 GB** |
+| Micro, Auto, Lensfun Auto, HDR → generated SDR at 78% | 45.90 s | CPU, reduced 4096 px, fresh preparation | **4.455 GB** |
+| Micro, Auto, Lensfun Auto, generated SDR → HDR at 78% | 0.034 s | CPU, reduced 4096 px, returned to prepared picture | 2.72 GB |
+| Micro, Auto, Lensfun Auto, return to Fit | 0.010 s | CPU, existing reduced 4096 px picture | — |
+| Micro, Auto, Lensfun Auto, return to 78% | 0.010 s | CPU, existing reduced 4096 px picture | — |
+
+At 110%, Micro held the same crop through all three sliders. At 78% it held
+the crop through Exposure and both lane changes and returned to the same
+position after Fit. No blocks or colour bands were visible in the sampled
+GPU pan, GPU SDR Fit, or lens-on HDR and SDR views. The CPU run described
+the 4096 px picture as limited and said export was full size. The backend
+logged 44.58 s of initial preparation, 44.72 s of fresh preparation on the
+Exposure action, and 43.58 s on the first SDR switch. The largest process
+at the initial 78% peak was Python, 2,710,195,296 bytes, followed by the
+Chromium GPU helper at 2,228,798,976 bytes. The retained source and
+original shared 508,677,120 bytes, and the reported working cache was empty
+at that sample. The same sample has 2,201,518,176 backend bytes beyond the
+retained source.
+
+An allocation replay of the first lens-on action found **1,017,354,240 B**
+in full-frame Lensfun coordinates, **508,677,120 B** each in its input
+and output, **508,677,120 B** in the retained Grade source, and
+**84,779,520 B** in the prepared Bayer sensor. The trace did not identify
+a separate Bayer tile cache allocation. At the sample's 2,741,521,672 B
+backend footprint, those named arrays leave **113,356,552 B** unassigned.
+The GPU helper reached **2,561,476,120 B** at the replay's
+**5,843,088,176 B** whole-app peak. Its internal allocations were beyond
+the scope of the backend trace.
+[Micro lens allocation trace](../../codebase/output/mem-1-mac/micro-lens-allocation.jsonl)
+
+On cold GPU Micro Fit, the source preparation request lasted 7.73 s and
+the exact reduction stage lasted 12.96 s. The 66 Bayer region responses
+occupied 11.25 s of wall time across this action and transferred 228.2 MB.
+The final submission reached the presentation callback in 6.7 ms. The
+first 110% pan took 1.63 s, including nine Bayer responses spanning 0.75 s
+and 15.6 MB of data. The measured region work totalled 0.79 s, includes
+fetches, and overlaps the measured proxy work. Submission to presentation
+took 8.1 ms. The app timings cannot split GPU upload, demosaic, Grain
+resolve and reduction into separate hardware times. The Metal trace was
+unavailable. [Micro Grade log](../../codebase/output/mem-1-mac/grade-micro-off-1.jsonl)
+
+### Native AVIF Gain Map export and Proof
+
+Clean Small on both generated renditions, Lensfun off, Q90, original
+size, no metadata, peak guarantee on and CPU delivery selected as in the
+checklist. Proof followed export in the same profile with a 1000-nit target.
+Both completed and the encoded Proof and export hashes matched.
+The separate Windows PC observation was about 6.2 GB for the standalone
+backend working set. Mac physical footprint is a different measure and
+includes memory charged to the process after macOS compresses it.
+[Mac driver results](../../codebase/output/mem-1-mac/avif-proof.jsonl)
+
+| Action and accepted route | To result | Whole-app peak | Backend peak | Largest process and stage at both peaks |
+| --- | ---: | ---: | ---: | --- |
+| Full-size AVIF Gain Map export, CPU | 72.82 s | **6,688,700,888 B** | **5,842,867,576 B** | Python backend, HDR Y4M preparation before the combine helper |
+| Full-size AVIF Gain Map Proof, CPU | 124.44 s | **11,014,604,392 B** | **10,193,674,712 B** | Python backend, full-size Proof reconstruction after the encoded artifact was ready |
+
+At each peak Grade retained **508,677,120 B**. The source and Retouch
+original shared those bytes and the Library cache census reported 0 B.
+Each finished float32 RGB rendition is **508,677,120 B**. The one shared
+Grain result has the same byte size during render. It is released before
+the export writes Y4M and Proof's file-backed copy is unmapped before AVIF
+encoding and final reconstruction. Proof retains two endpoint planes of
+**508,677,120 B** each, the authored HDR and the SDR converted to the
+matrix working space. The SDR conversion runs in bands and precedes the
+final Proof peak. The two Proof reconstruction requests can overlap.
+
+After deducting the source and two known full-frame planes, the baseline
+backend samples leave **4,316,836,216 B** in export and **8,667,643,352 B**
+in Proof without individual allocation attribution. The process census
+assigns the remaining **845,833,312 B** and **820,929,680 B**, respectively,
+to the other app processes in those samples.
+
+The allocation replay put **6,121,287,044 B** of live traced allocations
+at the sampled **5,833,348,568 B** export backend footprint. Its stack
+was converting the finished HDR rendition to BT.2020 PQ for Y4M.
+A nearby allocation snapshot includes the retained source and both finished
+renditions at **508,677,120 B** each, a full-frame BT.2020 intermediate
+of the same size, and four PQ transfer arrays totalling **2,034,708,480 B**.
+
+During Proof reconstruction, both target requests were in the gain-map
+formula simultaneously. One stack sample identifies **5,086,771,200 B**
+in ten distinct named arrays. Two are the shared endpoints. Each request
+holds its own clipped endpoints, log-gain and normalized gain planes.
+A nearby allocation snapshot attributes **9,156,188,160 B** to
+reconstruction temporaries from gain and RGB math and array clipping,
+in addition to **1,526,031,360 B** for the retained source and endpoints.
+At the replay's **10,804,945,872 B** backend footprint peak, the live
+allocation census read **10,445,206,055 B**. Traced allocation sizes and
+charged footprint measure different things. The original peaks above use
+the uninstrumented run. [Backend allocation trace](../../codebase/output/mem-1-mac/avif-proof-allocation.jsonl)
+
+The AVIF combine helper was recorded at **1,968,604,960 B** during export
+and **1,928,627,976 B** during Proof. Export's `avifdec` reached
+**3,948,924,096 B** in a separate peak-check sample. During Proof tile
+encoding, one `avifgainmaputil` process was sampled at **2,779,089,392 B**
+and an earlier sample had two helpers at **2,028,717,904 B** and
+**1,531,905,488 B** concurrently. The largest whole-app samples in the table
+had no AVIF helper. [Delivery log](../../codebase/output/mem-1-mac/avif-proof-backend.log)
+
 ## November 21 — Windows PC Denoise follow-up (INT-2)
 
 Unpackaged Electron at 2560 × 1440 under the shared GPU lock. Sony
