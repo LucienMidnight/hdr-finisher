@@ -203,7 +203,7 @@ def _frame(priority=20):
     ("sdr_jpeg", "clean_grain", "large", .75, (3465, 5202), False),
     ("sdr_jpeg", "clean_grain", "large", 0, (3464, 5202), False),
     ("sdr_jpeg", "clean_grain", "small", .75, (3464, 5202), False),
-    ("sdr_jpeg", "fine_grain", "large", .75, (3464, 5202), False),
+    ("sdr_jpeg", "clean_grain", "small", .75, (3464, 5202), False),
     ("sdr_jpeg", "micro_grain", "large", .75, (3464, 5202), False),
     ("jpeg_ultrahdr", "clean_grain", "large", .75, (3464, 5202), False),
 ])

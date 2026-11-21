@@ -242,7 +242,7 @@
           const denoise=job.denoise[lane];
           const controls=denoise?.controls;
           if(denoise?.enabled&&controls.amount>0&&(controls.luminance>0||controls.color_noise>0)){
-            const grain=job.grain_reconstruction&&(controls.method==="clean_grain"||(controls.method==="fine_grain"&&controls.grain_evenness));
+            const grain=job.grain_reconstruction&&controls.method==="clean_grain";
             if(!await gpu.analyzeDenoiseProxy(job.id,lane,job.adjustments,edge,0,sourceIdentity,controls,0,edge,
               grain?{deliveryGrainSource:proxy,beforeDeliverySubmit:permit}:{}))
               throw Error("GPU Denoise analysis failed.");

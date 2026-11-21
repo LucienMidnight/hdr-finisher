@@ -25,7 +25,7 @@ from tools.lib.test_photos import manifest_files
 ATRIUM = "DSC01212.ARW"
 ORDINARY = "DSC05622.ARW"
 PHOTOS = (ATRIUM, "IMG_0790.CR2", "_DSC7970.ARW", ORDINARY)
-METHODS = {"standard": "Standard", "fine_grain": "Fine Grain", "clean_grain": "Clean Grain"}
+METHODS = {"standard": "Standard", "fine_grain": "Clean Grain without colour cleaning", "clean_grain": "Clean Grain"}
 OUTPUT = marking.OUTPUT.parents[1] / "review/denoise-speed-baseline"
 # Unrotated sensor coordinates. The light is at x=3460, y=3000.
 ATRIUM_AREAS = [
@@ -49,8 +49,15 @@ def old_cleanup():
     return namespace["apply"]
 
 
+def controls_for_case(case):
+    # The pre-fold reference files use the Fine Grain case name.
+    if case == "fine_grain":
+        return DenoiseLiveControls(method="clean_grain", clean_color=False)
+    return DenoiseLiveControls(method=case)
+
+
 def resolve(source, model, method):
-    controls = DenoiseLiveControls(method=method)
+    controls = controls_for_case(method)
     return adaptive.resolve_adaptive(source, model, adaptive.AdaptiveControls(**controls.model_dump()))
 
 
@@ -128,7 +135,7 @@ def cached_scene(preparation, method, controls):
     scene = np.empty((height, width, 3), dtype=np.float32)
     for row in range(0, height, 128):
         count = min(128, height - row)
-        packed = preparation.region(row, 0, count, width, height, width, colour=method == "clean_grain")
+        packed = preparation.region(row, 0, count, width, height, width)
         fields = np.frombuffer(packed, dtype="<u4").reshape(count, width, 4)
         rgb = fields[..., :3].view("<f4")
         if method == "clean_grain":
@@ -175,16 +182,16 @@ def compare_reference(folder, cache, photo=None):
                                   passed=ok)), flush=True)
 
         check(resolve(source, model, "standard"), "standard", "CPU preparation and bounded finishing")
-        fine, clean = (adaptive.AdaptiveControls(**DenoiseLiveControls(method=method).model_dump())
-                       for method in ("fine_grain", "clean_grain"))
-        fit = denoise_grain.fit_grain(height, width, read, model, fine)
-        preparation = denoise_grain.GrainPreparation(height, width, read, model, fine, fit, lambda: True, cache)
-        try:
-            check(cached_scene(preparation, "fine_grain", fine), "fine_grain", "native preview preparation")
-            preparation.add_colour(clean, lambda: True)
-            check(cached_scene(preparation, "clean_grain", clean), "clean_grain", "reused native preview preparation")
-        finally:
-            preparation.close()
+        fit = None
+        for method in ("fine_grain", "clean_grain"):
+            settings = adaptive.AdaptiveControls(**controls_for_case(method).model_dump())
+            if fit is None:
+                fit = denoise_grain.fit_grain(height, width, read, model, settings)
+            preparation = denoise_grain.GrainPreparation(height, width, read, model, settings, fit, lambda: True, cache)
+            try:
+                check(cached_scene(preparation, method, settings), method, "native preview preparation")
+            finally:
+                preparation.close()
     return passed
 
 
@@ -307,7 +314,7 @@ def main():
         records[name] = photo_record(path, folder, areas, originals, previous, bool(args.verify_guard), guard.get(name))
         records[name]["source_sha256"] = identities[name]
     receipt = dict(**round4.stamp(), photos=records,
-                   method_controls={method: DenoiseLiveControls(method=method).model_dump()
+                   method_controls={method: controls_for_case(method).model_dump()
                                     for method in METHODS},
                    hdr_target_nits=GRADE.hdr.highlight_compression_target_nits,
                    hdr_reference_white_nits=CONTEXT.hdr_reference_white_nits)

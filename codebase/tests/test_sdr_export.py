@@ -83,11 +83,11 @@ def test_sdr_jpeg_export_uses_sdr_branch_quality_and_jpg_suffix(monkeypatch, tmp
 
 
 @pytest.mark.parametrize(
-    ("method", "authored", "resize"),
-    [("fine_grain", False, False), ("clean_grain", True, False), ("fine_grain", False, True)],
+    ("clean_color", "authored", "resize"),
+    [(False, False, False), (True, True, False), (False, False, True)],
 )
 def test_standalone_sdr_jpeg_with_denoise_matches_the_whole_frame(
-    monkeypatch, tmp_path, method, authored, resize,
+    monkeypatch, tmp_path, clean_color, authored, resize,
 ):
     from hdr_finisher import gpu_delivery
     from hdr_finisher.models import DenoiseDocumentSettings, OutputFinishingSettings
@@ -98,7 +98,8 @@ def test_standalone_sdr_jpeg_with_denoise_matches_the_whole_frame(
     session.image = random.random((269, 151, 3), dtype=np.float32) * np.float32(1.4)
     session.denoise = DenoiseDocumentSettings()
     session.denoise.sdr.enabled = True
-    session.denoise.sdr.controls.method = method
+    session.denoise.sdr.controls.method = "clean_grain"
+    session.denoise.sdr.controls.clean_color = clean_color
     if authored:
         session.sdr_reference_image = session.image * np.float32(.65)
         session.adjustments.sdr.use_authored_base = True

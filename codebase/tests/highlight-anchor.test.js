@@ -95,7 +95,7 @@ test("a Grain underlayer rebuild reuses the native highlight anchor for the same
   const grain = { token: "fine-preparation" };
   const selector = preview.denoiseSourceSelector = {
     identity: native.identity, selected: "resolved", resolvedVersion: 1,
-    controls: { method: "fine_grain", colorSplotches: 1 },
+    controls: { method: "clean_grain", cleanColor: false, colorSplotches: 1 },
     cache: { grain, preparedFrame: JSON.stringify(["s", "hdr", "{}", "source"]) },
   };
   const params = peakFitParams();

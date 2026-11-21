@@ -47,7 +47,8 @@ def test_denoise_settings_are_versioned_undoable_and_project_persistent(
     settings.hdr.controls.amount = amount
     settings.hdr.controls.color_noise = color
     settings.hdr.controls.detail_recovery = detail
-    settings.hdr.controls.method = "fine_grain" if amount > .5 else "clean_grain"
+    settings.hdr.controls.method = "clean_grain"
+    settings.hdr.controls.clean_color = amount <= .5
     settings.hdr.controls.grain_evenness = .77
     settings.hdr.controls.color_splotches = .39
     settings.hdr.controls.splotch_size = "small"
@@ -97,7 +98,7 @@ def test_new_denoise_settings_use_approved_d1_defaults() -> None:
     expected = dict(amount=0.75, luminance=0.5, color_noise=0.75,
                     detail_recovery=0.5, finest_noise=0.5, fine_noise=0.5,
                     medium_noise=0.5, coarse_noise=0.5, method="standard",
-                    grain_evenness=1, color_splotches=1, splotch_size="small")
+                    grain_evenness=1, clean_color=True, color_splotches=1, splotch_size="small")
     expected |= dict(micro_luminance=0.5, micro_color=0.5, micro_detail=0.5)
     assert DenoiseLiveControls().model_dump() == expected
     assert asdict(AdaptiveControls()) == expected

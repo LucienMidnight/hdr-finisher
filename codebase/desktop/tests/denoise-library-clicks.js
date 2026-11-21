@@ -10,7 +10,7 @@ const { setTimeout: delay } = require('node:timers/promises');
 const { chromium } = require('playwright');
 const { photosRoot } = require('../../tests/helpers/photos-root.cjs');
 
-const methods = ['standard', 'fine_grain', 'clean_grain', 'micro_grain'];
+const methods = ['standard', 'clean_grain', 'micro_grain'];
 
 async function waitFor(action, description) {
   const end = Date.now() + 60000;

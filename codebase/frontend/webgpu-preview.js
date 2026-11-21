@@ -6,7 +6,7 @@
   const CLEAN_GRAIN_LARGE_MARGIN = 76;
 
   function cleanGrainMargin(controls) {
-    if (controls.method !== "clean_grain") return 0;
+    if (controls.method !== "clean_grain" || controls.cleanColor === false) return 0;
     return controls.splotchSize === "large" ? CLEAN_GRAIN_LARGE_MARGIN : CLEAN_GRAIN_SMALL_MARGIN;
   }
   const FINE_GRAIN_REDUCED_CACHE_SIZE = 3;
@@ -15,7 +15,7 @@
 
   function fineGrainPixelControls(controls, endpoints = false) {
     const { grainEvenness, colorSplotches, splotchSize, ...core } = controls;
-    if (controls.method === "clean_grain") {
+    if (controls.method === "clean_grain" && controls.cleanColor !== false) {
       return { ...core, grainEvenness, splotchSize, ...(endpoints ? {} : { colorSplotches }) };
     }
     return endpoints ? core : { ...core, grainEvenness };
@@ -23,9 +23,9 @@
 
   function preparedGrainControls(controls) {
     const { amount, luminance, colorNoise, detailRecovery, finestNoise, fineNoise,
-      mediumNoise, coarseNoise, method, grainEvenness, splotchSize } = controls;
+      mediumNoise, coarseNoise, method, grainEvenness, cleanColor, splotchSize } = controls;
     return { amount, luminance, colorNoise, detailRecovery, finestNoise, fineNoise,
-      mediumNoise, coarseNoise, method, grainEvenness, ...(method === "clean_grain" ? { splotchSize } : {}) };
+      mediumNoise, coarseNoise, method, grainEvenness, ...(method === "clean_grain" ? { cleanColor, splotchSize } : {}) };
   }
 
   function denoiseDeadline(signal, milliseconds) {
@@ -6148,7 +6148,9 @@
           coarseNoise: controls.coarseNoise ?? controls.coarse_noise ?? 0.5,
           method: controls.method ?? "standard",
           grainEvenness: controls.grainEvenness ?? controls.grain_evenness ?? 1,
-          colorSplotches: controls.colorSplotches ?? controls.color_splotches ?? 1,
+          cleanColor: (controls.cleanColor ?? controls.clean_color) !== false,
+          colorSplotches: (controls.cleanColor ?? controls.clean_color) === false
+            ? 0 : (controls.colorSplotches ?? controls.color_splotches ?? 1),
           splotchSize: controls.splotchSize ?? controls.splotch_size ?? "small",
           microLuminance: controls.microLuminance ?? controls.micro_luminance ?? 0.5,
           microColor: controls.microColor ?? controls.micro_color ?? 0.5,
@@ -6443,7 +6445,7 @@
       const { controls } = selector;
       return JSON.stringify([selector.cache.grain.fitKey, proxy.width, proxy.height, proxy.workingSpace,
         selector.cache.grain.micro ? [controls.microLuminance, controls.microColor, controls.microDetail]
-          : fineGrainPixelControls(controls, controls.method === "clean_grain")]);
+          : fineGrainPixelControls(controls, controls.method === "clean_grain" && controls.cleanColor !== false)]);
     }
 
     hasReducedMicroGrain(width, height) {
@@ -6456,7 +6458,7 @@
     hasReducedCleanGrain() {
       const selector = this.denoiseSourceSelector;
       const proxy = selector?.original;
-      return Boolean(proxy && selector.cache?.grain?.gpu && selector.controls.method === "clean_grain"
+      return Boolean(proxy && selector.cache?.grain?.gpu && selector.controls.method === "clean_grain" && selector.controls.cleanColor !== false
         && this.fineGrainReduced.has(this.reducedGrainKey(proxy, selector)));
     }
 
@@ -6466,7 +6468,7 @@
       const grain = selector.cache.grain;
       if (!grain?.gpu || (proxy.width === grain.width && proxy.height === grain.height)) return null;
       const controls = selector.controls;
-      const clean = controls.method === "clean_grain";
+      const clean = controls.method === "clean_grain" && controls.cleanColor !== false;
       if (interactive && !clean) return null;
       const key = this.reducedGrainKey(proxy, selector);
       const cached = this.fineGrainReduced.get(key);
@@ -6700,7 +6702,7 @@
     async resizeNativeFineGrain(proxy, revision, selector, current, key, signal, action) {
       const start = performance.now();
       const controls = selector.controls;
-      const clean = controls.method === "clean_grain";
+      const clean = controls.method === "clean_grain" && controls.cleanColor !== false;
       const micro = selector.cache.grain.micro;
       const [horizontal, vertical, baseVertical] = await this.ensureFineGrainResizePipelines(clean);
       if (!current()) throw new DOMException("Grain resize was replaced.", "AbortError");
@@ -6763,7 +6765,7 @@
           usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.STORAGE_BINDING }),
       });
       const assertCurrent = () => {
-        if (!current()) throw new DOMException("Fine Grain reduction was replaced.", "AbortError");
+        if (!current()) throw new DOMException("Grain reduction was replaced.", "AbortError");
       };
       const inFlight = [];
       try {
@@ -6945,7 +6947,7 @@
       // The resident-source delivery route has its own qualification. The
       // larger-photo route here is for Grade's streamed source.
       if (residentSource && native > 8192) {
-        throw grainWorkRefused("source_too_large", "Fine Grain calibration exceeds the supported delivery source size.", {
+        throw grainWorkRefused("source_too_large", "Grain calibration exceeds the supported delivery source size.", {
           source_edge_px: native, max_source_edge_px: 8192,
         });
       }
@@ -6957,7 +6959,7 @@
       const maxTiles = Math.min(textureTiles, Math.floor(fitBufferLimit / bytesPerTile), residentSource ? Infinity : 8);
       const chunkWidth = Math.min(native, maxTiles * rows);
       if (textureLimit < rows + 2 * margin || chunkWidth <= 0) {
-        throw grainWorkRefused("source_too_large", "Fine Grain calibration cannot fit one GPU tile.", {
+        throw grainWorkRefused("source_too_large", "Grain calibration cannot fit one GPU tile.", {
           requested_bytes: bytesPerTile, max_buffer_bytes: fitBufferLimit, max_texture_dimension_px: textureLimit,
         });
       }
@@ -6975,7 +6977,7 @@
       const sizes = adaptiveResolveOptions(controls);
       const totals = GRAIN_DENOISE_BANDS.map(() => [0, 0, 0, 0]);
       const assertCurrent = () => {
-        if (!current()) throw new DOMException("Fine Grain calibration was replaced.", "AbortError");
+        if (!current()) throw new DOMException("Grain calibration was replaced.", "AbortError");
       };
       let { width, height } = residentSource || {};
       let stripCount = 0;
@@ -7004,7 +7006,7 @@
             if (source.region && (source.region.x !== left || source.region.y !== top
                 || source.region.width !== Math.min(width, right) - left
                 || source.region.height !== Math.min(height, bottom) - top)) {
-              throw grainWorkRefused("gpu_validation_error", "Incomplete Fine Grain calibration chunk.", {
+              throw grainWorkRefused("gpu_validation_error", "Incomplete Grain calibration chunk.", {
                 width_px: right - left, height_px: bottom - top,
               });
             }
@@ -7049,14 +7051,14 @@
         assertCurrent();
         const fit = totals.map(([retained, averaged, mixed, square]) => {
           if (![retained, averaged, mixed, square].every(value => Number.isFinite(value) && value >= 0)) {
-            throw grainWorkRefused("gpu_validation_error", "Invalid GPU Fine Grain statistics.", { width_px: width, height_px: height });
+            throw grainWorkRefused("gpu_validation_error", "Invalid GPU Grain statistics.", { width_px: width, height_px: height });
           }
           const linear = 2 * mixed;
           const increase = Math.max(retained - averaged, 0);
           const offset = 2 * increase / Math.max(linear + Math.sqrt(linear ** 2 + 4 * square * increase), 1e-30);
           const scale = Math.min(1, Math.sqrt(retained / Math.max(averaged, 1e-30))) * (1 - offset);
           if (offset > 1 || scale < 0 || !Number.isFinite(scale)) {
-            throw grainWorkRefused("gpu_validation_error", "Invalid GPU Fine Grain coefficients.", { width_px: width, height_px: height });
+            throw grainWorkRefused("gpu_validation_error", "Invalid GPU Grain coefficients.", { width_px: width, height_px: height });
           }
           return [Math.fround(scale), Math.fround(offset)];
         });
@@ -7180,11 +7182,10 @@
       this.recordStage("denoise-analysis", { state: "started", generation, longEdge, algorithm: ADAPTIVE_DENOISE_ALGORITHM_VERSION });
       const apiEdge = Math.min(longEdge, 16384);
       const query = `long_edge=${apiEdge}&edit_revision=${editRevision}&geometry_signature=${encodeURIComponent(geometrySignature)}`;
-      const experimental = controls.method === "clean_grain"
-        || (controls.method === "fine_grain" && controls.grainEvenness);
+      const experimental = controls.method === "clean_grain";
       const sourceKey = this.grainSourceKey(sessionId, geometrySignature, frame.sourceIdentity, repairGeneration, controls.method);
       const gpuFine = (gradeGpuGrain || deliveryGrainSource)
-        && (controls.method === "fine_grain" || controls.method === "clean_grain")
+        && experimental
         && controls.amount > 0 && (controls.luminance > 0 || controls.colorNoise > 0);
       // Grade can start analysis before the first render sets maskSourceSize.
       // Measure the native source the Grain preparation will actually use.
@@ -7233,7 +7234,7 @@
           repairGeneration, refresh, model, controls.amount, controls.luminance, controls.detailRecovery,
           controls.fineNoise, controls.mediumNoise]);
         const fit = async () => {
-          if (controls.method === "clean_grain") await this.ensureCleanGrainPipelines();
+          if (controls.cleanColor !== false) await this.ensureCleanGrainPipelines();
           if (!current()) return null;
           const cached = this.fineGrainFits.get(fitKey);
           if (cached) {
@@ -7271,7 +7272,7 @@
               color_noise: controls.colorNoise, detail_recovery: controls.detailRecovery,
               finest_noise: controls.finestNoise, fine_noise: controls.fineNoise,
               medium_noise: controls.mediumNoise, coarse_noise: controls.coarseNoise,
-              grain_evenness: controls.grainEvenness, splotch_size: controls.splotchSize,
+              grain_evenness: controls.grainEvenness, clean_color: controls.cleanColor, splotch_size: controls.splotchSize,
             }),
           });
           if (response.status === 409) throw new DOMException("Grain preparation was replaced.", "AbortError");
@@ -7307,7 +7308,7 @@
       const preparedFrame = JSON.stringify([sessionId, lane, geometrySignature, frame.sourceIdentity]);
       const setupIdentity=this.denoiseSetupIdentity?.(lane,longEdge,geometrySignature) || frame.identity;
       const cacheIdentity = `${frame.identity}|${ADAPTIVE_DENOISE_ALGORITHM_VERSION}|${JSON.stringify(model)}${grain ? "|" + JSON.stringify(grain) : ""}`;
-      const cleanMargin = micro ? MICRO_GRAIN_MARGIN : grain?.gpu && controls.method === "clean_grain"
+      const cleanMargin = micro ? MICRO_GRAIN_MARGIN : grain?.gpu && controls.method === "clean_grain" && controls.cleanColor !== false
         ? ADAPTIVE_DENOISE_MARGIN + CLEAN_GRAIN_LARGE_MARGIN : undefined;
       if (this.reuseDenoiseSetup && previous?.setupIdentity === setupIdentity
           && (!cleanMargin || previous.cache?.adaptiveScratch?.margin >= cleanMargin)

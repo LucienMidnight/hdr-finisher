@@ -82,8 +82,9 @@ async function authoredSdr(page, api) {
   console.log("Authored Match/Undo: linear sRGB → ACEScg → authored linear sRGB");
 
   await page.evaluate(()=>{
-    state.gpuPreview.enableGradeFineGrainGpu=false;
-    return commitDenoiseControl("method","fine_grain");
+    state.gpuPreview.enableGradeCleanGrainGpu=false;
+    state.denoise.sdr.controls.clean_color=false;
+    return commitDenoiseControl("method","clean_grain");
   });
   await page.waitForFunction(()=>state.gpuPreview.denoiseSourceSelector?.cache?.grain?.token && previewIdleNow());
   const fallback = await page.evaluate(async ()=>{
@@ -120,8 +121,8 @@ async function authoredSdr(page, api) {
     if(!upload.ok())throw Error(await upload.text());
     console.log("fixture uploaded");
     const session=(await upload.json()).session;
-    for (const [method, size] of [["standard", "small"], ["fine_grain", "small"], ["clean_grain", "small"], ["clean_grain", "large"]]) {
-      const output = path.join(root, `${method}-${size}`);
+    for (const [method, size, cleanColor] of [["standard", "small", true], ["clean_grain", "small", false], ["clean_grain", "small", true], ["clean_grain", "large", true]]) {
+      const output = path.join(root, `${method}-${size}-${cleanColor}`);
       fs.mkdirSync(output);
       console.log("Denoise delivery", method, size);
       const edits=await page.request.get(api(`/api/session/${session.session_id}/edit-state`));
@@ -130,7 +131,8 @@ async function authoredSdr(page, api) {
         editState.document.denoise[lane].enabled = true;
         editState.document.denoise[lane].controls.method = method;
         editState.document.denoise[lane].controls.splotch_size = size;
-        editState.document.denoise[lane].controls.grain_evenness = method === "fine_grain" ? 0.65 : 0;
+        editState.document.denoise[lane].controls.grain_evenness = cleanColor ? 0 : 0.65;
+        editState.document.denoise[lane].controls.clean_color = cleanColor;
       }
       // The clipped calibration fixture exceeds 1000 nits without an authored cap.
       editState.document.global_adjustments.hdr.highlight_section_enabled=true;

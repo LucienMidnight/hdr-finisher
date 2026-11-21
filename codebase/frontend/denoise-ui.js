@@ -157,8 +157,10 @@ function renderDenoiseControls() {
   els.denoiseDetail.closest(".control-row").classList.toggle("hidden", micro);
   els.denoiseAdvancedToggle.classList.toggle("hidden", micro);
   els.denoiseCleanControls.classList.toggle("hidden", settings.controls.method !== "clean_grain");
+  els.denoiseCleanColor.checked = settings.controls.clean_color !== false;
+  els.denoiseCleanColor.disabled = !editable;
   els.denoiseSplotchSize.value = settings.controls.splotch_size;
-  els.denoiseSplotchSize.disabled = !editable;
+  els.denoiseSplotchSize.disabled = !editable || !els.denoiseCleanColor.checked;
   els.denoiseBypass.classList.toggle("bypassed", !enabled);
   els.denoiseBypass.setAttribute("aria-pressed", String(enabled));
   group?.classList.toggle("bypassed", !enabled);
@@ -179,7 +181,7 @@ function renderDenoiseControls() {
   for (const [input, output, value] of controls) {
     input.value = String(value);
     output.textContent = `${Math.round(value * 100)}%`;
-    input.disabled = !editable;
+    input.disabled = !editable || (input === els.denoiseSplotches && !els.denoiseCleanColor.checked);
     updateRangeVisual(input);
   }
   els.denoiseRecalculate.disabled = !editable || ["preparing", "recalculating"].includes(runtime.status);
@@ -516,8 +518,7 @@ async function recalculateDenoiseForView(lane, options) {
   const { color_splotches, ...preparationControls } = settings.controls;
   const nativePreparation = preparationControls.amount
     && (preparationControls.luminance || preparationControls.color_noise)
-    && (preparationControls.method === "clean_grain"
-      || (preparationControls.method === "fine_grain" && preparationControls.grain_evenness));
+    && preparationControls.method === "clean_grain";
   const key = JSON.stringify([
     sessionId, lane, nativePreparation ? "native" : longEdge, geometrySignature(),
     pixels, state.repairSourceGeneration || 0, settings.analysis, refresh,
@@ -778,7 +779,8 @@ function denoiseRendererControls(controls) {
     coarseNoise: controls.coarse_noise ?? 0.5,
     method: controls.method,
     grainEvenness: controls.grain_evenness,
-    colorSplotches: controls.color_splotches,
+    cleanColor: controls.clean_color !== false,
+    colorSplotches: controls.clean_color === false ? 0 : controls.color_splotches,
     splotchSize: controls.splotch_size,
     ...(controls.method === "micro_grain" ? { microLuminance: controls.micro_luminance,
       microColor: controls.micro_color, microDetail: controls.micro_detail } : {}),

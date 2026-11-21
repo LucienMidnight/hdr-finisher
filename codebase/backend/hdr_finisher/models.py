@@ -940,11 +940,12 @@ class DenoiseLiveControls(BaseModel):
     fine_noise: float = Field(default=0.5, ge=0.0, le=1.0)
     medium_noise: float = Field(default=0.5, ge=0.0, le=1.0)
     coarse_noise: float = Field(default=0.5, ge=0.0, le=1.0)
-    method: Literal["standard", "fine_grain", "clean_grain", "micro_grain"] = "standard"
+    method: Literal["standard", "clean_grain", "micro_grain"] = "standard"
     micro_luminance: float = Field(default=0.5, ge=0.0, le=1.0)
     micro_color: float = Field(default=0.5, ge=0.0, le=1.0)
     micro_detail: float = Field(default=0.5, ge=0.0, le=1.0)
     grain_evenness: float = Field(default=1.0, ge=0.0, le=1.0)
+    clean_color: bool = True
     color_splotches: float = Field(default=1.0, ge=0.0, le=1.0)
     splotch_size: Literal["small", "large"] = "small"
 

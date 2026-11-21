@@ -22,10 +22,11 @@ test('Denoise method controls recover after a rejected save, missing GPU, or exp
   }
 });
 
-for (const [method, toggle] of [['fine_grain', 'enableGradeFineGrainGpu'], ['clean_grain', 'enableGradeCleanGrainGpu']]) {
-test(`Grade only prepares GPU ${method} while its correction is enabled`, async () => {
+for (const clean_color of [false, true]) {
+const toggle = 'enableGradeCleanGrainGpu';
+test(`Grade only prepares GPU Clean Grain while Denoise is enabled (clean color: ${clean_color})`, async () => {
   const routes = [];
-  const settings = { enabled: true, controls: { method } };
+  const settings = { enabled: true, controls: { method: 'clean_grain', clean_color } };
   const runtime = { generation: 0 };
   const gpuPreview = {
     available: true,

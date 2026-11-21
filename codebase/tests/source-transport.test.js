@@ -99,7 +99,7 @@ test('Wide panorama Grain at Fit requests a measurement the API can serve', asyn
     },
   });
   assert.equal(await renderer.analyzeDenoiseProxy('photo', 'hdr', {}, 1600, 0, 'source',
-    { method: 'fine_grain', grainEvenness: 1 }, 0, 18001), true);
+    { method: 'clean_grain', cleanColor: false, grainEvenness: 1 }, 0, 18001), true);
   assert.equal(measurementEdge, 1600);
 });
 
