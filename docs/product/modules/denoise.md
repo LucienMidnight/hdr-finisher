@@ -85,9 +85,16 @@ Windows PC with a 2 GiB graphics setting, the 50 MP Sony and a synthetic
 61 MP linear TIFF each presented Fine and Clean Grain Small on the GPU at
 Fit and 110%. The merged Clean Small route passed again on the Sony and
 logged correlated reservations. Bayer Micro Grain also stayed on the GPU on
-that Sony at 110%. Finished HDR and SDR agreement with the CPU route, large
-Bayer Micro at Fit, and minimum-Mac validation remain open. See the
-[performance table](../../technical/performance-table.md#november-21--large-photo-grain-in-grade).
+that Sony at 110%.
+
+The integration check found a wrong tile in generated SDR at 110% while
+Grain was prepared on the CPU. Background peak measurements could overwrite
+the drawing settings for a visible tile. Peak measurements now keep their own
+GPU settings. Both the 50 MP and 42 MP Sony photos passed finished HDR and SDR
+agreement at Fit and 110% for Fine and Clean Grain Small. Micro Grain drew on
+the GPU at Fit on the 50 MP photo.
+The 61 MP TIFF still needs finished parity and the minimum Mac needs
+validation. [Large-photo measurements](../../technical/performance-table.md#november-21--large-photo-grain-in-grade)
 
 ### RAW Pixel cleanup
 

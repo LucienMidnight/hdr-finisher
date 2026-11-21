@@ -878,7 +878,8 @@ async function renderGpuDraftForView(lane, request) {
   if (cpuGrainToken && !allowInactive && state.zoomMode === "fit" && !request.underlayerOnly
     && tier !== "interactive" && canvas.hdrCpuGrainQuickToken !== cpuGrainToken) {
     const quick = await renderGpuDraftInner(lane, { ...request, underlayerOnly: true });
-    if (!quick || request.isCurrent?.() === false) return refuse("superseded-after-cpu-grain-quick");
+    if (!quick) return false;
+    if (request.isCurrent?.() === false) return refuse("superseded-after-cpu-grain-quick");
     canvas.hdrCpuGrainQuickToken = cpuGrainToken;
   }
   // A magnified pass fetches a region of the frame it will produce, so it has

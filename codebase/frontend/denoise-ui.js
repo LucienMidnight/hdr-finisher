@@ -374,7 +374,8 @@ function gradeGrainAction(lane, operation) {
 }
 
 async function recalculateDenoise(lane = state.currentView, options = {}) {
-  const action = options.action || (options.logAction !== false && gradeGrainAction(lane, options.operation || "prepare_grain"));
+  const action = options.action ?? (options.logAction === false ? undefined
+    : gradeGrainAction(lane, options.operation || "prepare_grain"));
   let ready = false, failed = false;
   try {
     ready = await recalculateDenoiseForView(lane, { ...options, action });

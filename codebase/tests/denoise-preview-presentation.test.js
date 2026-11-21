@@ -111,6 +111,38 @@ test("switching lanes after a hard Denoise failure uses the CPU without another 
   assert.deepEqual(calls, ["gpu", "cpu-cache", "denoised-cpu"]);
 });
 
+test("a validation failure drawing the quick CPU Grain picture still requests the CPU fallback", async () => {
+  const state = {
+    currentView: "sdr", session: { session_id: "photo", source: { width: 1600, height: 1000 } },
+    zoomMode: "fit", previewGeneration: { sdr: 1 }, gpuDraftRefusals: {}, displayInfo: {}, adjustments: {},
+    denoise: { sdr: { enabled: true, controls: { method: "fine_grain" } } },
+    denoiseRuntime: { sdr: {} },
+    gpuFailurePolicy: { record: error => ({ kind: "validation", detail: error.message, recoverable: true }) },
+  };
+  let attempts = 0;
+  state.gpuPreview = {
+    diagnosticsSnapshot: () => ({ denoise: { cacheReady: true, identity: "photo:sdr:1600:{}:authored-sdr" } }),
+    denoiseSourceSelector: { cache: { grain: { token: "cpu-preparation" } } },
+    async render() {
+      attempts++;
+      throw new Error("Injected validation failure");
+    },
+  };
+  const context = vm.createContext({
+    state, performance, window: {}, els: { previewCanvas: {} }, console: { warn() {} },
+    gradeGrainAction: () => null, gradeGrainGpuPreferred: () => false, liveGradeGrainSelected: () => false,
+    geometryDraftActive: () => false, gpuPreviewEligible: () => true, nativeDenoiseViewport: () => false,
+    geometrySignature: () => "{}", gradeSourceIdentity: () => "authored-sdr", denoiseNoiseViewActive: () => false,
+    gpuLumaMaskOverlayOptions: () => null, projectReferenceWhiteNits: () => 203, gpuFrameSizeAt: () => null,
+    localAdjustments: () => [], localsBypassed: () => true, sampleCurvePoints() {}, renderReadouts() {},
+  });
+  vm.runInContext(frontendSource("preview-pipeline.js"), context);
+  assert.equal(await context.renderGpuDraftInner("sdr", { longEdge: 1600 }), false);
+  assert.equal(attempts, 1);
+  assert.equal(context.transientGpuRefusal(), false);
+  assert.equal(state.lastGpuDraftRefusal.detail, "Injected validation failure");
+});
+
 for (const method of ["standard", "fine_grain", "clean_grain"]) {
   test(`${method} keeps the sharp patch mounted while the replacement is drawn`, async () => {
     const previous = { x: 10, y: 20, width: 900, height: 600, frameWidth: 5202, frameHeight: 3464 };
