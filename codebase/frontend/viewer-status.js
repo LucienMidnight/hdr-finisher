@@ -17,11 +17,11 @@ function previewNeedsRefinement() {
 }
 
 /**
- * @typedef {"ready"|"updating"|"preparing"|"unavailable"} ViewerStatus
+ * @typedef {"ready"|"updating"|"preparing"|"reduced"|"unavailable"} ViewerStatus
  */
 
 /**
- * The four viewer states are derived, never stored. A stored status drifts out
+ * Viewer states are derived, never stored. A stored status drifts out
  * of agreement with the image on screen; a derived one is always a statement
  * about the presentation the viewer can actually see.
  *
@@ -45,6 +45,10 @@ function deriveViewerState({
   const laneMatches = Boolean(accepted) && accepted.lane === lane;
   const presentedTier = laneMatches ? (accepted.tier || null) : null;
   if (unavailableReason) return { status: "unavailable", tier, presentedTier, detail: unavailableReason };
+  if (laneMatches && accepted.generation === currentGeneration && accepted.requestedTier === tier
+      && accepted.geometrySignature === currentGeometrySignature && accepted.reducedNotice) {
+    return { status: "reduced", tier, presentedTier, detail: accepted.reducedNotice };
+  }
   // The selected tier owns the viewer only once it has produced an exact
   // result of its own. Anything else is still a placeholder, however good it
   // looks, and must be labeled as one.
@@ -80,6 +84,7 @@ function viewerStatusLabel(viewer = viewerState()) {
   if (viewer.status === "unavailable") {
     return `${tierLabel} unavailable${viewer.detail ? ` — ${viewer.detail}` : ""}`;
   }
+  if (viewer.status === "reduced") return viewer.detail;
   if (viewer.status === "preparing") {
     if (viewer.coarse) return `Coarse — refining to ${tierLabel}`;
     const showing = viewer.presentedTier
@@ -107,7 +112,7 @@ function renderViewerStatus() {
   state.viewerTierStatusEntry = viewer.status === "ready" && !state.perspectiveMode
     && !(state.perspectiveApplyOperation && state.perspectivePhase === "applying") ? null : {
     nodeId: "viewer-tier-status",
-    severity: viewer.status === "unavailable" ? "error" : "progress",
+    severity: viewer.status === "unavailable" ? "error" : viewer.status === "reduced" ? "info" : "progress",
     message: label,
   };
   syncViewerStatusEntry();
@@ -159,7 +164,7 @@ function applyPreviewResolution(value, { schedule = true } = {}) {
   renderViewerStatus();
 }
 
-function acceptPresentation(lane, schedulerTier, width, height, transport, fallbackReason = "", sourceSerial = null, generation = state.previewGeneration[lane], execution = null, processedLongEdge = null, scopePeak = null, coarse = false, approximate = false) {
+function acceptPresentation(lane, schedulerTier, width, height, transport, fallbackReason = "", sourceSerial = null, generation = state.previewGeneration[lane], execution = null, processedLongEdge = null, scopePeak = null, coarse = false, approximate = false, reducedNotice = "") {
   const longEdge = Math.max(Number(width) || 0, Number(height) || 0);
   const requestedTier = state.previewResolutionOverride === false ? "display" : normalizedPreviewResolution();
   // Exactness is a fact about the resolution this frame was processed at, not
@@ -205,6 +210,7 @@ function acceptPresentation(lane, schedulerTier, width, height, transport, fallb
     sourceSerial,
     scopePeak: Number.isFinite(scopePeak) ? scopePeak : null,
     fallbackReason,
+    reducedNotice,
   };
   if (transport !== "WebGPU" && lane === state.currentView && longEdge > 0) {
     const sessionId=state.session?.session_id;
@@ -219,7 +225,7 @@ function acceptPresentation(lane, schedulerTier, width, height, transport, fallb
     const native = Math.max(state.session?.source?.width || 0, state.session?.source?.height || 0);
     void state.gpuPreview?.warmDenoiseModel?.(state.session.session_id, "hdr", native);
   }
-  if (exact) state.previewUnavailableReason = "";
+  if (exact || reducedNotice) state.previewUnavailableReason = "";
   if (lane === state.currentView && width && height) {
     acceptPreviewGeometry(width, height, longEdge);
   }

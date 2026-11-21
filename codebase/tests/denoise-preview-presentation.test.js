@@ -82,7 +82,16 @@ test("the reduced CPU Denoise image is presented at its actual size without anot
     assert.equal(presentation[0][9], edge);
     assert.equal(presentation[0][5], "CPU/backend");
     if (reduced) {
-      assert.match(state.previewUnavailableReason, /4096px/);
+      const notice = `Denoise is using the CPU here, so the picture is shown at ${(4096).toLocaleString()} px. Export is full size.`;
+      assert.equal(presentation[0][13], notice);
+      vm.runInContext(declarations("deriveViewerState", "viewerStatusLabel"), context);
+      context.PREVIEW_RESOLUTION_OPTIONS = new Set(["full"]);
+      context.previewResolutionLabel = () => "Display exact";
+      const viewer = context.deriveViewerState({ requestedTier: "full", lane: "hdr", currentGeneration: 1,
+        geometrySignature: "{}", accepted: { requestedTier: "full", lane: "hdr", generation: 1,
+          geometrySignature: "{}", reducedNotice: notice } });
+      assert.equal(viewer.status, "reduced");
+      assert.equal(context.viewerStatusLabel(viewer), notice);
       assert.deepEqual(request.micro_grain_controls, state.denoise.hdr.controls);
       assert.equal(request.micro_grain_original, false);
     } else {

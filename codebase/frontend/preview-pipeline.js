@@ -415,8 +415,7 @@ async function renderPreviewForLaneInner(
       state.previewInfoByLane[lane] = previewInfo;
       if (!await applyPreviewUrl(url, requestIsCurrent)) return false;
       state.previewInfo = previewInfo;
-      describeReducedDenoisePreview(reducedEdge);
-      acceptPresentation(lane, processedEdge >= refinementProxyLongEdge() ? "refinement" : "settled", width, height, previewInfo.transport, denoiseFallback || !gpuPreviewEligible(lane) ? "CPU/backend" : "", null, generation, null, processedEdge, responseScopePeak);
+      acceptPresentation(lane, processedEdge >= refinementProxyLongEdge() ? "refinement" : "settled", width, height, previewInfo.transport, denoiseFallback || !gpuPreviewEligible(lane) ? "CPU/backend" : "", null, generation, null, processedEdge, responseScopePeak, false, false, describeReducedDenoisePreview(reducedEdge));
       els.scopeKindLabel.textContent = lane.toUpperCase();
       renderReadouts();
     }
@@ -539,7 +538,7 @@ async function renderRawPreviewForLane(lane, displayWhenReady, longEdge, { showP
 }
 
 function describeReducedDenoisePreview(edge) {
-  if (edge) state.previewUnavailableReason = `Full CPU Denoise is unavailable. Showing a denoised ${edge}px preview.`;
+  return edge ? `Denoise is using the CPU here, so the picture is shown at ${edge.toLocaleString()} px. Export is full size.` : "";
 }
 
 function applyRawPreview(frame) {
@@ -568,9 +567,8 @@ function applyRawPreview(frame) {
   clearInteractiveStraightenPreview();
   applyZoomGeometry();
   renderReadouts();
-  describeReducedDenoisePreview(frame.reducedEdge);
   const rawProcessedEdge = frame.reducedEdge || frame.requestedLongEdge || frame.longEdge;
-  acceptPresentation(state.currentView, rawProcessedEdge >= refinementProxyLongEdge() ? "refinement" : "settled", frame.width, frame.height, "Raw RGBA8", "CPU/backend", null, frame.generation, null, rawProcessedEdge, frame.scopePeak);
+  acceptPresentation(state.currentView, rawProcessedEdge >= refinementProxyLongEdge() ? "refinement" : "settled", frame.width, frame.height, "Raw RGBA8", "CPU/backend", null, frame.generation, null, rawProcessedEdge, frame.scopePeak, false, false, describeReducedDenoisePreview(frame.reducedEdge));
 }
 
 function applyRawComparisonPreview(frame) {
@@ -1463,9 +1461,8 @@ async function showCachedPreview(lane, { skipGpu = false } = {}) {
   if (cached.raw) applyRawPreview(cached);
   else if (cached.url) {
     if (!await applyPreviewUrl(cached.url, isCurrent)) return false;
-    describeReducedDenoisePreview(cached.reducedEdge);
     const cachedProcessedEdge = cached.reducedEdge || cached.requestedLongEdge || cached.longEdge;
-    acceptPresentation(lane, cachedProcessedEdge >= refinementProxyLongEdge() ? "refinement" : "settled", cached.width, cached.height, state.previewInfoByLane[lane].transport, "CPU/backend", null, cached.generation, null, cachedProcessedEdge, cached.scopePeak);
+    acceptPresentation(lane, cachedProcessedEdge >= refinementProxyLongEdge() ? "refinement" : "settled", cached.width, cached.height, state.previewInfoByLane[lane].transport, "CPU/backend", null, cached.generation, null, cachedProcessedEdge, cached.scopePeak, false, false, describeReducedDenoisePreview(cached.reducedEdge));
   }
   state.previewInfo = state.previewInfoByLane[lane];
   renderReadouts();

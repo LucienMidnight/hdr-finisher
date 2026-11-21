@@ -148,7 +148,7 @@ function installPreviewWatchdog() {
   state.previewWatchdogTimer = window.setInterval(() => {
     if (!state.session || !state.previewScheduler) return;
     const viewer = viewerState();
-    if (viewer.status === "ready" || viewer.status === "unavailable") {
+    if (["ready", "reduced", "unavailable"].includes(viewer.status)) {
       state.previewWatchdogRearms = 0;
       return;
     }
