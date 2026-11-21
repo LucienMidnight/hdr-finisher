@@ -786,6 +786,13 @@ async function renderGpuDraftInner(
     const quick = await renderGpuDraftInner(lane, { ...request, microQuick: true });
     if (!quick || !microStillCurrent() || request.isCurrent?.() === false) return refuse("superseded-after-micro-quick");
   }
+  const cpuGrainToken = denoiseActive ? state.gpuPreview.denoiseSourceSelector?.cache?.grain?.token : null;
+  if (cpuGrainToken && !allowInactive && state.zoomMode === "fit" && !request.underlayerOnly
+    && tier !== "interactive" && canvas.hdrCpuGrainQuickToken !== cpuGrainToken) {
+    const quick = await renderGpuDraftInner(lane, { ...request, underlayerOnly: true });
+    if (!quick || request.isCurrent?.() === false) return refuse("superseded-after-cpu-grain-quick");
+    canvas.hdrCpuGrainQuickToken = cpuGrainToken;
+  }
   // A magnified pass fetches a region of the frame it will produce, so it has
   // to know that frame's exact size first.
   if (request.viewport && !gpuFrameSizeAt(longEdge)) await ensureGeometryCoordinateMap(longEdge);

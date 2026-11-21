@@ -1,4 +1,6 @@
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
+from threading import Event
 
 import numpy as np
 
@@ -87,3 +89,62 @@ def test_clean_grain_reuses_native_fine_grain_across_tile_edges(tmp_path):
     finally:
         prepared.close()
         expected.close()
+
+
+def test_native_warmup_does_not_fill_the_rest_and_visible_reads_share_work(tmp_path, monkeypatch):
+    from hdr_finisher import cpu_budget
+    from hdr_finisher.library_cache import LibraryCache
+
+    size = adaptive.TILE_SIZE
+    width = 4 * size
+    source = np.broadcast_to(np.arange(width, dtype=np.float32)[None, :, None], (16, width, 3))
+    resolved = []
+    background_entered = Event()
+    release_background = Event()
+    visible_submitted = Event()
+    pool = cpu_budget.PriorityCpuPool(1)
+    submit = pool.submit
+
+    def observe(function, **options):
+        future = submit(function, **options)
+        if options.get("background") is None and background_entered.is_set():
+            visible_submitted.set()
+        return future
+
+    def resolve(read, height, width, origin, size, *_):
+        resolved.append(origin)
+        y, x = origin
+        if x == 0:
+            background_entered.set()
+            assert release_background.wait(5)
+        return read(y, x, min(y + size, height), min(x + size, width)), np.s_[:, :]
+
+    monkeypatch.setattr(cpu_budget, "_cpu_pool", pool)
+    monkeypatch.setattr(pool, "submit", observe)
+    monkeypatch.setattr(grain, "_resolved_tile", resolve)
+    read = lambda y, x, b, r: source[y:b, x:r]
+    settings = adaptive.AdaptiveControls(method="fine_grain")
+    prepared = grain.GrainPreparation(16, width, read, None, settings, None, lambda: True, LibraryCache(tmp_path))
+    warm = (0, 3 * size, 1, 1, 16, width)
+    visible = (0, 2 * size, 1, 1, 16, width)
+    try:
+        assert resolved == []
+        assert prepared.region(*warm, warm_only=True) is None
+        assert resolved == [(0, 3 * size)]
+        prepared.region(*warm)
+        assert background_entered.wait(5)
+
+        with ThreadPoolExecutor(2) as readers:
+            first = readers.submit(prepared.region, *visible)
+            second = readers.submit(prepared.region, *visible)
+            try:
+                assert visible_submitted.wait(5)
+            finally:
+                release_background.set()
+            assert first.result(5) == second.result(5) == grain._pack(source[:1, 2 * size:2 * size + 1]).tobytes()
+        assert resolved[:3] == [(0, 3 * size), (0, 0), (0, 2 * size)]
+        assert resolved.count((0, 2 * size)) == 1
+    finally:
+        release_background.set()
+        prepared.close()
+        pool.pool.shutdown()

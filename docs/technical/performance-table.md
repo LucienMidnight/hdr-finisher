@@ -1,3 +1,33 @@
+## November 21 — Windows PC CPU Grain sprint
+
+Windows PC, isolated Electron at 2560 × 1440, Sony `_DSC7970.ARW`
+(7968 × 5320), Clean Grain Small, lens correction off and harsh speck
+cleanup at ×2.5. Grain preparation was forced to the CPU with normal GPU
+presentation. Both app measurements ran in one GPU-lock session. The
+baseline was `f424bbdd`. The first CPU-1 implementation was measured before
+queuing all visible tiles together, which still needs an integration run.
+
+| Action | Baseline | First CPU-1 implementation | Conditions |
+| --- | ---: | ---: | --- |
+| Enable at 110% to the first sharp picture | 21.94 s | 17.34 s | Windows PC, cold Grade preparation, HDR |
+| Release Grain Evenness at 110% to the matching sharp picture | 19.62 s | 15.80 s | Windows PC, HDR, whole-photo grain fit reused |
+| Whole-photo preparation | 15.63–17.28 s | 15.83–17.49 s | Windows PC, release and enable. Measured from preparation start to all native tiles ready. |
+| Sampled peak whole-app RAM | 2.21–2.39 GB | 2.34–2.57 GB | Windows PC, enable and release, decimal GB |
+
+The first implementation missed the quarter-wait, 30% whole-photo speedup
+and peak-RAM targets. Its 24 sequential correction requests took about 13.5 s
+on the first native draw. The revised request queues the full visible
+rectangle before tile uploads and returns no pixel body.
+
+The Windows PC offline comparison against `f424bbdd` matched the bytes of
+the entire native image and sampled Fit reads for Sony `_DSC7970.ARW` and
+Canon `IMG_0790.CR2`. On the Sony, the contiguous layout reduced summed
+worker time writing scratch from 12.45 s to 0.70 s. Wavelet and colour
+remained the bulk of the work. A separate 768-pixel tile trial matched bytes
+on both inputs, but finished the Sony in 11.65 s versus 14.19 s for its paired
+baseline (18% faster) before testing a worker-memory bound. The app keeps the
+existing 512-pixel tile size.
+
 ## November 21 — Denoise CPU fallback waits
 
 MacBook Neo, A18 Pro and 8 GB, working changes based on `ed7e4a83`.

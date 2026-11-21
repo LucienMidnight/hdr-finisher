@@ -33,6 +33,10 @@
     return signal ? AbortSignal.any([signal, timeout]) : timeout;
   }
 
+  function grainPreparationReplaced() {
+    return Object.assign(new Error("Grain preparation expired or was replaced."), { grainPreparationReplaced: true });
+  }
+
   function fineGrainStripUpload(maxRows) {
     return { maxRows, slots: 2, chunkBytes: 8 * 1024 * 1024, ring: [], retired: [] };
   }
@@ -2749,14 +2753,25 @@
       return { ...entry, hit: false };
     }
 
+    async requestPreparedGrain(grain, { x, y, width, height }, source, signal, warmOnly = false) {
+      if (grain.stale) throw grainPreparationReplaced();
+      const query = new URLSearchParams({ x, y, width, height, frame_width: source.width, frame_height: source.height });
+      if (warmOnly) query.set("warm_only", "true");
+      const response = await fetch(`${grain.url}/${grain.token}?${query}`, { signal: denoiseDeadline(signal, 15000) });
+      if (response.status === 409) {
+        grain.stale = true;
+        throw grainPreparationReplaced();
+      }
+      if (!response.ok) throw new Error(`Clean Grain source request failed (${response.status}).`);
+      return response;
+    }
+
     async preparedGrainTile(grain, region, source, isCurrent = () => true, signal = this.librarySignal) {
-      const replaced = () => Object.assign(new Error("Grain preparation expired or was replaced."),
-        { grainPreparationReplaced: true });
       const check = () => {
         if (!isCurrent() || signal?.aborted) throw new DOMException("Grain draw cancelled.", "AbortError");
       };
       check();
-      if (grain.stale) throw replaced();
+      if (grain.stale) throw grainPreparationReplaced();
       const { x, y, width, height } = region;
       const key = `grain|${grain.token}|${source.width}x${source.height}|${x},${y},${width},${height}`;
       const previous = this.denoiseTiles.get(key);
@@ -2788,15 +2803,8 @@
         for (let offset = 0; offset < height; offset += rows) {
           check();
           const count = Math.min(rows, height - offset);
-          const query = new URLSearchParams({ x, y: y + offset, width, height: count,
-            frame_width: source.width, frame_height: source.height });
-          const response = await fetch(`${grain.url}/${grain.token}?${query}`, { signal: denoiseDeadline(signal, 15000) });
+          const response = await this.requestPreparedGrain(grain, { x, y: y + offset, width, height: count }, source, signal);
           check();
-          if (response.status === 409) {
-            grain.stale = true;
-            throw replaced();
-          }
-          if (!response.ok) throw new Error(`Clean Grain source request failed (${response.status}).`);
           const body = await response.arrayBuffer();
           check();
           if (body.byteLength !== width * count * 16) throw new Error("Clean Grain returned an incomplete region.");
@@ -4126,6 +4134,28 @@
           return { rendered: false, refusals: ["roi source region does not cover its foreground tiles"] };
         }
       }
+      const preparedGrain = adaptiveDenoise ? denoiseSelector.cache.grain : null;
+      if (options.boundedPresentation && preparedGrain?.token && foregroundTiles.length > 1
+          && proxy.width === preparedGrain.width && proxy.height === preparedGrain.height
+          && Object.entries(preparedGrainControls(preparedGrain.controls)).every(([key, value]) => denoiseControls[key] === value)) {
+        // GPU encoding reads one tile at a time. Send the visible rectangle
+        // ahead without downloading any extra pixels, so all of its CPU tiles
+        // can run together before unrelated background tiles fill the queue.
+        const rects = foregroundTiles.map(tile => tile.haloRect);
+        const x = Math.min(...rects.map(rect => rect.x));
+        const y = Math.min(...rects.map(rect => rect.y));
+        const width = Math.max(...rects.map(rect => rect.x + rect.width)) - x;
+        const height = Math.max(...rects.map(rect => rect.y + rect.height)) - y;
+        const viewport = { x, y, width, height };
+        if (!globalThis.HDRViewportRequest?.covers(preparedGrain.warmedRegion, viewport)) {
+          const start = performance.now();
+          await this.requestPreparedGrain(preparedGrain, viewport, proxy, options.signal, true);
+          preparedGrain.warmedRegion = viewport;
+          this.recordStage("denoise_grain_region_ready", { area: "denoise", route: "cpu", reason: "visible_tiles_ready",
+            duration_ms: performance.now() - start, width_px: width, height_px: height });
+        }
+        if (options.isCurrent?.() === false) return { rendered: false, refusals: ["superseded during Grain warmup"] };
+      }
       let cancelled = false;
       const graph = this.ensureTileGraph(
         workWidth, workHeight, surface.format, proxy.pixelFormat, spatialActive, denoiseActive,
@@ -4158,7 +4188,7 @@
       const denoiseTileControls = cacheGrainEndpoints ? fineGrainPixelControls(denoiseControls, true) : denoiseControls;
       const denoiseTileIdentity = adaptiveDenoise && !noiseView && !measureOnly
         ? `${cacheGrainEndpoints || micro ? `${denoiseSelector.cache.grain.fitKey}|${proxy.width}x${proxy.height}|${proxy.workingSpace}`
-          : denoiseSelector.cache.identity}|${JSON.stringify(denoiseTileControls)}`
+          : denoiseSelector.cache.identity}|${JSON.stringify(denoiseTileControls)}${options.quickCpuGrain ? "|quick" : ""}`
         : null;
       const denoiseStateSeen = denoiseTileIdentity !== null && this.denoiseTileIdentity === denoiseTileIdentity;
       if (denoiseTileIdentity !== null && !denoiseStateSeen) {
@@ -4526,7 +4556,7 @@
         // The reconstruction reads the original at its true frame position,
         // so the pixels are the ones the whole-frame resolve would produce.
         const resolved = await this.resolveDenoiseProxy(denoiseControls, {
-          isCurrent, signal: options.signal,
+          isCurrent, signal: options.signal, quickCpuGrain: options.quickCpuGrain,
           region: { ...region },
           destination: {
             texture: kept && cacheGrainEndpoints ? kept.texture : graph.denoiseResolvedTexture,
@@ -5284,6 +5314,7 @@
       // device will actually hold for this render.
       if (!sourceOptions?.scopeAnalysis && !sourceOptions?.keepProxies) this.evictStaleProxies({ sessionId, lane, geometrySignature, sourceIdentity, keep: proxy.identity });
       const cleanGrain = this.adaptiveDenoiseFor(proxy) ? this.denoiseSourceSelector.cache.grain : null;
+      const quickCpuGrain = Boolean(cleanGrain?.token && sourceOptions?.fineGrainUnderlayer);
       const useMicro = cleanGrain?.micro && !sourceOptions?.originalSource;
       const microNative = useMicro && proxy.width === cleanGrain.width && proxy.height === cleanGrain.height;
       const microQuick = useMicro && !microNative && (sourceOptions?.microQuick || sourceOptions?.fineGrainUnderlayer
@@ -5293,7 +5324,7 @@
         // A region proxy covers only the visible area; if Direct is admitted
         // the whole frame is loaded below, so admission charges it now.
         pendingSourceBytes: proxy.region ? proxy.width * proxy.height * (proxy.pixelFormat === "rgba16float" ? 8 : 16) : 0,
-        cleanGrain: Boolean(cleanGrain?.token),
+        cleanGrain: Boolean(cleanGrain?.token && !quickCpuGrain),
         detailActive: detailActive || localDetailActive,
         spatialActive,
         lensGlowCache,
@@ -5343,7 +5374,7 @@
       const fineGrainReduced = cleanGrainBlend || reducedGrain;
       if (fineGrainReduced && plan.decision.mode !== "tiled") sourceProxy = fineGrainReduced;
       else if (!sourceOptions?.originalSource && plan.decision.mode !== "tiled"
-        && await this.ensureDenoiseResolved(proxy, currentRender, sourceOptions?.signal)) {
+        && await this.ensureDenoiseResolved(proxy, currentRender, sourceOptions?.signal, quickCpuGrain)) {
         if (resourceGeneration !== this.resourceGeneration
           || serial !== this.renderSerials.get(canvas)
           || sourceOptions?.isCurrent?.() === false) return this.refuseRender("superseded-before-proxy");
@@ -5483,9 +5514,11 @@
         });
         // Show noise needs the original and a reconstruction per tile, so it
         // hands Tiled the original even when a whole-frame resolve is resident.
-        const tiled = await this.encodeTiledGeneration(canvas, context, noiseView ? proxy : sourceProxy, surface, pipelines, params, {
+        const tiledSource = noiseView || cleanGrain?.token ? proxy : sourceProxy;
+        const tiled = await this.encodeTiledGeneration(canvas, context, tiledSource, surface, pipelines, params, {
           fineGrainReduced,
           microQuick,
+          quickCpuGrain,
           signal: sourceOptions?.signal,
           originalSource: sourceOptions?.originalSource,
           delivery: sourceOptions?.delivery,
@@ -6034,13 +6067,14 @@
      * Fill adaptive Denoise's whole-frame reconstruction of `proxy` if it is
      * missing or was made with other controls. Returns whether it did any work.
      */
-    async ensureDenoiseResolved(proxy, isCurrent, signal) {
+    async ensureDenoiseResolved(proxy, isCurrent, signal, quickCpuGrain = false) {
       if (!proxy || proxy.region || !this.adaptiveDenoiseFor(proxy)) return false;
       const selector = this.denoiseSourceSelector;
       if (selector.identity !== proxy.identity) return false;
       if (selector.original !== proxy) selector.original = proxy;
-      if (selector.resolved && selector.resolvedFor === JSON.stringify(selector.controls || {})) return false;
-      await this.resolveDenoiseProxy(selector.controls || {}, { source: proxy, isCurrent, signal });
+      if (selector.resolved && selector.resolvedFor === JSON.stringify(selector.controls || {})
+          && Boolean(selector.resolvedQuickCpuGrain) === quickCpuGrain) return false;
+      await this.resolveDenoiseProxy(selector.controls || {}, { source: proxy, isCurrent, signal, quickCpuGrain });
       return true;
     }
 
@@ -7328,7 +7362,7 @@
       else run(clean.output, base, null, { ...color, out: candidate.texture }, 0, 0, tile);
     }
 
-    async resolveAdaptiveDenoise(selector, weights, sizes, generation, startedAt, region, destination, sharedEncoder, source, isCurrent, signal) {
+    async resolveAdaptiveDenoise(selector, weights, sizes, generation, startedAt, region, destination, sharedEncoder, source, isCurrent, signal, quickCpuGrain) {
       await this.ensureAdaptiveDenoisePipelines();
       const frame = { x: 0, y: 0, width: source.width, height: source.height };
       const held = source.region || frame;
@@ -7356,7 +7390,7 @@
         const live = { amount: weights[0], luminance: weights[1], colorNoise: weights[2], detailRecovery: weights[3], ...sizes };
         // A drag can give immediate wavelet feedback before release commits
         // a new native preparation. Color Splotches only changes the blend.
-        const matches = grain?.token && Object.entries(preparedGrainControls(grain.controls))
+        const matches = !quickCpuGrain && grain?.token && Object.entries(preparedGrainControls(grain.controls))
           .every(([key, value]) => live[key] === value);
         const current = () => isCurrent?.() !== false && selector === this.denoiseSourceSelector
           && (sharedEncoder || generation === this.denoiseSelectorGeneration);
@@ -7411,6 +7445,7 @@
           amount: weights[0], luminance: weights[1], colorNoise: weights[2], detailRecovery: weights[3], ...sizes,
         };
         selector.resolvedFor = JSON.stringify(selector.controls);
+        selector.resolvedQuickCpuGrain = quickCpuGrain;
         selector.resolvedRegion = region ? target : null;
         this.denoiseCounters.atomicSwaps += 1;
         this.recordStage("denoise-resolve", stage);
@@ -7450,7 +7485,7 @@
       return true;
     }
 
-    async resolveDenoiseProxy(controls = {}, { region = null, destination = null, encoder: sharedEncoder = null, source = null, isCurrent, signal } = {}) {
+    async resolveDenoiseProxy(controls = {}, { region = null, destination = null, encoder: sharedEncoder = null, source = null, isCurrent, signal, quickCpuGrain = false } = {}) {
       const selector = this.denoiseSourceSelector;
       if (!selector?.cache) return false;
       // Reconstruction reads the original's pixels; adopt the live copy if the
@@ -7475,7 +7510,7 @@
       });
       return this.resolveAdaptiveDenoise(
         selector, weights, adaptiveResolveOptions(controls), generation, startedAt, region, destination, sharedEncoder,
-        source || selector.original, isCurrent, signal,
+        source || selector.original, isCurrent, signal, quickCpuGrain,
       );
     }
 
