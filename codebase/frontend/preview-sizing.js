@@ -140,6 +140,13 @@ function noteViewerPan() {
   const lane = state.currentView;
   const region = els.previewCanvas.hdrFrameRegion;
   const accepted = state.acceptedPresentation;
+  if (cpuMicroPreviewSelected(lane) && cpuMicroViewport(lane)) {
+    if (els.previewCanvas.hdrCpuMicroRegion !== cpuMicroViewportKey(lane)
+      || !window.HDRViewportRequest.covers(region, visibleOutputRect(region.frameWidth, region.frameHeight, { includeWhole: true }))) {
+      scheduleZoomRefinement({ continuous: true });
+    }
+    return;
+  }
   const liveGpuGrain = liveGradeGrainSelected(lane);
   if (region && accepted?.exact && accepted.lane === lane && accepted.generation === state.previewGeneration[lane]
       && liveGpuGrain && window.HDRViewportRequest.covers(region,

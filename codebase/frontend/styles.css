@@ -1316,6 +1316,34 @@ body[data-active-lane="sdr"] .lane-dot {
   z-index: 2;
 }
 
+#preview-micro-underlayer,
+#preview-micro-detail,
+#preview-micro-hdr-underlayer,
+#preview-micro-hdr-detail {
+  display: none;
+  position: absolute;
+  dynamic-range-limit: no-limit;
+}
+
+#preview-canvas-frame[data-micro-region] > #preview-canvas,
+#preview-canvas-frame[data-micro-region] > #preview-denoise-detail {
+  visibility: hidden;
+}
+
+#preview-canvas-frame[data-micro-region="rgba"] > #preview-micro-underlayer,
+#preview-canvas-frame[data-micro-region="hdr"] > #preview-micro-hdr-underlayer {
+  display: block;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+#preview-canvas-frame[data-micro-region="rgba"] > #preview-micro-detail:not([hidden]),
+#preview-canvas-frame[data-micro-region="hdr"] > #preview-micro-hdr-detail:not([hidden]) {
+  display: block;
+  z-index: 2;
+}
+
 #comparison-canvas {
   image-rendering: auto;
 }
@@ -1323,6 +1351,8 @@ body[data-active-lane="sdr"] .lane-dot {
 /* Above 100% zoom each source pixel is drawn as a sharp square. */
 #preview-canvas.pixel-magnified,
 #preview-denoise-detail.pixel-magnified,
+#preview-micro-detail.pixel-magnified,
+#preview-micro-hdr-detail.pixel-magnified,
 #comparison-canvas.pixel-magnified,
 #preview-image.pixel-magnified,
 #comparison-image.pixel-magnified {

@@ -1310,86 +1310,19 @@ def apply_lens_correction(
     _raise_if_cancelled(cancelled)
     if progress: progress("lens_profile", "Selecting Lensfun profile")
     try:
-        import lensfunpy
-    except ImportError as exc:
-        if settings.mode == "auto":
-            return image, {
-                "mode": "auto",
-                "applied": False,
-                "reason": "Lensfun is unavailable; RAW development continued without lens correction.",
-            }
-        raise RawImportError("Lens correction was requested, but lensfunpy is not installed.") from exc
-
-    database = _lens_database()
-    if database is None:
-        if settings.mode == "auto":
-            return image, {
-                "mode": "auto",
-                "applied": False,
-                "reason": "Lensfun's database is unavailable; RAW development continued without lens correction.",
-            }
-        raise RawImportError("Lensfun's correction database is unavailable.")
-    database_identity = _lens_database_identity()
-    if (
-        settings.mode == "manual"
-        and settings.database_version
-        and settings.database_version != database_identity
-    ):
-        return image, {
-            "mode": "off",
-            "requested_mode": "manual",
-            "applied": False,
-            "warning": "The saved Lensfun database identity does not match; correction fell back to Off without substitution.",
-            "database_version": database_identity,
-        }
-    profile = _resolve_lens_profile(
-        database,
-        settings,
-        camera_maker=camera_maker,
-        camera_model=camera_model,
-        lens_maker=lens_maker,
-        lens_name=lens_name,
-    )
-    if profile is None:
-        if settings.mode == "auto":
-            return image, {"mode": "auto", "applied": False, "reason": "No unique Lensfun profile match."}
-        return image, {
-            "mode": "off",
-            "requested_mode": "manual",
-            "applied": False,
-            "warning": "The saved Lensfun profile is unavailable; correction fell back to Off without substitution.",
-        }
-
-    camera, lens, record = profile
-    focal = settings.focal_length_mm
-    if focal is None:
-        focal = _first_calibration_focal(lens)
-    if focal is None:
-        raise RawImportError("Lens correction needs a focal length from metadata or manual input.")
-    aperture = settings.aperture or 0.0
-    distance = settings.focus_distance_m or 1000.0
-    crop = float(getattr(camera, "crop_factor", 1.0) or 1.0)
-    height, width = image.shape[:2]
-    try:
-        if progress: progress("lens_setup", "Preparing Lensfun modifier")
-        modifier = lensfunpy.Modifier(lens, crop, width, height)
-        flags = lensfunpy.ModifyFlags.SCALE
-        if settings.distortion:
-            flags |= lensfunpy.ModifyFlags.DISTORTION
-        if settings.chromatic_aberration:
-            flags |= lensfunpy.ModifyFlags.TCA
-        if settings.vignetting:
-            flags |= lensfunpy.ModifyFlags.VIGNETTING
-        modifier.initialize(
-            float(focal), float(aperture), float(distance), scale=0.0, pixel_format=np.float32, flags=flags
+        modifier, metadata = _lens_modifier(
+            image.shape[:2], settings, camera_maker=camera_maker, camera_model=camera_model,
+            lens_maker=lens_maker, lens_name=lens_name, progress=progress,
         )
+        if modifier is None:
+            return image, metadata
         # RAW development owns this buffer exclusively; vignette it before
         # remapping instead of retaining an untouched third full-size plane.
         if progress: progress("lens_vignette", "Applying Lensfun vignetting")
         corrected = np.ascontiguousarray(image, dtype=np.float32)
         if not consume_input or not corrected.flags.writeable:
             corrected = corrected.copy()
-        if settings.vignetting and aperture > 0:
+        if metadata["vignetting"]:
             _apply_signed_vignetting(modifier, corrected, cancelled=cancelled)
         _raise_if_cancelled(cancelled)
         if progress: progress("lens_coordinates", "Calculating exact Lensfun coordinates")
@@ -1411,7 +1344,84 @@ def apply_lens_correction(
     except Exception as exc:
         raise RawImportError(f"Lensfun could not apply the selected profile: {exc}") from exc
     if progress: progress("lens_complete", "Lensfun corrections complete")
-    return corrected, {
+    return corrected, metadata
+
+
+def _lens_modifier(shape, settings, *, camera_maker, camera_model, lens_maker, lens_name, progress=None):
+    height, width = shape
+    try:
+        import lensfunpy
+    except ImportError as exc:
+        if settings.mode == "auto":
+            return None, {
+                "mode": "auto",
+                "applied": False,
+                "reason": "Lensfun is unavailable; RAW development continued without lens correction.",
+            }
+        raise RawImportError("Lens correction was requested, but lensfunpy is not installed.") from exc
+
+    database = _lens_database()
+    if database is None:
+        if settings.mode == "auto":
+            return None, {
+                "mode": "auto",
+                "applied": False,
+                "reason": "Lensfun's database is unavailable; RAW development continued without lens correction.",
+            }
+        raise RawImportError("Lensfun's correction database is unavailable.")
+    database_identity = _lens_database_identity()
+    if (
+        settings.mode == "manual"
+        and settings.database_version
+        and settings.database_version != database_identity
+    ):
+        return None, {
+            "mode": "off",
+            "requested_mode": "manual",
+            "applied": False,
+            "warning": "The saved Lensfun database identity does not match; correction fell back to Off without substitution.",
+            "database_version": database_identity,
+        }
+    profile = _resolve_lens_profile(
+        database,
+        settings,
+        camera_maker=camera_maker,
+        camera_model=camera_model,
+        lens_maker=lens_maker,
+        lens_name=lens_name,
+    )
+    if profile is None:
+        if settings.mode == "auto":
+            return None, {"mode": "auto", "applied": False, "reason": "No unique Lensfun profile match."}
+        return None, {
+            "mode": "off",
+            "requested_mode": "manual",
+            "applied": False,
+            "warning": "The saved Lensfun profile is unavailable; correction fell back to Off without substitution.",
+        }
+
+    camera, lens, record = profile
+    focal = settings.focal_length_mm
+    if focal is None:
+        focal = _first_calibration_focal(lens)
+    if focal is None:
+        raise RawImportError("Lens correction needs a focal length from metadata or manual input.")
+    aperture = settings.aperture or 0.0
+    distance = settings.focus_distance_m or 1000.0
+    crop = float(getattr(camera, "crop_factor", 1.0) or 1.0)
+    if progress: progress("lens_setup", "Preparing Lensfun modifier")
+    modifier = lensfunpy.Modifier(lens, crop, width, height)
+    flags = lensfunpy.ModifyFlags.SCALE
+    if settings.distortion:
+        flags |= lensfunpy.ModifyFlags.DISTORTION
+    if settings.chromatic_aberration:
+        flags |= lensfunpy.ModifyFlags.TCA
+    if settings.vignetting:
+        flags |= lensfunpy.ModifyFlags.VIGNETTING
+    modifier.initialize(
+        float(focal), float(aperture), float(distance), scale=0.0, pixel_format=np.float32, flags=flags
+    )
+    return modifier, {
         "mode": settings.mode,
         "applied": True,
         "profile": record.as_dict(),
@@ -1506,9 +1516,14 @@ def _remap_bilinear_strips(
     chromatic: bool,
     rows: int = 32,
     cancelled: Callable[[], bool] | None = None,
+    frame_shape: tuple[int, int] | None = None,
+    origin: tuple[int, int] = (0, 0),
 ) -> np.ndarray:
-    height, width, channels = image.shape
-    output = np.empty_like(image)
+    height, width = coordinates.shape[:2]
+    channels = image.shape[2]
+    frame_height, frame_width = frame_shape or image.shape[:2]
+    origin_x, origin_y = origin
+    output = np.empty((height, width, channels), dtype=image.dtype)
 
     def remap_strip(start: int) -> None:
         _raise_if_cancelled(cancelled)
@@ -1518,14 +1533,18 @@ def _remap_bilinear_strips(
                 xy = coordinates[start:end, :, min(channel, coordinates.shape[2] - 1), :]
             else:
                 xy = coordinates[start:end, :, :]
-            x = np.clip(xy[..., 0], 0.0, width - 1.0)
-            y = np.clip(xy[..., 1], 0.0, height - 1.0)
+            x = np.clip(xy[..., 0], 0.0, frame_width - 1.0)
+            y = np.clip(xy[..., 1], 0.0, frame_height - 1.0)
             x0 = np.floor(x).astype(np.int32)
             y0 = np.floor(y).astype(np.int32)
-            x1 = np.minimum(x0 + 1, width - 1)
-            y1 = np.minimum(y0 + 1, height - 1)
+            x1 = np.minimum(x0 + 1, frame_width - 1) - origin_x
+            y1 = np.minimum(y0 + 1, frame_height - 1) - origin_y
+            # Keep interpolation in full-frame coordinates until weights are
+            # computed. Subtracting a region offset in float changes rounding.
             wx = x - x0
             wy = y - y0
+            x0 -= origin_x
+            y0 -= origin_y
             top = image[y0, x0, channel] * (1.0 - wx) + image[y0, x1, channel] * wx
             bottom = image[y1, x0, channel] * (1.0 - wx) + image[y1, x1, channel] * wx
             output[start:end, :, channel] = top * (1.0 - wy) + bottom * wy

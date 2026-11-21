@@ -1,3 +1,24 @@
+## November 21 ? Windows PC CPU Micro Grain visible area
+
+Windows PC, Ryzen 5 7600, unpackaged Electron at 2560 ? 1440, Sony
+`_DSC7970.ARW` (7968 ? 5320), HDR Grade, Lensfun Auto applied and harsh-speck
+cleanup ?2.5. MG-2 uses the region renderer in `2fbd9672`, based on `52c94217`. Use the existing 10% timing
+allowance for shared-machine variation. RAM is sampled whole-app use in
+decimal GB. The locked runs used RGBA8 for native detail. Separate targeted
+checks cover the final HDR AVIF response, whose viewer latency remains open.
+
+| Action | Earlier observation | MG-2 verification | Conditions |
+| --- | ---: | ---: | --- |
+| First CPU Micro Grain picture | 58.04 s / 3.07 GB | 10.38 s / 2.05 GB | Earlier MG-1 was a reduced 4096 px picture at 78% with the withdrawn Lensfun strip trial. MG-2 is sharp native detail at 110%. |
+| Pan to the far corner | No native detail | 3.81 s / 1.95 GB | At 110%, outside the initial tile region. The first MG-2 run sampled 2.68 GB during the pan. |
+| Fit immediately after panning | ? | 0.012 s | Approximate 960 px underlayer at Fit layout. |
+| Settled CPU Micro Grain Fit | 29.93 s / 4.10 GB | 27.30 s / 3.43 GB | 1610 px. The final Fit follow-up releases cached tiles as their pixels are copied into the whole frame. |
+
+Both native Sony regions (centre and lower right, about 43 MB of float32
+pixels together) matched independent whole-frame CPU development and Grade
+byte for byte. Canon Lensfun coverage used signed inputs with distortion,
+TCA, vignette and indexed crop/rotation. The cold Sony first picture is
+still about ten seconds. MacBook Neo memory has yet to be measured.
 ## November 21 — AVIF Gain Map and full-size Proof Grain sharing
 
 Windows PC, standalone production CPU export and Proof on Sony

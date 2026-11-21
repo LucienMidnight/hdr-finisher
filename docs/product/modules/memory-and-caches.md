@@ -583,6 +583,16 @@ origin can change sampling. The app now charges the last GPU Micro source's
 sensor, profile and Bayer tiles to the existing working share. Reclaim drops
 that cached source so later requests can rebuild it.
 
+MG-2 keeps Lensfun's full row width and zero origin, then copies out only
+the visible rectangle and releases the unused rows. Peak coordinate
+allocation includes the prefix and the copied window: 647 MB for the Sony
+centre at 110%, and 1,059 MB at its lower-right corner. A matched vignetting
+profile can also need a full-size float32 RGB scratch plane because
+lensfunpy's image API fixes the original dimensions and pitch. This is
+509 MB at Sony size. The measured Sigma profile uses distortion and TCA,
+so its run skipped that plane. Finished Bayer tiles are charged to the existing
+working share and are consumed as Fit assembles the whole photo.
+
 For the four hand-off timings, propose 5% against the previous whole waits
 (ordinary shared-machine variation); the existing 500 ms goal remains. Paired
 Grade opening already uses 5%. Memory must still peak at or below 4.4 GB and
