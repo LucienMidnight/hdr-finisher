@@ -190,19 +190,42 @@ API void colour_repair(const float *core, const float *chroma, const float *clos
     }
 }
 
+static void colour_guides_impl(const float *local, const float *luma_noise, const float *peak,
+                       const float *background, const float *texture, const float *sharp,
+                       const float *fringe, const float *noise,
+                       float *limit, float *dark, float *edge_weight, int count, float reference) {
+    for (int i = 0; i < count; i++) {
+        float light = maximum(local[i], 0.0f);
+        float guide_peak = peak[i], guide_background = background[i], guide_light = light;
+        if (reference > 0.0f) {
+            float scale = reference / luma_noise[i];
+            guide_peak *= scale;
+            guide_background *= scale;
+            guide_light *= scale;
+        }
+        float highlight = ramp(guide_peak, .065f, .06f);
+        float texture_relative = texture[i] / maximum(background[i] + 3.0f * luma_noise[i], 1e-6f);
+        float sharp_relative = sharp[i] / maximum(light + 4.0f * luma_noise[i], 1e-6f);
+        limit[i] = (1.0f - .97f * highlight) *
+                   (1.0f - ramp(texture_relative, .045f, .105f) * ramp(guide_background, .004f, .011f));
+        dark[i] = 1.0f - ramp(guide_light, .006f, .008f);
+        edge_weight[i] = (.45f * highlight) * ramp(sharp_relative, .06f, .18f) *
+                         ramp(fringe[i] / noise[i], 3.0f, 5.0f);
+    }
+}
+
 API void colour_guides(const float *local, const float *luma_noise, const float *peak,
                        const float *background, const float *texture, const float *sharp,
                        const float *fringe, const float *noise,
                        float *limit, float *dark, float *edge_weight, int count) {
-    for (int i = 0; i < count; i++) {
-        float highlight = ramp(peak[i], .065f, .06f);
-        float light = maximum(local[i], 0.0f);
-        float texture_relative = texture[i] / maximum(background[i] + 3.0f * luma_noise[i], 1e-6f);
-        float sharp_relative = sharp[i] / maximum(light + 4.0f * luma_noise[i], 1e-6f);
-        limit[i] = (1.0f - .97f * highlight) *
-                   (1.0f - ramp(texture_relative, .045f, .105f) * ramp(background[i], .004f, .011f));
-        dark[i] = 1.0f - ramp(light, .006f, .008f);
-        edge_weight[i] = (.45f * highlight) * ramp(sharp_relative, .06f, .18f) *
-                         ramp(fringe[i] / noise[i], 3.0f, 5.0f);
-    }
+    colour_guides_impl(local, luma_noise, peak, background, texture, sharp, fringe, noise,
+                       limit, dark, edge_weight, count, 0.0f);
+}
+
+API void colour_guides_relative(const float *local, const float *luma_noise, const float *peak,
+                                const float *background, const float *texture, const float *sharp,
+                                const float *fringe, const float *noise,
+                                float *limit, float *dark, float *edge_weight, int count, float reference) {
+    colour_guides_impl(local, luma_noise, peak, background, texture, sharp, fringe, noise,
+                       limit, dark, edge_weight, count, reference);
 }

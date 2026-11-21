@@ -16,6 +16,7 @@ import numpy as np
 
 from . import app_memory, denoise_adaptive as wave, denoise_grain, signed_raw
 from .cpu_budget import CpuExecutor, CpuWorkLimit, logical_cpus
+from .denoise_quality import BAYER_NOISE_REFERENCE, enabled
 
 
 BAYER_MARGIN = 80
@@ -128,8 +129,15 @@ def _structure(signal, variance, *, quiet, coherence_start, coherence_width, ene
 
 def _highlight_guard(cells, profile):
     mean = _box(cells, 3)
-    threshold = np.maximum(.007, 5 * np.sqrt(profile.shot * np.maximum(mean, 0) + profile.read))
-    seed = (cells.max(axis=-1) >= .12) | (np.count_nonzero(cells - mean > threshold, axis=-1) >= 2)
+    sigma = np.sqrt(profile.shot * np.maximum(mean, 0) + profile.read)
+    if enabled("MICRO_GUARD"):
+        scale = np.sqrt(profile.read) / np.float32(BAYER_NOISE_REFERENCE)
+        threshold = np.maximum(.007 * scale, 5 * sigma)
+        bright = np.any(cells >= .12 * scale, axis=-1)
+    else:
+        threshold = np.maximum(.007, 5 * sigma)
+        bright = cells.max(axis=-1) >= .12
+    seed = bright | (np.count_nonzero(cells - mean > threshold, axis=-1) >= 2)
     return cv2.dilate(seed.astype(np.uint8), np.ones((9, 9), np.uint8)).astype(bool)
 
 
@@ -197,7 +205,7 @@ class BayerTile:
                 + sum(band.nbytes + noise.nbytes + local.nbytes for band, noise, local, _ in self.bands)
                 + (self.chroma.nbytes if self.chroma is not None else 0))
 
-    def apply(self, controls, central):
+    def apply(self, controls, central, *, signed_clips=None):
         """Return the encoded mosaic and packed structure gate for the AHD tile."""
         protection = 1 - self.brightness_gate
         fine = np.clip(1 - np.float32(controls.protection) * protection, 0, 1)
@@ -213,7 +221,10 @@ class BayerTile:
             delta += np.float32(1.4 * controls.color) * self.chroma[central]
         original = self.cells[central]
         adjusted = np.where(self.guard[central][..., None], original, original + delta)
-        codes = np.clip(np.rint(adjusted * self.profile.span + self.profile.black), 0, 65535).astype(np.uint16)
+        rounded = np.rint(adjusted * self.profile.span + self.profile.black)
+        if signed_clips is not None:
+            signed_clips(rounded < 0)
+        codes = np.clip(rounded, 0, 65535).astype(np.uint16)
         height, width = codes.shape[:2]
         return codes.reshape(height, width, 2, 2).transpose(0, 2, 1, 3).reshape(height * 2, width * 2)
 

@@ -7723,7 +7723,7 @@
           tile.x, tile.y, tile.width, tile.height,
           destination.x, destination.y, 0, 0,
           domain.x - area.x, domain.y - area.y, domain.width, domain.height,
-          controls.colorSplotches, 0, 0, 0,
+          controls.colorSplotches, window.HDRDenoiseQuality?.colourReference ?? 0, 0, 0,
           0, 0, 0, 0,
         ];
         dispatch(pipeline, { src: src.createView(), dst, ...inputs }, params, size);

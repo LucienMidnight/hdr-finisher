@@ -5,6 +5,7 @@ import cv2
 import numpy as np
 
 from .raw_pixel_cleanup import STRIP_ROWS, _normalise
+from .denoise_quality import BAYER_NOISE_REFERENCE, enabled
 
 ABSOLUTE_FLOOR = .005
 ENVELOPE = 1.5
@@ -19,7 +20,7 @@ LIGHT_MARGIN = np.ones((5, 5), np.uint8)
 
 
 def tame_plane(plane, shot, read, threshold=2.5, *, absolute_floor=ABSOLUTE_FLOOR,
-               light_evidence=None):
+               light_evidence=None, light_floor=LIGHT_FLOOR):
     """Soften both signed tails, never replace a median.
 
     The floor can be overridden for qualification, not through the app. Count component
@@ -40,7 +41,7 @@ def tame_plane(plane, shot, read, threshold=2.5, *, absolute_floor=ABSOLUTE_FLOO
     residual = source - centre
     distance = np.abs(residual) / sigma
     if light_evidence is not None:
-        light_evidence[:] = (residual > LIGHT_FLOOR) & (distance > LIGHT_SIGMA)
+        light_evidence[:] = (residual > light_floor) & (distance > LIGHT_SIGMA)
     candidates = distance > threshold
     candidates &= ~cv2.dilate((source >= .98).astype('uint8'), np.ones((5, 5), 'uint8')).astype(bool)
     candidates[:BORDER] = candidates[-BORDER:] = False
@@ -77,10 +78,13 @@ def filter_sensor(mosaic, config, threshold=2.5, *, absolute_floor=ABSOLUTE_FLOO
     if len(config['noise']) != 4 or sorted(config['colours']) != [0, 1, 1, 2]:
         raise ValueError('Four Bayer noise phases required')
     evidence = np.zeros((3, *image.shape), dtype=np.uint8)
+    relative = enabled("RAW_LEVELS")
     for phase, (noise, colour) in enumerate(zip(config['noise'], config['colours'])):
         rows, columns = slice(phase // 2, None, 2), slice(phase % 2, None, 2)
+        scale = (np.sqrt(noise['b'] + (1 / config['spans'][phase]) ** 2 / 12) / BAYER_NOISE_REFERENCE
+                 if relative else 1)
         result[rows, columns] = tame_plane(image[rows, columns], noise['a'], noise['b'], threshold,
-                                          absolute_floor=absolute_floor,
+                                          absolute_floor=absolute_floor * scale, light_floor=LIGHT_FLOOR * scale,
                                           light_evidence=evidence[colour, rows, columns])
     # Bayer samples are staggered. Look for positive detail in all three
     # colours within one sensor pixel, then protect the edge of that light.

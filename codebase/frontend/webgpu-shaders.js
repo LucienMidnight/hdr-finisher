@@ -665,9 +665,11 @@ fn cleanGuidesMain(@builtin(global_invocation_id) id: vec3u) {
   let context = textureLoad(aux2Tex, p, 0);
   let texture = textureLoad(aux3Tex, p, 0).x / max(context.y + 3.0 * noise, 1e-6);
   let peak = textureLoad(sumTex, p, 0).x;
-  let highlight = cleanRamp(peak, .065, .125);
-  let limit = (1.0 - .97 * highlight) * (1.0 - cleanRamp(texture, .045, .15) * cleanRamp(context.y, .004, .015));
-  let dark = 1.0 - cleanRamp(local, .006, .014);
+  var guide = vec3f(peak, context.y, local);
+  if (ap.strength.y > 0.0) { guide *= ap.strength.y / noise; }
+  let highlight = cleanRamp(guide.x, .065, .125);
+  let limit = (1.0 - .97 * highlight) * (1.0 - cleanRamp(texture, .045, .15) * cleanRamp(guide.y, .004, .015));
+  let dark = 1.0 - cleanRamp(guide.z, .006, .014);
   let sharpness = cleanRamp(context.z / max(local + 4.0 * noise, 1e-6), .06, .24);
   textureStore(dstTex, p, vec4f(limit, dark, .45 * highlight * sharpness, 0.0));
 }

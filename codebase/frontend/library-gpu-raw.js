@@ -102,8 +102,11 @@
     for (var neighbour=0u; neighbour<8u; neighbour++) {
       largest = max(largest, sensor_sample(row+offsets[neighbour].x,column+offsets[neighbour].y));
     }
-    let variance = cleanup.shot[phase]*max(centre,0.) + cleanup.read[phase] + cleanup.steps[phase]*cleanup.steps[phase]/12.;
-    if centre-largest <= max(cleanup.limits.x*sqrt(variance),cleanup.limits.y) { return original; }
+    let quantisation = cleanup.steps[phase]*cleanup.steps[phase]/12.;
+    let variance = cleanup.shot[phase]*max(centre,0.) + cleanup.read[phase] + quantisation;
+    var floor = cleanup.limits.y;
+    if floor < 0. { floor = -floor * sqrt(cleanup.read[phase] + quantisation); }
+    if centre-largest <= max(cleanup.limits.x*sqrt(variance),floor) { return original; }
     for (var delta_row=-2; delta_row<=2; delta_row++) {
       for (var delta_column=-2; delta_column<=2; delta_column++) {
         if sensor_sample(row+delta_row,column+delta_column) >= cleanup.limits.w { return original; }

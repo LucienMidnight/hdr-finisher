@@ -37,6 +37,7 @@ def fixtures():
 
 def compare(cases, results):
     checks = 0
+    worst = {lane: dict(mean=0., p99=0.) for lane in ("sdr", "hdr")}
     for case, result in zip(cases, results, strict=True):
         height, width = case["meta"]["height"], case["meta"]["width"]
         expected = np.frombuffer(base64.b64decode(case["expected"]), "<f4").reshape(height, width, 3)
@@ -49,8 +50,10 @@ def compare(cases, results):
                 delta = colour_error(actual * 2.**exposure, expected * 2.**exposure, lane)
                 mean, percentile = float(np.mean(delta)), float(np.quantile(delta, .99))
                 assert mean < 1 and percentile < 3, (case["meta"], exposure, lane, mean, percentile)
+                worst[lane]["mean"] = max(worst[lane]["mean"], mean)
+                worst[lane]["p99"] = max(worst[lane]["p99"], percentile)
                 checks += 1
-    return dict(cases=len(cases), finished_comparisons=checks, passed=True)
+    return dict(cases=len(cases), finished_comparisons=checks, worst=worst, passed=True)
 
 
 if __name__ == "__main__":

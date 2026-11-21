@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import numpy as np
 
+from .denoise_quality import BAYER_NOISE_REFERENCE, enabled
+
 HOT_SIGMA = 8.0
 LIGHT_SIGMA = 2.5
 MINIMUM_EXCESS = 0.02
@@ -14,6 +16,12 @@ OFFSETS = ((-2, -2), (-2, 0), (-2, 2), (0, -2),
 DIRECTIONS = ((0, 2), (2, 0), (2, 2), (2, -2))
 
 
+def cleanup_thresholds():
+    """The second CPU/WGSL slot is an absolute floor or a negative noise multiplier."""
+    minimum_excess = -MINIMUM_EXCESS / BAYER_NOISE_REFERENCE if enabled("RAW_LEVELS") else MINIMUM_EXCESS
+    return [HOT_SIGMA, minimum_excess, LIGHT_SIGMA, CLIP_GUARD]
+
+
 def _normalise(sensor, black, spans):
     image = np.asarray(sensor, dtype=np.float32).copy()
     for phase in range(4):
@@ -23,15 +31,20 @@ def _normalise(sensor, black, spans):
     return image
 
 
-def _fit(observations):
+def _fit(observations, *, weighted=False):
     if len(observations) < 12:
         return None
     values = np.asarray(observations, dtype=np.float64)
     selected = []
+    counts = []
     for group in np.array_split(values[np.argsort(values[:, 0])], min(12, len(values) // 8)):
         quiet = group[group[:, 2] <= np.quantile(group[:, 2], 0.5)]
         selected.append((np.median(quiet[:, 0]), np.quantile(quiet[:, 1], 0.25)))
+        if weighted:
+            counts.append(len(quiet))
     signal, variance = np.asarray(selected).T
+    if weighted:
+        return _fit_weighted(signal, variance, counts)
     design = np.column_stack((signal, np.ones_like(signal)))
     shot, read = np.linalg.lstsq(design, variance, rcond=None)[0]
     choices = [(max(0.0, shot), max(0.0, read)),
@@ -41,6 +54,31 @@ def _fit(observations):
     if not np.isfinite([shot, read]).all() or shot + read <= 0:
         return None
     return dict(a=float(shot), b=float(read))
+
+
+def _fit_weighted(signal, variance, counts):
+    from .denoise_adaptive import CALIBRATION_RULES
+
+    signal_scale = max(float(signal.max()), 1e-20)
+    variance_scale = float(np.median(variance))
+    signal, variance = signal / signal_scale, variance / variance_scale
+    weights = np.sqrt(counts) / np.maximum(variance, CALIBRATION_RULES["variance_floor"])
+    design = np.column_stack((signal, np.ones_like(signal))) * weights[:, None]
+    target = variance * weights
+    choices = []
+    for terms in ([0, 1], [0], [1]):
+        coefficients = np.linalg.lstsq(design[:, terms], target, rcond=None)[0]
+        if not np.isfinite(coefficients).all() or np.any(coefficients < 0):
+            continue
+        pair = np.zeros(2)
+        pair[terms] = coefficients
+        choices.append(pair)
+    if not choices:
+        return None
+    shot, read = min(choices, key=lambda pair: np.sum((design @ pair - target) ** 2))
+    if shot + read <= 0:
+        return None
+    return dict(a=float(shot * variance_scale / signal_scale), b=float(read * variance_scale))
 
 
 def configuration(sensor, metadata, *, cancelled=None):
@@ -60,6 +98,7 @@ def configuration(sensor, metadata, *, cancelled=None):
     design = np.column_stack((np.ones(256), coordinates[1].ravel(), coordinates[0].ravel()))
     inverse = np.linalg.pinv(design)
     observations = [[] for _ in range(4)]
+    weighted = enabled("BAYER_FIT")
     for fraction_row in (0.15, 0.5, 0.85):
         for fraction_column in (0.15, 0.5, 0.85):
             if cancelled is not None and cancelled():
@@ -75,14 +114,14 @@ def configuration(sensor, metadata, *, cancelled=None):
                         residual = (block - design @ (inverse @ block)).reshape(16, 16)
                         variance = np.sum(residual ** 2) / 253
                         mean = block.mean()
-                        if 0.0001 < mean < 0.85 and variance > 0:
+                        if (weighted or mean > 0.0001) and mean < 0.85 and variance > 0:
                             correlation = abs(np.mean(residual[:, 1:] * residual[:, :-1])) + abs(np.mean(residual[1:] * residual[:-1]))
-                            observations[phase].append((mean, variance, correlation / variance))
-    noise = [_fit(phase) for phase in observations]
+                            observations[phase].append((max(mean, 0) if weighted else mean, variance, correlation / variance))
+    noise = [_fit(phase, weighted=weighted) for phase in observations]
     if any(phase is None for phase in noise):
         return None
     return dict(noise=noise, black=black.tolist(), spans=spans.tolist(), colours=colours.tolist(),
-                thresholds=[HOT_SIGMA, MINIMUM_EXCESS, LIGHT_SIGMA, CLIP_GUARD],
+                thresholds=cleanup_thresholds(),
                 confidence="single-frame per-CFA estimate; not a camera calibration")
 
 
@@ -97,6 +136,7 @@ def filter_sensor(mosaic, config):
     colours = config['colours']
     noise = np.asarray([[phase['a'], phase['b']] for phase in config['noise']], dtype=np.float32)
     steps = np.float32(1.0) / np.asarray(config['spans'], dtype=np.float32)
+    minimum_excess = config.get('thresholds', (HOT_SIGMA, MINIMUM_EXCESS))[1]
     height, width = image.shape
     for phase, (shot, read) in enumerate(noise):
         first_row = HALO + phase // 2
@@ -107,7 +147,9 @@ def filter_sensor(mosaic, config):
             np.maximum(largest, image[first_row + delta_row:height - HALO + delta_row:2,
                                       first_column + delta_column:width - HALO + delta_column:2], out=largest)
         variance = shot * np.maximum(centre, 0) + read + steps[phase] ** 2 / 12
-        proposed = centre - largest > np.maximum(HOT_SIGMA * np.sqrt(variance), MINIMUM_EXCESS)
+        floor = (np.float32(-minimum_excess) * np.sqrt(read + steps[phase] ** 2 / 12)
+                 if minimum_excess < 0 else MINIMUM_EXCESS)
+        proposed = centre - largest > np.maximum(HOT_SIGMA * np.sqrt(variance), floor)
         for local_row, local_column in zip(*np.nonzero(proposed)):
             row = first_row + 2 * int(local_row)
             column = first_column + 2 * int(local_column)

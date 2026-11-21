@@ -11,6 +11,7 @@ from .import_defaults import calibrate_camera_raw
 from .import_bands import map_import_negative
 
 from .analysis import classify_hdr
+from .denoise_quality import raw_cache_suffix
 from .color import (
     display_referred_sdr,
     sdr_file_renditions,
@@ -58,7 +59,7 @@ DISPLAY_P3_TO_SRGB = np.asarray(
 
 def source_decoder_version(even_out_specks: bool) -> str:
     """Cached scenes and measurements must use the current speck filter."""
-    return SOURCE_DECODER_VERSION + ":speck-light-v1" if even_out_specks else SOURCE_DECODER_VERSION
+    return SOURCE_DECODER_VERSION + (":speck-light-v1" if even_out_specks else "") + raw_cache_suffix()
 
 
 class LoaderError(RuntimeError):

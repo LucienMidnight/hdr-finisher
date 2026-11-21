@@ -16,6 +16,7 @@ import numpy as np
 
 from . import denoise_adaptive as adaptive, denoise_filters
 from .cpu_budget import CpuExecutor, CpuWorkLimit, logical_cpus
+from .denoise_quality import colour_reference
 from .grain_work import background_fill_allowed
 from .library_diagnostics import log
 
@@ -210,17 +211,26 @@ def colour_delta(rgb, broad):
     fringe = chroma - median
     sharp = np.abs(local - _box(local, 3))
     fringe_magnitude = _magnitude(fringe)
-    if native is None:
-        highlight = _ramp(peak, .065, .125)
+    reference = colour_reference()
+    if native is None or (reference and not hasattr(native, "colour_guides_relative")):
+        guide_peak, guide_background, guide_light = peak, background, np.maximum(local, 0)
+        if reference:
+            scale = np.float32(reference) / luma_noise
+            guide_peak, guide_background, guide_light = peak * scale, background * scale, guide_light * scale
+        highlight = _ramp(guide_peak, .065, .125)
         texture = texture / np.maximum(background + 3 * luma_noise, 1e-6)
-        limit = (1 - .97 * highlight) * (1 - _ramp(texture, .045, .15) * _ramp(background, .004, .015))
-        dark = 1 - _ramp(np.maximum(local, 0), .006, .014)
+        limit = (1 - .97 * highlight) * (1 - _ramp(texture, .045, .15) * _ramp(guide_background, .004, .015))
+        dark = 1 - _ramp(guide_light, .006, .014)
         sharpness = _ramp(sharp / np.maximum(np.maximum(local, 0) + 4 * luma_noise, 1e-6), .06, .24)
         edge_weight = .45 * highlight * sharpness * _ramp(fringe_magnitude / noise, 3, 8)
     else:
         limit, dark, edge_weight = (np.empty_like(local) for _ in range(3))
-        native.colour_guides(local, luma_noise, peak, background, texture, sharp, fringe_magnitude,
-                             noise, limit, dark, edge_weight, local.size)
+        args = (local, luma_noise, peak, background, texture, sharp, fringe_magnitude,
+                noise, limit, dark, edge_weight, local.size)
+        if reference:
+            native.colour_guides_relative(*args, reference)
+        else:
+            native.colour_guides(*args)
     chroma -= _colour_pass(chroma, noise, limit, dark, 12, 2, 1, native) + fringe * edge_weight[..., None]
     if broad:
         chroma -= _colour_pass(chroma, noise, limit, dark, 28, 4, 3, native)

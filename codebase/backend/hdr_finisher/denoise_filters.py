@@ -32,6 +32,9 @@ def library():
         # The first two arguments are aligned views into the padded tap field.
         function = native.colour_pair
         function.argtypes = [np.ctypeslib.ndpointer(dtype=np.float32, flags="ALIGNED")] * 2 + function.argtypes[2:]
+        if hasattr(native, "colour_guides_relative"):
+            native.colour_guides_relative.argtypes = native.colour_guides.argtypes + [ctypes.c_float]
+            native.colour_guides_relative.restype = None
     except AttributeError:
         pass
     return native

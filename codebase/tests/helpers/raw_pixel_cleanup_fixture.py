@@ -34,12 +34,14 @@ def fixtures():
         sensor[18, 18], sensor[18, 19] = 7000, 2800
         sensor[20, 34], sensor[21, 35] = 7000, 12900
         sensor[5, 40] = 14000
+        thresholds = raw_pixel_cleanup.cleanup_thresholds()
+        relative = thresholds[1] < 0
+        sensor[28, 20] += 180
         camera = SimpleNamespace(raw_pattern=channels, raw_channel_to_rgb=np.asarray([0, 1, 2, 1]),
             raw_black_level=black, raw_white_level=white, as_shot_wb=wb)
         config = dict(noise=[dict(a=.00001 * (phase + 1), b=.0000002 * (phase + 1)) for phase in range(4)],
             black=black[channels].ravel().tolist(), spans=(white - black)[channels].ravel().tolist(),
-            colours=colours.ravel().tolist(), thresholds=[raw_pixel_cleanup.HOT_SIGMA, raw_pixel_cleanup.MINIMUM_EXCESS,
-                raw_pixel_cleanup.LIGHT_SIGMA, raw_pixel_cleanup.CLIP_GUARD])
+            colours=colours.ravel().tolist(), thresholds=thresholds)
         for enabled, specks, threshold in ((False, False, 2.5), (True, False, 2.5),
                                            (False, True, 2), (False, True, 2.5),
                                            (True, True, 2.5), (True, True, 4)):
@@ -47,7 +49,7 @@ def fixtures():
                 'even_out_specks': specks, 'speck_threshold': threshold})
             cleaned = sensor.copy()
             if enabled:
-                assert raw_pixel_cleanup.apply(cleaned, config) == 4
+                assert raw_pixel_cleanup.apply(cleaned, config) == 4 + relative
             if specks:
                 assert raw_speck_cleanup.apply(cleaned, config, threshold) > 0
             transported = cleaned.copy() if specks else sensor

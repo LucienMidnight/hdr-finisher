@@ -223,12 +223,16 @@ def test_native_colour_correction_matches_numpy_bytes(monkeypatch):
     image = rng.normal(.04, .028, (173, 149, 3)).astype(np.float32)
     image[20:38, 12:28] *= 20
     image[60:68, 80:95] *= .1
-    for broad in (False, True):
-        actual = denoise_grain.colour_delta(image, broad)
-        with monkeypatch.context() as fallback:
-            fallback.setattr(denoise_filters, "library", lambda: None)
-            expected = denoise_grain.colour_delta(image, broad)
-        assert actual.tobytes() == expected.tobytes()
+    for enabled in ("0", "1"):
+        monkeypatch.setenv("HDR_FINISHER_QUAL_COLOUR_LEVELS", enabled)
+        if enabled == "1" and not hasattr(native, "colour_guides_relative"):
+            pytest.skip("Run machine setup to rebuild the optional native filters.")
+        for broad in (False, True):
+            actual = denoise_grain.colour_delta(image, broad)
+            with monkeypatch.context() as fallback:
+                fallback.setattr(denoise_filters, "library", lambda: None)
+                expected = denoise_grain.colour_delta(image, broad)
+            assert actual.tobytes() == expected.tobytes()
 
 
 def test_colour_shader_uses_the_cpu_offsets_and_ramp_bounds():
@@ -238,7 +242,8 @@ def test_colour_shader_uses_the_cpu_offsets_and_ramp_bounds():
     import re
     from hdr_finisher import denoise_grain
 
-    shader = (Path(__file__).resolve().parents[1] / "frontend/webgpu-shaders.js").read_text(encoding="utf-8")
+    root = Path(__file__).resolve().parents[1]
+    shader = (root / "frontend/webgpu-shaders.js").read_text(encoding="utf-8")
     pairs = shader.split("fn cleanPairsMain(", 1)[1].split("fn cleanRelativeMain(", 1)[0]
     small, large, switching_reach = map(
         int, re.search(r"select\((\d+), (\d+), reach == (\d+)\)", pairs).groups())
@@ -265,3 +270,11 @@ def test_colour_shader_uses_the_cpu_offsets_and_ramp_bounds():
             if isinstance(call, ast.Call) and isinstance(call.func, ast.Name) and call.func.id == "_ramp":
                 cpu.add(tuple(ast.literal_eval(arg) for arg in call.args[1:]))
     assert cpu == gpu
+
+    native = (root / "backend/hdr_finisher/denoise_filters.c").read_text(encoding="utf-8")
+    guides = native.split("static void colour_guides_impl(", 1)[1].split("API void colour_guides(", 1)[0]
+    native_bounds = re.findall(r",\s*([.\d]+)f,\s*([.\d]+)f\)", guides)
+    assert {tuple((float(low), round(float(low) + float(span), 6)))
+            for low, span in native_bounds} == {
+                (.065, .125), (.045, .15), (.004, .015), (.006, .014), (.06, .24), (3., 8.)
+            }

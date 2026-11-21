@@ -27,7 +27,7 @@ from starlette.datastructures import MutableHeaders
 from starlette.concurrency import run_in_threadpool
 from pydantic import BaseModel, ValidationError
 
-from . import denoise_adaptive
+from . import denoise_adaptive, denoise_quality
 from .capabilities import probe_capabilities
 from .config import APP_NAME, APP_VERSION, DEFAULT_HOST, DEFAULT_PORT, DOCS_DIR, EXPORTS_DIR, FRONTEND_DIR, SAMPLES_DIR
 from .desktop_security import DesktopPathGrants, secret_matches
@@ -2817,6 +2817,13 @@ def library_page() -> HTMLResponse:
     html = (FRONTEND_DIR / "photo-library.html").read_text(encoding="utf-8")
     return HTMLResponse(content=html.replace("__HDR_FINISHER_ASSET_VERSION__", _asset_version()),
                         headers={"Cache-Control": "no-store"})
+
+
+@app.get("/denoise-quality.js")
+def denoise_quality_script() -> Response:
+    options = json.dumps({"colourReference": denoise_quality.colour_reference()})
+    return Response(f"window.HDRDenoiseQuality = Object.freeze({options});", media_type="application/javascript",
+                    headers={"Cache-Control": "no-store"})
 
 
 @app.get("/launcher")
