@@ -1,6 +1,6 @@
 const {test}=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
 const source=fs.readFileSync(require.resolve('../frontend/webgpu-preview.js'),'utf8');
-const begin=source.indexOf('    async analyzeAdaptiveDenoise('),end=source.indexOf('    encodeAdaptiveDenoise(',begin);
+const begin=source.indexOf('    grainSourceKey('),end=source.indexOf('    encodeAdaptiveDenoise(',begin);
 const Renderer=vm.runInNewContext('(class {'+source.slice(begin,end)+'})',{performance,ADAPTIVE_DENOISE_ALGORITHM_VERSION:'adaptive-v1'});
 function setup(){
  const renderer=new Renderer(),calls={scratch:0,destroy:0};

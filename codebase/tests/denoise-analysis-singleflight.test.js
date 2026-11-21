@@ -14,7 +14,7 @@ test('Denoise method controls recover after a rejected save, missing GPU, or exp
       persistDenoiseSettings: async () => scenario !== 'save', refinementProxyLongEdge: () => 1600,
       geometrySignature: () => '{}', denoiseRendererControls: controls => controls,
       renderPreviewForLane: async () => true });
-    vm.runInContext(declarations('restoreDenoiseStatus', 'gradeGrainGpuPreferred', 'gradeGrainGpuEnabled', 'gradeSourceIdentity', 'denoiseRetryError', 'recalculateDenoise', 'recalculateDenoiseAnalysis', 'liveGrainControl', 'invalidateDenoisePreparation', 'deferDenoisePreparation', 'commitDenoiseControl'), context);
+    vm.runInContext(declarations('restoreDenoiseStatus', 'gradeGrainGpuPreferred', 'gradeGrainGpuEnabled', 'gradeSourceIdentity', 'denoiseRetryError', 'recalculateDenoise', 'recalculateDenoiseForView', 'recalculateDenoiseAnalysis', 'liveGrainControl', 'invalidateDenoisePreparation', 'deferDenoisePreparation', 'commitDenoiseControl', 'gradeGrainAction'), context);
     await context.commitDenoiseControl('method', 'clean_grain');
     assert.equal(runtime.status, 'error', scenario);
     assert.match(runtime.error, /try|retry|again/i, scenario);
@@ -80,7 +80,7 @@ function setup() {
  const calls=[];const renders=[];
  const state={session:{session_id:'photo'},gpuPreview:{available:true},denoise:{hdr:{enabled:true,controls:{method:'standard'},analysis:{algorithm_version:'adaptive'}}},denoiseRuntime:{hdr:{}},currentView:'hdr'};
  const context=vm.createContext({state,geometrySignature:()=> '{}',refinementProxyLongEdge:()=>7968,recalculateDenoiseAnalysis:(...args)=>{calls.push(args);return work;},renderGpuDraft:(...args)=>renders.push(args),debounceOverlayAndScopes:()=>{}});
- vm.runInContext(declarations('gradeSourceIdentity', 'recalculateDenoise'),context);
+ vm.runInContext(declarations('gradeSourceIdentity', 'recalculateDenoise', 'recalculateDenoiseForView', 'gradeGrainAction'),context);
  return {context,state,calls,renders,resolve};
 }
 test('enable, pan and drag share one setup for the same photo, scale and geometry',async()=>{
