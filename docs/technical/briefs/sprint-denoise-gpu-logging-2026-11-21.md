@@ -8,7 +8,10 @@ its own worktree made from `feat/denoise-v1`.
 **Base:** `feat/denoise-v1` at the commit that adds this brief (parent
 `e0257bad`).
 **Timebox:** development on November 21–22, 2026. Steve tests by hand after
-integration and expects to find bugs then.
+integration and expects to find bugs then. Round 2 (added the evening of
+November 21, after Steve's first MacBook Neo test and an outside review)
+front-loads PC work that helps both machines, then moves to MacBook Neo
+memory work overnight. See "Round 2 · Review follow-up".
 
 `AGENTS.md` applies to every package, especially "How much to test", the
 GPU-route rules, "Stop and ask" and the GPU run lock. Where this brief and
@@ -61,10 +64,24 @@ Three problems follow, and Steve approved all three on November 21:
 | CPU-1 | Faster CPU Grain backup: visible area first, then root speedups | `sprint/cpu-grain-speed` | — | done, merged Nov 21 (`16de955f`), byte-identical. PC, Sony Clean Small at 110%: first sharp picture 21.94 → 4.25 s, Evenness release 19.62 → 2.63 s, peak RAM 2.39 → 2.33 GB. Whole-photo preparation only ~10% faster: 30% target left as open work (wavelet and colour filters dominate) |
 | GPU-1 | Fine, Clean and Micro Grain on the GPU above 8,192 pixels | `sprint/gpu-large-photos` | — | done, merged Nov 21 (`5f8a2946`): 50 MP and 61 MP Fine and Clean Small stay on the GPU at 2 GiB at Fit and 110%; 50 MP Micro at 110% too. CPU agreement and 50 MP Micro at Fit checked at INT |
 | LOG-2 | App-wide logging rollout | `sprint/logging-rollout` | LOG-1 merged | done, merged Nov 21 (`b60767b9`): Library, RAW, Grade, Match, Export, Proof, memory, startup/shutdown instrumented; PC session log 84,288 bytes; reason codes folded into `logging.md` |
-| INT | Integration, full checks, push and Steve's hand test | `feat/denoise-v1` | all | merged and checked on the PC Nov 21 (see Integration result); awaiting Steve's push approval and hand test |
+| INT | Integration, full checks, push and Steve's hand test | `feat/denoise-v1` | all | merged and checked on the PC Nov 21 (see Integration result); pushed Nov 21 (`deb2fc6f`). Mac hand test partial (Micro Grain only; see Round 2) |
+| TRI-1 | Mac triage: CPU Micro Grain reuse and reduced-preview wording | `t3/b289892f` | INT | done, merged Nov 21 (`79b10821`), byte-identical. PC: Exposure edit 81.2 → 2.0 s, HDR→SDR 79.2 → 2.4 s; first picture unchanged (~84 s, one core); peak RAM 3.86 → 3.58 GB |
+| MG-1 | Micro Grain CPU: all cores and lens correction in strips | `sprint/micro-cpu-speed` | TRI-1 | to do (PC, now) |
+| CG-2 | Clean Grain colour stage in C, one noise-model store | `sprint/clean-colour-native` | — | to do (PC, now) |
+| GPU-2 | Faster GPU Micro Grain and Fit | `sprint/gpu-grain-speed` | — | to do (PC, now) |
+| ROUTE-1 | One Grain route state and clear route messages | `sprint/grain-route-ui` | — | to do (PC, now) |
+| MG-2 | Micro Grain CPU: visible area first | `sprint/micro-cpu-visible` | MG-1 merged | to do (PC, after MG-1) |
+| MEM-1 | One memory budget on the MacBook Neo | `sprint/mac-memory` | MG-1, GPU-2 merged | to do (overnight; Mac measurements) |
+| QUAL-1 | Exposure-independent quality fixes (output changes) | `sprint/grain-quality` | CG-2 merged | to do; needs Steve's visual sign-off before any default changes |
+| INT-2 | Round 2 integration, full checks, push and hand test | `feat/denoise-v1` | all round 2 | to do |
 
 LOG-1, CPU-1 and GPU-1 run in parallel on November 21. LOG-2 starts once
 LOG-1's foundation is merged. INT runs at the end of November 22.
+
+Round 2: MG-1, CG-2, GPU-2 and ROUTE-1 run in parallel on the PC first.
+MG-2 follows MG-1. MEM-1 starts overnight once MG-1 and GPU-2 are merged,
+with its measurements on the MacBook Neo. QUAL-1 builds review crops but
+changes no default until Steve has looked at them.
 
 ## Rules shared by every package
 
@@ -404,7 +421,7 @@ on the Windows PC (about 25 minutes locked):
   the base); `gpu-denoise-measurement.js` (missing EXR fixture, AGENTS.md
   item 6).
 - Open work: the CPU-1 30% whole-photo preparation target (about 10% reached;
-  wavelet and colour filters dominate).
+  wavelet and colour filters dominate). Round 2 gives it to CG-2.
 
 ### Hand test (Steve, after integration)
 
@@ -445,6 +462,397 @@ from that folder, plus any `backend.log.1` with the same date.
 The hand test on the Mac is also the first chance to catch the original
 incident with the new logs.
 
+## Round 2 · Review follow-up (November 21 evening)
+
+### Why
+
+Steve's first MacBook Neo test (18:47 WIB, Micro Grain only, `_DSC7970.ARW`
+with lens correction at 78%) found:
+- CPU Micro Grain took about 50 s (70 s from the first click);
+- app memory reached 4.3–4.9 GB against the 4 GB ceiling;
+- it prepared again after view changes;
+- the reduced 4,096 px preview read as an error.
+
+TRI-1 fixed the repeats and the wording. Steve then asked for an outside
+review of the Denoise module (Gemini 4 Neon, high thinking, read-only)
+covering:
+1. the methods;
+2. the architecture and speed;
+3. memory on the MacBook Neo.
+
+Steve accepted its recommendations. The coordinator checked every claim
+against the code; the corrections are below. Steve's order: PC work that
+helps both machines first, MacBook Neo memory overnight.
+
+### Review findings, as checked in the code
+
+Each line gives the finding, what the code shows and where it went.
+
+**Methods**
+- *Fixed linear thresholds make protection depend on exposure.*
+  - True for `colour_delta` (`denoise_grain.py`: highlight 0.065–0.125,
+    texture background 0.004–0.015, dark 0.006–0.014).
+  - Partly true for Micro's `_highlight_guard`: its edge threshold is
+    already noise-relative, with a 0.007 floor; only the 0.12 seed is fixed.
+  - Partly true for `raw_speck_cleanup.ABSOLUTE_FLOOR`, which is a floor
+    beneath a noise envelope.
+  - → QUAL-1.
+- *The Bayer noise fit is unweighted and skips the deepest blocks.*
+  - True: `raw_pixel_cleanup._fit` is an unweighted least squares over
+    about 12 binned medians, and drops blocks with mean ≤ 0.0001.
+  - Binning reduces, but does not remove, the bright-bin pull.
+  - → QUAL-1.
+- *Micro re-quantises to `uint16` before AHD and clips signed shadows.*
+  - True, but it only clips values more than the black level below black
+    (`BayerTile.apply`).
+  - → QUAL-1 measures how often this happens before changing anything.
+- *The brightness channel weights R, G and B equally, not as ACEScg
+  luminance; the noise variance comes from one Y; bands 2–4 are
+  extrapolated from bands 0–1.*
+  - All true (`OPPONENT`, `_noise_variance`, `estimate_adaptive_model`).
+  - The equal-weight opponent transform is orthonormal, which keeps the
+    noise per channel predictable. Changing it is research, not a fix.
+  - → QUAL-1 research item, with no default change.
+- *Half-strength shadow-only guided colour pass* (researched: 11–12% less
+  Canon shadow mottling, no regressions on the marks) → QUAL-1 option.
+- *Variance-stabilising transforms are not suitable after demosaic for
+  signed HDR.* Agreed; no work.
+
+**Architecture**
+- *About 37 WGSL shaders mirror the Python and C by hand.*
+  - True. The example given, the colour-pair diagonal (`select(8, 20, …)`
+    against `round(reach/√2)`), does agree for the only reaches used (12
+    and 28).
+  - → No rewrite. CG-2 and GPU-2 add a shared-constant check where they
+    touch the code.
+- *Four separate stores for the same noise model.*
+  - True: `denoise_measurement._models` (plus disk), `main._DENOISE_MODEL_CACHE`,
+    `render_cache.cpu_denoise_model`, and `pendingByDevice` in the browser.
+  - → CG-2 consolidates the backend three; the browser one stays.
+- *Three overlapping GPU-fallback state machines.*
+  - True: `grain-route.js` `Failures`, `runtime.microCpu` in `denoise-ui.js`,
+    and `gpuFailurePolicy` in `preview-pipeline.js`.
+  - → ROUTE-1.
+- *Fine Grain is Clean Grain with Color Splotches at 0.*
+  - True in the code: `clean = method == "clean_grain" and splotches > 0`.
+  - Folding it in is a product decision → Decision R2-1 for Steve.
+- *The CPU computes 13 fixed calibration constants by Monte Carlo at run
+  time, while the browser already hardcodes them.*
+  - True (`_quantile_calibration`, `_tail_reference`, and the hardcoded
+    constants in `denoise-measurement.js`).
+  - → CG-2: use the constants, with a unit test that recomputes them.
+
+**Speed**
+- *CPU Micro Grain renders tiles on one core, and its model estimate uses
+  `workers=1`.*
+  - True (`MicroGrainSource.render`).
+  - The native kernels are called through `ctypes`, which releases the
+    GIL, so threads can scale.
+  - → MG-1.
+- *Visible area first for CPU Micro with lens correction* → MG-2.
+- *GPU Micro Grain:*
+  - Running the Clean Grain passes over the padded area may be about 2×
+    redundant. Unproven: halos are needed for exact results, so measure
+    first.
+  - `resizeNativeFineGrain` waits for the GPU after every strip. True.
+  - AHD buffers are made new for every region (`micro-grain-gpu.js`). True.
+  - → GPU-2.
+- *Clean Grain's colour stage is half of CPU Clean Grain time.* Matches the
+  performance table. → CG-2, which also owns CPU-1's open 30% target.
+- *Overlap strip fetches with GPU work in `measureFineGrain` and
+  `resizeNativeFineGrain`* → GPU-2, measure first.
+
+**Memory**
+- *GPU Grain admission ignores whole-app memory on unified-memory Macs.*
+  True: `reserveFineGrain` checks only the graphics budget. → MEM-1.
+- *GPU cache reclaim never runs while background work holds a scope.*
+  - True (`reclaimGrainResources` returns early).
+  - The guard exists because a render can hold an unregistered texture.
+  - → MEM-1 defers reclaim to the end of the scope rather than removing
+    the guard.
+- *The Micro source is not counted in `app_memory`.*
+  - The CPU copy is now counted (TRI-1).
+  - The GPU route's module-level `_recent_source` (sensor plus up to
+    256 MiB of Bayer tiles) still is not.
+  - → MG-1.
+- *Lens correction builds whole-frame coordinates (1,017 MB on 42 MP).*
+  - True (`apply_lens_correction`; memory PRD census).
+  - `lensfunpy` accepts a region (`xu, yu, width, height`), so strip
+    coordinates are possible.
+  - → MG-1 for every caller (RAW development, Micro, delivery).
+- *Narrower scratch texture formats; keep float32 maths.* → MEM-1, after
+  GPU-2. Check storage-format support on both machines.
+- *Memory-mapped read-only sources on 8 GB machines.* A large change →
+  MEM-1 proposal only, Decision R2-3.
+- *Stop whole-photo background CPU tile fill on 8 GB machines.* True:
+  `_ensure` queues every remaining tile. → MEM-1, gated on memory pressure.
+- *Trim Library cache shares while Grade has a large photo open on 8 GB.*
+  A size change → MEM-1 proposal, Decision R2-2.
+- *Library pressure ignores retained Grade bytes* (`grade_bytes_provider`).
+  This is intended for Library admission. → MEM-1 confirms that Grade's
+  own admission counts them.
+
+**Telling the user**
+- *"Denoise cache ready." shows even after a CPU fallback.* True
+  (`denoise-ui.js`). → ROUTE-1.
+- *A route label next to the Method menu (GPU, CPU backup, Reduced preview,
+  Paused), with a plain reason and a one-click action.* → ROUTE-1.
+
+**Measure before acting** (reviewer's list, adopted):
+- the real cause of the Mac Clean Grain fallback, from the Mac logs;
+- the Neo's texture limits and 50 MP behaviour;
+- a Metal profile of GPU Micro Grain;
+- pixel drift checks for QUAL-1;
+- storage-format support.
+These are owned by MEM-1, GPU-2 and QUAL-1 as noted.
+
+### Shared rules for round 2
+
+- The round 1 rules apply: the testing timetable, commits and branches, the
+  limits and the log contract.
+- MG-1, CG-2, GPU-2, ROUTE-1, MG-2 and MEM-1 must be **byte-identical**
+  unless a package says otherwise. A pixel change is an output change and
+  goes to Steve.
+- Workers write short reports. They do not delete files (no `Remove-Item`,
+  `rm` or `rmdir`); the coordinator cleans up.
+- One short locked measurement per package, as in round 1.
+
+### MG-1 · Micro Grain CPU: all cores and lens correction in strips
+
+**Goal.** CPU Micro Grain (Grade with lens correction or crop, export and
+full-size Proof) uses the available cores, and lens correction never holds
+whole-frame coordinates. Helps both machines.
+
+**Build.**
+1. Run `MicroGrainSource.render` tiles and the model estimate
+   (`estimate_adaptive_model_from_windows`) through the existing CPU budget
+   (`cpu_budget.CpuWorkLimit`/`CpuExecutor`). Choose worker counts so peak
+   memory stays within the `WORKING` allowance on an 8 GB machine.
+   Cancellation and TRI-1's shared work must keep working.
+2. Compute Lensfun coordinates per output strip (`lensfunpy` region
+   arguments) and remap strip by strip. Bilinear maths stays unchanged.
+   This applies to every `apply_lens_correction` caller.
+3. Count the GPU route's retained Micro source (`_recent_source`) in
+   `app_memory` with a trim hook.
+
+**Owns.** `denoise_micro_grain.py`, the lens-correction code in
+`raw_import.py`, the Micro section of `render_cache.py`, `cpu_budget.py` if
+needed, and their tests.
+
+**Done when:**
+- Output is byte-identical, for Micro and for RAW development with lens
+  correction, on a Canon and a Sony with a lens profile.
+- One short PC run on `_DSC7970.ARW` records the Grade first picture (TRI-1
+  baseline about 84 s), Micro JPEG export time and peak app RAM.
+- `denoise.md`, `memory-and-caches.md` (lens census) and
+  `performance-table.md` are updated.
+
+### MG-2 · Micro Grain CPU: visible area first
+
+**Goal.** At 100% and above, CPU Micro Grain with lens correction shows the
+sharp visible area in a few seconds, like CPU-1 did for Clean Grain. Fit
+keeps a quick reduced picture first.
+
+**Build.**
+- Map the viewport back through the lens and geometry. Sample every edge,
+  not only the corners, and add a stated margin.
+- Develop only those Bayer regions, at high priority. Fill the rest only as
+  MEM-1's memory gate allows.
+- If the mapping is unbounded or extreme, fall back to the whole frame and
+  log why.
+
+**Owns.** The same files as MG-1, after MG-1 is merged; Micro region reads
+in `main.py`.
+
+**Done when:**
+- Visible pixels are byte-identical to the whole-frame result.
+- One short PC run records the first sharp picture at 110% and a pan into
+  an unprepared area.
+- Docs are updated.
+
+### CG-2 · Clean Grain colour stage in C, one noise-model store
+
+**Goal.** Finish CPU-1's open 30% whole-photo target and remove duplicate
+caches.
+
+**Build.**
+1. Move the hot loops of `denoise_grain.colour_delta` and `_colour_pass`
+   into `denoise_filters.c`. Rebuild the binaries on both platforms, as the
+   existing native filters do; setup builds them on the Mac.
+2. Put the backend noise model in one store, `denoise_measurement.py`, with
+   shared in-flight work. Remove `main._DENOISE_MODEL_CACHE` and the separate
+   CPU-preview store, keeping their keys' meaning.
+3. Replace the run-time Monte Carlo calibration with fixed constants, plus
+   a unit test that recomputes them.
+4. Add a check that the colour-pair offsets and other shared constants
+   agree between Python and WGSL.
+
+**Owns.** `denoise_grain.py`, `denoise_filters.*`, `denoise_measurement.py`,
+`denoise_adaptive.py`, the model cache in `render_cache.py` and `main.py`,
+and their tests.
+
+**Done when:**
+- Prepared pixels are byte-identical on the Canon and Sony tile sets. If
+  the C code can only match within float rounding, stop and report; that
+  is Steve's decision.
+- One short forced-CPU run on the Sony Clean Small records whole-photo
+  preparation against the CPU-1 baseline (target at least 30% faster than
+  the original), first sharp picture at 110% and peak RAM.
+- Docs are updated.
+
+### GPU-2 · Faster GPU Micro Grain and Fit
+
+**Goal.** Micro Grain slider updates at 110% move towards the 0.30 s
+target (now 0.70–0.80 s on the Mac Canon), and the cold Fine/Clean Fit
+gets faster.
+
+**Build, measuring first** (GPU timestamps where available, otherwise
+stage timings):
+- Find where the Micro late passes spend time.
+- Reduce the Clean Grain work over the padded area only where the halo is
+  provably unused.
+- Reuse AHD buffers and textures across regions within the reservation.
+- Remove per-strip `onSubmittedWorkDone` waits in `resizeNativeFineGrain`
+  and Micro Fit where ordering does not need them.
+- Overlap strip fetches with GPU work in `measureFineGrain` and
+  `resizeNativeFineGrain`, and batch submits in `denoise-measurement.js`.
+- Drop any item that measures below a visible gain.
+
+**Owns.** The Grain encode, fit and resize code in `webgpu-preview.js`;
+`micro-grain-gpu.js`; `denoise-measurement.js`; Grain WGSL. Avoid the
+reservation and reclaim functions (MEM-1) and route state (ROUTE-1).
+
+**Done when:**
+- GPU output is identical to before on the same machine.
+- One short PC run records the Micro slider at 110%, Micro exact Fit and
+  cold Clean Fit on the Sony, before and after.
+- A note says which items should also be profiled on the Mac.
+- Docs are updated.
+
+### ROUTE-1 · One Grain route state and clear route messages
+
+**Goal.** One place decides GPU or CPU for every Grain method, and the user
+always sees which route is in use, why, and what they can do.
+
+**Build.**
+1. Move Micro Grain's CPU latch (`runtime.microCpu`, `microFailureKey`)
+   and the Grain parts of `gpuFailurePolicy` into `grain-route.js`. Keep
+   the AGENTS.md rule: one GPU try, a second only for temporary failures,
+   otherwise the CPU.
+2. Add a small route label beside the Denoise Method menu: **GPU**, **CPU
+   backup**, **Reduced preview** or **Paused**.
+3. Add a plain status message with the reason, built from the existing
+   reason codes. Examples:
+   - "Micro Grain is using the CPU because lens correction is on."
+   - "Using the CPU backup because graphics memory was short. Export is
+     unchanged."
+4. Offer one action where it helps:
+   - **Retry on GPU** for temporary and memory failures;
+   - **Switch to Clean Grain** when Micro Grain is on the CPU.
+5. Replace "Denoise cache ready." when the CPU did the work.
+6. Show progress when CPU work runs longer than about 2 s.
+
+**Design.** Use an existing component and tokens from the component sheet
+(`docs/design/component-sheet.html`) and the design guidelines. If no
+existing component fits, stop and propose one; that is Steve's decision.
+Save before/after screenshots for Steve's sign-off.
+
+**Owns.** `grain-route.js`, `denoise-ui.js`, the route parts of
+`preview-pipeline.js`, `viewer-status.js`, the Denoise panel markup and
+styles, and their tests.
+
+**Done when:**
+- Fast tests cover each label, message and action.
+- The forced-CPU, lens-correction and memory-refusal cases show the right
+  label in a short real-app run, with screenshots.
+- `denoise.md` and the user guide `docs/user-guide/denoise.md` are updated.
+
+### MEM-1 · One memory budget on the MacBook Neo (overnight)
+
+**Goal.** On unified-memory machines, graphics and CPU work share one
+budget. Grade with Denoise stays under the 4 GB ceiling on the Neo without
+silent slowdowns.
+
+**Build.**
+1. On unified-memory Macs, limit GPU Grain admission to the whole-app
+   headroom as well as the graphics budget. Keep the configured budget as
+   the upper bound.
+2. Let backend memory pressure (moderate or critical) trigger GPU Grain
+   cache reclaim. While a render or background scope is active, defer the
+   reclaim to its end instead of skipping it. Never evict the visible
+   picture.
+3. Gate CPU background tile fill (CPU-1 and MG-2) on memory headroom and
+   pressure. Under pressure, prepare tiles on demand only.
+4. After GPU-2 is merged, use narrower formats for 1–2-channel Grain
+   scratch textures where the device supports them as storage. The maths
+   stays float32.
+5. **Proposals only, for Steve:**
+   - trimming Library cache shares while Grade has a large photo open on
+     8 GB (Decision R2-2);
+   - memory-mapped read-only sources (Decision R2-3).
+   Give the numbers and what could break.
+6. **On the Mac:**
+   - capture the Clean Grain fallback cause from the new logs;
+   - record `maxTextureDimension2D`, the Auto budget and 50 MP behaviour;
+   - profile GPU Micro Grain;
+   - re-run Steve's Micro Grain hand test.
+
+**Owns.** The reservation and reclaim code in `webgpu-preview.js`,
+`app_memory.py`, the memory gate in `grain_work.py`/`denoise_grain.py`
+(after CG-2), `resource_preflight.py` and their tests.
+
+**Done when:**
+- Output is byte-identical.
+- A Mac run of Steve's hand-test steps (Clean Grain Small and Micro Grain
+  on `_DSC7970.ARW`) stays under 4 GB with the route and reasons logged.
+- `memory-and-caches.md`, `preview-and-gpu.md` and `performance-table.md`
+  are updated.
+
+### QUAL-1 · Exposure-independent quality fixes (output changes)
+
+**Goal.** Protection follows the noise, not fixed brightness levels.
+
+**Build, as switchable candidates beside the current defaults:**
+1. Make `colour_delta`'s dark and texture gates, Micro's 0.12 highlight
+   seed and the speck floor relative to the measured noise. Change CPU and
+   WGSL together.
+2. Weight the Bayer fit (`raw_pixel_cleanup._fit`) as
+   `_fit_informative_variance` does, and keep usable deep-shadow blocks.
+3. Count how often Micro's `uint16` re-quantisation clips signed shadows
+   on the test RAWs. Fix it only if it occurs.
+4. Optional: the half-strength shadow-only guided colour pass.
+5. Research only: measured bands 2–3, a noise-weighted `fit_grain`, and
+   luminance-weighted brightness.
+
+**Done when:**
+- A review page shows the candidates against the current result on Steve's
+  38 Canon and 25 Sony marks, the atrium lights, and ±3 EV exposure
+  shifts.
+- CPU and GPU agree within the limits.
+- **No default changes until Steve approves.**
+
+### Round 2 decisions for Steve
+
+| ID | Question | Recommendation |
+| --- | --- | --- |
+| R2-1 | Fold Fine Grain into Clean Grain (Clean with Color Splotches at 0)? | Reviewer: yes, removes a method's worth of code and tests. Saved Fine Grain grades would open as Clean Grain at 0 (no compatibility code before 1.0). |
+| R2-2 | Trim Library cache shares while Grade has a large photo open on an 8 GB machine? | Decide on MEM-1's numbers. |
+| R2-3 | Memory-map read-only sources on 8 GB machines? | Decide on MEM-1's proposal. |
+| R2-4 | Which QUAL-1 candidates become defaults? | Decide on the review page. |
+| R2-5 | Route label look and wording | Decide on ROUTE-1's screenshots. |
+
+### INT-2 · Round 2 integration
+
+The coordinator:
+- merges MG-1, CG-2, GPU-2 and ROUTE-1, then MG-2, MEM-1 and any approved
+  QUAL-1 item;
+- runs the full fast suites and the covering GPU drivers once;
+- asks Steve before pushing;
+- adds Micro Grain steps to the hand test.
+
+Later, after v1: lens correction as a GPU warp after GPU Micro Grain
+(reviewer's suggestion) replaces most of MG-2. It stays out of scope here.
+
 ## Out of scope
 
 - Micro Grain on the GPU with lens correction or crop (about 1–2 weeks; ask
@@ -452,7 +860,10 @@ incident with the new logs.
 - Export and Proof Grain on the GPU.
 - Library thumbnail Grain changes.
 - Encoder or gain-map changes.
-- Changes to agreed tolerances or memory limits.
+- Changes to agreed tolerances or memory limits. Round 2 cache-share and
+  memory-mapping ideas are proposals for Steve (R2-2, R2-3), not built.
+- Rewriting the WGSL to share code with the Python and C routes; round 2
+  adds checks on shared constants only.
 
 ## Decisions
 
@@ -464,3 +875,5 @@ incident with the new logs.
 | 2026-11-21 | Steve: finish development on November 21–22; skip long tests until the end; Steve tests by hand. |
 | 2026-11-21 | Workers use Codex `gpt-6.2-sol` at medium or high effort. |
 | 2026-11-21 | Steve: the coordinator decides process questions (extra rounds, an extra short locked measurement) and reports them; Steve keeps product decisions. First use: CPU-1 gets a second round and one more 5-minute run, because its first version missed the speed and memory targets before its final change was measured. |
+| 2026-11-21 | Steve: push `feat/denoise-v1` after integration (`deb2fc6f`). |
+| 2026-11-21 | Steve: adopt the Gemini 4 Neon Denoise review's recommendations into this sprint as round 2, after the coordinator checks them in the code; PC work for both machines first, MacBook Neo memory overnight; the reviewer checks the updated brief. Product choices in it stay with Steve (R2-1 to R2-5). |
