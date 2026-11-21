@@ -7259,7 +7259,8 @@
       this.recordStage("denoise-analysis", { state: "started", generation, longEdge, algorithm: ADAPTIVE_DENOISE_ALGORITHM_VERSION });
       const apiEdge = Math.min(longEdge, 16384);
       const query = `long_edge=${apiEdge}&edit_revision=${editRevision}&geometry_signature=${encodeURIComponent(geometrySignature)}`;
-      const experimental = controls.method === "clean_grain";
+      const experimental = controls.method === "clean_grain"
+        && (controls.cleanColor !== false || controls.grainEvenness !== 0);
       const sourceKey = this.grainSourceKey(sessionId, geometrySignature, frame.sourceIdentity, repairGeneration, controls.method);
       const gpuFine = (gradeGpuGrain || deliveryGrainSource)
         && experimental

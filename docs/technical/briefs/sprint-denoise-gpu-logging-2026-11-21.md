@@ -1039,6 +1039,8 @@ The coordinator:
 - asks Steve before pushing;
 - adds Micro Grain steps to the hand test.
 
+**INT-2 triage (Windows PC, Nov 21).** Fixed bypassed Clean Grain edits reusing stale preparation and restored Standard output at zero Evenness with colour cleaning off (`ebb54c56`). The authored SDR driver now commits the checkbox and verifies CPU preparation (`6bb48eee`). All three drivers passed. Same-revision tests identified MG-1's one-thread OpenCV setting as a contributor to the RAM rise. MEM-1 matched finished Sony GPU Grade bytes at Fit and 110% in HDR and SDR, and CPU AVIF export bytes with matched warm-up. Node had only the known tooltip failure. 97 focused Python tests passed. The broader Python selection passed 193 assertions and hit a Windows SQLite cleanup error at shutdown. [PC measurements](../performance-table.md)
+
 Later, after v1: lens correction as a GPU warp after GPU Micro Grain
 (reviewer's suggestion) replaces most of MG-2. It stays out of scope here.
 

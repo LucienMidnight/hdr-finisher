@@ -512,7 +512,8 @@ async function recalculateDenoiseForView(lane, options) {
   const { color_splotches, ...preparationControls } = settings.controls;
   const nativePreparation = preparationControls.amount
     && (preparationControls.luminance || preparationControls.color_noise)
-    && preparationControls.method === "clean_grain";
+    && preparationControls.method === "clean_grain"
+    && (preparationControls.clean_color !== false || preparationControls.grain_evenness !== 0);
   const key = JSON.stringify([
     sessionId, lane, nativePreparation ? "native" : longEdge, geometrySignature(),
     pixels, state.repairSourceGeneration || 0, settings.analysis, refresh,
@@ -676,6 +677,7 @@ async function commitDenoiseControl(key, value) {
   const sessionId = state.session?.session_id;
   if (!sessionId) return;
   if (key === "method" && value === settings.controls.method) return;
+  const previous = settings.controls[key];
   if (value !== undefined) settings.controls[key] = value;
   if (key === "method") {
     runtime.microBackup = null;
@@ -696,7 +698,9 @@ async function commitDenoiseControl(key, value) {
     }
     return;
   }
-  if (runtime.status === "ready" && liveGrainControl(key, lane) && liveGradeGrainSelected(lane)) {
+  const usesStandard = settings.controls.method === "clean_grain"
+    && settings.controls.clean_color === false && settings.controls.grain_evenness === 0;
+  if (!usesStandard && runtime.status === "ready" && liveGrainControl(key, lane) && liveGradeGrainSelected(lane)) {
     const generation = runtime.generation;
     const saved = await persistDenoiseSettings().catch(() => false);
     if (state.session?.session_id !== sessionId || state.denoiseRuntime[lane] !== runtime
@@ -729,7 +733,10 @@ async function commitDenoiseControl(key, value) {
     }
     return;
   }
-  if (!settings.enabled && key !== "method") return persistDenoiseSettings();
+  if (!settings.enabled && key !== "method") {
+    if (settings.controls[key] !== previous && key !== "color_splotches") runtime.dirty = true;
+    return persistDenoiseSettings();
+  }
   const needsPreparation = key === "method" || runtime.status !== "ready"
     || (settings.controls.method !== "standard" && key !== "color_splotches");
   if (!needsPreparation) {

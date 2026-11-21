@@ -81,12 +81,17 @@ async function authoredSdr(page, api) {
   assert.match(await page.evaluate(()=>state.gpuPreview.denoiseSourceSelector.identity),/:authored-sdr$/);
   console.log("Authored Match/Undo: linear sRGB → ACEScg → authored linear sRGB");
 
-  await page.evaluate(()=>{
+  await page.evaluate(async ()=>{
     state.gpuPreview.enableGradeCleanGrainGpu=false;
-    state.denoise.sdr.controls.clean_color=false;
-    return commitDenoiseControl("method","clean_grain");
+    await commitDenoiseControl("method","clean_grain");
+    await commitDenoiseControl("grain_evenness",0.65);
+    await commitDenoiseControl("clean_color",false);
   });
-  await page.waitForFunction(()=>state.gpuPreview.denoiseSourceSelector?.cache?.grain?.token && previewIdleNow());
+  await page.waitForFunction(()=>{
+    const selector = state.gpuPreview.denoiseSourceSelector;
+    return selector?.identity.endsWith(":authored-sdr") && selector.controls.cleanColor === false
+      && selector.cache?.grain?.token && !selector.cache.grain.gpu && previewIdleNow();
+  });
   const fallback = await page.evaluate(async ()=>{
     const gpu = state.gpuPreview, render = gpu.renderTo;
     let attempts = 0;
