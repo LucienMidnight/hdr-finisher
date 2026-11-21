@@ -3,6 +3,7 @@ import json
 from pathlib import Path
 import sys
 from .batch_export import export_photo
+from .diagnostics import action_scope, process_scope
 from .export_presets import ExportPreset
 
 def main():
@@ -14,7 +15,8 @@ def main():
         temporary = target.with_suffix(".tmp")
         temporary.write_text(json.dumps(results), encoding="utf-8")
         temporary.replace(target)
-    results = export_photo(task["photo"], ExportPreset.model_validate(task["preset"]), task["directory"], task["sequence"], progress, lambda: Path(task["cancel"]).exists())
+    with process_scope("batch_worker"), action_scope(task.get("diagnostic_action")):
+        results = export_photo(task["photo"], ExportPreset.model_validate(task["preset"]), task["directory"], task["sequence"], progress, lambda: Path(task["cancel"]).exists())
     Path(sys.argv[2]).write_text(json.dumps(results), encoding="utf-8")
 
 if __name__ == "__main__": main()

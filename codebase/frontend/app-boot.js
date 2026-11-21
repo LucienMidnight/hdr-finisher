@@ -72,9 +72,11 @@ async function initializeGpuPreview() {
  */
 async function rebuildGpuPreview(reason = "") {
   if (!state.gpuPreview) return false;
+  const action = globalThis.HDRDiagnostics?.start("gpu", "rebuild_device", gradeDiagnosticPhoto());
   try {
     const rebuilt = await state.gpuPreview.rebuild();
     if (!rebuilt) {
+      action?.finish("error", { level: "error", route: "refused", reason: "gpu_rebuild_failed" });
       state.gpuFailurePolicy?.record(
         new Error(state.gpuPreview.detail || reason || "WebGPU device rebuild failed"),
         { init: true },
@@ -86,9 +88,11 @@ async function rebuildGpuPreview(reason = "") {
     state.gpuRebuildAttempts = 0;
     state.displayInfo.gpu = state.gpuPreview.detail;
     renderReadouts();
+    action?.finish("success", { route: "gpu", reason: "device_rebuilt" });
     if (state.session) await settlePreview(state.currentView);
     return true;
   } catch (error) {
+    action?.finish("error", { level: "error", route: "refused", reason: "gpu_rebuild_failed" });
     state.gpuFailurePolicy?.record(error, { init: true });
     markPreviewUnavailable(`WebGPU device rebuild failed: ${error?.message || error}`);
     return false;
@@ -1188,6 +1192,9 @@ function bindEvents() {
     wakePendingHighlightAnchor(lane);
   });
   window.addEventListener("hdrfinisher:webgpulost", (event) => {
+    globalThis.HDRDiagnostics?.event("gpu", "device_lost", {
+      level: "warn", route: "refused", reason: "device_lost", photo: gradeDiagnosticPhoto(),
+    });
     const message = event.detail?.message || "WebGPU device lost";
     const verdict = state.gpuFailurePolicy?.record(new Error(message), { deviceLost: true });
     state.displayInfo.gpu = verdict?.recoverable === false

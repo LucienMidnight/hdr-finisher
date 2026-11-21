@@ -194,7 +194,8 @@ def _uses_grain_reconstruction(frame):
 
 
 def _render_pair(frame, owner, settings, adjustments):
-    from .delivery import preferences, renderer_record
+    from .delivery import log_delivery, preferences, renderer_record
+    from .diagnostics import current_action
     from .exporters import denoise_settings_for_export
     from .models import PreviewKind
 
@@ -205,6 +206,7 @@ def _render_pair(frame, owner, settings, adjustments):
     try:
         policy = preferences()
     except (OSError, ValueError, AttributeError):
+        log_delivery("delivery_route", route="cpu", reason="delivery_policy_unreadable", level="warn", format=settings.format)
         frame._delivery_record = renderer_record()
         return None
     from .finishing import geometry_output_dimensions
@@ -227,9 +229,11 @@ def _render_pair(frame, owner, settings, adjustments):
     cached = getattr(owner, "_delivery_cache", None)
     if cached and cached[0] == signature:
         frame._delivery_record = cached[2]
+        log_delivery("delivery_route", route=cached[2]["renderer"], reason="delivery_cache_hit", format=settings.format)
         return cached[1]
     result = None
     record = renderer_record()
+    reason = "gpu_delivery_unavailable"
     root = Path(os.environ[ROOT_ENV]) if os.environ.get(ROOT_ENV) else None
     directory = None
     cacheable = True
@@ -237,12 +241,15 @@ def _render_pair(frame, owner, settings, adjustments):
     resources = []
     try:
         if policy["effective_force_cpu"]:
+            reason = "cpu_delivery_policy"
             return None
         if getattr(settings, "_bounded_cpu_delivery", False):
+            reason = "app_memory_ceiling"
             record = {"renderer": "cpu", "fallback_reason":
                 "Native GPU delivery working set does not fit the existing app memory ceiling; using bounded CPU strips."}
             return None
         if grain_reconstruction and not grain_trial:
+            reason = "cpu_delivery_policy"
             record = {"renderer": "cpu", "fallback_reason": "GPU Grain delivery has not qualified for default use."}
             return None
         if root is None or not (root / "heartbeat").exists() or time.time() - (root / "heartbeat").stat().st_mtime > 5:
@@ -272,6 +279,7 @@ def _render_pair(frame, owner, settings, adjustments):
                 record = {"renderer": "cpu", "fallback_reason":
                     "GPU Grain delivery working set does not fit the app memory ceiling."}
                 return None
+        reason = "gpu_delivery_failed"
         identity = "delivery-" + uuid4().hex
         directory = root / identity
         directory.mkdir()
@@ -307,7 +315,7 @@ def _render_pair(frame, owner, settings, adjustments):
             "memory": {"source": source_memory, "reference": reference_memory, "raw": raw_memory, **lane_memory},
             "file_sources": file_sources, "streamed": streamed, "lanes": lanes,
             "raw": {key: value for key, value in raw.items() if key != "body"} if raw else None,
-            "id": identity, "width": width, "height": height, "output": output,
+            "id": identity, "action": current_action(), "width": width, "height": height, "output": output,
             "photo_output": photo_output, "framing": framing,
             # With an authored SDR base the SDR lane has its own source pixels.
             "authored_sdr": reference is not None,
@@ -319,12 +327,15 @@ def _render_pair(frame, owner, settings, adjustments):
             "priority": getattr(frame, "delivery_priority", 20), "created": time.time()})
         reply = _wait_for_result(directory, root, frame)
         if reply.get("error") in PREEMPTED_REASONS:
+            log_delivery("delivery_retry", level="warn", route="gpu", reason="gpu_preempted", retry_count=1)
             # Give the GPU back, then wait for another turn with the same
             # request (and its original queue time).
             for name in ("result.json", "claimed"):
                 (directory / name).unlink(missing_ok=True)
             reply = _wait_for_result(directory, root, frame)
         if reply.get("error"):
+            if reply["error"] in PREEMPTED_REASONS:
+                reason = "gpu_preempted"
             raise RuntimeError(reply["error"])
         images = {}
         for lane in lanes:
@@ -341,6 +352,7 @@ def _render_pair(frame, owner, settings, adjustments):
         frame._delivery_timings = reply.get("timings_ms", {})
         frame._raw_measurements = reply.get("raw_measurements")
         record = {"renderer": "gpu", "fallback_reason": None}
+        reason = "gpu_delivery_succeeded"
         from .library_diagnostics import log
         log("gpu_delivery_rendered", width=output[0], height=output[1], priority=getattr(frame, "delivery_priority", 20),
             total_ms=reply.get("total_ms"), **{k: round(v, 1) for k, v in reply.get("timings_ms", {}).items()})
@@ -357,6 +369,9 @@ def _render_pair(frame, owner, settings, adjustments):
         memory.close()
         for release in resources:
             release()
+        log_delivery("delivery_route", route=record["renderer"], reason=reason, format=settings.format,
+                   level="warn" if reason in {"gpu_delivery_unavailable", "gpu_delivery_failed", "gpu_preempted"} else "info",
+                   width_px=native_size[0], height_px=native_size[1])
         frame._delivery_record = record
         owner._delivery_record = record
         frame._delivery_cache = owner._delivery_cache = (signature, result, record) if cacheable else None

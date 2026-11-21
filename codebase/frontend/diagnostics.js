@@ -35,5 +35,9 @@
     return { event, start, headers };
   }
   if (typeof module === "object" && module.exports) module.exports = { create, ACTION_HEADER };
-  else root.HDRDiagnostics = create({ send: root.hdrFinisherDesktop?.diagnosticEvent ?? root.hdrDeliveryMemory?.diagnosticEvent });
+  else {
+    const libraryHost = root.location.pathname === "/library" && root.parent !== root ? root.parent : null;
+    root.HDRDiagnostics = create({ send: root.hdrFinisherDesktop?.diagnosticEvent
+      ?? root.hdrDeliveryMemory?.diagnosticEvent ?? libraryHost?.hdrFinisherDesktop?.diagnosticEvent });
+  }
 })(globalThis);

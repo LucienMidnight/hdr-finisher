@@ -80,16 +80,19 @@
   let overlays = null;
   const logView = () => compare?.enabled() ? "compare" : state.review ? "fullscreen" : state.view;
   const pictureRequests = HDRLibraryRequestQueue.create();
-  async function api(route, body, signal) {
+  async function api(route, body, signal, action = null) {
     const measured = ["/api/library/picture", "/api/library/native", "/api/library/overlay-map"].includes(route);
     const trace = measured ? crypto.randomUUID() : null;
+    const context = action ?? (body?.path ? window.HDRLibraryFolderAction?.(body.path) : null);
+    const headers = { "Content-Type": "application/json", ...(trace ? { "X-Library-Request": trace } : {}) };
     for (;;) {
       const queued = performance.now();
       if (measured) HDRLibraryStopwatch("picture_requested", { picture_size:route === "/api/library/native" ? "detail preview" : body.edge <= 640 ? "thumbnail" : "screen preview",view:logView(),path: body.path, request: trace });
       const request = async () => {
         if (measured) HDRLibraryStopwatch("picture_dispatched", { picture_size:route === "/api/library/native" ? "detail preview" : body.edge <= 640 ? "thumbnail" : "screen preview",view:logView(),path: body.path, request: trace, queue_ms: performance.now() - queued });
         const response = await fetch(route, { signal, ...(body === undefined ? {} : {
-          method: "POST", headers: { "Content-Type": "application/json", ...(trace ? { "X-Library-Request": trace } : {}) }, body: JSON.stringify(body) }) });
+          method: "POST", headers: globalThis.HDRDiagnostics?.headers(context, headers) ?? headers,
+          body: JSON.stringify(body) }) });
         return { response, result: await response.json() };
       };
       const { response, result } = await ((route === "/api/library/picture" || route === "/api/library/native" || route === "/api/library/overlay-map")
@@ -552,7 +555,15 @@
   async function drawPicture(meta, canvas, controller, isCurrent) {
     for (;;) {
       const epoch = state.displayEpoch;
-      await HDRLibraryPictures.show(meta, canvas, controller.signal, () => isCurrent() && epoch === state.displayEpoch, state.hdr);
+      try {
+        await HDRLibraryPictures.show(meta, canvas, controller.signal, () => isCurrent() && epoch === state.displayEpoch, state.hdr);
+      } catch (error) {
+        if (!aborted(error) && isCurrent()) globalThis.HDRDiagnostics?.event("library", "picture_draw_failed", {
+          level: "warn", route: "refused", reason: error.gpuUnavailable ? "gpu_unavailable" : "picture_draw_failed",
+          photo: meta.path ? { id: meta.path, name: meta.path.split(/[\\/]/).at(-1) } : null,
+        }, window.HDRLibraryFolderAction?.(meta.path));
+        throw error;
+      }
       if (!isCurrent() || controller.signal.aborted || epoch === state.displayEpoch) return;
     }
   }
@@ -725,7 +736,7 @@
           const badge=document.createElement("span");badge.className="library-colour-note";badge.style.color="var(--muted)";badge.style.borderColor="var(--border)";badge.textContent="Developed";badge.classList.add("is-developed");frame.append(badge);
           pictureErrors.paint(cell);
           HDRLibraryStopwatch("picture_shown",{reason:"HDR Finisher stored",path:photo.path,key:finished.key,route:finished.route,view:container===space?"grid":"filmstrip",duration_ms:cell.elapsed});
-          window.HDRLibraryFolderPresented?.({view:container===space?"grid":"filmstrip",path:photo.path});
+          window.HDRLibraryFolderPresented?.({view:container===space?"grid":"filmstrip",path:photo.path},{ route: finished.route, draw_route: "gpu" });
           overlays?.attach(photo,fallback,finished,cell.controller,current);
           return;
         }
@@ -773,7 +784,7 @@
             fallback.dataset.pictureKey=meta.key; fallback.dataset.picturePath=photo.path;
             refreshedShown(photo.path, container === space ? "grid" : "filmstrip");
             HDRLibraryStopwatch("picture_shown",{reason:meta.bitmap?meta.picture_source:meta.cache_hit?"HDR Finisher stored":"HDR Finisher fresh",...window.HDRLibraryPictureLog?.(meta),view:container === space ? "grid" : "filmstrip",path:photo.path,key:meta.key,duration_ms:cell.elapsed});
-            HDRLibraryTrace.present(trace,current,{picture_size:"thumbnail",route:meta.route});
+            HDRLibraryTrace.present(trace,current,{picture_size:"thumbnail",route:meta.route,draw_route:meta.bitmap ? "cpu" : "gpu"});
             overlays?.attach(photo,fallback,meta,cell.controller,current);
             return;
           } catch(error) {
@@ -781,14 +792,19 @@
             if (error.libraryYield) { await sleep(50,cell.controller.signal); continue; }
             if (!error.grainPreparationReplaced && (error.libraryError || (!error.gpuUnavailable && !HDRLibraryPictures.lost?.()))) throw error;
             if (!cpuShown) {
-              const meta = await api("/api/library/fallback-picture",{path:photo.path,edge:cell.edge},cell.controller.signal);
+              const action = window.HDRLibraryFolderAction?.(photo.path);
+              globalThis.HDRDiagnostics?.event("library", "picture_draw_fallback", {
+                level: "warn", route: "cpu", reason: "gpu_draw_unavailable",
+                photo: { id: photo.path, name: photo.name }, requested_edge_px: cell.edge,
+              }, action);
+              const meta = await api("/api/library/fallback-picture",{path:photo.path,edge:cell.edge},cell.controller.signal,action);
               if (!current()) return;
               canvas.src=meta.url; await canvas.decode();
               if (!current()) return;
               canvas.hidden=false; canvas.style.visibility=""; fallback.hidden=true;
               canvas.dataset.preview="false"; canvas.dataset.cpuFallback="true";
               pictureMode(canvas,HDRLibraryQuery.displayHDR(photo,state.hdr)); element.classList.remove("loading"); frame.querySelector(".library-picture-status")?.remove();
-              window.HDRLibraryFolderPresented?.({view:container === space ? "grid" : "filmstrip",path:photo.path});
+              window.HDRLibraryFolderPresented?.({view:container === space ? "grid" : "filmstrip",path:photo.path},{route:meta.route,draw_route:"cpu"});
             cpuShown=true;
             }
             if (error.grainPreparationReplaced) return;
@@ -1585,20 +1601,26 @@
       HDRLibraryStopwatch("folder_open_joined", {path,request:state.folderOpen.request});
       return state.folderOpen.ready;
     }
+    const diagnostics = globalThis.HDRDiagnostics;
+    const action = diagnostics?.start("library", "open_place", null, { folder: path, place_kind: place.kind || "folder" });
     restoreSourceSort(place);
     if(state.folderOpen)HDRLibraryStopwatch("folder_open_cancelled",{path:state.path,request:state.folderOpen.request,reason:"opened another place"});
     state.scan?.abort(); state.single?.abort(); state.native?.abort(); clearPrefetch(); clearCells(state.cells); clearCells(state.filmCells);
     state.collection = place.kind ? { kind: place.kind, name: place.name } : null; state.smartFilters = null; albums.setActive(place.kind === "album" ? place.name : ""); smart.setActive(place.kind === "smart" ? place.name : "");
     if (path) state.lastFolder = path;  // Where a deleted album's view returns to.
-    const controller = new AbortController(); state.scan = controller; state.folderOpen = null; state.path = path; state.reading = true; state.scanError = ""; state.allPhotos = []; state.photos = []; state.index = -1; state.selection.clear(); state.anchor = -1; state.hiddenFiles = 0;
+    const controller = new AbortController();
+    controller.signal.addEventListener("abort", () => action?.finish("cancelled", {
+      route: "refused", reason: "superseded",
+    }), { once: true });
+    state.scan = controller; state.folderOpen = null; state.path = path; state.reading = true; state.scanError = ""; state.allPhotos = []; state.photos = []; state.index = -1; state.selection.clear(); state.anchor = -1; state.hiddenFiles = 0;
     setView("grid"); grid.scrollTop = 0;
     $("check-photos").disabled = !path;
     $("place-title").textContent = place.kind === "smart" ? smart.name(place.name) || "Smart album" : place.kind === "album" ? place.name : place.kind ? `Tag · ${place.name}` : path.split(/[\\/]/).filter(Boolean).at(-1) || path;
     $("place-title").title = place.kind === "smart" ? "Smart album · saved filter across the indexed library" : place.kind === "album" ? "Album. Photos stay where they are." : place.kind ? "Every connected photo that carries this tag" : path; status(place.kind ? "Reading…" : "Reading folder…");
     for (const element of $("folders").querySelectorAll(".library-folder-row")) element.classList.toggle("active", !place.kind && element.dataset.path === path);
     try {
-      if (!place.kind) { await openFolderStream(path, controller); return; }
-      const result = place.kind === "smart" ? await smart.open(place.name) : place.kind ? await api("/api/library/collection", { kind: place.kind, name: place.name }, controller.signal) : await api("/api/library/scan", { path }, controller.signal);
+      if (!place.kind) { await openFolderStream(path, controller, action); return; }
+      const result = place.kind === "smart" ? await smart.open(place.name) : place.kind ? await api("/api/library/collection", { kind: place.kind, name: place.name }, controller.signal, action) : await api("/api/library/scan", { path }, controller.signal);
       if (controller.signal.aborted) return;
       if (place.kind === "smart") { state.smartFilters = result.filters; state.smartIndexing = result.indexing; $("place-title").textContent = result.name; }
       HDRLibraryStopwatch("folder_listed", { path });
@@ -1620,16 +1642,23 @@
       if (notes.length) status(`${result.photos.length.toLocaleString()} photos · ${notes.join(" · ")}`);
       if (result.warnings?.length) status(result.warnings[0]);
       void readDates(controller, result.photos.filter(photo => !photo.indexed));
-    } catch (error) { if (!aborted(error) && state.scan === controller) { state.reading = false; state.scanError = error.message; status(error.message); paintGrid(); } }
+    } catch (error) {
+      if (!aborted(error) && state.scan === controller) {
+        action?.finish("error", { level: "error", route: "refused", reason: "place_open_failed" });
+        state.reading = false; state.scanError = error.message; status(error.message); paintGrid();
+      }
+    } finally {
+      if (place.kind && !controller.signal.aborted) action?.finish("success", { photo_count: state.allPhotos.length });
+    }
   }
   let folderPaintTimer;
-  async function openFolderStream(path, controller) {
+  async function openFolderStream(path, controller, action) {
     const started = performance.now(), rows = new Map(), copies = new Map();
-    const opening = {path, controller, started, request:null, presented:false};
+    const opening = {path, controller, started, request:null, presented:false, action};
     state.folderOpen = opening;
     HDRLibraryStopwatch("folder_open", {path});
     const response = await fetch("/api/library/folder-stream", {method:"POST",signal:controller.signal,
-      headers:{"Content-Type":"application/json"},body:JSON.stringify({path,sort:state.sort,descending:state.descending})});
+      headers:globalThis.HDRDiagnostics?.headers(action, {"Content-Type":"application/json"}) ?? {"Content-Type":"application/json"},body:JSON.stringify({path,sort:state.sort,descending:state.descending})});
     if (!response.ok) throw Error("The folder could not be opened.");
     const reader = response.body.getReader(), decoder = new TextDecoder();
     let readyResolve,readyReject;
@@ -1702,6 +1731,7 @@
               first=false;state.reading=false;
               HDRLibraryStopwatch("folder_first_rows",{path,request:event.request,duration_ms:performance.now()-started});
               paint();readyResolve();
+              action?.finish("success", { photo_count: rows.size });
               HDRLibraryStopwatch("folder_rows_usable",{path,request:event.request,count:rows.size,
                 duration_ms:performance.now()-started});
               await new Promise(resolve=>requestAnimationFrame(()=>setTimeout(resolve,0)));
@@ -1716,6 +1746,7 @@
           }
           if(event.kind === "checked") {
             state.reading=false;paint();
+            action?.finish("success", { photo_count: rows.size });
             HDRLibraryStopwatch("folder_complete",{path,request:event.request,duration_ms:performance.now()-started});
             if(event.unreadable_folders?.length)status("Some sub-folders could not be read; existing entries kept");
             else if(event.manual){
@@ -1728,19 +1759,37 @@
         if(offset<chunk.length)pending.push(chunk.slice(offset));
       }
     } catch(error) {
+      if (!aborted(error) && state.scan === controller) globalThis.HDRDiagnostics?.event("library", "folder_stream_failed", {
+        level: "error", route: "refused", reason: "folder_stream_failed",
+      }, action);
+      if (!aborted(error)) action?.finish("error", {
+        level: "error", route: "refused", reason: "folder_stream_failed",
+      });
       readyReject(error);
       if(!aborted(error) && state.scan===controller){state.reading=false;state.scanError=error.message;status(error.message);}
     } finally {
+      action?.finish("cancelled", { route: "refused", reason: "folder_stream_closed" });
       readyResolve();reader.releaseLock();clearTimeout(folderPaintTimer);
       HDRLibraryStopwatch("folder_stream_ended",{path,request:opening.request,reason:controller.signal.aborted?"opened another place":"connection ended"});
     }};
     void pump();
     return ready;
   }
+  window.HDRLibraryFolderAction = path => {
+    const opening = state.folderOpen;
+    if (!opening?.path || opening.controller.signal.aborted || typeof path !== "string") return null;
+    const root = opening.path.replaceAll("\\", "/").replace(/\/$/, "");
+    return path.replaceAll("\\", "/").startsWith(root + "/") ? opening.action : null;
+  };
   window.HDRLibraryFolderPresented = (trace,fields={}) => {
     const opening=state.folderOpen;
     if(!opening || opening.controller.signal.aborted || trace.view!=="grid")return;
     if(!opening.presented){opening.presented=true;
+      globalThis.HDRDiagnostics?.event("library", "first_picture_drawn", {
+        photo: trace.path ? { id: trace.path, name: trace.path.split(/[\\/]/).at(-1) } : null,
+        route: fields.draw_route,
+        reason: "first_picture_presented", picture_route: fields.route, duration_ms: Math.round(performance.now() - opening.started),
+      }, opening.action);
       window.HDRIdleWarmup?.gridShown();
       HDRLibraryStopwatch("folder_first_grid_picture",{path:opening.path,request:opening.request,duration_ms:performance.now()-opening.started});
     }

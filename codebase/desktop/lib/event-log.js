@@ -57,6 +57,9 @@ function create(write, { quietMs = 250 } = {}) {
       try {
         const record = JSON.parse(line);
         if (record.proc === "backend") return ingest(record, "backend", pid);
+        if (record.proc === "batch_worker" && Number.isSafeInteger(record.pid) && record.pid > 0) {
+          return ingest(record, "batch_worker", record.pid);
+        }
       } catch { /* Preserve other backend output in its original form. */ }
     }
     flush();

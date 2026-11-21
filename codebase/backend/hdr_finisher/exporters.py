@@ -1847,6 +1847,10 @@ def _pq_oetf(normalized_luminance: np.ndarray) -> np.ndarray:
 
 
 def _run_command(command: list[str]) -> subprocess.CompletedProcess[str]:
+    from .delivery import log_delivery
+
+    started = perf_counter()
+    helper = Path(command[0]).name
     try:
         result = subprocess.run(
             command,
@@ -1856,7 +1860,13 @@ def _run_command(command: list[str]) -> subprocess.CompletedProcess[str]:
             **hidden_window_options(),
         )
     except OSError as exc:
+        log_delivery("encoder_helper_finished", level="error", route="refused",
+                   reason="encoder_launch_failed", helper=helper, duration_ms=round((perf_counter() - started) * 1000))
         raise ExportProcessError(f"Could not start {Path(command[0]).name}: {exc}") from exc
+    log_delivery("encoder_helper_finished", level="error" if result.returncode else "info",
+               route="refused" if result.returncode else "cpu", helper=helper, exit_code=result.returncode,
+               reason="encoder_exit_failed" if result.returncode else "encoder_completed",
+               duration_ms=round((perf_counter() - started) * 1000))
     if result.returncode != 0:
         detail = result.stderr.strip() or result.stdout.strip() or f"Command failed with exit code {result.returncode}."
         raise ExportProcessError(detail)

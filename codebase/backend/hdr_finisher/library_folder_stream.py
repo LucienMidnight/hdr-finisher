@@ -204,6 +204,8 @@ class OrderedExtent:
 
 
 async def stream_folder(index, store, request, root, enrich, sort="time", descending=False):
+    from .diagnostics import log as diagnostic
+
     worker = index.worker
     token = uuid4().hex
     started = time.perf_counter()
@@ -248,6 +250,8 @@ async def stream_folder(index, store, request, root, enrich, sort="time", descen
                 if not rows: break
                 if first:
                     log("folder_open_first_rows",folder=root,request=token,rows=len(rows),duration_ms=(time.perf_counter()-started)*1000,route="index")
+                    diagnostic("library", "folder_listing_route", folder=root, route="cpu",
+                               reason="folder_index", photo_count=len(rows))
                     first=False
                 empty_marks=Marks().model_dump()
                 columns=sorted({key for photo in rows for key in photo if key not in ("name","type","albums","storage","kept_by_album")})
@@ -314,6 +318,8 @@ async def stream_folder(index, store, request, root, enrich, sort="time", descen
                 if rows:
                     if first:
                         log("folder_open_first_rows",folder=root,request=token,rows=len(rows),duration_ms=(time.perf_counter()-started)*1000,route="disk")
+                        diagnostic("library", "folder_listing_route", folder=root, route="cpu",
+                                   reason="folder_disk", photo_count=len(rows))
                         first=False
                     yield event("changes",photos=rows,removed=[])
                 if result["done"]: break

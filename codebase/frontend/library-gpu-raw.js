@@ -1252,6 +1252,11 @@
   }
   async function develop(path, edge, signal, savedGradeOnly, nativeMode = false, liveScene = false, importance = () => 30, sceneIdentity = "", grant = null, gpuDone = () => {}, sharedJob = null) {
     const begun = performance.now();
+    const diagnostics = root.HDRDiagnostics;
+    const action = root.HDRLibraryFolderAction?.(path);
+    const photo = { id: path, name: path.split(/[\\/]/).at(-1) };
+    const sourceHeaders = { "Content-Type": "application/json" };
+    const diagnosticHeaders = diagnostics && action ? Object.fromEntries(diagnostics.headers(action, sourceHeaders)) : sourceHeaders;
     // A completed thumbnail can still own the source until its deferred save.
     // Publish that existing tier before a late screen request claims the source;
     // otherwise the new request polls its predecessor's 30-second idle lease.
@@ -1282,7 +1287,8 @@
       const late=await adoptKept();
       if(late){kept=late;sourceJob=late.token;break;}
       response = await root.HDRLibraryUpload.fetchSource(liveScene ? "/api/library/live-scene" : "/api/library/raw-sensor", { method: "POST", priority:"low", signal,
-        headers: { "Content-Type": "application/json" }, body: JSON.stringify(liveScene ? {path, edge:nativeMode?100000:edge, grant, gpu:true,max_storage_bytes:sourceLimit,source_job:sourceJob,priority:importance()} : { path, edge, grant, saved_grade_only: savedGradeOnly, native_mode:nativeMode }) });
+        headers: diagnosticHeaders,
+        body: JSON.stringify(liveScene ? {path, edge:nativeMode?100000:edge, grant, gpu:true,max_storage_bytes:sourceLimit,source_job:sourceJob,priority:importance()} : { path, edge, grant, saved_grade_only: savedGradeOnly, native_mode:nativeMode }) });
       if(grant && response.headers.get("X-Library-Wait")==="memory")await root.HDRLibraryGrants.wait(grant,signal);
       if (response.status !== 202) break;
       root.HDRLibraryScenes?.stage(path,"Waiting to develop photo",true);
@@ -1491,9 +1497,25 @@
     if (!nativeMode) await finish(gpuResult);
     body=null;
     root.HDRLibraryStopwatch?.("picture_development", {path, duration_ms:performance.now()-begun, gpu_ms:gpuMs, sensor_ms:sensorMs, source_ms:meta.source_timings_ms, gpu_stages_ms:gpuResult.timings, quantiles_ms:quantileMs, handoff_ms:performance.now()-handoffStarted});
+    diagnostics?.event("raw", "development_finished", {
+      route: "gpu", reason: "raw_developed", photo, rendered_edge_px: edge,
+      duration_ms: Math.round(performance.now() - begun), peak_bytes: gpuResult.memory_peak_bytes,
+    }, action);
     selectedResult.scene_stored=!liveScene || (nativeMode && !selectedResult.directScene);
     return selectedResult;
     } catch(error){
+      const cancelled = error?.name === "AbortError" || signal?.aborted;
+      const reason = cancelled ? "raw_development_cancelled"
+        : error.unsupportedSource ? "unsupported_raw_source"
+        : error.gpuInvalidPixels ? "gpu_validation_error"
+        : error.gpuMemory || error.needsMemory ? "gpu_budget_exceeded"
+        : error.yieldRaw || error.libraryRequeue ? "gpu_preempted"
+        : error.gpuUnavailable ? "raw_gpu_unavailable" : "raw_development_failed";
+      diagnostics?.event("raw", error.libraryRequeue ? "development_retry" : "development_finished", {
+        route: cancelled ? "refused" : error.libraryRequeue ? "gpu" : error.gpuUnavailable ? "cpu" : "refused",
+        level: cancelled ? "info" : "warn", reason, photo, requested_edge_px: edge,
+        duration_ms: Math.round(performance.now() - begun),
+      }, action);
       // CPU fallback must never wait on this attempt's own source claim.
       if(error.gpuUnavailable && sourceJob){
         if(sharedJob)sharedJob.source=null;

@@ -3,6 +3,18 @@ const assert = require("node:assert/strict");
 
 const { HDRRenderCoordinator } = require("../frontend/render-coordinator.js");
 
+test("queued preview keeps the action that requested it", async () => {
+  const seen = [];
+  const coordinator = new HDRRenderCoordinator({ dispatch: request => {
+    seen.push(request.action);
+    return true;
+  } });
+  coordinator.noteSource("photo");
+  const action = { id: "zoom-action" };
+  await coordinator.submit({ lane: "hdr", action });
+  assert.deepEqual(seen, [action]);
+});
+
 function fakeTimers() {
   let nextId = 1;
   const pending = new Map();

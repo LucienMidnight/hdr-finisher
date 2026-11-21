@@ -1342,6 +1342,9 @@ async function requestClose() {
 async function beginShutdown() {
   if (shuttingDown) return;
   shuttingDown = true;
+  const action = crypto.randomUUID();
+  const started = performance.now();
+  desktopEvent("app", "action_started", { action, operation: "shutdown" });
   quitRequested = true;
   forceClose = true;
   for (const record of [...windows.values()]) {
@@ -1355,6 +1358,9 @@ async function beginShutdown() {
   clearTimeout(deliveryIdleTimer);
   deliveryWindow?.destroy();deliveryWindow=null;
   await stopBackend();
+  desktopEvent("app", "action_finished", {
+    action, operation: "shutdown", outcome: "success", duration_ms: Math.round(performance.now() - started),
+  });
   app.quit();
 }
 
@@ -1416,6 +1422,8 @@ if (!gotLock) {
       ? path.join(process.resourcesPath, "icon.png") : path.join(__dirname, "assets", "icon.png"));
     loadApplicationPreferences();
     void recordSessionHeader().catch(error => console.error("Could not log session header:", error.message));
+    const action = crypto.randomUUID();
+    desktopEvent("app", "action_started", { action, operation: "startup" });
     session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false));
     try {
       // Python imports and window construction are independent startup work.
@@ -1436,6 +1444,10 @@ if (!gotLock) {
       void backendStarting.then(() => splash?.step("Image engine ready", 0.5), () => {});
       await Promise.all([backendStarting, windowCreating]);
       libraryStage("desktop_startup_join", { duration_ms: Date.now() - shellStarted });
+      desktopEvent("app", "action_finished", {
+        action, operation: "startup", outcome: shuttingDown ? "cancelled" : "success",
+        duration_ms: Date.now() - libraryAppStarted,
+      });
       if (shuttingDown || !mainWindow || mainWindow.isDestroyed()) return;
       const activeBackend = backend;
       session.defaultSession.webRequest.onBeforeSendHeaders({ urls: [`${activeBackend.url}/*`, `${activeBackend.url.replace("http:","ws:")}/*`] }, (details, callback) => {
@@ -1466,6 +1478,11 @@ if (!gotLock) {
           const trimLevel = memoryTrimGate(value.level || "none");
           value.reclaim = !!trimLevel;
           value.reclaimLevel = trimLevel || "none";
+          if (trimLevel) desktopEvent("memory", "cache_trim_requested", {
+            route: "cpu", reason: "system_memory_pressure", pressure_level: trimLevel,
+            app_ram_bytes: value.totalBytes, budget_bytes: value.ceilingBytes, system_free_bytes: os.freemem(),
+            reserved_bytes: value.reservedBytes,
+          });
           if (trimLevel) libraryStage("memory_trim", {level:trimLevel, totalBytes:value.totalBytes,
             targetBytes:value.targetBytes, ceilingBytes:value.ceilingBytes, pressure:value.pressure, waiting:value.waiting});
           if (Date.now()-memoryLastLog > 60000 || value.level !== memoryLastLevel || trimLevel) {
@@ -1498,6 +1515,7 @@ if (!gotLock) {
             await memoryPressureRelay.withDeadline(reclaimed.arrayBuffer());
           }
         } catch (error) {
+          desktopEvent("memory", "memory_sample_failed", { level: "warn", route: "refused", reason: "memory_sample_failed" });
           libraryStage("memory_controller_error", {reason:error.message});
           console.error("Memory controller:",error.message);
         }
@@ -1552,6 +1570,10 @@ if (!gotLock) {
         await createWindow("library");
       }
     } catch (error) {
+      desktopEvent("app", "action_finished", {
+        level: "error", action, operation: "startup", outcome: "error", route: "refused", reason: "startup_failed",
+        duration_ms: Date.now() - libraryAppStarted,
+      });
       splash?.close();
       await dialog.showMessageBox({ type: "error", title: "HDR Finisher could not start", message: "HDR Finisher could not start its image-processing backend.", detail: error.message, buttons: ["Quit"] });
       beginShutdown();

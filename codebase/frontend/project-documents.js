@@ -92,6 +92,13 @@ function syncSourceFilenameOverflow() {
   }
 }
 
+function gradeDiagnosticPhoto() {
+  const source = state.editDocument?.source;
+  const path = source?.durable_path || state.gradeOpen?.path;
+  const id = path || state.session?.session_id;
+  return id ? { id, name: path?.split(/[\\/]/).at(-1) || source?.filename || state.session?.source?.filename } : null;
+}
+
 async function openDesktopSelection(selection) {
   if (!selection) return;
   if (selection.kind === "project") {
@@ -163,6 +170,10 @@ async function openStagedDesktopSource(selection) {
     status.post({ id: "import", severity: "progress", message: `Loading ${name}…`, progress: "indeterminate" });
     gradeOpenStage("grade_open_visible");
   }
+  const diagnostics = globalThis.HDRDiagnostics;
+  const action = diagnostics?.start("grade", "open_photo", { id: selection.path, name });
+  const request = (url, options) => fetch(url, { ...options, headers: diagnostics?.headers(action, options?.headers) ?? options?.headers });
+  if (state.gradeOpen?.generation === generation) state.gradeOpen.action = action;
   let openingJobId = null, completed = false;
   try {
     if (state.activeImportJobId) {
@@ -178,7 +189,7 @@ async function openStagedDesktopSource(selection) {
     setImportCancelVisible(true);
     const recoveryChoice = selection.replaceSessionId ? null : await window.HDRGradeSaving.prepare(selection);
     if (generation !== state.importGeneration) return;
-    const { response, payload: initialJob } = await projectIo.createImportJob(fetch, {
+    const { response, payload: initialJob } = await projectIo.createImportJob(request, {
       grant: selection.grant,
       rawImportSettings: selection.rawImportSettings,
       replaceSessionId: selection.replaceSessionId,
@@ -205,7 +216,7 @@ async function openStagedDesktopSource(selection) {
       const reassurance = elapsed >= 10 ? " · still working normally" : "";
       setIndeterminatePreviewMessage(`${label}${reassurance} · ${elapsed.toFixed(1)}s elapsed`);
       if (job.state === "ready" && job.session_id) {
-        const { response: sessionResponse, payload } = await projectIo.fetchSession(fetch, job.session_id);
+        const { response: sessionResponse, payload } = await projectIo.fetchSession(request, job.session_id);
         if (generation !== state.importGeneration || state.activeImportJobId !== job.job_id) return;
         state.activeImportJobId = null;
         state.importInProgress = false;
@@ -240,7 +251,7 @@ async function openStagedDesktopSource(selection) {
       }
       if (!firstPoll) await new Promise((resolve) => window.setTimeout(resolve, 250));
       firstPoll = false;
-      const { response: poll, payload } = await projectIo.pollImportJob(fetch, job.job_id);
+      const { response: poll, payload } = await projectIo.pollImportJob(request, job.job_id);
       job = payload;
       if (!poll.ok) {
         state.activeImportJobId = null;
@@ -251,6 +262,7 @@ async function openStagedDesktopSource(selection) {
     }
   } catch (error) {
     if (generation !== state.importGeneration) return;
+    action?.finish("error", { level: "error", route: "refused", reason: "source_open_failed" });
     gradeOpenStage("grade_open_failed");
     if (!selection.replaceSessionId) {
       retireActiveSession();
@@ -265,6 +277,7 @@ async function openStagedDesktopSource(selection) {
     if (selection.fromLibrary) activateWorkflowTab("import");
     showUploadError(error.message || `Could not open ${name}.`);
   } finally {
+    action?.finish(completed ? "success" : "cancelled", completed ? {} : { route: "refused", reason: "source_open_cancelled" });
     if (!completed && openingJobId) void projectIo.cancelImportJob(fetch, openingJobId).catch(()=>{});
     if (generation === state.importGeneration) {
       state.importInProgress = false;

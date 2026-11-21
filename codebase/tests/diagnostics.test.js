@@ -23,6 +23,32 @@ test("concurrent actions carry separate ids and preserve request headers", () =>
   assert.equal(events[3].duration_ms, 45);
 });
 
+test("the docked Library emits through the desktop bridge", () => {
+  const events = [];
+  const vm = require("node:vm");
+  const source = require("node:fs").readFileSync(require.resolve("../frontend/diagnostics"), "utf8");
+  const library = { location: { pathname: "/library" }, Headers, crypto: require("node:crypto").webcrypto,
+    parent: { hdrFinisherDesktop: { diagnosticEvent: event => events.push(event) } } };
+  vm.runInNewContext(source, library);
+  const action = library.HDRDiagnostics.start("library", "open_place");
+  action.finish("success", { photo_count: 4 });
+  assert.equal(events.length, 2);
+  assert.equal(events[1].action, library.HDRDiagnostics.headers(action).get(ACTION_HEADER));
+  assert.equal(events[1].photo_count, 4);
+});
+
+test("main attributes forwarded batch log lines to the child process", () => {
+  const lines = [];
+  const sink = eventLog.create(line => lines.push(JSON.parse(line)));
+  sink.backend(JSON.stringify({ proc: "batch_worker", pid: 52, seq: 3,
+    area: "export", event: "encoder_helper_finished", level: "info", action: "batch-1" }), 90);
+  sink.flush();
+  assert.equal(lines[0].pid, 52);
+  assert.equal(lines[0].proc, "batch_worker");
+  assert.equal(lines[0].action, "batch-1");
+  assert.equal(lines[0].seq, 3);
+});
+
 test("main accepts structured IPC records, bounds and collapses repeats, preserves Library lines", () => {
   const lines = [];
   const sink = eventLog.create(line => lines.push(line));

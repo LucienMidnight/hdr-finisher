@@ -196,6 +196,8 @@ def encode_within_ceiling(
     Only a caller that owns a private writable render may opt into correction
     in place, and its encoder must return a separate delivery.
     """
+    from .delivery import log_delivery
+
     current = hdr_image
     delivery = encode(current)
     if ceiling_nits is None:
@@ -217,10 +219,15 @@ def encode_within_ceiling(
         if peak <= ceiling or (attempt in (0, len(MARGINS)) and peak <= allowed):
             return delivery
         if attempt == len(MARGINS):
+            log_delivery("ceiling_refused", level="error", route="refused",
+                       reason="encoded_peak_exceeded", retry_count=attempt,
+                       peak_nits=peak, target_nits=ceiling, allowed_nits=allowed)
             raise CeilingError(
                 f"HDR peak remains {peak:.3f} nits, above the {ceiling:g}-nit target after local correction; "
                 "no file was delivered."
             )
+        log_delivery("ceiling_retry", level="warn", route="cpu", reason="encoded_peak_exceeded",
+                   retry_count=attempt + 1, peak_nits=peak, target_nits=ceiling, allowed_nits=allowed)
         if not correct_in_place:
             current = current.copy()
         _correct_bands(current, decoded, ceiling, MARGINS[attempt])

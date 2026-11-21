@@ -95,6 +95,22 @@ function transientGpuRefusal() {
 }
 
 async function settlePreview(lane = state.currentView, task = {}) {
+  if (!state.session || state.denoise?.[lane]?.enabled || task.action || state.gradeOpen?.action) {
+    return settlePreviewInner(lane, task, task.action ?? state.gradeOpen?.action);
+  }
+  const action = globalThis.HDRDiagnostics?.start("grade", "settle_preview", gradeDiagnosticPhoto(), { lane });
+  try {
+    const result = await settlePreviewInner(lane, task, action);
+    action?.finish(result === false ? "cancelled" : "success",
+      result === false ? { route: "refused", reason: "superseded" } : {});
+    return result;
+  } catch (error) {
+    action?.finish("error", { level: "error", route: "refused", reason: "preview_failed" });
+    throw error;
+  }
+}
+
+async function settlePreviewInner(lane, task, action) {
   const workGeneration = state.gradeWorkGeneration;
   // Rotate/Straighten is an explicit Apply/Cancel transaction. A scheduler
   // task left resident by an earlier grading gesture must never settle the
@@ -134,7 +150,7 @@ async function settlePreview(lane = state.currentView, task = {}) {
   const tier = longEdge >= refinementProxyLongEdge() ? "refinement" : "settled";
   if (display) {
     if (gpuPreviewEligible(lane)) {
-      let rendered = await renderGpuDraft(lane, { longEdge, tier });
+      let rendered = await renderGpuDraft(lane, { longEdge, tier, action });
       // Latest-wins cancellation is expected while a mask proxy or edit
       // revision changes underneath a Full render. If this is still the
       // current scheduler task, retry once after the serialized edit queue has
@@ -149,17 +165,17 @@ async function settlePreview(lane = state.currentView, task = {}) {
           const applicationCurrent = task.applicationGeneration === undefined
             || task.applicationGeneration === state.previewGeneration[lane];
           if (schedulerCurrent && applicationCurrent && lane === state.currentView) {
-            rendered = await renderGpuDraft(lane, { longEdge, tier });
+            rendered = await renderGpuDraft(lane, { longEdge, tier, action });
           }
         }
       }
       if (rendered) await refreshOverlay(longEdge);
       else if (!supersededByScheduledWork(task) && !transientGpuRefusal()) {
         state.cpuFallbacks.settle.push(state.lastGpuDraftRefusal?.reason || "unknown");
-        await renderPreviewForLane(lane, true, longEdge, { showProgress: false, denoiseFallback: state.denoise?.[lane]?.enabled });
+        await renderPreviewForLane(lane, true, longEdge, { showProgress: false, denoiseFallback: state.denoise?.[lane]?.enabled, action });
       }
     } else {
-      await renderPreviewForLane(lane, true, longEdge, { showProgress: false });
+      await renderPreviewForLane(lane, true, longEdge, { showProgress: false, action });
     }
     prepareInactivePreview();
   } else {
@@ -239,14 +255,24 @@ async function renderPreviewForLane(
   // image while it is still computing. Aborting and restarting that request
   // wastes the backend work and can prevent any current frame from finishing.
   if (previous?.key === key) return previous.promise;
+  const action = options.action ?? state.gradeOpen?.action;
   const record = { key, sessionId, generation: state.previewGeneration[lane], promise: null };
-  record.promise = renderPreviewForLaneInner(lane, displayWhenReady, longEdge, { ...options, raw });
+  record.promise = renderPreviewForLaneInner(lane, displayWhenReady, longEdge, { ...options, raw, action });
   inflight.set(lane, record);
   try {
     return await record.promise;
   } finally {
     if (inflight.get(lane) === record) inflight.delete(lane);
   }
+}
+
+function previewDiagnosticReason(reason) {
+  const [code, kind] = String(reason || "renderer-returned-nothing").split(":", 2);
+  if (code === "gpu-failed" || code === "gpu-retry-scheduled") {
+    return ({ validation: "gpu_validation_error", transport: "transport_timeout", "device-lost": "device_lost",
+      allocation: "gpu_allocation_failed" })[kind] || "gpu_render_failed";
+  }
+  return code.toLowerCase().replace(/[^a-z0-9]+/g, "_");
 }
 
 function cpuPreviewReason(lane) {
@@ -266,7 +292,7 @@ async function renderPreviewForLaneInner(
   lane,
   displayWhenReady,
   longEdge = 1600,
-  { showProgress = true, progressSteps = [12, 76, 92], raw = !state.gpuPreview?.available, denoiseFallback = false } = {},
+  { showProgress = true, progressSteps = [12, 76, 92], raw = !state.gpuPreview?.available, denoiseFallback = false, action = null } = {},
 ) {
   // Perspective owns its transient preview until Apply/Cancel. Revision-based
   // renders still contain the committed geometry, even when the controls reset.
@@ -275,7 +301,7 @@ async function renderPreviewForLaneInner(
   const workGeneration = state.gradeWorkGeneration;
   if (await syncGlobalEditState() === false) return false;
   if (workGeneration !== state.gradeWorkGeneration || geometryDraftActive() || state.session?.session_id !== sessionId) return false;
-  if (raw) return renderRawPreviewForLane(lane, displayWhenReady, longEdge, { showProgress });
+  if (raw) return renderRawPreviewForLane(lane, displayWhenReady, longEdge, { showProgress, action });
   const cached = state.previewCache[lane];
   const generation = state.previewGeneration[lane];
   const signature = geometrySignature();
@@ -295,7 +321,7 @@ async function renderPreviewForLaneInner(
 
   const response = await fetch(`/api/session/${state.session.session_id}/preview/${lane}`, {
     method: "POST",
-    headers: grainCpuPreviewHeaders(lane),
+    headers: grainCpuPreviewHeaders(lane, action),
     body: JSON.stringify({
       edit_revision: state.editRevision,
       include_locals: !localsBypassed(),
@@ -409,12 +435,14 @@ function microGrainPreviewRequest(lane) {
   } : {};
 }
 
-function grainCpuPreviewHeaders(lane) {
+function grainCpuPreviewHeaders(lane, requestAction = null) {
   const runtime = state.denoiseRuntime?.[lane];
   const action = state.denoise?.[lane]?.enabled && !runtime?.showOriginal && runtime?.microCpu
     ? runtime.microCpuAction : null;
   const headers = { "Content-Type": "application/json" };
-  if (!action || action.photo?.id !== state.session?.session_id) return headers;
+  if (!action || action.photo?.id !== state.session?.session_id) {
+    return globalThis.HDRDiagnostics?.headers(requestAction, headers) ?? headers;
+  }
   runtime.microCpuAction = null;
   state.gpuPreview?.grainEvent?.("grain_cpu_prepare_started", "cpu", runtime.microCpuReason, action,
     { lane, method: "micro_grain" });
@@ -430,7 +458,7 @@ function microGrainPreviewKey(lane) {
   ]) : null;
 }
 
-async function renderRawPreviewForLane(lane, displayWhenReady, longEdge, { showProgress = false } = {}) {
+async function renderRawPreviewForLane(lane, displayWhenReady, longEdge, { showProgress = false, action = null } = {}) {
   if (!state.session || geometryDraftActive()) return false;
   const generation = state.previewGeneration[lane];
   const signature = geometrySignature();
@@ -448,7 +476,7 @@ async function renderRawPreviewForLane(lane, displayWhenReady, longEdge, { showP
   if (displayWhenReady && showProgress) setPreviewMessage(`Rendering ${lane.toUpperCase()} canvas preview...`, 24);
   const response = await fetch(`/api/session/${state.session.session_id}/preview-raw/${lane}`, {
     method: "POST",
-    headers: grainCpuPreviewHeaders(lane),
+    headers: grainCpuPreviewHeaders(lane, action),
     body: JSON.stringify({
       edit_revision: state.editRevision,
       include_locals: !localsBypassed(),
@@ -612,6 +640,7 @@ function renderGpuDraft(lane = state.currentView, options = {}) {
   const tier = options.tier || "settled";
   const longEdge = Number(options.longEdge) > 0 ? Number(options.longEdge) : settledProxyLongEdge();
   const coordinator = state.renderCoordinator;
+  const action = options.action ?? state.gradeOpen?.action;
   if (coordinator) {
     // The visible region is measured here, where the mounted canvas is known,
     // and handed to the coordinator so the deferred pan pass can use the same
@@ -626,7 +655,7 @@ function renderGpuDraft(lane = state.currentView, options = {}) {
       tier,
       longEdge,
       reason: options.reason || tier,
-      action: options.action,
+      action,
       priority: options.priority || "foreground",
       // The refinement pass is the expensive one at large tiers, so that is
       // where the visible region pays off. Interactive and settled passes stay
@@ -645,7 +674,7 @@ function renderGpuDraft(lane = state.currentView, options = {}) {
       coarse: Boolean(options.coarse),
       interactiveSnapshot: tier === "interactive" && pacedPreviewInteraction(lane),
     })
-    : renderGpuDraftInner(lane, options);
+    : renderGpuDraftInner(lane, { ...options, action });
   state.gpuDraftInFlight = pending;
   // Which tier is holding the device. A settled draft at Full is a multi-second
   // tiled render; an interactive one is refused immediately. Telling them apart
@@ -713,6 +742,11 @@ async function renderGpuDraftForView(lane, request) {
     panPass = false,
   } = request;
   const renderStartedAt = performance.now();
+  const diagnostics = globalThis.HDRDiagnostics;
+  const context = request.action ?? state.gradeOpen?.action;
+  const logDecision = tier !== "interactive" && request.reason !== "drag-coarse"
+    && !panPass && !state.denoise?.[lane]?.enabled;
+  const diagnosticFields = () => ({ lane, tier, requested_edge_px: longEdge, photo: gradeDiagnosticPhoto() });
   // Record why a draft declined. A silent false is very hard to diagnose from
   // a failing browser test, and every one of these is a legitimate refusal.
   const refuse = (reason, detail = null) => {
@@ -724,6 +758,10 @@ async function renderGpuDraftForView(lane, request) {
     // repeated supersession that PERF-03 is about.
     const key = `${tier}:${reason}`;
     state.gpuDraftRefusals[key] = (state.gpuDraftRefusals[key] || 0) + 1;
+    if (logDecision) diagnostics?.event("grade", "preview_refused", {
+      ...diagnosticFields(), route: "refused", reason: previewDiagnosticReason(reason),
+      budget_bytes: state.gpuPreview?.memoryBudgetBytes?.(),
+    }, context);
     return false;
   };
   if (geometryDraftActive()) return refuse("geometry-draft-active");
@@ -979,6 +1017,18 @@ async function renderGpuDraftForView(lane, request) {
       canvas.hdrWholeFrame = !viewport || result.execution === "direct" ? { key: wholeFrameKey, edge: longEdge } : null;
     }
     if (request.underlayerOnly) return true;
+    if (logDecision && diagnostics) {
+      const plan = renderer.lastRenderPlan;
+      const execution = result.execution || "direct";
+      diagnostics.event("grade", "preview_route", {
+        ...diagnosticFields(), route: "gpu", reason: "gpu_render_succeeded",
+        execution, width_px: result.width, height_px: result.height,
+        requested_bytes: plan?.totals?.peakLogicalBytes,
+        budget_bytes: plan?.budgetBytes,
+        planner_violations: plan?.decision?.violations?.map(violation => violation.rule),
+        duration_ms: Math.round(performance.now() - renderStartedAt),
+      }, context);
+    }
     state.gpuRenderRetries = 0;
     state.gpuFailurePolicy?.noteSuccess(state.session?.session_id ?? null);
     // The coordinator arms the whole-frame catch-up once this pass presents,
@@ -1132,15 +1182,22 @@ async function renderGpuDraftForView(lane, request) {
       renderReadouts();
       if (verdict.retryable && state.gpuRenderRetries < 1) {
         state.gpuRenderRetries += 1;
+        if (logDecision) diagnostics?.event("grade", "preview_retry", {
+          ...diagnosticFields(), level: "warn", route: "gpu", reason: previewDiagnosticReason(`gpu-failed:${verdict.kind}`),
+          retry_count: state.gpuRenderRetries,
+        }, context);
         console.warn(`WebGPU authoring render failed (${verdict.kind}); retrying once on the GPU.`, error);
         window.setTimeout(() => {
-          if (state.session) settlePreview(lane).catch(() => null);
+          if (state.session) settlePreview(lane, { action: state.session.session_id === sessionId ? context : null }).catch(() => null);
         }, 250);
         return refuse(`gpu-retry-scheduled:${verdict.kind}`);
       }
       console.warn(`WebGPU authoring render failed (${verdict.kind}); using the CPU picture for this render${verdict.workDisabled ? " and for the rest of this photo" : ""}.`, error);
       return refuse(`gpu-failed:${verdict.kind}`, verdict.detail);
     }
+    if (logDecision) diagnostics?.event("grade", "preview_failed", {
+      ...diagnosticFields(), level: "error", route: "cpu", reason: previewDiagnosticReason(`gpu-failed:${verdict.kind}`),
+    }, context);
     console.warn("WebGPU authoring render failed permanently; using raw CPU preview.", error);
     state.gpuPreview.available = false;
     setGpuSurfaceHdr(lane, false);

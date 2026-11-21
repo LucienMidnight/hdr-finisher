@@ -190,6 +190,26 @@ def test_proof_preserves_the_peak_option_and_its_cache_signature():
     assert off.model_dump_json() != on.model_dump_json()
 
 
+def test_ceiling_retries_follow_proof_action(capsys, tmp_path):
+    import json
+
+    from hdr_finisher.delivery import delivery_diagnostics
+    from hdr_finisher.diagnostics import action_scope
+
+    photo = tmp_path / "camera.ARW"
+    with action_scope("proof-action"), delivery_diagnostics("proof", photo):
+        with pytest.raises(hdr_ceiling.CeilingError):
+            hdr_ceiling.encode_within_ceiling(scene(), 203, lambda image: image,
+                lambda image: np.full(image.shape[:2], 1012.0, np.float32), 1000)
+    rows = [json.loads(line) for line in capsys.readouterr().err.splitlines()]
+    assert [row["event"] for row in rows] == ["ceiling_retry"] * len(hdr_ceiling.MARGINS) + ["ceiling_refused"]
+    assert all(row["area"] == "proof" and row["action"] == "proof-action" for row in rows)
+    assert all(row["photo"] == {"id": str(photo), "name": photo.name} for row in rows)
+    assert rows[-1]["peak_nits"] == 1012
+    assert rows[-1]["target_nits"] == 1000
+    assert rows[-1]["route"] == "refused"
+
+
 def test_an_uncorrectable_codec_is_rejected():
     notes = []
     with pytest.raises(hdr_ceiling.CeilingError, match="1000-nit target"):
