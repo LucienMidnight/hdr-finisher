@@ -33,6 +33,7 @@ import os
 from .cpu_budget import CpuExecutor, native_threads
 from dataclasses import dataclass
 from statistics import NormalDist
+from threading import Lock
 from contextvars import ContextVar
 
 _ESTIMATION_WORKERS = ContextVar("denoise_estimation_workers", default=None)

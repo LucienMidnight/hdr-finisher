@@ -150,7 +150,8 @@ def test_micro_grain_retains_three_bayer_bands_and_evicts_by_bytes(monkeypatch) 
     profile = micro.BayerProfile(phases * 64, phases * 1024, phases * .01, phases * .01,
                                  np.eye(4, dtype=np.float32), np.eye(4, dtype=np.float32),
                                  np.array(((0, 1), (1, 2))), np.eye(3), np.ones(3), np.ones(3), np.eye(3))
-    source = SimpleNamespace(sensor=sensor, profile=profile, flip=0, tiles=OrderedDict(), tiles_lock=RLock())
+    source = SimpleNamespace(sensor=sensor, profile=profile, flip=0, tiles=OrderedDict(), tiles_lock=RLock(),
+                             _claim_recent_source_tiles=lambda *args, **kwargs: True)
     controls = micro.MicroGrainControls(0, 0, .5)
     changed = micro.MicroGrainControls(.61, .78, .7)
     rects = [(106, row, 174, row + 32) for row in (130, 290, 450, 610)]
