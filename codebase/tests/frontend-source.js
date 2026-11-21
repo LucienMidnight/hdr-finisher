@@ -21,7 +21,7 @@ const PARTS = {
 
   "graph-scale.js": ["gpu-param-layout.js", "lens-filters.js", "graph-scale.js"],
   "webgpu-shaders.js": ["hsl-shader.js", "gpu-param-layout.js", "lens-filters.js", "webgpu-shaders.js"],
-  "webgpu-preview.js": ["hsl-engine.js", "gpu-param-layout.js", "lens-filters.js", "gpu-render-plan.js", "gpu-params.js", "webgpu-preview.js"],
+  "webgpu-preview.js": ["hsl-engine.js", "gpu-param-layout.js", "lens-filters.js", "gpu-render-plan.js", "gpu-params.js", "grain-route.js", "webgpu-preview.js"],
 };
 
 // Resolve named positions through the production list before existing source pins

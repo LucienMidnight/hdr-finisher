@@ -29,13 +29,14 @@
     return pipelinesByDevice.get(device);
   }
 
-  async function readBayer(grain, region, controls, revision, current, retain, signal) {
+  async function readBayer(grain, region, controls, revision, current, retain, signal, action) {
     const { x, y, width, height } = region;
     const request = new URLSearchParams({ x, y, width, height, revision, retain });
     const response = await fetch(`${grain.url}/region?${request}`, {
       method: "POST",
       signal,
-      headers: { "Content-Type": "application/json" },
+      headers: globalThis.HDRDiagnostics?.headers(action, { "Content-Type": "application/json" })
+        ?? { "Content-Type": "application/json" },
       body: JSON.stringify({ method: "micro_grain", micro_luminance: controls.microLuminance,
         micro_color: controls.microColor, micro_detail: controls.microDetail }),
     });

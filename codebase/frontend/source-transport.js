@@ -475,7 +475,7 @@
     const strip = options.stripUpload;
     let metadata = strip?.metadata;
     if (!metadata) {
-      const probe = await fetch(query({ x: region.x, y: region.y, width: 1, height: 1 }), { signal });
+      const probe = await fetch(query({ x: region.x, y: region.y, width: 1, height: 1 }), { signal, headers: options.headers });
       if (!probe.ok) {
         await probe.arrayBuffer().catch(() => null);
         if (strip && probe.status === 409) throw new DOMException("Grain strip source was replaced.", "AbortError");
@@ -584,7 +584,7 @@
           assertCurrent("ROI source region stream was superseded");
           const response = await fetch(query({
             x: missing.x, y: missing.y + top, width: missing.width, height: rows,
-          }, sourceEpoch), { signal });
+          }, sourceEpoch), { signal, headers: options.headers });
           if (!response.ok) {
             const payload = await response.json().catch(() => null);
             const error = new Error(payload?.detail || "A source region could not be loaded");
