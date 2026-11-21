@@ -108,7 +108,8 @@ def render(rows, *, summary_only=False):
         timestamp = datetime.fromtimestamp(row["time"], timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
         detail = " ".join(f"{key}={row[key]}" for key in (
             "route", "reason", "prior_reason", "status", "method", "stage", "lane", "outcome", "duration_ms",
-            "evicted_count", "evicted_bytes", "attempt", *MEMORY,
+            "evicted_count", "evicted_bytes", "evicted_bytes_by_kind", "presentation_kept",
+            "reservation_limit_bytes", "attempt", *MEMORY,
         ) if row.get(key) is not None)
         photo = row.get("photo")
         name = (photo.get("name") or photo.get("id")) if isinstance(photo, dict) else photo

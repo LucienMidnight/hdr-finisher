@@ -54,6 +54,9 @@ test("reclaim drains submitted work, preserves the visible proxy and skips pinne
   const renderer = new context.window.HDRWebGPUPreview(null);
   const visible = { lane: "hdr", longEdge: 1600, geometrySignature: "{}" };
   renderer.lastPresentedFrame = visible;
+  const presentation = renderer.presentationTarget = {};
+  const events = [];
+  renderer.grainEvent = (event, route, reason, context, fields) => events.push({ event, route, reason, ...fields });
   const released = [];
   let drained = false;
   const entries = new Map();
@@ -82,4 +85,8 @@ test("reclaim drains submitted work, preserves the visible proxy and skips pinne
   assert.equal(await renderer.reserveFineGrain("fine-grain-fit", { strip: 120 }, { id: "trace" }), 120);
   assert.deepEqual(released, ["old"]);
   assert.deepEqual([...entries.keys()], ["pinned", "visible"]);
+  assert.equal(renderer.presentationTarget, presentation);
+  assert.equal(events[0].event, "grain_eviction");
+  assert.equal(events[0].presentation_kept, true);
+  assert.equal(events[0].evicted_bytes_by_kind["source-proxy"], 100);
 });

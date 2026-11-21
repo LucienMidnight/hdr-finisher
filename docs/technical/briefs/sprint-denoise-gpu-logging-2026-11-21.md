@@ -57,7 +57,7 @@ Three problems follow, and Steve approved all three on November 21:
 
 | ID | Package | Branch | Depends on | Status |
 | --- | --- | --- | --- | --- |
-| LOG-1 | Logging foundation and GPU Grain route robustness | `sprint/logging-foundation` | — | Implemented, targeted checks pass. PC replay confirmed action linkage and timed out in eviction before a fix. Full replay pending at integration. |
+| LOG-1 | Logging foundation and GPU Grain route robustness | `sprint/logging-foundation` | — | Done. Locked PC replay linked eviction, numbered refusal, CPU preparation, one retry and final GPU presentation under one action. Targeted checks pass. |
 | CPU-1 | Faster CPU Grain backup: visible area first, then root speedups | `sprint/cpu-grain-speed` | — | not started |
 | GPU-1 | Fine, Clean and Micro Grain on the GPU above 8,192 pixels | `sprint/gpu-large-photos` | — | not started |
 | LOG-2 | App-wide logging rollout | `sprint/logging-rollout` | LOG-1 merged | not started |

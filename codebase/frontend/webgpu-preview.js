@@ -6526,6 +6526,8 @@
       // A live proxy lookup touches the allocator LRU. Take a snapshot so
       // protected entries neither change order nor get re-visited here.
       const proxies = new Map(this.proxies);
+      const presentation = this.presentationTarget;
+      const evictedByKind = {};
       for (const entry of [...(allocator?.entries.values() || [])]) {
         if (entry.pins || !entry.evict || !reclaimable.has(entry.kind)) continue;
         if (entry.kind === "source-proxy") {
@@ -6537,12 +6539,15 @@
         allocator.unregister(entry);
         count++;
         released += entry.bytes;
+        evictedByKind[entry.kind] = (evictedByKind[entry.kind] || 0) + entry.bytes;
         if (HDRGrainRoute.headroom(this.grainMemorySnapshot()) >= (before.requested_bytes ?? Infinity)) break;
       }
       this.grainEvent("grain_eviction", count ? "gpu" : "refused",
         count ? "rebuildable_cache_released" : "no_reclaimable_resources", context, {
           snapshot: this.grainMemorySnapshot(before.requested_bytes), evicted_count: count, evicted_bytes: released,
           before_resident_bytes: before.resident_bytes, before_allocator_bytes: before.allocator_bytes,
+          evicted_bytes_by_kind: evictedByKind,
+          presentation_kept: Boolean(visible) && this.lastPresentedFrame === visible && this.presentationTarget === presentation,
         });
       return count > 0;
     }
