@@ -408,7 +408,10 @@ class DesktopRequestBoundary:
             await self.app(scope, receive, send_hardened)
 
 
+from .diagnostics import RequestAction
+
 app.add_middleware(DesktopRequestBoundary)
+app.add_middleware(RequestAction)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],

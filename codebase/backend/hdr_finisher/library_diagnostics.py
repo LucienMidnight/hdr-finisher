@@ -9,6 +9,8 @@ import sys
 from threading import RLock
 import time
 
+from .diagnostics import current_action
+
 _lock = RLock()
 _recent = deque(maxlen=50)
 _batch = ContextVar("library_diagnostics_batch", default=None)
@@ -25,6 +27,8 @@ def log(event, **fields):
         key = fields.pop("key", None)
         if key:
             fields["scene_key" if str(key).startswith("live-") else "picture_key"] = str(key)[5:] if str(key).startswith("live-") else key
+    if current_action():
+        fields.setdefault("action_id", current_action())
     record = {"event": event, "time": time.time(), **fields}
     with _lock:
         if "reason" in fields and event not in {"writer_pause", "writer_resume", "helper_pause", "helper_resume", "kept_picture_replaced", "kept_picture_cancelled"}:

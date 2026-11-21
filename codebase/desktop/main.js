@@ -1,6 +1,7 @@
 const libraryAppStarted = Date.now();
 const { app, BrowserWindow, clipboard, crashReporter, dialog, ipcMain, Menu, screen, session, shell } = require("electron");
-const { spawn } = require("node:child_process");
+const { execFile, spawn } = require("node:child_process");
+const os = require("node:os");
 const crypto = require("node:crypto");
 const fs = require("node:fs");
 const path = require("node:path");
@@ -310,12 +311,34 @@ function getBackendLogWriter() {
   if (!backendLogWriter) {
     const logPath = path.join(app.getPath("userData"), "logs", "backend.log");
     const log = require("./lib/rotating-log").create(logPath, {backups:7}).stream;
-    backendLogWriter = {log, write:require("./lib/backend-log").create(log)};
+    const write = require("./lib/backend-log").create(log);
+    backendLogWriter = {log, write, events: require("./lib/event-log").create(write), logPath};
   }
   return backendLogWriter;
 }
 function libraryStage(event, fields = {}) {
   getBackendLogWriter().write(`[library] ${event} ${JSON.stringify({ time: Date.now() / 1000, ...fields })}`);
+}
+
+let lastDiagnosticMemory = null;
+function desktopEvent(area, event, fields = {}) {
+  getBackendLogWriter().events.ingest({ area, event, level: "info", ...fields }, "main", process.pid);
+}
+
+async function recordSessionHeader() {
+  const { logPath } = getBackendLogWriter();
+  const commit = app.isPackaged
+    ? await fs.promises.readFile(path.join(process.resourcesPath, "build-commit.txt"), "utf8").catch(() => null)
+    : await new Promise(resolve => {
+      const root = path.resolve(__dirname, "../..").replaceAll("\\", "/");
+      execFile("git", ["-c", `safe.directory=${root}`, "-C", root, "rev-parse", "HEAD"],
+        { windowsHide: true, timeout: 2000 }, (error, stdout) => resolve(error ? null : stdout));
+    });
+  desktopEvent("app", "session_started", {
+    version: app.getVersion(), commit: commit?.trim() || null, platform: process.platform,
+    arch: process.arch, system_ram_bytes: os.totalmem(), app_memory_setting_bytes: applicationPreferences.appMemoryBytes,
+    log_path: logPath,
+  });
 }
 
 async function startBackend() {
@@ -325,7 +348,7 @@ async function startBackend() {
   const logsDirectory = path.join(app.getPath("userData"), "logs");
   fs.mkdirSync(logsDirectory, { recursive: true });
   const logPath = path.join(logsDirectory, "backend.log");
-  const {log, write:writeBackendLog} = getBackendLogWriter();
+  const {log, write:writeBackendLog, events} = getBackendLogWriter();
   const child = spawn(command.executable, command.args, {
     cwd: command.cwd,
     env: {
@@ -345,7 +368,7 @@ async function startBackend() {
   });
   const backendStarted = Date.now();
   libraryStage("backend_process_started", { pid: child.pid });
-  readline.createInterface({ input: child.stderr }).on("line", line => writeBackendLog(line));
+  readline.createInterface({ input: child.stderr }).on("line", line => events.backend(line, child.pid));
 
   const ready = await new Promise((resolve, reject) => {
     const timeout = setTimeout(() => reject(new Error("The image-processing backend did not become ready in time.")), 30000);
@@ -516,6 +539,20 @@ function checkedLibraryState(snapshot) {
 }
 
 function registerIpc() {
+  ipcMain.on("desktop:diagnostic-event", (event, value) => {
+    if (!value || typeof value !== "object") return;
+    let role;
+    try {
+      role = deliveryWindow && !deliveryWindow.isDestroyed() && event.sender === deliveryWindow.webContents
+        && event.senderFrame === event.sender.mainFrame ? "delivery_worker" : `renderer_${validateSender(event).role}`;
+    } catch { return; }
+    if (Object.hasOwn(value, "requested_bytes")) {
+      value.app_ram_bytes = lastDiagnosticMemory?.totalBytes ?? null;
+      value.app_ram_sample_age_ms = lastDiagnosticMemory ? Date.now() - lastDiagnosticMemory.sampledAt : null;
+      value.system_free_bytes = os.freemem();
+    }
+    getBackendLogWriter().events.ingest(value, role, event.sender.getOSProcessId());
+  });
   const handle = (channel, callback) => ipcMain.handle(channel, async (event, ...args) => {
     const record = validateSender(event);
     if (record.role !== "main") throw new Error("This command requires the main window.");
@@ -1148,7 +1185,10 @@ async function createWindow(role = "main") {
   window.webContents.on("will-navigate", (event, url) => {
     if (!backend || new URL(url).origin !== new URL(backend.url).origin) event.preventDefault();
   });
-  window.webContents.on("render-process-gone", () => { record.ready = false; });
+  window.webContents.on("render-process-gone", (_event, details) => {
+    record.ready = false;
+    desktopEvent("app", "renderer_exited", { level: "warn", role, exit_reason: details.reason, exit_code: details.exitCode });
+  });
   window.on("close", (event) => {
     saveWindowBounds(record);
     if (!isMain) {
@@ -1359,6 +1399,11 @@ if (!gotLock) {
   app.on("window-all-closed", () => {
     if (process.platform !== "darwin") beginShutdown();
   });
+  app.on("before-quit", () => backendLogWriter?.events.flush());
+  app.on("child-process-gone", (_event, details) => {
+    if (details.type === "GPU") desktopEvent("gpu", "gpu_process_exited",
+      { level: "warn", exit_reason: details.reason, exit_code: details.exitCode });
+  });
   app.on("activate", () => {
     if (backend && !mainWindow) createWindow();
   });
@@ -1369,6 +1414,7 @@ if (!gotLock) {
     if (process.platform === "darwin") app.dock?.setIcon(app.isPackaged
       ? path.join(process.resourcesPath, "icon.png") : path.join(__dirname, "assets", "icon.png"));
     loadApplicationPreferences();
+    void recordSessionHeader().catch(error => console.error("Could not log session header:", error.message));
     session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false));
     try {
       // Python imports and window construction are independent startup work.
@@ -1412,6 +1458,7 @@ if (!gotLock) {
             headers:{"X-HDR-Finisher-Token":activeBackend.authoringSecret}, signal:AbortSignal.timeout(2000)});
           if (!response.ok) throw Error(`Memory sampling failed (${response.status})`);
           const value = await memoryPressureRelay.withDeadline(response.json());
+          lastDiagnosticMemory = {totalBytes: value.totalBytes, sampledAt: Date.now()};
           // The backend's level comes from measurement and the OS only, never
           // from a refused admission. Trim once when it rises, then at most
           // once per cool-down while it lasts.

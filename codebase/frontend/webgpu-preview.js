@@ -270,6 +270,7 @@
     setMemoryBudget(value) {
       this.memoryBudget = value === "auto" ? "auto" : value;
       this.gpuAllocator?.setBudget(this.memoryBudgetBytes());
+      this.logGpuConfiguration();
       return this.memoryBudgetBytes();
     }
 
@@ -344,7 +345,20 @@
         probe: (bytes) => this.probeGpuAllocation(bytes),
       });
       this.gpuAllocator?.setBudget(this.memoryBudgetBytes());
+      this.logGpuConfiguration();
       return this.gpuBudget;
+    }
+
+    logGpuConfiguration() {
+      if (!this.adapterInfo) return;
+      const { limits, ...adapter } = this.adapterInfo;
+      globalThis.HDRDiagnostics?.event("gpu", "session_gpu_configuration", {
+        adapter, limits, budget_bytes: this.memoryBudgetBytes(),
+        budget_source: this.memoryBudget === "auto" ? this.gpuBudget?.source : "explicit",
+        detected_vram_bytes: this.detectedVideoMemory?.bytes ?? null,
+        probe_bytes: this.gpuBudget?.probe?.requestedBytes ?? null,
+        probe_passed: this.gpuBudget?.probe?.passed ?? null,
+      });
     }
 
     probeGpuAllocation(bytes) {
@@ -631,6 +645,7 @@
     async initialize(beforePipeline = async () => {}) {
       if (!navigator.gpu) {
         this.detail = "WebGPU is unavailable in this browser";
+        globalThis.HDRDiagnostics?.event("gpu", "session_gpu_unavailable", { reason: "gpu_unavailable" });
         return false;
       }
       try {
@@ -785,6 +800,7 @@
       } catch (error) {
         this.available = false;
         this.detail = error?.message || "WebGPU initialization failed";
+        globalThis.HDRDiagnostics?.event("gpu", "session_gpu_unavailable", { level: "warn", reason: "gpu_initialization_failed" });
         return false;
       }
     }
