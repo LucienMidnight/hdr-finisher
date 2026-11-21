@@ -4,6 +4,7 @@ The browser measures bounded source windows on its own GPU, so Grade and a
 running delivery never wait for another turn on the hidden delivery renderer.
 """
 from collections import OrderedDict
+from concurrent.futures import Future
 from dataclasses import asdict, dataclass
 from hashlib import sha256
 import json
@@ -23,6 +24,8 @@ from .denoise_adaptive import CALIBRATION_RULES, MEASUREMENT_VERSION
 
 VERSION = MEASUREMENT_VERSION
 _models = OrderedDict()
+_model_flights = {}
+_MODEL_LIMIT = 512
 _lock = RLock()
 
 
@@ -126,9 +129,63 @@ def _file(cache, key):
     return cache.directory("library-pictures") / (key + ".denoise.json")
 
 
+def _remember(key, value):
+    _models[key] = value
+    _models.move_to_end(key)
+    while len(_models) > _MODEL_LIMIT:
+        _models.popitem(last=False)
+
+
+def _get_in_memory(key):
+    value = _models.get(key)
+    if value is not None:
+        _models.move_to_end(key)
+    return value
+
+
+def measured_model(key, measure, *, observe=None, persistent=False):
+    """Share one CPU fit per measurement identity, including concurrent requests."""
+    with _lock:
+        cached = _get(key) if persistent else _get_in_memory(key)
+        pending = _model_flights.get(key)
+        owner = cached is None and pending is None
+        if owner:
+            pending = _model_flights[key] = Future()
+    if cached is not None:
+        if observe is not None:
+            observe("model_cache_hit")
+        return cached
+    if not owner:
+        if observe is not None:
+            observe("model_in_flight")
+        return pending.result()
+    try:
+        if observe is not None:
+            observe("model_cache_miss")
+        value = measure()
+        if persistent:
+            _put(key, value)
+        else:
+            with _lock:
+                _remember(key, value)
+        pending.set_result(value)
+        return value
+    except BaseException as error:
+        pending.set_exception(error)
+        raise
+    finally:
+        with _lock:
+            del _model_flights[key]
+
+
+def proxy_model(key, measure):
+    # Keep the full-source, proxy and authored source semantics of this route.
+    return measured_model(("proxy-request", VERSION, *key), measure)
+
+
 def _get(key):
     with _lock:
-        value = _models.get(key)
+        value = _get_in_memory(key)
         if value is None:
             try:
                 cache = _cache()
@@ -136,22 +193,15 @@ def _get(key):
                     candidate = json.loads(_file(cache,key).read_text(encoding="utf-8"))
                     _validate(candidate["model"])
                     value = candidate
-                    _models[key] = value
-                    while len(_models) > 512:
-                        _models.popitem(last=False)
+                    _remember(key, value)
             except (OSError, ValueError, KeyError, HTTPException):
                 pass
-        if value is not None:
-            _models.move_to_end(key)
         return value
 
 
 def _put(key, model):
     with _lock:
-        _models[key] = model
-        _models.move_to_end(key)
-        while len(_models) > 512:
-            _models.popitem(last=False)
+        _remember(key, model)
     cache = _cache()
     if not cache.preferences()["enabled"]:
         return
@@ -201,16 +251,21 @@ def cpu_delivery_model(frame, *, authored_image=None, geometry=None):
         identity = {"version": VERSION, "source": source_identity(frame),
             "pixels": "authored-sdr", "size": max(256, native_edge), "geometry": geometry}
         key = sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()
-    cached = _get(key)
-    if cached is None:
+    reused = True
+
+    def measure():
+        nonlocal reused
+        reused = False
         with measurement_usage("export/Proof"):
             model = estimate_adaptive_model(image)
         height, width = image.shape[:2]
-        _put(key, {"model": model.as_dict(), "measurement": {
-            "width": width, "height": height, "measured_pixels": min(width*height,4*1024*1024)}})
-        return model
-    log("denoise_measurement", usage="export/Proof", route="reused", measurement_key=key,
-        duration_ms=(perf_counter()-started)*1000, **cached["measurement"])
+        return {"model": model.as_dict(), "measurement": {
+            "width": width, "height": height, "measured_pixels": min(width*height,4*1024*1024)}}
+
+    cached = measured_model(key, measure, persistent=True)
+    if reused:
+        log("denoise_measurement", usage="export/Proof", route="reused", measurement_key=key,
+            duration_ms=(perf_counter()-started)*1000, **cached["measurement"])
     value = cached["model"]
     return AdaptiveNoiseModel(a=value["a"], b=value["b"], c=value["c"],
         band_sigmas=tuple(tuple(row) for row in value["band_sigmas"]))

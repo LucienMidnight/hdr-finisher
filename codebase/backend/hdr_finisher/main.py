@@ -3,7 +3,6 @@ from __future__ import annotations
 import atexit
 import asyncio
 from contextlib import asynccontextmanager
-from concurrent.futures import Future
 from threading import Event, Lock
 import base64
 import binascii
@@ -459,7 +458,7 @@ from .delivery import create_delivery_router
 app.include_router(create_delivery_router())
 from .gpu_delivery import create_gpu_delivery_router
 app.include_router(create_gpu_delivery_router())
-from .denoise_measurement import create_router as create_denoise_measurement_router
+from .denoise_measurement import create_router as create_denoise_measurement_router, proxy_model
 app.include_router(create_denoise_measurement_router(store))
 import_jobs = ImportJobManager(store, media_browser_store, workers=1)
 add_opening_routes(app, import_jobs)
@@ -1434,45 +1433,6 @@ def webgpu_proxy(
     )
 
 
-# Adaptive denoise models measured on preview proxies, newest last. A model is
-# a handful of numbers, but measuring one resamples its sample windows.
-_DENOISE_MODEL_CACHE: dict[tuple, dict] = {}
-_DENOISE_MODEL_CACHE_LIMIT = 16
-_DENOISE_MODEL_LOCK = Lock()
-_DENOISE_MODEL_PENDING: dict[tuple, Future] = {}
-
-
-def _cached_denoise_model(key: tuple, measure) -> dict:
-    """Overlapping warm-up and foreground requests share one measurement."""
-    key = (denoise_adaptive.MEASUREMENT_VERSION, *key)
-    with _DENOISE_MODEL_LOCK:
-        cached = _DENOISE_MODEL_CACHE.pop(key, None)
-        if cached is not None:
-            _DENOISE_MODEL_CACHE[key] = cached
-            return cached
-        pending = _DENOISE_MODEL_PENDING.get(key)
-        owner = pending is None
-        if owner:
-            pending = Future()
-            _DENOISE_MODEL_PENDING[key] = pending
-    if not owner:
-        return pending.result()
-    try:
-        result = measure()
-        with _DENOISE_MODEL_LOCK:
-            _DENOISE_MODEL_CACHE[key] = result
-            while len(_DENOISE_MODEL_CACHE) > _DENOISE_MODEL_CACHE_LIMIT:
-                _DENOISE_MODEL_CACHE.pop(next(iter(_DENOISE_MODEL_CACHE)))
-        pending.set_result(result)
-        return result
-    except BaseException as error:
-        pending.set_exception(error)
-        raise
-    finally:
-        with _DENOISE_MODEL_LOCK:
-            _DENOISE_MODEL_PENDING.pop(key, None)
-
-
 @app.get("/api/session/{session_id}/denoise-model/{kind}")
 def adaptive_denoise_model(
     session_id: str,
@@ -1521,7 +1481,7 @@ def adaptive_denoise_model(
             log("picture_denoise_model", path=metadata.get("path"), route="library-exact-all-cores",
                 edge=long_edge, workers=logical_cpus(), duration_ms=(time.perf_counter()-started)*1000)
             return model.as_dict()
-        return _cached_denoise_model(key, measure_library)
+        return proxy_model(key, measure_library)
     return _adaptive_denoise_model(session_id, kind, long_edge, edit_revision, geometry_signature)
 
 
@@ -1554,7 +1514,7 @@ def _adaptive_denoise_model(session_id, kind, long_edge, edit_revision, geometry
         image, source_epoch = native
         key = (session_id, "native", source_epoch)
         measure = lambda: denoise_adaptive.estimate_adaptive_model(image).as_dict()
-        return _cached_denoise_model(key, measure) if cached else measure()
+        return proxy_model(key, measure) if cached else measure()
     # A smaller level is measured on the proxy the preview denoises, at this
     # size and geometry, so the picture never depends on which geometry was
     # seen first.
@@ -1576,7 +1536,7 @@ def _adaptive_denoise_model(session_id, kind, long_edge, edit_revision, geometry
         return model.as_dict()
 
     try:
-        return _cached_denoise_model(key, measure) if cached else measure()
+        return proxy_model(key, measure) if cached else measure()
     except StaleRender:
         return JSONResponse(status_code=409, content={"detail": "Stale source mip request dropped."})
 
