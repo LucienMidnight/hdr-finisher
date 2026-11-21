@@ -1,3 +1,16 @@
+## November 21 — Adaptive Denoise parity check
+
+Unpackaged Electron on the Windows PC at 2560 × 1440, with a 1500 × 1000
+synthetic noisy TIFF. The driver selects Standard explicitly and uses CPU
+preparation with WebGPU reconstruction for Fine and Clean Grain. These
+single observations include diagnostic readback.
+
+| Action | Pre-sprint `f424bbdd` | Sprint `629d8898` with updated driver |
+| --- | ---: | ---: |
+| Fine Grain preparation and readback | 1.33 s | 1.28 s |
+| Clean Grain preparation and readback | 1.20 s | 1.28 s |
+| Clean Grain live blend and readback | 0.68 s | 0.67 s |
+
 ## November 21 — Grade Grain forced-budget recovery replay
 
 Windows PC, RTX 4070 Ti, unpackaged Electron at 2560 × 1440, working changes

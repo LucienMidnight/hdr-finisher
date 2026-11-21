@@ -65,9 +65,11 @@ function halfToFloat(bits) {
     await page.waitForFunction(() => viewerState().status === "ready", null, { timeout: 300000 });
     await page.waitForTimeout(900);
 
-    assert(await page.evaluate(() => state.denoise[state.currentView].controls.method) === "standard",
-      "New Denoise does not default to Standard.");
     await page.evaluate(() => {
+      // Fine and Clean originally used CPU preparation in this check. Keep
+      // that route so zero-evenness and CPU preparation reuse are exercised.
+      state.gpuPreview.enableGradeFineGrainGpu = false;
+      state.gpuPreview.enableGradeCleanGrainGpu = false;
       const group = document.querySelector(".denoise-group .group-toggle");
       if (group.getAttribute("aria-expanded") !== "true") group.click();
     });
@@ -76,6 +78,9 @@ function halfToFloat(bits) {
     "Clean Grain should start at Small with no Dark Specks control.");
     assert(await page.evaluate(() => !document.getElementById("denoise-legacy-method-row")),
       "The removed wavelet presets are still in the panel.");
+    // New edits start on Clean Grain. The first parity case measures Standard.
+    await page.selectOption("#denoise-method", "standard");
+    await page.waitForFunction(() => state.denoise[state.currentView].controls.method === "standard");
     await page.evaluate(() => document.querySelector("#denoise-bypass").click());
     await page.waitForFunction(
       () => ["ready", "error"].includes(state.denoiseRuntime[state.currentView].status),
@@ -107,11 +112,14 @@ function halfToFloat(bits) {
     "The noise size controls are not showing their values under Adaptive.");
 
     const readResult = () => page.evaluate(async () => {
+      await state.editCommandQueue;
       const renderer = state.gpuPreview;
       const selector = state.gpuPreview.denoiseSourceSelector;
+      const { session_id: sessionId } = state.session;
+      const { currentView: lane, editRevision } = state;
       const geometry = JSON.stringify(state.adjustments.shared?.geometry || {});
       const edge = refinementProxyLongEdge();
-      const original = await renderer.loadProxy(state.session.session_id, state.currentView, edge, geometry, state.editRevision, "source");
+      const original = await renderer.loadProxy(sessionId, lane, edge, geometry, editRevision, "source");
       // The regular screen draw can supersede this diagnostic resolve while
       // the first Clean Grain region is still uploading. Let that draw
       // finish and read the same prepared controls after it settles.
@@ -127,10 +135,10 @@ function halfToFloat(bits) {
         gpu=btoa(binary);
       }
       return {
-        sessionId: state.session.session_id,
-        lane: state.currentView,
-        editRevision: state.editRevision,
-        geometry: JSON.stringify(state.adjustments.shared?.geometry || {}),
+        sessionId,
+        lane,
+        editRevision,
+        geometry,
         width: original.width,
         height: original.height,
         algorithm: selector.cache.algorithmVersion,
@@ -285,7 +293,9 @@ for lane, pair in (("sdr", [_hdr_to_sdr_display(rgb) for rgb in (fit, actual)]),
         `${method} replaced the native preparation on return to Fit.`);
     }
 
-    await change("denoise-evenness", 0, false);
+    // Standard doesn't apply live Evenness input. Save the value before
+    // selecting Fine Grain so its first reconstruction uses zero.
+    await page.evaluate(() => commitDenoiseControl("grain_evenness", 0));
     await change("denoise-method", "fine_grain");
     await waitReady();
     const zero = nextPixels(await readResult());
