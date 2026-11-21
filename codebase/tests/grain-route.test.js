@@ -8,24 +8,26 @@ const { declarations, frontendSource } = require("./frontend-source");
 const device = {}, rebuilt = {};
 const snapshot = { budget_bytes: 1000, resident_bytes: 850, allocator_bytes: 830, requested_bytes: 100 };
 
-test("the label and help describe the Grain route that actually produced the preview", () => {
+test("the help line appears only when the slower CPU route is used or the method cannot run", () => {
   const route = (frame, extra = {}) => describe({ method: "clean_grain", enabled: true, frame, ...extra });
-  assert.equal(route({ route: "gpu" }).label, "GPU");
-  assert.equal(route({ route: "gpu", reduced: true }).label, "Reduced preview");
-  assert.deepEqual(route(null, { enabled: false }), { label: "Off", message: "Denoise is off." });
-  assert.deepEqual(route({ route: "gpu" }, { original: true }), { label: "Original", message: "Showing the original." });
-  assert.equal(route(null).label, "Preparing");
-  assert.equal(route(null, { unavailable: "Micro Grain needs an ordinary Bayer RAW." }).label, "Paused");
+  assert.deepEqual(route({ route: "gpu" }), { message: "" });
+  assert.deepEqual(route({ route: "gpu", reduced: true }), { message: "" });
+  assert.deepEqual(route(null, { enabled: false }), { message: "" });
+  assert.deepEqual(route({ route: "gpu" }, { original: true }), { message: "" });
+  assert.deepEqual(route(null), { message: "" });
+  assert.match(route(null, { cpuBusy: true }).message, /on the CPU/);
+  assert.match(route({ route: "gpu" }, { cpuBusy: true }).message, /on the CPU/);
+  assert.equal(route(null, { unavailable: "Micro Grain needs an ordinary Bayer RAW." }).message,
+    "Micro Grain needs an ordinary Bayer RAW.");
   assert.equal(route(null, { method: "standard" }), null);
   const memory = route({ route: "cpu", reason: "gpu_budget_exceeded" }, { canRetry: true });
-  assert.deepEqual(memory, { label: "CPU backup",
-    message: "Clean Grain is using the CPU because graphics memory was short. Export is unchanged.", action: "Retry on GPU" });
+  assert.deepEqual(memory, { message: "Clean Grain is using the slower CPU because graphics memory was short. "
+    + "Export is unchanged.", action: "Retry on GPU" });
   const lens = route({ route: "cpu", reason: "unsupported_lens_correction" }, { method: "micro_grain" });
-  assert.deepEqual(lens, { label: "CPU backup",
-    message: "Micro Grain is using the CPU because lens correction is on. Export is unchanged.", action: "Switch to Clean Grain" });
+  assert.deepEqual(lens, { message: "Micro Grain is using the slower CPU because lens correction is on. "
+    + "Export is unchanged.", action: "Switch to Clean Grain" });
   const reduced = route({ route: "cpu", reason: "gpu_unavailable", reduced: true, reducedEdge: 4096 });
-  assert.equal(reduced.label, "Reduced preview");
-  assert.match(reduced.message, /Export is full size/);
+  assert.match(reduced.message, /Preview limited to 4,096 px\. Export is full size/);
   const forced = route({ route: "cpu", reason: "gpu_grain_not_selected" });
   assert.equal(forced.action, null);
   assert.match(forced.message, /GPU Denoise is turned off/);
@@ -38,7 +40,7 @@ test("CPU activity appears after two seconds and clears when the request complet
     denoise: { hdr: { enabled: true, controls: { method: "clean_grain" } } },
     denoiseRuntime: { hdr: {} },
   };
-  const els = { denoiseRoute: {}, denoiseRouteAction: {}, denoiseStatus: {} };
+  const els = { denoiseRouteAction: {}, denoiseStatus: {} };
   const context = vm.createContext({ HDRGrainRoute, state, els, geometrySignature: () => "{}",
     window: { setTimeout: (fn, ms) => { assert.equal(ms, 2000); elapsed = fn; }, clearTimeout() {} },
   });

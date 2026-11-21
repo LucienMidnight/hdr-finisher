@@ -73,7 +73,8 @@ Three problems follow, and Steve approved all three on November 21:
 | MG-2 | Micro Grain CPU: visible area first | `sprint/micro-cpu-visible` | MG-1 merged | to do (PC, after MG-1) |
 | MEM-1 | One memory budget on the MacBook Neo | `sprint/mac-memory` | MG-1, GPU-2 merged | to do (overnight; Mac measurements) |
 | QUAL-1 | Exposure-independent quality fixes (output changes) | `sprint/grain-quality` | CG-2 merged | to do; needs Steve's visual sign-off before any default changes |
-| FOLD-1 | Fine Grain folded into Clean Grain, with a cleaning checkbox | `sprint/fold-fine-grain` | CG-2, GPU-2, ROUTE-1 merged | to do (Steve approved R2-1) |
+| FOLD-1 | Fine Grain folded into Clean Grain, with a cleaning checkbox | `sprint/fold-fine-grain` | CG-2, GPU-2, ROUTE-1 merged | running (Steve approved R2-1) |
+| DLV-1 | Share one Grain result across HDR and SDR in AVIF export and Proof | `sprint/delivery-grain-share` | — | to do (PC) |
 | INT-2 | Round 2 integration, full checks, push and hand test | `feat/denoise-v1` | all round 2 | to do |
 
 LOG-1, CPU-1 and GPU-1 run in parallel on November 21. LOG-2 starts once
@@ -889,7 +890,7 @@ silent slowdowns.
 | R2-2 | Trim Library cache shares while Grade has a large photo open on an 8 GB machine? | **Steve, Nov 21: yes.** MEM-1 builds it and records the shares in `memory-and-caches.md`. |
 | R2-3 | Memory-map read-only sources on 8 GB machines? | **Coordinator and reviewer agree, Nov 21: not now.**<br>- On macOS, clean mapped pages leave the physical-footprint number the app measures. The meter would drop without freeing real memory, and `safety_total` would subtract the image twice.<br>- It would write about 500 MB to the SSD for every photo opened.<br>- Grain scratch is already disk-backed, so mapping it gains nothing.<br>If MEM-1's Mac measurements still show pressure, look first at cold buffers (`retouch_original`, about 509 MB) and Micro's 256 MiB Bayer tile cache, then revisit with numbers. |
 | R2-4 | Which QUAL-1 candidates become defaults? | Decide on the review page. |
-| R2-5 | Route label look and wording | Decide on ROUTE-1's screenshots. |
+| R2-5 | Route label look and wording | **Steve, Nov 21:** no label and no Method heading. Show nothing while the GPU works. One line appears only when the slower CPU route is in use, saying why (or when the method cannot run). Coordinator applied this after ROUTE-1 merged. |
 
 ### FOLD-1 · Fine Grain folded into Clean Grain (Steve, R2-1)
 
@@ -919,6 +920,33 @@ their files.
 - With it on, output is byte-identical to Clean Grain today.
 - Steve sees crops of off against today's Fine Grain on the Canon and Sony
   marks.
+
+### DLV-1 · One Grain result per delivery (reviewer's follow-up)
+
+**Why.** The reviewer checked whether the CPU-1 30% target still matters
+for export and Proof. Delivery does not use `GrainPreparation`; it runs
+`resolve_grain` directly.
+- Ultra HDR JPEG already shares one Grain result across HDR and SDR
+  (`_jpeg_denoise_source` in `exporters.py`).
+- AVIF Gain Map export runs Grain twice.
+- Full-size non-JPEG Proof runs it up to four times.
+Sharing the result is byte-identical and should cut the Clean Grain part
+of those waits by half or more.
+
+**Build.**
+- Reuse one Grain result per source and settings across the renditions of
+  one AVIF export and one Proof, as JPEG does.
+- Bound the memory to what JPEG already holds.
+
+**Owns.** The Grain source sharing in `exporters.py` and `proofing.py`, and
+their tests.
+
+**Done when:**
+- Exported files are byte-identical before and after (AVIF Gain Map and
+  full-size Proof, on the Sony with Clean Small).
+- One short PC run records the export and Proof waits and peak RAM, before
+  and after.
+- `export-and-proof.md` and `performance-table.md` are updated.
 
 ### INT-2 · Round 2 integration
 
@@ -961,4 +989,5 @@ Later, after v1: lens correction as a GPU warp after GPU Micro Grain
 | 2026-11-21 | Workers use Codex `gpt-6.2-sol` at medium or high effort. |
 | 2026-11-21 | Steve: the coordinator decides process questions (extra rounds, an extra short locked measurement) and reports them; Steve keeps product decisions. First use: CPU-1 gets a second round and one more 5-minute run, because its first version missed the speed and memory targets before its final change was measured. |
 | 2026-11-21 | Steve: push `feat/denoise-v1` after integration (`deb2fc6f`). |
+| 2026-11-21 | Coordinator and reviewer: retire CPU-1's 30% whole-photo CPU Clean Grain target at 18%. The felt waits are about 4 s (first sharp) and 2.6 s (Evenness release), and export would gain only 1–2 s. Effort goes to MacBook Neo memory, CPU Micro Grain and DLV-1 instead. Steve asked for the reviewer's view; reported to him. |
 | 2026-11-21 | Steve: adopt the Gemini 4 Neon Denoise review's recommendations into this sprint as round 2, after the coordinator checks them in the code; PC work for both machines first, MacBook Neo memory overnight; the reviewer checks the updated brief. Product choices in it stay with Steve (R2-1 to R2-5). |

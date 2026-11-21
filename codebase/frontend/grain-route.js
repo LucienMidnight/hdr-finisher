@@ -59,26 +59,22 @@
   const METHODS = { micro_grain: "Micro Grain", clean_grain: "Clean Grain", fine_grain: "Fine Grain" };
 
   function describe({ method, enabled, original, unavailable, error, frame, cpuBusy, canRetry, retryNote }) {
+    // Steve, Nov 21: say nothing while the GPU does its job. One line
+    // appears only when the slower CPU route is in use (and why), or when
+    // the method cannot run.
     if (!METHODS[method]) return null;
-    if (!enabled) return { label: "Off", message: "Denoise is off." };
-    if (original) return { label: "Original", message: "Showing the original." };
-    if (unavailable || (error && frame?.route !== "cpu")) return { label: "Paused", message: unavailable || error };
-    if (!frame) return { label: "Preparing", message: cpuBusy ? "Preparing the denoised preview on the CPU…"
-      : "Preparing Denoise. You can keep viewing the current picture." };
+    if (!enabled || original) return { message: "" };
+    if (unavailable || (error && frame?.route !== "cpu")) return { message: unavailable || error };
+    if (!frame) return { message: cpuBusy ? "Preparing the denoised preview on the CPU…" : "" };
     const progress = cpuBusy ? "Preparing the next preview on the CPU…" : "";
-    if (frame.route === "gpu" && !frame.reduced) {
-      return { label: "GPU", message: [`${METHODS[method]} is running on the GPU.`, progress].filter(Boolean).join(" ") };
-    }
-    const action = canRetry ? "Retry on GPU" : frame.route === "cpu" && method === "micro_grain" ? "Switch to Clean Grain" : null;
+    if (frame.route !== "cpu") return { message: progress };
+    const action = canRetry ? "Retry on GPU" : method === "micro_grain" ? "Switch to Clean Grain" : null;
     const reason = REASONS[frame.reason] || "the GPU preview could not be used";
-    const message = frame.route === "cpu"
-      ? `${METHODS[method]} is using the CPU because ${reason}.`
-      : "Showing a quick GPU preview while full detail prepares.";
     const size = frame.reducedEdge ? ` Preview limited to ${frame.reducedEdge.toLocaleString()} px. Export is full size.`
-      : frame.route === "cpu" ? " Export is unchanged." : "";
+      : " Export is unchanged.";
     return {
-      label: frame.reduced ? "Reduced preview" : "CPU backup",
-      message: [message + size, error, retryNote, progress].filter(Boolean).join(" "),
+      message: [`${METHODS[method]} is using the slower CPU because ${reason}.${size}`, error, retryNote, progress]
+        .filter(Boolean).join(" "),
       action,
     };
   }

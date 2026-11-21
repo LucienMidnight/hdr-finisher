@@ -71,7 +71,7 @@ function currentGrainFrame(lane) {
 }
 
 function renderDenoiseRoute() {
-  if (!els.denoiseRoute) return false;
+  if (!els.denoiseStatus || !els.denoiseRouteAction) return false;
   const lane = state.currentView;
   const settings = state.denoise[lane];
   const runtime = state.denoiseRuntime[lane];
@@ -84,10 +84,9 @@ function renderDenoiseRoute() {
     canRetry: failure && state.gpuPreview.grainFailures.canOfferRetry(failure),
     retryNote: frame?.retryNote,
   });
-  els.denoiseRoute.hidden = !route;
   els.denoiseRouteAction.hidden = !route?.action;
   if (!route) return false;
-  if (els.denoiseRoute.textContent !== route.label) els.denoiseRoute.textContent = route.label;
+  els.denoiseStatus.hidden = !route.message;
   if (els.denoiseRouteAction.textContent !== (route.action || "")) els.denoiseRouteAction.textContent = route.action || "";
   if (els.denoiseStatus.textContent !== route.message) els.denoiseStatus.textContent = route.message;
   return true;
@@ -188,16 +187,11 @@ function renderDenoiseControls() {
   const labels = { off: "Off", preparing: "Preparing", ready: "Ready", dirty: "Dirty", recalculating: "Recalculating", error: "Error" };
   if (els.denoiseState) els.denoiseState.textContent = labels[runtime.status] || runtime.status;
   if (renderDenoiseRoute()) return;
-  els.denoiseStatus.textContent = runtime.error || ({
-    off: "Denoise is off.",
-    preparing: experimental
-      ? "Preparing grain from the whole photo. You can keep viewing the current picture."
-      : "Preparing the denoise cache; the original remains interactive.",
-    ready: "Denoise cache ready.",
-    dirty: "The view changed. The previous valid result remains visible until recalculated.",
-    recalculating: "Recalculating; the previous valid result remains interactive.",
-    error: "Denoise could not be prepared. The original pipeline remains available.",
-  }[runtime.status] || "");
+  // Steve, Nov 21: no status while Denoise works normally; only problems.
+  const message = runtime.error || (runtime.status === "error"
+    ? "Denoise could not be prepared. The original pipeline remains available." : "");
+  els.denoiseStatus.textContent = message;
+  els.denoiseStatus.hidden = !message;
 }
 
 /**

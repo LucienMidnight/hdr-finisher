@@ -37,10 +37,8 @@ The Simple controls also work in Fine Grain and Clean Grain. Grain Evenness and 
 
 Micro Grain updates the visible area first when zoomed in, leaving the previous picture up while it works. At Fit it shows a quick preview before the more accurate picture. Micro Grain is for supported Bayer RAWs only. It isn't available with an authored SDR base, retouch repairs or Edge Colour highlight reconstruction.
 
-For the Grain methods, look beside **Method** for **GPU**, **CPU backup**,
-**Reduced preview**, **Preparing**, **Original**, **Off** or **Paused** (the
-method cannot run on this photo or stopped with an error). The message below
-explains the route,
+Denoise normally runs on the graphics card and shows no message. When it
+has to use the slower CPU, one line under the method menu says why,
 including when lens correction sends Micro Grain to the CPU or a CPU preview
 takes more than a couple of seconds. **Retry on GPU** is available for some
 temporary failures. If Micro Grain is on the CPU and a retry is unavailable,
