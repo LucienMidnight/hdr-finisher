@@ -14,7 +14,7 @@ from weakref import finalize
 import cv2
 import numpy as np
 
-from . import denoise_adaptive as adaptive
+from . import denoise_adaptive as adaptive, denoise_filters
 from .cpu_budget import CpuExecutor, CpuWorkLimit, logical_cpus
 from .library_diagnostics import log
 
@@ -117,38 +117,61 @@ def _shift(padded, shape, y, x):
     return padded[y:y+height, x:x+width]
 
 
+def _colour_offsets(reach):
+    diagonal = round(reach / np.sqrt(2))
+    return ((0, reach), (reach, 0), (diagonal, diagonal), (diagonal, -diagonal))
+
+
 def _colour_pairs(field, reach, tap):
     """Pairs of colour samples on opposite sides of the centre."""
     padded = cv2.copyMakeBorder(_box(field, tap), reach, reach, reach, reach, cv2.BORDER_REFLECT_101)
-    diagonal = round(reach / np.sqrt(2))
     shape = field.shape[:2]
-    for y, x in ((0, reach), (reach, 0), (diagonal, diagonal), (diagonal, -diagonal)):
+    for y, x in _colour_offsets(reach):
         yield (_shift(padded, shape, reach+y, reach+x),
                _shift(padded, shape, reach-y, reach-x))
 
 
-def _colour_pass(chroma, noise, limit, dark, reach, tap, centre):
+def _colour_pass(chroma, noise, limit, dark, reach, tap, centre, native=None):
     core = _box(chroma, centre)
     closest = np.full_like(noise, np.inf)
     total = np.zeros_like(core)
     low = np.full_like(core, np.inf)
     high = np.full_like(core, -np.inf)
+    if native is not None:
+        first_x, first_y, second_x, second_y = (np.empty_like(noise) for _ in range(4))
     for first, second in _colour_pairs(chroma, reach, tap):
+        if native is not None:
+            native.colour_pair(first, second, core, first_x, first_y, second_x, second_y,
+                               total, low, high, *noise.shape, first.strides[0] // first.itemsize)
+            cv2.magnitude(first_x, first_y, first_x)
+            cv2.magnitude(second_x, second_y, second_x)
+            np.minimum(first_x, second_x, out=first_x)
+            np.minimum(closest, first_x, out=closest)
+            continue
         np.minimum(closest, np.minimum(_magnitude(core - first), _magnitude(core - second)), out=closest)
         pair = first + second
         pair *= .5
         total += pair
         np.minimum(low, pair, out=low)
         np.maximum(high, pair, out=high)
-    total -= low
-    total -= high
-    total *= .5
-    surrounding = total
-    delta = core - surrounding
-    pixel_delta = chroma - surrounding
+    if native is None:
+        total -= low
+        total -= high
+        total *= .5
+        delta = core - total
+        pixel_delta = chroma - total
+    else:
+        delta, pixel_delta = np.empty_like(core), np.empty_like(core)
+        native.colour_deltas(core, chroma, total, low, high, delta, pixel_delta, core.size)
     signal = _magnitude(delta)
     relative = signal / noise
     pixel_relative = _magnitude(pixel_delta) / noise
+    peak = cv2.dilate(pixel_relative, np.ones((7, 7), dtype=np.uint8))
+    if native is not None:
+        output = np.empty_like(core)
+        native.colour_repair(core, chroma, closest, signal, relative, pixel_relative,
+                             limit, dark, peak, delta, pixel_delta, output, noise.size)
+        return output
     isolated = _ramp(closest / np.maximum(signal, 1e-7), .1, .65)
     # A large difference that repeats on one side is more likely real colour.
     protection = 1 - (1 - isolated) * _ramp(relative, 5, 12)
@@ -159,13 +182,15 @@ def _colour_pass(chroma, noise, limit, dark, reach, tap, centre):
     moderate = correction * (strength * protection * limit)[..., None]
 
     # Permit a stronger repair at compact peaks in the darkest patches.
-    peak = cv2.dilate(pixel_relative, np.ones((7, 7), dtype=np.uint8))
     isolated_dark = dark * _ramp(pixel_relative / np.maximum(peak, 1e-6), .55, .95) * _ramp(pixel_relative, 1.8, 4)
     return moderate + isolated_dark[..., None] * (pixel_delta * limit[..., None] - moderate)
 
 
 def colour_delta(rgb, broad):
     """Full-strength opponent-colour correction, leaving scene luminance alone."""
+    native = denoise_filters.library()
+    if not denoise_filters.supports(rgb) or not hasattr(native, "colour_guides"):
+        native = None
     y = rgb @ LUMA
     local = _box(y, 1)
     luma_noise = _grain(y)
@@ -177,20 +202,27 @@ def colour_delta(rgb, broad):
     # Broad colour pulls must not follow very bright neighbours into dark
     # pixels. Keep a narrow pass for thin colour fringes on bright edges.
     peak = cv2.dilate(np.maximum(local, 0), np.ones((41, 41), dtype=np.uint8))
-    highlight = _ramp(peak, .065, .125)
     background = np.maximum(_box(local, 12), 0)
-    texture = _box(np.abs(local - _box(local, 5)), 4) / np.maximum(background + 3 * luma_noise, 1e-6)
-    limit = (1 - .97 * highlight) * (1 - _ramp(texture, .045, .15) * _ramp(background, .004, .015))
-    dark = 1 - _ramp(np.maximum(local, 0), .006, .014)
+    texture = _box(np.abs(local - _box(local, 5)), 4)
     channels = cv2.split(chroma)
     median = cv2.merge([cv2.medianBlur(channel, 5) for channel in channels])
     fringe = chroma - median
-    sharpness = _ramp(np.abs(local - _box(local, 3)) /
-                      np.maximum(np.maximum(local, 0) + 4 * luma_noise, 1e-6), .06, .24)
-    edge_weight = .45 * highlight * sharpness * _ramp(_magnitude(fringe) / noise, 3, 8)
-    chroma -= _colour_pass(chroma, noise, limit, dark, 12, 2, 1) + fringe * edge_weight[..., None]
+    sharp = np.abs(local - _box(local, 3))
+    fringe_magnitude = _magnitude(fringe)
+    if native is None:
+        highlight = _ramp(peak, .065, .125)
+        texture = texture / np.maximum(background + 3 * luma_noise, 1e-6)
+        limit = (1 - .97 * highlight) * (1 - _ramp(texture, .045, .15) * _ramp(background, .004, .015))
+        dark = 1 - _ramp(np.maximum(local, 0), .006, .014)
+        sharpness = _ramp(sharp / np.maximum(np.maximum(local, 0) + 4 * luma_noise, 1e-6), .06, .24)
+        edge_weight = .45 * highlight * sharpness * _ramp(fringe_magnitude / noise, 3, 8)
+    else:
+        limit, dark, edge_weight = (np.empty_like(local) for _ in range(3))
+        native.colour_guides(local, luma_noise, peak, background, texture, sharp, fringe_magnitude,
+                             noise, limit, dark, edge_weight, local.size)
+    chroma -= _colour_pass(chroma, noise, limit, dark, 12, 2, 1, native) + fringe * edge_weight[..., None]
     if broad:
-        chroma -= _colour_pass(chroma, noise, limit, dark, 28, 4, 3)
+        chroma -= _colour_pass(chroma, noise, limit, dark, 28, 4, 3, native)
     return chroma * light[..., None] - original
 
 

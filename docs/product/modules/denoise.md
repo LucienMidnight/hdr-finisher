@@ -82,6 +82,14 @@ CPU previews reuse a compact noise model across Exposure and other finishing edi
 
 Native CPU Grain limits simultaneous wavelet and colour workspaces across Grade and Library. Visible tiles still enter the pool before queued background tiles. On the Windows PC, five workspaces brought peak app memory down from 2.74 GB to 2.33 GB, below the 2.39 GB baseline. The Sony reached its first sharp picture at 110% in 4.25 s against the 5.49 s target. The 30% whole-photo speed target remains open. [Windows PC measurements](../../technical/performance-table.md#november-21--windows-pc-cpu-grain-sprint)
 
+Clean Grain now runs the colour arithmetic in native C and keeps the
+OpenCV neighbourhood filters and magnitude operations. Backend noise model
+storage and in-flight measurements live in one module, with each route's
+source identity preserved. The CPU uses the same fixed white-noise
+calibration values as the browser. The Windows tile comparison matched
+prepared bytes for both splotch sizes on Canon and Sony. The Mac build and
+checks are pending. [Windows PC CG-2 measurement](../../technical/performance-table.md#november-21--windows-pc-native-clean-grain-colour)
+
 ### November 21 — Grade Grain on large photos
 
 Fine and Clean Grain calibrate at native resolution in rectangles with the

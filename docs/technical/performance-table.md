@@ -103,6 +103,27 @@ workers finished the Sony in 10.73 s and peaked at 1.53 GB in the offline
 backend. The same trial series measured 1.33 GB for the baseline backend.
 Twelve workers with 768-pixel tiles raised that peak to 2.32 GB for 10.64 s.
 The app keeps the existing 512-pixel tile size.
+## November 21 — Windows PC native Clean Grain colour
+
+One locked run on the CG-2 build in unpackaged Electron at 2560 × 1440.
+Sony `_DSC7970.ARW` (7968 × 5320), Clean Grain Small, lens correction off,
+harsh speck cleanup ×2.5 and a cached noise model. Grain ran on the CPU
+with GPU presentation. The CPU-1 values are its round-three enable sample.
+
+| Action | CPU-1 | CG-2 |
+| --- | ---: | ---: |
+| Enable at 110% to the first sharp picture | 4.25 s | 4.19 s |
+| Whole-photo preparation through all native tiles | 15.69 s | 14.16 s |
+| Sampled peak whole-app RAM through native fill | 2.33 GB | 2.42 GB |
+
+Whole-photo preparation was 18% faster than the original 17.28 s enable
+baseline. The 30% target remains open, and the sampled RAM rose by 0.09 GB
+against CPU-1. All 859 native Canon and Sony tiles matched the bytes of the
+original preparation across both splotch sizes. An earlier Sony corner probe
+showed two differing float32 values before packing. The original OpenCV
+magnitude stage reproduced that variation when compared with itself, and
+the complete repeat matched even before packing.
+
 ## November 21 — Large-photo Grain in Grade
 
 Windows PC, unpackaged Electron at 2560 × 1440, 2 GiB graphics setting,

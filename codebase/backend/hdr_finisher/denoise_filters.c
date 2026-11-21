@@ -120,3 +120,89 @@ API void box7(const float *RESTRICT input, float *RESTRICT vertical, float *REST
         }
     }
 }
+
+/* NumPy rounds the ramp span from the original scalar bounds before division. */
+static float ramp(float value, float low, float span) {
+    float t = (value - low) / span;
+    return t < 0.0f ? 0.0f : t > 1.0f ? 1.0f : t;
+}
+
+static float maximum(float a, float b) {
+    return a > b || a != a ? a : b;
+}
+
+static float minimum(float a, float b) {
+    return a < b || a != a ? a : b;
+}
+
+API void colour_pair(const float *first, const float *second,
+                     const float *core, float *first_x, float *first_y, float *second_x,
+                     float *second_y, float *total, float *low, float *high,
+                     int height, int width, int stride) {
+    for (int row = 0; row < height; row++) {
+        for (int x = 0; x < width; x++) {
+            int i = row * width + x;
+            int sample = row * stride + 2 * x;
+            first_x[i] = core[2 * i] - first[sample];
+            first_y[i] = core[2 * i + 1] - first[sample + 1];
+            second_x[i] = core[2 * i] - second[sample];
+            second_y[i] = core[2 * i + 1] - second[sample + 1];
+            for (int channel = 0; channel < 2; channel++) {
+                int j = 2 * i + channel;
+                float pair = (first[sample + channel] + second[sample + channel]) * 0.5f;
+                total[j] += pair;
+                low[j] = minimum(low[j], pair);
+                high[j] = maximum(high[j], pair);
+            }
+        }
+    }
+}
+
+API void colour_deltas(const float *core, const float *chroma, const float *total,
+                       const float *low, const float *high, float *delta, float *pixel_delta,
+                       int count) {
+    for (int i = 0; i < count; i++) {
+        float surrounding = ((total[i] - low[i]) - high[i]) * 0.5f;
+        delta[i] = core[i] - surrounding;
+        pixel_delta[i] = chroma[i] - surrounding;
+    }
+}
+
+API void colour_repair(const float *core, const float *chroma, const float *closest,
+                       const float *signal, const float *relative, const float *pixel_relative,
+                       const float *limit, const float *dark, const float *peak,
+                       const float *delta, const float *pixel_delta, float *output, int count) {
+    for (int i = 0; i < count; i++) {
+        float rel = relative[i], pixel = pixel_relative[i];
+        float isolated = ramp(closest[i] / maximum(signal[i], 1e-7f), .1f, .55f);
+        float protection = 1.0f - (1.0f - isolated) * ramp(rel, 5.0f, 7.0f);
+        float strength = maximum(ramp(rel, 1.5f, 3.5f),
+                                 ramp(pixel, 2.5f, 2.5f) * ramp(rel, .65f, 1.85f));
+        float weight = (strength * protection) * limit[i];
+        float fine = .8f * ramp(pixel, 1.0f, 3.0f);
+        float compact = (dark[i] * ramp(pixel / maximum(peak[i], 1e-6f), .55f, .4f))
+                        * ramp(pixel, 1.8f, 2.2f);
+        for (int channel = 0; channel < 2; channel++) {
+            int j = 2 * i + channel;
+            float moderate = (delta[j] + fine * (chroma[j] - core[j])) * weight;
+            output[j] = moderate + compact * (pixel_delta[j] * limit[i] - moderate);
+        }
+    }
+}
+
+API void colour_guides(const float *local, const float *luma_noise, const float *peak,
+                       const float *background, const float *texture, const float *sharp,
+                       const float *fringe, const float *noise,
+                       float *limit, float *dark, float *edge_weight, int count) {
+    for (int i = 0; i < count; i++) {
+        float highlight = ramp(peak[i], .065f, .06f);
+        float light = maximum(local[i], 0.0f);
+        float texture_relative = texture[i] / maximum(background[i] + 3.0f * luma_noise[i], 1e-6f);
+        float sharp_relative = sharp[i] / maximum(light + 4.0f * luma_noise[i], 1e-6f);
+        limit[i] = (1.0f - .97f * highlight) *
+                   (1.0f - ramp(texture_relative, .045f, .105f) * ramp(background[i], .004f, .011f));
+        dark[i] = 1.0f - ramp(light, .006f, .008f);
+        edge_weight[i] = (.45f * highlight) * ramp(sharp_relative, .06f, .18f) *
+                         ramp(fringe[i] / noise[i], 3.0f, 5.0f);
+    }
+}

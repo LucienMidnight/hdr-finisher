@@ -21,6 +21,19 @@ def library():
             function.restype = None
     except (OSError, AttributeError):
         return None
+    # A worktree can still have the older optional binary until setup runs.
+    try:
+        for function, arrays, dimensions in (
+            (native.colour_pair, 10, 3), (native.colour_deltas, 7, 1),
+            (native.colour_repair, 12, 1), (native.colour_guides, 11, 1),
+        ):
+            function.argtypes = [floats] * arrays + [ctypes.c_int] * dimensions
+            function.restype = None
+        # The first two arguments are aligned views into the padded tap field.
+        function = native.colour_pair
+        function.argtypes = [np.ctypeslib.ndpointer(dtype=np.float32, flags="ALIGNED")] * 2 + function.argtypes[2:]
+    except AttributeError:
+        pass
     return native
 
 
