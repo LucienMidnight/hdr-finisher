@@ -6674,7 +6674,7 @@
         await this.refreshGrainMemorySample();
       }
       let snapshot = this.grainMemorySnapshot(bytes);
-      if (HDRGrainRoute.headroom(snapshot) < bytes) {
+      if (HDRGrainRoute.headroom(snapshot) < bytes && (context || this.observeGradeMemory)) {
         const generation = this.resourceGeneration;
         if (this.reclaimGrainResources(snapshot, context, true)) {
           await this.waitForSubmittedWork();

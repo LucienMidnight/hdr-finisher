@@ -215,7 +215,7 @@ test("a live Grain reservation releases an unused source proxy immediately", asy
   renderer.memoryBudgetBytes = () => 400;
   renderer.waitForSubmittedWork = async () => {};
   renderer.activeRenderCount = 1;
-  assert.equal(await renderer.reserveFineGrain("grain", { strip: 120 }), 120);
+  assert.equal(await renderer.reserveFineGrain("grain", { strip: 120 }, { id: "render" }), 120);
   assert.deepEqual(destroyed, ["old"]);
   assert.deepEqual([...renderer.proxies.keys()], ["visible", "render"]);
 });

@@ -71,7 +71,7 @@ Three problems follow, and Steve approved all three on November 21:
 | GPU-2 | Faster GPU Micro Grain and Fit | `sprint/gpu-grain-speed` | — | done, merged Nov 21 (`33063718`). PC Sony, finished frames byte-identical (5 pairs incl. edges and partial tiles): Fit reduction Micro 15.0 → 12.5 s, Clean 2.49 → 2.18 s. Micro slider unchanged (halo trim gave no consistent gain, dropped). AHD pooling and measurement batching not done (no measured gain). Isolated Micro Fit timing and Mac profiling open (INT-2, MEM-1) |
 | ROUTE-1 | One Grain route state and clear route messages | `sprint/grain-route-ui` | — | done, merged Nov 21: GPU / CPU backup / Reduced preview label beside Method, plain reason, Retry on GPU and Switch to Clean Grain actions, CPU progress after 2 s; sampled CPU preview bytes unchanged. Look awaits Steve (R2-5); lens-corrected Micro crop not captured |
 | MG-2 | Micro Grain CPU: visible area first | `sprint/micro-cpu-visible` | MG-1 merged | locally committed, Sony native regions byte-identical, PC RGBA8 110% first sharp 10.38 s and pan 3.81 s, Fit 27.30 s and 3.43 GB after the memory fix, native HDR timing open |
-| MEM-1 | One memory budget on the MacBook Neo | `sprint/mac-memory` | MG-1, GPU-2 merged | to do (overnight; Mac measurements) |
+| MEM-1 | One memory budget on the MacBook Neo | `sprint/mac-memory` | MG-1, GPU-2 merged | PC implementation and locked 8 GB replay passed (share trim/restore, admission, deferred reclaim and identical calibration with 4.06 MB less scratch). Lens strips changed both images and remain a trial. Mac confirmation pending. |
 | QUAL-1 | Exposure-independent quality fixes (output changes) | `sprint/grain-quality` | CG-2 merged | to do; needs Steve's visual sign-off before any default changes |
 | FOLD-1 | Fine Grain folded into Clean Grain, with a cleaning checkbox | `sprint/fold-fine-grain` | CG-2, GPU-2, ROUTE-1 merged | done, merged Nov 21: "Clean color splotches and fringes" checkbox, on by default, saved per rendition. On: Sony HDR and SDR Fit byte-identical on each route. Off: CPU/GPU HDR ΔE ITP 0.055 / 0.161, SDR ΔE 2000 0.031 / 0.765 (mean / p99). Crops of off against old Fine Grain for Steve. Affected saved grade: Canon `IMG_0790.CR2.hdrf` |
 | DLV-1 | Share one Grain result across HDR and SDR in AVIF export and Proof | `sprint/delivery-grain-share` | — | done, merged Nov 21: shared when HDR and SDR have the same source and controls, bounded to one float32 frame (~509 MB). Sony Clean Small: AVIF export 54.5 → 44.9 s, full-size Proof 94.6 → 60.1 s, files byte-identical. Pre-existing: backend peak ~6.2 GB on both, over the 4 GB ceiling (MEM-1) |
@@ -896,8 +896,10 @@ Keep the PC override unset. Record the commit and the log path in
    pan to a second region, change Micro luminance/color/detail, return to
    Fit and switch HDR to SDR and back. For each step record the first sharp
    picture, route, any blocks or colour bands, and whether the crop position
-   holds. Repeat Steve's lens-on CPU case and check that zoom and an
-   Exposure change reuse prior work. Capture one Metal System Trace over
+   holds. Repeat Steve's lens-on CPU case at 78%. Record first click to
+   sharp picture, peak app RAM, and whether the 4,096 px view is described
+   as reduced. Change Exposure, go HDR → SDR → HDR and back to 78% to
+   check whether each uses prepared pixels. Capture one Metal System Trace over
    cold Micro Fit and the first 110% pan while the GPU route is active.
    Attribute the wait to Bayer fetch/upload, demosaic, Grain resolve,
    reduction or present using the trace and the matching Grade events.
