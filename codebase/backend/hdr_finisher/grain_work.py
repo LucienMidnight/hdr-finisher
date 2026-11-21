@@ -25,9 +25,14 @@ def checkpoint():
         raise StaleRender("Obsolete grain work cancelled.")
 
 
+def current_check():
+    return _current.get()
+
+
 @contextmanager
-def render_work(current=None, *, background=None):
-    parent = _current.get()
+def render_work(current=None, *, background=None, shared=False):
+    # Shared preparation supplies a check for all its callers.
+    parent = None if shared else _current.get()
     combined = lambda: (parent is None or parent()) and (current is None or current())
     token = _current.set(combined)
     priority = _background.set(_background.get() if background is None else background)

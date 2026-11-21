@@ -344,6 +344,11 @@ class MicroGrainSource:
         self.tiles = OrderedDict()
         self.tiles_lock = RLock()
 
+    @property
+    def prepared_nbytes(self):
+        # Grade CPU retains only the sensor and its small profile/model.
+        return self.sensor.nbytes + sum(array.nbytes for array in vars(self.profile).values())
+
     def clear_bayer_cache(self):
         with self.tiles_lock:
             self.tiles.clear()
@@ -443,14 +448,19 @@ def prepare_source(frame, *, cancelled=None, retain=True):
 
 
 def resolve_source(frame, controls, *, cancelled=None):
-    from . import raw_import
-    from .preview import downsample_image
-
     owner = getattr(frame, "delivery_owner", frame)
     if unavailable_reason(owner) or not (controls.luminance or controls.color):
         return frame.image
     source = prepare_source(owner, cancelled=cancelled, retain=False)
     source.clear_bayer_cache()
+    return render_prepared_source(frame, source, controls, cancelled=cancelled)
+
+
+def render_prepared_source(frame, source, controls, *, cancelled=None):
+    from . import raw_import
+    from .preview import downsample_image
+
+    owner = getattr(frame, "delivery_owner", frame)
     result = source.render(controls, cancelled=cancelled)
     metadata = owner.metadata
     if metadata.get("lens_correction", {}).get("applied"):

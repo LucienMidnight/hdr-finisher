@@ -65,6 +65,17 @@ unsupported inputs stay recorded for that source key. The existing CPU
 correction and GPU draw paths still render the same pixels.
 [Diagnostic log and reason codes](../../technical/logging.md)
 
+### November 21: CPU Micro Grain reuse in Grade
+
+Grade reuses the same reduced Micro Grain pixels across Exposure and other
+downstream edits and views that use the same preview size. A replacement
+request can join work already running for that photo, Micro controls, lens
+state and preview size. Changing the controls or size computes a new result
+using the prepared Bayer sensor and noise model. Both are evictable under
+the existing Grade cache allowance and are released on source change or
+Grade close. The reduced CPU preview is labelled with its processing size
+in the status bar.
+
 ### November 21: Faster CPU Grain backup
 
 CPU previews reuse a compact noise model across Exposure and other finishing edits. The model depends on the source pixels, rendition, geometry, processing size and measurement version. Concurrent previews share a measurement. The CPU Grain scratch reservation and the existing tile dimensions still apply. [Windows PC measurements](../../technical/performance-table.md#november-21--windows-pc-cpu-grain-sprint)
@@ -224,6 +235,7 @@ All nine fixes below are committed on the branch in `de20bf58` and `5105a4cc`. T
 | --- | --- |
 | Grain on the GPU | **Fine Grain and Clean Grain are enabled in Grade.** The delivery trial stays opt-in: the Canon did not save enough of the total wait, and the full-size Sony was refused under the 4 GB cap. Investigate full-image finishing and encoding costs before trying another delivery rollout. [Measured waits, memory and checks](../../technical/performance-table.md#november-20--fine-and-clean-grain-gpu-delivery-trial) · [November 20 GPU study](../../technical/briefs/denoise-grain-gpu-design-2026-11-20.md) |
 | GPU fallback, CPU backup speed and logs | **Sprint started November 21.** The Mac's silent switch of Clean Grain to the CPU is unexplained: PC tests at the Neo's likely 2 GiB graphics setting stayed on the GPU. The sprint adds app-wide logs with reason codes, releases old graphics memory and retries once before falling back, prepares the visible CPU area first, and keeps photos above 8,192 pixels on the GPU in bounded pieces. [Sprint brief](../../technical/briefs/sprint-denoise-gpu-logging-2026-11-21.md) · [PC fallback measurements](../../technical/briefs/denoise-gpu-fallback-memory-2026-11-21.md) |
+| CPU Micro Grain on the MacBook Neo | **Open.** Recheck the first lens-corrected Grade preview on the minimum machine. The Windows PC confirmed reduced-source reuse after an Exposure edit and an SDR view switch. [Windows measurement](../../technical/performance-table.md#november-21--cpu-micro-grain-source-reuse) |
 | Grain size and colour | **Canon benchmark measured.** The next trial should preserve signed shadow brightness while reducing broad colour separately from fine brightness grain. Keep the fixed marks and visually check recognizable detail. Repeat the Sony and atrium checks before adopting the Canon targets. [Grain and colour tests](../../technical/research/denoise-v1-2026-11-16/grain-size-and-colour.md) · [DxO benchmark](../../technical/research/denoise-v1-2026-11-16/dxo-comparison.md) |
 | Export reuse | **On hold.** Export and Proof can share their GPU delivery result when admitted. Matching HDR and generated SDR share the Grain fit; an authored SDR base is measured separately. The CPU still has its existing Fine-to-Clean and identical-rendition reuse. Keep the trial off by default until a shorter whole delivery wait is measured under 4 GB. [GPU delivery design](../../technical/briefs/denoise-grain-gpu-design-2026-11-20.md) |
 | Library colour and experimental acceptance | **Open.** Isolate the mismatch with Off as a control. Compare exact saved thumbnails when a native render already exists. Review the fixed crop set and Steve's marks before accepting either Grain method for release. [Library trials](../../technical/briefs/denoise-mac-open-items-2026-11-20.md) · [Clean Grain acceptance](../../technical/briefs/denoise-clean-grain-fixes-2026-11-19.md) |

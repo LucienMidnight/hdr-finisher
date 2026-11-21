@@ -124,6 +124,18 @@ The reader automatically includes rotated files beside the current log.
   can occur at different times, so inspect one event to compare values
   that occurred together.
 
+### CPU Micro Grain source reuse
+
+The backend's `micro_cpu_source` event reports the source photo, preview
+edge, reason and elapsed time. Work that waited or computed also records
+its outcome.
+
+| Reason | Meaning |
+| --- | --- |
+| `micro_source_cache_hit` | Grade reused the reduced Micro Grain source for this photo, settings and preview edge. |
+| `micro_source_in_flight` | The request waited on another request's computation of the same source. |
+| `micro_source_cache_miss` | The request owned a fresh computation. The sensor and noise model can still be warm. |
+
 ## App-wide reason codes
 
 | Area | Reasons and meaning |

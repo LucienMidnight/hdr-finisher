@@ -382,6 +382,7 @@ class SessionStore:
             _remove_owned_source(previous.source_path)
         if previous is not None:
             previous.render_cache.discard_grain_preparation()
+            previous.render_cache.close_micro_preview()
             if previous.retouch_worker is not None:
                 previous.retouch_worker.close()
         return payload
@@ -431,6 +432,7 @@ class SessionStore:
             self._current = developed
             self._publish_retained_session_bytes()
             current.render_cache.discard_grain_preparation()
+            current.render_cache.close_micro_preview()
             if current.retouch_worker is not None:
                 current.retouch_worker.close()
             if getattr(self, "grade_recovery_observer", None):
@@ -469,6 +471,7 @@ class SessionStore:
             _remove_owned_source(previous.source_path)
         if previous is not None:
             previous.render_cache.discard_grain_preparation()
+            previous.render_cache.close_micro_preview()
             if previous.retouch_worker is not None:
                 previous.retouch_worker.close()
 

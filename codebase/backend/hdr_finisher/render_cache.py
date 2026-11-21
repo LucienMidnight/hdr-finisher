@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections import OrderedDict
-from concurrent.futures import Future
+from concurrent.futures import Future, wait
 from contextvars import Context
 from dataclasses import InitVar, dataclass, field
 import hashlib
@@ -11,7 +11,7 @@ import os
 from pathlib import Path
 import shutil
 import struct
-from threading import Event, Lock, RLock, get_ident
+from threading import Condition, Event, Lock, RLock, get_ident
 import time
 from typing import Any, Callable
 import zlib
@@ -784,6 +784,13 @@ class SessionRenderCache:
     eager_peak_candidates: InitVar[bool] = True
 
     def __post_init__(self, eager_peak_candidates: bool) -> None:
+        self._micro_prepared = {}
+        self._micro_previews = {}
+        self._micro_flights = {}
+        self._micro_condition = Condition(self._lock)
+        self._micro_render_lock = Lock()
+        self._micro_closed = False
+        self._micro_source_epoch = 0
         self._hue_stages: OrderedDict = OrderedDict()
         self._hsl_inputs: OrderedDict = OrderedDict()
         self._ram_lru = OrderedDict()
@@ -864,6 +871,169 @@ class SessionRenderCache:
             with self._lock:
                 self._denoise_model_flights.pop(key)
 
+    def micro_preview_source(self, frame, controls, edge, is_current):
+        from .denoise_micro_grain import unavailable_reason
+        from .diagnostics import log
+        from .grain_work import current_check
+
+        parent_current = current_check()
+        epoch = self._micro_source_epoch
+
+        def caller_current():
+            return (not self._micro_closed and self._micro_source_epoch == epoch
+                    and (is_current is None or is_current())
+                    and (parent_current is None or parent_current()))
+
+        if not caller_current():
+            raise StaleRender("The CPU Micro Grain preview was replaced.")
+        if unavailable_reason(frame):
+            return downsample_image(frame.image, edge), None
+
+        path = Path(frame.source_path)
+        settings = frame.raw_import_settings
+        stat = path.stat()
+        source_key = (path, stat.st_mtime_ns, stat.st_size, settings.model_dump_json())
+        lens_applied = bool(frame.metadata.get("lens_correction", {}).get("applied"))
+        exif = frame.metadata.get("raw_exif", {})
+        lens_key = (lens_applied, *(exif.get(name) for name in ("focal_length_mm", "aperture",
+                    "focus_distance_m", "camera_maker", "camera_model", "lens_maker", "lens_model", "lens_name")))
+        key = (epoch, source_key, lens_key, controls, edge)
+        photo = {"id": str(path), "name": path.name}
+
+        while True:
+            started = time.perf_counter()
+            with self._micro_condition:
+                if not caller_current():
+                    raise StaleRender("The CPU Micro Grain preview was replaced.")
+                cached = self._micro_previews.get(key)
+                if cached is not None:
+                    if source_key in self._micro_prepared:
+                        self._touch_ram_locked("_micro_prepared", source_key)
+                    self._touch_ram_locked("_micro_previews", key)
+                    log("denoise", "micro_cpu_source", photo=photo, route="cpu",
+                        reason="micro_source_cache_hit", edge_px=edge,
+                        duration_ms=round((time.perf_counter() - started) * 1000, 2))
+                    return cached, key
+
+                flight = self._micro_flights.get(key)
+                owner = flight is None
+                if owner:
+                    flight = self._micro_flights[key] = (Future(), set())
+                future, callers = flight
+                callers.add(caller_current)
+                self._micro_condition.notify_all()
+
+            cancelled = False
+
+            def needed():
+                nonlocal cancelled
+                with self._micro_condition:
+                    if cancelled:
+                        return False
+                    # An abort can retire the owner before its replacement
+                    # reaches this worker. Allow one bounded handoff window.
+                    def resolved():
+                        return self._micro_source_epoch != epoch or self._micro_closed or any(
+                            check() for check in callers
+                        )
+                    has_caller_or_invalidated = self._micro_condition.wait_for(resolved, timeout=0.15)
+                    cancelled = not has_caller_or_invalidated or self._micro_source_epoch != epoch or self._micro_closed
+                    return not cancelled
+
+            reason = "micro_source_cache_miss" if owner else "micro_source_in_flight"
+            outcome = "failed"
+            try:
+                if owner:
+                    try:
+                        reduced = self._build_micro_preview(frame, controls, edge, epoch, source_key, needed)
+                        with self._lock:
+                            if self._micro_source_epoch != epoch or self._micro_closed:
+                                raise StaleRender("The CPU Micro Grain source changed.")
+                            self._micro_previews[key] = reduced
+                            self._touch_ram_locked("_micro_previews", key)
+                            self._rebalance_locked()
+                            self._micro_flights.pop(key)
+                            future.set_result(reduced)
+                    except BaseException as error:
+                        failure = error
+                        if cancelled and isinstance(error, Exception) and not isinstance(error, StaleRender):
+                            failure = StaleRender("The CPU Micro Grain preview was replaced.")
+                            failure.__cause__ = error
+                        with self._lock:
+                            self._micro_flights.pop(key)
+                            future.set_exception(failure)
+                        raise failure
+                else:
+                    while not wait((future,), timeout=0.05).done:
+                        if not caller_current():
+                            raise StaleRender("The CPU Micro Grain preview was replaced.")
+                result = future.result()
+                outcome = "completed"
+                if not caller_current():
+                    raise StaleRender("The CPU Micro Grain preview was replaced.")
+                return result, key
+            except StaleRender:
+                if outcome != "completed":
+                    outcome = "cancelled"
+                # A replacement arriving after shared work observed that
+                # nobody needed it can take over once the owner exits.
+                if owner or not caller_current():
+                    raise
+            finally:
+                with self._lock:
+                    callers.discard(caller_current)
+                log("denoise", "micro_cpu_source", photo=photo, route="cpu", reason=reason,
+                    edge_px=edge, outcome=outcome, duration_ms=round((time.perf_counter() - started) * 1000, 2))
+
+    def _build_micro_preview(self, frame, controls, edge, epoch, source_key, needed):
+        from .denoise_micro_grain import MicroGrainSource, render_prepared_source
+        from .grain_work import render_work
+
+        def cancelled():
+            return not needed()
+
+        # Different edges share preparation. Serialize full-size scratch.
+        while not self._micro_render_lock.acquire(timeout=0.05):
+            if cancelled():
+                raise StaleRender("The CPU Micro Grain preview was replaced.")
+        try:
+            with render_work(needed, shared=True):
+                with self._lock:
+                    source = self._micro_prepared.get(source_key)
+                    if source is not None:
+                        self._touch_ram_locked("_micro_prepared", source_key)
+                if source is None:
+                    source = MicroGrainSource(frame.source_path, frame.raw_import_settings, cancelled=cancelled)
+                    if cancelled():
+                        raise StaleRender("The CPU Micro Grain preview was replaced.")
+                    with self._lock:
+                        if self._micro_source_epoch != epoch or self._micro_closed:
+                            raise StaleRender("The CPU Micro Grain source changed.")
+                        self._micro_prepared.clear()
+                        self._micro_prepared[source_key] = source
+                        self._touch_ram_locked("_micro_prepared", source_key)
+                        self._rebalance_locked()
+                reduced = downsample_image(
+                    render_prepared_source(frame, source, controls, cancelled=cancelled),
+                    edge, is_current=needed,
+                )
+            reduced.setflags(write=False)
+            return reduced
+        finally:
+            self._micro_render_lock.release()
+
+    def close_micro_preview(self):
+        with self._micro_condition:
+            self._micro_closed = True
+            self._clear_micro_preview_locked()
+            self._rebalance_locked()
+
+    def _clear_micro_preview_locked(self):
+        self._micro_source_epoch += 1
+        self._micro_prepared.clear()
+        self._micro_previews.clear()
+        self._micro_condition.notify_all()
+
     def matching_grain_preparation(self, signature: tuple):
         with self._lock:
             return next((item for item in self._grain_preparations.values() if item.signature == signature), None)
@@ -937,6 +1107,7 @@ class SessionRenderCache:
             self.sdr_identity = sdr_identity
             self._source_epoch += 1
             self._denoise_models.clear()
+            self._clear_micro_preview_locked()
             self.discard_grain_preparation()
             self._source_proxies.clear()
             self._sdr_proxies.clear()
@@ -1449,7 +1620,7 @@ class SessionRenderCache:
         is_current: Callable[[], bool] | None = None,
         local_adjustments: list[LocalAdjustment] | None = None,
         _record_diagnostics: bool = True,
-        *, denoise_controls=None, native_source=None,
+        *, denoise_controls=None, micro_preview=None,
     ) -> np.ndarray:
         edge = max(256, int(long_edge))
         with self._lock:
@@ -1457,6 +1628,14 @@ class SessionRenderCache:
         signature = adjustment_signature(adjustments) + local_adjustment_signature(local_adjustments) + repr(self.color_context.cache_key)
         if denoise_controls is not None:
             signature += denoise_controls.model_dump_json()
+        if micro_preview is not None:
+            from .denoise_micro_grain import MicroGrainControls
+
+            frame, controls = micro_preview
+            source, micro_key = self.micro_preview_source(
+                frame, MicroGrainControls.from_settings(controls), edge, is_current,
+            )
+            signature += repr(("micro", micro_key))
         key = (source_epoch, kind.value, edge, signature)
         flight_key = ("frame", *key)
         cached, flight = self._acquire_frame_flight(
@@ -1467,9 +1646,12 @@ class SessionRenderCache:
         assert flight is not None
         try:
             with self._lock:
-                source, sdr_reference = self._proxies_locked(edge)
-            if native_source is not None:
-                source = downsample_image(native_source(), edge)
+                if micro_preview is None:
+                    source, sdr_reference = self._proxies_locked(edge)
+                elif kind == PreviewKind.SDR and self.sdr_reference_image is not None and adjustments.sdr.use_authored_base:
+                    sdr_reference = self._source_level_locked(edge, PreviewKind.SDR)
+                else:
+                    sdr_reference = None
             compiled_masks = self._compiled_masks(
                 source,
                 adjustments,
@@ -1479,7 +1661,7 @@ class SessionRenderCache:
             )
             from .grain_work import render_work
             source_filter = None
-            if denoise_controls is not None and native_source is None:
+            if denoise_controls is not None:
                 from .denoise_adaptive import AdaptiveControls, estimate_adaptive_model, resolve_adaptive
 
                 def source_filter(pixels, authored):
@@ -1511,6 +1693,8 @@ class SessionRenderCache:
                 raise StaleRender("A newer adjustment replaced this render.")
             processed.setflags(write=False)
             with self._lock:
+                if self._source_epoch != source_epoch:
+                    raise StaleRender("The preview source changed.")
                 self._frames[key] = processed
                 self._touch_ram_locked('_frames', key)
                 self._evict_locked()
@@ -1719,6 +1903,10 @@ class SessionRenderCache:
             frame_bytes = sum(int(frame.nbytes) for frame in self._frames.values())
             scope_bytes = sum(len(scope.model_dump_json().encode("utf-8")) for scope in self._scopes.values())
             mask_bytes = sum(int(mask.nbytes) for mask in self._masks.values())
+            micro_bytes = sum(source.prepared_nbytes for source in self._micro_prepared.values()) + sum(
+                image.nbytes for image in self._micro_previews.values()
+                if image is not self.image
+            )
             source_mip = self.mip_store.diagnostics() if self.mip_store is not None else None
             source_identity = self.source_identity.digest() if self.source_identity is not None else None
             return {
@@ -1729,8 +1917,10 @@ class SessionRenderCache:
                 "local_mask_bytes": mask_bytes,
                 "local_mask_entries": len(self._masks),
                 "local_mask_budget_bytes": self._mask_budget_locked(),
-                "managed_bytes": source_bytes + proxy_bytes + frame_bytes + scope_bytes + mask_bytes,
-                "entries": len(self._source_proxies) + len(self._frames) + len(self._scopes) + len(self._masks),
+                "micro_source_bytes": micro_bytes,
+                "managed_bytes": source_bytes + proxy_bytes + frame_bytes + scope_bytes + mask_bytes + micro_bytes,
+                "entries": (len(self._source_proxies) + len(self._frames) + len(self._scopes) + len(self._masks)
+                            + len(self._micro_prepared) + len(self._micro_previews)),
                 "hits": self._hits,
                 "misses": self._misses,
                 "evictions": self._evictions,
@@ -1947,12 +2137,14 @@ class SessionRenderCache:
         # The active decoded source belongs to the current document, not a
         # reconstructible cache. Views into it allocate no additional payload.
         count(self.image); count(self.sdr_reference_image)
-        return sum(count(getattr(self, name)) for name in self._ram_collections())
+        return (sum(count(getattr(self, name)) for name in self._ram_collections())
+                + sum(source.prepared_nbytes for source in self._micro_prepared.values()))
 
     @staticmethod
     def _ram_collections():
         return ('_source_proxies', '_sdr_proxies', '_frames', '_scopes',
-                '_masks', '_geometry_maps', '_hue_stages', '_hsl_inputs', '_peak_candidates', '_source_ranges')
+                '_masks', '_geometry_maps', '_hue_stages', '_hsl_inputs', '_peak_candidates', '_source_ranges',
+                '_micro_prepared', '_micro_previews')
 
     def _rebalance_locked(self, target=None):
         live = {(name, key) for name in self._ram_collections() for key in getattr(self, name)}

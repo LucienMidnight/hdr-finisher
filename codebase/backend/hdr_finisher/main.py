@@ -988,16 +988,7 @@ def _render_selected_execution(session, request, kind, adjustments, preview_long
         return processed, report
     kwargs = {"denoise_controls": denoise.controls} if denoise is not None else {}
     if micro is not None:
-        from .denoise_micro_grain import MicroGrainControls, resolve_source
-
-        def micro_source():
-            try:
-                return resolve_source(session, MicroGrainControls.from_settings(micro),
-                                      cancelled=lambda: not is_current())
-            except InterruptedError as error:
-                raise StaleRender(str(error)) from error
-
-        kwargs.update(denoise_controls=micro, native_source=micro_source)
+        kwargs["micro_preview"] = (session, micro)
     processed = session.render_cache.adjusted_frame(
         adjustments,
         kind,

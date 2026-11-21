@@ -100,6 +100,27 @@ Grain at 110%. The correlated log recorded 85,599,904 B for calibration,
 Bayer region. Finished-pixel CPU agreement and the large Bayer Micro Fit
 check remain open.
 
+## November 21 — CPU Micro Grain source reuse
+
+Windows PC, Ryzen 5 7600, unpackaged Electron at 2560 × 1440 under the shared
+GPU lock. Sony `_DSC7970.ARW` (7968 × 5320), Lensfun Auto applied, speck cleanup
+at ×2.5, 78% zoom, Full tier. The GPU refused Micro Grain because lens
+correction was on, so Grade presented the 4096 px CPU picture. Timing starts
+at the action and ends after the updated picture appears. Repeated timings
+use a 10% noise allowance. Peak app RAM is sampled across the app's processes
+against the existing 4 GB Denoise ceiling. Fast tests were running during
+parts of the measurements.
+
+| Action | Before (`deb2fc6f`) | With source reuse | Peak app RAM before / after | Conditions |
+| --- | ---: | ---: | ---: | --- |
+| First Micro Grain picture | 83.79 s | 84.07 s | 3.63 / 3.58 GB | Windows PC, cold CPU Micro preparation at 78%, HDR. |
+| Exposure +0.25 | 81.17 s | 2.04 s | 3.71 / 2.57 GB | Windows PC, same HDR view and Micro controls. |
+| Switch to generated SDR | 79.25 s | 2.42 s | 3.86 / 2.33 GB | Windows PC, same zoom and Micro controls, no inactive-lane prefetch. |
+
+The new run computed the Micro source once (81.92 s); the two later actions
+each logged a source cache hit. The first lens-corrected preview still needs
+a cold check on the MacBook Neo.
+
 ## November 21 — Denoise CPU fallback waits
 
 MacBook Neo, A18 Pro and 8 GB, working changes based on `ed7e4a83`.
