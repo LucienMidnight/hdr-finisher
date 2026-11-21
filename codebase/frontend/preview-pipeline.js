@@ -410,13 +410,13 @@ function microGrainPreviewRequest(lane) {
 }
 
 function grainCpuPreviewHeaders(lane) {
-  const runtime = state.denoiseRuntime[lane];
-  const action = state.denoise[lane]?.enabled && !runtime?.showOriginal && runtime?.microCpu
+  const runtime = state.denoiseRuntime?.[lane];
+  const action = state.denoise?.[lane]?.enabled && !runtime?.showOriginal && runtime?.microCpu
     ? runtime.microCpuAction : null;
   const headers = { "Content-Type": "application/json" };
   if (!action || action.photo?.id !== state.session?.session_id) return headers;
   runtime.microCpuAction = null;
-  state.gpuPreview?.grainEvent("grain_cpu_prepare_started", "cpu", runtime.microCpuReason, action,
+  state.gpuPreview?.grainEvent?.("grain_cpu_prepare_started", "cpu", runtime.microCpuReason, action,
     { lane, method: "micro_grain" });
   return HDRDiagnostics.headers(action, { ...headers, "X-HDR-Finisher-Grain-Fallback": "micro" });
 }
@@ -760,12 +760,12 @@ async function renderGpuDraftForView(lane, request) {
   const retryMicro = micro && microRuntime.microCpu && tier !== "interactive" && microRuntime.microFailureKey
     && state.gpuPreview.grainFailureCanRun(microRuntime.microFailureKey);
   if (denoiseActive && microSelected && !micro) {
-    state.gpuPreview.grainEvent("grain_gpu_skipped", "refused", "unsupported_grain_source", request.action, { lane });
+    state.gpuPreview?.grainEvent?.("grain_gpu_skipped", "refused", "unsupported_grain_source", request.action, { lane });
   }
   if (micro && microRuntime.microCpu && !retryMicro) {
     if (request.action) {
       microRuntime.microCpuAction = request.action;
-      state.gpuPreview.grainEvent("grain_gpu_skipped", "cpu", "prior_failure_latched", request.action,
+      state.gpuPreview?.grainEvent?.("grain_gpu_skipped", "cpu", "prior_failure_latched", request.action,
         { prior_reason: microRuntime.microCpuReason, lane });
     }
     return refuse("micro-grain-cpu");
@@ -1029,7 +1029,7 @@ async function renderGpuDraftForView(lane, request) {
     if (denoiseActive && (!microSelected || micro) && !request.microQuick && !result.approximate && tier !== "interactive") {
       const grain = renderer.denoiseSourceSelector?.cache?.grain;
       if (grain?.gpu) renderer.grainFailures.succeeded(grain.sourceKey);
-      renderer.grainEvent("grain_presented", grain && !grain.gpu ? "cpu" : "gpu",
+      renderer?.grainEvent?.("grain_presented", grain && !grain.gpu ? "cpu" : "gpu",
         grain && !grain.gpu ? "cpu_prepared_grain_selected" : grain?.gpu ? "gpu_grain_selected" : "gpu_adaptive_selected",
         request.action, { lane, method: denoiseMethod, long_edge_px: longEdge });
     }
@@ -1071,7 +1071,7 @@ async function renderGpuDraftForView(lane, request) {
       return true;
   } catch (error) {
     if (!sourceOptions.isCurrent() || error?.name === "AbortError" || (denoiseActive && error?.status === 409)) {
-      renderer.grainEvent("grain_cancelled", "refused", "superseded", request.action, { lane, method: denoiseMethod });
+      renderer?.grainEvent?.("grain_cancelled", "refused", "superseded", request.action, { lane, method: denoiseMethod });
       return refuse("superseded-during-render");
     }
     if (gpuGrain && renderer.denoiseSourceSelector?.cache?.grain === gpuGrain) {
@@ -1086,7 +1086,7 @@ async function renderGpuDraftForView(lane, request) {
         state.denoiseRuntime[lane].dirty = true;
         return renderGpuDraftForView(lane, request);
       }
-      renderer.grainEvent("grain_route", "cpu", failure.reason, request.action, { lane, method: denoiseMethod });
+      renderer?.grainEvent?.("grain_route", "cpu", failure.reason, request.action, { lane, method: denoiseMethod });
       useMicroGrainCpu(lane, Object.assign(new Error(error.message), {
         grainSourceKey: gpuGrain.sourceKey, grainReason: failure.reason,
       }), request.action);

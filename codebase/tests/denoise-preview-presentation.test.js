@@ -70,7 +70,7 @@ test("the reduced CPU Denoise image is presented at its actual size without anot
       setGpuSurfaceHdr() {}, applyPreviewUrl: async () => true, refinementProxyLongEdge: () => 5202,
       renderCompareStatus() {}, renderReadouts() {}, acceptPresentation: (...args) => presentation.push(args),
       CPU_PREVIEW_MAX_LONG_EDGE: 16384 });
-    vm.runInContext(declarations("renderPreviewForLaneInner", "describeReducedDenoisePreview", "microGrainPreviewRequest", "microGrainPreviewKey"), context);
+    vm.runInContext(declarations("renderPreviewForLaneInner", "describeReducedDenoisePreview", "microGrainPreviewRequest", "microGrainPreviewKey", "grainCpuPreviewHeaders"), context);
     assert.equal(await context.renderPreviewForLaneInner("hdr", true, 5202, { showProgress: false, denoiseFallback: true }), !stale);
     assert.equal(gpuAttempts, 0);
     if (stale) {
@@ -123,7 +123,7 @@ for (const method of ["standard", "fine_grain", "clean_grain"]) {
       previewGeneration: { hdr: 2 }, acceptedPresentation: { lane: "hdr", geometrySignature: "{}" },
       adjustments: {}, denoise: { hdr: { enabled: true, controls: { method } } },
       denoiseRuntime: { hdr: {} }, gpuDraftRefusals: {}, gpuPreparedLane: {}, previewInfoByLane: {},
-      zoomMode: "custom",
+      zoomMode: "custom", displayInfo: {},
     };
     let edge = 5202;
     let underlayerDraws = 0;
@@ -160,7 +160,7 @@ for (const method of ["standard", "fine_grain", "clean_grain"]) {
       renderReadouts: noop, hidePreviewMessage: noop, requestAnimationFrame: noop,
     });
     vm.runInContext(frontendSource("preview-pipeline.js"), context);
-    vm.runInContext(declarations("gradeGrainGpuPreferred", "gradeGrainGpuEnabled", "gradeSourceIdentity", "liveGradeGrainSelected"), context);
+    vm.runInContext(declarations("gradeGrainGpuPreferred", "gradeGrainGpuEnabled", "gradeSourceIdentity", "liveGradeGrainSelected", "gradeGrainAction"), context);
     context.denoiseUnderlayerEdge = () => 1600;
     context.visibleOutputRect = () => previous;
     assert.equal(await context.renderGpuDraftInner("hdr", { longEdge: 5202, viewport: previous }), true);
