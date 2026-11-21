@@ -825,8 +825,10 @@ silent slowdowns.
    stays float32.
 5. Trim the Library cache shares while Grade has a large photo open on an
    8 GB machine (Steve approved R2-2). Restore them when Grade closes.
-   Record the shares and the trigger in `memory-and-caches.md`. Memory
-   mapping (R2-3) follows whatever the coordinator and reviewer agree.
+   Record the shares and the trigger in `memory-and-caches.md`. No memory
+   mapping (R2-3). If the Mac is still over the ceiling after items 1–5,
+   measure the cold buffers (`retouch_original`, Micro's Bayer tile cache)
+   and report before changing them.
 6. **On the Mac:**
    - capture the Clean Grain fallback cause from the new logs;
    - record `maxTextureDimension2D`, the Auto budget and 50 MP behaviour;
@@ -877,7 +879,7 @@ silent slowdowns.
 | --- | --- | --- |
 | R2-1 | Fold Fine Grain into Clean Grain (Clean with Color Splotches at 0)? | **Steve, Nov 21: yes.** Clean Grain stays the default. A checkbox turns off the cleaning part, giving Fine-Grain-like results; they need not match today's Fine Grain exactly. Built by FOLD-1. |
 | R2-2 | Trim Library cache shares while Grade has a large photo open on an 8 GB machine? | **Steve, Nov 21: yes.** MEM-1 builds it and records the shares in `memory-and-caches.md`. |
-| R2-3 | Memory-map read-only sources on 8 GB machines? | Decide on MEM-1's proposal. |
+| R2-3 | Memory-map read-only sources on 8 GB machines? | **Coordinator and reviewer agree, Nov 21: not now.**<br>- On macOS, clean mapped pages leave the physical-footprint number the app measures. The meter would drop without freeing real memory, and `safety_total` would subtract the image twice.<br>- It would write about 500 MB to the SSD for every photo opened.<br>- Grain scratch is already disk-backed, so mapping it gains nothing.<br>If MEM-1's Mac measurements still show pressure, look first at cold buffers (`retouch_original`, about 509 MB) and Micro's 256 MiB Bayer tile cache, then revisit with numbers. |
 | R2-4 | Which QUAL-1 candidates become defaults? | Decide on the review page. |
 | R2-5 | Route label look and wording | Decide on ROUTE-1's screenshots. |
 
