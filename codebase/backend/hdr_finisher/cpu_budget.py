@@ -55,6 +55,13 @@ def raw_threads(count):
     runtime.omp_set_num_threads(max(1, int(count)))
 
 
+class CpuWorkLimit:
+    """Shared limit for jobs that hold large working arrays."""
+    def __init__(self, workers):
+        self.workers = workers
+        self.active = 0
+
+
 class PriorityCpuPool:
     """Dispatch queued visible work before scopes, retaining all CPU workers."""
     def __init__(self, workers):
@@ -65,30 +72,46 @@ class PriorityCpuPool:
         self.lock = RLock()
         self.queues = (deque(), deque())
 
-    def submit(self, function, *, background=None):
+    def submit(self, function, *, background=None, work_limit=None):
         from .grain_work import background_work
         future = Future()
         context = copy_context()
         with self.lock:
-            self.queues[int(background_work() if background is None else background)].append((future, context, function))
-            if self.active < self.workers:
+            self.queues[int(background_work() if background is None else background)].append(
+                (future, context, function, work_limit))
+            if self.active < self.workers and (work_limit is None or work_limit.active < work_limit.workers):
                 self.active += 1
                 self.pool.submit(self.drain)
         return future
 
+    def _next_job(self):
+        for queue in self.queues:
+            for index, (future, context, function, limit) in enumerate(queue):
+                if limit is None or limit.active < limit.workers:
+                    del queue[index]
+                    if limit is not None:
+                        limit.active += 1
+                    return future, context, function, limit
+        return None
+
     def drain(self):
         while True:
             with self.lock:
-                queue = self.queues[0] or self.queues[1]
-                if not queue:
+                job = self._next_job()
+                if job is None:
                     self.active -= 1
                     return
-                future, context, function = queue.popleft()
-            if future.set_running_or_notify_cancel():
-                try:
-                    future.set_result(context.run(function))
-                except BaseException as error:
-                    future.set_exception(error)
+                future, context, function, limit = job
+            try:
+                if future.set_running_or_notify_cancel():
+                    try:
+                        future.set_result(context.run(function))
+                    except BaseException as error:
+                        future.set_exception(error)
+            finally:
+                if limit is not None:
+                    with self.lock:
+                        limit.active -= 1
 
 
 _cpu_pool = PriorityCpuPool(logical_cpus())
@@ -103,10 +126,11 @@ class CpuExecutor:
     Each caller retains ownership of its futures and joins them at shutdown.
     Native decoders use separate process partitions, not this Python pool.
     """
-    def __init__(self):
+    def __init__(self, *, work_limit=None):
         self.futures = WeakSet()
         self.lock = RLock()
         self.closed = False
+        self.work_limit = work_limit
 
     def submit(self, function, *args, **kwargs):
         return self._submit(function, args, kwargs)
@@ -135,7 +159,7 @@ class CpuExecutor:
                 except BaseException as error:
                     future.set_exception(error)
             else:
-                future = _cpu_pool.submit(run, background=background)
+                future = _cpu_pool.submit(run, background=background, work_limit=self.work_limit)
             self.futures.add(future)
             return future
 

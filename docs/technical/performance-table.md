@@ -4,26 +4,35 @@ Windows PC, isolated Electron at 2560 × 1440, Sony `_DSC7970.ARW`
 (7968 × 5320), Clean Grain Small, lens correction off and harsh speck
 cleanup at ×2.5. Grain preparation was forced to the CPU with normal GPU
 presentation. The baseline `f424bbdd` and the first implementation ran in
-one GPU-lock session. Round two used a second locked session with the same
-conditions and built on `dbe4a215`.
+one GPU-lock session. Rounds two and three each used one more locked session
+under the same conditions, building on `dbe4a215` and `68944ed0` respectively.
 
-| Action | Baseline | First implementation | Round two | Conditions |
-| --- | ---: | ---: | ---: | --- |
-| Enable at 110% to the first sharp picture | 21.94 s | 17.34 s | 4.74 s | Windows PC, cold Grade preparation, HDR |
-| Release Grain Evenness at 110% to the matching sharp picture | 19.62 s | 15.80 s | 3.11 s | Windows PC, HDR, whole-photo grain fit reused |
-| Whole-photo preparation | 15.63–17.28 s | 15.83–17.49 s | 13.30–15.07 s | Windows PC, release and enable. From preparation start to all native tiles ready. |
-| Sampled peak whole-app RAM | 2.21–2.39 GB | 2.34–2.57 GB | 2.54–2.74 GB | Windows PC, enable and release, through native fill, decimal GB |
+| Action | Baseline | First implementation | Round two | Round three | Conditions |
+| --- | ---: | ---: | ---: | ---: | --- |
+| Enable at 110% to the first sharp picture | 21.94 s | 17.34 s | 4.74 s | 4.25 s | Windows PC, cold Grade preparation, HDR |
+| Release Grain Evenness at 110% to the matching sharp picture | 19.62 s | 15.80 s | 3.11 s | 2.63 s | Windows PC, HDR, whole-photo grain fit reused |
+| Whole-photo preparation, enable / release | 17.28 / 15.63 s | 17.49 / 15.83 s | 15.07 / 13.30 s | 15.69 / 13.98 s | Windows PC, from preparation start to all native tiles ready |
+| Sampled peak whole-app RAM, enable / release | 2.21 / 2.39 GB | 2.34 / 2.57 GB | 2.54 / 2.74 GB | 2.33 / 2.24 GB | Windows PC, through native fill, decimal GB |
+| Backend RAM at the whole-app peak, enable / release | — / 1.22 GB | — | 1.23 / 1.41 GB | 0.96 / 0.85 GB | Windows PC, charged bytes at each action's whole-app peak |
 
 Round two met the quarter-wait target of 5.49 s. Whole-photo preparation
-improved by 13% on enable and 15% on release. The 30% and peak-RAM targets
-remain open. On enable the cached noise-model request took 7 ms, grain fit
-1.16 s, scratch setup 4 ms and the visible-tile batch 1.49 s. The renderer
+improved by 13% on enable and 15% on release. On enable the cached noise-model
+request took 7 ms, grain fit 1.16 s, scratch setup 4 ms and the visible-tile
+batch 1.49 s. The renderer
 loaded reduced and native source proxies, then drew 12 GPU tiles for the
 visible picture. The quick underlayer issued no prepared Fit read.
 The native queue logged 29 foreground and 218 background CPU tiles across
 the enable. Summed worker times were about 74 s each for wavelet and colour,
 and 0.69 s for writes. The 2.74 GB release peak included 1.41 GB charged to
 the backend and 1.08 GB across the two largest Electron processes.
+
+Round three capped simultaneous native Grain workspaces across Grade and
+Library at five on the 12-logical-CPU PC. The isolated Sony backend peaked
+at 0.92 GB working set, down from 1.31 GB with round two's twelve workers.
+Both returned to about 0.61 GB at fill completion. The same source, scratch
+reservation and cache produced byte-identical native pixels and sampled Fit
+reads on both Sony and Canon. The locked run met the first-picture and RAM
+targets. The 30% whole-photo speed target remains open.
 
 The Windows PC offline comparison against `f424bbdd` matched the bytes of
 the entire native image and sampled Fit reads for Sony `_DSC7970.ARW` and

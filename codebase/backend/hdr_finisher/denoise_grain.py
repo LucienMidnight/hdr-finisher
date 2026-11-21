@@ -15,7 +15,7 @@ import cv2
 import numpy as np
 
 from . import denoise_adaptive as adaptive
-from .cpu_budget import CpuExecutor
+from .cpu_budget import CpuExecutor, CpuWorkLimit, logical_cpus
 from .library_diagnostics import log
 
 GRAIN_RADIUS = 18
@@ -23,6 +23,9 @@ SMALL_COLOUR_MARGIN = 40
 LARGE_COLOUR_MARGIN = 76
 LUMA = adaptive.ACESCG_LUMINANCE
 CHROMA = adaptive.OPPONENT[1:]
+# Native Grade and Library share one workspace per pair of logical CPUs,
+# leaving a CPU outside that pairing for requests and renderer work.
+_PREVIEW_TILE_WORK = CpuWorkLimit(max(1, (logical_cpus() - 1) // 2))
 
 
 def _box(values, radius):
@@ -267,7 +270,7 @@ class GrainPreparation:
         self.width = width
         self._lock = Lock()
         self._tiles_lock = RLock()
-        self._pool = CpuExecutor()
+        self._pool = CpuExecutor(work_limit=_PREVIEW_TILE_WORK)
         started = perf_counter()
         self._current = is_current
         self._error = None
@@ -357,6 +360,7 @@ class GrainPreparation:
                 log("denoise_grain_tiles_completed", **phase.log_fields, area="denoise", route="cpu",
                     reason="native_tiles_ready", duration_ms=(perf_counter() - phase.started) * 1000,
                     foreground_tile_count=phase.foreground_count, background_tile_count=phase.background_count,
+                    worker_limit=_PREVIEW_TILE_WORK.workers,
                     tile_worker_ms=self._timing_ms(phase))
                 if phase is self._base and self._colour is not None and self._colour.background_requested:
                     self._background(self._colour)
