@@ -1,3 +1,15 @@
+## November 21 — Grade Grain forced-budget recovery replay
+
+Windows PC, RTX 4070 Ti, unpackaged Electron at 2560 × 1440, working changes
+based on `0ab656bb`. Clean Grain Small at Fit on the approved 7968 × 5320
+`_DSC7970.ARW`, lens off and harsh-speck cleanup ×2.5. This single
+forced-budget replay verifies routing and gives no same-condition speed comparison.
+
+| Action | Total wait | Conditions |
+| --- | ---: | --- |
+| Enable under forced Grain budget | 23.11 s to return with CPU Grain ready | 128 MiB test budget. The backend spent 16.65 s preparing Grain. |
+| Restore Auto and retry | 5.81 s to accepted GPU picture | Same action ID, prior noise measurement reused. The entire two-phase action took 28.92 s. |
+
 ## November 21 — Denoise CPU fallback waits
 
 MacBook Neo, A18 Pro and 8 GB, working changes based on `ed7e4a83`.

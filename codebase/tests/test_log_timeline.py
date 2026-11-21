@@ -12,7 +12,8 @@ def test_timeline_connects_rotated_and_legacy_records_by_action(tmp_path):
 
     (tmp_path / "backend.log.1").write_text(
         record(1, "action_started", photo={"id": "frame", "name": "foo.ARW"}) + "\n"
-        + record(2, "grain_gpu_refused", route="refused", reason="gpu_budget_exceeded", requested_bytes=90) + "\n",
+        + record(2, "grain_gpu_refused", route="refused", reason="gpu_budget_exceeded", requested_bytes=90) + "\n"
+        + record(2.1, "grain_eviction", evicted_bytes_by_kind={"source-proxy": 8}, presentation_kept=True) + "\n",
         encoding="utf-8",
     )
     (tmp_path / "backend.log").write_text(
@@ -30,3 +31,5 @@ def test_timeline_connects_rotated_and_legacy_records_by_action(tmp_path):
     assert "refusals=1" in output
     assert "requested_bytes=90" in output
     assert "disk_bytes=128" in output
+    assert "evicted_bytes_by_kind={'source-proxy': 8}" in output
+    assert "presentation_kept=True" in output

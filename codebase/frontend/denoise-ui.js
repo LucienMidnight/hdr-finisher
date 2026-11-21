@@ -253,7 +253,7 @@ async function persistDenoiseSettings() {
   return applied;
 }
 
-async function setDenoiseEnabled(enabled) {
+async function setDenoiseEnabled(enabled, { action } = {}) {
   if (!state.session) return;
   const sessionId = state.session.session_id;
   const lane = state.currentView;
@@ -300,7 +300,7 @@ async function setDenoiseEnabled(enabled) {
     return;
   }
   if (runtime.microCpu && state.denoise[lane].controls.method === "micro_grain") {
-    await recalculateDenoise(lane, { operation: "enable_grain" });
+    await recalculateDenoise(lane, { operation: "enable_grain", action });
     return;
   }
   const denoise = state.gpuPreview?.diagnosticsSnapshot?.().denoise;
@@ -325,7 +325,7 @@ async function setDenoiseEnabled(enabled) {
     renderDenoiseControls();
     return;
   }
-  if (await afterCommit && isCurrent()) await recalculateDenoise(lane, { operation: "enable_grain" });
+  if (await afterCommit && isCurrent()) await recalculateDenoise(lane, { operation: "enable_grain", action });
 }
 
 function nativeDenoiseViewport(lane) {

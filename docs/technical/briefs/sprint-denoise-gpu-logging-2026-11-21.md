@@ -57,10 +57,17 @@ Three problems follow, and Steve approved all three on November 21:
 
 | ID | Package | Branch | Depends on | Status |
 | --- | --- | --- | --- | --- |
+<<<<<<< HEAD
 | LOG-1 | Logging foundation and GPU Grain route robustness | `sprint/logging-foundation` | — | merged Nov 21 (`0ab656bb`); targeted checks pass; PC replay found and fixed an eviction hang; post-fix forced-refusal replay pending |
 | CPU-1 | Faster CPU Grain backup: visible area first, then root speedups | `sprint/cpu-grain-speed` | — | round 2 in progress: `dbe4a215` byte-identical but first measured version missed speed and RAM targets |
 | GPU-1 | Fine, Clean and Micro Grain on the GPU above 8,192 pixels | `sprint/gpu-large-photos` | — | done `73454417`, awaiting merge: 50 MP and 61 MP stay on GPU at 2 GiB; CPU agreement and Sony Micro checks at INT |
 | LOG-2 | App-wide logging rollout | `sprint/logging-rollout` | LOG-1 merged | done `b60767b9`, awaiting merge: Library, RAW, Grade, Match, Export, Proof, memory, startup/shutdown instrumented; 84 KB session log |
+=======
+| LOG-1 | Logging foundation and GPU Grain route robustness | `sprint/logging-foundation` | — | Done. Locked PC replay linked eviction, numbered refusal, CPU preparation, one retry and final GPU presentation under one action. Targeted checks pass. |
+| CPU-1 | Faster CPU Grain backup: visible area first, then root speedups | `sprint/cpu-grain-speed` | — | not started |
+| GPU-1 | Fine, Clean and Micro Grain on the GPU above 8,192 pixels | `sprint/gpu-large-photos` | — | not started |
+| LOG-2 | App-wide logging rollout | `sprint/logging-rollout` | LOG-1 merged | not started |
+>>>>>>> e4847957
 | INT | Integration, full checks, push and Steve's hand test | `feat/denoise-v1` | all | not started |
 
 LOG-1, CPU-1 and GPU-1 run in parallel on November 21. LOG-2 starts once
