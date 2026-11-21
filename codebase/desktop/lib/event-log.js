@@ -3,7 +3,7 @@ const LEVELS = new Set(["info", "warn", "error"]);
 const ACTION = /^[a-zA-Z0-9_-]{1,80}$/;
 const NAME = /^[a-z][a-z0-9_]{0,79}$/;
 const MAX_EVENT_BYTES = 8192;
-const PRIVATE_FIELD = /secret|password|authorization|cookie|token|request.?body|pixels?|base64|^data$/i;
+const PRIVATE_FIELD = /secret|password|authorization|cookie|^token$|request.?body|base64|^(pixels?|pixel_data|data)$/i;
 
 function sanitize(value, depth = 0) {
   if (typeof value === "string") return value.slice(0, 1000);

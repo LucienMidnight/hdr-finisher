@@ -12,7 +12,7 @@ import time
 ACTION_HEADER = "X-HDR-Finisher-Action"
 _ACTION = re.compile(r"[a-zA-Z0-9_-]{1,80}")
 _NAME = re.compile(r"[a-z][a-z0-9_]{0,79}")
-_PRIVATE = re.compile(r"secret|password|authorization|cookie|token|request.?body|pixels?|base64|^data$", re.I)
+_PRIVATE = re.compile(r"secret|password|authorization|cookie|^token$|request.?body|base64|^(pixels?|pixel_data|data)$", re.I)
 _AREAS = {"app", "library", "grade", "denoise", "gpu", "memory", "raw", "export", "proof", "match"}
 _action = ContextVar("diagnostic_action", default=None)
 _sequence = count(1)
