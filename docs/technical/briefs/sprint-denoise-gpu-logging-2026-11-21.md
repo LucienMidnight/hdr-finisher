@@ -60,7 +60,7 @@ Three problems follow, and Steve approved all three on November 21:
 | LOG-1 | Logging foundation and GPU Grain route robustness | `sprint/logging-foundation` | — | in progress (Codex worker started Nov 21) |
 | CPU-1 | Faster CPU Grain backup: visible area first, then root speedups | `sprint/cpu-grain-speed` | — | in progress (Codex worker started Nov 21) |
 | GPU-1 | Fine, Clean and Micro Grain on the GPU above 8,192 pixels | `sprint/gpu-large-photos` | — | in progress (Codex worker started Nov 21) |
-| LOG-2 | App-wide logging rollout | `sprint/logging-rollout` | LOG-1 merged | not started |
+| LOG-2 | App-wide logging rollout | `sprint/logging-rollout` | LOG-1 merged | Implemented and locally checked. PC session traced folder, Grade and export fallback (84,288-byte log). First grid draw and clean shutdown remain unverified. |
 | INT | Integration, full checks, push and Steve's hand test | `feat/denoise-v1` | all | not started |
 
 LOG-1, CPU-1 and GPU-1 run in parallel on November 21. LOG-2 starts once
