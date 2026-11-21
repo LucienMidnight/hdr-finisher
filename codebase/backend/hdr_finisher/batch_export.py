@@ -12,6 +12,7 @@ from threading import Condition, Lock, Thread
 from time import monotonic
 from uuid import uuid4
 from .config import APP_DATA_DIR
+from .diagnostics import action_scope, current_action, log
 from .export_presets import ExportPreset, version_destination
 from .library_grades import grade_key
 
@@ -46,20 +47,25 @@ class BatchExports:
         photos = [self.snapshot(path) for path in dict.fromkeys(paths)]
         job = {"id":uuid4().hex,"state":"queued","completed":0,"total":len(photos)*len(preset.versions),"results":[],"directory":directory,"estimated_seconds":None,
                "active_photo":None,"photo_completed":0,"photo_total":len(preset.versions),"photos":photos,"preset":preset.model_dump(mode="json"),"started":monotonic()}
+        job["diagnostic_action"] = current_action() or job["id"]
         with self.condition:
             if self._closing: raise ValueError("The export queue is closing.")
+            log("export", "action_started", action=job["diagnostic_action"], operation="batch_export",
+                photo_count=len(photos), rendition_count=job["total"])
             self.jobs[job["id"]] = job
             self.condition.notify_all()
         return self.status(job["id"])
     def status(self, identity):
         with self.condition:
             job = self.jobs[identity]
-            return deepcopy({k:v for k,v in job.items() if k not in {"photos","preset","started"}})
+            return deepcopy({k:v for k,v in job.items() if k not in {"photos","preset","started","diagnostic_action"}})
     def control(self, identity, action):
         with self.condition:
             job = self.jobs[identity]
             if job["state"] not in {"finished","cancelled","failed","cancelling"}:
                 job["state"] = {"pause":"paused","resume":"queued","cancel":"cancelling"}[action]
+                log("export", "batch_control", action=job["diagnostic_action"],
+                    route="refused" if action in {"pause", "cancel"} else "cpu", reason="batch_" + action)
                 self.condition.notify_all()
         return self.status(identity)
     def close(self):
@@ -101,11 +107,18 @@ class BatchExports:
                         publish()
                 try:
                     if self.runner == self._subprocess:
-                        results = self._subprocess(photo, preset, job["directory"], sequence, progress, lambda: job["state"] == "cancelling")
+                        with action_scope(job["diagnostic_action"]):
+                            results = self._subprocess(photo, preset, job["directory"], sequence, progress, lambda: job["state"] == "cancelling")
                     else:
                         results = self.runner(photo, preset, job["directory"], sequence)
                 except Exception as error:
                     results = [{"photo":photo["path"],"version":v.name,"outcome":"failed","reason":str(error)} for v in preset.versions]
+                for row in results:
+                    outcome = row["outcome"]
+                    source = Path(photo.get("source_path") or photo["path"])
+                    log("export", "batch_rendition_finished", action=job["diagnostic_action"],
+                        photo={"id": str(source), "name": source.name}, version=row["version"],
+                        route=row.get("renderer", "refused"), reason="batch_" + outcome)
                 with self.condition:
                     per_photo[sequence] = list(results)
                     running.discard(sequence)
@@ -130,6 +143,9 @@ class BatchExports:
             with self.condition:
                 job["state"] = "cancelled" if job["state"] == "cancelling" else "finished"
                 job["estimated_seconds"] = 0
+                log("export", "action_finished", action=job["diagnostic_action"], operation="batch_export",
+                    outcome=job["state"], duration_ms=round((monotonic() - job["started"]) * 1000),
+                    failed_count=sum(row["outcome"] == "failed" for row in job["results"]))
     @staticmethod
     def _parallel():
         # Each worker peaks at about 1.6 GB on a 42 MP RAW (October 20). With the
@@ -162,7 +178,7 @@ class BatchExports:
             result = Path(temporary) / "result.json"
             progress_file = Path(temporary) / "progress.json"
             cancel_file = Path(temporary) / "cancel"
-            task.write_text(json.dumps({"photo":photo,"preset":preset.model_dump(mode="json"),"directory":directory,"sequence":sequence,"progress":str(progress_file),"cancel":str(cancel_file)}), encoding="utf-8")
+            task.write_text(json.dumps({"photo":photo,"preset":preset.model_dump(mode="json"),"directory":directory,"sequence":sequence,"progress":str(progress_file),"cancel":str(cancel_file),"diagnostic_action":current_action()}), encoding="utf-8")
             env = dict(os.environ)
             # Use the same native-library threading as an ordinary export.
             # Isolation, below-normal priority and serial photos protect Grade.
@@ -185,6 +201,18 @@ class BatchExports:
                             try: progress(json.loads(progress_file.read_text(encoding="utf-8")))
                             except (OSError, ValueError): pass
                 self._children.discard(child)
+                errors = []
+                for line in stderr.splitlines():
+                    try:
+                        record = json.loads(line)
+                    except ValueError:
+                        errors.append(line)
+                        continue
+                    if isinstance(record, dict) and record.get("proc") == "batch_worker":
+                        print(line, file=sys.stderr, flush=True)
+                    else:
+                        errors.append(line)
+                stderr = "\n".join(errors)
                 if child.returncode:
                     if cancelled():
                         try: return json.loads(progress_file.read_text(encoding="utf-8"))
@@ -229,7 +257,9 @@ def export_photo(photo, preset, directory, sequence, progress=None, cancelled=la
                 with tempfile.TemporaryDirectory(prefix=".hdr-export-", dir=target.parent) as staging:
                     staged = Path(staging) / target.name
                     settings = version.settings.model_copy(update={"output_path":str(staged),"overwrite":False,"path_grant":None,"edit_revision":None,"metadata_sequence":sequence})
-                    response = backends[settings.format].export(session, settings)
+                    from .delivery import delivery_diagnostics
+                    with delivery_diagnostics("export", session.source_path):
+                        response = backends[settings.format].export(session, settings)
                     if not response.accepted: raise RuntimeError(response.message)
                     if cancelled(): break
                     # Hard links publish a completed file atomically and fail if it exists.

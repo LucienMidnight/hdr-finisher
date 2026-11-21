@@ -13,6 +13,8 @@ import time
 import weakref
 import tracemalloc
 
+from .diagnostics import log as diagnostic
+
 # Opt-in for the one-off diagnostic only: tracing allocations has overhead.
 if os.environ.get("HDR_FINISHER_TRACE_ALLOCATIONS") == "1":
     tracemalloc.start(1)
@@ -156,7 +158,11 @@ def reclaim(level='moderate', needed=None):
         callback(max(0, before-remaining))
         with _lock: after = _caches.get(key, {}).get('bytes', 0)
         remaining -= max(0, before-after)
-    return max(0, int(needed)-remaining)
+    freed = max(0, int(needed)-remaining)
+    if freed:
+        diagnostic("memory", "cache_trimmed", route="cpu", reason="memory_reclaim",
+                   requested_bytes=int(needed), freed_bytes=freed, pressure_level=level)
+    return freed
 
 
 def reclaim_all(level='moderate'):
@@ -415,6 +421,9 @@ def admit(key,size,release=False):
     # Retained Grade levels need eviction only when total RAM is needed.
     # Ordinary admission and lease renewal must not destroy another owner.
     if value['totalBytes']+reserved+size>CEILING and value['caches']['working']['bytes']:
+        diagnostic("memory", "cache_trim_requested", route="cpu", reason="app_memory_ceiling",
+                   requested_bytes=size, budget_bytes=CEILING, app_ram_bytes=value['totalBytes'],
+                   reserved_bytes=reserved, resident_bytes=value['caches']['working']['bytes'])
         with _lock: callbacks=[v['trim']() for v in _caches.values() if v['share']=='working' and v.get('trim')]
         for callback in callbacks:
             if callback: callback(0)
@@ -426,4 +435,8 @@ def admit(key,size,release=False):
         granted=value['totalBytes']+reserved+size<=CEILING
         if granted: _reservations[key]=(size,time.monotonic()+30)
         else: _waiting_until=time.monotonic()+2
+    if not granted:
+        diagnostic("memory", "admission_refused", level="warn", route="refused", reason="app_memory_ceiling",
+                   requested_bytes=size, budget_bytes=CEILING, app_ram_bytes=value['totalBytes'],
+                   reserved_bytes=reserved, pressure_level=value['pressure'])
     return dict(value,granted=granted)

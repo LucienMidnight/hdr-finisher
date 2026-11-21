@@ -174,9 +174,12 @@
 
   async function refreshProof({ force = false } = {}) {
     if (!state.session) return;
+    const diagnostics = globalThis.HDRDiagnostics;
+    const action = diagnostics?.start("proof", "build_proof", gradeDiagnosticPhoto(), { format: state.proofFormat });
     const encoderKey = capabilityForFormat[state.proofFormat];
     const capability = state.capabilities[encoderKey];
     if (capability?.status !== "available") {
+      action?.finish("refused", { route: "refused", reason: "encoder_unavailable" });
       showProofFailure(capability?.detail || "The selected proof encoder is unavailable.");
       return;
     }
@@ -193,10 +196,11 @@
     renderProofUi();
     try {
       let artifact = state.proofArtifact;
+      if (!mustEncode) diagnostics?.event("proof", "artifact_reused", {}, action);
       if (mustEncode) {
         const artifactResponse = await fetch(`/api/session/${state.session.session_id}/proof/artifact`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: diagnostics?.headers(action, { "Content-Type": "application/json" }) ?? { "Content-Type": "application/json" },
           body: JSON.stringify({
             adjustments: state.adjustments,
             edit_revision: state.editRevision,
@@ -231,7 +235,7 @@
 
       const reconstructionRequest = (target) => fetch("/api/proof/reconstruction", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: diagnostics?.headers(action, { "Content-Type": "application/json" }) ?? { "Content-Type": "application/json" },
         body: JSON.stringify({ artifact_id: artifact.artifact_id, target }),
       });
       const [reconstructionResponse, sdrResponse] = await Promise.all([
@@ -268,7 +272,11 @@
     } catch (error) {
       if (generation !== requestGeneration) return;
       buildStage = null;
+      action?.finish("error", { level: "error", route: "refused", reason: "proof_failed" });
       showProofFailure(error?.message || "Chromium proof failed.");
+    } finally {
+      if (generation !== requestGeneration) action?.finish("cancelled", { route: "refused", reason: "superseded" });
+      else action?.finish("success", { delivery_available: state.proofDeliveryAvailable });
     }
   }
 

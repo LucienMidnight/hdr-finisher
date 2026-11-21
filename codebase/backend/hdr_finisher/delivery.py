@@ -1,4 +1,6 @@
 """One delivery policy, read by export, Proof and Library worker processes."""
+from contextlib import contextmanager
+from contextvars import ContextVar
 import json
 import os
 from pathlib import Path
@@ -7,9 +9,28 @@ from tempfile import NamedTemporaryFile
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, StrictBool
 from .config import APP_DATA_DIR
+from .diagnostics import log
 
 PREFERENCES_PATH = APP_DATA_DIR / "delivery-preferences.json"
 FORCE_CPU_ENV = "HDR_FINISHER_FORCE_CPU_DELIVERY"
+
+
+_diagnostic_delivery = ContextVar("diagnostic_delivery", default=("export", None))
+
+
+@contextmanager
+def delivery_diagnostics(area, source_path):
+    path = Path(source_path)
+    reset = _diagnostic_delivery.set((area, {"id": str(path), "name": path.name}))
+    try:
+        yield
+    finally:
+        _diagnostic_delivery.reset(reset)
+
+
+def log_delivery(event, **fields):
+    area, photo = _diagnostic_delivery.get()
+    log(area, event, photo=photo, **fields)
 
 
 def preferences(path=None):

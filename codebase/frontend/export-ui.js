@@ -184,6 +184,19 @@ function splitOutputPath(path) {
 
 async function exportCurrentSession() {
   if (!state.session) return;
+  const diagnostics = globalThis.HDRDiagnostics;
+  const action = diagnostics?.start("export", "export_photo", gradeDiagnosticPhoto(), { format: els.exportFormat.value });
+  try {
+    await exportWithDiagnostics(action);
+  } catch (error) {
+    action?.finish("error", { level: "error", route: "refused", reason: "export_failed" });
+    throw error;
+  } finally {
+    action?.finish("cancelled", { route: "refused", reason: "export_cancelled" });
+  }
+}
+
+async function exportWithDiagnostics(action) {
   status.post({ id: "export", severity: "progress", message: "Export queued…", progress: "indeterminate" });
   const pendingApplied = await (state.editCommandQueue || Promise.resolve(true));
   const globalsApplied = pendingApplied === false ? false : await syncGlobalEditState();
@@ -191,6 +204,7 @@ async function exportCurrentSession() {
     ? false
     : await (state.editCommandQueue || Promise.resolve(true));
   if (editsApplied === false) {
+    action?.finish("refused", { route: "refused", reason: "edit_sync_failed" });
     status.post({ id: "export", severity: "error", message: "Export paused because the latest edit could not be saved. Review the edit error and try again." });
     return;
   }
@@ -233,7 +247,7 @@ async function exportCurrentSession() {
   }, 1000);
   try {
     desktop?.setOperationProgress({ kind: "export", value: 0.01, state: "indeterminate" });
-    let response = await requestSessionExport(outputPath, Boolean(nativeOverwrite), pathGrant, nativeOverwrite);
+    let response = await requestSessionExport(outputPath, Boolean(nativeOverwrite), pathGrant, nativeOverwrite, action);
     let payload = await safeJson(response);
     if (response.status === 409 && payload?.detail?.code === "overwrite_required") {
       const detail = payload.detail;
@@ -246,13 +260,16 @@ async function exportCurrentSession() {
         return;
       }
       status.post({ id: "export", severity: "progress", message: "Replacing the existing file and validating the result…", progress: "indeterminate" });
-      response = await requestSessionExport(outputPath, true, pathGrant, null);
+      globalThis.HDRDiagnostics?.event("export", "overwrite_approved", {}, action);
+      response = await requestSessionExport(outputPath, true, pathGrant, null, action);
       payload = await safeJson(response);
     }
     if (!response.ok) {
+      action?.finish("error", { level: "error", route: "refused", reason: "export_failed", status_code: response.status });
       status.post({ id: "export", severity: "error", message: responseErrorMessage(payload, "Export failed.") });
       return;
     }
+    action?.finish("success");
     // The status bar says only that it finished. The file path is in the
     // Export panel, and any measurement warning is spelled out there too.
     const totalExportMs = Number(payload.timings_ms?.total);
@@ -275,6 +292,7 @@ async function exportCurrentSession() {
       els.exportResult.classList.remove("hidden");
     }
   } catch (error) {
+    action?.finish("error", { level: "error", route: "refused", reason: "export_transport_failed" });
     console.error(error);
     status.post({ id: "export", severity: "error", message: "Export could not reach the local HDR Finisher server." });
   } finally {
@@ -338,10 +356,10 @@ function currentExportSettings(outputPath = null, overwrite = false, pathGrant =
     };
 }
 
-function requestSessionExport(outputPath, overwrite, pathGrant = null, overwriteTarget = null) {
+function requestSessionExport(outputPath, overwrite, pathGrant = null, overwriteTarget = null, action = null) {
   return fetch(`/api/session/${state.session.session_id}/export`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: globalThis.HDRDiagnostics?.headers(action, { "Content-Type": "application/json" }) ?? { "Content-Type": "application/json" },
     body: JSON.stringify(currentExportSettings(outputPath, overwrite, pathGrant, overwriteTarget)),
   });
 }

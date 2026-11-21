@@ -190,6 +190,10 @@ def _guard_preview_resources(session, max_dimension: int) -> None:
         return
     payload = _preview_resource_payload(session, max_dimension)
     if not payload["allowed"]:
+        from .diagnostics import log as diagnostic
+        diagnostic("grade", "preview_refused", level="warn", route="refused",
+                   reason="preview_resource_limit", requested_edge_px=max_dimension,
+                   requested_bytes=payload["estimated_peak_bytes"], budget_bytes=payload["safely_available_bytes"])
         raise HTTPException(status_code=507, detail=payload["reason"])
 
 
@@ -835,6 +839,8 @@ def post_local_sdr_match(session_id: str, target_id: str, request: SdrMatchActio
     try:
         result, message, changed = store.apply_local_sdr_match_action(
             session_id, expected_revision=request.expected_revision, target_id=target_id)
+        from .diagnostics import log as diagnostic
+        diagnostic("match", "local_match_route", route="cpu", reason="local_match_cpu", changed=changed)
         return {**result.model_dump(mode="json"), "message": message, "changed": changed}
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -864,6 +870,13 @@ def post_sdr_match(session_id: str, request: SdrMatchActionRequest, response: Re
             if bridge is not None:
                 close_bridge(session_id, bridge)
         timing["request_total_ms"] = round((perf_counter() - started) * 1000.0, 3)
+        from .diagnostics import log as diagnostic
+        route = timing.get("candidate_renderer", "cpu")
+        fallback = timing.get("gpu_candidate_fallback")
+        reason = ("gpu_candidate_unavailable" if fallback else
+                  "gpu_candidates_completed" if route == "gpu" else "cpu_candidates_selected")
+        diagnostic("match", "candidate_result", route=route, reason=reason,
+                   candidate_count=timing.get("gpu_candidates"), duration_ms=timing["request_total_ms"])
         response.headers["X-SDR-Match-Timing"] = json.dumps(timing, separators=(",", ":"))
         return result
     except KeyError as exc:
@@ -1014,6 +1027,9 @@ def _cpu_preview_edge(session, kind, request, requested_edge):
 
 
 def _strip_execution_conflict(exc: StripExecutionRefused) -> JSONResponse:
+    from .diagnostics import log as diagnostic
+
+    diagnostic("grade", "preview_refused", level="warn", route="refused", reason="strip_execution_refused")
     return JSONResponse(
         status_code=409,
         content={
@@ -1037,6 +1053,8 @@ def _cancellable_preview(endpoint):
         try:
             return await _preview_work.run(key, http_request, lambda current: endpoint(*args, **kwargs))
         except StaleRender:
+            from .diagnostics import log as diagnostic
+            diagnostic("grade", "preview_cancelled", route="refused", reason="superseded")
             return JSONResponse(status_code=409, content={"detail": "Stale preview request dropped."})
     signature = inspect.signature(endpoint)
     wrapped.__signature__ = signature.replace(parameters=[*signature.parameters.values(),
@@ -1044,9 +1062,22 @@ def _cancellable_preview(endpoint):
     return wrapped
 
 
-def _log_cpu_preview(session, kind, edge, request):
+def _log_cpu_preview(session, kind, edge, request, requested_edge):
     from .library_diagnostics import log
+    from .diagnostics import log as diagnostic
     h, w = session.image.shape[:2]
+    path = Path(session.source_path)
+    reported = (request.cpu_fallback_reason or "").partition(":")[0]
+    reasons = {
+        "user-selected-cpu": "user_selected_cpu", "gpu-unavailable": "gpu_unavailable",
+        "gpu-disabled-after-session-failure": "prior_failure_latched",
+        "unsupported-local-adjustments": "unsupported_local_adjustments",
+        "gpu-failed": "gpu_render_failed", "gpu-retry-scheduled": "gpu_retry_scheduled",
+    }
+    diagnostic("grade", "preview_route", lane=kind.value, photo={"id": str(path), "name": path.name},
+               route="cpu_reduced" if edge < requested_edge else "cpu",
+               reason="preview_edge_reduced" if edge < requested_edge else reasons.get(reported, "backend_preview_requested"),
+               requested_edge_px=requested_edge, rendered_edge_px=edge, requested_execution=request.execution)
     scale = min(1.0, edge / max(h, w))
     log("grade_preview_cpu", path=str(session.source_path), lane=kind.value,
         width=round(w * scale), height=round(h * scale), long_edge=edge,
@@ -1073,7 +1104,7 @@ def preview(session_id: str, kind: PreviewKind, request: PreviewRequest) -> Resp
     requested_edge = request.long_edge or session.preview.long_edge
     preview_long_edge = _cpu_preview_edge(session, kind, request, requested_edge)
     _guard_preview_resources(session, preview_long_edge)
-    _log_cpu_preview(session, kind, preview_long_edge, request)
+    _log_cpu_preview(session, kind, preview_long_edge, request, requested_edge)
     token = store.next_preview_token(session_id, kind)
     try:
         processed, strip_report = _render_selected_execution(
@@ -1131,7 +1162,7 @@ def preview_raw(session_id: str, kind: PreviewKind, request: PreviewRequest) -> 
     requested_edge = request.long_edge or (768 if kind == PreviewKind.SDR else 960)
     preview_long_edge = _cpu_preview_edge(session, kind, request, requested_edge)
     _guard_preview_resources(session, preview_long_edge)
-    _log_cpu_preview(session, kind, preview_long_edge, request)
+    _log_cpu_preview(session, kind, preview_long_edge, request, requested_edge)
     token = store.next_preview_token(session_id, kind)
     try:
         processed, strip_report = _render_selected_execution(
@@ -2405,7 +2436,9 @@ def export(session_id: str, settings: ExportSettings):
             raise HTTPException(status_code=400, detail=str(exc)) from exc
     try:
         export_started = perf_counter()
-        result = backend.export(session, settings)
+        from .delivery import delivery_diagnostics
+        with delivery_diagnostics("export", session.source_path):
+            result = backend.export(session, settings)
     except ExportOverwriteRequired as exc:
         raise HTTPException(
             status_code=409,
@@ -2416,6 +2449,10 @@ def export(session_id: str, settings: ExportSettings):
             },
         ) from exc
     result.timings_ms.setdefault("total", round((perf_counter() - export_started) * 1000.0, 3))
+    from .diagnostics import log as diagnostic
+    diagnostic("export", "delivery_result", route=result.renderer if result.accepted else "refused",
+               reason=("delivery_completed" if result.accepted else "encoding_failed"),
+               level="info" if result.accepted else "error", format=settings.format, duration_ms=result.timings_ms["total"])
     if not result.accepted:
         return JSONResponse(status_code=501, content=result.model_dump())
     return result
@@ -2433,7 +2470,13 @@ def create_proof_artifact(session_id: str, request: ProofArtifactRequest) -> Pro
     if backend is None:
         raise HTTPException(status_code=400, detail=f"Unsupported proof format: {request.format}")
     try:
-        return proof_store.create(session, request.model_copy(update={"adjustments": adjustments}), backend)
+        from .delivery import delivery_diagnostics
+        with delivery_diagnostics("proof", session.source_path):
+            result = proof_store.create(session, request.model_copy(update={"adjustments": adjustments}), backend)
+        from .diagnostics import log as diagnostic
+        diagnostic("proof", "delivery_result", route=result.renderer,
+                   reason="proof_artifact_available", format=request.format)
+        return result
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except RuntimeError as exc:

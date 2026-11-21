@@ -60,6 +60,19 @@ function unlinkSdrCreativeDraft() {
 
 async function setSdrMatch() {
   if (!state.session) return false;
+  const diagnostics = globalThis.HDRDiagnostics;
+  const action = diagnostics?.start("match", "match_sdr", gradeDiagnosticPhoto());
+  try {
+    const matched = await setSdrMatchWithDiagnostics(action);
+    action?.finish(matched ? "success" : "cancelled", matched ? {} : { route: "refused", reason: "match_cancelled" });
+    return matched;
+  } catch (error) {
+    action?.finish("error", { level: "error", route: "refused", reason: "match_failed" });
+    throw error;
+  }
+}
+
+async function setSdrMatchWithDiagnostics(action) {
   const sessionId = state.session.session_id;
   const isCurrent = () => state.session?.session_id === sessionId;
   if (await syncGlobalEditState() === false || !isCurrent()) return false;
@@ -88,10 +101,16 @@ async function setSdrMatch() {
     // request waits; the backend still owns the fit and its final CPU check.
     const candidateRenderer = state.renderingMode !== "cpu" && state.gpuPreview?.available
       ? (state.sdrMatchCandidateRenderer || "gpu") : "cpu";
+    globalThis.HDRDiagnostics?.event("match", "candidate_route", {
+      route: candidateRenderer === "cpu" ? "cpu" : "gpu",
+      reason: candidateRenderer === "cpu"
+        ? (state.renderingMode === "cpu" ? "user_selected_cpu" : state.gpuPreview?.available ? "cpu_candidates_selected" : "gpu_unavailable")
+        : "gpu_candidates_requested",
+    }, action);
     let matchFinished = false;
     const request = fetch(`/api/session/${sessionId}/sdr-match`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: globalThis.HDRDiagnostics?.headers(action, { "Content-Type": "application/json" }) ?? { "Content-Type": "application/json" },
       body: JSON.stringify({
         expected_revision: state.editRevision,
         authored_sdr_override_consent: consent,
@@ -100,7 +119,7 @@ async function setSdrMatch() {
       }),
     }).finally(() => { matchFinished = true; });
     if (candidateRenderer !== "cpu") {
-      void serveSdrMatchCandidates(sessionId, state.editRevision, () => matchFinished || !isCurrent());
+      void serveSdrMatchCandidates(sessionId, state.editRevision, () => matchFinished || !isCurrent(), action);
     }
     const response = await request;
     const result = await safeJson(response);
@@ -167,6 +186,7 @@ async function setSdrMatch() {
     return true;
   } catch (error) {
     if (!isCurrent()) return false;
+    action?.finish("error", { level: "error", route: "refused", reason: "match_failed" });
     console.error(error);
     status.post({ id: "match", severity: "error", message: error.message });
     return false;
@@ -220,6 +240,8 @@ async function matchSelectedLocalSdr() {
   const sessionId = state.session.session_id;
   const targetId = selectedLocal()?.id;
   if (!targetId || unusedLocal()) return false;
+  const diagnostics = globalThis.HDRDiagnostics;
+  const action = diagnostics?.start("match", "match_local_sdr", gradeDiagnosticPhoto());
   const current = () => state.session?.session_id === sessionId;
   const panel = document.getElementById("grade-workflow-panel");
   const wasInert = panel?.inert;
@@ -231,7 +253,8 @@ async function matchSelectedLocalSdr() {
     if (state.editCommandQueue && await state.editCommandQueue === false) return false;
     if (!current()) return false;
     const response = await fetch(`/api/session/${sessionId}/local/${encodeURIComponent(targetId)}/sdr-match`, {
-      method: "POST", headers: { "Content-Type": "application/json" },
+      method: "POST",
+      headers: diagnostics?.headers(action, { "Content-Type": "application/json" }) ?? { "Content-Type": "application/json" },
       body: JSON.stringify({ expected_revision: state.editRevision }),
     });
     const result = await safeJson(response);
@@ -249,11 +272,14 @@ async function matchSelectedLocalSdr() {
       syncDesktopDocumentState();
     }
     status.post({ id: "match", severity: result.changed ? "success" : "info", message: result.message });
+    action?.finish("success", { changed: Boolean(result.changed) });
     return Boolean(result.changed);
   } catch (error) {
+    if (current()) action?.finish("error", { level: "error", route: "refused", reason: "match_failed" });
     if (current()) status.post({ id: "match", severity: "attention", message: error.message });
     return false;
   } finally {
+    action?.finish("cancelled", { route: "refused", reason: "match_cancelled" });
     if (panel) panel.inert = wasInert;
     state.localSdrMatchBusy = false;
     if (current()) renderLocalSdrMatch(selectedLocal());
@@ -267,7 +293,7 @@ async function matchSelectedLocalSdr() {
  * answer, or no answer, makes it run the whole fit on the CPU instead, so
  * nothing here needs to succeed for Match to finish.
  */
-async function serveSdrMatchCandidates(sessionId, revision, finished) {
+async function serveSdrMatchCandidates(sessionId, revision, finished, action) {
   const endpoint = `/api/session/${sessionId}/sdr-match/candidate`;
   const sourceSize = { width: state.session.source.width, height: state.session.source.height };
   let locals = [];
@@ -277,7 +303,7 @@ async function serveSdrMatchCandidates(sessionId, revision, finished) {
     let response;
     const polledAt = performance.now();
     try {
-      response = await fetch(`${endpoint}?wait_ms=500`);
+      response = await fetch(`${endpoint}?wait_ms=500`, { headers: globalThis.HDRDiagnostics?.headers(action) });
     } catch (_) {
       return;
     }
@@ -316,7 +342,7 @@ async function serveSdrMatchCandidates(sessionId, revision, finished) {
     try {
       await fetch(`${endpoint}/${job.job_id}?width=${job.width}&height=${job.height}${anchor}`, {
         method: "POST",
-        headers: { "Content-Type": "application/octet-stream" },
+        headers: globalThis.HDRDiagnostics?.headers(action, { "Content-Type": "application/octet-stream" }) ?? { "Content-Type": "application/octet-stream" },
         // Half-float RGB, as a Blob: the desktop shell uploads a Blob about
         // twice as fast as the same bytes in an ArrayBuffer.
         body: pixels ? new Blob([pixels]) : new ArrayBuffer(0),
@@ -324,7 +350,12 @@ async function serveSdrMatchCandidates(sessionId, revision, finished) {
     } catch (_) {
       return;
     }
-    if (!pixels) return;
+    if (!pixels) {
+      globalThis.HDRDiagnostics?.event("match", "candidate_fallback", {
+        level: "warn", route: "cpu", reason: "gpu_candidate_unavailable",
+      }, action);
+      return;
+    }
     // How one candidate's time divides between waiting for the backend to ask,
     // rendering, reading back and returning the pixels.
     timings.push({ waitMs: receivedAt - polledAt, ...candidateTiming, totalMs: performance.now() - polledAt });

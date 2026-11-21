@@ -225,37 +225,56 @@ function scheduleZoomRefinement({ continuous = false } = {}) {
     const target = requiredProcessingLongEdge();
     const lane = state.currentView;
     const sessionId = state.session.session_id;
-    if (state.acceptedPresentation?.processedLongEdge !== target) {
-      const decision = interactiveScaleDecision(lane);
-      if (decision.coarse && decision.edge < target && !state.denoise[lane]?.enabled) {
-        // Zoom can require the tiled renderer even for its reduced pass.
-        // Interactive tier explicitly refuses tiles; refinement tier accepts
-        // them while the coarse flag keeps the presentation truthful.
-        await renderGpuDraft(lane, { tier: "refinement", longEdge: responseCoarseLongEdge(target),
-          coarse: true, reason: "zoom-current-coarse" });
-      }
-      // A failed, cancelled, or superseded coarse pass never cancels the exact
-      // obligation. A newer zoom owns its own request and wins at presentation.
-      if (state.session?.session_id !== sessionId || state.currentView !== lane
-        || requiredProcessingLongEdge() !== target) return;
-      if (state.acceptedPresentation?.processedLongEdge !== target
-        || !state.acceptedPresentation.exact) {
-        await renderGpuDraft(lane, { tier: "refinement", longEdge: target, reason: "zoom-scale" });
-      }
-    } else {
-      noteViewerPan();
-    }
-    // Zoom cancels the adjustment scheduler, including its scope obligation.
-    // Restore scopes only after the replacement frame is exact and current;
-    // a superseded zoom must not analyze the next zoom's old canvas.
-    const accepted = state.acceptedPresentation;
-    if (state.session?.session_id === sessionId && state.currentView === lane
-      && requiredProcessingLongEdge() === target && accepted?.lane === lane
-      && accepted.generation === state.previewGeneration[lane]
-      && accepted.exact && accepted.processedLongEdge === target) {
-      await refreshScopes(scopeLongEdge("settled"), { tier: "settled", lane });
+    const action = globalThis.HDRDiagnostics?.start("grade", "zoom", gradeDiagnosticPhoto(), {
+      lane, requested_edge_px: target,
+    });
+    try {
+      const rendered = await refineZoomView(action, target, lane, sessionId);
+      const current = state.session?.session_id === sessionId && state.currentView === lane
+        && requiredProcessingLongEdge() === target;
+      if (!current) action?.finish("cancelled", { route: "refused", reason: "superseded" });
+      else if (rendered === false) action?.finish("refused", { route: "refused", reason: "zoom_render_refused" });
+      else action?.finish("success");
+    } catch (error) {
+      action?.finish("error", { level: "error", route: "refused", reason: "zoom_render_failed" });
+      throw error;
     }
   }, continuous ? 80 : 0);
+}
+
+async function refineZoomView(action, target, lane, sessionId) {
+  let rendered = true;
+  if (state.acceptedPresentation?.processedLongEdge !== target) {
+    const decision = interactiveScaleDecision(lane);
+    if (decision.coarse && decision.edge < target && !state.denoise[lane]?.enabled) {
+      // Zoom can require the tiled renderer even for its reduced pass.
+      // Interactive tier explicitly refuses tiles; refinement tier accepts
+      // them while the coarse flag keeps the presentation truthful.
+      await renderGpuDraft(lane, { tier: "refinement", longEdge: responseCoarseLongEdge(target),
+        coarse: true, reason: "zoom-current-coarse", action });
+    }
+    // A failed, cancelled, or superseded coarse pass never cancels the exact
+    // obligation. A newer zoom owns its own request and wins at presentation.
+    if (state.session?.session_id !== sessionId || state.currentView !== lane
+      || requiredProcessingLongEdge() !== target) return;
+    if (state.acceptedPresentation?.processedLongEdge !== target
+      || !state.acceptedPresentation.exact) {
+      rendered = await renderGpuDraft(lane, { tier: "refinement", longEdge: target, reason: "zoom-scale", action });
+    }
+  } else {
+    noteViewerPan();
+  }
+  // Zoom cancels the adjustment scheduler, including its scope obligation.
+  // Restore scopes only after the replacement frame is exact and current;
+  // a superseded zoom must not analyze the next zoom's old canvas.
+  const accepted = state.acceptedPresentation;
+  if (state.session?.session_id === sessionId && state.currentView === lane
+    && requiredProcessingLongEdge() === target && accepted?.lane === lane
+    && accepted.generation === state.previewGeneration[lane]
+    && accepted.exact && accepted.processedLongEdge === target) {
+    await refreshScopes(scopeLongEdge("settled"), { tier: "settled", lane });
+  }
+  return rendered;
 }
 
 function shouldKeepHdrGpuSurface(lane) {

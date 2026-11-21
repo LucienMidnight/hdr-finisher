@@ -142,6 +142,26 @@ def decode_raw(
     cancelled: Callable[[], bool] | None = None,
     dng_inspection: LinearDngInspection | None = None,
 ) -> tuple[np.ndarray, dict[str, Any]]:
+    from .diagnostics import log as diagnostic
+    from time import perf_counter
+
+    started = perf_counter()
+    photo = {"id": str(path), "name": path.name}
+    try:
+        image, metadata = _decode_raw(path, settings, progress=progress, cancelled=cancelled, dng_inspection=dng_inspection)
+    except Exception as error:
+        is_cancelled = cancelled is not None and cancelled()
+        diagnostic("raw", "development_finished", photo=photo, route="refused",
+                   reason="raw_development_cancelled" if is_cancelled else "raw_development_failed",
+                   level="info" if is_cancelled else "error", error_type=type(error).__name__,
+                   duration_ms=round((perf_counter() - started) * 1000))
+        raise
+    diagnostic("raw", "development_finished", photo=photo, route="cpu", reason="raw_developed",
+               width_px=image.shape[1], height_px=image.shape[0], duration_ms=round((perf_counter() - started) * 1000))
+    return image, metadata
+
+
+def _decode_raw(path, settings, *, progress, cancelled, dng_inspection):
     inspection = _inspect_raw(path, dng_inspection=dng_inspection, progress=progress, cancelled=cancelled)
     plan = _build_raw_decode_plan(settings, inspection)
     decoded = _execute_raw_decode(path, settings, inspection, plan, progress=progress, cancelled=cancelled)

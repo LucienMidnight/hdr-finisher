@@ -62,9 +62,16 @@
   // otherwise keeps the completed photo in its parameters and registers.
   async function runJob(job){
     let finishing;
+    const diagnostics = globalThis.HDRDiagnostics;
+    const action = job.action ? { id: job.action } : null;
+    const started = performance.now();
+    const complete = payload => fetch(`/api/delivery/gpu/${job.id}/complete`, {
+      method: "POST", headers: diagnostics?.headers(action, { "Content-Type": "application/json" }) ?? { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
     try{
       identity=job.id;permitted=0;
-      const timings={},started=performance.now();let mark=started;
+      const timings={};let mark=started;
       const stamp=(name,lane)=>{const now=performance.now(),spent=now-mark;timings[name]=(timings[name]||0)+spent;
         if(lane)timings[`${lane}_${name}`]=spent;mark=now;};
       await initialize();
@@ -277,12 +284,19 @@
         if(validation||oom)throw Error((validation||oom).message);
       }
       finishing.destroy();finishing=null;gpu.resetSession(null);
-      await fetch(`/api/delivery/gpu/${job.id}/complete`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({timings_ms:timings,total_ms:performance.now()-started})});
+      await complete({timings_ms:timings,total_ms:performance.now()-started});
+      diagnostics?.event("gpu", "delivery_worker_finished", {
+        route: "gpu", reason: "gpu_delivery_succeeded", duration_ms: Math.round(performance.now() - started),
+      }, action);
     }catch(error){
       if(error.deliveryPreempted)console.info("GPU delivery yielded",error.message);
       else console.error("GPU delivery",error);
       finishing?.destroy();finishing=null;gpu?.resetSession(null);
-      if(job)await fetch(`/api/delivery/gpu/${job.id}/complete`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({error:error.message})}).catch(()=>{});
+      if (action) diagnostics?.event("gpu", "delivery_worker_failed", {
+        level: "warn", route: "refused", reason: error.deliveryPreempted ? "gpu_preempted" : "gpu_delivery_failed",
+        duration_ms: Math.round(performance.now() - started),
+      }, action);
+      await complete({error:error.message}).catch(()=>{});
       await pause(100);
     }finally{
       identity=null;finishing?.destroy();gpu?.resetSession(null);
