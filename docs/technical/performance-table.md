@@ -1,3 +1,24 @@
+## November 21 — Byte-exact Lensfun strips on MacBook Neo
+
+MacBook Neo, A18 Pro and 8 GB unified memory. Isolated CPU RAW development
+with Lensfun 0.3.4 via lensfunpy 1.18.0 and the `2ac61a8f` whole-frame
+path as reference. Three fresh processes for each method and photo.
+The kernel's peak physical footprint is read at the end
+of lens correction, before finishing. Both methods use the same float32
+RAW input, profile and bilinear remap. Values are decimal MB.
+
+| RAW | Whole-frame coordinates, median (range) | Exact strips, median (range) | Median peak RAM saved |
+| --- | ---: | ---: | ---: |
+| Canon `IMG_0790.CR2`, 5202 × 3464, manual EF-S 18–135 mm IS | 1,349.3 (1,348.9–1,353.6) | 887.5 (887.3–888.8) | 461.8 MB |
+| Sony `_DSC7970.ARW`, 7968 × 5320, Auto Sigma 65 mm F2 | 2,826.1 (2,824.1–2,838.7) | 1,768.3 (1,764.3–1,768.4) | 1,057.9 MB |
+
+Both RAWs matched every coordinate in both layouts, the corrected float32
+image, the finished float SDR image and its 8-bit sRGB encoding. These
+peaks cover the backend process through lens correction. Windows
+confirmation is open.
+[R2-6](briefs/sprint-denoise-gpu-logging-2026-11-21.md#mem-1--one-memory-budget-on-the-macbook-neo-overnight)
+· [Mac measurements and hashes](../../codebase/output/r2-6-lens/)
+
 ## November 21, 2026 — MacBook Neo MEM-1
 
 MacBook Neo, A18 Pro and 8 GB unified memory, app `0.9.3` at `113a1c92`.

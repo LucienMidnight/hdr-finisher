@@ -224,6 +224,15 @@ Do not run that group without approval or interpret fast passes as delivery sign
 
 ### November 15: W2 P5 Lensfun stage measurement; no rewrite
 
+**November 21 follow-up (R2-6).** Full-frame CPU Lensfun correction now
+uses 128-row coordinates seeded with Lensfun's own whole-frame row values.
+The original vignetting call and bilinear arithmetic apply to those same
+samples. On the MacBook Neo, both coordinate layouts, the corrected RAW
+and the SDR finish matched the whole-frame reference byte for byte.
+The existing whole-frame path handles unavailable bindings and failed
+byte checks. Windows confirmation is open.
+[Mac measurements](../../technical/performance-table.md#november-21--byte-exact-lensfun-strips-on-macbook-neo)
+
 The existing RAW import phase history now separates Lensfun profile/modifier,
 vignette preparation, exact coordinate generation and parallel strip remapping.
 The RAW baseline driver records those phases alongside first picture and exact

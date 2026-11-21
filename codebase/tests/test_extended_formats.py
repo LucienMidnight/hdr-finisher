@@ -888,6 +888,62 @@ def test_owned_lens_input_avoids_copy_and_preserves_result(monkeypatch):
     assert owned_metadata == metadata
 
 
+@pytest.mark.parametrize("chromatic", [False, True])
+def test_lens_coordinate_strips_match_whole_frame_bytes(chromatic, monkeypatch):
+    import lensfunpy
+    from hdr_finisher import raw_import
+    from hdr_finisher.lens_coordinate_strips import (
+        COORDINATE_ROWS, exact_lens_coordinate_strips, native_lens_database,
+    )
+
+    native = native_lens_database()
+    if native is None:
+        pytest.skip("The bundled Lensfun 0.3.4 C API is unavailable")
+    settings = LensCorrectionSettings(
+        mode="manual",
+        profile_id="Canon|Canon EOS 60D|Canon EF-S|Canon|Canon EF-S 18-135mm f/3.5-5.6 IS STM",
+        focal_length_mm=18,
+        aperture=3.5,
+        focus_distance_m=10,
+        chromatic_aberration=chromatic,
+    )
+    identity = dict(camera_maker=None, camera_model=None, lens_maker=None, lens_name=None)
+    height, width = 2 * COORDINATE_ROWS + 19, 417
+    rng = np.random.default_rng(74)
+    image = rng.standard_normal((height, width, 3), dtype=np.float32)
+
+    standard = lensfunpy.Database()
+    monkeypatch.setattr(raw_import, "_lens_database", lambda: standard)
+    baseline, metadata = apply_lens_correction(image, settings)
+    modifier, _ = raw_import._lens_modifier((height, width), settings, **identity)
+    assert modifier.apply_color_modification(np.ones_like(image))
+    full = (modifier.apply_subpixel_geometry_distortion() if chromatic else
+            modifier.apply_geometry_distortion())
+    assert full is not None
+
+    monkeypatch.setattr(raw_import, "_lens_database", lambda: native)
+    modifier, _ = raw_import._lens_modifier((height, width), settings, **identity)
+    flags = raw_import._lens_flags(settings, lensfunpy)
+    with exact_lens_coordinate_strips(modifier, chromatic, flags, lensfunpy.LensType.RECTILINEAR.value) as read:
+        assert read is not None
+        for top in range(0, height, COORDINATE_ROWS):
+            bottom = min(top + COORDINATE_ROWS, height)
+            assert read(top, bottom).tobytes() == full[top:bottom].tobytes()
+
+    remap = raw_import._remap_bilinear_strips
+    band_heights = []
+
+    def observe(source, coordinates, **kwargs):
+        band_heights.append(len(coordinates))
+        return remap(source, coordinates, **kwargs)
+
+    monkeypatch.setattr(raw_import, "_remap_bilinear_strips", observe)
+    actual, actual_metadata = apply_lens_correction(image, settings)
+    assert actual_metadata == metadata
+    assert actual.tobytes() == baseline.tobytes()
+    assert band_heights == [COORDINATE_ROWS, COORDINATE_ROWS, 19]
+
+
 @pytest.mark.skipif(__import__("hdr_finisher.binaries", fromlist=["resolve_binary"]).resolve_binary("hdrf-jxl-info") is None,
                     reason="Structured JPEG XL colour profiles need the native hdrf-jxl-info helper (Windows build only).")
 @pytest.mark.parametrize("primaries,color_space", [(1, "sRGB"), (9, "BT.2020"), (11, "Display P3")])

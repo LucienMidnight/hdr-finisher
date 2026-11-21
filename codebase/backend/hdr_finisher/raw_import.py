@@ -13,6 +13,7 @@ from .import_bands import parallel_import_enabled, run_bands
 
 from .color import aces2065_to_acescg, transform_float32_bounded
 from .dng_color import D60_XYZ, XYZ_D60_TO_ACESCG, chromatic_adaptation_matrix
+from .lens_coordinate_strips import COORDINATE_ROWS, exact_lens_coordinate_strips, native_lens_database
 from .models import LensCorrectionSettings, RawImportSettings
 
 if TYPE_CHECKING:
@@ -1305,8 +1306,6 @@ def apply_lens_correction(
     consume_input: bool = False,
     progress: Callable[[str, str], None] | None = None,
 ) -> tuple[np.ndarray, dict[str, Any]]:
-    # Measurement only: progress records the existing boundaries, with exactly
-    # the same full-resolution Lensfun operations and remapping below.
     _raise_if_cancelled(cancelled)
     if progress: progress("lens_profile", "Selecting Lensfun profile")
     try:
@@ -1326,19 +1325,34 @@ def apply_lens_correction(
             _apply_signed_vignetting(modifier, corrected, cancelled=cancelled)
         _raise_if_cancelled(cancelled)
         if progress: progress("lens_coordinates", "Calculating exact Lensfun coordinates")
-        coordinates = None
-        if settings.chromatic_aberration:
-            coordinates = modifier.apply_subpixel_geometry_distortion()
-        elif settings.distortion:
-            coordinates = modifier.apply_geometry_distortion()
-        if progress: progress("lens_remap", "Remapping Lensfun pixels")
-        if coordinates is not None:
-            corrected = _remap_bilinear_strips(
-                corrected,
-                np.asarray(coordinates),
-                chromatic=settings.chromatic_aberration,
-                cancelled=cancelled,
-            )
+        chromatic = settings.chromatic_aberration
+        if chromatic or settings.distortion:
+            import lensfunpy
+            with exact_lens_coordinate_strips(
+                modifier, chromatic, _lens_flags(settings, lensfunpy), lensfunpy.LensType.RECTILINEAR.value,
+            ) as read_strip:
+                coordinates = None
+                if read_strip is None:
+                    generate = (modifier.apply_subpixel_geometry_distortion if chromatic else
+                                modifier.apply_geometry_distortion)
+                    coordinates = generate()
+                if progress: progress("lens_remap", "Remapping Lensfun pixels")
+                if read_strip is not None:
+                    output = np.empty_like(corrected)
+                    for top in range(0, len(output), COORDINATE_ROWS):
+                        _raise_if_cancelled(cancelled)
+                        bottom = min(top + COORDINATE_ROWS, len(output))
+                        _remap_bilinear_strips(
+                            corrected, read_strip(top, bottom), chromatic=chromatic,
+                            cancelled=cancelled, output=output[top:bottom],
+                        )
+                    corrected = output
+                elif coordinates is not None:
+                    corrected = _remap_bilinear_strips(
+                        corrected, np.asarray(coordinates), chromatic=chromatic, cancelled=cancelled,
+                    )
+        elif progress:
+            progress("lens_remap", "Remapping Lensfun pixels")
     except RawImportError:
         raise
     except Exception as exc:
@@ -1411,15 +1425,9 @@ def _lens_modifier(shape, settings, *, camera_maker, camera_model, lens_maker, l
     crop = float(getattr(camera, "crop_factor", 1.0) or 1.0)
     if progress: progress("lens_setup", "Preparing Lensfun modifier")
     modifier = lensfunpy.Modifier(lens, crop, width, height)
-    flags = lensfunpy.ModifyFlags.SCALE
-    if settings.distortion:
-        flags |= lensfunpy.ModifyFlags.DISTORTION
-    if settings.chromatic_aberration:
-        flags |= lensfunpy.ModifyFlags.TCA
-    if settings.vignetting:
-        flags |= lensfunpy.ModifyFlags.VIGNETTING
     modifier.initialize(
-        float(focal), float(aperture), float(distance), scale=0.0, pixel_format=np.float32, flags=flags
+        float(focal), float(aperture), float(distance), scale=0.0, pixel_format=np.float32,
+        flags=_lens_flags(settings, lensfunpy),
     )
     return modifier, {
         "mode": settings.mode,
@@ -1433,6 +1441,17 @@ def _lens_modifier(shape, settings, *, camera_maker, camera_model, lens_maker, l
         "focus_distance_m": float(distance),
         "database_version": database_identity,
     }
+
+
+def _lens_flags(settings, lensfunpy):
+    flags = lensfunpy.ModifyFlags.SCALE
+    if settings.distortion:
+        flags |= lensfunpy.ModifyFlags.DISTORTION
+    if settings.chromatic_aberration:
+        flags |= lensfunpy.ModifyFlags.TCA
+    if settings.vignetting:
+        flags |= lensfunpy.ModifyFlags.VIGNETTING
+    return flags
 
 
 def _resolve_lens_profile(
@@ -1518,12 +1537,14 @@ def _remap_bilinear_strips(
     cancelled: Callable[[], bool] | None = None,
     frame_shape: tuple[int, int] | None = None,
     origin: tuple[int, int] = (0, 0),
+    output: np.ndarray | None = None,
 ) -> np.ndarray:
     height, width = coordinates.shape[:2]
     channels = image.shape[2]
     frame_height, frame_width = frame_shape or image.shape[:2]
     origin_x, origin_y = origin
-    output = np.empty((height, width, channels), dtype=image.dtype)
+    if output is None:
+        output = np.empty((height, width, channels), dtype=image.dtype)
 
     def remap_strip(start: int) -> None:
         _raise_if_cancelled(cancelled)
@@ -1749,7 +1770,7 @@ def _lens_database() -> Any | None:
     try:
         import lensfunpy
 
-        return lensfunpy.Database()
+        return native_lens_database() or lensfunpy.Database()
     except (ImportError, OSError, RuntimeError):
         return None
 

@@ -609,12 +609,18 @@ isolated backend working-set peak falls to 2.316 GB (diagnostic, not app
 acceptance). Small tests cover both coordinate layouts, multiple waves,
 input ownership and exact output equality.
 
-November 21 update: a Lensfun strip trial reduced coordinate storage, but
-changed byte output on the Canon and was withdrawn. Lensfun advances its
-normalised rows with repeated float additions, so restarting at a strip
-origin can change sampling. The app now charges the last GPU Micro source's
-sensor, profile and Bayer tiles to the existing working share. Reclaim drops
-that cached source so later requests can rebuild it.
+November 21 update: R2-6 retains Lensfun's original row positions while
+generating coordinates in 128-row full-width bands for full-frame CPU
+correction. The Canon and Sony coordinate buffers fell from 432.5 and
+1,017.4 MB to 16.0 and 24.5 MB, plus a four-column probe under 0.6 MB.
+The MacBook Neo backend peak fell by 462 MB and 1,058 MB, with identical
+corrected and finished pixels. The app uses the whole map if Lensfun's
+native strip check fails. Windows confirmation is open.
+[Mac measurements](../../technical/performance-table.md#november-21--byte-exact-lensfun-strips-on-macbook-neo)
+
+The app now charges the last GPU Micro source's sensor, profile and Bayer
+tiles to the existing working share. Reclaim drops that cached source so
+later requests can rebuild it.
 
 MG-2 keeps Lensfun's full row width and zero origin, then copies out only
 the visible rectangle and releases the unused rows. Peak coordinate

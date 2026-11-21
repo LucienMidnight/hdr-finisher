@@ -89,9 +89,12 @@ The first CPU Grade picture, export and full-size Proof use the same
 native tiles and filtering. Independent tiles and noise-measurement windows
 use the shared CPU pool. At most three full tile workspaces fit in the
 existing 600 MB allowance. OpenCV runs one thread inside each worker. The
-prepared model remains in the Micro source for this round. Lensfun strip
-generation stays open because restarting the row coordinates changed pixels.
+prepared model remains in the Micro source for this round. Full-frame CPU
+lens correction produces coordinates in strips using Lensfun's original
+whole-frame row positions. Mac RAW tests matched the original corrected and
+finished bytes. Windows confirmation is open.
 [Windows PC measurements](../../technical/performance-table.md#november-21--cpu-micro-grain-tile-workers)
+· [Mac lens measurements](../../technical/performance-table.md#november-21--byte-exact-lensfun-strips-on-macbook-neo)
 
 ### November 21: CPU Micro Grain visible area first
 

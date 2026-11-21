@@ -71,7 +71,7 @@ Three problems follow, and Steve approved all three on November 21:
 | GPU-2 | Faster GPU Micro Grain and Fit | `sprint/gpu-grain-speed` | — | done, merged Nov 21 (`33063718`). PC Sony, finished frames byte-identical (5 pairs incl. edges and partial tiles): Fit reduction Micro 15.0 → 12.5 s, Clean 2.49 → 2.18 s. Micro slider unchanged (halo trim gave no consistent gain, dropped). AHD pooling and measurement batching not done (no measured gain). Isolated Micro Fit timing and Mac profiling open (INT-2, MEM-1) |
 | ROUTE-1 | One Grain route state and clear route messages | `sprint/grain-route-ui` | — | done, merged Nov 21: GPU / CPU backup / Reduced preview label beside Method, plain reason, Retry on GPU and Switch to Clean Grain actions, CPU progress after 2 s; sampled CPU preview bytes unchanged. Look awaits Steve (R2-5); lens-corrected Micro crop not captured |
 | MG-2 | Micro Grain CPU: visible area first | `sprint/micro-cpu-visible` | MG-1 merged | locally committed, Sony native regions byte-identical, PC RGBA8 110% first sharp 10.38 s and pan 3.81 s, Fit 27.30 s and 3.43 GB after the memory fix, native HDR timing open |
-| MEM-1 | One memory budget on the MacBook Neo | `sprint/mac-memory` | MG-1, GPU-2 merged | PC part done, merged Nov 21 (`62e602b4`). On the PC, with the machine acting as an 8 GB Mac, the locked replay passed: share trim and restore, admission, deferred reclaim, and identical calibration with 4.06 MB less scratch per tile. Finished-frame and export byte parity not yet run (INT-2). Lens strips measured only (see R2-6). MacBook Neo checked Nov 21 at `113a1c92`. Auto Clean and lens-off Micro stayed on GPU. Lens-on Micro hit 5.465 GB, CPU AVIF export 6.689 GB, full-size Proof 11.015 GB. Exact incident RAW, 50 MP RAW and Metal trace remain open |
+| MEM-1 | One memory budget on the MacBook Neo | `sprint/mac-memory` | MG-1, GPU-2 merged | PC part done, merged Nov 21 (`62e602b4`). On the PC, with the machine acting as an 8 GB Mac, the locked replay passed: share trim and restore, admission, deferred reclaim, and identical calibration with 4.06 MB less scratch per tile. Finished-frame and export byte parity not yet run (INT-2). R2-6 now has byte-exact lens strips verified on the Mac, with Windows confirmation open. MacBook Neo checked Nov 21 at `113a1c92`. Auto Clean and lens-off Micro stayed on GPU. Lens-on Micro hit 5.465 GB, CPU AVIF export 6.689 GB, full-size Proof 11.015 GB. Exact incident RAW, 50 MP RAW and Metal trace remain open |
 | QUAL-1 | Exposure-independent quality fixes (output changes) | `sprint/grain-quality` | CG-2 merged | to do; needs Steve's visual sign-off before any default changes |
 | FOLD-1 | Fine Grain folded into Clean Grain, with a cleaning checkbox | `sprint/fold-fine-grain` | CG-2, GPU-2, ROUTE-1 merged | done, merged Nov 21: "Clean color splotches and fringes" checkbox, on by default, saved per rendition. On: Sony HDR and SDR Fit byte-identical on each route. Off: CPU/GPU HDR ΔE ITP 0.055 / 0.161, SDR ΔE 2000 0.031 / 0.765 (mean / p99). Crops of off against old Fine Grain for Steve. Affected saved grade: Canon `IMG_0790.CR2.hdrf` |
 | DLV-1 | Share one Grain result across HDR and SDR in AVIF export and Proof | `sprint/delivery-grain-share` | — | done, merged Nov 21: shared when HDR and SDR have the same source and controls, bounded to one float32 frame (~509 MB). Sony Clean Small: AVIF export 54.5 → 44.9 s, full-size Proof 94.6 → 60.1 s, files byte-identical. Pre-existing: backend peak ~6.2 GB on both, over the 4 GB ceiling (MEM-1) |
@@ -825,14 +825,10 @@ silent slowdowns.
 4. After GPU-2 is merged, use narrower formats for 1–2-channel Grain
    scratch textures where the device supports them as storage. The maths
    stays float32.
-5. Lens coordinates in strips (from MG-1). Lensfun accumulates rows, so
-   strips changed the Canon output by a tiny amount, and MG-1 withdrew
-   them. Measure, on the Canon and Sony:
-   - the finished ΔE (mean, p99) of strip coordinates against the
-     whole-frame coordinates;
-   - the peak RAM saved.
-   Then bring it to Steve as an output-change decision. Do not adopt it
-   without his yes.
+5. Lens coordinates in strips (R2-6). The original trial changed sampling and
+   was withdrawn. The replacement uses Lensfun's exact whole-frame row
+   positions in each strip. See the coordinate comparison and Mac memory
+   result below. Confirm the replacement on Windows.
 6. Trim the Library cache shares while Grade has a large photo open on an
    8 GB machine (Steve approved R2-2). Restore them when Grade closes.
    Record the shares and the trigger in `memory-and-caches.md`. No memory
@@ -870,6 +866,58 @@ used every finished pixel. The trial stays out of the app.
 | --- | ---: | ---: | ---: |
 | Canon 18 MP | 0.232 / 1.512 | 513 MB (1,098 → 585 MB) | 416 MB |
 | Sony 42 MP | 0.486 / 2.319 | 1,125 MB (2,323 → 1,198 MB) | 993 MB |
+
+**R2-6 coordinate comparison on the MacBook Neo.** Lensfun 0.3.4
+normalises each requested origin as `float(yu * NormScale - CenterY)`.
+Each following row adds the double-precision step and rounds the running
+y back to float32. Asking for the next strip at its integer row restarts
+this sum and discards the rounding accumulated from the top of the frame.
+The x loop starts at the same x on every row in both requests. The resulting
+y difference also affects x through the radial distortion and chromatic
+aberration calculations.
+[Geometry source](https://github.com/lensfun/lensfun/blob/v0.3.4/libs/lensfun/mod-coord.cpp#L419-L455)
+· [Combined source](https://github.com/lensfun/lensfun/blob/v0.3.4/libs/lensfun/mod-subpix.cpp#L114-L160)
+
+Same profiles as the PC trial, 5202 × 3464 at 55 mm for Canon and 7968 ×
+5320 at 65 mm for Sony. The numbers pool all pixels and all three channel
+maps. Geometry-only requests show the same y drift.
+
+| Photo | Request height | Mean absolute x / y (px) | Max absolute x / y (px) |
+| --- | ---: | ---: | ---: |
+| Canon | 64 | 0.000165 / 0.023173 | 0.001465 / 0.048584 |
+| Canon | 128 | 0.000161 / 0.022735 | 0.001465 / 0.048584 |
+| Canon | 256 | 0.000154 / 0.021955 | 0.001465 / 0.045898 |
+| Sony | 64 | 0.000201 / 0.040848 | 0.002441 / 0.084961 |
+| Sony | 128 | 0.000196 / 0.040351 | 0.002441 / 0.082031 |
+| Sony | 256 | 0.000188 / 0.039441 | 0.002441 / 0.076172 |
+
+For 128-row strips the first band matches. Mean signed y differences at
+the first restart, midpoint and last row are +0.0026, +0.0233 and +0.0478 px
+on Canon and −0.0056, −0.0411 and −0.0809 px on Sony. The Sony also reaches
+−0.0578 px near the first quarter and recedes to −0.0230 px near the third
+quarter. Averaging absolute y by offset 0 / 64 / 127 within each strip gives
+0.0236 / 0.0227 / 0.0227 px on Canon and 0.0408 / 0.0408 / 0.0398 px on
+Sony. The error is mainly set by where the strip restarts in the whole image.
+
+Changing only the requests reproduced the PC finished SDR result on the Mac:
+ΔE 2000 mean / p99 of 0.232 / 1.495 on Canon and 0.486 / 2.319 on Sony, from
+the finished float SDR pixels. Subpixel shifts change the weights of
+adjacent pixels, which differ along edges and in textured or noisy areas.
+With the same full-width remap bands but slices of the original coordinate
+map, both corrected frames matched the whole-frame bytes. Auto-scale,
+channel layout, the original full-image vignetting call and frame-border
+sampling were held fixed. Both profiles lack vignette calibration.
+
+**Exact replacement.** Lensfun's native loop produces the full sequence of
+normalised y values in a four-column probe. A coordinate callback reuses
+those values in 128-row full-width bands before scale, distortion or
+chromatic aberration. This preserves the native arithmetic on each
+platform. A byte check against a conventional request selects the
+whole-frame path if the binding disagrees. On the Mac, both RAWs matched
+every coordinate in both layouts, the corrected image and the default SDR
+finish. Peak physical footprint through lens correction fell by 462 MB
+on Canon and 1,058 MB on Sony.
+[Mac measurements](../performance-table.md#november-21--byte-exact-lensfun-strips-on-macbook-neo)
 
 #### Mac run
 
@@ -1002,7 +1050,7 @@ largest owner at both delivery peaks.
 | R2-2 | Trim Library cache shares while Grade has a large photo open on an 8 GB machine? | **Steve, Nov 21: yes.** MEM-1 builds it and records the shares in `memory-and-caches.md`. |
 | R2-3 | Memory-map read-only sources on 8 GB machines? | **Coordinator and reviewer agree, Nov 21: not now.**<br>- On macOS, clean mapped pages leave the physical-footprint number the app measures. The meter would drop without freeing real memory, and `safety_total` would subtract the image twice.<br>- It would write about 500 MB to the SSD for every photo opened.<br>- Grain scratch is already disk-backed, so mapping it gains nothing.<br>If MEM-1's Mac measurements still show pressure, look first at cold buffers (`retouch_original`, about 509 MB) and Micro's 256 MiB Bayer tile cache, then revisit with numbers. |
 | R2-4 | Which QUAL-1 candidates become defaults? | Decide on the review page. |
-| R2-6 | Lens correction in strips? | **Not ready for Steve.** The trial changed finished pixels: Canon ΔE 2000 mean / p99 0.23 / 1.51, saving 513 MB; Sony 0.49 / 2.32, saving 1,125 MB. A different starting point for Lensfun's row sums should move pixels by far less than that, so the coordinator suspects the trial differs in more than the coordinates. Find the cause before this goes to Steve; an exact strip version may exist. Whole-frame correction stays. |
+| R2-6 | Lens correction in strips? | **Byte-exact replacement built and verified on the MacBook Neo.** Restarting Lensfun's float32 row sum caused the trial's output drift. The replacement preserves the native row values and saves 462 MB on Canon and 1,058 MB on Sony through lens correction, with identical corrected and finished pixels. Confirm byte equality and that the strip path runs on the Windows PC. |
 | R2-7 | Export depends on whether Grade was opened first (pre-existing, also on `deb2fc6f`)? | **Steve and reviewer, Nov 21: leave for later.**<br>- Grade, Proof and export on the same machine already share one measurement.<br>- The difference appears only for an export without Grade first, for example on the other machine or after clearing the cache. HDR ΔE ITP mean / p99 0.669 / 2.075, within limits.<br>- Cause, checked in code: the GPU measures a 4×4 grid of 256 px windows; the CPU measures up to 64 windows and every pixel of the tail sample, where the GPU samples 16,384.<br>- Root fix after v1: make CPU and GPU measure the same windows. This is an output change and needs Steve's yes.<br>- Do not store noise models in saved grades. |
 | R2-5 | Route label look and wording | **Steve, Nov 21:** no label and no Method heading. Show nothing while the GPU works. One line appears only when the slower CPU route is in use, saying why (or when the method cannot run). Coordinator applied this after ROUTE-1 merged. |
 
