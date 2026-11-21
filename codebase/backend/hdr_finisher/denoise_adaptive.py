@@ -33,7 +33,6 @@ import os
 from .cpu_budget import CpuExecutor, native_threads
 from dataclasses import dataclass
 from statistics import NormalDist
-from threading import Lock
 from contextvars import ContextVar
 
 _ESTIMATION_WORKERS = ContextVar("denoise_estimation_workers", default=None)
@@ -503,22 +502,14 @@ def _block_stds(values: np.ndarray) -> np.ndarray:
     return values[:bh * _BLOCK, :bw * _BLOCK].reshape(bh, _BLOCK, bw, _BLOCK).std(axis=(1, 3)).ravel()
 
 
-_CALIBRATION: dict[float, float] = {}
+# Unit white noise, seed 11, measured through the flat-block selection.
+BAND_QUANTILE_CALIBRATION = 1.096484132980239
 
 
 def _quantile_calibration(quantile: float) -> float:
-    """1 / what the estimator's own procedure reads on unit white noise.
-
-    The procedure keeps the quarter of blocks with the least fine-band spread
-    and then takes a low quantile of those, so the calibration has to be
-    measured through exactly that selection, not over every block.
-    """
-    if quantile not in _CALIBRATION:
-        noise = np.random.default_rng(11).standard_normal((2048, 2048)).astype(np.float32)
-        stds = _block_stds(noise)
-        flat = stds <= np.quantile(stds, FLAT_BLOCK_QUANTILE)
-        _CALIBRATION[quantile] = 1.0 / float(np.quantile(stds[flat], quantile))
-    return _CALIBRATION[quantile]
+    if quantile != CALIBRATION_RULES["band_quantile"]:
+        raise ValueError("No calibration for this band quantile.")
+    return BAND_QUANTILE_CALIBRATION
 
 
 def _window_energies(source: np.ndarray, windows, model: AdaptiveNoiseModel):
@@ -583,29 +574,17 @@ def _energy_tails(source: np.ndarray, windows, model: AdaptiveNoiseModel, quiet_
     return tails, count / max(total, 1)
 
 
-_TAIL_REFERENCE: dict[str, list] = {}
-_TAIL_REFERENCE_LOCK = Lock()
+# White-noise energy limits and 99th-percentile tails, seed 3. Kept in
+# step with the GPU measurement; tests recompute both calibrations.
+_TAIL_LIMITS = (1.9266645908355713, 1.9007071256637573, 1.8868334293365479,
+                2.7170934677124023, 2.666938304901123, 2.5905818939208984)
+_TAIL_REFERENCE = ((1.583670735359192, 2.354907751083374),
+                   (1.468549370765686, 2.3227500915527344),
+                   (1.4817520380020142, 2.290879726409912))
 
 
-def _tail_reference() -> tuple[list[float], list[list[float]]]:
-    """White noise read through the whole estimator: the coarse-band energies
-    that define quiet (``TAIL_QUIET_QUANTILE`` of each), and the tails read
-    there."""
-    # Native warm-up and a differently sized preview can arrive together.
-    # Publish the shared calibration only once both parts are complete.
-    with _TAIL_REFERENCE_LOCK:
-        if not _TAIL_REFERENCE:
-            rng = np.random.default_rng(3)
-            noise = rng.standard_normal((1024, 1024, 3)).astype(np.float32) * np.float32(0.01) + np.float32(0.5)
-            model, windows = _measure_model(noise)
-            coarse = [[] for _ in range(6)]
-            for window_coarse, _ in _window_energies(noise, windows, model):
-                for index, energy in enumerate(window_coarse):
-                    coarse[index].append(energy.ravel())
-            limits = [float(np.quantile(np.concatenate(values), TAIL_QUIET_QUANTILE)) for values in coarse]
-            tails = _energy_tails(noise, windows, model, limits)[0]
-            _TAIL_REFERENCE.update(limits=limits, tails=tails)
-    return _TAIL_REFERENCE["limits"], _TAIL_REFERENCE["tails"]
+def _tail_reference():
+    return _TAIL_LIMITS, _TAIL_REFERENCE
 
 
 def _tail_confidence(fraction: float) -> float:

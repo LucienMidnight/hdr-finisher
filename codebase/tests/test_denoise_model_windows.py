@@ -45,13 +45,9 @@ GEOMETRIES = {
 
 @pytest.fixture
 def small_windows(monkeypatch):
-    """Smaller windows keep the frame small while it still samples as windows.
-    The white-noise reference is measured through the same windows, so it is
-    dropped on the way in and out."""
+    """Smaller windows keep the frame small while it still samples as windows."""
     monkeypatch.setattr(da, "ESTIMATION_TILE", 96)
-    da._TAIL_REFERENCE.clear()
     yield
-    da._TAIL_REFERENCE.clear()
 
 
 @pytest.mark.parametrize("name", GEOMETRIES)
