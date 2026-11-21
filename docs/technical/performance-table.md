@@ -5604,6 +5604,16 @@ The stable fit does not clean the lifted Canon shadows and is not proposed for
 shipping. Quality findings, final crop evidence and integration limits:
 `research/denoise-v1-2026-11-16/noise-model-and-raw-specks.md`.
 
+### November 21 — Lensfun coordinate-strip trial
+
+| Action | Observation | Conditions / evidence |
+| --- | --- | --- |
+| Lens coordinate and remap peak, Canon 18 MP | 1,098 → 585 MB process working set | Windows PC, `35a6b9ce`, `IMG_0790.CR2`, manual EF-S 18–135 mm IS, full-height versus 128-row coordinate requests in fresh processes |
+| Lens coordinate and remap peak, Sony 42 MP | 2,323 → 1,198 MB process working set | Windows PC, `35a6b9ce`, `_DSC7970.ARW`, Lensfun Auto, same trial |
+
+Both cameras changed finished SDR pixels. The [MEM-1 trial](briefs/sprint-denoise-gpu-logging-2026-11-21.md#mem-1--one-memory-budget-on-the-macbook-neo-overnight)
+records the perceptual comparison. The coordinate strips stay out of the app.
+
 ### Library check environment investigation — November 17, 2026
 
 | Action | Observation | Conditions / evidence |

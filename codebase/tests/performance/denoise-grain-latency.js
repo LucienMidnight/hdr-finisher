@@ -9,6 +9,7 @@ const reusePhoto = require("../helpers/reuse-test-photo.cjs");
 const output = fs.mkdtempSync(path.join(os.tmpdir(), "hdr-finish-denoise-grain-"));
 const baselineMethods = ["standard", "clean_grain_off", "clean_grain"];
 const fullProofMethod = process.argv.find(arg => arg.startsWith("--full-proof-method="))?.split("=")[1];
+const fullDeliveryFormat = process.argv.includes("--full-delivery-avif") ? "avif_gain_map" : "jpeg_ultrahdr";
 const fullDeliveryRoute = process.argv.find(arg => arg.startsWith("--full-delivery-route="))?.split("=")[1];
 const coldProofOnly = process.argv.includes("--cold-proof-only");
 const phaseTwo = process.argv.find(arg => arg.startsWith("--phase2="))?.split("=")[1];
@@ -705,20 +706,23 @@ async function measurePhaseOne(page, name, record, setZoom) {
 }
 
 async function measureDelivery(page, harness, name, method, record, proofOnly = false) {
-  const target = path.join(output, `${name}-${method}.jpg`);
+  const format = fullDeliveryFormat;
+  const extension = format === "avif_gain_map" ? "avif" : "jpg";
+  const formatName = extension === "avif" ? "AVIF Gain Map" : "JPEG Ultra HDR";
+  const target = path.join(output, `${name}-${method}.${extension}`);
   let exportSha256;
   if (!proofOnly) await harness.selectExportPath(target);
-  await page.evaluate(async measureFullProof => {
+  await page.evaluate(async ({ measureFullProof, format }) => {
     if (measureFullProof) activateWorkflowTab("export");
     state.denoise.sdr = structuredClone(state.denoise.hdr);
     if (!await persistDenoiseSettings()) throw Error("Could not save the SDR Denoise method.");
     if (!measureFullProof) activateWorkflowTab("export");
-    els.exportFormat.value = "jpeg_ultrahdr";
+    els.exportFormat.value = format;
     els.exportQuality.value = "90";
     els.exportResizeMode.value = "original";
     els.exportGuaranteePeak.checked = true;
     if (measureFullProof) els.exportMetadataPolicy.value = "none";
-  }, Boolean(fullProofMethod));
+  }, { measureFullProof: Boolean(fullProofMethod), format });
   if (!proofOnly) {
     const deliveryResponse = page.waitForResponse(response => response.request().method() === "POST"
       && new URL(response.url()).pathname.endsWith("/export"), { timeout: 180000 });
@@ -733,7 +737,7 @@ async function measureDelivery(page, harness, name, method, record, proofOnly = 
     const delivery = await response.json();
     const accepted = response.ok() && delivery.accepted && fs.existsSync(target) && result.savedPath
       && fs.realpathSync(result.savedPath) === fs.realpathSync(target) && fs.statSync(target).size > 0;
-    await record("full-size JPEG Ultra HDR export", {
+    await record(`full-size ${formatName} export`, {
       ...result, accepted, renderer: delivery.renderer, timingsMs: delivery.timings_ms,
       fallback: delivery.fallback_reason,
     });
@@ -743,13 +747,13 @@ async function measureDelivery(page, harness, name, method, record, proofOnly = 
   }
 
   const fullProof = Boolean(fullProofMethod) || method === "standard" && process.argv.includes("--speed-memory-full-proof");
-  await page.evaluate(fullSize => {
+  await page.evaluate(({ fullSize, format }) => {
     activateWorkflowTab("proof");
-    state.proofFormat = "jpeg_ultrahdr";
+    state.proofFormat = format;
     state.proofSize = fullSize ? "full" : "reduced";
     state.proofTarget = "custom";
     state.proofCustomNits = 1000;
-  }, fullProof);
+  }, { fullSize: fullProof, format });
   const proofStart = await page.evaluate(() => {
     const start = performance.timeOrigin + performance.now();
     els.chromeProofRefresh.click();
@@ -769,15 +773,15 @@ async function measureDelivery(page, harness, name, method, record, proofOnly = 
       artifactSha256: state.proofArtifact.sha256,
       hdrTile: state.proofReconstruction?.tile, sdrTile: state.proofSdrReconstruction?.tile };
   }, proofStart);
-  if (fullProofMethod) {
-    proof.exportSha256 = exportSha256;
+  if (fullProofMethod) proof.exportSha256 = exportSha256;
+  if (fullProofMethod && format === "jpeg_ultrahdr") {
     for (const [key, tile] of [["hdrTileSha256", proof.hdrTile], ["sdrTileSha256", proof.sdrTile]]) {
       const response = await harness.fetch(tile.url);
       assert.ok(response.ok, tile.url);
       proof[key] = createHash("sha256").update(Buffer.from(await response.arrayBuffer())).digest("hex");
     }
   }
-  await record(`${fullProof ? "full-size" : "reduced"} JPEG Ultra HDR Proof`, proof);
+  await record(`${fullProof ? "full-size" : "reduced"} ${formatName} Proof`, proof);
   if (fullProofMethod && !proofOnly) assert.equal(proof.artifactSha256, exportSha256, "Full-size Proof differs from export");
   await page.evaluate(async () => {
     activateWorkflowTab("grade");
@@ -791,8 +795,15 @@ function deliveryRecorder(page, harness, name, method) {
     const backend = backendLog(harness, result.timeStart, result.timeEnd, method);
     const samples = await page.evaluate(() => window.denoiseBaselineMemory);
     const peak = peakBetween(samples, result.timeStart, result.timeEnd);
+    const during = samples.filter(sample => sample.at >= result.timeStart && sample.at <= result.timeEnd);
+    const peakBackend = during.reduce((largest, sample) => {
+      const bytes = sample.processes?.find(row => row.pid === sample.backendPid)?.chargedBytes || 0;
+      return bytes > (largest?.bytes || 0)
+        ? { at: sample.at, bytes, heap: sample.backendHeap, gradeBytes: sample.gradeBytes, caches: sample.caches }
+        : largest;
+    }, null);
     console.log(JSON.stringify({ name, method, action, ...result, ...backend,
-      peakAppBytes: peak?.bytes ?? backend.peakAppBytes, peakProcesses: peak?.processes }));
+      peakAppBytes: peak?.bytes ?? backend.peakAppBytes, peakProcesses: peak?.processes, peakBackend }));
   };
 }
 
@@ -992,9 +1003,9 @@ async function measureBaseline(page, harness, name, record, setZoom) {
       window.denoiseBaselineMemory = [];
       window.addEventListener("message", event => {
         if (event.origin !== location.origin || event.data?.type !== "hdr-memory-pressure") return;
-        const bytes = event.data.value?.totalBytes;
+        const { totalBytes: bytes, processes, backendPid, backendHeap, gradeBytes, caches } = event.data.value ?? {};
         if (Number.isFinite(bytes)) window.denoiseBaselineMemory.push({ at: Date.now(), bytes,
-          processes: event.data.value.processes });
+          processes, backendPid, backendHeap, gradeBytes, caches });
       });
     }, baseline || panCoverage || nativeGrainSwitch || stillPicture || Boolean(phaseOne));
     const names = process.argv.includes("--atrium-only") ? ["DSC01212.ARW"]

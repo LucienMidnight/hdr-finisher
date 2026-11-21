@@ -859,6 +859,74 @@ silent slowdowns.
 - `memory-and-caches.md`, `preview-and-gpu.md` and `performance-table.md`
   are updated.
 
+**PC lens-strip trial.** Windows, default full-resolution SDR finish and
+128-row Lensfun coordinate requests. Canon `IMG_0790.CR2` used the manual
+EF-S 18–135 mm IS profile and Sony `_DSC7970.ARW` used Auto. Separate fresh
+processes measured peak working set through lens correction. The comparison
+used every finished pixel. The trial stays out of the app.
+
+| Photo | ΔE 2000 mean / p99 | Peak process RAM saved | Peak coordinate RAM saved |
+| --- | ---: | ---: | ---: |
+| Canon 18 MP | 0.232 / 1.512 | 513 MB (1,098 → 585 MB) | 416 MB |
+| Sony 42 MP | 0.486 / 2.319 | 1,125 MB (2,323 → 1,198 MB) | 993 MB |
+
+#### Mac run
+
+Run on the 8 GB Neo with the branch integrated, a 4 GB app limit, GPU Auto,
+and an unmodified copy of each RAW. Use the shared GPU lock for automation.
+Keep the PC override unset. Record the commit and the log path in
+`session_started`.
+
+1. Open `_DSC7970.ARW` with lens correction off and harsh-speck cleanup ×2.5.
+   Enable Clean Grain Small in HDR at Fit, then zoom to 110%, pan and release
+   Grain Evenness. Repeat the incident with Steve's exact `DSC00786.ARW` if
+   available (portrait, SHA prefix `aa6b7118`). Record action time to the
+   sharp frame and the accepted route. For CPU fallback, copy the first
+   `grain_gpu_refused` or prior failure and its matching `grain_route`;
+   include the requested bytes, graphics and app headroom, pressure, and
+   retry reason. If it stays on GPU, report whether the original fallback
+   reproduces. Repeat at Custom 0.25 GiB, then restore Auto.
+2. Copy the 50 MP Sony `DSC00636.ARW` (8660 × 5784) to a working folder.
+   Record `maxTextureDimension2D` and the configured Auto budget from
+   `session_gpu_configuration`. With Auto, test HDR and generated SDR
+   at Fit and 110%, Clean Small with colour cleaning on and off, and
+   Micro. Record exact vs reduced, route, any fallback reason, and any
+   seams or blocks. If the file is absent, record the missing filename.
+3. With `_DSC7970.ARW` lens off, select Micro Grain at Fit, zoom to 110%,
+   pan to a second region, change Micro luminance/color/detail, return to
+   Fit and switch HDR to SDR and back. For each step record the first sharp
+   picture, route, any blocks or colour bands, and whether the crop position
+   holds. Repeat Steve's lens-on CPU case and check that zoom and an
+   Exposure change reuse prior work. Capture one Metal System Trace over
+   cold Micro Fit and the first 110% pan while the GPU route is active.
+   Attribute the wait to Bayer fetch/upload, demosaic, Grain resolve,
+   reduction or present using the trace and the matching Grade events.
+4. Use the script below for a full-size AVIF Gain Map export and full-size
+   Proof with Clean Small on the Sony. Record separate peak whole-app and
+   backend footprints, the biggest process at each peak and the active
+   render/encoding/reconstruction stage. Compare with the 6.2 GB PC
+   backend observation. Start with the measured retained Grade/cache bytes.
+   At 42.4 MP each float32 RGB plane is about 509 MB. Check the source,
+   retained original, shared Grain frame, HDR and SDR finished renditions,
+   and Proof's authored endpoint planes or SDR matrix conversion. Attribute
+   encoder memory separately to the helper. If those owners cannot account
+   for the peak, record the unassigned bytes and capture a backend allocation
+   trace before proposing changes.
+
+From `codebase` on macOS:
+
+```sh
+set -o pipefail
+unset HDR_FINISHER_MEMORY_PROFILE
+mkdir -p output/mem-1-mac
+.venv/bin/python tools/output_size.py
+# During step 3, set GPU_PID to the GPU-process PID for this Electron session.
+xcrun xctrace record --template 'Metal System Trace' --attach "$GPU_PID" --time-limit 60s --output output/mem-1-mac/micro.trace
+# Close the hand-test app first. This replay uses DLV-1's CPU delivery route.
+.venv/bin/python tools/gpu-run-lock.py --label mem-1-mac-avif --minutes 10 -- node tests/run-in-electron.js tests/performance/denoise-grain-latency.js --42-only --full-proof-method=clean_grain --full-delivery-avif --full-delivery-route=cpu 2>&1 | tee output/mem-1-mac/avif-proof.jsonl
+.venv/bin/python tools/output_size.py
+```
+
 ### QUAL-1 · Exposure-independent quality fixes (output changes)
 
 **Goal.** Protection follows the noise, not fixed brightness levels.
