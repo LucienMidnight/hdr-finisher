@@ -107,6 +107,15 @@ the GPU at Fit on the 50 MP photo.
 The 61 MP TIFF still needs finished parity and the minimum Mac needs
 validation. [Large-photo measurements](../../technical/performance-table.md#november-21--large-photo-grain-in-grade)
 
+### November 21 — GPU Grain Fit scheduling
+
+Grade can start preparing the next native Fit rectangle while the previous
+one reduces on the GPU. It queues at most two reduction rectangles and
+waits for them before releasing their shared textures. Micro Grain batches
+the cores from a single developed Bayer band. The GPU still uses the same
+tile boundaries, source halos and resize arithmetic. The minimum Mac still
+needs timing and whole-app memory checks. [Windows PC timings and parity trial](../../technical/performance-table.md#november-21--windows-pc-gpu-grain-fit-scheduling-trial)
+
 ### RAW Pixel cleanup
 
 Pixel cleanup belongs to the RAW source recipe, so changing it redevelops the source for Library, Grade, export and Proof. It runs before Bayer demosaicing and highlight reconstruction. **Remove hot pixels** is off by default and has no strength control. It targets isolated bright sensor readings. **Even out harsh specks (Experimental)** is also off by default. Its **Threshold** runs from ×2 to ×4, starts at **×2.5**, and applies on release. Lower values generally act more strongly. Both require eligible Bayer data. X-Trans, linear DNG and non-RAW inputs are ineligible.
