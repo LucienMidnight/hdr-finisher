@@ -61,7 +61,7 @@ Three problems follow, and Steve approved all three on November 21:
 | CPU-1 | Faster CPU Grain backup: visible area first, then root speedups | `sprint/cpu-grain-speed` | — | done, merged Nov 21 (`16de955f`), byte-identical. PC, Sony Clean Small at 110%: first sharp picture 21.94 → 4.25 s, Evenness release 19.62 → 2.63 s, peak RAM 2.39 → 2.33 GB. Whole-photo preparation only ~10% faster: 30% target left as open work (wavelet and colour filters dominate) |
 | GPU-1 | Fine, Clean and Micro Grain on the GPU above 8,192 pixels | `sprint/gpu-large-photos` | — | done, merged Nov 21 (`5f8a2946`): 50 MP and 61 MP Fine and Clean Small stay on the GPU at 2 GiB at Fit and 110%; 50 MP Micro at 110% too. CPU agreement and 50 MP Micro at Fit checked at INT |
 | LOG-2 | App-wide logging rollout | `sprint/logging-rollout` | LOG-1 merged | done, merged Nov 21 (`b60767b9`): Library, RAW, Grade, Match, Export, Proof, memory, startup/shutdown instrumented; PC session log 84,288 bytes; reason codes folded into `logging.md` |
-| INT | Integration, full checks, push and Steve's hand test | `feat/denoise-v1` | all | in progress: all four packages merged Nov 21; full checks next |
+| INT | Integration, full checks, push and Steve's hand test | `feat/denoise-v1` | all | merged and checked on the PC Nov 21 (see Integration result); awaiting Steve's push approval and hand test |
 
 LOG-1, CPU-1 and GPU-1 run in parallel on November 21. LOG-2 starts once
 LOG-1's foundation is merged. INT runs at the end of November 22.
@@ -382,6 +382,65 @@ The coordinator:
 3. Asks Steve before pushing.
 4. Gives Steve a short hand-test list for the PC and the MacBook Neo,
    including how to send back the log.
+
+### Integration result (November 21)
+
+All four packages and the triage fixes are merged on `feat/denoise-v1`.
+Full fast suites: Node 1,157 tests, one failure (tooltip catalogue, also
+failing on the pre-sprint base); Python 4,372 passed, 63 failures that also
+fail on the base (Denoise research tools and machine tooling), one new
+failure fixed. Thirteen GPU drivers plus the Library quick check ran once
+on the Windows PC (about 25 minutes locked):
+
+- Passed: export parity, preview/export comparison, GPU delivery repeat and
+  ceiling, HDR ceiling delivery, Proof/Grade diagnostic, batch export,
+  progressive disclosure, Library quick check.
+- Fixed in triage and re-run passing: large-photo Grain parity (a peak
+  measurement overwrote a visible tile's parameters while Grade waited for
+  CPU Grain), GPU delivery smoke (the quick Fit picture hid a GPU validation
+  failure), adaptive parity (driver updated for the Clean Grain default; an
+  unlogged-preparation exception fixed).
+- Pre-existing, unchanged: `denoise-zoomed-region.js` (fails the same way on
+  the base); `gpu-denoise-measurement.js` (missing EXR fixture, AGENTS.md
+  item 6).
+- Open work: the CPU-1 30% whole-photo preparation target (about 10% reached;
+  wavelet and colour filters dominate).
+
+### Hand test (Steve, after integration)
+
+Run the app from the sprint branch on each machine. Before you start, note
+the time, so the matching part of the log is easy to find. After testing,
+choose **Help → Open logs** and send the coordinator the `backend.log` file
+from that folder, plus any `backend.log.1` with the same date.
+
+**Windows PC**
+
+1. Grade the 42 MP Sony `_DSC7970.ARW` with Clean Grain Small. At Fit, then
+   at 110%, the sharp picture should arrive within a few seconds. Drag Grain
+   Evenness and release it: the picture should settle within about 3 s.
+2. Forced CPU backup: in Settings, set **Maximum GPU memory for previews** to
+   Custom 0.25 GiB (the lowest), then turn Clean Grain off and on again at
+   110%. If the app uses the CPU, the sharp picture should still appear in
+   about 5 s. If it stays on the graphics card, that is fine too. Set the
+   limit back to **Auto**: the next change should use the graphics card.
+3. Large photo: copy `D:\Photos\Play_Raw\House barges on the Thames - Pberg\DSC00636.ARW`
+   to a working folder first (do not edit it in `D:\Photos`). Grade it with
+   Fine, Clean Small and Micro Grain at Fit and 110%. Each should look like
+   the 42 MP photo does: no blocks, seams or colour bands.
+4. Export the 50 MP photo as JPEG and as AVIF with Clean Grain, then open the
+   Proof for one. They should match what Grade showed.
+5. Ordinary use for ten minutes: open a folder in the Library, scroll, open
+   photos, zoom, export one. Nothing should feel slower than yesterday.
+
+**MacBook Neo**
+
+1. Same as PC steps 1 and 2 on `_DSC7970.ARW`, using the Mac's default
+   settings. The CPU backup there works on fewer pieces at once, so note the
+   time to the sharp picture at 110%.
+2. Repeat the original problem: Clean Grain on the 42 MP Sony, then zoom and
+   adjust for a few minutes. If the picture ever takes about 25 s, write down
+   the time. The log now records why the CPU was used.
+3. If the 50 MP Sony is on the Mac, repeat PC step 3 once.
 
 The hand test on the Mac is also the first chance to catch the original
 incident with the new logs.
