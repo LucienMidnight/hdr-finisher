@@ -1,3 +1,45 @@
+## November 21 — Windows PC Denoise follow-up (INT-2)
+
+Unpackaged Electron at 2560 × 1440 under the shared GPU lock. Sony
+`_DSC7970.ARW` (7968 × 5320), harsh-speck cleanup ×2.5, fresh app per
+condition. Tests used the existing 10% timing allowance and required peak
+RAM not to rise. RAM is sampled across the whole app in decimal GB.
+
+| Grade action at `0e1563d4` | OpenCV one thread | OpenCV default (12) | Conditions |
+| --- | ---: | ---: | --- |
+| CPU Micro Grain, first sharp at 110% | 11.13 s / 2.12 GB | 9.92 s / 2.20 GB | Lensfun Auto, verified CPU region and exact native presentation |
+| CPU Micro Grain, settled Fit | 31.24 s / 3.61 GB | 27.28 s / 3.74 GB | From the first 110% frame to exact 1610 px Fit |
+| Forced-CPU Clean Small, first sharp at 110% | 4.13–4.14 s | 4.15–4.16 s | Lens off, Evenness 0.65, native model warmed in Grade |
+| Forced-CPU Clean Small, peak and all native tiles | 2.12–2.34 GB / 11.89–12.20 s | 2.37–2.47 GB / 11.77–12.05 s | Two fresh apps per setting in one-thread, default, default, one-thread order |
+
+Both Clean Small settings used five workers, with 29 foreground and 218
+background tiles in every run. Tile completion time was similar. The earlier
+one-thread RAM increase at `35a6b9ce` did not repeat at the integrated tip.
+Per-process samples showed transient peaks in Python and Chromium at
+different times, leaving the cause of the earlier increase unresolved.
+The default was faster for Micro Grain but raised its RAM at both views.
+The shipping setting stays at one thread.
+
+For AVIF Gain Map delivery, both revisions exported the same Sony Clean Small
+grade at native size, Q90, dithering off, with CPU delivery forced. Each run
+used a fresh profile. The cold session never opened Grade. The warm session
+waited for its finished Grade preview and native GPU noise measurement.
+
+| CPU AVIF export | Cold | After Grade |
+| --- | ---: | ---: |
+| Round-one base `deb2fc6f` | 80.79 s | 79.50 s |
+| Integrated tip `0e1563d4` | 64.89 s | 64.04 s |
+
+Both revisions produced cold SHA-256
+`42b82f61a4c7f818b339cd3026937683b846641fc5d4a304dbb5b2f050351fdb`
+and warm SHA-256
+`845c9495f9a6146ee857872072287379df8179d18e925d3d1bf724ba5ec3adbb`.
+Across all decoded pixels, the cold-to-warm difference was HDR ΔE ITP
+0.669 mean / 2.075 p99 and SDR ΔE 2000 0.136 mean / 0.663 p99.
+Cold delivery measured the native source on the CPU. Warm delivery reused
+the GPU noise model under the same native cache key, a behavior already
+present in round one. Export behavior remains open for Steve's decision.
+
 ## November 21 — Windows PC Denoise triage (INT-2)
 
 Unpackaged Electron at 2560 × 1440, Sony `_DSC7970.ARW` (7968 × 5320),
