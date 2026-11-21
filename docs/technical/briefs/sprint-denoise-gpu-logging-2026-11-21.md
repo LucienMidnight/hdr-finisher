@@ -58,10 +58,10 @@ Three problems follow, and Steve approved all three on November 21:
 | ID | Package | Branch | Depends on | Status |
 | --- | --- | --- | --- | --- |
 | LOG-1 | Logging foundation and GPU Grain route robustness | `sprint/logging-foundation` | — | done, merged Nov 21 (`e4847957`): locked PC replay showed eviction, numbered refusal, CPU preparation, one retry and final GPU picture under one action |
-| CPU-1 | Faster CPU Grain backup: visible area first, then root speedups | `sprint/cpu-grain-speed` | — | merged Nov 21 (`68944ed0`), byte-identical: first sharp picture at 110% 21.94 → 4.74 s (target met); whole photo 13–15% faster (30% target missed); peak RAM 2.39 → 2.74 GB (target missed) |
-| GPU-1 | Fine, Clean and Micro Grain on the GPU above 8,192 pixels | `sprint/gpu-large-photos` | — | implementation `73454417` and conflict resolution ready: 50 MP and 61 MP stay on GPU at 2 GiB; merged Sony Clean at Fit and 110% and Micro at 110% pass with correlated reservations; CPU agreement and Micro Fit at INT |
+| CPU-1 | Faster CPU Grain backup: visible area first, then root speedups | `sprint/cpu-grain-speed` | — | done, merged Nov 21 (`16de955f`), byte-identical. PC, Sony Clean Small at 110%: first sharp picture 21.94 → 4.25 s, Evenness release 19.62 → 2.63 s, peak RAM 2.39 → 2.33 GB. Whole-photo preparation only ~10% faster: 30% target left as open work (wavelet and colour filters dominate) |
+| GPU-1 | Fine, Clean and Micro Grain on the GPU above 8,192 pixels | `sprint/gpu-large-photos` | — | done, merged Nov 21 (`5f8a2946`): 50 MP and 61 MP Fine and Clean Small stay on the GPU at 2 GiB at Fit and 110%; 50 MP Micro at 110% too. CPU agreement and 50 MP Micro at Fit checked at INT |
 | LOG-2 | App-wide logging rollout | `sprint/logging-rollout` | LOG-1 merged | done, merged Nov 21 (`b60767b9`): Library, RAW, Grade, Match, Export, Proof, memory, startup/shutdown instrumented; PC session log 84,288 bytes; reason codes folded into `logging.md` |
-| INT | Integration, full checks, push and Steve's hand test | `feat/denoise-v1` | all | not started |
+| INT | Integration, full checks, push and Steve's hand test | `feat/denoise-v1` | all | in progress: all four packages merged Nov 21; full checks next |
 
 LOG-1, CPU-1 and GPU-1 run in parallel on November 21. LOG-2 starts once
 LOG-1's foundation is merged. INT runs at the end of November 22.

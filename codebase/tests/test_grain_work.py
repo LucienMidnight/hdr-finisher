@@ -134,3 +134,33 @@ def test_cpu_pool_dispatches_visible_before_queued_scope():
     first.result(2); preview.result(2); scope.result(2)
     pool.pool.shutdown()
     assert order == ["preview", "scope"]
+
+
+def test_large_cpu_jobs_share_a_limit_without_blocking_unrelated_work():
+    from hdr_finisher.cpu_budget import CpuWorkLimit, PriorityCpuPool
+
+    pool = PriorityCpuPool(3)
+    limit = CpuWorkLimit(1)
+    started = threading.Event()
+    released = threading.Event()
+    order = []
+
+    def hold():
+        started.set()
+        assert released.wait(5)
+
+    try:
+        first = pool.submit(hold, background=True, work_limit=limit)
+        assert started.wait(5)
+        background = pool.submit(lambda: order.append("background"), background=True, work_limit=limit)
+        viewport = pool.submit(lambda: order.append("viewport"), work_limit=limit)
+        pool.submit(lambda: order.append("other")).result(5)
+        assert order == ["other"]
+        released.set()
+        first.result(5)
+        viewport.result(5)
+        background.result(5)
+        assert order == ["other", "viewport", "background"]
+    finally:
+        released.set()
+        pool.pool.shutdown()

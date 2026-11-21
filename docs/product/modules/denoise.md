@@ -69,7 +69,8 @@ correction and GPU draw paths still render the same pixels.
 
 CPU previews reuse a compact noise model across Exposure and other finishing edits. The model depends on the source pixels, rendition, geometry, processing size and measurement version. Concurrent previews share a measurement. The CPU Grain scratch reservation and the existing tile dimensions still apply. [Windows PC measurements](../../technical/performance-table.md#november-21--windows-pc-cpu-grain-sprint)
 
-On the Windows PC, the Sony reached its first sharp picture at 110% in 4.74 s, down from 21.94 s. Whole-photo preparation improved by 13–15% and peak app memory rose to 2.74 GB from 2.39 GB. The 30% whole-photo speed target and the baseline memory target remain open. [Windows PC measurements](../../technical/performance-table.md#november-21--windows-pc-cpu-grain-sprint)
+Native CPU Grain limits simultaneous wavelet and colour workspaces across Grade and Library. Visible tiles still enter the pool before queued background tiles. On the Windows PC, five workspaces brought peak app memory down from 2.74 GB to 2.33 GB, below the 2.39 GB baseline. The Sony reached its first sharp picture at 110% in 4.25 s against the 5.49 s target. The 30% whole-photo speed target remains open. [Windows PC measurements](../../technical/performance-table.md#november-21--windows-pc-cpu-grain-sprint)
+
 ### November 21 — Grade Grain on large photos
 
 Fine and Clean Grain calibrate at native resolution in rectangles with the
