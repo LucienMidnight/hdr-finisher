@@ -68,7 +68,7 @@ async function installCapture(page) {
           const encoder = this.device.createCommandEncoder();
           encoder.copyTextureToTexture({ texture: source }, { texture }, { width, height });
           this.device.queue.submit([encoder.finish()]);
-          active.frame = { lane, region, texture };
+          active.frame = { lane, region, texture, applicationGeneration: options.applicationGeneration };
           active.generation++;
         },
       });
@@ -100,7 +100,9 @@ async function waitForFrame(page, lane, method, view, previous) {
     const frame = capture.frame;
     return state.currentView === lane && state.acceptedPresentation?.exact && previewIdleNow()
       && state.acceptedPresentation.processedLongEdge === requiredProcessingLongEdge()
-      && capture.generation > previous && frame?.lane === lane && Boolean(frame.region) === (view === "110%")
+      && capture.generation > previous && frame?.lane === lane
+      && frame.applicationGeneration === state.acceptedPresentation.generation
+      && Boolean(frame.region) === (view === "110%")
       && runtime.status === "ready" && state.gpuPreview.denoiseSourceSelector?.controls.method === method;
   }, { lane, method, view, previous }, { timeout: 40000 });
 }
@@ -109,7 +111,19 @@ async function saveSamples(page, scratch, stem, lane, useGpu) {
   const sample = await page.evaluate(async () => {
     const { frame } = window.largeGrainCapture;
     const { texture, region } = frame;
-    const { width, height, format } = texture;
+    const { format } = texture;
+    // Grade guarantees coverage of the visible rectangle on the accepted
+    // native frame. Its extra padding can vary with CPU preparation and pan
+    // history. Measure the visible picture, using native coordinates.
+    const visible = region ? visibleOutputRect(region.frameWidth, region.frameHeight, { includeWhole: true }) : null;
+    if (region && (!visible || !window.HDRViewportRequest.covers(region, visible))) {
+      throw Error("The finished native capture does not cover the visible viewport.");
+    }
+    const width = visible?.width ?? texture.width;
+    const height = visible?.height ?? texture.height;
+    const offsetX = visible ? visible.x - region.x : 0;
+    const offsetY = visible ? visible.y - region.y : 0;
+    const sampledRegion = visible ? { ...visible, frameWidth: region.frameWidth, frameHeight: region.frameHeight } : null;
     // Full-width strips span the horizontal chunk joins at Fit. Widely
     // spaced rows sample different detail and tones at each zoom.
     const rows = 24;
@@ -120,7 +134,8 @@ async function saveSamples(page, scratch, stem, lane, useGpu) {
     const buffer = device.createBuffer({ size: pitch * rows * tops.length, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ });
     try {
       const encoder = device.createCommandEncoder();
-      tops.forEach((top, index) => encoder.copyTextureToBuffer({ texture, origin: { y: top } },
+      tops.forEach((top, index) => encoder.copyTextureToBuffer(
+        { texture, origin: { x: offsetX, y: offsetY + top } },
         { buffer, offset: index * pitch * rows, bytesPerRow: pitch, rowsPerImage: rows }, { width, height: rows }));
       device.queue.submit([encoder.finish()]);
       await buffer.mapAsync(GPUMapMode.READ);
@@ -130,7 +145,7 @@ async function saveSamples(page, scratch, stem, lane, useGpu) {
         tight.set(padded.subarray(row * pitch, row * pitch + rowBytes), row * rowBytes);
       }
       const grain = state.gpuPreview.denoiseSourceSelector.cache.grain;
-      return { data: tight.toBase64(), meta: { width, height: rows * tops.length, format, region, tops },
+      return { data: tight.toBase64(), meta: { width, height: rows * tops.length, format, region: sampledRegion, tops },
         gpu: Boolean(grain?.gpu), cpu: Boolean(grain?.token), configuredBytes: state.gpuPreview.configuredGpuBudgetBytes() };
     } finally {
       buffer.destroy();
