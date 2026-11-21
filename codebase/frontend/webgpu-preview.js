@@ -3959,6 +3959,7 @@
       const Scheduler = options.Scheduler
         || (typeof window !== "undefined" ? window.HDRTileScheduler : null);
       if (!Scheduler) return { rendered: false, refusals: ["tile scheduler is unavailable"] };
+      let analysisTileParams = null;
       try {
       const tileSize = Math.max(64, Math.floor(Number(options.tileSize) || Scheduler.DEFAULT_TILE_SIZE));
       // A measurement pass renders the graph to read one number off it and
@@ -4348,12 +4349,18 @@
       const stride = Math.ceil(params.byteLength / alignment) * alignment;
       const compositeStart = plan.tileCount + clarityChunks;
       const required = stride * (compositeStart + (pictureRegion ? foregroundTiles.length : 0));
-      if (!this.tileCompositeParamBuffer || this.tileCompositeParamBuffer.size < required) {
+      const tileParamsDescriptor = {
+        size: required, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+      };
+      if (options.analysisPatch) {
+        // Peak measurement can run while Grade is waiting for prepared
+        // Grain tiles. Keep its coordinates out of the visible tile buffer.
+        analysisTileParams = this.device.createBuffer(tileParamsDescriptor);
+      } else if (!this.tileCompositeParamBuffer || this.tileCompositeParamBuffer.size < required) {
         this.tileCompositeParamBuffer?.destroy();
-        this.tileCompositeParamBuffer = this.device.createBuffer({
-          size: required, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
-        });
+        this.tileCompositeParamBuffer = this.device.createBuffer(tileParamsDescriptor);
       }
+      const tileParams = analysisTileParams || this.tileCompositeParamBuffer;
       const slots = new Float32Array(required / 4);
       // The Clarity pre-pass's regions take the slots after the tiles'.
       (clarityFrame?.chunks || []).forEach(({ region }, index) => {
@@ -4397,7 +4404,7 @@
         slots[destination + GPU_PARAMS.TILE_ORIGIN_X] -= pictureRegion.x;
         slots[destination + GPU_PARAMS.TILE_ORIGIN_Y] -= pictureRegion.y;
       });
-      this.device.queue.writeBuffer(this.tileCompositeParamBuffer, 0, slots);
+      this.device.queue.writeBuffer(tileParams, 0, slots);
 
       const tiledLocalState = buildTiledLocalState(
         proxy.identity, params, activeLocals, lane, options.sourcePixelScale || 1,this.localCurveOffsets,
@@ -4677,7 +4684,7 @@
             break;
           }
           const binding = {
-            buffer: this.tileCompositeParamBuffer, offset: (plan.tileCount + chunkIndex) * stride, size: params.byteLength,
+            buffer: tileParams, offset: (plan.tileCount + chunkIndex) * stride, size: params.byteLength,
           };
           if (denoiseActive) {
             await denoiseInto(region);
@@ -4709,7 +4716,7 @@
         if (!cancelled) {
           // Any slot carries the frame size and the map's plan, which is all
           // the level and blur passes read from it.
-          const binding = { buffer: this.tileCompositeParamBuffer, offset: 0, size: params.byteLength };
+          const binding = { buffer: tileParams, offset: 0, size: params.byteLength };
           const finished = clarityFrame.textures[1];
           if (clarityFrame.reblur) {
             this.encodeClarityLevels(encoder, pipelines, (view) => bindWith(view, binding),
@@ -4736,7 +4743,7 @@
         const width = tile.haloRect.width;
         const height = tile.haloRect.height;
         const parameterBinding = {
-          buffer: this.tileCompositeParamBuffer, offset: index * stride, size: params.byteLength,
+          buffer: tileParams, offset: index * stride, size: params.byteLength,
         };
         const bind = (source, spatial = source, overlay = spatial, binding = parameterBinding) =>
           this.bindGraphResources(source, spatial, binding, overlay);
@@ -4930,7 +4937,7 @@
             ? maskMatrix[index][options.overlayIndex].texture.createView()
             : sourceView;
           const binding = pictureRegion ? {
-            buffer: this.tileCompositeParamBuffer, offset: (compositeStart + position) * stride, size: params.byteLength,
+            buffer: tileParams, offset: (compositeStart + position) * stride, size: params.byteLength,
           } : parameterBinding;
           const compositeBind = bind(noiseView ? baseView : finishView, sourceView, overlayView, binding);
           const compositePass = encoder.beginRenderPass({
@@ -5210,6 +5217,7 @@
         sourceSerial: proxy.sourceSerial ?? null, execution: "tiled", metrics,
       };
       } finally {
+        analysisTileParams?.destroy();
         this.scheduleTileCacheTrim();
       }
     }
