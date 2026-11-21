@@ -942,6 +942,8 @@ const els = {
   denoiseShowNoise: document.getElementById("denoise-show-noise"),
   noiseViewBadge: document.getElementById("noise-view-badge"),
   denoiseMethod: document.getElementById("denoise-method"),
+  denoiseRoute: document.getElementById("denoise-route"),
+  denoiseRouteAction: document.getElementById("denoise-route-action"),
   denoiseMicroControls: document.getElementById("denoise-micro-controls"),
   denoiseMicroSliders: ["luminance", "color", "detail"].map(name => [
     document.getElementById(`denoise-micro-${name}`), `micro_${name}`,

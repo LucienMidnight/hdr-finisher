@@ -1,11 +1,82 @@
 const assert = require("node:assert/strict");
 const test = require("node:test");
-const { Failures, failureReason } = require("../frontend/grain-route");
+const HDRGrainRoute = require("../frontend/grain-route");
+const { Failures, failureReason, describe } = HDRGrainRoute;
 
 const vm = require("node:vm");
-const { frontendSource } = require("./frontend-source");
+const { declarations, frontendSource } = require("./frontend-source");
 const device = {}, rebuilt = {};
 const snapshot = { budget_bytes: 1000, resident_bytes: 850, allocator_bytes: 830, requested_bytes: 100 };
+
+test("the label and help describe the Grain route that actually produced the preview", () => {
+  const route = (frame, extra = {}) => describe({ method: "clean_grain", enabled: true, frame, ...extra });
+  assert.equal(route({ route: "gpu" }).label, "GPU");
+  assert.equal(route({ route: "gpu", reduced: true }).label, "Reduced preview");
+  assert.equal(route(null, { enabled: false }).message, "Denoise is off.");
+  assert.deepEqual(route({ route: "gpu" }, { original: true }), { label: "Paused", message: "Showing the original." });
+  assert.equal(route(null, { unavailable: "Micro Grain needs an ordinary Bayer RAW." }).label, "Paused");
+  assert.equal(route(null, { method: "standard" }), null);
+  const memory = route({ route: "cpu", reason: "gpu_budget_exceeded" }, { canRetry: true });
+  assert.deepEqual(memory, { label: "CPU backup",
+    message: "Clean Grain is using the CPU because graphics memory was short.", action: "Retry on GPU" });
+  const lens = route({ route: "cpu", reason: "unsupported_lens_correction" }, { method: "micro_grain" });
+  assert.deepEqual(lens, { label: "CPU backup",
+    message: "Micro Grain is using the CPU because lens correction is on.", action: "Switch to Clean Grain" });
+  const reduced = route({ route: "cpu", reason: "gpu_unavailable", reduced: true, reducedEdge: 4096 });
+  assert.equal(reduced.label, "Reduced preview");
+  assert.match(reduced.message, /Export is full size/);
+  const forced = route({ route: "cpu", reason: "gpu_grain_not_selected" });
+  assert.equal(forced.action, null);
+  assert.match(forced.message, /GPU Denoise is turned off/);
+});
+
+test("CPU activity appears after two seconds and clears when the request completes", async () => {
+  let elapsed, finish;
+  const state = {
+    currentView: "hdr", session: { session_id: "photo" },
+    denoise: { hdr: { enabled: true, controls: { method: "clean_grain" } } },
+    denoiseRuntime: { hdr: {} },
+  };
+  const els = { denoiseRoute: {}, denoiseRouteAction: {}, denoiseStatus: {} };
+  const context = vm.createContext({ HDRGrainRoute, state, els, geometrySignature: () => "{}",
+    window: { setTimeout: (fn, ms) => { assert.equal(ms, 2000); elapsed = fn; }, clearTimeout() {} },
+  });
+  vm.runInContext(declarations("currentGrainFrame", "renderDenoiseRoute", "trackGrainCpuWork"), context);
+  context.renderDenoiseRoute();
+  const before = els.denoiseStatus.textContent;
+  const work = context.trackGrainCpuWork("hdr", "clean_grain", () => new Promise(resolve => { finish = resolve; }));
+  assert.equal(els.denoiseStatus.textContent, before);
+  elapsed();
+  assert.match(els.denoiseStatus.textContent, /on the CPU/);
+  finish();
+  await work;
+  assert.equal(els.denoiseStatus.textContent, before);
+});
+
+test("the offered action checks GPU recovery or selects Clean Grain", async () => {
+  const calls = [];
+  const state = {
+    currentView: "hdr", session: { session_id: "photo" },
+    denoise: { hdr: { enabled: true, controls: { method: "micro_grain" } } },
+    denoiseRuntime: { hdr: {} }, gpuPreview: { grainFailureCanRun: () => false },
+    acceptedPresentation: { lane: "hdr", geometrySignature: "{}", grainRoute: {
+      method: "micro_grain", sessionId: "photo", route: "cpu", key: "source", reason: "device_lost",
+    } },
+  };
+  const els = { denoiseRouteAction: { hidden: false, textContent: "Retry on GPU" } };
+  const context = vm.createContext({ state, els, geometrySignature: () => "{}", renderDenoiseRoute() {},
+    recalculateDenoise: lane => calls.push(lane), commitDenoiseControl: (...args) => calls.push(args),
+  });
+  vm.runInContext(declarations("currentGrainFrame", "runDenoiseRouteAction"), context);
+  await context.runDenoiseRouteAction();
+  assert.deepEqual(calls, []);
+  assert.match(state.acceptedPresentation.grainRoute.retryNote, /still busy/);
+  state.gpuPreview.grainFailureCanRun = () => true;
+  await context.runDenoiseRouteAction();
+  els.denoiseRouteAction.textContent = "Switch to Clean Grain";
+  await context.runDenoiseRouteAction();
+  assert.deepEqual(calls, ["hdr", ["method", "clean_grain"]]);
+});
 
 test("budget denial waits until the actual request fits, then grants one retry", () => {
   const failures = new Failures();

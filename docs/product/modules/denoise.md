@@ -65,6 +65,13 @@ unsupported inputs stay recorded for that source key. The existing CPU
 correction and GPU draw paths still render the same pixels.
 [Diagnostic log and reason codes](../../technical/logging.md)
 
+The Grain methods show GPU, CPU backup, Reduced preview or Paused beside
+Method. The label describes the preview on screen, so CPU preparation still
+shows CPU backup when the GPU draws the picture. The panel explains
+fallbacks and shows when CPU work takes more than two seconds. Retry on GPU
+uses the same one-retry policy after a temporary failure. Micro Grain on the
+CPU also offers Switch to Clean Grain when a GPU retry is unavailable.
+
 ### November 21: CPU Micro Grain reuse in Grade
 
 Grade reuses the same reduced Micro Grain pixels across Exposure and other

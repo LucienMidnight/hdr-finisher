@@ -257,7 +257,9 @@ async function renderPreviewForLane(
   if (previous?.key === key) return previous.promise;
   const action = options.action ?? state.gradeOpen?.action;
   const record = { key, sessionId, generation: state.previewGeneration[lane], promise: null };
-  record.promise = renderPreviewForLaneInner(lane, displayWhenReady, longEdge, { ...options, raw, action });
+  const render = () => renderPreviewForLaneInner(lane, displayWhenReady, longEdge, { ...options, raw, action });
+  const method = state.denoise?.[lane]?.enabled && !state.denoiseRuntime?.[lane]?.showOriginal && state.denoise[lane].controls.method;
+  record.promise = method && displayWhenReady ? trackGrainCpuWork(lane, method, render) : render();
   inflight.set(lane, record);
   try {
     return await record.promise;
@@ -381,6 +383,7 @@ async function renderPreviewForLaneInner(
   if (displayWhenReady && showProgress) setPreviewMessage("Processing complete. Decoding preview...", progressSteps[1]);
   const previewInfo = previewInfoFromResponse(response, lane);
   const reducedEdge = Number(response.headers.get("X-Preview-Reduced-Edge")) || null;
+  const grainRoute = backendGrainFrame(lane, reducedEdge);
   const processedEdge = reducedEdge || longEdge;
   let width = Number(response.headers.get("X-Image-Width"));
   let height = Number(response.headers.get("X-Image-Height"));
@@ -403,7 +406,7 @@ async function renderPreviewForLaneInner(
   }
   const previous = state.previewCache[lane];
   if (previous?.url) URL.revokeObjectURL(previous.url);
-  state.previewCache[lane] = { url, generation, longEdge: Math.max(width, height) || longEdge, requestedLongEdge: longEdge, reducedEdge, width, height, microKey, geometrySignature: signature, scopePeak: Number.isFinite(responseScopePeak) ? responseScopePeak : null };
+  state.previewCache[lane] = { url, generation, longEdge: Math.max(width, height) || longEdge, requestedLongEdge: longEdge, reducedEdge, grainRoute, width, height, microKey, geometrySignature: signature, scopePeak: Number.isFinite(responseScopePeak) ? responseScopePeak : null };
   if (displayWhenReady && state.currentView === lane && !state.comparePeekActive) {
     if (showProgress) setPreviewMessage("Presenting preview...", progressSteps[2]);
     const keptGpuSurface = !denoiseFallback && !reducedEdge && shouldKeepHdrGpuSurface(lane)
@@ -415,7 +418,7 @@ async function renderPreviewForLaneInner(
       state.previewInfoByLane[lane] = previewInfo;
       if (!await applyPreviewUrl(url, requestIsCurrent)) return false;
       state.previewInfo = previewInfo;
-      acceptPresentation(lane, processedEdge >= refinementProxyLongEdge() ? "refinement" : "settled", width, height, previewInfo.transport, denoiseFallback || !gpuPreviewEligible(lane) ? "CPU/backend" : "", null, generation, null, processedEdge, responseScopePeak, false, false, describeReducedDenoisePreview(reducedEdge));
+      acceptPresentation(lane, processedEdge >= refinementProxyLongEdge() ? "refinement" : "settled", width, height, previewInfo.transport, denoiseFallback || !gpuPreviewEligible(lane) ? "CPU/backend" : "", null, generation, null, processedEdge, responseScopePeak, false, false, describeReducedDenoisePreview(reducedEdge), grainRoute);
       els.scopeKindLabel.textContent = lane.toUpperCase();
       renderReadouts();
     }
@@ -436,14 +439,14 @@ function microGrainPreviewRequest(lane) {
 
 function grainCpuPreviewHeaders(lane, requestAction = null) {
   const runtime = state.denoiseRuntime?.[lane];
-  const action = state.denoise?.[lane]?.enabled && !runtime?.showOriginal && runtime?.microCpu
-    ? runtime.microCpuAction : null;
+  const action = state.denoise?.[lane]?.enabled && !runtime?.showOriginal && runtime?.microBackup
+    ? runtime.microBackup.action : null;
   const headers = { "Content-Type": "application/json" };
   if (!action || action.photo?.id !== state.session?.session_id) {
     return globalThis.HDRDiagnostics?.headers(requestAction, headers) ?? headers;
   }
-  runtime.microCpuAction = null;
-  state.gpuPreview?.grainEvent?.("grain_cpu_prepare_started", "cpu", runtime.microCpuReason, action,
+  runtime.microBackup.action = null;
+  state.gpuPreview?.grainEvent?.("grain_cpu_prepare_started", "cpu", runtime.microBackup.reason, action,
     { lane, method: "micro_grain" });
   return HDRDiagnostics.headers(action, { ...headers, "X-HDR-Finisher-Grain-Fallback": "micro" });
 }
@@ -517,13 +520,14 @@ async function renderRawPreviewForLane(lane, displayWhenReady, longEdge, { showP
   const height = Number(response.headers.get("X-Image-Height"));
   const rawGeneration = Number(response.headers.get("X-Generation"));
   const reducedEdge = Number(response.headers.get("X-Preview-Reduced-Edge")) || null;
+  const grainRoute = backendGrainFrame(lane, reducedEdge);
   const scopePeakHeader = response.headers.get("X-Scope-Peak");
   const responseScopePeak = scopePeakHeader === null ? null : Number(scopePeakHeader);
   const data = new Uint8ClampedArray(await response.arrayBuffer());
   if (geometryDraftActive() || controller !== state.previewControllers[lane]
     || microKey !== microGrainPreviewKey(lane)
     || generation !== state.previewGeneration[lane] || rawGeneration !== generation || signature !== geometrySignature()) return false;
-  const frame = { raw: data, width, height, generation, longEdge: Math.max(width, height) || longEdge, requestedLongEdge: longEdge, reducedEdge, microKey, geometrySignature: signature, scopePeak: Number.isFinite(responseScopePeak) ? responseScopePeak : null };
+  const frame = { raw: data, width, height, generation, longEdge: Math.max(width, height) || longEdge, requestedLongEdge: longEdge, reducedEdge, grainRoute, microKey, geometrySignature: signature, scopePeak: Number.isFinite(responseScopePeak) ? responseScopePeak : null };
   state.previewCache[lane] = frame;
   state.previewInfoByLane[lane] = {
     mediaType: "application/octet-stream",
@@ -535,6 +539,19 @@ async function renderRawPreviewForLane(lane, displayWhenReady, longEdge, { showP
   };
   if (displayWhenReady && lane === state.currentView && !state.comparePeekActive) applyRawPreview(frame);
   return true;
+}
+
+function backendGrainFrame(lane, reducedEdge) {
+  const settings = state.denoise?.[lane];
+  const method = settings?.controls.method;
+  const runtime = state.denoiseRuntime?.[lane];
+  if (!settings?.enabled || runtime?.showOriginal || method === "standard") return null;
+  const backup = runtime?.microBackup;
+  const reason = backup?.reason ?? (state.renderingMode === "cpu" ? "user_selected_cpu"
+    : !state.gpuPreview?.available ? "gpu_unavailable"
+      : previewDiagnosticReason(state.lastGpuDraftRefusal?.lane === lane ? state.lastGpuDraftRefusal.reason : null));
+  return { method, sessionId: state.session.session_id, route: "cpu", key: backup?.key,
+    reason, reduced: Boolean(reducedEdge), reducedEdge };
 }
 
 function describeReducedDenoisePreview(edge) {
@@ -568,7 +585,7 @@ function applyRawPreview(frame) {
   applyZoomGeometry();
   renderReadouts();
   const rawProcessedEdge = frame.reducedEdge || frame.requestedLongEdge || frame.longEdge;
-  acceptPresentation(state.currentView, rawProcessedEdge >= refinementProxyLongEdge() ? "refinement" : "settled", frame.width, frame.height, "Raw RGBA8", "CPU/backend", null, frame.generation, null, rawProcessedEdge, frame.scopePeak, false, false, describeReducedDenoisePreview(frame.reducedEdge));
+  acceptPresentation(state.currentView, rawProcessedEdge >= refinementProxyLongEdge() ? "refinement" : "settled", frame.width, frame.height, "Raw RGBA8", "CPU/backend", null, frame.generation, null, rawProcessedEdge, frame.scopePeak, false, false, describeReducedDenoisePreview(frame.reducedEdge), frame.grainRoute);
 }
 
 function applyRawComparisonPreview(frame) {
@@ -793,16 +810,16 @@ async function renderGpuDraftForView(lane, request) {
   const microControls = micro ? denoiseRendererControls(state.denoise[lane].controls) : null;
   const microStillCurrent = () => !micro || microGrainControlsMatch(lane, microControls);
   const microRuntime = state.denoiseRuntime[lane];
-  const retryMicro = micro && microRuntime.microCpu && tier !== "interactive" && microRuntime.microFailureKey
-    && state.gpuPreview.grainFailureCanRun(microRuntime.microFailureKey);
+  const retryMicro = micro && microRuntime.microBackup && tier !== "interactive" && microRuntime.microBackup.key
+    && state.gpuPreview.grainFailureCanRun(microRuntime.microBackup.key);
   if (denoiseActive && microSelected && !micro) {
     state.gpuPreview?.grainEvent?.("grain_gpu_skipped", "refused", "unsupported_grain_source", request.action, { lane });
   }
-  if (micro && microRuntime.microCpu && !retryMicro) {
+  if (micro && microRuntime.microBackup && !retryMicro) {
     if (request.action) {
-      microRuntime.microCpuAction = request.action;
+      microRuntime.microBackup.action = request.action;
       state.gpuPreview?.grainEvent?.("grain_gpu_skipped", "cpu", "prior_failure_latched", request.action,
-        { prior_reason: microRuntime.microCpuReason, lane });
+        { prior_reason: microRuntime.microBackup.reason, lane });
     }
     return refuse("micro-grain-cpu");
   }
@@ -859,7 +876,7 @@ async function renderGpuDraftForView(lane, request) {
         }
         const ready = await recalculateDenoise(lane, { longEdge, renderAfter: false, action: request.action, logAction: request.tier !== "interactive" });
         if (waiting && state.previewStatusEntry === waiting) hidePreviewMessage();
-        if (!ready || request.isCurrent?.() === false) return refuse(runtime.microCpu ? "micro-grain-cpu" : runtime.status === "error"
+        if (!ready || request.isCurrent?.() === false) return refuse(runtime.microBackup ? "micro-grain-cpu" : runtime.status === "error"
           ? "denoise-scale-analysis-unavailable" : "superseded-denoise-preparation");
         retarget();
       }
@@ -989,7 +1006,7 @@ async function renderGpuDraftForView(lane, request) {
   try {
     const draw = boundedPresentation
       ? renderer.renderTo.bind(renderer, els.previewDenoiseDetail) : renderer.render.bind(renderer);
-    const result = await draw(
+    const render = () => draw(
       sessionId,
       lane,
       adjustmentsSnapshot,
@@ -1002,6 +1019,7 @@ async function renderGpuDraftForView(lane, request) {
       { width: state.session.source.width, height: state.session.source.height },
       sourceOptions,
     );
+    const result = await (cpuGrainToken ? trackGrainCpuWork(lane, denoiseMethod, render) : render());
     if (!result) {
       const reason = renderer.lastRenderRefusal?.reason;
       if (gpuGrain && (reason?.startsWith("tiled-encode-failed:validation:")
@@ -1061,6 +1079,13 @@ async function renderGpuDraftForView(lane, request) {
       null,
       request.coarse,
       result.approximate || Boolean(request.microQuick || (micro && tier === "interactive" && !boundedPresentation)),
+      "",
+      denoiseActive && denoiseMethod !== "standard" && (!microSelected || micro) ? {
+        method: denoiseMethod, sessionId, route: cpuGrainToken ? "cpu" : "gpu",
+        key: cpuGrainToken ? renderer.denoiseSourceSelector?.cache?.grainFallbackKey : null,
+        reason: cpuGrainToken ? renderer.denoiseSourceSelector?.cache?.grainFallbackReason : null,
+        reduced: Boolean(result.approximate || request.microQuick),
+      } : null,
     );
     const exactEdge = refinementProxyLongEdge();
     const visibleEdge = Math.min(exactEdge, Math.max(1, displayedLongEdge()));
@@ -1123,11 +1148,13 @@ async function renderGpuDraftForView(lane, request) {
       renderer?.grainEvent?.("grain_cancelled", "refused", "superseded", request.action, { lane, method: denoiseMethod });
       return refuse("superseded-during-render");
     }
-    if (gpuGrain && renderer.denoiseSourceSelector?.cache?.grain === gpuGrain) {
+    if (micro || (gpuGrain && renderer.denoiseSourceSelector?.cache?.grain === gpuGrain)) {
       const current = () => sourceOptions.isCurrent() && state.gpuPreview === renderer;
-      const failure = renderer.noteGrainFailure(gpuGrain.sourceKey, error, request.action);
+      const key = gpuGrain?.sourceKey ?? renderer.grainSourceKey(sessionId, requestedGeometrySignature,
+        sourceIdentity, repairSourceGeneration, denoiseMethod);
+      const failure = renderer.noteGrainFailure(key, error, request.action);
       if (!failure) return refuse("superseded-during-render");
-      if (await renderer.recoverGrainFailure(gpuGrain.sourceKey, failure, current, request.action)) {
+      if (await renderer.recoverGrainFailure(key, failure, current, request.action)) {
         return renderGpuDraftForView(lane, request);
       }
       if (!current()) return refuse("superseded-during-render");
@@ -1137,12 +1164,8 @@ async function renderGpuDraftForView(lane, request) {
       }
       renderer?.grainEvent?.("grain_route", "cpu", failure.reason, request.action, { lane, method: denoiseMethod });
       useMicroGrainCpu(lane, Object.assign(new Error(error.message), {
-        grainSourceKey: gpuGrain.sourceKey, grainReason: failure.reason,
+        grainSourceKey: key, grainReason: failure.reason,
       }), request.action);
-      return refuse("micro-grain-cpu", error?.message);
-    }
-    if (micro) {
-      useMicroGrainCpu(lane, error, request.action);
       return refuse("micro-grain-cpu", error?.message);
     }
     if (error?.grainPreparationReplaced) {
@@ -1462,7 +1485,7 @@ async function showCachedPreview(lane, { skipGpu = false } = {}) {
   else if (cached.url) {
     if (!await applyPreviewUrl(cached.url, isCurrent)) return false;
     const cachedProcessedEdge = cached.reducedEdge || cached.requestedLongEdge || cached.longEdge;
-    acceptPresentation(lane, cachedProcessedEdge >= refinementProxyLongEdge() ? "refinement" : "settled", cached.width, cached.height, state.previewInfoByLane[lane].transport, "CPU/backend", null, cached.generation, null, cachedProcessedEdge, cached.scopePeak, false, false, describeReducedDenoisePreview(cached.reducedEdge));
+    acceptPresentation(lane, cachedProcessedEdge >= refinementProxyLongEdge() ? "refinement" : "settled", cached.width, cached.height, state.previewInfoByLane[lane].transport, "CPU/backend", null, cached.generation, null, cachedProcessedEdge, cached.scopePeak, false, false, describeReducedDenoisePreview(cached.reducedEdge), cached.grainRoute);
   }
   state.previewInfo = state.previewInfoByLane[lane];
   renderReadouts();

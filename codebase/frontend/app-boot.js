@@ -874,6 +874,7 @@ function bindEvents() {
     }
   }
   els.denoiseRecalculate?.addEventListener("click", () => recalculateDenoise(state.currentView, { force: true }));
+  els.denoiseRouteAction?.addEventListener("click", runDenoiseRouteAction);
   // PRD 6.3 progressive disclosure. Purely a matter of what is on screen:
   // the controls keep their values and keep applying while the panel is shut,
   // because `renderDenoiseControls` writes to them either way.

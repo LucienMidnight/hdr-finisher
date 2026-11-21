@@ -710,7 +710,10 @@
             <button id="denoise-show-noise" class="local-overlay-toggle" type="button" aria-pressed="false" disabled data-tooltip="Shows only what Denoise removes, as gray with the removed noise on top. Even grain is safe; visible edges, lettering or texture mean detail is being lost."><span class="local-overlay-icon" aria-hidden="true"></span><span>Show noise</span></button>
           </div>
           <div class="control-row">
-            <label for="denoise-method" data-tooltip="Clean Grain evens out the brightness grain and reduces colour splotches. Simple uses the original noise reduction. Fine Grain evens out the brightness grain only.">Method</label>
+            <div class="denoise-method-heading">
+              <label for="denoise-method" data-tooltip="Clean Grain evens out the brightness grain and reduces colour splotches. Simple uses the original noise reduction. Fine Grain evens out the brightness grain only.">Method</label>
+              <span id="denoise-route" class="helper" hidden></span>
+            </div>
             <select id="denoise-method">
               <option value="clean_grain">Clean Grain</option>
               <option value="standard">Simple</option>
@@ -718,6 +721,8 @@
               <option value="micro_grain">Micro Grain · Experimental</option>
             </select>
           </div>
+          <p id="denoise-status" class="helper" aria-live="polite">Denoise is off.</p>
+          <button id="denoise-route-action" class="text-button" type="button" hidden></button>
           <div id="denoise-micro-controls" class="hidden">
             <div class="control-row"><div class="control-heading"><label for="denoise-micro-luminance" data-tooltip="Reduces brightness noise while keeping a fine grain.">Luminance</label><output id="denoise-micro-luminance-value">50%</output></div><input id="denoise-micro-luminance" type="range" min="0" max="1" step="0.01" value="0.5"></div>
             <div class="control-row"><div class="control-heading"><label for="denoise-micro-color" data-tooltip="Reduces colour noise and blotches.">Color</label><output id="denoise-micro-color-value">50%</output></div><input id="denoise-micro-color" type="range" min="0" max="1" step="0.01" value="0.5"></div>
@@ -759,7 +764,6 @@
           <div class="control-actions">
             <button id="denoise-recalculate" class="button-secondary" type="button">Recalculate Denoise</button>
           </div>
-          <p id="denoise-status" class="support-copy" aria-live="polite">Denoise is off.</p>
         </div>
       </section>
 

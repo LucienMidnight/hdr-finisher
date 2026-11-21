@@ -1,3 +1,4 @@
+const HDRGrainRoute = require("../frontend/grain-route");
 const assert = require("node:assert/strict");
 const { test } = require("node:test");
 const vm = require("node:vm");
@@ -70,7 +71,7 @@ test("the reduced CPU Denoise image is presented at its actual size without anot
       setGpuSurfaceHdr() {}, applyPreviewUrl: async () => true, refinementProxyLongEdge: () => 5202,
       renderCompareStatus() {}, renderReadouts() {}, acceptPresentation: (...args) => presentation.push(args),
       CPU_PREVIEW_MAX_LONG_EDGE: 16384 });
-    vm.runInContext(declarations("renderPreviewForLaneInner", "describeReducedDenoisePreview", "microGrainPreviewRequest", "microGrainPreviewKey", "grainCpuPreviewHeaders"), context);
+    vm.runInContext(declarations("renderPreviewForLaneInner", "describeReducedDenoisePreview", "microGrainPreviewRequest", "microGrainPreviewKey", "grainCpuPreviewHeaders", "backendGrainFrame", "previewDiagnosticReason"), context);
     assert.equal(await context.renderPreviewForLaneInner("hdr", true, 5202, { showProgress: false, denoiseFallback: true }), !stale);
     assert.equal(gpuAttempts, 0);
     if (stale) {
@@ -138,14 +139,14 @@ test("a validation failure drawing the quick CPU Grain picture still requests th
     },
   };
   const context = vm.createContext({
-    state, performance, window: {}, els: { previewCanvas: {} }, console: { warn() {} },
+    state, performance, window: { setTimeout, clearTimeout }, els: { previewCanvas: {} }, console: { warn() {} },
     gradeGrainAction: () => null, gradeGrainGpuPreferred: () => false, liveGradeGrainSelected: () => false,
     geometryDraftActive: () => false, gpuPreviewEligible: () => true, nativeDenoiseViewport: () => false,
     geometrySignature: () => "{}", gradeSourceIdentity: () => "authored-sdr", denoiseNoiseViewActive: () => false,
     gpuLumaMaskOverlayOptions: () => null, projectReferenceWhiteNits: () => 203, gpuFrameSizeAt: () => null,
     localAdjustments: () => [], localsBypassed: () => true, sampleCurvePoints() {}, renderReadouts() {},
   });
-  vm.runInContext(frontendSource("preview-pipeline.js"), context);
+  vm.runInContext(frontendSource("preview-pipeline.js") + declarations("trackGrainCpuWork"), context);
   assert.equal(await context.renderGpuDraftInner("sdr", { longEdge: 1600 }), false);
   assert.equal(attempts, 1);
   assert.equal(context.transientGpuRefusal(), false);
@@ -188,7 +189,7 @@ for (const method of ["standard", "fine_grain", "clean_grain"]) {
     };
     const noop = () => {};
     const context = vm.createContext({
-      state, performance, window: {}, els: { previewCanvas: canvas, previewDenoiseDetail: detail,
+      state, HDRGrainRoute, performance, window: {}, els: { previewCanvas: canvas, previewDenoiseDetail: detail,
         previewImage: { style: {} }, emptyState: { style: {} } },
       geometryDraftActive: () => false, gpuPreviewEligible: () => true, nativeDenoiseViewport: () => true,
       geometrySignature: () => "{}", denoiseNoiseViewActive: () => false, gpuLumaMaskOverlayOptions: () => null,

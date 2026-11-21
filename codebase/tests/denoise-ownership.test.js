@@ -3,6 +3,7 @@ const { test } = require('node:test');
 const fs = require('node:fs');
 const vm = require('node:vm');
 const path = require('node:path');
+const HDRGrainRoute = require("../frontend/grain-route");
 const { HDRLatestWorkQueue } = require('../frontend/latest-work-queue.js');
 const { frontendSource, declarations } = require('./frontend-source.js');
 
@@ -23,8 +24,8 @@ function harness() {
       cancelDenoiseProcessing() {}, analyzeDenoiseProxy: async () => true,
       resolveDenoiseProxy: async controls => { calls.resolves.push(controls); return true; } },
   };
-  const context = vm.createContext({ state, els: {}, console, performance, structuredClone, AbortController,
-    window: { HDRLatestWorkQueue, setTimeout },
+  const context = vm.createContext({ state, HDRGrainRoute, els: {}, console, performance, structuredClone, AbortController,
+    window: { HDRLatestWorkQueue, setTimeout, clearTimeout },
     refinementProxyLongEdge: () => 1024, geometrySignature: () => '',
     renderGpuDraft: async lane => { calls.renders.push(lane); },
     renderPreviewForLane: async () => true,
@@ -333,7 +334,7 @@ test('retained Micro Grain CPU fallback becomes ready again immediately on enabl
   const h = harness();
   h.state.denoise.hdr.controls.method = 'micro_grain';
   const runtime = h.state.denoiseRuntime.hdr;
-  runtime.microCpu = true;
+  runtime.microBackup = HDRGrainRoute.microFallback(null, { grainReason: "gpu_unavailable" });
   await h.context.setDenoiseEnabled(true);
   assert.equal(runtime.status, 'ready');
   assert.equal(runtime.dirty, false);
