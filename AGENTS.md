@@ -689,6 +689,13 @@ Completed UI polish round 3 (pending visual sign-off): `docs/technical/archive/b
   railing-light fix, the three-method crop reference and MacBook baseline
   with 110% measurements. Lists the remaining Canon timing cases. The Grade
   PRD records the ranked speed plan and the memory failures.
+- `docs/technical/briefs/sprint-denoise-gpu-logging-2026-11-21.md`: the
+  current sprint. App-wide logs, Grade Grain route robustness, a faster CPU
+  Grain backup and Grain on the GPU above 8,192 pixels. Read it before any
+  sprint package.
+- `docs/technical/briefs/denoise-gpu-fallback-memory-2026-11-21.md`: PC
+  measurements of Grade Grain memory, the map of every GPU-to-CPU exit and
+  the inferred MacBook Neo limits.
 - `docs/technical/briefs/denoise-micro-grain-app-2026-11-20.md`:
   Round 3 Bayer Denoise app design and feasibility checks.
 - `docs/technical/briefs/denoise-export-proof-breakdown-2026-11-20.md`:
