@@ -1106,6 +1106,29 @@ separate proof it does not trade away hair and fine texture; luminance-weighted
 brightness needs an independent detail and signed-luminance check. None changes
 the current algorithm.
 
+**Reviewer's caution (Gemini 4 Neon, Nov 22), checked by the coordinator.**
+The fixed 0.001 anchor is not neutral on real photos, so three candidates
+change more than exposure behaviour:
+- `MICRO_GUARD` and `RAW_LEVELS` scale by the fitted read noise, which varies
+  a lot between photos. On the atrium `DSC01212.ARW` the unweighted fit gives
+  zero read noise, so the Micro light guard seed falls from 0.12 to about
+  0.0023 and protects most of the frame from Micro; on the noisy Sony it rises
+  to about 0.51 and stops protecting lights between 0.12 and 0.5.
+- `COLOUR_LEVELS` divides by local luminance grain, which also rises at edges:
+  beside bright pinpoint lights the highlight ramp moves from 0.065–0.125 to
+  about 2.4–4.5 (weaker protection), and in very smooth areas it falls about
+  55× (less colour cleanup).
+- The review crops show RAW and Micro candidates processed once and displayed
+  at −3/0/+3 EV; they do not test under- or over-exposed captures. The Clean
+  pair uses Grain Evenness 0 and is not brightness-matched.
+- `COLOUR_LEVELS` and `MICRO_GUARD` do not enter Library cache keys; clear the
+  Library cache before trying them. Windows needs setup rerun to rebuild
+  `denoise_filters` before `COLOUR_LEVELS` uses the C path.
+Recommendation: `BAYER_FIT` is ready for an ordinary visual decision. The
+other three need an anchor taken from each photo's own measured noise (or a
+per-camera reference) and exposure-matched stress crops before they are
+candidates for defaults.
+
 ### Round 2 decisions for Steve
 
 | ID | Question | Recommendation |
@@ -1113,8 +1136,8 @@ the current algorithm.
 | R2-1 | Fold Fine Grain into Clean Grain (Clean with Color Splotches at 0)? | **Steve, Nov 21: yes.** Clean Grain stays the default. A checkbox turns off the cleaning part, giving Fine-Grain-like results; they need not match today's Fine Grain exactly. Built by FOLD-1. |
 | R2-2 | Trim Library cache shares while Grade has a large photo open on an 8 GB machine? | **Steve, Nov 21: yes.** MEM-1 builds it and records the shares in `memory-and-caches.md`. |
 | R2-3 | Memory-map read-only sources on 8 GB machines? | **Coordinator and reviewer agree, Nov 21: not now.**<br>- On macOS, clean mapped pages leave the physical-footprint number the app measures. The meter would drop without freeing real memory, and `safety_total` would subtract the image twice.<br>- It would write about 500 MB to the SSD for every photo opened.<br>- Grain scratch is already disk-backed, so mapping it gains nothing.<br>If MEM-1's Mac measurements still show pressure, look first at cold buffers (`retouch_original`, about 509 MB) and Micro's 256 MiB Bayer tile cache, then revisit with numbers. |
-| R2-4 | Which QUAL-1 candidates become defaults? | Decide on the review page. |
-| R2-6 | Lens correction in strips? | **Byte-exact replacement built and verified on the MacBook Neo.** Restarting Lensfun's float32 row sum caused the trial's output drift. The replacement preserves the native row values and saves 462 MB on Canon and 1,058 MB on Sony through lens correction, with identical corrected and finished pixels. Confirm byte equality and that the strip path runs on the Windows PC. |
+| R2-4 | Which QUAL-1 candidates become defaults? | Decide on the review page (`codebase/output/review/grain-quality/`). Coordinator and reviewer, Nov 22: only `BAYER_FIT` is ready to judge; the other three need an anchor redesign first (see QUAL-1, reviewer's caution). |
+| R2-6 | Lens correction in strips? | **Byte-exact replacement built and verified on the MacBook Neo.** Restarting Lensfun's float32 row sum caused the trial's output drift. The replacement preserves the native row values and saves 462 MB on Canon and 1,058 MB on Sony through lens correction, with identical corrected and finished pixels. Any native failure now falls back to whole-frame coordinates with a logged reason (`f7d58825`, after the final review). Confirm byte equality and that the strip path runs on the Windows PC. |
 | R2-7 | Export depends on whether Grade was opened first (pre-existing, also on `deb2fc6f`)? | **Steve and reviewer, Nov 21: leave for later.**<br>- Grade, Proof and export on the same machine already share one measurement.<br>- The difference appears only for an export without Grade first, for example on the other machine or after clearing the cache. HDR ΔE ITP mean / p99 0.669 / 2.075, within limits.<br>- Cause, checked in code: the GPU measures a 4×4 grid of 256 px windows; the CPU measures up to 64 windows and every pixel of the tail sample, where the GPU samples 16,384.<br>- Root fix after v1: make CPU and GPU measure the same windows. This is an output change and needs Steve's yes.<br>- Do not store noise models in saved grades. |
 | R2-5 | Route label look and wording | **Steve, Nov 21:** no label and no Method heading. Show nothing while the GPU works. One line appears only when the slower CPU route is in use, saying why (or when the method cannot run). Coordinator applied this after ROUTE-1 merged. |
 
@@ -1195,6 +1218,60 @@ The coordinator:
 
 Later, after v1: lens correction as a GPU warp after GPU Micro Grain
 (reviewer's suggestion) replaces most of MG-2. It stays out of scope here.
+
+**Overnight summary (MacBook Neo, Nov 21–22, for Steve).** Commits
+`2ac61a8f`…`f7d58825` on top of `113a1c92`; final review by Gemini 4 Neon.
+
+- **Passed.**
+  - Clean Grain on the 42 MP Sony stayed on the graphics card at Fit, 110%,
+    pan and Evenness release, under 4 GB (peak 3.16 GB). The original slow
+    fallback did not happen. At Custom 0.25 GiB it correctly moved to the CPU,
+    and the log names the reason (`gpu_budget_exceeded`, 216 MB needed,
+    115 MB free).
+  - Micro Grain without lens correction stayed on the graphics card, under
+    4 GB.
+  - Lens correction in strips (R2-6): the cause was Lensfun's own rounding
+    as it adds up row positions. The new version reproduces those positions
+    exactly, so pictures are byte-identical, and it uses 462 MB (Canon) and
+    1,058 MB (Sony) less memory. If anything goes wrong it quietly uses the
+    old method and logs why.
+  - QUAL-1: four quality options are built, all off. With them off nothing
+    changes. With each on, the CPU and graphics-card results agree within the
+    limits. Signed-shadow clipping never happens on the test RAWs, so no fix
+    was needed.
+  - Fast tests: Node 1,160 passed, Python 4,410 passed. The only failures
+    (tooltip catalogue, two Python checks) were already failing before
+    tonight.
+- **Failed or over the limit.**
+  - Over the 4 GB ceiling on the Mac: lens-corrected Micro Grain 5.47 GB
+    (about 1 GB less now with R2-6, so still about 4.4 GB), AVIF export
+    6.69 GB, full-size AVIF Proof 11.0 GB (two gain-map rebuilds running at
+    the same time). No memory sizes were changed.
+  - Lens-corrected Micro Grain on the Mac took about 47 s at first, and then
+    about 46 s **again** after an Exposure change and after the first HDR→SDR
+    switch. TRI-1 expected those repeats to be reused (2 s on the PC). Not
+    investigated tonight.
+  - Clean Grain switched on at Fit takes about 9 s on the Mac (GPU route).
+- **Could not run.** The incident photo `DSC00786.ARW` on the Mac is a
+  different file from the one in the incident (SHA `6b9781a0…`, not
+  `aa6b7118…`). The 50 MP `DSC00636.ARW` is not on the Mac. The Metal trace
+  needs Xcode (Instruments), which is not installed.
+- **Decisions for Steve, one at a time.**
+  1. Which memory overrun to fix first: full-size Proof (11 GB), AVIF export
+     (6.7 GB) or lens-corrected Micro (about 4.4 GB). Recommendation: Proof,
+     since it can make the whole Mac swap; stop the two gain-map rebuilds
+     overlapping.
+  2. QUAL-1 (R2-4): look at the review page. Only the weighted noise fit is
+     ready to judge; the other three need a redesign before they could become
+     defaults.
+  3. Whether to install Xcode on the Mac for the Metal trace, and copy the
+     exact incident RAW and the 50 MP RAW to it.
+- **PC follow-up.** Rerun setup, then confirm R2-6 strips run and stay
+  byte-identical on Windows (AGENTS.md, item 9).
+- **Small follow-up, not done.** Micro Grain's visible-area lens step still
+  computes coordinates from the top of the photo down to the view
+  (`denoise_micro_grain._lens_region`); the new exact strips could bound it to
+  the view.
 
 ## Out of scope
 

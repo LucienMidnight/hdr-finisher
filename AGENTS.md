@@ -406,6 +406,14 @@ same-Mac v0.9.2 comparisons and exact errors: `docs/known-limitations.md`,
    runner retry (stale metadata on the first post-fix attempt). Local adjustment
    overlay and codec-source checks also have explicit flaky results.
 
+**PC confirmation from the overnight Mac work (November 22):**
+
+9. After setup (which rebuilds `denoise_filters`), confirm the R2-6 Lensfun
+   strips run on Windows and stay byte-identical: `pytest tests/test_extended_formats.py -k lens`
+   must pass without skips, and the backend log must not show
+   `lens_coordinate_strips_unavailable`. Then one RAW import with lens
+   correction on `IMG_0790.CR2` and `_DSC7970.ARW` must match whole-frame bytes.
+
 ## Disk space and test output
 
 Steve, October 28, 2026, after test and measurement output filled drive D
