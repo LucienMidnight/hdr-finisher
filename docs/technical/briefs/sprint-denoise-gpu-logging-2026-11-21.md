@@ -319,11 +319,13 @@ setting.
 - Log any refusal that remains with the contract's reason codes.
 
 **Test inputs.**
-- Find a real 50 MP (about 8640 × 5760) and 61 MP (about 9504 × 6336) Sony
-  ARW in the shared test-photo folder or `D:\Photos` (read only; copy it
-  first).
-- If none exists, tell the coordinator, who will ask Steve. Meanwhile use a
-  synthetic large linear source for functional tests only.
+- **50 MP:** `D:\Photos\Play_Raw\House barges on the Thames - Pberg\DSC00636.ARW`,
+  supplied by Steve. It is a Sony at 8660 × 5784 (8672 × 5784 raw), RGGB.
+  `D:\Photos` is read only, so copy the ARW into the shared test-photo folder
+  first and never copy its sidecars back.
+- **61 MP:** there is no real file. Use a synthetic large linear source of
+  about 9504 × 6336 for functional and memory checks, and say so in the
+  report.
 
 **Owns.** The Fine/Clean fit, the Fit reduction and the strip-upload code in
 `webgpu-preview.js`; Grain WGSL in `webgpu-shaders.js`; `micro-grain-gpu.js`;
