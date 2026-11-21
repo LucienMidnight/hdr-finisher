@@ -4,6 +4,7 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from itertools import count
 import json
+import os
 import re
 import sys
 from threading import Lock
@@ -16,6 +17,7 @@ _PRIVATE = re.compile(r"secret|password|authorization|cookie|^token$|request.?bo
 _AREAS = {"app", "library", "grade", "denoise", "gpu", "memory", "raw", "export", "proof", "match"}
 _action = ContextVar("diagnostic_action", default=None)
 _sequence = count(1)
+_process = ContextVar("diagnostic_process", default="backend")
 _lock = Lock()
 
 
@@ -34,6 +36,15 @@ def action_scope(action):
         yield
     finally:
         _action.reset(reset)
+
+
+@contextmanager
+def process_scope(role):
+    reset = _process.set(role)
+    try:
+        yield
+    finally:
+        _process.reset(reset)
 
 
 def _safe(value, depth=0):
@@ -58,7 +69,7 @@ def log(area, event, *, level="info", action=None, photo=None, **fields):
     if stream is None:
         return
     with _lock:
-        record = {**_safe(fields), "time": time.time(), "seq": next(_sequence), "proc": "backend",
+        record = {**_safe(fields), "time": time.time(), "seq": next(_sequence), "proc": _process.get(), "pid": os.getpid(),
                   "area": area, "event": event, "level": level, "action": valid_action(action) or current_action(),
                   "photo": _safe(photo) if isinstance(photo, Mapping) else None}
         try:
