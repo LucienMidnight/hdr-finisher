@@ -60,10 +60,10 @@
 
   function describe({ method, enabled, original, unavailable, error, frame, cpuBusy, canRetry, retryNote }) {
     if (!METHODS[method]) return null;
-    if (!enabled) return { label: "Paused", message: "Denoise is off." };
-    if (original) return { label: "Paused", message: "Showing the original." };
+    if (!enabled) return { label: "Off", message: "Denoise is off." };
+    if (original) return { label: "Original", message: "Showing the original." };
     if (unavailable || (error && frame?.route !== "cpu")) return { label: "Paused", message: unavailable || error };
-    if (!frame) return { label: "Paused", message: cpuBusy ? "Preparing the denoised preview on the CPU…"
+    if (!frame) return { label: "Preparing", message: cpuBusy ? "Preparing the denoised preview on the CPU…"
       : "Preparing Denoise. You can keep viewing the current picture." };
     const progress = cpuBusy ? "Preparing the next preview on the CPU…" : "";
     if (frame.route === "gpu" && !frame.reduced) {
@@ -74,7 +74,8 @@
     const message = frame.route === "cpu"
       ? `${METHODS[method]} is using the CPU because ${reason}.`
       : "Showing a quick GPU preview while full detail prepares.";
-    const size = frame.reducedEdge ? ` Preview limited to ${frame.reducedEdge.toLocaleString()} px. Export is full size.` : "";
+    const size = frame.reducedEdge ? ` Preview limited to ${frame.reducedEdge.toLocaleString()} px. Export is full size.`
+      : frame.route === "cpu" ? " Export is unchanged." : "";
     return {
       label: frame.reduced ? "Reduced preview" : "CPU backup",
       message: [message + size, error, retryNote, progress].filter(Boolean).join(" "),
