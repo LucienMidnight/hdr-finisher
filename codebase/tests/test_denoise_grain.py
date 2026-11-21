@@ -179,3 +179,58 @@ def test_native_warmup_runs_visible_tiles_together(tmp_path, monkeypatch):
     finally:
         prepared.close()
         pool.pool.shutdown()
+
+
+def test_native_colour_correction_matches_numpy_bytes(monkeypatch):
+    import pytest
+    from hdr_finisher import denoise_filters, denoise_grain
+
+    native = denoise_filters.library()
+    if not hasattr(native, "colour_guides"):
+        pytest.skip("Run machine setup to build the optional native filters.")
+    rng = np.random.default_rng(5)
+    image = rng.normal(.04, .028, (173, 149, 3)).astype(np.float32)
+    image[20:38, 12:28] *= 20
+    image[60:68, 80:95] *= .1
+    for broad in (False, True):
+        actual = denoise_grain.colour_delta(image, broad)
+        with monkeypatch.context() as fallback:
+            fallback.setattr(denoise_filters, "library", lambda: None)
+            expected = denoise_grain.colour_delta(image, broad)
+        assert actual.tobytes() == expected.tobytes()
+
+
+def test_colour_shader_uses_the_cpu_offsets_and_ramp_bounds():
+    import ast
+    import inspect
+    from pathlib import Path
+    import re
+    from hdr_finisher import denoise_grain
+
+    shader = (Path(__file__).resolve().parents[1] / "frontend/webgpu-shaders.js").read_text(encoding="utf-8")
+    pairs = shader.split("fn cleanPairsMain(", 1)[1].split("fn cleanRelativeMain(", 1)[0]
+    small, large, switching_reach = map(
+        int, re.search(r"select\((\d+), (\d+), reach == (\d+)\)", pairs).groups())
+    offsets = re.search(r"let offsets = array<vec2i, 4>\((.+)\);", pairs)[1]
+    for reach in (12, 28):
+        values = {"reach": reach, "0": 0, "d": large if reach == switching_reach else small}
+        actual = []
+        for arguments in re.findall(r"vec2i\(([^)]+)\)", offsets):
+            coords = [token.strip() for token in arguments.split(",")]
+            xy = [(-1 if token.startswith("-") else 1) * values[token.lstrip("-")] for token in coords]
+            x, y = xy if len(xy) == 2 else xy * 2
+            actual.append((y, x))
+        assert tuple(actual) == denoise_grain._colour_offsets(reach)
+
+    # These literal bounds are shared numerical constants. Ignore operation
+    # structure because the GPU splits repair into several shader stages.
+    colour = shader.split("fn cleanGuidesMain(", 1)[1].split("fn cleanOutputMain(", 1)[0]
+    bounds = r",\s*(-?[.\d]+),\s*(-?[.\d]+)\)"
+    gpu = {tuple(map(float, re.search(bounds, call).groups()))
+           for call in colour.split("cleanRamp(")[1:]}
+    cpu = set()
+    for function in (denoise_grain._colour_pass, denoise_grain.colour_delta):
+        for call in ast.walk(ast.parse(inspect.getsource(function))):
+            if isinstance(call, ast.Call) and isinstance(call.func, ast.Name) and call.func.id == "_ramp":
+                cpu.add(tuple(ast.literal_eval(arg) for arg in call.args[1:]))
+    assert cpu == gpu
