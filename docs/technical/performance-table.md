@@ -1,3 +1,19 @@
+## November 21 — Windows PC interim Denoise integration (INT-2a)
+
+Unpackaged Electron at 2560 × 1440, Sony `_DSC7970.ARW` (7968 × 5320)
+from the shared staged copy, harsh-speck cleanup ×2.5, one observation per
+condition under the same GPU lock. Times start at the user action. RAM is
+sampled whole-app use in decimal GB. Use the existing 10% timing allowance
+for shared-machine variation.
+
+| Action | Comparison | Conditions |
+| --- | --- | --- |
+| Lens-corrected CPU Micro Grain, first sharp at 110% | 10.07 s, 2.11 GB | `35a6b9ce`, Lensfun Auto, native AVIF viewport. Earlier MG-2 RGBA8 sample was 10.38 s, 2.05 GB. |
+| Lens-corrected CPU Micro Grain, settled Fit | 29.30 s, 3.43 GB | `35a6b9ce`, straight from the initial 110% picture, exact 1610 px AVIF. Earlier MG-2 sample after panning was 27.30 s, 3.43 GB. |
+| Forced CPU Clean Small, first sharp at 110% | 3.48 → 3.50 s | Same `35a6b9ce` code, OpenCV default (12 threads) → shipping one thread. Lens off, CPU preparation and WebGPU presentation. A temporary launch hook restored the OpenCV default at the startup call, then was removed. |
+| Forced CPU original-size Q90 SDR JPEG export with Clean Small | 19.13 → 18.01 s | Same OpenCV pair. Timed from Export to the completed file and status. JPEG bytes were identical. |
+| Forced CPU Clean Small, first sharp / all native tiles / peak RAM | 3.85 → 3.50 s / 14.01 → 11.84 s / 2.38 → 2.61 GB | `411f0cc6` → `35a6b9ce`, isolated apps in the same locked run, lens off. Current tip also measured 2.48 GB with OpenCV at its default. The revision comparison includes the other round-two changes. |
+
 ## November 21 ? Windows PC CPU Micro Grain visible area
 
 Windows PC, Ryzen 5 7600, unpackaged Electron at 2560 ? 1440, Sony

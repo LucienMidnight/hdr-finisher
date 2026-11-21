@@ -76,6 +76,7 @@ Three problems follow, and Steve approved all three on November 21:
 | FOLD-1 | Fine Grain folded into Clean Grain, with a cleaning checkbox | `sprint/fold-fine-grain` | CG-2, GPU-2, ROUTE-1 merged | done, merged Nov 21: "Clean color splotches and fringes" checkbox, on by default, saved per rendition. On: Sony HDR and SDR Fit byte-identical on each route. Off: CPU/GPU HDR ΔE ITP 0.055 / 0.161, SDR ΔE 2000 0.031 / 0.765 (mean / p99). Crops of off against old Fine Grain for Steve. Affected saved grade: Canon `IMG_0790.CR2.hdrf` |
 | DLV-1 | Share one Grain result across HDR and SDR in AVIF export and Proof | `sprint/delivery-grain-share` | — | done, merged Nov 21: shared when HDR and SDR have the same source and controls, bounded to one float32 frame (~509 MB). Sony Clean Small: AVIF export 54.5 → 44.9 s, full-size Proof 94.6 → 60.1 s, files byte-identical. Pre-existing: backend peak ~6.2 GB on both, over the 4 GB ceiling (MEM-1) |
 | INT-2 | Round 2 integration, full checks, push and hand test | `feat/denoise-v1` | all round 2 | to do |
+| INT-2a | Interim Windows PC check | `sprint/int-2a` | MG-2 merged | checked Nov 21 at `35a6b9ce` with 4/9 drivers passing. Two round-one failures and three new failures repeated on retry (`grain-large-photo-parity.js`, `denoise-adaptive-parity.js`, `gpu-delivery-smoke.js`). Sony timings in the performance table. Grade was quiet on GPU and showed one explanatory CPU message. |
 
 LOG-1, CPU-1 and GPU-1 run in parallel on November 21. LOG-2 starts once
 LOG-1's foundation is merged. INT runs at the end of November 22.
