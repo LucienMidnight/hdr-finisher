@@ -8,7 +8,7 @@ from types import SimpleNamespace
 import numpy as np
 from PIL import Image
 
-from hdr_finisher.models import DenoiseDocumentSettings, DenoiseLiveControls, EditCommand
+from hdr_finisher.models import DenoiseDocumentSettings, DenoiseLiveControls, EditCommand, EditDocument
 from hdr_finisher.projects import open_project, save_project
 from hdr_finisher.sessions import SessionStore
 
@@ -105,7 +105,26 @@ def test_new_denoise_settings_use_approved_d1_defaults() -> None:
     settings = DenoiseDocumentSettings()
     for lane in (settings.hdr, settings.sdr):
         assert not lane.enabled
-        assert lane.controls.model_dump() == expected
+        assert lane.controls.model_dump() == {**expected, "method": "clean_grain"}
+
+
+def test_methodless_saved_grade_uses_simple_instead_of_the_new_lane_default(tmp_path: Path) -> None:
+    from hdr_finisher.exporters import denoise_settings_for_export
+    from hdr_finisher.models import PreviewKind
+
+    source = tmp_path / "methodless.png"
+    Image.fromarray(np.full((16, 24, 3), 96, dtype=np.uint8)).save(source)
+    store = SessionStore()
+    payload = store.create_session(source, owns_source_path=False)
+    session = store.get(payload.session_id)
+    assert session.denoise.hdr.controls.method == session.denoise.sdr.controls.method == "clean_grain"
+    data = session.edit_document().model_dump(mode="json")
+    data["denoise"] = {"hdr": {"enabled": True, "controls": {"amount": 0.65}}, "sdr": {"enabled": True}}
+    saved = EditDocument.model_validate(data)
+    for lane in (PreviewKind.HDR, PreviewKind.SDR):
+        assert denoise_settings_for_export(saved, lane).controls.method == "standard"
+    assert saved.denoise.hdr.controls.amount == 0.65
+    assert EditDocument.model_validate_json(saved.model_dump_json()).denoise == saved.denoise
 
 
 def test_micro_grain_controls_round_trip_without_reusing_standard_values() -> None:

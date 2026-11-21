@@ -56,6 +56,7 @@ async function initializeGpuPreview() {
   const videoMemory = await desktop?.videoMemory?.().catch(() => null);
   state.gpuPreview.setDetectedVideoMemory(videoMemory?.detected ? videoMemory : null);
   await state.gpuPreview.initialize();
+  warmGradeDenoisePipelines();
   renderGpuMemoryAutoLabel();
   if (!state.gpuPreview.available && state.gpuFailurePolicy) {
     // Initialization failure is the one permanent failure in Section 5.8.
@@ -81,6 +82,7 @@ async function rebuildGpuPreview(reason = "") {
       markPreviewUnavailable(`WebGPU device rebuild failed: ${state.gpuPreview.detail || reason}`);
       return false;
     }
+    warmGradeDenoisePipelines();
     state.gpuRebuildAttempts = 0;
     state.displayInfo.gpu = state.gpuPreview.detail;
     renderReadouts();
@@ -91,6 +93,20 @@ async function rebuildGpuPreview(reason = "") {
     markPreviewUnavailable(`WebGPU device rebuild failed: ${error?.message || error}`);
     return false;
   }
+}
+
+function warmGradeDenoisePipelines() {
+  const renderer = state.gpuPreview;
+  if (!renderer?.available) return;
+  const device = renderer.device;
+  window.requestIdleCallback(() => {
+    if (renderer.device !== device || !renderer.available || renderer.deviceLost) return;
+    // Foreground Grade uses the same in-flight compilations if it needs them
+    // before idle warm-up finishes.
+    void renderer.ensureCleanGrainPipelines().catch(() => {});
+    void renderer.ensureGrainFitPipeline().catch(() => {});
+    void renderer.ensureFineGrainResizePipelines(true).catch(() => {});
+  });
 }
 
 function initializeLocalOverlayColor() {

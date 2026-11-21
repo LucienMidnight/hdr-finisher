@@ -130,6 +130,13 @@ def denoise_settings_for_export(session: object, kind: PreviewKind) -> object | 
     return lane
 
 
+def denoise_delivery_key(session: object) -> tuple:
+    return tuple(
+        lane.controls.model_dump_json() if (lane := denoise_settings_for_export(session, kind)) else None
+        for kind in (PreviewKind.HDR, PreviewKind.SDR)
+    )
+
+
 def _denoised_export_source(session: object, kind: PreviewKind) -> np.ndarray:
     """Apply the authored denoise to the full-resolution source.
 

@@ -111,6 +111,7 @@ class _Document:
 def _document(lane: str = "hdr", **overrides) -> _Document:
     document = _Document(DenoiseDocumentSettings())
     settings = getattr(document.denoise, lane)
+    settings.controls.method = "standard"
     settings.enabled = overrides.pop("enabled", True)
     settings.controls.amount = overrides.pop("amount", 0.8)
     settings.controls.luminance = overrides.pop("luminance", 0.7)

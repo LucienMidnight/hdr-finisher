@@ -1,3 +1,27 @@
+## November 21 — Denoise CPU fallback waits
+
+MacBook Neo, A18 Pro and 8 GB, working changes based on `ed7e4a83`.
+The 7968 × 5320 Sony `_DSC7970.ARW` used Clean Grain Small and harsh speck
+cleanup at ×2.5. Allow 10% variation when comparing repeated runs under the
+same conditions. These measurements describe the remaining work.
+
+| Action | Total wait | Denoise work | Conditions |
+| --- | ---: | ---: | --- |
+| Enable at 110% with cold CPU preparation, HDR and generated SDR | 20.54 / 20.62 s | 17.54 / 17.53 s to prepare the whole photo | Isolated Electron at 1408 × 794, forced CPU Grain preparation with normal GPU presentation. From enable to the matching exact picture. |
+| Release Grain Evenness at 110% | 18.08 s | 15.11 s to build new prepared pixels | Same Electron check, HDR. The brightness-grain fit was reused. |
+| Enable at Fit with CPU preparation already available, HDR and generated SDR | 2.58 / 2.41 s | Existing preparation read at Fit size | Same Electron check, matching exact picture. |
+| CPU preview after two Exposure edits, 1600 px | 1.50 / 0.72 s | 0.66 / 0.29 s to measure noise again | Isolated backend only, lens off. First request included the cold source resize. Repeating the same Exposure took 0.16 s with no measurement. |
+| CPU preview after two Exposure edits, 4096 px | 4.86 / 3.85 s | 0.57 / 0.58 s to measure noise again | Same backend check. Repeating the same Exposure took 0.96 s with no measurement. |
+
+The CPU preview timings include response encoding. Browser display is outside
+that measurement. Whole-photo CPU preparation and CPU preview noise
+measurement still use their existing algorithms.
+
+The 90-second Library smoke drew all nine visible photos, first in 0.4 s.
+The test app peaked at 2.87 GB. The system reserve check failed when available
+memory fell to 1.25 GB against the 2 GB floor. Steve's Electron window was
+open throughout. [Library run](../../codebase/output/quick-library-check/denoise-fixes/report.json)
+
 ## November 20 — Streamed GPU JPEG export trial
 
 MacBook Neo, 8 GB; original size, Q90, 1,000-nit Ultra HDR target, and the

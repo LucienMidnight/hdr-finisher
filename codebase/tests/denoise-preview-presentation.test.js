@@ -16,7 +16,7 @@ test("bypass draws the original without waiting and retries a stale source after
         return state.editRevision === 2;
       },
       transientGpuRefusal: () => true });
-    vm.runInContext(declarations("setDenoiseEnabled"), context);
+    vm.runInContext(declarations("restoreDenoiseStatus", "invalidateDenoisePreparation", "setDenoiseEnabled"), context);
     await context.setDenoiseEnabled(false);
     assert.deepEqual(draws, [{ revision: 1, original: true }, { revision: 2, original: true }], method);
   }
@@ -29,10 +29,10 @@ test("switching methods while enabling does not leave the original selected", as
     denoiseRuntime: { hdr: runtime } };
   const saves = [];
   const pictures = [];
-  const context = vm.createContext({ state, renderDenoiseControls() {}, invalidatePreview() {},
+  const context = vm.createContext({ state, window: { setTimeout }, renderDenoiseControls() {}, invalidatePreview() {},
     liveGrainControl: () => false, persistDenoiseSettings: () => new Promise(resolve => saves.push(resolve)),
     recalculateDenoise: async () => { if (!runtime.showOriginal) pictures.push(controls.method); } });
-  vm.runInContext(declarations("setDenoiseEnabled", "commitDenoiseControl"), context);
+  vm.runInContext(declarations("restoreDenoiseStatus", "invalidateDenoisePreparation", "deferDenoisePreparation", "setDenoiseEnabled", "commitDenoiseControl"), context);
   const enable = context.setDenoiseEnabled(true);
   const change = context.commitDenoiseControl("method", "micro_grain");
   saves[0](true);

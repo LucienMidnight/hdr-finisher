@@ -688,7 +688,9 @@ async function renderGpuDraftInner(
   // Record why a draft declined. A silent false is very hard to diagnose from
   // a failing browser test, and every one of these is a legitimate refusal.
   const refuse = (reason, detail = null) => {
-    state.lastGpuDraftRefusal = { reason, detail, lane, tier, at: performance.now() };
+    if (!request.token?.detached) {
+      state.lastGpuDraftRefusal = { reason, detail, lane, tier, at: performance.now() };
+    }
     // Cumulative, because the interesting refusals arrive in bursts during a
     // drag and only the histogram distinguishes "superseded once" from the
     // repeated supersession that PERF-03 is about.
@@ -765,11 +767,14 @@ async function renderGpuDraftInner(
       const retarget = () => !runtime.analysisInFlight && !runtime.dirty && state.gpuPreview.retargetPreparedDenoise?.(
         sessionId, lane, longEdge, requestedGeometrySignature, sourceIdentity);
       if (staleGrainRoute || !retarget()) {
-        const waiting = "Preparing Denoise for this view…";
-        if (hideStatus && lane === state.currentView) setIndeterminatePreviewMessage(waiting);
+        let waiting = null;
+        if (hideStatus && lane === state.currentView) {
+          setIndeterminatePreviewMessage("Preparing Denoise for this view…");
+          waiting = state.previewStatusEntry;
+        }
         const ready = await recalculateDenoise(lane, { longEdge, renderAfter: false });
-        if (state.previewStatusEntry?.message === waiting) hidePreviewMessage();
-        if (!ready) return refuse(runtime.microCpu ? "micro-grain-cpu" : runtime.status === "error"
+        if (waiting && state.previewStatusEntry === waiting) hidePreviewMessage();
+        if (!ready || request.isCurrent?.() === false) return refuse(runtime.microCpu ? "micro-grain-cpu" : runtime.status === "error"
           ? "denoise-scale-analysis-unavailable" : "superseded-denoise-preparation");
         retarget();
       }
@@ -819,6 +824,7 @@ async function renderGpuDraftInner(
     boundedPresentation,
     fineGrainUnderlayer: request.underlayerOnly,
     microQuick: Boolean(request.microQuick),
+    signal: request.token?.signal,
     fineGrainGrade: liveGradeGrainSelected(lane),
     originalSource: !denoiseActive || (microSelected && (!micro || !(microControls.microLuminance || microControls.microColor))),
     deferSurface: request.underlayerOnly || (replacingDetail && !boundedPresentation && !viewport),
@@ -996,7 +1002,7 @@ async function renderGpuDraftInner(
       });
       return true;
   } catch (error) {
-    if (!sourceOptions.isCurrent() || error?.name === "AbortError" || (micro && error?.status === 409)) {
+    if (!sourceOptions.isCurrent() || error?.name === "AbortError" || (denoiseActive && error?.status === 409)) {
       return refuse("superseded-during-render");
     }
     if (micro) {
@@ -1008,6 +1014,10 @@ async function renderGpuDraftInner(
       return renderGpuDraftInner(lane, request);
     }
     if (error?.grainPreparationReplaced) {
+      invalidateDenoisePreparation(lane, { dirty: true });
+      if (!request.retriedGrainPreparation) {
+        return renderGpuDraftInner(lane, { ...request, retriedGrainPreparation: true });
+      }
       denoiseRetryError(lane, "Grain preparation expired.");
       return refuse("denoise-preparation-expired");
     }

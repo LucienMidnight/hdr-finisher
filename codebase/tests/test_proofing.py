@@ -430,12 +430,12 @@ def test_proof_signature_tracks_denoise_state() -> None:
     enabled.hdr.controls.amount = 0.8
     disabled = DenoiseDocumentSettings()
 
-    signatures = {
-        ProofArtifactStore._request_signature("session", request, context, None),
-        ProofArtifactStore._request_signature("session", request, context, enabled),
-        ProofArtifactStore._request_signature("session", request, context, disabled),
-    }
-    assert len(signatures) == 3
+    simple_off = disabled.model_copy(deep=True)
+    simple_off.hdr.controls.method = "standard"
+    signature = lambda request, denoise: ProofArtifactStore._request_signature("session", request, context, denoise)
+    assert signature(request, None) == signature(request, disabled)
+    assert signature(request, disabled) == signature(request.model_copy(update={"edit_revision": 1}), simple_off)
+    assert signature(request, enabled) != signature(request, disabled)
 
 
 def test_failed_proof_build_cleans_internal_staging_file_before_retry(monkeypatch, tmp_path: Path) -> None:

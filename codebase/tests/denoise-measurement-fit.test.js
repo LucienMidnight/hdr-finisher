@@ -9,7 +9,7 @@ const root = path.resolve(__dirname, '..');
 const data = JSON.parse(execFileSync(pythonExecutable(), [path.join(__dirname, 'helpers/denoise_calibration_fixture.py')], {
   cwd: root, env: {...process.env, PYTHONPATH: path.join(root, 'backend')}, encoding: 'utf8',
 }));
-const context = vm.createContext({window: {}});
+const context = vm.createContext({window: {}, AbortController});
 vm.runInContext(fs.readFileSync(path.join(root, 'frontend/denoise-measurement.js'), 'utf8'), context);
 const measurement = context.window.HDRDenoiseMeasurement;
 
@@ -63,3 +63,26 @@ for (const scale of [1/64, 1, 64]) {
     }
   });
 }
+
+test('Denoise measurement cancels abandoned work and leaves a shared waiter intact', async () => {
+  const device = {};
+  const first = new AbortController(), second = new AbortController();
+  let worker, calls = 0;
+  const task = signal => {
+    calls++;
+    worker = signal;
+    return new Promise((_, reject) => signal.addEventListener('abort', () => reject(signal.reason), { once: true }));
+  };
+  const a = measurement.acquire(device, 'same-source', first.signal, task);
+  const b = measurement.acquire(device, 'same-source', second.signal, task);
+  await Promise.resolve();
+  first.abort();
+  await assert.rejects(a, { name: 'AbortError' });
+  assert.equal(worker.aborted, false);
+  assert.equal(calls, 1);
+  second.abort();
+  await assert.rejects(b, { name: 'AbortError' });
+  assert.equal(worker.aborted, true);
+  const next = await measurement.acquire(device, 'same-source', new AbortController().signal, async () => 'fresh');
+  assert.equal(next, 'fresh');
+});

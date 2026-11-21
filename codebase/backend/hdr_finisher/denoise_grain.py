@@ -42,7 +42,7 @@ def _region(read, height, width, origin, size, margin):
     return pixels, core, edges
 
 
-def fit_grain(height, width, read, model, controls):
+def fit_grain(height, width, read, model, controls, is_current=None):
     """Fit two brightness gains with the same RGB projection as reconstruction."""
     size = adaptive.TILE_SIZE
     luma_strength, _ = controls.strengths()
@@ -50,6 +50,8 @@ def fit_grain(height, width, read, model, controls):
     fine_floor = np.float32(controls.fine_band_floor())
 
     def sums(origin):
+        if is_current is not None and not is_current():
+            raise InterruptedError("A newer edit replaced the Denoise grain fit.")
         pixels, core, edges = _region(read, height, width, origin, size, 17 + GRAIN_RADIUS)
         variance = adaptive._noise_variance(pixels @ adaptive.ACESCG_LUMINANCE, model, edges)
         current = adaptive._atrous((pixels @ adaptive.OPPONENT.T)[..., 0], 0, edges)

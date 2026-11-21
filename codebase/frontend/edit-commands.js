@@ -124,8 +124,7 @@ function queueEditCommand(commandType, payload = {}, targetId = null, { refreshP
       resetLocalSourceMasks();
       clearNavigationThumbnail();
       for (const lane of ["hdr", "sdr"]) {
-        const runtime = state.denoiseRuntime?.[lane];
-        if (runtime) { runtime.dirty = true; runtime.generation += 1; runtime.analysisInFlight = null; }
+        invalidateDenoisePreparation(lane, { dirty: true });
       }
       renderRawImportControls(session);
     }
@@ -249,8 +248,7 @@ async function resetRepairSource(previousRepairs, documentState) {
   resetLocalSourceMasks();
   clearNavigationThumbnail();
   for (const lane of ["hdr", "sdr"]) {
-    const runtime = state.denoiseRuntime?.[lane];
-    if (runtime) { runtime.dirty = true; runtime.generation += 1; runtime.analysisInFlight = null; }
+    invalidateDenoisePreparation(lane, { dirty: true });
     invalidatePreview(lane, { local: true });
   }
   renderLaneChrome();

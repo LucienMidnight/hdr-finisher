@@ -241,10 +241,10 @@ Clipped lane, scope, preview and filename labels use their visible text; dynamic
 | Denoise | Independent for the active HDR or SDR rendition. Match/Rematch copies the current HDR denoise recipe into SDR once. | fixed | codebase/frontend/index.html:704 · [source](../../codebase/frontend/index.html#L704) |
 | ◉ | Toggle Denoise preview | name only (fallback) | codebase/frontend/index.html::#denoise-bypass · [source](../../codebase/frontend/index.html#L706) |
 | Show noise | Shows only what Denoise removes, as gray with the removed noise on top. Even grain is safe; visible edges, lettering or texture mean detail is being lost. | fixed | codebase/frontend/index.html::#denoise-show-noise · [source](../../codebase/frontend/index.html#L710) |
-| Method | Standard uses the existing noise reduction. Fine Grain evens out the brightness grain. Clean Grain also reduces colour splotches. | fixed | codebase/frontend/index.html::for=denoise-method · [source](../../codebase/frontend/index.html#L713) |
-| Standard | Standard | name only (selected option, when clipped) | codebase/frontend/index.html:715 · [source](../../codebase/frontend/index.html#L715) |
-| Fine Grain · Experimental | Fine Grain · Experimental | name only (selected option, when clipped) | codebase/frontend/index.html:716 · [source](../../codebase/frontend/index.html#L716) |
-| Clean Grain · Experimental | Clean Grain · Experimental | name only (selected option, when clipped) | codebase/frontend/index.html:717 · [source](../../codebase/frontend/index.html#L717) |
+| Method | Clean Grain evens out the brightness grain and reduces colour splotches. Simple uses the original noise reduction. Fine Grain evens out the brightness grain only. | fixed | codebase/frontend/index.html::for=denoise-method · [source](../../codebase/frontend/index.html#L713) |
+| Clean Grain | Clean Grain | name only (selected option, when clipped) | codebase/frontend/index.html:715 · [source](../../codebase/frontend/index.html#L715) |
+| Simple | Simple | name only (selected option, when clipped) | codebase/frontend/index.html:716 · [source](../../codebase/frontend/index.html#L716) |
+| Fine Grain · Experimental | Fine Grain · Experimental | name only (selected option, when clipped) | codebase/frontend/index.html:717 · [source](../../codebase/frontend/index.html#L717) |
 | Micro Grain · Experimental | Micro Grain · Experimental | name only (selected option, when clipped) | codebase/frontend/index.html:718 · [source](../../codebase/frontend/index.html#L718) |
 | Luminance | Reduces brightness noise while keeping a fine grain. | fixed | codebase/frontend/index.html::for=denoise-micro-luminance · [source](../../codebase/frontend/index.html#L722) |
 | Color | Reduces colour noise and blotches. | fixed | codebase/frontend/index.html::for=denoise-micro-color · [source](../../codebase/frontend/index.html#L723) |
@@ -532,7 +532,7 @@ Clipped lane, scope, preview and filename labels use their visible text; dynamic
 
 | Control / visible name | Text | Flags | ID and source |
 | --- | --- | --- | --- |
-| option.title | unavailable | dynamic expression | codebase/frontend/denoise-ui.js:85 · [source](../../codebase/frontend/denoise-ui.js#L85) |
+| option.title | unavailable | dynamic expression | codebase/frontend/denoise-ui.js:81 · [source](../../codebase/frontend/denoise-ui.js#L81) |
 
 ### geometry tools
 
@@ -1142,17 +1142,17 @@ Clipped lane, scope, preview and filename labels use their visible text; dynamic
 
 | Control / visible name | Text | Flags | ID and source |
 | --- | --- | --- | --- |
-| control aria-label | label | dynamic expression; name/status supplied at runtime | codebase/frontend/adjustment-controls.js:488 · [source](../../codebase/frontend/adjustment-controls.js#L488) |
-| dot aria-label | &#96;Reset ${label} to ${HDRFilmCharacter.owned.includes(key) ? "the stock" : "the baseline"}&#96; | dynamic expression | codebase/frontend/adjustment-controls.js:489 · [source](../../codebase/frontend/adjustment-controls.js#L489) |
-| key — text used by dynamic tooltips | path.replace("shared.geometry.", "") | dynamic supporting definition | codebase/frontend/adjustment-controls.js:320 · [source](../../codebase/frontend/adjustment-controls.js#L320) |
-| dot.title | &#96;Mod. Reset ${label} to ${HDRFilmCharacter.owned.includes(key) ? "the stock" : "the baseline"}&#96; | dynamic expression | codebase/frontend/adjustment-controls.js:490 · [source](../../codebase/frontend/adjustment-controls.js#L490) |
-| control.title | film.film_stock === "none" ? "Neutral has no halation of its own; these are absolute effect controls." : "100% is this stock's own value; Hue Offset 0 keeps its colour. Set values stay fixed when changing stock." | dynamic expression | codebase/frontend/adjustment-controls.js:491 · [source](../../codebase/frontend/adjustment-controls.js#L491) |
-| summary.title | summaries[name] | dynamic expression | codebase/frontend/adjustment-controls.js:545 · [source](../../codebase/frontend/adjustment-controls.js#L545) |
-| summaries — text used by dynamic tooltips | { camera:text("grain_film_format")+(film.lens_filter === "none" ? "" : &#96; · ${text("lens_filter")} ${grade}&#96;), negative:(film.grain_enabled ? &#96;Grain ${Math.round(film.grain_amount)}&#96; : "No grain")+" · "+(film.halation_enabled ? &#96;Halation ${Math.round(HDRFilmCharacter.toUi(film, "halation_amount", film.halation_amount))}%&#96; : "No halation"), development:film.push_pull === 0 ? "Normal" : film.push_pull &gt; 0 ? &#96;Push +${film.push_pull}&#96; : &#96;Pull ${film.push_pull}&#96;, print:slide ? "No print" : paper+(film.stock_print_warmth ? film.stock_print_warmth &gt; 0 ? " · Warm" : " · Cool" : ""), scan:(film.lab_levels ? "Lab levels" : "Clean")+(film.scan_sharpening ? &#96; · Sharpen ${film.scan_sharpening}&#96; : "")} | dynamic supporting definition | codebase/frontend/adjustment-controls.js:536 · [source](../../codebase/frontend/adjustment-controls.js#L536) |
-| grade — text used by dynamic tooltips | {0.125:"1/8", 0.25:"1/4", 0.5:"1/2", 1:"1", 2:"2"}[film.lens_strength] &#124;&#124; Number(film.lens_strength).toFixed(2) | dynamic supporting definition | codebase/frontend/adjustment-controls.js:535 · [source](../../codebase/frontend/adjustment-controls.js#L535) |
-| slide — text used by dynamic tooltips | film.film_stock !== "none" && character.default_paper === null | dynamic supporting definition | codebase/frontend/adjustment-controls.js:507 · [source](../../codebase/frontend/adjustment-controls.js#L507) |
-| paper — text used by dynamic tooltips | paperName(film.print_paper === "default" ? character.default_paper : film.print_paper) | dynamic supporting definition | codebase/frontend/adjustment-controls.js:517 · [source](../../codebase/frontend/adjustment-controls.js#L517) |
-| modified.title | count ? &#96;${count} modified controls&#96; : "" | dynamic expression | codebase/frontend/adjustment-controls.js:548 · [source](../../codebase/frontend/adjustment-controls.js#L548) |
+| control aria-label | label | dynamic expression; name/status supplied at runtime | codebase/frontend/adjustment-controls.js:478 · [source](../../codebase/frontend/adjustment-controls.js#L478) |
+| dot aria-label | &#96;Reset ${label} to ${HDRFilmCharacter.owned.includes(key) ? "the stock" : "the baseline"}&#96; | dynamic expression | codebase/frontend/adjustment-controls.js:479 · [source](../../codebase/frontend/adjustment-controls.js#L479) |
+| key — text used by dynamic tooltips | path.replace("shared.geometry.", "") | dynamic supporting definition | codebase/frontend/adjustment-controls.js:310 · [source](../../codebase/frontend/adjustment-controls.js#L310) |
+| dot.title | &#96;Mod. Reset ${label} to ${HDRFilmCharacter.owned.includes(key) ? "the stock" : "the baseline"}&#96; | dynamic expression | codebase/frontend/adjustment-controls.js:480 · [source](../../codebase/frontend/adjustment-controls.js#L480) |
+| control.title | film.film_stock === "none" ? "Neutral has no halation of its own; these are absolute effect controls." : "100% is this stock's own value; Hue Offset 0 keeps its colour. Set values stay fixed when changing stock." | dynamic expression | codebase/frontend/adjustment-controls.js:481 · [source](../../codebase/frontend/adjustment-controls.js#L481) |
+| summary.title | summaries[name] | dynamic expression | codebase/frontend/adjustment-controls.js:535 · [source](../../codebase/frontend/adjustment-controls.js#L535) |
+| summaries — text used by dynamic tooltips | { camera:text("grain_film_format")+(film.lens_filter === "none" ? "" : &#96; · ${text("lens_filter")} ${grade}&#96;), negative:(film.grain_enabled ? &#96;Grain ${Math.round(film.grain_amount)}&#96; : "No grain")+" · "+(film.halation_enabled ? &#96;Halation ${Math.round(HDRFilmCharacter.toUi(film, "halation_amount", film.halation_amount))}%&#96; : "No halation"), development:film.push_pull === 0 ? "Normal" : film.push_pull &gt; 0 ? &#96;Push +${film.push_pull}&#96; : &#96;Pull ${film.push_pull}&#96;, print:slide ? "No print" : paper+(film.stock_print_warmth ? film.stock_print_warmth &gt; 0 ? " · Warm" : " · Cool" : ""), scan:(film.lab_levels ? "Lab levels" : "Clean")+(film.scan_sharpening ? &#96; · Sharpen ${film.scan_sharpening}&#96; : "")} | dynamic supporting definition | codebase/frontend/adjustment-controls.js:526 · [source](../../codebase/frontend/adjustment-controls.js#L526) |
+| grade — text used by dynamic tooltips | {0.125:"1/8", 0.25:"1/4", 0.5:"1/2", 1:"1", 2:"2"}[film.lens_strength] &#124;&#124; Number(film.lens_strength).toFixed(2) | dynamic supporting definition | codebase/frontend/adjustment-controls.js:525 · [source](../../codebase/frontend/adjustment-controls.js#L525) |
+| slide — text used by dynamic tooltips | film.film_stock !== "none" && character.default_paper === null | dynamic supporting definition | codebase/frontend/adjustment-controls.js:497 · [source](../../codebase/frontend/adjustment-controls.js#L497) |
+| paper — text used by dynamic tooltips | paperName(film.print_paper === "default" ? character.default_paper : film.print_paper) | dynamic supporting definition | codebase/frontend/adjustment-controls.js:507 · [source](../../codebase/frontend/adjustment-controls.js#L507) |
+| modified.title | count ? &#96;${count} modified controls&#96; : "" | dynamic expression | codebase/frontend/adjustment-controls.js:538 · [source](../../codebase/frontend/adjustment-controls.js#L538) |
 
 ### app state
 
@@ -1188,9 +1188,9 @@ Clipped lane, scope, preview and filename labels use their visible text; dynamic
 
 | Control / visible name | Text | Flags | ID and source |
 | --- | --- | --- | --- |
-| els.viewerBranchNote.textContent | branchCopy[lane] | dynamic expression | codebase/frontend/lanes-compare.js:240 · [source](../../codebase/frontend/lanes-compare.js#L240) |
-| els.viewerBranchNote.textContent | &#96;${branchCopy[other]} Release V to return to the authored preview.&#96; | dynamic expression | codebase/frontend/lanes-compare.js:372 · [source](../../codebase/frontend/lanes-compare.js#L372) |
-| other — text used by dynamic tooltips | state.currentView === "hdr" ? "sdr" : "hdr" | dynamic supporting definition | codebase/frontend/lanes-compare.js:396 · [source](../../codebase/frontend/lanes-compare.js#L396) |
+| els.viewerBranchNote.textContent | branchCopy[lane] | dynamic expression | codebase/frontend/lanes-compare.js:244 · [source](../../codebase/frontend/lanes-compare.js#L244) |
+| els.viewerBranchNote.textContent | &#96;${branchCopy[other]} Release V to return to the authored preview.&#96; | dynamic expression | codebase/frontend/lanes-compare.js:376 · [source](../../codebase/frontend/lanes-compare.js#L376) |
+| other — text used by dynamic tooltips | state.currentView === "hdr" ? "sdr" : "hdr" | dynamic supporting definition | codebase/frontend/lanes-compare.js:400 · [source](../../codebase/frontend/lanes-compare.js#L400) |
 
 ### overlay ui
 

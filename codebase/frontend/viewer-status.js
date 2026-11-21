@@ -147,8 +147,7 @@ function applyPreviewResolution(value, { schedule = true } = {}) {
   // preview. Proxy levels are keyed by long edge and trimmed by the renderer's
   // own LRU, so the outgoing tier is retired only when the budget requires it.
   if (state.denoise?.[state.currentView]?.enabled) {
-    state.denoiseRuntime[state.currentView].status = "dirty";
-    state.denoiseRuntime[state.currentView].dirty = true;
+    invalidateDenoisePreparation(state.currentView, { dirty: true });
     if (schedule) window.setTimeout(() => recalculateDenoise(), 300);
   }
   if (state.session) {

@@ -491,3 +491,22 @@ test("preserving a drag never preserves ordinary settled work", async () => {
   await pending;
   assert.equal(coordinator.state("hdr").accepted, null);
 });
+
+test("a detached Denoise render cannot block or present over its replacement", async () => {
+  const dispatch = deferredDispatch();
+  const { coordinator, dispatches, presentations } = makeCoordinator({ dispatchImpl: dispatch.impl });
+  const old = coordinator.submit({ lane: "hdr", reason: "denoise-on" });
+  await flush();
+  coordinator.cancelLane("hdr", "superseded-by-denoise-toggle", { detach: true });
+  const replacement = coordinator.submit({ lane: "hdr", reason: "denoise-off" });
+  await flush();
+  assert.equal(await old, false);
+  assert.equal(dispatches[0].token.signal.aborted, true);
+  assert.equal(dispatches.length, 2);
+  dispatch.queue[1].resolve({ rendered: true });
+  await replacement;
+  dispatch.queue[0].reject(new Error("late Denoise failure"));
+  await flush();
+  assert.equal(presentations.length, 1);
+  assert.equal(presentations[0].request.reason, "denoise-off");
+});

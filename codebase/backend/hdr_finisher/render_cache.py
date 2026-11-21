@@ -770,7 +770,7 @@ class SessionRenderCache:
     _stale_cancellations: int = field(default=0, init=False, repr=False)
     _source_epoch: int = field(default=0, init=False, repr=False)
     grain_preparation_lock: Lock = field(default_factory=Lock, init=False, repr=False)
-    grain_preparation: tuple | None = field(default=None, init=False, repr=False)
+    _grain_preparations: dict[PreviewKind, Any] = field(default_factory=dict, init=False, repr=False)
     # The last answer each source edge received, for the transport headers:
     # ``native`` (the decoded frame itself), ``memory``/``disk`` (warm mip),
     # ``built`` (cold mip build) or ``session`` (no persistent store).
@@ -811,12 +811,46 @@ class SessionRenderCache:
         result.update(working_space="linear-srgb" if authored else "acescg", source_epoch=self._source_epoch)
         return result
 
-    def discard_grain_preparation(self):
+    def grain_preparation_for(self, kind: PreviewKind):
+        with self._lock:
+            return self._grain_preparations.get(kind)
+
+    def matching_grain_preparation(self, signature: tuple):
+        with self._lock:
+            return next((item for item in self._grain_preparations.values() if item.signature == signature), None)
+
+    def owns_grain_preparation_exclusively(self, preparation):
+        with self._lock:
+            return sum(item is preparation for item in self._grain_preparations.values()) == 1
+
+    def retain_grain_preparation(self, kind: PreviewKind, preparation, epoch: int) -> bool:
+        with self._lock:
+            if self._source_epoch != epoch:
+                return False
+            previous = self._grain_preparations.get(kind)
+            self._grain_preparations[kind] = preparation
+            if (previous is not None and previous.corrections is not preparation.corrections
+                    and not any(item is previous for item in self._grain_preparations.values())):
+                previous.close()
+            return True
+
+    def discard_grain_preparation(self, kind: PreviewKind | None = None, *, expected=None):
         # Do not wait for an unfinished fit. It detects the new source epoch
         # or session before publishing and disposes of its own scratch.
-        preparation, self.grain_preparation = self.grain_preparation, None
-        if preparation is not None:
-            preparation.close()
+        with self._lock:
+            if kind is None:
+                removed = {id(item): item for item in self._grain_preparations.values()}
+                self._grain_preparations.clear()
+            else:
+                preparation = self._grain_preparations.get(kind)
+                if preparation is None or (expected is not None and preparation is not expected):
+                    return
+                self._grain_preparations.pop(kind)
+                if any(item is preparation for item in self._grain_preparations.values()):
+                    return
+                removed = {id(preparation): preparation}
+            for preparation in removed.values():
+                preparation.close()
 
     def set_color_context(self, context: RenderColorContext) -> None:
         with self._lock:

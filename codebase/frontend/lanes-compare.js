@@ -156,6 +156,10 @@ async function switchLane(lane) {
     return;
   }
   suspendGradeInstruments();
+  const outgoing = state.currentView;
+  if (outgoing !== lane && state.denoiseRuntime[outgoing]?.analysisInFlight) {
+    invalidateDenoisePreparation(outgoing);
+  }
   state.currentView = lane;
   state.renderCoordinator?.noteActiveLane(lane);
   state.selectedCurvePoint = Math.min(state.selectedCurvePoint ?? 0, currentCurveValues().length - 1);

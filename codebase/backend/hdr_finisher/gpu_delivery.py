@@ -217,9 +217,10 @@ def _render_pair(frame, owner, settings, adjustments):
     # Full-size Proof states this size and passes only enabled locals; export
     # derives the same size and passes all locals. Key on what is rendered so
     # both share one finished pair and one CPU fallback decision.
+    from .exporters import denoise_delivery_key
     signature = (id(frame.image), id(getattr(frame, "sdr_reference_image", None)),
         adjustments.model_dump_json(), repr(adjustments.enabled_locals(getattr(frame, "local_adjustments", None))),
-        repr(getattr(frame, "denoise", None)), getattr(frame, "hdr_reference_white_nits", 203),
+        denoise_delivery_key(frame), getattr(frame, "hdr_reference_white_nits", 203),
         settings.output_finishing.model_dump_json(), policy["effective_force_cpu"],
         settings.export_with_frame, repr(getattr(frame, "framing", None)),
         native_size, getattr(frame, "framing_output_limit", None), grain_trial, streamed, lanes)

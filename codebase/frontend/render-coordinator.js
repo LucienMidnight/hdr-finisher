@@ -219,10 +219,19 @@
      * bumping a generation. Geometry transactions use this to stop work that
      * the transaction itself will supersede.
      */
-    cancelLane(lane, reason = "cancelled") {
+    cancelLane(lane, reason = "cancelled", { detach = false } = {}) {
       this.cancelFollowUps(lane);
       this.cancelInFlight(lane, reason);
       this.dropPending(lane, reason);
+      const st = this.laneState(lane);
+      if (detach && st.inFlight) {
+        // A Denoise toggle can abandon network/preparation waits immediately.
+        // The cancelled dispatch still owns unwinding its GPU resources.
+        const entry = st.inFlight;
+        entry.token.detached = true;
+        st.inFlight = null;
+        this.settleEntry(st, entry, false, reason);
+      }
     }
 
     /** Whether a presented viewport pass is followed up at all. */
@@ -421,7 +430,8 @@
         this.metrics.coalesced += 1;
         return entry.promise;
       }
-      return this.runEntry(st, entry);
+      void this.runEntry(st, entry);
+      return entry.promise;
     }
 
     async runEntry(st, entry) {
@@ -441,7 +451,8 @@
         error = caught;
       }
       this.recordMetric("dispatchMs", Math.max(0, this.now() - startedAt));
-      if (st.inFlight === entry) st.inFlight = null;
+      if (st.inFlight !== entry) return;
+      st.inFlight = null;
 
       if (!error && result && entry.token.isCurrent()) {
         let record = null;
@@ -477,10 +488,9 @@
 
       if (error) {
         this.settleEntry(st, entry, null, null, error);
-        throw error;
+        return;
       }
       this.settleEntry(st, entry, result, null);
-      return result;
     }
 
     refuseEntry(st, entry, reason) {

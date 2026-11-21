@@ -963,13 +963,17 @@ class DenoiseLaneSettings(BaseModel):
     controls: DenoiseLiveControls = Field(default_factory=DenoiseLiveControls)
     analysis: DenoiseAnalysisSettings = Field(default_factory=DenoiseAnalysisSettings)
 
+    @classmethod
+    def new_lane(cls) -> DenoiseLaneSettings:
+        return cls(controls=DenoiseLiveControls(method="clean_grain"))
+
 
 class DenoiseDocumentSettings(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     schema_version: Literal[1] = 1
-    hdr: DenoiseLaneSettings = Field(default_factory=DenoiseLaneSettings)
-    sdr: DenoiseLaneSettings = Field(default_factory=DenoiseLaneSettings)
+    hdr: DenoiseLaneSettings = Field(default_factory=DenoiseLaneSettings.new_lane)
+    sdr: DenoiseLaneSettings = Field(default_factory=DenoiseLaneSettings.new_lane)
 
 
 class SDRMatchQualityMetrics(BaseModel):

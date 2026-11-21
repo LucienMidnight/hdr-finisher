@@ -998,7 +998,7 @@ class SessionStore:
             adjustments = session.adjustments.model_copy(deep=True)
             setattr(adjustments, lane, getattr(session.starting_adjustments(), lane))
             denoise = session.denoise.model_copy(deep=True)
-            setattr(denoise, lane, DenoiseLaneSettings())
+            setattr(denoise, lane, DenoiseLaneSettings.new_lane())
             session.adjustments = adjustments
             session.denoise = denoise
             session.local_adjustments = [

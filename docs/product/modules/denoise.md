@@ -1,6 +1,6 @@
 # Module PRD: Denoise
 
-**Status, November 20, 2026.** Standard is the default. Fine Grain, Clean Grain and Micro Grain are experimental. Grade defaults to the GPU for the Grain methods. Micro Grain uses signed Bayer samples; its export and full-size Proof use the CPU source stage.
+**November 21, 2026 working changes.** New lanes start with Clean Grain selected and Denoise off. Saved enabled grades with no method still use Simple. Fine Grain and Micro Grain are experimental. Grade defaults to the GPU for the Grain methods. Micro Grain uses signed Bayer samples; its export and full-size Proof use the CPU source stage.
 
 ## 1. Purpose and goals
 
@@ -17,7 +17,7 @@ Denoise works on developed camera RAWs, HDR files and renders. It measures noise
 | Control | Default | What it does |
 | --- | --- | --- |
 | Denoise switch | Off in HDR and SDR | Off shows the original source through the current grade without rebuilding Denoise. On reuses compatible preparation. The previous picture stays visible until the selected result is ready. |
-| Method | Standard | Uses the measured adaptive wavelet method (`adaptive-atrous-v1`). The other choices are Fine Grain · Experimental, Clean Grain · Experimental and Micro Grain · Experimental. |
+| Method | Clean Grain | Evens out brightness grain and reduces colour splotches. Simple uses the original adaptive wavelet method (`adaptive-atrous-v1`). The other choices are Fine Grain · Experimental and Micro Grain · Experimental. |
 | Amount | 75% | Overall cleaning. At 50% it uses the measured amount. At 0% it leaves the input alone. |
 | Detail Recovery | 50% | Returns fine detail that would otherwise be removed with noise. |
 | Luminance | 50% | Brightness noise removal. |
@@ -33,9 +33,9 @@ Denoise works on developed camera RAWs, HDR files and renders. It measures noise
 | Advanced | Collapsed initially | Reveals Luminance, Color Noise and the four noise sizes. |
 | Show noise | Off | Displays what Denoise removed. Scopes keep the normal picture and update when the noise view closes. |
 | Recalculate Denoise | On request | Refreshes the measurement and preparation. The last good picture stays visible while work runs. A failed attempt offers a retry. |
-| Reset and Default preset | Standard and the values above | Restore the starting settings. Saved grades and presets carry the method and controls. |
+| Reset and Default preset | Clean Grain and the values above | Restore the starting settings. Saved grades and presets carry the method and controls. |
 
-Standard, Fine Grain and Clean Grain have the eight common sliders. Standard resolves them live. Fine Grain adds the brightness-grain fit. Clean Grain adds colour protection for bright edges and colour boundaries, plus a narrow fringe pass. Micro Grain has three live sliders and works on eligible Bayer RAWs. The status line shows Off, Preparing, Ready, Dirty, Recalculating or Error. A view change can mark the measurement Dirty while the last good result stays visible. Obsolete work is discarded when a newer edit or photo takes over. [Denoise guide](../../user-guide/denoise.md) · [Technical contract](../../technical/denoising.md#november-19-2026-experimental-grain-methods) · [Grade controls](../../../codebase/frontend/denoise-ui.js)
+Standard, Fine Grain and Clean Grain have the eight common sliders. Standard resolves them live. Fine Grain adds the brightness-grain fit. Clean Grain adds colour protection for bright edges and colour boundaries, plus a narrow fringe pass. Micro Grain has three live sliders and works on eligible Bayer RAWs. The status line shows Off, Preparing, Ready, Dirty, Recalculating or Error. A view change can mark the measurement Dirty while the last good result stays visible. The sliders and Splotch Size stay editable while Denoise prepares and after a failure. Rapid committed edits prepare the latest settings together. Leaving Grade or changing the source discards obsolete work and clears its busy status. [Denoise guide](../../user-guide/denoise.md) · [Technical contract](../../technical/denoising.md#november-19-2026-experimental-grain-methods) · [Grade controls](../../../codebase/frontend/denoise-ui.js)
 
 ### HDR, SDR and rendering routes
 

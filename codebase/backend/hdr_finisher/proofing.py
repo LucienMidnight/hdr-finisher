@@ -21,7 +21,7 @@ from .binaries import resolve_binary
 from .color import acescg_to_linear_bt2020, linear_bt2020_to_acescg, linear_srgb_to_acescg
 from .color_context import RenderColorContext, nits_to_scene_linear, scene_linear_to_nits
 from .config import APP_VERSION
-from .exporters import ExportBackend, _finishing_adjustments_for_export, _render_export_branch, _run_command
+from .exporters import ExportBackend, _finishing_adjustments_for_export, _render_export_branch, _run_command, denoise_delivery_key
 from .gainmap_decoders import parse_jpeg_gain_map_probe
 from .models import (
     JPEGGainMapProofMetadata,
@@ -688,20 +688,15 @@ class ProofArtifactStore:
         framing: object | None = None,
         local_adjustments: list | None = None,
     ) -> str:
-        # ``force`` selects how the request is served, not what it produces, so
-        # it stays out of the signature. Denoise is not part of the request, so
-        # its state has to be folded in explicitly: otherwise a proof built
-        # before a denoise change would be served for it unchanged.
-        request_payload = request.model_dump_json(exclude={"force", "editing_measurements"})
+        # The revision validates the request on arrival. The resolved settings
+        # and source epoch below identify the pixels that Proof will render.
+        excluded = {"force", "editing_measurements"}
+        if request.adjustments is not None:
+            excluded.add("edit_revision")
+        request_payload = request.model_dump_json(exclude=excluded)
         if request.export_with_frame and framing is not None:
             request_payload += framing.model_dump_json()
-        denoise_payload = ""
-        if denoise is not None:
-            denoise_payload = (
-                denoise.model_dump_json()
-                if hasattr(denoise, "model_dump_json")
-                else json.dumps(denoise, sort_keys=True, default=str)
-            )
+        denoise_payload = denoise_delivery_key(SimpleNamespace(denoise=denoise))
         # Local adjustments live on the session, not in the request, so they are
         # folded in like Denoise: a proof made before a Local edit must not be
         # served for it when the request carries no edit revision.

@@ -21,6 +21,18 @@
     return endpoints ? core : { ...core, grainEvenness };
   }
 
+  function preparedGrainControls(controls) {
+    const { amount, luminance, colorNoise, detailRecovery, finestNoise, fineNoise,
+      mediumNoise, coarseNoise, method, grainEvenness, splotchSize } = controls;
+    return { amount, luminance, colorNoise, detailRecovery, finestNoise, fineNoise,
+      mediumNoise, coarseNoise, method, grainEvenness, ...(method === "clean_grain" ? { splotchSize } : {}) };
+  }
+
+  function denoiseDeadline(signal, milliseconds) {
+    const timeout = AbortSignal.timeout(milliseconds);
+    return signal ? AbortSignal.any([signal, timeout]) : timeout;
+  }
+
   function fineGrainStripUpload(maxRows) {
     return { maxRows, slots: 2, chunkBytes: 8 * 1024 * 1024, ring: [], retired: [] };
   }
@@ -802,6 +814,12 @@
       this.surfaceKeys = new WeakMap();
       this.fineGrainResizePipelines = null;
       this.cleanGrainResizePipelines = null;
+      const adaptive = this.adaptiveDenoisePipelines;
+      adaptive?.dummySampled.destroy();
+      adaptive?.dummyStorage32.destroy();
+      adaptive?.dummyStorage16.destroy();
+      this.adaptiveDenoisePipelines = null;
+      this.adaptiveDenoiseCompilation = null;
       this.bindGroupLayout = null;
       this.clarityMaps = null;
       this.clarityFrameMap = null;
@@ -2609,6 +2627,7 @@
         claritySurround: sourceOptions?.claritySurround,
         Scheduler,
         serial,
+        signal: sourceOptions?.signal,
         isCurrent: sourceOptions?.isCurrent || null,
         viewport: sourceOptions?.viewport || null,
         panPass: sourceOptions?.panPass,
@@ -2771,7 +2790,7 @@
           const count = Math.min(rows, height - offset);
           const query = new URLSearchParams({ x, y: y + offset, width, height: count,
             frame_width: source.width, frame_height: source.height });
-          const response = await fetch(`${grain.url}/${grain.token}?${query}`, { signal });
+          const response = await fetch(`${grain.url}/${grain.token}?${query}`, { signal: denoiseDeadline(signal, 15000) });
           check();
           if (response.status === 409) {
             grain.stale = true;
@@ -4507,7 +4526,7 @@
         // The reconstruction reads the original at its true frame position,
         // so the pixels are the ones the whole-frame resolve would produce.
         const resolved = await this.resolveDenoiseProxy(denoiseControls, {
-          isCurrent,
+          isCurrent, signal: options.signal,
           region: { ...region },
           destination: {
             texture: kept && cacheGrainEndpoints ? kept.texture : graph.denoiseResolvedTexture,
@@ -5315,16 +5334,16 @@
         && sourceOptions?.isCurrent?.() !== false;
       const reducedGrain = !microQuick && !sourceOptions?.fineGrainUnderlayer && !sourceOptions?.originalSource
         && !sourceOptions?.delivery && !sourceOptions?.frameAnchor && !sourceOptions?.measureOnly
-        ? await this.ensureFineGrainReduced(proxy, editRevision, currentRender, sourceOptions?.tier === "interactive") : null;
+        ? await this.ensureFineGrainReduced(proxy, editRevision, currentRender, sourceOptions?.tier === "interactive", sourceOptions?.signal) : null;
+      if (!currentRender()) return this.refuseRender("superseded-before-grain-blend");
       if (reducedGrain?.cleanGrainDelta) {
-        if (!currentRender()) return this.refuseRender("superseded-before-grain-blend");
         const strength = this.denoiseSourceSelector.controls.colorSplotches;
         cleanGrainBlend = this.blendReducedCleanGrain(reducedGrain, strength);
       }
       const fineGrainReduced = cleanGrainBlend || reducedGrain;
       if (fineGrainReduced && plan.decision.mode !== "tiled") sourceProxy = fineGrainReduced;
       else if (!sourceOptions?.originalSource && plan.decision.mode !== "tiled"
-        && await this.ensureDenoiseResolved(proxy, currentRender)) {
+        && await this.ensureDenoiseResolved(proxy, currentRender, sourceOptions?.signal)) {
         if (resourceGeneration !== this.resourceGeneration
           || serial !== this.renderSerials.get(canvas)
           || sourceOptions?.isCurrent?.() === false) return this.refuseRender("superseded-before-proxy");
@@ -5467,6 +5486,7 @@
         const tiled = await this.encodeTiledGeneration(canvas, context, noiseView ? proxy : sourceProxy, surface, pipelines, params, {
           fineGrainReduced,
           microQuick,
+          signal: sourceOptions?.signal,
           originalSource: sourceOptions?.originalSource,
           delivery: sourceOptions?.delivery,
           beforeDeliverySubmit: sourceOptions?.beforeDeliverySubmit,
@@ -6014,13 +6034,13 @@
      * Fill adaptive Denoise's whole-frame reconstruction of `proxy` if it is
      * missing or was made with other controls. Returns whether it did any work.
      */
-    async ensureDenoiseResolved(proxy, isCurrent) {
+    async ensureDenoiseResolved(proxy, isCurrent, signal) {
       if (!proxy || proxy.region || !this.adaptiveDenoiseFor(proxy)) return false;
       const selector = this.denoiseSourceSelector;
       if (selector.identity !== proxy.identity) return false;
       if (selector.original !== proxy) selector.original = proxy;
       if (selector.resolved && selector.resolvedFor === JSON.stringify(selector.controls || {})) return false;
-      await this.resolveDenoiseProxy(selector.controls || {}, { source: proxy, isCurrent });
+      await this.resolveDenoiseProxy(selector.controls || {}, { source: proxy, isCurrent, signal });
       return true;
     }
 
@@ -6075,7 +6095,20 @@
 
     async ensureAdaptiveDenoisePipelines(beforeNext = null) {
       if (this.adaptiveDenoisePipelines) return this.adaptiveDenoisePipelines;
-      const module = this.device.createShaderModule({ code: ADAPTIVE_DENOISE_SHADER_SOURCE });
+      // Library warms piecemeal so foreground pictures can take over. Grade
+      // and its idle task both use the shared foreground compilation.
+      if (beforeNext) return this.compileAdaptiveDenoisePipelines(this.device, beforeNext);
+      if (!this.adaptiveDenoiseCompilation) {
+        const pending = this.compileAdaptiveDenoisePipelines(this.device).finally(() => {
+          if (this.adaptiveDenoiseCompilation === pending) this.adaptiveDenoiseCompilation = null;
+        });
+        this.adaptiveDenoiseCompilation = pending;
+      }
+      return this.adaptiveDenoiseCompilation;
+    }
+
+    async compileAdaptiveDenoisePipelines(device, beforeNext = null) {
+      const module = device.createShaderModule({ code: ADAPTIVE_DENOISE_SHADER_SOURCE });
       const compilation = await module.getCompilationInfo();
       const errors = compilation.messages.filter((message) => message.type === "error");
       if (errors.length) throw new Error(errors.map((message) => message.message).join("; "));
@@ -6083,7 +6116,7 @@
       const sampled = { sampleType: "unfilterable-float" };
       // One explicit layout for every entry point, so a pass binds the same
       // eight slots and fills the ones it does not read with dummies.
-      const layout = this.device.createBindGroupLayout({
+      const layout = device.createBindGroupLayout({
         entries: [
           { binding: 0, visibility: compute, texture: sampled },
           { binding: 1, visibility: compute, texture: sampled },
@@ -6095,19 +6128,33 @@
           { binding: 7, visibility: compute, texture: sampled },
         ],
       });
-      const pipelineLayout = this.device.createPipelineLayout({ bindGroupLayouts: [layout] });
+      const pipelineLayout = device.createPipelineLayout({ bindGroupLayouts: [layout] });
       const names = ["Load", "Blur", "Noise", "EnergyHorizontal", "EnergyVertical", "Accumulate", "Final"];
-      const create = name => this.device.createComputePipelineAsync({
+      const create = name => device.createComputePipelineAsync({
         layout: pipelineLayout,
         compute: { module, entryPoint: `adaptive${name}Main` },
       });
+      const checkDevice = () => {
+        if (this.device !== device || this.deviceLost) {
+          throw new DOMException("The Denoise device was replaced.", "AbortError");
+        }
+      };
       const created = [];
       if (beforeNext) {
-        for (const name of names) { await beforeNext(); created.push(await create(name)); }
-        if (this.adaptiveDenoisePipelines) return this.adaptiveDenoisePipelines;
-      } else created.push(...await Promise.all(names.map(create)));
-      const dummy = (format, usage) => this.device.createTexture({ size: { width: 1, height: 1 }, format, usage });
+        for (const name of names) {
+          await beforeNext();
+          checkDevice();
+          if (this.adaptiveDenoisePipelines) return this.adaptiveDenoisePipelines;
+          created.push(await create(name));
+        }
+      } else {
+        created.push(...await Promise.all(names.map(create)));
+      }
+      checkDevice();
+      if (this.adaptiveDenoisePipelines) return this.adaptiveDenoisePipelines;
+      const dummy = (format, usage) => device.createTexture({ size: { width: 1, height: 1 }, format, usage });
       this.adaptiveDenoisePipelines = {
+        device,
         layout,
         ...Object.fromEntries(names.map((name, index) => [name[0].toLowerCase() + name.slice(1), created[index]])),
         dummySampled: dummy("rgba32float", GPUTextureUsage.TEXTURE_BINDING),
@@ -6119,11 +6166,13 @@
 
     async ensureGrainPipelines() {
       const pipelines = await this.ensureAdaptiveDenoisePipelines();
+      const { device } = pipelines;
+      if (device !== this.device) throw new DOMException("The Denoise device was replaced.", "AbortError");
       if (!pipelines.grainPipelines) {
-        const module = this.device.createShaderModule({ code: GRAIN_DENOISE_SHADER_SOURCE });
-        const layout = this.device.createPipelineLayout({ bindGroupLayouts: [pipelines.layout] });
+        const module = device.createShaderModule({ code: GRAIN_DENOISE_SHADER_SOURCE });
+        const layout = device.createPipelineLayout({ bindGroupLayouts: [pipelines.layout] });
         const compute = GPUShaderStage.COMPUTE;
-        const preparedLayout = this.device.createBindGroupLayout({ entries: [
+        const preparedLayout = device.createBindGroupLayout({ entries: [
           { binding: 5, visibility: compute, storageTexture: { format: "rgba16float" } },
           { binding: 6, visibility: compute, buffer: { type: "uniform" } },
           { binding: 8, visibility: compute, texture: { sampleType: "uint" } },
@@ -6131,12 +6180,12 @@
         const names = ["grainGain", "grainBox", "grainAccumulate", "grainEndpoints"];
         pipelines.grainPipelines = Promise.all([
           ...names.map(async (name) => {
-            pipelines[name] = await this.device.createComputePipelineAsync({
+            pipelines[name] = await device.createComputePipelineAsync({
               layout, compute: { module, entryPoint: `adaptive${name[0].toUpperCase()}${name.slice(1)}Main` },
             });
           }),
-          this.device.createComputePipelineAsync({
-            layout: this.device.createPipelineLayout({ bindGroupLayouts: [preparedLayout] }),
+          device.createComputePipelineAsync({
+            layout: device.createPipelineLayout({ bindGroupLayouts: [preparedLayout] }),
             compute: { module, entryPoint: "adaptivePreparedMain" },
           }).then(pipeline => {
             pipelines.prepared = pipeline;
@@ -6148,11 +6197,13 @@
         });
       }
       await pipelines.grainPipelines;
+      if (device !== this.device) throw new DOMException("The Denoise device was replaced.", "AbortError");
+      return pipelines;
     }
 
     async ensureCleanGrainPipelines() {
-      await this.ensureGrainPipelines();
-      const adaptive = this.adaptiveDenoisePipelines;
+      const adaptive = await this.ensureGrainPipelines();
+      if (adaptive.device !== this.device) throw new DOMException("The Denoise device was replaced.", "AbortError");
       if (!adaptive.cleanGrainPipelines) {
         const device = this.device;
         const module = device.createShaderModule({ code: CLEAN_GRAIN_SHADER_SOURCE });
@@ -6202,8 +6253,8 @@
     }
 
     async ensureGrainFitPipeline() {
-      await this.ensureGrainPipelines();
-      const pipelines = this.adaptiveDenoisePipelines;
+      const pipelines = await this.ensureGrainPipelines();
+      if (pipelines.device !== this.device) throw new DOMException("The Denoise device was replaced.", "AbortError");
       if (!pipelines.grainFitPipeline) {
         const module = this.device.createShaderModule({ code: GRAIN_DENOISE_SHADER_SOURCE });
         const visibility = GPUShaderStage.COMPUTE;
@@ -6272,6 +6323,11 @@
             make("Vertical", [...verticalSamples, ...(clean ? [sample(10), write(7, "rgba32uint")] : [write(7, "rgba16float")])]),
             ...(clean ? [make("Base", [...verticalSamples, write(9, "rgba32float")])] : []),
           ]);
+        }).then(pipelines => {
+          if (device !== this.device || this.deviceLost) {
+            throw new DOMException("The Denoise device was replaced.", "AbortError");
+          }
+          return pipelines;
         }).catch(error => {
           if (this[key] === pending) this[key] = null;
           throw error;
@@ -6335,7 +6391,7 @@
         && this.fineGrainReduced.has(this.reducedGrainKey(proxy, selector)));
     }
 
-    async ensureFineGrainReduced(proxy, revision, isCurrent, interactive) {
+    async ensureFineGrainReduced(proxy, revision, isCurrent, interactive, signal) {
       if (!this.adaptiveDenoiseFor(proxy)) return null;
       const selector = this.denoiseSourceSelector;
       const grain = selector.cache.grain;
@@ -6354,8 +6410,9 @@
       }
       if (interactive) return null;
       this.recordStage("fine-grain-reduced-miss", { lane: proxy.lane, width: proxy.width, height: proxy.height });
-      const current = () => isCurrent() && selector === this.denoiseSourceSelector && selector.controls === controls;
-      return this.resizeNativeFineGrain(proxy, revision, selector, current, key);
+      const current = () => !signal?.aborted && isCurrent()
+        && selector === this.denoiseSourceSelector && selector.controls === controls;
+      return this.resizeNativeFineGrain(proxy, revision, selector, current, key, signal);
     }
 
     refuseFineGrainFit(grain, error) {
@@ -6441,12 +6498,13 @@
       }
     }
 
-    async resizeNativeFineGrain(proxy, revision, selector, current, key) {
+    async resizeNativeFineGrain(proxy, revision, selector, current, key, signal) {
       const start = performance.now();
       const controls = selector.controls;
       const clean = controls.method === "clean_grain";
       const micro = selector.cache.grain.micro;
       const [horizontal, vertical, baseVertical] = await this.ensureFineGrainResizePipelines(clean);
+      if (!current()) throw new DOMException("Grain resize was replaced.", "AbortError");
       const device = this.device;
       const grain = selector.cache.grain;
       const { width, height } = grain;
@@ -6510,7 +6568,7 @@
             const coreWidth = 768;
             const bandFor = left => ({ ...target, x: left, width: Math.min(2 * coreWidth, width - left) });
             const fetchBand = left => window.HDRMicroGrainGpu.readBayer(grain, this.microGrainSourceRegion(selector, bandFor(left)),
-              controls, revision, current, false).then(body => ({ body }), error => ({ error }));
+              controls, revision, current, false, denoiseDeadline(signal, 15000)).then(body => ({ body }), error => ({ error }));
             let nextBayer = fetchBand(0);
             for (let left = 0; left < width; left += 2 * coreWidth) {
               const right = Math.min(width, left + 2 * coreWidth);
@@ -6531,7 +6589,7 @@
           }
           const source = micro ? null : await this.loadProxyRegion(proxy.sessionId, proxy.lane, grain.nativeEdge, proxy.geometrySignature,
             revision, proxy.sourceIdentity, null, { x: 0, y: top, width, height: bottom + margin - top },
-            { isCurrent: current, transient: true, stripUpload });
+            { signal: denoiseDeadline(signal, 15000), isCurrent: current, transient: true, stripUpload });
           if (!micro && !source) throw Error("The native Fine Grain source is not available for reduction.");
           let encoded;
           try {
@@ -6590,6 +6648,7 @@
       { residentSource, beforeSubmit } = {}) {
       const started = performance.now();
       const grainFit = await this.ensureGrainFitPipeline();
+      if (!current()) throw new DOMException("Grain fit was replaced.", "AbortError");
       const device = this.device;
       const margin = 17 + GRAIN_DENOISE_RADIUS;
       const rows = ADAPTIVE_DENOISE_TILE;
@@ -6620,7 +6679,7 @@
           const top = Math.max(0, y - margin);
           const source = residentSource || await this.loadProxyRegion(sessionId, lane, native, geometry, revision, sourceIdentity, null,
             { x: 0, y: top, width: width ?? native, height: y + rows + margin - top },
-            { signal, isCurrent: current, transient: true, stripUpload });
+            { signal: denoiseDeadline(signal, 15000), isCurrent: current, transient: true, stripUpload });
           if (!source) throw new Error("The native Fine Grain source is not available in strips.");
           let partials;
           let readback;
@@ -6708,7 +6767,8 @@
       const key = `${sessionId}:${lane}:${native}`;
       if (this.denoiseModelWarm?.key === key) return this.denoiseModelWarm.promise;
       const warm = { key, promise: null };
-      warm.promise = this.fetchDenoiseModel(`/api/session/${sessionId}/denoise-model/${lane}?long_edge=${native}`)
+      warm.promise = this.fetchDenoiseModel(`/api/session/${sessionId}/denoise-model/${lane}?long_edge=${native}`,
+        { signal: this.sourceAbortSignal() })
         .then(async () => {
           return true;
         }).catch(() => {
@@ -6727,50 +6787,55 @@
      * hands it, which is what keeps a 42 MP frame's denoise from holding
      * evidence, or the frame, at all.
      */
-    async fetchDenoiseModel(url, { allowCpuFallback = true } = {}) {
+    async fetchDenoiseModel(url, { allowCpuFallback = true, signal } = {}) {
       const measurementURL = url.replace("/denoise-model/", "/denoise-measurement/");
       const started = performance.now();
-      const cached = await fetch(measurementURL);
+      const waiting = denoiseDeadline(signal, 30000);
+      const cached = await fetch(measurementURL, { signal: waiting });
       if (cached.status === 200) return cached.json();
       if (cached.status === 409) throw new DOMException("Denoise preparation was replaced.", "AbortError");
       if (!cached.ok) throw new Error(`Denoise measurement request failed (${cached.status}).`);
-      return HDRDenoiseMeasurement.acquire(cached.headers.get("X-Denoise-Measurement-Key") || measurementURL, async () => {
-      let description;
-      try {
-        const response = await fetch(measurementURL + (measurementURL.includes("?") ? "&" : "?") + "source=true");
-        if (response.status === 409) throw new DOMException("Denoise preparation was replaced.", "AbortError");
-        if (!response.ok) throw Error(`Denoise source request failed (${response.status}).`);
-        if (response.headers.get("content-type")?.includes("application/json")) return response.json();
-        const body = await response.arrayBuffer(), length = new DataView(body).getUint32(0,true);
-        description = JSON.parse(new TextDecoder().decode(new Uint8Array(body,4,length)));
-        if (!this.available || this.deviceLost || this.adapterInfo?.fallback) throw Error("No usable graphics card.");
-        const pixels = new Float32Array(body,4+length);
-        const snapshot = this.resourceMemorySnapshot();
-        const budget = Math.max(0,this.memoryBudgetBytes() - snapshot.totals.peakLogicalBytes);
-        const result = await HDRDenoiseMeasurement.measure(this.device,description,pixels,budget);
-        const stored = await fetch(measurementURL,{method:"POST",headers:{"Content-Type":"application/json"},
-          body:JSON.stringify({...result,key:description.key,width:description.source_width,height:description.source_height,
-            gpu_ms:result.duration_ms,duration_ms:performance.now()-started})});
-        if (stored.status === 409) throw new DOMException("Denoise preparation was replaced.", "AbortError");
-        if (!stored.ok) throw Error(`Denoise measurement publication failed (${stored.status}).`);
-        return stored.json();
-      } catch (error) {
-        if (!allowCpuFallback || error.name === "AbortError" || /request failed|publication failed|source request/.test(error.message)) throw error;
-        const response = await fetch(url + (url.includes("?") ? "&" : "?") + "fallback_reason=" + encodeURIComponent(error.message));
-        if (response.status === 409) throw new DOMException("Denoise preparation was replaced.", "AbortError");
-        if (!response.ok) throw new Error(`Denoise CPU fallback failed (${response.status}).`);
-        const model = await response.json();
-        if (description) {
-          const stored = await fetch(measurementURL,{method:"POST",headers:{"Content-Type":"application/json"},
-            body:JSON.stringify({model,key:description.key,version:description.version,route:"CPU fallback",
-              width:description.source_width,height:description.source_height,
-              measured_pixels:Math.min(description.source_width*description.source_height,4*1024*1024),
-              duration_ms:performance.now()-started,reason:error.message})});
+      const device = this.device;
+      const key = JSON.stringify([measurementURL, allowCpuFallback]);
+      return HDRDenoiseMeasurement.acquire(device, key, waiting, async signal => {
+        let description;
+        try {
+          const response = await fetch(measurementURL + (measurementURL.includes("?") ? "&" : "?") + "source=true", { signal });
+          if (response.status === 409) throw new DOMException("Denoise preparation was replaced.", "AbortError");
+          if (!response.ok) throw Error(`Denoise source request failed (${response.status}).`);
+          if (response.headers.get("content-type")?.includes("application/json")) return response.json();
+          const body = await response.arrayBuffer(), length = new DataView(body).getUint32(0, true);
+          description = JSON.parse(new TextDecoder().decode(new Uint8Array(body, 4, length)));
+          if (!this.available || this.device !== device || this.deviceLost || this.adapterInfo?.fallback) throw Error("No usable graphics card.");
+          const pixels = new Float32Array(body, 4 + length);
+          const snapshot = this.resourceMemorySnapshot();
+          const budget = Math.max(0, this.memoryBudgetBytes() - snapshot.totals.peakLogicalBytes);
+          const result = await HDRDenoiseMeasurement.measure(device, description, pixels, budget, signal);
+          signal.throwIfAborted();
+          const stored = await fetch(measurementURL, { method: "POST", signal, headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ ...result, key: description.key, width: description.source_width,
+              height: description.source_height, gpu_ms: result.duration_ms, duration_ms: performance.now() - started }) });
           if (stored.status === 409) throw new DOMException("Denoise preparation was replaced.", "AbortError");
-          if (!stored.ok) throw Error(`Denoise fallback publication failed (${stored.status}).`);
+          if (!stored.ok) throw Error(`Denoise measurement publication failed (${stored.status}).`);
+          return stored.json();
+        } catch (error) {
+          signal.throwIfAborted();
+          if (!allowCpuFallback || error.name === "AbortError" || /request failed|publication failed|source request/.test(error.message)) throw error;
+          const response = await fetch(url + (url.includes("?") ? "&" : "?") + "fallback_reason=" + encodeURIComponent(error.message), { signal });
+          if (response.status === 409) throw new DOMException("Denoise preparation was replaced.", "AbortError");
+          if (!response.ok) throw new Error(`Denoise CPU fallback failed (${response.status}).`);
+          const model = await response.json();
+          if (description) {
+            const stored = await fetch(measurementURL, { method: "POST", signal, headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ model, key: description.key, version: description.version, route: "CPU fallback",
+                width: description.source_width, height: description.source_height,
+                measured_pixels: Math.min(description.source_width * description.source_height, 4 * 1024 * 1024),
+                duration_ms: performance.now() - started, reason: error.message }) });
+            if (stored.status === 409) throw new DOMException("Denoise preparation was replaced.", "AbortError");
+            if (!stored.ok) throw Error(`Denoise fallback publication failed (${stored.status}).`);
+          }
+          return model;
         }
-        return model;
-      }
       });
     }
 
@@ -6805,7 +6870,8 @@
           throw new Error("Micro Grain uses the CPU with a crop or geometry adjustment.");
         }
         const url = `/api/session/${sessionId}/denoise-micro`;
-        const response = await fetch(url, { signal });
+        const response = await fetch(url, { signal: denoiseDeadline(signal, 30000) });
+        if (response.status === 409) throw new DOMException("Micro Grain preparation was replaced.", "AbortError");
         if (!response.ok) throw new Error((await response.json().catch(() => null))?.detail || "Micro Grain preparation failed.");
         const { width, height, gain, model: measured } = await response.json();
         await this.ensureMicroGrainPipelines();
@@ -6814,7 +6880,7 @@
         model = measured;
       } else {
         model = await this.fetchDenoiseModel(`/api/session/${sessionId}/denoise-model/${lane}?${modelQuery}`,
-          { allowCpuFallback: !deliveryGrainSource });
+          { signal, allowCpuFallback: !deliveryGrainSource });
       }
       if (!current()) return false;
       if (gpuFine) {
@@ -6837,7 +6903,8 @@
           } else this.recordStage("fine-grain-fit-hit", { lane });
         } catch (error) {
           if (deliveryGrainSource) throw error;
-          if (!current() || error.name === "AbortError") return false;
+          if (!current()) return false;
+          if (error.name === "AbortError" || error.status === 409) throw error;
           calibration = null;
           this.fineGrainFailedSources.add(sourceKey);
           this.recordStage("fine-grain-fallback", { reason: error.message });
@@ -6862,15 +6929,12 @@
             grain_evenness: controls.grainEvenness, splotch_size: controls.splotchSize,
           }),
         });
-        if (response.status === 409) {
-          if (!current()) return false;
-          throw Object.assign(new Error("Grain preparation expired or was replaced."), { grainPreparationReplaced: true });
-        }
+        if (response.status === 409) throw new DOMException("Grain preparation was replaced.", "AbortError");
         if (!response.ok) {
           const detail = response.status === 507 ? (await response.json().catch(() => null))?.detail : null;
           throw new Error(typeof detail === "string" ? detail : `Denoise preparation failed (${response.status}).`);
         }
-        grain = { ...await response.json(), url, controls: { ...controls } };
+        grain = { ...await response.json(), url, controls: preparedGrainControls(controls) };
         onGrain?.(grain);
         if (!current()) return false;
         await this.ensureGrainPipelines();
@@ -7264,7 +7328,7 @@
       else run(clean.output, base, null, { ...color, out: candidate.texture }, 0, 0, tile);
     }
 
-    async resolveAdaptiveDenoise(selector, weights, sizes, generation, startedAt, region, destination, sharedEncoder, source, isCurrent) {
+    async resolveAdaptiveDenoise(selector, weights, sizes, generation, startedAt, region, destination, sharedEncoder, source, isCurrent, signal) {
       await this.ensureAdaptiveDenoisePipelines();
       const frame = { x: 0, y: 0, width: source.width, height: source.height };
       const held = source.region || frame;
@@ -7292,12 +7356,11 @@
         const live = { amount: weights[0], luminance: weights[1], colorNoise: weights[2], detailRecovery: weights[3], ...sizes };
         // A drag can give immediate wavelet feedback before release commits
         // a new native preparation. Color Splotches only changes the blend.
-        const matches = grain?.token && Object.entries(grain.controls).every(([key, value]) => (
-          key === "colorSplotches" || live[key] === value
-        ));
+        const matches = grain?.token && Object.entries(preparedGrainControls(grain.controls))
+          .every(([key, value]) => live[key] === value);
         const current = () => isCurrent?.() !== false && selector === this.denoiseSourceSelector
           && (sharedEncoder || generation === this.denoiseSelectorGeneration);
-        const prepared = matches ? await this.preparedGrainTile(grain, target, source, current) : null;
+        const prepared = matches ? await this.preparedGrainTile(grain, target, source, current, signal) : null;
         if (prepared?.transient) cleanGrainTransient = prepared.texture;
         if (!current()) throw new DOMException("Denoise draw cancelled.", "AbortError");
         const encoder = sharedEncoder || this.device.createCommandEncoder();
@@ -7387,7 +7450,7 @@
       return true;
     }
 
-    async resolveDenoiseProxy(controls = {}, { region = null, destination = null, encoder: sharedEncoder = null, source = null, isCurrent } = {}) {
+    async resolveDenoiseProxy(controls = {}, { region = null, destination = null, encoder: sharedEncoder = null, source = null, isCurrent, signal } = {}) {
       const selector = this.denoiseSourceSelector;
       if (!selector?.cache) return false;
       // Reconstruction reads the original's pixels; adopt the live copy if the
@@ -7412,7 +7475,7 @@
       });
       return this.resolveAdaptiveDenoise(
         selector, weights, adaptiveResolveOptions(controls), generation, startedAt, region, destination, sharedEncoder,
-        source || selector.original, isCurrent,
+        source || selector.original, isCurrent, signal,
       );
     }
 

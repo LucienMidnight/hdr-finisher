@@ -272,18 +272,49 @@ var<workgroup> sums:array<u32,256>;
     }
     await Promise.all([pipeline(device),histogramPipelines.get(device)]);
   }
-  const turns=new WeakMap();
-  function serialMeasure(device,...args) {
-    const previous=turns.get(device)||Promise.resolve();
-    const result=previous.catch(()=>{}).then(()=>measure(device,...args));turns.set(device,result);
-    result.finally(()=>{if(turns.get(device)===result)turns.delete(device);}).catch(()=>{});
+  const turns = new WeakMap();
+  function serialMeasure(device, description, pixels, budget, signal) {
+    const previous = turns.get(device) || Promise.resolve();
+    const result = previous.catch(() => {}).then(() => {
+      signal?.throwIfAborted();
+      return measure(device, description, pixels, budget);
+    });
+    turns.set(device, result);
+    result.finally(() => { if (turns.get(device) === result) turns.delete(device); }).catch(() => {});
     return result;
   }
-  const pending = new Map();
-  function acquire(key, task) {
-    if (pending.has(key)) return pending.get(key);
-    const result = task().finally(()=>{if(pending.get(key)===result)pending.delete(key);});
-    pending.set(key,result);return result;
+
+  const pendingByDevice = new Map();
+  function acquire(device, key, signal, task) {
+    signal.throwIfAborted();
+    const pending = pendingByDevice.get(device) || new Map();
+    pendingByDevice.set(device, pending);
+    let flight = pending.get(key);
+    if (!flight) {
+      flight = { controller: new AbortController(), waiters: 0, promise: null };
+      pending.set(key, flight);
+      flight.promise = Promise.resolve().then(() => {
+        flight.controller.signal.throwIfAborted();
+        return task(flight.controller.signal);
+      }).finally(() => forget());
+    }
+    function forget() {
+      if (pending.get(key) === flight) pending.delete(key);
+      if (!pending.size && pendingByDevice.get(device) === pending) pendingByDevice.delete(device);
+    }
+    flight.waiters++;
+    let onAbort;
+    const cancelled = new Promise((resolve, reject) => {
+      onAbort = () => reject(signal.reason);
+      signal.addEventListener("abort", onAbort, { once: true });
+    });
+    return Promise.race([flight.promise, cancelled]).finally(() => {
+      signal.removeEventListener("abort", onAbort);
+      if (--flight.waiters === 0 && pending.get(key) === flight) {
+        forget();
+        flight.controller.abort();
+      }
+    });
   }
   window.HDRDenoiseMeasurement={measure:serialMeasure,warm,acquire,version:VERSION,fitInformative,calibrationBlocks};
 })();

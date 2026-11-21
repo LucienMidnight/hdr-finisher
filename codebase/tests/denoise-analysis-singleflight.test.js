@@ -4,17 +4,17 @@ const {test} = require('node:test');
 const {declarations} = require('./frontend-source.js');
 
 test('Denoise method controls recover after a rejected save, missing GPU, or expired preparation', async () => {
-  for (const scenario of ['save', 'unavailable', 'expired']) {
+  for (const scenario of ['save', 'unavailable', 'failed']) {
     const runtime = { generation: 0, status: 'ready' };
     const state = { currentView: 'hdr', session: { session_id: 'photo' }, adjustments: {}, denoiseRuntime: { hdr: runtime },
       denoise: { hdr: { enabled: true, controls: { method: 'standard' } } },
       gpuPreview: { available: scenario !== 'unavailable', diagnosticsSnapshot: () => ({ denoise: {} }),
-        analyzeDenoiseProxy: async () => { throw new DOMException('Expired', 'AbortError'); } } };
-    const context = vm.createContext({ state, console, renderDenoiseControls: () => {}, invalidatePreview: () => {},
+        analyzeDenoiseProxy: async () => { throw new Error('Preparation failed'); } } };
+    const context = vm.createContext({ state, console, AbortController, structuredClone, window: { setTimeout }, renderDenoiseControls: () => {}, invalidatePreview: () => {},
       persistDenoiseSettings: async () => scenario !== 'save', refinementProxyLongEdge: () => 1600,
       geometrySignature: () => '{}', denoiseRendererControls: controls => controls,
       renderPreviewForLane: async () => true });
-    vm.runInContext(declarations('gradeGrainGpuPreferred', 'gradeGrainGpuEnabled', 'gradeSourceIdentity', 'denoiseRetryError', 'recalculateDenoise', 'recalculateDenoiseAnalysis', 'liveGrainControl', 'commitDenoiseControl'), context);
+    vm.runInContext(declarations('restoreDenoiseStatus', 'gradeGrainGpuPreferred', 'gradeGrainGpuEnabled', 'gradeSourceIdentity', 'denoiseRetryError', 'recalculateDenoise', 'recalculateDenoiseAnalysis', 'liveGrainControl', 'invalidateDenoisePreparation', 'deferDenoisePreparation', 'commitDenoiseControl'), context);
     await context.commitDenoiseControl('method', 'clean_grain');
     assert.equal(runtime.status, 'error', scenario);
     assert.match(runtime.error, /try|retry|again/i, scenario);
@@ -36,10 +36,10 @@ test(`Grade only prepares GPU ${method} while its correction is enabled`, async 
     denoise: { hdr: settings }, denoiseRuntime: { hdr: runtime }, gpuPreview,
   };
   const context = vm.createContext({
-    state, renderDenoiseControls: () => {}, nativeDenoiseViewport: () => false,
+    state, AbortController, structuredClone, renderDenoiseControls: () => {}, nativeDenoiseViewport: () => false, geometrySignature: () => "{}",
     denoiseRendererControls: controls => controls, refinementProxyLongEdge: () => 1600,
   });
-  vm.runInContext(declarations('gradeGrainGpuPreferred', 'gradeGrainGpuEnabled',
+  vm.runInContext(declarations('restoreDenoiseStatus', 'gradeGrainGpuPreferred', 'gradeGrainGpuEnabled',
     'gradeSourceIdentity', 'recalculateDenoiseAnalysis'), context);
   const prepare = () => context.recalculateDenoiseAnalysis('hdr', { renderAfter: false });
   assert.equal(await prepare(), true);
@@ -63,9 +63,9 @@ test('Match and Undo select separate Denoise preparations at the same SDR size',
     adjustments: { sdr: {use_authored_base: true} },
     gpuPreview: { available: true, diagnosticsSnapshot: () => ({ denoise: {} }),
       analyzeDenoiseProxy: async (...args) => { identities.push(args[5]); return true; } } };
-  const context = vm.createContext({ state, console, renderDenoiseControls: () => {},
+  const context = vm.createContext({ state, console, AbortController, structuredClone, window: { setTimeout }, renderDenoiseControls: () => {},
     refinementProxyLongEdge: () => 1600, geometrySignature: () => '{}', denoiseRendererControls: controls => controls });
-  vm.runInContext(declarations('gradeGrainGpuPreferred', 'gradeGrainGpuEnabled', 'gradeSourceIdentity', 'recalculateDenoiseAnalysis'), context);
+  vm.runInContext(declarations('restoreDenoiseStatus', 'gradeGrainGpuPreferred', 'gradeGrainGpuEnabled', 'gradeSourceIdentity', 'recalculateDenoiseAnalysis'), context);
   await context.recalculateDenoiseAnalysis('sdr', { renderAfter: false });
   state.adjustments.sdr.use_authored_base = false;
   await context.recalculateDenoiseAnalysis('sdr', { renderAfter: false });

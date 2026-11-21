@@ -351,7 +351,7 @@ def create_router(store):
                 return delivery_session(session_id) is frame
             return store.current() is frame
 
-        options = controls.model_dump(exclude={"color_splotches"})
+        options = controls.model_dump(exclude={"color_splotches", "micro_luminance", "micro_color", "micro_detail"})
         model_signature = json.dumps(cached_model["model"], sort_keys=True) if cached_model else None
         base_signature = (key, epoch, geometry.model_dump_json(), refresh, model_signature)
         signature = (*base_signature, tuple(options.items()))
@@ -362,9 +362,12 @@ def create_router(store):
         with cache.grain_preparation_lock:
             if not is_current():
                 raise HTTPException(409, "A newer edit replaced the Denoise preparation.")
-            previous = cache.grain_preparation
-            if previous is not None and previous.signature == signature:
-                return previous
+            previous = cache.grain_preparation_for(kind)
+            matching = cache.matching_grain_preparation(signature)
+            if matching is not None:
+                if not cache.retain_grain_preparation(kind, matching, epoch):
+                    raise HTTPException(409, "A newer edit replaced the Denoise preparation.")
+                return matching
             request = (kind, native_edge, frame.adjustments)
             direct = cache.native_source_stream(*request)
             if direct is not None:
@@ -384,7 +387,8 @@ def create_router(store):
             settings = AdaptiveControls(**controls.model_dump())
             has_colour = settings.method == "clean_grain"
             reuse_rgb = (has_colour and previous is not None and not previous.has_colour
-                         and previous.rgb_signature == rgb_signature and previous.corrections is not None)
+                         and previous.rgb_signature == rgb_signature and previous.corrections is not None
+                         and cache.owns_grain_preparation_exclusively(previous))
             fit = None
             fit_started = perf_counter()
             if settings.grain_evenness and settings.amount and settings.luminance:
@@ -393,7 +397,10 @@ def create_router(store):
                 else:
                     if not is_current():
                         raise HTTPException(409, "A newer edit replaced the Denoise preparation.")
-                    fit = fit_grain(height, width, read, model, settings)
+                    try:
+                        fit = fit_grain(height, width, read, model, settings, is_current)
+                    except InterruptedError as error:
+                        raise HTTPException(409, str(error)) from error
             if not is_current():
                 raise HTTPException(409, "A newer edit replaced the Denoise preparation.")
             fitted = perf_counter()
@@ -404,7 +411,7 @@ def create_router(store):
                     corrections = previous.corrections
                     tile_timings = corrections.add_colour(settings, is_current)
                 else:
-                    cache.discard_grain_preparation()
+                    cache.discard_grain_preparation(kind)
                     if settings.amount and (settings.luminance or settings.color_noise):
                         source_path = (fields["path"] or "") if fields["usage"] == "Grade" else None
                         corrections = GrainPreparation(height, width, read, model, settings, fit,
@@ -421,9 +428,12 @@ def create_router(store):
             preparation = _GrainPreparation(signature, fit_signature, rgb_signature, authored_sdr, has_colour,
                                             uuid4().hex, fit, corrections)
             if meta is None:
-                cache.grain_preparation = preparation
+                if not cache.retain_grain_preparation(kind, preparation, epoch):
+                    if not reuse_rgb:
+                        preparation.close()
+                    raise HTTPException(409, "A newer edit replaced the Denoise preparation.")
                 if not is_current():
-                    cache.discard_grain_preparation()
+                    cache.discard_grain_preparation(kind, expected=preparation)
                     raise HTTPException(409, "A newer edit replaced the Denoise preparation.")
         finished = perf_counter()
         log("denoise_grain_prepared", **fields, method=settings.method, width=width, height=height,
@@ -447,7 +457,7 @@ def create_router(store):
                     hold_draw(draw_key, preparation)
         else:
             _, frame, _, _ = _context(store, session_id, kind, 1600, None, None)
-            preparation = frame.render_cache.grain_preparation
+            preparation = frame.render_cache.grain_preparation_for(kind)
             if preparation is not None and preparation.authored_sdr != _uses_authored_sdr(frame, kind):
                 preparation = None
         if preparation is None or preparation.token != token or preparation.corrections is None:

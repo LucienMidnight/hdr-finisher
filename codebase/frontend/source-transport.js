@@ -478,6 +478,7 @@
       const probe = await fetch(query({ x: region.x, y: region.y, width: 1, height: 1 }), { signal });
       if (!probe.ok) {
         await probe.arrayBuffer().catch(() => null);
+        if (strip && probe.status === 409) throw new DOMException("Grain strip source was replaced.", "AbortError");
         return null;
       }
       metadata = {

@@ -36,6 +36,7 @@ function loadPreview(fetchImpl) {
     console,
     fetch: fetchImpl,
     AbortController,
+    AbortSignal,
     DOMException,
     URLSearchParams,
     // The streaming transport races a pending read against a currency tick so a
@@ -45,6 +46,7 @@ function loadPreview(fetchImpl) {
     clearInterval,
     setTimeout,
     clearTimeout,
+    GPUShaderStage: { COMPUTE: 1 },
     GPUTextureUsage: {
       COPY_SRC: 1, COPY_DST: 2, TEXTURE_BINDING: 4, STORAGE_BINDING: 8, RENDER_ATTACHMENT: 16,
     },
@@ -99,6 +101,57 @@ test('Wide panorama Grain at Fit requests a measurement the API can serve', asyn
   assert.equal(await renderer.analyzeDenoiseProxy('photo', 'hdr', {}, 1600, 0, 'source',
     { method: 'fine_grain', grainEvenness: 1 }, 0, 18001), true);
   assert.equal(measurementEdge, 1600);
+});
+
+test("Clean Grain blends prepared CPU pixels and falls back when a preparation control changes", async () => {
+  const Renderer = loadPreview();
+  const renderer = Object.create(Renderer.prototype);
+  const controls = {
+    amount: 0.75, luminance: 0.5, colorNoise: 0.75, detailRecovery: 0.5,
+    finestNoise: 0.5, fineNoise: 0.5, mediumNoise: 0.5, coarseNoise: 0.5,
+    method: "clean_grain", grainEvenness: 1, splotchSize: "small",
+  };
+  const grain = { token: "prepared", controls: { ...controls, microLuminance: 0.5, microColor: 0.5, microDetail: 0.5 } };
+  const selector = { cache: { grain } };
+  const routes = [];
+  Object.assign(renderer, {
+    denoiseSourceSelector: selector, denoiseCounters: { resolveDispatches: 0, resolveTiles: 0 },
+    ensureAdaptiveDenoisePipelines: async () => {}, preparedGrainTile: async () => ({}),
+    encodePreparedDenoise: (...args) => { routes.push(["prepared", args.at(-1)]); return { dispatches: 1, tiles: 1 }; },
+    encodeAdaptiveDenoise: () => { routes.push(["wavelet"]); return { dispatches: 1, tiles: 1 }; },
+  });
+  const draw = sizes => renderer.resolveAdaptiveDenoise(selector, [0.75, 0.5, 0.75, 0.5], sizes, 1, 0,
+    null, {}, {}, { width: 96, height: 64 });
+  await draw({ ...controls, colorSplotches: 0.3 });
+  await draw({ ...controls, splotchSize: "large", colorSplotches: 0.3 });
+  assert.deepEqual(routes, [["prepared", 0.3], ["wavelet"]]);
+});
+
+test("adaptive Denoise shares device compilation and an old device cannot publish", async () => {
+  const Renderer = loadPreview();
+  const renderer = Object.create(Renderer.prototype);
+  let finish;
+  const held = new Promise(resolve => { finish = resolve; });
+  const device = info => ({
+    modules: 0, dummies: 0,
+    createShaderModule() { this.modules++; return { getCompilationInfo: () => info }; },
+    createBindGroupLayout: () => ({}), createPipelineLayout: () => ({}),
+    createComputePipelineAsync: async () => ({}),
+    createTexture() { this.dummies++; return {}; },
+  });
+  const oldDevice = renderer.device = device(held);
+  const warm = renderer.ensureAdaptiveDenoisePipelines();
+  const draw = renderer.ensureAdaptiveDenoisePipelines();
+  const aborted = Promise.all([assert.rejects(warm, { name: "AbortError" }), assert.rejects(draw, { name: "AbortError" })]);
+  assert.equal(oldDevice.modules, 1);
+  renderer.device = device({ messages: [] });
+  renderer.adaptiveDenoiseCompilation = null;
+  const fresh = await renderer.ensureAdaptiveDenoisePipelines();
+  finish({ messages: [] });
+  await aborted;
+  assert.equal(renderer.adaptiveDenoisePipelines, fresh);
+  assert.equal(oldDevice.dummies, 0);
+  assert.equal(renderer.device.dummies, 3);
 });
 
 function alignRow(bytes) {

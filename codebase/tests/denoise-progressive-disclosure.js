@@ -73,9 +73,16 @@ function assert(condition, message) {
       assert(await page.locator(`#denoise-${key}`).inputValue() === "0.75", `${key} did not start at 75%.`);
       assert(await page.locator(`#denoise-${key}-value`).textContent() === "75%", `${key} did not display 75%.`);
     }
-    for (const removed of ["denoise-algorithm", "denoise-method", "denoise-levels"]) {
+    for (const removed of ["denoise-algorithm", "denoise-levels"]) {
       assert(await page.locator(`#${removed}`).count() === 0, `The removed control #${removed} is still in the panel.`);
     }
+    const method = page.locator("#denoise-method");
+    assert(await method.inputValue() === "clean_grain", "A new photo should select Clean Grain.");
+    const options = await method.locator("option").evaluateAll(options =>
+      options.map(option => [option.value, option.textContent.trim()]));
+    assert(JSON.stringify(options.slice(0, 3)) === JSON.stringify([
+      ["clean_grain", "Clean Grain"], ["standard", "Simple"], ["fine_grain", "Fine Grain · Experimental"],
+    ]) && options[3]?.[0] === "micro_grain", "The Denoise menu changed.");
     assert(!await shown("denoise-luminance"), "Luminance is visible before Advanced is opened.");
     assert(!await shown("denoise-color"), "Colour Noise is visible before Advanced is opened.");
 
@@ -94,6 +101,13 @@ function assert(condition, message) {
 
     const enableDenoise = async () => {
       await page.evaluate(() => {
+        const original = state.gpuPreview.analyzeDenoiseProxy;
+        state.gpuPreview.analyzeDenoiseProxy = function (...args) {
+          this.analyzeDenoiseProxy = original;
+          window.denoiseEditableWhilePreparing = !els.denoiseAmount.disabled && !els.denoiseSplotchSize.disabled
+            && els.denoiseRecalculate.disabled;
+          return original.apply(this, args);
+        };
         const group = document.querySelector(".denoise-group .group-toggle");
         if (group.getAttribute("aria-expanded") !== "true") group.click();
         const bypass = document.querySelector("#denoise-bypass");
@@ -107,6 +121,8 @@ function assert(condition, message) {
       await page.waitForTimeout(1200);
     };
     await enableDenoise();
+    assert(await page.evaluate(() => window.denoiseEditableWhilePreparing),
+      "Denoise should allow editing Amount and Splotch Size during preparation.");
 
     // Capture only the visible image region. A locator screenshot of the
     // oversized zoomed canvas also captures page controls lying over it.
@@ -171,7 +187,7 @@ function assert(condition, message) {
     // The reset routes must agree with the fresh-photo values, including
     // Advanced controls. Dispatch the actual double-click handler.
     const resetDefaults = await page.evaluate(() => {
-      const expected = { amount: 0.75, luminance: 0.5, color_noise: 0.75,
+      const expected = { method: "clean_grain", amount: 0.75, luminance: 0.5, color_noise: 0.75,
         detail_recovery: 0.5, finest_noise: 0.5, fine_noise: 0.5,
         medium_noise: 0.5, coarse_noise: 0.5 };
       const lane = state.currentView;

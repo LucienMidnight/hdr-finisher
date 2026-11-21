@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 const path = require('node:path');
 const { HDRLatestWorkQueue } = require('../frontend/latest-work-queue.js');
-const { frontendSource } = require('./frontend-source.js');
+const { frontendSource, declarations } = require('./frontend-source.js');
 
 function deferred() {
   let resolve, reject;
@@ -23,7 +23,7 @@ function harness() {
       cancelDenoiseProcessing() {}, analyzeDenoiseProxy: async () => true,
       resolveDenoiseProxy: async controls => { calls.resolves.push(controls); return true; } },
   };
-  const context = vm.createContext({ state, els: {}, console, performance, structuredClone,
+  const context = vm.createContext({ state, els: {}, console, performance, structuredClone, AbortController,
     window: { HDRLatestWorkQueue, setTimeout },
     refinementProxyLongEdge: () => 1024, geometrySignature: () => '',
     renderGpuDraft: async lane => { calls.renders.push(lane); },
@@ -167,7 +167,7 @@ test('replacing a document in the same session invalidates its old Denoise analy
 });
 
 function renderer(fetch) {
-  const context = vm.createContext({ window: {}, performance, console, fetch, AbortController, DOMException, URLSearchParams,
+  const context = vm.createContext({ window: {}, performance, console, fetch, AbortController, AbortSignal, DOMException, URLSearchParams,
     GPUTextureUsage: { TEXTURE_BINDING: 1, COPY_DST: 2 } });
   for (const file of ['webgpu-shaders.js', 'webgpu-preview.js']) {
     vm.runInContext(frontendSource(file), context);
@@ -193,8 +193,8 @@ test('cold Grade Fit prepares Grain with the native noise measurement', async ()
   assert.match(requests[0][0], /denoise-measurement\/hdr\?long_edge=5202&/);
   assert.match(requests[1][0], /denoise-grain\/hdr\?long_edge=1024&/);
   assert.equal(requests[1][1], 'POST');
-  assert.equal(h.state.denoiseRuntime.hdr.status, 'error');
-  assert.match(h.state.denoiseRuntime.hdr.error, /Try Recalculate again/);
+  assert.equal(h.state.denoiseRuntime.hdr.status, 'dirty');
+  assert.equal(h.state.denoiseRuntime.hdr.error, '');
   assert.equal(h.state.denoiseRuntime.hdr.dirty, true);
   assert.deepEqual(h.calls.renders, []);
 });
@@ -256,4 +256,121 @@ test('expired Grain tiles are not user cancels and a fresh preparation can be re
   assert.deepEqual(uploads, []);
   assert.equal((await load(after)).grainToken, 'new');
   assert.deepEqual(uploads, [64]);
+});
+
+test('a stale edit revision retries against the latest edit without reporting an error', async () => {
+  const h = harness(), first = deferred(), edit = deferred();
+  h.state.editCommandQueue = edit.promise;
+  const revisions = [];
+  h.state.gpuPreview.analyzeDenoiseProxy = async (...args) => {
+    revisions.push(args[4]);
+    if (revisions.length === 1) {
+      await first.promise;
+      assert.equal(args.at(-1).isCurrent(), true);
+      throw Object.assign(new Error('Stale Denoise revision dropped.'), { status: 409 });
+    }
+    return true;
+  };
+  const pending = h.context.recalculateDenoise('hdr', { renderAfter: false });
+  first.resolve();
+  await Promise.resolve();
+  assert.equal(h.state.editRevision, 0);
+  h.state.editRevision++;
+  edit.resolve(true);
+  assert.equal(await pending, true);
+  assert.deepEqual(revisions, [0, 1]);
+  assert.equal(h.state.denoiseRuntime.hdr.status, 'ready');
+  assert.equal(h.state.denoiseRuntime.hdr.error, '');
+});
+
+test('source invalidation clears busy status and cancels the owning preparation', async () => {
+  const h = harness(), result = deferred();
+  let signal;
+  h.state.gpuPreview.analyzeDenoiseProxy = async (...args) => {
+    signal = args.at(-1).signal;
+    return result.promise;
+  };
+  const pending = h.context.recalculateDenoise();
+  assert.equal(h.state.denoiseRuntime.hdr.status, 'preparing');
+  h.context.invalidateDenoisePreparation('hdr', { dirty: true });
+  assert.equal(signal.aborted, true);
+  assert.equal(h.state.denoiseRuntime.hdr.status, 'dirty');
+  result.resolve(true);
+  assert.equal(await pending, false);
+  assert.deepEqual(h.calls.renders, []);
+});
+
+test('a rapid on-off-on and two slider releases prepare only the final saved controls', async () => {
+  const h = harness();
+  const settings = h.state.denoise.hdr;
+  settings.controls.method = 'clean_grain';
+  const controls = [];
+  h.state.gpuPreview.analyzeDenoiseProxy = async (...args) => { controls.push(args[6]); return true; };
+  const toggles = [h.context.setDenoiseEnabled(true), h.context.setDenoiseEnabled(false), h.context.setDenoiseEnabled(true)];
+  const edits = [h.context.commitDenoiseControl('luminance', 0.3), h.context.commitDenoiseControl('luminance', 0.6)];
+  await Promise.all([...toggles, ...edits]);
+  assert.deepEqual(controls.map(value => value.luminance), [0.6]);
+  assert.equal(h.state.denoiseRuntime.hdr.status, 'ready');
+});
+
+test('retained Micro Grain CPU fallback becomes ready again immediately on enable', async () => {
+  const h = harness();
+  h.state.denoise.hdr.controls.method = 'micro_grain';
+  const runtime = h.state.denoiseRuntime.hdr;
+  runtime.microCpu = true;
+  await h.context.setDenoiseEnabled(true);
+  assert.equal(runtime.status, 'ready');
+  assert.equal(runtime.dirty, false);
+});
+
+test('new Denoise lanes default to Clean Grain while a saved method-less lane keeps Simple', () => {
+  const h = harness();
+  vm.runInContext(declarations('defaultDenoiseLane', 'defaultDenoiseDocument'), h.context);
+  const settings = h.state.denoise;
+  h.context.loadDenoiseDocument({ denoise: { hdr: { enabled: true, controls: { amount: 0.6 } } } });
+  assert.equal(h.state.denoise.hdr.controls.method, 'standard');
+  assert.equal(h.state.denoise.hdr.controls.amount, 0.6);
+  assert.equal(h.state.denoise.sdr.controls.method, 'clean_grain');
+  h.context.loadDenoiseDocument({});
+  assert.equal(h.state.denoise.hdr.controls.method, 'clean_grain');
+  assert.equal(h.state.denoise.hdr.enabled, false);
+  assert.notEqual(h.state.denoise, settings);
+});
+
+test('Denoise sliders and Splotch Size stay editable through preparation and error', () => {
+  const h = harness();
+  vm.runInContext(declarations('defaultDenoiseLane', 'defaultDenoiseDocument'), h.context);
+  const element = () => ({ classList: { toggle() {} }, setAttribute() {}, closest: element, querySelector: () => null });
+  Object.assign(h.context.els, Object.fromEntries([
+    'Bypass', 'Method', 'GrainControls', 'MicroControls', 'Amount', 'Detail', 'AdvancedToggle',
+    'CleanControls', 'SplotchSize', 'Luminance', 'Color', 'Finest', 'Fine', 'Medium', 'Coarse',
+    'Evenness', 'Splotches', 'Recalculate', 'Status', 'AmountValue', 'LuminanceValue', 'ColorValue',
+    'DetailValue', 'FinestValue', 'FineValue', 'MediumValue', 'CoarseValue', 'EvennessValue', 'SplotchesValue',
+  ].map(name => ['denoise' + name, element()])), { denoiseMicroSliders: [] });
+  Object.assign(h.context, { valuesEqual: (a, b) => JSON.stringify(a) === JSON.stringify(b),
+    updateRangeVisual() {}, renderDenoiseNoiseViewControl() {} });
+  h.state.denoise.hdr = { ...vm.runInContext("defaultDenoiseDocument().hdr", h.context), enabled: true };
+  for (const status of ['preparing', 'recalculating', 'error']) {
+    h.state.denoiseRuntime.hdr.status = status;
+    h.context.renderDenoiseControls();
+    assert.equal(h.context.els.denoiseAmount.disabled, false, status);
+    assert.equal(h.context.els.denoiseSplotchSize.disabled, false, status);
+    assert.equal(h.context.els.denoiseRecalculate.disabled, status !== 'error', status);
+  }
+});
+
+test('Reset from Simple prepares and draws the Clean Grain defaults', async () => {
+  const h = harness();
+  vm.runInContext(declarations('defaultDenoiseLane', 'defaultDenoiseDocument', 'resetControlGroup'), h.context);
+  h.state.denoise.hdr.controls.method = 'standard';
+  let method;
+  h.state.gpuPreview.analyzeDenoiseProxy = async (...args) => { method = args[6].method; return true; };
+  const originalCommit = h.context.commitDenoiseControl;
+  let pending;
+  h.context.commitDenoiseControl = (...args) => { pending = originalCommit(...args); };
+  h.context.resetControlGroup('denoise');
+  await pending;
+  assert.equal(h.state.denoise.hdr.controls.method, 'clean_grain');
+  assert.equal(method, 'clean_grain');
+  assert.deepEqual(h.calls.renders, ['hdr']);
 });

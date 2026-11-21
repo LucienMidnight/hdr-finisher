@@ -249,18 +249,8 @@ function resetControlGroup(group) {
   if (group === "denoise") {
     const lane = state.currentView;
     const defaults = defaultDenoiseDocument()[lane];
-    const experimental = state.denoise[lane].controls.method !== "standard";
-    state.denoise[lane].controls = JSON.parse(JSON.stringify(defaults.controls));
-    if (experimental) {
-      void commitDenoiseControl("method");
-      return;
-    }
-    const runtime = state.denoiseRuntime[lane];
-    runtime.dirty = true;
-    runtime.status = state.denoise[lane].enabled ? "dirty" : "off";
-    runtime.showOriginal = !state.denoise[lane].enabled;
-    renderDenoiseControls();
-    void persistDenoiseSettings();
+    state.denoise[lane].controls = defaults.controls;
+    void commitDenoiseControl("method");
     return;
   }
   const paths = controlGroups[group] || [];

@@ -106,6 +106,8 @@ def test_grain_preparation_is_shared_only_for_the_same_source_and_controls(conte
 
         separate = prepare("sdr", {**controls, "amount": .4})
         assert separate != hdr
+        assert client.get(base + f"hdr/{hdr}" + region).content == scene.content
+        assert client.get(base + f"sdr/{sdr}" + region).status_code == 409
         frame.sdr_reference_image = frame.image * .5
         frame.render_cache.sdr_reference_image = frame.sdr_reference_image
         assert client.get(base + f"sdr/{separate}" + region).status_code == 409
@@ -113,6 +115,7 @@ def test_grain_preparation_is_shared_only_for_the_same_source_and_controls(conte
         assert authored != separate
         assert client.get(base + f"sdr/{authored}" + region).status_code == 200
         assert client.get(base + f"hdr/{authored}" + region).status_code == 409
+        assert client.get(base + f"hdr/{hdr}" + region).content == scene.content
     finally:
         frame.render_cache.discard_grain_preparation()
 

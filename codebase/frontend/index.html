@@ -710,11 +710,11 @@
             <button id="denoise-show-noise" class="local-overlay-toggle" type="button" aria-pressed="false" disabled data-tooltip="Shows only what Denoise removes, as gray with the removed noise on top. Even grain is safe; visible edges, lettering or texture mean detail is being lost."><span class="local-overlay-icon" aria-hidden="true"></span><span>Show noise</span></button>
           </div>
           <div class="control-row">
-            <label for="denoise-method" data-tooltip="Standard uses the existing noise reduction. Fine Grain evens out the brightness grain. Clean Grain also reduces colour splotches.">Method</label>
+            <label for="denoise-method" data-tooltip="Clean Grain evens out the brightness grain and reduces colour splotches. Simple uses the original noise reduction. Fine Grain evens out the brightness grain only.">Method</label>
             <select id="denoise-method">
-              <option value="standard">Standard</option>
+              <option value="clean_grain">Clean Grain</option>
+              <option value="standard">Simple</option>
               <option value="fine_grain">Fine Grain · Experimental</option>
-              <option value="clean_grain">Clean Grain · Experimental</option>
               <option value="micro_grain">Micro Grain · Experimental</option>
             </select>
           </div>
