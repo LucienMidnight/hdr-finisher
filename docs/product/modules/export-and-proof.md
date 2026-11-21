@@ -1,3 +1,18 @@
+## November 21 — Share Grain Denoise in CPU delivery
+
+CPU AVIF Gain Map export and non-JPEG Proof reuse one Grain result when
+both renditions use the same source and Denoise controls. An authored SDR
+base or different controls follow the existing independent render paths.
+The reuse ends with the current export or Proof.
+
+The shared payload is bounded by the same one float32 source frame as the
+JPEG sharing path, up to 12 bytes per RGB pixel or 16 bytes per RGBA pixel.
+Proof keeps that frame in temporary storage across encoding and maps it only
+while rendering. The Sony Clean Small AVIF export, full-size Proof and both
+authored Proof endpoints match their previous bytes. The existing native
+AVIF peak is still above 4 GB on this PC measurement.
+[Delivery timings and conditions](../../technical/performance-table.md)
+
 ## November 20 — Bounded native JPEG Ultra HDR Proof
 
 The existing exporter renders the grade for delivery. Full-size JPEG Proof

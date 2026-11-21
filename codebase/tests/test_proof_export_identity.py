@@ -324,3 +324,83 @@ def test_physical_film_controls_proof_is_export(backends, tmp_path, stock, paper
         assert proof.sha256 == _sha(Path(result.output_path))
     finally:
         store.clear()
+
+
+
+@pytest.mark.parametrize("format_name,source_mode,export_calls,proof_calls", [
+    ("avif_gain_map", "matched", 1, 1),
+    ("avif_gain_map", "different_controls", 2, 4),
+    ("avif_gain_map", "authored_sdr", 2, 4),
+    ("jpegxl_hdr", "matched", 1, 1),
+])
+def test_delivery_shares_grain_only_for_matched_inputs(
+    backends, tmp_path, monkeypatch, format_name, source_mode, export_calls, proof_calls,
+):
+    from contextlib import nullcontext
+
+    from hdr_finisher import denoise_grain, denoise_measurement, exporters, proofing
+    from hdr_finisher.models import DenoiseDocumentSettings
+
+    capabilities, backends_by_format = backends
+    capability, suffix = FORMATS[format_name]
+    if capabilities[capability].status != CapabilityStatus.AVAILABLE:
+        pytest.skip(f"{capability} unavailable")
+
+    rng = np.random.default_rng(20261121)
+    session = _session(rng.uniform(.01, .6, (96, 128, 3)).astype(np.float32))
+    session.local_adjustments = []
+    session.denoise = DenoiseDocumentSettings()
+    for lane in (session.denoise.hdr, session.denoise.sdr):
+        lane.enabled = True
+        lane.controls.method = "clean_grain"
+        lane.controls.splotch_size = "small"
+    session.adjustments.shared.geometry.rotation = 90
+    if source_mode == "different_controls":
+        session.denoise.sdr.controls.amount *= .5
+    if source_mode == "authored_sdr":
+        session.sdr_reference_image = session.image * .5
+        session.adjustments.sdr.use_authored_base = True
+        session.render_cache = SessionRenderCache(session.image, session.sdr_reference_image)
+
+    calls = 0
+    resolve_grain = denoise_grain.resolve_grain
+
+    def count_resolution(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        return resolve_grain(*args, **kwargs)
+
+    monkeypatch.setattr(denoise_grain, "resolve_grain", count_resolution)
+    measured_model = denoise_measurement.measured_model
+    monkeypatch.setattr(denoise_measurement, "measured_model", lambda key, measure, **_: measured_model(key, measure))
+    backend = backends_by_format[format_name]
+
+    def run(name):
+        nonlocal calls
+        settings = ExportSettings(format=format_name, output_path=str(tmp_path / f"{name}{suffix}"))
+        calls = 0
+        export = backend.export(session, settings)
+        assert export.accepted, export.message
+        export_count = calls
+        calls = 0
+        store = ProofArtifactStore()
+        try:
+            proof = store.create(session, ProofArtifactRequest(
+                adjustments=session.adjustments, format=format_name, quality=settings.quality, full_size=True,
+            ), backend)
+            artifact = store.artifact(proof.artifact_id)
+            outputs = (_sha(Path(export.output_path)), proof.sha256,
+                       hashlib.sha256(artifact.hdr_authored).hexdigest(),
+                       hashlib.sha256(artifact.sdr_authored).hexdigest())
+            return outputs, (export_count, calls)
+        finally:
+            store.clear()
+
+    shared_outputs, counts = run("shared")
+    assert counts == (export_calls, proof_calls)
+    monkeypatch.setattr(exporters, "share_delivery_grain", lambda *_, **__: nullcontext())
+    monkeypatch.setattr(proofing, "share_delivery_grain", lambda *_, **__: nullcontext())
+    separate_outputs, separate_counts = run("separate")
+    assert separate_counts == ((2, 4) if format_name == "avif_gain_map" else (1, 3))
+    assert shared_outputs == separate_outputs
+    assert shared_outputs[0] == shared_outputs[1]

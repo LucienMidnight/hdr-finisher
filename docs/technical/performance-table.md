@@ -1,3 +1,27 @@
+## November 21 — AVIF Gain Map and full-size Proof Grain sharing
+
+Windows PC, standalone production CPU export and Proof on Sony
+`_DSC7970.ARW` at 7968 × 5320, with Clean Grain Small in both renditions.
+Default encoding settings and developed RAW, from invocation to encoded
+result or ready Proof artifact. One sample per action and revision.
+Before was `52c94217`. After was DLV-1 on `sprint/delivery-grain-share`.
+The initial five-minute GPU lock expired during the last arm, so only the
+after Proof sample was completed in a second locked run. Export before
+included a cold noise-model measurement of about one second. The other
+arms reused that model. Peak RAM is the standalone backend working set
+sampled every 20 ms, with a 5% allowance for sampling variation.
+
+| Action | Wait before → after | Peak RAM before → after | Grain renders |
+| --- | ---: | ---: | ---: |
+| AVIF Gain Map export | 54.51 → 44.88 s | 6.211 → 6.206 GB | 2 → 1 |
+| Full-size AVIF Proof | 94.56 → 60.08 s | 6.212 → 6.205 GB | 4 → 1 |
+
+All four encoded files had SHA-256
+`dc36fa40678dfe5070ad831d3d4e99b0c1894a6677cd544ea282db124634ef8c`.
+Both rendered Proof endpoints matched their own before hashes as well.
+The one shared RGB Grain frame is 508,677,120 bytes at this resolution.
+The native AVIF path already exceeded the 4 GB app ceiling in this CPU test.
+
 ## November 21 — Windows PC GPU Grain Fit scheduling trial
 
 Windows PC, unpackaged Electron at 2560 × 1440 and a 2 GiB graphics

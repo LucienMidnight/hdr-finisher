@@ -21,7 +21,10 @@ from .binaries import resolve_binary
 from .color import acescg_to_linear_bt2020, linear_bt2020_to_acescg, linear_srgb_to_acescg
 from .color_context import RenderColorContext, nits_to_scene_linear, scene_linear_to_nits
 from .config import APP_VERSION
-from .exporters import ExportBackend, _finishing_adjustments_for_export, _render_export_branch, _run_command, denoise_delivery_key
+from .exporters import (
+    ExportBackend, _finishing_adjustments_for_export, _render_export_branch, _run_command,
+    denoise_delivery_key, share_delivery_grain,
+)
 from .gainmap_decoders import parse_jpeg_gain_map_probe
 from .models import (
     JPEGGainMapProofMetadata,
@@ -280,6 +283,12 @@ class ProofArtifactStore:
             from .photo_framing import output_layout
             native = output_layout(*proxy_session.framing_source_size, session.framing, request.output_finishing)
             full_size = max(native.width, native.height) <= request.long_edge
+        grain = (share_delivery_grain(proxy_session, request.adjustments, spans_encoding=True)
+                 if request.format != "jpeg_ultrahdr" else nullcontext())
+        with grain:
+            return self._build_artifact(proxy_session, request, backend, signature, context, full_size)
+
+    def _build_artifact(self, proxy_session, request, backend, signature, context, full_size):
         suffix, media_type = PROOF_FORMAT_INFO[request.format]
         # Proofs are internal cache artifacts, not user exports. Use a unique
         # staging target so concurrent/retried builds cannot collide, and allow
