@@ -57,9 +57,9 @@ Three problems follow, and Steve approved all three on November 21:
 
 | ID | Package | Branch | Depends on | Status |
 | --- | --- | --- | --- | --- |
-| LOG-1 | Logging foundation and GPU Grain route robustness | `sprint/logging-foundation` | — | not started |
-| CPU-1 | Faster CPU Grain backup: visible area first, then root speedups | `sprint/cpu-grain-speed` | — | not started |
-| GPU-1 | Fine, Clean and Micro Grain on the GPU above 8,192 pixels | `sprint/gpu-large-photos` | — | not started |
+| LOG-1 | Logging foundation and GPU Grain route robustness | `sprint/logging-foundation` | — | in progress (Codex worker started Nov 21) |
+| CPU-1 | Faster CPU Grain backup: visible area first, then root speedups | `sprint/cpu-grain-speed` | — | in progress (Codex worker started Nov 21) |
+| GPU-1 | Fine, Clean and Micro Grain on the GPU above 8,192 pixels | `sprint/gpu-large-photos` | — | in progress (Codex worker started Nov 21) |
 | LOG-2 | App-wide logging rollout | `sprint/logging-rollout` | LOG-1 merged | not started |
 | INT | Integration, full checks, push and Steve's hand test | `feat/denoise-v1` | all | not started |
 
