@@ -69,7 +69,7 @@ Three problems follow, and Steve approved all three on November 21:
 | MG-1 | Micro Grain CPU: all cores and lens correction in strips | `sprint/micro-cpu-speed` | TRI-1 | to do (PC, now) |
 | CG-2 | Clean Grain colour stage in C, one noise-model store | `sprint/clean-colour-native` | — | to do (PC, now) |
 | GPU-2 | Faster GPU Micro Grain and Fit | `sprint/gpu-grain-speed` | — | to do (PC, now) |
-| ROUTE-1 | One Grain route state and clear route messages | `sprint/grain-route-ui` | — | to do (PC, now) |
+| ROUTE-1 | One Grain route state and clear route messages | `sprint/grain-route-ui` | — | implemented on PC (`8b229aa7`), targeted tests pass, forced CPU and memory retry captured with matching sampled CPU bytes; lens CPU completed in the log, crop and R2-5 sign-off pending |
 | MG-2 | Micro Grain CPU: visible area first | `sprint/micro-cpu-visible` | MG-1 merged | to do (PC, after MG-1) |
 | MEM-1 | One memory budget on the MacBook Neo | `sprint/mac-memory` | MG-1, GPU-2 merged | to do (overnight; Mac measurements) |
 | QUAL-1 | Exposure-independent quality fixes (output changes) | `sprint/grain-quality` | CG-2 merged | to do; needs Steve's visual sign-off before any default changes |
