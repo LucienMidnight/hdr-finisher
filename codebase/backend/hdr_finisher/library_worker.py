@@ -783,6 +783,10 @@ def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> N
                     from . import app_memory
                     app_memory.configure(message['bytes'])
                     continue
+                if message['command']=='grade-cache-trim':
+                    from . import app_memory
+                    Thread(target=app_memory.trim_library_shares, args=(message['caps'],), daemon=True).start()
+                    continue
                 if message['command']=='memory-pressure':
                     from . import app_memory
                     # Keep receiving owner replies while a cache waits for its lock.

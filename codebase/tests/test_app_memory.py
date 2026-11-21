@@ -30,6 +30,45 @@ def test_memory_includes_full_tree_and_reservations(monkeypatch):
     app_memory.admit('b',0,True)
 
 
+def test_unified_profile_counts_grade_and_gates_background_fill(monkeypatch):
+    from hdr_finisher.grain_work import background_fill_allowed
+
+    monkeypatch.setenv("HDR_FINISHER_MEMORY_PROFILE", "unified-8gb")
+    total = 3_200_000_000
+    retained = 500_000_000
+    pressure = "none"
+    monkeypatch.setattr(app_memory, "process_tree", lambda root: [{"workingSetBytes": total}])
+    monkeypatch.setattr(app_memory, "system_pressure", lambda: pressure)
+    monkeypatch.setattr(app_memory, "grade_bytes_provider", lambda: retained)
+    assert app_memory.machine_memory() == 8 * 1024**3
+    assert app_memory.snapshot()["unifiedMemory"]
+    assert background_fill_allowed()
+    assert app_memory.admit("ongoing", 300_000_000)["granted"]
+    assert not background_fill_allowed()
+    app_memory.admit("ongoing", 0, release=True)
+    total = 3_600_000_000
+    value = app_memory.snapshot(refresh=True)
+    assert value["level"] == "none"
+    assert value["gradePressure"] == "moderate"
+    assert not background_fill_allowed()
+    limit = app_memory.LIMITS
+    for share in ("thumbnails", "sharp", "camera", "raw"):
+        assert value["caches"][share]["limitBytes"] == limit[share] // 2
+    targets = []
+    app_memory.register("raw-test", "raw", lambda value: targets.append(value))
+    app_memory.report("raw-test", "raw", limit["raw"])
+    app_memory.trim_library_shares()
+    assert targets == [limit["raw"] // 2]
+    retained = 0
+    value = app_memory.snapshot()
+    assert not value["gradeCacheTrim"]
+    assert value["caches"]["raw"]["limitBytes"] == limit["raw"]
+    total = 3_200_000_000
+    pressure = "critical"
+    app_memory.snapshot(refresh=True)
+    assert not background_fill_allowed()
+
+
 def test_slow_conflict_disk_read_does_not_own_marks_lock(tmp_path,monkeypatch):
     marks=LibraryMarks(tmp_path/'app')
     photo=tmp_path/'photo.png';photo.write_bytes(b'original')
@@ -398,7 +437,7 @@ def test_memory_endpoint_coalesces_a_stuck_sample(tmp_path, monkeypatch):
     def sample(**kwargs):
         calls.append(1)
         if len(calls)>1: entered.set(); assert release.wait(4)
-        return {'totalBytes': 100}
+        return {'totalBytes': 100, 'gradeCacheTrim': False}
     monkeypatch.setattr(app_memory, 'snapshot', sample)
     app = FastAPI(); app.include_router(create_library_router(LibraryWorker(tmp_path), MediaBrowserStore(tmp_path)))
     async def run():

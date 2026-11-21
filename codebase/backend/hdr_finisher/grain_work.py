@@ -14,6 +14,17 @@ _busy = False
 _foreground_waiters = 0
 
 
+def background_fill_allowed():
+    from . import app_memory
+
+    try:
+        memory = app_memory.snapshot(cached_only=True)
+    except OSError:
+        return False
+    return (memory["gradePressure"] == "none"
+            and memory["totalBytes"] + memory["reservedBytes"] <= memory["targetBytes"])
+
+
 def background_work():
     return _background.get()
 

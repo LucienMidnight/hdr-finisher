@@ -16,6 +16,7 @@ import numpy as np
 
 from . import denoise_adaptive as adaptive, denoise_filters
 from .cpu_budget import CpuExecutor, CpuWorkLimit, logical_cpus
+from .grain_work import background_fill_allowed
 from .library_diagnostics import log
 
 GRAIN_RADIUS = 18
@@ -285,7 +286,7 @@ class _TilePass:
         self.log_fields = log_fields
         self.done = set()
         self.inflight = {}
-        self.background_started = False
+        self.background_pending = 0
         self.foreground_count = 0
         self.background_count = 0
         self.timings = np.zeros(6)
@@ -356,6 +357,8 @@ class GrainPreparation:
         def run():
             if not self._current():
                 raise InterruptedError("A newer source replaced the Denoise preparation.")
+            if background and not background_fill_allowed():
+                return None
             return phase.process(origin)
 
         # The POST's request lease ends when it returns the token. These
@@ -367,10 +370,14 @@ class GrainPreparation:
         return future
 
     def _tile_finished(self, phase, origin, future, background):
-        if future.cancelled():
-            return
         with self._tiles_lock:
-            phase.inflight.pop(origin, None)
+            if phase.inflight.get(origin, (None,))[0] is not future:
+                return
+            phase.inflight.pop(origin)
+            if future.cancelled():
+                if background:
+                    phase.background_pending -= 1
+                return
             if self._closed:
                 return
             error = future.exception()
@@ -378,8 +385,13 @@ class GrainPreparation:
                 self._error = error
                 self.close()
                 return
+            timings = future.result()
+            if background:
+                phase.background_pending -= 1
+            if timings is None:
+                return
             phase.done.add(origin)
-            phase.timings += future.result()
+            phase.timings += timings
             if background:
                 phase.background_count += 1
             else:
@@ -391,14 +403,18 @@ class GrainPreparation:
                     foreground_tile_count=phase.foreground_count, background_tile_count=phase.background_count,
                     worker_limit=_PREVIEW_TILE_WORK.workers,
                     tile_worker_ms=self._timing_ms(phase))
+            elif background:
+                self._background(phase)
+
     def _background(self, phase):
-        if self._closed or phase.background_started:
+        if self._closed or phase.background_pending >= _PREVIEW_TILE_WORK.workers or not background_fill_allowed():
             return
-        phase.background_started = True
         for origin in _origins(self.height, self.width, phase.size):
-            if self._closed:
+            if self._closed or phase.background_pending >= _PREVIEW_TILE_WORK.workers:
                 break
-            self._submit(phase, origin, background=True)
+            if origin not in phase.done and origin not in phase.inflight:
+                phase.background_pending += 1
+                self._submit(phase, origin, background=True)
 
     def _intersecting(self, phase, y, x, bottom, right):
         size = phase.size
@@ -408,12 +424,22 @@ class GrainPreparation:
         with self._tiles_lock:
             if self._closed:
                 raise self._error or InterruptedError("The Denoise preparation was replaced.")
-            pending = [future for origin in origins if (future := self._submit(phase, origin, background=False))]
+            pending = [(origin, future) for origin in origins
+                       if (future := self._submit(phase, origin, background=False))]
             if fill_background:
                 self._background(phase)
         try:
-            for future in pending:
-                future.result()
+            for origin, future in pending:
+                if future.result() is None:
+                    # A running background tile may have joined this request
+                    # just as its memory gate closed. Retry it as visible work.
+                    with self._tiles_lock:
+                        if phase.inflight.get(origin, (None,))[0] is future:
+                            phase.inflight.pop(origin)
+                            phase.background_pending -= 1
+                        foreground = self._submit(phase, origin, background=False)
+                    if foreground is not None:
+                        foreground.result()
         except CancelledError as error:
             raise self._error or InterruptedError("The Denoise preparation was replaced.") from error
 

@@ -488,12 +488,13 @@
     }
 
     /** Release one registered cache entry by kind and key, through its owner. */
-    evictGpuCacheEntry(kind, key) {
+    evictGpuCacheEntry(kind, key, unpinnedProxy = false) {
       if (kind === "source-proxy") {
         const proxy = this.proxies.get(key);
         if (!proxy) return;
         this.proxies.delete(key);
-        this.destroyAfterActiveRenders(() => proxy.texture?.destroy());
+        if (unpinnedProxy) proxy.texture?.destroy();
+        else this.destroyAfterActiveRenders(() => proxy.texture?.destroy());
       } else if (kind === "detail-band-tile") {
         const entry = this.detailBandTiles.get(key);
         if (!entry) return;
@@ -1028,9 +1029,15 @@
     }
 
     flushDeferredDestroy() {
-      if (this.activeRenderCount > 0 || this.activeScopeCount > 0 || !this.deferredDestroy.length) return;
+      if (this.activeRenderCount > 0 || this.activeScopeCount > 0) return;
       const callbacks = this.deferredDestroy.splice(0);
       callbacks.forEach((callback) => callback());
+      if (this.pendingGrainReclaim) {
+        this.pendingGrainReclaim = false;
+        const action = globalThis.HDRDiagnostics?.start("memory", "grade_grain_reclaim", {});
+        const released = this.reclaimGrainResources(this.grainMemorySnapshot(), action);
+        action?.finish("complete", { route: "gpu", reason: released ? "rebuildable_cache_released" : "no_reclaimable_resources" });
+      }
     }
 
     finishActiveRender() {
@@ -1738,6 +1745,8 @@
       const snapshot = new Float32Array(params);
       const estimate = params[GPU_PARAMS.HIGHLIGHT_ANCHOR];
       const resourceGeneration = this.resourceGeneration;
+      const allocator = this.gpuAllocator;
+      const pin = allocator?.pin?.(sourceProxy.allocatorEntry);
       const run = (this.pendingHighlightMeasurement || Promise.resolve()).then(async () => {
         if (resourceGeneration !== this.resourceGeneration || !sourceProxy.texture) return;
         const value = await this.measureToneAdjustedPeak(sourceProxy, snapshot, anchor.measurement, anchor.key, {
@@ -1754,6 +1763,7 @@
         this.recordHighlightMeasurementFailure(error, { lane, key: anchor.key, used });
         return null;
       }).finally(() => {
+        if (pin) allocator.unpin(pin);
         if (this.pendingHighlightKeys.get(anchor.key) === run) this.pendingHighlightKeys.delete(anchor.key);
       });
       this.pendingHighlightKeys.set(anchor.key, run);
@@ -6327,7 +6337,11 @@
       const pipelines = await this.ensureGrainPipelines();
       if (pipelines.device !== this.device) throw new DOMException("The Denoise device was replaced.", "AbortError");
       if (!pipelines.grainFitPipeline) {
-        const module = this.device.createShaderModule({ code: GRAIN_DENOISE_SHADER_SOURCE });
+        const device = this.device;
+        const module = device.createShaderModule({ code: GRAIN_DENOISE_SHADER_SOURCE });
+        const narrowNoise = device.createShaderModule({
+          code: ADAPTIVE_DENOISE_SHADER_SOURCE.replace("texture_storage_2d<rgba32float", "texture_storage_2d<r32float"),
+        });
         const visibility = GPUShaderStage.COMPUTE;
         const group = this.device.createBindGroupLayout({ entries: [
           ...[0, 1, 2, 3].map(binding => ({ binding, visibility, texture: { sampleType: "unfilterable-float" } })),
@@ -6339,9 +6353,18 @@
             layout: this.device.createPipelineLayout({ bindGroupLayouts: [group] }),
             compute: { module, entryPoint: "adaptiveGrainFitMain" },
           }),
-          this.device.createComputePipelineAsync({ layout: "auto", compute: { module, entryPoint: "adaptiveGrainMixMain" } }),
-        ]).then(([fit, mix]) => {
+          device.createComputePipelineAsync({ layout: "auto", compute: { module, entryPoint: "adaptiveGrainMixMain" } }),
+          device.createComputePipelineAsync({
+            layout: device.createPipelineLayout({ bindGroupLayouts: [device.createBindGroupLayout({ entries: [
+              { binding: 0, visibility, texture: { sampleType: "unfilterable-float" } },
+              { binding: 4, visibility, storageTexture: { format: "r32float" } },
+              { binding: 6, visibility, buffer: { type: "uniform" } },
+            ] })] }),
+            compute: { module: narrowNoise, entryPoint: "adaptiveNoiseMain" },
+          }).catch(() => null),
+        ]).then(([fit, mix, measurementNoise]) => {
           pipelines.grainMix = mix;
+          pipelines.measurementNoise = measurementNoise;
           return fit;
         }).catch(error => {
           pipelines.grainFitPipeline = null;
@@ -6490,11 +6513,50 @@
       return this._grainFailures ||= new globalThis.HDRGrainRoute.Failures();
     }
 
+    acceptGrainMemorySample(value) {
+      if (!value) return;
+      if (this.grainMemorySample && value.sampleId < this.grainMemorySample.sampleId) return;
+      if (value.sampleId !== this.grainMemorySample?.sampleId || !this.grainMemorySample) {
+        const { resident_bytes, allocator_bytes } = this.grainMemorySnapshot();
+        this.grainMemorySample = { ...value, gpuBytes: Math.max(resident_bytes, allocator_bytes), receivedAt: performance.now() };
+      } else {
+        // The process census can stay the same across polls while reservations,
+        // system pressure and the configured limit change.
+        Object.assign(this.grainMemorySample, value);
+      }
+      if (value.grainReclaim) {
+        this.pendingGrainReclaim = true;
+        this.flushDeferredDestroy();
+      }
+    }
+
+    async refreshGrainMemorySample() {
+      try {
+        const response = await fetch("/api/library/memory?fresh=true", { signal: AbortSignal.timeout(1500) });
+        if (response.ok) this.acceptGrainMemorySample(await response.json());
+      } catch {
+        // If the census is busy, retain the last completed sample.
+      }
+    }
+
     grainMemorySnapshot(requestedBytes = null) {
       const { totalBytes, categories } = this.resourceMemorySnapshot().resident;
+      const allocatorBytes = this.gpuAllocator?.usedBytes() || 0;
+      const sample = this.grainMemorySample;
+      // On Apple Silicon the process footprint already includes graphics
+      // memory. Charge GPU growth after the census without adding it twice.
+      // For the PC test profile the discrete GPU is outside the RAM census,
+      // so charge the full ledger rather than only growth after the sample.
+      const sampledGpu = sample?.measurement === "proportional-resident" ? 0 : sample?.gpuBytes;
+      const unified = sample?.unifiedMemory ?? this.unifiedGrainMemory;
+      const currentSample = sample && performance.now() - sample.receivedAt < 5000;
+      const appHeadroom = !unified ? null : currentSample ? Math.max(0, sample.ceilingBytes - sample.totalBytes
+        - sample.reservedBytes - Math.max(0, Math.max(totalBytes, allocatorBytes) - sampledGpu)) : 0;
       return { requested_bytes: requestedBytes, budget_bytes: this.memoryBudgetBytes(),
         reservation_limit_bytes: 0.9 * this.memoryBudgetBytes(), resident_bytes: totalBytes,
-        allocator_bytes: this.gpuAllocator?.usedBytes() || 0, resident_by_kind: categories };
+        allocator_bytes: allocatorBytes, resident_by_kind: categories, app_headroom_bytes: appHeadroom,
+        app_ram_bytes: sample?.totalBytes, app_budget_bytes: sample?.ceilingBytes,
+        pressure_level: sample?.gradePressure };
     }
 
     grainEvent(event, route, reason, context, fields = {}) {
@@ -6562,14 +6624,15 @@
       return current() && this.startGrainRetry(key, context);
     }
 
-    reclaimGrainResources(before, context) {
-      // A render can still hold an unregistered texture in a local variable.
-      // Only reclaim here once the render/scope owners have released their use.
-      if (this.activeRenderCount || this.activeScopeCount) return false;
+    reclaimGrainResources(before, context, reservation = false) {
+      const busy = this.activeRenderCount || this.activeScopeCount;
+      // Only source proxies are pinned before a render uses them. Other
+      // entries can still be held by a render or a scope outside the ledger.
+      if (busy && (!reservation || this.activeScopeCount || this.activeRenderCount > 1)) return false;
       const visible = this.lastPresentedFrame;
       const selector = this.denoiseSourceSelector;
       const reclaimable = new Set(["source-proxy", "detail-band-tile", "mask-tile", "scene-luminance",
-        "local-mask", "oriented-luminance", "fine-grain-reduced"]);
+        "local-mask", "oriented-luminance", "fine-grain-reduced", "denoise-tile"]);
       const allocator = this.gpuAllocator;
       let count = 0;
       let released = 0;
@@ -6579,13 +6642,15 @@
       const presentation = this.presentationTarget;
       const evictedByKind = {};
       for (const entry of [...(allocator?.entries.values() || [])]) {
-        if (entry.pins || !entry.evict || !reclaimable.has(entry.kind)) continue;
+        if (entry.pins || !entry.evict || !reclaimable.has(entry.kind)
+            || (busy && entry.kind !== "source-proxy")) continue;
         if (entry.kind === "source-proxy") {
           const proxy = proxies.get(entry.key);
-          if (!proxy || proxy === selector?.original || (proxy.lane === visible?.lane
+          if (this.proxyInflight.size || !proxy || proxy === selector?.original || (proxy.lane === visible?.lane
               && proxy.longEdge === visible.longEdge && proxy.geometrySignature === visible.geometrySignature)) continue;
         }
-        entry.evict();
+        if (busy) this.evictGpuCacheEntry(entry.kind, entry.key, true);
+        else entry.evict();
         allocator.unregister(entry);
         count++;
         released += entry.bytes;
@@ -6604,17 +6669,27 @@
 
     async reserveFineGrain(kind, allocations, context = null) {
       const bytes = Object.values(allocations).reduce((total, value) => total + value, 0);
+      if (this.observeGradeMemory && (!this.grainMemorySample
+          || (this.grainMemorySample.unifiedMemory && performance.now() - this.grainMemorySample.receivedAt >= 5000))) {
+        await this.refreshGrainMemorySample();
+      }
       let snapshot = this.grainMemorySnapshot(bytes);
-      if (HDRGrainRoute.headroom(snapshot) < bytes && context) {
+      if (HDRGrainRoute.headroom(snapshot) < bytes && (context || this.observeGradeMemory)) {
         const generation = this.resourceGeneration;
-        if (this.reclaimGrainResources(snapshot, context)) await this.waitForSubmittedWork();
+        if (this.reclaimGrainResources(snapshot, context, true)) {
+          await this.waitForSubmittedWork();
+          if (snapshot.app_headroom_bytes != null && snapshot.app_headroom_bytes < bytes) {
+            await this.refreshGrainMemorySample();
+          }
+        }
         if (generation !== this.resourceGeneration) throw new DOMException("Grain reservation was replaced.", "AbortError");
         snapshot = this.grainMemorySnapshot(bytes);
       }
       if (HDRGrainRoute.headroom(snapshot) < bytes) {
         throw Object.assign(new Error(`Insufficient graphics memory for ${kind}.`), {
           grainReason: bytes > snapshot.reservation_limit_bytes && bytes > 0.9 * this.configuredGpuBudgetBytes()
-            ? "gpu_request_too_large" : "gpu_budget_exceeded",
+            ? "gpu_request_too_large" : snapshot.app_headroom_bytes != null && snapshot.app_headroom_bytes < bytes
+              ? "app_memory_ceiling" : "gpu_budget_exceeded",
           grainSnapshot: snapshot, grainStage: kind, grainDetails: { allocations_bytes: allocations },
         });
       }
@@ -6967,7 +7042,7 @@
         Math.min(native, rows + 2 * margin));
       const blocks = Math.ceil(chunkWidth / GRAIN_FIT_BLOCK) * Math.ceil(Math.min(rows, native) / GRAIN_FIT_BLOCK);
       const reservation = await this.reserveFineGrain("fine-grain-fit", {
-        measurementScratch: 6 * (rows + 2 * margin) ** 2 * 16,
+        measurementScratch: (rows + 2 * margin) ** 2 * (this.adaptiveDenoisePipelines?.measurementNoise ? 84 : 96),
         sourceStrip: residentSource ? 0 : stripUpload.maxWidth * stripUpload.maxRows * 8,
         uploadAndResponses: residentSource ? 0 : 2 * stripUpload.slots * stripUpload.chunkBytes,
         partialsAndReadback: 2 * GRAIN_DENOISE_BANDS.length * blocks * 16,
@@ -7078,16 +7153,18 @@
     /** One tile's worth of scratch, reused by every tile of every resolve. */
     createAdaptiveDenoiseScratch(margin = ADAPTIVE_DENOISE_MARGIN, measurementOnly = false) {
       const size = ADAPTIVE_DENOISE_TILE + 2 * margin;
-      const make = (label) => this.device.createTexture({
-        label,
+      const measurementNoise = measurementOnly && this.adaptiveDenoisePipelines?.measurementNoise;
+      const make = (name) => this.device.createTexture({
+        label: `adaptive-denoise-${name}`,
         size: { width: size, height: size },
-        format: "rgba32float",
+        format: measurementNoise && name === "noise" ? "r32float" : "rgba32float",
         usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.STORAGE_BINDING,
       });
       const names = ["current", "next", "blur", "energyRow", "energy", "noise"];
       if (!measurementOnly) names.push("sumA", "sumB");
-      const textures = Object.fromEntries(names.map((name) => [name, make(`adaptive-denoise-${name}`)]));
-      return { textures, margin, byteSize: names.length * size * size * 16, textureCount: names.length };
+      const textures = Object.fromEntries(names.map(name => [name, make(name)]));
+      return { textures, margin, byteSize: size * size * (names.length * 16 - (measurementNoise ? 12 : 0)),
+        textureCount: names.length, measurementNoise };
     }
 
     warmDenoiseModel(sessionId, lane, native) {
@@ -7433,7 +7510,7 @@
     encodeAdaptiveDenoise(encoder, selector, weights, sizes, target, candidate, destinationOrigin, source, reduction = null, micro = null) {
       const pipelines = this.adaptiveDenoisePipelines;
       const { model, grain } = selector.cache;
-      const scratch = selector.cache.adaptiveScratch.textures;
+      const { textures: scratch, measurementNoise } = selector.cache.adaptiveScratch;
       const frameWidth = source.width;
       const frameHeight = source.height;
       // What of the frame the source texture holds. A region source is fetched
@@ -7494,12 +7571,14 @@
             { binding: 6, resource: { buffer: paramBuffer, offset: slot * ADAPTIVE_DENOISE_SLOT, size: 112 } },
             { binding: 7, resource: binding.sum ? view(binding.sum) : view(pipelines.dummySampled) },
         ];
+        const narrow = pipeline === measurementNoise && !!measurementNoise;
         const bindGroup = this.device.createBindGroup({
-          layout: partials || binding.packed ? pipeline.getBindGroupLayout(0) : pipelines.layout,
+          layout: partials || binding.packed || narrow ? pipeline.getBindGroupLayout(0) : pipelines.layout,
           entries: partials ? entries.filter(entry => entry.binding < 4 || entry.binding === 6)
             .concat({ binding: 9, resource: { buffer: partials } })
             : binding.packed ? entries.filter(entry => entry.binding < 3 || entry.binding === 6)
-              .concat({ binding: 8, resource: view(binding.packed) }) : entries,
+              .concat({ binding: 8, resource: view(binding.packed) })
+              : narrow ? entries.filter(entry => [0, 4, 6].includes(entry.binding)) : entries,
         });
         const pass = encoder.beginComputePass();
         pass.setPipeline(pipeline);
@@ -7532,7 +7611,7 @@
         blur(0, scratch.current, scratch.next);
         const noiseLowpass = micro ? scratch.sumA : scratch.energyRow;
         blur(1, scratch.next, noiseLowpass);
-        dispatch(pipelines.noise, { src: noiseLowpass.createView(), dst: scratch.noise }, common(0, 0), region);
+        dispatch(measurementNoise || pipelines.noise, { src: noiseLowpass.createView(), dst: scratch.noise }, common(0, 0), region);
         let current = scratch.current;
         let next = scratch.next;
         let sum = scratch.sumA;

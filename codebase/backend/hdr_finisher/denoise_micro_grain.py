@@ -598,8 +598,9 @@ def _vignette_region(modifier, shape, rect, pixels):
 
 
 def micro_background_allowed():
-    """MEM-1 can replace the pressure decision without changing tile ownership."""
-    return app_memory.snapshot(cached_only=True)["level"] == "none"
+    from .grain_work import background_fill_allowed
+
+    return background_fill_allowed()
 
 
 class MicroPreviewTiles:

@@ -19,11 +19,44 @@ remain required before release; these are accounting changes, not a memory pass.
 
 ### November 15: W2 P2 format-first publication within the same upload slot
 
+## November 21: Grade shares memory on Apple Silicon
+
+GPU Grain admission uses the lesser of the existing graphics headroom
+and the whole-app headroom. The Mac process footprint includes Grade's
+retained source and resident GPU memory. GPU ledger growth since that
+sample and outstanding backend reservations also count. The Windows test
+profile `HDR_FINISHER_MEMORY_PROFILE=unified-8gb` uses the same admission
+rule and adds its discrete GPU ledger to the host census.
+
+Clean and Micro prepare requested CPU tiles even under pressure. Background
+fill starts only while the whole app is below the pressure target and has
+room after existing reservations. Clean checks again before starting each
+background tile.
+
+**R2-2, approved November 21.** On an 8 GiB unified-memory machine, while
+Grade owns at least 384,000,000 bytes of retained source images, use half of
+the configured Library thumbnail, sharp, camera and RAW cache shares. Return
+to the usual limits when that Grade session closes or its retained source
+drops below the trigger. Active hand-offs and working room keep their
+existing shares.
+
+| Library cache | Usual at 4 GB | With a large Grade photo |
+| --- | ---: | ---: |
+| Finished thumbnails | 536,870,912 bytes | 268,435,456 bytes |
+| Sharp pictures | 512,000,000 bytes | 256,000,000 bytes |
+| Camera previews | 64,000,000 bytes | 32,000,000 bytes |
+| RAW read-ahead | 768,000,000 bytes | 384,000,000 bytes |
+
+The 4 GB ceiling and 2 GB system reserve still apply. MacBook Neo
+confirmation is tracked in the sprint brief.
+
 ## November 21: reclaim before refusing Grade Grain
 
 When a Grain reservation would exceed the existing 90% graphics limit,
-Grade releases eligible unpinned, rebuildable resources after active owners
-are finished. It keeps the presentation target and selector source. The
+Grade can release an unused source proxy during a reservation. Other
+rebuildable entries wait for active owners to finish. A moderate or critical
+Grade pressure message schedules that reclaim at the next idle point. Grade
+keeps the visible picture, presentation target and selector source. The
 decision records the requested bytes, effective budget, both GPU ledgers
 and the sampled app RAM and free system memory. The configured allowances
 and the greater-of-resident-and-allocator calculation still apply.

@@ -2,7 +2,7 @@
 (function (root) {
   const renderFailure = root.HDRRenderFailure ??
     (typeof module === "object" ? require("./render-failure").HDRRenderFailure : null);
-  const TEMPORARY = new Set(["gpu_budget_exceeded", "gpu_allocation_pressure", "transport_timeout", "device_lost"]);
+  const TEMPORARY = new Set(["gpu_budget_exceeded", "app_memory_ceiling", "gpu_allocation_pressure", "transport_timeout", "device_lost"]);
   const MARGIN = 0.9;
 
   function failureReason(error, deviceLost) {
@@ -24,7 +24,8 @@
   }
 
   function headroom(snapshot) {
-    return MARGIN * snapshot.budget_bytes - Math.max(snapshot.resident_bytes, snapshot.allocator_bytes);
+    return Math.min(snapshot.app_headroom_bytes ?? Infinity,
+      MARGIN * snapshot.budget_bytes - Math.max(snapshot.resident_bytes, snapshot.allocator_bytes));
   }
 
   function microFallback(previous, error, action) {
@@ -48,6 +49,7 @@
     gpu_unavailable: "the GPU is unavailable",
     device_lost: "the GPU stopped responding",
     gpu_budget_exceeded: "graphics memory was short",
+    app_memory_ceiling: "the app was short of shared memory",
     gpu_allocation_pressure: "graphics memory was short",
     gpu_allocation_failed: "graphics memory was short",
     gpu_request_too_large: "this photo needs more graphics memory than is available",
@@ -111,6 +113,7 @@
       if (device && device !== failure.device) return true;
       switch (failure.reason) {
         case "transport_timeout": return this.now() >= failure.retryAt;
+        case "app_memory_ceiling":
         case "gpu_budget_exceeded":
           return headroom(snapshot) > headroom(failure.snapshot) && headroom(snapshot) >= failure.snapshot.requested_bytes;
         case "gpu_allocation_pressure":

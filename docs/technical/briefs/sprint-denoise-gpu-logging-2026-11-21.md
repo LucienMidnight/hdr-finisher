@@ -71,7 +71,7 @@ Three problems follow, and Steve approved all three on November 21:
 | GPU-2 | Faster GPU Micro Grain and Fit | `sprint/gpu-grain-speed` | — | done, merged Nov 21 (`33063718`). PC Sony, finished frames byte-identical (5 pairs incl. edges and partial tiles): Fit reduction Micro 15.0 → 12.5 s, Clean 2.49 → 2.18 s. Micro slider unchanged (halo trim gave no consistent gain, dropped). AHD pooling and measurement batching not done (no measured gain). Isolated Micro Fit timing and Mac profiling open (INT-2, MEM-1) |
 | ROUTE-1 | One Grain route state and clear route messages | `sprint/grain-route-ui` | — | done, merged Nov 21: GPU / CPU backup / Reduced preview label beside Method, plain reason, Retry on GPU and Switch to Clean Grain actions, CPU progress after 2 s; sampled CPU preview bytes unchanged. Look awaits Steve (R2-5); lens-corrected Micro crop not captured |
 | MG-2 | Micro Grain CPU: visible area first | `sprint/micro-cpu-visible` | MG-1 merged | locally committed, Sony native regions byte-identical, PC RGBA8 110% first sharp 10.38 s and pan 3.81 s, Fit 27.30 s and 3.43 GB after the memory fix, native HDR timing open |
-| MEM-1 | One memory budget on the MacBook Neo | `sprint/mac-memory` | MG-1, GPU-2 merged | to do (overnight; Mac measurements) |
+| MEM-1 | One memory budget on the MacBook Neo | `sprint/mac-memory` | MG-1, GPU-2 merged | PC implementation and locked 8 GB replay passed (share trim/restore, admission, deferred reclaim and identical calibration with 4.06 MB less scratch). Lens strips changed both images and remain a trial. Mac confirmation pending. |
 | QUAL-1 | Exposure-independent quality fixes (output changes) | `sprint/grain-quality` | CG-2 merged | to do; needs Steve's visual sign-off before any default changes |
 | FOLD-1 | Fine Grain folded into Clean Grain, with a cleaning checkbox | `sprint/fold-fine-grain` | CG-2, GPU-2, ROUTE-1 merged | done, merged Nov 21: "Clean color splotches and fringes" checkbox, on by default, saved per rendition. On: Sony HDR and SDR Fit byte-identical on each route. Off: CPU/GPU HDR ΔE ITP 0.055 / 0.161, SDR ΔE 2000 0.031 / 0.765 (mean / p99). Crops of off against old Fine Grain for Steve. Affected saved grade: Canon `IMG_0790.CR2.hdrf` |
 | DLV-1 | Share one Grain result across HDR and SDR in AVIF export and Proof | `sprint/delivery-grain-share` | — | done, merged Nov 21: shared when HDR and SDR have the same source and controls, bounded to one float32 frame (~509 MB). Sony Clean Small: AVIF export 54.5 → 44.9 s, full-size Proof 94.6 → 60.1 s, files byte-identical. Pre-existing: backend peak ~6.2 GB on both, over the 4 GB ceiling (MEM-1) |
@@ -858,6 +858,76 @@ silent slowdowns.
   on `_DSC7970.ARW`) stays under 4 GB with the route and reasons logged.
 - `memory-and-caches.md`, `preview-and-gpu.md` and `performance-table.md`
   are updated.
+
+**PC lens-strip trial.** Windows, default full-resolution SDR finish and
+128-row Lensfun coordinate requests. Canon `IMG_0790.CR2` used the manual
+EF-S 18–135 mm IS profile and Sony `_DSC7970.ARW` used Auto. Separate fresh
+processes measured peak working set through lens correction. The comparison
+used every finished pixel. The trial stays out of the app.
+
+| Photo | ΔE 2000 mean / p99 | Peak process RAM saved | Peak coordinate RAM saved |
+| --- | ---: | ---: | ---: |
+| Canon 18 MP | 0.232 / 1.512 | 513 MB (1,098 → 585 MB) | 416 MB |
+| Sony 42 MP | 0.486 / 2.319 | 1,125 MB (2,323 → 1,198 MB) | 993 MB |
+
+#### Mac run
+
+Run on the 8 GB Neo with the branch integrated, a 4 GB app limit, GPU Auto,
+and an unmodified copy of each RAW. Use the shared GPU lock for automation.
+Keep the PC override unset. Record the commit and the log path in
+`session_started`.
+
+1. Open `_DSC7970.ARW` with lens correction off and harsh-speck cleanup ×2.5.
+   Enable Clean Grain Small in HDR at Fit, then zoom to 110%, pan and release
+   Grain Evenness. Repeat the incident with Steve's exact `DSC00786.ARW` if
+   available (portrait, SHA prefix `aa6b7118`). Record action time to the
+   sharp frame and the accepted route. For CPU fallback, copy the first
+   `grain_gpu_refused` or prior failure and its matching `grain_route`;
+   include the requested bytes, graphics and app headroom, pressure, and
+   retry reason. If it stays on GPU, report whether the original fallback
+   reproduces. Repeat at Custom 0.25 GiB, then restore Auto.
+2. Copy the 50 MP Sony `DSC00636.ARW` (8660 × 5784) to a working folder.
+   Record `maxTextureDimension2D` and the configured Auto budget from
+   `session_gpu_configuration`. With Auto, test HDR and generated SDR
+   at Fit and 110%, Clean Small with colour cleaning on and off, and
+   Micro. Record exact vs reduced, route, any fallback reason, and any
+   seams or blocks. If the file is absent, record the missing filename.
+3. With `_DSC7970.ARW` lens off, select Micro Grain at Fit, zoom to 110%,
+   pan to a second region, change Micro luminance/color/detail, return to
+   Fit and switch HDR to SDR and back. For each step record the first sharp
+   picture, route, any blocks or colour bands, and whether the crop position
+   holds. Repeat Steve's lens-on CPU case at 78%. Record first click to
+   sharp picture, peak app RAM, and whether the 4,096 px view is described
+   as reduced. Change Exposure, go HDR → SDR → HDR and back to 78% to
+   check whether each uses prepared pixels. Capture one Metal System Trace over
+   cold Micro Fit and the first 110% pan while the GPU route is active.
+   Attribute the wait to Bayer fetch/upload, demosaic, Grain resolve,
+   reduction or present using the trace and the matching Grade events.
+4. Use the script below for a full-size AVIF Gain Map export and full-size
+   Proof with Clean Small on the Sony. Record separate peak whole-app and
+   backend footprints, the biggest process at each peak and the active
+   render/encoding/reconstruction stage. Compare with the 6.2 GB PC
+   backend observation. Start with the measured retained Grade/cache bytes.
+   At 42.4 MP each float32 RGB plane is about 509 MB. Check the source,
+   retained original, shared Grain frame, HDR and SDR finished renditions,
+   and Proof's authored endpoint planes or SDR matrix conversion. Attribute
+   encoder memory separately to the helper. If those owners cannot account
+   for the peak, record the unassigned bytes and capture a backend allocation
+   trace before proposing changes.
+
+From `codebase` on macOS:
+
+```sh
+set -o pipefail
+unset HDR_FINISHER_MEMORY_PROFILE
+mkdir -p output/mem-1-mac
+.venv/bin/python tools/output_size.py
+# During step 3, set GPU_PID to the GPU-process PID for this Electron session.
+xcrun xctrace record --template 'Metal System Trace' --attach "$GPU_PID" --time-limit 60s --output output/mem-1-mac/micro.trace
+# Close the hand-test app first. This replay uses DLV-1's CPU delivery route.
+.venv/bin/python tools/gpu-run-lock.py --label mem-1-mac-avif --minutes 10 -- node tests/run-in-electron.js tests/performance/denoise-grain-latency.js --42-only --full-proof-method=clean_grain --full-delivery-avif --full-delivery-route=cpu 2>&1 | tee output/mem-1-mac/avif-proof.jsonl
+.venv/bin/python tools/output_size.py
+```
 
 ### QUAL-1 · Exposure-independent quality fixes (output changes)
 
