@@ -83,6 +83,16 @@ the existing Grade cache allowance and are released on source change or
 Grade close. The reduced CPU preview is labelled with its processing size
 in the status bar.
 
+### November 21: CPU Micro Grain tile workers
+
+The first CPU Grade picture, export and full-size Proof use the same
+native tiles and filtering. Independent tiles and noise-measurement windows
+use the shared CPU pool. At most three full tile workspaces fit in the
+existing 600 MB allowance. OpenCV runs one thread inside each worker. The
+prepared model remains in the Micro source for this round. Lensfun strip
+generation stays open because restarting the row coordinates changed pixels.
+[Windows PC measurements](../../technical/performance-table.md#november-21--cpu-micro-grain-tile-workers)
+
 ### November 21: Faster CPU Grain backup
 
 CPU previews reuse a compact noise model across Exposure and other finishing edits. The model depends on the source pixels, rendition, geometry, processing size and measurement version. Concurrent previews share a measurement. The CPU Grain scratch reservation and the existing tile dimensions still apply. [Windows PC measurements](../../technical/performance-table.md#november-21--windows-pc-cpu-grain-sprint)

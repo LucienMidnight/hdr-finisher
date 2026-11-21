@@ -155,6 +155,36 @@ Grain at 110%. The correlated log recorded 85,599,904 B for calibration,
 Bayer region. Finished-pixel CPU agreement and the large Bayer Micro Fit
 check remain open.
 
+## November 21 — CPU Micro Grain tile workers
+
+Windows PC, Ryzen 5 7600, unpackaged Electron at 2560 × 1440 under the shared
+GPU lock. Sony `_DSC7970.ARW` (7968 × 5320), Lensfun Auto, harsh-speck
+cleanup ×2.5, 78% zoom. The GPU refused Micro Grain with lens correction on.
+Use the existing 10% timing allowance for these single observations and
+for the separate CPU export comparison. Grade RAM is the sampled whole-app
+peak in decimal GB.
+
+| Action | Before | With tile workers and trial lens strips | Conditions |
+| --- | ---: | ---: | --- |
+| First CPU Micro Grain picture | 84.07 s | 58.04 s | Windows PC, HDR, reduced 4096 px picture. Before is the TRI-1 Full-tier measurement. |
+| Peak app RAM during first picture | 3.58 GB | 3.07 GB | Windows PC, same Grade observations. |
+
+The replay on `411f0cc6` logged 82.88 s for the CPU preview request and showed
+the reduced picture. The driver initially waited for a full-resolution picture
+and skipped baseline export. It accepted the reduced picture on the changed
+run. The five-minute lock expired while the app was exporting. The Lensfun
+strip trial later failed byte parity and was withdrawn. The 58.04 s and
+3.07 GB observations include the trial and need a repeat on the final code.
+
+A separate paired Windows PC run called the production CPU exporter directly,
+after opening the same RAW. Original-size Q90 Ultra HDR JPEG, both renditions
+on Micro Grain, the HDR peak guarantee enabled and metadata off. Export time
+was 100.46 s on `411f0cc6` and 59.71 s on `2309417c`. The encoder wrote the
+same SHA-256 on both: `8d5256cf05dacbc6c540e4075e22c5b832714eaaaa438993be4d61802a858706`.
+Lens-corrected RAW development and native Micro Grain output also matched
+byte for byte on Canon `IMG_0790.CR2` (manual EF-S 18–135 profile) and the
+Sony (Auto). The paired JPEG exports used the Sony.
+
 ## November 21 — CPU Micro Grain source reuse
 
 Windows PC, Ryzen 5 7600, unpackaged Electron at 2560 × 1440 under the shared

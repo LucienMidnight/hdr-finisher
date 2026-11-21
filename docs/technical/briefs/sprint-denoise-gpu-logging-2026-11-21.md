@@ -66,7 +66,7 @@ Three problems follow, and Steve approved all three on November 21:
 | LOG-2 | App-wide logging rollout | `sprint/logging-rollout` | LOG-1 merged | done, merged Nov 21 (`b60767b9`): Library, RAW, Grade, Match, Export, Proof, memory, startup/shutdown instrumented; PC session log 84,288 bytes; reason codes folded into `logging.md` |
 | INT | Integration, full checks, push and Steve's hand test | `feat/denoise-v1` | all | merged and checked on the PC Nov 21 (see Integration result); pushed Nov 21 (`deb2fc6f`). Mac hand test partial (Micro Grain only; see Round 2) |
 | TRI-1 | Mac triage: CPU Micro Grain reuse and reduced-preview wording | `t3/b289892f` | INT | done, merged Nov 21 (`79b10821`), byte-identical. PC: Exposure edit 81.2 → 2.0 s, HDR→SDR 79.2 → 2.4 s; first picture unchanged (~84 s, one core); peak RAM 3.86 → 3.58 GB |
-| MG-1 | Micro Grain CPU: all cores and lens correction in strips | `sprint/micro-cpu-speed` | TRI-1 | to do (PC, now) |
+| MG-1 | Micro Grain CPU: all cores and lens correction in strips | `sprint/micro-cpu-speed` | TRI-1 | done, merged Nov 21: tiles and model windows on bounded CPU workers (OpenCV set to one thread app-wide in `run_app.py`), retained GPU Micro source charged to `working`. Byte-identical (Canon and Sony RAW development, native Micro, Sony JPEG). Sony Micro JPEG export 100.5 → 59.7 s. Lens strips withdrawn: Lensfun accumulates rows, so strips changed Canon bytes; 1 GB coordinates remain (MEM-1 measures the size of that output change for Steve). Grade first-picture timing on final code open (INT-2) |
 | CG-2 | Clean Grain colour stage in C, one noise-model store | `sprint/clean-colour-native` | — | done, merged Nov 21, 859 prepared Canon and Sony tiles byte-identical. Forced-CPU Sony Clean Small: whole photo 15.69 → 14.16 s (18% faster than the original; 30% target missed), first sharp 110% 4.25 → 4.19 s, peak RAM 2.33 → 2.42 GB (one run; INT-2 re-measures paired). Mac check open |
 | GPU-2 | Faster GPU Micro Grain and Fit | `sprint/gpu-grain-speed` | — | done, merged Nov 21 (`33063718`). PC Sony, finished frames byte-identical (5 pairs incl. edges and partial tiles): Fit reduction Micro 15.0 → 12.5 s, Clean 2.49 → 2.18 s. Micro slider unchanged (halo trim gave no consistent gain, dropped). AHD pooling and measurement batching not done (no measured gain). Isolated Micro Fit timing and Mac profiling open (INT-2, MEM-1) |
 | ROUTE-1 | One Grain route state and clear route messages | `sprint/grain-route-ui` | — | done, merged Nov 21: GPU / CPU backup / Reduced preview label beside Method, plain reason, Retry on GPU and Switch to Clean Grain actions, CPU progress after 2 s; sampled CPU preview bytes unchanged. Look awaits Steve (R2-5); lens-corrected Micro crop not captured |
@@ -823,13 +823,21 @@ silent slowdowns.
 4. After GPU-2 is merged, use narrower formats for 1–2-channel Grain
    scratch textures where the device supports them as storage. The maths
    stays float32.
-5. Trim the Library cache shares while Grade has a large photo open on an
+5. Lens coordinates in strips (from MG-1). Lensfun accumulates rows, so
+   strips changed the Canon output by a tiny amount, and MG-1 withdrew
+   them. Measure, on the Canon and Sony:
+   - the finished ΔE (mean, p99) of strip coordinates against the
+     whole-frame coordinates;
+   - the peak RAM saved.
+   Then bring it to Steve as an output-change decision. Do not adopt it
+   without his yes.
+6. Trim the Library cache shares while Grade has a large photo open on an
    8 GB machine (Steve approved R2-2). Restore them when Grade closes.
    Record the shares and the trigger in `memory-and-caches.md`. No memory
    mapping (R2-3). If the Mac is still over the ceiling after items 1–5,
    measure the cold buffers (`retouch_original`, Micro's Bayer tile cache)
    and report before changing them.
-6. **On the Mac:**
+7. **On the Mac:**
    - capture the Clean Grain fallback cause from the new logs;
    - record `maxTextureDimension2D`, the Auto budget and 50 MP behaviour;
    - profile GPU Micro Grain;
@@ -917,7 +925,12 @@ their files.
 The coordinator:
 - merges MG-1, CG-2, GPU-2 and ROUTE-1, then MG-2, MEM-1 and any approved
   QUAL-1 item;
-- re-times CPU Micro Grain once MG-1 and CG-2 are both in;
+- re-times CPU Micro Grain once MG-1 and CG-2 are both in, on the final
+  code (MG-1's Grade figure included the withdrawn lens strips);
+- times one ordinary CPU path before and after MG-1's app-wide
+  `cv2.setNumThreads(1)` (a Grade CPU preview and a non-Micro export), so
+  the one-thread OpenCV setting is known not to slow other work;
+- re-measures CG-2's peak RAM as a before/after pair;
 - runs the full fast suites and the covering GPU drivers once;
 - asks Steve before pushing;
 - adds Micro Grain steps to the hand test.

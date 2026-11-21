@@ -5,7 +5,7 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from hdr_finisher import denoise_micro_grain, raw_import
+from hdr_finisher import app_memory, denoise_micro_grain, raw_import
 from hdr_finisher.color_context import RenderColorContext
 from hdr_finisher.denoise_micro_grain import MicroGrainControls
 from hdr_finisher.grain_work import checkpoint, render_work
@@ -158,3 +158,51 @@ def test_abandoned_micro_preview_stops_without_publishing_pixels(micro_frame, mo
     assert len(built) == 1
     assert not rendered
     assert frame.render_cache.diagnostics()["micro_source_bytes"] == 320 * 272 * 2
+
+
+def test_gpu_micro_source_admitted_and_reclaimed(micro_frame):
+    frame, _, built, _ = micro_frame
+    from hdr_finisher.denoise_micro_grain import _trim_recent_source, prepare_source
+
+    initial = app_memory.cache_snapshot()["working"]["bytes"]
+    try:
+        source = prepare_source(frame)
+        assert prepare_source(frame) is source
+        assert len(built) == 1
+        assert app_memory.cache_snapshot()["working"]["bytes"] == initial + source.prepared_nbytes
+
+        _trim_recent_source(0)
+        assert app_memory.cache_snapshot()["working"]["bytes"] == initial
+        assert prepare_source(frame) is not source
+        assert len(built) == 2
+    finally:
+        _trim_recent_source(0)
+
+
+def test_parallel_measurement_reads_each_window_once():
+    from hdr_finisher.denoise_adaptive import _WindowSource
+
+    first, second, release = Event(), Event(), Event()
+    reads = []
+    def read(top, left, bottom, right):
+        reads.append((top, left))
+        if left == 0:
+            first.set()
+            assert release.wait(3)
+        else:
+            second.set()
+        return np.full((bottom - top, right - left, 3), left, dtype=np.float32)
+
+    source = _WindowSource(2, 4, read)
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        first_read = pool.submit(lambda: source[0:2, 0:2])
+        try:
+            assert first.wait(3)
+            duplicate = pool.submit(lambda: source[0:2, 0:2])
+            other = pool.submit(lambda: source[0:2, 2:4])
+            assert second.wait(3)
+            np.testing.assert_array_equal(other.result(), 2)
+        finally:
+            release.set()
+        assert duplicate.result() is first_read.result()
+    assert reads == [(0, 0), (0, 2)]

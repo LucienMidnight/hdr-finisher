@@ -576,6 +576,13 @@ isolated backend working-set peak falls to 2.316 GB (diagnostic, not app
 acceptance). Small tests cover both coordinate layouts, multiple waves,
 input ownership and exact output equality.
 
+November 21 update: a Lensfun strip trial reduced coordinate storage, but
+changed byte output on the Canon and was withdrawn. Lensfun advances its
+normalised rows with repeated float additions, so restarting at a strip
+origin can change sampling. The app now charges the last GPU Micro source's
+sensor, profile and Bayer tiles to the existing working share. Reclaim drops
+that cached source so later requests can rebuild it.
+
 For the four hand-off timings, propose 5% against the previous whole waits
 (ordinary shared-machine variation); the existing 500 ms goal remains. Paired
 Grade opening already uses 5%. Memory must still peak at or below 4.4 GB and
