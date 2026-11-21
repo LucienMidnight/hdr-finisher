@@ -641,6 +641,13 @@
       }
     },
     {
+      "path": "tests/grain-large-photo-parity.js",
+      "areas": ["detail", "preview"],
+      "tier": "area",
+      "protects": "50 MP Grade Fine and Clean Small GPU routing and finished HDR/SDR agreement at Fit and 110%, plus the Micro Fit route or its logged refusal.",
+      "launch": { "method": "electron" }
+    },
+    {
       "path": "tests/performance/denoise-grain-latency.js",
       "areas": ["detail", "export-proof"],
       "tier": "full",
