@@ -1014,17 +1014,13 @@ class SessionRenderCache:
         with self._lock:
             return next((item for item in self._grain_preparations.values() if item.signature == signature), None)
 
-    def owns_grain_preparation_exclusively(self, preparation):
-        with self._lock:
-            return sum(item is preparation for item in self._grain_preparations.values()) == 1
-
     def retain_grain_preparation(self, kind: PreviewKind, preparation, epoch: int) -> bool:
         with self._lock:
             if self._source_epoch != epoch:
                 return False
             previous = self._grain_preparations.get(kind)
             self._grain_preparations[kind] = preparation
-            if (previous is not None and previous.corrections is not preparation.corrections
+            if (previous is not None and previous is not preparation
                     and not any(item is previous for item in self._grain_preparations.values())):
                 previous.close()
             return True

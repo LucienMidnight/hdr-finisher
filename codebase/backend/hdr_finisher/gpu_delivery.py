@@ -137,7 +137,8 @@ def streamed_delivery_enabled(frame, settings, adjustments):
         if settings.format != "sdr_jpeg" or width * height > CLEAN_LARGE_SDR_DEFAULT_MAX_PIXELS:
             return False
         lane = denoise_settings_for_export(frame, PreviewKind.SDR)
-        if lane is None or lane.controls.method != "clean_grain" or lane.controls.splotch_size != "large":
+        if (lane is None or lane.controls.method != "clean_grain" or not lane.controls.clean_color
+                or lane.controls.splotch_size != "large"):
             return False
     reference = getattr(frame, "sdr_reference_image", None)
     return (frame.image.dtype == np.float32
@@ -186,9 +187,7 @@ def _uses_grain_reconstruction(frame):
 
     for kind in (PreviewKind.HDR, PreviewKind.SDR):
         lane = denoise_settings_for_export(frame, kind)
-        if lane is not None and (lane.controls.method == "clean_grain" or (
-            lane.controls.method == "fine_grain" and lane.controls.grain_evenness
-        )):
+        if lane is not None and lane.controls.method == "clean_grain":
             return True
     return False
 

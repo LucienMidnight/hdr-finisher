@@ -81,10 +81,10 @@ def test_authored_sdr_is_separate_only_when_used(context):
     assert client.get(url.replace("/hdr?","/sdr?")).json()==MODEL
 
 
-@pytest.mark.parametrize("method", ["fine_grain", "clean_grain"])
-def test_grain_preparation_is_shared_only_for_the_same_source_and_controls(context, method):
+@pytest.mark.parametrize("clean_color", [False, True])
+def test_grain_preparation_is_shared_only_for_the_same_source_and_controls(context, clean_color):
     client, frame = context
-    controls = {"method": method, "color_splotches": .55}
+    controls = {"method": "clean_grain", "clean_color": clean_color, "color_splotches": .55}
     base = "/api/session/test-photo/denoise-grain/"
     region = "?x=0&y=0&width=32&height=32&frame_width=96&frame_height=64"
 
@@ -110,7 +110,7 @@ def test_grain_preparation_is_shared_only_for_the_same_source_and_controls(conte
         assert scene.status_code == shared.status_code == 200
         assert scene.content == shared.content
 
-        separate = prepare("sdr", {**controls, "amount": .4})
+        separate = prepare("sdr", {**controls, "clean_color": not clean_color})
         assert separate != hdr
         assert client.get(base + f"hdr/{hdr}" + region).content == scene.content
         assert client.get(base + f"sdr/{sdr}" + region).status_code == 409
@@ -240,5 +240,5 @@ def test_replaced_grain_fit_never_starts_tile_work(context, monkeypatch):
     monkeypatch.setattr(denoise_grain, "fit_grain", replace_during_fit)
     monkeypatch.setattr(denoise_grain, "GrainPreparation", unexpected_tiles)
     response = client.post("/api/session/test-photo/denoise-grain/hdr?long_edge=640",
-                           json={"method": "fine_grain", "grain_evenness": 1})
+                           json={"method": "clean_grain", "clean_color": False, "grain_evenness": 1})
     assert response.status_code == 409

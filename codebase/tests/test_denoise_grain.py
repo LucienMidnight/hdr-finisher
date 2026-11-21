@@ -18,7 +18,7 @@ def test_experimental_grain_matches_research():
     rgb[100:109, 316:327] -= .06
     model = adaptive.AdaptiveNoiseModel(.0003, .00008, 0, ((1., .6, .36, .21, .12),) * 3)
     standard = adaptive.AdaptiveControls()
-    fine = replace(standard, method="fine_grain")
+    fine = replace(standard, method="clean_grain", clean_color=False)
 
     np.testing.assert_array_equal(
         adaptive.resolve_adaptive(rgb, model, replace(fine, grain_evenness=0)),
@@ -59,19 +59,22 @@ def test_grain_settings_round_trip_with_standard_default():
     assert existing_grade.hdr.controls.amount == .35
     grade = DenoiseDocumentSettings.model_validate({"hdr": {"enabled": True, "controls": {
         "method": "clean_grain", "grain_evenness": .57, "color_splotches": .33,
-        "splotch_size": "large",
+        "splotch_size": "large", "clean_color": False,
     }}})
-    assert DenoiseDocumentSettings.model_validate_json(grade.model_dump_json()) == grade
+    restored = DenoiseDocumentSettings.model_validate_json(grade.model_dump_json())
+    assert restored == grade
+    assert restored.hdr.controls.clean_color is False
+    assert restored.sdr.controls.clean_color is True
 
 
-def test_clean_grain_reuses_native_fine_grain_across_tile_edges(tmp_path):
+def test_clean_color_controls_native_and_reduced_correction(tmp_path):
     from hdr_finisher.library_cache import LibraryCache
 
     source = np.random.default_rng(41).normal(.025, .006, (575, 601, 3)).astype(np.float32)
     height, width = source.shape[:2]
     model = adaptive.AdaptiveNoiseModel(.0003, .00008, 0, ((1., .6, .36, .21, .12),) * 3)
-    fine = adaptive.AdaptiveControls(method="fine_grain")
-    clean = replace(fine, method="clean_grain", splotch_size="large")
+    fine = adaptive.AdaptiveControls(method="clean_grain", clean_color=False)
+    clean = replace(fine, clean_color=True, splotch_size="large")
     read = lambda top, left, bottom, right: source[top:bottom, left:right]
     fit = grain.fit_grain(height, width, read, model, fine)
     cache = LibraryCache(tmp_path)
@@ -81,11 +84,13 @@ def test_clean_grain_reuses_native_fine_grain_across_tile_edges(tmp_path):
     try:
         native = (0, 0, height, width, height, width)
         reduced = (0, 0, 161, 168, 161, 168)
-        original = [prepared.region(*region, colour=False) for region in (native, reduced)]
-        prepared.add_colour(clean, current)
-        for region, fine_bytes in zip((native, reduced), original):
-            assert prepared.region(*region, colour=False) == fine_bytes
-            assert prepared.region(*region, colour=True) == expected.region(*region)
+        for region in (native, reduced):
+            base = np.frombuffer(prepared.region(*region), dtype="<u4").reshape(-1, 4)
+            corrected = np.frombuffer(expected.region(*region), dtype="<u4").reshape(-1, 4)
+            assert not base[:, 3].any()
+            assert corrected[:, 3].any()
+            np.testing.assert_allclose(base[:, :3].copy().view("<f4"),
+                                       corrected[:, :3].copy().view("<f4"), atol=2e-6)
     finally:
         prepared.close()
         expected.close()
@@ -123,7 +128,7 @@ def test_native_warmup_does_not_fill_the_rest_and_visible_reads_share_work(tmp_p
     monkeypatch.setattr(pool, "submit", observe)
     monkeypatch.setattr(grain, "_resolved_tile", resolve)
     read = lambda y, x, b, r: source[y:b, x:r]
-    settings = adaptive.AdaptiveControls(method="fine_grain")
+    settings = adaptive.AdaptiveControls(method="clean_grain", clean_color=False)
     prepared = grain.GrainPreparation(16, width, read, None, settings, None, lambda: True, LibraryCache(tmp_path))
     warm = (0, 3 * size, 1, 1, 16, width)
     visible = (0, 2 * size, 1, 1, 16, width)
@@ -171,7 +176,7 @@ def test_native_warmup_runs_visible_tiles_together(tmp_path, monkeypatch):
     monkeypatch.setattr(cpu_budget, "_cpu_pool", pool)
     monkeypatch.setattr(grain, "_resolved_tile", resolve)
     read = lambda y, x, b, r: source[y:b, x:r]
-    settings = adaptive.AdaptiveControls(method="fine_grain")
+    settings = adaptive.AdaptiveControls(method="clean_grain", clean_color=False)
     prepared = grain.GrainPreparation(8, 3 * size, read, None, settings, None, lambda: True, LibraryCache(tmp_path))
     try:
         prepared.region(0, size, 8, 2 * size, 8, 3 * size, warm_only=True)

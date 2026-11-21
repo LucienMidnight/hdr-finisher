@@ -73,7 +73,7 @@ Three problems follow, and Steve approved all three on November 21:
 | MG-2 | Micro Grain CPU: visible area first | `sprint/micro-cpu-visible` | MG-1 merged | to do (PC, after MG-1) |
 | MEM-1 | One memory budget on the MacBook Neo | `sprint/mac-memory` | MG-1, GPU-2 merged | to do (overnight; Mac measurements) |
 | QUAL-1 | Exposure-independent quality fixes (output changes) | `sprint/grain-quality` | CG-2 merged | to do; needs Steve's visual sign-off before any default changes |
-| FOLD-1 | Fine Grain folded into Clean Grain, with a cleaning checkbox | `sprint/fold-fine-grain` | CG-2, GPU-2, ROUTE-1 merged | running (Steve approved R2-1) |
+| FOLD-1 | Fine Grain folded into Clean Grain, with a cleaning checkbox | `sprint/fold-fine-grain` | CG-2, GPU-2, ROUTE-1 merged | done, merged Nov 21: "Clean color splotches and fringes" checkbox, on by default, saved per rendition. On: Sony HDR and SDR Fit byte-identical on each route. Off: CPU/GPU HDR ΔE ITP 0.055 / 0.161, SDR ΔE 2000 0.031 / 0.765 (mean / p99). Crops of off against old Fine Grain for Steve. Affected saved grade: Canon `IMG_0790.CR2.hdrf` |
 | DLV-1 | Share one Grain result across HDR and SDR in AVIF export and Proof | `sprint/delivery-grain-share` | — | to do (PC) |
 | INT-2 | Round 2 integration, full checks, push and hand test | `feat/denoise-v1` | all round 2 | to do |
 

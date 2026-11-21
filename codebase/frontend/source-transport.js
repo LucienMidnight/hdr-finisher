@@ -498,7 +498,7 @@
     const { outputWidth, outputHeight, pixelFormat, workingSpace, acceptedGeometry, sourceEpoch } = metadata;
     assertCurrent("ROI source region probe was superseded");
     if (!(outputWidth > 0 && outputHeight > 0)) return null;
-    if (strip && pixelFormat !== "rgba16float") throw new Error("Fine Grain strips require 16-bit source textures");
+    if (strip && pixelFormat !== "rgba16float") throw new Error("Grain strips require 16-bit source textures");
     if (acceptedGeometry !== geometrySignature) {
       const error = new Error("Stale WebGPU geometry region rejected");
       error.recoverable = true;
@@ -577,7 +577,7 @@
     let texture = strip?.texture;
     try {
       texture ||= renderer.device.createTexture({
-        label: strip ? "fine-grain-source-strip" : undefined,
+        label: strip ? "grain-source-strip" : undefined,
         size: { width: textureWidth, height: textureHeight },
         format: pixelFormat,
         usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.COPY_SRC,

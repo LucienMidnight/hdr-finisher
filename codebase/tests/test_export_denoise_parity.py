@@ -185,7 +185,7 @@ def test_standard_denoise_jpeg_strips_preserve_finished_pixels(monkeypatch):
         np.testing.assert_array_equal(strips, whole)
 
 
-@pytest.mark.parametrize("method", ["standard", "fine_grain", "clean_grain"])
+@pytest.mark.parametrize("method", ["standard", "clean_grain"])
 def test_authored_sdr_standard_and_equivalent_grain_render_the_reference(monkeypatch, method):
     from hdr_finisher import exporters, gpu_delivery
     from hdr_finisher.models import ExportSettings
@@ -219,7 +219,8 @@ def test_cpu_grade_fallback_renders_grain_even_when_full_strips_are_requested():
     session.render_cache = SessionRenderCache(session.image, session.sdr_reference_image)
     kind = PreviewKind.SDR
     settings = session.denoise.sdr
-    settings.controls.method = "fine_grain"
+    settings.controls.method = "clean_grain"
+    settings.controls.clean_color = False
     request = PreviewRequest(execution="strips")
     denoised, _ = _render_selected_execution(session, request, kind, session.adjustments, 640, lambda: True)
     settings.enabled = False

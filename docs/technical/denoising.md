@@ -53,14 +53,16 @@ The wide pass pulls less colour around bright features and in structured
 areas. A separate five-pixel median residual keeps a narrow bright-fringe
 correction. Dark Specks and its patch search have been removed.
 
-Fine Grain and Clean Grain prepare native geometry-fixed pixels once per
+Clean Grain prepares native geometry-fixed pixels once per
 decoded source, rendition and preparation recipe. The first request uses
 the native noise model. Zoom and pan request regions of the same result.
 Fit regions use the usual Lanczos filter and local range limit. The screen
 draw applies the stored correction strength on the GPU. During an Amount
 or other base-setting drag, wavelet feedback remains available until the
 new preparation commits on release. Color Splotches updates the prepared
-colour blend live. Zero-evenness Fine Grain uses the Standard path.
+colour blend live when **Clean color splotches and fringes** is on. With
+the checkbox off, the extra colour pass is skipped and zero evenness uses
+the Simple reconstruction.
 
 The temporary result holds float32 RGB and two float16 opponent corrections
 packed into 16 bytes per pixel. It is reserved under the existing full-size
@@ -75,11 +77,9 @@ source replacement and preparation replacement release the reservation.
 Startup reclaims abandoned scratch. Cached GPU regions still use the
 existing Denoise tile allowance.
 
-On a Fine-to-Clean switch, the same scratch file supplies the neighbouring
-native RGB for each colour tile. Only the packed colour fields gain new
-values. The existing Fine Grain token serves zero correction until the
-completed Clean Grain token is available. Source, geometry, noise model,
-Recalculate and RGB-affecting controls are part of the reuse identity.
+Toggling colour cleaning replaces the preparation and reuses the brightness
+fit when its inputs match. Source, geometry, noise model, Recalculate and
+the settings that affect brightness are part of the fit identity.
 The Small and Large colour passes keep their original native margins.
 
 Grade and Show noise use WebGPU. Proof and export use the same GPU reconstruction

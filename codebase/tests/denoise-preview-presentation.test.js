@@ -5,7 +5,7 @@ const vm = require("node:vm");
 const { frontendSource, declarations } = require("./frontend-source.js");
 
 test("bypass draws the original without waiting and retries a stale source after acknowledgement", async () => {
-  for (const method of ["standard", "fine_grain", "clean_grain", "micro_grain"]) {
+  for (const method of ["standard", "clean_grain", "micro_grain"]) {
     const state = { session: { session_id: "photo" }, currentView: "hdr", editRevision: 1,
       denoise: { hdr: { enabled: true, controls: { method } } }, denoiseRuntime: { hdr: { generation: 0 } } };
     const draws = [];
@@ -125,7 +125,7 @@ test("a validation failure drawing the quick CPU Grain picture still requests th
   const state = {
     currentView: "sdr", session: { session_id: "photo", source: { width: 1600, height: 1000 } },
     zoomMode: "fit", previewGeneration: { sdr: 1 }, gpuDraftRefusals: {}, displayInfo: {}, adjustments: {},
-    denoise: { sdr: { enabled: true, controls: { method: "fine_grain" } } },
+    denoise: { sdr: { enabled: true, controls: { method: "clean_grain", clean_color: false } } },
     denoiseRuntime: { sdr: {} },
     gpuFailurePolicy: { record: error => ({ kind: "validation", detail: error.message, recoverable: true }) },
   };
@@ -153,7 +153,7 @@ test("a validation failure drawing the quick CPU Grain picture still requests th
   assert.equal(state.lastGpuDraftRefusal.detail, "Injected validation failure");
 });
 
-for (const method of ["standard", "fine_grain", "clean_grain"]) {
+for (const method of ["standard", "clean_grain"]) {
   test(`${method} keeps the sharp patch mounted while the replacement is drawn`, async () => {
     const previous = { x: 10, y: 20, width: 900, height: 600, frameWidth: 5202, frameHeight: 3464 };
     const next = { ...previous };

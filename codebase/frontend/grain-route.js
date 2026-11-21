@@ -37,8 +37,7 @@
 
   function gpuPreferred(method, renderer, microUnavailable, microBackup) {
     if (method === "micro_grain") return !microUnavailable && !microBackup;
-    if (method === "clean_grain") return renderer.enableGradeCleanGrainGpu !== false;
-    return method === "fine_grain" && renderer.enableGradeFineGrainGpu !== false;
+    return method === "clean_grain" && renderer.enableGradeCleanGrainGpu !== false;
   }
 
   const REASONS = {
@@ -56,7 +55,7 @@
     transport_timeout: "the GPU preparation request timed out",
     gpu_validation_error: "the GPU result failed a validity check",
   };
-  const METHODS = { micro_grain: "Micro Grain", clean_grain: "Clean Grain", fine_grain: "Fine Grain" };
+  const METHODS = { micro_grain: "Micro Grain", clean_grain: "Clean Grain" };
 
   function describe({ method, enabled, original, unavailable, error, frame, cpuBusy, canRetry, retryNote }) {
     // Steve, Nov 21: say nothing while the GPU does its job. One line

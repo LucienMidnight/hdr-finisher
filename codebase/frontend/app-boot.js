@@ -841,6 +841,7 @@ function bindEvents() {
   for (const event of ["input", "change"]) {
     els.denoiseMethod?.addEventListener(event, () => commitDenoiseControl("method", els.denoiseMethod.value));
   }
+  els.denoiseCleanColor?.addEventListener("change", () => commitDenoiseControl("clean_color", els.denoiseCleanColor.checked));
   els.denoiseSplotchSize?.addEventListener("change", () => commitDenoiseControl("splotch_size", els.denoiseSplotchSize.value));
   const denoiseSliders = [
     [els.denoiseAmount, "amount"],

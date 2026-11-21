@@ -68,7 +68,6 @@ function halfToFloat(bits) {
     await page.evaluate(() => {
       // Fine and Clean originally used CPU preparation in this check. Keep
       // that route so zero-evenness and CPU preparation reuse are exercised.
-      state.gpuPreview.enableGradeFineGrainGpu = false;
       state.gpuPreview.enableGradeCleanGrainGpu = false;
       const group = document.querySelector(".denoise-group .group-toggle");
       if (group.getAttribute("aria-expanded") !== "true") group.click();
@@ -294,25 +293,26 @@ for lane, pair in (("sdr", [_hdr_to_sdr_display(rgb) for rgb in (fit, actual)]),
     }
 
     // Standard doesn't apply live Evenness input. Save the value before
-    // selecting Fine Grain so its first reconstruction uses zero.
+    // selecting Clean Grain with colour cleaning off.
     await page.evaluate(() => commitDenoiseControl("grain_evenness", 0));
-    await change("denoise-method", "fine_grain");
+    await page.evaluate(() => commitDenoiseControl("clean_color", false));
+    await change("denoise-method", "clean_grain");
     await waitReady();
     const zero = nextPixels(await readResult());
     assert(Buffer.from(zero.buffer, zero.byteOffset, zero.byteLength).equals(gpuBytes),
-      "Fine Grain at zero evenness differs from Standard.");
+      "Clean Grain with colour cleaning off and zero evenness differs from Standard.");
 
     const fineStart = performance.now();
     await change("denoise-evenness", 1, false);
     await change("denoise-evenness", 1);
     await waitReady();
     const fine = await readResult();
-    console.log("Fine Grain preview preparation and readback ms", Math.round(performance.now() - fineStart));
+    console.log("Clean Grain without colour cleaning preparation and readback ms", Math.round(performance.now() - fineStart));
     const finePixels = nextPixels(fine);
-    await compareZoom("Fine Grain", fine, finePixels);
+    await compareZoom("Clean Grain without colour cleaning", fine, finePixels);
 
     const cleanStart = performance.now();
-    await change("denoise-method", "clean_grain");
+    await page.evaluate(() => commitDenoiseControl("clean_color", true));
     await waitReady();
     const clean = await readResult();
     console.log("Clean Grain preview preparation and readback ms", Math.round(performance.now() - cleanStart));
@@ -328,7 +328,7 @@ for lane, pair in (("sdr", [_hdr_to_sdr_display(rgb) for rgb in (fit, actual)]),
     const off = nextPixels(await readResult());
     console.log("Clean Grain blend preview and readback ms", Math.round(performance.now() - dragStart));
     assert(Buffer.from(off.buffer, off.byteOffset, off.byteLength).equals(
-      Buffer.from(finePixels.buffer, finePixels.byteOffset, finePixels.byteLength)), "Clean Grain with Color Splotches off differs from Fine Grain.");
+      Buffer.from(finePixels.buffer, finePixels.byteOffset, finePixels.byteLength)), "Color Splotches at zero differs from turning colour cleaning off.");
     assert(prepToken === await page.evaluate(() => state.gpuPreview.denoiseSourceSelector.cache.grain.token),
       "A live blend rebuilt the preparation.");
     await page.evaluate(() => document.querySelector("#denoise-show-noise").click());

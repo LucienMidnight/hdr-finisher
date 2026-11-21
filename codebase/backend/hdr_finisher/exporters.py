@@ -176,8 +176,9 @@ def _delivery_source_filter(session, kind, adjustments, *, authored):
     if lane.controls.method == "micro_grain":
         return (lambda image, authored: image) if authored else None
     controls = denoise_adaptive.AdaptiveControls(**lane.controls.model_dump())
-    experimental = (controls.method == "fine_grain" and controls.grain_evenness
-                    or controls.method == "clean_grain" and (controls.grain_evenness or controls.color_splotches))
+    experimental = controls.method == "clean_grain" and (
+        controls.grain_evenness or (controls.clean_color and controls.color_splotches)
+    )
     if not authored and not experimental:
         return None
 

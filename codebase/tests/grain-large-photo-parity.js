@@ -9,7 +9,7 @@ const { pythonExecutable } = require("../tools/lib/platform.cjs");
 
 const ROOT = path.resolve(__dirname, "..");
 const PHOTO = path.join(ROOT, "output/test-photos/DSC00636.ARW");
-const methods = ["fine_grain", "clean_grain"];
+const methods = ["clean_grain_off", "clean_grain"];
 const lanes = ["hdr", "sdr"];
 const views = ["Fit", "110%"];
 const cases = methods.flatMap(method => lanes.flatMap(lane => views.map(view => `${method}-${lane}-${view}`)));
@@ -81,12 +81,13 @@ async function selectGrain(page, lane, method, useGpu) {
     if (state.currentView !== lane) await switchLane(lane);
     if (state.denoise[lane].enabled) await setDenoiseEnabled(false);
     if (state.zoomMode !== "fit") document.querySelector("#zoom-fit").click();
-    state.gpuPreview.enableGradeFineGrainGpu = useGpu;
     state.gpuPreview.enableGradeCleanGrainGpu = useGpu;
-    await commitDenoiseControl("method", method);
+    const cleanColor = method !== "clean_grain_off";
+    await commitDenoiseControl("method", cleanColor ? method : "clean_grain");
     if (method !== "micro_grain") {
       await commitDenoiseControl("grain_evenness", 0.65);
-      if (method === "clean_grain") await commitDenoiseControl("splotch_size", "small");
+      await commitDenoiseControl("clean_color", cleanColor);
+      await commitDenoiseControl("splotch_size", "small");
     }
     await setDenoiseEnabled(true);
   }, { lane, method, useGpu });
@@ -98,12 +99,16 @@ async function waitForFrame(page, lane, method, view, previous) {
     if (runtime.status === "error") throw Error(runtime.error);
     const capture = window.largeGrainCapture;
     const frame = capture.frame;
+    const controls = state.gpuPreview.denoiseSourceSelector?.controls;
+    const matchingMethod = method === "clean_grain_off"
+      ? controls?.method === "clean_grain" && controls.cleanColor === false
+      : controls?.method === method && controls.cleanColor !== false;
     return state.currentView === lane && state.acceptedPresentation?.exact && previewIdleNow()
       && state.acceptedPresentation.processedLongEdge === requiredProcessingLongEdge()
       && capture.generation > previous && frame?.lane === lane
       && frame.applicationGeneration === state.acceptedPresentation.generation
       && Boolean(frame.region) === (view === "110%")
-      && runtime.status === "ready" && state.gpuPreview.denoiseSourceSelector?.controls.method === method;
+      && runtime.status === "ready" && matchingMethod;
   }, { lane, method, view, previous }, { timeout: 40000 });
 }
 

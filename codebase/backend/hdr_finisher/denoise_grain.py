@@ -277,16 +277,14 @@ def _resize_window(fields, box, size, bounds, ranges):
 
 
 class _TilePass:
-    def __init__(self, size, process, height, width, *, started, log_fields, dependency_margin=0):
+    def __init__(self, size, process, height, width, *, started, log_fields):
         self.size = size
         self.process = process
-        self.dependency_margin = dependency_margin
         self.count = ceil(height / size) * ceil(width / size)
         self.started = started
         self.log_fields = log_fields
         self.done = set()
         self.inflight = {}
-        self.background_requested = False
         self.background_started = False
         self.foreground_count = 0
         self.background_count = 0
@@ -312,7 +310,7 @@ class GrainPreparation:
         self._close = finalize(self, close)
         self._tile_offsets = {}
         self._written_bytes = 0
-        clean = controls.method == "clean_grain"
+        clean = controls.method == "clean_grain" and controls.clean_color
         broad = controls.splotch_size == "large"
         margin = (LARGE_COLOUR_MARGIN if broad else SMALL_COLOUR_MARGIN) if clean else 0
         size = adaptive.TILE_SIZE - 2 * margin
@@ -331,7 +329,6 @@ class GrainPreparation:
             return (resolved - start, coloured - resolved, packed - coloured, waiting, writing, 0)
 
         self._base = _TilePass(size, resolve, height, width, started=started, log_fields=log_fields or {})
-        self._colour = None
 
     @property
     def usable(self):
@@ -394,9 +391,6 @@ class GrainPreparation:
                     foreground_tile_count=phase.foreground_count, background_tile_count=phase.background_count,
                     worker_limit=_PREVIEW_TILE_WORK.workers,
                     tile_worker_ms=self._timing_ms(phase))
-                if phase is self._base and self._colour is not None and self._colour.background_requested:
-                    self._background(self._colour)
-
     def _background(self, phase):
         if self._closed or phase.background_started:
             return
@@ -416,43 +410,12 @@ class GrainPreparation:
                 raise self._error or InterruptedError("The Denoise preparation was replaced.")
             pending = [future for origin in origins if (future := self._submit(phase, origin, background=False))]
             if fill_background:
-                phase.background_requested = True
-                if phase is self._base or len(self._base.done) == self._base.count:
-                    self._background(phase)
+                self._background(phase)
         try:
             for future in pending:
                 future.result()
         except CancelledError as error:
             raise self._error or InterruptedError("The Denoise preparation was replaced.") from error
-
-    def add_colour(self, controls, is_current, *, log_fields=None):
-        """Fill the reserved correction fields using neighbouring Fine Grain RGB."""
-        broad = controls.splotch_size == "large"
-        margin = LARGE_COLOUR_MARGIN if broad else SMALL_COLOUR_MARGIN
-        size = adaptive.TILE_SIZE - 2 * margin
-
-        def read(y, x, bottom, right):
-            fields = self._read(y, x, bottom - y, right - x)
-            return fields.view("<f4")[..., :3].copy()
-
-        def colour(origin):
-            start = perf_counter()
-            rgb, core, _ = _region(read, self.height, self.width, origin, size, margin)
-            loaded = perf_counter()
-            delta = colour_delta(rgb, broad)[core]
-            coloured = perf_counter()
-            rows = _pack(rgb[core], delta)
-            packed = perf_counter()
-            waiting, writing = self._write(origin, rows)
-            return 0.0, coloured - loaded, packed - coloured, waiting, writing, loaded - start
-
-        if not is_current():
-            raise InterruptedError("The Denoise preparation was replaced.")
-        with self._tiles_lock:
-            if self._closed:
-                raise InterruptedError("The Denoise preparation was replaced.")
-            self._colour = _TilePass(size, colour, self.height, self.width, started=perf_counter(),
-                                     log_fields=log_fields or {}, dependency_margin=margin)
 
     def _write(self, origin, rows):
         y, x = origin
@@ -461,24 +424,13 @@ class GrainPreparation:
             if self._file.closed:
                 raise InterruptedError("The Denoise preparation was replaced.")
             writing = perf_counter()
-            height, width = rows.shape[:2]
-            size = self._base.size
-            if y % size == x % size == 0 and height == min(size, self.height - y) and width == min(size, self.width - x):
-                # Append the visible tiles without reserving physical blocks
-                # for earlier rows. Upgrades can overwrite a ready tile.
-                offset = self._tile_offsets.get(origin, self._written_bytes)
-                self._file.seek(offset)
-                if self._file.write(rows) != rows.nbytes:
-                    raise OSError("Incomplete Grain Denoise scratch write.")
-                if origin not in self._tile_offsets:
-                    self._tile_offsets[origin] = offset
-                    self._written_bytes += rows.nbytes
-            else:
-                for start, column, pixels, tile_width in self._pieces(y, x, height, width, rows):
-                    for dy, row in enumerate(pixels):
-                        self._file.seek(start + (dy * tile_width + column) * 16)
-                        if self._file.write(row) != row.nbytes:
-                            raise OSError("Incomplete Grain Denoise scratch write.")
+            # Append visible tiles without reserving space for earlier ones.
+            offset = self._written_bytes
+            self._file.seek(offset)
+            if self._file.write(rows) != rows.nbytes:
+                raise OSError("Incomplete Grain Denoise scratch write.")
+            self._tile_offsets[origin] = offset
+            self._written_bytes += rows.nbytes
             written = perf_counter()
         return writing - start, written - writing
 
@@ -500,7 +452,7 @@ class GrainPreparation:
                 return
             self._closed = True
             self._pool.shutdown(wait=False, cancel_futures=True)
-            phase = self._colour or self._base
+            phase = self._base
             if len(phase.done) != phase.count:
                 log("denoise_grain_tiles_stopped", **phase.log_fields, area="denoise", route="cpu",
                     reason="tile_failed" if self._error and not isinstance(self._error, InterruptedError)
@@ -529,30 +481,15 @@ class GrainPreparation:
                         target[:] = block[:, column:column+piece_width]
         return rows
 
-    def _prepare_region(self, y, x, height, width, colour, *, fill_background=True):
-        phase = self._colour if colour is not False and self._colour is not None else self._base
-        origins = tuple(self._intersecting(phase, y, x, y + height, x + width))
-        if phase.dependency_margin:
-            size, margin = phase.size, phase.dependency_margin
-            required = dict.fromkeys(
-                origin for top, left in origins for origin in self._intersecting(
-                    self._base, max(0, top - margin), max(0, left - margin),
-                    min(self.height, top + size + margin), min(self.width, left + size + margin))
-            )
-            self._ensure(self._base, required, fill_background=False)
-        self._ensure(phase, origins, fill_background=fill_background)
-        if fill_background and phase.dependency_margin:
-            with self._tiles_lock:
-                self._background(self._base)
+    def _prepare_region(self, y, x, height, width, *, fill_background=True):
+        origins = tuple(self._intersecting(self._base, y, x, y + height, x + width))
+        self._ensure(self._base, origins, fill_background=fill_background)
 
-    def _prepared_fields(self, y, x, height, width, colour):
-        self._prepare_region(y, x, height, width, colour)
-        fields = self._read(y, x, height, width)
-        if colour is False:
-            fields[..., 3] = 0
-        return fields
+    def _prepared_fields(self, y, x, height, width):
+        self._prepare_region(y, x, height, width)
+        return self._read(y, x, height, width)
 
-    def region(self, y, x, height, width, frame_height, frame_width, *, colour=None, warm_only=False):
+    def region(self, y, x, height, width, frame_height, frame_width, *, warm_only=False):
         if min(y, x) < 0 or min(height, width) < 1 or y + height > frame_height or x + width > frame_width:
             raise ValueError("Grain Denoise region exceeds the requested frame.")
         if not self._current():
@@ -560,9 +497,9 @@ class GrainPreparation:
             raise InterruptedError("A newer source replaced the Denoise preparation.")
         if self.height == frame_height and self.width == frame_width:
             if warm_only:
-                self._prepare_region(y, x, height, width, colour, fill_background=False)
+                self._prepare_region(y, x, height, width, fill_background=False)
                 return None
-            fields = self._prepared_fields(y, x, height, width, colour)
+            fields = self._prepared_fields(y, x, height, width)
             return fields.tobytes()
         if warm_only:
             raise ValueError("A Grain tile warmup needs native frame dimensions.")
@@ -587,7 +524,7 @@ class GrainPreparation:
         for row in range(0, height, target_rows):
             count = min(target_rows, height - row)
             top, bottom, y0, y1, ys = axis(y + row, count, sy, self.height)
-            fields = self._prepared_fields(top, left, bottom - top, right - left, colour)
+            fields = self._prepared_fields(top, left, bottom - top, right - left)
             result[row:row + count] = _resize_window(fields, (x0, y0, x1, y1), (width, count),
                                                      (left, top), (block, xs, ys))
         return result.tobytes()
@@ -597,7 +534,7 @@ def resolve_grain(source, model, controls):
     evenness = controls.grain_evenness
     splotches = controls.color_splotches
     broad = controls.splotch_size == "large"
-    clean = controls.method == "clean_grain" and splotches > 0
+    clean = controls.method == "clean_grain" and controls.clean_color and splotches > 0
     if (not clean and not evenness) or controls.amount <= 0 or not (controls.luminance or controls.color_noise):
         return adaptive._resolve_standard(source, model, controls)
     height, width = source.shape[:2]

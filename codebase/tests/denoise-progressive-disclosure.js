@@ -1,7 +1,7 @@
 // PRD 6.3 -- progressive disclosure for the Denoise controls.
 //
 // Amount and Detail Recovery are always visible; Luminance and Colour Noise
-// sit behind Advanced. There is one method, so no method selector.
+// sit behind Advanced. Clean Grain offers an optional colour correction.
 //
 //   node tests/denoise-progressive-disclosure.js --url http://127.0.0.1:8765
 //
@@ -80,9 +80,10 @@ function assert(condition, message) {
     assert(await method.inputValue() === "clean_grain", "A new photo should select Clean Grain.");
     const options = await method.locator("option").evaluateAll(options =>
       options.map(option => [option.value, option.textContent.trim()]));
-    assert(JSON.stringify(options.slice(0, 3)) === JSON.stringify([
-      ["clean_grain", "Clean Grain"], ["standard", "Simple"], ["fine_grain", "Fine Grain · Experimental"],
-    ]) && options[3]?.[0] === "micro_grain", "The Denoise menu changed.");
+    assert(JSON.stringify(options.slice(0, 2)) === JSON.stringify([
+      ["clean_grain", "Clean Grain"], ["standard", "Simple"],
+    ]) && options[2]?.[0] === "micro_grain" && options.length === 3, "The Denoise menu changed.");
+    assert(await page.locator("#denoise-clean-color").isChecked(), "Clean Grain should start with colour cleaning on.");
     assert(!await shown("denoise-luminance"), "Luminance is visible before Advanced is opened.");
     assert(!await shown("denoise-color"), "Colour Noise is visible before Advanced is opened.");
 

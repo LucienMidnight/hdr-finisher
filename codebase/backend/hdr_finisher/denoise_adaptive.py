@@ -137,6 +137,7 @@ class AdaptiveControls:
     coarse_noise: float = 0.5
     method: str = "standard"
     grain_evenness: float = 1.0
+    clean_color: bool = True
     color_splotches: float = 1.0
     splotch_size: str = "small"
     micro_luminance: float = 0.5
