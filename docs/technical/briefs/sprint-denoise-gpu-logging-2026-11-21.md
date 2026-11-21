@@ -58,7 +58,7 @@ Three problems follow, and Steve approved all three on November 21:
 | ID | Package | Branch | Depends on | Status |
 | --- | --- | --- | --- | --- |
 | LOG-1 | Logging foundation and GPU Grain route robustness | `sprint/logging-foundation` | — | done, merged Nov 21 (`e4847957`): locked PC replay showed eviction, numbered refusal, CPU preparation, one retry and final GPU picture under one action |
-| CPU-1 | Faster CPU Grain backup: visible area first, then root speedups | `sprint/cpu-grain-speed` | — | round 2 in progress: `dbe4a215` byte-identical but first measured version missed speed and RAM targets |
+| CPU-1 | Faster CPU Grain backup: visible area first, then root speedups | `sprint/cpu-grain-speed` | — | merged Nov 21 (`68944ed0`), byte-identical: first sharp picture at 110% 21.94 → 4.74 s (target met); whole photo 13–15% faster (30% target missed); peak RAM 2.39 → 2.74 GB (target missed) |
 | GPU-1 | Fine, Clean and Micro Grain on the GPU above 8,192 pixels | `sprint/gpu-large-photos` | — | done `73454417`, awaiting merge: 50 MP and 61 MP stay on GPU at 2 GiB; CPU agreement and Sony Micro checks at INT |
 | LOG-2 | App-wide logging rollout | `sprint/logging-rollout` | LOG-1 merged | done `b60767b9`, awaiting merge: Library, RAW, Grade, Match, Export, Proof, memory, startup/shutdown instrumented; 84 KB session log |
 | INT | Integration, full checks, push and Steve's hand test | `feat/denoise-v1` | all | not started |

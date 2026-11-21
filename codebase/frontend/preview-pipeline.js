@@ -835,6 +835,14 @@ async function renderGpuDraftForView(lane, request) {
     const quick = await renderGpuDraftInner(lane, { ...request, microQuick: true });
     if (!quick || !microStillCurrent() || request.isCurrent?.() === false) return refuse("superseded-after-micro-quick");
   }
+  const preparedGrain = denoiseActive ? state.gpuPreview.denoiseSourceSelector?.cache?.grain : null;
+  const cpuGrainToken = preparedGrain?.token;
+  if (cpuGrainToken && !allowInactive && state.zoomMode === "fit" && !request.underlayerOnly
+    && tier !== "interactive" && canvas.hdrCpuGrainQuickToken !== cpuGrainToken) {
+    const quick = await renderGpuDraftInner(lane, { ...request, underlayerOnly: true });
+    if (!quick || request.isCurrent?.() === false) return refuse("superseded-after-cpu-grain-quick");
+    canvas.hdrCpuGrainQuickToken = cpuGrainToken;
+  }
   // A magnified pass fetches a region of the frame it will produce, so it has
   // to know that frame's exact size first.
   if (request.viewport && !gpuFrameSizeAt(longEdge)) await ensureGeometryCoordinateMap(longEdge);
@@ -868,7 +876,10 @@ async function renderGpuDraftForView(lane, request) {
     frameSize,
     roiCatchUp,
     panPass,
-    minimumRoiFraction: boundedPresentation && liveGradeGrainSelected(lane) ? 0.18 : undefined,
+    // First paint only the visible CPU Grain tiles. Pan requests use the
+    // ordinary padding once this preparation has an exact picture.
+    minimumRoiFraction: boundedPresentation && cpuGrainToken && !preparedGrain.warmedRegion && !panPass
+      ? 0 : boundedPresentation && liveGradeGrainSelected(lane) ? 0.18 : undefined,
     noiseView: denoiseNoiseViewActive(lane),
     boundedPresentation,
     fineGrainUnderlayer: request.underlayerOnly,

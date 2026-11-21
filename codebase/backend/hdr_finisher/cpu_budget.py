@@ -65,12 +65,12 @@ class PriorityCpuPool:
         self.lock = RLock()
         self.queues = (deque(), deque())
 
-    def submit(self, function):
+    def submit(self, function, *, background=None):
         from .grain_work import background_work
         future = Future()
         context = copy_context()
         with self.lock:
-            self.queues[int(background_work())].append((future, context, function))
+            self.queues[int(background_work() if background is None else background)].append((future, context, function))
             if self.active < self.workers:
                 self.active += 1
                 self.pool.submit(self.drain)
@@ -109,6 +109,12 @@ class CpuExecutor:
         self.closed = False
 
     def submit(self, function, *args, **kwargs):
+        return self._submit(function, args, kwargs)
+
+    def submit_background(self, function):
+        return self._submit(function, (), {}, background=True)
+
+    def _submit(self, function, args, kwargs, *, background=None):
         def run():
             previous = getattr(_inside, "active", False)
             _inside.active = True
@@ -129,7 +135,7 @@ class CpuExecutor:
                 except BaseException as error:
                     future.set_exception(error)
             else:
-                future = _cpu_pool.submit(run)
+                future = _cpu_pool.submit(run, background=background)
             self.futures.add(future)
             return future
 

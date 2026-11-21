@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from collections import OrderedDict
+from concurrent.futures import Future
+from contextvars import Context
 from dataclasses import InitVar, dataclass, field
 import hashlib
 import json
@@ -771,6 +773,8 @@ class SessionRenderCache:
     _source_epoch: int = field(default=0, init=False, repr=False)
     grain_preparation_lock: Lock = field(default_factory=Lock, init=False, repr=False)
     _grain_preparations: dict[PreviewKind, Any] = field(default_factory=dict, init=False, repr=False)
+    _denoise_models: OrderedDict = field(default_factory=OrderedDict, init=False, repr=False)
+    _denoise_model_flights: dict = field(default_factory=dict, init=False, repr=False)
     # The last answer each source edge received, for the transport headers:
     # ``native`` (the decoded frame itself), ``memory``/``disk`` (warm mip),
     # ``built`` (cold mip build) or ``session`` (no persistent store).
@@ -815,6 +819,51 @@ class SessionRenderCache:
         with self._lock:
             return self._grain_preparations.get(kind)
 
+    def cpu_denoise_model(self, *, epoch, authored, geometry, size, processing_size, measure, usage, log_fields=None):
+        from .denoise_adaptive import MEASUREMENT_VERSION
+        from .library_diagnostics import log
+
+        with self._lock:
+            if self._source_epoch != epoch:
+                raise StaleRender("The Denoise measurement source changed.")
+            identity = self.sdr_identity if authored else self.source_identity
+            key = (epoch, identity, authored, geometry.model_dump_json(), size, processing_size, MEASUREMENT_VERSION)
+            cached = self._denoise_models.get(key)
+            if cached is not None:
+                self._denoise_models.move_to_end(key)
+            flight = self._denoise_model_flights.get(key)
+            owner = cached is None and flight is None
+            if owner:
+                flight = Future()
+                self._denoise_model_flights[key] = flight
+
+        reason = "model_cache_hit" if cached is not None else "model_cache_miss" if owner else "model_in_flight"
+        fields = {"usage": usage, **(log_fields or {})}
+        log("denoise_cpu_model_cache", **fields, area="denoise", route="cpu", reason=reason,
+            width=size[1], height=size[0])
+        if cached is not None:
+            return cached
+        if not owner:
+            return flight.result()
+        try:
+            # This source-only model is also valid for a waiter after an
+            # Exposure edit cancels the render that started the measurement.
+            model = Context().run(measure)
+            with self._lock:
+                if self._source_epoch != epoch:
+                    raise StaleRender("The Denoise measurement source changed.")
+                self._denoise_models[key] = model
+                while len(self._denoise_models) > 2 * self.max_proxy_levels:
+                    self._denoise_models.popitem(last=False)
+            flight.set_result(model)
+            return model
+        except BaseException as error:
+            flight.set_exception(error)
+            raise
+        finally:
+            with self._lock:
+                self._denoise_model_flights.pop(key)
+
     def matching_grain_preparation(self, signature: tuple):
         with self._lock:
             return next((item for item in self._grain_preparations.values() if item.signature == signature), None)
@@ -858,6 +907,7 @@ class SessionRenderCache:
                 return
             self.color_context = context
             self._source_epoch += 1
+            self._denoise_models.clear()
             self.discard_grain_preparation()
             self._frames.clear()
             self._frame_scope_peaks.clear()
@@ -886,6 +936,7 @@ class SessionRenderCache:
             self.source_identity = identity
             self.sdr_identity = sdr_identity
             self._source_epoch += 1
+            self._denoise_models.clear()
             self.discard_grain_preparation()
             self._source_proxies.clear()
             self._sdr_proxies.clear()
@@ -1432,7 +1483,11 @@ class SessionRenderCache:
                 from .denoise_adaptive import AdaptiveControls, estimate_adaptive_model, resolve_adaptive
 
                 def source_filter(pixels, authored):
-                    model = estimate_adaptive_model(pixels)
+                    model = self.cpu_denoise_model(
+                        epoch=source_epoch, authored=authored, geometry=adjustments.shared.geometry,
+                        size=pixels.shape[:2], processing_size=edge,
+                        measure=lambda: estimate_adaptive_model(pixels), usage="CPU preview",
+                    )
                     if is_current is not None and not is_current():
                         raise StaleRender("A newer adjustment replaced this render.")
                     return resolve_adaptive(pixels, model, AdaptiveControls(**denoise_controls.model_dump()))

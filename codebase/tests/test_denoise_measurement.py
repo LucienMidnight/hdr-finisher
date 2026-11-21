@@ -99,6 +99,12 @@ def test_grain_preparation_is_shared_only_for_the_same_source_and_controls(conte
         hdr = prepare("hdr", controls)
         sdr = prepare("sdr", {**controls, "color_splotches": .15})
         assert sdr == hdr
+        native_warm = client.get(base + f"hdr/{hdr}" + region + "&warm_only=true")
+        assert native_warm.status_code == 204
+        assert native_warm.content == b""
+        reduced_warm = client.get(base + f"hdr/{hdr}" + region.replace("frame_width=96", "frame_width=48")
+                                  + "&warm_only=true")
+        assert reduced_warm.status_code == 400
         scene = client.get(base + f"hdr/{hdr}" + region)
         shared = client.get(base + f"sdr/{sdr}" + region)
         assert scene.status_code == shared.status_code == 200
