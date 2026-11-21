@@ -62,7 +62,7 @@ def test_cpu_log_reason_photo_lane_size(monkeypatch):
     events = []
     monkeypatch.setattr(library_diagnostics, "_sink", events.append)
     session = SimpleNamespace(image=np.zeros((100, 200, 3)), source_path=Path("DSC07752.ARW"))
-    _log_cpu_preview(session, PreviewKind.SDR, 100, PreviewRequest(cpu_fallback_reason="budget-refused"))
+    _log_cpu_preview(session, PreviewKind.SDR, 100, PreviewRequest(cpu_fallback_reason="budget-refused"), 100)
     assert len(events) == 1
     event = events[0]
     assert (event["event"], event["reason"], event["lane"], event["width"], event["height"]) == ("grade_preview_cpu", "budget-refused", "sdr", 100, 50)
