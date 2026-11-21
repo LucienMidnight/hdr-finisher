@@ -7144,7 +7144,7 @@
 
     async analyzeAdaptiveDenoise(sessionId, lane, frame, longEdge, editRevision, geometrySignature, generation, controls, refresh, nativeEdge,
       { signal, isCurrent, onGrain, gradeGpuGrain, repairGeneration, deliveryGrainSource, beforeDeliverySubmit,
-        libraryApproximation, action } = {}) {
+        libraryApproximation, action, onCpuWork } = {}) {
       const startedAt = performance.now();
       this.denoiseCounters.analysisCalls += 1;
       this.recordStage("denoise-analysis", { state: "started", generation, longEdge, algorithm: ADAPTIVE_DENOISE_ALGORITHM_VERSION });
@@ -7227,29 +7227,33 @@
           grain = { gpu: true, fitKey, sourceKey, ...calibration };
         }
       }
+      let grainFallbackReason = null;
       if (experimental && !grain) {
         if (deliveryGrainSource) throw new Error("GPU Grain delivery could not prepare this rendition.");
         const url = `/api/session/${sessionId}/denoise-grain/${lane}`;
-        const fallbackReason = this._grainFailures?.get(sourceKey)?.reason || "gpu_grain_not_selected";
-        this.grainEvent?.("grain_cpu_prepare_started", "cpu", fallbackReason, action, { lane, method: controls.method });
-        const response = await fetch(`${url}?${query}&refresh=${refresh}`, {
-          method: "POST", signal, headers: headers({ "Content-Type": "application/json" }),
-          body: JSON.stringify({
-            method: controls.method, amount: controls.amount, luminance: controls.luminance,
-            color_noise: controls.colorNoise, detail_recovery: controls.detailRecovery,
-            finest_noise: controls.finestNoise, fine_noise: controls.fineNoise,
-            medium_noise: controls.mediumNoise, coarse_noise: controls.coarseNoise,
-            grain_evenness: controls.grainEvenness, splotch_size: controls.splotchSize,
-          }),
-        });
-        if (response.status === 409) throw new DOMException("Grain preparation was replaced.", "AbortError");
-        if (!response.ok) {
-          this.grainEvent?.("grain_cpu_prepare_failed", "refused", response.status === 507 ? "cpu_scratch_refused" : "cpu_preparation_failed", action,
-            { level: "error", status: response.status, lane, method: controls.method });
-          const detail = response.status === 507 ? (await response.json().catch(() => null))?.detail : null;
-          throw new Error(typeof detail === "string" ? detail : `Denoise preparation failed (${response.status}).`);
-        }
-        grain = { ...await response.json(), url, controls: preparedGrainControls(controls) };
+        grainFallbackReason = this._grainFailures?.get(sourceKey)?.reason || "gpu_grain_not_selected";
+        this.grainEvent?.("grain_cpu_prepare_started", "cpu", grainFallbackReason, action, { lane, method: controls.method });
+        const prepare = async () => {
+          const response = await fetch(`${url}?${query}&refresh=${refresh}`, {
+            method: "POST", signal, headers: headers({ "Content-Type": "application/json" }),
+            body: JSON.stringify({
+              method: controls.method, amount: controls.amount, luminance: controls.luminance,
+              color_noise: controls.colorNoise, detail_recovery: controls.detailRecovery,
+              finest_noise: controls.finestNoise, fine_noise: controls.fineNoise,
+              medium_noise: controls.mediumNoise, coarse_noise: controls.coarseNoise,
+              grain_evenness: controls.grainEvenness, splotch_size: controls.splotchSize,
+            }),
+          });
+          if (response.status === 409) throw new DOMException("Grain preparation was replaced.", "AbortError");
+          if (!response.ok) {
+            this.grainEvent?.("grain_cpu_prepare_failed", "refused", response.status === 507 ? "cpu_scratch_refused" : "cpu_preparation_failed", action,
+              { level: "error", status: response.status, lane, method: controls.method });
+            const detail = response.status === 507 ? (await response.json().catch(() => null))?.detail : null;
+            throw new Error(typeof detail === "string" ? detail : `Denoise preparation failed (${response.status}).`);
+          }
+          return { ...await response.json(), url, controls: preparedGrainControls(controls) };
+        };
+        grain = await (onCpuWork ? onCpuWork(prepare) : prepare());
         onGrain?.(grain);
         if (!current()) return false;
         await this.ensureGrainPipelines();
@@ -7286,6 +7290,7 @@
         previous.cache.identity = cacheIdentity;
         previous.cache.grain = grain;
         previous.cache.grainFallbackKey = fallback ? sourceKey : null;
+        previous.cache.grainFallbackReason = grainFallbackReason;
         previous.cache.preparedFrame = preparedFrame;
         previous.original = this.proxies.get(frame.identity) || null;
         previous.generation = generation;
@@ -7305,6 +7310,7 @@
         identity: cacheIdentity,
         grain,
         grainFallbackKey: fallback ? sourceKey : null,
+        grainFallbackReason,
         preparedFrame,
         tiles: [],
         levels: [],

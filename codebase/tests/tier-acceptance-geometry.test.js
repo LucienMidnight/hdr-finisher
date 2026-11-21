@@ -60,7 +60,7 @@ function shell({ previewResolution = "4096" } = {}) {
       declarations(
         "normalizedPreviewResolution", "previewTargetLongEdge", "requiredProcessingLongEdge",
         "steppedProcessingLongEdge", "deriveViewerState", "finishPerspectivePresentation",
-        "acceptPreviewGeometry", "acceptPresentation", "residentAuthoringLongEdge",
+        "acceptPreviewGeometry", "acceptPresentation", "residentAuthoringLongEdge", "renderDenoiseRoute", "currentGrainFrame",
       ),
       "globalThis.api = { acceptPresentation, deriveViewerState, residentAuthoringLongEdge, previewTargetLongEdge };",
     ].join("\n"),

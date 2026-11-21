@@ -15,7 +15,7 @@ Find it in **Grade**, in the **Denoise** group. It works the same way for camera
 
 1. Open the **Denoise** group.
 2. Click the round switch at the right of the group header. It lights up when Denoise is on.
-3. Choose a **Method** and give it time to prepare. The status line under the controls reads **Preparing**, then **Ready**. The current picture stays visible while it prepares, and you can keep adjusting the controls.
+3. Choose a **Method** and give it time to prepare. The Denoise header reads **Preparing**, then **Ready**. The current picture stays visible while it prepares, and you can keep adjusting the controls.
 
 Click the switch again to compare. Turning Denoise off shows the original picture.
 
@@ -35,7 +35,15 @@ If you open another photo while Denoise is preparing or updating, the old work i
 
 The Simple controls also work in Fine Grain and Clean Grain. Grain Evenness and Splotch Size can trigger preparation on release. **Even out harsh specks** at **×2.5** in Pixel cleanup is an independent RAW setting used in the comparison tests.
 
-Micro Grain updates the visible area first when zoomed in, leaving the previous picture up while it works. At Fit it shows a quick preview before the more accurate picture. If the GPU cannot draw it, the status line tells you when it switches to the slower CPU route. Micro Grain is for supported Bayer RAWs only. It isn't available with an authored SDR base, retouch repairs or Edge Colour highlight reconstruction.
+Micro Grain updates the visible area first when zoomed in, leaving the previous picture up while it works. At Fit it shows a quick preview before the more accurate picture. Micro Grain is for supported Bayer RAWs only. It isn't available with an authored SDR base, retouch repairs or Edge Colour highlight reconstruction.
+
+For the Grain methods, look beside **Method** for **GPU**, **CPU backup**,
+**Reduced preview** or **Paused**. The message below explains the route,
+including when lens correction sends Micro Grain to the CPU or a CPU preview
+takes more than a couple of seconds. **Retry on GPU** is available for some
+temporary failures. If Micro Grain is on the CPU and a retry is unavailable,
+**Switch to Clean Grain** changes the method for the current grade. A reduced
+preview leaves full-size export available.
 
 Fine Grain and Clean Grain prepare the full photo when you enable the method
 or change a setting that affects the preparation. You can then zoom and pan

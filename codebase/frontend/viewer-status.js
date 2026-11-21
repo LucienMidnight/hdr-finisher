@@ -164,7 +164,7 @@ function applyPreviewResolution(value, { schedule = true } = {}) {
   renderViewerStatus();
 }
 
-function acceptPresentation(lane, schedulerTier, width, height, transport, fallbackReason = "", sourceSerial = null, generation = state.previewGeneration[lane], execution = null, processedLongEdge = null, scopePeak = null, coarse = false, approximate = false, reducedNotice = "") {
+function acceptPresentation(lane, schedulerTier, width, height, transport, fallbackReason = "", sourceSerial = null, generation = state.previewGeneration[lane], execution = null, processedLongEdge = null, scopePeak = null, coarse = false, approximate = false, reducedNotice = "", grainRoute = null) {
   const longEdge = Math.max(Number(width) || 0, Number(height) || 0);
   const requestedTier = state.previewResolutionOverride === false ? "display" : normalizedPreviewResolution();
   // Exactness is a fact about the resolution this frame was processed at, not
@@ -211,6 +211,7 @@ function acceptPresentation(lane, schedulerTier, width, height, transport, fallb
     scopePeak: Number.isFinite(scopePeak) ? scopePeak : null,
     fallbackReason,
     reducedNotice,
+    grainRoute,
   };
   if (transport !== "WebGPU" && lane === state.currentView && longEdge > 0) {
     const sessionId=state.session?.session_id;
@@ -239,6 +240,7 @@ function acceptPresentation(lane, schedulerTier, width, height, transport, fallb
   // candidate, catch-up freshness) read one source of truth.
   state.renderCoordinator?.noteAccepted(state.acceptedPresentation);
   refreshScopesAfterPresentation(lane);
+  if (lane === state.currentView) renderDenoiseRoute();
 }
 
 function acceptPreviewGeometry(width, height, longEdge) {
