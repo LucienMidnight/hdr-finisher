@@ -404,3 +404,4 @@ incident with the new logs.
 | 2026-11-21 | Steve: support photos above 8,192 pixels on the GPU in bounded tiles; new Sony high-resolution bodies exceed 50 MP. |
 | 2026-11-21 | Steve: finish development on November 21–22; skip long tests until the end; Steve tests by hand. |
 | 2026-11-21 | Workers use Codex `gpt-6.2-sol` at medium or high effort. |
+| 2026-11-21 | Steve: the coordinator decides process questions (extra rounds, an extra short locked measurement) and reports them; Steve keeps product decisions. First use: CPU-1 gets a second round and one more 5-minute run, because its first version missed the speed and memory targets before its final change was measured. |
