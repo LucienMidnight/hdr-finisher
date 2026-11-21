@@ -551,9 +551,12 @@ Each line gives the finding, what the code shows and where it went.
   - → MG-1.
 - *Visible area first for CPU Micro with lens correction* → MG-2.
 - *GPU Micro Grain:*
-  - Running the Clean Grain passes over the padded area may be about 2×
-    redundant. Unproven: halos are needed for exact results, so measure
-    first.
+  - Running the Clean Grain passes over the padded area is redundant
+    outside what the output reads. The reviewer's re-check proved this:
+    `microOutputMain` reads only the tile, so `repair`/`microColourDelta`
+    need at most tile + 32 px and `luma`…`guides` tile + 72 px, against a
+    736² padded area for a 512² tile. GPU-2 still measures the time saved
+    before changing it.
   - `resizeNativeFineGrain` waits for the GPU after every strip. True.
   - AHD buffers are made new for every region (`micro-grain-gpu.js`). True.
   - → GPU-2.
@@ -568,8 +571,12 @@ Each line gives the finding, what the code shows and where it went.
 - *GPU cache reclaim never runs while background work holds a scope.*
   - True (`reclaimGrainResources` returns early).
   - The guard exists because a render can hold an unregistered texture.
-  - → MEM-1 defers reclaim to the end of the scope rather than removing
-    the guard.
+  - Deferring alone is not enough. `reserveFineGrain` is itself called
+    inside renders and scopes, so it would still refuse and drop to the CPU
+    (reviewer's re-check).
+  - → MEM-1 keeps the guard. It defers reclaim triggered by background
+    pressure, and lets a reservation inside a render reclaim the entries
+    that render has not pinned.
 - *The Micro source is not counted in `app_memory`.*
   - The CPU copy is now counted (TRI-1).
   - The GPU route's module-level `_recent_source` (sensor plus up to
@@ -634,10 +641,21 @@ whole-frame coordinates. Helps both machines.
    This applies to every `apply_lens_correction` caller.
 3. Count the GPU route's retained Micro source (`_recent_source`) in
    `app_memory` with a trim hook.
+4. Inside worker tiles, bound OpenCV's own thread count so six cores are
+   not oversubscribed. Size concurrency from the measured bytes per tile
+   (about 120–160 MB of working arrays) within `WORKING`.
+5. Make the window reads behind the model estimate safe for parallel
+   callers. `denoise_adaptive._WindowSource._windows` is an unlocked dict.
+   Coordinate this small edit with CG-2, which owns `denoise_adaptive.py`.
+6. `MicroGrainSource` estimates its model afresh on every construction.
+   Either route it through CG-2's single model store after CG-2 merges, or
+   state that it stays separate in round 2.
 
 **Owns.** `denoise_micro_grain.py`, the lens-correction code in
-`raw_import.py`, the Micro section of `render_cache.py`, `cpu_budget.py` if
-needed, and their tests.
+`raw_import.py`, `render_cache.py` `micro_preview_source`,
+`_build_micro_preview` and `close_micro_preview`, `cpu_budget.py` if
+needed, and their tests. Micro Grain calls `denoise_grain.colour_delta`, so
+CG-2's C port also speeds up MG-1; INT-2 re-times Micro after both merge.
 
 **Done when:**
 - Output is byte-identical, for Micro and for RAW development with lens
@@ -656,8 +674,9 @@ keeps a quick reduced picture first.
 **Build.**
 - Map the viewport back through the lens and geometry. Sample every edge,
   not only the corners, and add a stated margin.
-- Develop only those Bayer regions, at high priority. Fill the rest only as
-  MEM-1's memory gate allows.
+- Develop only those Bayer regions, at high priority. Fill the rest through
+  a memory-gate function, which defaults to the current `app_memory`
+  pressure level. MEM-1 later replaces it with the shared gate.
 - If the mapping is unbounded or extreme, fall back to the whole frame and
   log why.
 
@@ -679,6 +698,10 @@ caches.
 1. Move the hot loops of `denoise_grain.colour_delta` and `_colour_pass`
    into `denoise_filters.c`. Rebuild the binaries on both platforms, as the
    existing native filters do; setup builds them on the Mac.
+   - Keep the OpenCV primitives (`boxFilter`, `medianBlur`, `dilate`,
+     `magnitude`) where replacing them would change rounding.
+   - Build the C with strict floating point (no FMA contraction:
+     `-ffp-contract=off`, `/fp:precise`) and keep NumPy's operation order.
 2. Put the backend noise model in one store, `denoise_measurement.py`, with
    shared in-flight work. Remove `main._DENOISE_MODEL_CACHE` and the separate
    CPU-preview store, keeping their keys' meaning.
@@ -688,8 +711,8 @@ caches.
    agree between Python and WGSL.
 
 **Owns.** `denoise_grain.py`, `denoise_filters.*`, `denoise_measurement.py`,
-`denoise_adaptive.py`, the model cache in `render_cache.py` and `main.py`,
-and their tests.
+`denoise_adaptive.py`, `render_cache.py` `cpu_denoise_model` and its model
+flights, the model cache in `main.py`, and their tests.
 
 **Done when:**
 - Prepared pixels are byte-identical on the Canon and Sony tile sets. If
@@ -713,17 +736,22 @@ stage timings):
   provably unused.
 - Reuse AHD buffers and textures across regions within the reservation.
 - Remove per-strip `onSubmittedWorkDone` waits in `resizeNativeFineGrain`
-  and Micro Fit where ordering does not need them.
+  and Micro Fit where ordering does not need them. Cap the strips in
+  flight (about two), so their transient textures and buffers do not pile
+  up in the Neo's shared memory.
 - Overlap strip fetches with GPU work in `measureFineGrain` and
   `resizeNativeFineGrain`, and batch submits in `denoise-measurement.js`.
 - Drop any item that measures below a visible gain.
 
 **Owns.** The Grain encode, fit and resize code in `webgpu-preview.js`;
 `micro-grain-gpu.js`; `denoise-measurement.js`; Grain WGSL. Avoid the
-reservation and reclaim functions (MEM-1) and route state (ROUTE-1).
+reservation and reclaim functions (MEM-1) and the route and failure code
+(ROUTE-1).
 
 **Done when:**
-- GPU output is identical to before on the same machine.
+- GPU output is identical to before on the same machine, including tiles at
+  the photo's edges and regions that are not a multiple of 512 px, so a
+  trimmed halo cannot change border handling.
 - One short PC run records the Micro slider at 110%, Micro exact Fit and
   cold Clean Fit on the Sony, before and after.
 - A note says which items should also be profiled on the Mac.
@@ -750,7 +778,9 @@ always sees which route is in use, why, and what they can do.
    - **Retry on GPU** for temporary and memory failures;
    - **Switch to Clean Grain** when Micro Grain is on the CPU.
 5. Replace "Denoise cache ready." when the CPU did the work.
-6. Show progress when CPU work runs longer than about 2 s.
+6. Show progress when CPU work runs longer than about 2 s. The backend does
+   not report progress, so this is an elapsed-time or indeterminate
+   indicator in the frontend, with no backend API change.
 
 **Design.** Use an existing component and tokens from the component sheet
 (`docs/design/component-sheet.html`) and the design guidelines. If no
@@ -758,7 +788,9 @@ existing component fits, stop and propose one; that is Steve's decision.
 Save before/after screenshots for Steve's sign-off.
 
 **Owns.** `grain-route.js`, `denoise-ui.js`, the route parts of
-`preview-pipeline.js`, `viewer-status.js`, the Denoise panel markup and
+`preview-pipeline.js`, `viewer-status.js`, the Grain route and failure code
+in `webgpu-preview.js` (`grainFailures`, `runGrainAttempt`,
+`grainFailureCanRun` and their helpers), the Denoise panel markup and
 styles, and their tests.
 
 **Done when:**
@@ -778,9 +810,13 @@ silent slowdowns.
    headroom as well as the graphics budget. Keep the configured budget as
    the upper bound.
 2. Let backend memory pressure (moderate or critical) trigger GPU Grain
-   cache reclaim. While a render or background scope is active, defer the
-   reclaim to its end instead of skipping it. Never evict the visible
-   picture.
+   cache reclaim.
+   - While a render or background scope is active, defer that reclaim to
+     the scope's end instead of skipping it.
+   - A reservation made inside a render may reclaim the entries that render
+     has not pinned, so it does not refuse and drop to the CPU when memory
+     could be freed.
+   - Never evict the visible picture.
 3. Gate CPU background tile fill (CPU-1 and MG-2) on memory headroom and
    pressure. Under pressure, prepare tiles on demand only.
 4. After GPU-2 is merged, use narrower formats for 1–2-channel Grain
@@ -813,9 +849,13 @@ silent slowdowns.
 **Goal.** Protection follows the noise, not fixed brightness levels.
 
 **Build, as switchable candidates beside the current defaults:**
-1. Make `colour_delta`'s dark and texture gates, Micro's 0.12 highlight
-   seed and the speck floor relative to the measured noise. Change CPU and
-   WGSL together.
+1. Make the fixed linear levels relative to the measured noise. Change CPU
+   and WGSL together. The levels:
+   - `colour_delta`'s highlight ramp (0.065–0.125), texture background
+     (0.004–0.015) and dark gate (0.006–0.014);
+   - Micro `_highlight_guard`'s 0.12 seed and 0.007 floor;
+   - `raw_pixel_cleanup.MINIMUM_EXCESS` (0.02);
+   - `raw_speck_cleanup.ABSOLUTE_FLOOR` and `LIGHT_FLOOR` (0.005).
 2. Weight the Bayer fit (`raw_pixel_cleanup._fit`) as
    `_fit_informative_variance` does, and keep usable deep-shadow blocks.
 3. Count how often Micro's `uint16` re-quantisation clips signed shadows
@@ -846,6 +886,7 @@ silent slowdowns.
 The coordinator:
 - merges MG-1, CG-2, GPU-2 and ROUTE-1, then MG-2, MEM-1 and any approved
   QUAL-1 item;
+- re-times CPU Micro Grain once MG-1 and CG-2 are both in;
 - runs the full fast suites and the covering GPU drivers once;
 - asks Steve before pushing;
 - adds Micro Grain steps to the hand test.
