@@ -193,7 +193,7 @@ def _guard_preview_resources(session, max_dimension: int) -> None:
         from .diagnostics import log as diagnostic
         diagnostic("grade", "preview_refused", level="warn", route="refused",
                    reason="preview_resource_limit", requested_edge_px=max_dimension,
-                   requested_bytes=payload["estimated_peak_bytes"], budget_bytes=payload["safely_available_bytes"])
+                   requested_bytes=payload.get("estimated_peak_bytes"), budget_bytes=payload.get("safely_available_bytes"))
         raise HTTPException(status_code=507, detail=payload["reason"])
 
 
