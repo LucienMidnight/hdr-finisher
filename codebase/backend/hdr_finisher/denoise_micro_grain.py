@@ -12,13 +12,17 @@ from threading import RLock
 import cv2
 import numpy as np
 
-from . import denoise_adaptive as wave, denoise_grain, signed_raw
+from . import app_memory, denoise_adaptive as wave, denoise_grain, signed_raw
+from .cpu_budget import CpuExecutor, CpuWorkLimit, logical_cpus
 
 
 BAYER_MARGIN = 80
 DEMOSAIC_MARGIN = 12
 SCENE_MARGIN = 112
 VIEWPORT_BAYER_CACHE_BYTES = 256 * 1024**2
+# A full core and its halos use up to about 160 MB of live working arrays.
+# Model windows are smaller and run in a separate stage of each source build.
+_TILE_WORK = CpuWorkLimit(min(logical_cpus(), max(1, app_memory.WORKING // 160_000_000)))
 _STRIDES = (1, 2, 4, 8, 16)
 _BRIGHTNESS_WEIGHTS = (0.16, 1.35, 4.5, 7.0, 8.0)
 _OPPONENT = np.array(((.25, .25, .25, .25), (1, -.5, -.5, 0),
@@ -340,25 +344,42 @@ class MicroGrainSource:
             self.flip = int(raw.sizes.flip)
         self.shape = self.sensor.shape[::-1] if self.flip in (5, 6) else self.sensor.shape
         self.gain = np.float32(2 ** (RAW_CALIBRATION_EV + {200: 1, 400: 2}.get(fuji_dynamic_range(path), 0)))
-        self.model = wave.estimate_adaptive_model_from_windows(*self.shape, self.read_unfiltered, workers=1)
+        self.model = wave.estimate_adaptive_model_from_windows(
+            *self.shape,
+            lambda *window: self.read_unfiltered(*window, cancelled=cancelled),
+            workers=_TILE_WORK.workers,
+        )
         self.tiles = OrderedDict()
         self.tiles_lock = RLock()
 
     @property
     def prepared_nbytes(self):
-        # Grade CPU retains only the sensor and its small profile/model.
+        # The GPU route accounts for retained Bayer tiles separately.
         return self.sensor.nbytes + sum(array.nbytes for array in vars(self.profile).values())
 
     def clear_bayer_cache(self):
         with self.tiles_lock:
             self.tiles.clear()
+            self._claim_recent_source_tiles(0)
 
-    def read_unfiltered(self, top, left, bottom, right):
+    def _claim_recent_source_tiles(self, tiles_bytes, *, extra=0):
+        # Called with tiles_lock held. Reclaim can drop the cache reference
+        # without touching this source's tiles or an in-flight region.
+        with _source_lock:
+            if self is not _recent_source[1]:
+                return True
+            retained = self.prepared_nbytes + tiles_bytes
+            if app_memory.claim(_SOURCE_RAM_KEY, "working", retained + extra):
+                return True
+            app_memory.claim(_SOURCE_RAM_KEY, "working", retained)
+            return False
+
+    def read_unfiltered(self, top, left, bottom, right, *, cancelled=None):
         rect = _sensor_rect((left, top, right, bottom), self.sensor.shape, self.flip)
         outer = _expand(rect, self.sensor.shape, DEMOSAIC_MARGIN, even=True)
         profile = self.profile
         rgb = signed_raw.demosaic(self.sensor[_inset(outer, (0, 0, 0, 0))], profile.cfa,
-                                 profile.black.reshape(2, 2), profile.lab)
+                                 profile.black.reshape(2, 2), profile.lab, cancelled=cancelled)
         rgb *= profile.inverse_range
         rgb *= profile.white_balance
         return signed_raw.orient((rgb @ profile.acescg.T)[_inset(rect, outer)], self.flip)
@@ -372,20 +393,23 @@ class MicroGrainSource:
         sensor_rect = _sensor_rect(rect, self.sensor.shape, self.flip)
         demosaic = _expand(sensor_rect, self.sensor.shape, DEMOSAIC_MARGIN, even=True)
         outer = _expand(demosaic, self.sensor.shape, BAYER_MARGIN, even=True)
+        sensor = self.sensor[_inset(outer, (0, 0, 0, 0))]
+        if not retain:
+            if (rect[2] - rect[0]) * (rect[3] - rect[1]) > 512 * 512:
+                self.clear_bayer_cache()
+            return BayerTile(sensor, self.profile, color=bool(controls.color)), outer, demosaic, sensor_rect
         with self.tiles_lock:
-            if not retain and (rect[2] - rect[0]) * (rect[3] - rect[1]) > 512 * 512:
-                self.tiles.clear()
-            raw = self.tiles.get(outer) if retain else None
+            raw = self.tiles.get(outer)
             if raw is not None:
                 self.tiles.move_to_end(outer)
             else:
-                if retain:
-                    size = BayerTile.retained_nbytes(outer[2] - outer[0], outer[3] - outer[1])
-                    while self.tiles and size + sum(tile.nbytes for tile in self.tiles.values()) > VIEWPORT_BAYER_CACHE_BYTES:
-                        self.tiles.popitem(last=False)
-                raw = BayerTile(self.sensor[_inset(outer, (0, 0, 0, 0))], self.profile,
-                                color=retain or bool(controls.color))
-                if retain and raw.nbytes <= VIEWPORT_BAYER_CACHE_BYTES:
+                size = BayerTile.retained_nbytes(outer[2] - outer[0], outer[3] - outer[1])
+                while self.tiles and size + sum(tile.nbytes for tile in self.tiles.values()) > VIEWPORT_BAYER_CACHE_BYTES:
+                    self.tiles.popitem(last=False)
+                raw = BayerTile(sensor, self.profile)
+                retained = sum(tile.nbytes for tile in self.tiles.values())
+                extra = raw.nbytes if raw.nbytes <= VIEWPORT_BAYER_CACHE_BYTES else 0
+                if self._claim_recent_source_tiles(retained, extra=extra) and extra:
                     self.tiles[outer] = raw
         return raw, outer, demosaic, sensor_rect
 
@@ -410,22 +434,42 @@ class MicroGrainSource:
     def render(self, controls, *, cancelled=None):
         height, width = self.shape
         result = np.empty((height, width, 3), np.float32)
-        for top in range(0, height, 512):
-            for left in range(0, width, 768):
-                if cancelled and cancelled():
-                    raise InterruptedError("Micro Grain was replaced.")
-                bottom, right = min(top+512, height), min(left+768, width)
-                rect = (left, top, right, bottom)
-                target = _expand(rect, self.shape, SCENE_MARGIN)
-                rgb, gate = self.develop_region(target, controls, cancelled=cancelled)
-                west, north, east, south = target
-                edges = wave._Edges(north == 0, south == height, west == 0, east == width, height, width)
-                result[top:bottom, left:right] = resolve_scene(rgb, self.model, controls, edges, gate)[_inset(rect, target)]
+
+        def render_core(rect):
+            if cancelled and cancelled():
+                raise InterruptedError("Micro Grain was replaced.")
+            left, top, right, bottom = rect
+            target = _expand(rect, self.shape, SCENE_MARGIN)
+            rgb, gate = self.develop_region(target, controls, cancelled=cancelled)
+            west, north, east, south = target
+            edges = wave._Edges(north == 0, south == height, west == 0, east == width, height, width)
+            result[top:bottom, left:right] = resolve_scene(rgb, self.model, controls, edges, gate)[_inset(rect, target)]
+
+        # Each job owns its scratch and writes a distinct rectangle. Keep all
+        # futures until completion so cancellation joins every running writer.
+        cores = ((left, top, min(left + 768, width), min(top + 512, height))
+                 for top in range(0, height, 512) for left in range(0, width, 768))
+        with CpuExecutor(work_limit=_TILE_WORK) as pool:
+            for _ in pool.map(render_core, cores):
+                pass
         return result
 
 
+_prepare_lock = RLock()
 _source_lock = RLock()
 _recent_source = (None, None)
+_SOURCE_RAM_KEY = "micro-grain-gpu-source"
+
+
+def _trim_recent_source(_target):
+    global _recent_source
+    with _source_lock:
+        if _recent_source[1] is not None:
+            _recent_source = (None, None)
+            app_memory.claim(_SOURCE_RAM_KEY, "working", 0)
+
+
+app_memory.register(_SOURCE_RAM_KEY, "working", _trim_recent_source)
 
 
 def prepare_source(frame, *, cancelled=None, retain=True):
@@ -437,13 +481,16 @@ def prepare_source(frame, *, cancelled=None, retain=True):
     settings = owner.raw_import_settings
     stat = path.stat()
     key = path, stat.st_mtime_ns, stat.st_size, settings.model_dump_json()
-    with _source_lock:
-        if key == _recent_source[0]:
-            return _recent_source[1]
-        _recent_source = (None, None)
+    with _prepare_lock:
+        with _source_lock:
+            if key == _recent_source[0]:
+                return _recent_source[1]
+            _trim_recent_source(0)
         source = MicroGrainSource(path, settings, cancelled=cancelled)
         if retain:
-            _recent_source = (key, source)
+            with _source_lock:
+                if app_memory.claim(_SOURCE_RAM_KEY, "working", source.prepared_nbytes):
+                    _recent_source = (key, source)
         return source
 
 

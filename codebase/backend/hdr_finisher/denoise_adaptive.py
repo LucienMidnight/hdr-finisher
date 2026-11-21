@@ -626,16 +626,27 @@ class _WindowSource:
         self.shape = (int(height), int(width), 3)
         self._read = read
         self._windows: dict[tuple[int, int, int, int], np.ndarray] = {}
+        self._locks: dict[tuple[int, int, int, int], Lock] = {}
+        self._lock = Lock()
 
     def __getitem__(self, key) -> np.ndarray:
         rows, columns = key[0], key[1]
         window = (rows.start, columns.start, rows.stop, columns.stop)
-        if window not in self._windows:
-            pixels = np.asarray(self._read(*window), dtype=np.float32)[..., :3]
-            if pixels.shape[:2] != (window[2] - window[0], window[3] - window[1]):
-                raise ValueError("Denoise estimation window was read at the wrong size.")
-            self._windows[window] = pixels
-        return self._windows[window]
+        with self._lock:
+            lock = self._locks.get(window)
+            if lock is None:
+                lock = self._locks[window] = Lock()
+        # Fetch each window once while letting other windows read in parallel.
+        with lock:
+            with self._lock:
+                pixels = self._windows.get(window)
+            if pixels is None:
+                pixels = np.asarray(self._read(*window), dtype=np.float32)[..., :3]
+                if pixels.shape[:2] != (window[2] - window[0], window[3] - window[1]):
+                    raise ValueError("Denoise estimation window was read at the wrong size.")
+                with self._lock:
+                    self._windows[window] = pixels
+        return pixels
 
 
 from contextvars import ContextVar
