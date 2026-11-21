@@ -1,3 +1,36 @@
+## November 21 — Windows PC Denoise triage (INT-2)
+
+Unpackaged Electron at 2560 × 1440, Sony `_DSC7970.ARW` (7968 × 5320),
+lens off and harsh-speck cleanup ×2.5. Each sample used a fresh app under
+the GPU lock. RAM is sampled whole-app use in decimal GB. The existing 10%
+timing allowance applies.
+
+| Action | First sharp at 110% | All 247 native tiles | Peak RAM | Revision or condition |
+| --- | ---: | ---: | ---: | --- |
+| Forced CPU Clean Small | 4.01 s | 14.73 s | 2.21 GB | Round one, `411f0cc6`. INT-2a had sampled 2.38 GB here. |
+| Forced CPU Clean Small | 4.02 → 3.81 s | 14.76 → 12.29 s | 2.42 → 2.19 GB | Immediately before and after CG-2, `386c05d0` → `ad5e7554`. |
+| Forced CPU Clean Small | 3.76 → 3.68 → 3.59 s | 12.36 → 12.27 → 12.25 s | 2.42 → 2.47 → 2.42 GB | After MG-1 (`665c06b5`), pre-MEM-1 (`35a6b9ce`), and integrated triage (`6bb48eee`). |
+| Forced CPU Clean Small | 3.53–3.55 → 3.54–3.59 s | 12.08–12.10 → 12.15–12.22 s | 2.05–2.15 → 2.38–2.65 GB | Same `35a6b9ce` code, alternated OpenCV default (12 threads) and MG-1's one-thread setting across four fresh apps. |
+
+The same-revision comparison isolates MG-1's startup OpenCV setting as a
+contributor to the peak increase first seen in INT-2a (2.38 → 2.61 GB).
+The largest resident process varied between runs. Changing OpenCV's
+process-wide setting during a request is unsafe, and reverting it at
+startup would also change threading for Micro Grain's tile workers. The
+startup setting remains as shipped.
+
+For MEM-1, SHA-256 matched on the finished GPU Clean Small HDR and SDR
+Grade frames at Fit and 110%. The comparison used `35a6b9ce`, the first
+parent of the MEM-1 merge, and the integrated `6bb48eee`.
+
+With matching GPU Grade warm-up, full-size CPU AVIF Gain Map export was
+62.03 → 67.71 s (peak whole app 7.15 → 7.21 GB) from `35a6b9ce` to
+`6bb48eee`. Export SHA-256 matched: `25eb92e41746dcb64694de5291384026ca447fa0548440da223f96ffa9d2a2d2`.
+Proof produced the same file hash on both revisions. The exploratory
+pre-MEM-1 cold export differed from its Proof before the Grade warm-up was
+matched. Proof took 103.82 s after the warm-up on `6bb48eee`; the cold
+pre-MEM-1 observation was 108.94 s, with different starting caches.
+
 ## November 21 — Windows PC interim Denoise integration (INT-2a)
 
 Unpackaged Electron at 2560 × 1440, Sony `_DSC7970.ARW` (7968 × 5320)
