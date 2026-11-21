@@ -929,10 +929,17 @@ def create_library_router(worker, browser, store=None):
 
     memory_pending = None
     memory_completed = None
+    grade_cache_trim = False
+
+    def trim_for_grade():
+        from . import app_memory
+        if app_memory.grade_cache_trim_active(app_memory.grade_bytes_provider()):
+            caps = app_memory.trim_library_shares()
+            worker._send(dict(command="grade-cache-trim", caps=caps))
 
     @router.get("/memory")
-    async def memory_snapshot():
-        nonlocal memory_pending, memory_completed
+    async def memory_snapshot(fresh: bool = False):
+        nonlocal memory_pending, memory_completed, grade_cache_trim
         from .app_memory import snapshot
         # One in-flight census, shared even when the HTTP caller times out.
         # A blocked sample can never build a queue on the one-thread lane.
@@ -946,19 +953,23 @@ def create_library_router(worker, browser, store=None):
             def sample():
                 started = time.perf_counter()
                 try:
-                    return {**snapshot(cached_only=True), "nativeDetail": [cache.native_memory(), live.cache.native_memory()]}
+                    return {**snapshot(refresh=fresh, cached_only=not fresh),
+                            "nativeDetail": [cache.native_memory(), live.cache.native_memory()]}
                 finally:
                     ended = time.perf_counter()
                     if ended-queued > .25:
                         log("memory_endpoint", wait_ms=(started-queued)*1000, run_ms=(ended-started)*1000)
             memory_pending = asyncio.get_running_loop().run_in_executor(_memory_sampler, sample)
-        if memory_completed is not None:
-            return memory_completed
-        try:
-            memory_completed = await asyncio.wait_for(asyncio.shield(memory_pending), .5)
-            return memory_completed
-        except asyncio.TimeoutError:
-            raise HTTPException(503, "Memory sample still running")
+        if fresh or memory_completed is None:
+            try:
+                memory_completed = await asyncio.wait_for(asyncio.shield(memory_pending), .5)
+            except asyncio.TimeoutError:
+                raise HTTPException(503, "Memory sample still running")
+        active = memory_completed["gradeCacheTrim"]
+        if active and not grade_cache_trim:
+            asyncio.get_running_loop().run_in_executor(_memory_reclaimer, trim_for_grade)
+        grade_cache_trim = active
+        return memory_completed
 
     @router.get("/memory-setting")
     def memory_setting():

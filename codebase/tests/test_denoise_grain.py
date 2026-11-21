@@ -155,6 +155,32 @@ def test_native_warmup_does_not_fill_the_rest_and_visible_reads_share_work(tmp_p
         pool.pool.shutdown()
 
 
+def test_clean_prepares_only_requested_tiles_under_memory_pressure(tmp_path, monkeypatch):
+    from hdr_finisher.library_cache import LibraryCache
+
+    monkeypatch.setattr(grain, "background_fill_allowed", lambda: False)
+    size = adaptive.TILE_SIZE
+    width = 3 * size
+    source = np.ones((8, width, 3), dtype=np.float32)
+    rendered = []
+
+    def resolve(read, height, width, origin, size, *_):
+        rendered.append(origin)
+        y, x = origin
+        return read(y, x, min(y + size, height), min(x + size, width)), np.s_[:, :]
+
+    monkeypatch.setattr(grain, "_resolved_tile", resolve)
+    monkeypatch.setattr(grain, "colour_delta", lambda rgb, broad: np.zeros_like(rgb))
+    settings = adaptive.AdaptiveControls(method="clean_grain", clean_color=False)
+    prepared = grain.GrainPreparation(8, width, lambda y, x, b, r: source[y:b, x:r],
+                                      None, settings, None, lambda: True, LibraryCache(tmp_path))
+    try:
+        assert prepared.region(0, size, 1, 1, 8, width) == grain._pack(source[:1, :1]).tobytes()
+        assert rendered == [(0, size)]
+    finally:
+        prepared.close()
+
+
 def test_native_warmup_runs_visible_tiles_together(tmp_path, monkeypatch):
     from hdr_finisher import cpu_budget
     from hdr_finisher.library_cache import LibraryCache

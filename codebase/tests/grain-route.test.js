@@ -1,7 +1,7 @@
 const assert = require("node:assert/strict");
 const test = require("node:test");
 const HDRGrainRoute = require("../frontend/grain-route");
-const { Failures, failureReason, describe } = HDRGrainRoute;
+const { Failures, failureReason, describe, headroom } = HDRGrainRoute;
 
 const vm = require("node:vm");
 const { declarations, frontendSource } = require("./frontend-source");
@@ -168,4 +168,54 @@ test("reclaim drains submitted work, preserves the visible proxy and skips pinne
   assert.equal(events[1].action, "trace");
   assert.equal(events[1].snapshot.requested_bytes, 120);
   assert.equal(events[1].snapshot.resident_bytes, 200);
+});
+
+test("Grade shares the app ceiling and reclaims after the final active scope", async () => {
+  const context = vm.createContext({ window: {}, performance, HDRGrainRoute: { headroom } });
+  for (const name of ["webgpu-shaders.js", "webgpu-preview.js"]) vm.runInContext(frontendSource(name), context);
+  const renderer = new context.window.HDRWebGPUPreview(null);
+  let resident = 100;
+  renderer.resourceMemorySnapshot = () => ({ resident: { totalBytes: resident, categories: {} } });
+  renderer.memoryBudgetBytes = () => 1000;
+  const reclaim = renderer.reclaimGrainResources;
+  let pressureReclaims = 0;
+  renderer.reclaimGrainResources = function (snapshot, action, reservation) {
+    if (!reservation) pressureReclaims++;
+    return reclaim.call(this, snapshot, action, reservation);
+  };
+  const sample = { unifiedMemory: true, sampleId: 1, totalBytes: 360, ceilingBytes: 500, reservedBytes: 40 };
+  renderer.activeScopeCount = 1;
+  renderer.acceptGrainMemorySample({ ...sample, grainReclaim: true });
+  assert.equal(pressureReclaims, 0);
+  resident += 60;
+  assert.equal(headroom(renderer.grainMemorySnapshot()), 40);
+  await assert.rejects(renderer.reserveFineGrain("grain", { strip: 41 }), { grainReason: "app_memory_ceiling" });
+  renderer.activeScopeCount = 0;
+  renderer.flushDeferredDestroy();
+  renderer.flushDeferredDestroy();
+  assert.equal(pressureReclaims, 1);
+  renderer.acceptGrainMemorySample({ ...sample, sampleId: 2, unifiedMemory: false });
+  assert.equal(headroom(renderer.grainMemorySnapshot()), 740);
+});
+
+test("a live Grain reservation releases an unused source proxy immediately", async () => {
+  const context = vm.createContext({ window: {}, performance, HDRGrainRoute: { headroom } });
+  for (const name of ["webgpu-shaders.js", "webgpu-preview.js"]) vm.runInContext(frontendSource(name), context);
+  const renderer = new context.window.HDRWebGPUPreview(null);
+  const destroyed = [];
+  for (const [key, longEdge, pins] of [["visible", 1600, 0], ["render", 2000, 1], ["old", 600, 0]]) {
+    const proxy = { lane: "hdr", longEdge, texture: { destroy: () => destroyed.push(key) } };
+    renderer.proxies.set(key, proxy);
+    renderer.gpuAllocator ||= { entries: new Map(), usedBytes() { return this.entries.size * 100; },
+      unregister(entry) { this.entries.delete(entry.key); }, reserve: ({ bytes }) => bytes };
+    renderer.gpuAllocator.entries.set(key, { key, kind: "source-proxy", pins, bytes: 100, evict() {} });
+  }
+  renderer.lastPresentedFrame = renderer.proxies.get("visible");
+  renderer.resourceMemorySnapshot = () => ({ resident: { totalBytes: renderer.proxies.size * 100, categories: {} } });
+  renderer.memoryBudgetBytes = () => 400;
+  renderer.waitForSubmittedWork = async () => {};
+  renderer.activeRenderCount = 1;
+  assert.equal(await renderer.reserveFineGrain("grain", { strip: 120 }), 120);
+  assert.deepEqual(destroyed, ["old"]);
+  assert.deepEqual([...renderer.proxies.keys()], ["visible", "render"]);
 });

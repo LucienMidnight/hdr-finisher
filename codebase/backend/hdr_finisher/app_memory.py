@@ -7,6 +7,7 @@ import ctypes
 import errno
 from ctypes import wintypes
 import os
+import platform
 import sys
 from threading import RLock, Lock
 import time
@@ -40,9 +41,23 @@ _sample = (0, None)
 _sample_lock = Lock()
 _remote_claim = None
 grade_bytes_provider = lambda: 0
+NEO_RAM = 8 * 1024**3
+LARGE_GRADE_BYTES = 384_000_000
+GRADE_TRIMMED_SHARES = frozenset(("thumbnails", "sharp", "camera", "raw"))
+
+
+def unified_memory():
+    return (os.environ.get("HDR_FINISHER_MEMORY_PROFILE") == "unified-8gb"
+            or (sys.platform == "darwin" and platform.machine() == "arm64"))
+
+
+def grade_cache_trim_active(grade_bytes):
+    return unified_memory() and machine_memory() <= NEO_RAM and grade_bytes >= LARGE_GRADE_BYTES
 
 
 def machine_memory():
+    if os.environ.get("HDR_FINISHER_MEMORY_PROFILE") == "unified-8gb":
+        return NEO_RAM
     if os.name == 'nt':
         class Memory(ctypes.Structure):
             _fields_ = [('length',ctypes.c_uint32),('load',ctypes.c_uint32)] + [
@@ -90,7 +105,31 @@ def configure(chosen=None):
     return dict(memory_options(), ceilingBytes=ceiling, targetBytes=TARGET)
 
 
-def limit(share): return LIMITS[share]
+def limit(share):
+    cap = LIMITS[share]
+    if share in GRADE_TRIMMED_SHARES and grade_cache_trim_active(grade_bytes_provider()):
+        return cap // 2
+    return cap
+
+
+def trim_library_shares(caps=None):
+    remaining = dict(caps) if caps is not None else {share: LIMITS[share] // 2 for share in GRADE_TRIMMED_SHARES}
+    with _lock:
+        callbacks = []
+        # The worker and backend enforce their local owners. Aggregate claims
+        # keep both processes under the same limits as new entries arrive.
+        for key, entry in _caches.items():
+            share = entry['share']
+            if share not in remaining or (caps is None and key.startswith('helper-')):
+                continue
+            target = min(remaining[share], entry['bytes'])
+            remaining[share] -= target
+            if entry.get('trim') and target < entry['bytes']:
+                callbacks.append((entry['trim'](), target))
+    for callback, target in callbacks:
+        if callback:
+            callback(target)
+    return remaining
 
 
 def register(key, share, trim=None):
@@ -139,8 +178,8 @@ def cache_snapshot():
     with _lock:
         dead=[key for key,v in _caches.items() if v.get('trim') and v['trim']() is None]
         for key in dead: forget(key)
-        return {share:dict(bytes=sum(v['bytes'] for v in _caches.values() if v['share']==share),limitBytes=cap)
-                for share,cap in LIMITS.items()}
+        return {share:dict(bytes=sum(v['bytes'] for v in _caches.values() if v['share']==share),limitBytes=limit(share))
+                for share in LIMITS}
 
 
 def reclaim(level='moderate', needed=None):
@@ -371,11 +410,9 @@ def snapshot(refresh=False, cached_only=False):
                 with _lock: cached = _sample
                 if refresh or time.monotonic()-cached[0]>.45 or cached[1] is None:
                     rows=process_tree(int(os.environ.get('HDR_FINISHER_DESKTOP_PID',os.getppid())))
-                    with _lock: _sample=(time.monotonic(),rows)
-                else: rows=cached[1]
+                    with _lock: cached = _sample = (time.monotonic(), rows)
             finally: _sample_lock.release()
-        else: rows=cached[1]
-    else: rows=cached[1]
+    sample_time, rows = cached
     total=sum(row.get('chargedBytes',row['workingSetBytes']) for row in rows)
     with _lock:
         for key,(_,expires) in list(_reservations.items()):
@@ -392,7 +429,8 @@ def snapshot(refresh=False, cached_only=False):
                 measurement='physical-footprint' if sys.platform=='darwin' else 'proportional-resident',processes=rows,ceilingBytes=CEILING,
                 targetBytes=TARGET,reservedBytes=reserved,caches=cache_snapshot(),
                 pressure=pressure,level=level,waiting=waiting,budgetPressure=safety_total>TARGET,gradeBytes=grade_bytes,
-                reclaim=level!='none')
+                sampleId=sample_time, gradePressure=pressure_level(total,pressure), unifiedMemory=unified_memory(),
+                gradeCacheTrim=grade_cache_trim_active(grade_bytes), reclaim=level!='none')
 
 
 def pressure_level(total,system='none'):

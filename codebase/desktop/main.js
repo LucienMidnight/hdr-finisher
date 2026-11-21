@@ -507,6 +507,8 @@ function desktopEnvironment(window = mainWindow) {
   return {
     apiVersion: 2,
     platform: process.platform,
+    unifiedMemory: process.env.HDR_FINISHER_MEMORY_PROFILE === "unified-8gb" ||
+      (process.platform === "darwin" && process.arch === "arm64"),
     electronVersion: process.versions.electron,
     appVersion: app.getVersion(),
     packaged: app.isPackaged,
@@ -1463,6 +1465,7 @@ if (!gotLock) {
       let memorySampling = false, memoryLastLog = 0, memoryLastLevel = null;
       const memoryPressureRelay = require('./memory-pressure.cjs');
       const memoryTrimGate = memoryPressureRelay.pressureGate();
+      const gradeTrimGate = memoryPressureRelay.pressureGate();
       const memoryTimer = setInterval(async () => {
         if (memorySampling || shuttingDown) return;
         memorySampling = true;
@@ -1478,6 +1481,7 @@ if (!gotLock) {
           const trimLevel = memoryTrimGate(value.level || "none");
           value.reclaim = !!trimLevel;
           value.reclaimLevel = trimLevel || "none";
+          value.grainReclaim = !!gradeTrimGate(value.gradePressure || "none");
           if (trimLevel) desktopEvent("memory", "cache_trim_requested", {
             route: "cpu", reason: "system_memory_pressure", pressure_level: trimLevel,
             app_ram_bytes: value.totalBytes, budget_bytes: value.ceilingBytes, system_free_bytes: os.freemem(),

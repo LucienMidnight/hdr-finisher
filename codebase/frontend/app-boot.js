@@ -45,7 +45,14 @@ async function boot() {
 async function initializeGpuPreview() {
   if (!window.HDRWebGPUPreview) return;
   state.gpuFailurePolicy = window.HDRRenderFailurePolicy ? new window.HDRRenderFailurePolicy() : null;
-  state.gpuPreview = new window.HDRWebGPUPreview(els.previewCanvas);
+  const renderer = state.gpuPreview = new window.HDRWebGPUPreview(els.previewCanvas);
+  renderer.observeGradeMemory = true;
+  renderer.unifiedGrainMemory = state.desktopEnvironment?.unifiedMemory;
+  window.addEventListener("message", event => {
+    if (event.origin === location.origin && event.data?.type === "hdr-memory-pressure") {
+      renderer.acceptGrainMemorySample(event.data.value);
+    }
+  });
   state.gpuPreview.featherReferenceScale = maskFeatherReferenceScale;
   state.gpuPreview.acknowledgedMaskSignature = acknowledgedMaskSignature;
   // Preferences can load before or after the renderer exists, so apply the

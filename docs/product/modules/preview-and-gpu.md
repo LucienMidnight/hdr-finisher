@@ -17,6 +17,18 @@ once after recovery, including after device rebuild. Sticky source failures
 go to the existing fallback. The timeline links preparation and the accepted
 route to the originating Grade action.
 [Diagnostic log and reason codes](../../technical/logging.md)
+## November 21: unified memory and narrower Grain calibration scratch
+
+Grade Grain checks whole-app headroom on Apple Silicon in addition to the
+existing graphics budget. Background pressure queues reclaim until renders
+and scopes finish. A live reservation can release an unused source proxy
+while its own source and the visible picture stay resident.
+
+Grain calibration stores its single-channel variance in `r32float` when the
+device can compile that storage pipeline. It keeps float32 values and the
+same arithmetic, saving 12 bytes per calibration scratch pixel. Resolve
+scratch that is reused for multi-channel work retains its existing formats.
+
 ## November 21: bounded native work for Grade Grain
 
 Fine and Clean Grain use a single haloed calibration rectangle at a time.
