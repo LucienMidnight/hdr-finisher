@@ -301,26 +301,32 @@ def create_router(store):
                       long_edge: int = Query(ge=256, le=16384), edit_revision: int | None = None,
                       geometry_signature: str | None = None, refresh: int = 0):
         draw_key = None
+        action = request.headers.get("x-hdr-action-id") or uuid4().hex
 
         def build(current):
             nonlocal draw_key
             preparation = _prepare_grain(session_id, kind, controls, long_edge, edit_revision,
-                                         geometry_signature, refresh, current)
+                                         geometry_signature, refresh, current, action)
             if session_id.startswith("live-") and preparation.corrections is not None:
                 draw_key = session_id, kind, preparation.token
                 hold_draw(draw_key, preparation)
-            return {"fit": preparation.fit, "token": preparation.token if preparation.corrections else None}
+            corrections = preparation.corrections
+            return {"fit": preparation.fit, "token": preparation.token if corrections else None,
+                    "width": corrections.width if corrections else None, "height": corrections.height if corrections else None}
 
         try:
             return await work.run((session_id, kind), request, build)
-        except StaleRender as error:
+        except (StaleRender, InterruptedError) as error:
             release_draw(draw_key)
+            log("denoise_grain_prepare_cancelled", area="denoise", route="cpu", reason="preparation_replaced",
+                action=action)
             raise HTTPException(409, str(error)) from error
         except BaseException:
             release_draw(draw_key)
             raise
 
-    def _prepare_grain(session_id, kind, controls, long_edge, edit_revision, geometry_signature, refresh, current):
+    def _prepare_grain(session_id, kind, controls, long_edge, edit_revision, geometry_signature, refresh,
+                       current, action):
         from .denoise_adaptive import AdaptiveControls, AdaptiveNoiseModel
         from .denoise_grain import GrainPreparation, fit_grain
         from .library_live import session as library_session
@@ -334,22 +340,28 @@ def create_router(store):
         image = frame.sdr_reference_image if authored_sdr else frame.image
         native_edge = max(256, *image.shape[:2])
         key, _, _, fields = _context(store, session_id, kind, native_edge, edit_revision, geometry_signature)
+        fields.update(action=action, photo={"identity": key, "path": fields["path"]})
         cached_model = _get(key)
         cache = frame.render_cache
         epoch = cache.source_epoch
         geometry = frame.adjustments.shared.geometry
 
-        def is_current():
-            if not current() or cache.source_epoch != epoch or frame.adjustments.shared.geometry != geometry:
+        def grade_source_current():
+            if cache.source_epoch != epoch or frame.adjustments.shared.geometry != geometry:
                 return False
             if _uses_authored_sdr(frame, kind) != authored_sdr:
                 return False
-            if meta is not None:
-                return True
             if session_id.startswith("delivery-"):
                 from .gpu_delivery import session as delivery_session
                 return delivery_session(session_id) is frame
             return store.current() is frame
+
+        # A Library draw owns its scratch through release_draw or the expiry
+        # timer. Once its tiles finish it need not retain the decoded frame.
+        source_current = (lambda: True) if meta is not None else grade_source_current
+
+        def is_current():
+            return current() and source_current()
 
         options = controls.model_dump(exclude={"color_splotches", "micro_luminance", "micro_color", "micro_detail"})
         model_signature = json.dumps(cached_model["model"], sort_keys=True) if cached_model else None
@@ -361,10 +373,10 @@ def create_router(store):
                                                if k not in {"method", "grain_evenness", "splotch_size"}))
         with cache.grain_preparation_lock:
             if not is_current():
-                raise HTTPException(409, "A newer edit replaced the Denoise preparation.")
+                raise InterruptedError("A newer edit replaced the Denoise preparation.")
             previous = cache.grain_preparation_for(kind)
             matching = cache.matching_grain_preparation(signature)
-            if matching is not None:
+            if matching is not None and (matching.corrections is None or matching.corrections.usable):
                 if not cache.retain_grain_preparation(kind, matching, epoch):
                     raise HTTPException(409, "A newer edit replaced the Denoise preparation.")
                 return matching
@@ -379,15 +391,22 @@ def create_router(store):
                 height, width, read = windows
             if cached_model is None:
                 from .denoise_adaptive import estimate_adaptive_model_from_windows
-                model = estimate_adaptive_model_from_windows(height, width, read)
+                model = cache.cpu_denoise_model(
+                    epoch=epoch, authored=authored_sdr, geometry=geometry, size=(height, width),
+                    processing_size=("native", native_edge),
+                    measure=lambda: estimate_adaptive_model_from_windows(height, width, read),
+                    usage=fields["usage"], log_fields=fields,
+                )
             else:
                 value = cached_model["model"]
                 model = AdaptiveNoiseModel(value["a"], value["b"], value["c"],
                                            tuple(tuple(row) for row in value["band_sigmas"]))
             settings = AdaptiveControls(**controls.model_dump())
+            tile_log_fields = {**fields, "method": settings.method}
             has_colour = settings.method == "clean_grain"
             reuse_rgb = (has_colour and previous is not None and not previous.has_colour
                          and previous.rgb_signature == rgb_signature and previous.corrections is not None
+                         and previous.corrections.usable
                          and cache.owns_grain_preparation_exclusively(previous))
             fit = None
             fit_started = perf_counter()
@@ -396,35 +415,33 @@ def create_router(store):
                     fit = previous.fit
                 else:
                     if not is_current():
-                        raise HTTPException(409, "A newer edit replaced the Denoise preparation.")
-                    try:
-                        fit = fit_grain(height, width, read, model, settings, is_current)
-                    except InterruptedError as error:
-                        raise HTTPException(409, str(error)) from error
+                        raise InterruptedError("A newer edit replaced the Denoise preparation.")
+                    fit = fit_grain(height, width, read, model, settings, is_current)
             if not is_current():
-                raise HTTPException(409, "A newer edit replaced the Denoise preparation.")
+                raise InterruptedError("A newer edit replaced the Denoise preparation.")
             fitted = perf_counter()
             corrections = None
-            tile_timings = {}
             try:
                 if reuse_rgb:
                     corrections = previous.corrections
-                    tile_timings = corrections.add_colour(settings, is_current)
+                    corrections.add_colour(settings, is_current, log_fields=tile_log_fields)
                 else:
                     cache.discard_grain_preparation(kind)
                     if settings.amount and (settings.luminance or settings.color_noise):
                         source_path = (fields["path"] or "") if fields["usage"] == "Grade" else None
                         corrections = GrainPreparation(height, width, read, model, settings, fit,
-                                                       is_current, _cache(), source_path=source_path)
-                        tile_timings = corrections.tile_timing_ms
-            except InterruptedError as error:
-                raise HTTPException(409, str(error)) from error
+                                                       source_current, _cache(), source_path=source_path,
+                                                       log_fields=tile_log_fields)
+            except InterruptedError:
+                raise
             except OSError as error:
+                log("denoise_grain_scratch_refused", **fields, area="denoise", route="refused",
+                    reason="scratch_unavailable", requested_bytes=width * height * 16)
                 raise HTTPException(507, str(error)) from error
-            if not is_current():
+            if not current() or not source_current():
                 if corrections is not None and not reuse_rgb:
                     corrections.close()
-                raise HTTPException(409, "A newer edit replaced the Denoise preparation.")
+                raise InterruptedError("A newer edit replaced the Denoise preparation.")
             preparation = _GrainPreparation(signature, fit_signature, rgb_signature, authored_sdr, has_colour,
                                             uuid4().hex, fit, corrections)
             if meta is None:
@@ -432,21 +449,22 @@ def create_router(store):
                     if not reuse_rgb:
                         preparation.close()
                     raise HTTPException(409, "A newer edit replaced the Denoise preparation.")
-                if not is_current():
+                if not current() or not source_current():
                     cache.discard_grain_preparation(kind, expected=preparation)
-                    raise HTTPException(409, "A newer edit replaced the Denoise preparation.")
+                    raise InterruptedError("A newer edit replaced the Denoise preparation.")
         finished = perf_counter()
-        log("denoise_grain_prepared", **fields, method=settings.method, width=width, height=height,
+        log("denoise_grain_prepared", **fields, area="denoise", route="cpu",
+            method=settings.method, width=width, height=height,
             duration_ms=(finished-started)*1000, fit_ms=(fitted-fit_started)*1000,
-            filter_ms=(finished-fitted)*1000, tile_worker_ms=tile_timings, reused_rgb=reuse_rgb,
+            scratch_setup_ms=(finished-fitted)*1000, reused_rgb=reuse_rgb,
             disk_bytes=width * height * 16 if corrections else 0)
         return preparation
 
     @router.get("/api/session/{session_id}/denoise-grain/{kind}/{token}")
     def grain_region(session_id: str, kind: PreviewKind, token: str, x: int, y: int,
                      width: int, height: int, frame_width: int = Query(gt=0, le=32768),
-                     frame_height: int = Query(gt=0, le=32768)):
-        if min(width, height) < 1 or width*height > 1024*1024:
+                     frame_height: int = Query(gt=0, le=32768), warm_only: bool = False):
+        if min(width, height) < 1 or (not warm_only and width * height > 1024 * 1024):
             raise HTTPException(400, "Invalid Clean Grain region size.")
         if session_id.startswith("live-"):
             draw_key = session_id, kind, token
@@ -464,12 +482,14 @@ def create_router(store):
             raise HTTPException(409, "The Clean Grain preparation was replaced.")
         try:
             body = preparation.corrections.region(y, x, height, width, frame_height, frame_width,
-                                                 colour=preparation.has_colour)
+                                                 colour=preparation.has_colour, warm_only=warm_only)
         except ValueError as error:
             raise HTTPException(400, str(error)) from error
         except InterruptedError as error:
             raise HTTPException(409, str(error)) from error
-        return Response(body, media_type="application/octet-stream")
+        except OSError as error:
+            raise HTTPException(507, str(error)) from error
+        return Response(status_code=204) if warm_only else Response(body, media_type="application/octet-stream")
 
     @router.delete("/api/session/{session_id}/denoise-grain/{kind}/{token}", status_code=204)
     def release_grain(session_id: str, kind: PreviewKind, token: str):

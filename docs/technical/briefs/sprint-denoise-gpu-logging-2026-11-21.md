@@ -57,10 +57,10 @@ Three problems follow, and Steve approved all three on November 21:
 
 | ID | Package | Branch | Depends on | Status |
 | --- | --- | --- | --- | --- |
-| LOG-1 | Logging foundation and GPU Grain route robustness | `sprint/logging-foundation` | — | not started |
-| CPU-1 | Faster CPU Grain backup: visible area first, then root speedups | `sprint/cpu-grain-speed` | — | not started |
-| GPU-1 | Fine, Clean and Micro Grain on the GPU above 8,192 pixels | `sprint/gpu-large-photos` | — | Built. Both large inputs passed Grade GPU routing at Fit and 110% on the PC. Finished-pixel parity and Micro runtime validation remain open. |
-| LOG-2 | App-wide logging rollout | `sprint/logging-rollout` | LOG-1 merged | not started |
+| LOG-1 | Logging foundation and GPU Grain route robustness | `sprint/logging-foundation` | — | done, merged Nov 21 (`e4847957`): locked PC replay showed eviction, numbered refusal, CPU preparation, one retry and final GPU picture under one action |
+| CPU-1 | Faster CPU Grain backup: visible area first, then root speedups | `sprint/cpu-grain-speed` | — | merged Nov 21 (`68944ed0`), byte-identical: first sharp picture at 110% 21.94 → 4.74 s (target met); whole photo 13–15% faster (30% target missed); peak RAM 2.39 → 2.74 GB (target missed) |
+| GPU-1 | Fine, Clean and Micro Grain on the GPU above 8,192 pixels | `sprint/gpu-large-photos` | — | implementation `73454417` and conflict resolution ready: 50 MP and 61 MP stay on GPU at 2 GiB; merged Sony Clean at Fit and 110% and Micro at 110% pass with correlated reservations; CPU agreement and Micro Fit at INT |
+| LOG-2 | App-wide logging rollout | `sprint/logging-rollout` | LOG-1 merged | done `b60767b9`, awaiting merge: Library, RAW, Grade, Match, Export, Proof, memory, startup/shutdown instrumented; 84 KB session log |
 | INT | Integration, full checks, push and Steve's hand test | `feat/denoise-v1` | all | not started |
 
 LOG-1, CPU-1 and GPU-1 run in parallel on November 21. LOG-2 starts once
@@ -404,3 +404,4 @@ incident with the new logs.
 | 2026-11-21 | Steve: support photos above 8,192 pixels on the GPU in bounded tiles; new Sony high-resolution bodies exceed 50 MP. |
 | 2026-11-21 | Steve: finish development on November 21–22; skip long tests until the end; Steve tests by hand. |
 | 2026-11-21 | Workers use Codex `gpt-6.2-sol` at medium or high effort. |
+| 2026-11-21 | Steve: the coordinator decides process questions (extra rounds, an extra short locked measurement) and reports them; Steve keeps product decisions. First use: CPU-1 gets a second round and one more 5-minute run, because its first version missed the speed and memory targets before its final change was measured. |

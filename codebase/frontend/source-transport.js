@@ -478,7 +478,7 @@
     const strip = options.stripUpload;
     let metadata = strip?.metadata;
     if (!metadata) {
-      const probe = await fetch(query({ x: region.x, y: region.y, width: 1, height: 1 }), { signal });
+      const probe = await fetch(query({ x: region.x, y: region.y, width: 1, height: 1 }), { signal, headers: options.headers });
       if (!probe.ok) {
         await probe.arrayBuffer().catch(() => null);
         if (strip && probe.status === 409) throw new DOMException("Grain strip source was replaced.", "AbortError");
@@ -544,24 +544,29 @@
     const limits = renderer.device.limits;
     const textureWidth = strip ? Math.min(strip.maxWidth, outputWidth) : delivered.width;
     const textureHeight = strip ? Math.min(strip.maxRows, outputHeight) : delivered.height;
+    const refuseRegion = (message, details) => {
+      const reason = "source_too_large";
+      if (!strip) {
+        globalThis.HDRDiagnostics?.event?.("gpu", "source_region_refused", {
+          route: "refused", reason, action: options.headers?.get?.("X-HDR-Finisher-Action"), ...details,
+        });
+      }
+      return Object.assign(new Error(message), { grainReason: reason, grainDetails: details });
+    };
     const maxTextureDimension = limits?.maxTextureDimension2D ?? Infinity;
     if (textureWidth > maxTextureDimension || textureHeight > maxTextureDimension
         || delivered.width > textureWidth || delivered.height > textureHeight) {
-      renderer.recordStage("source_region_refused", {
-        area: "gpu", route: "refused", reason: "texture_limit_exceeded",
-        width_px: delivered.width, height_px: delivered.height, max_texture_dimension: maxTextureDimension,
+      throw refuseRegion("The source region exceeds its WebGPU texture size.", {
+        width_px: delivered.width, height_px: delivered.height, max_texture_dimension_px: maxTextureDimension,
       });
-      throw new Error("The source region exceeds its WebGPU texture size.");
     }
 
     const chunkBytes = Math.min(strip?.chunkBytes ?? renderer.maxSourceChunkBytes, limits?.maxBufferSize ?? Infinity);
     const maxChunkWidth = Math.min(SOURCE_TILE_REQUEST_EDGE, Math.floor(chunkBytes / 256) * 256 / bytesPerPixel);
     if (missing.width && maxChunkWidth < 1 && !store) {
-      renderer.recordStage("source_region_refused", {
-        area: "gpu", route: "refused", reason: "buffer_limit_exceeded",
+      throw refuseRegion("A source region row cannot fit in the staging buffer.", {
         requested_bytes: 256, max_buffer_bytes: limits?.maxBufferSize,
       });
-      throw new Error("A source region row cannot fit in the staging buffer.");
     }
     const chunkWidth = Math.min(missing.width || 1, maxChunkWidth || 1);
     const rowBytes = chunkWidth * bytesPerPixel;
@@ -610,7 +615,7 @@
             height: Math.min(rowsPerChunk, delivered.height - top),
           };
           assertCurrent("ROI source region stream was superseded");
-          const response = await fetch(query(rect, sourceEpoch), { signal });
+          const response = await fetch(query(rect, sourceEpoch), { signal, headers: options.headers });
           if (!response.ok) {
             const payload = await response.json().catch(() => null);
             const error = new Error(payload?.detail || "A source region could not be loaded");
@@ -630,11 +635,9 @@
             throw new Error("A source region chunk changed its upload format.");
           }
           if (bytesPerRow * rect.height > chunkBytes) {
-            renderer.recordStage("source_region_refused", {
-              area: "gpu", route: "refused", reason: "buffer_limit_exceeded",
-              requested_bytes: bytesPerRow * rect.height, budget_bytes: chunkBytes,
+            throw refuseRegion("A source region chunk exceeded the staging buffer size.", {
+              requested_bytes: bytesPerRow * rect.height, max_buffer_bytes: chunkBytes,
             });
-            throw new Error("A source region chunk exceeded the staging buffer size.");
           }
           const data = await response.arrayBuffer();
           if (failure) return;

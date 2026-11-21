@@ -1,3 +1,52 @@
+## November 21 — Grade Grain forced-budget recovery replay
+
+Windows PC, RTX 4070 Ti, unpackaged Electron at 2560 × 1440, working changes
+based on `0ab656bb`. Clean Grain Small at Fit on the approved 7968 × 5320
+`_DSC7970.ARW`, lens off and harsh-speck cleanup ×2.5. This single
+forced-budget replay verifies routing and gives no same-condition speed comparison.
+
+| Action | Total wait | Conditions |
+| --- | ---: | --- |
+| Enable under forced Grain budget | 23.11 s to return with CPU Grain ready | 128 MiB test budget. The backend spent 16.65 s preparing Grain. |
+| Restore Auto and retry | 5.81 s to accepted GPU picture | Same action ID, prior noise measurement reused. The entire two-phase action took 28.92 s. |
+
+## November 21 — Windows PC CPU Grain sprint
+
+Windows PC, isolated Electron at 2560 × 1440, Sony `_DSC7970.ARW`
+(7968 × 5320), Clean Grain Small, lens correction off and harsh speck
+cleanup at ×2.5. Grain preparation was forced to the CPU with normal GPU
+presentation. The baseline `f424bbdd` and the first implementation ran in
+one GPU-lock session. Round two used a second locked session with the same
+conditions and built on `dbe4a215`.
+
+| Action | Baseline | First implementation | Round two | Conditions |
+| --- | ---: | ---: | ---: | --- |
+| Enable at 110% to the first sharp picture | 21.94 s | 17.34 s | 4.74 s | Windows PC, cold Grade preparation, HDR |
+| Release Grain Evenness at 110% to the matching sharp picture | 19.62 s | 15.80 s | 3.11 s | Windows PC, HDR, whole-photo grain fit reused |
+| Whole-photo preparation | 15.63–17.28 s | 15.83–17.49 s | 13.30–15.07 s | Windows PC, release and enable. From preparation start to all native tiles ready. |
+| Sampled peak whole-app RAM | 2.21–2.39 GB | 2.34–2.57 GB | 2.54–2.74 GB | Windows PC, enable and release, through native fill, decimal GB |
+
+Round two met the quarter-wait target of 5.49 s. Whole-photo preparation
+improved by 13% on enable and 15% on release. The 30% and peak-RAM targets
+remain open. On enable the cached noise-model request took 7 ms, grain fit
+1.16 s, scratch setup 4 ms and the visible-tile batch 1.49 s. The renderer
+loaded reduced and native source proxies, then drew 12 GPU tiles for the
+visible picture. The quick underlayer issued no prepared Fit read.
+The native queue logged 29 foreground and 218 background CPU tiles across
+the enable. Summed worker times were about 74 s each for wavelet and colour,
+and 0.69 s for writes. The 2.74 GB release peak included 1.41 GB charged to
+the backend and 1.08 GB across the two largest Electron processes.
+
+The Windows PC offline comparison against `f424bbdd` matched the bytes of
+the entire native image and sampled Fit reads for Sony `_DSC7970.ARW` and
+Canon `IMG_0790.CR2`. On the Sony, the contiguous layout reduced summed
+worker time writing scratch from 12.45 s to about 0.70 s. Round two matched
+the bytes again after switching to append-on-write scratch, batching scratch
+reads and reusing wavelet and colour arrays. The 768-pixel trial with six
+workers finished the Sony in 10.73 s and peaked at 1.53 GB in the offline
+backend. The same trial series measured 1.33 GB for the baseline backend.
+Twelve workers with 768-pixel tiles raised that peak to 2.32 GB for 10.64 s.
+The app keeps the existing 512-pixel tile size.
 ## November 21 — Large-photo Grain in Grade
 
 Windows PC, unpackaged Electron at 2560 × 1440, 2 GiB graphics setting,
@@ -22,8 +71,12 @@ and the recorded resident-plus-reservation total, in bytes.
 
 The prior calibration refused both sizes at either zoom before reserving
 GPU Grain memory. CPU fallback wait and memory were not measured in this
-run. Finished-pixel CPU agreement and large Bayer Micro Grain validation
-are still open.
+run. In a separate locked Windows PC merge check at the same graphics setting,
+the Sony stayed on the GPU in Clean Small at Fit and 110%, and in Bayer Micro
+Grain at 110%. The correlated log recorded 85,599,904 B for calibration,
+158,722,864 B for Clean Fit reduction and 77,083,920 B per admitted Micro
+Bayer region. Finished-pixel CPU agreement and the large Bayer Micro Fit
+check remain open.
 
 ## November 21 — Denoise CPU fallback waits
 

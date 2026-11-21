@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from threading import Event, Thread
 import time
 
@@ -74,6 +75,77 @@ def test_adjusted_proxy_is_downsampled_before_processing_and_reused() -> None:
     assert first.shape == (400, 600, 3)
     assert second is first
     assert not first.flags.writeable
+
+
+def test_cpu_preview_noise_model_reused_across_exposure_edits(monkeypatch) -> None:
+    from hdr_finisher import denoise_adaptive as adaptive
+    from hdr_finisher.models import DenoiseLiveControls
+
+    source = np.full((320, 480, 3), .18, dtype=np.float32)
+    cache = SessionRenderCache(source, source / 2)
+    settings = AdjustmentState()
+    settings.sdr.linked_to_hdr = False
+    controls = DenoiseLiveControls()
+    measurements = []
+
+    def measure(pixels):
+        measurements.append((pixels.shape[:2], float(pixels[0, 0, 0])))
+        return adaptive.AdaptiveNoiseModel(.0003, .00008, 0, ((1., .6, .36, .21, .12),) * 3)
+
+    monkeypatch.setattr(adaptive, "estimate_adaptive_model", measure)
+    monkeypatch.setattr(adaptive, "resolve_adaptive", lambda pixels, *_: pixels)
+    first = cache.adjusted_frame(settings, PreviewKind.HDR, 480, denoise_controls=controls)
+    settings.hdr.exposure = 1
+    cache.clear_adjusted()
+    second = cache.adjusted_frame(settings, PreviewKind.HDR, 480, denoise_controls=controls)
+    assert not np.array_equal(first, second)
+    assert len(measurements) == 1
+    cache.adjusted_frame(settings, PreviewKind.SDR, 480, denoise_controls=controls)
+    cache.adjusted_frame(settings, PreviewKind.HDR, 320, denoise_controls=controls)
+    settings.shared.geometry.rotation = 90
+    cache.adjusted_frame(settings, PreviewKind.HDR, 480, denoise_controls=controls)
+    cache.replace_source(source * 2, None)
+    cache.adjusted_frame(settings, PreviewKind.HDR, 480, denoise_controls=controls)
+    assert len(measurements) == 5
+
+
+def test_concurrent_cpu_previews_share_one_source_measurement(monkeypatch) -> None:
+    from hdr_finisher import denoise_adaptive as adaptive, library_diagnostics
+    from hdr_finisher.models import DenoiseLiveControls
+
+    cache = SessionRenderCache(np.full((32, 48, 3), .18, dtype=np.float32), None)
+    started, shared, release = Event(), Event(), Event()
+    calls = []
+
+    def measure(pixels):
+        calls.append(pixels)
+        started.set()
+        assert release.wait(5)
+        return adaptive.AdaptiveNoiseModel(.0003, .00008, 0, ((1., .6, .36, .21, .12),) * 3)
+
+    def log(event, **fields):
+        if event == "denoise_cpu_model_cache" and fields["reason"] == "model_in_flight":
+            shared.set()
+
+    monkeypatch.setattr(adaptive, "estimate_adaptive_model", measure)
+    monkeypatch.setattr(adaptive, "resolve_adaptive", lambda pixels, *_: pixels)
+    monkeypatch.setattr(library_diagnostics, "log", log)
+
+    def preview(exposure):
+        settings = AdjustmentState()
+        settings.hdr.exposure = exposure
+        return cache.adjusted_frame(settings, PreviewKind.HDR, 256, denoise_controls=DenoiseLiveControls())
+
+    with ThreadPoolExecutor(2) as pool:
+        first = pool.submit(preview, 0)
+        try:
+            assert started.wait(5)
+            second = pool.submit(preview, 1)
+            assert shared.wait(5)
+        finally:
+            release.set()
+        assert not np.array_equal(first.result(5), second.result(5))
+    assert len(calls) == 1
 
 
 def test_scope_request_counts_one_top_level_miss_then_one_hit() -> None:

@@ -295,7 +295,7 @@ async function renderPreviewForLaneInner(
 
   const response = await fetch(`/api/session/${state.session.session_id}/preview/${lane}`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: grainCpuPreviewHeaders(lane),
     body: JSON.stringify({
       edit_revision: state.editRevision,
       include_locals: !localsBypassed(),
@@ -409,6 +409,18 @@ function microGrainPreviewRequest(lane) {
   } : {};
 }
 
+function grainCpuPreviewHeaders(lane) {
+  const runtime = state.denoiseRuntime?.[lane];
+  const action = state.denoise?.[lane]?.enabled && !runtime?.showOriginal && runtime?.microCpu
+    ? runtime.microCpuAction : null;
+  const headers = { "Content-Type": "application/json" };
+  if (!action || action.photo?.id !== state.session?.session_id) return headers;
+  runtime.microCpuAction = null;
+  state.gpuPreview?.grainEvent?.("grain_cpu_prepare_started", "cpu", runtime.microCpuReason, action,
+    { lane, method: "micro_grain" });
+  return HDRDiagnostics.headers(action, { ...headers, "X-HDR-Finisher-Grain-Fallback": "micro" });
+}
+
 function microGrainPreviewKey(lane) {
   const settings = state.denoise?.[lane];
   const controls = settings?.controls;
@@ -436,7 +448,7 @@ async function renderRawPreviewForLane(lane, displayWhenReady, longEdge, { showP
   if (displayWhenReady && showProgress) setPreviewMessage(`Rendering ${lane.toUpperCase()} canvas preview...`, 24);
   const response = await fetch(`/api/session/${state.session.session_id}/preview-raw/${lane}`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: grainCpuPreviewHeaders(lane),
     body: JSON.stringify({
       edit_revision: state.editRevision,
       include_locals: !localsBypassed(),
@@ -614,6 +626,7 @@ function renderGpuDraft(lane = state.currentView, options = {}) {
       tier,
       longEdge,
       reason: options.reason || tier,
+      action: options.action,
       priority: options.priority || "foreground",
       // The refinement pass is the expensive one at large tiers, so that is
       // where the visible region pays off. Interactive and settled passes stay
@@ -672,10 +685,25 @@ function markStripPreviewUnavailable(lane, payload, reasons) {
     : `${payload.detail || "Bounded Full preview is unavailable for this graph."}${reasons}`);
 }
 
-async function renderGpuDraftInner(
-  lane = state.currentView,
-  request = {},
-) {
+async function renderGpuDraftInner(lane = state.currentView, request = {}) {
+  if (request.action || request.allowInactive || request.tier === "interactive" || request.panPass) {
+    return renderGpuDraftForView(lane, request);
+  }
+  const action = gradeGrainAction(lane, request.reason === "grade-grain-control" ? "release_grain_control" : "grade_grain_view");
+  if (!action) return renderGpuDraftForView(lane, request);
+  let drawn = false, failed = false;
+  try {
+    drawn = await renderGpuDraftForView(lane, { ...request, action });
+    return drawn;
+  } catch (error) {
+    failed = true;
+    throw error;
+  } finally {
+    action.finish(failed ? "error" : drawn ? "presented" : "stopped");
+  }
+}
+
+async function renderGpuDraftForView(lane, request) {
   const {
     hideStatus = true,
     longEdge = settledProxyLongEdge(),
@@ -699,7 +727,11 @@ async function renderGpuDraftInner(
     return false;
   };
   if (geometryDraftActive()) return refuse("geometry-draft-active");
-  if (!gpuPreviewEligible(lane)) return refuse("gpu-not-eligible");
+  if (!gpuPreviewEligible(lane)) {
+    state.gpuPreview?.grainEvent?.("grain_gpu_skipped", "refused",
+      state.renderingMode === "cpu" ? "gpu_grain_not_selected" : "gpu_unavailable", request.action, { lane });
+    return refuse("gpu-not-eligible");
+  }
   if (!state.session || (!allowInactive && lane !== state.currentView)) return refuse("no-session-or-inactive-lane");
   if (state.comparePeekActive && !allowInactive) return refuse("compare-peek-active");
   if (state.globalEditDirty && state.acceptedPresentation?.geometrySignature !== geometrySignature()) return refuse("dirty-edit-with-stale-geometry");
@@ -724,7 +756,20 @@ async function renderGpuDraftInner(
   const micro = denoiseActive && microSelected && state.activeWorkflow === "grade" && !microGrainUnavailable(lane);
   const microControls = micro ? denoiseRendererControls(state.denoise[lane].controls) : null;
   const microStillCurrent = () => !micro || microGrainControlsMatch(lane, microControls);
-  if (micro && state.denoiseRuntime[lane].microCpu) return refuse("micro-grain-cpu");
+  const microRuntime = state.denoiseRuntime[lane];
+  const retryMicro = micro && microRuntime.microCpu && tier !== "interactive" && microRuntime.microFailureKey
+    && state.gpuPreview.grainFailureCanRun(microRuntime.microFailureKey);
+  if (denoiseActive && microSelected && !micro) {
+    state.gpuPreview?.grainEvent?.("grain_gpu_skipped", "refused", "unsupported_grain_source", request.action, { lane });
+  }
+  if (micro && microRuntime.microCpu && !retryMicro) {
+    if (request.action) {
+      microRuntime.microCpuAction = request.action;
+      state.gpuPreview?.grainEvent?.("grain_gpu_skipped", "cpu", "prior_failure_latched", request.action,
+        { prior_reason: microRuntime.microCpuReason, lane });
+    }
+    return refuse("micro-grain-cpu");
+  }
   const underlayerDenoise = state.denoise[lane];
   const underlayerEdit = liveGpuGrain ? [state.adjustments, localAdjustments(), localsBypassed()] : generation;
   const wholeFrameKey = JSON.stringify([sessionId, lane, requestedGeometrySignature, underlayerEdit, sourceIdentity,
@@ -762,7 +807,11 @@ async function renderGpuDraftInner(
     const expectedIdentity = `${sessionId}:${lane}:${longEdge}:${requestedGeometrySignature}:${sourceIdentity}`;
     const denoise = state.gpuPreview?.diagnosticsSnapshot?.().denoise;
     const runtime = state.denoiseRuntime[lane];
-    const staleGrainRoute = state.gpuPreview.denoiseSourceSelector?.cache?.grain?.gpu && !gradeGrainGpuEnabled(lane);
+    const grainCache = state.gpuPreview.denoiseSourceSelector?.cache;
+    const staleGrainRoute = grainCache?.grain?.gpu && !gradeGrainGpuEnabled(lane);
+    const retryGrain = tier !== "interactive" && gradeGrainGpuPreferred(lane) && grainCache?.grainFallbackKey
+      && state.gpuPreview.grainFailureCanRun(grainCache.grainFallbackKey);
+    if (retryGrain || retryMicro) runtime.dirty = true;
     if (staleGrainRoute || runtime.analysisInFlight || runtime.dirty || !denoise?.cacheReady || denoise.identity !== expectedIdentity) {
       const retarget = () => !runtime.analysisInFlight && !runtime.dirty && state.gpuPreview.retargetPreparedDenoise?.(
         sessionId, lane, longEdge, requestedGeometrySignature, sourceIdentity);
@@ -772,7 +821,7 @@ async function renderGpuDraftInner(
           setIndeterminatePreviewMessage("Preparing Denoise for this view…");
           waiting = state.previewStatusEntry;
         }
-        const ready = await recalculateDenoise(lane, { longEdge, renderAfter: false });
+        const ready = await recalculateDenoise(lane, { longEdge, renderAfter: false, action: request.action, logAction: request.tier !== "interactive" });
         if (waiting && state.previewStatusEntry === waiting) hidePreviewMessage();
         if (!ready || request.isCurrent?.() === false) return refuse(runtime.microCpu ? "micro-grain-cpu" : runtime.status === "error"
           ? "denoise-scale-analysis-unavailable" : "superseded-denoise-preparation");
@@ -785,6 +834,14 @@ async function renderGpuDraftInner(
     && !state.gpuPreview.hasReducedMicroGrain(fitSize?.width, fitSize?.height)) {
     const quick = await renderGpuDraftInner(lane, { ...request, microQuick: true });
     if (!quick || !microStillCurrent() || request.isCurrent?.() === false) return refuse("superseded-after-micro-quick");
+  }
+  const preparedGrain = denoiseActive ? state.gpuPreview.denoiseSourceSelector?.cache?.grain : null;
+  const cpuGrainToken = preparedGrain?.token;
+  if (cpuGrainToken && !allowInactive && state.zoomMode === "fit" && !request.underlayerOnly
+    && tier !== "interactive" && canvas.hdrCpuGrainQuickToken !== cpuGrainToken) {
+    const quick = await renderGpuDraftInner(lane, { ...request, underlayerOnly: true });
+    if (!quick || request.isCurrent?.() === false) return refuse("superseded-after-cpu-grain-quick");
+    canvas.hdrCpuGrainQuickToken = cpuGrainToken;
   }
   // A magnified pass fetches a region of the frame it will produce, so it has
   // to know that frame's exact size first.
@@ -819,13 +876,17 @@ async function renderGpuDraftInner(
     frameSize,
     roiCatchUp,
     panPass,
-    minimumRoiFraction: boundedPresentation && liveGradeGrainSelected(lane) ? 0.18 : undefined,
+    // First paint only the visible CPU Grain tiles. Pan requests use the
+    // ordinary padding once this preparation has an exact picture.
+    minimumRoiFraction: boundedPresentation && cpuGrainToken && !preparedGrain.warmedRegion && !panPass
+      ? 0 : boundedPresentation && liveGradeGrainSelected(lane) ? 0.18 : undefined,
     noiseView: denoiseNoiseViewActive(lane),
     boundedPresentation,
     fineGrainUnderlayer: request.underlayerOnly,
     microQuick: Boolean(request.microQuick),
     signal: request.token?.signal,
     fineGrainGrade: liveGradeGrainSelected(lane),
+    action: request.action,
     originalSource: !denoiseActive || (microSelected && (!micro || !(microControls.microLuminance || microControls.microColor))),
     deferSurface: request.underlayerOnly || (replacingDetail && !boundedPresentation && !viewport),
     coversViewport: boundedPresentation ? (region, width, height) => {
@@ -965,6 +1026,13 @@ async function renderGpuDraftInner(
     else setZoomMode(state.zoomMode);
     renderReadouts();
     if (micro) renderDenoiseControls();
+    if (denoiseActive && (!microSelected || micro) && !request.microQuick && !result.approximate && tier !== "interactive") {
+      const grain = renderer.denoiseSourceSelector?.cache?.grain;
+      if (grain?.gpu) renderer.grainFailures.succeeded(grain.sourceKey);
+      renderer?.grainEvent?.("grain_presented", grain && !grain.gpu ? "cpu" : "gpu",
+        grain && !grain.gpu ? "cpu_prepared_grain_selected" : grain?.gpu ? "gpu_grain_selected" : "gpu_adaptive_selected",
+        request.action, { lane, method: denoiseMethod, long_edge_px: longEdge });
+    }
       if (hideStatus) hidePreviewMessage();
       const submittedAt = performance.now();
       requestAnimationFrame((animationFrameAt) => {
@@ -1003,15 +1071,30 @@ async function renderGpuDraftInner(
       return true;
   } catch (error) {
     if (!sourceOptions.isCurrent() || error?.name === "AbortError" || (denoiseActive && error?.status === 409)) {
+      renderer?.grainEvent?.("grain_cancelled", "refused", "superseded", request.action, { lane, method: denoiseMethod });
       return refuse("superseded-during-render");
     }
-    if (micro) {
-      useMicroGrainCpu(lane, error);
+    if (gpuGrain && renderer.denoiseSourceSelector?.cache?.grain === gpuGrain) {
+      const current = () => sourceOptions.isCurrent() && state.gpuPreview === renderer;
+      const failure = renderer.noteGrainFailure(gpuGrain.sourceKey, error, request.action);
+      if (!failure) return refuse("superseded-during-render");
+      if (await renderer.recoverGrainFailure(gpuGrain.sourceKey, failure, current, request.action)) {
+        return renderGpuDraftForView(lane, request);
+      }
+      if (!current()) return refuse("superseded-during-render");
+      if (!micro) {
+        state.denoiseRuntime[lane].dirty = true;
+        return renderGpuDraftForView(lane, request);
+      }
+      renderer?.grainEvent?.("grain_route", "cpu", failure.reason, request.action, { lane, method: denoiseMethod });
+      useMicroGrainCpu(lane, Object.assign(new Error(error.message), {
+        grainSourceKey: gpuGrain.sourceKey, grainReason: failure.reason,
+      }), request.action);
       return refuse("micro-grain-cpu", error?.message);
     }
-    if (renderer.refuseFineGrainFit(gpuGrain, error)) {
-      state.denoiseRuntime[lane].dirty = true;
-      return renderGpuDraftInner(lane, request);
+    if (micro) {
+      useMicroGrainCpu(lane, error, request.action);
+      return refuse("micro-grain-cpu", error?.message);
     }
     if (error?.grainPreparationReplaced) {
       invalidateDenoisePreparation(lane, { dirty: true });

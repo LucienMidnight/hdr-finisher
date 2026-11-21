@@ -258,6 +258,22 @@ test('expired Grain tiles are not user cancels and a fresh preparation can be re
   assert.deepEqual(uploads, [64]);
 });
 
+test('prepared Grain can warm a native viewport without allocating a GPU texture', async () => {
+  const seen = [];
+  const gpu = renderer(async url => {
+    seen.push(new URLSearchParams(url.split('?')[1]));
+    return new Response(null, { status: 204 });
+  });
+  const grain = { url: '/denoise-grain/hdr', token: 'viewport' };
+  const region = { x: 1024, y: 512, width: 2048, height: 1024 };
+  const result = await gpu.requestPreparedGrain(grain, region, { width: 7968, height: 5320 }, null, true);
+  assert.equal(result.status, 204);
+  assert.deepEqual(Object.fromEntries(seen[0]), {
+    x: '1024', y: '512', width: '2048', height: '1024',
+    frame_width: '7968', frame_height: '5320', warm_only: 'true',
+  });
+});
+
 test('a stale edit revision retries against the latest edit without reporting an error', async () => {
   const h = harness(), first = deferred(), edit = deferred();
   h.state.editCommandQueue = edit.promise;

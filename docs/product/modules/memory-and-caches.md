@@ -19,6 +19,16 @@ remain required before release; these are accounting changes, not a memory pass.
 
 ### November 15: W2 P2 format-first publication within the same upload slot
 
+## November 21: reclaim before refusing Grade Grain
+
+When a Grain reservation would exceed the existing 90% graphics limit,
+Grade releases eligible unpinned, rebuildable resources after active owners
+are finished. It keeps the presentation target and selector source. The
+decision records the requested bytes, effective budget, both GPU ledgers
+and the sampled app RAM and free system memory. The configured allowances
+and the greater-of-resident-and-allocator calculation still apply.
+[Diagnostic log and reason codes](../../technical/logging.md)
+
 ## November 16: Steve's 4 GB minimum and default on every platform
 
 **Steve's decision, November 16, 2026:** 4 GB app memory is the minimum, on

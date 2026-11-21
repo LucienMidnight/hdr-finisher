@@ -48,13 +48,28 @@ HDR and generated SDR share four methods and preparation code. Each rendition sa
 | Grade, GPU Clean Grain | On by default when Clean Grain is selected and Denoise is active. Reuses Fine Grain’s whole-photo fit and adds Small or Large colour correction. Fit downsamples the base picture and signed colour correction independently. The viewer blends the retained correction live as Color Splotches changes. At native zoom, Splotch Size computes the visible tiles with the selected reach and keeps the previous picture until they are ready. A horizontal pan can reuse overlapping source pixels. At Fit a quick view can appear while the exact native-strip result finishes. Denoise off, bypass and Show original skip GPU Grain. |
 | Grade, GPU Micro Grain | Reconstructs visible native tiles from corrected Bayer samples using signed WebGPU AHD, then applies the round 3 late filter. Slider moves reuse bounded, source-dependent Bayer measurements. At Fit a reduced scene-wavelet preview precedes the exact result; neighbouring native tiles share Bayer preparation and demosaic, and preparing the next band overlaps the GPU work. GPU failure selects the CPU route. |
 | Delivery, CPU Micro Grain | Export and full-size Proof use the same bounded round 3 source before grade and finishing. |
-| Grade, CPU Grain | The CPU fits the grain, filters the geometry-adjusted native photo in parallel tiles and writes a temporary file at 16 bytes per pixel. Fit reads and reduces the prepared result. At 100% and above the viewer reads the padded viewport at native resolution. A matching Fine-to-Clean switch can reuse the fit and RGB before adding colour correction. |
+| Grade, CPU Grain | The CPU returns a preparation token after the fit and scratch reservation. The first sharp native draw queues the visible tiles together. Once the picture is sharp, pan requests use the usual padding. Overlapping requests share work already in flight, and other tiles fill at lower priority on the same CPU pool. Fit can show a quick wavelet preview while its exact read waits for and reduces native tiles. The cache reserves 16 bytes per pixel up front. The temporary file grows one contiguous tile at a time. A matching Fine-to-Clean switch reuses the fit and neighbouring RGB before adding colour correction. |
 | Grade fallback | A permanent GPU failure gets one attempt, then a CPU denoised picture. A Full request that needs the bounded whole-preview fallback can be reduced to the existing 4096-pixel edge and is labelled reduced. Show noise uses the GPU. |
 | Library | A saved developed grade can supply its Denoise settings and cached noise model. Quick GPU draws can read Grain corrections and hold them through presentation. Small Micro Grain pictures use reduced scene-wavelet Denoise on GPU and CPU rather than reading native Bayer strips. Expiry on a current draw falls back to the CPU once. Cancelled draws stop. HDR draws use the saved highlight target. The small-picture colour mismatch is open. |
 | Export and Proof | Both use the saved rendition settings, including an authored SDR base. Native export and full-size Proof process the full delivery image. Standard keeps its shared GPU route, with CPU fallback. Fine Grain with Grain Evenness and Clean Grain use CPU delivery by default. The opt-in trial uses the same GPU Grain reconstruction for Proof and export, without CPU Grain preparation or its temporary files. It sends finished pixels in bands, but some finishing and encoder inputs still need full-size images. Eligible JPEG Ultra HDR CPU jobs render in strips with file-backed output. Reduced Proof has its own size and source identity. Full-size Proof follows the same delivery settings, including watermark, and is checked for byte identity with export on the same route. |
 
 CPU filtering uses the app's worker pool. Standard and the experimental filters share ordered float32 native filters with a NumPy fallback. The GPU queue serializes measurement per device. Downstream Grade edits can reuse prepared Denoise pixels. Keep the picture in place through zoom, pan and preparation changes. [Technical contract](../../technical/denoising.md) · [CPU worker policy](../../../codebase/backend/hdr_finisher/cpu_budget.py) · [Export and Proof](export-and-proof.md) · [November 20 audit](../../technical/briefs/denoise-mac-open-items-2026-11-20.md#5-overnight-bug-fix-report--november-20-2026)
 
+### November 21: Grade Grain fallback and retry
+
+Grade records the Grain GPU decision, refusal, retry and final route with
+the same action ID as any CPU Grain preparation it starts. Temporary GPU
+memory, transport and device failures can get one retry after recovery.
+Temporary source keys expire after 30 seconds. Size, shader validation and
+unsupported inputs stay recorded for that source key. The existing CPU
+correction and GPU draw paths still render the same pixels.
+[Diagnostic log and reason codes](../../technical/logging.md)
+
+### November 21: Faster CPU Grain backup
+
+CPU previews reuse a compact noise model across Exposure and other finishing edits. The model depends on the source pixels, rendition, geometry, processing size and measurement version. Concurrent previews share a measurement. The CPU Grain scratch reservation and the existing tile dimensions still apply. [Windows PC measurements](../../technical/performance-table.md#november-21--windows-pc-cpu-grain-sprint)
+
+On the Windows PC, the Sony reached its first sharp picture at 110% in 4.74 s, down from 21.94 s. Whole-photo preparation improved by 13–15% and peak app memory rose to 2.74 GB from 2.39 GB. The 30% whole-photo speed target and the baseline memory target remain open. [Windows PC measurements](../../technical/performance-table.md#november-21--windows-pc-cpu-grain-sprint)
 ### November 21 — Grade Grain on large photos
 
 Fine and Clean Grain calibrate at native resolution in rectangles with the
@@ -67,8 +82,10 @@ request. At 110%, Grade draws the native viewport and its reconstruction halos.
 
 Windows PC with a 2 GiB graphics setting, the 50 MP Sony and a synthetic
 61 MP linear TIFF each presented Fine and Clean Grain Small on the GPU at
-Fit and 110%. Finished HDR and SDR agreement with the CPU route, large Bayer
-Micro Grain and minimum-Mac validation remain open. See the
+Fit and 110%. The merged Clean Small route passed again on the Sony and
+logged correlated reservations. Bayer Micro Grain also stayed on the GPU on
+that Sony at 110%. Finished HDR and SDR agreement with the CPU route, large
+Bayer Micro at Fit, and minimum-Mac validation remain open. See the
 [performance table](../../technical/performance-table.md#november-21--large-photo-grain-in-grade).
 
 ### RAW Pixel cleanup

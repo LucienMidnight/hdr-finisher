@@ -8,6 +8,15 @@
   scopes UI; backend `render_cache.py`, `cpu_strips.py`, `preview.py`,
   `scopes.py`, `overlay.py`, `peak_*.py`.
 
+## November 21: correlated Grade Grain decisions
+
+The desktop log includes the GPU configuration and the reason and memory
+snapshot for Grade Grain refusals and retries. Grade cancels replaced work
+without holding a failure against the source. Temporary failures can retry
+once after recovery, including after device rebuild. Sticky source failures
+go to the existing fallback. The timeline links preparation and the accepted
+route to the originating Grade action.
+[Diagnostic log and reason codes](../../technical/logging.md)
 ## November 21: bounded native work for Grade Grain
 
 Fine and Clean Grain use a single haloed calibration rectangle at a time.
@@ -26,8 +35,9 @@ Small or Large colour margins. Micro Grain checks its Bayer endpoint, padded
 storage, dispatch and texture limits before sharing bands. The existing
 resident-source delivery size gate still applies. The
 [Windows PC measurements](../../technical/performance-table.md#november-21--large-photo-grain-in-grade)
-record route and memory at 2 GiB. Finished HDR/SDR comparison and the large
-Micro runtime check are pending.
+record route and memory at 2 GiB. The merged GPU and logging paths also
+passed with Clean Small at Fit and 110%, and with Bayer Micro Grain at 110%.
+Finished HDR/SDR comparison and the large Micro Fit check are pending.
 
 ## November 15: CPU preview diagnostics and grain cancellation
 

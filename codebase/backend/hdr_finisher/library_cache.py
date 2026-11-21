@@ -539,7 +539,7 @@ class LibraryCache:
             if needed <= 0:
                 break
 
-    def open_grade_scratch(self, size, *, grain_source=None):
+    def open_grade_scratch(self, size, *, grain_source=None, preallocate=True):
         """Reserve the full logical byte size before writing any Grade samples."""
         from uuid import uuid4
         from .library_diagnostics import log
@@ -562,7 +562,17 @@ class LibraryCache:
                 with db:
                     db.execute("BEGIN IMMEDIATE")
                     before = limit - self._used(db)["full_size"]
-                    drive_free = shutil.disk_usage(directory).free
+                    # Append-only Grain scratch is charged in full even
+                    # while its physical file still holds only the viewport.
+                    pending_bytes = 0
+                    for reserved_path, reserved_bytes in db.execute("SELECT path, size FROM grade_scratch"):
+                        try:
+                            written_bytes = Path(reserved_path).stat().st_size
+                        except OSError:
+                            written_bytes = 0
+                        pending_bytes += max(0, reserved_bytes - written_bytes)
+                    physical_free = shutil.disk_usage(directory).free
+                    drive_free = max(0, physical_free - pending_bytes)
                     evicted = 0
                     try:
                         if grain:
@@ -583,7 +593,8 @@ class LibraryCache:
                                           f"Grain Denoise needs {size:,} bytes.")
                         db.execute("INSERT INTO grade_scratch VALUES (?, ?, ?)", (str(file), size, os.getpid()))
                         handle = file.open("x+b", buffering=0)
-                        handle.truncate(size)
+                        if preallocate:
+                            handle.truncate(size)
                     except OSError as error:
                         # Already-unlinked previews must also leave the ledger
                         # when opening or allocating scratch fails.
@@ -597,7 +608,8 @@ class LibraryCache:
                     log("denoise_grain_scratch", path=str(grain_source), needed_bytes=size,
                         allowance_room_before_bytes=before,
                         allowance_room_after_bytes=before + evicted - (size if failure is None else 0),
-                        evicted_bytes=evicted, drive_free_bytes=drive_free,
+                        evicted_bytes=evicted, drive_free_bytes=physical_free, pending_bytes=pending_bytes,
+                        drive_available_bytes=drive_free,
                         outcome="reserved" if failure is None else "refused", reason=reason)
                 if failure is not None:
                     raise failure

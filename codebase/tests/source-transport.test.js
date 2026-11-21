@@ -798,11 +798,11 @@ test("a changed halo reuses a containing source region without fetching", async 
 /** A region backend that answers after a delay and counts overlapping requests. */
 function createRegionBackend({ width, height, failAt = null, delayMs = 5 }) {
   const state = { requests: [], active: 0, peakActive: 0 };
-  const fetchImpl = async (url) => {
+  const fetchImpl = async (url, options) => {
     const parsed = new URL(url, "http://localhost");
     const rect = Object.fromEntries(["x", "y", "width", "height"].map((name) => [name, Number(parsed.searchParams.get(name))]));
     const probe = rect.width === 1 && rect.height === 1;
-    state.requests.push({ ...rect, probe, epoch: parsed.searchParams.get("source_epoch") });
+    state.requests.push({ ...rect, probe, epoch: parsed.searchParams.get("source_epoch"), headers: options.headers });
     if (!probe) {
       state.active += 1;
       state.peakActive = Math.max(state.peakActive, state.active);
@@ -896,7 +896,9 @@ test("a wide source region covers every output column within the wire and buffer
   const { preview, harness } = regionPreview(backend, 100, region.width);
   const maxBufferSize = 512 * 1024;
   harness.device.limits.maxBufferSize = maxBufferSize;
-  await preview.loadProxyRegion("session", "hdr", 9504, "{}", 0, "source", "wide", region);
+  const headers = new Headers({ "X-HDR-Finisher-Action": "wide-photo" });
+  await preview.loadProxyRegion("session", "hdr", 9504, "{}", 0, "source", "wide", region, { headers });
+  assert.ok(backend.state.requests.every(request => request.headers?.get("X-HDR-Finisher-Action") === "wide-photo"));
   const requested = backend.state.requests.filter(request => !request.probe);
   assert.ok(requested.some(request => request.x > region.x));
   assert.ok(requested.every(request => request.width <= 8192 && request.epoch === "7"));
@@ -996,7 +998,7 @@ test("Micro Grain's Bayer work limit follows the padded region and device storag
   const device = { limits: { maxTextureDimension2D: 8192, maxComputeWorkgroupsPerDimension: 65535,
     maxBufferSize: 16 * 1024 * 1024, maxStorageBufferBindingSize: 4 * 1024 * 1024 } };
   assert.equal(regionLimit(device, { width: 768, height: 720 }), null);
-  assert.equal(regionLimit(device, { width: 1536, height: 720 }).reason, "buffer_limit_exceeded");
+  assert.equal(regionLimit(device, { width: 1536, height: 720 }).reason, "source_too_large");
   assert.equal(regionLimit(device, { width: 2048, height: 2049 }).reason, "source_too_large");
-  assert.equal(regionLimit(device, { width: 8193, height: 128 }).reason, "texture_limit_exceeded");
+  assert.equal(regionLimit(device, { width: 8193, height: 128 }).reason, "source_too_large");
 });

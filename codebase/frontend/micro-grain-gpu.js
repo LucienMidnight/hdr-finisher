@@ -9,12 +9,12 @@
       maxStorageBufferBindingSize, maxTextureDimension2D } = device.limits;
     const maxEdge = 16 * maxComputeWorkgroupsPerDimension;
     if (Math.max(width, height) > maxEdge) {
-      return { reason: "dispatch_limit_exceeded", width_px: width, height_px: height, max_dispatch_dimension_px: maxEdge };
+      return { reason: "source_too_large", width_px: width, height_px: height, max_dispatch_dimension_px: maxEdge };
     }
     const requestedBytes = Math.max(width * height * 4, 65536 * 4);
     const maxBytes = Math.min(maxBufferSize, maxStorageBufferBindingSize);
     if (requestedBytes > maxBytes) {
-      return { reason: "buffer_limit_exceeded", requested_bytes: requestedBytes, max_buffer_bytes: maxBytes };
+      return { reason: "source_too_large", requested_bytes: requestedBytes, max_buffer_bytes: maxBytes };
     }
     return null;
   }
@@ -22,7 +22,7 @@
   function regionLimit(device, { width, height }) {
     const textureLimit = device.limits.maxTextureDimension2D;
     if (Math.max(width, height) > textureLimit) {
-      return { reason: "texture_limit_exceeded", width_px: width, height_px: height, max_texture_dimension: textureLimit };
+      return { reason: "source_too_large", width_px: width, height_px: height, max_texture_dimension_px: textureLimit };
     }
     if (width * height > BAYER_REQUEST_PIXELS) {
       return { reason: "source_too_large", width_px: width, height_px: height, max_request_pixels: BAYER_REQUEST_PIXELS };
@@ -60,13 +60,14 @@
     return pipelinesByDevice.get(device);
   }
 
-  async function readBayer(grain, region, controls, revision, current, retain, signal) {
+  async function readBayer(grain, region, controls, revision, current, retain, signal, action) {
     const { x, y, width, height } = region;
     const request = new URLSearchParams({ x, y, width, height, revision, retain });
     const response = await fetch(`${grain.url}/region?${request}`, {
       method: "POST",
       signal,
-      headers: { "Content-Type": "application/json" },
+      headers: globalThis.HDRDiagnostics?.headers?.(action, { "Content-Type": "application/json" })
+        ?? { "Content-Type": "application/json" },
       body: JSON.stringify({ method: "micro_grain", micro_luminance: controls.microLuminance,
         micro_color: controls.microColor, micro_detail: controls.microDetail }),
     });
