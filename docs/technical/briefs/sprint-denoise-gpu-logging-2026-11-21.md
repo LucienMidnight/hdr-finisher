@@ -59,7 +59,7 @@ Three problems follow, and Steve approved all three on November 21:
 | --- | --- | --- | --- | --- |
 | LOG-1 | Logging foundation and GPU Grain route robustness | `sprint/logging-foundation` | — | not started |
 | CPU-1 | Faster CPU Grain backup: visible area first, then root speedups | `sprint/cpu-grain-speed` | — | not started |
-| GPU-1 | Fine, Clean and Micro Grain on the GPU above 8,192 pixels | `sprint/gpu-large-photos` | — | not started |
+| GPU-1 | Fine, Clean and Micro Grain on the GPU above 8,192 pixels | `sprint/gpu-large-photos` | — | Built. Both large inputs passed Grade GPU routing at Fit and 110% on the PC. Finished-pixel parity and Micro runtime validation remain open. |
 | LOG-2 | App-wide logging rollout | `sprint/logging-rollout` | LOG-1 merged | not started |
 | INT | Integration, full checks, push and Steve's hand test | `feat/denoise-v1` | all | not started |
 

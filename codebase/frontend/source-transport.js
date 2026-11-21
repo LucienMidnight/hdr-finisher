@@ -4,6 +4,9 @@
   // Four bounded chunks overlap response reads with GPU copies without
   // rebuilding an image-sized staging allocation in the browser.
   const UPLOAD_RING_SIZE = 4;
+  // The backend caps each /source-tile request axis, independently of the
+  // texture or frame dimensions that the client can hold.
+  const SOURCE_TILE_REQUEST_EDGE = 8192;
 
   function supersededError(message) {
     const error = new Error(message || "Source preparation was superseded");
@@ -52,9 +55,9 @@
 
   /** Copy one row chunk through a reusable mapped staging-buffer slot. */
   async function copyChunkStaged(renderer, ring, retired, slot, data, {
-    bytesPerRow, rows, width, texture, origin,
+    bytesPerRow, rows, width, texture, origin, stagingCapacity = 0,
   }) {
-    const capacity = Math.max(1, bytesPerRow * rows);
+    const capacity = Math.max(stagingCapacity, bytesPerRow * rows);
     let staging = ring[slot];
     if (!staging || staging.size < capacity) {
       if (staging) retired.push(staging);
@@ -538,14 +541,39 @@
     }
 
     const bytesPerPixel = pixelFormat === "rgba16float" ? 8 : 16;
+    const limits = renderer.device.limits;
+    const textureWidth = strip ? Math.min(strip.maxWidth, outputWidth) : delivered.width;
+    const textureHeight = strip ? Math.min(strip.maxRows, outputHeight) : delivered.height;
+    const maxTextureDimension = limits?.maxTextureDimension2D ?? Infinity;
+    if (textureWidth > maxTextureDimension || textureHeight > maxTextureDimension
+        || delivered.width > textureWidth || delivered.height > textureHeight) {
+      renderer.recordStage("source_region_refused", {
+        area: "gpu", route: "refused", reason: "texture_limit_exceeded",
+        width_px: delivered.width, height_px: delivered.height, max_texture_dimension: maxTextureDimension,
+      });
+      throw new Error("The source region exceeds its WebGPU texture size.");
+    }
+
+    const chunkBytes = Math.min(strip?.chunkBytes ?? renderer.maxSourceChunkBytes, limits?.maxBufferSize ?? Infinity);
+    const maxChunkWidth = Math.min(SOURCE_TILE_REQUEST_EDGE, Math.floor(chunkBytes / 256) * 256 / bytesPerPixel);
+    if (missing.width && maxChunkWidth < 1 && !store) {
+      renderer.recordStage("source_region_refused", {
+        area: "gpu", route: "refused", reason: "buffer_limit_exceeded",
+        requested_bytes: 256, max_buffer_bytes: limits?.maxBufferSize,
+      });
+      throw new Error("A source region row cannot fit in the staging buffer.");
+    }
+    const chunkWidth = Math.min(missing.width || 1, maxChunkWidth || 1);
+    const rowBytes = chunkWidth * bytesPerPixel;
+    const rowsPerChunk = Math.max(1, Math.min(delivered.height, SOURCE_TILE_REQUEST_EDGE,
+      Math.floor(chunkBytes / (Math.ceil(rowBytes / 256) * 256))));
+    const rowChunks = Math.ceil(delivered.height / rowsPerChunk);
+    const chunkTotal = rowChunks * Math.ceil(missing.width / chunkWidth);
     let texture = strip?.texture;
     try {
-      if (strip && (delivered.width !== outputWidth || delivered.height > strip.maxRows)) {
-        throw new Error("Fine Grain strip exceeded its reserved source texture");
-      }
       texture ||= renderer.device.createTexture({
         label: strip ? "fine-grain-source-strip" : undefined,
-        size: { width: delivered.width, height: strip ? Math.min(strip.maxRows, outputHeight) : delivered.height },
+        size: { width: textureWidth, height: textureHeight },
         format: pixelFormat,
         usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.COPY_SRC,
       });
@@ -557,11 +585,6 @@
       throw error;
     }
 
-    const rowBytes = Math.max(1, missing.width * bytesPerPixel);
-    const chunkBytes = strip?.chunkBytes ?? renderer.maxSourceChunkBytes;
-    const rowsPerChunk = Math.max(1, Math.min(delivered.height,
-      Math.floor(chunkBytes / (Math.ceil(rowBytes / 256) * 256))));
-    const chunkTotal = Math.ceil(delivered.height / rowsPerChunk);
     const ringSize = Math.max(1, Math.min(strip?.slots ?? UPLOAD_RING_SIZE, chunkTotal));
     const stagingRing = strip?.ring ?? [];
     const retiredStaging = strip?.retired ?? [];
@@ -574,17 +597,20 @@
       // staging slot fetches them side by side: a slot's next write still
       // waits only for its own earlier copy, and at most `ringSize` chunk
       // responses exist at once, never the whole region.
-      let nextTop = 0;
+      let nextChunk = 0;
       let failure = null;
       const lane = async (slot) => {
-        while (!failure && nextTop < delivered.height) {
-          const top = nextTop;
-          const rows = Math.min(rowsPerChunk, delivered.height - top);
-          nextTop += rows;
+        while (!failure && nextChunk < chunkTotal) {
+          const index = nextChunk++;
+          const top = (index % rowChunks) * rowsPerChunk;
+          const left = Math.floor(index / rowChunks) * chunkWidth;
+          const rect = {
+            x: missing.x + left, y: missing.y + top,
+            width: Math.min(chunkWidth, missing.width - left),
+            height: Math.min(rowsPerChunk, delivered.height - top),
+          };
           assertCurrent("ROI source region stream was superseded");
-          const response = await fetch(query({
-            x: missing.x, y: missing.y + top, width: missing.width, height: rows,
-          }, sourceEpoch), { signal });
+          const response = await fetch(query(rect, sourceEpoch), { signal });
           if (!response.ok) {
             const payload = await response.json().catch(() => null);
             const error = new Error(payload?.detail || "A source region could not be loaded");
@@ -599,21 +625,28 @@
             height: Number(response.headers.get("X-Tile-Height")),
           };
           const bytesPerRow = Number(response.headers.get("X-Bytes-Per-Row"));
-          if (strip && (response.headers.get("X-Pixel-Format") !== pixelFormat
-              || bytesPerRow < rowBytes || bytesPerRow * rows > strip.chunkBytes)) {
-            throw new Error("Fine Grain source chunk exceeded its reserved upload format or size");
+          if ((strip && response.headers.get("X-Pixel-Format") !== pixelFormat)
+              || bytesPerRow !== Math.ceil(rect.width * bytesPerPixel / 256) * 256) {
+            throw new Error("A source region chunk changed its upload format.");
+          }
+          if (bytesPerRow * rect.height > chunkBytes) {
+            renderer.recordStage("source_region_refused", {
+              area: "gpu", route: "refused", reason: "buffer_limit_exceeded",
+              requested_bytes: bytesPerRow * rect.height, budget_bytes: chunkBytes,
+            });
+            throw new Error("A source region chunk exceeded the staging buffer size.");
           }
           const data = await response.arrayBuffer();
           if (failure) return;
-          if (chunk.x !== missing.x || chunk.y !== missing.y + top
-            || chunk.width !== missing.width || chunk.height !== rows || data.byteLength !== bytesPerRow * rows) {
-            throw new Error("A source region chunk did not cover its requested rows");
+          if (chunk.x !== rect.x || chunk.y !== rect.y || chunk.width !== rect.width
+              || chunk.height !== rect.height || data.byteLength !== bytesPerRow * rect.height) {
+            throw new Error("A source region chunk did not cover its requested rectangle.");
           }
           if (firstTileMs === null) firstTileMs = performance.now() - startedAt;
           transferredBytes += data.byteLength;
           chunkCount += 1;
           await copyChunkStaged(renderer, stagingRing, retiredStaging, slot, data, {
-            bytesPerRow, rows: chunk.height, width: chunk.width, texture,
+            bytesPerRow, rows: chunk.height, width: chunk.width, texture, stagingCapacity: strip?.chunkBytes,
             origin: { x: chunk.x - delivered.x, y: chunk.y - delivered.y },
           });
           assertCurrent("ROI source region stream was superseded");
@@ -999,6 +1032,7 @@
     UPLOAD_RING_SIZE,
     supersededError,
     readChunk,
+    SOURCE_TILE_REQUEST_EDGE,
     copyChunkStaged,
     releaseStaging,
     setMode,

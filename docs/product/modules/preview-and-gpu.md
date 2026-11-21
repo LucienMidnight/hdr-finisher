@@ -8,6 +8,27 @@
   scopes UI; backend `render_cache.py`, `cpu_strips.py`, `preview.py`,
   `scopes.py`, `overlay.py`, `peak_*.py`.
 
+## November 21: bounded native work for Grade Grain
+
+Fine and Clean Grain use a single haloed calibration rectangle at a time.
+The 512-pixel row cores split at the existing 512-pixel tile boundaries.
+The planner uses the device texture limit, storage binding limit and
+readback-buffer limit and reduces the partial sums in their original order.
+Fit processes output row and column bands when the full-width native strip
+is too wide for the working texture or a single source-tile request. Its
+Lanczos and local range windows remain anchored to the full image. Only the
+reduced Fit picture stays on the GPU for later presentation.
+
+Each upload keeps the existing two-slot Grade strip ring. Individual
+source-tile requests fit the endpoint's rectangle limits and the device's
+staging capacity. Native Clean Grain tiles include the original wavelet and
+Small or Large colour margins. Micro Grain checks its Bayer endpoint, padded
+storage, dispatch and texture limits before sharing bands. The existing
+resident-source delivery size gate still applies. The
+[Windows PC measurements](../../technical/performance-table.md#november-21--large-photo-grain-in-grade)
+record route and memory at 2 GiB. Finished HDR/SDR comparison and the large
+Micro runtime check are pending.
+
 ## November 15: CPU preview diagnostics and grain cancellation
 
 Grade CPU preview requests now write `grade_preview_cpu` to the existing backend

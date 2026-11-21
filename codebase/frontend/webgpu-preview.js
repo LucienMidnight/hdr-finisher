@@ -33,8 +33,16 @@
     return signal ? AbortSignal.any([signal, timeout]) : timeout;
   }
 
-  function fineGrainStripUpload(maxRows) {
-    return { maxRows, slots: 2, chunkBytes: 8 * 1024 * 1024, ring: [], retired: [] };
+  function fineGrainStripUpload(device, maxWidth, maxRows) {
+    const chunkBytes = Math.min(8 * 1024 * 1024, device.limits.maxBufferSize);
+    return { maxWidth, maxRows, slots: 2, chunkBytes, ring: [], retired: [] };
+  }
+
+  function grainWorkRefused(renderer, reason, message, details) {
+    renderer.recordStage("grain_work_refused", { area: "denoise", route: "refused", reason, ...details });
+    const error = new Error(message);
+    error.reason = reason;
+    return error;
   }
   function maskHasHueLeaf(expression) {
     if (!expression) return false;
@@ -4508,7 +4516,8 @@
           const band = microBands.get(region.y);
           let prepared = microBandSources.get(region.y);
           if (!prepared && band && band.width > region.width
-              && (band.width + 2 * MICRO_GRAIN_MARGIN) * (band.height + 2 * MICRO_GRAIN_MARGIN) <= 3000000) {
+              && (band.width + 2 * MICRO_GRAIN_MARGIN) * (band.height + 2 * MICRO_GRAIN_MARGIN) <= 3000000
+              && !window.HDRMicroGrainGpu.regionLimit(this.device, this.microGrainSourceRegion(denoiseSelector, band))) {
             prepared = await this.developMicroGrainRegion(denoiseSelector, band, options.editRevision, current, true);
             microBandSources.set(region.y, prepared);
           }
@@ -6450,17 +6459,24 @@
     async developMicroGrainRegion(selector, core, revision, current, retain, bayer = null) {
       const { grain } = selector.cache;
       const region = this.microGrainSourceRegion(selector, core);
+      const gpu = window.HDRMicroGrainGpu;
+      const limit = gpu.regionLimit(this.device, region);
+      if (limit) throw grainWorkRefused(this, limit.reason, "Micro Grain Bayer region exceeds its GPU or source limit.", limit);
       const reservation = this.reserveFineGrain("micro-grain-region", {
-        bayer: (region.width + 26) * (region.height + 26) * 36,
+        bayer: (region.width + gpu.BAYER_PADDING) * (region.height + gpu.BAYER_PADDING) * 36,
       });
       try {
         if (this.injectMicroGrainFailure) {
           this.injectMicroGrainFailure = false;
           throw new Error("Injected Micro Grain GPU failure.");
         }
-        const gpu = window.HDRMicroGrainGpu;
         const body = bayer || await gpu.readBayer(grain, region, selector.controls, revision, current, retain);
         return await gpu.develop(this.device, grain, region, body, current);
+      } catch (error) {
+        if (error.grainLimit) {
+          throw grainWorkRefused(this, error.grainLimit.reason, error.message, error.grainLimit);
+        }
+        throw error;
       } finally {
         if (reservation) this.gpuAllocator.releaseReservation(reservation);
       }
@@ -6508,25 +6524,55 @@
       const device = this.device;
       const grain = selector.cache.grain;
       const { width, height } = grain;
-      const ratio = height / proxy.height;
-      const box = Math.ceil(Math.max(1, ratio, width / proxy.width));
-      const stride = Math.max(1, Math.floor(ADAPTIVE_DENOISE_TILE / ratio));
+      const textureLimit = device.limits.maxTextureDimension2D;
+      const dispatchEdge = 8 * device.limits.maxComputeWorkgroupsPerDimension;
+      const workEdge = Math.min(textureLimit, dispatchEdge);
+      const rowRatio = height / proxy.height;
+      const columnRatio = width / proxy.width;
+      const box = Math.ceil(Math.max(1, rowRatio, columnRatio));
       const resizeMargin = 3 * box + 1;
-      const maxRows = Math.min(height, Math.ceil(stride * ratio) + 2 * resizeMargin + 2);
       const margin = micro ? MICRO_GRAIN_MARGIN : ADAPTIVE_DENOISE_MARGIN + cleanGrainMargin(controls);
-      const stripUpload = fineGrainStripUpload(maxRows + 2 * margin);
+      const sourceReach = 2 * resizeMargin + 2;
+      const nativeExtent = (count, ratio, extent) => Math.min(extent, Math.ceil(count * ratio) + sourceReach);
+      // Keep the original strip when it fits; otherwise use output-column
+      // bands. Their source rectangles overlap by the Lanczos/range support
+      // plus the native reconstruction margin, with full-frame tap positions.
+      const workCount = (ratio, extent, output, preferred, limit) => {
+        if (nativeExtent(preferred, ratio, extent) <= limit) return Math.min(output, preferred);
+        return Math.min(output, Math.max(1, Math.floor((limit - sourceReach) / ratio)));
+      };
+      const stride = workCount(rowRatio, height, proxy.height,
+        Math.max(1, Math.floor(ADAPTIVE_DENOISE_TILE / rowRatio)), workEdge - 2 * margin);
+      const fullWidth = width <= Math.min(workEdge, sourceTransport().SOURCE_TILE_REQUEST_EDGE);
+      const columns = workCount(columnRatio, width, proxy.width, proxy.width,
+        fullWidth ? workEdge : Math.min(4096, workEdge - 2 * margin));
+      const maxRows = nativeExtent(stride, rowRatio, height);
+      const maxWidth = nativeExtent(columns, columnRatio, width);
+      const stripUpload = fineGrainStripUpload(device, Math.min(width, maxWidth + 2 * margin), Math.min(height, maxRows + 2 * margin));
+      if (Math.max(proxy.width, proxy.height, stripUpload.maxWidth, stripUpload.maxRows) > textureLimit
+          || Math.max(columns, maxRows, stride) > dispatchEdge) {
+        throw grainWorkRefused(this, "texture_limit_exceeded", "Grain reduction exceeds the device's working dimensions.", {
+          width_px: proxy.width, height_px: proxy.height, max_texture_dimension: textureLimit,
+        });
+      }
+      const microCoreWidth = 768;
+      const microBandWidth = Math.min(maxWidth, 2 * microCoreWidth);
+      const microRequest = { width: Math.min(width, microBandWidth + 2 * margin), height: stripUpload.maxRows };
+      const microGpu = micro ? window.HDRMicroGrainGpu : null;
+      const microBandFits = micro && !microGpu.regionLimit(device, microRequest);
       const reservation = this.reserveFineGrain("fine-grain-resize", {
-        sourceStrip: micro ? (768 + 2 * margin + 26) * (maxRows + 2 * margin + 26) * 36 : width * stripUpload.maxRows * 8,
-        filteredStrip: width * maxRows * (clean ? 16 : 8),
-        resizeScratch: proxy.width * (maxRows * 48 + (clean ? stride * 16 : 0)),
+        sourceStrip: micro ? 0 : stripUpload.maxWidth * stripUpload.maxRows * 8,
+        filteredStrip: maxWidth * maxRows * (clean ? 16 : 8),
+        resizeScratch: columns * (maxRows * 48 + (clean ? stride * 16 : 0)),
         reducedPicture: proxy.width * proxy.height * (clean ? 24 : 8),
-        uploadAndResponses: 2 * stripUpload.slots * stripUpload.chunkBytes,
+        uploadAndResponses: micro ? (microRequest.width + microGpu.BAYER_PADDING) * (microRequest.height + microGpu.BAYER_PADDING) * 6
+          : 2 * stripUpload.slots * stripUpload.chunkBytes,
       });
       const weights = [controls.amount, controls.luminance, controls.colorNoise, controls.detailRecovery];
       const sizes = adaptiveResolveOptions(controls);
       const owned = [];
       const own = resource => { owned.push(resource); return resource; };
-      const scratch = (label, rows = maxRows) => own(device.createTexture({ label, size: [proxy.width, rows], format: "rgba32float",
+      const scratch = (label, rows = maxRows) => own(device.createTexture({ label, size: [columns, rows], format: "rgba32float",
         usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.STORAGE_BINDING }));
       const packed = (width, height, label) => ({
         width, height, byteSize: width * height * 16, cleanGrainDelta: true,
@@ -6541,87 +6587,112 @@
         const makePicture = clean ? packed : this.createDenoiseTexture.bind(this);
         const result = makePicture(proxy.width, proxy.height, "grain-reduced");
         own(result.texture);
-        const native = makePicture(width, maxRows, "grain-resize-strip");
+        const native = makePicture(maxWidth, maxRows, "grain-resize-strip");
         own(native.texture);
         const [samples, low, high] = ["lanczos", "low", "high"].map(name => scratch(`fine-grain-resize-${name}`));
         const baseStrip = clean ? scratch("clean-grain-resize-base", stride) : null;
-        const newParams = () => own(device.createBuffer({ size: 48, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST }));
+        const newParams = () => own(device.createBuffer({ size: 64, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST }));
         const params = newParams();
         const deltaParams = clean ? newParams() : null;
-        const encode = (encoder, pipeline, bindings, rows, uniforms = params) => {
+        const encode = (encoder, pipeline, bindings, cols, rows, uniforms = params) => {
           const pass = encoder.beginComputePass();
           pass.setPipeline(pipeline);
           pass.setBindGroup(0, device.createBindGroup({ layout: pipeline.getBindGroupLayout(0), entries: [
             { binding: 0, resource: { buffer: uniforms } },
             ...bindings.map(([binding, texture]) => ({ binding, resource: texture.createView() })),
           ] }));
-          pass.dispatchWorkgroups(Math.ceil(proxy.width / 8), Math.ceil(rows / 8));
+          pass.dispatchWorkgroups(Math.ceil(cols / 8), Math.ceil(rows / 8));
           pass.end();
         };
         for (let row = 0; row < proxy.height; row += stride) {
           const count = Math.min(stride, proxy.height - row);
-          const y = Math.max(0, Math.floor(row * ratio) - resizeMargin);
-          const bottom = Math.min(height, Math.ceil((row + count) * ratio) + resizeMargin);
-          const target = { x: 0, y, width, height: bottom - y };
-          const top = Math.max(0, y - margin);
-          if (micro) {
-            const coreWidth = 768;
-            const bandFor = left => ({ ...target, x: left, width: Math.min(2 * coreWidth, width - left) });
-            const fetchBand = left => window.HDRMicroGrainGpu.readBayer(grain, this.microGrainSourceRegion(selector, bandFor(left)),
-              controls, revision, current, false, denoiseDeadline(signal, 15000)).then(body => ({ body }), error => ({ error }));
-            let nextBayer = fetchBand(0);
-            for (let left = 0; left < width; left += 2 * coreWidth) {
-              const right = Math.min(width, left + 2 * coreWidth);
-              const { body, error } = await nextBayer;
-              if (error) throw error;
-              assertCurrent();
-              if (right < width) nextBayer = fetchBand(right);
-              const prepared = await this.developMicroGrainRegion(selector, bandFor(left), revision, current, false, body);
+          const y = Math.max(0, Math.floor(row * rowRatio) - resizeMargin);
+          const bottom = Math.min(height, Math.ceil((row + count) * rowRatio) + resizeMargin);
+          for (let column = 0; column < proxy.width; column += columns) {
+            assertCurrent();
+            const cols = Math.min(columns, proxy.width - column);
+            const x = Math.max(0, Math.floor(column * columnRatio) - resizeMargin);
+            const right = Math.min(width, Math.ceil((column + cols) * columnRatio) + resizeMargin);
+            const target = { x, y, width: right - x, height: bottom - y };
+            if (micro) {
+              const bandWidth = microBandFits ? microBandWidth : Math.min(microBandWidth, microCoreWidth);
+              const bandFor = left => ({ ...target, x: left, width: Math.min(bandWidth, right - left) });
+              const fetchBand = async left => {
+                const region = this.microGrainSourceRegion(selector, bandFor(left));
+                const limit = microGpu.regionLimit(device, region);
+                if (limit) throw grainWorkRefused(this, limit.reason, "Micro Grain Fit band exceeds its GPU or source limit.", limit);
+                return microGpu.readBayer(grain, region, controls, revision, current, false, denoiseDeadline(signal, 15000));
+              };
+              // Prefetch one response while the current band is on the GPU.
+              const fetchNext = left => fetchBand(left).then(body => ({ body }), error => ({ error }));
+              let pending = fetchNext(x);
               try {
-                for (let x = left; x < right; x += coreWidth) {
-                  const core = { ...target, x, width: Math.min(coreWidth, width - x) };
-                  await this.writeMicroGrainRegion(selector, core, native, target, revision, current, null, prepared);
+                for (let left = x; left < right; left += bandWidth) {
+                  const { body, error } = await pending;
+                  pending = null;
+                  if (error) throw error;
+                  assertCurrent();
+                  if (left + bandWidth < right) pending = fetchNext(left + bandWidth);
+                  const band = bandFor(left);
+                  const prepared = await this.developMicroGrainRegion(selector, band, revision, current, false, body);
+                  try {
+                    for (let coreX = left; coreX < left + band.width; coreX += microCoreWidth) {
+                      const core = { ...target, x: coreX, width: Math.min(microCoreWidth, left + band.width - coreX) };
+                      await this.writeMicroGrainRegion(selector, core, native, target, revision, current, null, prepared);
+                    }
+                  } finally {
+                    prepared.texture.destroy();
+                  }
                 }
               } finally {
-                prepared.texture.destroy();
+                await pending;
               }
             }
-          }
-          const source = micro ? null : await this.loadProxyRegion(proxy.sessionId, proxy.lane, grain.nativeEdge, proxy.geometrySignature,
-            revision, proxy.sourceIdentity, null, { x: 0, y: top, width, height: bottom + margin - top },
-            { signal: denoiseDeadline(signal, 15000), isCurrent: current, transient: true, stripUpload });
-          if (!micro && !source) throw Error("The native Fine Grain source is not available for reduction.");
-          let encoded;
-          try {
-            assertCurrent();
-            if (source && (source.width !== width || source.height !== height)) throw Error("The native Fine Grain source size changed.");
-            device.pushErrorScope("validation");
-            let validation;
+            const left = Math.max(0, x - margin);
+            const top = Math.max(0, y - margin);
+            const sourceRect = { x: left, y: top, width: Math.min(width, right + margin) - left,
+              height: Math.min(height, bottom + margin) - top };
+            const source = micro ? null : await this.loadProxyRegion(proxy.sessionId, proxy.lane, grain.nativeEdge,
+              proxy.geometrySignature, revision, proxy.sourceIdentity, null, sourceRect,
+              { signal: denoiseDeadline(signal, 15000), isCurrent: current, transient: true, stripUpload });
+            if (!micro && (!source || source.width !== width || source.height !== height
+                || source.region.x !== sourceRect.x || source.region.y !== sourceRect.y
+                || source.region.width !== sourceRect.width || source.region.height !== sourceRect.height)) {
+              throw grainWorkRefused(this, "source_region_unavailable", "Incomplete native Grain source for reduction.", {
+                width_px: sourceRect.width, height_px: sourceRect.height,
+              });
+            }
+            let encoded;
             try {
-              const encoder = device.createCommandEncoder();
-              if (source) encoded = this.encodeAdaptiveDenoise(encoder, selector, weights, sizes, target, native, target, source);
-              const dimensions = [width, height, proxy.width, proxy.height, y, target.height, row, count, box];
-              device.queue.writeBuffer(params, 0, new Float32Array([...dimensions, 0, 0, 0]));
-              const horizontalBindings = [[clean ? 8 : 1, native.texture], [4, samples], [5, low], [6, high]];
-              const verticalBindings = [[1, samples], [2, low], [3, high]];
-              encode(encoder, horizontal, horizontalBindings, target.height);
-              if (clean) {
-                // The CPU reference limits the resize of RGB and colour
-                // correction independently, then applies the live strength.
-                encode(encoder, baseVertical, [...verticalBindings, [9, baseStrip]], count);
-                device.queue.writeBuffer(deltaParams, 0, new Float32Array([...dimensions, 1, 0, 0]));
-                encode(encoder, horizontal, horizontalBindings, target.height, deltaParams);
+              assertCurrent();
+              device.pushErrorScope("validation");
+              let validation;
+              try {
+                const encoder = device.createCommandEncoder();
+                if (source) encoded = this.encodeAdaptiveDenoise(encoder, selector, weights, sizes, target, native, target, source);
+                const dimensions = [width, height, proxy.width, proxy.height, y, target.height, row, count, box];
+                const uniforms = delta => new Float32Array([...dimensions, delta, column, cols, x, 0, 0, 0]);
+                device.queue.writeBuffer(params, 0, uniforms(0));
+                const horizontalBindings = [[clean ? 8 : 1, native.texture], [4, samples], [5, low], [6, high]];
+                const verticalBindings = [[1, samples], [2, low], [3, high]];
+                encode(encoder, horizontal, horizontalBindings, cols, target.height);
+                if (clean) {
+                  // Limit RGB and colour correction independently, then apply the live strength.
+                  encode(encoder, baseVertical, [...verticalBindings, [9, baseStrip]], cols, count);
+                  device.queue.writeBuffer(deltaParams, 0, uniforms(1));
+                  encode(encoder, horizontal, horizontalBindings, cols, target.height, deltaParams);
+                }
+                encode(encoder, vertical, [...verticalBindings, [7, result.texture], ...(clean ? [[10, baseStrip]] : [])], cols, count);
+                device.queue.submit([encoder.finish()]);
+              } finally {
+                validation = device.popErrorScope();
               }
-              encode(encoder, vertical, [...verticalBindings, [7, result.texture], ...(clean ? [[10, baseStrip]] : [])], count);
-              device.queue.submit([encoder.finish()]);
+              const error = await validation;
+              if (error) throw Error(error.message);
+              await device.queue.onSubmittedWorkDone();
             } finally {
-              validation = device.popErrorScope();
+              encoded?.paramBuffer.destroy();
             }
-            const error = await validation;
-            if (error) throw Error(error.message);
-            await device.queue.onSubmittedWorkDone();
-          } finally {
-            encoded?.paramBuffer.destroy();
           }
         }
         assertCurrent();
@@ -6636,6 +6707,10 @@
         this.fineGrainReduced.set(key, entry);
         owned.shift();
         this.recordStage(micro ? "micro-grain-fit-exact" : "fine-grain-reduced", { durationMs: performance.now() - start, width, height });
+        if (columns < proxy.width) this.recordStage("grain_reduction_chunked", {
+          area: "denoise", route: "gpu", reason: "bounded_working_set", duration_ms: performance.now() - start,
+          width_px: width, height_px: height, chunk_width_px: maxWidth, chunk_height_px: maxRows,
+        });
         return { ...proxy, ...entry, bindGroups: new Map() };
       } finally {
         owned.forEach(resource => resource.destroy());
@@ -6652,12 +6727,33 @@
       const device = this.device;
       const margin = 17 + GRAIN_DENOISE_RADIUS;
       const rows = ADAPTIVE_DENOISE_TILE;
-      const stripUpload = fineGrainStripUpload(rows + 2 * margin);
-      const blocks = Math.ceil(native / GRAIN_FIT_BLOCK) * Math.ceil(rows / GRAIN_FIT_BLOCK);
-      if (native > 8192) throw new Error("Fine Grain calibration exceeds the supported source size.");
+      const textureLimit = device.limits.maxTextureDimension2D;
+      // The resident-source delivery route has its own qualification. The
+      // larger-photo route here is for Grade's streamed source.
+      if (residentSource && native > 8192) {
+        throw grainWorkRefused(this, "source_too_large", "Fine Grain calibration exceeds the supported delivery source size.", {
+          source_edge_px: native, max_source_edge_px: 8192,
+        });
+      }
+      const fitBufferLimit = Math.min(device.limits.maxBufferSize, device.limits.maxStorageBufferBindingSize);
+      const bytesPerTile = GRAIN_DENOISE_BANDS.length * (rows / GRAIN_FIT_BLOCK) ** 2 * 16;
+      // Keep the existing tile boundaries and summation order. Each partial
+      // reduces just one 32×32 block in a core; overlapping halos never vote.
+      const textureTiles = residentSource ? Infinity : Math.floor((textureLimit - 2 * margin) / rows);
+      const maxTiles = Math.min(textureTiles, Math.floor(fitBufferLimit / bytesPerTile), residentSource ? Infinity : 8);
+      const chunkWidth = Math.min(native, maxTiles * rows);
+      if (textureLimit < rows + 2 * margin || chunkWidth <= 0) {
+        const reason = textureLimit < rows + 2 * margin ? "texture_limit_exceeded" : "buffer_limit_exceeded";
+        throw grainWorkRefused(this, reason, "Fine Grain calibration cannot fit one GPU tile.", {
+          requested_bytes: bytesPerTile, max_buffer_bytes: fitBufferLimit, max_texture_dimension: textureLimit,
+        });
+      }
+      const stripUpload = fineGrainStripUpload(device, Math.min(native, chunkWidth + 2 * margin),
+        Math.min(native, rows + 2 * margin));
+      const blocks = Math.ceil(chunkWidth / GRAIN_FIT_BLOCK) * Math.ceil(Math.min(rows, native) / GRAIN_FIT_BLOCK);
       const reservation = this.reserveFineGrain("fine-grain-fit", {
-        measurementScratch: 6 * stripUpload.maxRows ** 2 * 16,
-        sourceStrip: residentSource ? 0 : native * stripUpload.maxRows * 8,
+        measurementScratch: 6 * (rows + 2 * margin) ** 2 * 16,
+        sourceStrip: residentSource ? 0 : stripUpload.maxWidth * stripUpload.maxRows * 8,
         uploadAndResponses: residentSource ? 0 : 2 * stripUpload.slots * stripUpload.chunkBytes,
         partialsAndReadback: 2 * GRAIN_DENOISE_BANDS.length * blocks * 16,
       });
@@ -6668,76 +6764,93 @@
       const assertCurrent = () => {
         if (!current()) throw new DOMException("Fine Grain calibration was replaced.", "AbortError");
       };
-      let height = null;
-      let width = null;
+      let { width, height } = residentSource || {};
       let stripCount = 0;
       try {
         adaptiveScratch = this.createAdaptiveDenoiseScratch(margin, true);
         const selector = { cache: { model, adaptiveScratch } };
-        for (let y = 0; height === null || y < height; y += rows) {
-          assertCurrent();
-          const top = Math.max(0, y - margin);
-          const source = residentSource || await this.loadProxyRegion(sessionId, lane, native, geometry, revision, sourceIdentity, null,
-            { x: 0, y: top, width: width ?? native, height: y + rows + margin - top },
-            { signal: denoiseDeadline(signal, 15000), isCurrent: current, transient: true, stripUpload });
-          if (!source) throw new Error("The native Fine Grain source is not available in strips.");
-          let partials;
-          let readback;
-          let encoded;
-          try {
+        for (let y = 0; height === undefined || y < height; y += rows) {
+          for (let x = 0; x < (width ?? native); x += chunkWidth) {
             assertCurrent();
-            width = source.width;
-            height = source.height;
-            const target = { x: 0, y, width, height: Math.min(rows, height - y) };
-            if (source.region && (source.region.width !== width || source.region.y + source.region.height < y + target.height)) {
-              throw new Error("Incomplete Fine Grain calibration strip.");
+            const left = Math.max(0, x - margin);
+            const top = Math.max(0, y - margin);
+            const right = Math.min(width ?? native, x + chunkWidth + margin);
+            const bottom = Math.min(height ?? native, y + rows + margin);
+            const source = residentSource || await this.loadProxyRegion(sessionId, lane, native, geometry, revision, sourceIdentity, null,
+              { x: left, y: top, width: right - left, height: bottom - top },
+              { signal: denoiseDeadline(signal, 15000), isCurrent: current, transient: true, stripUpload });
+            if (!source || Math.max(source.width, source.height) > native
+                || (width !== undefined && (source.width !== width || source.height !== height))) {
+              throw grainWorkRefused(this, "source_region_unavailable", "The native Grain calibration source is unavailable or changed dimensions.", {
+                source_edge_px: native, width_px: source?.width, height_px: source?.height,
+              });
             }
-            await beforeSubmit?.();
-            assertCurrent();
-            const stride = Math.ceil(width / GRAIN_FIT_BLOCK) * Math.ceil(target.height / GRAIN_FIT_BLOCK);
-            const size = totals.length * stride * 16;
-            device.pushErrorScope("validation");
-            let validation;
+            ({ width, height } = source);
+            const target = { x, y, width: Math.min(chunkWidth, width - x), height: Math.min(rows, height - y) };
+            if (source.region && (source.region.x !== left || source.region.y !== top
+                || source.region.width !== Math.min(width, right) - left
+                || source.region.height !== Math.min(height, bottom) - top)) {
+              throw grainWorkRefused(this, "source_region_unavailable", "Incomplete Fine Grain calibration chunk.", {
+                width_px: right - left, height_px: bottom - top,
+              });
+            }
+            let partials;
+            let readback;
+            let encoded;
             try {
-              partials = device.createBuffer({ size, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC });
-              readback = device.createBuffer({ size, usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST });
-              const encoder = device.createCommandEncoder();
-              encoded = this.encodeAdaptiveDenoise(encoder, selector, weights, sizes, target, null,
-                target, source, { grainFit, partials, stride, margin });
-              encoder.copyBufferToBuffer(partials, 0, readback, 0, size);
-              device.queue.submit([encoder.finish()]);
-            } finally {
-              validation = device.popErrorScope();
-            }
-            const error = await validation;
-            if (error) throw Error(error.message);
-            await readback.mapAsync(GPUMapMode.READ);
-            const values = new Float32Array(readback.getMappedRange());
-            for (const [index, sum] of totals.entries()) {
-              for (let block = 0; block < stride; block++) {
-                for (let term = 0; term < 4; term++) sum[term] += values[(index * stride + block) * 4 + term];
+              await beforeSubmit?.();
+              assertCurrent();
+              const stride = Math.ceil(target.width / GRAIN_FIT_BLOCK) * Math.ceil(target.height / GRAIN_FIT_BLOCK);
+              const size = totals.length * stride * 16;
+              device.pushErrorScope("validation");
+              let validation;
+              try {
+                partials = device.createBuffer({ size, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC });
+                readback = device.createBuffer({ size, usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST });
+                const encoder = device.createCommandEncoder();
+                encoded = this.encodeAdaptiveDenoise(encoder, selector, weights, sizes, target, null,
+                  target, source, { grainFit, partials, stride, margin });
+                encoder.copyBufferToBuffer(partials, 0, readback, 0, size);
+                device.queue.submit([encoder.finish()]);
+              } finally {
+                validation = device.popErrorScope();
               }
+              const error = await validation;
+              if (error) throw Error(error.message);
+              await readback.mapAsync(GPUMapMode.READ);
+              const values = new Float32Array(readback.getMappedRange());
+              for (const [index, sum] of totals.entries()) {
+                for (let block = 0; block < stride; block++) {
+                  for (let term = 0; term < 4; term++) sum[term] += values[(index * stride + block) * 4 + term];
+                }
+              }
+              stripCount++;
+            } finally {
+              encoded?.paramBuffer.destroy();
+              readback?.destroy();
+              partials?.destroy();
             }
-            stripCount++;
-          } finally {
-            encoded?.paramBuffer.destroy();
-            readback?.destroy();
-            partials?.destroy();
           }
         }
         assertCurrent();
         const fit = totals.map(([retained, averaged, mixed, square]) => {
           if (![retained, averaged, mixed, square].every(value => Number.isFinite(value) && value >= 0)) {
-            throw new Error("Invalid GPU Fine Grain statistics.");
+            throw grainWorkRefused(this, "gpu_validation_error", "Invalid GPU Fine Grain statistics.", { width_px: width, height_px: height });
           }
           const linear = 2 * mixed;
           const increase = Math.max(retained - averaged, 0);
           const offset = 2 * increase / Math.max(linear + Math.sqrt(linear ** 2 + 4 * square * increase), 1e-30);
           const scale = Math.min(1, Math.sqrt(retained / Math.max(averaged, 1e-30))) * (1 - offset);
-          if (offset > 1 || scale < 0 || !Number.isFinite(scale)) throw new Error("Invalid GPU Fine Grain coefficients.");
+          if (offset > 1 || scale < 0 || !Number.isFinite(scale)) {
+            throw grainWorkRefused(this, "gpu_validation_error", "Invalid GPU Fine Grain coefficients.", { width_px: width, height_px: height });
+          }
           return [Math.fround(scale), Math.fround(offset)];
         });
         this.recordStage("fine-grain-fit", { durationMs: performance.now() - started, width, height, stripCount, fit });
+        if (chunkWidth < width) this.recordStage("grain_calibration_chunked", {
+          area: "denoise", route: "gpu", reason: "bounded_working_set", duration_ms: performance.now() - started,
+          width_px: width, height_px: height, chunk_width_px: chunkWidth, chunk_height_px: rows,
+        });
         return { fit, width, height, nativeEdge: native };
       } finally {
         Object.values(adaptiveScratch?.textures || {}).forEach(texture => texture.destroy());
@@ -7110,9 +7223,15 @@
       const colourDispatches = colourMargin ? 23 + (sizes.splotchSize === "large" ? 5 : 0) : 0;
       const dispatchesPerTile = 1 + 5 + ADAPTIVE_DENOISE_LEVELS * 5 + 1
         + (evenness ? 6 : 0) + (micro ? 30 : colourDispatches);
+      const paramBytes = Math.max(ADAPTIVE_DENOISE_SLOT, tiles.length * dispatchesPerTile * ADAPTIVE_DENOISE_SLOT);
+      const maxBufferBytes = this.device.limits?.maxBufferSize ?? Infinity;
+      if (paramBytes > maxBufferBytes) {
+        throw grainWorkRefused(this, "buffer_limit_exceeded", "Denoise tile parameters exceed the device's buffer limit.", {
+          requested_bytes: paramBytes, max_buffer_bytes: maxBufferBytes,
+        });
+      }
       const paramBuffer = this.device.createBuffer({
-        size: Math.max(ADAPTIVE_DENOISE_SLOT, tiles.length * dispatchesPerTile * ADAPTIVE_DENOISE_SLOT),
-        usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+        size: paramBytes, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
       });
       const slots = new Float32Array(paramBuffer.size / 4);
       let slot = 0;

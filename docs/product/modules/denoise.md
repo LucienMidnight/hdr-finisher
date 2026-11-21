@@ -55,6 +55,22 @@ HDR and generated SDR share four methods and preparation code. Each rendition sa
 
 CPU filtering uses the app's worker pool. Standard and the experimental filters share ordered float32 native filters with a NumPy fallback. The GPU queue serializes measurement per device. Downstream Grade edits can reuse prepared Denoise pixels. Keep the picture in place through zoom, pan and preparation changes. [Technical contract](../../technical/denoising.md) · [CPU worker policy](../../../codebase/backend/hdr_finisher/cpu_budget.py) · [Export and Proof](export-and-proof.md) · [November 20 audit](../../technical/briefs/denoise-mac-open-items-2026-11-20.md#5-overnight-bug-fix-report--november-20-2026)
 
+### November 21 — Grade Grain on large photos
+
+Fine and Clean Grain calibrate at native resolution in rectangles with the
+existing overlaps. The GPU sums only the non-overlapping core pixels, keeping
+the same block and tile order as the whole-width calibration. Grade's exact
+Fit picture reconstructs bounded native rectangles and resizes with the
+original full-frame sampling grid. Micro Grain retains its Bayer region
+requirements and uses smaller Fit bands when two cores cannot share a Bayer
+request. At 110%, Grade draws the native viewport and its reconstruction halos.
+
+Windows PC with a 2 GiB graphics setting, the 50 MP Sony and a synthetic
+61 MP linear TIFF each presented Fine and Clean Grain Small on the GPU at
+Fit and 110%. Finished HDR and SDR agreement with the CPU route, large Bayer
+Micro Grain and minimum-Mac validation remain open. See the
+[performance table](../../technical/performance-table.md#november-21--large-photo-grain-in-grade).
+
 ### RAW Pixel cleanup
 
 Pixel cleanup belongs to the RAW source recipe, so changing it redevelops the source for Library, Grade, export and Proof. It runs before Bayer demosaicing and highlight reconstruction. **Remove hot pixels** is off by default and has no strength control. It targets isolated bright sensor readings. **Even out harsh specks (Experimental)** is also off by default. Its **Threshold** runs from ×2 to ×4, starts at **×2.5**, and applies on release. Lower values generally act more strongly. Both require eligible Bayer data. X-Trans, linear DNG and non-RAW inputs are ineligible.
