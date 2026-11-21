@@ -944,6 +944,66 @@ def test_lens_coordinate_strips_match_whole_frame_bytes(chromatic, monkeypatch):
     assert band_heights == [COORDINATE_ROWS, COORDINATE_ROWS, 19]
 
 
+def _canon_strip_case():
+    settings = LensCorrectionSettings(
+        mode="manual",
+        profile_id="Canon|Canon EOS 60D|Canon EF-S|Canon|Canon EF-S 18-135mm f/3.5-5.6 IS STM",
+        focal_length_mm=18, aperture=3.5, focus_distance_m=10,
+    )
+    image = np.random.default_rng(75).standard_normal((2 * 128 + 19, 417, 3), dtype=np.float32)
+    return settings, image
+
+
+@pytest.mark.parametrize("failure", ["mid_image", "setup"])
+def test_lens_strip_failures_fall_back_to_whole_frame_bytes(failure, monkeypatch):
+    import lensfunpy
+    from hdr_finisher import lens_coordinate_strips as strips, raw_import
+
+    native = strips.native_lens_database()
+    if native is None:
+        pytest.skip("The bundled Lensfun 0.3.4 C API is unavailable")
+    settings, image = _canon_strip_case()
+    standard = lensfunpy.Database()
+    monkeypatch.setattr(raw_import, "_lens_database", lambda: standard)
+    baseline, _ = apply_lens_correction(image, settings)
+
+    monkeypatch.setattr(raw_import, "_lens_database", lambda: native)
+    real = strips._strip_reader
+    if failure == "setup":
+        def broken(*args):
+            raise OSError("simulated native failure")
+        monkeypatch.setattr(strips, "_strip_reader", broken)
+    else:
+        def failing_later(*args):
+            read = real(*args)
+            calls = []
+
+            def read_strip(top, bottom):
+                calls.append(top)
+                if len(calls) == 2:
+                    raise strips.LensStripUnavailable("simulated")
+                return read(top, bottom)
+            return read_strip
+        monkeypatch.setattr(strips, "_strip_reader", failing_later)
+    actual, _ = apply_lens_correction(image, settings)
+    assert actual.tobytes() == baseline.tobytes()
+
+
+def test_strip_lens_database_keeps_search_signatures_and_refuses_mounts():
+    from hdr_finisher.lens_coordinate_strips import native_lens_database
+
+    native = native_lens_database()
+    if native is None:
+        pytest.skip("The bundled Lensfun 0.3.4 C API is unavailable")
+    cameras = native.find_cameras("Canon", "Canon EOS 60D", loose_search=True)
+    assert cameras and native.find_cameras(maker="Canon", model="Canon EOS 60D")
+    assert native.find_lenses(cameras[0], None, "EF-S 18-135mm", loose_search=True)
+    with pytest.raises(NotImplementedError):
+        native.mounts
+    with pytest.raises(NotImplementedError):
+        native.find_mount("Canon EF-S")
+
+
 @pytest.mark.skipif(__import__("hdr_finisher.binaries", fromlist=["resolve_binary"]).resolve_binary("hdrf-jxl-info") is None,
                     reason="Structured JPEG XL colour profiles need the native hdrf-jxl-info helper (Windows build only).")
 @pytest.mark.parametrize("primaries,color_space", [(1, "sRGB"), (9, "BT.2020"), (11, "Display P3")])

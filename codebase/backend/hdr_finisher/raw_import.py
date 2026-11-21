@@ -13,7 +13,10 @@ from .import_bands import parallel_import_enabled, run_bands
 
 from .color import aces2065_to_acescg, transform_float32_bounded
 from .dng_color import D60_XYZ, XYZ_D60_TO_ACESCG, chromatic_adaptation_matrix
-from .lens_coordinate_strips import COORDINATE_ROWS, exact_lens_coordinate_strips, native_lens_database
+from .lens_coordinate_strips import (
+    COORDINATE_ROWS, LensStripUnavailable, exact_lens_coordinate_strips, native_lens_database,
+    _unavailable as _lens_strips_unavailable,
+)
 from .models import LensCorrectionSettings, RawImportSettings
 
 if TYPE_CHECKING:
@@ -1328,29 +1331,25 @@ def apply_lens_correction(
         chromatic = settings.chromatic_aberration
         if chromatic or settings.distortion:
             import lensfunpy
+            remapped = None
             with exact_lens_coordinate_strips(
                 modifier, chromatic, _lens_flags(settings, lensfunpy), lensfunpy.LensType.RECTILINEAR.value,
             ) as read_strip:
-                coordinates = None
-                if read_strip is None:
-                    generate = (modifier.apply_subpixel_geometry_distortion if chromatic else
-                                modifier.apply_geometry_distortion)
-                    coordinates = generate()
-                if progress: progress("lens_remap", "Remapping Lensfun pixels")
                 if read_strip is not None:
-                    output = np.empty_like(corrected)
-                    for top in range(0, len(output), COORDINATE_ROWS):
-                        _raise_if_cancelled(cancelled)
-                        bottom = min(top + COORDINATE_ROWS, len(output))
-                        _remap_bilinear_strips(
-                            corrected, read_strip(top, bottom), chromatic=chromatic,
-                            cancelled=cancelled, output=output[top:bottom],
-                        )
-                    corrected = output
-                elif coordinates is not None:
-                    corrected = _remap_bilinear_strips(
+                    if progress: progress("lens_remap", "Remapping Lensfun pixels")
+                    remapped = _remap_lens_strips(corrected, read_strip, chromatic=chromatic, cancelled=cancelled)
+            if remapped is None:
+                # Whole-frame coordinates: no strip reader, or it failed mid-image.
+                generate = (modifier.apply_subpixel_geometry_distortion if chromatic else
+                            modifier.apply_geometry_distortion)
+                coordinates = generate()
+                if progress: progress("lens_remap", "Remapping Lensfun pixels")
+                if coordinates is not None:
+                    remapped = _remap_bilinear_strips(
                         corrected, np.asarray(coordinates), chromatic=chromatic, cancelled=cancelled,
                     )
+            if remapped is not None:
+                corrected = remapped
         elif progress:
             progress("lens_remap", "Remapping Lensfun pixels")
     except RawImportError:
@@ -1359,6 +1358,21 @@ def apply_lens_correction(
         raise RawImportError(f"Lensfun could not apply the selected profile: {exc}") from exc
     if progress: progress("lens_complete", "Lensfun corrections complete")
     return corrected, metadata
+
+
+def _remap_lens_strips(corrected, read_strip, *, chromatic, cancelled):
+    """Remap with exact coordinate strips; None if Lensfun fails mid-image."""
+    output = np.empty_like(corrected)
+    for top in range(0, len(output), COORDINATE_ROWS):
+        _raise_if_cancelled(cancelled)
+        bottom = min(top + COORDINATE_ROWS, len(output))
+        try:
+            strip = read_strip(top, bottom)
+        except LensStripUnavailable as exc:
+            _lens_strips_unavailable("lensfun_strip_failed", error=str(exc), row=top)
+            return None
+        _remap_bilinear_strips(corrected, strip, chromatic=chromatic, cancelled=cancelled, output=output[top:bottom])
+    return output
 
 
 def _lens_modifier(shape, settings, *, camera_maker, camera_model, lens_maker, lens_name, progress=None):

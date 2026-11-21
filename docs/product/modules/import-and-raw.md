@@ -229,8 +229,8 @@ uses 128-row coordinates seeded with Lensfun's own whole-frame row values.
 The original vignetting call and bilinear arithmetic apply to those same
 samples. On the MacBook Neo, both coordinate layouts, the corrected RAW
 and the SDR finish matched the whole-frame reference byte for byte.
-The existing whole-frame path handles unavailable bindings and failed
-byte checks. Windows confirmation is open.
+The existing whole-frame path handles unavailable bindings, failed self-checks
+and mid-image strip failures, with a logged reason. Windows confirmation is open.
 [Mac measurements](../../technical/performance-table.md#november-21--byte-exact-lensfun-strips-on-macbook-neo)
 
 The existing RAW import phase history now separates Lensfun profile/modifier,

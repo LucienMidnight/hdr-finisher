@@ -614,8 +614,10 @@ generating coordinates in 128-row full-width bands for full-frame CPU
 correction. The Canon and Sony coordinate buffers fell from 432.5 and
 1,017.4 MB to 16.0 and 24.5 MB, plus a four-column probe under 0.6 MB.
 The MacBook Neo backend peak fell by 462 MB and 1,058 MB, with identical
-corrected and finished pixels. The app uses the whole map if Lensfun's
-native strip check fails. Windows confirmation is open.
+corrected and finished pixels. The app uses the whole map, and logs
+`lens_coordinate_strips_unavailable`, if the native library is missing, its
+three-row self-check fails, or a strip fails mid-image. Windows confirmation
+is open.
 [Mac measurements](../../technical/performance-table.md#november-21--byte-exact-lensfun-strips-on-macbook-neo)
 
 The app now charges the last GPU Micro source's sensor, profile and Bayer
