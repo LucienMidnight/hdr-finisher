@@ -102,3 +102,12 @@ test('different scales do not share setup',async()=>{
  const b=f.context.recalculateDenoise('hdr',{longEdge:7968,renderAfter:false});
  assert.equal(f.calls.length,2);f.resolve(true);await Promise.all([a,b]);
 });
+
+test('interactive preparation completes with logging disabled', async () => {
+  const f = setup();
+  const prepared = f.context.recalculateDenoise('hdr', { logAction: false, renderAfter: false });
+  f.resolve(true);
+  assert.equal(await prepared, true);
+  assert.equal(f.calls.length, 1);
+  assert.equal(f.calls[0][1].action, undefined);
+});
