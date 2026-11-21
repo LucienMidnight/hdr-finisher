@@ -2,15 +2,16 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from concurrent.futures import ThreadPoolExecutor
-from contextlib import ExitStack
+from contextlib import ExitStack, contextmanager, nullcontext
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 from io import BytesIO
 import os
 from pathlib import Path
-from tempfile import NamedTemporaryFile, TemporaryDirectory
+from tempfile import NamedTemporaryFile, TemporaryDirectory, TemporaryFile
 import subprocess
 from time import perf_counter
-from typing import Callable
+from typing import BinaryIO, Callable
 import zlib
 
 import numpy as np
@@ -190,10 +191,71 @@ def _delivery_source_filter(session, kind, adjustments, *, authored):
     return resolve
 
 
+@dataclass
+class _DeliveryGrain:
+    session: object
+    source: np.ndarray
+    controls_key: str
+    scratch: BinaryIO | None
+    pixels: np.ndarray | None = None
+    mapped_shape: tuple[int, ...] | None = None
+    mapped_dtype: np.dtype | None = None
+
+    def resolve(self, render):
+        if self.pixels is not None:
+            return self.pixels
+        if self.mapped_shape is not None:
+            return np.memmap(self.scratch, dtype=self.mapped_dtype, mode="c", shape=self.mapped_shape)
+        pixels = render()
+        if self.scratch is None:
+            self.pixels = pixels
+        else:
+            # Proof reuses the source across an encoder pass. The mapping is
+            # held only by a render, so the encoder does not hold this frame.
+            pixels.tofile(self.scratch)
+            self.mapped_shape, self.mapped_dtype = pixels.shape, pixels.dtype
+        return pixels
+
+
+_delivery_grain: ContextVar[_DeliveryGrain | None] = ContextVar("delivery_grain", default=None)
+
+
+@contextmanager
+def share_delivery_grain(session, adjustments, *, spans_encoding=False):
+    """Keep one resolved Grain source for the duration of an export or Proof."""
+    active = _delivery_grain.get()
+    if active is not None and active.session is session:
+        yield
+        return
+    hdr = denoise_settings_for_export(session, PreviewKind.HDR)
+    sdr = denoise_settings_for_export(session, PreviewKind.SDR)
+    if (hdr is None or sdr is None or hdr.controls.method in {"standard", "micro_grain"}
+            or hdr.controls != sdr.controls or _authored_sdr_base(session, PreviewKind.SDR, adjustments)):
+        yield
+        return
+    with TemporaryFile() if spans_encoding else nullcontext() as scratch:
+        token = _delivery_grain.set(_DeliveryGrain(session, session.image, hdr.controls.model_dump_json(), scratch))
+        try:
+            yield
+        finally:
+            _delivery_grain.reset(token)
+
+
 def delivery_denoise_inputs(session, kind, adjustments):
     authored = _authored_sdr_base(session, kind, adjustments)
     source_filter = _delivery_source_filter(session, kind, adjustments, authored=authored)
-    source = session.image if source_filter else _denoised_export_source(session, kind)
+    shared = _delivery_grain.get()
+    lane = denoise_settings_for_export(session, kind) if shared is not None else None
+    if (shared is not None and shared.session is session and shared.source is session.image
+            and not authored and lane is not None and lane.controls.model_dump_json() == shared.controls_key):
+        if source_filter is not None:
+            resolve_source = source_filter
+            source_filter = lambda image, authored: shared.resolve(lambda: resolve_source(image, authored))
+            source = session.image
+        else:
+            source = shared.resolve(lambda: _denoised_export_source(session, kind))
+    else:
+        source = session.image if source_filter else _denoised_export_source(session, kind)
     return source, getattr(session, "sdr_reference_image", None), source_filter
 
 
@@ -864,8 +926,9 @@ class AVIFGainMapExportBackend(ExportBackend):
             notes: list[str] = []
             finishing_adjustments = _finishing_adjustments_for_export(session)
             phase_started = perf_counter()
-            hdr_image = _render_export_branch(session, settings, PreviewKind.HDR, finishing_adjustments)
-            sdr_image = _render_export_branch(session, settings, PreviewKind.SDR, finishing_adjustments)
+            with share_delivery_grain(session, finishing_adjustments):
+                hdr_image = _render_export_branch(session, settings, PreviewKind.HDR, finishing_adjustments)
+                sdr_image = _render_export_branch(session, settings, PreviewKind.SDR, finishing_adjustments)
             timings_ms["render_renditions"] = round((perf_counter() - phase_started) * 1000.0, 3)
 
             def write(staged_output: Path) -> None:
