@@ -73,7 +73,7 @@ Three problems follow, and Steve approved all three on November 21:
 | MG-2 | Micro Grain CPU: visible area first | `sprint/micro-cpu-visible` | MG-1 merged | to do (PC, after MG-1) |
 | MEM-1 | One memory budget on the MacBook Neo | `sprint/mac-memory` | MG-1, GPU-2 merged | to do (overnight; Mac measurements) |
 | QUAL-1 | Exposure-independent quality fixes (output changes) | `sprint/grain-quality` | CG-2 merged | to do; needs Steve's visual sign-off before any default changes |
-| FOLD-1 | Fine Grain folded into Clean Grain, with a cleaning checkbox | `sprint/fold-fine-grain` | CG-2, GPU-2, ROUTE-1 merged | to do (Steve approved R2-1) |
+| FOLD-1 | Fine Grain folded into Clean Grain, with a cleaning checkbox | `sprint/fold-fine-grain` | CG-2, GPU-2, ROUTE-1 merged | done locally: colour cleaning checkbox defaults on; Sony HDR and SDR Fit captures byte-identical on each route with it on, and off-mode CPU/GPU mean / p99 0.055 / 0.161 HDR and 0.031 / 0.765 SDR; Canon and Sony crops ready |
 | INT-2 | Round 2 integration, full checks, push and hand test | `feat/denoise-v1` | all round 2 | to do |
 
 LOG-1, CPU-1 and GPU-1 run in parallel on November 21. LOG-2 starts once
