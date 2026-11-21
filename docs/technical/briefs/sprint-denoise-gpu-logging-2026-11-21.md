@@ -68,7 +68,7 @@ Three problems follow, and Steve approved all three on November 21:
 | TRI-1 | Mac triage: CPU Micro Grain reuse and reduced-preview wording | `t3/b289892f` | INT | done, merged Nov 21 (`79b10821`), byte-identical. PC: Exposure edit 81.2 → 2.0 s, HDR→SDR 79.2 → 2.4 s; first picture unchanged (~84 s, one core); peak RAM 3.86 → 3.58 GB |
 | MG-1 | Micro Grain CPU: all cores and lens correction in strips | `sprint/micro-cpu-speed` | TRI-1 | to do (PC, now) |
 | CG-2 | Clean Grain colour stage in C, one noise-model store | `sprint/clean-colour-native` | — | to do (PC, now) |
-| GPU-2 | Faster GPU Micro Grain and Fit | `sprint/gpu-grain-speed` | — | local `bef10902`: bounded Fit batching; Sony trial pixel-identical; slider trim dropped; Mac and isolated Micro Fit timing open |
+| GPU-2 | Faster GPU Micro Grain and Fit | `sprint/gpu-grain-speed` | — | done, merged Nov 21 (`33063718`). PC Sony, finished frames byte-identical (5 pairs incl. edges and partial tiles): Fit reduction Micro 15.0 → 12.5 s, Clean 2.49 → 2.18 s. Micro slider unchanged (halo trim gave no consistent gain, dropped). AHD pooling and measurement batching not done (no measured gain). Isolated Micro Fit timing and Mac profiling open (INT-2, MEM-1) |
 | ROUTE-1 | One Grain route state and clear route messages | `sprint/grain-route-ui` | — | to do (PC, now) |
 | MG-2 | Micro Grain CPU: visible area first | `sprint/micro-cpu-visible` | MG-1 merged | to do (PC, after MG-1) |
 | MEM-1 | One memory budget on the MacBook Neo | `sprint/mac-memory` | MG-1, GPU-2 merged | to do (overnight; Mac measurements) |
