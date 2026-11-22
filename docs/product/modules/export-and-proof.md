@@ -1,3 +1,19 @@
+## November 22 — File-backed AVIF delivery and full-size Proof
+
+AVIF delivery stores Grain and finished frames in files owned by the export
+or Proof job. It checks free disk space before allocating a frame. The renderer
+closes its maps after use, and the encoder inputs read the files in row bands.
+Native AVIF helpers run with the finished delivery frames on disk. Ceiling
+retries work on a private HDR copy, so Proof keeps the authored frame.
+
+Full-size AVIF and JPEG XL Proof reuse the export’s finished HDR and SDR frames.
+Proof converts SDR and calculates tile statistics in 128-row bands. It keeps
+the endpoint files for the two latest full-size artifacts. Full-size AVIF tiles
+are tone-mapped to temporary Y4M, then encoded with one worker and the same
+bitstream settings as the single-step helper. The single-step call still covers
+reduced tiles and systems without avifenc.
+[MacBook Neo measurements](../../technical/performance-table.md#november-22-2026--macbook-neo-proof-memory)
+
 ## November 22 — Bounded AVIF preparation and peak check
 
 AVIF Gain Map export and Proof prepare SDR and HDR encoder inputs in row bands.

@@ -19,6 +19,21 @@ remain required before release; these are accounting changes, not a memory pass.
 
 ### November 15: W2 P2 format-first publication within the same upload slot
 
+## November 22: delivery frame files
+
+AVIF delivery writes full frames to job-owned files after checking free disk
+space. It closes maps when the writing stage finishes and streams encoder
+inputs in row bands. Only files carry the finished frames across native
+helpers. The Library disk cache retains its own allowance. Grade keeps its
+source under the existing app memory census.
+
+Full-size non-JPEG Proof takes the finished frames from export before the
+ceiling check can change HDR pixels. It reads the retained endpoints in bands
+and keeps two pairs on disk. Each full-size AVIF tile uses a temporary Y4M
+between tone-mapping and encoding, so the helpers run one after the other.
+The desktop clears the Proof scratch when the backend exits.
+[MacBook Neo measurements](../../technical/performance-table.md#november-22-2026--macbook-neo-proof-memory)
+
 ## November 21: Grade shares memory on Apple Silicon
 
 GPU Grain admission uses the lesser of the existing graphics headroom

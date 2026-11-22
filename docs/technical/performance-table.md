@@ -78,6 +78,30 @@ retained Proof endpoints and the native tile helper.
 [Driver log](../../codebase/output/proof-mem-2/avif-proof.jsonl) ·
 [Run details](../../codebase/output/proof-mem-2/result.txt)
 
+### File-backed frames and split Proof tile encoding
+
+Same 42 MP Sony, full-size CPU Q90 AVIF Gain Map, Clean Small, Lensfun off
+and peak guarantee on. The MacBook Neo used the 4 GB setting and a disposable
+profile seeded with the CPU noise measurement from the whole-frame control.
+
+| Action | To result before → after | Whole-app peak (B) before → after | Backend peak (B) before → after | Peak scratch with profile (B) |
+| --- | ---: | ---: | ---: | ---: |
+| AVIF Gain Map export | 59.24 → 55.10 s | 5,541,590,864 → **3,594,121,984** | 4,682,568,264 → 1,181,517,840 | 1,529,548,800 |
+| Full-size AVIF Proof | 105.50 → 95.58 s | 5,355,190,528 → **3,564,122,976** | 3,905,065,400 → 1,170,639,416 | 1,564,164,096 |
+
+The native helper led both whole-app peaks. It used 2.106 GB during export’s
+ceiling reconstruction and 2.102 GB while tone-mapping the first Proof tile
+to Y4M. The Python backend used 0.658 GB and 0.673 GB at those samples. Its
+separate peaks were early in rendition preparation. Scratch peaks include
+the disposable profile. Earlier runs did not sample scratch disk use.
+
+Export and the Proof artifact matched SHA-256
+`ff42ef7d45b291da5251ca354b7908845cb37ea68318d18a205c054a6a4bc431`.
+Both Proof tiles, the retained endpoints and the displayed statistics
+matched. The encoder accepted the first attempt in both actions.
+[Driver log](../../codebase/output/proof-mem-3/avif-proof.jsonl) ·
+[Run details](../../codebase/output/proof-mem-3/result.txt)
+
 ## November 21 — Byte-exact Lensfun strips on MacBook Neo
 
 MacBook Neo, A18 Pro and 8 GB unified memory. Isolated CPU RAW development
