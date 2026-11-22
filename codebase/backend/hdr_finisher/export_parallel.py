@@ -3,24 +3,21 @@
 Both helpers split work where the arithmetic of every output sample is
 unchanged: a one-axis blur treats each line along that axis on its own, so
 blocks across the other axis give the same numbers; and a per-pixel band
-conversion gives the same band whichever worker runs it. They act only while
+conversion gives the same rows whichever worker converts them. They act only while
 an export is timed (``export_timing.export_clock``), so Grade and Library keep
 their current behaviour. Each use was checked byte for byte on the exported
 files.
 """
 from __future__ import annotations
 
-from collections import deque
-from typing import Callable, Iterable, Iterator, TypeVar
+from typing import Callable
 
 import numpy as np
-
-T = TypeVar("T")
-R = TypeVar("R")
 
 # Below this a frame is not worth dispatching.
 MINIMUM_BLOCK_PIXELS = 2_000_000
 MINIMUM_BLOCK_LINES = 64
+MINIMUM_PART_ROWS = 16
 
 
 def _exporting() -> bool:
@@ -53,22 +50,20 @@ def blur_axis_in_blocks(blur: Callable[[np.ndarray, int, int], np.ndarray], valu
     return result
 
 
-def ordered_map(function: Callable[[T], R], items: Iterable[T], *, ahead: int | None = None) -> Iterator[R]:
-    """``map(function, items)`` on the CPU pool, in order, a few items ahead.
+def rows_in_parts(convert: Callable[[np.ndarray, int], np.ndarray], band: np.ndarray, top: int) -> np.ndarray:
+    """``convert(band, top)`` with the band's rows split over the CPU pool.
 
-    At most ``ahead`` results are held at once, so a band conversion keeps
-    its bounded memory.
+    For a per-pixel conversion that takes its first row's frame position
+    (dithering uses it). One band is in flight at a time, as before, so the
+    memory held stays that of the serial conversion.
     """
-    if not _exporting():
-        yield from map(function, items)
-        return
+    rows = band.shape[0]
+    if not _exporting() or rows < 2 * MINIMUM_PART_ROWS:
+        return convert(band, top)
     from .cpu_budget import CpuExecutor, logical_cpus
-    ahead = ahead or logical_cpus()
-    pending: deque = deque()
+    parts = max(1, min(logical_cpus(), rows // MINIMUM_PART_ROWS))
+    edges = np.linspace(0, rows, parts + 1).astype(int)
     with CpuExecutor() as pool:
-        for item in items:
-            pending.append(pool.submit(function, item))
-            if len(pending) >= ahead:
-                yield pending.popleft().result()
-        while pending:
-            yield pending.popleft().result()
+        pieces = list(pool.map(lambda index: convert(band[edges[index]:edges[index + 1]], top + int(edges[index])),
+                               range(parts)))
+    return np.concatenate(pieces, axis=0)
