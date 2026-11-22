@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from concurrent.futures import ThreadPoolExecutor
-from contextlib import ExitStack, contextmanager, nullcontext
+from contextlib import ExitStack, closing, contextmanager, nullcontext
 from contextvars import ContextVar
 from dataclasses import dataclass, field
 from io import BytesIO
@@ -141,7 +141,7 @@ def denoise_delivery_key(session: object) -> tuple:
     )
 
 
-def _denoised_export_source(session: object, kind: PreviewKind) -> np.ndarray:
+def _denoised_export_source(session: object, kind: PreviewKind, *, allocate_output=None) -> np.ndarray:
     """Apply the authored denoise to the full-resolution source.
 
     The preview replaces its *source proxy* with the reconstruction and grades
@@ -161,11 +161,9 @@ def _denoised_export_source(session: object, kind: PreviewKind) -> np.ndarray:
         return resolve_source(session, MicroGrainControls.from_settings(controls))
     from .denoise_measurement import cpu_delivery_model
     model = cpu_delivery_model(session)
+    options = {"allocate_output": allocate_output} if allocate_output is not None else {}
     return denoise_adaptive.resolve_adaptive(
-        image,
-        model,
-        denoise_adaptive.AdaptiveControls(**controls.model_dump()),
-    )
+        image, model, denoise_adaptive.AdaptiveControls(**controls.model_dump()), **options)
 
 
 def _authored_sdr_base(session, kind, adjustments):
@@ -173,7 +171,7 @@ def _authored_sdr_base(session, kind, adjustments):
             and adjustments.sdr.use_authored_base and not adjustments.sdr.linked_to_hdr)
 
 
-def _delivery_source_filter(session, kind, adjustments, *, authored):
+def _delivery_source_filter(session, kind, adjustments, *, authored, allocate_output=None):
     lane = denoise_settings_for_export(session, kind)
     if lane is None:
         return None
@@ -190,7 +188,8 @@ def _delivery_source_filter(session, kind, adjustments, *, authored):
         from .denoise_measurement import cpu_delivery_model
         model = cpu_delivery_model(session, authored_image=image if authored else None,
                                    geometry=adjustments.shared.geometry)
-        return denoise_adaptive.resolve_adaptive(image, model, controls)
+        options = {"allocate_output": allocate_output} if allocate_output is not None else {}
+        return denoise_adaptive.resolve_adaptive(image, model, controls, **options)
 
     return resolve
 
@@ -199,8 +198,9 @@ def _delivery_source_filter(session, kind, adjustments, *, authored):
 class _DeliveryGrain:
     session: object
     source: np.ndarray
-    controls_key: str
+    controls_key: str | None
     scratch: BinaryIO | None
+    allocate_output: Callable | None = None
     pixels: np.ndarray | None = None
     mapped_shape: tuple[int, ...] | None = None
     mapped_dtype: np.dtype | None = None
@@ -209,7 +209,7 @@ class _DeliveryGrain:
         if self.pixels is not None:
             return self.pixels
         if self.mapped_shape is not None:
-            return np.memmap(self.scratch, dtype=self.mapped_dtype, mode="c", shape=self.mapped_shape)
+            return np.memmap(self.scratch, dtype=self.mapped_dtype, mode="r", shape=self.mapped_shape)
         pixels = render()
         if self.scratch is None:
             self.pixels = pixels
@@ -225,7 +225,7 @@ _delivery_grain: ContextVar[_DeliveryGrain | None] = ContextVar("delivery_grain"
 
 
 @contextmanager
-def share_delivery_grain(session, adjustments, *, spans_encoding=False):
+def share_delivery_grain(session, adjustments, *, spans_encoding=False, allocate_output=None):
     """Keep one resolved Grain source for the duration of an export or Proof."""
     active = _delivery_grain.get()
     if active is not None and active.session is session:
@@ -233,12 +233,14 @@ def share_delivery_grain(session, adjustments, *, spans_encoding=False):
         return
     hdr = denoise_settings_for_export(session, PreviewKind.HDR)
     sdr = denoise_settings_for_export(session, PreviewKind.SDR)
-    if (hdr is None or sdr is None or hdr.controls.method in {"standard", "micro_grain"}
-            or hdr.controls != sdr.controls or _authored_sdr_base(session, PreviewKind.SDR, adjustments)):
+    matched = (hdr is not None and sdr is not None and hdr.controls.method not in {"standard", "micro_grain"}
+               and hdr.controls == sdr.controls and not _authored_sdr_base(session, PreviewKind.SDR, adjustments))
+    if not matched and allocate_output is None:
         yield
         return
-    with TemporaryFile() if spans_encoding else nullcontext() as scratch:
-        token = _delivery_grain.set(_DeliveryGrain(session, session.image, hdr.controls.model_dump_json(), scratch))
+    key = hdr.controls.model_dump_json() if matched else None
+    with TemporaryFile() if spans_encoding and matched else nullcontext() as scratch:
+        token = _delivery_grain.set(_DeliveryGrain(session, session.image, key, scratch, allocate_output))
         try:
             yield
         finally:
@@ -247,19 +249,26 @@ def share_delivery_grain(session, adjustments, *, spans_encoding=False):
 
 def delivery_denoise_inputs(session, kind, adjustments):
     authored = _authored_sdr_base(session, kind, adjustments)
-    source_filter = _delivery_source_filter(session, kind, adjustments, authored=authored)
     shared = _delivery_grain.get()
-    lane = denoise_settings_for_export(session, kind) if shared is not None else None
-    if (shared is not None and shared.session is session and shared.source is session.image
-            and not authored and lane is not None and lane.controls.model_dump_json() == shared.controls_key):
+    if shared is not None and (shared.session is not session or shared.source is not session.image):
+        shared = None
+    allocate_output = shared.allocate_output if shared is not None else None
+    source_filter = _delivery_source_filter(session, kind, adjustments, authored=authored, allocate_output=allocate_output)
+    source = session.image
+    if source_filter is None:
+        def resolve_source():
+            options = {"allocate_output": allocate_output} if allocate_output is not None else {}
+            return _denoised_export_source(session, kind, **options)
+
+    lane = denoise_settings_for_export(session, kind) if shared is not None and shared.controls_key is not None else None
+    if not authored and lane is not None and lane.controls.model_dump_json() == shared.controls_key:
         if source_filter is not None:
             resolve_source = source_filter
             source_filter = lambda image, authored: shared.resolve(lambda: resolve_source(image, authored))
-            source = session.image
         else:
-            source = shared.resolve(lambda: _denoised_export_source(session, kind))
-    else:
-        source = session.image if source_filter else _denoised_export_source(session, kind)
+            source = shared.resolve(resolve_source)
+    elif source_filter is None:
+        source = resolve_source()
     return source, getattr(session, "sdr_reference_image", None), source_filter
 
 
@@ -280,7 +289,12 @@ def _render_unwatermarked_branch(
     from .gpu_delivery import grain_delivery_enabled, render_pair, streamed_delivery_enabled
     object.__setattr__(settings, "_last_cpu_strips", False)
     bounded = _bounded_export_eligible(session, settings, kind, adjustments, prepared_denoise=denoise_source is not None)
-    if bounded and not streamed_delivery_enabled(session, settings, adjustments) and (denoise_source is None or settings.format == "sdr_jpeg" or all(
+    # AVIF's prepared source is only for CPU rendering. Its GPU admission
+    # still uses the same graph and checks as before.
+    avif = settings.format == "avif_gain_map"
+    gpu_prepared_denoise = not avif and denoise_source is not None
+    gpu_bounded = bounded and not (avif and denoise_settings_for_export(session, kind))
+    if gpu_bounded and not streamed_delivery_enabled(session, settings, adjustments) and (not gpu_prepared_denoise or settings.format == "sdr_jpeg" or all(
         _bounded_export_eligible(session, settings, lane, adjustments, prepared_denoise=True)
         for lane in (PreviewKind.HDR, PreviewKind.SDR)
     )):
@@ -293,7 +307,7 @@ def _render_unwatermarked_branch(
         # Grade window. Don't allocate its shared input and output arrays when
         # the measured desktop already leaves too little room for them.
         starting = app_memory.STARTING
-        if denoise_source is not None and os.environ.get("HDR_FINISHER_DESKTOP_PID"):
+        if gpu_prepared_denoise and os.environ.get("HDR_FINISHER_DESKTOP_PID"):
             memory = app_memory.snapshot()
             starting = max(starting, memory["totalBytes"] + memory["reservedBytes"])
             # The hidden renderer's readback and the main process's mapped
@@ -328,7 +342,7 @@ def _render_unwatermarked_branch(
             source, reference, strip_adjustments = denoise_source(kind)
         image, report = render_in_strips(source, strip_adjustments, kind,
             sdr_reference_image=reference, color_context=color_context,
-            allocate_output=allocate_output if getattr(settings, "_bounded_cpu_delivery", False) else None,
+            allocate_output=allocate_output,
             parallel_sdr_output=True)
         if kind.value in settings.editing_measurements:
             peak = report.scope_peak_value
@@ -427,6 +441,48 @@ def _render_branch_to_file(path, render):
     return DeliveryFrame.spill(path, pixels)
 
 
+def _prepared_delivery_source(session, adjustments, kind):
+    """Adapt the existing delivery denoise inputs for the fixed-source strips."""
+    from .finishing import apply_geometry
+    from .models import GeometryAdjustments
+
+    source, reference, source_filter = delivery_denoise_inputs(session, kind, adjustments)
+    if source_filter is None:
+        return source, reference, adjustments
+    geometry = adjustments.shared.geometry
+    fixed_adjustments = adjustments.model_copy(update={"shared": adjustments.shared.model_copy(
+        update={"geometry": GeometryAdjustments()})})
+    if reference is not None and kind == PreviewKind.SDR and adjustments.sdr.use_authored_base:
+        reference = apply_geometry(reference, geometry)
+    if _authored_sdr_base(session, kind, adjustments):
+        return apply_geometry(source, geometry), source_filter(reference, True), fixed_adjustments
+    return source_filter(apply_geometry(source, geometry), False), reference, fixed_adjustments
+
+
+def _render_delivery_files(session, settings, adjustments, directory, *, render=_render_export_branch):
+    with TemporaryDirectory(prefix="grain-", dir=directory) as grains, ExitStack() as maps:
+        def allocate_grain(shape):
+            # Equal inputs resolve through the shared source below. A new
+            # allocation therefore replaces a lane whose render has returned.
+            maps.close()
+            return maps.enter_context(DeliveryFrame(Path(grains) / "source.rgb", shape).map("w+"))
+
+        def prepared(kind):
+            return _prepared_delivery_source(session, adjustments, kind)
+
+        denoise_source = prepared if any(denoise_settings_for_export(session, lane) is not None
+                                         for lane in (PreviewKind.HDR, PreviewKind.SDR)) else None
+        try:
+            with share_delivery_grain(session, adjustments, allocate_output=allocate_grain):
+                return tuple(
+                    _render_branch_to_file(directory / f"{lane.value}.rgb", lambda allocate:
+                        render(session, settings, lane, adjustments, denoise_source=denoise_source,
+                               allocate_output=allocate))
+                    for lane in (PreviewKind.HDR, PreviewKind.SDR))
+        finally:
+            _release_delivery_pixels(session)
+
+
 def _release_delivery_pixels(session):
     owner = getattr(session, "delivery_owner", session)
     with getattr(owner, "_delivery_lock", nullcontext()):
@@ -438,15 +494,8 @@ def _release_delivery_pixels(session):
 
 
 def _allocate_export_strip_output(scratch: ExitStack, shape: tuple[int, int, int]) -> np.memmap:
-    from .config import APP_DATA_DIR
-    from .library_cache import LibraryCache
-
-    size = shape[0] * shape[1] * shape[2] * np.dtype(np.float32).itemsize
-    handle, release = LibraryCache(APP_DATA_DIR).open_grade_scratch(size)
-    scratch.callback(release)
-    output = np.memmap(handle, mode="r+", shape=shape, dtype=np.float32)
-    scratch.callback(output._mmap.close)
-    return output
+    directory = scratch.enter_context(TemporaryDirectory(prefix="delivery-strip-"))
+    return scratch.enter_context(DeliveryFrame(Path(directory) / "strip.rgb", shape).map("w+"))
 
 
 def _jpeg_denoise_source(session, adjustments):
@@ -856,15 +905,16 @@ class _JpegGainMapInputs:
     track_floor: bool
     positive_mask: np.ndarray | None = None
 
-    def can_reuse_sdr(self, hdr_image: np.ndarray) -> bool:
+    def can_reuse_sdr(self, hdr_image: np.ndarray | DeliveryFrame) -> bool:
         if self.positive_mask is None:
             return False
         # The SDR base floor is the only part of staging that depends on HDR.
         # Even a positive correction scale can round a tiny HDR channel to zero.
-        for top in range(0, hdr_image.shape[0], _ULTRAHDR_INPUT_BAND_ROWS):
-            rows = slice(top, top + _ULTRAHDR_INPUT_BAND_ROWS)
-            if not np.array_equal(_ultrahdr_positive_mask(hdr_image[rows]), self.positive_mask[rows]):
-                return False
+        with closing(row_bands(hdr_image, _ULTRAHDR_INPUT_BAND_ROWS)) as bands:
+            for index, band in enumerate(bands):
+                top = index * _ULTRAHDR_INPUT_BAND_ROWS
+                if not np.array_equal(_ultrahdr_positive_mask(band), self.positive_mask[top:top + len(band)]):
+                    return False
         return True
 
 
@@ -885,16 +935,18 @@ def _write_jpeg_gainmap_once(staged_output, hdr_image, sdr_image, settings, refe
         sdr_rgb = np.empty((*sdr_image.shape[:2], 3), dtype=np.uint8)
         if inputs.track_floor and inputs.positive_mask is None:
             inputs.positive_mask = np.empty((height, (width + 7) // 8, 3), dtype=np.uint8)
-    with hdr_raw_path.open("wb") as hdr_raw:
-        for top in range(0, height, _ULTRAHDR_INPUT_BAND_ROWS):
-            rows = slice(top, top + _ULTRAHDR_INPUT_BAND_ROWS)
-            hdr_band = hdr_image[rows]
+    with (hdr_raw_path.open("wb") as hdr_raw,
+          closing(row_bands(hdr_image, _ULTRAHDR_INPUT_BAND_ROWS)) as hdr_bands,
+          closing(row_bands(sdr_image, _ULTRAHDR_INPUT_BAND_ROWS)) as sdr_bands):
+        for index, hdr_band in enumerate(hdr_bands):
             hdr_rgba, peak = _prepare_hdr_linear_rgba_f16(hdr_band, reference_white_nits)
             hdr_raw.write(memoryview(hdr_rgba).cast("B"))
             target_peak_nits = max(target_peak_nits, peak)
             if sdr_rgb is not None:
+                top = index * _ULTRAHDR_INPUT_BAND_ROWS
+                rows = slice(top, top + len(hdr_band))
                 sdr_rgb[rows] = _floor_ultrahdr_base(
-                    _linear_to_srgb8(sdr_image[rows, :, :3], dither=settings.dithering, top=top),
+                    _linear_to_srgb8(next(sdr_bands)[..., :3], dither=settings.dithering, top=top),
                     hdr_band,
                 )
                 if inputs.positive_mask is not None:
@@ -956,26 +1008,17 @@ class AVIFGainMapExportBackend(ExportBackend):
 
         timings_ms: dict[str, float] = {}
         proof_directory = getattr(settings, "_proof_endpoint_directory", None)
+        scratch = ExitStack()
 
         def prepare() -> _PreparedExport:
             notes: list[str] = []
             finishing_adjustments = _finishing_adjustments_for_export(session)
             phase_started = perf_counter()
-            try:
-                with share_delivery_grain(session, finishing_adjustments):
-                    if proof_directory is None:
-                        hdr_image = _render_export_branch(session, settings, PreviewKind.HDR, finishing_adjustments)
-                        sdr_image = _render_export_branch(session, settings, PreviewKind.SDR, finishing_adjustments)
-                    else:
-                        hdr_image, sdr_image = (
-                            _render_branch_to_file(proof_directory / f"{lane.value}.rgb", lambda allocate:
-                                _render_export_branch(session, settings, lane, finishing_adjustments,
-                                                      allocate_output=allocate))
-                            for lane in (PreviewKind.HDR, PreviewKind.SDR))
-                        object.__setattr__(settings, "_proof_endpoints", (hdr_image, sdr_image))
-            finally:
-                if proof_directory is not None:
-                    _release_delivery_pixels(session)
+            directory = proof_directory or Path(scratch.enter_context(TemporaryDirectory(prefix="avif-delivery-")))
+            hdr_image, sdr_image = _render_delivery_files(session, settings, finishing_adjustments, directory,
+                                                          render=_render_export_branch)
+            if proof_directory is not None:
+                object.__setattr__(settings, "_proof_endpoints", (hdr_image, sdr_image))
             timings_ms["render_renditions"] = round((perf_counter() - phase_started) * 1000.0, 3)
 
             def write(staged_output: Path) -> None:
@@ -1002,16 +1045,17 @@ class AVIFGainMapExportBackend(ExportBackend):
             message = f"AVIF gain map export finished at {path}"
             return f"{message}. {validation}" if validation else message
 
-        return _execute_export(
-            self,
-            session,
-            settings,
-            suffix=".avif",
-            prepare=prepare,
-            success_message=success,
-            failure_prefix=None,
-            timings_ms=timings_ms,
-        )
+        with scratch:
+            return _execute_export(
+                self,
+                session,
+                settings,
+                suffix=".avif",
+                prepare=prepare,
+                success_message=success,
+                failure_prefix=None,
+                timings_ms=timings_ms,
+            )
 
 
 class JPEGUltraHDRExportBackend(ExportBackend):
@@ -1032,27 +1076,30 @@ class JPEGUltraHDRExportBackend(ExportBackend):
             )
 
         scratch = ExitStack()
-        strip_outputs: list[np.memmap] = []
-
-        def allocate_output(shape):
-            output = _allocate_export_strip_output(scratch, shape)
-            strip_outputs.append(output)
-            return output
 
         def prepare() -> _PreparedExport:
+            from .gpu_delivery import streamed_delivery_enabled
+
             notes: list[str] = []
             finishing_adjustments = _finishing_adjustments_for_export(session)
             lanes = (PreviewKind.HDR, PreviewKind.SDR)
-            if any(denoise_settings_for_export(session, lane) is not None for lane in lanes):
-                denoise_source = _jpeg_denoise_source(session, finishing_adjustments)
-                hdr_image, sdr_image = (_render_export_branch(session, settings, lane, finishing_adjustments,
-                                                              denoise_source=denoise_source,
-                                                              allocate_output=allocate_output) for lane in lanes)
+            denoise_source = (_jpeg_denoise_source(session, finishing_adjustments)
+                              if any(denoise_settings_for_export(session, lane) is not None for lane in lanes) else None)
+            if denoise_source is not None or streamed_delivery_enabled(session, settings, finishing_adjustments):
+                directory = Path(scratch.enter_context(TemporaryDirectory(prefix="jpeg-delivery-")))
+                try:
+                    hdr_image, sdr_image = (
+                        _render_branch_to_file(directory / f"{lane.value}.rgb", lambda allocate:
+                            _render_export_branch(session, settings, lane, finishing_adjustments,
+                                                  denoise_source=denoise_source, allocate_output=allocate))
+                        for lane in lanes)
+                finally:
+                    _release_delivery_pixels(session)
                 del denoise_source
             else:
                 hdr_image, sdr_image = (_render_export_branch(session, settings, lane, finishing_adjustments)
                                         for lane in lanes)
-            if hdr_image.shape != sdr_image.shape or hdr_image.ndim != 3 or hdr_image.shape[2] < 3:
+            if hdr_image.shape != sdr_image.shape or len(hdr_image.shape) != 3 or hdr_image.shape[2] < 3:
                 raise ExportProcessError(
                     "The independently authored HDR and SDR renditions must have matching RGB dimensions."
                 )
@@ -1062,22 +1109,11 @@ class JPEGUltraHDRExportBackend(ExportBackend):
             photo_rect = layout.photo if layout is not None and layout.inset else None
 
             def write(staged_output: Path) -> None:
-                owns_hdr = any(hdr_image is output for output in strip_outputs)
-                if owns_hdr:
-                    hdr_image.setflags(write=True)
-                with ExitStack() as encoder_input:
-                    hdr = hdr_image
-                    if isinstance(hdr_image, np.memmap) and hdr_image.mode == "r" and not hdr_image.flags.writeable:
-                        hdr = np.memmap(hdr_image.filename, mode="c", dtype=hdr_image.dtype,
-                                        offset=hdr_image.offset, shape=hdr_image.shape)
-                        encoder_input.callback(hdr._mmap.close)
-                        owns_hdr = True
-                    write_jpeg_gainmap_renditions(staged_output, hdr, sdr_image, settings,
-                        getattr(session, "hdr_reference_white_nits", 203), ultrahdr_app=ultrahdr_app,
-                        exif_payload=None,
-                        ceiling_nits=_peak_ceiling(settings, finishing_adjustments),
-                        encoding_allowance=_peak_allowance(finishing_adjustments), notes=notes, photo_rect=photo_rect,
-                        correct_in_place=owns_hdr)
+                write_jpeg_gainmap_renditions(staged_output, hdr_image, sdr_image, settings,
+                    getattr(session, "hdr_reference_white_nits", 203), ultrahdr_app=ultrahdr_app,
+                    exif_payload=None,
+                    ceiling_nits=_peak_ceiling(settings, finishing_adjustments),
+                    encoding_allowance=_peak_allowance(finishing_adjustments), notes=notes, photo_rect=photo_rect)
 
             return _PreparedExport(
                 ".ultrahdr.tmp.jpg",

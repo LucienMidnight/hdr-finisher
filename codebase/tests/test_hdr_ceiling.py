@@ -3,6 +3,7 @@ import numpy as np
 import pytest
 
 from hdr_finisher import hdr_ceiling
+from hdr_finisher.delivery_frames import DeliveryFrame
 
 NITS = .18 / 203
 
@@ -59,9 +60,10 @@ def test_disk_backed_jpeg_correction_matches_whole_image_over_multiple_retries(t
     peaks[0][-1, -1] = 1025
     peaks[1][128, 16] = 1072
     delivered_pixels = []
+    array_notes = []
     finished = hdr_ceiling.encode_within_ceiling(
         output, 203, lambda pixels: delivered_pixels.append(np.array(pixels)) or len(delivered_pixels),
-        lambda attempt: peaks[attempt - 1], 1000, correct_in_place=True, encoding_allowance=0.01,
+        lambda attempt: peaks[attempt - 1], 1000, array_notes, correct_in_place=True, encoding_allowance=0.01,
     )
     assert finished == 3
     expected = rgba.copy()
@@ -85,6 +87,23 @@ def test_disk_backed_jpeg_correction_matches_whole_image_over_multiple_retries(t
         expected[..., :3] *= correction[..., None]
         np.testing.assert_array_equal(delivered_pixels[attempt + 1], expected)
     np.testing.assert_array_equal(output, expected)
+    output._mmap.close()
+
+    frame = DeliveryFrame.spill(tmp_path / "authored.raw", rgba)
+    notes = []
+    streamed_pixels = []
+
+    def encode_frame(current):
+        streamed_pixels.append(b"".join(band.tobytes() for band in current.bands(hdr_ceiling.BAND_ROWS)))
+        return len(streamed_pixels)
+
+    finished = hdr_ceiling.encode_within_ceiling(frame, 203, encode_frame,
+        lambda attempt: peaks[attempt - 1], 1000, notes, encoding_allowance=0.01)
+    assert finished == 3
+    assert streamed_pixels == [pixels.tobytes() for pixels in delivered_pixels]
+    assert notes == array_notes == []
+    assert frame.path.read_bytes() == rgba.tobytes()
+    assert not list(tmp_path.glob("ceiling-*"))
 
 
 @pytest.mark.parametrize("orientation", [1, 6])

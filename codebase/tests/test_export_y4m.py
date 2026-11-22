@@ -2,6 +2,7 @@ import numpy as np
 import pytest
 
 from hdr_finisher import exporters
+from hdr_finisher.delivery_frames import DeliveryFrame
 
 
 def _whole_frame_y4m(yuv, bit_depth, chroma):
@@ -33,6 +34,9 @@ def test_banded_sdr_y4m_matches_whole_frame(tmp_path, chroma, bit_depth, ditheri
     expected = _whole_frame_y4m(exporters._linear_sdr_to_yuv(image, bit_depth, dithering, 0), bit_depth, chroma)
     exporters._write_sdr_y4m(path, image, bit_depth=bit_depth, chroma_subsampling=chroma, dithering=dithering)
     assert path.read_bytes() == expected
+    frame = DeliveryFrame.spill(tmp_path / "sdr.rgb", image)
+    exporters._write_sdr_y4m(path, frame, bit_depth=bit_depth, chroma_subsampling=chroma, dithering=dithering)
+    assert path.read_bytes() == expected
 
 
 @pytest.mark.parametrize("chroma", ["444", "422", "420"])
@@ -44,6 +48,9 @@ def test_banded_hdr_y4m_matches_whole_frame(tmp_path, chroma, bit_depth):
     path = tmp_path / "hdr.y4m"
     expected = _whole_frame_y4m(exporters._linear_to_bt2020_pq_yuv(image, bit_depth, 100), bit_depth, chroma)
     exporters._write_hdr_y4m(path, image, bit_depth=bit_depth, chroma_subsampling=chroma, reference_white_nits=100)
+    assert path.read_bytes() == expected
+    frame = DeliveryFrame.spill(tmp_path / "hdr.rgb", image)
+    exporters._write_hdr_y4m(path, frame, bit_depth=bit_depth, chroma_subsampling=chroma, reference_white_nits=100)
     assert path.read_bytes() == expected
 
 

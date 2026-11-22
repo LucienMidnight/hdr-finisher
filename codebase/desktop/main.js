@@ -350,6 +350,14 @@ async function startBackend() {
   fs.mkdirSync(logsDirectory, { recursive: true });
   const logPath = path.join(logsDirectory, "backend.log");
   const {log, write:writeBackendLog, events} = getBackendLogWriter();
+  const proofScratchRoot = fs.mkdtempSync(path.join(os.tmpdir(), "hdr-proof-"));
+  const clearProofScratch = () => {
+    try {
+      fs.rmSync(proofScratchRoot, { recursive: true, force: true, maxRetries: 3 });
+    } catch (error) {
+      console.warn(`Proof scratch cleanup failed: ${error.message}`);
+    }
+  };
   const child = spawn(command.executable, command.args, {
     cwd: command.cwd,
     env: {
@@ -362,11 +370,15 @@ async function startBackend() {
       HDR_FINISHER_DESKTOP_PID: String(process.pid),
       HDR_FINISHER_DESKTOP_CONTROL_SECRET: controlSecret,
       HDR_FINISHER_APP_DATA_DIR: app.getPath("userData"),
+      HDR_FINISHER_PROOF_ROOT: proofScratchRoot,
       PYTHONUNBUFFERED: "1",
     },
     windowsHide: true,
     stdio: ["ignore", "pipe", "pipe"],
   });
+  // The desktop can terminate the backend before Python's exit handlers run.
+  child.once("exit", clearProofScratch);
+  child.once("error", clearProofScratch);
   const backendStarted = Date.now();
   libraryStage("backend_process_started", { pid: child.pid });
   readline.createInterface({ input: child.stderr }).on("line", line => events.backend(line, child.pid));

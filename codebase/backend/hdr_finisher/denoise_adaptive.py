@@ -290,7 +290,8 @@ def _filter_region(rgb: np.ndarray, model: AdaptiveNoiseModel, controls: Adaptiv
     return (out @ OPPONENT).astype(np.float32)
 
 
-def resolve_adaptive(image: np.ndarray, model: AdaptiveNoiseModel, controls: AdaptiveControls = AdaptiveControls()) -> np.ndarray:
+def resolve_adaptive(image: np.ndarray, model: AdaptiveNoiseModel, controls: AdaptiveControls = AdaptiveControls(),
+                     *, allocate_output=None) -> np.ndarray:
     """Denoise ``image`` tile by tile; alpha, if present, passes through."""
     source = np.asarray(image, dtype=np.float32)
     if source.ndim != 3 or source.shape[2] not in (3, 4):
@@ -299,15 +300,29 @@ def resolve_adaptive(image: np.ndarray, model: AdaptiveNoiseModel, controls: Ada
         return source
     if controls.method != "standard":
         from .denoise_grain import resolve_grain
-        return resolve_grain(source, model, controls)
-    return _resolve_standard(source, model, controls)
+        return resolve_grain(source, model, controls, allocate_output=allocate_output)
+    return _resolve_standard(source, model, controls, allocate_output=allocate_output)
 
 
-def _resolve_standard(source, model, controls):
-    if controls.amount <= 0.0 or (controls.luminance <= 0.0 and controls.color_noise <= 0.0):
+def _denoise_output(source, allocate_output):
+    if allocate_output is None:
         return source.copy()
+    result = allocate_output(source.shape)
+    # The filters write only RGB. Copy any extra channels without a full-frame
+    # intermediate, and preserve the direct-copy case for disabled filtering.
+    np.copyto(result, source)
+    return result
+
+
+def _denoise_is_finite(result):
+    return all(np.isfinite(result[top:top + 128]).all() for top in range(0, len(result), 128))
+
+
+def _resolve_standard(source, model, controls, *, allocate_output=None):
+    result = _denoise_output(source, allocate_output)
+    if controls.amount <= 0.0 or (controls.luminance <= 0.0 and controls.color_noise <= 0.0):
+        return result
     height, width = source.shape[:2]
-    result = source.copy()
 
     def run(origin: tuple[int, int]) -> None:
         y0, x0 = origin
@@ -329,7 +344,7 @@ def _resolve_standard(source, model, controls):
     else:
         with CpuExecutor() as pool:
             list(pool.map(run, origins))
-    if not np.isfinite(result).all():
+    if not _denoise_is_finite(result):
         raise FloatingPointError("Adaptive denoise produced a non-finite value.")
     return result
 

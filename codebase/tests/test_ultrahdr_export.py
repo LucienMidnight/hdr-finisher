@@ -569,6 +569,23 @@ def test_real_ultrahdr_export_and_decode_when_encoder_is_available(tmp_path: Pat
     assert float(np.percentile(decoded_hdr, 99)) > float(np.percentile(legacy_linear, 99))
 
 
+def test_ultrahdr_file_inputs_match_array_inputs(tmp_path: Path) -> None:
+    from hdr_finisher.delivery_frames import DeliveryFrame
+
+    binary = binaries.resolve_binary("ultrahdr_app")
+    if binary is None:
+        pytest.skip("Native Ultra HDR encoder unavailable")
+    hdr = build_hdr_test_pattern(width=96, height=259)
+    sdr = np.clip(hdr * np.float32(.55), 0, 1)
+    settings = ExportSettings(format="jpeg_ultrahdr", quality=90, dithering="subtle")
+    array_path, file_path = tmp_path / "array.jpg", tmp_path / "file.jpg"
+    exporter_module.write_jpeg_gainmap_renditions(array_path, hdr, sdr, settings, ultrahdr_app=binary)
+    hdr_file = DeliveryFrame.spill(tmp_path / "hdr.rgb", hdr)
+    sdr_file = DeliveryFrame.spill(tmp_path / "sdr.rgb", sdr)
+    exporter_module.write_jpeg_gainmap_renditions(file_path, hdr_file, sdr_file, settings, ultrahdr_app=binary)
+    assert file_path.read_bytes() == array_path.read_bytes()
+
+
 def test_real_ultrahdr_gradient_has_no_long_reconstruction_plateaus_when_encoder_is_available(tmp_path: Path) -> None:
     capability = capability_module._ultrahdr_status()
     if capability.status != CapabilityStatus.AVAILABLE:

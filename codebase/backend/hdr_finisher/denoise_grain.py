@@ -566,15 +566,15 @@ class GrainPreparation:
         return result.tobytes()
 
 
-def resolve_grain(source, model, controls):
+def resolve_grain(source, model, controls, *, allocate_output=None):
     evenness = controls.grain_evenness
     splotches = controls.color_splotches
     broad = controls.splotch_size == "large"
     clean = controls.method == "clean_grain" and controls.clean_color and splotches > 0
     if (not clean and not evenness) or controls.amount <= 0 or not (controls.luminance or controls.color_noise):
-        return adaptive._resolve_standard(source, model, controls)
+        return adaptive._resolve_standard(source, model, controls, allocate_output=allocate_output)
     height, width = source.shape[:2]
-    result = source.copy()
+    result = adaptive._denoise_output(source, allocate_output)
     read = lambda y, x, b, r: source[y:b, x:r]
     fit = fit_grain(height, width, read, model, controls) if evenness else None
     # Stage only the core and the pixels the next stage will read.
@@ -592,6 +592,6 @@ def resolve_grain(source, model, controls):
 
     with CpuExecutor() as pool:
         list(pool.map(run, _origins(height, width, size)))
-    if not np.isfinite(result).all():
+    if not adaptive._denoise_is_finite(result):
         raise FloatingPointError("Grain Denoise produced a non-finite value.")
     return result

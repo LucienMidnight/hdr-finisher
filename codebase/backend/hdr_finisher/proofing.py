@@ -6,6 +6,7 @@ from dataclasses import dataclass
 import hashlib
 import json
 import math
+import os
 from pathlib import Path
 import shutil
 from tempfile import TemporaryDirectory, mkdtemp
@@ -23,7 +24,7 @@ from .color_context import RenderColorContext, nits_to_scene_linear, scene_linea
 from .config import APP_VERSION
 from .delivery_frames import DeliveryFrame, row_bands
 from .exporters import (
-    ExportBackend, _finishing_adjustments_for_export, _release_delivery_pixels, _render_branch_to_file,
+    ExportBackend, _finishing_adjustments_for_export, _render_delivery_files,
     _render_export_branch, _run_command,
     denoise_delivery_key, share_delivery_grain,
 )
@@ -234,7 +235,7 @@ def _jpeg_endpoint_bands(primary, raw, artifact):
 
 class ProofArtifactStore:
     def __init__(self) -> None:
-        self.root = Path(mkdtemp(prefix="hdr_finisher_proof_"))
+        self.root = Path(mkdtemp(prefix="hdr_finisher_proof_", dir=os.environ.get("HDR_FINISHER_PROOF_ROOT")))
         self._lock = RLock()
         self._artifacts: dict[str, ProofArtifact] = {}
         self._tiles: dict[str, ProofTile] = {}
@@ -395,15 +396,8 @@ class ProofArtifactStore:
             directory = Path(storage.name)
             if endpoints is None:
                 adjustments = _finishing_adjustments_for_export(proxy_session)
-                try:
-                    with share_delivery_grain(proxy_session, adjustments):
-                        endpoints = tuple(
-                            _render_branch_to_file(directory / f"{lane.value}.rgb", lambda allocate:
-                                _render_export_branch(proxy_session, export_settings, lane, adjustments,
-                                                      allocate_output=allocate))
-                            for lane in (PreviewKind.HDR, PreviewKind.SDR))
-                finally:
-                    _release_delivery_pixels(proxy_session)
+                endpoints = _render_delivery_files(proxy_session, export_settings, adjustments, directory,
+                                                   render=_render_export_branch)
             hdr_authored, sdr_authored = endpoints
             height, width = hdr_authored.shape[:2]
             sdr_matrix_endpoint = DeliveryFrame(directory / "sdr-matrix.rgb", (height, width, 3))
@@ -464,7 +458,8 @@ class ProofArtifactStore:
             retained = [item for item in self._artifacts.values() if item.endpoint_storage is not None]
             for item in retained[:-2]:
                 item.endpoint_storage.cleanup()
-                del self._artifacts[item.artifact_id]
+                item.endpoint_storage = None
+                item.hdr_authored = item.sdr_authored = None
                 self._request_cache = {key: value for key, value in self._request_cache.items()
                                        if value != item.artifact_id}
         return self._response(artifact, request.editing_measurements)
@@ -569,12 +564,14 @@ class ProofArtifactStore:
         with self._full_tile_lock if artifact.full_size else nullcontext():
             with self._lock:
                 cached = self._target_cache.get(cache_key)
-                if artifact.endpoint_storage is not None:
-                    artifact = self.artifact(artifact.artifact_id)
+                if artifact.full_size:
+                    artifact = self._artifacts.get(artifact.artifact_id, artifact)
             if cached is None:
                 if artifact.jpeg_decoded is not None:
                     tile_bytes, peak_nits, clipped = self._jpeg_target_tile(artifact, resolved_target)
                 elif artifact.full_size and artifact.format != "jpeg_ultrahdr":
+                    if artifact.hdr_authored is None:
+                        raise KeyError("The Proof endpoints have expired. Refresh Proof to render them again.")
                     tile_bytes, peak_nits, clipped = self._authored_target_tile(artifact, resolved_target)
                 else:
                     base_endpoint, alternate_endpoint = self._matrix_endpoints(artifact)
@@ -786,10 +783,12 @@ class ProofArtifactStore:
                     "-d", "10", "-y", "444", "-q", "90",
                 ])
                 if encoder:
-                    # Match tonemap's AVIF defaults, including single-job encoding.
+                    # The tonemap utility uses the library's manual tile defaults.
+                    # avifenc would otherwise choose different tiles on large photos.
                     _run_command([
                         str(encoder), "--cicp", "9/16/9", "-d", "10", "-y", "444",
-                        "-s", "6", "-q", "90", "-j", "1", str(y4m), str(staged),
+                        "-s", "6", "-q", "90", "-j", "1", "--tilerowslog2", "0", "--tilecolslog2", "0",
+                        str(y4m), str(staged),
                     ])
                 payload = staged.read_bytes()
                 try:

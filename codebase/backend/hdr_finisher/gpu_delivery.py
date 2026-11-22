@@ -227,6 +227,7 @@ def _render_pair(frame, owner, settings, adjustments):
         native_size, getattr(frame, "framing_output_limit", None), grain_trial, streamed, lanes)
     cached = getattr(owner, "_delivery_cache", None)
     if cached and cached[0] == signature:
+        frame._delivery_cache = cached
         frame._delivery_record = cached[2]
         log_delivery("delivery_route", route=cached[2]["renderer"], reason="delivery_cache_hit", format=settings.format)
         return cached[1]
