@@ -1136,7 +1136,7 @@ candidates for defaults.
 | R2-1 | Fold Fine Grain into Clean Grain (Clean with Color Splotches at 0)? | **Steve, Nov 21: yes.** Clean Grain stays the default. A checkbox turns off the cleaning part, giving Fine-Grain-like results; they need not match today's Fine Grain exactly. Built by FOLD-1. |
 | R2-2 | Trim Library cache shares while Grade has a large photo open on an 8 GB machine? | **Steve, Nov 21: yes.** MEM-1 builds it and records the shares in `memory-and-caches.md`. |
 | R2-3 | Memory-map read-only sources on 8 GB machines? | **Coordinator and reviewer agree, Nov 21: not now.**<br>- On macOS, clean mapped pages leave the physical-footprint number the app measures. The meter would drop without freeing real memory, and `safety_total` would subtract the image twice.<br>- It would write about 500 MB to the SSD for every photo opened.<br>- Grain scratch is already disk-backed, so mapping it gains nothing.<br>If MEM-1's Mac measurements still show pressure, look first at cold buffers (`retouch_original`, about 509 MB) and Micro's 256 MiB Bayer tile cache, then revisit with numbers. |
-| R2-4 | Which QUAL-1 candidates become defaults? | Decide on the review page (`codebase/output/review/grain-quality/`). Coordinator and reviewer, Nov 22: only `BAYER_FIT` is ready to judge; the other three need an anchor redesign first (see QUAL-1, reviewer's caution). |
+| R2-4 | Which QUAL-1 candidates become defaults? | Decide on the review page (`codebase/output/review/grain-quality/`). Coordinator and reviewer, Nov 22: only `BAYER_FIT` is ready to judge; the other three need an anchor redesign first (see QUAL-1, reviewer's caution). **Steve, Nov 22:** the crops looked very similar on the MacBook screen; `BAYER_FIT` is acceptable. Not yet made the default. |
 | R2-6 | Lens correction in strips? | **Byte-exact replacement built and verified on the MacBook Neo.** Restarting Lensfun's float32 row sum caused the trial's output drift. The replacement preserves the native row values and saves 462 MB on Canon and 1,058 MB on Sony through lens correction, with identical corrected and finished pixels. Any native failure now falls back to whole-frame coordinates with a logged reason (`f7d58825`, after the final review). Confirm byte equality and that the strip path runs on the Windows PC. |
 | R2-7 | Export depends on whether Grade was opened first (pre-existing, also on `deb2fc6f`)? | **Steve and reviewer, Nov 21: leave for later.**<br>- Grade, Proof and export on the same machine already share one measurement.<br>- The difference appears only for an export without Grade first, for example on the other machine or after clearing the cache. HDR ΔE ITP mean / p99 0.669 / 2.075, within limits.<br>- Cause, checked in code: the GPU measures a 4×4 grid of 256 px windows; the CPU measures up to 64 windows and every pixel of the tail sample, where the GPU samples 16,384.<br>- Root fix after v1: make CPU and GPU measure the same windows. This is an output change and needs Steve's yes.<br>- Do not store noise models in saved grades. |
 | R2-5 | Route label look and wording | **Steve, Nov 21:** no label and no Method heading. Show nothing while the GPU works. One line appears only when the slower CPU route is in use, saying why (or when the method cannot run). Coordinator applied this after ROUTE-1 merged. |
@@ -1261,9 +1261,12 @@ Later, after v1: lens correction as a GPU warp after GPU Micro Grain
      (6.7 GB) or lens-corrected Micro (about 4.4 GB). Recommendation: Proof,
      since it can make the whole Mac swap; stop the two gain-map rebuilds
      overlapping.
+     **Steve, Nov 22: Proof next.**
   2. QUAL-1 (R2-4): look at the review page. Only the weighted noise fit is
      ready to judge; the other three need a redesign before they could become
      defaults.
+     **Steve, Nov 22: all four looked very similar on the MacBook screen;
+     the weighted noise fit is acceptable.**
   3. Whether to install Xcode on the Mac for the Metal trace, and copy the
      exact incident RAW and the 50 MP RAW to it.
 - **PC follow-up.** Rerun setup, then confirm R2-6 strips run and stay
