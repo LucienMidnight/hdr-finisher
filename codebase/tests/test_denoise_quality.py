@@ -91,3 +91,12 @@ def test_weighted_fit_keeps_deep_shadow_observations():
     settings = raw_pixel_cleanup.configuration(sensor, metadata())
     assert settings is not None
     assert all(phase['a'] == 0 and phase['b'] > 0 for phase in settings['noise'])
+
+
+def test_untouched_sources_keep_pre_qualification_decoder_versions(monkeypatch):
+    old_loader = previous(loader, monkeypatch)
+    for specks in (False, True):
+        assert loader.source_decoder_version(specks, bayer_cleanup=False) == old_loader.source_decoder_version(specks)
+    assert loader.source_decoder_version(True, bayer_cleanup=False) != loader.source_decoder_version(False, bayer_cleanup=False)
+    assert loader.source_decoder_version(False, bayer_cleanup=True) == (
+        old_loader.source_decoder_version(False) + loader.BAYER_NOISE_FIT_CACHE_SUFFIX)
