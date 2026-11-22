@@ -161,6 +161,14 @@ def test_noise_estimation_keeps_four_sensor_phases_and_is_repeatable():
     assert result['thresholds'] == config()['thresholds']
 
 
+def test_bayer_fit_gives_quiet_bins_more_weight():
+    observations = [(signal, variance * 1e-6, 0.) for signal, variance in ((0., 1), (.1, 2), (.2, 20))
+                    for _ in range(8)]
+    fit = cleanup._fit(observations)
+    # With equally populated bins the squared weights are proportional to 1/variance².
+    assert fit == pytest.approx({"a": 190 / 139 * 1e-5, "b": 400 / 417 * 1e-6})
+
+
 def test_cancelled_cleanup_does_not_process_a_strip():
     with pytest.raises(InterruptedError, match='cancelled'):
         cleanup.apply(np.full((48, 48), 1120, np.uint16), config(), cancelled=lambda: True)

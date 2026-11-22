@@ -77,12 +77,17 @@ def _source_mip_identity(session: "LoadedSession", lane: str = "hdr") -> SourceM
         sort_keys=True,
         separators=(",", ":"),
     )
+    cleanup = session.raw_import_settings.pixel_cleanup
+    bayer_cleanup = (
+        (cleanup.remove_hot_pixels or cleanup.even_out_specks)
+        and session.metadata.get("raw_pixel_cleanup", {}).get("supported", False)
+    )
     return SourceMipIdentity(
         content_key=session.source_fingerprint_sha256,
         byte_size=session.source_byte_size,
         width=int(session.image.shape[1]),
         height=int(session.image.shape[0]),
-        decoder_version=source_decoder_version(session.raw_import_settings.pixel_cleanup.even_out_specks),
+        decoder_version=source_decoder_version(cleanup.even_out_specks, bayer_cleanup=bayer_cleanup),
         color_transform_version=SOURCE_COLOR_TRANSFORM_VERSION,
         orientation=1,
         lane=lane,

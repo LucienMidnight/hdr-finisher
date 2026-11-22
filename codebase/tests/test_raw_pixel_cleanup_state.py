@@ -10,7 +10,8 @@ from hdr_finisher.models import EditCommand, EditDocument, RawImportSettings
 from test_library_grades import setup
 
 
-def test_light_guard_replaces_only_enabled_cached_developments(setup, monkeypatch):
+@pytest.mark.parametrize('field', ['remove_hot_pixels', 'even_out_specks'])
+def test_fit_replaces_only_enabled_cached_bayer_developments(setup, monkeypatch, field):
     from hdr_finisher import loader, sessions
     from hdr_finisher.library_live import quality
 
@@ -19,14 +20,26 @@ def test_light_guard_replaces_only_enabled_cached_developments(setup, monkeypatc
     def identities():
         return sessions._source_mip_identity(session), quality(session.edit_document().model_dump(mode="json"))
 
-    off = identities()
-    session.raw_import_settings.pixel_cleanup.even_out_specks = True
+    session.source.filename = "sensor.ARW"
+    session.metadata["raw_pixel_cleanup"] = {"supported": True}
+    setattr(session.raw_import_settings.pixel_cleanup, field, True)
     enabled = identities()
-    for module in (loader, sessions):
-        monkeypatch.setattr(module, "source_decoder_version", lambda _: loader.SOURCE_DECODER_VERSION)
-    assert all(current != old for current, old in zip(enabled, identities(), strict=True))
-    session.raw_import_settings.pixel_cleanup.even_out_specks = False
-    assert identities() == off
+    with monkeypatch.context() as previous:
+        previous.setattr(loader, "BAYER_NOISE_FIT_CACHE_SUFFIX", "")
+        assert all(current != old for current, old in zip(enabled, identities(), strict=True))
+
+    def assert_kept():
+        current = identities()
+        with monkeypatch.context() as previous:
+            previous.setattr(loader, "BAYER_NOISE_FIT_CACHE_SUFFIX", "")
+            assert identities() == current
+
+    setattr(session.raw_import_settings.pixel_cleanup, field, False)
+    assert_kept()
+    setattr(session.raw_import_settings.pixel_cleanup, field, True)
+    session.source.filename = "photo.png"
+    session.metadata.pop("raw_pixel_cleanup")
+    assert_kept()
 
 
 @pytest.mark.parametrize('field,value', [('remove_hot_pixels', True), ('even_out_specks', True), ('speck_threshold', 3.1)])

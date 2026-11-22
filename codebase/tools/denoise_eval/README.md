@@ -25,6 +25,11 @@ intermediates. Infinite PSNR is JSON `null`; other nulls mean unavailable or
 undefined, never a pass. All measurements, controls, crop coordinates, mask
 recipe, ISO, noise fits, clipping fractions and RNG seeds are recorded.
 
+The QUAL-1 crop review (`tools.denoise_eval.quality_review`) compares
+`HDR_FINISHER_QUAL_COLOUR_LEVELS`, `HDR_FINISHER_QUAL_MICRO_GUARD` and
+`HDR_FINISHER_QUAL_RAW_LEVELS` against the current defaults. The baseline
+and all three comparisons use the weighted Bayer noise estimate.
+
 ## Steve's fixed-area baseline marking page
 
 After setup, run from `codebase`:

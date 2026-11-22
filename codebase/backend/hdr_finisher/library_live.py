@@ -40,10 +40,49 @@ def recipe(document):
     }
 
 
-def _quality(inputs):
+def _saved_setting(document, *fields):
+    for field in fields:
+        if not isinstance(document, dict):
+            return None
+        document = document.get(field)
+    return document
+
+
+def uses_raw_pixel_cleanup(document):
+    from .raw_import import RAW_EXTENSIONS
+
+    # Stored Library scenes must be addressable with the source drive offline.
+    filename = _saved_setting(document, "source", "filename")
+    if not isinstance(filename, str) or Path(filename).suffix.lower() not in RAW_EXTENSIONS:
+        return False
+    cleanup = _saved_setting(document, "source", "raw_import_settings", "pixel_cleanup")
+    return isinstance(cleanup, dict) and bool(cleanup.get("remove_hot_pixels") or cleanup.get("even_out_specks"))
+
+
+def finished_micro_grain_suffix(path, document, lane):
+    """A finished Library picture can contain the exact Micro Grain frame from Grade."""
+    from .loader import BAYER_NOISE_FIT_CACHE_SUFFIX
+    from .raw_import import RAW_EXTENSIONS
+
+    suffix = Path(path).suffix.lower()
+    if suffix == ".dng" or suffix not in RAW_EXTENSIONS:
+        return ""
+    controls = _saved_setting(document, "denoise", lane, "controls")
+    if (not _saved_setting(document, "denoise", lane, "enabled")
+            or not isinstance(controls, dict) or controls.get("method") != "micro_grain"
+            or not (controls.get("micro_luminance", .5) or controls.get("micro_color", .5))
+            or _saved_setting(document, "repairs")):
+        return ""
+    highlights = _saved_setting(document, "source", "raw_import_settings", "highlight_reconstruction")
+    if isinstance(highlights, dict) and highlights.get("enabled", True) and highlights.get("method") == "edge_colour_v1":
+        return ""
+    return BAYER_NOISE_FIT_CACHE_SUFFIX
+
+
+def _quality(inputs, *, bayer_cleanup=False):
     from .loader import SOURCE_COLOR_TRANSFORM_VERSION, source_decoder_version
     specks_enabled = inputs["raw_import_settings"].get("pixel_cleanup", {}).get("even_out_specks", False)
-    identity = {"recipe": inputs, "decoder": source_decoder_version(specks_enabled),
+    identity = {"recipe": inputs, "decoder": source_decoder_version(specks_enabled, bayer_cleanup=bayer_cleanup),
                 "colour": SOURCE_COLOR_TRANSFORM_VERSION, "rgb_adapter": "library-rgb-reduced-v5"}
     return "live-scene-v2:" + sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()
 
@@ -58,6 +97,7 @@ def equivalent_qualities(value):
 
 def quality(document):
     inputs = recipe(document)
+    bayer_cleanup = uses_raw_pixel_cleanup(document)
     canonical = deepcopy(inputs)
     highlights = canonical["raw_import_settings"]["highlight_reconstruction"]
     # Opposed colour never reads this Edge colour-only control. Use the
@@ -71,15 +111,15 @@ def quality(document):
         canonical["raw_import_settings"]["lens"] = {"mode": "off"}
     # Record labels and disabled strokes never alter the reconstructed source.
     canonical["repairs"] = [{"recipe": r["recipe"]} for r in inputs["repairs"] if r["enabled"]]
-    value = _quality(canonical)
-    variants = [value, _quality(inputs)]
+    value = _quality(canonical, bayer_cleanup=bayer_cleanup)
+    variants = [value, _quality(inputs, bayer_cleanup=bayer_cleanup)]
     # Exact historical encodings of the SAME developed pixels, never a broad
     # cache search or fallback to a different recipe/decoder/file version.
     old = deepcopy(inputs)
     h = old["raw_import_settings"]["highlight_reconstruction"]
     if h["method"] != "edge_colour_v1" or h["edge_colour_expand_percent"] == 0.5:
         h.pop("edge_colour_expand_percent", None)
-        variants.append(_quality(old))
+        variants.append(_quality(old, bayer_cleanup=bayer_cleanup))
     with _registry_lock:
         previous = _quality_aliases.pop(value, ())
         _quality_aliases[value] = tuple(dict.fromkeys((*variants, *previous)))[:16]

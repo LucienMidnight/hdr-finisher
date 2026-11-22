@@ -12,7 +12,7 @@ import numpy as np
 from .library_diagnostics import log
 from .library_documents import atomic_json
 from .library_copies import source
-from .library_live import quality
+from .library_live import finished_micro_grain_suffix, quality
 from .library_pictures import picture_key, PICTURE_VERSION
 from .sdr_gamut import SDR_GAMUT_CACHE_SUFFIX
 
@@ -56,6 +56,7 @@ class StoredScreenPreviews:
             source_key = picture_key(physical, 2560, quality(document))
         grade = sha256(json.dumps(document, sort_keys=True).encode()).hexdigest()
         version = VERSION + (SDR_GAMUT_CACHE_SUFFIX if lane == "sdr" else ":saved-hdr-target")
+        version += finished_micro_grain_suffix(physical, document, lane)
         identity = dict(version=version, path=str(path), lane=lane,
             display_width=display_width, display_height=display_height,
             source_key=source_key,

@@ -24,7 +24,6 @@ CANDIDATES = {
     "COLOUR_LEVELS": ("Colour protection", "Colour cleanup follows the grain level; look for the same railing and flame-edge detail as you change exposure."),
     "MICRO_GUARD": ("Micro light guard", "Micro Grain uses sensor noise to decide which lights to leave alone; look for crisp lights without untreated patches around them."),
     "RAW_LEVELS": ("RAW cleanup floors", "RAW cleanup scales its cutoffs to the sensor noise; look for fewer stray specks without losing tiny lights."),
-    "BAYER_FIT": ("Weighted Bayer fit", "The noise estimate gives clean shadow samples more say; look for smoother shadow grain without softer hair or edges."),
 }
 EXPOSURES = (-3, 0, 3)
 SETTINGS = RawImportSettings(lens={"mode": "off"}, pixel_cleanup={"remove_hot_pixels": True, "even_out_specks": True})
@@ -115,7 +114,7 @@ def photo_rows(path, areas, marks):
                                                grain.SMALL_COLOUR_MARGIN, model, CLEAN, None)
                      for name, _, _, rect in selections}
     micro_variants = {"micro-today": old_micro}
-    for variant in ("MICRO_GUARD", "RAW_LEVELS", "BAYER_FIT"):
+    for variant in ("MICRO_GUARD", "RAW_LEVELS"):
         with candidate(variant):
             trial_source = source if variant == "MICRO_GUARD" else micro.MicroGrainSource(location, SETTINGS)
             micro_variants[variant] = {name: micro_crop(trial_source, rect) for name, _, _, rect in selections}
@@ -139,7 +138,7 @@ def photo_rows(path, areas, marks):
 
 def page(sections):
     columns = ("Clean today", CANDIDATES["COLOUR_LEVELS"][0], "Micro today",
-               *(CANDIDATES[key][0] for key in ("MICRO_GUARD", "RAW_LEVELS", "BAYER_FIT")))
+               *(CANDIDATES[key][0] for key in ("MICRO_GUARD", "RAW_LEVELS")))
     headers = "<th>Exposure</th>" + "".join(f"<th scope='col'>{label}</th>" for label in columns)
     explanations = "".join(f"<li><strong>{label}:</strong> {line}</li>" for label, line in CANDIDATES.values())
     comparisons = []
@@ -165,7 +164,7 @@ th, td {{ padding: .25rem; text-align: center; }} th:first-child {{ width: 4.5re
 td:nth-child(4), th:nth-child(4) {{ border-left: 2px solid #888; }}
 img {{ display: block; width: 100%; }} a:focus-visible {{ outline: 3px solid white; }}
 </style></head><body><main><h1>Grain quality review</h1>
-<p>Compare each candidate with “today” in the same group. Click any crop for its original size. Nothing is enabled by default.</p>
+<p>Compare each candidate with “today” in the same group. Click any crop for its original size. The baseline uses the weighted Bayer noise estimate.</p>
 <ul>{explanations}</ul>
 <p>The Clean pair changes exposure before colour cleanup to stress the new guides; RAW and Micro run before the exposure edit, so those columns show the same sensor result viewed at each exposure.</p>
 {''.join(comparisons)}</main></body></html>"""

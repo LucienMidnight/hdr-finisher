@@ -1,4 +1,4 @@
-"""Optional, bright-only Bayer cleanup before highlight evidence and demosaic."""
+"""Bayer noise estimation and optional hot-pixel cleanup before demosaic."""
 from __future__ import annotations
 
 import numpy as np
@@ -31,7 +31,9 @@ def _normalise(sensor, black, spans):
     return image
 
 
-def _fit(observations, *, weighted=False):
+def _fit(observations):
+    from .denoise_adaptive import CALIBRATION_RULES
+
     if len(observations) < 12:
         return None
     values = np.asarray(observations, dtype=np.float64)
@@ -40,25 +42,8 @@ def _fit(observations, *, weighted=False):
     for group in np.array_split(values[np.argsort(values[:, 0])], min(12, len(values) // 8)):
         quiet = group[group[:, 2] <= np.quantile(group[:, 2], 0.5)]
         selected.append((np.median(quiet[:, 0]), np.quantile(quiet[:, 1], 0.25)))
-        if weighted:
-            counts.append(len(quiet))
+        counts.append(len(quiet))
     signal, variance = np.asarray(selected).T
-    if weighted:
-        return _fit_weighted(signal, variance, counts)
-    design = np.column_stack((signal, np.ones_like(signal)))
-    shot, read = np.linalg.lstsq(design, variance, rcond=None)[0]
-    choices = [(max(0.0, shot), max(0.0, read)),
-               (max(0.0, signal @ variance / max(signal @ signal, 1e-30)), 0.0),
-               (0.0, max(0.0, variance.mean()))]
-    shot, read = min(choices, key=lambda pair: np.sum((variance - design @ pair) ** 2))
-    if not np.isfinite([shot, read]).all() or shot + read <= 0:
-        return None
-    return dict(a=float(shot), b=float(read))
-
-
-def _fit_weighted(signal, variance, counts):
-    from .denoise_adaptive import CALIBRATION_RULES
-
     signal_scale = max(float(signal.max()), 1e-20)
     variance_scale = float(np.median(variance))
     signal, variance = signal / signal_scale, variance / variance_scale
@@ -82,7 +67,7 @@ def _fit_weighted(signal, variance, counts):
 
 
 def configuration(sensor, metadata, *, cancelled=None):
-    """The research single-frame per-phase estimate, using nine bounded crops."""
+    """Estimate per-phase Bayer noise from nine bounded crops, including deep shadows."""
     pattern = metadata.raw_pattern
     if pattern.shape != (2, 2):
         return None
@@ -98,7 +83,6 @@ def configuration(sensor, metadata, *, cancelled=None):
     design = np.column_stack((np.ones(256), coordinates[1].ravel(), coordinates[0].ravel()))
     inverse = np.linalg.pinv(design)
     observations = [[] for _ in range(4)]
-    weighted = enabled("BAYER_FIT")
     for fraction_row in (0.15, 0.5, 0.85):
         for fraction_column in (0.15, 0.5, 0.85):
             if cancelled is not None and cancelled():
@@ -114,10 +98,10 @@ def configuration(sensor, metadata, *, cancelled=None):
                         residual = (block - design @ (inverse @ block)).reshape(16, 16)
                         variance = np.sum(residual ** 2) / 253
                         mean = block.mean()
-                        if (weighted or mean > 0.0001) and mean < 0.85 and variance > 0:
+                        if mean < 0.85 and variance > 0:
                             correlation = abs(np.mean(residual[:, 1:] * residual[:, :-1])) + abs(np.mean(residual[1:] * residual[:-1]))
-                            observations[phase].append((max(mean, 0) if weighted else mean, variance, correlation / variance))
-    noise = [_fit(phase, weighted=weighted) for phase in observations]
+                            observations[phase].append((max(mean, 0), variance, correlation / variance))
+    noise = [_fit(phase) for phase in observations]
     if any(phase is None for phase in noise):
         return None
     return dict(noise=noise, black=black.tolist(), spans=spans.tolist(), colours=colours.tolist(),

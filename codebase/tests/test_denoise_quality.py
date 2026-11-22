@@ -12,7 +12,7 @@ from test_raw_pixel_cleanup import config, metadata
 
 @pytest.fixture(autouse=True)
 def switches_off(monkeypatch):
-    for candidate in ('COLOUR_LEVELS', 'MICRO_GUARD', 'RAW_LEVELS', 'BAYER_FIT'):
+    for candidate in ('COLOUR_LEVELS', 'MICRO_GUARD', 'RAW_LEVELS'):
         monkeypatch.delenv(f'HDR_FINISHER_QUAL_{candidate}', raising=False)
 
 
@@ -30,14 +30,14 @@ def previous(module, monkeypatch):
     return original
 
 
-def test_all_off_cpu_stages_match_pre_qualification_bytes(monkeypatch):
+def test_off_threshold_candidates_match_pre_qualification_bytes_with_the_same_fit(monkeypatch):
     rng = np.random.default_rng(306)
     sensor = rng.integers(980, 1020, (128, 160), dtype=np.uint16) + np.arange(160, dtype=np.uint16)
     sensor[35, 37] = 5100
     sensor[37, 43] = 1130
     old_pixel = previous(raw_pixel_cleanup, monkeypatch)
     settings = raw_pixel_cleanup.configuration(sensor, metadata())
-    assert settings is not None and settings == old_pixel.configuration(sensor, metadata())
+    assert settings is not None
     actual, expected = sensor.copy(), sensor.copy()
     assert raw_pixel_cleanup.apply(actual, settings) == old_pixel.apply(expected, settings)
     assert actual.tobytes() == expected.tobytes()
@@ -59,9 +59,6 @@ def test_all_off_cpu_stages_match_pre_qualification_bytes(monkeypatch):
     old_grain = previous(denoise_grain, monkeypatch)
     for broad in (False, True):
         assert denoise_grain.colour_delta(rgb, broad).tobytes() == old_grain.colour_delta(rgb, broad).tobytes()
-    old_loader = previous(loader, monkeypatch)
-    for specks in (False, True):
-        assert loader.source_decoder_version(specks) == old_loader.source_decoder_version(specks)
 
 
 def test_micro_guard_tracks_signal_and_noise_scale(monkeypatch):
@@ -82,17 +79,15 @@ def test_raw_excess_tracks_read_noise_and_separates_cache(monkeypatch):
     image[16, 16] = .012
     settings = config()
     assert raw_pixel_cleanup.filter_sensor(image, settings)[16, 16] == image[16, 16]
-    original = loader.source_decoder_version(True)
+    original = loader.source_decoder_version(True, bayer_cleanup=True)
     monkeypatch.setenv('HDR_FINISHER_QUAL_RAW_LEVELS', '1')
     settings['thresholds'] = raw_pixel_cleanup.cleanup_thresholds()
     assert raw_pixel_cleanup.filter_sensor(image, settings)[16, 16] == 0
-    assert loader.source_decoder_version(True) != original
+    assert loader.source_decoder_version(True, bayer_cleanup=True) != original
 
 
-def test_weighted_fit_keeps_deep_shadow_observations(monkeypatch):
+def test_weighted_fit_keeps_deep_shadow_observations():
     sensor = np.random.default_rng(13).integers(963, 999, (128, 160), dtype=np.uint16)
-    assert raw_pixel_cleanup.configuration(sensor, metadata()) is None
-    monkeypatch.setenv('HDR_FINISHER_QUAL_BAYER_FIT', '1')
     settings = raw_pixel_cleanup.configuration(sensor, metadata())
     assert settings is not None
     assert all(phase['a'] == 0 and phase['b'] > 0 for phase in settings['noise'])

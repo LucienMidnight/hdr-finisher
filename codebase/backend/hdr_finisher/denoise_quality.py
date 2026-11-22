@@ -16,4 +16,4 @@ def colour_reference():
 
 
 def raw_cache_suffix():
-    return "".join(f":qual-{name.lower()}-v1" for name in ("RAW_LEVELS", "BAYER_FIT") if enabled(name))
+    return ":qual-raw_levels-v1" if enabled("RAW_LEVELS") else ""

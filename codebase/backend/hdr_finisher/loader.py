@@ -39,11 +39,11 @@ EXR_COLOR_INTEROP_SPACES = {
     "lin_ap1_scene": "ACEScg",
 }
 
-# Provenance for the persistent source mip cache (PRD 5.3). Bump either
-# constant when a change alters the decoded scene-linear pixels for the same
-# file; stale levels are then ignored and removed by version.
+# Provenance for the persistent source mip cache (PRD 5.3). A recipe-specific
+# change can version just the affected source identities.
 SOURCE_DECODER_VERSION = "hdr-finisher-loader-signed-raw-v8"
 SOURCE_COLOR_TRANSFORM_VERSION = "acescg-signed-raw-source-v4"
+BAYER_NOISE_FIT_CACHE_SUFFIX = ":bayer-noise-fit-v1"
 
 # Display-P3 and sRGB share D65, so the hot-path linear conversion is a fixed
 # float32 matrix and does not require a general-purpose colour transform.
@@ -57,9 +57,11 @@ DISPLAY_P3_TO_SRGB = np.asarray(
 )
 
 
-def source_decoder_version(even_out_specks: bool) -> str:
-    """Cached scenes and measurements must use the current speck filter."""
-    return SOURCE_DECODER_VERSION + (":speck-light-v1" if even_out_specks else "") + raw_cache_suffix()
+def source_decoder_version(even_out_specks: bool, *, bayer_cleanup: bool) -> str:
+    """Version the cached source pixels and measurements affected by RAW cleanup."""
+    speck_suffix = ":speck-light-v1" if even_out_specks else ""
+    fit_suffix = BAYER_NOISE_FIT_CACHE_SUFFIX if bayer_cleanup else ""
+    return SOURCE_DECODER_VERSION + speck_suffix + fit_suffix + raw_cache_suffix()
 
 
 class LoaderError(RuntimeError):
