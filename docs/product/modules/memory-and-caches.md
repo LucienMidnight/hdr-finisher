@@ -40,7 +40,8 @@ has aged past the cleanup grace period.
 ## November 22: lens-corrected Micro Grain previews
 
 For reduced CPU Micro previews, Lensfun writes its remapped frame to a
-job-owned file. Grade closes and removes the file before caching the reduced
+job-owned file in the desktop's per-launch scratch folder, which is swept
+after a crash. Grade closes and removes the file before caching the reduced
 picture, and refreshes the process census if the previous reading could
 deny that cache entry.
 

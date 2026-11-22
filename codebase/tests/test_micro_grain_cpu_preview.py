@@ -163,7 +163,14 @@ def test_reduced_micro_lens_scratch(micro_frame, monkeypatch, tmp_path, chromati
         yield read
 
     monkeypatch.setattr(raw_import, "exact_lens_coordinate_strips", strips)
-    monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
+    system_temp = tmp_path / "system"
+    proof_root = tmp_path / "proof-root"
+    system_temp.mkdir()
+    proof_root.mkdir()
+    monkeypatch.setattr(tempfile, "tempdir", str(system_temp))
+    monkeypatch.setenv("HDR_FINISHER_PROOF_ROOT", str(proof_root))
+    refreshes = []
+    monkeypatch.setattr(app_memory, "refresh_after_scratch", lambda size: refreshes.append(size) or (size, size))
     original_map = DeliveryFrame.map
     mappings = []
 
@@ -179,6 +186,7 @@ def test_reduced_micro_lens_scratch(micro_frame, monkeypatch, tmp_path, chromati
         error = StaleRender if outcome == "cancel" else raw_import.RawImportError
         with pytest.raises(error):
             frame.render_cache.micro_preview_source(frame, micro, 256, lambda: not cancelled)
+        assert refreshes == []
     else:
         expected = denoise_micro_grain.resolve_source(frame, micro, cancelled=lambda: False)
         expected = downsample_image(expected, 256)
@@ -187,8 +195,12 @@ def test_reduced_micro_lens_scratch(micro_frame, monkeypatch, tmp_path, chromati
         assert actual.tobytes() == expected.tobytes()
         if outcome == "success":
             assert calls[-1] == (2 * strip_rows, height)
+        # A lens-corrected preview refreshes a stale census before it is cached.
+        assert refreshes == [actual.nbytes]
     assert len(mappings) == 1
     for file, mapping in mappings:
+        # Crash sweeps cover the desktop scratch root, not system temp.
+        assert file.parent.parent == proof_root
         assert mapping.closed
         assert not file.exists()
         assert not file.parent.exists()

@@ -997,7 +997,11 @@ class SessionRenderCache:
                 allocate_lens_output = None
                 if frame.metadata.get("lens_correction", {}).get("applied") and max(frame.image.shape[:2]) > edge:
                     def allocate_lens_output(shape):
-                        directory = scratch.enter_context(TemporaryDirectory(prefix="micro-lens-"))
+                        # The desktop's per-launch scratch root is swept after a crash.
+                        directory = scratch.enter_context(TemporaryDirectory(
+                            prefix="micro-lens-", dir=os.environ.get("HDR_FINISHER_PROOF_ROOT") or None,
+                            ignore_cleanup_errors=True,
+                        ))
                         return scratch.enter_context(DeliveryFrame(Path(directory) / "remapped.rgb", shape).map("w+"))
                 result = render_prepared_source(
                     frame, source, controls, cancelled=cancelled, render=render, allocate_lens_output=allocate_lens_output,
