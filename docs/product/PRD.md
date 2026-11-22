@@ -179,17 +179,18 @@ performance work optimises for this class of machine as well as the
 Windows PC. Development and testing happen on both machines, which hand
 work to each other through GitHub.
 
-**Minimum specification (Steve, November 16, 2026):**
+**Minimum specification (Steve, November 16 and 22, 2026):**
 
 - **macOS:** Apple silicon arm64 (MacBook Neo / A18 Pro class), 8 GB unified
   memory, WebGPU-capable Apple GPU using Metal; current MacBook macOS tested.
-- **Windows:** x64, Windows 11, 8 GB RAM, WebGPU-capable GPU using Direct3D 12
+- **Windows:** x64, Windows 11, 16 GB RAM, WebGPU-capable GPU using Direct3D 12
   with current drivers.
 - **Linux:** x86_64, 8 GB RAM, working hardware WebGPU; Kubuntu 26.04 LTS is
   the primary target.
 
-On every platform, app memory is at least 4 GB (also the default, including on
-8 GB machines), the window is at least 1100×720, and an HDR display is optional.
+The app memory default and minimum are 6 GB on Windows and 4 GB on macOS
+and Linux. All platforms require a window of at least 1100×720. An HDR
+display is optional.
 The user-facing copy is the [Minimum specification table](../getting-started/install-and-run.md#minimum-specification).
 Ceilings, maximum and physical reserve belong to [Memory and caches](modules/memory-and-caches.md).
 

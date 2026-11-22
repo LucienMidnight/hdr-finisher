@@ -19,6 +19,46 @@ remain required before release; these are accounting changes, not a memory pass.
 
 ### November 15: W2 P2 format-first publication within the same upload slot
 
+## November 22: Windows private commit and 6 GB default
+
+Steve set the Windows minimum specification to 16 GB RAM. The whole-app
+default and lowest setting are a fixed 6,000,000,000 bytes on Windows,
+including on machines with more than 16 GB. The user can raise the setting
+up to physical RAM minus the larger of 2 GB or 10%. The 6 GB default has the
+same cache shares as the 4 GB default. Only additional bytes selected in
+Settings scale the variable shares. The 4 GB settings and existing cache
+formula still apply on macOS, Linux and with the Windows `unified-8gb` profile.
+
+Windows sums the live process tree's private commit (`PrivateUsage` from
+`GetProcessMemoryInfo`), the same counter Chromium uses for its private
+memory footprint. The old `QueryWorkingSet` reported a `ShareCount` of seven
+on this PC even for a 200 MB mapping used by a single process. Dividing by
+seven charged about 30 MB. A resident-only meter also drops when Windows
+trims or compresses pages. Charging all resident shared pages in full
+(the other option considered) would count the same mappings in several app
+processes. Working sets and each process's lifetime peak private commit
+remain visible in diagnostics. Admission and reclaim use current commit.
+[Chromium memory footprint](https://chromium.googlesource.com/chromium/src/+/HEAD/third_party/blink/renderer/controller/memory_usage_monitor_win.cc)
+| [Microsoft process counters](https://learn.microsoft.com/en-us/windows/win32/api/psapi/ns-psapi-process_memory_counters_ex)
+
+**Task Manager note for future agents.** On the Details tab, sum **Commit
+size** across the app's processes to compare with the app meter. It often
+reads higher than the default **Memory** column (private working set).
+Summing **Working set** double-counts shared DLLs across the six Electron
+processes. [Microsoft counter mapping](https://learn.microsoft.com/en-us/windows/win32/memory/memory-performance-information)
+
+Windows pressure and resource preflight take the smaller of available
+physical RAM and remaining commit headroom from `GlobalMemoryStatusEx`.
+The existing reserves still apply. The Library reserve is the larger of
+2 GB or 10% of physical RAM. DNG and full-preview preflight reserve the
+larger of 2 GiB or 15%. Windows' low-physical-memory notification can also
+trigger pressure. [Microsoft memory status](https://learn.microsoft.com/en-us/windows/win32/api/sysinfoapi/ns-sysinfoapi-memorystatusex)
+
+The PC's cold-idle whole-app private commit was 1.714 GB, sampled five times
+15 to 19 seconds after the app window was ready, with no photo open.
+Cache scaling uses the existing growth rate above the platform default,
+so it needs no fixed Windows idle estimate. [Windows measurements](../../technical/performance-table.md#november-22-2026--windows-private-commit)
+
 ## November 22: delivery frame files
 
 AVIF delivery writes full frames to job-owned files after checking free disk
@@ -118,17 +158,14 @@ and the sampled app RAM and free system memory. The configured allowances
 and the greater-of-resident-and-allocator calculation still apply.
 [Diagnostic log and reason codes](../../technical/logging.md)
 
-## November 16: Steve's 4 GB minimum and default on every platform
+## November 16: Steve's 4 GB minimum and default on macOS and Linux
 
-**Steve's decision, November 16, 2026:** 4 GB app memory is the minimum, on
-every platform (macOS, Windows, Linux). The 8 GB MacBook Neo is the minimum
-spec, so 8 GB machines explicitly use a 4,000,000,000-byte minimum and default.
-Windows uses the same rule despite its different memory architecture, because
-2.5 GB is not enough. Defaults on 16/32/64 GB machines remain 4 GB. The
-user-adjustable maximum stays RAM − max(2 GB, RAM/10), approximately 6.59 GB
-on this 8 GiB Mac. The existing 2 GB physical free-memory reserve gate is
-unchanged. Saved preferences below 4 GB are raised by the normal clamp; no
-migration or compatibility layer is added. Existing custom settings >=4 GB stay.
+**Steve's decision, November 16, 2026:** macOS and Linux use a
+4,000,000,000-byte minimum and default, including the 8 GB MacBook Neo.
+The user-adjustable maximum is RAM minus the larger of 2 GB or 10%,
+approximately 6.59 GB on this 8 GiB Mac. The 2 GB physical free-memory
+reserve still applies. Saved preferences below the minimum are raised by
+the normal clamp. Windows follows the November 22 decision above.
 
 The existing `budgets()` formula restores the ordinary 4 GB cache shares on
 8 GB machines; no share formula or GPU budget changes:
@@ -1328,8 +1365,8 @@ app behaves when the machine runs short.
 
 | Decision | Date |
 | --- | --- |
-| **Whole-app RAM minimum and default: 4 GB on macOS, Windows and Linux, explicitly including the minimum 8 GB machine.** 4 GB means 4,000,000,000 bytes, counting Electron main, renderers, GPU-process host RAM, the Python backend and its helpers. Dedicated VRAM is not counted. | Steve, 2026-11-16 (replaces October 29 default) |
-| **User memory setting, like DaVinci Resolve.** Settings will let the user choose how much memory the app may use: from 4 GB up to the computer's RAM minus the system reserve (the larger of 2 GB or 10%). The ceiling, target, scaled shares, admission and the very-large-picture check all follow it. The default and minimum are 4 GB (Steve, 2026-11-16); lower saved settings clamp to 4 GB. Built live and persistent in phase 3c; evidence and limitations in the scheduler design, section 7.8. | Steve, 2026-10-31 |
+| **Whole-app RAM minimum and default.** 6 GB on Windows (16 GB RAM minimum). 4 GB on macOS and Linux, including the 8 GB MacBook Neo, and in the Windows `unified-8gb` profile. The process tree includes Electron main, renderers, GPU-process host memory, the Python backend and helpers. Dedicated VRAM has its own budget. | Steve, 2026-11-16 and 2026-11-22 |
+| **User memory setting, like DaVinci Resolve.** Settings ranges from the platform minimum to physical RAM minus the larger of 2 GB or 10%. The ceiling, target, scaled shares, admission and very-large-picture check follow it. Lower saved settings clamp to the platform minimum. Built live and persistent in phase 3c. | Steve, 2026-10-31 |
 | **Budget split** as in section 4. Approved as a trial; adjust from measurements. | Steve, 2026-10-29 |
 | **Respond to system memory pressure** by trimming caches early (principle 6). | Steve, 2026-10-29 |
 | Older pictures may be discarded and redrawn; visible and nearby pictures keep priority. | Steve, 2026-10-29 |
@@ -1342,13 +1379,12 @@ app behaves when the machine runs short.
 
 ## 4. RAM budget
 
-Shares of the 4 GB total. On a smaller total, the cache shares (marked
-"scales") shrink in proportion. The starting memory and the working room do
-not shrink.
+Both platform defaults use the shares below. The cache shares marked
+"scales" grow when the user raises the ceiling above the platform default.
 
-| Part | Process | Share of 4 GB | Scales | Implementation |
+| Part | Process | Default share | Scales | Implementation |
 | --- | --- | --- | --- | --- |
-| App starting memory | all | about 1.3 GB, measured | no | Observed process charge, never claimed as cache bytes. |
+| App starting memory | all | measured at runtime | no | The Windows PC cold-idle charge was 1.714 GB. Startup allocations count toward the app total. |
 | Finished thumbnails | renderer / GPU host | fixed 512 MiB (existing fixed pool) | no | Pool plus visible/nearby canvas estimates report to `thumbnails`; oldest detached cells go first. |
 | Sharp selected/nearby pictures | renderer / GPU host | 512,000,000 bytes | yes | Ready surfaces and direct scenes share one byte cap; older finished surfaces/scenes are evicted. |
 | Camera previews | backend / helper | 64,000,000 bytes | yes | Aggregate preview LRU claims `camera`. |
@@ -1356,19 +1392,15 @@ not shrink.
 | Picture hand-off | backend / helper | 256,000,000 bytes | yes | RAW outputs and transient picture bodies share `handoff`; delivered bodies are released. |
 | Grade source mips / session frames, masks, hue stages / retained native source | backend / helper | inside working room | — | A 600,000,000-byte aggregate retention cap replaces the separate 256 MiB mip, 192 MiB frame and 96/160 MiB mask limits. Unique array backing is counted once within a session; persistent mips have one retaining owner. Oversized levels are served without being cached. |
 | Working room | all | at least 600,000,000 bytes kept free | no | Minimum free room protected from retained caches, not a maximum for jobs. Concurrent temporary reservations may use all remaining room below the whole-app ceiling. |
-| **Total** | | **ceiling 4,000,000,000 bytes** | | Actual process charge is the final gate; shares are approximate and cannot override it. |
+| **Total** | | **6 GB Windows, 4 GB macOS and Linux** | | Actual process charge is the final gate; shares are approximate and cannot override it. |
 
 The fixed thumbnail decision preserves the existing 512 MiB implementation.
-All other cache shares scale by `(ceiling − 1.3 GB − 600 MB − 512 MiB) /
-(4 GB − 1.3 GB − 600 MB − 512 MiB)`. Starting memory, working room and the
-fixed thumbnail pool stay unchanged. No share or ceiling was enlarged.
+The variable cache shares scale by `1 + (ceiling - platform default) /
+(4 GB - 1.3 GB - 600 MB - 512 MiB)`. This keeps both the default shares and
+the original number of cache bytes gained per extra byte of ceiling.
 `app_memory.py` is the backend owner. Helper cache growth is admitted over
 IPC by that owner; renderer caches use its returned share limits and report
 actual retained bytes every 500 ms. Disk and dedicated VRAM remain separate.
-
-With the 2.5 GB minimum, an 8 GB machine has about 0.6 GB left for the cache
-shares after starting memory and working room. That machine redraws more
-often; nothing stops working.
 
 ## 5. Disk allowances
 
@@ -1429,17 +1461,10 @@ Budget implementation is in progress on `library-big-folder`. The five-minute
 manual checkpoint below restores retention under the ceiling. The lock criterion
 and broader CPU qualification remain open; full ten-minute/driver validation is deferred.
 
-**Windows gate:** sum proportional resident bytes for Electron main and its
-complete descendant process tree (renderers, GPU host, backend and helpers).
-For every resident page from `QueryWorkingSet`, charge a private page once;
-charge a shared page as page size divided by its OS ShareCount. This avoids
-adding Chromium mappings and backend/helper shared sections as full copies
-in each process. This is proportional attribution, not private commit bytes
-and not the sum of working sets. Pages shared with other applications are
-attributed proportionally too. Windows saturates ShareCount at seven, so
-heavily shared pages can be overcharged; this is conservative. Dedicated VRAM
-is absent from this measurement. Ordinary working sets are retained only as
-diagnostics. See Microsoft's [working-set flags](https://learn.microsoft.com/en-us/windows/win32/api/psapi/ns-psapi-psapi_working_set_block).
+**Windows gate since November 22:** sum the current private commit of
+Electron main and its descendants. Older results below measured proportional
+resident pages, which can undercount singly mapped pages and fall after
+a working-set trim. [Current Windows policy](#november-22-windows-private-commit-and-6-gb-default)
 
 The independent Python observer samples approximately every 500 ms, outside
 the app's process tree, even when renderer/backend requests stall. It records
@@ -1456,7 +1481,7 @@ On macOS the implemented sampler uses the kernel's `proc_pid_rusage` physical
 footprint charge, with resident bytes alongside it, and libdispatch memory
 pressure events. This platform path has not been validated on this Windows
 machine. See Apple's [rusage structure](https://github.com/apple/darwin-xnu/blob/main/bsd/sys/resource.h).
-Windows pressure uses memory resource notifications. Moderate pressure trims
+Windows pressure uses commit-aware headroom and memory resource notifications. Moderate pressure trims
 oldest reconstructible entries toward half; critical pressure drops them.
 
 **Electron main investigation:** the earlier 1.040 GB resident sample had only
@@ -1868,6 +1893,11 @@ profile/cache scratch is removed after measurement; evidence is retained.
 Output started and ended at 2.1 GB, below the 100 GB limit.
 
 ## 8. Open work
+
+- **WDDM shared GPU memory on Windows laptops.** Integrated graphics textures in shared RAM sit outside private commit and are covered by system headroom today. Future accounting needs to avoid counting Chromium staging buffers twice.
+- **Windows Job Object.** `PeakJobMemoryUsed` would catch encoder spikes shorter than the 0.5 s poll and job membership would cover orphaned grandchildren. Chromium's nested sandbox jobs need care.
+- **Pagefile-backed shared memory.** `DeliveryMemory` and `library_raw` shared sections sit outside private commit. Admission reservations and commit headroom cover them today.
+- **OpenBLAS reservation.** The library commits about 373 MB that it leaves untouched. Reduce it only if a benchmark shows no slowdown.
 
 - Bound and qualify the remaining no-GPU CPU recipes listed above; only the ordinary ARW path has the measured 600 MB result.
 

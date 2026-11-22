@@ -4,15 +4,14 @@ HDR Finisher is currently a technical alpha. Windows x64, Apple Silicon macOS, a
 
 ## Minimum specification
 
-Steve, November 16, 2026. The MacBook Neo (8 GB) is the minimum supported
-machine; every feature must work on it. The same memory rule applies on every
-platform.
+Steve, November 16 and 22, 2026. Every feature must work on the 8 GB
+MacBook Neo. Windows requires 16 GB RAM.
 
 | | macOS | Windows | Linux |
 | --- | --- | --- | --- |
 | Processor | Apple silicon (arm64). No Intel Mac build. Minimum class: Apple A18 Pro, 6 cores (MacBook Neo). | x64 | x86_64 |
-| Memory | 8 GB unified memory | 8 GB RAM | 8 GB RAM |
-| App memory | at least 4 GB (the lowest setting and the default on 8 GB machines); the rest stays free for the system | same rule | same rule |
+| Memory | 8 GB unified memory | 16 GB RAM | 8 GB RAM |
+| App memory | 4 GB default and minimum | 6 GB default and minimum | 4 GB default and minimum |
 | Graphics | Apple GPU (WebGPU on Metal) | GPU with WebGPU support (Direct3D 12) and current drivers | GPU with working hardware WebGPU |
 | Operating system | Tested on the current macOS on the MacBook Neo; older versions are untested | Windows 11 (Windows 10 untested) | Kubuntu 26.04 LTS (primary target) |
 | Window | at least 1100 × 720 points | at least 1100 × 720 | at least 1100 × 720 |

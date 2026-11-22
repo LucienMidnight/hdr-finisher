@@ -26,7 +26,7 @@ const { windowChromeOptions } = require("./lib/window-chrome");
 const { installProcessDiagnostics } = require("./lib/process-diagnostics");
 const { createRecentProjects } = require("./lib/recent-projects");
 const { detectVideoMemory } = require("./lib/video-memory");
-const { DEFAULT_APPLICATION_PREFERENCES, sanitizeApplicationPreferences } = require("./lib/application-preferences");
+const { DEFAULT_APPLICATION_PREFERENCES, defaultAppMemoryBytes, sanitizeApplicationPreferences } = require("./lib/application-preferences");
 
 const { leaveCurrentPhoto } = require(app.isPackaged ? "./shared/photo-transition" : "../frontend/photo-transition");
 const { createSplashWindow } = require("./lib/splash-window");
@@ -340,7 +340,7 @@ async function recordSessionHeader() {
   desktopEvent("app", "session_started", {
     version: app.getVersion(), commit: commit?.trim() || null, platform: process.platform,
     arch: process.arch, system_ram_bytes: os.totalmem(), app_memory_setting_bytes: applicationPreferences.appMemoryBytes,
-    app_memory_ceiling_bytes: applicationPreferences.appMemoryBytes ?? 4_000_000_000,
+    app_memory_ceiling_bytes: applicationPreferences.appMemoryBytes ?? defaultAppMemoryBytes(),
     log_path: logPath,
   });
 }

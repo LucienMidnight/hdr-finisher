@@ -162,12 +162,45 @@ def _native_memory_resources() -> ResourceSnapshot:
     raise OSError("No native memory reader for this platform")
 
 
+class _MemoryStatusEx(ctypes.Structure):
+    _fields_ = [
+        ("dwLength", ctypes.c_uint32),
+        ("dwMemoryLoad", ctypes.c_uint32),
+        ("ullTotalPhys", ctypes.c_uint64),
+        ("ullAvailPhys", ctypes.c_uint64),
+        ("ullTotalPageFile", ctypes.c_uint64),
+        ("ullAvailPageFile", ctypes.c_uint64),
+        ("ullTotalVirtual", ctypes.c_uint64),
+        ("ullAvailVirtual", ctypes.c_uint64),
+        ("ullAvailExtendedVirtual", ctypes.c_uint64),
+    ]
+
+    @property
+    def available_bytes(self) -> int:
+        return min(self.ullAvailPhys, self.ullAvailPageFile)
+
+
+def windows_memory_status() -> _MemoryStatusEx:
+    status = _MemoryStatusEx()
+    status.dwLength = ctypes.sizeof(status)
+    if not ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(status)):
+        raise ctypes.WinError()
+    return status
+
+
 def detect_memory_resources() -> ResourceSnapshot:
     if sys.platform == "darwin" or sys.platform.startswith("linux"):
         try:
             return _native_memory_resources()
         except (AttributeError, OSError, KeyError, TypeError, ValueError):
             pass
+    if os.name == "nt":
+        try:
+            status = windows_memory_status()
+        except (AttributeError, OSError):
+            # Physical RAM alone cannot certify Windows headroom.
+            return ResourceSnapshot(None, None, "unavailable")
+        return ResourceSnapshot(status.ullTotalPhys, status.available_bytes, "GlobalMemoryStatusEx")
     try:
         import psutil
 
@@ -175,30 +208,6 @@ def detect_memory_resources() -> ResourceSnapshot:
         return ResourceSnapshot(int(memory.total), int(memory.available), "psutil")
     except (ImportError, OSError, RuntimeError):
         pass
-
-    if os.name == "nt":
-        class MemoryStatusEx(ctypes.Structure):
-            _fields_ = [
-                ("dwLength", ctypes.c_ulong),
-                ("dwMemoryLoad", ctypes.c_ulong),
-                ("ullTotalPhys", ctypes.c_ulonglong),
-                ("ullAvailPhys", ctypes.c_ulonglong),
-                ("ullTotalPageFile", ctypes.c_ulonglong),
-                ("ullAvailPageFile", ctypes.c_ulonglong),
-                ("ullTotalVirtual", ctypes.c_ulonglong),
-                ("ullAvailVirtual", ctypes.c_ulonglong),
-                ("ullAvailExtendedVirtual", ctypes.c_ulonglong),
-            ]
-
-        status = MemoryStatusEx()
-        status.dwLength = ctypes.sizeof(status)
-        try:
-            if ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(status)):
-                return ResourceSnapshot(
-                    int(status.ullTotalPhys), int(status.ullAvailPhys), "GlobalMemoryStatusEx"
-                )
-        except (AttributeError, OSError):
-            pass
 
     try:
         page_size = int(os.sysconf("SC_PAGE_SIZE"))

@@ -20,10 +20,10 @@ Rendering mode does not change final export quality.
 
 ## Performance and memory
 
-**Memory the app may use** sets the app's memory allowance. The default is
-4 GB on macOS, Windows and Linux, including on the 8 GB MacBook Neo.
-4 GB is also the minimum; saved lower settings are raised to 4 GB. Settings shows the default for your computer. You can choose from
-4 GB up to RAM minus the larger of 2 GB or 10% reserved for the system.
+**Memory the app may use** sets the app's memory allowance. The default
+and lowest setting are 6 GB on Windows and 4 GB on macOS and Linux.
+Settings raises saved values below the minimum and lets you select up to
+your RAM minus the larger of 2 GB or 10% for the system.
 Use **Use default** to return to the automatic value.
 
 Changes apply immediately and are saved for next time. Lowering the value

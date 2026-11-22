@@ -1,7 +1,6 @@
 """Single RAM budget owner. Disk and dedicated GPU memory are separate.
 
-Windows charged RAM is proportional resident memory (QueryWorkingSet).
-Shared pages are divided by their OS share count, never added as full copies.
+Windows charges private commit for each process in the app tree.
 """
 import ctypes
 import errno
@@ -15,6 +14,7 @@ import weakref
 import tracemalloc
 
 from .diagnostics import log as diagnostic
+from .resource_preflight import windows_memory_status
 
 # Opt-in for the one-off diagnostic only: tracing allocations has overhead.
 if os.environ.get("HDR_FINISHER_TRACE_ALLOCATIONS") == "1":
@@ -59,11 +59,10 @@ def machine_memory():
     if os.environ.get("HDR_FINISHER_MEMORY_PROFILE") == "unified-8gb":
         return NEO_RAM
     if os.name == 'nt':
-        class Memory(ctypes.Structure):
-            _fields_ = [('length',ctypes.c_uint32),('load',ctypes.c_uint32)] + [
-                (key,ctypes.c_uint64) for key in ('total','available','page','free_page','virtual','free_virtual','extended')]
-        value=Memory(); value.length=ctypes.sizeof(value)
-        if ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(value)): return value.total
+        try:
+            return windows_memory_status().ullTotalPhys
+        except OSError:
+            pass
     if sys.platform=='darwin':
         value=ctypes.c_uint64();size=ctypes.c_size_t(ctypes.sizeof(value))
         libc=ctypes.CDLL('/usr/lib/libSystem.B.dylib')
@@ -74,21 +73,21 @@ def machine_memory():
 
 def memory_options(ram=None):
     ram = ram or machine_memory()
-    maximum = max(4_000_000_000, ram-max(2_000_000_000, ram//10))
-    # Steve, 2026-11-16: 4 GB minimum/default on every platform, including
-    # the minimum supported 8 GB machine. The supported-machine user
-    # maximum and the independent physical-memory reserve are unchanged.
-    return dict(minimumBytes=4_000_000_000, maximumBytes=maximum,
-        defaultBytes=min(4_000_000_000, maximum), ramBytes=ram)
+    minimum = 4_000_000_000
+    if os.name == "nt" and os.environ.get("HDR_FINISHER_MEMORY_PROFILE") != "unified-8gb":
+        minimum = 6_000_000_000
+    maximum = max(minimum, ram-max(2_000_000_000, ram//10))
+    return dict(minimumBytes=minimum, maximumBytes=maximum,
+        defaultBytes=minimum, ramBytes=ram)
 
 
 def budgets(ram=None, chosen=None):
     options=memory_options(ram)
     ceiling=options['defaultBytes'] if chosen is None else max(options['minimumBytes'],min(options['maximumBytes'],int(chosen)))
-    # Starting memory and working room stay fixed. The fixed thumbnail pool
-    # stays fixed too; only the other cache shares shrink on smaller machines.
-    scale=max(0,(ceiling-STARTING-WORKING-SHARES['thumbnails']) /
-              (4_000_000_000-STARTING-WORKING-SHARES['thumbnails']))
+    # Keep the original cache growth per extra byte above the platform default.
+    # The thumbnail pool and working room are fixed.
+    reference_pool = 4_000_000_000-STARTING-WORKING-SHARES['thumbnails']
+    scale = (reference_pool + ceiling - options['defaultBytes']) / reference_pool
     return ceiling,{key:int(value*(scale if key not in ('thumbnails','working') else 1))
                     for key,value in SHARES.items()}
 
@@ -255,29 +254,19 @@ def system_pressure():
         kernel.QueryMemoryResourceNotification.argtypes=[wintypes.HANDLE,ctypes.POINTER(wintypes.BOOL)]
         if _pressure_handle is None: _pressure_handle=kernel.CreateMemoryResourceNotification(0)
         low=wintypes.BOOL()
-        if _pressure_handle and kernel.QueryMemoryResourceNotification(_pressure_handle,ctypes.byref(low)) and low.value:
-            class Memory(ctypes.Structure):
-                _fields_=[('length',ctypes.c_uint32),('load',ctypes.c_uint32)]+[(k,ctypes.c_uint64) for k in ('total','available','page','free_page','virtual','free_virtual','extended')]
-            value=Memory();value.length=ctypes.sizeof(value);kernel.GlobalMemoryStatusEx(ctypes.byref(value))
-            return 'critical' if value.available<max(256_000_000,value.total//50) else 'moderate'
+        physical_low = (_pressure_handle
+                        and kernel.QueryMemoryResourceNotification(_pressure_handle,ctypes.byref(low))
+                        and low.value)
+        try:
+            memory = windows_memory_status()
+        except OSError:
+            return 'moderate' if physical_low else 'none'
+        available = memory.available_bytes
+        if available < max(256_000_000, memory.ullTotalPhys//50):
+            return 'critical'
+        if physical_low or available < max(2_000_000_000, memory.ullTotalPhys//10):
+            return 'moderate'
     return 'none'
-
-
-def proportional_resident(handle, working, psapi):
-    import numpy as np
-    # QueryWorkingSet may grow during the query; retry with the returned size.
-    count=max(4096,int(working//4096*1.25)+1024)
-    for attempt in range(4):
-        buffer=(ctypes.c_size_t*(count+1))()
-        psapi.QueryWorkingSet.argtypes=[wintypes.HANDLE,ctypes.c_void_p,wintypes.DWORD]
-        if psapi.QueryWorkingSet(handle,buffer,ctypes.sizeof(buffer)):
-            flags=np.ctypeslib.as_array(buffer)[1:int(buffer[0])+1]
-            shares=(flags>>5)&7
-            divisor=np.where((flags&256)!=0,np.maximum(shares,1),1)
-            return int(np.sum(4096/divisor))
-        count=max(count*2,int(buffer[0])+1024)
-    # Never silently certify an unreadable process with a zero charge.
-    raise OSError('QueryWorkingSet failed; memory gate unavailable')
 
 
 def linux_pss(pid, fallback):
@@ -383,16 +372,15 @@ def process_tree(root):
                     if kernel.GetExitCodeProcess(handle,ctypes.byref(status)) and status.value != 259: continue
                     raise ctypes.WinError(error)
                 working = memory.working
-                try:charged = proportional_resident(handle, working, psapi)
-                except OSError:
-                    status=wintypes.DWORD()
-                    kernel.GetExitCodeProcess.argtypes=[wintypes.HANDLE,ctypes.POINTER(wintypes.DWORD)]
-                    if kernel.GetExitCodeProcess(handle,ctypes.byref(status)) and status.value!=259:continue
-                    raise
             finally: kernel.CloseHandle(handle)
-        result.append({'pid':pid,'parentPid':rows.get(pid,(0,0))[0],'name':names.get(pid,''),'workingSetBytes':working,
-                       'chargedBytes':charged if os.name == 'nt' else linux_pss(pid, working),
-                       'privateBytes':memory.private if os.name == 'nt' else None})
+        row = {'pid':pid,'parentPid':rows.get(pid,(0,0))[0],'name':names.get(pid,''),
+               'workingSetBytes':working}
+        if os.name == 'nt':
+            row.update(chargedBytes=memory.private, privateBytes=memory.private,
+                       peakPrivateBytes=memory.pagefile_peak)
+        else:
+            row.update(chargedBytes=linux_pss(pid, working), privateBytes=None)
+        result.append(row)
     return result
 
 
@@ -425,8 +413,9 @@ def snapshot(refresh=False, cached_only=False):
     level=pressure_level(safety_total,pressure)
     # A refused admission ("waiting") is reported for logs only. It is never
     # pressure: only measured memory and the operating system are.
+    measurement = 'private-commit' if os.name == 'nt' else 'proportional-resident'
     return dict(backendPid=os.getpid(), backendHeap=backend_heap(), totalBytes=total,workingSetBytes=sum(r['workingSetBytes'] for r in rows),
-                measurement='physical-footprint' if sys.platform=='darwin' else 'proportional-resident',processes=rows,ceilingBytes=CEILING,
+                measurement='physical-footprint' if sys.platform=='darwin' else measurement,processes=rows,ceilingBytes=CEILING,
                 targetBytes=TARGET,reservedBytes=reserved,caches=cache_snapshot(),
                 pressure=pressure,level=level,waiting=waiting,budgetPressure=safety_total>TARGET,gradeBytes=grade_bytes,
                 sampleId=sample_time, gradePressure=pressure_level(total,pressure), unifiedMemory=unified_memory(),

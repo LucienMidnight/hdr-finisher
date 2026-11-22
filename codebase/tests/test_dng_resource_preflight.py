@@ -180,6 +180,46 @@ def test_linux_uses_kernel_reclaimable_available_memory(monkeypatch):
     assert resources.available_ram_bytes == 3 * GIB
 
 
+@pytest.mark.usefixtures("native_preflight_memory")
+@pytest.mark.parametrize("physical, commit, available, pressure", [
+    (12 * GIB, GIB, GIB, "moderate"),
+    (GIB, 12 * GIB, GIB, "moderate"),
+    (12 * GIB, 128 * 1024**2, 128 * 1024**2, "critical"),
+    (12 * GIB, 12 * GIB, 12 * GIB, "none"),
+])
+def test_windows_pressure_and_preflight_use_lower_headroom(monkeypatch, physical, commit, available, pressure):
+    from types import SimpleNamespace
+    from hdr_finisher import app_memory, resource_preflight as preflight
+
+    windows = SimpleNamespace(name="nt")
+    monkeypatch.setattr(preflight, "os", windows)
+    monkeypatch.setattr(app_memory, "os", windows)
+    monkeypatch.setattr(preflight, "sys", SimpleNamespace(platform="win32"))
+    monkeypatch.setattr(app_memory, "sys", SimpleNamespace(platform="win32"))
+    monkeypatch.setattr(app_memory, "_pressure_handle", None)
+
+    def read_status(pointer):
+        status = pointer._obj
+        status.ullTotalPhys = 16 * GIB
+        status.ullAvailPhys = physical
+        status.ullAvailPageFile = commit
+        return True
+
+    # Simulate an unsignalled physical-memory notification, even with low commit.
+    kernel = SimpleNamespace(GlobalMemoryStatusEx=read_status,
+                             CreateMemoryResourceNotification=lambda kind: 1,
+                             QueryMemoryResourceNotification=lambda handle, low: True)
+    monkeypatch.setattr(ctypes, "windll", SimpleNamespace(kernel32=kernel), raising=False)
+    monkeypatch.setattr(ctypes, "WinDLL", lambda *a, **kw: kernel, raising=False)
+    resources = preflight.detect_memory_resources()
+    assert resources == ResourceSnapshot(16 * GIB, available, "GlobalMemoryStatusEx")
+    estimate = estimate_resources(width=8000, height=6000, samples=3, bytes_per_sample=2,
+                                  resources=resources)
+    assert estimate.safely_available_bytes == max(0, available-int(16 * GIB * .15))
+    assert estimate.export_decision is (ResourceDecision.PASS if pressure == "none" else ResourceDecision.REJECT)
+    assert app_memory.system_pressure() == pressure
+
+
 class MacMemoryReader:
     def __init__(self, level=51, pressure=1, missing=(), invalid_sizes=()):
         self.values = {
