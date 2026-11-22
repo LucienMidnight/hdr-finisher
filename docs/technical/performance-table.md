@@ -53,6 +53,53 @@ SDR preview files matched SHA-256 in both runs.
 [After](../../codebase/output/micro-lens-mem/after.jsonl) ·
 [Run details](../../codebase/output/micro-lens-mem/result.txt)
 
+## November 22, 2026 — MacBook Neo Grade memory
+
+MacBook Neo, A18 Pro with 8 GB unified memory, unpackaged Electron at
+1408 × 794. Each replay used the shared GPU lock and the default 4 GB app
+ceiling. Sony `_DSC7970.ARW` is a 42 MP signed AHD source with speck cleanup
+×2.5. The before measurement is the stored Micro lens replay. The final run
+uses `19884d24`. Peak columns are the independently sampled physical
+footprint in decimal GB. The three peak columns can refer to different
+samples during the same action.
+
+| Action | Seconds before → after | Whole app GB before → after | Backend GB before → after | GPU helper GB before → after |
+| --- | ---: | ---: | ---: | ---: |
+| Open at Fit | 10.76 → 9.75 | 2.133 → 2.045 | 1.516 → 1.448 | 0.485 → 0.476 |
+| Enable Micro at Fit, lens off | 19.42 → 19.07 | 2.224 → 2.182 | 1.073 → 1.114 | 0.675 → 0.680 |
+| Zoom to 78%, lens off | 5.16 → 4.92 | 4.110 → 3.620 | 1.463 → 1.927 | 1.845 → 0.897 |
+| Enable Lensfun Auto and return to 78% | 61.99 → 80.03 | 4.050 → 3.209 | 2.144 → 1.923 | 1.759 → 0.773 |
+| Exposure +0.25 EV | 38.96 → 2.12 | 4.452 → 3.578 | 2.112 → 1.385 | 1.694 → 0.973 |
+| HDR → generated SDR | 2.32 → 3.25 | 3.468 → 3.740 | 1.631 → 1.346 | 0.949 → 1.461 |
+| Generated SDR → HDR | 0.11 → 0.14 | 2.992 → 3.539 | 1.216 → 1.125 | 0.892 → 1.394 |
+| Return to Fit | 0.01 → 0.01 | 2.898 → 3.528 | 1.019 → 0.982 | 0.892 → 1.530 |
+| Return to 78% | 0.01 → 0.01 | 2.898 → 3.528 | 1.019 → 0.982 | 0.892 → 1.530 |
+
+All nine sampled actions stayed below 4 GB. Exposure and the SDR switch
+reused the 4096 px Micro source. The highest peak was 3.740 GB on the SDR
+switch. After it finished, the reduced source was eventually evicted.
+All four HDR and SDR preview SHA-256 hashes matched the baseline. Lensfun
+Auto took 18 s longer. Its 1600 px Micro preparation finished before the
+4096 px request in this run. The baseline cancelled the 1600 px preparation.
+The shortest actions can include the preceding census sample.
+
+The isolated lens-off GPU helper snapshot rose from 0.517 GB at Fit to
+1.755 GB at 78%. IOSurface rose from 92 to 764 MB and unmapped graphics
+from 289 to 715 MB. The app reported a 7968 × 5320 canvas and a 339 MB
+retained target at 78%. At the settled capture, source proxies were 74 MB
+and all Grade allocations reported by the app were 562 MB. The OS
+categories include backing outside the app's allocation counters.
+A paired GPU capture held the same 2631 × 1097 finished pixels in the
+339 MB whole-photo surface and the new 43 MB viewport surface. The
+captured pixels matched byte for byte, and panning filled the new view.
+The picture also matched in a screen crop sampled before and during
+RAW re-development. The preset ROI pan-cache driver hit the same
+retained-frame assertion on the baseline and this branch.
+
+[Before replay](../../codebase/output/micro-lens-mem/after.jsonl) ·
+[Final replay](../../codebase/output/grade-mem/after.jsonl) ·
+[Run details](../../codebase/output/grade-mem/result.txt)
+
 ## November 22, 2026 — MacBook Neo Proof memory
 
 MacBook Neo, A18 Pro, 8 GB, unpackaged Electron at 1408 × 794 under the shared

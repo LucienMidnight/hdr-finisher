@@ -420,6 +420,8 @@ same-Mac v0.9.2 comparisons and exact errors: `docs/known-limitations.md`,
     under the GPU lock at the PC window size. Confirm the scratch file closes
     on success and cancellation, compare the reduced HDR and generated SDR
     hashes on the PC, and record the action peaks and Exposure cache reuse.
+    Also compare finished GPU viewport pixels and check panning at 78% when
+    Micro selects the native processing step.
 
 ## Disk space and test output
 

@@ -45,6 +45,32 @@ after a crash. Grade closes and removes the file before caching the reduced
 picture, and refreshes the process census if the previous reading could
 deny that cache entry.
 
+## November 22: Grade scopes, RAW re-development and zoom
+
+A cold scope source is resized one colour channel at a time in bands, outside
+the session render lock. It keeps the same Lanczos samples and local range
+limits. Preview requests can access their caches while the scope source is
+being prepared.
+
+Grade converts HDR and SDR previews for encoding in row bands. The HDR
+preview's temporary encoder input goes in the desktop's swept scratch
+folder. Under the existing memory admission rule, a finished Micro preview
+can be served without retaining it if keeping it would displace the reusable
+reduced source. Generated CPU Micro SDR previews with supported grades
+also finish in strips.
+
+RAW re-development drops the previous source's GPU working resources and
+rebuildable backend caches before decoding. The mounted canvas retains the
+last picture. The backend keeps the decoded source so the current edit can
+continue if re-development fails or is cancelled.
+
+When magnified Micro Grain uses native GPU processing, the existing viewport
+presentation also applies below 100% zoom. The window shows native tiles over
+the Fit-size picture, without allocating a photo-size HDR presentation surface.
+A docked Library that is hidden during zoomed CPU Micro keeps the previous
+thumbnail on hand and finishes the saved-grade redraw when Library is opened.
+[MacBook Neo measurements](../../technical/performance-table.md#november-22-2026--macbook-neo-grade-memory)
+
 ## November 21: Grade shares memory on Apple Silicon
 
 GPU Grain admission uses the lesser of the existing graphics headroom
