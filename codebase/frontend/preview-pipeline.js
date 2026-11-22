@@ -247,7 +247,8 @@ async function renderPreviewForLane(
     || workGeneration !== state.gradeWorkGeneration) return false;
   if (geometryDraftActive()) return false;
   const raw = options.raw ?? !state.gpuPreview?.available;
-  const viewport = displayWhenReady && cpuMicroPreviewSelected(lane, options.denoiseFallback)
+  const viewport = displayWhenReady && lane === state.currentView && !state.comparePeekActive
+    && cpuMicroPreviewSelected(lane, options.denoiseFallback)
     ? cpuMicroViewport(lane) : null;
   const key = JSON.stringify([sessionId, state.editRevision, state.previewGeneration[lane],
     geometrySignature(), longEdge, displayWhenReady, raw, Boolean(options.denoiseFallback), localsBypassed(),
@@ -441,7 +442,7 @@ async function renderPreviewForLaneInner(
 function cpuMicroPreviewSelected(lane, fallback = false) {
   const settings = state.denoise?.[lane];
   const runtime = state.denoiseRuntime?.[lane];
-  return state.activeWorkflow === "grade" && lane === state.currentView && !state.comparePeekActive
+  return state.activeWorkflow === "grade"
     && settings?.enabled && settings.controls.method === "micro_grain" && !runtime?.showOriginal
     && (settings.controls.micro_luminance || settings.controls.micro_color)
     && (runtime?.microBackup || fallback || !gpuPreviewEligible(lane));
@@ -1670,6 +1671,11 @@ function previewIdleNow() {
   return true;
 }
 
+function canPreloadInactiveLane(lane, longEdge = settledProxyLongEdge()) {
+  return lane !== state.currentView && gpuPreviewEligible(lane)
+    && !cpuMicroPreviewSelected(lane) && longEdge < previewTargetLongEdge("full");
+}
+
 function prepareInactivePreview({ immediate = false } = {}) {
   if (!state.session) return;
   const other = state.currentView === "hdr" ? "sdr" : "hdr";
@@ -1685,14 +1691,11 @@ function prepareInactivePreview({ immediate = false } = {}) {
   // true idle so a background lane cannot compete with the edit on screen.
   if (immediate) {
     if (!state.inactiveSourceController) {
-      void preloadInactiveLane(other, state.previewGeneration[other]);
+      void preloadInactiveLane(other, state.previewGeneration[other], { immediate });
     }
     return;
   }
-  // Full would retain another native source just for an unseen lane. A lane
-  // switch already loads that source within its one render; explicit compare
-  // intent above can still prepare it immediately.
-  if (state.previewResolutionOverride && normalizedPreviewResolution() === "full") return;
+  if (!canPreloadInactiveLane(other)) return;
   state.previewScheduler?.scheduleInactive(other, state.previewGeneration[other], previewIdleNow);
 }
 
@@ -1729,12 +1732,14 @@ async function holdSourceForPanning(lane, longEdge) {
   }
 }
 
-async function preloadInactiveLane(lane, generation) {
+async function preloadInactiveLane(lane, generation, { immediate = false } = {}) {
   if (!state.session || generation !== state.previewGeneration[lane] || !state.gpuPreview?.available) return;
   if (state.compareLayout !== "single" && lane !== state.currentView) {
     await renderComparisonPreview(lane);
     return;
   }
+  const longEdge = settledProxyLongEdge();
+  if (!immediate && !canPreloadInactiveLane(lane, longEdge)) return;
   const controller = new AbortController();
   state.inactiveSourceController?.abort();
   state.inactiveSourceController = controller;
@@ -1743,7 +1748,7 @@ async function preloadInactiveLane(lane, generation) {
     await state.gpuPreview.loadProxy(
       state.session.session_id,
       lane,
-      settledProxyLongEdge(),
+      longEdge,
       geometrySignature(),
       state.editRevision,
       sourceIdentity,

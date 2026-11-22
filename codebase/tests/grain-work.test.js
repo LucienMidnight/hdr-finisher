@@ -19,6 +19,45 @@ test('CPU reason distinguishes eligibility and actual renderer refusal',()=>{
   state.renderingMode='cpu';
   assert.equal(ctx.cpuPreviewReason('sdr'),'user-selected-cpu');
 });
+test('inactive preloads skip CPU Micro and native size but keep GPU Fit and explicit compare', async () => {
+  const queued = [], loaded = [];
+  const state = {
+    session: { session_id: 'photo' }, activeWorkflow: 'grade', currentView: 'hdr', compareLayout: 'single',
+    previewResolutionOverride: false, previewGeneration: { sdr: 2 }, gpuPreparedLane: {},
+    gpuPreview: { available: true, loadProxy: async (_session, lane, edge) => loaded.push([lane, edge]) },
+    previewScheduler: { scheduleInactive: (...args) => queued.push(args) },
+    denoise: { sdr: { enabled: true, controls: { method: 'micro_grain', micro_luminance: 1 } } },
+    denoiseRuntime: { sdr: { microBackup: {} } },
+  };
+  const ctx = context(state);
+  let edge = 1600, gpuAllowed = true;
+  Object.assign(ctx, {
+    AbortController, cacheReady: () => false, renderCompareStatus() {},
+    gpuPreviewEligible: () => gpuAllowed, geometrySignature: () => 'geometry',
+    gradeSourceIdentity: () => 'generated-sdr', settledProxyLongEdge: () => edge, previewTargetLongEdge: () => 7968,
+  });
+
+  ctx.prepareInactivePreview();
+  assert.equal(queued.length, 0);
+  state.denoiseRuntime.sdr.microBackup = null;
+  gpuAllowed = false;
+  ctx.prepareInactivePreview();
+  assert.equal(queued.length, 0);
+  gpuAllowed = true;
+  ctx.prepareInactivePreview();
+  assert.deepEqual(queued.map(([lane, generation]) => [lane, generation]), [['sdr', 2]]);
+  await ctx.preloadInactiveLane('sdr', 2);
+  assert.deepEqual(loaded, [['sdr', 1600]]);
+  assert.equal(state.gpuPreparedLane.sdr, true);
+
+  edge = 7968;
+  ctx.prepareInactivePreview();
+  await ctx.preloadInactiveLane('sdr', 2);
+  assert.equal(queued.length, 1);
+  assert.equal(loaded.length, 1);
+  ctx.prepareInactivePreview({ immediate: true });
+  assert.deepEqual(loaded, [['sdr', 1600], ['sdr', 7968]]);
+});
 test('leaving Grade cancels both preview lanes and scope work',()=>{
   const aborted=[];const resolved=[];
   const state={scopeGeneration:3,previewControllers:{hdr:{abort(){aborted.push('hdr')}},sdr:{abort(){aborted.push('sdr')}}},scopeRequestInFlight:{controller:{abort(){aborted.push('scope')}}},pendingScopeRequest:{resolve:v=>resolved.push(v)}};
