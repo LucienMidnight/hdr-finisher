@@ -18,7 +18,11 @@ class DeliveryFrame:
 
     def check_space(self) -> None:
         size = math.prod(self.shape) * self.dtype.itemsize
-        if shutil.disk_usage(self.path.parent).free < size:
+        try:
+            reusable = self.path.stat().st_size
+        except FileNotFoundError:
+            reusable = 0
+        if shutil.disk_usage(self.path.parent).free + reusable < size:
             raise OSError(f"Delivery needs {size:,} bytes of free scratch disk space.")
 
     def write(self, bands) -> None:

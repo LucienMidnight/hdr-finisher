@@ -89,3 +89,24 @@ def test_avif_writer_closes_delivery_frame_when_band_write_fails(monkeypatch, tm
     assert caught.value.__traceback__ is not None
     assert len(handles) == 1 and handles[0].closed
     frame.path.unlink()
+
+
+def test_watermark_overwrite_counts_existing_frame_as_reusable(monkeypatch, tmp_path):
+    from types import SimpleNamespace
+
+    from hdr_finisher import delivery_frames
+
+    path = tmp_path / "delivery.rgb"
+    pixels = np.ones((16, 24, 3), np.float32)
+
+    def render(allocate):
+        mapped = allocate(pixels.shape)
+        mapped[:] = pixels
+        monkeypatch.setattr(delivery_frames.shutil, "disk_usage", lambda _: SimpleNamespace(free=0))
+        return mapped + pixels
+
+    frame = exporters._render_branch_to_file(path, render)
+    assert path.read_bytes() == (pixels + pixels).tobytes()
+    with pytest.raises(OSError, match="free scratch disk space"):
+        DeliveryFrame.spill(tmp_path / "new.rgb", pixels)
+    assert frame.path.exists()

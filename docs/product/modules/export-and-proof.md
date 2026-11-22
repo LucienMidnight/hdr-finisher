@@ -1,8 +1,9 @@
 ## November 22 — File-backed AVIF delivery and full-size Proof
 
 AVIF delivery stores Grain and finished frames in files owned by the export
-or Proof job. It checks free disk space before allocating a frame. The renderer
-closes its maps after use, and the encoder inputs read the files in row bands.
+or Proof job. It checks free disk space before allocating a frame and counts
+the existing file's space when overwriting it. The renderer closes its maps
+after use, and the encoder inputs read the files in row bands.
 Native AVIF helpers run with the finished delivery frames on disk. Ceiling
 retries work on a private HDR copy, so Proof keeps the authored frame.
 
