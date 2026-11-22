@@ -17,33 +17,62 @@ Peak is the sampled Apple physical footprint of the export process tree
 | Profile | Build | Wall time | Peak footprint | AVIF SHA-256 |
 | --- | --- | ---: | ---: | --- |
 | A | Baseline `a654d7f9`, three runs | 147.9–156.5 s | 6.12–6.51 GB | `ff3961ee9b4eaccd969ee9844459961474e866a32b6bf8e5be5e0159e67a04a9` |
+| A | After `928e7414`, three runs | 99.6–106.3 s | 5.90–6.15 GB | same |
 | B | Baseline `a654d7f9`, three runs | 29.8–34.0 s | 3.80–3.81 GB | `ccfeedf49d0e88dd81ad286fd53e2e89a57e2d1e388ff50bb835318002dc5c05` |
+| B | After `8b300c10`, three runs | 26.7–28.5 s | 3.67–3.70 GB | same |
 
 Profile A's peak is the worker alone (6.44 GB at about 90 s, the start of the
-SDR rendition), so this export already exceeds the 4 GB whole-app ceiling
-before any change.
+SDR rendition), so this export already exceeded the 4 GB whole-app ceiling
+before any change, and still does (open in the Export and Proof PRD).
+Every change kept both files byte-identical. A first Y4M version that
+converted six bands ahead raised Profile B's peak to 4.00–4.05 GB and was
+replaced by splitting each band's rows.
 
-Stage time from the first `export_timing` record, seconds, HDR + SDR:
+Stage time from the `export_timing` records, seconds, HDR + SDR (after:
+mean of the three runs):
 
-| Stage | Profile A | Profile B |
-| --- | ---: | ---: |
-| Film Grain | 31.5 + 32.2 = 63.7 | — |
-| Film stock | 11.7 + 11.5 = 23.2 | — |
-| Tone and colour | 6.0 + 7.2 = 13.2 | 0.2 + 0.3 |
-| Brush mask | 5.3 + 5.5 = 10.8 | — |
-| Detail | 4.1 + 5.0 = 9.1 | — |
-| Geometry | 3.1 + 4.9 = 8.0 | 0 |
-| Halation | 3.2 + 3.8 = 7.0 | — |
-| Clean Grain (model and Grain) | 5.9 (shared) | 7.8 (shared) |
-| Local stack | 1.8 + 2.2 = 4.0 | — |
-| Vignette | 1.0 + 1.5 = 2.5 | — |
-| Strip render | — | 0.7 + 2.5 = 3.3 |
-| RAW development | 3.8 | 4.5 |
-| Output finishing, compression, framing | 1.4 | 0 |
-| Y4M preparation | 0.3 | 4.2 |
-| Encoder | 1.2 | 12.1 |
-| Validate and metadata | 0.1 | 0.7 |
-| Unattributed | 0.1 (0.09%) | 0.3 (0.99%) |
+| Stage | Profile A before | Profile A after | Profile B before | Profile B after |
+| --- | ---: | ---: | ---: | ---: |
+| Film Grain | 31.5 + 32.2 = 63.7 | 15.6 + 15.7 = 31.3 | — | — |
+| Film stock | 11.7 + 11.5 = 23.2 | 11.6 + 11.0 = 22.6 | — | — |
+| Tone and colour | 6.0 + 7.2 = 13.2 | 5.4 + 7.0 = 12.5 | 0.2 + 0.3 | 0.2 + 0.3 |
+| Brush mask | 5.3 + 5.5 = 10.8 | 4.8 (once) | — | — |
+| Detail | 4.1 + 5.0 = 9.1 | 3.2 + 3.2 = 6.4 | — | — |
+| Geometry | 3.1 + 4.9 = 8.0 | 3.0 (once) | 0 | 0 |
+| Halation | 3.2 + 3.8 = 7.0 | 1.9 + 1.9 = 3.8 | — | — |
+| Clean Grain (model and Grain) | 5.9 (shared) | 5.7 (shared) | 7.8 (shared) | 6.4 (shared) |
+| Local stack | 1.8 + 2.2 = 4.0 | 1.6 + 1.7 = 3.3 | — | — |
+| Vignette | 1.0 + 1.5 = 2.5 | 1.0 + 0.9 = 1.9 | — | — |
+| Strip render | — | — | 0.7 + 2.5 = 3.3 | 0.6 + 2.2 = 2.8 |
+| RAW development | 3.8 | 4.0 | 4.5 | 3.8 |
+| Output finishing, compression, framing | 1.4 | 1.4 | 0 | 0 |
+| Y4M preparation | 0.3 | 0.2 | 4.2 | 2.0 |
+| Encoder | 1.2 | 1.1 | 12.1 | 11.1 |
+| Validate and metadata | 0.1 | 0.1 | 0.7 | 0.6 |
+| Unattributed | 0.1 (0.09%) | 0.1 (0.09–0.12%) | 0.3 (0.99%) | 0.04–0.14 (0.16–0.51%) |
+
+Film stock and Clean Grain already ran on the CPU pool; tone and colour is a
+dozen separate steps, none above 5% of the wait. Steps 4a–4d were Film Grain
+on up to six workers in 32-row chunks, the SDR geometry pass and brush mask
+done once, no halation map unless shown, and exact parallel box blurs and
+Y4M band conversion.
+
+Progress (headless batch, 0.1 s polling of the queue): never backwards in
+any run. Profile A longest pause 1.08 s in both runs after the overrun fix
+(`d5492b37`; up to 2.12 s before it), 5% at 2.1 s (2% of the wait);
+Profile B longest pause 1.1–1.3 s, 5% at 2.0–2.1 s (7–8% of the wait).
+
+**Real app, Profile A with the same photo open in Grade**
+(`tests/performance/export-speed-app.js`, unpackaged Electron at
+1408 × 794, `02add6cf`): 137.3 s from Export to finished (131.9–137.3 s over
+three runs), whole-app peak 5.04 GB (4.97–5.17 GB, sampled once a second),
+AVIF SHA-256 equal to the headless file. The Export page and status bar never
+went back, longest pause 0.31 s (the page polls every 0.5 s), 5% at 2.8 s
+(2% of the wait). Memory: cache trims with 40 MB, 12 MB and 0 MB of
+rebuildable cache, then `cache_trim_paused` and silence through the end of
+the export and one more cool-down (`budget_pressure`, OS pressure none);
+Grade's Grain reclaim twice, then none. Before the guard's second revision
+the same run logged 3 trims and 5–6 Grain reclaims spread over the export.
 
 ## November 22, 2026 — Windows private commit
 

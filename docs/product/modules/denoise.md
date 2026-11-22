@@ -2,6 +2,8 @@
 
 **November 21, 2026 working changes.** New lanes start with Clean Grain selected and Denoise off. Saved enabled grades with no method still use Simple. Clean Grain has a per-rendition colour-cleaning checkbox, on by default. Micro Grain is experimental. Grade defaults to the GPU for the Grain methods. Micro Grain uses signed Bayer samples; its export and full-size Proof use the CPU source stage.
 
+**November 23, 2026 export speed.** CPU AVIF Gain Map export with Clean Grain is faster and shows real progress; Clean Grain itself was under 10% of that wait, so GPU Grain delivery stays deferred. [Export and Proof](export-and-proof.md#november-23--faster-cpu-clean-grain-avif-export-real-progress-quiet-trims)
+
 ## 1. Purpose and goals
 
 Remove sensor noise without harming structure or sharpness. Clean up brightness grain, colour specks and broad shadow blotches while keeping real texture, small lights, edges and highlight detail. The result must hold up in SDR and HDR, including lifted shadows. Steve judges the photos at normal viewing size and at 100%. [November 16 quality trial](../../technical/briefs/denoise-v1-quality-trial-2026-11-16.md#1-goal-steve-november-16-2026)

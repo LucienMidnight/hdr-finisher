@@ -1,3 +1,36 @@
+## November 23 — Faster CPU Clean Grain AVIF export, real progress, quiet trims
+
+Steve's November 22 Windows batch export (one Canon CR3 cropped to
+4182 × 6273, AVIF Gain Map, 1920 px long edge, frame, the Santorini recipe in
+`codebase/tests/fixtures/export-speed/`) took 175 s with the bar at 0% until
+done. Re-measured and fixed on the MacBook Neo with the same recipe on the
+Sony `_DSC7970.ARW` (Profile A) and Clean Grain Small at native size
+(Profile B, the bounded strip path). Every exported file stayed
+byte-identical to the app before the change.
+
+- **Stage timing.** Each export logs one `export_timing` record: exclusive
+  time per lane and stage, the exporter's `timings_ms` and the unattributed
+  rest (0.1–0.5%). [Logging](../../technical/logging.md#export-stage-timing)
+- **Speed.** Film Grain renders on up to six CPU workers into one frame; the
+  SDR lane reuses the HDR lane's geometry and brush mask when both share
+  Clean Grain; the halation map is built only when shown; Detail and
+  halation blurs and Y4M bands use all cores. Profile A 148–157 s →
+  100–106 s; Profile B 30–34 s → 27–28.5 s.
+  [Measurements](../../technical/performance-table.md#november-22-2026--macbook-neo-cpu-avif-export-with-clean-grain)
+- **Progress.** The bar follows the export's own stages (Developing RAW,
+  Denoising, Rendering HDR, Rendering SDR, Encoding, Finishing), weighted by
+  measured stage costs, never goes back and shows the time left. The batch
+  meter, per-photo meter, status bar, Library Activity and single-photo
+  export all use it.
+- **Memory trims.** After a cache trim frees nothing, the desktop stops
+  repeating trims and renderer collections until caches or Grade grow, the
+  OS pressure level changes or pressure rises; Grade skips a Grain reclaim
+  that found nothing until it holds more. Trims with no OS pressure are
+  logged as `budget_pressure`.
+- **Wording.** A Clean Grain CPU export now says "Exported on the CPU.
+  Graphics-card export for Clean Grain is still being tested." The log
+  keeps `cpu_delivery_policy`.
+
 ## November 22 — File-backed AVIF delivery and full-size Proof
 
 AVIF delivery stores Grain and finished frames in files owned by the export
@@ -1202,6 +1235,25 @@ No pixel change.
    October 27 status above; macOS/Linux packaging awaits CI execution and
    Steve's on-screen HDR acceptance remains manual.
 4. AVIF gain-map denoise: only if a corpus shows a net benefit.
+5. **Export memory with Film Look on a 42 MP RAW (found November 23).**
+   Profile A's export worker alone peaks at 5.9–6.2 GB on the MacBook Neo,
+   above the 4 GB whole-app ceiling, before and after the speed work. The
+   whole-frame CPU path keeps several full-size float frames alive per
+   rendition. Needs a memory plan (bounded creative stages or a lower
+   working precision) and Steve's decision on its cost.
+6. **Later options from the November 23 export-speed work** (recorded, not
+   built):
+   - Share Film Grain between HDR and SDR: about 15 s on Profile A, but it can
+     change the exported bytes.
+   - Run the spatial creative stages after resizing to the 1920 px output:
+     most of the remaining wait, but it changes the look. Steve's call.
+   - GPU Grain delivery: Clean Grain is under 10% of this wait (5.7 of about
+     100 s), so it cannot make the whole wait about 50% faster.
+   - Film stock (22 s, already on the CPU pool) and tone and colour (12.5 s,
+     a dozen small steps) are the next largest stages; both need
+     algorithmic work rather than more threads.
+   - Windows trim loop: the desktop guard is shared, but Windows'
+     private-commit headroom during an export needs checking on the PC.
 
 **Ideas (not scheduled)**
 
