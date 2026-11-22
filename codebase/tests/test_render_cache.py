@@ -206,6 +206,31 @@ def test_scope_admission_refusal_preserves_micro_cache_until_trim(monkeypatch, w
     assert app_memory.cache_snapshot()["working"]["bytes"] == 0
 
 
+def test_refused_scope_proxy_does_not_rebalance_micro_work(monkeypatch) -> None:
+    monkeypatch.setattr(app_memory, "_sample", (0, None))
+    monkeypatch.setattr(app_memory, "_caches", {})
+    image = np.linspace(0.0, 1.0, 270 * 360 * 3, dtype=np.float32).reshape(270, 360, 3)
+    cache = SessionRenderCache(image, None)
+    preview = image.copy()
+    prepared = SimpleNamespace(prepared_nbytes=preview.nbytes)
+    with cache._lock:
+        cache._micro_prepared["raw"] = prepared
+        cache._micro_previews["reduced"] = preview
+        cache._rebalance_locked()
+    monkeypatch.setattr(app_memory, "_sample", (0, [{"workingSetBytes": app_memory.TARGET + 1}]))
+    rebalances = []
+    original = cache._rebalance_locked
+    monkeypatch.setattr(cache, "_rebalance_locked", lambda: rebalances.append(True) or original())
+
+    with cache._lock:
+        cache._remember_proxies_locked(64, image[:48, :64].copy(), None, scope_source=True)
+
+    assert rebalances == []
+    assert not cache._source_proxies
+    assert cache._micro_prepared.get("raw") is prepared
+    assert cache._micro_previews.get("reduced") is preview
+
+
 def test_scope_region_is_a_post_geometry_view_and_has_an_independent_cache_key() -> None:
     image = np.arange(8 * 12 * 3, dtype=np.float32).reshape(8, 12, 3)
     region = (0.25, 0.25, 0.5, 0.5)

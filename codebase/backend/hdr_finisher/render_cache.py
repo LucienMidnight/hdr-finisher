@@ -2156,7 +2156,10 @@ class SessionRenderCache:
             while len(cache) > self.max_proxy_levels:
                 cache.popitem(last=False)
                 self._evictions += 1
-        self._rebalance_locked()
+        # A scope store either claimed its bytes or was refused. Rebalancing
+        # here could still evict Micro work for bytes the scope did not keep.
+        if not scope_source:
+            self._rebalance_locked()
 
     def _source_level_locked(self, edge: int, kind: PreviewKind, *, is_current: Callable[[], bool] | None = None, persist: bool = True) -> np.ndarray:
         """Return one source level, through the persistent mip store when present.
