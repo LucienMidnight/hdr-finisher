@@ -72,7 +72,7 @@ Three problems follow, and Steve approved all three on November 21:
 | ROUTE-1 | One Grain route state and clear route messages | `sprint/grain-route-ui` | — | done, merged Nov 21: GPU / CPU backup / Reduced preview label beside Method, plain reason, Retry on GPU and Switch to Clean Grain actions, CPU progress after 2 s; sampled CPU preview bytes unchanged. Look awaits Steve (R2-5); lens-corrected Micro crop not captured |
 | MG-2 | Micro Grain CPU: visible area first | `sprint/micro-cpu-visible` | MG-1 merged | locally committed, Sony native regions byte-identical, PC RGBA8 110% first sharp 10.38 s and pan 3.81 s, Fit 27.30 s and 3.43 GB after the memory fix, native HDR timing open |
 | MEM-1 | One memory budget on the MacBook Neo | `sprint/mac-memory` | MG-1, GPU-2 merged | PC part done, merged Nov 21 (`62e602b4`). On the PC, with the machine acting as an 8 GB Mac, the locked replay passed: share trim and restore, admission, deferred reclaim, and identical calibration with 4.06 MB less scratch per tile. Finished-frame and export byte parity not yet run (INT-2). R2-6 now has byte-exact lens strips verified on the Mac, with Windows confirmation open. MacBook Neo checked Nov 21 at `113a1c92`. Auto Clean and lens-off Micro stayed on GPU. Lens-on Micro hit 5.465 GB, CPU AVIF export 6.689 GB, full-size Proof 11.015 GB. Nov 22 Proof peak fell to 6.746 GB. Exact incident RAW, 50 MP RAW and Metal trace remain open |
-| QUAL-1 | Exposure-independent quality fixes (output changes) | `feat/denoise-v1` | CG-2 merged | four options built and checked on Mac, all off; review crops ready for Steve (R2-4); no signed-shadow clips on three RAWs |
+| QUAL-1 | Exposure-independent quality fixes (output changes) | `feat/denoise-v1` | CG-2 merged | Steve approved the weighted Bayer fit on Nov 22 (R2-4). Adopted as the only fit in `b5b2ac1c`. RAW cleanup, delivery, Canon Micro parity and Library viewport checks passed on the MacBook Neo. Three switches remain off pending an anchor redesign. |
 | FOLD-1 | Fine Grain folded into Clean Grain, with a cleaning checkbox | `sprint/fold-fine-grain` | CG-2, GPU-2, ROUTE-1 merged | done, merged Nov 21: "Clean color splotches and fringes" checkbox, on by default, saved per rendition. On: Sony HDR and SDR Fit byte-identical on each route. Off: CPU/GPU HDR ΔE ITP 0.055 / 0.161, SDR ΔE 2000 0.031 / 0.765 (mean / p99). Crops of off against old Fine Grain for Steve. Affected saved grade: Canon `IMG_0790.CR2.hdrf` |
 | DLV-1 | Share one Grain result across HDR and SDR in AVIF export and Proof | `sprint/delivery-grain-share` | — | done, merged Nov 21: shared when HDR and SDR have the same source and controls, bounded to one float32 frame (~509 MB). Sony Clean Small: AVIF export 54.5 → 44.9 s, full-size Proof 94.6 → 60.1 s, files byte-identical. Pre-existing: backend peak ~6.2 GB on both, over the 4 GB ceiling (MEM-1) |
 | INT-2 | Round 2 integration, full checks, push and hand test | `feat/denoise-v1` | all round 2 | to do |
@@ -1042,16 +1042,15 @@ largest owner at both delivery peaks.
 - CPU and GPU agree within the limits.
 - **No default changes until Steve approves.**
 
-**Built and checked on the MacBook Neo.** These are developer-only environment
-switches: set only the one to try to `1` before launching the app. Nothing is
-added to the interface, projects, or presets. The same switch reaches both paths.
+**Built and checked on the MacBook Neo.** The three remaining candidates use
+developer-only environment switches. Set one to `1` before launching the app
+to test it. The same switch reaches the CPU and GPU paths.
 
 | Switch | What changes and what to look at |
 | --- | --- |
 | `HDR_FINISHER_QUAL_COLOUR_LEVELS` | Clean Grain's colour protection follows local brightness grain. Look at the colour beside the Canon flame and the boosted atrium lights; one small light changes conspicuously at +3 EV. |
 | `HDR_FINISHER_QUAL_MICRO_GUARD` | Micro's light guard follows sensor noise. The Canon flame edge and the atrium post and tiny lights change most; the two Sony crops look the same. |
 | `HDR_FINISHER_QUAL_RAW_LEVELS` | Hot-pixel and speck cutoffs follow sensor noise. Boosted Canon shadows show the largest texture change; check the real pinpoint lights before accepting it. |
-| `HDR_FINISHER_QUAL_BAYER_FIT` | The Bayer noise estimate gives quiet shadow blocks more weight. Look for the change in grain in the boosted Sony hair and grey background rather than a change in outline. |
 
 **Anchors.** At a noise level of 0.001 in the respective units, each cutoff is
 the same as today; the scale moves with the measured noise, not an exposure slider.
@@ -1064,7 +1063,7 @@ the same as today; the scale moves with the measured noise, not an exposure slid
 - RAW hot-pixel excess (0.02): use 20 times the phase read sigma, including quantisation, while retaining the local noise test.
 - RAW speck absolute floor (0.005): use five times the phase read sigma, including quantisation.
 - RAW speck light-evidence floor (0.005): use that same five-sigma floor before the existing three-colour light protection.
-- Bayer fit: keep positive-variance deep-shadow blocks, use zero as the shot-noise predictor when the block mean is negative, and weight quiet bins by square root of their count divided by relative variance (floored at 0.02).
+- Bayer fit (adopted November 22): keep positive-variance deep-shadow blocks, use zero as the shot-noise predictor when the block mean is negative, and weight quiet bins by square root of their count divided by relative variance (floored at 0.02).
 
 **Checks.** Finished HDR ΔE ITP and SDR ΔE 2000 below are mean / p99;
 limits stay **< 1 / < 3**. Clean uses CPU and GPU delivery, Micro uses GPU
@@ -1079,7 +1078,35 @@ existing CPU/GPU signed-RAW check.
 | RAW speck floors through Micro, Canon | 0.07541 / 0.16852 | 0.13887 / 0.51159 |
 | Weighted Bayer fit, Canon | 0.14188 / 1.85972 | 0.29222 / 0.82948 |
 
-All off against `ef31bd78`: identical bytes in the touched CPU stages, the
+**November 22 adoption (R2-4, `b5b2ac1c`).** The weighted fit replaces the old
+fit and `HDR_FINISHER_QUAL_BAYER_FIT` switch. A recipe-specific suffix versions
+cleanup-enabled RAW scenes and their cached measurements. Finished Library
+screen pictures and thumbnails also get a new key in lanes that can use
+Micro Grain from Grade. Micro Grain's Bayer preparations and tiles are
+rebuilt in memory when the app restarts. RAW cleanup diagnostics are
+generated during development. The offline Library keys use the saved RAW
+recipe, so a RAW with an enabled recipe and an unsupported sensor can also
+get a one-time cache miss.
+
+| MacBook Neo check | HDR ΔE ITP | SDR ΔE 2000 | Result |
+| --- | ---: | ---: | --- |
+| RAW Pixel cleanup, 768 comparisons | 0.000132 / 0 | 0.000473 / 0 | Passed, mean / p99 |
+| RAW cleanup delivery, worst finished comparison | 0.336811 / 2.259168 | 0.080737 / 0.485808 | Passed, mean / p99.9. Encoded Proof and export matched on both RAWs. |
+| Canon Micro Grain, GPU Grade at 110% vs CPU delivery | 0.141878 / 1.859724 | 0.173628 / 0.518844 | Passed, mean / p99. Exact HDR delivery peaked at the 1000-nit target. |
+
+The Canon Micro run repeated the earlier SDR highlight-anchor warning
+(editing estimate 9.2% from delivery, against a 1% warning threshold).
+Delivery used the exact measurement. The Library smoke check pictured all
+nine expected photos. All four app drivers used the shared GPU lock and the
+1408 × 794 window. [Run timings](../performance-table.md#november-22-2026--weighted-bayer-fit-checks)
+
+The JavaScript suite had 1,160 passes, one skip and the known tooltip catalogue
+failure. Python had 4,425 passes, 150 skips, one unexpected pass and two known
+failures, the seeded white-noise calibration and the opt-in ROI refinement
+contract. Scratch output measured 25.4 GB before and after the task.
+
+Before the default changed, all four switches off against `ef31bd78` gave
+identical bytes in the touched CPU stages, the
 Clean Grain CPU and GPU JPEGs, and the Canon Micro HDR/SDR WebGPU Grade
 frames and CPU export (HDR/SDR pre-encode and JPEG). The Micro Grade byte
 check used fixed highlight anchors: automatic anchor measurements can
@@ -1096,10 +1123,12 @@ atrium 0 / 42,389,760. No encoding change was needed.
 and S2 flame edge (20 of 38 marks), Sony D2 hair and S1 grey background
 (13 of 25 marks), and the atrium railing lights. Clean's exposure stress is
 before colour cleanup; RAW and Micro run before the exposure edit, so their
-crops show the sensor result viewed at each exposure. To rebuild from
-`codebase`: `PYTHONPATH=backend .venv/bin/python -m tools.denoise_eval.quality_review`.
+crops show the sensor result viewed at each exposure. Rebuilding the review
+now compares the three remaining candidates against the weighted Bayer baseline.
+From `codebase`, run
+`PYTHONPATH=backend .venv/bin/python -m tools.denoise_eval.quality_review`.
 
-**Still open:** Steve's choice of defaults. The optional half-strength
+**Still open.** The three remaining candidates need redesigned anchors. The optional half-strength
 shadow-guided colour pass was not built. Bands 2–3 still need direct noise
 measurements across the marked crops; a noise-weighted `fit_grain` would need
 separate proof it does not trade away hair and fine texture; luminance-weighted
@@ -1124,8 +1153,7 @@ change more than exposure behaviour:
 - `COLOUR_LEVELS` and `MICRO_GUARD` do not enter Library cache keys; clear the
   Library cache before trying them. Windows needs setup rerun to rebuild
   `denoise_filters` before `COLOUR_LEVELS` uses the C path.
-Recommendation: `BAYER_FIT` is ready for an ordinary visual decision. The
-other three need an anchor taken from each photo's own measured noise (or a
+The three remaining candidates need an anchor taken from each photo's own measured noise (or a
 per-camera reference) and exposure-matched stress crops before they are
 candidates for defaults.
 
@@ -1136,7 +1164,7 @@ candidates for defaults.
 | R2-1 | Fold Fine Grain into Clean Grain (Clean with Color Splotches at 0)? | **Steve, Nov 21: yes.** Clean Grain stays the default. A checkbox turns off the cleaning part, giving Fine-Grain-like results; they need not match today's Fine Grain exactly. Built by FOLD-1. |
 | R2-2 | Trim Library cache shares while Grade has a large photo open on an 8 GB machine? | **Steve, Nov 21: yes.** MEM-1 builds it and records the shares in `memory-and-caches.md`. |
 | R2-3 | Memory-map read-only sources on 8 GB machines? | **Coordinator and reviewer agree, Nov 21: not now.**<br>- On macOS, clean mapped pages leave the physical-footprint number the app measures. The meter would drop without freeing real memory, and `safety_total` would subtract the image twice.<br>- It would write about 500 MB to the SSD for every photo opened.<br>- Grain scratch is already disk-backed, so mapping it gains nothing.<br>If MEM-1's Mac measurements still show pressure, look first at cold buffers (`retouch_original`, about 509 MB) and Micro's 256 MiB Bayer tile cache, then revisit with numbers. |
-| R2-4 | Which QUAL-1 candidates become defaults? | Decide on the review page (`codebase/output/review/grain-quality/`). Coordinator and reviewer, Nov 22: only `BAYER_FIT` is ready to judge; the other three need an anchor redesign first (see QUAL-1, reviewer's caution). **Steve, Nov 22:** the crops looked very similar on the MacBook screen; `BAYER_FIT` is acceptable. Not yet made the default. |
+| R2-4 | Which QUAL-1 candidates become defaults? | **Steve, Nov 22.** The review crops looked very similar on the MacBook screen. Adopted the weighted Bayer fit as the only fit and removed its developer switch. Colour protection, Micro light guard and RAW cleanup floors stay off while their noise references are redesigned. |
 | R2-6 | Lens correction in strips? | **Byte-exact replacement built and verified on the MacBook Neo.** Restarting Lensfun's float32 row sum caused the trial's output drift. The replacement preserves the native row values and saves 462 MB on Canon and 1,058 MB on Sony through lens correction, with identical corrected and finished pixels. Any native failure now falls back to whole-frame coordinates with a logged reason (`f7d58825`, after the final review). Confirm byte equality and that the strip path runs on the Windows PC. |
 | R2-7 | Export depends on whether Grade was opened first (pre-existing, also on `deb2fc6f`)? | **Steve and reviewer, Nov 21: leave for later.**<br>- Grade, Proof and export on the same machine already share one measurement.<br>- The difference appears only for an export without Grade first, for example on the other machine or after clearing the cache. HDR ΔE ITP mean / p99 0.669 / 2.075, within limits.<br>- Cause, checked in code: the GPU measures a 4×4 grid of 256 px windows; the CPU measures up to 64 windows and every pixel of the tail sample, where the GPU samples 16,384.<br>- Root fix after v1: make CPU and GPU measure the same windows. This is an output change and needs Steve's yes.<br>- Do not store noise models in saved grades. |
 | R2-5 | Route label look and wording | **Steve, Nov 21:** no label and no Method heading. Show nothing while the GPU works. One line appears only when the slower CPU route is in use, saying why (or when the method cannot run). Coordinator applied this after ROUTE-1 merged. |

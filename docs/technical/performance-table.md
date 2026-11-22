@@ -1,3 +1,21 @@
+## November 22, 2026 — Weighted Bayer fit checks
+
+MacBook Neo, A18 Pro and 8 GB, unpackaged Electron at 1408 × 794 under the
+shared GPU lock. These are individual qualification runs with the weighted
+fit from R2-4 at `b5b2ac1c`.
+
+| Action | DSC00264.ARW | IMG_3129.CR2 | Conditions |
+| --- | ---: | ---: | --- |
+| RAW open to first Grade picture, CPU / GPU | 22.80 / 21.48 s | 9.70 / 7.83 s | Both RAW cleanups on, Edge Colour highlights |
+| Library GPU development | 10.72 s | 5.57 s | Saved Grade settings, 2560 px Library scene |
+| GPU JPEG Ultra HDR export | 4.94 s | 1.64 s | 1024 px delivery, encoded Proof matched export byte for byte |
+
+Canon `IMG_0790.CR2` full-size CPU Micro Grain JPEG Ultra HDR export took
+29.03 s with harsh-speck cleanup on and Lensfun off, after GPU Grade
+captures at 110%. The quick Library viewport check showed the first picture
+at 0.30 s and all nine visible pictures by 30 s.
+[QUAL-1 colour comparisons](briefs/sprint-denoise-gpu-logging-2026-11-21.md#qual-1--exposure-independent-quality-fixes-output-changes)
+
 ## November 22, 2026 — MacBook Neo Proof memory
 
 MacBook Neo, A18 Pro, 8 GB, unpackaged Electron at 1408 × 794 under the shared
