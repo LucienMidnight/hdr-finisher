@@ -155,12 +155,32 @@ def run(profile: str, out: Path, label: str) -> dict:
         "results": results, "sha256": {path.name: _sha256(path) for path in outputs},
         "progress": progress, "timing": timing_records,
     }
+    report["progress_check"] = progress_check(progress, elapsed)
     (out / f"{label}-{profile}-run.json").write_text(json.dumps(report, indent=1), encoding="utf-8")
-    print(json.dumps({k: report[k] for k in ("profile", "label", "wall_s", "peak_gb", "sha256")}))
+    print(json.dumps({k: report[k] for k in ("profile", "label", "wall_s", "peak_gb", "sha256", "progress_check")}))
     for row in results:
         if row["outcome"] not in {"exported", "renamed"}:
             print("export did not finish:", row, file=sys.stderr)
     return report
+
+
+def progress_check(samples: list[dict], wall: float) -> dict:
+    """The progress bar acceptance: never backwards, gaps, and the first 5%.
+
+    Gaps are measured between changes of the reported fraction, leaving out
+    time inside the external encoder (stage "Encoding").
+    """
+    moving = [row for row in samples if row.get("progress") is not None]
+    backwards = any(b["progress"] < a["progress"] for a, b in zip(moving, moving[1:]))
+    gaps, worst_at = [], None
+    for a, b in zip(moving, moving[1:]):
+        if b["progress"] != a["progress"] and a.get("stage") != "Encoding":
+            gaps.append(b["t"] - a["t"])
+    worst = max(gaps, default=None)
+    first_5 = next((row["t"] for row in moving if row["progress"] >= .05), None)
+    return {"backwards": backwards, "updates": len(moving), "max_gap_s": round(worst, 2) if worst else None,
+            "first_5_percent_s": first_5, "first_5_percent_share": round(first_5 / wall, 3) if first_5 else None,
+            "stages": sorted({row["stage"] for row in moving if row.get("stage")})}
 
 
 def main() -> None:

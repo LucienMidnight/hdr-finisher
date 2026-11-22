@@ -2425,11 +2425,13 @@ def _apply_density_grain(
     bounds = list(range(0, region_height, GRAIN_CHUNK_ROWS)) + [region_height]
     spans = list(zip(bounds[:-1], bounds[1:]))
     from .grain_work import grain_allocation, checkpoint
+    from .export_timing import tick
     parts = []
-    for first, last in spans:
+    for done, (first, last) in enumerate(spans, 1):
         checkpoint()
         with grain_allocation():
             parts.append(render(first, last))
+        tick(done, len(spans))
     result = parts[0] if len(parts) == 1 else np.concatenate(parts, axis=0)
     if density_delta or not clip_output:
         return result.astype(np.float32)

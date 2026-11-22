@@ -5,6 +5,8 @@ from typing import Iterable
 
 import numpy as np
 
+from .export_timing import tick
+
 
 def write_y4m_bands(
     path: Path,
@@ -51,6 +53,7 @@ def write_y4m_bands(
                             + (top // vertical) * chroma_width * sample_bytes)
                 handle.write(plane.astype(dtype, copy=False).tobytes())
             top += len(band)
+            tick(top, height)
 
 
 def _downsample_plane(plane: np.ndarray, vertical: int, horizontal: int) -> np.ndarray:

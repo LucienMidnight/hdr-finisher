@@ -3,6 +3,7 @@ from copy import deepcopy
 from datetime import datetime, timezone
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
 import subprocess
@@ -45,7 +46,7 @@ class BatchExports:
         if not paths: raise ValueError("Select photos to export.")
         directory = str(Path(directory).resolve(strict=True))
         photos = [self.snapshot(path) for path in dict.fromkeys(paths)]
-        job = {"id":uuid4().hex,"state":"queued","completed":0,"total":len(photos)*len(preset.versions),"results":[],"directory":directory,"estimated_seconds":None,
+        job = {"id":uuid4().hex,"state":"queued","completed":0,"total":len(photos)*len(preset.versions),"results":[],"directory":directory,"estimated_seconds":None,"progress":0.0,"stage":None,"photo_progress":None,
                "active_photo":None,"photo_completed":0,"photo_total":len(preset.versions),"photos":photos,"preset":preset.model_dump(mode="json"),"started":monotonic()}
         job["diagnostic_action"] = current_action() or job["id"]
         with self.condition:
@@ -90,20 +91,33 @@ class BatchExports:
             # previous photo is on the GPU (the GPU queue still renders one at
             # a time). Each worker holds one full photo, so memory stays bounded.
             parallel = self._parallel() if self.runner == self._subprocess else 1
-            per_photo, running = {}, set()
+            per_photo, running, live = {}, set(), {}
             def publish():
                 job["results"] = [row for key in sorted(per_photo) for row in per_photo[key]]
                 job["completed"] = len(job["results"])
                 active = sorted(running)
                 job["active_photo"] = job["photos"][active[0] - 1]["path"] if active else None
                 job["photo_completed"] = len(per_photo.get(active[0], [])) if active else 0
-                if job["completed"]:
-                    elapsed = monotonic() - job["started"]
-                    job["estimated_seconds"] = round(elapsed / job["completed"] * (job["total"] - job["completed"]))
+                photos = len(job["photos"])
+                # Finished photos count whole; running ones by their live share.
+                finished = sum(1 for key in per_photo if key not in running)
+                fraction = (finished + sum(live.get(key, {}).get("fraction", 0.0) for key in running)) / max(1, photos)
+                job["progress"] = round(max(job.get("progress") or 0.0, min(1.0, fraction)), 4)
+                current = live.get(active[0], {}) if active else {}
+                job["stage"] = current.get("label")
+                job["photo_progress"] = current.get("fraction", 0.0) if active else None
+                from .export_progress import estimate_remaining
+                elapsed = monotonic() - job["started"]
+                if photos == 1 and current.get("eta_s") is not None:
+                    job["estimated_seconds"] = current["eta_s"]
+                elif (estimate := estimate_remaining(job["progress"], elapsed)) is not None:
+                    job["estimated_seconds"] = estimate
             def one(sequence, photo):
-                def progress(results):
+                def progress(results, state=None):
                     with self.condition:
                         per_photo[sequence] = list(results)
+                        if state is not None:
+                            live[sequence] = state
                         publish()
                 try:
                     if self.runner == self._subprocess:
@@ -143,6 +157,8 @@ class BatchExports:
             with self.condition:
                 job["state"] = "cancelled" if job["state"] == "cancelling" else "finished"
                 job["estimated_seconds"] = 0
+                job["stage"] = None
+                if job["state"] == "finished": job["progress"] = 1.0
                 log("export", "action_finished", action=job["diagnostic_action"], operation="batch_export",
                     outcome=job["state"], duration_ms=round((monotonic() - job["started"]) * 1000),
                     failed_count=sum(row["outcome"] == "failed" for row in job["results"]))
@@ -198,8 +214,10 @@ class BatchExports:
                         break
                     except subprocess.TimeoutExpired:
                         if progress is not None:
-                            try: progress(json.loads(progress_file.read_text(encoding="utf-8")))
-                            except (OSError, ValueError): pass
+                            try:
+                                state = json.loads(progress_file.read_text(encoding="utf-8"))
+                                progress(state["results"], state.get("live"))
+                            except (OSError, ValueError, KeyError, TypeError): pass
                 self._children.discard(child)
                 errors = []
                 for line in stderr.splitlines():
@@ -215,8 +233,8 @@ class BatchExports:
                 stderr = "\n".join(errors)
                 if child.returncode:
                     if cancelled():
-                        try: return json.loads(progress_file.read_text(encoding="utf-8"))
-                        except (OSError, ValueError): return []
+                        try: return json.loads(progress_file.read_text(encoding="utf-8"))["results"]
+                        except (OSError, ValueError, KeyError, TypeError): return []
                     raise RuntimeError(stderr[-2000:] or "Export worker stopped.")
             return json.loads(result.read_text(encoding="utf-8"))
 
@@ -233,7 +251,62 @@ def _log_export_timing(clock, response, photo, export_format, develop_s=0.0):
         **summary)
     return summary
 
-def export_photo(photo, preset, directory, sequence, progress=None, cancelled=lambda: False):
+class PhotoProgress:
+    """One photo's share of the bar: RAW development, then each version.
+
+    Development runs before the photo's size is known, so it shows a
+    provisional, time-based share. Once the photo is open the rest of the bar
+    continues from wherever development left it, so it never jumps back.
+    """
+    # Development took 3.8-4.5 s for the 42 MP Sony on the minimum Mac. The
+    # share approaches 15% and keeps moving however long development takes.
+    DEVELOP_SHARE = 0.15
+    DEVELOP_TIME_CONSTANT_S = 3.0
+
+    def __init__(self, versions):
+        self.versions = max(1, versions)
+        self.started = monotonic()
+        self.developed_at = None
+        self.base = 0.0
+        self.index = 0
+        self.clock = None
+        self._reported = 0.0
+        self._lock = Lock()
+
+    def developed(self):
+        self.base = self.fraction()
+        self.developed_at = monotonic()
+
+    def begin(self, index, clock):
+        self.index, self.clock = index, clock
+
+    def fraction(self):
+        if self.developed_at is None:
+            elapsed = monotonic() - self.started
+            value = self.DEVELOP_SHARE * (1.0 - math.exp(-elapsed / self.DEVELOP_TIME_CONSTANT_S))
+        else:
+            live = getattr(self.clock, "progress", None)
+            version = live.fraction() if live is not None else 0.0
+            value = self.base + (1.0 - self.base) * min(1.0, (self.index + version) / self.versions)
+        with self._lock:
+            self._reported = max(self._reported, min(value, .99))
+            return self._reported
+
+    def snapshot(self):
+        from .export_progress import LABELS, estimate_remaining
+        fraction = self.fraction()
+        live = getattr(self.clock, "progress", None)
+        if self.developed_at is None:
+            label, eta = LABELS["source"], None
+        else:
+            label = live.label() if live is not None else LABELS["hdr"]
+            # Time the rest from the work after development, which the plan weighs.
+            rendered = (fraction - self.base) / max(1e-6, 1.0 - self.base)
+            eta = estimate_remaining(rendered, monotonic() - self.developed_at)
+        return {"fraction": round(fraction, 4), "label": label, "eta_s": eta}
+
+
+def export_photo(photo, preset, directory, sequence, progress=None, cancelled=lambda: False, live=None):
     from .sessions import SessionStore
     from .projects import open_document, validate_saved_document
     from .exporters import build_export_backends
@@ -251,12 +324,14 @@ def export_photo(photo, preset, directory, sequence, progress=None, cancelled=la
                 session = store.get(payload.session_id)
         session.delivery_cancelled = cancelled
         develop_s = monotonic() - develop_started
+        if live is not None: live.developed()
         backends = build_export_backends(probe_capabilities())
         original_white = session.hdr_reference_white_nits
         if not photo.get("grade"):
             photo = dict(photo, sdr_only=session.analysis.classification.value == "SDR_ONLY")
-        for version in preset.versions:
+        for index, version in enumerate(preset.versions):
             if cancelled(): break
+            if live is not None: live.begin(index, None)
             row = {"photo":photo["path"],"version":version.name}
             if session.grade_notice:
                 row["grade_warning"] = session.grade_notice["reason"]
@@ -275,6 +350,7 @@ def export_photo(photo, preset, directory, sequence, progress=None, cancelled=la
                     settings = version.settings.model_copy(update={"output_path":str(staged),"overwrite":False,"path_grant":None,"edit_revision":None,"metadata_sequence":sequence})
                     from .delivery import delivery_diagnostics
                     with delivery_diagnostics("export", session.source_path), export_clock() as clock:
+                        if live is not None: live.begin(index, clock)
                         response = backends[settings.format].export(session, settings)
                     # RAW development is shared by the versions; the first one carries it.
                     _log_export_timing(clock, response, photo, settings.format, develop_s)

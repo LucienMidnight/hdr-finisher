@@ -27,6 +27,8 @@ class ExportClock:
         self.lane = "source"
         self.lanes: dict[str, dict[str, float]] = {}
         self._stack: list[list] = []  # [lane, name, resumed_at]
+        self.finished_lanes: set[str] = set()
+        self.progress = None  # export_progress.ExportProgress, when someone watches
 
     def _owned(self) -> bool:
         return threading.get_ident() == self.thread
@@ -51,7 +53,21 @@ class ExportClock:
 
     @property
     def current_stage(self) -> str | None:
-        return self._stack[-1][1] if self._stack else None
+        top = self._stack[-1] if self._stack else None
+        return top[1] if top else None
+
+    @property
+    def current_lane(self) -> str:
+        top = self._stack[-1] if self._stack else None
+        return top[0] if top else self.lane
+
+    def elapsed(self, lane: str, name: str) -> float:
+        """Seconds spent so far in one stage, including a running one. Any thread."""
+        seconds = self.lanes.get(lane, {}).get(name, 0.0)
+        top = self._stack[-1] if self._stack else None
+        if top and top[0] == lane and top[1] == name:
+            seconds += max(0.0, perf_counter() - top[2])
+        return seconds
 
     def summary(self) -> dict:
         total = (perf_counter() - self.started) * 1000.0
@@ -106,6 +122,14 @@ def lane(name: str):
         yield
     finally:
         clock.lane = previous
+        clock.finished_lanes.add(name)
+
+
+def tick(done: int, total: int) -> None:
+    """Report progress through the loop of the running stage. Any thread."""
+    clock = _clock.get()
+    if clock is not None and clock.progress is not None and total > 0:
+        clock.progress.tick(done, total)
 
 
 def timed(name: str):

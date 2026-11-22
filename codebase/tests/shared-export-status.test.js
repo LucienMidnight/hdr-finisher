@@ -6,10 +6,12 @@ test('shared export progress offers pause/resume and cancel, completion removes 
  const ctx={window:{HDRStatus:{post:e=>entry=e,get:()=>entry}},control:async a=>calls.push(a),report:e=>{throw e;}};
  vm.createContext(ctx);vm.runInContext(source.slice(start,end),ctx);
  const job={state:'running',completed:2,total:12};const counts={exported:12,renamed:0,failed:0};
- ctx.appStatus(job,false,counts);assert.equal(entry.progress,100*2/12);assert.equal(entry.actions.length,2);
+ ctx.appStatus(job,false,counts);assert.ok(Math.abs(entry.progress-100*2/12)<1e-9);assert.equal(entry.actions.length,2);
  assert.equal(entry.actions[0].label,'Pause the current export');assert.equal(entry.actions[0].icon,'player-pause');await entry.actions[0].run();await entry.actions[1].run();
  job.state='paused';ctx.appStatus(job,false,counts);assert.equal(entry.actions[0].label,'Resume the current export');assert.equal(entry.actions[0].icon,'player-play');await entry.actions[0].run();
- assert.deepEqual(calls,['pause','cancel','resume']);job.state='finished';ctx.appStatus(job,true,counts);assert.equal(entry.actions,undefined);assert.equal(entry.severity,'success');assert.match(entry.message,/12 files/);
+ assert.deepEqual(calls,['pause','cancel','resume']);
+ Object.assign(job,{state:'running',progress:.4,stage:'Rendering HDR',estimated_seconds:75});ctx.appStatus(job,false,counts);
+ assert.equal(entry.progress,40);assert.match(entry.message,/Rendering HDR/);assert.match(entry.message,/1 min left/);job.state='finished';ctx.appStatus(job,true,counts);assert.equal(entry.actions,undefined);assert.equal(entry.severity,'success');assert.match(entry.message,/12 files/);
 });
 test('Activity button leaves export progress to the shared bar',async()=>{
  const oldWindow=global.window,oldDocument=global.document;

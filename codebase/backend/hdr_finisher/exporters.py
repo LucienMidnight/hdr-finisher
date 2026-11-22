@@ -225,6 +225,14 @@ class _DeliveryGrain:
 _delivery_grain: ContextVar[_DeliveryGrain | None] = ContextVar("delivery_grain", default=None)
 
 
+def _delivery_grain_shared(session, adjustments) -> bool:
+    """Whether HDR and SDR resolve one Grain source between them."""
+    hdr = denoise_settings_for_export(session, PreviewKind.HDR)
+    sdr = denoise_settings_for_export(session, PreviewKind.SDR)
+    return (hdr is not None and sdr is not None and hdr.controls.method not in {"standard", "micro_grain"}
+            and hdr.controls == sdr.controls and not _authored_sdr_base(session, PreviewKind.SDR, adjustments))
+
+
 @contextmanager
 def share_delivery_grain(session, adjustments, *, spans_encoding=False, allocate_output=None):
     """Keep one resolved Grain source for the duration of an export or Proof."""
@@ -233,9 +241,7 @@ def share_delivery_grain(session, adjustments, *, spans_encoding=False, allocate
         yield
         return
     hdr = denoise_settings_for_export(session, PreviewKind.HDR)
-    sdr = denoise_settings_for_export(session, PreviewKind.SDR)
-    matched = (hdr is not None and sdr is not None and hdr.controls.method not in {"standard", "micro_grain"}
-               and hdr.controls == sdr.controls and not _authored_sdr_base(session, PreviewKind.SDR, adjustments))
+    matched = _delivery_grain_shared(session, adjustments)
     if not matched and allocate_output is None:
         yield
         return
@@ -651,6 +657,7 @@ def _execute_export(
         )
         _require_overwrite_permission(output_path, settings)
         jxl_lease = _reserve_high_fidelity_jxl(session, settings)
+        _start_progress(session, settings)
         prepared = prepare()
         from .retouch_routes import delivery_record
         rendering = delivery_record(session, getattr(session, "_delivery_record", rendering))
@@ -700,6 +707,22 @@ def _execute_export(
         timings_ms=timings,
         measurement_warnings=measurement_warnings(settings.editing_measurements, settings._exact_measurements),
     )
+
+
+def _start_progress(session, settings) -> None:
+    """Give a timed export its progress plan. A plan failure never stops it."""
+    from .export_timing import active_clock
+    clock = active_clock()
+    if clock is None or clock.progress is not None:
+        return
+    from .export_progress import ExportPlan, ExportProgress, plan_export
+    try:
+        plan = plan_export(session, settings, _finishing_adjustments_for_export(session))
+    except Exception as error:  # noqa: BLE001 - progress is advisory
+        from .diagnostics import log
+        log("export", "progress_plan_failed", level="warn", reason="progress_plan_failed", error=type(error).__name__)
+        plan = ExportPlan()
+    ExportProgress(clock, plan)
 
 
 def _fsync_path(path: Path) -> None:

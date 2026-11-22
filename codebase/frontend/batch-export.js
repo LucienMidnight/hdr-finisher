@@ -145,9 +145,9 @@
       picture.querySelectorAll(".batch-badge,progress").forEach(e=>e.remove());
       const results=model.job?.results.filter(r=>r.photo===p.path)||[],active=model.job?.active_photo===p.path&&!terminal(model.job);
       const skipped=results.filter(r=>r.outcome==="skipped").length,failed=results.some(r=>r.outcome==="failed");
-      const label=failed?"Failed":active?"Exporting…":skipped?`${skipped} skipped`:results.length?"Done":"";
+      const label=failed?"Failed":active?(model.job.stage||"Exporting…"):skipped?`${skipped} skipped`:results.length?"Done":"";
       if(label)picture.append(node("span",label,"batch-badge"));
-      if(active){const meter=node("progress","","status-entry-progress batch-photo-progress");meter.max=model.job.photo_total||model.draft.versions.length;meter.value=model.job.photo_completed||0;meter.setAttribute("aria-label",`Versions completed for ${p.name}`);picture.append(meter);}
+      if(active){const meter=node("progress","","status-entry-progress batch-photo-progress");meter.max=100;meter.value=100*(model.job.photo_progress??((model.job.photo_completed||0)/Math.max(1,model.job.photo_total||model.draft.versions.length)));meter.setAttribute("aria-label",`Export progress for ${p.name}`);picture.append(meter);}
       return row;
     });
     if(tiles.length!==grid.children.length||tiles.some((e,i)=>e!==grid.children[i]))grid.replaceChildren(...tiles);
@@ -158,8 +158,8 @@
     const j=model.job,strip=$("batch-run-strip");strip.hidden=!j||model.closedJob===j.id;if(!j)return;
     const done=terminal(j),counts=Object.fromEntries(["exported","renamed","skipped","failed"].map(k=>[k,j.results.filter(r=>r.outcome===k).length]));
     $("batch-progress").textContent=done?`${j.state==="cancelled"?"Cancelled · ":""}${counts.exported+counts.renamed} ${counts.exported+counts.renamed===1?"file":"files"} exported · ${counts.renamed} renamed · ${counts.skipped} skipped${counts.failed?` · ${counts.failed} failed`:""}`:`${j.state==="paused"?"Paused · ":""}Exporting ${Math.min(j.completed+1,j.total)} of ${j.total} ${j.total===1?"file":"files"}`;
-    $("batch-eta").textContent=!done&&j.estimated_seconds?`about ${j.estimated_seconds}s left`:"";
-    $("batch-meter").hidden=done;$("batch-meter").max=Math.max(1,j.total);$("batch-meter").value=j.completed;
+    $("batch-eta").textContent=done?"":[j.stage,j.estimated_seconds?`about ${remaining(j.estimated_seconds)} left`:""].filter(Boolean).join(" · ");
+    $("batch-meter").hidden=done;$("batch-meter").max=100;$("batch-meter").value=100*overall(j);
     $("batch-pause").hidden=$("batch-cancel").hidden=done;$("batch-pause").textContent=j.state==="paused"?"Resume":"Pause";
     $("batch-reveal").hidden=$("batch-close").hidden=!done;
     $("batch-results").hidden=!done;
@@ -169,13 +169,16 @@
   // The shared status bar shows export progress from any page.
   function appStatus(j,done,counts){
     const bar=window.HDRStatus;if(!bar)return;
-    if(!done){bar.post({id:"batch-export",severity:"progress",message:`${j.state==="paused"?"Export paused":"Exporting"} ${Math.min(j.completed+1,j.total)} of ${j.total}`,progress:100*j.completed/Math.max(1,j.total),progressLabel:"Overall export progress",actions:[
+    if(!done){bar.post({id:"batch-export",severity:"progress",message:`${j.state==="paused"?"Export paused":"Exporting"} ${Math.min(j.completed+1,j.total)} of ${j.total}${j.stage&&j.state!=="paused"?` · ${j.stage}`:""}${j.estimated_seconds?` · about ${remaining(j.estimated_seconds)} left`:""}`,progress:100*overall(j),progressLabel:"Overall export progress",actions:[
       {label:j.state==="paused"?"Resume the current export":"Pause the current export",icon:j.state==="paused"?"player-play":"player-pause",run:()=>control(j.state==="paused"?"resume":"pause").catch(report)},
       {label:"Cancel the current export",icon:"ban",run:()=>control("cancel").catch(report)}]});return;}
     if(bar.get("batch-export")?.severity!=="progress")return;
     const written=counts.exported+counts.renamed;
     bar.post({id:"batch-export",severity:counts.failed||j.state==="failed"?"attention":"success",message:`${j.state==="cancelled"?"Export cancelled":"Export finished"} · ${written} ${written===1?"file":"files"}${counts.failed?` · ${counts.failed} failed`:""}`,dismissible:!!counts.failed});
   }
+  // Live progress from the export's own stages; finished files before the first report.
+  function overall(j){return Number.isFinite(j.progress)?j.progress:j.completed/Math.max(1,j.total);}
+  function remaining(seconds){return seconds<60?`${seconds}s`:`${Math.round(seconds/60)} min`;}
   // Observation changes demand, while progress polls only update badges.
   const tileJobs=new Map();
   const observer=new IntersectionObserver(entries=>{
@@ -221,7 +224,7 @@
   }
   async function folder(){const selected=await desktop?.chooseBatchExportDirectory?.(model.directory);if(selected){model.directory=selected.path;model.grant=selected.grant;}else if(!desktop)model.directory=$("batch-directory").value;$("batch-directory").value=model.directory;$("batch-directory").title=model.directory;return selected;}
   async function run(preset=model.draft,paths=model.paths){capture();if(!paths.length)throw Error("Add photos from the Library before exporting.");if(!model.directory)await folder();if(!model.directory)return;if(desktop){await authorizeDirectory();if(!model.grant)return;}if(model.photos.some(p=>p.unsaved)&&!await HDRDialogs.confirm("The photo open in Grade has unsaved changes. This batch exports its last saved grade.",{title:"Export saved grades",confirmLabel:"Export"}))return;const job=await api("/api/batch-export",{paths,preset,directory:model.directory,path_grant:model.grant},"POST",{id:crypto.randomUUID()});model.grant=null;model.job=job;localStorage.setItem("last-export-preset",preset.id);poll();}
-  async function poll(){if(!model.job)return;model.job=await api(`/api/batch-export/${model.job.id}`);window.dispatchEvent(new CustomEvent("batch-export-activity",{detail:model.job}));renderJob();renderGrid();if(!terminal(model.job))setTimeout(()=>poll().catch(report),750);}
+  async function poll(){if(!model.job)return;model.job=await api(`/api/batch-export/${model.job.id}`);window.dispatchEvent(new CustomEvent("batch-export-activity",{detail:model.job}));renderJob();renderGrid();if(!terminal(model.job))setTimeout(()=>poll().catch(report),500);}
   async function control(action){if(model.job){model.job=await api(`/api/batch-export/${model.job.id}`,{action});renderJob();}}
   function view(grid){
     const gridButton = $("batch-view-grid");

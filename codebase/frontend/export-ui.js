@@ -231,20 +231,23 @@ async function exportWithDiagnostics(action) {
   status.post({ id: "export", severity: "progress", message: "Rendering full-resolution HDR and SDR endpoints…", progress: "indeterminate" });
   els.exportResult.classList.add("hidden");
   state.lastExportMessage = "";
-  const exportStartedAt = performance.now();
-  let lastExportExpectation = "Rendering full-resolution HDR and SDR endpoints";
-  const exportTicker = window.setInterval(() => {
-    const elapsedSeconds = Math.max(1, Math.round((performance.now() - exportStartedAt) / 1000));
-    const expectation = elapsedSeconds < 20
-      ? "Rendering full-resolution HDR and SDR endpoints"
-      : elapsedSeconds < 60
-        ? "Encoding gain-map media; large sources can take a minute or more"
-        : "Still working locally; the final file will be validated before completion";
-    if (expectation !== lastExportExpectation) {
-      lastExportExpectation = expectation;
-      status.update("export", { severity: "progress", message: expectation, progress: "indeterminate" });
-    }
-  }, 1000);
+  // The export reports its own stage and fraction while the request runs.
+  const exportSessionId = state.session.session_id;
+  let exportPolling = true;
+  const pollExportProgress = async () => {
+    if (!exportPolling) return;
+    try {
+      const live = await safeJson(await fetch(`/api/session/${exportSessionId}/export/progress`));
+      if (exportPolling && live?.running && live.label) {
+        const left = Number.isFinite(live.eta_s) && live.eta_s > 0 ? ` · about ${formatSecondsLeft(live.eta_s)} left` : "";
+        status.update("export", { severity: "progress", message: `${live.label}…${left}`, progress: 100 * live.fraction,
+          progressLabel: "Export progress" });
+        desktop?.setOperationProgress({ kind: "export", value: Math.max(0.01, live.fraction), state: "normal" });
+      }
+    } catch { /* The export request reports failures. */ }
+    if (exportPolling) exportTicker = window.setTimeout(pollExportProgress, 500);
+  };
+  let exportTicker = window.setTimeout(pollExportProgress, 250);
   try {
     desktop?.setOperationProgress({ kind: "export", value: 0.01, state: "indeterminate" });
     let response = await requestSessionExport(outputPath, Boolean(nativeOverwrite), pathGrant, nativeOverwrite, action);
@@ -296,7 +299,8 @@ async function exportWithDiagnostics(action) {
     console.error(error);
     status.post({ id: "export", severity: "error", message: "Export could not reach the local HDR Finisher server." });
   } finally {
-    window.clearInterval(exportTicker);
+    exportPolling = false;
+    window.clearTimeout(exportTicker);
     els.exportConfirmButton.disabled = false;
     desktop?.setOperationProgress({ kind: "export", value: -1, state: "normal" });
   }
@@ -354,6 +358,10 @@ function currentExportSettings(outputPath = null, overwrite = false, pathGrant =
         method: "edge_aware_multiscale",
       },
     };
+}
+
+function formatSecondsLeft(seconds) {
+  return seconds < 60 ? `${Math.round(seconds)}s` : `${Math.round(seconds / 60)} min`;
 }
 
 function requestSessionExport(outputPath, overwrite, pathGrant = null, overwriteTarget = null, action = null) {

@@ -58,6 +58,15 @@ def apply_geometry(image: np.ndarray, geometry: GeometryAdjustments, *, screen: 
     return np.ascontiguousarray(result[top:bottom, left:right], dtype=np.float32)
 
 
+def geometry_is_identity(geometry: GeometryAdjustments) -> bool:
+    """Whether ``apply_geometry`` returns its input unchanged."""
+    crop = geometry.crop
+    return (geometry.rotation == 0 and not geometry.flip_horizontal and not geometry.flip_vertical
+            and geometry.straighten_angle + geometry.perspective_rotate == 0.0
+            and geometry.perspective_horizontal == 0.0 and geometry.perspective_vertical == 0.0
+            and crop.x == 0.0 and crop.y == 0.0 and crop.width == 1.0 and crop.height == 1.0)
+
+
 def _oriented_view(image: np.ndarray, geometry: GeometryAdjustments) -> np.ndarray:
     """Return the quarter-turn and flip stage as a view, allocating nothing.
 

@@ -2401,6 +2401,20 @@ def session_diagnostics(session_id: str) -> dict[str, object]:
     return {"render_cache": session.render_cache.diagnostics()}
 
 
+# The clock of each running single-photo export, for its progress bar.
+_live_exports: dict[str, object] = {}
+
+
+@app.get("/api/session/{session_id}/export/progress")
+def export_progress(session_id: str) -> dict:
+    """Fraction, stage label and seconds left of this photo's running export."""
+    clock = _live_exports.get(session_id)
+    progress = getattr(clock, "progress", None)
+    if progress is None:
+        return {"running": clock is not None, "fraction": 0.0, "label": None, "eta_s": None}
+    return {"running": True, **progress.snapshot()}
+
+
 @app.post("/api/session/{session_id}/export")
 def export(session_id: str, settings: ExportSettings):
     try:
@@ -2468,7 +2482,11 @@ def export(session_id: str, settings: ExportSettings):
         from .delivery import delivery_diagnostics
         from .export_timing import export_clock
         with delivery_diagnostics("export", session.source_path), export_clock() as clock:
-            result = backend.export(session, settings)
+            _live_exports[session_id] = clock
+            try:
+                result = backend.export(session, settings)
+            finally:
+                _live_exports.pop(session_id, None)
         from .batch_export import _log_export_timing
         _log_export_timing(clock, result, {"path": str(session.source_path)}, settings.format)
     except ExportOverwriteRequired as exc:

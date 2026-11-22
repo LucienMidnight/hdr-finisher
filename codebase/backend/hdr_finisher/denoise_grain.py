@@ -590,8 +590,17 @@ def resolve_grain(source, model, controls, *, allocate_output=None):
             rgb = apply_colour(base, colour_delta(base, broad), splotches)
         result[y:min(y+size, height), x:min(x+size, width), :3] = rgb[core]
 
+    from itertools import count
+    from .export_timing import tick
+    origins = list(_origins(height, width, size))
+    finished = count(1)
+
+    def run_and_report(origin):
+        run(origin)
+        tick(next(finished), len(origins))
+
     with CpuExecutor() as pool:
-        list(pool.map(run, _origins(height, width, size)))
+        list(pool.map(run_and_report, origins))
     if not adaptive._denoise_is_finite(result):
         raise FloatingPointError("Grain Denoise produced a non-finite value.")
     return result

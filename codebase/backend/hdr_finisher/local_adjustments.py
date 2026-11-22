@@ -62,8 +62,10 @@ def apply_local_stack(
             runtime_masks = dict(runtime_masks)
         if local.id not in runtime_masks:
             runtime_masks[local.id] = compile_spatial_preview_mask(fixed_source, local.mask, geometry)
+    from .export_timing import tick
     for top in range(0, height, tile_size):
         bottom = min(top + tile_size, height)
+        tick(top, height)
         for left in range(0, width, tile_size):
             right = min(left + tile_size, width)
             tile = result[top:bottom, left:right]
