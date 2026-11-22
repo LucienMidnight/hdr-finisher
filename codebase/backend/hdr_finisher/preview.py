@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from io import BytesIO
+import os
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import subprocess
@@ -57,8 +58,8 @@ def encode_processed_preview_bytes(
 ) -> tuple[bytes, str]:
     if kind == PreviewKind.HDR:
         if not hdr_display:
-            return _encode_png_sdr(_hdr_to_sdr_display(processed)), "image/png"
-        return _encode_hdr_avif(processed, reference_white_nits), "image/avif"
+            return _encode_png_sdr(processed, tonemap_hdr=True), "image/png"
+        return _encode_hdr_avif(processed, reference_white_nits, banded=True), "image/avif"
     return _encode_png_sdr(processed), "image/png"
 
 
@@ -225,18 +226,23 @@ def downsample_image(
     return result
 
 
-def _encode_png_sdr(image: np.ndarray) -> bytes:
+def _encode_png_sdr(image: np.ndarray, *, tonemap_hdr: bool = False) -> bytes:
     try:
         from PIL import Image
     except ImportError as exc:
         raise RuntimeError("Pillow is required for preview rendering.") from exc
 
-    encoded = np.where(
-        image <= 0.0031308,
-        image * 12.92,
-        1.055 * np.power(np.clip(image, 0.0, 1.0), 1.0 / 2.4) - 0.055,
-    )
-    image_8bit = (np.clip(encoded, 0.0, 1.0) * 255.0).astype(np.uint8)
+    image_8bit = np.empty(image.shape, dtype=np.uint8)
+    for top in range(0, len(image), 128):
+        band = image[top:top + 128]
+        if tonemap_hdr:
+            band = _hdr_to_sdr_display(band)
+        encoded = np.where(
+            band <= 0.0031308,
+            band * 12.92,
+            1.055 * np.power(np.clip(band, 0.0, 1.0), 1.0 / 2.4) - 0.055,
+        )
+        image_8bit[top:top + len(band)] = (np.clip(encoded, 0.0, 1.0) * 255.0).astype(np.uint8)
     buffer = BytesIO()
     Image.fromarray(image_8bit).save(buffer, format=PREVIEW_IMAGE_FORMAT)
     return buffer.getvalue()
@@ -246,12 +252,22 @@ def _encode_hdr_avif(
     image: np.ndarray,
     reference_white_nits: int = DEFAULT_HDR_REFERENCE_WHITE_NITS,
     quality: int = 82,
+    *, banded: bool = False,
 ) -> bytes:
+    scratch_root = (os.environ.get("HDR_FINISHER_PROOF_ROOT") or None) if banded else None
     try:
-        with TemporaryDirectory(prefix="hdr_finisher_preview_") as temp_dir_name:
+        with TemporaryDirectory(
+            prefix="hdr_finisher_preview_",
+            dir=scratch_root,
+            ignore_cleanup_errors=banded,
+        ) as temp_dir_name:
             temp_dir = Path(temp_dir_name)
             y4m_path = temp_dir / "preview_hdr.y4m"
-            _write_hdr_y4m(y4m_path, image, reference_white_nits)
+            if banded:
+                rows = (image[top:top + 128] for top in range(0, len(image), 128))
+                _write_hdr_y4m_bands(y4m_path, *image.shape[:2], rows, reference_white_nits)
+            else:
+                _write_hdr_y4m(y4m_path, image, reference_white_nits)
             return _encode_hdr_avif_y4m(y4m_path, temp_dir / "preview_hdr.avif", quality)
     except OSError as exc:
         raise RuntimeError("Failed to encode HDR AVIF preview.") from exc
