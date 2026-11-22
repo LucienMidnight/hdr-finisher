@@ -4,6 +4,7 @@ Widths are authored in cropped source pixels or percent of its shorter side.
 Round half up once at source size, then once for final output; viewers scale
 these rectangles instead of rounding again at proxy or display resolution.
 """
+from .export_timing import timed as _timed_stage
 from dataclasses import dataclass
 from fractions import Fraction
 
@@ -124,6 +125,7 @@ def layer_colors(framing, lane, white, ceiling=10000):
     return convert(framing.frame.color), convert(framing.border.color)
 
 
+@_timed_stage("framing")
 def compose(image, layout, colors):
     import numpy as np
     if layout is None:

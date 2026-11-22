@@ -2466,8 +2466,11 @@ def export(session_id: str, settings: ExportSettings):
     try:
         export_started = perf_counter()
         from .delivery import delivery_diagnostics
-        with delivery_diagnostics("export", session.source_path):
+        from .export_timing import export_clock
+        with delivery_diagnostics("export", session.source_path), export_clock() as clock:
             result = backend.export(session, settings)
+        from .batch_export import _log_export_timing
+        _log_export_timing(clock, result, {"path": str(session.source_path)}, settings.format)
     except ExportOverwriteRequired as exc:
         raise HTTPException(
             status_code=409,

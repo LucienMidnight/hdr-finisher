@@ -1,6 +1,7 @@
 """Job-owned float delivery frames. Readers stream bands without mapping."""
 from __future__ import annotations
 
+from .export_timing import timed as _timed_stage
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -32,6 +33,7 @@ class DeliveryFrame:
                 file.write(memoryview(np.ascontiguousarray(band, dtype=self.dtype)).cast("B"))
 
     @classmethod
+    @_timed_stage("frame_spill")
     def spill(cls, path: Path, pixels: np.ndarray) -> DeliveryFrame:
         frame = cls(path, pixels.shape, pixels.dtype)
         frame.write(row_bands(pixels, 128))

@@ -152,6 +152,23 @@ its outcome.
 | Export and Proof | `cpu_delivery_policy`, `delivery_policy_unreadable`, `gpu_delivery_unavailable`, `gpu_delivery_failed`, `gpu_delivery_succeeded`, `gpu_preempted` and `delivery_cache_hit` describe delivery rendering. `delivery_completed`, `proof_artifact_available`, `encoder_unavailable`, `encoding_failed`, `encoder_completed`, `encoder_launch_failed`, `encoder_exit_failed` and `encoded_peak_exceeded` cover validation and encoding. `edit_sync_failed`, `export_cancelled`, `export_failed`, `export_transport_failed` and `proof_failed` describe action outcomes. Batch controls emit `batch_pause`, `batch_resume` and `batch_cancel`. Each rendition reports `batch_exported`, `batch_renamed`, `batch_skipped` or `batch_failed`. |
 | Memory and app | `app_memory_ceiling`, `cache_share_limit`, `memory_reclaim`, `system_memory_pressure` and `memory_sample_failed` describe admission, eviction and sampling. `startup_failed` marks an unsuccessful desktop startup. |
 
+## Export stage timing
+
+Every export, single or batch, writes one `export_timing` event when it
+finishes (reason `export_stage_timing`). `lanes` holds exclusive wall time in
+milliseconds per stage: `source` (`develop_raw`, batch only), `hdr` and `sdr`
+(`geometry`, `masks`, `denoise` for the noise model and Grain, `tone_colour`,
+`local_stack`, `detail`, `film_stock`, `halation`, `film_grain`, `vignette`,
+`output_finishing`, `highlight_compression`, `framing`, `frame_spill`,
+`watermark`, and `strip_render` for the bounded strip path) and `encode`
+(`prepare_y4m`, `encode`, `ceiling_verify`, `metadata`, `validate`). A nested
+stage's time counts only there. Work handed to the CPU pool is counted by the
+stage that waits for it. `unattributed_ms` and `unattributed_percent` are the
+rest of `total_ms`. `encoder_timings_ms` is the exporter's own
+`timings_ms`. The clock lives in `backend/hdr_finisher/export_timing.py`.
+Run `python tools/export_speed_profile.py` from `codebase` to time the
+export-speed recipe on a test RAW.
+
 ## App-wide investigation recipes
 
 - **Library waited on opening.** Find `open_place` and follow its action through

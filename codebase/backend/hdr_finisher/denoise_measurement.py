@@ -3,6 +3,7 @@
 The browser measures bounded source windows on its own GPU, so Grade and a
 running delivery never wait for another turn on the hidden delivery renderer.
 """
+from .export_timing import timed as _timed_stage
 from collections import OrderedDict
 from concurrent.futures import Future
 from dataclasses import asdict, dataclass
@@ -234,6 +235,7 @@ def _validate(model):
     return model
 
 
+@_timed_stage("denoise")
 def cpu_delivery_model(frame, *, authored_image=None, geometry=None):
     """No usable GPU: retain the native source measurement for later delivery."""
     from .denoise_adaptive import AdaptiveNoiseModel, estimate_adaptive_model, measurement_usage

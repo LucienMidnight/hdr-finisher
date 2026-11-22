@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from .export_timing import timed as _timed_stage
 import math
 
 import numpy as np
@@ -29,6 +30,7 @@ def detail_is_neutral(detail: DetailAdjustments) -> bool:
     )
 
 
+@_timed_stage("detail")
 def apply_detail(
     image: np.ndarray,
     detail: DetailAdjustments,

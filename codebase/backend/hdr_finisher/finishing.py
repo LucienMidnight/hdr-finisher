@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from .export_timing import timed as _timed_stage
 import math
 from functools import lru_cache
 
@@ -8,6 +9,7 @@ import numpy as np
 from .models import GeometryAdjustments, OutputFinishingSettings, PerspectiveGuideLine, PreviewKind
 
 
+@_timed_stage("geometry")
 def apply_geometry(image: np.ndarray, geometry: GeometryAdjustments, *, screen: bool = False) -> np.ndarray:
     """Apply the one shared, destructive geometry stage without inventing pixels."""
     crop = geometry.crop
@@ -854,6 +856,7 @@ def resolve_output_dimensions(
     return max(1, int(round(width * scale))), max(1, int(round(height * scale)))
 
 
+@_timed_stage("output_finishing")
 def apply_output_finishing(
     image: np.ndarray, settings: OutputFinishingSettings, kind: PreviewKind,
     *, target_size: tuple[int, int] | None = None,

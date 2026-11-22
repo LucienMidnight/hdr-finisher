@@ -1,4 +1,5 @@
 """Final-size text on authored delivery lanes; never modifies cached GPU pixels."""
+from .export_timing import timed as _timed_stage
 from .config import FRONTEND_DIR
 
 import numpy as np
@@ -9,6 +10,7 @@ from .config import FRONTEND_DIR
 FONT = FRONTEND_DIR / "assets/fonts/ibm-plex-mono/IBMPlexMono-Regular.ttf"
 
 
+@_timed_stage("watermark")
 def apply_watermark(image, settings, lane, reference_white_nits=203, ceiling_nits=None):
     if settings.mode == "off" or settings.opacity == 0:
         return image

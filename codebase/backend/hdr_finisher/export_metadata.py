@@ -1,5 +1,6 @@
 """Descriptive metadata only: encoders own pixels, colour and HDR signalling."""
 from __future__ import annotations
+from .export_timing import timed as _timed_stage
 import atexit
 import hashlib
 import json
@@ -236,6 +237,7 @@ def delivery_fingerprint(data, format):
     raise ValueError("Cannot verify metadata preservation for this export format.")
 
 
+@_timed_stage("metadata")
 def write_metadata(path, session, settings):
     template=settings.metadata_template
     if settings.metadata_policy=="none" and not any(template.values()):

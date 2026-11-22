@@ -29,6 +29,7 @@ preview implements the same arithmetic and the same edge rule.
 
 from __future__ import annotations
 
+from .export_timing import timed as _timed_stage
 import os
 from .cpu_budget import CpuExecutor, native_threads
 from dataclasses import dataclass
@@ -290,6 +291,7 @@ def _filter_region(rgb: np.ndarray, model: AdaptiveNoiseModel, controls: Adaptiv
     return (out @ OPPONENT).astype(np.float32)
 
 
+@_timed_stage("denoise")
 def resolve_adaptive(image: np.ndarray, model: AdaptiveNoiseModel, controls: AdaptiveControls = AdaptiveControls(),
                      *, allocate_output=None) -> np.ndarray:
     """Denoise ``image`` tile by tile; alpha, if present, passes through."""

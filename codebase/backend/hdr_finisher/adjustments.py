@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from .export_timing import timed as _timed_stage
 from .cpu_budget import CpuExecutor
 from dataclasses import dataclass, replace
 from typing import Callable
@@ -169,6 +170,7 @@ def apply_adjustments(
     )
 
 
+@_timed_stage("tone_colour")
 def apply_fixed_source_adjustments(
     fixed_source: np.ndarray,
     adjustments: AdjustmentState,
@@ -333,6 +335,7 @@ def _local_hue_stage(result, local_adjustments, kind, source_pixel_scale):
     return prepare_stage_input(result, kind, source_pixel_scale)
 
 
+@_timed_stage("highlight_compression")
 def apply_hdr_output_highlight_compression(
     image: np.ndarray,
     adjustments: AdjustmentState,
@@ -760,6 +763,7 @@ def hdr_peak_nits_from_measured(measured: float, context: RenderColorContext) ->
     return max(1.0, float(scene_linear_to_nits(measured, context.hdr_reference_white_nits)))
 
 
+@_timed_stage("highlight_compression")
 def apply_sdr_output_highlight_compression(
     image: np.ndarray,
     adjustments: AdjustmentState,
@@ -1870,6 +1874,7 @@ def _apply_color_grading(image: np.ndarray, grading: object, kind: PreviewKind) 
     return np.where(affected[..., None], tinted, image).astype(np.float32)
 
 
+@_timed_stage("vignette")
 def _apply_vignette(
     image: np.ndarray,
     vignette: object,
@@ -1945,6 +1950,7 @@ def _film_stock_is_active(look: object) -> bool:
     )
 
 
+@_timed_stage("film_stock")
 def _apply_film_stock(image: np.ndarray, look: object, kind: PreviewKind, master: np.float32,
                       *, density_delta: np.ndarray | None = None) -> np.ndarray:
     """Render the chosen film stock's colour and tone, per pixel, in place.
@@ -2283,6 +2289,7 @@ def _halation_tint(hue_offset: float, saturation: float, kind: PreviewKind) -> n
     return canonical_srgb
 
 
+@_timed_stage("halation")
 def _apply_halation(
     image: np.ndarray, look: object, kind: PreviewKind, master: np.float32
 ) -> tuple[np.ndarray, np.ndarray]:
@@ -2354,6 +2361,7 @@ def _apply_film_resolution(
     return (image - fine_detail * attenuation[..., None]).astype(np.float32)
 
 
+@_timed_stage("film_grain")
 def _apply_density_grain(
     image: np.ndarray,
     look: object,

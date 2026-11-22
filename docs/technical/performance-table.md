@@ -1,3 +1,50 @@
+## November 22, 2026 — MacBook Neo CPU AVIF export with Clean Grain
+
+MacBook Neo (A18 Pro, six cores, 8 GB), macOS 27, AC power, `feat/denoise-v1`
+from `a654d7f9`. Headless batch export through `BatchExports` and its isolated
+worker, the same code the app runs, timed by `tools/export_speed_profile.py`
+under the shared GPU lock. A disposable copy of the 42 MP Sony `_DSC7970.ARW`.
+Peak is the sampled Apple physical footprint of the export process tree
+(driver, worker and encoder; no Electron window), in decimal GB.
+
+* **Profile A**: the Santorini recipe from
+  `codebase/tests/fixtures/export-speed/` unchanged (its crop gives
+  7206 × 4706 on this photo), `play_raw` preset: AVIF gain map, 1920 px long
+  edge, frame. Whole-frame CPU path.
+* **Profile B**: the photo's own grade with Clean Grain Small in HDR and SDR,
+  native-size AVIF gain map, no frame. Bounded strip path.
+
+| Profile | Build | Wall time | Peak footprint | AVIF SHA-256 |
+| --- | --- | ---: | ---: | --- |
+| A | Baseline `a654d7f9`, three runs | 147.9–156.5 s | 6.12–6.51 GB | `ff3961ee9b4eaccd969ee9844459961474e866a32b6bf8e5be5e0159e67a04a9` |
+| B | Baseline `a654d7f9`, three runs | 29.8–34.0 s | 3.80–3.81 GB | `ccfeedf49d0e88dd81ad286fd53e2e89a57e2d1e388ff50bb835318002dc5c05` |
+
+Profile A's peak is the worker alone (6.44 GB at about 90 s, the start of the
+SDR rendition), so this export already exceeds the 4 GB whole-app ceiling
+before any change.
+
+Stage time from the first `export_timing` record, seconds, HDR + SDR:
+
+| Stage | Profile A | Profile B |
+| --- | ---: | ---: |
+| Film Grain | 31.5 + 32.2 = 63.7 | — |
+| Film stock | 11.7 + 11.5 = 23.2 | — |
+| Tone and colour | 6.0 + 7.2 = 13.2 | 0.2 + 0.3 |
+| Brush mask | 5.3 + 5.5 = 10.8 | — |
+| Detail | 4.1 + 5.0 = 9.1 | — |
+| Geometry | 3.1 + 4.9 = 8.0 | 0 |
+| Halation | 3.2 + 3.8 = 7.0 | — |
+| Clean Grain (model and Grain) | 5.9 (shared) | 7.8 (shared) |
+| Local stack | 1.8 + 2.2 = 4.0 | — |
+| Vignette | 1.0 + 1.5 = 2.5 | — |
+| Strip render | — | 0.7 + 2.5 = 3.3 |
+| RAW development | 3.8 | 4.5 |
+| Output finishing, compression, framing | 1.4 | 0 |
+| Y4M preparation | 0.3 | 4.2 |
+| Encoder | 1.2 | 12.1 |
+| Validate and metadata | 0.1 | 0.7 |
+| Unattributed | 0.1 (0.09%) | 0.3 (0.99%) |
+
 ## November 22, 2026 — Windows private commit
 
 Windows PC, Ryzen 5 7600 and GeForce RTX 4070 Ti, unpackaged Electron at

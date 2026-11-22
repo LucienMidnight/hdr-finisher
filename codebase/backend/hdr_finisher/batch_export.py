@@ -220,13 +220,28 @@ class BatchExports:
                     raise RuntimeError(stderr[-2000:] or "Export worker stopped.")
             return json.loads(result.read_text(encoding="utf-8"))
 
+def _log_export_timing(clock, response, photo, export_format, develop_s=0.0):
+    """One structured record per export: where its wait went, by lane and stage."""
+    if develop_s:
+        clock.started -= develop_s
+        clock.lanes.setdefault("source", {})["develop_raw"] = develop_s
+    summary = clock.summary()
+    source = Path(photo.get("source_path") or photo["path"])
+    log("export", "export_timing", photo={"id": str(source), "name": source.name}, format=export_format,
+        route=getattr(response, "renderer", None) or "cpu", reason="export_stage_timing",
+        outcome="exported" if response.accepted else "failed", encoder_timings_ms=dict(response.timings_ms or {}),
+        **summary)
+    return summary
+
 def export_photo(photo, preset, directory, sequence, progress=None, cancelled=lambda: False):
     from .sessions import SessionStore
     from .projects import open_document, validate_saved_document
     from .exporters import build_export_backends
     from .capabilities import probe_capabilities
+    from .export_timing import export_clock
     store = SessionStore(grade_import_parallel=True)
     results = []
+    develop_started = monotonic()
     try:
         from .highlight_edge_gpu import source_work
         with source_work(priority=20, cancelled=cancelled):
@@ -235,6 +250,7 @@ def export_photo(photo, preset, directory, sequence, progress=None, cancelled=la
                 payload = store.create_session(Path(photo["source_path"]), owns_source_path=False)
                 session = store.get(payload.session_id)
         session.delivery_cancelled = cancelled
+        develop_s = monotonic() - develop_started
         backends = build_export_backends(probe_capabilities())
         original_white = session.hdr_reference_white_nits
         if not photo.get("grade"):
@@ -258,8 +274,11 @@ def export_photo(photo, preset, directory, sequence, progress=None, cancelled=la
                     staged = Path(staging) / target.name
                     settings = version.settings.model_copy(update={"output_path":str(staged),"overwrite":False,"path_grant":None,"edit_revision":None,"metadata_sequence":sequence})
                     from .delivery import delivery_diagnostics
-                    with delivery_diagnostics("export", session.source_path):
+                    with delivery_diagnostics("export", session.source_path), export_clock() as clock:
                         response = backends[settings.format].export(session, settings)
+                    # RAW development is shared by the versions; the first one carries it.
+                    _log_export_timing(clock, response, photo, settings.format, develop_s)
+                    develop_s = 0.0
                     if not response.accepted: raise RuntimeError(response.message)
                     if cancelled(): break
                     # Hard links publish a completed file atomically and fail if it exists.

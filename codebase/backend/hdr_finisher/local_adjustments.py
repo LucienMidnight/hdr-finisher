@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from .export_timing import timed as _timed_stage
 from concurrent.futures import wait
 from .cpu_budget import CpuExecutor
 import json
@@ -21,6 +22,7 @@ LINEAR_SRGB_LUMA = np.array([0.2126, 0.7152, 0.0722], dtype=np.float32)
 SAMPLED_MASKS_ENABLED = os.getenv("HDR_FINISHER_ENABLE_SAMPLED_MASKS", "0") == "1"
 
 
+@_timed_stage("local_stack")
 def apply_local_stack(
     image: np.ndarray,
     fixed_source: np.ndarray,
@@ -177,6 +179,7 @@ def compile_spatial_preview_mask(
     return compile_preview_mask(fixed_source, spatial_mask_expression(expression), geometry)
 
 
+@_timed_stage("masks")
 def compile_geometry_fixed_mask(
     source: np.ndarray,
     expression: MaskExpression,

@@ -31,6 +31,7 @@ than merely close.
 
 from __future__ import annotations
 
+from .export_timing import timed as _timed_stage
 from dataclasses import dataclass
 from typing import Callable, Sequence
 
@@ -297,6 +298,7 @@ class _PeakReducer:
         return float(low_value + difference * fraction)
 
 
+@_timed_stage("strip_render")
 def render_in_strips(
     image: np.ndarray,
     adjustments: AdjustmentState,

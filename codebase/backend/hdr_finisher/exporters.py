@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from .export_timing import timed as _timed_stage
 from abc import ABC, abstractmethod
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import ExitStack, closing, contextmanager, nullcontext
@@ -273,6 +274,13 @@ def delivery_denoise_inputs(session, kind, adjustments):
 
 
 def _render_export_branch(session, settings, kind, adjustments, *, denoise_source=None, allocate_output=None):
+    from .export_timing import lane
+    with lane(kind.value):
+        return _render_export_lane(session, settings, kind, adjustments, denoise_source=denoise_source,
+                                   allocate_output=allocate_output)
+
+
+def _render_export_lane(session, settings, kind, adjustments, *, denoise_source=None, allocate_output=None):
     from .watermark import apply_watermark
     image = (_render_unwatermarked_branch(session, settings, kind, adjustments, denoise_source=denoise_source,
                                         allocate_output=allocate_output)
@@ -653,13 +661,15 @@ def _execute_export(
             delete=False,
         ) as staged_file:
             staged_output = Path(staged_file.name)
-        prepared.write(staged_output)
-        from .export_metadata import write_metadata
-        metadata_started = perf_counter()
-        write_metadata(staged_output, session, settings)
-        timings["metadata"] = round((perf_counter() - metadata_started) * 1000, 3)
-        _fsync_path(staged_output)
-        validation = prepared.validate(staged_output)
+        from .export_timing import lane
+        with lane("encode"):
+            prepared.write(staged_output)
+            from .export_metadata import write_metadata
+            metadata_started = perf_counter()
+            write_metadata(staged_output, session, settings)
+            timings["metadata"] = round((perf_counter() - metadata_started) * 1000, 3)
+            _fsync_path(staged_output)
+            validation = prepared.validate(staged_output)
         os.replace(staged_output, output_path)
         staged_output = None
     except ExportOverwriteRequired:
@@ -1870,6 +1880,7 @@ def _remove_incomplete_output(path: Path | None) -> None:
 _AVIF_Y4M_BAND_ROWS = 128  # A multiple of the 4:2:0 vertical subsampling factor.
 
 
+@_timed_stage("prepare_y4m")
 def _write_sdr_y4m(
     path: Path,
     image: np.ndarray,
@@ -1906,6 +1917,7 @@ def _linear_sdr_to_yuv(image: np.ndarray, bit_depth: int, dithering: str, top: i
     return np.stack([y_code, cb_code, cr_code], axis=-1).astype(dtype)
 
 
+@_timed_stage("prepare_y4m")
 def _write_hdr_y4m(
     path: Path,
     image: np.ndarray,
@@ -1979,6 +1991,7 @@ def _pq_oetf(normalized_luminance: np.ndarray) -> np.ndarray:
     return np.power(numerator / denominator, m2)
 
 
+@_timed_stage("encode")
 def _run_command(command: list[str]) -> subprocess.CompletedProcess[str]:
     from .delivery import log_delivery
 
@@ -2006,6 +2019,7 @@ def _run_command(command: list[str]) -> subprocess.CompletedProcess[str]:
     return result
 
 
+@_timed_stage("validate")
 def _validate_avif_output(
     path: Path,
     *,

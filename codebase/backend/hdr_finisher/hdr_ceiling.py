@@ -12,6 +12,7 @@ image to pass would visibly change the grade.
 """
 from __future__ import annotations
 
+from .export_timing import timed as _timed_stage
 from dataclasses import dataclass
 from contextlib import ExitStack, closing, nullcontext
 from pathlib import Path
@@ -83,6 +84,7 @@ class _DecodedCeiling:
     block_maxima: np.ndarray
 
 
+@_timed_stage("ceiling_verify")
 def decoded_avif_ceiling(path: Path, ceiling_nits: float) -> _DecodedCeiling:
     """Check every HDR pixel, keeping only the exact peak and correction grid."""
     from .gainmap_decoders import avif_delivery_hdr_bands
