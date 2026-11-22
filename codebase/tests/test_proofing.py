@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor, wait
+from dataclasses import replace
 from io import BytesIO
 import math
 from pathlib import Path
@@ -341,10 +342,11 @@ def test_banded_authored_proof_matches_whole_image_tiles(monkeypatch, tmp_path, 
     )
     store = ProofArtifactStore()
     legacy_store = ProofArtifactStore()
+
     with np.errstate(invalid="ignore"):
         for target in (1.75, 0.0, 3.0):
             whole = reconstruct_from_endpoints(base, alternate, artifact.encoded_headroom, target)
-            expected = legacy_store._encoded_matrix_tile(artifact, target, whole)
+            expected = legacy_store._encoded_matrix_tile(replace(artifact, full_size=False), target, whole)
             banded, peak, clipped = store._authored_target_tile(artifact, target)
             assert banded == expected
             assert (peak, clipped) == proofing_module._image_stats(whole, target, artifact.reference_white_nits)

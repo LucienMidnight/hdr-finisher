@@ -730,13 +730,28 @@ class ProofArtifactStore:
         target_key = str(target).replace(".", "_")
         output = self.root / f"tonemap-{artifact.artifact_id}-{target_key}.avif"
         if not output.exists():
-            _run_command(
-                [
-                    str(utility), "tonemap", str(artifact.path), str(output),
+            encoder = resolve_binary("avifenc") if artifact.full_size else None
+            with TemporaryDirectory(prefix="tonemap-", dir=self.root) as directory:
+                staged = Path(directory) / "tile.avif"
+                y4m = staged.with_suffix(".y4m")
+                _run_command([
+                    str(utility), "tonemap", str(artifact.path), str(y4m if encoder else staged),
                     "--headroom", f"{target:.6f}", "--cicp-output", "9/16/9",
                     "-d", "10", "-y", "444", "-q", "90",
-                ]
-            )
+                ])
+                if encoder:
+                    # Match tonemap's AVIF defaults, including single-job encoding.
+                    _run_command([
+                        str(encoder), "--cicp", "9/16/9", "-d", "10", "-y", "444",
+                        "-s", "6", "-q", "90", "-j", "1", str(y4m), str(staged),
+                    ])
+                payload = staged.read_bytes()
+                try:
+                    staged.replace(output)
+                except PermissionError:
+                    if not output.exists():
+                        raise
+                return payload
         return output.read_bytes()
 
     @staticmethod
