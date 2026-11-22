@@ -50,7 +50,7 @@ function exportRun(samples){
     const decision=guard(value,trim(value.level,index*500),!!grain(value.gradePressure,index*500));
     if(decision.entered)events.push(['paused',index*500]);
     if(decision.resumed)events.push([decision.resumed,index*500]);
-    if(decision.trimLevel||decision.grainReclaim)rounds.push(index*500);
+    if(decision.trimLevel)rounds.push(index*500);
   });
   return {rounds,events};
 }
@@ -72,6 +72,22 @@ test('rounds that free memory continue; growth or OS pressure wakes a quiet guar
     assert.deepEqual(run.events.slice(0,2).map(event=>event[0]),['paused',reason]);
     assert.ok(run.rounds.some(time=>time>=run.events[1][1]));
   }
+});
+test('a budget level flapping around the target with Grade open stays quiet',()=>{
+  // Recorded November 23 on the MacBook Neo: Profile A export with Grade open.
+  const samples=Array.from({length:300},(_,i)=>sample({level:Math.floor(i/7)%3?'none':'moderate'}));
+  const {rounds,events}=exportRun(samples);
+  assert.equal(rounds.length,1);
+  assert.deepEqual(events.map(event=>event[0]),['paused']);
+  const critical=[...samples,...Array.from({length:30},()=>sample({level:'critical'}))];
+  assert.ok(exportRun(critical).events.some(event=>event[0]==='pressure_rose'));
+});
+test('a Grade-only round does not silence a trim of caches that still hold pictures',()=>{
+  const full={caches:{working:{bytes:300e6}}};
+  const samples=[...Array.from({length:30},()=>sample({...full,level:'none'})),...Array.from({length:30},()=>sample({...full}))];
+  const trim=pressureGate(),grain=pressureGate(),guard=emptyTrimGuard();let trims=0;
+  samples.forEach((value,index)=>{if(guard(value,trim(value.level,index*500),!!grain(value.gradePressure,index*500)).trimLevel)trims++;});
+  assert.ok(trims>=1);
 });
 test('over the target with no OS shortage is logged as budget pressure',()=>{
   assert.equal(trimReason({pressure:'none'}),'budget_pressure');

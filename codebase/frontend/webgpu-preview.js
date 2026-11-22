@@ -101,6 +101,9 @@
 
     constructor(canvas) {
       this.canvas = canvas;
+      // Grain GPU bytes held when a reclaim last released nothing.
+      this.emptyGrainReclaimBytes = null;
+      this.grainReclaimPressure = "none";
       this.context = null;
       this.adapter = null;
       this.device = null;
@@ -1042,8 +1045,14 @@
       callbacks.forEach((callback) => callback());
       if (this.pendingGrainReclaim) {
         this.pendingGrainReclaim = false;
+        const snapshot = this.grainMemorySnapshot();
+        const held = Math.max(snapshot.resident_bytes || 0, snapshot.allocator_bytes || 0);
+        // After a reclaim that found nothing, wait until Grain holds more
+        // GPU memory or the system pressure changes (acceptGrainMemorySample).
+        if (this.emptyGrainReclaimBytes !== null && held <= this.emptyGrainReclaimBytes) return;
         const action = globalThis.HDRDiagnostics?.start("memory", "grade_grain_reclaim", {});
-        const released = this.reclaimGrainResources(this.grainMemorySnapshot(), action);
+        const released = this.reclaimGrainResources(snapshot, action);
+        this.emptyGrainReclaimBytes = released ? null : held;
         action?.finish("complete", { route: "gpu", reason: released ? "rebuildable_cache_released" : "no_reclaimable_resources" });
       }
     }
@@ -6531,6 +6540,10 @@
         // The process census can stay the same across polls while reservations,
         // system pressure and the configured limit change.
         Object.assign(this.grainMemorySample, value);
+      }
+      if ((value.pressure || "none") !== this.grainReclaimPressure) {
+        this.grainReclaimPressure = value.pressure || "none";
+        this.emptyGrainReclaimBytes = null;
       }
       if (value.grainReclaim) {
         this.pendingGrainReclaim = true;

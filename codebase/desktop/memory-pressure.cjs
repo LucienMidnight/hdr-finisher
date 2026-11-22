@@ -33,12 +33,13 @@ function pressureGate(cooldownMs = COOLDOWN_MS) {
     return level;
   };
 }
-// A trim round (cache trim, renderer collection or Grade Grain reclaim) that
-// starts with nothing left to release is not repeated. After a round, the next
-// one is skipped when neither the backend caches nor Grade's bytes went down,
-// and the guard stays quiet until caches or Grade grow again, the operating
-// system's pressure level changes, or the level rises. An export worker above
-// the target otherwise re-fired the whole round every cool-down for minutes.
+// A cache trim (with its renderer collections) that frees nothing is not
+// repeated. After a trim, the next one is skipped when neither the backend
+// caches nor Grade's bytes went down, and trimming stays quiet until caches
+// or Grade grow again, the operating system's pressure level changes, or the
+// level rises. An export worker above the target otherwise re-fired the whole
+// round every cool-down for minutes. Grade's Grain reclaim passes through:
+// the renderer skips it itself when the last one released nothing.
 function cacheBytes(value) {
   return Object.values(value?.caches || {}).reduce((sum, share) => sum + (Number(share?.bytes) || 0), 0);
 }
@@ -46,22 +47,26 @@ function emptyTrimGuard() {
   let round = null, quiet = null;
   return function decide(value, trimLevel, grainReclaim) {
     const caches = cacheBytes(value), grade = Number(value?.gradeBytes) || 0;
-    const system = value?.pressure || 'none', level = value?.level || 'none';
+    const system = value?.pressure || 'none';
+    // The app's budget level excludes Grade; Grade's level counts everything.
+    // A budget level flapping around the target is not a rise while Grade's
+    // level has already been at least as high.
+    const rank = Math.max(RANK[value?.level] ?? 0, RANK[value?.gradePressure] ?? 0);
     let resumed = null;
     if (quiet) {
       if (caches > quiet.caches) resumed = 'cache_growth';
       else if (grade > quiet.grade) resumed = 'grade_growth';
       else if (system !== quiet.system) resumed = 'system_pressure_changed';
-      else if ((RANK[level] ?? 0) > (RANK[quiet.level] ?? 0)) resumed = 'pressure_rose';
-      if (!resumed) return {trimLevel: null, grainReclaim: false, quiet: true};
+      else if (rank > quiet.rank) resumed = 'pressure_rose';
+      if (!resumed) return {trimLevel: null, grainReclaim, quiet: true};
       quiet = null; round = null;
     }
-    if (!trimLevel && !grainReclaim) return {trimLevel, grainReclaim, quiet: false, resumed};
+    if (!trimLevel) return {trimLevel, grainReclaim, quiet: false, resumed};
     if (round && caches >= round.caches && grade >= round.grade) {
-      quiet = {caches, grade, system, level};
-      return {trimLevel: null, grainReclaim: false, quiet: true, entered: true};
+      quiet = {caches, grade, system, rank: Math.max(rank, round.rank)};
+      return {trimLevel: null, grainReclaim, quiet: true, entered: true};
     }
-    round = {caches, grade};
+    round = {caches, grade, rank};
     return {trimLevel, grainReclaim, quiet: false, resumed};
   };
 }
