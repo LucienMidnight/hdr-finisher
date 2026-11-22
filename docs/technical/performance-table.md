@@ -44,6 +44,40 @@ Meeting the 4 GB ceiling will require bounded AVIF preparation and ceiling
 decoding, plus reducing the overlap between the retained Proof endpoints
 and the tile helper's memory. [Driver log](../../codebase/output/proof-mem/avif-proof.jsonl) · [Run details](../../codebase/output/proof-mem/result.txt)
 
+### Banded AVIF encoder inputs and ceiling check
+
+Same MacBook Neo and 42 MP Sony delivery settings. The earlier Proof memory
+run predates Steve's weighted Bayer fit, which the driver uses for RAW cleanup.
+A second locked run with the delivery code from `0b9c6877` isolates the memory
+change on the current fit. Each row is one run, with macOS physical footprint
+sampled across the whole app.
+
+| Action and revision | To result | Whole-app peak (B) | Backend peak (B) |
+| --- | ---: | ---: | ---: |
+| Export, earlier Proof memory run | 72.52 s | 6,940,474,176 | 6,066,001,536 |
+| Export, same-revision control | 67.43 s | 7,025,867,752 | 6,178,952,904 |
+| Export, banded preparation and ceiling check | 59.24 s | **5,541,590,864** | **4,682,568,264** |
+| Proof, earlier Proof memory run | 120.73 s | 6,746,209,040 | 5,948,184,072 |
+| Proof, same-revision control | 116.34 s | 6,949,927,888 | 6,150,116,992 |
+| Proof, banded preparation and ceiling check | 105.50 s | **5,355,190,528** | **3,905,065,400** |
+
+Export's whole-app and backend peaks both occurred during CPU rendition
+rendering. Proof's whole-app peak occurred during tile tone-mapping, with
+`avifgainmaputil` at 2.902 GB and Python at 1.650 GB. Its largest Python
+sample occurred earlier while rendering the authored Proof endpoints.
+The largest logged sample during the new ceiling check was 4.279 GB for
+export and 4.232 GB for Proof, with `avifgainmaputil` reconstructing HDR.
+In the same-revision control, `avifdec` alone reached 4.039 GB in a 6.480 GB
+Proof ceiling-check sample.
+
+The banded run and same-revision control produced identical export, artifact
+and tile bytes, tile measurements and zero ceiling retries. They share a new
+hash after the Bayer fit change. Both whole-app peaks remain above 4 GB.
+Further reductions need less CPU render scratch and less overlap between the
+retained Proof endpoints and the native tile helper.
+[Driver log](../../codebase/output/proof-mem-2/avif-proof.jsonl) ·
+[Run details](../../codebase/output/proof-mem-2/result.txt)
+
 ## November 21 — Byte-exact Lensfun strips on MacBook Neo
 
 MacBook Neo, A18 Pro and 8 GB unified memory. Isolated CPU RAW development
