@@ -8,6 +8,7 @@
 // --retention --folder=hdr-test: focused memory acceptance across cancel/Grade/100% views; cadence is diagnostic.
 const fs=require('node:fs'),path=require('node:path'),os=require('node:os');
 const {execFileSync,spawn}=require('node:child_process');
+const {defaultAppMemoryBytes}=require('../desktop/lib/application-preferences');
 const {MemoryMonitor}=require('./library-memory-monitor.cjs');
 const root=path.resolve(__dirname,'..');
 const arg=(name,fallback)=>process.argv.find(x=>x.startsWith(`--${name}=`))?.slice(name.length+3)??fallback;
@@ -169,7 +170,7 @@ function analyse(text, openedAt, events, openedPageAt, visibleFiles) {
     let appError=null;
     app.on('error',error=>{appError=String(error);});
     const stdout=fs.createWriteStream(path.join(out,'electron.log'));app.stdout.pipe(stdout);app.stderr.pipe(stdout);
-    const memory=new MemoryMonitor(4e9),memoryPath=path.join(out,'memory.jsonl');fs.writeFileSync(memoryPath,'');
+    const memory=new MemoryMonitor(defaultAppMemoryBytes()),memoryPath=path.join(out,'memory.jsonl');fs.writeFileSync(memoryPath,'');
     let pending='',observerError=null,sampleCount=0,lastSampleAt;const sampleIntervals=[];
     observer=spawn(require('./lib/platform.cjs').pythonExecutable(),[path.join(__dirname,'measure-library-processes.py'),String(app.pid),'.25'],{windowsHide:true});
     observer.on('exit',(code,signal)=>{if(!done)observerError='Memory observer exited before scenario completion: '+(signal||code);});
@@ -260,7 +261,7 @@ function analyse(text, openedAt, events, openedPageAt, visibleFiles) {
       report.retention=result.retention.map(check=>{
         const tail=samples.filter(s=>s.at>=check.end_epoch_ms-2000&&s.at<=check.end_epoch_ms);
         const unfinished=Object.values(check.snapshot||{}).flatMap(q=>q.jobs||[]).filter(j=>!j.background);
-        const settled=tail.length>=4&&tail.every(s=>s.totalBytes<3.4e9)&&unfinished.length===0;
+        const settled=tail.length>=4&&tail.every(s=>s.totalBytes<defaultAppMemoryBytes()-600_000_000)&&unfinished.length===0;
         if(!settled)errors.push('Retention did not settle after '+check.stage);
         return {...check,settled,unfinished,settledBytes:tail.length?Math.max(...tail.map(s=>s.totalBytes)):null,samples:tail.length};
       });

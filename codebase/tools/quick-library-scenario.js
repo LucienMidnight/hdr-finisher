@@ -68,7 +68,7 @@ async function scenario(config) {
   let openedAt, single=null, redisplay=null, retention=null, detail=null;
   try {
     mark('memory setting');
-    const set=await fetch('/api/library/memory-setting',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({bytes:4e9})});
+    const set=await fetch('/api/library/memory-setting',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({bytes:null})});
     if(!set.ok)throw Error('memory-setting: '+set.status);
     const size=document.getElementById('thumbnail-size');if(size){size.value=config.survey?size.min:300;size.dispatchEvent(new Event('input'));}
     if(config.allFiles){localStorage.setItem('hdr-finisher:library-show-all-files','true');window.dispatchEvent(new StorageEvent('storage',{key:'hdr-finisher:library-show-all-files',newValue:'true'}));}

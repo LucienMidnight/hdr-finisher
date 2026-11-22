@@ -15,7 +15,7 @@ const {chromium}=require('playwright');
   }
   await page.goto(process.env.HDR_FINISHER_URL,{waitUntil:'networkidle'});
   await page.waitForFunction(()=>document.querySelector('#library-frame')?.contentWindow?.HDRLibrary);
-  await page.evaluate(()=>fetch('/api/library/memory-setting',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({bytes:4000000000})}));
+  await page.evaluate(()=>fetch('/api/library/memory-setting',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({bytes:null})}));
   const frame=page.frames().find(f=>/\/library(?:\?|$)/.test(f.url()));
   const capturePage=async clip=>{
    const png=await page.screenshot({clip});

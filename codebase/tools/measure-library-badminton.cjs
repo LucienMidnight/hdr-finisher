@@ -1,6 +1,7 @@
 if(process.platform!=='win32'){console.log('Skipped: PC-only personal-library / very-large-file check (see docs/technical/test-photos.md).');process.exit(0);}
 /* Short read-only scroll reproduction. Uses the runner's disposable profile. */
 const fs=require('node:fs'),path=require('node:path'),{spawn}=require('node:child_process');
+const {defaultAppMemoryBytes}=require('../desktop/lib/application-preferences');
 const {chromium}=require('playwright');
 const {hashProjects,checkProjects}=require('../tests/release/runner.cjs');
 const root=path.resolve(__dirname,'..'),out=path.join(root,'output/badminton');
@@ -16,7 +17,7 @@ const sleep=ms=>new Promise(r=>setTimeout(r,ms));
  const record=()=>fs.writeFileSync(path.join(out,'scroll.json'),JSON.stringify(report,null,2));
  try{
   observer=spawn(require('./lib/platform.cjs').pythonExecutable(),[path.join(__dirname,'measure-library-processes.py'),process.env.HDR_FINISHER_ELECTRON_MAIN_PID],{windowsHide:true});
-  let buffer='';observer.stdout.on('data',chunk=>{buffer+=chunk;let at;while((at=buffer.indexOf('\n'))>=0){const line=buffer.slice(0,at);buffer=buffer.slice(at+1);if(line){const s=JSON.parse(line);if(s.totalBytes>report.peakBytes){report.peakBytes=s.totalBytes;report.peakSample=s;}if(s.totalBytes>4e9)report.ceilingExceeded=true;}}});
+  let buffer='';observer.stdout.on('data',chunk=>{buffer+=chunk;let at;while((at=buffer.indexOf('\n'))>=0){const line=buffer.slice(0,at);buffer=buffer.slice(at+1);if(line){const s=JSON.parse(line);if(s.totalBytes>report.peakBytes){report.peakBytes=s.totalBytes;report.peakSample=s;}if(s.totalBytes>defaultAppMemoryBytes())report.ceilingExceeded=true;}}});
   observer.stderr.on('data',b=>report.errors.push(String(b)));
   const page=await browser.newPage();page.on('pageerror',e=>report.errors.push(String(e)));
   report.network=[];report.admission=[];const requests=new Map();

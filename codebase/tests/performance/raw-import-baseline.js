@@ -57,8 +57,8 @@ async function main() {
       });
     });
     if(contention)await page.evaluate(async()=>{
-      const r=await fetch('/api/library/memory-setting',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({bytes:4000000000})});
-      if(!r.ok)throw Error('Could not select existing 4 GB test memory setting');
+      const r=await fetch('/api/library/memory-setting',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({bytes:null})});
+      if(!r.ok)throw Error('Could not reset the test memory setting to its default');
     });
     const rows = [];
     for (let index = 0; index < sampleCount; index += 1) {

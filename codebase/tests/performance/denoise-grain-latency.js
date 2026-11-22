@@ -4,6 +4,7 @@ const { createHash } = require("node:crypto");
 const os = require("node:os");
 const path = require("node:path");
 const { chromium } = require("playwright");
+const { defaultAppMemoryBytes } = require("../../desktop/lib/application-preferences");
 const reusePhoto = require("../helpers/reuse-test-photo.cjs");
 
 const output = fs.mkdtempSync(path.join(os.tmpdir(), "hdr-finish-denoise-grain-"));
@@ -476,7 +477,7 @@ async function measurePhaseOne(page, name, record, setZoom) {
   const check = async (action, button, options = {}, fallback = false) => {
     const result = await record(method, `${phaseOne}: ${action}`, button, { trace: true, ...options });
     assert.ok(result.peakAppBytes > 0, `${action}: missing app memory sample`);
-    if (gpuRoute && result.peakAppBytes >= 4e9) {
+    if (gpuRoute && result.peakAppBytes >= defaultAppMemoryBytes()) {
       phaseOneMemoryFailures.push(`${name}, ${action}: ${result.peakAppBytes} app bytes`);
     }
     const grain = await page.evaluate(() => {
@@ -1444,7 +1445,7 @@ while True:
         await commitDenoiseControl("method", "standard");
       });
     }
-    assert.deepEqual(phaseOneMemoryFailures, [], "Fine Grain exceeded the 4 GB whole-app ceiling.");
+    assert.deepEqual(phaseOneMemoryFailures, [], "Fine Grain exceeded the default whole-app ceiling.");
   } finally {
     await browser.close();
     fs.rmSync(output, { recursive: true, force: true });

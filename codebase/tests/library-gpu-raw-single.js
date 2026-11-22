@@ -13,8 +13,9 @@ const photos=['DSC00264','DSC04375','DSC06615'].map(name=>{
  return fs.realpathSync(file);
 });
 const {spawn}=require('node:child_process');
+const {defaultAppMemoryBytes}=require('../desktop/lib/application-preferences');
 const {MemoryMonitor}=require('../tools/library-memory-monitor.cjs');
-const memory=new MemoryMonitor(4e9);let observer;
+const memory=new MemoryMonitor(defaultAppMemoryBytes());let observer;
 (async()=>{
  const browser=await chromium.launch();
  if(process.env.HDR_FINISHER_ELECTRON_MAIN_PID){

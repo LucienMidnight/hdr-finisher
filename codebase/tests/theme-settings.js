@@ -1,6 +1,8 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs'), path = require('node:path');
 const { chromium } = require('playwright');
+const {defaultAppMemoryBytes} = require('../desktop/lib/application-preferences');
+const minimum = defaultAppMemoryBytes();
 const out = path.resolve(__dirname, '../output/review/theme-settings');
 fs.mkdirSync(out, {recursive:true});
 (async () => {
@@ -16,12 +18,13 @@ fs.mkdirSync(out, {recursive:true});
    await page.evaluate(async () => desktop.setPreferences({ ...HDRApplicationShell.preferences(), appMemoryBytes: 2500000000 }));
    await page.reload();
    await page.waitForFunction(() => document.body.dataset.ready === 'true');
-   assert.equal(await page.evaluate(() => HDRApplicationShell.preferences().appMemoryBytes),4000000000);
+   assert.equal(await page.evaluate(() => HDRApplicationShell.preferences().appMemoryBytes),minimum);
   }
   await page.evaluate(() => HDRApplicationShell.openSettings('performance'));
-  await page.waitForFunction(() => document.getElementById('settings-app-memory-status').textContent.includes('Default on this computer: 4.0 GB'));
-  assert.equal(await page.locator('#settings-app-memory').getAttribute('min'),'4');
-  assert.equal(await page.locator('#settings-app-memory').inputValue(),'4');
+  await page.waitForFunction(text => document.getElementById('settings-app-memory-status').textContent.includes(text),
+    `Default on this computer: ${(minimum/1e9).toFixed(1)} GB`);
+  assert.equal(await page.locator('#settings-app-memory').getAttribute('min'),String(minimum/1e9));
+  assert.equal(await page.locator('#settings-app-memory').inputValue(),String(minimum/1e9));
   const refused = await page.request.post(new URL('/api/library/memory-setting',page.url()).href,{data:{bytes:2500000000}});
   assert.equal(refused.status(),400);
   await page.locator('#settings-app-memory-default').click();
