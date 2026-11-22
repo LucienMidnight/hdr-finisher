@@ -433,6 +433,21 @@ def snapshot(refresh=False, cached_only=False):
                 gradeCacheTrim=grade_cache_trim_active(grade_bytes), reclaim=level!='none')
 
 
+def refresh_after_scratch(additional_bytes):
+    """Refresh an existing census if its reading could reject cache growth."""
+    with _lock:
+        rows = _sample[1]
+        if not rows:
+            return None
+        total = sum(row.get("chargedBytes", row["workingSetBytes"]) for row in rows)
+        if total + additional_bytes <= TARGET:
+            return None
+    try:
+        return total, snapshot(refresh=True)["totalBytes"]
+    except OSError:
+        return None  # Keep the last successful census.
+
+
 def pressure_level(total,system='none'):
     """Real shortage only. Measured memory above the target is moderate: caches
     halve, again each cool-down while it lasts. Only operating-system critical

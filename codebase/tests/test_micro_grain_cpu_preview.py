@@ -15,6 +15,9 @@ from hdr_finisher.preview import downsample_image
 from hdr_finisher.render_cache import SessionRenderCache, StaleRender
 
 
+_APPLY_LENS_CORRECTION = raw_import.apply_lens_correction
+
+
 @pytest.fixture
 def micro_frame(tmp_path, monkeypatch):
     path = tmp_path / "synthetic.ARW"
@@ -107,6 +110,88 @@ def test_cached_micro_pixels_equal_previous_processing(micro_frame):
     assert len(built) == len(rendered) == 4
     cache.close_micro_preview()
     assert cache.diagnostics()["micro_source_bytes"] == 0
+
+
+@pytest.mark.parametrize("chromatic", [False, True])
+@pytest.mark.parametrize("outcome", ["success", "fallback", "cancel", "error"])
+def test_reduced_micro_lens_scratch(micro_frame, monkeypatch, tmp_path, chromatic, outcome):
+    from contextlib import contextmanager
+    import tempfile
+    from hdr_finisher.delivery_frames import DeliveryFrame
+
+    frame, controls, _, _ = micro_frame
+    frame.raw_import_settings.lens.chromatic_aberration = chromatic
+    micro = MicroGrainControls.from_settings(controls)
+    height, width = frame.image.shape[:2]
+    strip_rows = raw_import.COORDINATE_ROWS
+    assert height % strip_rows
+    y, x = np.mgrid[:height, :width].astype(np.float32)
+    xy = np.stack((x + .25, y - .37), axis=-1)
+    coordinates = np.stack((xy, xy - .07, xy + .21), axis=2) if chromatic else xy
+    modifier = SimpleNamespace(
+        apply_subpixel_geometry_distortion=lambda: coordinates,
+        apply_geometry_distortion=lambda: coordinates,
+    )
+    reference_remap = None
+
+    def check_remap(*args, **kwargs):
+        nonlocal reference_remap
+        result, metadata = _APPLY_LENS_CORRECTION(*args, **kwargs)
+        if kwargs.get("allocate_output") is None:
+            reference_remap = result.tobytes()
+        else:
+            assert result.tobytes() == reference_remap
+        return result, metadata
+
+    monkeypatch.setattr(raw_import, "apply_lens_correction", check_remap)
+    monkeypatch.setattr(raw_import, "_lens_modifier", lambda *a, **kw: (modifier, {"vignetting": False}))
+    calls = []
+    cancelled = False
+
+    @contextmanager
+    def strips(*args):
+        def read(top, bottom):
+            nonlocal cancelled
+            calls.append((top, bottom))
+            if top and outcome == "fallback":
+                raise raw_import.LensStripUnavailable("test strip failure")
+            if top and outcome == "cancel":
+                cancelled = True
+            if top and outcome == "error":
+                raise ValueError("test remap error")
+            return coordinates[top:bottom]
+        yield read
+
+    monkeypatch.setattr(raw_import, "exact_lens_coordinate_strips", strips)
+    monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
+    original_map = DeliveryFrame.map
+    mappings = []
+
+    @contextmanager
+    def track_map(scratch, mode):
+        with original_map(scratch, mode) as mapped:
+            mappings.append((scratch.path, mapped._mmap))
+            assert mode == "w+"
+            yield mapped
+
+    monkeypatch.setattr(DeliveryFrame, "map", track_map)
+    if outcome in ("cancel", "error"):
+        error = StaleRender if outcome == "cancel" else raw_import.RawImportError
+        with pytest.raises(error):
+            frame.render_cache.micro_preview_source(frame, micro, 256, lambda: not cancelled)
+    else:
+        expected = denoise_micro_grain.resolve_source(frame, micro, cancelled=lambda: False)
+        expected = downsample_image(expected, 256)
+        calls.clear()
+        actual, _ = frame.render_cache.micro_preview_source(frame, micro, 256, None)
+        assert actual.tobytes() == expected.tobytes()
+        if outcome == "success":
+            assert calls[-1] == (2 * strip_rows, height)
+    assert len(mappings) == 1
+    for file, mapping in mappings:
+        assert mapping.closed
+        assert not file.exists()
+        assert not file.parent.exists()
 
 
 @pytest.mark.parametrize("change_grade", [False, True])

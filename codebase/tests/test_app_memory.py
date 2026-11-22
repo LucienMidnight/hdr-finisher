@@ -319,6 +319,20 @@ def test_memory_endpoint_answers_during_coalesced_slow_reclaim(tmp_path, monkeyp
     asyncio.run(run())
 
 
+@pytest.mark.parametrize("has_headroom", [False, True])
+def test_refresh_after_scratch_rechecks_existing_admission(monkeypatch, has_headroom):
+    size = 1_000_000
+    before = app_memory.TARGET
+    after = before - 2 * size if has_headroom else before
+    monkeypatch.setattr(app_memory, "_sample", (0, [{"workingSetBytes": before}]))
+    monkeypatch.setattr(app_memory, "process_tree", lambda root: [{"workingSetBytes": after}])
+    assert not app_memory.claim("preview", "working", size)
+    assert app_memory.refresh_after_scratch(size) == (before, after)
+    assert app_memory.claim("preview", "working", size) is has_headroom
+    if has_headroom:
+        assert app_memory.refresh_after_scratch(size) is None
+
+
 def test_memory_reader_uses_completed_census_during_refresh(monkeypatch):
     from concurrent.futures import ThreadPoolExecutor
     from threading import Event

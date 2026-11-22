@@ -534,7 +534,7 @@ def _lens_inputs(owner):
                       lens_maker=exif.get("lens_maker"), lens_name=exif.get("lens_model") or exif.get("lens_name"))
 
 
-def render_prepared_source(frame, source, controls, *, cancelled=None, render=None):
+def render_prepared_source(frame, source, controls, *, cancelled=None, render=None, allocate_lens_output=None):
     from . import raw_import
     from .preview import downsample_image
 
@@ -543,9 +543,11 @@ def render_prepared_source(frame, source, controls, *, cancelled=None, render=No
     if owner.metadata.get("lens_correction", {}).get("applied"):
         lens, profile = _lens_inputs(owner)
         result, _ = raw_import.apply_lens_correction(
-            result, lens, **profile, cancelled=cancelled, consume_input=True
+            result, lens, **profile, cancelled=cancelled, consume_input=True, allocate_output=allocate_lens_output,
         )
     result *= source.gain
+    if isinstance(result, np.memmap):
+        result.flush()
     height, width = frame.image.shape[:2]
     return result if result.shape[:2] == (height, width) else downsample_image(result, max(height, width))
 

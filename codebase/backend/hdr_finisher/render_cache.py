@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections import OrderedDict
 from concurrent.futures import Future, wait
+from contextlib import ExitStack
 from contextvars import Context
 from dataclasses import InitVar, dataclass, field
 import hashlib
@@ -11,6 +12,7 @@ import os
 from pathlib import Path
 import shutil
 import struct
+from tempfile import TemporaryDirectory
 from threading import Condition, Event, Lock, RLock, get_ident
 import time
 from typing import Any, Callable
@@ -22,6 +24,7 @@ import numpy as np
 from .adjustments import apply_adjustments
 from .color_context import DEFAULT_HDR_REFERENCE_WHITE_NITS, RenderColorContext
 from .config import APP_DATA_DIR
+from .delivery_frames import DeliveryFrame
 from .cpu_strips import (
     DEFAULT_STRIP_BUDGET_BYTES,
     StripCancelled,
@@ -919,16 +922,25 @@ class SessionRenderCache:
 
             reason = "micro_source_cache_miss" if owner else "micro_source_in_flight"
             outcome = "failed"
+            cache_details = {}
             try:
                 if owner:
                     try:
                         reduced = self._build_micro_preview(frame, controls, edge, epoch, source_key, needed)
+                        if lens_applied:
+                            # A census taken while Lensfun and the resize were
+                            # live can reject the completed preview after their
+                            # scratch is gone. Keep the same admission check.
+                            readings = app_memory.refresh_after_scratch(reduced.nbytes)
+                            if readings is not None:
+                                cache_details.update(before_refresh_bytes=readings[0], after_refresh_bytes=readings[1])
                         with self._lock:
                             if self._micro_source_epoch != epoch or self._micro_closed:
                                 raise StaleRender("The CPU Micro Grain source changed.")
                             self._micro_previews[key] = reduced
                             self._touch_ram_locked("_micro_previews", key)
                             self._rebalance_locked()
+                            cache_details["preview_kept"] = key in self._micro_previews
                             self._micro_flights.pop(key)
                             future.set_result(reduced)
                     except BaseException as error:
@@ -960,7 +972,8 @@ class SessionRenderCache:
                 with self._lock:
                     callers.discard(caller_current)
                 log("denoise", "micro_cpu_source", photo=photo, route="cpu", reason=reason,
-                    edge_px=edge, outcome=outcome, duration_ms=round((time.perf_counter() - started) * 1000, 2))
+                    edge_px=edge, outcome=outcome, duration_ms=round((time.perf_counter() - started) * 1000, 2),
+                    **cache_details)
 
     def _build_micro_preview(self, frame, controls, edge, epoch, source_key, needed):
         from .denoise_micro_grain import render_prepared_source
@@ -974,17 +987,28 @@ class SessionRenderCache:
             if cancelled():
                 raise StaleRender("The CPU Micro Grain preview was replaced.")
         try:
-            with render_work(needed, shared=True):
+            with render_work(needed, shared=True), ExitStack() as scratch:
                 source = self._micro_source(frame, epoch, source_key, cancelled)
                 tiles = self._micro_tiles
                 render = None
                 if tiles is not None and tiles.source() is source and tiles.controls == controls:
                     height, width = source.shape
                     render = lambda stop: tiles.read(source, (0, 0, width, height), cancelled=stop, consume=True)
-                reduced = downsample_image(
-                    render_prepared_source(frame, source, controls, cancelled=cancelled, render=render),
-                    edge, is_current=needed,
+                allocate_lens_output = None
+                if frame.metadata.get("lens_correction", {}).get("applied") and max(frame.image.shape[:2]) > edge:
+                    def allocate_lens_output(shape):
+                        directory = scratch.enter_context(TemporaryDirectory(prefix="micro-lens-"))
+                        return scratch.enter_context(DeliveryFrame(Path(directory) / "remapped.rgb", shape).map("w+"))
+                result = render_prepared_source(
+                    frame, source, controls, cancelled=cancelled, render=render, allocate_lens_output=allocate_lens_output,
                 )
+                reduced = downsample_image(result, edge, is_current=needed)
+                if reduced is result and isinstance(result, np.memmap):
+                    # The source and displayed image can have different sizes.
+                    # The preview cache must never keep a job's map.
+                    reduced = np.array(result)
+                del result
+
             reduced.setflags(write=False)
             return reduced
         finally:

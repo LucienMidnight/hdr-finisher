@@ -1308,6 +1308,7 @@ def apply_lens_correction(
     cancelled: Callable[[], bool] | None = None,
     consume_input: bool = False,
     progress: Callable[[str, str], None] | None = None,
+    allocate_output: Callable[[tuple[int, ...]], np.ndarray] | None = None,
 ) -> tuple[np.ndarray, dict[str, Any]]:
     _raise_if_cancelled(cancelled)
     if progress: progress("lens_profile", "Selecting Lensfun profile")
@@ -1332,12 +1333,16 @@ def apply_lens_correction(
         if chromatic or settings.distortion:
             import lensfunpy
             remapped = None
+            # Reuse the destination if strip generation falls back mid-image.
+            output = allocate_output(corrected.shape) if allocate_output is not None else None
             with exact_lens_coordinate_strips(
                 modifier, chromatic, _lens_flags(settings, lensfunpy), lensfunpy.LensType.RECTILINEAR.value,
             ) as read_strip:
                 if read_strip is not None:
                     if progress: progress("lens_remap", "Remapping Lensfun pixels")
-                    remapped = _remap_lens_strips(corrected, read_strip, chromatic=chromatic, cancelled=cancelled)
+                    remapped = _remap_lens_strips(
+                        corrected, read_strip, chromatic=chromatic, cancelled=cancelled, output=output,
+                    )
             if remapped is None:
                 # Whole-frame coordinates: no strip reader, or it failed mid-image.
                 generate = (modifier.apply_subpixel_geometry_distortion if chromatic else
@@ -1346,7 +1351,7 @@ def apply_lens_correction(
                 if progress: progress("lens_remap", "Remapping Lensfun pixels")
                 if coordinates is not None:
                     remapped = _remap_bilinear_strips(
-                        corrected, np.asarray(coordinates), chromatic=chromatic, cancelled=cancelled,
+                        corrected, np.asarray(coordinates), chromatic=chromatic, cancelled=cancelled, output=output,
                     )
             if remapped is not None:
                 corrected = remapped
@@ -1360,9 +1365,10 @@ def apply_lens_correction(
     return corrected, metadata
 
 
-def _remap_lens_strips(corrected, read_strip, *, chromatic, cancelled):
+def _remap_lens_strips(corrected, read_strip, *, chromatic, cancelled, output=None):
     """Remap with exact coordinate strips; None if Lensfun fails mid-image."""
-    output = np.empty_like(corrected)
+    if output is None:
+        output = np.empty_like(corrected)
     for top in range(0, len(output), COORDINATE_ROWS):
         _raise_if_cancelled(cancelled)
         bottom = min(top + COORDINATE_ROWS, len(output))
