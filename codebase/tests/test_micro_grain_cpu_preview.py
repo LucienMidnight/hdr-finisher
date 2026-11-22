@@ -89,6 +89,27 @@ def test_micro_preview_reuses_source_across_grade_and_view_changes(micro_frame):
     assert rendered == [MicroGrainControls.from_settings(c) for c in (controls, changed, controls)]
 
 
+def test_finished_micro_frame_does_not_displace_reusable_source(micro_frame, monkeypatch):
+    frame, controls, _, rendered = micro_frame
+    cache = frame.render_cache
+    original_claim = app_memory.claim
+    # The image source and its sensor preparation fit, but a second RGB
+    # frame at the same size does not.
+    capacity = 256 * 218 * 3 * 4 + 320 * 272 * 2
+
+    def claim(key, share, size):
+        return (key != cache._ram_key or size <= capacity) and original_claim(key, share, size)
+
+    monkeypatch.setattr(app_memory, "claim", claim)
+    first = preview(frame, controls)
+    kept = cache.diagnostics()
+    assert kept["micro_source_bytes"] == capacity
+    assert kept["frame_bytes"] == 0
+    edited = preview(frame, controls, exposure=0.25)
+    assert not np.array_equal(first, edited)
+    assert len(rendered) == 1
+
+
 def test_cached_micro_pixels_equal_previous_processing(micro_frame):
     frame, controls, built, rendered = micro_frame
     cache = frame.render_cache

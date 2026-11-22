@@ -1009,7 +1009,7 @@ class SessionRenderCache:
                 result = render_prepared_source(
                     frame, source, controls, cancelled=cancelled, render=render, allocate_lens_output=allocate_lens_output,
                 )
-                reduced = downsample_image(result, edge, is_current=needed)
+                reduced = downsample_image(result, edge, is_current=needed, bounded=allocate_lens_output is not None)
                 if reduced is result and isinstance(result, np.memmap):
                     # The source and displayed image can have different sizes.
                     # The preview cache must never keep a job's map.
@@ -1835,8 +1835,16 @@ class SessionRenderCache:
                 if self._source_epoch != source_epoch:
                     raise StaleRender("The preview source changed.")
                 self._frames[key] = processed
-                self._touch_ram_locked('_frames', key)
-                self._evict_locked()
+                # With a reusable Micro source, a finished frame is cheaper
+                # to rebuild than the RAW preparation that every edit needs.
+                # Serve the frame without caching it if retaining both fails
+                # the same admission check used by the working cache.
+                if (micro_preview is not None and micro_key in self._micro_previews
+                        and not app_memory.claim(self._ram_key, 'working', self._retained_bytes_locked())):
+                    self._frames.pop(key)
+                else:
+                    self._touch_ram_locked('_frames', key)
+                    self._evict_locked()
         finally:
             with self._lock:
                 # Invalidation may have removed this flight and a newer caller
