@@ -380,7 +380,7 @@ class MicroGrainSource:
         # without touching this source's tiles or an in-flight region.
         with _source_lock:
             if self is not _recent_source[1]:
-                return True
+                return False
             retained = self.prepared_nbytes + tiles_bytes
             if app_memory.claim(_SOURCE_RAM_KEY, "working", retained + extra):
                 return True

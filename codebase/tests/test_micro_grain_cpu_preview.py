@@ -494,3 +494,41 @@ def test_micro_region_preview_uses_the_display_transport(micro_frame, monkeypatc
     else:
         assert response.body == (main.encode_processed_rgba8(detail, PreviewKind.HDR)
                                  + main.encode_processed_rgba8(base, PreviewKind.HDR))
+
+
+def test_late_gpu_micro_region_does_not_retain_bayer_tiles_after_cpu_handoff(monkeypatch):
+    from collections import OrderedDict
+    from threading import RLock
+
+    module = denoise_micro_grain
+    phases = np.ones(4, dtype=np.float32)
+    source = object.__new__(module.MicroGrainSource)
+    source.sensor = np.random.default_rng(21).integers(100, 400, (264, 280), dtype=np.uint16)
+    source.profile = module.BayerProfile(
+        phases * 64, phases * 1024, phases * .01, phases * .01,
+        np.eye(4, dtype=np.float32), np.eye(4, dtype=np.float32),
+        np.array(((0, 1), (1, 2))), np.eye(3), np.ones(3), np.ones(3), np.eye(3),
+    )
+    source.flip = 0
+    source.tiles = OrderedDict()
+    source.tiles_lock = RLock()
+    key = ("camera-raw",)
+    monkeypatch.setattr(module, "_recent_source", (key, source))
+    initial = app_memory.cache_snapshot()["working"]["bytes"]
+    assert app_memory.claim(module._SOURCE_RAM_KEY, "working", source.prepared_nbytes)
+    rect = (106, 130, 174, 162)
+    controls = MicroGrainControls(.61, .78, .7)
+    try:
+        payload = source.gpu_region(rect, controls, retain=True)
+        cached, = source.tiles.values()
+        assert source.gpu_region(rect, controls, retain=True) == payload
+        assert next(iter(source.tiles.values())) is cached
+        assert app_memory.cache_snapshot()["working"]["bytes"] == initial + source.prepared_nbytes + cached.nbytes
+
+        assert module.take_recent_preparation(key) is source
+        assert not source.tiles
+        assert source.gpu_region(rect, controls, retain=True) == payload
+        assert not source.tiles
+        assert app_memory.cache_snapshot()["working"]["bytes"] == initial
+    finally:
+        module._trim_recent_source(0)

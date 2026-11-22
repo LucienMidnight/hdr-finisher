@@ -711,6 +711,8 @@ function retireActiveSession(replacementSessionId = null, { preservePicture = fa
   cancelRoiCatchUp();
   cancelRoiPanRefinement();
   clearNavigationThumbnail();
+  window.clearTimeout(state.zoomRefinementTimer);
+  state.zoomRefinementTimer = 0;
   window.clearTimeout(state.localMaskDraftTimer);
   state.localMaskDraftTimer = 0;
   state.localMaskDraftController?.abort();

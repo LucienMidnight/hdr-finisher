@@ -188,6 +188,9 @@ async function openStagedDesktopSource(selection) {
     renderSessionChrome();
     status.post({ id: "import", severity: "progress", message: `Loading ${name}…`, progress: "indeterminate" });
     gradeOpenStage("grade_open_visible");
+  } else {
+    window.clearTimeout(state.zoomRefinementTimer);
+    state.zoomRefinementTimer = 0;
   }
   const diagnostics = globalThis.HDRDiagnostics;
   const action = diagnostics?.start("grade", "open_photo", { id: selection.path, name });
@@ -356,6 +359,7 @@ async function activateDesktopSession(session, projectPath, openGeneration = nul
     && session.session_id === replaceSessionId);
   const zoom = redevelopment ? retainedRedevelopmentZoom(session) : null;
   retireActiveSession(session.session_id, { preservePicture: redevelopment });
+  if (redevelopment && !zoom) clearDenoiseDetail();
   gradeOpening.reset(openingJobId);
   if (!stayOnTab) collapseGradeModules();
   state.session = session;

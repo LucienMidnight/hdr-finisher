@@ -31,12 +31,13 @@ function harness() {
   vm.createContext(c);
   const frontend = name => fs.readFileSync(path.join(__dirname, '../frontend', name), 'utf8');
   const { retireActiveSession, setImportCancelVisible, showUploadError } = c;
-  for (const name of ['session-import.js', 'project-documents.js', 'scope-requests.js']) {
+  for (const name of ['session-import.js', 'project-documents.js', 'scope-requests.js', 'zoom-navigation.js']) {
     vm.runInContext(frontend(name), c);
   }
+  const realRetirement = c.retireActiveSession;
   Object.assign(c, { retireActiveSession, setImportCancelVisible, showUploadError });
   c.renderSourceFilename = name => events.push(name);
-  return { c, panels, events, resolve };
+  return { c, panels, events, resolve, realRetirement };
 }
 test('Grade loads immediately with an empty preview and locked controls, then returns to Library on failure', async () => {
   const { c, panels, events, resolve } = harness();
@@ -73,6 +74,8 @@ test('RAW redevelopment keeps the current picture and releases GPU work before s
   const retiring = new Promise(r => { releaseStarted = r; });
   const decoding = new Promise(r => { jobStarted = r; });
   const originalSession = c.state.session;
+  const zoomWork = new AbortController();
+  c.state.zoomRefinementTimer = setTimeout(() => zoomWork.abort(), 0);
   const verifyGradeRecovery = trackGradeRecovery(c, events);
   const createImportJob = c.projectIo.createImportJob;
   c.state.activeWorkflow = 'grade';
@@ -91,6 +94,9 @@ test('RAW redevelopment keeps the current picture and releases GPU work before s
   assert.equal(c.state.session, originalSession);
   assert.ok(panels.every(panel => panel.inert));
   assert.equal(events.includes('decode'), false);
+  assert.equal(c.state.zoomRefinementTimer, 0);
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.equal(zoomWork.signal.aborted, false);
   assert.equal(events.includes('clear'), false);
 
   allowRelease();
@@ -252,6 +258,7 @@ test('Electron load barrier remains blocked until main-frame completion and reje
 async function activateAtZoom({
   replace = true, previousSize = [6000, 4000], size = [6000, 4000],
   pan = [800, 600], extent = [1600, 1200], rotation = 0, pictureVisible = true, geometryDraft = false,
+  nativeDetail = false,
 } = {}) {
   const { c } = harness();
   const view = { scrollLeft: pan[0], scrollTop: pan[1], clientWidth: 1000, clientHeight: 700 };
@@ -266,6 +273,8 @@ async function activateAtZoom({
   Object.assign(c.state, { zoomMode: 'custom', zoomPercent: 78, adjustments: { shared: { geometry: {} } },
     denoise: { hdr: { enabled: true } } });
   c.els.dropzone = view;
+  c.els.previewCanvas = { style: { display: 'block' }, hdrFrameRegion: nativeDetail ? { x: 10 } : null };
+  c.els.chromeProofImage = { style: { display: 'none' } };
   const renders = [];
   const snapshot = () => [c.state.zoomMode, c.state.zoomPercent, view.scrollLeft, view.scrollTop];
   const noop = () => {};
@@ -275,12 +284,18 @@ async function activateAtZoom({
     previewIsVisible: () => pictureVisible, geometryDraftActive: () => geometryDraft,
     collapseGradeModules: noop, loadDenoiseDocument: noop, recordAcknowledgedLocals: noop,
     invalidatePreview: noop, renderSession: noop, renderLocalAdjustments: noop, seedExportFieldsFromSession: noop,
+    clearDenoiseDetail: () => { c.els.previewCanvas.hdrFrameRegion = null; },
     applyZoomGeometry: () => {
+      if (c.holdingNativeDenoisePictureForFit()) return;
       view.scrollWidth = view.clientWidth + extent[0];
       view.scrollHeight = view.clientHeight + extent[1];
     },
     settledProxyLongEdge: () => c.state.zoomMode === 'custom' ? 4096 : 1280,
-    renderGpuDraft: async (lane, { longEdge }) => { renders.push(['gpu', longEdge, ...snapshot()]); return false; },
+    renderGpuDraft: async (lane, { longEdge }) => {
+      if (nativeDetail) assert.equal(Boolean(c.els.previewCanvas.hdrFrameRegion), c.state.zoomMode === 'custom');
+      renders.push(['gpu', longEdge, ...snapshot()]);
+      return false;
+    },
     transientGpuRefusal: () => false,
     renderPreviewForLane: async (lane, display, longEdge) => renders.push(['cpu', longEdge, ...snapshot()]),
     refreshPreview: async () => renders.push(['fit', ...snapshot()]),
@@ -293,7 +308,7 @@ async function activateAtZoom({
 }
 
 test('same-photo RAW redevelopment preserves zoom and pan for the first GPU and CPU preview requests', async () => {
-  assert.deepEqual(await activateAtZoom(), [
+  assert.deepEqual(await activateAtZoom({ nativeDetail: true }), [
     ['gpu', 4096, 'custom', 78, 800, 600],
     ['cpu', 4096, 'custom', 78, 800, 600],
   ]);
@@ -308,7 +323,7 @@ test('same-photo RAW redevelopment clamps pan when the resized image has less ro
 
 test('same-photo RAW redevelopment falls back to Fit if the old coordinates no longer apply', async () => {
   for (const options of [{ size: [4000, 6000] }, { rotation: 180 }, { pictureVisible: false }, { geometryDraft: true }]) {
-    assert.deepEqual(await activateAtZoom(options), [
+    assert.deepEqual(await activateAtZoom({ ...options, nativeDetail: true }), [
       ['gpu', 1280, 'fit', 100, 0, 0],
       ['fit', 'fit', 100, 0, 0],
     ]);
@@ -321,4 +336,24 @@ test('a different photo starts at Fit even when it has the same dimensions', asy
     ['gpu', 1280, 'fit', 100],
     ['fit', 'fit', 100],
   ]);
+});
+
+test('retiring Grade stops a queued zoom refinement before it can run', async () => {
+  const { c, realRetirement } = harness();
+  const noop = () => {};
+  Object.assign(c, {
+    suspendGradeInstruments: noop, cancelRoiCatchUp: noop, cancelRoiPanRefinement: noop,
+    clearNavigationThumbnail: noop, clearPreviewCache: noop,
+    localComparisonMaskRequests: new Map(), localAuthoritativeMaskRequests: new Map(),
+    localAuthoritativeMaskCache: new Map(), localComparisonMaskCache: new Map(),
+    localComparisonCompositeCache: new Map(), localBrushMaskCanvasCache: new Map(),
+    localMaskOverlayFrame: 0, pathMarchingAntFrame: 0,
+  });
+  c.state.localHiddenGizmoIds = new Set();
+  let fired = false;
+  c.state.zoomRefinementTimer = setTimeout(() => { fired = true; }, 0);
+  realRetirement();
+  assert.equal(c.state.zoomRefinementTimer, 0);
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.equal(fired, false);
 });
