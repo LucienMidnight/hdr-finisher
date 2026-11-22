@@ -357,6 +357,7 @@
         coarse: Boolean(intent.coarse),
         interactiveSnapshot: Boolean(intent.interactiveSnapshot),
         hideStatus: intent.hideStatus !== false,
+        preservePicture: Boolean(intent.preservePicture),
         sessionId: this.sessionId,
         token,
         isCurrent: token.isCurrent,
@@ -405,6 +406,7 @@
         coarse: Boolean(intent.coarse),
         interactiveSnapshot: Boolean(intent.interactiveSnapshot),
         hideStatus: intent.hideStatus !== false,
+        preservePicture: Boolean(intent.preservePicture),
         allowInactive: Boolean(intent.allowInactive),
       };
       const st = this.laneState(lane);

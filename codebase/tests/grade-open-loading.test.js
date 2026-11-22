@@ -25,11 +25,16 @@ function harness() {
     retireActiveSession() {}, clearPreviewImage: () => events.push('clear'), clearComparisonPreview() {},
     drawHistogram: () => events.push('clear-scopes'), renderSourceFilename: name => events.push(name),
     renderReadouts() {}, renderSessionChrome() {}, updateExportAvailability() {}, setIndeterminatePreviewMessage() {},
-    setImportCancelVisible() {}, showUploadError: error => events.push(error),
+    setImportCancelVisible() {}, hidePreviewMessage() {}, showUploadError: error => events.push(error),
   };
   c.window = c;
   vm.createContext(c);
-  vm.runInContext(fs.readFileSync(path.join(__dirname, '../frontend/project-documents.js'), 'utf8'), c);
+  const frontend = name => fs.readFileSync(path.join(__dirname, '../frontend', name), 'utf8');
+  const { retireActiveSession, setImportCancelVisible, showUploadError } = c;
+  for (const name of ['session-import.js', 'project-documents.js', 'scope-requests.js']) {
+    vm.runInContext(frontend(name), c);
+  }
+  Object.assign(c, { retireActiveSession, setImportCancelVisible, showUploadError });
   c.renderSourceFilename = name => events.push(name);
   return { c, panels, events, resolve };
 }
@@ -68,9 +73,9 @@ test('RAW redevelopment keeps the current picture and releases GPU work before s
   const retiring = new Promise(r => { releaseStarted = r; });
   const decoding = new Promise(r => { jobStarted = r; });
   const originalSession = c.state.session;
+  const verifyGradeRecovery = trackGradeRecovery(c, events);
   const createImportJob = c.projectIo.createImportJob;
   c.state.activeWorkflow = 'grade';
-  c.suspendGradeInstruments = () => {};
   c.state.gpuPreview.releaseForSourceReplacement = () => {
     releaseStarted();
     return release;
@@ -95,6 +100,85 @@ test('RAW redevelopment keeps the current picture and releases GPU work before s
   assert.equal(c.state.session, originalSession);
   assert.equal(events.includes('clear'), false);
   assert.ok(panels.every(panel => !panel.inert));
+  await verifyGradeRecovery();
+});
+
+function trackGradeRecovery(c, events) {
+  const originalSession = c.state.session;
+  const accepted = { lane: 'sdr', generation: 7, geometrySignature: 'original', exact: true,
+    sourceSerial: 42, transport: 'WebGPU' };
+  Object.assign(c.state, { activeWorkflow: 'grade', currentView: 'sdr', previewGeneration: { sdr: 7 },
+    acceptedPresentation: accepted, zoomMode: 'custom', zoomPercent: 78 });
+  c.els.previewCanvas = { style: { display: 'block' } };
+  c.geometrySignature = () => 'original';
+  c.state.gpuPreview.available = true;
+  c.state.gpuPreview.resetSession = sessionId => events.push(['gpu-source', sessionId]);
+  c.suspendGradeInstruments = () => events.push('suspended');
+  let finishSettle;
+  const settled = new Promise(resolve => { finishSettle = resolve; });
+  let request;
+  c.settlePreview = async (lane, options) => {
+    events.push(['settle', lane]);
+    request = options;
+    await settled;
+    c.state.acceptedPresentation = { ...accepted, sourceSerial: 43 };
+  };
+  let instrumentsResumed;
+  const resumed = new Promise(resolve => { instrumentsResumed = resolve; });
+  c.refreshOverlayAndScopesImmediately = () => {
+    events.push('instruments');
+    instrumentsResumed(c.gpuScopeEligible('sdr'));
+  };
+  assert.equal(c.gpuScopeEligible('sdr'), true);
+  return async () => {
+    assert.equal(c.state.session, originalSession);
+    assert.equal(c.state.rawRedevelopGeneration, null);
+    assert.equal(c.state.acceptedPresentation.exact, false);
+    assert.equal(c.gpuScopeEligible('sdr'), false);
+    assert.deepEqual(events.filter(Array.isArray), [['gpu-source', 'old'], ['settle', 'sdr']]);
+    assert.equal(request.applicationGeneration, 7);
+    assert.equal(request.preservePicture, true);
+    assert.equal(c.state.zoomPercent, 78);
+    assert.equal(events.includes('clear'), false);
+    assert.equal(events.includes('instruments'), false);
+    finishSettle();
+    assert.equal(await resumed, true);
+  };
+}
+
+test('RAW redevelopment cancelled by the backend restores the retained Grade preview', async () => {
+  const { c, panels, events, resolve } = harness();
+  const verifyGradeRecovery = trackGradeRecovery(c, events);
+  c.state.gpuPreview.releaseForSourceReplacement = async () => {};
+  const opened = c.openStagedDesktopSource({ path: 'D:/photos/first.ARW', replaceSessionId: 'old' });
+  resolve({ response: { ok: true }, payload: { job_id: 'raw', state: 'cancelled' } });
+  await opened;
+  assert.ok(panels.every(panel => !panel.inert));
+  await verifyGradeRecovery();
+});
+
+test('cancelling a RAW redevelopment restores Grade only after the cancel request and only once', async () => {
+  const { c, panels, events, resolve } = harness();
+  const verifyGradeRecovery = trackGradeRecovery(c, events);
+  c.state.gpuPreview.releaseForSourceReplacement = async () => {};
+  let pollStarted, finishPoll, acknowledgeCancel;
+  const polling = new Promise(resolve => { pollStarted = resolve; });
+  const poll = new Promise(resolve => { finishPoll = resolve; });
+  c.projectIo.pollImportJob = () => { pollStarted(); return poll; };
+  const cancelAcknowledged = new Promise(resolve => { acknowledgeCancel = resolve; });
+  c.projectIo.cancelImportJob = () => cancelAcknowledged;
+  const opened = c.openStagedDesktopSource({ path: 'D:/photos/first.ARW', replaceSessionId: 'old' });
+  resolve({ response: { ok: true }, payload: { job_id: 'raw', state: 'developing' } });
+  await polling;
+  const cancelled = c.cancelActiveImport();
+  finishPoll({ response: { ok: true }, payload: { job_id: 'raw', state: 'cancelled' } });
+  await opened;
+  assert.equal(events.some(Array.isArray), false);
+  assert.ok(panels.every(panel => panel.inert));
+  acknowledgeCancel();
+  await cancelled;
+  assert.ok(panels.every(panel => !panel.inert));
+  await verifyGradeRecovery();
 });
 test('initial Electron page completion precedes runner actions', async () => {
   const { waitForInitialLoad } = require('./electron-initial-load');

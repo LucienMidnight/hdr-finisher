@@ -146,6 +146,25 @@ function finishGradeOpen() {
   renderReadouts();
 }
 
+function restoreGradeAfterRawRedevelopment(generation) {
+  if (generation !== state.importGeneration || generation !== state.rawRedevelopGeneration) return;
+  state.rawRedevelopGeneration = null;
+  const session = state.session;
+  if (!session) return;
+  const lane = state.currentView;
+  const workGeneration = state.gradeWorkGeneration;
+  if (state.acceptedPresentation) {
+    state.acceptedPresentation = { ...state.acceptedPresentation, exact: false, sourceSerial: null };
+  }
+  state.gpuPreview?.resetSession(session.session_id);
+  void settlePreview(lane, { applicationGeneration: state.previewGeneration[lane], preservePicture: true })
+    .then(() => {
+      if (generation === state.importGeneration && state.session === session && lane === state.currentView
+        && workGeneration === state.gradeWorkGeneration) refreshOverlayAndScopesImmediately();
+    })
+    .catch(error => console.error("The retained Grade preview could not be restored.", error));
+}
+
 async function openStagedDesktopSource(selection) {
   const generation = claimSessionReplacement();
   const name = selection.path?.split(/[/\\]/).pop() || "photo";
@@ -292,15 +311,17 @@ async function openStagedDesktopSource(selection) {
     if (selection.fromLibrary) activateWorkflowTab("import");
     showUploadError(error.message || `Could not open ${name}.`);
   } finally {
-    if (state.rawRedevelopGeneration === generation) state.rawRedevelopGeneration = null;
     action?.finish(completed ? "success" : "cancelled", completed ? {} : { route: "refused", reason: "source_open_cancelled" });
     if (!completed && openingJobId) void projectIo.cancelImportJob(fetch, openingJobId).catch(()=>{});
     if (generation === state.importGeneration) {
       state.importInProgress = false;
       state.activeImportJobId = null;
       setImportCancelVisible(false);
+      restoreGradeAfterRawRedevelopment(generation);
       finishGradeOpen();
       updateExportAvailability();
+    } else if (state.rawRedevelopGeneration === generation) {
+      state.rawRedevelopGeneration = null;
     }
   }
 }

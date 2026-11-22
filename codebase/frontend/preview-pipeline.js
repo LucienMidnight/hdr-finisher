@@ -150,7 +150,8 @@ async function settlePreviewInner(lane, task, action) {
   const tier = longEdge >= refinementProxyLongEdge() ? "refinement" : "settled";
   if (display) {
     if (gpuPreviewEligible(lane)) {
-      let rendered = await renderGpuDraft(lane, { longEdge, tier, action });
+      const options = { longEdge, tier, action, preservePicture: task.preservePicture };
+      let rendered = await renderGpuDraft(lane, options);
       // Latest-wins cancellation is expected while a mask proxy or edit
       // revision changes underneath a Full render. If this is still the
       // current scheduler task, retry once after the serialized edit queue has
@@ -165,7 +166,7 @@ async function settlePreviewInner(lane, task, action) {
           const applicationCurrent = task.applicationGeneration === undefined
             || task.applicationGeneration === state.previewGeneration[lane];
           if (schedulerCurrent && applicationCurrent && lane === state.currentView) {
-            rendered = await renderGpuDraft(lane, { longEdge, tier, action });
+            rendered = await renderGpuDraft(lane, options);
           }
         }
       }
@@ -828,6 +829,7 @@ function renderGpuDraft(lane = state.currentView, options = {}) {
       panPass: Boolean(options.panPass),
       allowInactive: Boolean(options.allowInactive),
       hideStatus: options.hideStatus !== false,
+      preservePicture: Boolean(options.preservePicture),
       coarse: Boolean(options.coarse),
       interactiveSnapshot: tier === "interactive" && pacedPreviewInteraction(lane),
     })
@@ -990,7 +992,7 @@ async function renderGpuDraftForView(lane, request) {
       && accepted.geometrySignature === requestedGeometrySignature;
     const reusable = canvas.hdrWholeFrame && canvas.style.display !== "none"
       && (samePicturePan || (canvas.hdrWholeFrame.key === wholeFrameKey && canvas.hdrWholeFrame.edge <= softEdge + 1));
-    if (!reusable && !(micro && canvas.hdrWholeFrame && state.acceptedPresentation?.lane === lane
+    if (!reusable && !((micro || request.preservePicture) && canvas.hdrWholeFrame && state.acceptedPresentation?.lane === lane
       && state.acceptedPresentation?.geometrySignature === requestedGeometrySignature)) {
       const drawn = await renderGpuDraftInner(lane, {
         ...request, longEdge: softEdge, viewport: null, panPass: false, roiCatchUp: false, underlayerOnly: true,
@@ -1034,14 +1036,14 @@ async function renderGpuDraftForView(lane, request) {
     }
   }
   const fitSize = micro ? gpuFrameSizeAt(longEdge) : null;
-  if (micro && !allowInactive && state.zoomMode === "fit" && !request.microQuick && tier !== "interactive"
+  if (micro && !allowInactive && state.zoomMode === "fit" && !request.preservePicture && !request.microQuick && tier !== "interactive"
     && !state.gpuPreview.hasReducedMicroGrain(fitSize?.width, fitSize?.height)) {
     const quick = await renderGpuDraftInner(lane, { ...request, microQuick: true });
     if (!quick || !microStillCurrent() || request.isCurrent?.() === false) return refuse("superseded-after-micro-quick");
   }
   const preparedGrain = denoiseActive ? state.gpuPreview.denoiseSourceSelector?.cache?.grain : null;
   const cpuGrainToken = preparedGrain?.token;
-  if (cpuGrainToken && !allowInactive && state.zoomMode === "fit" && !request.underlayerOnly
+  if (cpuGrainToken && !allowInactive && state.zoomMode === "fit" && !request.preservePicture && !request.underlayerOnly
     && tier !== "interactive" && canvas.hdrCpuGrainQuickToken !== cpuGrainToken) {
     const quick = await renderGpuDraftInner(lane, { ...request, underlayerOnly: true });
     if (!quick) return false;

@@ -15,6 +15,18 @@ test("queued preview keeps the action that requested it", async () => {
   assert.deepEqual(seen, [action]);
 });
 
+test("only the requested render preserves the mounted picture during recovery", async () => {
+  const seen = [];
+  const coordinator = new HDRRenderCoordinator({ dispatch: request => {
+    seen.push(request.preservePicture);
+    return true;
+  } });
+  coordinator.noteSource("photo");
+  await coordinator.submit({ lane: "hdr", preservePicture: true });
+  await coordinator.submit({ lane: "hdr" });
+  assert.deepEqual(seen, [true, false]);
+});
+
 function fakeTimers() {
   let nextId = 1;
   const pending = new Map();

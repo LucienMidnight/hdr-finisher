@@ -770,8 +770,10 @@ async function cancelActiveImport() {
   const libraryOpen = Boolean(state.gradeOpen?.fromLibrary);
   const loadingGrade = Boolean(state.gradeOpen);
   const jobId = state.activeImportJobId;
+  const redeveloping = state.rawRedevelopGeneration === state.importGeneration;
   state.importGeneration += 1;
   const cancelledGeneration = state.importGeneration;
+  if (redeveloping) state.rawRedevelopGeneration = cancelledGeneration;
   state.activeImportJobId = null;
   state.importInProgress = false;
   setImportCancelVisible(false);
@@ -791,6 +793,7 @@ async function cancelActiveImport() {
     await projectIo.cancelImportJob(fetch, jobId).catch(() => null);
   }
   if (cancelledGeneration !== state.importGeneration) return;
+  restoreGradeAfterRawRedevelopment(cancelledGeneration);
   finishCancelledImport();
   finishGradeOpen();
   if (libraryOpen) activateWorkflowTab("import");
