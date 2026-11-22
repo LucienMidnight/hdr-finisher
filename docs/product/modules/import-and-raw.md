@@ -589,6 +589,7 @@ Rules in force:
 
 | Decision | Date |
 | --- | --- |
+| **Keep zoom after RAW redevelopment.** Grade retains custom magnification and pan for the same RAW and clamps pan to the new output bounds. Grade falls back to Fit when the prior view is unavailable or the orientation or perspective changes, and opens a different photo at Fit. | Steve, 2026-11-22 |
 | Camera RAW uses a camera-linear bridge: LibRaw unpack and AHD demosaic, unity white balance through 16-bit, then float32 white balance and camera RGB to ACEScg. Opposed-colour highlight reconstruction removes magenta clipping. | 2026-09-03 |
 | **Exposure starts at zero.** RAW development is tuned so that the camera JPEG, the RAW as first shown, and Grade's starting point roughly agree. The Library's starting look must match Grade's. Every RAW grade saved before the change will look brighter or darker; no migration. The strict testing rule applies (RAW import). | Steve, 2026-10-11 |
 | Generic, not tuned to one camera. | 2026-10-09 |

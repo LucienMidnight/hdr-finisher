@@ -248,3 +248,77 @@ test('Electron load barrier remains blocked until main-frame completion and reje
     assert.equal(contents.listenerCount('did-fail-load'), 0);
   }
 });
+
+async function activateAtZoom({
+  replace = true, previousSize = [6000, 4000], size = [6000, 4000],
+  pan = [800, 600], extent = [1600, 1200], rotation = 0, pictureVisible = true,
+} = {}) {
+  const { c } = harness();
+  const view = { scrollLeft: pan[0], scrollTop: pan[1], clientWidth: 1000, clientHeight: 700 };
+  const geometry = { rotation };
+  const session = {
+    session_id: replace ? 'old' : 'new',
+    source: { width: size[0], height: size[1] },
+    adjustments: { shared: { geometry } },
+    edit_document: { local_adjustments: [] },
+  };
+  Object.assign(c.state.session, { source: { width: previousSize[0], height: previousSize[1] } });
+  Object.assign(c.state, { zoomMode: 'custom', zoomPercent: 78, adjustments: { shared: { geometry: {} } },
+    denoise: { hdr: { enabled: true } } });
+  c.els.dropzone = view;
+  const renders = [];
+  const snapshot = () => [c.state.zoomMode, c.state.zoomPercent, view.scrollLeft, view.scrollTop];
+  const noop = () => {};
+  Object.assign(c, {
+    clamp: (value, min, max) => Math.min(max, Math.max(min, value)),
+    MIN_ZOOM_PERCENT: 1, MAX_ZOOM_PERCENT: 400,
+    previewIsVisible: () => pictureVisible,
+    collapseGradeModules: noop, loadDenoiseDocument: noop, recordAcknowledgedLocals: noop,
+    invalidatePreview: noop, renderSession: noop, renderLocalAdjustments: noop, seedExportFieldsFromSession: noop,
+    applyZoomGeometry: () => {
+      view.scrollWidth = view.clientWidth + extent[0];
+      view.scrollHeight = view.clientHeight + extent[1];
+    },
+    settledProxyLongEdge: () => c.state.zoomMode === 'custom' ? 4096 : 1280,
+    renderGpuDraft: async (lane, { longEdge }) => { renders.push(['gpu', longEdge, ...snapshot()]); return false; },
+    transientGpuRefusal: () => false,
+    renderPreviewForLane: async (lane, display, longEdge) => renders.push(['cpu', longEdge, ...snapshot()]),
+    refreshPreview: async () => renders.push(['fit', ...snapshot()]),
+    requestAnimationFrame: noop, refreshOverlay: noop, refreshScopes: noop, scopeLongEdge: noop,
+    prepareInactivePreview: noop, syncDesktopDocumentState: noop,
+    HDRGradeSaving: { activated: noop },
+  });
+  await c.activateDesktopSession(session, 'grade.hdrfinisher', null, { replaceSessionId: 'old' });
+  return renders;
+}
+
+test('same-photo RAW redevelopment preserves zoom and pan for the first GPU and CPU preview requests', async () => {
+  assert.deepEqual(await activateAtZoom(), [
+    ['gpu', 4096, 'custom', 78, 800, 600],
+    ['cpu', 4096, 'custom', 78, 800, 600],
+  ]);
+});
+
+test('same-photo RAW redevelopment clamps pan when the resized image has less room to scroll', async () => {
+  assert.deepEqual(await activateAtZoom({ size: [2400, 1600], extent: [300, 0] }), [
+    ['gpu', 4096, 'custom', 78, 300, 0],
+    ['cpu', 4096, 'custom', 78, 300, 0],
+  ]);
+});
+
+test('same-photo RAW redevelopment falls back to Fit if the old coordinates no longer apply', async () => {
+  for (const options of [{ size: [4000, 6000] }, { rotation: 180 }, { pictureVisible: false }]) {
+    assert.deepEqual(await activateAtZoom(options), [
+      ['gpu', 1280, 'fit', 100, 0, 0],
+      ['fit', 'fit', 100, 0, 0],
+    ]);
+  }
+});
+
+test('a different photo starts at Fit even when it has the same dimensions', async () => {
+  const renders = await activateAtZoom({ replace: false });
+  assert.deepEqual(renders.map(render => render.slice(0, -2)), [
+    ['gpu', 1280, 'fit', 100],
+    ['fit', 'fit', 100],
+  ]);
+});
