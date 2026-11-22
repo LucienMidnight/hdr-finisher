@@ -1332,7 +1332,7 @@ def apply_lens_correction(
         corrected = np.ascontiguousarray(image, dtype=np.float32)
         if not consume_input or not corrected.flags.writeable:
             corrected = corrected.copy()
-        if metadata["vignetting"]:
+        if metadata["vignetting"] and metadata["profile"]["vignetting"]:
             _apply_signed_vignetting(modifier, corrected, cancelled=cancelled)
         _raise_if_cancelled(cancelled)
         if progress: progress("lens_coordinates", "Calculating exact Lensfun coordinates")

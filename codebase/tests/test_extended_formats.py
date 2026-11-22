@@ -416,6 +416,27 @@ def test_manual_lensfun_profile_is_named_and_applied() -> None:
     assert metadata["profile"]["id"] == profile.id
 
 
+def test_sony_sigma_without_vignetting_calibration_keeps_signed_pixels(monkeypatch):
+    from hdr_finisher import raw_import
+
+    def unexpected_vignette(*args, **kwargs):
+        pytest.fail("The Sigma profile has no vignetting calibration")
+
+    monkeypatch.setattr(raw_import, "_apply_signed_vignetting", unexpected_vignette)
+    settings = LensCorrectionSettings(
+        mode="auto", focal_length_mm=65, aperture=2,
+        distortion=False, chromatic_aberration=False, vignetting=True,
+    )
+    image = np.array([[[-0.0, -0.5, 1.25], [0.0, 0.5, -1.25]]], dtype=np.float32)
+    corrected, metadata = apply_lens_correction(
+        image, settings, camera_maker="Sony", camera_model="ILCE-7RM3",
+        lens_maker="Sigma", lens_name="65mm F2",
+    )
+    assert metadata["applied"]
+    assert metadata["profile"]["vignetting"] is False
+    assert corrected.tobytes() == image.tobytes()
+
+
 def test_lens_profile_catalog_has_unique_resolvable_camera_mount_ids() -> None:
     profiles = list_lens_profiles(limit=1000)
     ids = [profile.id for profile in profiles]
