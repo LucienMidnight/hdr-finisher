@@ -37,6 +37,13 @@ also removes abandoned scratch once its owners have exited and the directory
 has aged past the cleanup grace period.
 [MacBook Neo measurements](../../technical/performance-table.md#november-22-2026--macbook-neo-proof-memory)
 
+## November 22: lens-corrected Micro Grain previews
+
+For reduced CPU Micro previews, Lensfun writes its remapped frame to a
+job-owned file. Grade closes and removes the file before caching the reduced
+picture, and refreshes the process census if the previous reading could
+deny that cache entry.
+
 ## November 21: Grade shares memory on Apple Silicon
 
 GPU Grain admission uses the lesser of the existing graphics headroom

@@ -416,6 +416,11 @@ same-Mac v0.9.2 comparisons and exact errors: `docs/known-limitations.md`,
 10. Confirm full-size Sony Clean Small AVIF export and Proof on Windows with the same CPU noise measurement. Check the 4 GB working-set peak, exact files, tiles and statistics, ceiling retry isolation, and scratch cleanup after eviction, normal quit and
     a forced quit followed by relaunch.
 
+11. Run `tests/performance/denoise-grain-latency.js --micro-lens-memory`
+    under the GPU lock at the PC window size. Confirm the scratch file closes
+    on success and cancellation, compare the reduced HDR and generated SDR
+    hashes on the PC, and record the action peaks and Exposure cache reuse.
+
 ## Disk space and test output
 
 Steve, October 28, 2026, after test and measurement output filled drive D

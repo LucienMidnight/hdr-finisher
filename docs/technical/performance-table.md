@@ -16,6 +16,43 @@ captures at 110%. The quick Library viewport check showed the first picture
 at 0.30 s and all nine visible pictures by 30 s.
 [QUAL-1 colour comparisons](briefs/sprint-denoise-gpu-logging-2026-11-21.md#qual-1--exposure-independent-quality-fixes-output-changes)
 
+## November 22, 2026 — MacBook Neo Micro Grain with lens memory
+
+MacBook Neo, A18 Pro and 8 GB unified memory, unpackaged Electron at
+1408 × 794 under the GPU lock. Sony `_DSC7970.ARW`, 42 MP, signed AHD,
+speck cleanup ×2.5, GPU Auto, generated SDR and the 4 GB app ceiling.
+Baseline `a2aca788` already has exact Lensfun coordinate strips. The after
+run uses the scratch change in `13f9d673`. One run per version. Time is to
+the accepted Grade picture and peaks are sampled
+physical footprint in decimal GB. The Lensfun Auto action includes RAW
+re-development and restoring 78% zoom after Grade opens the new source
+at Fit.
+
+| Action | Seconds before → after | Whole-app GB before → after | Backend GB before → after | Reduced Micro cache before → after |
+| --- | ---: | ---: | ---: | --- |
+| Open at Fit | 9.75 → 10.76 | 2.156 → 2.133 | 1.555 → 1.516 | — |
+| Enable Micro at Fit, lens off | 18.09 → 19.42 | 2.160 → 2.224 | 1.112 → 1.073 | — |
+| Zoom to 78%, lens off | 5.05 → 5.16 | 4.084 → 4.110 | 1.461 → 1.463 | — |
+| Enable Lensfun Auto and return to 78% | 59.31 → 61.99 | 4.044 → 4.050 | 2.068 → 2.144 | Dropped → kept |
+| Exposure +0.25 EV | 37.05 → 38.96 | 3.947 → 4.452 | 2.187 → 2.112 | Kept after rebuilding both times |
+| HDR → generated SDR | 2.42 → 2.32 | 3.580 → 3.468 | 1.746 → 1.631 | Reused both times |
+| Generated SDR → HDR | 0.10 → 0.11 | 3.036 → 2.992 | 1.160 → 1.216 | Kept both times |
+| Return to Fit | 0.01 → 0.01 | 3.036 → 2.898 | 1.160 → 1.019 | Kept both times |
+| Return to 78% | 0.01 → 0.01 | 3.036 → 2.898 | 1.160 → 1.019 | Kept both times |
+
+Very short actions can use the immediately preceding census sample. The first
+4096 px Micro preparation, isolated from RAW re-development, peaked at
+3.854 → 3.452 GB whole-app. The new Exposure run still rebuilt the preview
+after a whole-app pressure spike and cache trim. The Lensfun Auto action
+peaked during RAW re-development, before that Micro preparation.
+The Chromium GPU helper peaked at 1.845 GB during the lens-off zoom and
+1.759 GB during Lensfun Auto in the after run. The reduced HDR and generated
+SDR preview files matched SHA-256 in both runs.
+
+[Before](../../codebase/output/micro-lens-mem/before.jsonl) ·
+[After](../../codebase/output/micro-lens-mem/after.jsonl) ·
+[Run details](../../codebase/output/micro-lens-mem/result.txt)
+
 ## November 22, 2026 — MacBook Neo Proof memory
 
 MacBook Neo, A18 Pro, 8 GB, unpackaged Electron at 1408 × 794 under the shared
