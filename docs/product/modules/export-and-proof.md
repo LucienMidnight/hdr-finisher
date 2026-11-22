@@ -11,7 +11,8 @@ Proof converts SDR and calculates tile statistics in 128-row bands. It keeps
 the endpoint files for the two latest full-size artifacts. Full-size AVIF tiles
 are tone-mapped to temporary Y4M, then encoded with one worker and the same
 bitstream settings as the single-step helper. The single-step call still covers
-reduced tiles and systems without avifenc.
+reduced tiles and systems without avifenc. Reduced AVIF Proof keeps the GPU
+rendition pair until it has built the matrix endpoints.
 [MacBook Neo measurements](../../technical/performance-table.md#november-22-2026--macbook-neo-proof-memory)
 
 ## November 22 — Bounded AVIF preparation and peak check

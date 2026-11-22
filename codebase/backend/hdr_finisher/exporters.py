@@ -484,7 +484,9 @@ def _render_delivery_files(session, settings, adjustments, directory, *, render=
                                allocate_output=allocate))
                     for lane in (PreviewKind.HDR, PreviewKind.SDR))
         finally:
-            _release_delivery_pixels(session)
+            # Reduced Proof still renders its matrix endpoints after export.
+            if not getattr(settings, "_keep_proof_delivery_cache", False):
+                _release_delivery_pixels(session)
 
 
 def _release_delivery_pixels(session):

@@ -335,6 +335,8 @@ class ProofArtifactStore:
         export_settings = request.to_export_settings(str(staged))
         if storage is not None:
             object.__setattr__(export_settings, "_proof_endpoint_directory", Path(storage.name))
+        elif request.format == "avif_gain_map":
+            object.__setattr__(export_settings, "_keep_proof_delivery_cache", True)
         if full_size:
             export_settings.editing_measurements = {lane: {"peak": 0, "anchor": 0} for lane in ("hdr", "sdr")}
         try:

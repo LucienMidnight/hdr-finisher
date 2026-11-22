@@ -410,3 +410,51 @@ def test_delivery_shares_grain_only_for_matched_inputs(
     assert separate_counts == ((2, 2) if format_name == "avif_gain_map" else (1, 2))
     assert shared_outputs == separate_outputs
     assert shared_outputs[0] == shared_outputs[1]
+
+
+@pytest.mark.parametrize("full_size", [False, True])
+def test_avif_proof_uses_one_gpu_delivery_pair(backends, monkeypatch, tmp_path, full_size):
+    from hdr_finisher import gpu_delivery, proofing
+
+    capabilities, export_backends = backends
+    if capabilities[FORMATS["avif_gain_map"][0]].status != CapabilityStatus.AVAILABLE:
+        pytest.skip("AVIF Gain Map encoder unavailable")
+    session = _session(np.full((180, 300, 3), .18, np.float32))
+    session.local_adjustments = []
+    monkeypatch.setenv("HDR_FINISHER_PROOF_ROOT", str(tmp_path))
+    renders = 0
+
+    def render_pair(frame, settings, adjustments):
+        nonlocal renders
+        owner = frame.delivery_owner
+        cache = getattr(owner, "_delivery_cache", None)
+        if cache is None:
+            renders += 1
+            pair = {"hdr": np.full_like(frame.image, .72), "sdr": np.full_like(frame.image, .42)}
+            cache = ("current-grade", pair, {"renderer": "gpu", "fallback_reason": None})
+            owner._delivery_cache = cache
+        frame._delivery_cache = cache
+        frame._delivery_record = cache[2]
+        return cache[1]
+
+    monkeypatch.setattr(gpu_delivery, "render_pair", render_pair)
+    store = ProofArtifactStore()
+    try:
+        proof = store.create(session, ProofArtifactRequest(adjustments=session.adjustments,
+            format="avif_gain_map", long_edge=256, full_size=full_size), export_backends["avif_gain_map"])
+        assert proof.full_size is full_size
+        assert proof.renderer == "gpu"
+        assert renders == 1
+        artifact = store.artifact(proof.artifact_id)
+        shape = (proof.height, proof.width, 3)
+        hdr = np.full(shape, .72, np.float32)
+        sdr = proofing._sdr_matrix_band(np.full(shape, .42, np.float32))
+        if full_size:
+            assert session._delivery_cache is None
+            assert artifact.hdr_authored.path.read_bytes() == hdr.tobytes()
+            assert artifact.sdr_authored.path.read_bytes() == sdr.tobytes()
+        else:
+            np.testing.assert_array_equal(artifact.hdr_authored, hdr)
+            np.testing.assert_array_equal(artifact.sdr_authored, sdr)
+    finally:
+        store.clear()
