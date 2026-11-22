@@ -855,7 +855,7 @@ class SessionRenderCache:
         return model
 
     def micro_preview_source(self, frame, controls, edge, is_current):
-        from .denoise_micro_grain import unavailable_reason
+        from .denoise_micro_grain import preparation_key, unavailable_reason
         from .diagnostics import log
         from .grain_work import current_check
 
@@ -873,12 +873,11 @@ class SessionRenderCache:
             return downsample_image(frame.image, edge), None
 
         path = Path(frame.source_path)
-        settings = frame.raw_import_settings
-        stat = path.stat()
-        source_key = (path, stat.st_mtime_ns, stat.st_size, settings.model_dump_json())
+        source_key = preparation_key(frame)
         lens_applied = bool(frame.metadata.get("lens_correction", {}).get("applied"))
         exif = frame.metadata.get("raw_exif", {})
-        lens_key = (lens_applied, *(exif.get(name) for name in ("focal_length_mm", "aperture",
+        lens_key = (lens_applied, frame.raw_import_settings.lens.model_dump_json(),
+                    *(exif.get(name) for name in ("focal_length_mm", "aperture",
                     "focus_distance_m", "camera_maker", "camera_model", "lens_maker", "lens_model", "lens_name")))
         key = (epoch, source_key, lens_key, controls, edge)
         photo = {"id": str(path), "name": path.name}
@@ -1027,14 +1026,17 @@ class SessionRenderCache:
             self._micro_render_lock.release()
 
     def _micro_source(self, frame, epoch, source_key, cancelled):
-        from .denoise_micro_grain import MicroGrainSource
+        from .denoise_micro_grain import MicroGrainSource, take_recent_preparation
 
         with self._lock:
             source = self._micro_prepared.get(source_key)
             if source is not None:
                 self._touch_ram_locked("_micro_prepared", source_key)
         if source is None:
-            source = MicroGrainSource(frame.source_path, frame.raw_import_settings, cancelled=cancelled)
+            if frame.metadata.get("lens_correction", {}).get("applied"):
+                source = take_recent_preparation(source_key)
+            if source is None:
+                source = MicroGrainSource(frame.source_path, frame.raw_import_settings, cancelled=cancelled)
             if cancelled():
                 raise StaleRender("The CPU Micro Grain preview was replaced.")
             with self._lock:
@@ -1048,7 +1050,9 @@ class SessionRenderCache:
 
     def micro_preview_region(self, frame, controls, adjustments, kind, viewport, local_adjustments, is_current):
         from .adjustments import FrameWindow, apply_fixed_source_adjustments
-        from .denoise_micro_grain import MicroPreviewTiles, MicroRegionRefused, _lens_region, _vignette_region, unavailable_reason
+        from .denoise_micro_grain import (
+            MicroPreviewTiles, MicroRegionRefused, _lens_region, _vignette_region, preparation_key, unavailable_reason,
+        )
         from .diagnostics import log
         from .finishing import _crop_bounds
         from .grain_work import current_check
@@ -1095,8 +1099,7 @@ class SessionRenderCache:
         }[geometry.rotation]
 
         path = Path(frame.source_path)
-        stat = path.stat()
-        source_key = (path, stat.st_mtime_ns, stat.st_size, frame.raw_import_settings.model_dump_json())
+        source_key = preparation_key(frame)
         epoch = self._micro_source_epoch
         parent = current_check()
         started = time.perf_counter()

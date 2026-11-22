@@ -320,6 +320,48 @@ def test_gpu_micro_source_admitted_and_reclaimed(micro_frame):
         _trim_recent_source(0)
 
 
+@pytest.mark.parametrize("changed", [None, "cleanup", "highlights", "file", "fingerprint"])
+def test_lens_toggle_reuses_only_matching_bayer_preparation(micro_frame, changed):
+    from hdr_finisher.denoise_micro_grain import _trim_recent_source, prepare_source
+
+    frame, controls, built, _ = micro_frame
+    micro = MicroGrainControls.from_settings(controls)
+    off = frame.raw_import_settings
+    lens = off.lens.model_copy(update={"mode": "auto"})
+    frame.raw_import_settings = off.model_copy(update={"lens": lens})
+    # Cold reconstruction is the old path: prepare from the RAW, render,
+    # then apply the new lens settings and reduce the result.
+    expected = downsample_image(denoise_micro_grain.resolve_source(frame, micro, cancelled=lambda: False), 256)
+
+    frame.raw_import_settings = off
+    frame.metadata["lens_correction"]["applied"] = False
+    frame.source_fingerprint_sha256 = "original"
+    initial = app_memory.cache_snapshot()["working"]["bytes"]
+    try:
+        prepare_source(frame)
+        assert len(built) == 2
+        frame.raw_import_settings = off.model_copy(update={"lens": lens}, deep=True)
+        frame.metadata["lens_correction"]["applied"] = True
+        if changed == "cleanup":
+            frame.raw_import_settings.pixel_cleanup.remove_hot_pixels = True
+        elif changed == "highlights":
+            frame.raw_import_settings.highlight_reconstruction.clipping_threshold = 0.95
+        elif changed == "file":
+            frame.source_path.write_bytes(b"updated file")
+        elif changed == "fingerprint":
+            frame.source_fingerprint_sha256 = "replacement"
+
+        actual, _ = frame.render_cache.micro_preview_source(frame, micro, 256, None)
+        assert actual.tobytes() == expected.tobytes()
+        if changed is None:
+            assert len(built) == 2
+            assert app_memory.cache_snapshot()["working"]["bytes"] == initial + actual.nbytes + 320 * 272 * 2
+        else:
+            assert len(built) == 3
+    finally:
+        _trim_recent_source(0)
+
+
 def test_parallel_measurement_reads_each_window_once():
     from hdr_finisher.denoise_adaptive import _WindowSource
 

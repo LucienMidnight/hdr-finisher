@@ -494,6 +494,28 @@ def _trim_recent_source(_target):
 app_memory.register(_SOURCE_RAM_KEY, "working", _trim_recent_source)
 
 
+def preparation_key(frame):
+    path = Path(frame.source_path)
+    stat = path.stat()
+    # Lensfun is applied to the finished Micro RGB, after the sensor
+    # preparation and noise fit. Keep every other RAW setting in this key.
+    return (path, stat.st_mtime_ns, stat.st_size, getattr(frame, "source_fingerprint_sha256", None),
+            frame.raw_import_settings.model_dump_json(exclude={"lens"}))
+
+
+def take_recent_preparation(key):
+    """Hand the admitted GPU preparation to the CPU session cache."""
+    with _source_lock:
+        if key != _recent_source[0]:
+            return None
+        source = _recent_source[1]
+        _trim_recent_source(0)
+    # Tiles belong to the GPU cache. Clear them outside the source lock:
+    # GPU region reads may take the tile lock first.
+    source.clear_bayer_cache()
+    return source
+
+
 def prepare_source(frame, *, cancelled=None, retain=True):
     global _recent_source
     if reason := unavailable_reason(frame):
@@ -501,8 +523,7 @@ def prepare_source(frame, *, cancelled=None, retain=True):
     owner = getattr(frame, "delivery_owner", frame)
     path = Path(owner.source_path)
     settings = owner.raw_import_settings
-    stat = path.stat()
-    key = path, stat.st_mtime_ns, stat.st_size, settings.model_dump_json()
+    key = preparation_key(owner)
     with _prepare_lock:
         with _source_lock:
             if key == _recent_source[0]:
