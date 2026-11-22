@@ -206,6 +206,9 @@ class _DeliveryGrain:
     mapped_shape: tuple[int, ...] | None = None
     mapped_dtype: np.dtype | None = None
 
+    def resolved(self) -> bool:
+        return self.pixels is not None or self.mapped_shape is not None
+
     def resolve(self, render):
         if self.pixels is not None:
             return self.pixels
@@ -272,6 +275,8 @@ def delivery_denoise_inputs(session, kind, adjustments):
         if source_filter is not None:
             resolve_source = source_filter
             source_filter = lambda image, authored: shared.resolve(lambda: resolve_source(image, authored))
+            # A later rendition gets the shared pixels without its own geometry pass.
+            source_filter.resolved = shared.resolved
         else:
             source = shared.resolve(resolve_source)
     elif source_filter is None:
@@ -474,6 +479,8 @@ def _prepared_delivery_source(session, adjustments, kind):
         reference = apply_geometry(reference, geometry)
     if _authored_sdr_base(session, kind, adjustments):
         return apply_geometry(source, geometry), source_filter(reference, True), fixed_adjustments
+    if getattr(source_filter, "resolved", lambda: False)():
+        return source_filter(None, False), reference, fixed_adjustments
     return source_filter(apply_geometry(source, geometry), False), reference, fixed_adjustments
 
 
@@ -658,7 +665,9 @@ def _execute_export(
         _require_overwrite_permission(output_path, settings)
         jxl_lease = _reserve_high_fidelity_jxl(session, settings)
         _start_progress(session, settings)
-        prepared = prepare()
+        from .local_adjustments import share_fixed_masks
+        with share_fixed_masks():
+            prepared = prepare()
         from .retouch_routes import delivery_record
         rendering = delivery_record(session, getattr(session, "_delivery_record", rendering))
         with NamedTemporaryFile(

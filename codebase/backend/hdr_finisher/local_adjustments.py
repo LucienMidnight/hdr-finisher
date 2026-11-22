@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from contextvars import ContextVar
+from contextlib import contextmanager
 from .export_timing import timed as _timed_stage
 from concurrent.futures import wait
 from .cpu_budget import CpuExecutor
@@ -201,12 +203,44 @@ def compile_geometry_fixed_mask(
     """
     mask_checkpoint()
     mask_expression = spatial_mask_expression(expression) if spatial_only else expression
+    memo = _fixed_mask_memo.get()
+    key = None
+    if memo is not None:
+        key = (id(source), source.shape, mask_expression.model_dump_json(), geometry.model_dump_json(), screen)
+        if key in memo:
+            return memo[key][1]
     source_mask = compile_preview_mask(source, mask_expression, GeometryAdjustments())
     mask_checkpoint()
     fixed = apply_geometry(source_mask[..., None], geometry, screen=screen)[..., 0]
     if fixed.dtype == np.uint8:
-        return np.ascontiguousarray(fixed)
-    return np.rint(np.clip(fixed, 0.0, 255.0)).astype(np.uint8)
+        fixed = np.ascontiguousarray(fixed)
+    else:
+        fixed = np.rint(np.clip(fixed, 0.0, 255.0)).astype(np.uint8)
+    if memo is not None:
+        # Shared between renditions: nobody may change it in place.
+        fixed.flags.writeable = False
+        memo[key] = (source, fixed)
+    return fixed
+
+
+_fixed_mask_memo: ContextVar[dict | None] = ContextVar("fixed_mask_memo", default=None)
+
+
+@contextmanager
+def share_fixed_masks():
+    """Compile each geometry-fixed mask once for an export's renditions.
+
+    HDR and SDR compile the same spatial mask from the same source, mask and
+    geometry; within this scope the second rendition reuses the first's.
+    """
+    if _fixed_mask_memo.get() is not None:
+        yield
+        return
+    token = _fixed_mask_memo.set({})
+    try:
+        yield
+    finally:
+        _fixed_mask_memo.reset(token)
 
 
 # A feathered luminance mask is a plain blur, so a region of it is exact once

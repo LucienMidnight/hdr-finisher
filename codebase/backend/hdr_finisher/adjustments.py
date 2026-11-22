@@ -136,7 +136,22 @@ def apply_adjustments(
 ) -> np.ndarray:
     color_context = color_context or RenderColorContext()
     geometry = adjustments.shared.geometry
-    fixed_source = apply_geometry(image, geometry)
+    fixed_reference = (
+        apply_geometry(sdr_reference_image, geometry)
+        if kind == PreviewKind.SDR
+        and sdr_reference_image is not None
+        and adjustments.sdr.use_authored_base
+        else None
+    )
+    filters_reference = fixed_reference is not None and not adjustments.sdr.linked_to_hdr
+    if (source_filter is not None and not filters_reference
+            and getattr(source_filter, "resolved", lambda: False)()):
+        # A shared export source already holds the filtered, geometry-fixed
+        # pixels; warping this frame again would only be thrown away.
+        fixed_source = source_filter(None, False)
+        source_filter = None
+    else:
+        fixed_source = apply_geometry(image, geometry)
     if local_adjustments and compiled_local_masks is None:
         from .local_adjustments import compile_geometry_fixed_mask, has_hue_mask
 
@@ -147,15 +162,8 @@ def apply_adjustments(
             for local in local_adjustments
             if local.enabled and local.opacity > 0.0 and not has_hue_mask(local.mask)
         }
-    fixed_reference = (
-        apply_geometry(sdr_reference_image, geometry)
-        if kind == PreviewKind.SDR
-        and sdr_reference_image is not None
-        and adjustments.sdr.use_authored_base
-        else None
-    )
     if source_filter is not None:
-        if fixed_reference is not None and not adjustments.sdr.linked_to_hdr:
+        if filters_reference:
             fixed_reference = source_filter(fixed_reference, True)
         else:
             fixed_source = source_filter(fixed_source, False)
