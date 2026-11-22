@@ -1,3 +1,90 @@
+## November 22, 2026 — Windows PC Grade Micro Grain with Lensfun
+
+Windows PC with a Ryzen 5 7600 and GeForce RTX 4070 Ti, unpackaged Electron
+at 2560 × 1440 under the shared GPU lock. Sony `_DSC7970.ARW` (42 MP),
+signed AHD, speck cleanup ×2.5, GPU Auto, generated SDR and the default 4 GB
+app limit. One `--micro-lens-memory` replay at `4ee831eb` and one at
+`3cc51a90`. Peaks are independently sampled proportional resident memory
+in decimal GB. Short actions can use the preceding sample.
+
+| Action | Seconds before → after | Whole app GB before → after | Backend GB before → after | GPU helper GB before → after |
+| --- | ---: | ---: | ---: | ---: |
+| Open at Fit | 18.011 → 19.085 | 2.428 → 2.477 | 1.538 → 1.617 | 0.471 → 0.452 |
+| Micro Grain at Fit, lens off | 19.453 → 20.012 | 2.099 → 2.099 | 0.920 → 0.941 | 0.597 → 0.617 |
+| Zoom to 78%, lens off | 5.808 → 6.027 | 2.819 → 2.827 | 1.555 → 1.546 | 0.588 → 0.593 |
+| Lensfun Auto at 78% | 46.296 → 41.282 | 3.155 → 3.397 | 2.053 → 2.262 | 0.570 → 0.580 |
+| Exposure +0.25 EV | 2.035 → 2.014 | 2.618 → 2.495 | 1.056 → 1.077 | 0.568 → 0.563 |
+| HDR to generated SDR | 2.546 → 2.484 | 2.435 → 2.445 | 1.227 → 1.252 | 0.564 → 0.555 |
+| Generated SDR to HDR | 0.064 → 0.064 | 2.350 → 2.445 | 1.131 → 1.252 | 0.563 → 0.548 |
+| Return to Fit | 0.012 → 0.081 | 2.350 → 2.415 | 1.131 → 1.157 | 0.563 → 0.547 |
+| Return to 78% | 0.078 → 0.012 | 2.350 → 2.415 | 1.131 → 1.157 | 0.563 → 0.547 |
+
+Both Lensfun runs kept zoom and pan. The current run built only the 4096 px
+Micro preview for the lens change and reused the GPU's matching Bayer
+preparation in 13 ms. The two lens stages together fell from 6.169 to
+0.580 s. Exposure and generated SDR reused the 4096 px source. All four
+reduced HDR and generated SDR SHA-256 comparisons matched. Micro scratch
+closed in the targeted success and cancellation tests for both coordinate
+layouts. The highest sampled current summed Windows working set was
+3.953 GB during the full replay.
+
+At 78%, with Micro using the native 7968 px processing step, the
+3473 × 1877 finished HDR viewport matched the same region of the
+7968 × 5320 whole-photo GPU surface byte for byte. An 800 px horizontal
+scroll produced a new sharp region covering the view. The RAW reload
+tests also passed pan clamping when the frame became smaller.
+
+## November 22, 2026 — Windows PC native Lensfun
+
+Windows PC, Ryzen 5 7600 (6 cores, 12 threads). Three alternating pairs
+of fresh RAW development processes per photo at `4ee831eb` and `3cc51a90`,
+using signed AHD and speck cleanup ×2.5. Canon used the manual EF-S
+18–135 mm IS profile because Auto found no unique match. Sony used the
+automatic Sigma 65 mm F2 profile. Peak is the backend lifetime working
+set read immediately after lens correction, before finishing SDR.
+
+| RAW | Lens seconds before, median (range) | Lens seconds after, median (range) | Peak MB before, median (range) | Peak MB after, median (range) |
+| --- | ---: | ---: | ---: | ---: |
+| Canon `IMG_0790.CR2`, 5202 × 3464 | 1.289 (1.279–1.324) | 0.145 (0.145–0.148) | 588.5 (587.9–589.2) | 590.9 (585.7–591.2) |
+| Sony `_DSC7970.ARW`, 7968 × 5320 | 2.694 (2.666–2.743) | 0.254 (0.254–0.255) | 1204.1 (1203.2–1204.5) | 1220.8 (1216.9–1230.5) |
+
+All six runs per photo matched on corrected float32 pixels, SDR float32
+pixels and finished 8-bit SDR. The 21 targeted Lensfun tests passed,
+including exact comparisons against whole-frame correction for both
+coordinate layouts and RAW profile selection. No strip warnings appeared
+during normal development. Setup built `lens_correction.dll`. The PyInstaller
+backend also loaded the bundled DLL and applied Lensfun Auto to the Sony.
+
+## November 22, 2026 — Windows PC AVIF delivery memory
+
+Windows PC with a Ryzen 5 7600 and GeForce RTX 4070 Ti, unpackaged
+Electron at 2560 × 1440 under the shared GPU lock. Full-size
+`_DSC7970.ARW` (7968 × 5320), Clean Grain Small, Lensfun off, CPU delivery,
+Q90 AVIF Gain Map and peak guarantee on. One run on `1d0b6720` before
+file-backed delivery and one on `3cc51a90`. The control used the full-size
+CPU noise measurement saved by the current export. Both Proof runs reused
+that exact measurement.
+
+| Action | To result before → after | App meter GB before → after | Summed working sets GB before → after |
+| --- | ---: | ---: | ---: |
+| Full-size AVIF export | 52.65 → 57.87 s | 4.615 → **3.568** | 5.375 → **4.099** |
+| Full-size AVIF Proof | 106.50 → 101.79 s | 4.582 → **3.483** | 5.904 → **4.029** |
+
+The app uses proportional resident Windows pages for its 4 GB budget. Both
+actions stayed below that limit. Summing the ordinary Windows process working
+sets counts shared pages in each process that maps them and exceeded 4 GB
+by 99 MB for export and 29 MB for Proof.
+
+The delivered AVIF and full-size Proof artifact shared the same SHA-256 in
+both revisions (`2183cf282d1079f58e1da00b2f4f36a58b1505022888d2c79da167a3e0e941c1`).
+Both Proof tile files and all reported tile statistics matched. HDR and SDR
+tile peaks were 329.3 and 162.2 nits, respectively, with 0% clipped for each.
+The logs recorded zero ceiling retries. Targeted tests exercised ceiling
+retry isolation, banded AVIF tile parity and endpoint eviction. Electron
+removed the Proof scratch root on normal quit. After the forced quit of the
+full Proof run, a relaunch swept the abandoned artifact, tiles and endpoints
+once the test root was aged past the five-minute grace period.
+
 ## November 22, 2026 — Weighted Bayer fit checks
 
 MacBook Neo, A18 Pro and 8 GB, unpackaged Electron at 1408 × 794 under the
