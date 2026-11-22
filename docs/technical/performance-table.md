@@ -1,3 +1,43 @@
+## November 22, 2026 — Windows private commit
+
+Windows PC, Ryzen 5 7600 and GeForce RTX 4070 Ti, unpackaged Electron at
+2560 × 1440 under the shared GPU lock. Fixed 6 GB whole-app default
+with the private-commit implementation in `2887a469`.
+Delivery used the same 42 MP Sony `_DSC7970.ARW`, Clean Grain Small,
+Lensfun off, CPU delivery, Q90 AVIF Gain Map and peak guarantee as the
+previous Windows run. Memory peaks below are sampled private commit in
+decimal GB.
+
+| Action | To result | Whole-app private commit | Memory outcome |
+| --- | ---: | ---: | --- |
+| Cold launch, no photo open | 5 samples at 15–19 s after the window was ready | 1.714 GB idle | No Grade source or active reservations |
+| Full-size AVIF export | 56.81 s | 5.388 GB peak | 0.612 GB below the limit |
+| Full-size AVIF Proof | 101.91 s | 5.194 GB peak | 0.806 GB below the limit |
+| 90-second Library viewport | 1.20 s to first picture, 60.7 s to the 30th | 5.558 GB in-app peak, 5.391 GB independent peak, 2.512 GB at end | All 30 eligible photos pictured |
+
+The delivery rerun kept the export's native CPU noise measurement for Proof
+by holding back the renderer's native GPU measurement publication in the
+test. The first unpinned run reproduced the existing R2-7 race: the export
+matched, then Proof picked up the GPU measurement that finished during
+export and its bytes differed. With the same measurement, export, Proof and
+both Proof tiles matched the previous hashes, with tile peaks of 329.3 HDR
+and 162.2 SDR nits and 0% clipping. The export and Proof SHA-256 was
+`2183cf282d1079f58e1da00b2f4f36a58b1505022888d2c79da167a3e0e941c1`.
+Neither delivery action logged a memory refusal, a trim or a ceiling retry.
+
+Library had one moderate cache trim when the in-app sample crossed the
+5.4 GB cache target. The 6.83 GB estimate for the line-scan DNG correctly
+hit the admission limit. There were no spurious refusals or trim loops.
+The app and independent sampler have different sampling clocks.
+
+A real child process committed 128 MiB and touched every page. Allowing
+1 MiB for the interpreter and pipe handshake, its charge rose by 128.25 MiB
+(6,500,352 to 140,980,224 bytes). `EmptyWorkingSet` reduced the working
+set from 147,492,864 to 1,208,320 bytes, with the charge still at
+140,980,224 bytes. Mocked headroom tests covered each limiting source and
+the 16 GiB budget tests confirmed that default cache shares stayed flat.
+[Windows memory policy](../product/modules/memory-and-caches.md#november-22-windows-private-commit-and-6-gb-default)
+
 ## November 22, 2026 — Windows PC Grade Micro Grain with Lensfun
 
 Windows PC with a Ryzen 5 7600 and GeForce RTX 4070 Ti, unpackaged Electron
@@ -70,7 +110,7 @@ that exact measurement.
 | Full-size AVIF export | 52.65 → 57.87 s | 4.615 → **3.568** | 5.375 → **4.099** |
 | Full-size AVIF Proof | 106.50 → 101.79 s | 4.582 → **3.483** | 5.904 → **4.029** |
 
-The app uses proportional resident Windows pages for its 4 GB budget. Both
+This run used proportional resident Windows pages for its then-current 4 GB budget. Both
 actions stayed below that limit. Summing the ordinary Windows process working
 sets counts shared pages in each process that maps them and exceeded 4 GB
 by 99 MB for export and 29 MB for Proof.

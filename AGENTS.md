@@ -406,14 +406,6 @@ same-Mac v0.9.2 comparisons and exact errors: `docs/known-limitations.md`,
    runner retry (stale metadata on the first post-fix attempt). Local adjustment
    overlay and codec-source checks also have explicit flaky results.
 
-**PC confirmation from the overnight Mac work (November 22):**
-
-10. The Sony Clean Small full-size AVIF and Proof files, tiles, statistics,
-    ceiling retry isolation and Proof scratch cleanup passed on Windows.
-    The app's 4 GB meter passed (3.568 GB export, 3.483 GB Proof). The summed
-    ordinary working sets reached 4.099 GB and 4.029 GB. Confirm whether the
-    ordinary working-set sum is also required to stay under 4 GB.
-
 ## Disk space and test output
 
 Steve, October 28, 2026, after test and measurement output filled drive D
