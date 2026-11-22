@@ -1275,6 +1275,11 @@ Later, after v1: lens correction as a GPU warp after GPU Micro Grain
   computes coordinates from the top of the photo down to the view
   (`denoise_micro_grain._lens_region`); the new exact strips could bound it to
   the view.
+- **Steve's note, Nov 22: check before the hand test.** A test run showed
+  batch export's notice ("1 photo needs a look before exporting. Details are
+  on each photo below.", `frontend/batch-export.js`) as bare yellow text over
+  the Export preview, with no background and outside the batch list. Confirm
+  whether the real app does this; it may be leftover code or test state.
 
 ## Out of scope
 
