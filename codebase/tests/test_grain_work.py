@@ -164,3 +164,60 @@ def test_large_cpu_jobs_share_a_limit_without_blocking_unrelated_work():
     finally:
         released.set()
         pool.pool.shutdown()
+
+
+def test_export_grain_on_several_workers_matches_the_serial_render():
+    from hdr_finisher.adjustments import EXPORT_GRAIN_CHUNK_ROWS, grain_export_workers
+    from hdr_finisher.export_timing import export_clock
+    height = 700
+    assert grain_export_workers(height, EXPORT_GRAIN_CHUNK_ROWS) > 1
+    image = np.random.default_rng(5).random((height, 96, 3), dtype=np.float32) * 2
+    for lane in PreviewKind:
+        look = FilmLookAdjustments(grain_amount=70, grain_size=60, grain_chroma=40, grain_film_type="color_negative")
+        for delta in (False, True):
+            serial = _apply_density_grain(image, look, lane, 271828, np.float32(1), density_delta=delta)
+            with export_clock():
+                parallel = _apply_density_grain(image, look, lane, 271828, np.float32(1), density_delta=delta)
+            assert parallel.dtype == serial.dtype == np.float32
+            np.testing.assert_array_equal(parallel, serial, err_msg=f"{lane.value} delta={delta}")
+
+
+def test_wide_grain_allocation_stays_within_its_slots_and_yields_to_grade():
+    from hdr_finisher import grain_work
+    import time
+    active, most, lock = 0, 0, threading.Lock()
+    order = []
+
+    def wide(label):
+        nonlocal active, most
+        with grain_allocation(slots=3):
+            with lock:
+                active += 1
+                most = max(most, active)
+            time.sleep(.02)
+            order.append(label)
+            with lock:
+                active -= 1
+
+    def grade():
+        with grain_allocation():
+            order.append("grade")
+
+    deadline = time.monotonic() + 2
+    with grain_allocation():
+        waiting_grade = threading.Thread(target=grade)
+        waiting_grade.start()
+        while not grain_work._narrow_waiters and time.monotonic() < deadline:
+            time.sleep(.001)
+        exports = [threading.Thread(target=wide, args=(f"export{index}",)) for index in range(6)]
+        for worker in exports:
+            worker.start()
+        while grain_work._foreground_waiters < 7 and time.monotonic() < deadline:
+            time.sleep(.001)
+        assert not order
+    waiting_grade.join(2)
+    for worker in exports:
+        worker.join(2)
+    # The queued Grade chunk is served before any export chunk starts.
+    assert order[0] == "grade" and len(order) == 7
+    assert most <= 3 and grain_work._holders == 0

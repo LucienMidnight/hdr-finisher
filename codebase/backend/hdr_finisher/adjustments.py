@@ -51,6 +51,11 @@ FILM_SPATIAL_REFERENCE_DIAGONAL_MM = float(np.hypot(36.0, 24.0))
 # Grain renders in row chunks on a few threads; NumPy releases the GIL for
 # the heavy array work, and each chunk is exact on its own.
 GRAIN_CHUNK_ROWS = 128
+# Export renders Film Grain in smaller chunks on several workers (same bytes).
+EXPORT_GRAIN_CHUNK_ROWS = 32
+# Peak scratch of one Film Grain chunk, bytes per pixel: 370 MB for a
+# 128 x 7206 colour-negative chunk on the MacBook Neo (November 22).
+GRAIN_SCRATCH_BYTES_PER_PIXEL = 400
 # HDR reference white (scene 0.18) onto SDR's (100 of 203 nits), for grain
 # development; mirrored in the shader.
 GRAIN_DEVELOP_HDR_SCALE = np.float32((100.0 / 203.0) / 0.18)
@@ -2422,20 +2427,82 @@ def _apply_density_grain(
         base = np.full_like(part, neutral) if view_map else part
         return np.maximum(base, 0.0) * np.exp2(noise * (response * amount)[..., None])
 
-    bounds = list(range(0, region_height, GRAIN_CHUNK_ROWS)) + [region_height]
-    spans = list(zip(bounds[:-1], bounds[1:]))
+    from .export_timing import active_clock, tick
     from .grain_work import grain_allocation, checkpoint
-    from .export_timing import tick
-    parts = []
-    for done, (first, last) in enumerate(spans, 1):
-        checkpoint()
-        with grain_allocation():
-            parts.append(render(first, last))
-        tick(done, len(spans))
-    result = parts[0] if len(parts) == 1 else np.concatenate(parts, axis=0)
+    if active_clock() is not None and region_height > EXPORT_GRAIN_CHUNK_ROWS:
+        result = _render_grain_chunks_in_parallel(render, region_height)
+    else:
+        bounds = list(range(0, region_height, GRAIN_CHUNK_ROWS)) + [region_height]
+        spans = list(zip(bounds[:-1], bounds[1:]))
+        parts = []
+        for done, (first, last) in enumerate(spans, 1):
+            checkpoint()
+            with grain_allocation():
+                parts.append(render(first, last))
+            tick(done, len(spans))
+        result = parts[0] if len(parts) == 1 else np.concatenate(parts, axis=0)
     if density_delta or not clip_output:
-        return result.astype(np.float32)
+        return result.astype(np.float32, copy=False)
+    if result.dtype == np.float32:
+        return np.clip(result, 0.0, None if kind == PreviewKind.HDR else 1.0, out=result)
     return np.clip(result, 0.0, None if kind == PreviewKind.HDR else 1.0).astype(np.float32)
+
+
+def grain_export_workers(height: int, rows: int, channels: int = 3) -> int:
+    """Concurrent Film Grain chunks an export may run.
+
+    The serial loop held its chunks, their concatenation and two more
+    whole-frame copies. The parallel path holds one preallocated frame, so it
+    may spend two frames of float32 scratch on concurrent chunks, plus the one
+    chunk the serial loop also had, and never more than the CPU pool.
+    """
+    from .cpu_budget import logical_cpus
+    frame_bytes_per_column = height * channels * 4
+    chunk_bytes_per_column = rows * GRAIN_SCRATCH_BYTES_PER_PIXEL
+    return max(1, min(logical_cpus(), 1 + (2 * frame_bytes_per_column) // chunk_bytes_per_column))
+
+
+def _render_grain_chunks_in_parallel(render, height: int) -> np.ndarray:
+    """Render the same fixed grain field in row chunks on several workers.
+
+    Grain is a fixed field over the frame, so any row chunk is exactly those
+    rows of a whole-frame render (checked byte for byte across chunk sizes);
+    only the order in time changes. Each chunk writes into one preallocated
+    output instead of a list that is concatenated afterwards.
+    """
+    from itertools import count
+    from threading import Lock
+    from .cpu_budget import CpuExecutor
+    from .export_timing import tick
+    from .grain_work import grain_allocation, checkpoint
+    rows = EXPORT_GRAIN_CHUNK_ROWS
+    spans = [(top, min(top + rows, height)) for top in range(0, height, rows)]
+    checkpoint()
+    with grain_allocation():
+        first = render(*spans[0])
+    result = np.empty((height, *first.shape[1:]), dtype=first.dtype)
+    result[:spans[0][1]] = first
+    del first
+    workers = min(grain_export_workers(height, rows, result.shape[-1]), len(spans) - 1)
+    following, finished, lock = count(1), count(2), Lock()
+
+    def runner():
+        while True:
+            with lock:
+                index = next(following)
+            if index >= len(spans):
+                return
+            top, bottom = spans[index]
+            checkpoint()
+            with grain_allocation(slots=workers):
+                result[top:bottom] = render(top, bottom)
+            tick(next(finished), len(spans))
+
+    tick(1, len(spans))
+    with CpuExecutor() as pool:
+        for future in [pool.submit(runner) for _ in range(workers)]:
+            future.result()
+    return result
 
 
 def _grain_development_signals(image: np.ndarray, kind: PreviewKind) -> tuple[np.ndarray, np.ndarray]:
