@@ -258,7 +258,7 @@ test('Electron load barrier remains blocked until main-frame completion and reje
 async function activateAtZoom({
   replace = true, previousSize = [6000, 4000], size = [6000, 4000],
   pan = [800, 600], extent = [1600, 1200], rotation = 0, pictureVisible = true, geometryDraft = false,
-  nativeDetail = false,
+  nativeDetail = false, cpuDetail = false,
 } = {}) {
   const { c } = harness();
   const view = { scrollLeft: pan[0], scrollTop: pan[1], clientWidth: 1000, clientHeight: 700 };
@@ -273,7 +273,8 @@ async function activateAtZoom({
   Object.assign(c.state, { zoomMode: 'custom', zoomPercent: 78, adjustments: { shared: { geometry: {} } },
     denoise: { hdr: { enabled: true } } });
   c.els.dropzone = view;
-  c.els.previewCanvas = { style: { display: 'block' }, hdrFrameRegion: nativeDetail ? { x: 10 } : null };
+  c.els.previewCanvas = { style: { display: 'block' }, hdrFrameRegion: nativeDetail ? { x: 10 } : null,
+    hdrCpuMicroRegion: cpuDetail };
   c.els.chromeProofImage = { style: { display: 'none' } };
   const renders = [];
   const snapshot = () => [c.state.zoomMode, c.state.zoomPercent, view.scrollLeft, view.scrollTop];
@@ -292,7 +293,9 @@ async function activateAtZoom({
     },
     settledProxyLongEdge: () => c.state.zoomMode === 'custom' ? 4096 : 1280,
     renderGpuDraft: async (lane, { longEdge }) => {
-      if (nativeDetail) assert.equal(Boolean(c.els.previewCanvas.hdrFrameRegion), c.state.zoomMode === 'custom');
+      if (nativeDetail) {
+        assert.equal(Boolean(c.els.previewCanvas.hdrFrameRegion), cpuDetail || c.state.zoomMode === 'custom');
+      }
       renders.push(['gpu', longEdge, ...snapshot()]);
       return false;
     },
@@ -328,6 +331,13 @@ test('same-photo RAW redevelopment falls back to Fit if the old coordinates no l
       ['fit', 'fit', 100, 0, 0],
     ]);
   }
+});
+
+test('RAW redevelopment at Fit keeps the CPU Micro underlayer while recomputing geometry', async () => {
+  assert.deepEqual(await activateAtZoom({ rotation: 180, nativeDetail: true, cpuDetail: true }), [
+    ['gpu', 1280, 'fit', 100, 0, 0],
+    ['fit', 'fit', 100, 0, 0],
+  ]);
 });
 
 test('a different photo starts at Fit even when it has the same dimensions', async () => {

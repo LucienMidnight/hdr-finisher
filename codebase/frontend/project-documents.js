@@ -359,7 +359,6 @@ async function activateDesktopSession(session, projectPath, openGeneration = nul
     && session.session_id === replaceSessionId);
   const zoom = redevelopment ? retainedRedevelopmentZoom(session) : null;
   retireActiveSession(session.session_id, { preservePicture: redevelopment });
-  if (redevelopment && !zoom) clearDenoiseDetail();
   gradeOpening.reset(openingJobId);
   if (!stayOnTab) collapseGradeModules();
   state.session = session;
@@ -389,6 +388,7 @@ async function activateDesktopSession(session, projectPath, openGeneration = nul
   renderLocalAdjustments();
   seedExportFieldsFromSession();
   if (redevelopment) {
+    if (holdingNativeDenoisePictureForFit()) clearDenoiseDetail();
     applyZoomGeometry();
     const viewport = els.dropzone;
     viewport.scrollLeft = clamp(zoom?.left ?? 0, 0, Math.max(0, viewport.scrollWidth - viewport.clientWidth));
