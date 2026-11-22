@@ -52,6 +52,7 @@ MATRIX_HEADROOMS = (0.0, 1.0, 2.0, 3.0, 4.0)
 # well above the interactive preview's quality so what the tile shows is the
 # reconstruction and not the tile encoder.
 PROOF_TILE_QUALITY = 95
+_PROOF_RECONSTRUCTION_ROWS = 128
 
 
 @dataclass
@@ -78,6 +79,7 @@ class ProofArtifact:
     delivery_notes: tuple[str, ...] = ()
     jpeg_decoded: Path | None = None
     jpeg_gain_range: tuple[np.ndarray, np.ndarray] | None = None
+    authored_gain_range: tuple[np.ndarray, np.ndarray] | None = None
 
 
 @dataclass
@@ -159,6 +161,24 @@ def _endpoint_log_gain(base, alternate, offset_sdr, offset_hdr):
     return np.log(alternate + offset_hdr) - np.log(base + offset_sdr)
 
 
+def _endpoint_gain_range(log_gain_bands):
+    # Match the whole-frame channel extrema, including NaN propagation.
+    gain_min = np.full(3, np.inf, dtype=np.float32)
+    gain_max = np.full(3, -np.inf, dtype=np.float32)
+    for log_gain in log_gain_bands:
+        gain_min = np.minimum(gain_min, np.min(log_gain, axis=(0, 1)))
+        gain_max = np.maximum(gain_max, np.max(log_gain, axis=(0, 1)))
+    return gain_min, gain_max
+
+
+def _authored_log_gain_bands(base, alternate, offset_sdr, offset_hdr):
+    for top in range(0, len(base), _PROOF_RECONSTRUCTION_ROWS):
+        rows = slice(top, top + _PROOF_RECONSTRUCTION_ROWS)
+        base_rgb = np.clip(base[rows, :, :3].astype(np.float32, copy=False), 0.0, None)
+        alternate_rgb = np.clip(alternate[rows, :, :3].astype(np.float32, copy=False), 0.0, None)
+        yield base_rgb, _endpoint_log_gain(base_rgb, alternate_rgb, offset_sdr, offset_hdr)
+
+
 def _endpoint_gain_parameters(encoded_headroom, display_ratio_sdr, offset_sdr, offset_hdr, gain_min, gain_max):
     return GainMapParameters(
         display_ratio_sdr=max(float(display_ratio_sdr), 1e-8),
@@ -214,7 +234,7 @@ class ProofArtifactStore:
         self._target_cache: dict[str, ProofMatrixTile] = {}
         self._endpoint_cache: dict[str, tuple[np.ndarray, np.ndarray]] = {}
         self._endpoint_locks = {}
-        self._full_jpeg_tile_lock = Lock()
+        self._full_tile_lock = Lock()
         atexit.register(self.clear)
 
     def clear(self) -> None:
@@ -500,14 +520,16 @@ class ProofArtifactStore:
     ) -> ProofMatrixTile:
         resolved_target = min(max(float(target), 0.0), max(artifact.encoded_headroom, 0.0))
         cache_key = f"{artifact.artifact_id}:{resolved_target:.6f}"
-        # The two UI targets arrive together. Serialize full-size JPEG tile
-        # builds so their native encoders cannot overlap in memory.
-        with self._full_jpeg_tile_lock if artifact.jpeg_decoded is not None else nullcontext():
+        # The two UI targets arrive together. Serialize full-size tile builds
+        # so their reconstruction and native encoders cannot overlap.
+        with self._full_tile_lock if artifact.full_size else nullcontext():
             with self._lock:
                 cached = self._target_cache.get(cache_key)
             if cached is None:
                 if artifact.jpeg_decoded is not None:
                     tile_bytes, peak_nits, clipped = self._jpeg_target_tile(artifact, resolved_target)
+                elif artifact.full_size and artifact.format != "jpeg_ultrahdr":
+                    tile_bytes, peak_nits, clipped = self._authored_target_tile(artifact, resolved_target)
                 else:
                     base_endpoint, alternate_endpoint = self._matrix_endpoints(artifact)
                     reconstructed = reconstruct_from_endpoints(
@@ -574,13 +596,10 @@ class ProofArtifactStore:
                 if artifact.jpeg_gain_range is None:
                     # Normalization uses whole-image channel extrema even
                     # though reconstruction and conversion run strip by strip.
-                    gain_min = np.full(3, np.inf, dtype=np.float32)
-                    gain_max = np.full(3, -np.inf, dtype=np.float32)
-                    for base, alternate in _jpeg_endpoint_bands(primary, raw, artifact):
-                        log_gain = _endpoint_log_gain(base, alternate, offset_sdr, offset_hdr)
-                        gain_min = np.minimum(gain_min, np.min(log_gain, axis=(0, 1)))
-                        gain_max = np.maximum(gain_max, np.max(log_gain, axis=(0, 1)))
-                    artifact.jpeg_gain_range = gain_min, gain_max
+                    artifact.jpeg_gain_range = _endpoint_gain_range(
+                        _endpoint_log_gain(base, alternate, offset_sdr, offset_hdr)
+                        for base, alternate in _jpeg_endpoint_bands(primary, raw, artifact)
+                    )
                 parameters = _endpoint_gain_parameters(
                     max(artifact.encoded_headroom, 0.01), metadata.hdr_capacity_min if metadata else 1.0,
                     offset_sdr, offset_hdr, *artifact.jpeg_gain_range)
@@ -600,6 +619,47 @@ class ProofArtifactStore:
         except (OSError, ValueError) as error:
             raise RuntimeError("Could not reconstruct the full-size JPEG Proof.") from error
         return tile, peak_nits, clipped_pixels / (artifact.height * artifact.width) * 100.0
+
+    def _authored_target_tile(self, artifact: ProofArtifact, target: float) -> tuple[bytes, float, float]:
+        base, alternate = self._matrix_endpoints(artifact)
+        height, width = base.shape[:2]
+        offset = np.float32(1.0 / 64.0)
+        if artifact.authored_gain_range is None:
+            artifact.authored_gain_range = _endpoint_gain_range(
+                log_gain for _, log_gain in _authored_log_gain_bands(base, alternate, offset, offset)
+            )
+        parameters = _endpoint_gain_parameters(
+            max(artifact.encoded_headroom, 0.01), 1.0, offset, offset, *artifact.authored_gain_range
+        )
+        peak_nits = 0.0
+        clipped_pixels = 0
+        ceiling = float(artifact.reference_white_nits) * (2.0 ** max(target, 0.0))
+
+        def bands():
+            nonlocal peak_nits, clipped_pixels
+            for base_rgb, log_gain in _authored_log_gain_bands(base, alternate, offset, offset):
+                pixels = _apply_endpoint_gain(base_rgb, log_gain, parameters, target)
+                nits = _image_luma_nits(pixels, artifact.reference_white_nits)
+                peak_nits = float(np.maximum(peak_nits, np.max(nits, initial=0.0)))
+                clipped_pixels += np.count_nonzero(nits > ceiling)
+                yield pixels
+
+        utility = resolve_binary("avifgainmaputil") if artifact.format == "avif_gain_map" else None
+        if utility is not None:
+            # libavif makes the tile from the encoded artifact. The authored
+            # reconstruction is only used for the displayed statistics.
+            for _ in bands():
+                pass
+            tile = self._tonemap_avif_tile(artifact, target, utility)
+        else:
+            try:
+                with TemporaryDirectory(prefix="hdr_finisher_preview_") as directory:
+                    y4m = Path(directory) / "preview_hdr.y4m"
+                    _write_hdr_y4m_bands(y4m, height, width, bands(), artifact.reference_white_nits)
+                    tile = _encode_hdr_avif_y4m(y4m, y4m.with_suffix(".avif"), PROOF_TILE_QUALITY)
+            except OSError as error:
+                raise RuntimeError("Failed to encode HDR AVIF preview.") from error
+        return tile, peak_nits, clipped_pixels / max(height * width, 1) * 100.0
 
     def _decode_jpeg_endpoint(self, path: Path, artifact_id: str, width: int, height: int) -> Path:
         ultrahdr = resolve_binary("ultrahdr_app")
@@ -658,34 +718,26 @@ class ProofArtifactStore:
         if artifact.format == "avif_gain_map":
             utility = resolve_binary("avifgainmaputil")
             if utility is not None:
-                target_key = str(target).replace(".", "_")
-                output = self.root / f"tonemap-{artifact.artifact_id}-{target_key}.avif"
-                if not output.exists():
-                    _run_command(
-                        [
-                            str(utility),
-                            "tonemap",
-                            str(artifact.path),
-                            str(output),
-                            "--headroom",
-                            f"{target:.6f}",
-                            "--cicp-output",
-                            "9/16/9",
-                            "-d",
-                            "10",
-                            "-y",
-                            "444",
-                            "-q",
-                            "90",
-                        ]
-                    )
-                return output.read_bytes()
+                return self._tonemap_avif_tile(artifact, target, utility)
         # Only jpeg_ultrahdr reconstructs from genuinely decoded endpoints -- an
         # 8-bit sRGB base and an 8-bit gain map -- so it is the one format whose
         # tile is already carrying quantization before it is encoded. Matching
         # the quality libavif tonemaps at keeps the proof from adding shadow
         # artifacts of its own on top of that.
         return _encode_hdr_avif(reconstructed, artifact.reference_white_nits, quality=PROOF_TILE_QUALITY)
+
+    def _tonemap_avif_tile(self, artifact: ProofArtifact, target: float, utility: Path) -> bytes:
+        target_key = str(target).replace(".", "_")
+        output = self.root / f"tonemap-{artifact.artifact_id}-{target_key}.avif"
+        if not output.exists():
+            _run_command(
+                [
+                    str(utility), "tonemap", str(artifact.path), str(output),
+                    "--headroom", f"{target:.6f}", "--cicp-output", "9/16/9",
+                    "-d", "10", "-y", "444", "-q", "90",
+                ]
+            )
+        return output.read_bytes()
 
     @staticmethod
     def _request_signature(

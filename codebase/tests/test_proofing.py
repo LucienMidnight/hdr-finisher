@@ -19,11 +19,13 @@ from hdr_finisher.models import (
     CapabilityStatus,
     DenoiseDocumentSettings,
     ExportResponse,
+    ExportSettings,
     JPEGGainMapProofMetadata,
     ProofArtifactRequest,
     ProofReconstructionRequest,
 )
 from hdr_finisher.color_context import RenderColorContext
+from hdr_finisher.exporters import write_avif_gainmap_renditions
 from hdr_finisher.proofing import (
     GainMapParameters,
     ProofArtifact,
@@ -299,6 +301,57 @@ def test_banded_jpeg_proof_matches_whole_image_tiles(tmp_path: Path) -> None:
         whole = reconstruct_from_endpoints(base, alternate, artifact.encoded_headroom, target)
         assert banded == proofing_module._encode_hdr_avif(whole, artifact.reference_white_nits, quality=proofing_module.PROOF_TILE_QUALITY)
         assert (peak, clipped) == proofing_module._image_stats(whole, target, artifact.reference_white_nits)
+
+
+@pytest.mark.parametrize("format, use_tonemap", [
+    ("avif_gain_map", True),
+    ("avif_gain_map", False),
+    ("jpegxl_hdr", False),
+])
+@pytest.mark.parametrize("invalid", [False, True])
+def test_banded_authored_proof_matches_whole_image_tiles(monkeypatch, tmp_path, format, use_tonemap, invalid):
+    resolve = proofing_module.resolve_binary
+    if resolve("avifgainmaputil" if use_tonemap else "avifenc") is None:
+        pytest.skip("Native AVIF tile helper unavailable")
+    if not use_tonemap:
+        monkeypatch.setattr(proofing_module, "resolve_binary",
+                            lambda name: None if name == "avifgainmaputil" else resolve(name))
+    monkeypatch.setattr(proofing_module, "_PROOF_RECONSTRUCTION_ROWS", 8)
+
+    height, width = 29, 37
+    rng = np.random.default_rng(25)
+    base = rng.random((height, width, 3), dtype=np.float32) * 0.7
+    alternate = rng.random(base.shape, dtype=np.float32) * 7
+    path = tmp_path / "artifact.avif"
+    if use_tonemap:
+        write_avif_gainmap_renditions(
+            path, alternate, base, ExportSettings(output_path=str(path), format=format),
+        )
+    base[0, 0] = alternate[0, 0] = 0
+    base[-1, -1] = [0.0, 2.0, 0.001]
+    alternate[-1, -1] = [1e20, 0.0, 200.0]  # Extrema in the last partial band.
+    if invalid:
+        base[1, 1, 0] = alternate[1, 1, 0] = np.inf
+        alternate[-1, 0, 1] = np.nan
+
+    artifact = ProofArtifact(
+        artifact_id="authored-proof", format=format, path=path, media_type="image/avif",
+        sha256="", width=width, height=height, quality=90, metadata_summary="", encoded_headroom=3,
+        reference_white_nits=203, hdr_authored=alternate, sdr_authored=base, full_size=True,
+    )
+    store = ProofArtifactStore()
+    legacy_store = ProofArtifactStore()
+    with np.errstate(invalid="ignore"):
+        for target in (1.75, 0.0, 3.0):
+            whole = reconstruct_from_endpoints(base, alternate, artifact.encoded_headroom, target)
+            expected = legacy_store._encoded_matrix_tile(artifact, target, whole)
+            banded, peak, clipped = store._authored_target_tile(artifact, target)
+            assert banded == expected
+            assert (peak, clipped) == proofing_module._image_stats(whole, target, artifact.reference_white_nits)
+
+            tile = store._target_tile(artifact, target, "Target", None)
+            assert store.tile(tile.id).path.read_bytes() == expected
+            assert (tile.peak_nits, tile.clipped_percent) == (round(peak, 1), round(clipped, 3))
 
 
 class _FakeBackend:

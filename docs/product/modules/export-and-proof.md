@@ -920,6 +920,9 @@ Settings rules (from v1.2 section 5, still in force):
   numbered names on collisions, per-file results. Exported and "Edited
   since last export" states feed the Library.
 - Proof: reduced size (1,200 px) or full size, through the export pipeline.
+  Full-size targets build one at a time. For AVIF and JPEG XL, Proof measures
+  the gain range across the photo once and reconstructs a band of rows at a
+  time for statistics and any pixels the tile encoder needs.
 - Highlight Compression's target is mandatory after encoding on every HDR
   export and Proof path. The decoded brightest channel is checked even when
   the source is well below the target. Initial peaks up to 1% above target

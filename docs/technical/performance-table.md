@@ -1,3 +1,31 @@
+## November 22, 2026 — MacBook Neo Proof memory
+
+MacBook Neo, A18 Pro, 8 GB, unpackaged Electron at 1408 × 794 under the shared
+GPU lock. The same 42 MP Sony `_DSC7970.ARW` Clean Small test ran Q90 full-size
+CPU delivery with Lensfun off, export first and Proof second. The baseline
+is the November 21 MEM-1 run at `113a1c92`. The follow-up adds banded Proof
+reconstruction on `a4debeb4`. Peaks are sampled macOS physical footprint.
+
+| Action | To result before → after | Whole-app peak (B) before → after | Backend peak (B) before → after |
+| --- | ---: | ---: | ---: |
+| AVIF Gain Map export | 72.82 → 72.52 s | 6,688,700,888 → 6,940,474,176 | 5,842,867,576 → 6,066,001,536 |
+| AVIF Gain Map Proof | 124.44 → 120.73 s | 11,014,604,392 → 6,746,209,040 | 10,193,674,712 → 5,948,184,072 |
+
+Proof's whole-app peak fell 39%. The AVIF artifact and export SHA-256 matched
+each other and the baseline. Both tile IDs and statistics also matched.
+Synthetic AVIF and JPEG XL tile checks matched the whole-frame tile bytes,
+unrounded peak nits and clipped percentage.
+
+The new Proof peak is in the Python backend during full-frame HDR PQ/Y4M
+preparation for the AVIF artifact, before the combine helper starts. The
+backend accounts for 5.948 GB of the 6.746 GB peak. Later, the ceiling
+check sampled `avifdec` at 4.039 GB within a 6.487 GB whole-app sample.
+Once the artifact was ready, the largest logged tile sample was 5.044 GB,
+including one `avifgainmaputil` at 2.585 GB and Python at 1.646 GB.
+Meeting the 4 GB ceiling will require bounded AVIF preparation and ceiling
+decoding, plus reducing the overlap between the retained Proof endpoints
+and the tile helper's memory. [Driver log](../../codebase/output/proof-mem/avif-proof.jsonl) · [Run details](../../codebase/output/proof-mem/result.txt)
+
 ## November 21 — Byte-exact Lensfun strips on MacBook Neo
 
 MacBook Neo, A18 Pro and 8 GB unified memory. Isolated CPU RAW development

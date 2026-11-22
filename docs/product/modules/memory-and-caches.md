@@ -157,6 +157,9 @@ full decoded RGB/nits frame. The test-only perceptual check also streams decoded
 pixels and retains only the exact upper 0.1% tail; every pixel is checked.
 Full Proof converts its uniquely owned CPU SDR endpoint in bands in place;
 GPU cached lanes are never modified. No new pixel cache or disk spool is added.
+Full-size Proof builds one target at a time and reconstructs AVIF and JPEG XL
+targets in row bands using whole-photo gain extrema. When libavif can tone-map
+the AVIF artifact directly, Proof uses the reconstructed bands only for statistics.
 Native CPU worker peaks for high fidelity are about 0.432 GB HDR / 0.382 GB
 SDR at 10.7 MP, 1.247 / 1.221 GB at 29.8 MP, and 1.725 GB HDR / 2.040 GB
 SDR at 42.2 MP (the last SDR figure includes its Q95 comparison). The previous
