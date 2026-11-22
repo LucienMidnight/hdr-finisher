@@ -940,3 +940,59 @@ def test_proof_signature_tracks_local_adjustments() -> None:
     signature = lambda locals_: ProofArtifactStore._request_signature("session", request, context, local_adjustments=locals_)
     assert len({signature(None), signature([local]), signature([edited])}) == 3
     assert signature([local]) == signature([local.model_copy(deep=True)])
+
+
+def test_proof_endpoint_failure_closes_source_bands_before_cleanup(monkeypatch, tmp_path):
+    from types import SimpleNamespace
+
+    monkeypatch.setenv("HDR_FINISHER_PROOF_ROOT", str(tmp_path))
+    monkeypatch.setattr(proofing_module, "_inspect_artifact", lambda *_: (1.0, "metadata"))
+    pixels = np.full((180, 130, 3), .18, np.float32)
+    adjustments = AdjustmentState()
+    session = SimpleNamespace(session_id="failed-proof", image=pixels,
+        render_cache=SessionRenderCache(pixels, None), adjustments=adjustments)
+    closed = False
+    original_bands = DeliveryFrame.bands
+    original_write = DeliveryFrame.write
+    storage_class = proofing_module.TemporaryDirectory
+
+    class Backend:
+        def export(self, session, settings):
+            path = Path(settings.output_path)
+            path.write_bytes(b"proof")
+            root = settings._proof_endpoint_directory
+            endpoints = tuple(DeliveryFrame.spill(root / f"{lane}.rgb", pixels) for lane in ("hdr", "sdr"))
+            object.__setattr__(settings, "_proof_endpoints", endpoints)
+            return ExportResponse(accepted=True, backend="fake", message="ok", output_path=settings.output_path)
+
+    class Storage(storage_class):
+        def cleanup(self):
+            assert closed
+            super().cleanup()
+            raise PermissionError("simulated Windows cleanup failure")
+
+    def track_bands(self, rows):
+        nonlocal closed
+        try:
+            yield from original_bands(self, rows)
+        finally:
+            closed = True
+
+    def fail_matrix_write(self, bands):
+        if self.path.name == "sdr-matrix.rgb":
+            next(bands)
+            assert not closed
+            raise OSError("original disk error")
+        original_write(self, bands)
+
+    monkeypatch.setattr(proofing_module, "TemporaryDirectory", Storage)
+    monkeypatch.setattr(DeliveryFrame, "bands", track_bands)
+    monkeypatch.setattr(DeliveryFrame, "write", fail_matrix_write)
+    store = ProofArtifactStore()
+    try:
+        request = ProofArtifactRequest(adjustments=adjustments, format="avif_gain_map", full_size=True)
+        with pytest.raises(OSError, match="original disk error"):
+            store.create(session, request, Backend())
+        assert not list(store.root.glob("endpoints-*"))
+    finally:
+        store.clear()

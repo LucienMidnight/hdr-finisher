@@ -486,3 +486,32 @@ def test_all_modes_and_targets_remain_exact_after_real_encoding(tmp_path, target
         jpeg_gain_map_scale='full', dithering='off', output_path=str(tmp_path / 'exact')))
     assert result.accepted, result.message
     assert float(hdr_ceiling.decoded_channel_nits(Path(result.output_path), format_name).max()) <= target * (1 + hdr_ceiling.ENCODING_ALLOWANCE)
+
+
+def test_ceiling_retry_closes_source_bands_if_private_copy_fails(monkeypatch, tmp_path):
+    pixels = scene()
+    source = DeliveryFrame.spill(tmp_path / "delivery.rgb", pixels)
+    closed = False
+    read_bands = DeliveryFrame.bands
+
+    def track_bands(self, rows):
+        nonlocal closed
+        try:
+            yield from read_bands(self, rows)
+        finally:
+            closed = True
+
+    def fail_copy(self, bands):
+        next(bands)
+        assert not closed
+        raise OSError("disk full")
+
+    monkeypatch.setattr(DeliveryFrame, "bands", track_bands)
+    monkeypatch.setattr(DeliveryFrame, "write", fail_copy)
+    with pytest.raises(OSError, match="disk full") as caught:
+        hdr_ceiling.encode_within_ceiling(source, 203, lambda frame: frame,
+            lambda _: np.full(source.shape[:2], 1100, dtype=np.float32), 1000)
+    assert caught.value.__traceback__ is not None
+    assert closed
+    assert not list(tmp_path.glob("ceiling-*"))
+    assert source.path.read_bytes() == pixels.tobytes()

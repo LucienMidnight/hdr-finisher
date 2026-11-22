@@ -62,3 +62,30 @@ def test_y4m_bands_reject_a_partial_chroma_row_before_the_last_band(tmp_path):
     bands = (np.zeros((3, 4, 3), np.uint16), np.zeros((3, 4, 3), np.uint16))
     with pytest.raises(ValueError):
         write_y4m_bands(tmp_path / "odd.y4m", 6, 4, bands, bit_depth=10, chroma_subsampling="420")
+
+
+@pytest.mark.parametrize("writer", [exporters._write_sdr_y4m, exporters._write_hdr_y4m])
+def test_avif_writer_closes_delivery_frame_when_band_write_fails(monkeypatch, tmp_path, writer):
+    frame = DeliveryFrame.spill(tmp_path / "delivery.rgb", np.ones((259, 35, 3), np.float32))
+    handles = []
+    path_open = type(frame.path).open
+
+    def track_open(path, *args, **kwargs):
+        file = path_open(path, *args, **kwargs)
+        if path == frame.path and args == ("rb",):
+            handles.append(file)
+        return file
+
+    def fail_mid_write(path, height, width, bands, **kwargs):
+        next(bands)
+        assert not handles[0].closed
+        raise OSError("disk full")
+
+    monkeypatch.setattr(type(frame.path), "open", track_open)
+    monkeypatch.setattr(exporters, "write_y4m_bands", fail_mid_write)
+    with pytest.raises(OSError, match="disk full") as caught:
+        writer(tmp_path / "failed.y4m", frame, bit_depth=10, chroma_subsampling="444")
+    # The live traceback still owns the suspended band iterator.
+    assert caught.value.__traceback__ is not None
+    assert len(handles) == 1 and handles[0].closed
+    frame.path.unlink()

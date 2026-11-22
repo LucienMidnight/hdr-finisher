@@ -40,12 +40,10 @@ class DeliveryFrame:
         pixels = np.memmap(self.path, mode=mode, shape=self.shape, dtype=self.dtype)
         try:
             yield pixels
+            if mode != "r":
+                pixels.flush()
         finally:
-            try:
-                if mode != "r":
-                    pixels.flush()
-            finally:
-                pixels._mmap.close()
+            pixels._mmap.close()
 
     def bands(self, rows: int):
         height, *row_shape = self.shape

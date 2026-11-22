@@ -460,7 +460,7 @@ def _prepared_delivery_source(session, adjustments, kind):
 
 
 def _render_delivery_files(session, settings, adjustments, directory, *, render=_render_export_branch):
-    with TemporaryDirectory(prefix="grain-", dir=directory) as grains, ExitStack() as maps:
+    with TemporaryDirectory(prefix="grain-", dir=directory, ignore_cleanup_errors=True) as grains, ExitStack() as maps:
         def allocate_grain(shape):
             # Equal inputs resolve through the shared source below. A new
             # allocation therefore replaces a lane whose render has returned.
@@ -834,7 +834,7 @@ def write_avif_gainmap_renditions(staged_output, hdr_image, sdr_image, settings,
 def _write_avif_gainmap_once(staged_output, hdr_image, sdr_image, settings, reference_white_nits=203, *, gainmaputil=None, timings_ms=None):
     gainmaputil = gainmaputil or resolve_binary("avifgainmaputil")
     timings_ms = timings_ms if timings_ms is not None else {}
-    with TemporaryDirectory(prefix="hdr_finisher_export_") as temp_dir_name:
+    with TemporaryDirectory(prefix="hdr_finisher_export_", ignore_cleanup_errors=True) as temp_dir_name:
         temp_dir = Path(temp_dir_name)
         base_y4m_path = temp_dir / "base_sdr.y4m"
         hdr_y4m_path = temp_dir / "alternate_hdr.y4m"
@@ -878,7 +878,7 @@ def write_jpeg_gainmap_renditions(staged_output, hdr_image, sdr_image, settings,
         settings = settings.model_copy(update={"jpeg_gain_map_scale": "full", "jpeg_gain_map_quality": 100})
         if notes is not None:
             notes.append("Framed Ultra HDR JPEG uses a full-resolution, maximum-quality gain map to preserve frame edges.")
-    with TemporaryDirectory(prefix="hdr_finisher_ultrahdr_") as temp_dir_name:
+    with TemporaryDirectory(prefix="hdr_finisher_ultrahdr_", ignore_cleanup_errors=True) as temp_dir_name:
         temp_dir = Path(temp_dir_name)
         inputs = _JpegGainMapInputs(
             temp_dir, _write_temporary_exif(temp_dir, exif_payload),
@@ -1014,7 +1014,7 @@ class AVIFGainMapExportBackend(ExportBackend):
             notes: list[str] = []
             finishing_adjustments = _finishing_adjustments_for_export(session)
             phase_started = perf_counter()
-            directory = proof_directory or Path(scratch.enter_context(TemporaryDirectory(prefix="avif-delivery-")))
+            directory = proof_directory or Path(scratch.enter_context(TemporaryDirectory(prefix="avif-delivery-", ignore_cleanup_errors=True)))
             hdr_image, sdr_image = _render_delivery_files(session, settings, finishing_adjustments, directory,
                                                           render=_render_export_branch)
             if proof_directory is not None:
@@ -1086,7 +1086,7 @@ class JPEGUltraHDRExportBackend(ExportBackend):
             denoise_source = (_jpeg_denoise_source(session, finishing_adjustments)
                               if any(denoise_settings_for_export(session, lane) is not None for lane in lanes) else None)
             if denoise_source is not None or streamed_delivery_enabled(session, settings, finishing_adjustments):
-                directory = Path(scratch.enter_context(TemporaryDirectory(prefix="jpeg-delivery-")))
+                directory = Path(scratch.enter_context(TemporaryDirectory(prefix="jpeg-delivery-", ignore_cleanup_errors=True)))
                 try:
                     hdr_image, sdr_image = (
                         _render_branch_to_file(directory / f"{lane.value}.rgb", lambda allocate:
@@ -1874,11 +1874,12 @@ def _write_sdr_y4m(
 ) -> None:
     if bit_depth not in {8, 10, 12}:
         raise ValueError(f"Unsupported AVIF bit depth: {bit_depth}")
-    bands = (
-        _linear_sdr_to_yuv(band, bit_depth, dithering, index * _AVIF_Y4M_BAND_ROWS)
-        for index, band in enumerate(row_bands(image, _AVIF_Y4M_BAND_ROWS))
-    )
-    write_y4m_bands(path, *image.shape[:2], bands, bit_depth=bit_depth, chroma_subsampling=chroma_subsampling)
+    with closing(row_bands(image, _AVIF_Y4M_BAND_ROWS)) as pixels:
+        bands = (
+            _linear_sdr_to_yuv(band, bit_depth, dithering, index * _AVIF_Y4M_BAND_ROWS)
+            for index, band in enumerate(pixels)
+        )
+        write_y4m_bands(path, *image.shape[:2], bands, bit_depth=bit_depth, chroma_subsampling=chroma_subsampling)
 
 
 def _linear_sdr_to_yuv(image: np.ndarray, bit_depth: int, dithering: str, top: int) -> np.ndarray:
@@ -1911,11 +1912,9 @@ def _write_hdr_y4m(
         raise ValueError(f"Unsupported AVIF bit depth: {bit_depth}")
     if chroma_subsampling not in {"420", "422", "444"}:
         raise ValueError(f"Unsupported AVIF chroma subsampling: {chroma_subsampling}")
-    bands = (
-        _linear_to_bt2020_pq_yuv(band, bit_depth, reference_white_nits)
-        for band in row_bands(image, _AVIF_Y4M_BAND_ROWS)
-    )
-    write_y4m_bands(path, *image.shape[:2], bands, bit_depth=bit_depth, chroma_subsampling=chroma_subsampling)
+    with closing(row_bands(image, _AVIF_Y4M_BAND_ROWS)) as pixels:
+        bands = (_linear_to_bt2020_pq_yuv(band, bit_depth, reference_white_nits) for band in pixels)
+        write_y4m_bands(path, *image.shape[:2], bands, bit_depth=bit_depth, chroma_subsampling=chroma_subsampling)
 
 
 def _linear_to_pq_rgb10(image: np.ndarray, reference_white_nits: int = 203) -> np.ndarray:

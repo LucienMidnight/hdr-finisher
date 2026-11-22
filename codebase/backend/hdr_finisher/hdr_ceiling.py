@@ -13,7 +13,7 @@ image to pass would visibly change the grade.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from contextlib import ExitStack, nullcontext
+from contextlib import ExitStack, closing, nullcontext
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Callable, TypeVar
@@ -277,9 +277,11 @@ def _encode_within_ceiling(hdr_image, encode, decode, ceiling_nits, notes,
                    retry_count=attempt + 1, peak_nits=peak, target_nits=ceiling, allowed_nits=allowed)
         if isinstance(hdr_image, DeliveryFrame):
             if current is hdr_image:
-                directory = scratch.enter_context(TemporaryDirectory(prefix="ceiling-", dir=hdr_image.path.parent))
+                directory = scratch.enter_context(TemporaryDirectory(
+                    prefix="ceiling-", dir=hdr_image.path.parent, ignore_cleanup_errors=True))
                 current = DeliveryFrame(Path(directory) / "hdr.rgb", hdr_image.shape, hdr_image.dtype)
-                current.write(hdr_image.bands(BAND_ROWS))
+                with closing(hdr_image.bands(BAND_ROWS)) as bands:
+                    current.write(bands)
         elif not correct_in_place:
             current = current.copy()
         _correct_bands(current, decoded, ceiling, MARGINS[attempt])

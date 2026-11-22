@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import atexit
-from contextlib import nullcontext, suppress
+from contextlib import closing, nullcontext, suppress
 from dataclasses import dataclass
 import hashlib
 import json
@@ -176,11 +176,12 @@ def _endpoint_gain_range(log_gain_bands):
 
 
 def _authored_log_gain_bands(base, alternate, offset_sdr, offset_hdr):
-    for base_band, hdr_band in zip(row_bands(base, _PROOF_RECONSTRUCTION_ROWS),
-                                   row_bands(alternate, _PROOF_RECONSTRUCTION_ROWS), strict=True):
-        base_rgb = np.clip(base_band[..., :3].astype(np.float32, copy=False), 0.0, None)
-        alternate_rgb = np.clip(hdr_band[..., :3].astype(np.float32, copy=False), 0.0, None)
-        yield base_rgb, _endpoint_log_gain(base_rgb, alternate_rgb, offset_sdr, offset_hdr)
+    with (closing(row_bands(base, _PROOF_RECONSTRUCTION_ROWS)) as sdr_bands,
+          closing(row_bands(alternate, _PROOF_RECONSTRUCTION_ROWS)) as hdr_bands):
+        for base_band, hdr_band in zip(sdr_bands, hdr_bands, strict=True):
+            base_rgb = np.clip(base_band[..., :3].astype(np.float32, copy=False), 0.0, None)
+            alternate_rgb = np.clip(hdr_band[..., :3].astype(np.float32, copy=False), 0.0, None)
+            yield base_rgb, _endpoint_log_gain(base_rgb, alternate_rgb, offset_sdr, offset_hdr)
 
 
 def _sdr_matrix_band(pixels):
@@ -313,11 +314,12 @@ class ProofArtifactStore:
             native = output_layout(*proxy_session.framing_source_size, session.framing, request.output_finishing)
             full_size = max(native.width, native.height) <= request.long_edge
         if full_size and request.format != "jpeg_ultrahdr":
-            storage = TemporaryDirectory(prefix="endpoints-", dir=self.root)
+            storage = TemporaryDirectory(prefix="endpoints-", dir=self.root, ignore_cleanup_errors=True)
             try:
                 return self._build_artifact(proxy_session, request, backend, signature, context, full_size, storage)
             except BaseException:
-                storage.cleanup()
+                with suppress(OSError):
+                    storage.cleanup()
                 raise
         grain = (share_delivery_grain(proxy_session, request.adjustments, spans_encoding=True)
                  if request.format != "jpeg_ultrahdr" else nullcontext())
@@ -401,7 +403,8 @@ class ProofArtifactStore:
             hdr_authored, sdr_authored = endpoints
             height, width = hdr_authored.shape[:2]
             sdr_matrix_endpoint = DeliveryFrame(directory / "sdr-matrix.rgb", (height, width, 3))
-            sdr_matrix_endpoint.write(_sdr_matrix_band(band) for band in sdr_authored.bands(_PROOF_RECONSTRUCTION_ROWS))
+            with closing(sdr_authored.bands(_PROOF_RECONSTRUCTION_ROWS)) as bands:
+                sdr_matrix_endpoint.write(_sdr_matrix_band(band) for band in bands)
             sdr_authored.path.unlink()
         elif jpeg_decoded is None:
             finishing_adjustments = _finishing_adjustments_for_export(proxy_session)
@@ -655,9 +658,10 @@ class ProofArtifactStore:
                     yield pixels
 
         try:
-            with TemporaryDirectory(prefix="hdr_finisher_proof_tile_") as directory:
+            with TemporaryDirectory(prefix="hdr_finisher_proof_tile_", ignore_cleanup_errors=True) as directory:
                 y4m = Path(directory) / "preview_hdr.y4m"
-                _write_hdr_y4m_bands(y4m, artifact.height, artifact.width, bands(), artifact.reference_white_nits)
+                with closing(bands()) as pixels:
+                    _write_hdr_y4m_bands(y4m, artifact.height, artifact.width, pixels, artifact.reference_white_nits)
                 tile = _encode_hdr_avif_y4m(y4m, y4m.with_suffix(".avif"), PROOF_TILE_QUALITY)
         except (OSError, ValueError) as error:
             raise RuntimeError("Could not reconstruct the full-size JPEG Proof.") from error
@@ -668,9 +672,8 @@ class ProofArtifactStore:
         height, width = base.shape[:2]
         offset = np.float32(1.0 / 64.0)
         if artifact.authored_gain_range is None:
-            artifact.authored_gain_range = _endpoint_gain_range(
-                log_gain for _, log_gain in _authored_log_gain_bands(base, alternate, offset, offset)
-            )
+            with closing(_authored_log_gain_bands(base, alternate, offset, offset)) as gain_bands:
+                artifact.authored_gain_range = _endpoint_gain_range(log_gain for _, log_gain in gain_bands)
         parameters = _endpoint_gain_parameters(
             max(artifact.encoded_headroom, 0.01), 1.0, offset, offset, *artifact.authored_gain_range
         )
@@ -680,25 +683,28 @@ class ProofArtifactStore:
 
         def bands():
             nonlocal peak_nits, clipped_pixels
-            for base_rgb, log_gain in _authored_log_gain_bands(base, alternate, offset, offset):
-                pixels = _apply_endpoint_gain(base_rgb, log_gain, parameters, target)
-                nits = _image_luma_nits(pixels, artifact.reference_white_nits)
-                peak_nits = float(np.maximum(peak_nits, np.max(nits, initial=0.0)))
-                clipped_pixels += np.count_nonzero(nits > ceiling)
-                yield pixels
+            with closing(_authored_log_gain_bands(base, alternate, offset, offset)) as gain_bands:
+                for base_rgb, log_gain in gain_bands:
+                    pixels = _apply_endpoint_gain(base_rgb, log_gain, parameters, target)
+                    nits = _image_luma_nits(pixels, artifact.reference_white_nits)
+                    peak_nits = float(np.maximum(peak_nits, np.max(nits, initial=0.0)))
+                    clipped_pixels += np.count_nonzero(nits > ceiling)
+                    yield pixels
 
         utility = resolve_binary("avifgainmaputil") if artifact.format == "avif_gain_map" else None
         if utility is not None:
             # libavif makes the tile from the encoded artifact. The authored
             # reconstruction is only used for the displayed statistics.
-            for _ in bands():
-                pass
+            with closing(bands()) as pixels:
+                for _ in pixels:
+                    pass
             tile = self._tonemap_avif_tile(artifact, target, utility)
         else:
             try:
-                with TemporaryDirectory(prefix="hdr_finisher_preview_") as directory:
+                with TemporaryDirectory(prefix="hdr_finisher_preview_", ignore_cleanup_errors=True) as directory:
                     y4m = Path(directory) / "preview_hdr.y4m"
-                    _write_hdr_y4m_bands(y4m, height, width, bands(), artifact.reference_white_nits)
+                    with closing(bands()) as pixels:
+                        _write_hdr_y4m_bands(y4m, height, width, pixels, artifact.reference_white_nits)
                     tile = _encode_hdr_avif_y4m(y4m, y4m.with_suffix(".avif"), PROOF_TILE_QUALITY)
             except OSError as error:
                 raise RuntimeError("Failed to encode HDR AVIF preview.") from error
