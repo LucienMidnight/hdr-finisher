@@ -74,6 +74,7 @@ let backendProcess = null;
 let mainWindow = null;
 let forceClose = false;
 let shuttingDown = false;
+let shutdownComplete = false;
 let quitRequested = false;
 let documentState = { path: "", dirty: false, displayName: "Untitled" };
 let renderingMode = "auto";
@@ -1374,6 +1375,7 @@ async function beginShutdown() {
   desktopEvent("app", "action_finished", {
     action, operation: "shutdown", outcome: "success", duration_ms: Math.round(performance.now() - started),
   });
+  shutdownComplete = true;
   app.quit();
 }
 
@@ -1410,8 +1412,9 @@ if (!gotLock) {
     if (mainWindow && rendererReady) dispatchPendingOpenPaths();
   });
   app.on("before-quit", (event) => {
-    if (shuttingDown) return;
+    if (shutdownComplete) return;
     event.preventDefault();
+    if (shuttingDown) return;
     quitRequested = true;
     if (mainWindow && !mainWindow.isDestroyed()) requestClose();
     else beginShutdown();
