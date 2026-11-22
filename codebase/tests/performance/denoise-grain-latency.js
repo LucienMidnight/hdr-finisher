@@ -947,6 +947,165 @@ async function measureBaseline(page, harness, name, record, setZoom) {
   }
 }
 
+async function measureMicroLensMemory(page, harness) {
+  const name = "_DSC7970.ARW";
+  const file = reusePhoto(name, path.resolve(__dirname, "../../output/gpu-raw", name));
+  const settings = {
+    white_balance: "as_shot", demosaic: "ahd",
+    pixel_cleanup: { remove_hot_pixels: false, even_out_specks: true, speck_threshold: 2.5 },
+    highlight_reconstruction: { enabled: true, method: "opposed_color_v1", clipping_threshold: 1,
+      edge_colour_expand_percent: 0.5 },
+    lens: { mode: "off", distortion: true, chromatic_aberration: true, vignetting: true },
+  };
+  await page.evaluate(() => {
+    const create = URL.createObjectURL.bind(URL);
+    const revoke = URL.revokeObjectURL.bind(URL);
+    const previewBlobs = window.microLensPreviewBlobs = new Map();
+    URL.createObjectURL = blob => {
+      const url = create(blob);
+      if (blob.type === "image/avif" || blob.type === "image/png") previewBlobs.set(url, blob);
+      return url;
+    };
+    URL.revokeObjectURL = url => {
+      previewBlobs.delete(url);
+      revoke(url);
+    };
+  });
+  const logPath = path.join(harness.userDataDirectory, "logs/backend.log");
+  const samples = [];
+  const { spawn } = require("node:child_process");
+  const { createInterface } = require("node:readline");
+  const sampler = spawn(require("../../tools/lib/platform.cjs").pythonExecutable(),
+    ["-u", "-c", `
+import json, sys, time
+sys.path.insert(0, 'backend')
+from hdr_finisher.app_memory import process_tree
+while True:
+    captured = time.time() * 1000
+    try:
+        rows = process_tree(int(sys.argv[1]))
+        print(json.dumps(dict(at=captured, processes=rows,
+                              bytes=sum(row['chargedBytes'] for row in rows))))
+    except OSError as error:
+        print(error, file=sys.stderr)
+    time.sleep(.1)
+`, process.env.HDR_FINISHER_ELECTRON_MAIN_PID], { cwd: path.resolve(__dirname, "../.."),
+      stdio: ["ignore", "pipe", "inherit"] });
+  const census = createInterface({ input: sampler.stdout });
+  census.on("line", line => samples.push(JSON.parse(line)));
+  const firstSample = require("node:events").once(census, "line", { signal: AbortSignal.timeout(10000) });
+  const ready = ({ lane, reduced, zoom, generation }) => {
+    const picture = state.acceptedPresentation;
+    return state.currentView === lane && state.session && !state.importInProgress
+      && picture?.lane === lane && picture.generation === state.previewGeneration[lane]
+      && picture.generation !== generation && previewIdleNow()
+      && (reduced ? picture.grainRoute?.reduced && picture.processedLongEdge === 4096 : picture.exact)
+      && (zoom === undefined || (zoom === "fit" ? state.zoomMode === "fit" : state.zoomPercent === zoom));
+  };
+  const run = async (action, operation, { lane = "hdr", reduced = false, zoom, update = false, hash = false } = {}) => {
+    console.log(JSON.stringify({ start: action }));
+    const offset = fs.statSync(logPath).size;
+    const generation = update ? await page.evaluate(() => state.acceptedPresentation?.generation) : undefined;
+    const start = Date.now();
+    const preceding = samples.at(-1);
+    await operation();
+    await page.waitForFunction(ready, { lane, reduced, zoom, generation }, { polling: "raf", timeout: 180000 });
+    const acceptedAt = Date.now();
+    const view = await page.evaluate(() => ({
+      id: state.session.session_id, zoom: state.zoomMode === "fit" ? "fit" : state.zoomPercent,
+      lane: state.currentView, settings: state.editDocument.source.raw_import_settings,
+      lens: state.session.metadata.extra?.lens_correction, transport: state.acceptedPresentation.transport,
+      edge: state.acceptedPresentation.processedLongEdge, route: state.acceptedPresentation.grainRoute,
+      linked: state.adjustments.sdr.linked_to_hdr,
+    }));
+    const [memory, cache] = await Promise.all([
+      harness.fetch("/api/library/memory").then(response => response.json()),
+      harness.fetch(`/api/session/${view.id}/diagnostics`).then(response => response.json()),
+    ]);
+    const readings = samples.filter(sample => sample.at >= start && sample.at <= acceptedAt);
+    // Zoom and cached lane switches may complete between census samples.
+    if (!readings.length && preceding) readings.push(preceding);
+    assert.ok(readings.length, "No whole-app census sample was collected");
+    const peak = readings.reduce((left, right) => right.bytes > left.bytes ? right : left);
+    const footprint = (sample, pid) => sample.processes.find(row => row.pid === pid)?.chargedBytes ?? 0;
+    const roles = (await harness.memory()).roles;
+    const gpuPid = roles.find(role => role.type === "GPU")?.pid;
+    const events = fs.readFileSync(logPath).subarray(offset).toString().split(/\r?\n/)
+      .filter(line => line.startsWith("{") && line.includes('"event":"micro_cpu_source"')).map(JSON.parse);
+    const hashValue = hash ? await page.evaluate(async lane => {
+      const cached = state.previewCache[lane];
+      const blob = window.microLensPreviewBlobs.get(cached?.url);
+      const bytes = cached?.raw ?? await blob?.arrayBuffer();
+      if (!cached?.reducedEdge || !bytes) throw Error("Missing reduced preview bytes");
+      const digest = await crypto.subtle.digest("SHA-256", bytes);
+      return { bytes: bytes.byteLength, sha256: new Uint8Array(digest).toHex() };
+    }, lane) : undefined;
+    console.log(JSON.stringify({ action, ms: acceptedAt - start, ...view, id: undefined,
+      appPeakBytes: peak.bytes, backendPeakBytes: Math.max(...readings.map(sample => footprint(sample, memory.backendPid))),
+      gpuPeakBytes: Math.max(...readings.map(sample => footprint(sample, gpuPid))),
+      peakProcesses: peak.processes.sort((a, b) => b.chargedBytes - a.chargedBytes).slice(0, 4)
+        .map(row => ({ ...row, role: roles.find(role => role.pid === row.pid)?.type
+          || (row.pid === memory.backendPid ? "Backend" : undefined) })),
+      sampleCount: readings.length, precedingSample: !readings.some(sample => sample.at >= start),
+      microCacheBytes: cache.render_cache.micro_source_bytes,
+      previewKept: reduced && cache.render_cache.micro_source_bytes >= 4096 * 2735 * 12,
+      cacheEvents: events.map(event => ({ reason: event.reason, outcome: event.outcome, ms: event.duration_ms,
+        previewKept: event.preview_kept, beforeRefreshBytes: event.before_refresh_bytes,
+        afterRefreshBytes: event.after_refresh_bytes })),
+      hash: hashValue,
+    }));
+  };
+  const zoom78 = () => page.evaluate(() => {
+    els.zoomReadout.value = "78%";
+    commitZoomReadout();
+  });
+
+  try {
+    await firstSample;
+    await run("Open at Fit", () => page.evaluate(async ({ file, settings }) => {
+      const selection = await desktop.grantSourcePath(file);
+      await openStagedDesktopSource({ ...selection, rawImportSettings: settings });
+      await commitDenoiseControl("method", "micro_grain");
+    }, { file, settings }), { zoom: "fit" });
+    await run("Micro Grain at Fit, lens off", () => page.evaluate(() => {
+      state.denoise.sdr = { enabled: true, controls: structuredClone(state.denoise.hdr.controls) };
+      state.denoiseRuntime.sdr.showOriginal = false;
+      return setDenoiseEnabled(true);
+    }), { zoom: "fit", update: true });
+    await run("Zoom to 78%, lens off", zoom78, { zoom: 78 });
+    await run("Lensfun Auto at 78%", async () => {
+      await page.evaluate(async () => {
+        els.lensMode.value = "auto";
+        await applyRawImportSettings();
+        const lens = state.session.metadata.extra?.lens_correction;
+        if (!(lens?.applied || String(lens).includes("'applied': True"))) {
+          throw Error(`Lensfun Auto was not applied: ${JSON.stringify(lens)}`);
+        }
+      });
+      await zoom78();
+      await page.evaluate(async () => {
+        if (!state.denoise.hdr.enabled) await setDenoiseEnabled(true);
+      });
+    }, { reduced: true, zoom: 78, hash: true });
+    await run("Exposure +0.25 EV", () => page.evaluate(() =>
+      commitAdjustmentValue("hdr.exposure", state.adjustments.hdr.exposure + 0.25, { manual: true })),
+    { reduced: true, zoom: 78, update: true, hash: true });
+    await run("HDR to generated SDR", () => page.locator("#view-sdr").click(),
+      { lane: "sdr", reduced: true, zoom: 78, hash: true });
+    await run("Generated SDR to HDR", () => page.locator("#view-hdr").click(),
+      { reduced: true, zoom: 78, hash: true });
+    await run("Return to Fit", () => page.evaluate(() => setZoomMode("fit")), { reduced: true, zoom: "fit" });
+    await run("Return to 78%", zoom78, { reduced: true, zoom: 78 });
+  } finally {
+    sampler.kill();
+    const prefix = process.argv.find(arg => arg.startsWith("--memory-log="))?.slice("--memory-log=".length);
+    if (prefix) {
+      fs.copyFileSync(logPath, `${prefix}-backend.log`);
+      fs.writeFileSync(`${prefix}-census.json`, JSON.stringify(samples));
+    }
+  }
+}
+
 (async () => {
   const browser = await chromium.launch();
   const page = await browser.newPage();
@@ -987,6 +1146,10 @@ async function measureBaseline(page, harness, name, record, setZoom) {
       });
     }
     await page.goto(process.env.HDR_FINISHER_URL);
+    if (process.argv.includes("--micro-lens-memory")) {
+      await measureMicroLensMemory(page, harness);
+      return;
+    }
     assert.ok(!fullProofMethod || baselineMethods.includes(fullProofMethod), "Unknown Denoise method");
     assert.ok(!fullDeliveryRoute || fullProofMethod && ["cpu", "gpu"].includes(fullDeliveryRoute), "Unknown full delivery route");
     assert.ok(!coldProofOnly || fullProofMethod, "Cold Proof needs a full Proof method");
