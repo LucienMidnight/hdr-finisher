@@ -40,8 +40,10 @@ from .jpegxl import (
     verify_lossless_jpegxl,
 )
 from .test_pattern import build_hdr_test_pattern
+from .y4m import write_y4m_bands
 from .hdr_ceiling import (
     ENCODING_ALLOWANCE,
+    decoded_avif_ceiling,
     decoded_channel_nits,
     decoded_ultrahdr_ceiling,
     delivery_ceiling_nits,
@@ -745,7 +747,7 @@ def write_avif_gainmap_renditions(staged_output, hdr_image, sdr_image, settings,
             gainmaputil=gainmaputil, timings_ms=timings_ms)
         return Path(staged_output)
     encode_within_ceiling(hdr_image, reference_white_nits, encode,
-        lambda written: decoded_channel_nits(written, "avif_gain_map"), ceiling_nits, notes,
+        lambda written: decoded_avif_ceiling(written, ceiling_nits), ceiling_nits, notes,
         encoding_allowance=encoding_allowance)
 
 
@@ -1764,6 +1766,9 @@ def _remove_incomplete_output(path: Path | None) -> None:
         pass
 
 
+_AVIF_Y4M_BAND_ROWS = 128  # A multiple of the 4:2:0 vertical subsampling factor.
+
+
 def _write_sdr_y4m(
     path: Path,
     image: np.ndarray,
@@ -1774,10 +1779,18 @@ def _write_sdr_y4m(
 ) -> None:
     if bit_depth not in {8, 10, 12}:
         raise ValueError(f"Unsupported AVIF bit depth: {bit_depth}")
+    bands = (
+        _linear_sdr_to_yuv(image[top:top + _AVIF_Y4M_BAND_ROWS], bit_depth, dithering, top)
+        for top in range(0, image.shape[0], _AVIF_Y4M_BAND_ROWS)
+    )
+    write_y4m_bands(path, *image.shape[:2], bands, bit_depth=bit_depth, chroma_subsampling=chroma_subsampling)
+
+
+def _linear_sdr_to_yuv(image: np.ndarray, bit_depth: int, dithering: str, top: int) -> np.ndarray:
     clipped = np.clip(image.astype(np.float32, copy=False), 0.0, 1.0)
     srgb = np.where(clipped <= 0.0031308, clipped * 12.92, 1.055 * np.power(clipped, 1.0 / 2.4) - 0.055)
     if bit_depth == 8 and dithering != "off":
-        _dither_srgb_in_place(srgb, amplitude_lsb=0.5 if dithering == "subtle" else 1.0)
+        _dither_srgb_in_place(srgb, amplitude_lsb=0.5 if dithering == "subtle" else 1.0, top=top)
 
     r, g, b = srgb[..., 0], srgb[..., 1], srgb[..., 2]
     y = 0.2126 * r + 0.7152 * g + 0.0722 * b
@@ -1788,8 +1801,7 @@ def _write_sdr_y4m(
     cb_code = np.clip(np.round(128.0 * scale + cb * 224.0 * scale), 16.0 * scale, 240.0 * scale)
     cr_code = np.clip(np.round(128.0 * scale + cr * 224.0 * scale), 16.0 * scale, 240.0 * scale)
     dtype = np.uint8 if bit_depth == 8 else np.uint16
-    yuv = np.stack([y_code, cb_code, cr_code], axis=-1).astype(dtype)
-    _write_y4m_planes(path, yuv, bit_depth=bit_depth, chroma_subsampling=chroma_subsampling)
+    return np.stack([y_code, cb_code, cr_code], axis=-1).astype(dtype)
 
 
 def _write_hdr_y4m(
@@ -1804,43 +1816,11 @@ def _write_hdr_y4m(
         raise ValueError(f"Unsupported AVIF bit depth: {bit_depth}")
     if chroma_subsampling not in {"420", "422", "444"}:
         raise ValueError(f"Unsupported AVIF chroma subsampling: {chroma_subsampling}")
-    yuv = _linear_to_bt2020_pq_yuv(image, bit_depth, reference_white_nits)
-    _write_y4m_planes(path, yuv, bit_depth=bit_depth, chroma_subsampling=chroma_subsampling)
-
-
-def _write_y4m_planes(
-    path: Path,
-    yuv: np.ndarray,
-    *,
-    bit_depth: int,
-    chroma_subsampling: str,
-) -> None:
-    height, width = yuv.shape[:2]
-    chroma_name = (
-        {"420": "420jpeg", "422": "422", "444": "444"}[chroma_subsampling]
-        if bit_depth == 8
-        else f"{chroma_subsampling}p{bit_depth}"
+    bands = (
+        _linear_to_bt2020_pq_yuv(image[top:top + _AVIF_Y4M_BAND_ROWS], bit_depth, reference_white_nits)
+        for top in range(0, image.shape[0], _AVIF_Y4M_BAND_ROWS)
     )
-    xyscss = chroma_name.upper() if bit_depth == 8 else f"{chroma_subsampling.upper()}P{bit_depth}"
-    header = (
-        f"YUV4MPEG2 W{width} H{height} F1:1 Ip A1:1 C{chroma_name} "
-        f"XYSCSS={xyscss}\n"
-    ).encode("ascii")
-    frame_header = b"FRAME\n"
-
-    with path.open("wb") as handle:
-        handle.write(header)
-        handle.write(frame_header)
-        planes = [yuv[..., 0]]
-        if chroma_subsampling == "444":
-            planes.extend([yuv[..., 1], yuv[..., 2]])
-        elif chroma_subsampling == "422":
-            planes.extend([_downsample_plane(yuv[..., 1], 1, 2), _downsample_plane(yuv[..., 2], 1, 2)])
-        else:
-            planes.extend([_downsample_plane(yuv[..., 1], 2, 2), _downsample_plane(yuv[..., 2], 2, 2)])
-        dtype = np.uint8 if bit_depth == 8 else np.dtype("<u2")
-        for plane in planes:
-            handle.write(plane.astype(dtype, copy=False).tobytes())
+    write_y4m_bands(path, *image.shape[:2], bands, bit_depth=bit_depth, chroma_subsampling=chroma_subsampling)
 
 
 def _linear_to_pq_rgb10(image: np.ndarray, reference_white_nits: int = 203) -> np.ndarray:
@@ -1885,17 +1865,6 @@ def _linear_to_bt2020_pq_yuv(image: np.ndarray, bit_depth: int, reference_white_
     cr_code = np.clip(np.round(c_mid + cr * c_span), c_min, c_max)
     dtype = np.uint8 if bit_depth == 8 else np.uint16
     return np.stack([y_code, cb_code, cr_code], axis=-1).astype(dtype)
-
-
-def _downsample_plane(plane: np.ndarray, vertical: int, horizontal: int) -> np.ndarray:
-    height, width = plane.shape
-    padded_height = ((height + vertical - 1) // vertical) * vertical
-    padded_width = ((width + horizontal - 1) // horizontal) * horizontal
-    padded = np.pad(plane, ((0, padded_height - height), (0, padded_width - width)), mode="edge")
-    return np.round(
-        padded.reshape(padded_height // vertical, vertical, padded_width // horizontal, horizontal)
-        .mean(axis=(1, 3))
-    ).astype(plane.dtype)
 
 
 def _pq_oetf(normalized_luminance: np.ndarray) -> np.ndarray:
@@ -1948,7 +1917,7 @@ def _validate_avif_output(
     if avifdec is None:
         return None
     result = subprocess.run(
-        [str(avifdec), "--info", str(path)],
+        [str(avifdec), "--jobs", "1", "--info", str(path)],
         capture_output=True,
         text=True,
         check=False,

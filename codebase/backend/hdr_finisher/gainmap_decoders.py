@@ -292,6 +292,134 @@ def decode_avif_preview(path: Path) -> np.ndarray:
     return normalize_to_acescg_bounded(encoded, color_space, transfer).astype(np.float32)
 
 
+def _avif_gain_map_headrooms(info: dict[str, Any]) -> tuple[float, float]:
+    gain = info.get("gain_map") or {}
+    headrooms = [gain.get("base_headroom"), gain.get("alternate_headroom")]
+    if any(value is None for value in headrooms):
+        raise GainMapDecodeError("AVIF gain-map metadata is missing base or alternate HDR headroom.")
+    hdr_headroom = max(float(value) for value in headrooms)
+    sdr_headroom = min(float(value) for value in headrooms)
+    if hdr_headroom <= sdr_headroom + 1e-6:
+        raise GainMapDecodeError("AVIF gain-map metadata does not define distinct SDR and HDR renditions.")
+    return hdr_headroom, sdr_headroom
+
+
+def _reconstruct_avif_hdr(path, temp_dir, utility, hdr_headroom, *, cancelled=None):
+    # Preserve the import decoder's choice of transport and its libavif
+    # gain-map math, including the 10-bit YUV to 16-bit RGB boundary.
+    native = resolve_binary("hdrf-avif-decode")
+    if native is not None:
+        raw_path = temp_dir / "hdr.rgb16"
+        try:
+            decoded = _run([str(native), str(path), str(raw_path), _format_float(hdr_headroom)], cancelled=cancelled)
+            dimensions = json.loads(decoded.stdout)
+            width, height = int(dimensions["width"]), int(dimensions["height"])
+            if width <= 0 or height <= 0 or raw_path.stat().st_size != width * height * 6:
+                raise ValueError("Incomplete native AVIF rendition")
+        except (GainMapDecodeError, OSError, ValueError, KeyError):
+            if cancelled is not None and cancelled():
+                raise GainMapDecodeError("Import cancelled")
+        else:
+            from .library_diagnostics import log
+            match = re.search(r"threads=(\d+) decode_ms=([\d.]+) reconstruction_ms=([\d.]+)", decoded.stderr)
+            if match:
+                log("picture_avif_native_stages", path=str(path), route="native-parallel-rows",
+                    workers=int(match[1]), decode_ms=float(match[2]), reconstruction_ms=float(match[3]),
+                    duration_ms=float(match[2])+float(match[3]))
+            return raw_path, (height, width)
+
+    hdr_png = temp_dir / "hdr.png"
+    _run(
+        [
+            str(utility),
+            "tonemap",
+            str(path),
+            str(hdr_png),
+            "--headroom",
+            _format_float(hdr_headroom),
+            "--cicp-output",
+            "9/16/9",
+            "-d",
+            "10",
+        ],
+        cancelled=cancelled,
+    )
+    return hdr_png, None
+
+
+@contextmanager
+def avif_delivery_hdr_bands(path: Path, rows: int):
+    """Read the import-equivalent HDR rendition in bands for a delivery check."""
+    avifdec = resolve_binary("avifdec")
+    utility = resolve_binary("avifgainmaputil")
+    try:
+        # --info actually decodes both AV1 items. One worker avoids AOM's
+        # per-superblock scratch for row threading, while validating both items.
+        info = inspect_avif(path, jobs=1)
+    except AVIFInfoError as exc:
+        raise GainMapDecodeError(f"Could not inspect AVIF input: {exc}") from exc
+
+    with TemporaryDirectory(prefix="hdr_finisher_avif_ceiling_") as directory:
+        temp_dir = Path(directory)
+        if info.get("gain_map_present"):
+            if utility is None:
+                raise GainMapDecodeError("AVIF gain-map input requires both avifgainmaputil and avifdec.")
+            gain = info["gain_map"]
+            hdr_headroom, sdr_headroom = _avif_gain_map_headrooms(info)
+            if gain["base_headroom"] > sdr_headroom + 1e-6 or _cicp_transfer(info.get("transfer_char")) is None:
+                raise GainMapDecodeError("AVIF Gain Map delivery requires a supported SDR base rendition.")
+            raw_path, shape = _reconstruct_avif_hdr(path, temp_dir, utility, hdr_headroom)
+            color_space, transfer = "BT.2020", "PQ"
+        else:
+            color_space = _cicp_color_space(info.get("color_primaries"))
+            transfer = _cicp_transfer(info.get("transfer_char"))
+            if transfer is None:
+                raise GainMapDecodeError(f"Unsupported or missing AVIF transfer characteristic {info.get('transfer_char')!r}.")
+            raw_path = temp_dir / "hdr.png"
+            _run([str(avifdec), "--jobs", "1", "-d", "16", str(path), str(raw_path)])
+            shape = None
+
+        channels, dtype = 3, np.dtype("<u2")
+        if shape is None:
+            raw_path, shape, channels, dtype = _spool_avif_png_samples(raw_path)
+        height, width = shape
+        if info.get("resolution") != f"{width}x{height}":
+            raise GainMapDecodeError("AVIF reconstruction does not match the primary dimensions.")
+
+        maximum = np.float32(np.iinfo(dtype).max)
+        with raw_path.open("rb") as raw:
+            def bands():
+                for top in range(0, height, rows):
+                    band_rows = min(rows, height - top)
+                    samples = np.fromfile(raw, dtype=dtype, count=band_rows * width * channels)
+                    if samples.size != band_rows * width * channels:
+                        raise GainMapDecodeError("Incomplete AVIF HDR rendition.")
+                    encoded = samples.reshape(band_rows, width, channels).astype(np.float32)
+                    encoded *= np.float32(1.0) / maximum
+                    rgb = np.repeat(encoded, 3, axis=2) if channels == 1 else encoded[..., :3]
+                    yield normalize_to_acescg(rgb, color_space, transfer).astype(np.float32, copy=False)
+
+            yield shape, bands()
+
+
+def _spool_avif_png_samples(path: Path) -> tuple[Path, tuple[int, int], int, np.dtype]:
+    # libvips reads libavif's PNG sequentially and writes native-endian
+    # integers to disk, preserving the 16-bit samples without a full RGB array.
+    import pyvips
+
+    target = path.with_suffix(".raw")
+    try:
+        source = pyvips.Image.new_from_file(str(path), access="sequential", fail_on="error")
+        dtype = {"uchar": np.dtype("u1"), "ushort": np.dtype("u2")}.get(source.format)
+        if dtype is None or source.bands not in {1, 3, 4}:
+            raise GainMapDecodeError("avifdec returned an unsupported pixel layout.")
+        shape, channels = (source.height, source.width), source.bands
+        source.rawsave(str(target))
+    except pyvips.Error as exc:
+        raise GainMapDecodeError(f"Could not read reconstructed AVIF pixels: {exc}") from exc
+    return target, shape, channels, dtype
+
+
 def _decode_avif_gain_map(
     path: Path,
     info: dict[str, Any],
@@ -307,68 +435,26 @@ def _decode_avif_gain_map(
             "AVIF gain-map input requires both avifgainmaputil and avifdec; "
             "refusing to return only the base rendition."
         )
-    gain = info.get("gain_map") or {}
-    headrooms = [gain.get("base_headroom"), gain.get("alternate_headroom")]
-    if any(value is None for value in headrooms):
-        raise GainMapDecodeError("AVIF gain-map metadata is missing base or alternate HDR headroom.")
-    hdr_headroom = max(float(value) for value in headrooms)
-    sdr_headroom = min(float(value) for value in headrooms)
-    if hdr_headroom <= sdr_headroom + 1e-6:
-        raise GainMapDecodeError("AVIF gain-map metadata does not define distinct SDR and HDR renditions.")
+    gain = info["gain_map"]
+    hdr_headroom, sdr_headroom = _avif_gain_map_headrooms(info)
 
     timings: dict[str, float] = {}
     with TemporaryDirectory(prefix="hdr_finisher_avif_gainmap_decode_") as temp_name:
         temp_dir = Path(temp_name)
-        hdr_png = temp_dir / "hdr.png"
         if progress:
             progress("hdr_reconstruction", "Reconstructing full-resolution HDR gain map")
         phase_started = perf_counter()
-        # The native handoff preserves the same libavif gain-map math and
-        # 10-bit YUV/16-bit RGB boundary, avoiding a compressed PNG round trip.
-        encoded_hdr = None
-        reconstruction_route = "serial-utility"
-        native = resolve_binary("hdrf-avif-decode")
-        if native is not None:
-            raw_path = temp_dir / "hdr.rgb16"
-            try:
-                decoded = _run([str(native), str(path), str(raw_path), _format_float(hdr_headroom)], cancelled=cancelled)
-                dimensions = json.loads(decoded.stdout)
-                reconstruction_route = "native-parallel-rows"
-                from .library_diagnostics import log
-                match = re.search(r"threads=(\d+) decode_ms=([\d.]+) reconstruction_ms=([\d.]+)", decoded.stderr)
-                if match:
-                    log("picture_avif_native_stages", path=str(path), route=reconstruction_route,
-                        workers=int(match[1]), decode_ms=float(match[2]), reconstruction_ms=float(match[3]),
-                        duration_ms=float(match[2])+float(match[3]))
-                width, height = int(dimensions["width"]), int(dimensions["height"])
-                if width <= 0 or height <= 0 or raw_path.stat().st_size != width * height * 6:
-                    raise ValueError("Incomplete native AVIF rendition")
-                encoded_hdr = np.fromfile(raw_path, dtype="<u2").reshape(height, width, 3).astype(np.float32)
-                encoded_hdr *= np.float32(1.0) / np.float32(65535)
-            except (GainMapDecodeError, OSError, ValueError, KeyError):
-                if cancelled is not None and cancelled():
-                    raise GainMapDecodeError("Import cancelled")
-        if encoded_hdr is None:
+        hdr_path, shape = _reconstruct_avif_hdr(path, temp_dir, utility, hdr_headroom, cancelled=cancelled)
+        if shape is None:
             reconstruction_route = "serial-utility"
-            _run(
-                [
-                    str(utility),
-                    "tonemap",
-                    str(path),
-                    str(hdr_png),
-                    "--headroom",
-                    _format_float(hdr_headroom),
-                    "--cicp-output",
-                    "9/16/9",
-                    "-d",
-                    "10",
-                ],
-                cancelled=cancelled,
-            )
-            encoded_hdr = _decode_png_pixels(hdr_png)
+            encoded_hdr = _decode_png_pixels(hdr_path)
+        else:
+            reconstruction_route = "native-parallel-rows"
+            encoded_hdr = np.fromfile(hdr_path, dtype="<u2").reshape(*shape, 3).astype(np.float32)
+            encoded_hdr *= np.float32(1.0) / np.float32(65535)
         timings["hdr_reconstruction"] = round((perf_counter() - phase_started) * 1000.0, 3)
         from .library_diagnostics import log
-        log("picture_avif_reconstruction", path=str(path), route=reconstruction_route if encoded_hdr is not None else "serial-utility",
+        log("picture_avif_reconstruction", path=str(path), route=reconstruction_route,
             duration_ms=timings["hdr_reconstruction"])
 
         if progress:

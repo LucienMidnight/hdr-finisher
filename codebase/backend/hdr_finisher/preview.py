@@ -16,6 +16,7 @@ from .color import acescg_to_linear_bt2020, acescg_to_linear_srgb
 from .color_context import DEFAULT_HDR_REFERENCE_WHITE_NITS, scene_linear_to_nits
 from .config import MAX_PREVIEW_LONG_EDGE, PREVIEW_IMAGE_FORMAT
 from .models import AdjustmentState, PreviewKind
+from .y4m import write_y4m_bands
 
 
 class ResizeCancelled(RuntimeError):
@@ -265,19 +266,8 @@ def _write_hdr_y4m(path: Path, image: np.ndarray, reference_white_nits: int = DE
 
 
 def _write_hdr_y4m_bands(path, height, width, bands, reference_white_nits):
-    header = f"YUV4MPEG2 W{width} H{height} F1:1 Ip A1:1 C444p10 XYSCSS=444P10\nFRAME\n".encode("ascii")
-    plane_bytes = height * width * 2
-    with path.open("wb") as handle:
-        handle.write(header)
-        top = 0
-        for band in bands:
-            yuv10 = _linear_to_bt2020_pq_yuv10(band, reference_white_nits)
-            # Y4M stores complete planes, even though the pixels arrive in
-            # row bands. Place each band at its original position.
-            for plane_index in range(3):
-                handle.seek(len(header) + plane_index * plane_bytes + top * width * 2)
-                handle.write(yuv10[..., plane_index].astype("<u2", copy=False).tobytes())
-            top += len(band)
+    yuv_bands = (_linear_to_bt2020_pq_yuv10(band, reference_white_nits) for band in bands)
+    write_y4m_bands(path, height, width, yuv_bands, bit_depth=10, chroma_subsampling="444")
 
 
 def _linear_to_bt2020_pq_yuv10(image: np.ndarray, reference_white_nits: int = DEFAULT_HDR_REFERENCE_WHITE_NITS) -> np.ndarray:

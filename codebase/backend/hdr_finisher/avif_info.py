@@ -13,13 +13,14 @@ class AVIFInfoError(RuntimeError):
     """Raised when avifdec cannot inspect an AVIF file."""
 
 
-def inspect_avif(path: Path) -> dict[str, Any]:
+def inspect_avif(path: Path, *, jobs: int | None = None) -> dict[str, Any]:
     avifdec = resolve_binary("avifdec")
     if avifdec is None:
         raise AVIFInfoError("avifdec is required for AVIF metadata inspection.")
 
+    worker_args = ["--jobs", str(jobs)] if jobs is not None else []
     result = subprocess.run(
-        [str(avifdec), "--info", str(path)],
+        [str(avifdec), *worker_args, "--info", str(path)],
         capture_output=True,
         text=True,
         check=False,

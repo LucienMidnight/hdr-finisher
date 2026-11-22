@@ -265,7 +265,7 @@ def test_only_active_highlights_get_the_encoding_allowance(monkeypatch, tmp_path
         pytest.skip(backend.capability.detail)
     def decoded(*args):
         return np.full((96, 128), 10050.0, np.float32)
-    monkeypatch.setattr(exporters, "decoded_channel_nits", decoded)
+    monkeypatch.setattr(exporters, "decoded_avif_ceiling", decoded)
     monkeypatch.setattr(exporters, "decoded_ultrahdr_ceiling", decoded)
     monkeypatch.setattr(exporters, "_decoded_jpegxl_channel_nits", decoded)
     adjustments = AdjustmentState()
@@ -277,6 +277,46 @@ def test_only_active_highlights_get_the_encoding_allowance(monkeypatch, tmp_path
         guarantee_hdr_peak=True, output_path=str(tmp_path / "delivery")))
     assert result.accepted is highlights, result.message
     assert result.delivery_notes == []
+
+
+@pytest.mark.parametrize("bit_depth,chroma", [(8, "420"), (10, "422"), (12, "444")])
+def test_avif_peak_and_correction_match_the_import_decoder(tmp_path, bit_depth, chroma):
+    from hdr_finisher import gainmap_decoders
+    from hdr_finisher.binaries import resolve_binary
+    from hdr_finisher.exporters import write_avif_gainmap_renditions
+    from hdr_finisher.models import ExportSettings
+
+    if not (resolve_binary("avifgainmaputil") and resolve_binary("avifdec")):
+        pytest.skip("Bundled AVIF gain-map tools are unavailable.")
+    rng = np.random.default_rng(79)
+    hdr = rng.uniform(0, 0.4, (261, 35, 3)).astype(np.float32)
+    hdr[126:132, 13:19] = [1.75, 0.30, 0.25]
+    hdr[-5:, -5:] = [0.4, 1.4, 0.3]
+    sdr = np.minimum(hdr, np.float32(0.8))
+    avif = tmp_path / "ceiling.avif"
+    write_avif_gainmap_renditions(avif, hdr, sdr, ExportSettings(
+        format="avif_gain_map", quality=90, avif_bit_depth=bit_depth, avif_chroma_subsampling=chroma,
+    ))
+
+    full_hdr, _, _ = gainmap_decoders.decode_avif(avif)
+    with gainmap_decoders.avif_delivery_hdr_bands(avif, hdr_ceiling.BAND_ROWS) as (shape, bands):
+        assert shape == full_hdr.shape[:2]
+        np.testing.assert_array_equal(np.concatenate(list(bands)), full_hdr)
+
+    full = hdr_ceiling.channel_nits(full_hdr)
+    ceiling = 600
+    compact = hdr_ceiling.decoded_avif_ceiling(avif, ceiling)
+    assert compact.peak == float(full.max()) > ceiling
+    assert compact.shape == full.shape
+    block = hdr_ceiling.BLOCK
+    grid = np.empty((-(-shape[0] // block), -(-shape[1] // block)), dtype=np.float32)
+    hdr_ceiling._fill_block_maxima(grid, 0, full, ceiling)
+    np.testing.assert_array_equal(compact.block_maxima, grid)
+    for margin in hdr_ceiling.MARGINS:
+        expected, actual = hdr.copy(), hdr.copy()
+        hdr_ceiling._correct_bands(expected, full, ceiling, margin)
+        hdr_ceiling._correct_bands(actual, compact, ceiling, margin)
+        np.testing.assert_array_equal(actual, expected)
 
 
 def test_a_codec_can_overshoot_despite_input_headroom():

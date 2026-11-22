@@ -1,3 +1,9 @@
+## November 22 — Bounded AVIF preparation and peak check
+
+AVIF Gain Map export and Proof prepare SDR and HDR encoder inputs in row bands.
+The encoded ceiling check reads the HDR rendition in bands and keeps the exact
+peak and local correction grid. [MacBook Neo measurements](../../technical/performance-table.md#november-22-2026--macbook-neo-proof-memory)
+
 ## November 21 — Share Grain Denoise in CPU delivery
 
 CPU AVIF Gain Map export and non-JPEG Proof reuse one Grain result when

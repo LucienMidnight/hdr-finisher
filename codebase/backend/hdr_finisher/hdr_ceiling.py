@@ -80,6 +80,28 @@ class _DecodedCeiling:
     block_maxima: np.ndarray
 
 
+def decoded_avif_ceiling(path: Path, ceiling_nits: float) -> _DecodedCeiling:
+    """Check every HDR pixel, keeping only the exact peak and correction grid."""
+    from .gainmap_decoders import avif_delivery_hdr_bands
+
+    ceiling = min(float(ceiling_nits), CODEC_LIMIT_NITS)
+    with avif_delivery_hdr_bands(path, BAND_ROWS) as (shape, bands):
+        height, width = shape
+        grid = np.ones((-(-height // BLOCK), -(-width // BLOCK)), dtype=np.float32)
+        peak = -np.inf
+        for index, hdr in enumerate(bands):
+            if not hdr.size or not np.isfinite(hdr).all():
+                raise CeilingError("The HDR file decoded to empty or non-finite pixels.")
+            nits = channel_nits(hdr, 203)
+            if not np.isfinite(nits).all():
+                raise CeilingError("The HDR file decoded to empty or non-finite pixels.")
+            band_peak = float(nits.max())
+            peak = max(peak, band_peak)
+            if band_peak > ceiling:
+                _fill_block_maxima(grid, index * BAND_ROWS, nits, ceiling)
+    return _DecodedCeiling(shape, peak, grid)
+
+
 def decoded_ultrahdr_ceiling(path: Path, ceiling_nits: float) -> _DecodedCeiling | np.ndarray:
     """Keep only the full decoded peak and the data used by local correction."""
     return _ultrahdr_channel_nits(path, min(float(ceiling_nits), CODEC_LIMIT_NITS))

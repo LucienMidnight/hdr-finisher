@@ -821,7 +821,7 @@ def _optional_float(value: object) -> float | None:
 
 def _inspect_artifact(path: Path, format_name: str, reference_white_nits: int = 203) -> tuple[float, str]:
     if format_name == "avif_gain_map":
-        info = inspect_avif(path)
+        info = inspect_avif(path, jobs=1)
         gain = info.get("gain_map") or {}
         headroom = float(gain.get("alternate_headroom", 0.0))
         return headroom, "ISO 21496-1 AVIF gain map; SDR base; 10-bit gain map"
