@@ -21,8 +21,10 @@ from .binaries import resolve_binary
 from .color import acescg_to_linear_bt2020, linear_bt2020_to_acescg, linear_srgb_to_acescg
 from .color_context import RenderColorContext, nits_to_scene_linear, scene_linear_to_nits
 from .config import APP_VERSION
+from .delivery_frames import DeliveryFrame, row_bands
 from .exporters import (
-    ExportBackend, _finishing_adjustments_for_export, _render_export_branch, _run_command,
+    ExportBackend, _finishing_adjustments_for_export, _release_delivery_pixels, _render_branch_to_file,
+    _render_export_branch, _run_command,
     denoise_delivery_key, share_delivery_grain,
 )
 from .gainmap_decoders import parse_jpeg_gain_map_probe
@@ -68,8 +70,8 @@ class ProofArtifact:
     metadata_summary: str
     encoded_headroom: float
     reference_white_nits: int
-    hdr_authored: np.ndarray | None
-    sdr_authored: np.ndarray | None
+    hdr_authored: np.ndarray | DeliveryFrame | None
+    sdr_authored: np.ndarray | DeliveryFrame | None
     jpeg_gain_map: JPEGGainMapProofMetadata | None = None
     full_size: bool = False
     exact_measurements: dict | None = None
@@ -80,6 +82,7 @@ class ProofArtifact:
     jpeg_decoded: Path | None = None
     jpeg_gain_range: tuple[np.ndarray, np.ndarray] | None = None
     authored_gain_range: tuple[np.ndarray, np.ndarray] | None = None
+    endpoint_storage: TemporaryDirectory | None = None
 
 
 @dataclass
@@ -172,11 +175,16 @@ def _endpoint_gain_range(log_gain_bands):
 
 
 def _authored_log_gain_bands(base, alternate, offset_sdr, offset_hdr):
-    for top in range(0, len(base), _PROOF_RECONSTRUCTION_ROWS):
-        rows = slice(top, top + _PROOF_RECONSTRUCTION_ROWS)
-        base_rgb = np.clip(base[rows, :, :3].astype(np.float32, copy=False), 0.0, None)
-        alternate_rgb = np.clip(alternate[rows, :, :3].astype(np.float32, copy=False), 0.0, None)
+    for base_band, hdr_band in zip(row_bands(base, _PROOF_RECONSTRUCTION_ROWS),
+                                   row_bands(alternate, _PROOF_RECONSTRUCTION_ROWS), strict=True):
+        base_rgb = np.clip(base_band[..., :3].astype(np.float32, copy=False), 0.0, None)
+        alternate_rgb = np.clip(hdr_band[..., :3].astype(np.float32, copy=False), 0.0, None)
         yield base_rgb, _endpoint_log_gain(base_rgb, alternate_rgb, offset_sdr, offset_hdr)
+
+
+def _sdr_matrix_band(pixels):
+    encoded_sdr_linear = np.clip(pixels[..., :3], 0, 1)
+    return np.clip(linear_srgb_to_acescg(encoded_sdr_linear) * np.float32(0.18), 0, None)
 
 
 def _endpoint_gain_parameters(encoded_headroom, display_ratio_sdr, offset_sdr, offset_hdr, gain_min, gain_max):
@@ -238,7 +246,7 @@ class ProofArtifactStore:
         atexit.register(self.clear)
 
     def clear(self) -> None:
-        with self._lock:
+        with self._full_tile_lock, self._lock:
             self._artifacts.clear()
             self._tiles.clear()
             self._request_cache.clear()
@@ -303,18 +311,27 @@ class ProofArtifactStore:
             from .photo_framing import output_layout
             native = output_layout(*proxy_session.framing_source_size, session.framing, request.output_finishing)
             full_size = max(native.width, native.height) <= request.long_edge
+        if full_size and request.format != "jpeg_ultrahdr":
+            storage = TemporaryDirectory(prefix="endpoints-", dir=self.root)
+            try:
+                return self._build_artifact(proxy_session, request, backend, signature, context, full_size, storage)
+            except BaseException:
+                storage.cleanup()
+                raise
         grain = (share_delivery_grain(proxy_session, request.adjustments, spans_encoding=True)
                  if request.format != "jpeg_ultrahdr" else nullcontext())
         with grain:
             return self._build_artifact(proxy_session, request, backend, signature, context, full_size)
 
-    def _build_artifact(self, proxy_session, request, backend, signature, context, full_size):
+    def _build_artifact(self, proxy_session, request, backend, signature, context, full_size, storage=None):
         suffix, media_type = PROOF_FORMAT_INFO[request.format]
         # Proofs are internal cache artifacts, not user exports. Use a unique
         # staging target so concurrent/retried builds cannot collide, and allow
         # the exporter to replace that owned target if it created a partial file.
         staged = self.root / f"request-{signature}-{uuid4().hex}{suffix}"
         export_settings = request.to_export_settings(str(staged))
+        if storage is not None:
+            object.__setattr__(export_settings, "_proof_endpoint_directory", Path(storage.name))
         if full_size:
             export_settings.editing_measurements = {lane: {"peak": 0, "anchor": 0} for lane in ("hdr", "sdr")}
         try:
@@ -373,7 +390,26 @@ class ProofArtifactStore:
                     jpeg_decoded = self._decode_jpeg_endpoint(final_path, artifact_id, width, height)
             except (OSError, ValueError, RuntimeError):
                 pass
-        if jpeg_decoded is None:
+        if storage is not None:
+            endpoints = getattr(export_settings, "_proof_endpoints", None)
+            directory = Path(storage.name)
+            if endpoints is None:
+                adjustments = _finishing_adjustments_for_export(proxy_session)
+                try:
+                    with share_delivery_grain(proxy_session, adjustments):
+                        endpoints = tuple(
+                            _render_branch_to_file(directory / f"{lane.value}.rgb", lambda allocate:
+                                _render_export_branch(proxy_session, export_settings, lane, adjustments,
+                                                      allocate_output=allocate))
+                            for lane in (PreviewKind.HDR, PreviewKind.SDR))
+                finally:
+                    _release_delivery_pixels(proxy_session)
+            hdr_authored, sdr_authored = endpoints
+            height, width = hdr_authored.shape[:2]
+            sdr_matrix_endpoint = DeliveryFrame(directory / "sdr-matrix.rgb", (height, width, 3))
+            sdr_matrix_endpoint.write(_sdr_matrix_band(band) for band in sdr_authored.bands(_PROOF_RECONSTRUCTION_ROWS))
+            sdr_authored.path.unlink()
+        elif jpeg_decoded is None:
             finishing_adjustments = _finishing_adjustments_for_export(proxy_session)
             hdr_authored = _render_export_branch(proxy_session, export_settings, PreviewKind.HDR, finishing_adjustments)
             sdr_authored = _render_export_branch(proxy_session, export_settings, PreviewKind.SDR, finishing_adjustments)
@@ -390,9 +426,7 @@ class ProofArtifactStore:
             if reuse:
                 sdr_matrix_endpoint.setflags(write=True)
             for row in range(0, sdr_authored.shape[0], 128):
-                encoded_sdr_linear = np.clip(sdr_authored[row:row + 128, :, :3], 0, 1)
-                sdr_matrix_endpoint[row:row + 128] = np.clip(
-                    linear_srgb_to_acescg(encoded_sdr_linear) * np.float32(0.18), 0, None)
+                sdr_matrix_endpoint[row:row + 128] = _sdr_matrix_band(sdr_authored[row:row + 128])
             sdr_matrix_endpoint.setflags(write=False)
             height, width = hdr_authored.shape[:2]
             hdr_authored = np.ascontiguousarray(hdr_authored, dtype=np.float32)
@@ -419,10 +453,20 @@ class ProofArtifactStore:
             delivery_notes=tuple(result.delivery_notes),
             fallback_reason=result.fallback_reason,
             delivery_cache=getattr(proxy_session, "_delivery_cache", None),
+            endpoint_storage=storage,
         )
-        with self._lock:
+        with self._full_tile_lock, self._lock:
+            previous = self._artifacts.pop(artifact_id, None)
+            if previous is not None and previous.endpoint_storage is not None:
+                previous.endpoint_storage.cleanup()
             self._artifacts[artifact_id] = artifact
             self._request_cache[signature] = artifact_id
+            retained = [item for item in self._artifacts.values() if item.endpoint_storage is not None]
+            for item in retained[:-2]:
+                item.endpoint_storage.cleanup()
+                del self._artifacts[item.artifact_id]
+                self._request_cache = {key: value for key, value in self._request_cache.items()
+                                       if value != item.artifact_id}
         return self._response(artifact, request.editing_measurements)
 
     def artifact(self, artifact_id: str) -> ProofArtifact:
@@ -525,6 +569,8 @@ class ProofArtifactStore:
         with self._full_tile_lock if artifact.full_size else nullcontext():
             with self._lock:
                 cached = self._target_cache.get(cache_key)
+                if artifact.endpoint_storage is not None:
+                    artifact = self.artifact(artifact.artifact_id)
             if cached is None:
                 if artifact.jpeg_decoded is not None:
                     tile_bytes, peak_nits, clipped = self._jpeg_target_tile(artifact, resolved_target)
@@ -680,7 +726,7 @@ class ProofArtifactStore:
         finally:
             staged.unlink(missing_ok=True)
 
-    def _matrix_endpoints(self, artifact: ProofArtifact) -> tuple[np.ndarray, np.ndarray]:
+    def _matrix_endpoints(self, artifact: ProofArtifact) -> tuple[np.ndarray | DeliveryFrame, np.ndarray | DeliveryFrame]:
         if artifact.format != "jpeg_ultrahdr":
             return artifact.sdr_authored, artifact.hdr_authored
         ultrahdr = resolve_binary("ultrahdr_app")

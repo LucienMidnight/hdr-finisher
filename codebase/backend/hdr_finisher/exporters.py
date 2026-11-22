@@ -26,6 +26,7 @@ from .subprocess_utils import hidden_window_options
 from .color import acescg_to_linear_bt2020
 from .color_context import RenderColorContext, scene_linear_to_nits
 from . import denoise_adaptive, gainmap_filter
+from .delivery_frames import DeliveryFrame, row_bands
 from .config import EXPORTS_DIR, SAMPLES_DIR
 from .finishing import apply_output_finishing
 from .peak_accuracy import measurement_warnings
@@ -266,7 +267,8 @@ def _render_export_branch(session, settings, kind, adjustments, *, denoise_sourc
     from .watermark import apply_watermark
     image = (_render_unwatermarked_branch(session, settings, kind, adjustments, denoise_source=denoise_source,
                                         allocate_output=allocate_output)
-             if denoise_source else _render_unwatermarked_branch(session, settings, kind, adjustments))
+             if denoise_source is not None or allocate_output is not None
+             else _render_unwatermarked_branch(session, settings, kind, adjustments))
     return apply_watermark(image, settings.watermark, kind.value,
         getattr(session, "hdr_reference_white_nits", 203), delivery_ceiling_nits(adjustments))
 
@@ -404,6 +406,35 @@ def _bounded_export_eligible(session, settings, kind, adjustments, *, prepared_d
         local_adjustments=adjustments.enabled_locals(getattr(session, "local_adjustments", None)),
         denoise_active=not prepared_denoise and denoise_settings_for_export(session, kind) is not None,
         source_width=width, source_height=height)
+
+
+def _render_branch_to_file(path, render):
+    """Close any strip output mapping before the next stage can use the file."""
+    with ExitStack() as maps:
+        mapped = None
+        frame = None
+
+        def allocate(shape):
+            nonlocal mapped, frame
+            frame = DeliveryFrame(path, shape)
+            mapped = maps.enter_context(frame.map("w+"))
+            return mapped
+
+        pixels = render(allocate)
+        if pixels is mapped:
+            return frame
+    # Watermarking can return a new array after the strip render.
+    return DeliveryFrame.spill(path, pixels)
+
+
+def _release_delivery_pixels(session):
+    owner = getattr(session, "delivery_owner", session)
+    with getattr(owner, "_delivery_lock", nullcontext()):
+        cache = getattr(session, "_delivery_cache", None)
+        if cache is not None and cache[1] is not None:
+            if getattr(owner, "_delivery_cache", None) is cache:
+                owner._delivery_cache = None
+            session._delivery_cache = None
 
 
 def _allocate_export_strip_output(scratch: ExitStack, shape: tuple[int, int, int]) -> np.memmap:
@@ -924,14 +955,27 @@ class AVIFGainMapExportBackend(ExportBackend):
             )
 
         timings_ms: dict[str, float] = {}
+        proof_directory = getattr(settings, "_proof_endpoint_directory", None)
 
         def prepare() -> _PreparedExport:
             notes: list[str] = []
             finishing_adjustments = _finishing_adjustments_for_export(session)
             phase_started = perf_counter()
-            with share_delivery_grain(session, finishing_adjustments):
-                hdr_image = _render_export_branch(session, settings, PreviewKind.HDR, finishing_adjustments)
-                sdr_image = _render_export_branch(session, settings, PreviewKind.SDR, finishing_adjustments)
+            try:
+                with share_delivery_grain(session, finishing_adjustments):
+                    if proof_directory is None:
+                        hdr_image = _render_export_branch(session, settings, PreviewKind.HDR, finishing_adjustments)
+                        sdr_image = _render_export_branch(session, settings, PreviewKind.SDR, finishing_adjustments)
+                    else:
+                        hdr_image, sdr_image = (
+                            _render_branch_to_file(proof_directory / f"{lane.value}.rgb", lambda allocate:
+                                _render_export_branch(session, settings, lane, finishing_adjustments,
+                                                      allocate_output=allocate))
+                            for lane in (PreviewKind.HDR, PreviewKind.SDR))
+                        object.__setattr__(settings, "_proof_endpoints", (hdr_image, sdr_image))
+            finally:
+                if proof_directory is not None:
+                    _release_delivery_pixels(session)
             timings_ms["render_renditions"] = round((perf_counter() - phase_started) * 1000.0, 3)
 
             def write(staged_output: Path) -> None:
@@ -1066,28 +1110,43 @@ class JPEGXLHDRExportBackend(ExportBackend):
         def prepare() -> _PreparedExport:
             notes: list[str] = []
             finishing_adjustments = _finishing_adjustments_for_export(session)
-            hdr_image = _render_export_branch(session, settings, PreviewKind.HDR, finishing_adjustments)
+            proof_directory = getattr(settings, "_proof_endpoint_directory", None)
             reference_white_nits = getattr(session, "hdr_reference_white_nits", 203)
-            exif_payload = None
-            if settings.jpegxl_high_fidelity:
-                payload = encode_hdr_jpegxl(hdr_image, 100, "uint12",
-                    exif_payload=exif_payload, reference_white_nits=reference_white_nits)
-                verify_lossless_jpegxl(payload, hdr_image, hdr=True,
-                    reference_white_nits=reference_white_nits,
-                    ceiling_nits=_peak_ceiling(settings, finishing_adjustments),
-                    encoding_allowance=_peak_allowance(finishing_adjustments))
-            else:
-                payload = encode_within_ceiling(
-                    hdr_image,
-                    reference_white_nits,
+
+            def encode(hdr_image):
+                if settings.jpegxl_high_fidelity:
+                    payload = encode_hdr_jpegxl(hdr_image, 100, "uint12", reference_white_nits=reference_white_nits)
+                    verify_lossless_jpegxl(payload, hdr_image, hdr=True,
+                        reference_white_nits=reference_white_nits,
+                        ceiling_nits=_peak_ceiling(settings, finishing_adjustments),
+                        encoding_allowance=_peak_allowance(finishing_adjustments))
+                    return payload
+                return encode_within_ceiling(
+                    hdr_image, reference_white_nits,
                     lambda hdr: encode_hdr_jpegxl(hdr, int(settings.quality), settings.jpegxl_precision,
-                        exif_payload=exif_payload, reference_white_nits=reference_white_nits),
-                    _decoded_jpegxl_channel_nits,
-                    _peak_ceiling(settings, finishing_adjustments),
-                    notes,
-                    encoding_allowance=_peak_allowance(finishing_adjustments),
-                )
-            shape = hdr_image.shape[:2]
+                        reference_white_nits=reference_white_nits),
+                    _decoded_jpegxl_channel_nits, _peak_ceiling(settings, finishing_adjustments), notes,
+                    encoding_allowance=_peak_allowance(finishing_adjustments))
+
+            if proof_directory is None:
+                hdr_image = _render_export_branch(session, settings, PreviewKind.HDR, finishing_adjustments)
+                shape = hdr_image.shape[:2]
+                payload = encode(hdr_image)
+            else:
+                try:
+                    with share_delivery_grain(session, finishing_adjustments):
+                        endpoints = tuple(
+                            _render_branch_to_file(proof_directory / f"{lane.value}.rgb", lambda allocate:
+                                _render_export_branch(session, settings, lane, finishing_adjustments,
+                                                      allocate_output=allocate))
+                            for lane in (PreviewKind.HDR, PreviewKind.SDR))
+                finally:
+                    _release_delivery_pixels(session)
+                hdr_endpoint, _ = endpoints
+                shape = hdr_endpoint.shape[:2]
+                with hdr_endpoint.map("r") as hdr_image:
+                    payload = encode(hdr_image)
+                object.__setattr__(settings, "_proof_endpoints", endpoints)
             return _PreparedExport(
                 ".tmp.jxl",
                 lambda staged: staged.write_bytes(payload),
@@ -1780,8 +1839,8 @@ def _write_sdr_y4m(
     if bit_depth not in {8, 10, 12}:
         raise ValueError(f"Unsupported AVIF bit depth: {bit_depth}")
     bands = (
-        _linear_sdr_to_yuv(image[top:top + _AVIF_Y4M_BAND_ROWS], bit_depth, dithering, top)
-        for top in range(0, image.shape[0], _AVIF_Y4M_BAND_ROWS)
+        _linear_sdr_to_yuv(band, bit_depth, dithering, index * _AVIF_Y4M_BAND_ROWS)
+        for index, band in enumerate(row_bands(image, _AVIF_Y4M_BAND_ROWS))
     )
     write_y4m_bands(path, *image.shape[:2], bands, bit_depth=bit_depth, chroma_subsampling=chroma_subsampling)
 
@@ -1817,8 +1876,8 @@ def _write_hdr_y4m(
     if chroma_subsampling not in {"420", "422", "444"}:
         raise ValueError(f"Unsupported AVIF chroma subsampling: {chroma_subsampling}")
     bands = (
-        _linear_to_bt2020_pq_yuv(image[top:top + _AVIF_Y4M_BAND_ROWS], bit_depth, reference_white_nits)
-        for top in range(0, image.shape[0], _AVIF_Y4M_BAND_ROWS)
+        _linear_to_bt2020_pq_yuv(band, bit_depth, reference_white_nits)
+        for band in row_bands(image, _AVIF_Y4M_BAND_ROWS)
     )
     write_y4m_bands(path, *image.shape[:2], bands, bit_depth=bit_depth, chroma_subsampling=chroma_subsampling)
 

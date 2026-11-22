@@ -13,13 +13,16 @@ image to pass would visibly change the grade.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from contextlib import ExitStack, nullcontext
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import Callable, TypeVar
 
 import numpy as np
 
 from .color import acescg_to_linear_bt2020
 from .color_context import scene_linear_to_nits
+from .delivery_frames import DeliveryFrame
 
 T = TypeVar("T")
 
@@ -163,7 +166,7 @@ def _ultrahdr_channel_nits(path: Path, ceiling: float | None = None) -> _Decoded
 
 
 def _correct_bands(
-    current: np.ndarray, decoded: _DecodedCeiling | np.ndarray, ceiling: float, margin: float,
+    current: np.ndarray | DeliveryFrame, decoded: _DecodedCeiling | np.ndarray, ceiling: float, margin: float,
 ) -> None:
     """Apply the same widened block grid using global interpolation coordinates."""
     height, width = decoded.shape
@@ -184,21 +187,36 @@ def _correct_bands(
 
     y0, y1, wy = axis_weights(height, blocks_y)
     x0, x1, wx = axis_weights(width, blocks_x)
-    for top in range(0, height, BAND_ROWS):
-        band = slice(top, top + BAND_ROWS)
-        if np.all(grid[y0[band]] == 1.0) and np.all(grid[y1[band]] == 1.0):
-            continue
-        rows = grid[y0[band]] * (1 - wy[band, None]) + grid[y1[band]] * wy[band, None]
-        spread = rows[:, x0] * (1 - wx)[None, :] + rows[:, x1] * wx[None, :]
-        correction = np.where(spread > 1.0, 1.0 / (spread ** STRENGTH * (1.0 + margin)), 1.0).astype(np.float32)
-        rgb = current[band, :, :3]
-        np.multiply(rgb, correction[..., None], out=rgb, where=correction[..., None] != 1.0)
+    on_disk = isinstance(current, DeliveryFrame)
+    with current.path.open("r+b") if on_disk else nullcontext() as file:
+        if on_disk:
+            buffer = np.empty((min(BAND_ROWS, height), *current.shape[1:]), dtype=current.dtype)
+        for top in range(0, height, BAND_ROWS):
+            band = slice(top, top + BAND_ROWS)
+            if np.all(grid[y0[band]] == 1.0) and np.all(grid[y1[band]] == 1.0):
+                continue
+            rows = grid[y0[band]] * (1 - wy[band, None]) + grid[y1[band]] * wy[band, None]
+            spread = rows[:, x0] * (1 - wx)[None, :] + rows[:, x1] * wx[None, :]
+            correction = np.where(spread > 1.0, 1.0 / (spread ** STRENGTH * (1.0 + margin)), 1.0).astype(np.float32)
+            if on_disk:
+                pixels = buffer[:len(correction)]
+                position = top * buffer[0].nbytes
+                file.seek(position)
+                if file.readinto(memoryview(pixels).cast("B")) != pixels.nbytes:
+                    raise OSError("Incomplete delivery frame.")
+            else:
+                pixels = current[band]
+            rgb = pixels[..., :3]
+            np.multiply(rgb, correction[..., None], out=rgb, where=correction[..., None] != 1.0)
+            if on_disk:
+                file.seek(position)
+                file.write(memoryview(pixels).cast("B"))
 
 
 def encode_within_ceiling(
-    hdr_image: np.ndarray,
+    hdr_image: np.ndarray | DeliveryFrame,
     reference_white_nits: float,
-    encode: Callable[[np.ndarray], T],
+    encode: Callable[[np.ndarray | DeliveryFrame], T],
     decode: Callable[[T], _DecodedCeiling | np.ndarray],
     ceiling_nits: float | None = None,
     notes: list[str] | None = None,
@@ -218,6 +236,13 @@ def encode_within_ceiling(
     Only a caller that owns a private writable render may opt into correction
     in place, and its encoder must return a separate delivery.
     """
+    with ExitStack() as scratch:
+        return _encode_within_ceiling(hdr_image, encode, decode, ceiling_nits, notes,
+                                      encoding_allowance, correct_in_place, scratch)
+
+
+def _encode_within_ceiling(hdr_image, encode, decode, ceiling_nits, notes,
+                           encoding_allowance, correct_in_place, scratch):
     from .delivery import log_delivery
 
     current = hdr_image
@@ -250,7 +275,12 @@ def encode_within_ceiling(
             )
         log_delivery("ceiling_retry", level="warn", route="cpu", reason="encoded_peak_exceeded",
                    retry_count=attempt + 1, peak_nits=peak, target_nits=ceiling, allowed_nits=allowed)
-        if not correct_in_place:
+        if isinstance(hdr_image, DeliveryFrame):
+            if current is hdr_image:
+                directory = scratch.enter_context(TemporaryDirectory(prefix="ceiling-", dir=hdr_image.path.parent))
+                current = DeliveryFrame(Path(directory) / "hdr.rgb", hdr_image.shape, hdr_image.dtype)
+                current.write(hdr_image.bands(BAND_ROWS))
+        elif not correct_in_place:
             current = current.copy()
         _correct_bands(current, decoded, ceiling, MARGINS[attempt])
         del decoded

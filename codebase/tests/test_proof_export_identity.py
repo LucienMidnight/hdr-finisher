@@ -329,8 +329,8 @@ def test_physical_film_controls_proof_is_export(backends, tmp_path, stock, paper
 
 @pytest.mark.parametrize("format_name,source_mode,export_calls,proof_calls", [
     ("avif_gain_map", "matched", 1, 1),
-    ("avif_gain_map", "different_controls", 2, 4),
-    ("avif_gain_map", "authored_sdr", 2, 4),
+    ("avif_gain_map", "different_controls", 2, 2),
+    ("avif_gain_map", "authored_sdr", 2, 2),
     ("jpegxl_hdr", "matched", 1, 1),
 ])
 def test_delivery_shares_grain_only_for_matched_inputs(
@@ -339,7 +339,7 @@ def test_delivery_shares_grain_only_for_matched_inputs(
     from contextlib import nullcontext
 
     from hdr_finisher import denoise_grain, denoise_measurement, exporters, proofing
-    from hdr_finisher.models import DenoiseDocumentSettings
+    from hdr_finisher.models import DenoiseDocumentSettings, PreviewKind
 
     capabilities, backends_by_format = backends
     capability, suffix = FORMATS[format_name]
@@ -390,9 +390,15 @@ def test_delivery_shares_grain_only_for_matched_inputs(
             ), backend)
             artifact = store.artifact(proof.artifact_id)
             outputs = (_sha(Path(export.output_path)), proof.sha256,
-                       hashlib.sha256(artifact.hdr_authored).hexdigest(),
-                       hashlib.sha256(artifact.sdr_authored).hexdigest())
-            return outputs, (export_count, calls)
+                       _sha(artifact.hdr_authored.path), _sha(artifact.sdr_authored.path))
+            proof_count = calls
+            adjustments = exporters._finishing_adjustments_for_export(session)
+            with exporters.share_delivery_grain(session, adjustments, spans_encoding=True):
+                hdr = exporters._render_export_branch(session, settings, PreviewKind.HDR, adjustments)
+                sdr = exporters._render_export_branch(session, settings, PreviewKind.SDR, adjustments)
+            assert artifact.hdr_authored.path.read_bytes() == hdr.tobytes()
+            assert artifact.sdr_authored.path.read_bytes() == proofing._sdr_matrix_band(sdr).tobytes()
+            return outputs, (export_count, proof_count)
         finally:
             store.clear()
 
@@ -401,6 +407,6 @@ def test_delivery_shares_grain_only_for_matched_inputs(
     monkeypatch.setattr(exporters, "share_delivery_grain", lambda *_, **__: nullcontext())
     monkeypatch.setattr(proofing, "share_delivery_grain", lambda *_, **__: nullcontext())
     separate_outputs, separate_counts = run("separate")
-    assert separate_counts == ((2, 4) if format_name == "avif_gain_map" else (1, 3))
+    assert separate_counts == ((2, 2) if format_name == "avif_gain_map" else (1, 2))
     assert shared_outputs == separate_outputs
     assert shared_outputs[0] == shared_outputs[1]
