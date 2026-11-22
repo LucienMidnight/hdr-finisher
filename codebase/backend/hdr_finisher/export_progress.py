@@ -21,24 +21,25 @@ from time import monotonic
 from .export_timing import ExportClock
 
 # Seconds per megapixel of the source frame on the MacBook Neo, from the
-# Profile A/B export_timing records of November 22 after the speed changes.
+# Sony Profile A/B export_timing records of November 22 after the speed
+# changes (per rendition, except Clean Grain, which both share).
 STAGE_COST = {
     "develop_raw": 0.10,
-    "denoise": 0.17,
-    "geometry": 0.08,
-    "masks": 0.13,
-    "tone_colour": 0.16,
-    "detail": 0.11,
-    "local_stack": 0.05,
-    "film_stock": 0.28,
-    "halation": 0.08,
-    "film_grain": 0.75,
-    "vignette": 0.03,
-    "output_finishing": 0.02,
-    "strip_render": 0.04,
+    "denoise": 0.15,
+    "geometry": 0.065,
+    "masks": 0.10,
+    "tone_colour": 0.135,
+    "detail": 0.075,
+    "local_stack": 0.037,
+    "film_stock": 0.27,
+    "halation": 0.043,
+    "film_grain": 0.37,
+    "vignette": 0.018,
+    "output_finishing": 0.013,
+    "strip_render": 0.035,
 }
 # Seconds per megapixel of the delivered file, both renditions.
-ENCODE_COST = {"prepare_y4m": 0.10, "encode": 0.30, "validate": 0.02}
+ENCODE_COST = {"prepare_y4m": 0.044, "encode": 0.275, "validate": 0.015}
 ENCODE_FIXED_S = 0.5
 
 LABELS = {
@@ -166,7 +167,7 @@ def plan_export(session, settings, adjustments, *, develop_megapixels: float = 0
     if settings.format in {"sdr_jpeg", "sdr_png", "sdr_jpegxl"}:
         lanes = [PreviewKind.SDR]
     shared_grain = _delivery_grain_shared(session, adjustments)
-    for kind in lanes:
+    for position, kind in enumerate(lanes):
         lane = kind.value
         if denoise_settings_for_export(session, kind) is not None:
             plan.add("*" if shared_grain else lane, "denoise",
@@ -174,11 +175,13 @@ def plan_export(session, settings, adjustments, *, develop_megapixels: float = 0
         if _bounded_export_eligible(session, settings, kind, adjustments, prepared_denoise=True):
             plan.add(lane, "strip_render", STAGE_COST["strip_render"] * megapixels)
             continue
-        if not geometry_is_identity(geometry):
+        # A later rendition reuses shared Grain pixels and the compiled masks.
+        if not geometry_is_identity(geometry) and (position == 0 or not shared_grain):
             plan.add(lane, "geometry", STAGE_COST["geometry"] * megapixels)
         for local in locals_:
             if local.enabled and local.opacity > 0.0:
-                plan.add(lane, "masks", STAGE_COST["masks"] * megapixels)
+                if position == 0:
+                    plan.add(lane, "masks", STAGE_COST["masks"] * megapixels)
                 plan.add(lane, "local_stack", STAGE_COST["local_stack"] * megapixels)
         branch = adjustments.hdr if kind == PreviewKind.HDR else adjustments.sdr
         plan.add(lane, "tone_colour", STAGE_COST["tone_colour"] * megapixels)
