@@ -102,14 +102,19 @@ def test_owned_lens_input_is_vignetted_in_place_and_remaps_into_memmap(tmp_path)
         output._mmap.close()
 
 
+@pytest.mark.parametrize("workers", [1, 4])
 @pytest.mark.parametrize("failure", ["setup", "mid_image"])
-def test_lens_strip_failure_restarts_with_native_strips(failure, monkeypatch):
+def test_lens_strip_failure_restarts_with_native_strips(failure, workers, monkeypatch):
+    import threading
+
     settings = canon_settings()
     image = np.random.default_rng(75).standard_normal((147, 417, 3), dtype=np.float32)
     expected, _ = reference_frame(image, settings, {})
     allocations = []
     failures = []
-    monkeypatch.setattr(lens_correction, "logical_cpus", lambda: 1)
+    failure_lock = threading.Lock()
+    # Four workers cover the pool's cancellation and teardown before the retry.
+    monkeypatch.setattr(lens_correction, "logical_cpus", lambda: workers)
 
     def allocate(shape):
         allocations.append(np.empty(shape, dtype=np.float32))
@@ -119,8 +124,11 @@ def test_lens_strip_failure_restarts_with_native_strips(failure, monkeypatch):
         real = getattr(lens_correction, method)
 
         def call(*args):
-            if not failures and should_fail(args):
-                failures.append(True)
+            with failure_lock:
+                fail = not failures and should_fail(args)
+                if fail:
+                    failures.append(True)
+            if fail:
                 raise lens_correction.LensStripError("test coordinate failure")
             return real(*args)
 
