@@ -382,7 +382,13 @@ async function setDenoiseEnabled(enabled, { action } = {}) {
 function nativeDenoiseViewport(lane) {
   // Keep the original picture bounded at native zoom too. It can stay on
   // screen while Grain starts, without keeping a native-sized canvas alive.
-  return state.zoomMode === "custom" && state.zoomPercent >= 100
+  // Below 100%, display sizing can still choose the native processing step.
+  // Micro computes the same native tiles, but only the visible ones need an
+  // HDR presentation surface.
+  const nativeMicro = state.denoise[lane]?.controls.method === "micro_grain"
+    && gradeGrainGpuEnabled(lane)
+    && requiredProcessingLongEdge() === previewTargetLongEdge("full");
+  return state.zoomMode === "custom" && (state.zoomPercent >= 100 || nativeMicro)
     && (Boolean(state.denoise[lane]?.enabled) || gradeGrainGpuPreferred(lane)
       || (state.activeWorkflow === "grade" && lane === state.currentView && Boolean(els.previewCanvas.hdrFrameRegion)));
 }
