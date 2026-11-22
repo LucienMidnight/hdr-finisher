@@ -183,6 +183,42 @@ def test_scope_region_is_a_post_geometry_view_and_has_an_independent_cache_key()
     assert sum(full.channels[0].bins) > sum(cropped.channels[0].bins)
 
 
+@pytest.mark.parametrize("shape", [(541, 789, 3), (789, 541, 3), (789, 13, 3)])
+def test_bounded_scope_resize_preserves_float_pixels(shape) -> None:
+    image = np.random.default_rng(30).uniform(-0.25, 4.0, size=shape).astype(np.float32)
+    expected = downsample_image(image, 256)
+    assert downsample_image(image, 256, bounded=True).tobytes() == expected.tobytes()
+
+
+def test_cold_scope_matches_existing_histogram_without_blocking_preview(monkeypatch) -> None:
+    image = np.random.default_rng(7).random((541, 789, 3), dtype=np.float32)
+    adjustments = AdjustmentState()
+    adjustments.hdr.exposure = 0.25
+    baseline = SessionRenderCache(image, None)
+    baseline.adjusted_frame(adjustments, PreviewKind.HDR, 256)
+    expected = baseline.scope_result(adjustments, PreviewKind.HDR, 256, "histogram", 64, 64)
+    cache = SessionRenderCache(image, None)
+    started = Event()
+    release = Event()
+
+    def pause_scope_source(pixels, edge, **kwargs):
+        if kwargs.get("bounded"):
+            started.set()
+            assert release.wait(5)
+        return downsample_image(pixels, edge, **kwargs)
+
+    monkeypatch.setattr(render_cache_module, "downsample_image", pause_scope_source)
+    with ThreadPoolExecutor(2) as pool:
+        scope = pool.submit(cache.scope_result, adjustments, PreviewKind.HDR, 256, "histogram", 64, 64)
+        try:
+            assert started.wait(5)
+            preview = pool.submit(cache.adjusted_frame, adjustments, PreviewKind.HDR, 384)
+            assert preview.result(2).shape[1] == 384
+        finally:
+            release.set()
+        assert scope.result(5).model_dump() == expected.model_dump()
+
+
 def test_overlay_only_changes_do_not_invalidate_adjusted_pixels() -> None:
     first = AdjustmentState()
     second = first.model_copy(deep=True)
@@ -1103,7 +1139,7 @@ def test_preview_recovers_after_source_resize_failure(monkeypatch, request_scope
     cache = SessionRenderCache(image, None)
     adjustments = AdjustmentState()
     expected = SessionRenderCache(image, None).adjusted_frame(adjustments, PreviewKind.HDR, 256)
-    original = cache._proxies_locked
+    original = cache._build_source_level
 
     def fail_resize(*args, **kwargs):
         raise OSError("Source resize failed")
@@ -1113,10 +1149,10 @@ def test_preview_recovers_after_source_resize_failure(monkeypatch, request_scope
             return cache.scope_result(adjustments, PreviewKind.HDR, 256, "histogram", 64, 64, **kwargs)
         return cache.adjusted_frame(adjustments, PreviewKind.HDR, 256, **kwargs)
 
-    monkeypatch.setattr(cache, "_proxies_locked", fail_resize)
+    monkeypatch.setattr(cache, "_build_source_level", fail_resize)
     with pytest.raises(OSError, match="Source resize failed"):
         request()
-    monkeypatch.setattr(cache, "_proxies_locked", original)
+    monkeypatch.setattr(cache, "_build_source_level", original)
     deadline = time.monotonic() + 1.0
     # The deadline turns the old infinite wait into a bounded test failure.
     recovered = request(is_current=lambda: time.monotonic() < deadline)

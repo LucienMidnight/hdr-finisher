@@ -140,6 +140,7 @@ def downsample_image(
     *,
     is_current: Callable[[], bool] | None = None,
     progress: Callable[[int, int], None] | None = None,
+    bounded: bool = False,
 ) -> np.ndarray:
     height, width = image.shape[:2]
     long_edge = max(height, width)
@@ -153,7 +154,7 @@ def downsample_image(
     except ImportError as exc:
         raise RuntimeError("Pillow is required for filtered preview resizing.") from exc
 
-    source = image.astype(np.float32, copy=False)
+    source = image if bounded else image.astype(np.float32, copy=False)
     channels = source[..., None] if source.ndim == 2 else source
     channel_count = channels.shape[2]
 
@@ -161,18 +162,39 @@ def downsample_image(
         if is_current is not None and not is_current():
             raise ResizeCancelled("A newer source replaced this resize.")
         channel = channels[..., channel_index]
-        resized = np.asarray(
-            Image.fromarray(channel).resize((target_w, target_h), Image.Resampling.LANCZOS),
-            dtype=np.float32,
-        )
+        if bounded:
+            # Pillow's float Lanczos is separable, horizontal first. Give it
+            # the same filter coordinates and float32 intermediate in strips
+            # so it never has to pack a whole strided source channel.
+            if width != target_w:
+                horizontal = np.empty((height, target_w), dtype=np.float32)
+                for top in range(0, height, 128):
+                    band = channel[top:top + 128].astype(np.float32, copy=False)
+                    horizontal[top:top + len(band)] = np.asarray(
+                        Image.fromarray(band).resize((target_w, len(band)), Image.Resampling.LANCZOS)
+                    )
+                channel_for_y = horizontal
+            else:
+                channel_for_y = channel
+            resized = np.empty((target_h, target_w), dtype=np.float32)
+            for left in range(0, target_w, 128):
+                band = channel_for_y[:, left:left + 128].astype(np.float32, copy=False)
+                resized[:, left:left + band.shape[1]] = np.asarray(
+                    Image.fromarray(band).resize((band.shape[1], target_h), Image.Resampling.LANCZOS)
+                )
+        else:
+            resized = np.asarray(
+                Image.fromarray(channel).resize((target_w, target_h), Image.Resampling.LANCZOS),
+                dtype=np.float32,
+            )
         # Filtering must not invent light the source does not hold nearby.
         # Lanczos overshoots beside a clipped highlight; a whole-image limit
         # leaves that overshoot in place and it shows as coloured specks.
-        low, high = _local_range(channel, target_w, target_h)
+        low, high = _local_range(channel.astype(np.float32, copy=False), target_w, target_h)
         return np.clip(resized, low, high)
 
     resized_channels: list[np.ndarray] = []
-    if channel_count > 1 and channels.shape[0] * channels.shape[1] >= PARALLEL_CHANNEL_MIN_PIXELS:
+    if not bounded and channel_count > 1 and channels.shape[0] * channels.shape[1] >= PARALLEL_CHANNEL_MIN_PIXELS:
         # Progress is reported from this thread as each future completes, so a
         # callback never runs on a worker and the count stays monotonic.
         with ThreadPoolExecutor(

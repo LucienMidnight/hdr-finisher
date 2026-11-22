@@ -246,6 +246,7 @@ class SourceMipStore:
         is_current: Callable[[], bool] | None = None,
         progress: Callable[[int, int], None] | None = None,
         persist: bool = True,
+        bounded: bool = False,
     ) -> tuple[np.ndarray, str]:
         """Return the level for ``long_edge`` and how it was answered.
 
@@ -283,7 +284,7 @@ class SourceMipStore:
         try:
             if persist:
                 self._ensure_cleaned()
-            array, state = self._load_or_build(identity, edge, image, is_current, progress, persist)
+            array, state = self._load_or_build(identity, edge, image, is_current, progress, persist, bounded)
             with self._lock:
                 if is_current is not None and not is_current():
                     raise StaleRender("A newer source replaced this mip request.")
@@ -430,6 +431,7 @@ class SourceMipStore:
         is_current: Callable[[], bool] | None,
         progress: Callable[[int, int], None] | None,
         persist: bool,
+        bounded: bool,
     ) -> tuple[np.ndarray, str]:
         if self.disk_budget_bytes > 0:
             loaded = self._read_disk_level(identity, edge)
@@ -453,7 +455,8 @@ class SourceMipStore:
                 progress(completed, total)
         try:
             array = np.ascontiguousarray(
-                downsample_image(image, edge, is_current=is_current, progress=report), dtype=np.float32,
+                downsample_image(image, edge, is_current=is_current, progress=report, bounded=bounded),
+                dtype=np.float32,
             )
         except ResizeCancelled as exc:
             raise StaleRender("A newer source replaced this mip build.") from exc
@@ -1740,7 +1743,7 @@ class SessionRenderCache:
         is_current: Callable[[], bool] | None = None,
         local_adjustments: list[LocalAdjustment] | None = None,
         _record_diagnostics: bool = True,
-        *, denoise_controls=None, micro_preview=None,
+        *, denoise_controls=None, micro_preview=None, scope_source=False,
     ) -> np.ndarray:
         edge = max(256, int(long_edge))
         with self._lock:
@@ -1765,13 +1768,16 @@ class SessionRenderCache:
             return cached
         assert flight is not None
         try:
-            with self._lock:
-                if micro_preview is None:
-                    source, sdr_reference = self._proxies_locked(edge)
-                elif kind == PreviewKind.SDR and self.sdr_reference_image is not None and adjustments.sdr.use_authored_base:
-                    sdr_reference = self._source_level_locked(edge, PreviewKind.SDR)
-                else:
-                    sdr_reference = None
+            if scope_source:
+                source, sdr_reference = self._scope_proxies(edge, source_epoch, is_current)
+            else:
+                with self._lock:
+                    if micro_preview is None:
+                        source, sdr_reference = self._proxies_locked(edge)
+                    elif kind == PreviewKind.SDR and self.sdr_reference_image is not None and adjustments.sdr.use_authored_base:
+                        sdr_reference = self._source_level_locked(edge, PreviewKind.SDR)
+                    else:
+                        sdr_reference = None
             compiled_masks = self._compiled_masks(
                 source,
                 adjustments,
@@ -1982,6 +1988,7 @@ class SessionRenderCache:
                 is_current=is_current,
                 local_adjustments=local_adjustments,
                 _record_diagnostics=False,
+                scope_source=True,
             )
             if is_current is not None and not is_current():
                 with self._lock:
@@ -2003,6 +2010,8 @@ class SessionRenderCache:
                     self._stale_cancellations += 1
                 raise StaleRender("A newer scope request replaced this one.")
             with self._lock:
+                if self._source_epoch != source_epoch:
+                    raise StaleRender("The scope source changed.")
                 self._scopes[key] = result.model_copy(deep=True)
                 while len(self._scopes) > 12:
                     self._scopes.popitem(last=False)
@@ -2059,6 +2068,41 @@ class SessionRenderCache:
     def _proxies_locked(self, edge: int, *, is_current: Callable[[], bool] | None = None, persist_mips: bool = True) -> tuple[np.ndarray, np.ndarray | None]:
         source = self._source_level_locked(edge, PreviewKind.HDR, is_current=is_current, persist=persist_mips)
         reference = None if self.sdr_reference_image is None else self._source_level_locked(edge, PreviewKind.SDR, is_current=is_current, persist=persist_mips)
+        self._remember_proxies_locked(edge, source, reference)
+        return source, reference
+
+    def _scope_proxies(
+        self, edge: int, epoch: int, is_current: Callable[[], bool] | None,
+    ) -> tuple[np.ndarray, np.ndarray | None]:
+        def current() -> bool:
+            return epoch == self._source_epoch and (is_current is None or is_current())
+
+        with self._lock:
+            if not current():
+                raise StaleRender("The scope source changed.")
+            inputs = (
+                (self.image, self.source_identity, self._source_proxies.get(edge)),
+                (self.sdr_reference_image, self.sdr_identity, self._sdr_proxies.get(edge)),
+            )
+        levels = []
+        states = []
+        for image, identity, cached in inputs:
+            if image is None or cached is not None:
+                levels.append(cached)
+                continue
+            level, state = self._build_source_level(edge, image, identity, current, True, bounded=True)
+            levels.append(level)
+            states.append(state)
+        source, reference = levels
+        with self._lock:
+            if not current():
+                raise StaleRender("The scope source changed.")
+            if states:
+                self._source_level_states[edge] = states[-1]
+            self._remember_proxies_locked(edge, source, reference)
+        return source, reference
+
+    def _remember_proxies_locked(self, edge: int, source: np.ndarray, reference: np.ndarray | None) -> None:
         # The mip store owns persistent levels. Keeping another reference here
         # would keep its evicted payload alive outside its reported bytes.
         for name, identity, value in (('_source_proxies', self.source_identity, source), ('_sdr_proxies', self.sdr_identity, reference)):
@@ -2071,7 +2115,6 @@ class SessionRenderCache:
                 cache.popitem(last=False)
                 self._evictions += 1
         self._rebalance_locked()
-        return source, reference
 
     def _source_level_locked(self, edge: int, kind: PreviewKind, *, is_current: Callable[[], bool] | None = None, persist: bool = True) -> np.ndarray:
         """Return one source level, through the persistent mip store when present.
@@ -2085,9 +2128,7 @@ class SessionRenderCache:
         """
         image = self.image if kind == PreviewKind.HDR else self.sdr_reference_image
         identity = self.source_identity if kind == PreviewKind.HDR else self.sdr_identity
-        if identity is not None and self.mip_store is not None and image is not None:
-            level, state = self.mip_store.level(identity, edge, image, is_current=is_current, persist=persist)
-        else:
+        if identity is None or self.mip_store is None:
             session_proxies = self._source_proxies if kind == PreviewKind.HDR else self._sdr_proxies
             cached = session_proxies.get(edge)
             if cached is not None:
@@ -2095,15 +2136,27 @@ class SessionRenderCache:
                     edge, "native" if edge >= max(image.shape[:2]) else "session"
                 )
                 return cached
+        source, state = self._build_source_level(edge, image, identity, is_current, persist)
+        self._source_level_states[edge] = state
+        return source
+
+    def _build_source_level(
+        self, edge: int, image: np.ndarray, identity: SourceMipIdentity | None,
+        is_current: Callable[[], bool] | None, persist: bool, *, bounded: bool = False,
+    ) -> tuple[np.ndarray, str]:
+        if identity is not None and self.mip_store is not None:
+            level, state = self.mip_store.level(
+                identity, edge, image, is_current=is_current, persist=persist, bounded=bounded,
+            )
+        else:
             try:
-                level = downsample_image(image, edge, is_current=is_current)
+                level = downsample_image(image, edge, is_current=is_current, bounded=bounded)
             except ResizeCancelled as exc:
                 raise StaleRender("A newer source replaced this proxy build.") from exc
             state = "native" if edge >= max(image.shape[:2]) else "session"
         source = np.ascontiguousarray(level, dtype=np.float32)
         source.setflags(write=False)
-        self._source_level_states[edge] = state
-        return source
+        return source, state
 
     def source_level_state(self, long_edge: int) -> str | None:
         """How the last request for this edge was answered (telemetry)."""
