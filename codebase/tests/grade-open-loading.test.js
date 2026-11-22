@@ -61,6 +61,41 @@ test('a superseded open cannot clear the newer loading state or report its failu
   assert.equal(c.state.gradeOpen, newer);
   assert.equal(events.includes('Old failure'), false);
 });
+test('RAW redevelopment keeps the current picture and releases GPU work before submitting the decode', async () => {
+  const { c, panels, events, resolve } = harness();
+  let allowRelease, releaseStarted, jobStarted;
+  const release = new Promise(r => { allowRelease = r; });
+  const retiring = new Promise(r => { releaseStarted = r; });
+  const decoding = new Promise(r => { jobStarted = r; });
+  const originalSession = c.state.session;
+  const createImportJob = c.projectIo.createImportJob;
+  c.state.activeWorkflow = 'grade';
+  c.suspendGradeInstruments = () => {};
+  c.state.gpuPreview.releaseForSourceReplacement = () => {
+    releaseStarted();
+    return release;
+  };
+  c.projectIo.createImportJob = (...args) => {
+    jobStarted();
+    events.push('decode');
+    return createImportJob(...args);
+  };
+
+  const opened = c.openStagedDesktopSource({ path: 'D:/photos/first.ARW', replaceSessionId: 'old' });
+  await retiring;
+  assert.equal(c.state.session, originalSession);
+  assert.ok(panels.every(panel => panel.inert));
+  assert.equal(events.includes('decode'), false);
+  assert.equal(events.includes('clear'), false);
+
+  allowRelease();
+  await decoding;
+  resolve({ response: { ok: false }, payload: { detail: 'Source is missing.' } });
+  await opened;
+  assert.equal(c.state.session, originalSession);
+  assert.equal(events.includes('clear'), false);
+  assert.ok(panels.every(panel => !panel.inert));
+});
 test('initial Electron page completion precedes runner actions', async () => {
   const { waitForInitialLoad } = require('./electron-initial-load');
   const events = [];
