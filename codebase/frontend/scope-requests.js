@@ -28,8 +28,10 @@ function scopeLongEdge(tier) {
 }
 
 function refreshScopes(longEdge = 960, { tier = "settled", generation = null, lane = state.currentView } = {}) {
-  if (["import", "export"].includes(state.activeWorkflow) || document.hidden || !state.session
-    || rawRedevelopmentPending() || geometryDraftActive()) return Promise.resolve(false);
+  if (["import", "export"].includes(state.activeWorkflow) || document.hidden || !state.session || geometryDraftActive()) return Promise.resolve(false);
+  if (state.rawRedevelopGeneration != null && state.rawRedevelopGeneration === state.importGeneration) {
+    return Promise.resolve(false);
+  }
   // Scopes describe the lane on screen. A request left over from the lane just
   // switched away from could only be a whole-picture CPU grade, and its answer
   // is discarded on arrival.

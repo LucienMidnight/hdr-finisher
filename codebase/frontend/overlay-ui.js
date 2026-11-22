@@ -117,7 +117,7 @@ function requestLiveOverlay(tier) {
 }
 
 async function refreshOverlay(longEdge = state.session?.preview?.long_edge || 1600, { interim = false } = {}) {
-  if (rawRedevelopmentPending()) return;
+  if (state.rawRedevelopGeneration != null && state.rawRedevelopGeneration === state.importGeneration) return;
   if (geometryDraftActive() || await syncGlobalEditState() === false || geometryDraftActive()) return;
   if (!state.session) return;
   state.overlayAbortController?.abort();

@@ -5,10 +5,6 @@ function claimSessionReplacement() {
   return ++state.importGeneration;
 }
 
-function rawRedevelopmentPending() {
-  return state.importInProgress && state.rawRedevelopGeneration === state.importGeneration;
-}
-
 async function importByteFile(file, actionLabel = "import another source", confirmedDocument = null, ownershipGeneration = null) {
   if (confirmedDocument === null) {
     if (!await confirmUnsavedTransition(actionLabel)) return false;

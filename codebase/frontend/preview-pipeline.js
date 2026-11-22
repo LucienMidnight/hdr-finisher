@@ -239,7 +239,8 @@ async function renderPreviewForLane(
   longEdge = 1600,
   options = {},
 ) {
-  if (!state.session || rawRedevelopmentPending() || geometryDraftActive()) return false;
+  if (!state.session || geometryDraftActive()) return false;
+  if (state.rawRedevelopGeneration != null && state.rawRedevelopGeneration === state.importGeneration) return false;
   const sessionId = state.session.session_id;
   const workGeneration = state.gradeWorkGeneration;
   if (await syncGlobalEditState() === false || state.session?.session_id !== sessionId
@@ -789,7 +790,9 @@ async function applyPreviewUrl(url, isCurrent = () => true) {
 }
 
 function renderGpuDraft(lane = state.currentView, options = {}) {
-  if (rawRedevelopmentPending()) return Promise.resolve(false);
+  if (state.rawRedevelopGeneration != null && state.rawRedevelopGeneration === state.importGeneration) {
+    return Promise.resolve(false);
+  }
   const tier = options.tier || "settled";
   const longEdge = Number(options.longEdge) > 0 ? Number(options.longEdge) : settledProxyLongEdge();
   const coordinator = state.renderCoordinator;
