@@ -45,3 +45,13 @@ def test_banded_hdr_y4m_matches_whole_frame(tmp_path, chroma, bit_depth):
     expected = _whole_frame_y4m(exporters._linear_to_bt2020_pq_yuv(image, bit_depth, 100), bit_depth, chroma)
     exporters._write_hdr_y4m(path, image, bit_depth=bit_depth, chroma_subsampling=chroma, reference_white_nits=100)
     assert path.read_bytes() == expected
+
+
+def test_y4m_bands_reject_a_partial_chroma_row_before_the_last_band(tmp_path):
+    import numpy as np
+    import pytest
+    from hdr_finisher.y4m import write_y4m_bands
+
+    bands = (np.zeros((3, 4, 3), np.uint16), np.zeros((3, 4, 3), np.uint16))
+    with pytest.raises(ValueError):
+        write_y4m_bands(tmp_path / "odd.y4m", 6, 4, bands, bit_depth=10, chroma_subsampling="420")

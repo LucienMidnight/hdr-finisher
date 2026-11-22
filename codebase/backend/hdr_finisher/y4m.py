@@ -37,6 +37,8 @@ def write_y4m_bands(
         handle.write(header)
         top = 0
         for band in bands:
+            if top % vertical:
+                raise ValueError("Only the final Y4M band may end in a partial chroma row.")
             # Y4M stores whole planes. Place each set of rows into its plane.
             # For 4:2:0, the final band alone can end in a partial chroma row.
             handle.seek(len(header) + top * width * sample_bytes)

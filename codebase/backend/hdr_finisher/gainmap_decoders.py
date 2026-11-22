@@ -364,8 +364,9 @@ def avif_delivery_hdr_bands(path: Path, rows: int):
         if info.get("gain_map_present"):
             if utility is None:
                 raise GainMapDecodeError("AVIF gain-map input requires both avifgainmaputil and avifdec.")
-            gain = info["gain_map"]
+            # Validate first so missing metadata stays a GainMapDecodeError.
             hdr_headroom, sdr_headroom = _avif_gain_map_headrooms(info)
+            gain = info["gain_map"]
             if gain["base_headroom"] > sdr_headroom + 1e-6 or _cicp_transfer(info.get("transfer_char")) is None:
                 raise GainMapDecodeError("AVIF Gain Map delivery requires a supported SDR base rendition.")
             raw_path, shape = _reconstruct_avif_hdr(path, temp_dir, utility, hdr_headroom)
@@ -407,6 +408,8 @@ def _spool_avif_png_samples(path: Path) -> tuple[Path, tuple[int, int], int, np.
     # integers to disk, preserving the 16-bit samples without a full RGB array.
     import pyvips
 
+    # As in library_reduced: no unaccounted libvips operation cache.
+    pyvips.cache_set_max(0)
     target = path.with_suffix(".raw")
     try:
         source = pyvips.Image.new_from_file(str(path), access="sequential", fail_on="error")
@@ -435,8 +438,9 @@ def _decode_avif_gain_map(
             "AVIF gain-map input requires both avifgainmaputil and avifdec; "
             "refusing to return only the base rendition."
         )
-    gain = info["gain_map"]
+    # Validate first so missing metadata stays a GainMapDecodeError.
     hdr_headroom, sdr_headroom = _avif_gain_map_headrooms(info)
+    gain = info["gain_map"]
 
     timings: dict[str, float] = {}
     with TemporaryDirectory(prefix="hdr_finisher_avif_gainmap_decode_") as temp_name:
