@@ -29,7 +29,7 @@ from hdr_finisher.loader import load_image
 from hdr_finisher.media_browser import MediaBrowserError, MediaBrowserInterpretationRequired, MediaBrowserStore, _apply_libraw_orientation
 from hdr_finisher.models import AdjustmentState, CapabilityInfo, CapabilityStatus, EditCommand, EditDocument, ExportSettings, RawImportSettings, SourceInterpretationOverride, SourceReference
 from hdr_finisher.models import LensCorrectionSettings
-from hdr_finisher.raw_import import RawImportError, _remap_bilinear_strips, apply_lens_correction, decode_raw, list_lens_profiles
+from hdr_finisher.raw_import import RawImportError, apply_lens_correction, decode_raw, list_lens_profiles
 from hdr_finisher.sessions import SessionStore
 
 
@@ -298,14 +298,6 @@ def test_source_reference_serializes_manual_lens_selection() -> None:
     assert source.raw_import_settings.lens.focal_length_mm == 35
 
 
-def test_bounded_bilinear_remapper_preserves_identity() -> None:
-    image = np.arange(5 * 7 * 3, dtype=np.float32).reshape(5, 7, 3)
-    y, x = np.mgrid[:5, :7]
-    coordinates = np.stack([x, y], axis=-1).astype(np.float32)
-    remapped = _remap_bilinear_strips(image, coordinates, chromatic=False, rows=2)
-    assert np.array_equal(remapped, image)
-
-
 def test_raw_decoder_returns_canonical_acescg_without_second_loader_transform(
     tmp_path: Path, monkeypatch
 ) -> None:
@@ -379,21 +371,6 @@ def test_raw_decoder_returns_canonical_acescg_without_second_loader_transform(
     assert metadata["raw_development"]["libraw_highlight_mode_requested"] == "clip"
     assert metadata["raw_development"]["libraw_highlight_processing"] == "bypassed_by_no_auto_scale"
     assert np.all(np.isfinite(image))
-
-
-def test_bounded_bilinear_remapper_honors_import_cancellation() -> None:
-    image = np.zeros((8, 8, 3), dtype=np.float32)
-    y, x = np.mgrid[:8, :8]
-    coordinates = np.stack([x, y], axis=-1).astype(np.float32)
-
-    with pytest.raises(RawImportError, match="Import cancelled"):
-        _remap_bilinear_strips(
-            image,
-            coordinates,
-            chromatic=False,
-            rows=2,
-            cancelled=lambda: True,
-        )
 
 
 def test_manual_lensfun_profile_is_named_and_applied() -> None:
@@ -881,157 +858,6 @@ def test_replace_document_rejects_interpretation_without_reloading_pixels(tmp_pa
 
     with pytest.raises(ValueError, match="interpretation endpoint"):
         sessions.replace_edit_document(payload.session_id, document, expected_revision=0)
-
-
-@pytest.mark.parametrize("chromatic", [False, True])
-def test_remap_waves_keep_original_bilinear_pixels(chromatic, monkeypatch):
-    from hdr_finisher import app_memory
-    rng = np.random.default_rng(31)
-    image = rng.random((19, 23, 3), dtype=np.float32)
-    shape = (19, 23, 3, 2) if chromatic else (19, 23, 2)
-    coordinates = rng.uniform(-2, 25, shape).astype(np.float32)
-    original = _remap_bilinear_strips(image, coordinates, chromatic=chromatic, rows=3)
-    monkeypatch.setattr(app_memory, "WORKING", 23 * 3 * 128)
-    bounded = _remap_bilinear_strips(image, coordinates, chromatic=chromatic, rows=3)
-    np.testing.assert_array_equal(bounded, original)
-
-
-def test_owned_lens_input_avoids_copy_and_preserves_result(monkeypatch):
-    from hdr_finisher import raw_import
-    profile = next(item for item in list_lens_profiles(limit=2000) if item.distortion)
-    image = np.linspace(0.0, 2.0, 48 * 64 * 3, dtype=np.float32).reshape(48, 64, 3)
-    saved = image.copy()
-    settings = LensCorrectionSettings(mode="manual", profile_id=profile.id,
-        focal_length_mm=5.0, aperture=4.0, distortion=True,
-        chromatic_aberration=profile.chromatic_aberration, vignetting=True)
-    remap = raw_import._remap_bilinear_strips
-    shared = []
-    def observe(source, *args, **kwargs):
-        shared.append(np.shares_memory(source, image))
-        return remap(source, *args, **kwargs)
-    monkeypatch.setattr(raw_import, "_remap_bilinear_strips", observe)
-    expected, metadata = apply_lens_correction(image, settings)
-    np.testing.assert_array_equal(image, saved)
-    actual, owned_metadata = apply_lens_correction(image, settings, consume_input=True)
-    assert shared == [False, True]
-    np.testing.assert_array_equal(actual, expected)
-    assert owned_metadata == metadata
-
-
-@pytest.mark.parametrize("chromatic", [False, True])
-def test_lens_coordinate_strips_match_whole_frame_bytes(chromatic, monkeypatch):
-    import lensfunpy
-    from hdr_finisher import raw_import
-    from hdr_finisher.lens_coordinate_strips import (
-        COORDINATE_ROWS, exact_lens_coordinate_strips, native_lens_database,
-    )
-
-    native = native_lens_database()
-    if native is None:
-        pytest.skip("The bundled Lensfun 0.3.4 C API is unavailable")
-    settings = LensCorrectionSettings(
-        mode="manual",
-        profile_id="Canon|Canon EOS 60D|Canon EF-S|Canon|Canon EF-S 18-135mm f/3.5-5.6 IS STM",
-        focal_length_mm=18,
-        aperture=3.5,
-        focus_distance_m=10,
-        chromatic_aberration=chromatic,
-    )
-    identity = dict(camera_maker=None, camera_model=None, lens_maker=None, lens_name=None)
-    height, width = 2 * COORDINATE_ROWS + 19, 417
-    rng = np.random.default_rng(74)
-    image = rng.standard_normal((height, width, 3), dtype=np.float32)
-
-    standard = lensfunpy.Database()
-    monkeypatch.setattr(raw_import, "_lens_database", lambda: standard)
-    baseline, metadata = apply_lens_correction(image, settings)
-    modifier, _ = raw_import._lens_modifier((height, width), settings, **identity)
-    assert modifier.apply_color_modification(np.ones_like(image))
-    full = (modifier.apply_subpixel_geometry_distortion() if chromatic else
-            modifier.apply_geometry_distortion())
-    assert full is not None
-
-    monkeypatch.setattr(raw_import, "_lens_database", lambda: native)
-    modifier, _ = raw_import._lens_modifier((height, width), settings, **identity)
-    flags = raw_import._lens_flags(settings, lensfunpy)
-    with exact_lens_coordinate_strips(modifier, chromatic, flags, lensfunpy.LensType.RECTILINEAR.value) as read:
-        assert read is not None
-        for top in range(0, height, COORDINATE_ROWS):
-            bottom = min(top + COORDINATE_ROWS, height)
-            assert read(top, bottom).tobytes() == full[top:bottom].tobytes()
-
-    remap = raw_import._remap_bilinear_strips
-    band_heights = []
-
-    def observe(source, coordinates, **kwargs):
-        band_heights.append(len(coordinates))
-        return remap(source, coordinates, **kwargs)
-
-    monkeypatch.setattr(raw_import, "_remap_bilinear_strips", observe)
-    actual, actual_metadata = apply_lens_correction(image, settings)
-    assert actual_metadata == metadata
-    assert actual.tobytes() == baseline.tobytes()
-    assert band_heights == [COORDINATE_ROWS, COORDINATE_ROWS, 19]
-
-
-def _canon_strip_case():
-    settings = LensCorrectionSettings(
-        mode="manual",
-        profile_id="Canon|Canon EOS 60D|Canon EF-S|Canon|Canon EF-S 18-135mm f/3.5-5.6 IS STM",
-        focal_length_mm=18, aperture=3.5, focus_distance_m=10,
-    )
-    image = np.random.default_rng(75).standard_normal((2 * 128 + 19, 417, 3), dtype=np.float32)
-    return settings, image
-
-
-@pytest.mark.parametrize("failure", ["mid_image", "setup"])
-def test_lens_strip_failures_fall_back_to_whole_frame_bytes(failure, monkeypatch):
-    import lensfunpy
-    from hdr_finisher import lens_coordinate_strips as strips, raw_import
-
-    native = strips.native_lens_database()
-    if native is None:
-        pytest.skip("The bundled Lensfun 0.3.4 C API is unavailable")
-    settings, image = _canon_strip_case()
-    standard = lensfunpy.Database()
-    monkeypatch.setattr(raw_import, "_lens_database", lambda: standard)
-    baseline, _ = apply_lens_correction(image, settings)
-
-    monkeypatch.setattr(raw_import, "_lens_database", lambda: native)
-    real = strips._strip_reader
-    if failure == "setup":
-        def broken(*args):
-            raise OSError("simulated native failure")
-        monkeypatch.setattr(strips, "_strip_reader", broken)
-    else:
-        def failing_later(*args):
-            read = real(*args)
-            calls = []
-
-            def read_strip(top, bottom):
-                calls.append(top)
-                if len(calls) == 2:
-                    raise strips.LensStripUnavailable("simulated")
-                return read(top, bottom)
-            return read_strip
-        monkeypatch.setattr(strips, "_strip_reader", failing_later)
-    actual, _ = apply_lens_correction(image, settings)
-    assert actual.tobytes() == baseline.tobytes()
-
-
-def test_strip_lens_database_keeps_search_signatures_and_refuses_mounts():
-    from hdr_finisher.lens_coordinate_strips import native_lens_database
-
-    native = native_lens_database()
-    if native is None:
-        pytest.skip("The bundled Lensfun 0.3.4 C API is unavailable")
-    cameras = native.find_cameras("Canon", "Canon EOS 60D", loose_search=True)
-    assert cameras and native.find_cameras(maker="Canon", model="Canon EOS 60D")
-    assert native.find_lenses(cameras[0], None, "EF-S 18-135mm", loose_search=True)
-    with pytest.raises(NotImplementedError):
-        native.mounts
-    with pytest.raises(NotImplementedError):
-        native.find_mount("Canon EF-S")
 
 
 @pytest.mark.skipif(__import__("hdr_finisher.binaries", fromlist=["resolve_binary"]).resolve_binary("hdrf-jxl-info") is None,

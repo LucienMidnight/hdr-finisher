@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from .cpu_budget import CpuExecutor
 from dataclasses import dataclass
 from functools import lru_cache
 import hashlib
@@ -13,10 +12,7 @@ from .import_bands import parallel_import_enabled, run_bands
 
 from .color import aces2065_to_acescg, transform_float32_bounded
 from .dng_color import D60_XYZ, XYZ_D60_TO_ACESCG, chromatic_adaptation_matrix
-from .lens_coordinate_strips import (
-    COORDINATE_ROWS, LensStripUnavailable, exact_lens_coordinate_strips, native_lens_database,
-    _unavailable as _lens_strips_unavailable,
-)
+from .lens_correction import correct_frame, native_lens_database
 from .models import LensCorrectionSettings, RawImportSettings
 
 if TYPE_CHECKING:
@@ -1329,7 +1325,9 @@ def apply_lens_correction(
         # RAW development owns this buffer exclusively; vignette it before
         # remapping instead of retaining an untouched third full-size plane.
         if progress: progress("lens_vignette", "Applying Lensfun vignetting")
-        corrected = np.ascontiguousarray(image, dtype=np.float32)
+        if image.ndim != 3 or image.shape[2] != 3 or not all(image.shape[:2]):
+            raise ValueError("Lensfun needs a nonempty RGB frame")
+        corrected = np.require(image, dtype=np.float32, requirements=("C", "A"))
         if not consume_input or not corrected.flags.writeable:
             corrected = corrected.copy()
         if metadata["vignetting"] and metadata["profile"]["vignetting"]:
@@ -1339,53 +1337,22 @@ def apply_lens_correction(
         chromatic = settings.chromatic_aberration
         if chromatic or settings.distortion:
             import lensfunpy
-            remapped = None
-            # Reuse the destination if strip generation falls back mid-image.
-            output = allocate_output(corrected.shape) if allocate_output is not None else None
-            with exact_lens_coordinate_strips(
-                modifier, chromatic, _lens_flags(settings, lensfunpy), lensfunpy.LensType.RECTILINEAR.value,
-            ) as read_strip:
-                if read_strip is not None:
-                    if progress: progress("lens_remap", "Remapping Lensfun pixels")
-                    remapped = _remap_lens_strips(
-                        corrected, read_strip, chromatic=chromatic, cancelled=cancelled, output=output,
-                    )
-            if remapped is None:
-                # Whole-frame coordinates: no strip reader, or it failed mid-image.
-                generate = (modifier.apply_subpixel_geometry_distortion if chromatic else
-                            modifier.apply_geometry_distortion)
-                coordinates = generate()
-                if progress: progress("lens_remap", "Remapping Lensfun pixels")
-                if coordinates is not None:
-                    remapped = _remap_bilinear_strips(
-                        corrected, np.asarray(coordinates), chromatic=chromatic, cancelled=cancelled, output=output,
-                    )
-            if remapped is not None:
-                corrected = remapped
-        elif progress:
-            progress("lens_remap", "Remapping Lensfun pixels")
+            def start_remap():
+                if progress:
+                    progress("lens_remap", "Remapping Lensfun pixels")
+
+            corrected = correct_frame(
+                corrected, modifier, chromatic=chromatic, flags=_lens_flags(settings, lensfunpy),
+                target_geometry=lensfunpy.LensType.RECTILINEAR.value,
+                check=lambda: _raise_if_cancelled(cancelled), allocate_output=allocate_output,
+                start_remap=start_remap,
+            )
     except RawImportError:
         raise
     except Exception as exc:
         raise RawImportError(f"Lensfun could not apply the selected profile: {exc}") from exc
     if progress: progress("lens_complete", "Lensfun corrections complete")
     return corrected, metadata
-
-
-def _remap_lens_strips(corrected, read_strip, *, chromatic, cancelled, output=None):
-    """Remap with exact coordinate strips; None if Lensfun fails mid-image."""
-    if output is None:
-        output = np.empty_like(corrected)
-    for top in range(0, len(output), COORDINATE_ROWS):
-        _raise_if_cancelled(cancelled)
-        bottom = min(top + COORDINATE_ROWS, len(output))
-        try:
-            strip = read_strip(top, bottom)
-        except LensStripUnavailable as exc:
-            _lens_strips_unavailable("lensfun_strip_failed", error=str(exc), row=top)
-            return None
-        _remap_bilinear_strips(corrected, strip, chromatic=chromatic, cancelled=cancelled, output=output[top:bottom])
-    return output
 
 
 def _lens_modifier(shape, settings, *, camera_maker, camera_model, lens_maker, lens_name, progress=None):
@@ -1553,66 +1520,6 @@ def _apply_signed_vignetting(modifier, image, *, cancelled=None):
             negative = np.unpackbits(packed, count=strip.size).reshape(strip.shape).astype(bool)
             np.negative(strip, out=strip, where=negative)
     _raise_if_cancelled(cancelled)
-
-
-def _remap_bilinear_strips(
-    image: np.ndarray,
-    coordinates: np.ndarray,
-    *,
-    chromatic: bool,
-    rows: int = 32,
-    cancelled: Callable[[], bool] | None = None,
-    frame_shape: tuple[int, int] | None = None,
-    origin: tuple[int, int] = (0, 0),
-    output: np.ndarray | None = None,
-) -> np.ndarray:
-    height, width = coordinates.shape[:2]
-    channels = image.shape[2]
-    frame_height, frame_width = frame_shape or image.shape[:2]
-    origin_x, origin_y = origin
-    if output is None:
-        output = np.empty((height, width, channels), dtype=image.dtype)
-
-    def remap_strip(start: int) -> None:
-        _raise_if_cancelled(cancelled)
-        end = min(height, start + rows)
-        for channel in range(channels):
-            if chromatic and coordinates.ndim == 4:
-                xy = coordinates[start:end, :, min(channel, coordinates.shape[2] - 1), :]
-            else:
-                xy = coordinates[start:end, :, :]
-            x = np.clip(xy[..., 0], 0.0, frame_width - 1.0)
-            y = np.clip(xy[..., 1], 0.0, frame_height - 1.0)
-            x0 = np.floor(x).astype(np.int32)
-            y0 = np.floor(y).astype(np.int32)
-            x1 = np.minimum(x0 + 1, frame_width - 1) - origin_x
-            y1 = np.minimum(y0 + 1, frame_height - 1) - origin_y
-            # Keep interpolation in full-frame coordinates until weights are
-            # computed. Subtracting a region offset in float changes rounding.
-            wx = x - x0
-            wy = y - y0
-            x0 -= origin_x
-            y0 -= origin_y
-            top = image[y0, x0, channel] * (1.0 - wx) + image[y0, x1, channel] * wx
-            bottom = image[y1, x0, channel] * (1.0 - wx) + image[y1, x1, channel] * wx
-            output[start:end, :, channel] = top * (1.0 - wy) + bottom * wy
-
-    # Strips write separate rows and NumPy releases the interpreter lock for
-    # this work, so a 42 MP frame remaps about three times faster on a pool.
-    # Small bands keep all CPUs busy without large simultaneous gathers.
-    from .app_memory import WORKING
-    from .cpu_budget import logical_cpus
-    # The gathers promote weights to float64. Include the live indices,
-    # weights and expression temporaries (128 bytes/pixel conservatively)
-    # within the existing working allowance rather than multiplying them
-    # by every CPU. Keep the original coordinates and arithmetic unchanged.
-    concurrent = min(logical_cpus(), max(1, WORKING // (width * rows * 128)))
-    starts = range(0, height, rows)
-    with CpuExecutor() as pool:
-        for offset in range(0, len(starts), concurrent):
-            for _ in pool.map(remap_strip, starts[offset:offset + concurrent]):
-                pass
-    return output
 
 
 def _raise_if_cancelled(cancelled: Callable[[], bool] | None) -> None:
@@ -1795,9 +1702,7 @@ def _positive_float(value: Any) -> float | None:
 @lru_cache(maxsize=1)
 def _lens_database() -> Any | None:
     try:
-        import lensfunpy
-
-        return native_lens_database() or lensfunpy.Database()
+        return native_lens_database()
     except (ImportError, OSError, RuntimeError):
         return None
 

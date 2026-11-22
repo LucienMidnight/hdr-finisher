@@ -43,3 +43,4 @@ if __name__ == "__main__":
     print(build())
     print(build_library("denoise_filters", ordered_float=True))
     print(build_library("gainmap_filter", ordered_float=True))
+    print(build_library("lens_correction", ordered_float=True))

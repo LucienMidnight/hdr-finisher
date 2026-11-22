@@ -5,7 +5,7 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from hdr_finisher import app_memory, denoise_micro_grain, raw_import
+from hdr_finisher import app_memory, denoise_micro_grain, lens_correction, raw_import
 from hdr_finisher.adjustments import apply_adjustments
 from hdr_finisher.color_context import RenderColorContext
 from hdr_finisher.denoise_micro_grain import MicroGrainControls
@@ -14,6 +14,7 @@ from hdr_finisher.main import _render_selected_execution
 from hdr_finisher.models import AdjustmentState, DenoiseLiveControls, PreviewKind, PreviewRequest, RawImportSettings
 from hdr_finisher.preview import downsample_image
 from hdr_finisher.render_cache import SessionRenderCache, StaleRender
+from test_lens_correction import canon_settings, numpy_bilinear, reference_frame
 
 
 _APPLY_LENS_CORRECTION = raw_import.apply_lens_correction
@@ -164,49 +165,31 @@ def test_reduced_micro_lens_scratch(micro_frame, monkeypatch, tmp_path, chromati
     from hdr_finisher.delivery_frames import DeliveryFrame
 
     frame, controls, _, _ = micro_frame
-    frame.raw_import_settings.lens.chromatic_aberration = chromatic
+    frame.raw_import_settings.lens = canon_settings(chromatic_aberration=chromatic)
     micro = MicroGrainControls.from_settings(controls)
-    height, width = frame.image.shape[:2]
-    strip_rows = raw_import.COORDINATE_ROWS
+    height = frame.image.shape[0]
+    strip_rows = lens_correction.COORDINATE_ROWS
     assert height % strip_rows
-    y, x = np.mgrid[:height, :width].astype(np.float32)
-    xy = np.stack((x + .25, y - .37), axis=-1)
-    coordinates = np.stack((xy, xy - .07, xy + .21), axis=2) if chromatic else xy
-    modifier = SimpleNamespace(
-        apply_subpixel_geometry_distortion=lambda: coordinates,
-        apply_geometry_distortion=lambda: coordinates,
-    )
-    reference_remap = None
-
-    def check_remap(*args, **kwargs):
-        nonlocal reference_remap
-        result, metadata = _APPLY_LENS_CORRECTION(*args, **kwargs)
-        if kwargs.get("allocate_output") is None:
-            reference_remap = result.tobytes()
-        else:
-            assert result.tobytes() == reference_remap
-        return result, metadata
-
-    monkeypatch.setattr(raw_import, "apply_lens_correction", check_remap)
-    monkeypatch.setattr(raw_import, "_lens_modifier", lambda *a, **kw: (modifier, {"vignetting": False}))
     calls = []
     cancelled = False
+    remap = lens_correction._generate
+    monkeypatch.setattr(lens_correction, "logical_cpus", lambda: 1)
+    monkeypatch.setattr(raw_import, "apply_lens_correction", _APPLY_LENS_CORRECTION)
 
-    @contextmanager
-    def strips(*args):
-        def read(top, bottom):
-            nonlocal cancelled
-            calls.append((top, bottom))
-            if top and outcome == "fallback":
-                raise raw_import.LensStripUnavailable("test strip failure")
-            if top and outcome == "cancel":
+    def generate(library, handle, apply, state, top, count, coordinates):
+        nonlocal cancelled
+        if top >= strip_rows:
+            if outcome == "fallback" and not calls:
+                calls.append((top, count))
+                raise lens_correction.LensStripError("test strip failure")
+            if outcome == "cancel":
                 cancelled = True
-            if top and outcome == "error":
+            if outcome == "error":
                 raise ValueError("test remap error")
-            return coordinates[top:bottom]
-        yield read
+            calls.append((top, count))
+        return remap(library, handle, apply, state, top, count, coordinates)
 
-    monkeypatch.setattr(raw_import, "exact_lens_coordinate_strips", strips)
+    monkeypatch.setattr(lens_correction, "_generate", generate)
     system_temp = tmp_path / "system"
     proof_root = tmp_path / "proof-root"
     system_temp.mkdir()
@@ -232,13 +215,12 @@ def test_reduced_micro_lens_scratch(micro_frame, monkeypatch, tmp_path, chromati
             frame.render_cache.micro_preview_source(frame, micro, 256, lambda: not cancelled)
         assert refreshes == []
     else:
-        expected = denoise_micro_grain.resolve_source(frame, micro, cancelled=lambda: False)
-        expected = downsample_image(expected, 256)
-        calls.clear()
+        source = frame.image * np.float32(1 - micro.luminance / 4)
+        expected, _ = reference_frame(source, frame.raw_import_settings.lens, {})
+        expected = downsample_image(expected * np.float32(1.25), 256)
         actual, _ = frame.render_cache.micro_preview_source(frame, micro, 256, None)
         assert actual.tobytes() == expected.tobytes()
-        if outcome == "success":
-            assert calls[-1] == (2 * strip_rows, height)
+        assert calls[-1] == (height - height % strip_rows, height % strip_rows)
         # A lens-corrected preview refreshes a stale census before it is cached.
         assert refreshes == [actual.nbytes]
     assert len(mappings) == 1
@@ -394,7 +376,7 @@ def test_parallel_measurement_reads_each_window_once():
 @pytest.mark.parametrize("rotation,flip", [(0, False), (90, True), (180, False), (270, True)])
 def test_lens_corrected_micro_viewport_matches_full_grade(micro_frame, monkeypatch, rotation, flip):
     from hdr_finisher.adjustments import apply_adjustments
-    from hdr_finisher.models import CropRectangle, LensCorrectionSettings, ScopeRegion
+    from hdr_finisher.models import CropRectangle, ScopeRegion
     import lensfunpy
 
     frame, controls, _, _ = micro_frame
@@ -427,7 +409,6 @@ def test_lens_corrected_micro_viewport_matches_full_grade(micro_frame, monkeypat
     monkeypatch.setattr(denoise_micro_grain, "MicroGrainSource", Sensor)
     monkeypatch.setattr(denoise_micro_grain, "micro_background_allowed", lambda: False)
     monkeypatch.setattr(raw_import, "_lens_modifier", lambda *a, **kv: (modifier, {"vignetting": True, "profile": {"vignetting": True}}))
-    lens_settings = LensCorrectionSettings()
     grade = AdjustmentState()
     grade.hdr.exposure = .4
     grade.shared.geometry.rotation = rotation
@@ -435,9 +416,7 @@ def test_lens_corrected_micro_viewport_matches_full_grade(micro_frame, monkeypat
     grade.shared.geometry.crop = CropRectangle(x=.13, y=.14, width=.7, height=.7)
     vignetted = pixels.copy()
     raw_import._apply_signed_vignetting(modifier, vignetted)
-    corrected = raw_import._remap_bilinear_strips(
-        vignetted, modifier.apply_subpixel_geometry_distortion(), chromatic=lens_settings.chromatic_aberration,
-    )
+    corrected = numpy_bilinear(vignetted, modifier.apply_subpixel_geometry_distortion())
     full = apply_adjustments(corrected * Sensor.gain, grade, PreviewKind.HDR)
     for viewport in (ScopeRegion(x=.07, y=.13, width=.39, height=.36),
                      ScopeRegion(x=.61, y=.53, width=.38, height=.46)):

@@ -1056,7 +1056,8 @@ class SessionRenderCache:
         from .diagnostics import log
         from .finishing import _crop_bounds
         from .grain_work import current_check
-        from .raw_import import _remap_bilinear_strips
+        from .lens_correction import remap_region
+        from .raw_import import _raise_if_cancelled
 
         geometry = adjustments.shared.geometry
         if unavailable_reason(frame):
@@ -1130,9 +1131,9 @@ class SessionRenderCache:
             if vignette is not None:
                 _vignette_region(vignette, source.shape, bounds, pixels)
             if coordinates is not None:
-                pixels = _remap_bilinear_strips(
-                    pixels, coordinates, chromatic=coordinates.ndim == 4, cancelled=cancelled,
-                    frame_shape=source.shape, origin=bounds[:2],
+                pixels = remap_region(
+                    pixels, coordinates, frame_shape=source.shape, origin=bounds[:2],
+                    check=lambda: _raise_if_cancelled(cancelled),
                 )
             del coordinates
             pixels *= source.gain

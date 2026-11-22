@@ -49,7 +49,7 @@ jobs:
         working-directory: codebase
         run: python tools/fetch_exiftool.py
 
-      - name: Build signed RAW helper
+      - name: Build native RAW and Lensfun helpers
         working-directory: codebase
         run: python tools/build_signed_ahd.py
 
@@ -145,7 +145,7 @@ jobs:
         working-directory: codebase
         run: python tools/fetch_exiftool.py
 
-      - name: Build signed RAW helper
+      - name: Build native RAW and Lensfun helpers
         working-directory: codebase
         run: python tools/build_signed_ahd.py
 
@@ -227,7 +227,7 @@ jobs:
         working-directory: codebase
         run: python tools/fetch_exiftool.py
 
-      - name: Build signed RAW helper
+      - name: Build native RAW and Lensfun helpers
         working-directory: codebase
         run: python tools/build_signed_ahd.py
 

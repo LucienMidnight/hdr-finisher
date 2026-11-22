@@ -52,6 +52,9 @@ codebase/bin/denoise_filters.so
 codebase/bin/gainmap_filter.dll
 codebase/bin/gainmap_filter.dylib
 codebase/bin/gainmap_filter.so
+codebase/bin/lens_correction.dll
+codebase/bin/lens_correction.dylib
+codebase/bin/lens_correction.so
 codebase/bin/avifenc
 codebase/bin/avifdec
 codebase/bin/avifgainmaputil

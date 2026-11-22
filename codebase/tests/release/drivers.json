@@ -18,7 +18,7 @@
   ],
   "sourceAreas": [
     {"pattern":"^codebase/backend/hdr_finisher/raw_(pixel|speck)_cleanup\\.py$","areas":["library","preview","export-proof"]},
-    {"pattern":"^codebase/(backend/hdr_finisher/signed_(raw\\.py|ahd\\.c)|tools/build_signed_ahd\\.py)$","areas":["library","preview","export-proof"]},
+    {"pattern":"^codebase/(backend/hdr_finisher/(signed_(raw\\.py|ahd\\.c)|lens_correction\\.(c|py))|tools/build_signed_ahd\\.py)$","areas":["library","preview","export-proof"]},
     {"pattern":"^codebase/frontend/(shortcut-labels|floating-surfaces)\\.(js|css)$","areas":["ui"]},
     {"pattern":"^codebase/(backend/hdr_finisher/tone\\.py|frontend/tone-engine\\.js)$","areas":["preview","export-proof","library"]},
     {"pattern":"^codebase/frontend/key-hints\\.js$","areas":["ui"]},

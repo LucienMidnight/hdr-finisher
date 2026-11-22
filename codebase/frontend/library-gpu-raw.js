@@ -546,7 +546,7 @@
     workgroupBarrier();if(li<3u){atomicMax(&peaks[li],atomicLoad(&wgPeak[li]));}
   }`;
 
-  // raw_import._remap_bilinear_strips on the turned picture: per-channel
+  // the CPU Lensfun remapper on the turned picture: per-channel
   // source coordinates, clamped to the frame, bilinear.
   const REMAP = COMMON + TURN + LENS + FINISHING + /* wgsl */ `
   @group(0) @binding(1) var<storage, read> inR: array<f32>;
