@@ -3,11 +3,13 @@ from __future__ import annotations
 from concurrent.futures import ThreadPoolExecutor
 from threading import Event, Thread
 import time
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
 
 import hdr_finisher.render_cache as render_cache_module
+from hdr_finisher import app_memory
 from hdr_finisher.color_context import RenderColorContext
 from hdr_finisher.finishing import apply_geometry
 from hdr_finisher.models import AdjustmentState, GeometryAdjustments, LocalAdjustment, MaskExpression, MaskLeaf, OverlayMode, PreviewKind
@@ -162,6 +164,46 @@ def test_scope_request_counts_one_top_level_miss_then_one_hit() -> None:
     assert after_miss["hits"] == 0
     assert after_hit["misses"] == 1
     assert after_hit["hits"] == 1
+
+
+@pytest.mark.parametrize("warm_frame", [False, True], ids=["cold-scope", "scope-result-only"])
+def test_scope_admission_refusal_preserves_micro_cache_until_trim(monkeypatch, warm_frame) -> None:
+    monkeypatch.setattr(app_memory, "_sample", (0, None))
+    monkeypatch.setattr(app_memory, "_caches", {})
+    image = np.linspace(0.0, 1.0, 270 * 360 * 3, dtype=np.float32).reshape(270, 360, 3)
+    adjustments = AdjustmentState.model_validate({"hdr": {"exposure": 0.25}})
+    locals_ = [LocalAdjustment(id="scope-mask")]
+    scope_args = (adjustments, PreviewKind.HDR, 256, "histogram", 64, 64)
+    reference = SessionRenderCache(image, None).scope_result(*scope_args, local_adjustments=locals_)
+    cache = SessionRenderCache(image, None)
+    preview = image.copy()
+    prepared = SimpleNamespace(prepared_nbytes=preview.nbytes)
+    with cache._lock:
+        cache._micro_prepared["raw"] = prepared
+        cache._micro_previews["reduced"] = preview
+        cache._rebalance_locked()
+    if warm_frame:
+        cache.adjusted_frame(adjustments, PreviewKind.HDR, 256, local_adjustments=locals_, scope_source=True)
+    before = app_memory.cache_snapshot()["working"]["bytes"]
+    monkeypatch.setattr(app_memory, "_sample", (0, [{"workingSetBytes": app_memory.TARGET + 1}]))
+
+    result = cache.scope_result(*scope_args, local_adjustments=locals_)
+
+    assert result.model_dump() == reference.model_dump()
+    assert cache._micro_prepared.get("raw") is prepared
+    assert cache._micro_previews.get("reduced") is preview
+    assert not cache._scopes
+    if not warm_frame:
+        assert not cache._source_proxies
+        assert not cache._masks
+        assert not cache._frames
+    assert app_memory.cache_snapshot()["working"]["bytes"] == before
+
+    cache.trim_memory(0)
+
+    assert not cache._micro_prepared
+    assert not cache._micro_previews
+    assert app_memory.cache_snapshot()["working"]["bytes"] == 0
 
 
 def test_scope_region_is_a_post_geometry_view_and_has_an_independent_cache_key() -> None:

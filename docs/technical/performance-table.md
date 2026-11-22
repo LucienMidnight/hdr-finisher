@@ -102,6 +102,8 @@ retained-frame assertion on the baseline and this branch.
 [After-fix first run](../../codebase/output/grade-mem/after-fixes-first.jsonl) ·
 [Run details](../../codebase/output/grade-mem/result.txt)
 
+Scope-eviction follow-up (this commit, same MacBook Neo, photo and locked window): HDR → generated SDR reused the 4096 px Micro source in 2.622 s (3.366 GB whole app / 1.430 GB backend / 1.113 GB GPU helper), versus the earlier 34.960 s cache miss and 2.336 s cache hit. All nine action peaks stayed below 4 GB (max 3.557 GB), and all four SHA-256 hashes matched. [Replay and per-action peaks](../../codebase/output/grade-mem/scope-evict.jsonl)
+
 ## November 22, 2026 — MacBook Neo Proof memory
 
 MacBook Neo, A18 Pro, 8 GB, unpackaged Electron at 1408 × 794 under the shared

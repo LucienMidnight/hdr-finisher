@@ -1797,6 +1797,7 @@ class SessionRenderCache:
                 local_adjustments,
                 edge,
                 source_epoch=source_epoch,
+                scope_source=scope_source,
             )
             from .grain_work import render_work
             source_filter = None
@@ -1859,15 +1860,9 @@ class SessionRenderCache:
             with self._lock:
                 if self._source_epoch != source_epoch:
                     raise StaleRender("The preview source changed.")
-                self._frames[key] = processed
-                # With a reusable Micro source, a finished frame is cheaper
-                # to rebuild than the RAW preparation that every edit needs.
-                # Serve the frame without caching it if retaining both fails
-                # the same admission check used by the working cache.
-                if (micro_preview is not None and micro_key in self._micro_previews
-                        and not app_memory.claim(self._ram_key, 'working', self._retained_bytes_locked())):
-                    self._frames.pop(key)
-                else:
+                if self._store_derived_locked('_frames', key, processed, protect_micro=(
+                    scope_source or (micro_preview is not None and micro_key in self._micro_previews)
+                )):
                     self._touch_ram_locked('_frames', key)
                     self._evict_locked()
         finally:
@@ -2058,12 +2053,12 @@ class SessionRenderCache:
             with self._lock:
                 if self._source_epoch != source_epoch:
                     raise StaleRender("The scope source changed.")
-                self._scopes[key] = result.model_copy(deep=True)
-                while len(self._scopes) > 12:
-                    self._scopes.popitem(last=False)
-                    self._evictions += 1
-                self._touch_ram_locked('_scopes', key)
-                self._rebalance_locked()
+                if self._store_derived_locked('_scopes', key, result.model_copy(deep=True), protect_micro=True):
+                    while len(self._scopes) > 12:
+                        self._scopes.popitem(last=False)
+                        self._evictions += 1
+                    self._touch_ram_locked('_scopes', key)
+                    self._rebalance_locked()
         finally:
             with self._lock:
                 if self._inflight.get(flight_key) is flight:
@@ -2145,16 +2140,17 @@ class SessionRenderCache:
                 raise StaleRender("The scope source changed.")
             if states:
                 self._source_level_states[edge] = states[-1]
-            self._remember_proxies_locked(edge, source, reference)
+            self._remember_proxies_locked(edge, source, reference, scope_source=True)
         return source, reference
 
-    def _remember_proxies_locked(self, edge: int, source: np.ndarray, reference: np.ndarray | None) -> None:
+    def _remember_proxies_locked(self, edge: int, source: np.ndarray, reference: np.ndarray | None, *, scope_source=False) -> None:
         # The mip store owns persistent levels. Keeping another reference here
         # would keep its evicted payload alive outside its reported bytes.
         for name, identity, value in (('_source_proxies', self.source_identity, source), ('_sdr_proxies', self.sdr_identity, reference)):
             cache = getattr(self, name)
             if self.mip_store is None or identity is None:
-                cache[edge] = value
+                if not self._store_derived_locked(name, edge, value, protect_micro=scope_source):
+                    continue
                 cache.move_to_end(edge)
                 self._touch_ram_locked(name, edge)
             while len(cache) > self.max_proxy_levels:
@@ -2223,6 +2219,7 @@ class SessionRenderCache:
         edge: int,
         *,
         source_epoch: int,
+        scope_source=False,
     ) -> dict[str, np.ndarray] | None:
         from .local_adjustments import has_hue_mask
         active = [item for item in (local_adjustments or []) if item.enabled and item.opacity > 0.0]
@@ -2299,10 +2296,10 @@ class SessionRenderCache:
                         if source_epoch == self._source_epoch:
                             existing = self._masks.get(key)
                             if existing is None:
-                                self._masks[key] = mask
-                                self._touch_ram_locked('_masks', key)
                                 self._misses += 1
-                                self._evict_masks_locked(self._mask_budget_locked())
+                                if self._store_derived_locked('_masks', key, mask, protect_micro=scope_source):
+                                    self._touch_ram_locked('_masks', key)
+                                    self._evict_masks_locked(self._mask_budget_locked())
                             else:
                                 mask = existing
                     mask_checkpoint()
@@ -2334,6 +2331,21 @@ class SessionRenderCache:
     def _touch_ram_locked(self, name, key):
         self._ram_lru[(name, key)] = None
         self._ram_lru.move_to_end((name, key))
+
+    def _store_derived_locked(self, name, key, value, *, protect_micro):
+        cache = getattr(self, name)
+        if not protect_micro or not (self._micro_prepared or self._micro_previews):
+            cache[key] = value
+            return True
+        had_entry, previous = key in cache, cache.get(key)
+        cache[key] = value
+        if app_memory.claim(self._ram_key, 'working', self._retained_bytes_locked()):
+            return True
+        if had_entry:
+            cache[key] = previous
+        else:
+            cache.pop(key)
+        return False
 
     def _retained_bytes_locked(self):
         from dataclasses import fields, is_dataclass

@@ -52,6 +52,8 @@ the session render lock. It keeps the same Lanczos samples and local range
 limits. Preview requests can access their caches while the scope source is
 being prepared.
 
+If the working cache refuses a scope proxy, mask, frame or result, Grade serves the scope without retaining that entry rather than evicting reusable CPU Micro Grain data; explicit memory-pressure trims are unchanged.
+
 Grade converts HDR and SDR previews for encoding in row bands. The HDR
 preview's temporary encoder input goes in the desktop's swept scratch
 folder. Under the existing memory admission rule, a finished Micro preview
