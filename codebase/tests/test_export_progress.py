@@ -63,6 +63,9 @@ def test_progress_follows_ticks_and_lanes_and_never_goes_back():
         with lane("sdr"), stage("film_grain"):
             tick(1, 2)
             seen.append(progress.fraction())
+            assert progress.label() == "Rendering SDR"
+        # Between renditions the label stays on the last rendition, not RAW.
+        assert progress.label() == "Rendering SDR"
         with lane("encode"), stage("validate"):
             assert progress.label() == "Finishing"
         seen.append(progress.fraction())

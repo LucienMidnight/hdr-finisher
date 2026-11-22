@@ -89,6 +89,7 @@ class ExportProgress:
         self._lock = threading.Lock()
         self._reported = 0.0
         self._started = monotonic()
+        self._label = None
         self.done = False
         clock.progress = self
 
@@ -141,10 +142,19 @@ class ExportProgress:
         except IndexError:
             lane, stage = clock.lane, None
         if stage == "denoise":
-            return LABELS["denoise"]
-        if lane == "encode":
-            return LABELS["finish"] if stage in _FINISHING else LABELS["encode"]
-        return LABELS.get(lane, LABELS["source"])
+            label = LABELS["denoise"]
+        elif lane == "encode":
+            label = LABELS["finish"] if stage in _FINISHING else LABELS["encode"]
+        elif lane in ("hdr", "sdr"):
+            label = LABELS[lane]
+        elif stage == "develop_raw":
+            label = LABELS["source"]
+        else:
+            # Between renditions (or before the first) keep the last label;
+            # the RAW is already developed when an export starts in Grade.
+            label = self._label or LABELS["hdr"]
+        self._label = label
+        return label
 
     def snapshot(self) -> dict:
         fraction = self.fraction()
