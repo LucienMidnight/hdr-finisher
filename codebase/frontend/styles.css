@@ -9076,7 +9076,8 @@ body:not([data-workflow="export"]) .batch-grid-panel { display:none; }
 body[data-workflow="export"].batch-export-grid .workspace-main { visibility:hidden; }
 body[data-workflow="export"] #viewer-status-dock { display:none; }
 body[data-workflow="export"] .batch-preview { pointer-events:none; background:transparent; }
-.batch-preview .batch-header, .batch-preview .batch-notice, .batch-preview .batch-empty { pointer-events:auto; }
+.batch-preview .batch-header, .batch-preview .batch-empty { pointer-events:auto; }
+.batch-preview .batch-notice { display:none; }
 body[data-workflow="export"] .batch-preview .batch-empty { background:var(--app); }
 
 .batch-quick-dialog { width:min(560px,calc(100vw - 40px)); max-width:560px; }
