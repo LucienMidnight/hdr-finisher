@@ -609,6 +609,10 @@ def test_halation_extent_changes_spread_without_changing_edge_qualification() ->
     assert float(large[60, 47, 0]) > float(small[60, 47, 0])
     np.testing.assert_array_equal(qualification_small, qualification_large)
     assert float(np.sum(large_map)) > float(np.sum(small_map))
+    # Without the diagnostic map the glow is the same picture.
+    unmapped, no_map = adjustments_module._apply_halation(image, look, PreviewKind.HDR, np.float32(1.0), with_map=False)
+    assert no_map is None
+    np.testing.assert_array_equal(unmapped, large)
 
 
 def test_film_resolution_attenuates_microcontrast_but_protects_hard_edges() -> None:

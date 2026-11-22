@@ -1824,7 +1824,7 @@ def _apply_film_look(
         if look.film_resolution < 100.0:
             result = _apply_film_resolution(result, look, full)
         if halation_active:
-            result, halation_map = _apply_halation(result, look, kind, full)
+            result, halation_map = _apply_halation(result, look, kind, full, with_map=look.halation_view_map)
             if look.halation_view_map:
                 return halation_map
         grain = include_grain and look.grain_enabled and look.grain_amount > 0.0
@@ -2304,8 +2304,9 @@ def _halation_tint(hue_offset: float, saturation: float, kind: PreviewKind) -> n
 
 @_timed_stage("halation")
 def _apply_halation(
-    image: np.ndarray, look: object, kind: PreviewKind, master: np.float32
-) -> tuple[np.ndarray, np.ndarray]:
+    image: np.ndarray, look: object, kind: PreviewKind, master: np.float32, *, with_map: bool = True,
+) -> tuple[np.ndarray, np.ndarray | None]:
+    """Add the halation glow; build the grey diagnostic map only when shown."""
     radius = _film_radius_pixels(image, look, look.halation_radius)
     source = _halation_edge_source(
         image, kind, 75.0, edge_radius=max(1, radius // 4)
@@ -2314,6 +2315,9 @@ def _apply_halation(
     edge_scatter = np.maximum(blurred - source * np.float32(0.15), 0.0)
     tint = _halation_tint(look.halation_hue_offset, look.halation_saturation, kind)
     halo = edge_scatter[..., None] * tint
+    amount = np.float32(0.42 * look.halation_amount / 100.0) * master
+    if not with_map:
+        return (image + halo * amount).astype(np.float32), None
     map_signal = np.clip(_film_encode_luma(np.maximum(edge_scatter, 0.0), kind), 0.0, 1.0)
     if kind == PreviewKind.HDR:
         # The map is a 0-1 signal shown as grey. HDR scene values place SDR
@@ -2321,7 +2325,6 @@ def _apply_halation(
         # several times brighter than white and read as solid white shapes.
         map_signal = map_signal * (SDR_SCENE_MIDDLE_GRAY / SDR_DISPLAY_REFERENCE_WHITE)
     halation_map = np.repeat(map_signal[..., None], 3, axis=-1).astype(np.float32)
-    amount = np.float32(0.42 * look.halation_amount / 100.0) * master
     return (image + halo * amount).astype(np.float32), halation_map
 
 
