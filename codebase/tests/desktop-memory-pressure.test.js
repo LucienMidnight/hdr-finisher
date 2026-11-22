@@ -42,3 +42,38 @@ test('failed renderer collection surfaces to the caller',async()=>{
  await assert.rejects(notifyChromiumPressure(contents,'moderate',20),/timed out/);
  assert.equal(calls,1);
 });
+const {emptyTrimGuard,trimReason}=require('../desktop/memory-pressure.cjs');
+function exportRun(samples){
+  // 500 ms polls through the same two gates as the desktop's memory timer.
+  const trim=pressureGate(),grain=pressureGate(),guard=emptyTrimGuard(),rounds=[],events=[];
+  samples.forEach((value,index)=>{
+    const decision=guard(value,trim(value.level,index*500),!!grain(value.gradePressure,index*500));
+    if(decision.entered)events.push(['paused',index*500]);
+    if(decision.resumed)events.push([decision.resumed,index*500]);
+    if(decision.trimLevel||decision.grainReclaim)rounds.push(index*500);
+  });
+  return {rounds,events};
+}
+const sample=(extra={})=>({level:'moderate',gradePressure:'moderate',pressure:'none',gradeBytes:400e6,caches:{working:{bytes:0},raw:{bytes:0}},...extra});
+test('an export over the target with empty caches gets one trim round, then silence',()=>{
+  const {rounds,events}=exportRun(Array.from({length:360},()=>sample()));
+  assert.deepEqual(rounds,[0]);
+  assert.deepEqual(events,[['paused',COOLDOWN_MS]]);
+});
+test('rounds that free memory continue; growth or OS pressure wakes a quiet guard',()=>{
+  let caches=800e6;const samples=[];
+  for(let i=0;i<120;i++){if(i%20===0)caches/=2;samples.push(sample({caches:{working:{bytes:caches}}}));}
+  assert.equal(exportRun(samples).rounds.length,6);
+  const quiet=Array.from({length:60},()=>sample());
+  const grown=[...quiet,...Array.from({length:30},()=>sample({caches:{working:{bytes:50e6}}}))];
+  // Woken, it runs a round on the new caches (this sample never frees them, so it pauses again).
+  for(const [samples,reason] of [[grown,'cache_growth'],[[...quiet,...Array.from({length:30},()=>sample({pressure:'moderate'}))],'system_pressure_changed']]){
+    const run=exportRun(samples);
+    assert.deepEqual(run.events.slice(0,2).map(event=>event[0]),['paused',reason]);
+    assert.ok(run.rounds.some(time=>time>=run.events[1][1]));
+  }
+});
+test('over the target with no OS shortage is logged as budget pressure',()=>{
+  assert.equal(trimReason({pressure:'none'}),'budget_pressure');
+  assert.equal(trimReason({pressure:'moderate'}),'system_memory_pressure');
+});

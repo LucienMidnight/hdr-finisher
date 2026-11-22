@@ -33,4 +33,40 @@ function pressureGate(cooldownMs = COOLDOWN_MS) {
     return level;
   };
 }
-module.exports = {notifyChromiumPressure, withDeadline, pressureGate, COOLDOWN_MS};
+// A trim round (cache trim, renderer collection or Grade Grain reclaim) that
+// starts with nothing left to release is not repeated. After a round, the next
+// one is skipped when neither the backend caches nor Grade's bytes went down,
+// and the guard stays quiet until caches or Grade grow again, the operating
+// system's pressure level changes, or the level rises. An export worker above
+// the target otherwise re-fired the whole round every cool-down for minutes.
+function cacheBytes(value) {
+  return Object.values(value?.caches || {}).reduce((sum, share) => sum + (Number(share?.bytes) || 0), 0);
+}
+function emptyTrimGuard() {
+  let round = null, quiet = null;
+  return function decide(value, trimLevel, grainReclaim) {
+    const caches = cacheBytes(value), grade = Number(value?.gradeBytes) || 0;
+    const system = value?.pressure || 'none', level = value?.level || 'none';
+    let resumed = null;
+    if (quiet) {
+      if (caches > quiet.caches) resumed = 'cache_growth';
+      else if (grade > quiet.grade) resumed = 'grade_growth';
+      else if (system !== quiet.system) resumed = 'system_pressure_changed';
+      else if ((RANK[level] ?? 0) > (RANK[quiet.level] ?? 0)) resumed = 'pressure_rose';
+      if (!resumed) return {trimLevel: null, grainReclaim: false, quiet: true};
+      quiet = null; round = null;
+    }
+    if (!trimLevel && !grainReclaim) return {trimLevel, grainReclaim, quiet: false, resumed};
+    if (round && caches >= round.caches && grade >= round.grade) {
+      quiet = {caches, grade, system, level};
+      return {trimLevel: null, grainReclaim: false, quiet: true, entered: true};
+    }
+    round = {caches, grade};
+    return {trimLevel, grainReclaim, quiet: false, resumed};
+  };
+}
+// Over the app's own target with no OS shortage is budget pressure.
+function trimReason(value) {
+  return (value?.pressure || 'none') === 'none' ? 'budget_pressure' : 'system_memory_pressure';
+}
+module.exports = {notifyChromiumPressure, withDeadline, pressureGate, emptyTrimGuard, trimReason, cacheBytes, COOLDOWN_MS};

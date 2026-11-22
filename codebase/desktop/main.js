@@ -1489,6 +1489,7 @@ if (!gotLock) {
       const memoryPressureRelay = require('./memory-pressure.cjs');
       const memoryTrimGate = memoryPressureRelay.pressureGate();
       const gradeTrimGate = memoryPressureRelay.pressureGate();
+      const emptyTrimGuard = memoryPressureRelay.emptyTrimGuard();
       const memoryTimer = setInterval(async () => {
         if (memorySampling || shuttingDown) return;
         memorySampling = true;
@@ -1501,15 +1502,22 @@ if (!gotLock) {
           // The backend's level comes from measurement and the OS only, never
           // from a refused admission. Trim once when it rises, then at most
           // once per cool-down while it lasts.
-          const trimLevel = memoryTrimGate(value.level || "none");
+          const decision = emptyTrimGuard(value, memoryTrimGate(value.level || "none"),
+            !!gradeTrimGate(value.gradePressure || "none"));
+          const trimLevel = decision.trimLevel;
           value.reclaim = !!trimLevel;
           value.reclaimLevel = trimLevel || "none";
-          value.grainReclaim = !!gradeTrimGate(value.gradePressure || "none");
+          value.grainReclaim = decision.grainReclaim;
+          const memoryFields = {app_ram_bytes: value.totalBytes, budget_bytes: value.ceilingBytes,
+            system_free_bytes: os.freemem(), reserved_bytes: value.reservedBytes,
+            cache_bytes: memoryPressureRelay.cacheBytes(value), grade_bytes: value.gradeBytes,
+            system_pressure: value.pressure || "none"};
+          if (decision.entered) desktopEvent("memory", "cache_trim_paused", {
+            route: "cpu", reason: "no_reclaimable_resources", pressure_level: value.level || "none", ...memoryFields});
+          if (decision.resumed) desktopEvent("memory", "cache_trim_resumed", {
+            route: "cpu", reason: decision.resumed, pressure_level: value.level || "none", ...memoryFields});
           if (trimLevel) desktopEvent("memory", "cache_trim_requested", {
-            route: "cpu", reason: "system_memory_pressure", pressure_level: trimLevel,
-            app_ram_bytes: value.totalBytes, budget_bytes: value.ceilingBytes, system_free_bytes: os.freemem(),
-            reserved_bytes: value.reservedBytes,
-          });
+            route: "cpu", reason: memoryPressureRelay.trimReason(value), pressure_level: trimLevel, ...memoryFields});
           if (trimLevel) libraryStage("memory_trim", {level:trimLevel, totalBytes:value.totalBytes,
             targetBytes:value.targetBytes, ceilingBytes:value.ceilingBytes, pressure:value.pressure, waiting:value.waiting});
           if (Date.now()-memoryLastLog > 60000 || value.level !== memoryLastLevel || trimLevel) {
