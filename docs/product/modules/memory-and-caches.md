@@ -67,6 +67,8 @@ continue if re-development fails or is cancelled.
 When magnified Micro Grain uses native GPU processing, the existing viewport
 presentation also applies below 100% zoom. The window shows native tiles over
 the Fit-size picture, without allocating a photo-size HDR presentation surface.
+Grade automatically preloads only reduced-size GPU proxies for inactive lanes
+that can use them; explicit comparison is unchanged.
 A docked Library that is hidden during zoomed CPU Micro keeps the previous
 thumbnail on hand and finishes the saved-grade redraw when Library is opened.
 [MacBook Neo measurements](../../technical/performance-table.md#november-22-2026--macbook-neo-grade-memory)
