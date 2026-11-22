@@ -56,7 +56,7 @@ from .mask_work import (
     phase as mask_phase,
     shared_work as mask_shared_work,
 )
-from .models import AdjustmentState, GeometryAdjustments, LocalAdjustment, MaskExpression, MaskPoint, PreviewKind
+from .models import AdjustmentState, FilmLookAdjustments, GeometryAdjustments, LocalAdjustment, MaskExpression, MaskPoint, PreviewKind
 from .preview import ResizeCancelled, downsample_image
 from .preview_geometry import limit_geometry_overshoot
 
@@ -1813,18 +1813,43 @@ class SessionRenderCache:
                         raise StaleRender("A newer adjustment replaced this render.")
                     return resolve_adaptive(pixels, model, AdaptiveControls(**denoise_controls.model_dump()))
 
+            scale = min(1.0, edge / max(self.image.shape[:2]))
             with render_work(is_current):
-                processed = apply_adjustments(
-                    source,
-                    adjustments,
-                    kind,
-                    sdr_reference_image=sdr_reference,
-                    local_adjustments=local_adjustments,
-                    compiled_local_masks=compiled_masks,
-                    color_context=self.color_context,
-                    source_pixel_scale=min(1.0, edge / max(self.image.shape[:2])),
-                    source_filter=source_filter,
-                )
+                # Reuse the reduced Micro source, but keep SDR finishing
+                # intermediates in strips when the grade supports exact strips.
+                if (micro_preview is not None and kind == PreviewKind.SDR
+                        and sdr_reference is None and not adjustments.sdr.linked_to_hdr
+                        and (not adjustments.sdr.film_look_section_enabled or adjustments.sdr.film_look == FilmLookAdjustments())
+                        and (not adjustments.sdr.vignette_section_enabled or adjustments.sdr.vignette.amount == 0)
+                        and not adjustments.sdr.black_and_white_section_enabled
+                        and geometry_resample_stage(adjustments.shared.geometry) == "index"
+                        and not strip_execution_refusals(
+                            adjustments, kind, local_adjustments=local_adjustments,
+                            denoise_active=source_filter is not None, source_width=source.shape[1],
+                            source_height=source.shape[0], long_edge=edge,
+                        )):
+                    try:
+                        processed, _ = render_in_strips(
+                            source, adjustments, kind, sdr_reference_image=sdr_reference,
+                            color_context=self.color_context, source_pixel_scale=scale,
+                            long_edge=edge, is_current=is_current,
+                        )
+                    except StripCancelled as exc:
+                        with self._lock:
+                            self._stale_cancellations += 1
+                        raise StaleRender("A newer adjustment replaced this render.") from exc
+                else:
+                    processed = apply_adjustments(
+                        source,
+                        adjustments,
+                        kind,
+                        sdr_reference_image=sdr_reference,
+                        local_adjustments=local_adjustments,
+                        compiled_local_masks=compiled_masks,
+                        color_context=self.color_context,
+                        source_pixel_scale=scale,
+                        source_filter=source_filter,
+                    )
             processed = downsample_image(processed, edge)
             if is_current is not None and not is_current():
                 with self._lock:

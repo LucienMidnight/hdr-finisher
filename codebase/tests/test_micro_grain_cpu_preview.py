@@ -6,6 +6,7 @@ import numpy as np
 import pytest
 
 from hdr_finisher import app_memory, denoise_micro_grain, raw_import
+from hdr_finisher.adjustments import apply_adjustments
 from hdr_finisher.color_context import RenderColorContext
 from hdr_finisher.denoise_micro_grain import MicroGrainControls
 from hdr_finisher.grain_work import checkpoint, render_work
@@ -108,6 +109,28 @@ def test_finished_micro_frame_does_not_displace_reusable_source(micro_frame, mon
     edited = preview(frame, controls, exposure=0.25)
     assert not np.array_equal(first, edited)
     assert len(rendered) == 1
+
+
+def test_generated_sdr_micro_finish_matches_whole_frame(micro_frame, monkeypatch):
+    from hdr_finisher import render_cache
+
+    frame, controls, _, _ = micro_frame
+    original = render_cache.render_in_strips
+    strip_counts = []
+
+    def render(*args, **options):
+        result, report = original(*args, **options, budget_bytes=1024 * 1024)
+        strip_counts.append(report.plan.strip_count)
+        return result, report
+
+    monkeypatch.setattr(render_cache, "render_in_strips", render)
+    source, _ = frame.render_cache.micro_preview_source(
+        frame, MicroGrainControls.from_settings(controls), 256, None,
+    )
+    expected = apply_adjustments(source, AdjustmentState(), PreviewKind.SDR, source_pixel_scale=0.8)
+    actual = preview(frame, controls, kind=PreviewKind.SDR)
+    assert strip_counts[0] > 1
+    np.testing.assert_array_equal(actual, expected)
 
 
 def test_cached_micro_pixels_equal_previous_processing(micro_frame):
