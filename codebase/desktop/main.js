@@ -1361,22 +1361,31 @@ async function beginShutdown() {
   desktopEvent("app", "action_started", { action, operation: "shutdown" });
   quitRequested = true;
   forceClose = true;
-  for (const record of [...windows.values()]) {
-    saveWindowBounds(record);
-    if (!record.window.isDestroyed()) record.window.destroy();
+  // before-quit waits for shutdownComplete, so a failed step must still stop
+  // the backend, clear Proof scratch and let the app quit.
+  try {
+    for (const record of [...windows.values()]) {
+      try { saveWindowBounds(record); } catch (error) { console.warn(`Could not save window bounds: ${error.message}`); }
+      if (!record.window.isDestroyed()) record.window.destroy();
+    }
+    if (backend) {
+      await fetch(`${backend.url}/api/batch-export/shutdown`, {method:"POST",
+        headers:{"X-HDR-Finisher-Token":backend.authoringSecret},signal:AbortSignal.timeout(7000)}).catch(()=>{});
+    }
+    clearTimeout(deliveryIdleTimer);
+    if (deliveryWindow && !deliveryWindow.isDestroyed()) deliveryWindow.destroy();
+    deliveryWindow = null;
+  } finally {
+    try {
+      await stopBackend();
+      desktopEvent("app", "action_finished", {
+        action, operation: "shutdown", outcome: "success", duration_ms: Math.round(performance.now() - started),
+      });
+    } finally {
+      shutdownComplete = true;
+      app.quit();
+    }
   }
-  if (backend) {
-    await fetch(`${backend.url}/api/batch-export/shutdown`, {method:"POST",
-      headers:{"X-HDR-Finisher-Token":backend.authoringSecret},signal:AbortSignal.timeout(7000)}).catch(()=>{});
-  }
-  clearTimeout(deliveryIdleTimer);
-  deliveryWindow?.destroy();deliveryWindow=null;
-  await stopBackend();
-  desktopEvent("app", "action_finished", {
-    action, operation: "shutdown", outcome: "success", duration_ms: Math.round(performance.now() - started),
-  });
-  shutdownComplete = true;
-  app.quit();
 }
 
 const gotLock = app.requestSingleInstanceLock();
