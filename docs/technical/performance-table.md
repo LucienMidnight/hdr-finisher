@@ -104,6 +104,78 @@ retained-frame assertion on the baseline and this branch.
 
 Scope-eviction follow-up (this commit, same MacBook Neo, photo and locked window): HDR → generated SDR reused the 4096 px Micro source in 2.622 s (3.366 GB whole app / 1.430 GB backend / 1.113 GB GPU helper), versus the earlier 34.960 s cache miss and 2.336 s cache hit. All nine action peaks stayed below 4 GB (max 3.557 GB), and all four SHA-256 hashes matched. [Replay and per-action peaks](../../codebase/output/grade-mem/scope-evict.jsonl)
 
+## November 22, 2026 — Native Lensfun correction
+
+MacBook Neo, A18 Pro and 8 GB unified memory. The isolated check ran three
+alternating pairs of fresh development processes per RAW, using the previous
+strip path at `4ee831eb` and the native path at `95cbb930`. The peak is
+the backend's lifetime physical footprint at the end of correction, before
+SDR finishing, in decimal MB.
+
+| RAW and profile | Lens seconds before, median (range) | Lens seconds after, median (range) | Peak MB before, median (range) | Peak MB after, median (range) |
+| --- | ---: | ---: | ---: | ---: |
+| Canon `IMG_0790.CR2`, 5202 × 3464, EF-S 18–135 mm IS | 0.857 (0.817–0.873) | 0.127 (0.125–0.130) | 892.2 (883.9–896.1) | 853.4 (853.2–853.5) |
+| Sony `_DSC7970.ARW`, 7968 × 5320, Sigma 65 mm F2 | 1.930 (1.923–1.959) | 0.262 (0.256–0.263) | 1,771.0 (1,767.0–1,773.3) | 1,705.6 (1,705.5–1,705.7) |
+
+The corrected float32 image and the float and 8-bit sRGB SDR finish
+matched on both RAWs. The six Sony TCA workers use at most 73.4 MB for
+coordinate strips, plus 3.5 MB for the reference prefix and row seeds.
+The Canon uses 50.2 MB in total at its width. The output image and
+calibrated signed vignetting scratch are separate and do not overlap the
+coordinate generation on the same photo.
+
+The Grade replay used unpackaged Electron at 1408 × 794 under the GPU lock
+with Sony `_DSC7970.ARW`, signed AHD, speck cleanup ×2.5, GPU Auto and
+the 4 GB ceiling. The comparison is the kept-zoom run from the
+[preceding check](#november-22-2026--lens-correction-speed) against one
+replay at `c779c36c`. The three peaks are sampled independently in decimal GB.
+
+| Action | Seconds before → after | Whole app GB before → after | Backend GB before → after | GPU helper GB before → after |
+| --- | ---: | ---: | ---: | ---: |
+| Open at Fit | 9.925 → 9.759 | 1.933 → 2.090 | 1.322 → 1.466 | 0.365 → 0.492 |
+| Micro Grain at Fit, lens off | 20.556 → 18.456 | 2.224 → 2.243 | 1.112 → 1.151 | 0.669 → 0.712 |
+| Zoom to 78%, lens off | 7.711 → 4.923 | 2.698 → 3.620 | 0.997 → 1.915 | 0.895 → 0.927 |
+| Lensfun Auto at 78% | **55.381 → 40.307** | 3.221 → 3.354 | 1.985 → 1.996 | 0.580 → 0.608 |
+| Exposure +0.25 EV | 2.181 → 2.172 | 3.136 → 3.118 | 1.043 → 1.063 | 0.876 → 0.873 |
+| HDR to generated SDR | 2.518 → 2.502 | 3.108 → 3.104 | 1.211 → 1.203 | 1.045 → 1.049 |
+| Generated SDR to HDR | 0.112 → 0.131 | 3.108 → 3.066 | 1.211 → 1.122 | 1.013 → 1.012 |
+| Return to Fit | 0.008 → 0.007 | 3.056 → 3.183 | 1.126 → 1.132 | 1.013 → 1.073 |
+| Return to 78% | 0.087 → 0.084 | 3.164 → 3.183 | 1.237 → 1.132 | 1.088 → 1.073 |
+
+| Lensfun Auto stage | Before, s | After, s |
+| --- | ---: | ---: |
+| RAW read, decode and development before Lensfun | 17.867 | 10.534 |
+| Lensfun on developed RAW | 3.394 | 0.618 |
+| Bayer read, cleanup, reconstruction and noise fit | 0.014 (reused) | 0.012 (reused) |
+| Micro Grain full-resolution render | 25.115 | 23.296 |
+| Lensfun on the Micro Grain RGB | 3.425 | 0.361 |
+| Micro source gain and scratch flush | 0.301 | 0.296 |
+| Resize to preview size | 2.012 | 1.978 |
+| Preview encode | 1.623 | 1.730 |
+| Request handoff, Grade finishing and frontend wait | 1.620 | 1.482 |
+
+The two lens stages saved 5.84 seconds in this replay. The non-lens
+RAW development stage varied between runs. The full-resolution Micro
+render is still the largest part of the wait. Exposure and generated SDR
+reused the 4096 px source, and all four preview hashes matched the Grade
+memory baseline. The highest sampled action was 3.620 GB during the
+lens-off zoom. The memory sampler dropped one reading when a short-lived
+`ps` process exited. Each action had a peak sample or used the immediately
+preceding sample for the shortest actions.
+
+The paired Library RAW driver passed. Canon and Sony GPU thumbnails
+appeared in 0.712 and 0.864 seconds. The Sony CPU reference with Lensfun
+took 5.14 seconds, versus 6.81 seconds previously. Its Lensfun stage took
+0.417 seconds. Both cameras had the same reported perceptual differences
+as the previous run. Canon Micro Grain Grade at 110% versus CPU delivery
+passed with Lensfun off. HDR ΔE ITP mean 0.150 and p99 2.277, SDR ΔE 2000
+mean 0.174 and p99 0.519, delivery peak 1000 nits. Full-size JPEG Ultra HDR
+delivery took 30.55 seconds.
+
+[Paired RAW measurements](../../codebase/output/native-lens/real-photo.jsonl)
+· [Grade replay](../../codebase/output/native-lens/after.jsonl)
+· [Backend stages](../../codebase/output/native-lens/after-backend.log)
+
 ## November 22, 2026 — Lens correction speed
 
 MacBook Neo, A18 Pro with 8 GB unified memory, unpackaged Electron at

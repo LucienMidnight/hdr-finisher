@@ -684,7 +684,17 @@ is open.
 
 The app now charges the last GPU Micro source's sensor, profile and Bayer
 tiles to the existing working share. Reclaim drops that cached source so
-later requests can rebuild it.
+later requests can rebuild it. If a pending GPU region finishes after this
+source has been handed to the CPU cache, the region can finish but does not
+retain new Bayer tiles.
+
+November 22 update: full-frame Lensfun correction uses 64 coordinate rows per
+CPU worker. At Sony size on the MacBook Neo, six TCA strips use 73.4 MB plus
+3.5 MB for the row seeds and coordinate check. The workers use the existing
+working allowance. An interrupted coordinate strip can be retried with one
+worker and a 16-row buffer. The full-frame output can still use the Micro
+preview's scratch file.
+[Mac measurements](../../technical/performance-table.md#november-22-2026--native-lensfun-correction)
 
 MG-2 keeps Lensfun's full row width and zero origin, then copies out only
 the visible rectangle and releases the unused rows. Peak coordinate

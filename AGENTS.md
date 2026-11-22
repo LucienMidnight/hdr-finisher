@@ -408,11 +408,9 @@ same-Mac v0.9.2 comparisons and exact errors: `docs/known-limitations.md`,
 
 **PC confirmation from the overnight Mac work (November 22):**
 
-9. After setup (which rebuilds `denoise_filters`), confirm the R2-6 Lensfun
-   strips run on Windows and stay byte-identical: `pytest tests/test_extended_formats.py -k lens`
-   must pass without skips, and the backend log must not show
-   `lens_coordinate_strips_unavailable`. Then one RAW import with lens
-   correction on `IMG_0790.CR2` and `_DSC7970.ARW` must match whole-frame bytes.
+9. After setup, run `pytest tests/test_lens_correction.py tests/test_extended_formats.py -k lens`.
+   This checks both native Lensfun coordinate layouts and RAW profile selection.
+   Normal RAW development should produce no Lensfun strip warnings.
 10. Confirm full-size Sony Clean Small AVIF export and Proof on Windows with the same CPU noise measurement. Check the 4 GB working-set peak, exact files, tiles and statistics, ceiling retry isolation, and scratch cleanup after eviction, normal quit and
     a forced quit followed by relaunch.
 
@@ -425,6 +423,11 @@ same-Mac v0.9.2 comparisons and exact errors: `docs/known-limitations.md`,
     Auto keeps the zoom and pan, only the current preview size builds, and
     matching GPU Bayer preparation is reused by the CPU fallback. Also
     confirm crop bounds clamp the pan when the RAW frame size changes.
+    For NATIVE-LENS, confirm setup builds and loads `lens_correction.dll` in
+    development and in the packaged backend. Compare the corrected float32 and
+    finished SDR bytes with the previous path for `IMG_0790.CR2` and
+    `_DSC7970.ARW`. Record the lens timings and peaks in three paired runs on
+    the PC's cores, and repeat the Grade replay.
 
 ## Disk space and test output
 

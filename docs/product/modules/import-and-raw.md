@@ -222,6 +222,17 @@ is estimated at **90–150 minutes or more**, not a timed runner estimate: the
 release plan has no usable driver history and includes unrelated branch work.
 Do not run that group without approval or interpret fast passes as delivery sign-off.
 
+### November 22: Native Lensfun correction
+
+A full RAW or Micro Grain correction now runs in parallel on the CPU. Each
+worker uses its own Lensfun modifier and holds only 64 rows of coordinates.
+It reuses the row positions from a whole-height four-column probe so the
+finished pixels match the previous correction byte for byte. If a coordinate
+strip fails, the app retries the correction with smaller serial strips.
+The app skips vignetting for profiles without that calibration and keeps
+the same signed vignetting operation on profiles that have it.
+[Mac timings and exactness](../../technical/performance-table.md#november-22-2026--native-lensfun-correction)
+
 ### November 15: W2 P5 Lensfun stage measurement; no rewrite
 
 **November 21 follow-up (R2-6).** Full-frame CPU Lensfun correction now
