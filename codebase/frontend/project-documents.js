@@ -335,7 +335,7 @@ function retainedRedevelopmentZoom(session) {
     "perspective_horizontal", "perspective_vertical", "perspective_rotate"]
     .every(key => (oldGeometry[key] || 0) === (newGeometry[key] || 0));
   const viewport = els.dropzone;
-  if (state.zoomMode !== "custom" || !previewIsVisible() || !sameOrientation
+  if (state.zoomMode !== "custom" || !previewIsVisible() || state.cropMode || geometryDraftActive() || !sameOrientation
     || ![before.width, before.height, after.width, after.height, state.zoomPercent]
       .every(value => Number.isFinite(value) && value > 0)
     || (before.width > before.height && after.width < after.height)

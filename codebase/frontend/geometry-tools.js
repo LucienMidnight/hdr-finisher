@@ -11,8 +11,15 @@ function geometryTransformIsNeutral(geometry = state.adjustments.shared?.geometr
   return geometryMath.geometryTransformIsNeutral(geometry);
 }
 
+function geometryFrameKey() {
+  const session = state.session;
+  const source = session?.source;
+  // RAW redevelopment can replace the dimensions without replacing the session ID.
+  return `${session?.session_id || "none"}:${source?.width}:${source?.height}`;
+}
+
 function geometryCoordinateMapKey(signature = geometrySignature(), longEdge = settledProxyLongEdge()) {
-  return `${state.session?.session_id || "none"}:${longEdge}:${signature}`;
+  return `${geometryFrameKey()}:${longEdge}:${signature}`;
 }
 
 function currentGeometryCoordinateMap() {
@@ -26,7 +33,7 @@ function projectivePoint(matrix, point) {
 
 async function ensureGeometryCoordinateMap(longEdge = settledProxyLongEdge()) {
   if (!state.session || geometryTransformIsNeutral()) return IDENTITY_GEOMETRY_COORDINATE_MAP;
-  const sessionId = state.session.session_id;
+  const frameKey = geometryFrameKey();
   const signature = geometrySignature();
   const key = geometryCoordinateMapKey(signature, longEdge);
   const cached = geometryCoordinateMapCache.get(key);
@@ -41,7 +48,7 @@ async function ensureGeometryCoordinateMap(longEdge = settledProxyLongEdge()) {
   }).then(async (response) => {
     if (!response.ok) throw new Error(`Geometry coordinate map failed (${response.status}).`);
     const payload = await response.json();
-    if (state.session?.session_id !== sessionId || signature !== geometrySignature()) return null;
+    if (geometryFrameKey() !== frameKey || signature !== geometrySignature()) return null;
     const result = {
       outputToSource: payload.output_to_source,
       sourceToOutput: payload.source_to_output,
@@ -51,7 +58,7 @@ async function ensureGeometryCoordinateMap(longEdge = settledProxyLongEdge()) {
       fullOutputHeight: payload.full_output_height,
     };
     geometryCoordinateMapCache.set(key, result);
-    geometryFullOutputFrames.set(`${sessionId}:${signature}`, result);
+    geometryFullOutputFrames.set(`${frameKey}:${signature}`, result);
     while (geometryFullOutputFrames.size > 12) {
       geometryFullOutputFrames.delete(geometryFullOutputFrames.keys().next().value);
     }
@@ -1169,7 +1176,7 @@ function sourcePixelFrameDimensions(geometry = state.adjustments?.shared?.geomet
   // until its own map arrived the frame fell back to arithmetic that knows
   // nothing of perspective, so the picture was laid out at the wrong size and
   // jumped when the map landed.
-  const map = geometryFullOutputFrames.get(`${state.session?.session_id || "none"}:${JSON.stringify(geometry)}`);
+  const map = geometryFullOutputFrames.get(`${geometryFrameKey()}:${JSON.stringify(geometry)}`);
   return geometryMath.sourcePixelFrameDimensions(source, geometry, map);
 }
 

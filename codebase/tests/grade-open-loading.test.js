@@ -251,7 +251,7 @@ test('Electron load barrier remains blocked until main-frame completion and reje
 
 async function activateAtZoom({
   replace = true, previousSize = [6000, 4000], size = [6000, 4000],
-  pan = [800, 600], extent = [1600, 1200], rotation = 0, pictureVisible = true,
+  pan = [800, 600], extent = [1600, 1200], rotation = 0, pictureVisible = true, geometryDraft = false,
 } = {}) {
   const { c } = harness();
   const view = { scrollLeft: pan[0], scrollTop: pan[1], clientWidth: 1000, clientHeight: 700 };
@@ -272,7 +272,7 @@ async function activateAtZoom({
   Object.assign(c, {
     clamp: (value, min, max) => Math.min(max, Math.max(min, value)),
     MIN_ZOOM_PERCENT: 1, MAX_ZOOM_PERCENT: 400,
-    previewIsVisible: () => pictureVisible,
+    previewIsVisible: () => pictureVisible, geometryDraftActive: () => geometryDraft,
     collapseGradeModules: noop, loadDenoiseDocument: noop, recordAcknowledgedLocals: noop,
     invalidatePreview: noop, renderSession: noop, renderLocalAdjustments: noop, seedExportFieldsFromSession: noop,
     applyZoomGeometry: () => {
@@ -307,7 +307,7 @@ test('same-photo RAW redevelopment clamps pan when the resized image has less ro
 });
 
 test('same-photo RAW redevelopment falls back to Fit if the old coordinates no longer apply', async () => {
-  for (const options of [{ size: [4000, 6000] }, { rotation: 180 }, { pictureVisible: false }]) {
+  for (const options of [{ size: [4000, 6000] }, { rotation: 180 }, { pictureVisible: false }, { geometryDraft: true }]) {
     assert.deepEqual(await activateAtZoom(options), [
       ['gpu', 1280, 'fit', 100, 0, 0],
       ['fit', 'fit', 100, 0, 0],

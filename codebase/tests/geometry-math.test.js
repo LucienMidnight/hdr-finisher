@@ -92,3 +92,34 @@ test("the frame size at a processing edge is exact or unknown, never a scaled gu
   );
   assert.equal(HDRGeometryMath.frameSizeAtEdge(null, {}, 5634), null);
 });
+
+test("an old crop map cannot size a redeveloped RAW with new dimensions", async () => {
+  const fs = require("node:fs");
+  const vm = require("node:vm");
+  const geometry = { crop: { x: 0, y: 0, width: 0.5, height: 1 } };
+  const state = {
+    session: { session_id: "same", source: { width: 6000, height: 4000 } },
+    adjustments: { shared: { geometry } },
+  };
+  let serveSecondMap;
+  const secondResponse = new Promise(resolve => { serveSecondMap = resolve; });
+  let requests = 0;
+  const context = vm.createContext({
+    state, geometryMath: HDRGeometryMath, console,
+    geometryCoordinateMapCache: new Map(), geometryFullOutputFrames: new Map(), geometryCoordinateMapRequests: new Map(),
+    queueLocalMaskOverlayRender() {}, applyZoomGeometry() {},
+    fetch: async () => ++requests === 1
+      ? { ok: true, json: async () => ({ full_output_width: 3000, full_output_height: 4000 }) }
+      : secondResponse,
+  });
+  vm.runInContext(fs.readFileSync(require.resolve("../frontend/geometry-tools.js"), "utf8"), context);
+  await context.ensureGeometryCoordinateMap(1280);
+  assert.equal(context.sourcePixelFrameDimensions().width, 3000);
+
+  const stale = context.ensureGeometryCoordinateMap(1920);
+  state.session.source = { width: 2400, height: 1600 };
+  assert.deepEqual(context.sourcePixelFrameDimensions(), { width: 1200, height: 1600 });
+  serveSecondMap({ ok: true, json: async () => ({ full_output_width: 3000, full_output_height: 4000 }) });
+  assert.equal(await stale, null);
+  assert.deepEqual(context.sourcePixelFrameDimensions(), { width: 1200, height: 1600 });
+});
