@@ -397,6 +397,7 @@ Found during the November 8 release check. Each needs a brief before work starts
 | Black & White slider strength, fade points and presets | Test | Grade |
 | Exposure-warning wording, shadow warning threshold | Test | Photo Library |
 | Match entire HDR grade fault: photos and message | Report | Grade |
+| Micro Grain before v1: tune its quality (today it looks less good than Clean Grain, the default), and whether to move Micro Grain with lens correction to the GPU (about 1–2 weeks; today about 55 s on the MacBook Neo when both are on). Steve, Nov 22: after other testing, smaller bug fixes and feature tweaks | Decision | [Denoise](modules/denoise.md#7-open-work-and-next-steps) |
 
 ## 8. How the documents are kept
 
