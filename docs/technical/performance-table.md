@@ -102,6 +102,24 @@ matched. The encoder accepted the first attempt in both actions.
 [Driver log](../../codebase/output/proof-mem-3/avif-proof.jsonl) ·
 [Run details](../../codebase/output/proof-mem-3/result.txt)
 
+### November 22 — PROOF-MEM-3 review check
+
+MacBook Neo, review fixes through `bd29d74f`. The locked Electron run used
+the same Sony RAW, Clean Small, seeded CPU noise measurement, Q90 gain map,
+1408 × 794 window and 4 GB app limit.
+
+| Action | To result | Whole-app peak (B) |
+| --- | ---: | ---: |
+| AVIF Gain Map export | 58.82 s | 3,635,475,296 |
+| Full-size AVIF Proof | 98.23 s | 3,764,139,112 |
+
+Export, the Proof artifact, both tiles and both retained endpoints matched
+the earlier hashes. The tile statistics also matched and neither action
+retried its encode. The native tone-map helper accounted for 197 MB of the
+200 MB increase in the sampled Proof peak. The temporary driver's teardown
+failed after both results had been recorded. The production sweep removed
+the abandoned test root when aged. [Driver log](../../codebase/output/proof-mem-3b/avif-proof.jsonl)
+
 ## November 21 — Byte-exact Lensfun strips on MacBook Neo
 
 MacBook Neo, A18 Pro and 8 GB unified memory. Isolated CPU RAW development
