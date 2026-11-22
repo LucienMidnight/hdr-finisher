@@ -1154,6 +1154,19 @@ class SessionRenderCache:
             self._clear_micro_preview_locked()
             self._rebalance_locked()
 
+    def release_development_cache(self) -> None:
+        """Discard work derived from the old RAW while keeping its decoded source."""
+        with self._lock:
+            self._source_epoch += 1
+            self._cancel_inflight_locked()
+            self._clear_micro_preview_locked()
+            self.discard_grain_preparation()
+            self._rebalance_locked(0)
+            if self.mip_store is not None:
+                for identity in (self.source_identity, self.sdr_identity):
+                    if identity is not None:
+                        self.mip_store.discard_memory(identity)
+
     def _clear_micro_preview_locked(self):
         self._micro_source_epoch += 1
         if self._micro_tiles is not None:

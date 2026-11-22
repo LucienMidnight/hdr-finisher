@@ -228,6 +228,8 @@ class ImportJobManager:
                 current_session = self.sessions.get(job.replace_session_id)
                 interpretation_override = current_session.interpretation_override.model_copy(deep=True)
                 prepare_options["hdr_reference_white_nits"] = current_session.hdr_reference_white_nits
+                current_session.render_cache.release_development_cache()
+                del current_session
             with self.browser.decode_slot():
                 session = self.sessions.prepare_session(
                     job.path,

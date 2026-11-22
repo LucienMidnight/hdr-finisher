@@ -985,6 +985,14 @@
       this.surfaceKeys = new WeakMap();
     }
 
+    async releaseForSourceReplacement() {
+      // The mounted canvas keeps the last swap-chain picture. None of the
+      // source, tile or retained render-target textures is needed to show it.
+      this.resetSession();
+      await new Promise(resolve => this.destroyAfterActiveRenders(resolve));
+      await this.waitForSubmittedWork();
+    }
+
     async retireDenoiseZoomResources(sessionId, lane, longEdge, regionOnly) {
       const previous = this.lastPresentedFrame;
       if (previous?.sessionId !== sessionId || previous.lane !== lane) return;

@@ -189,6 +189,18 @@ async function openStagedDesktopSource(selection) {
     setImportCancelVisible(true);
     const recoveryChoice = selection.replaceSessionId ? null : await window.HDRGradeSaving.prepare(selection);
     if (generation !== state.importGeneration) return;
+    if (selection.replaceSessionId) {
+      state.rawRedevelopGeneration = generation;
+      suspendGradeInstruments();
+      for (const lane of ["hdr", "sdr"]) state.renderCoordinator?.cancelLane(lane, "superseded-by-source");
+      for (const panel of document.querySelectorAll(".source-rail, .grade-rail")) {
+        panel.inert = true;
+        panel.setAttribute("aria-busy", "true");
+      }
+      state.gpuPreparedLane = { hdr: false, sdr: false };
+      await state.gpuPreview?.releaseForSourceReplacement();
+      if (generation !== state.importGeneration) return;
+    }
     const { response, payload: initialJob } = await projectIo.createImportJob(request, {
       grant: selection.grant,
       rawImportSettings: selection.rawImportSettings,
@@ -231,7 +243,10 @@ async function openStagedDesktopSource(selection) {
         const gradeSession = selection.replaceSessionId ? payload.session : await window.HDRGradeSaving.open(payload.session, selection.itemKey, () => generation === state.importGeneration, recoveryChoice);
         if (generation !== state.importGeneration) return;
         gradeOpenStage("grade_open_attached");
-        await activateDesktopSession(gradeSession, retainedProjectPath, generation, {openingJobId});
+        state.rawRedevelopGeneration = null;
+        await activateDesktopSession(gradeSession, retainedProjectPath, generation, {
+          openingJobId, preservePicture: Boolean(selection.replaceSessionId),
+        });
         if (generation !== state.importGeneration) return;
         gradeOpenStage("grade_open_controls");
         completed = true;
@@ -277,6 +292,7 @@ async function openStagedDesktopSource(selection) {
     if (selection.fromLibrary) activateWorkflowTab("import");
     showUploadError(error.message || `Could not open ${name}.`);
   } finally {
+    if (state.rawRedevelopGeneration === generation) state.rawRedevelopGeneration = null;
     action?.finish(completed ? "success" : "cancelled", completed ? {} : { route: "refused", reason: "source_open_cancelled" });
     if (!completed && openingJobId) void projectIo.cancelImportJob(fetch, openingJobId).catch(()=>{});
     if (generation === state.importGeneration) {
@@ -290,8 +306,8 @@ async function openStagedDesktopSource(selection) {
 }
 
 // stayOnTab: a background reload of the open photo (paste, outside change) keeps the current page.
-async function activateDesktopSession(session, projectPath, openGeneration = null, { stayOnTab = false, openingJobId = null } = {}) {
-  retireActiveSession(session.session_id);
+async function activateDesktopSession(session, projectPath, openGeneration = null, { stayOnTab = false, openingJobId = null, preservePicture = false } = {}) {
+  retireActiveSession(session.session_id, { preservePicture });
   gradeOpening.reset(openingJobId);
   if (!stayOnTab) collapseGradeModules();
   state.session = session;

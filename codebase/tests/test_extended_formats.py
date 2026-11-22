@@ -775,16 +775,24 @@ def test_raw_redevelopment_preserves_edit_document_and_session_identity(tmp_path
 
 def test_import_job_redevelopment_preserves_project_reference_white(tmp_path: Path, monkeypatch) -> None:
     source = tmp_path / "source.png"
-    Image.new("RGB", (32, 16), (80, 120, 160)).save(source)
+    Image.new("RGB", (512, 256), (80, 120, 160)).save(source)
     sessions = SessionStore()
     initial = sessions.create_session(source, hdr_reference_white_nits=100)
+    current = sessions.get(initial.session_id)
+    from hdr_finisher.models import PreviewKind
+    original_image = current.image
+    current.render_cache.adjusted_frame(current.adjustments, PreviewKind.HDR, 256)
+    assert current.render_cache.diagnostics()["frame_bytes"] > 0
     browser = MediaBrowserStore(tmp_path / "app-data")
     manager = ImportJobManager(sessions, browser, workers=1)
     original_prepare = sessions.prepare_session
     observed_reference: list[int] = []
+    observed_cache_bytes: list[int] = []
 
     def tracked_prepare(path, *args, **kwargs):
         observed_reference.append(kwargs.get("hdr_reference_white_nits"))
+        assert current.image is original_image
+        observed_cache_bytes.append(current.render_cache.diagnostics()["frame_bytes"])
         return original_prepare(path, *args, **kwargs)
 
     monkeypatch.setattr(sessions, "prepare_session", tracked_prepare)
@@ -796,6 +804,7 @@ def test_import_job_redevelopment_preserves_project_reference_white(tmp_path: Pa
 
         assert job.state == "ready", job.error
         assert observed_reference == [100]
+        assert observed_cache_bytes == [0]
         assert sessions.get(initial.session_id).hdr_reference_white_nits == 100
     finally:
         manager.close()

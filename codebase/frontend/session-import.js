@@ -5,6 +5,10 @@ function claimSessionReplacement() {
   return ++state.importGeneration;
 }
 
+function rawRedevelopmentPending() {
+  return state.importInProgress && state.rawRedevelopGeneration === state.importGeneration;
+}
+
 async function importByteFile(file, actionLabel = "import another source", confirmedDocument = null, ownershipGeneration = null) {
   if (confirmedDocument === null) {
     if (!await confirmUnsavedTransition(actionLabel)) return false;
@@ -698,7 +702,7 @@ function renderInterpretationGate() {
   });
 }
 
-function retireActiveSession(replacementSessionId = null) {
+function retireActiveSession(replacementSessionId = null, { preservePicture = false } = {}) {
   if (state.session?.session_id && state.session.session_id !== replacementSessionId) window.HDRGradeOpenFailed?.(state.session.session_id);
   suspendGradeInstruments();
   status.clear("match");
@@ -762,7 +766,7 @@ function retireActiveSession(replacementSessionId = null) {
   state.localMaskCommitDepth = 0;
   state.localMaskCommitRefreshPending = false;
   state.localErase = false;
-  clearPreviewCache();
+  clearPreviewCache({ preservePicture });
 }
 
 async function cancelActiveImport() {

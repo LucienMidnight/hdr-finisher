@@ -239,7 +239,7 @@ async function renderPreviewForLane(
   longEdge = 1600,
   options = {},
 ) {
-  if (!state.session || geometryDraftActive()) return false;
+  if (!state.session || rawRedevelopmentPending() || geometryDraftActive()) return false;
   const sessionId = state.session.session_id;
   const workGeneration = state.gradeWorkGeneration;
   if (await syncGlobalEditState() === false || state.session?.session_id !== sessionId
@@ -789,6 +789,7 @@ async function applyPreviewUrl(url, isCurrent = () => true) {
 }
 
 function renderGpuDraft(lane = state.currentView, options = {}) {
+  if (rawRedevelopmentPending()) return Promise.resolve(false);
   const tier = options.tier || "settled";
   const longEdge = Number(options.longEdge) > 0 ? Number(options.longEdge) : settledProxyLongEdge();
   const coordinator = state.renderCoordinator;
@@ -1514,7 +1515,7 @@ function invalidatePreview(lane, { local = false, markDirty = true } = {}) {
   if (lane === state.currentView) renderViewerStatus();
 }
 
-function clearPreviewCache() {
+function clearPreviewCache({ preservePicture = false } = {}) {
   // Source/project replacement must retire tool transactions, without copying
   // their old snapshots into the newly loaded document.
   state.perspectiveSolveController?.abort();
@@ -1583,7 +1584,7 @@ function clearPreviewCache() {
   state.comparisonRenderedLane = null;
   state.comparisonRenderedGeneration = null;
   state.comparisonRenderedGeometry = null;
-  clearGpuSurfaceHdr();
+  if (!preservePicture) clearGpuSurfaceHdr();
   state.gpuPreparedLane = { hdr: false, sdr: false };
   // A replacement source can have a completely different orientation. Do not
   // let the previous session's fitted aspect survive until the new GPU canvas
@@ -1595,7 +1596,7 @@ function clearPreviewCache() {
   state.scopeGeneration += 1;
   els.scopeFreshness.textContent = "Waiting";
   els.scopeFreshness.classList.remove("updating");
-  clearPreviewImage();
+  if (!preservePicture) clearPreviewImage();
   clearComparisonPreview();
   window.HDRProofing?.reset();
 }
