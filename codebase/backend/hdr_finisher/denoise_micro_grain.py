@@ -534,22 +534,35 @@ def _lens_inputs(owner):
                       lens_maker=exif.get("lens_maker"), lens_name=exif.get("lens_model") or exif.get("lens_name"))
 
 
-def render_prepared_source(frame, source, controls, *, cancelled=None, render=None, allocate_lens_output=None):
+def render_prepared_source(frame, source, controls, *, cancelled=None, render=None, allocate_lens_output=None,
+                           timings=None):
+    from time import perf_counter
+
     from . import raw_import
     from .preview import downsample_image
 
     owner = getattr(frame, "delivery_owner", frame)
+    started = perf_counter()
     result = source.render(controls, cancelled=cancelled) if render is None else render(cancelled)
+    if timings is not None:
+        timings["micro_render_ms"] = round((perf_counter() - started) * 1000, 2)
+    started = perf_counter()
     if owner.metadata.get("lens_correction", {}).get("applied"):
         lens, profile = _lens_inputs(owner)
         result, _ = raw_import.apply_lens_correction(
             result, lens, **profile, cancelled=cancelled, consume_input=True, allocate_output=allocate_lens_output,
         )
+    if timings is not None and owner.metadata.get("lens_correction", {}).get("applied"):
+        timings["micro_lens_ms"] = round((perf_counter() - started) * 1000, 2)
+    started = perf_counter()
     result *= source.gain
     if isinstance(result, np.memmap):
         result.flush()
     height, width = frame.image.shape[:2]
-    return result if result.shape[:2] == (height, width) else downsample_image(result, max(height, width))
+    result = result if result.shape[:2] == (height, width) else downsample_image(result, max(height, width))
+    if timings is not None:
+        timings["micro_source_finish_ms"] = round((perf_counter() - started) * 1000, 2)
+    return result
 
 
 class MicroRegionRefused(ValueError):

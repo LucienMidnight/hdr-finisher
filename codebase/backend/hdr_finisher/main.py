@@ -1112,12 +1112,18 @@ def preview(session_id: str, kind: PreviewKind, request: PreviewRequest) -> Resp
             preview_long_edge,
             lambda: session.preview_tokens[kind] == token,
         )
+        started = perf_counter()
         body, media_type = encode_processed_preview_bytes(
             processed,
             kind,
             hdr_display=request.hdr_display,
             reference_white_nits=session.hdr_reference_white_nits,
         )
+        if _preview_micro_controls(session, kind, request, adjustments) is not None:
+            from .diagnostics import log as diagnostic
+
+            diagnostic("grade", "micro_preview_encoded", lane=kind.value, edge_px=preview_long_edge,
+                       duration_ms=round((perf_counter() - started) * 1000, 2))
     except StripExecutionRefused as exc:
         return _strip_execution_conflict(exc)
     except StaleRender:

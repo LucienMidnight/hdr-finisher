@@ -929,7 +929,7 @@ class SessionRenderCache:
             try:
                 if owner:
                     try:
-                        reduced = self._build_micro_preview(frame, controls, edge, epoch, source_key, needed)
+                        reduced = self._build_micro_preview(frame, controls, edge, epoch, source_key, needed, cache_details)
                         if lens_applied:
                             # A census taken while Lensfun and the resize were
                             # live can reject the completed preview after their
@@ -978,7 +978,7 @@ class SessionRenderCache:
                     edge_px=edge, outcome=outcome, duration_ms=round((time.perf_counter() - started) * 1000, 2),
                     **cache_details)
 
-    def _build_micro_preview(self, frame, controls, edge, epoch, source_key, needed):
+    def _build_micro_preview(self, frame, controls, edge, epoch, source_key, needed, timings):
         from .denoise_micro_grain import render_prepared_source
         from .grain_work import render_work
 
@@ -991,7 +991,9 @@ class SessionRenderCache:
                 raise StaleRender("The CPU Micro Grain preview was replaced.")
         try:
             with render_work(needed, shared=True), ExitStack() as scratch:
+                started = time.perf_counter()
                 source = self._micro_source(frame, epoch, source_key, cancelled)
+                timings["micro_prepare_ms"] = round((time.perf_counter() - started) * 1000, 2)
                 tiles = self._micro_tiles
                 render = None
                 if tiles is not None and tiles.source() is source and tiles.controls == controls:
@@ -1007,9 +1009,12 @@ class SessionRenderCache:
                         ))
                         return scratch.enter_context(DeliveryFrame(Path(directory) / "remapped.rgb", shape).map("w+"))
                 result = render_prepared_source(
-                    frame, source, controls, cancelled=cancelled, render=render, allocate_lens_output=allocate_lens_output,
+                    frame, source, controls, cancelled=cancelled, render=render,
+                    allocate_lens_output=allocate_lens_output, timings=timings,
                 )
+                started = time.perf_counter()
                 reduced = downsample_image(result, edge, is_current=needed, bounded=allocate_lens_output is not None)
+                timings["micro_resize_ms"] = round((time.perf_counter() - started) * 1000, 2)
                 if reduced is result and isinstance(result, np.memmap):
                     # The source and displayed image can have different sizes.
                     # The preview cache must never keep a job's map.

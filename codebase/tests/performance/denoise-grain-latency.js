@@ -1040,7 +1040,7 @@ while True:
       const digest = await crypto.subtle.digest("SHA-256", bytes);
       return { bytes: bytes.byteLength, sha256: new Uint8Array(digest).toHex() };
     }, lane) : undefined;
-    console.log(JSON.stringify({ action, ms: acceptedAt - start, ...view, id: undefined,
+    console.log(JSON.stringify({ action, ms: acceptedAt - start, startedAt: start, acceptedAt, ...view, id: undefined,
       appPeakBytes: peak.bytes, backendPeakBytes: Math.max(...readings.map(sample => footprint(sample, memory.backendPid))),
       gpuPeakBytes: Math.max(...readings.map(sample => footprint(sample, gpuPid))),
       peakProcesses: peak.processes.sort((a, b) => b.chargedBytes - a.chargedBytes).slice(0, 4)
@@ -1051,7 +1051,9 @@ while True:
       previewKept: reduced && cache.render_cache.micro_source_bytes >= 4096 * 2735 * 12,
       cacheEvents: events.map(event => ({ reason: event.reason, outcome: event.outcome, ms: event.duration_ms,
         previewKept: event.preview_kept, beforeRefreshBytes: event.before_refresh_bytes,
-        afterRefreshBytes: event.after_refresh_bytes })),
+        afterRefreshBytes: event.after_refresh_bytes, edge: event.edge_px,
+        prepareMs: event.micro_prepare_ms, renderMs: event.micro_render_ms, lensMs: event.micro_lens_ms,
+        finishMs: event.micro_source_finish_ms, resizeMs: event.micro_resize_ms })),
       hash: hashValue,
     }));
   };
@@ -1073,20 +1075,21 @@ while True:
       return setDenoiseEnabled(true);
     }), { zoom: "fit", update: true });
     await run("Zoom to 78%, lens off", zoom78, { zoom: 78 });
-    await run("Lensfun Auto at 78%", async () => {
-      await page.evaluate(async () => {
-        els.lensMode.value = "auto";
-        await applyRawImportSettings();
-        const lens = state.session.metadata.extra?.lens_correction;
-        if (!(lens?.applied || String(lens).includes("'applied': True"))) {
-          throw Error(`Lensfun Auto was not applied: ${JSON.stringify(lens)}`);
-        }
-      });
-      await zoom78();
-      await page.evaluate(async () => {
-        if (!state.denoise.hdr.enabled) await setDenoiseEnabled(true);
-      });
-    }, { reduced: true, zoom: 78, hash: true });
+    await run("Lensfun Auto at 78%", () => page.evaluate(async () => {
+      const { scrollLeft, scrollTop } = els.dropzone;
+      els.lensMode.value = "auto";
+      await applyRawImportSettings();
+      const lens = state.session.metadata.extra?.lens_correction;
+      if (!(lens?.applied || String(lens).includes("'applied': True"))) {
+        throw Error(`Lensfun Auto was not applied: ${JSON.stringify(lens)}`);
+      }
+      if (state.zoomMode !== "custom" || state.zoomPercent !== 78
+        || Math.abs(els.dropzone.scrollLeft - scrollLeft) > 1
+        || Math.abs(els.dropzone.scrollTop - scrollTop) > 1) {
+        throw Error(`Lensfun moved the viewport from ${scrollLeft},${scrollTop} to ${els.dropzone.scrollLeft},${els.dropzone.scrollTop}`);
+      }
+      if (!state.denoise.hdr.enabled) throw Error("Lensfun disabled Micro Grain");
+    }), { reduced: true, zoom: 78, update: true, hash: true });
     await run("Exposure +0.25 EV", () => page.evaluate(() =>
       commitAdjustmentValue("hdr.exposure", state.adjustments.hdr.exposure + 0.25, { manual: true })),
     { reduced: true, zoom: 78, update: true, hash: true });

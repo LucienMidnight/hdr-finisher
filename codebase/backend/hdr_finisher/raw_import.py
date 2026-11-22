@@ -445,6 +445,10 @@ def _apply_raw_corrections(
         if progress:
             progress("lens_correction", "Applying selected Lensfun corrections")
         lens_input = aces2065 if not plan.opcode_plan and decoded.bridge_metadata is None else image
+        from .diagnostics import log as diagnostic
+        from time import perf_counter
+
+        lens_started = perf_counter()
         lens_output, lens_metadata = apply_lens_correction(
             lens_input,
             lens_settings,
@@ -456,6 +460,9 @@ def _apply_raw_corrections(
             consume_input=True,
             progress=progress,
         )
+        diagnostic("raw", "development_lens", photo={"id": str(path), "name": path.name},
+                   route="cpu", applied=lens_metadata.get("applied", False),
+                   duration_ms=round((perf_counter() - lens_started) * 1000, 2))
         if not plan.opcode_plan and decoded.bridge_metadata is None:
             aces2065 = lens_output
         else:
