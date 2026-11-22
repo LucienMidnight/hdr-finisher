@@ -1,0 +1,55 @@
+{
+  "id": "5f5111c7d3684f549602895ac3a29c3c",
+  "name": "play_raw",
+  "versions": [
+    {
+      "name": "Version 1",
+      "pattern": "{filename}_{version}",
+      "subfolder": "",
+      "quality_preset": "custom",
+      "reference_white": null,
+      "settings": {
+        "format": "avif_gain_map",
+        "quality": 85,
+        "jpeg_gain_map_quality": 90,
+        "jpeg_gain_map_scale": "full",
+        "jpeg_chroma_subsampling": "420",
+        "avif_bit_depth": 10,
+        "avif_chroma_subsampling": "420",
+        "avif_gain_map_chroma_subsampling": "444",
+        "avif_gain_map_quality": 85,
+        "avif_gain_map_scale": "half",
+        "sdr_png_bit_depth": 8,
+        "jpegxl_precision": "uint12",
+        "dithering": "off",
+        "metadata_policy": "none",
+        "metadata_template": {
+          "title": "",
+          "caption": "",
+          "creator": "",
+          "copyright": ""
+        },
+        "metadata_strip_location": false,
+        "metadata_strip_serials": false,
+        "metadata_sequence": 1,
+        "guarantee_hdr_peak": false,
+        "output_path": null,
+        "path_grant": null,
+        "overwrite": false,
+        "overwrite_target": null,
+        "edit_revision": null,
+        "output_finishing": {
+          "resize_mode": "long_edge",
+          "long_edge": 1920,
+          "width": null,
+          "height": null,
+          "prevent_enlargement": true,
+          "sharpening": "off",
+          "method": "edge_aware_multiscale"
+        },
+        "export_with_frame": true,
+        "editing_measurements": {}
+      }
+    }
+  ]
+}

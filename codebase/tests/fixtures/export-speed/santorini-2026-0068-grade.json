@@ -1,0 +1,4714 @@
+{
+ "note": "Grade from the Nov 22 2026 Windows export of Santorini2026_0068.CR3 (4660x6984 Canon CR3). Source path removed. Reference recipe for the export-speed work: transplant onto a disposable copy of another RAW.",
+ "format": "HDR Finisher Photo",
+ "schema_version": 1,
+ "grade": {
+  "schema_version": 4,
+  "app_version": "0.9.3",
+  "section_versions": {
+   "tone": 1,
+   "highlight": 1,
+   "tone_equalizer": 1,
+   "color": 1,
+   "hsl": 1,
+   "curves": 1,
+   "color_grading": 1,
+   "detail": 1,
+   "black_and_white": 1,
+   "film_look": 1,
+   "vignette": 1,
+   "geometry": 1,
+   "local_adjustments": 1,
+   "repairs": 1,
+   "denoise": 1,
+   "source": 1,
+   "interpretation_override": 1,
+   "framing": 1,
+   "sdr_match": 1
+  },
+  "hdr_reference_white_nits": 203,
+  "source": {
+   "filename": "Santorini2026_0068.CR3",
+   "fingerprint_sha256": "6c69ec2efd88d22d5e310be44d62174ee5e82eca078ee86e2b05098d3fc67e9b",
+   "byte_size": 40439642,
+   "raw_import_settings": {
+    "white_balance": "as_shot",
+    "demosaic": "ahd",
+    "pixel_cleanup": {
+     "remove_hot_pixels": false,
+     "even_out_specks": false,
+     "speck_threshold": 2.5
+    },
+    "highlight_reconstruction": {
+     "enabled": true,
+     "method": "opposed_color_v1",
+     "clipping_threshold": 1.0,
+     "edge_colour_expand_percent": 0.5
+    },
+    "lens": {
+     "mode": "auto",
+     "profile_id": null,
+     "database_version": null,
+     "distortion": true,
+     "chromatic_aberration": true,
+     "vignetting": true,
+     "focal_length_mm": null,
+     "aperture": null,
+     "focus_distance_m": null
+    }
+   },
+   "luminance": {
+    "luminance_semantics": "scene_relative",
+    "transfer_function": "linear",
+    "source_reference_white_nits": null,
+    "source_peak_nits": null,
+    "hlg_reference": "unknown",
+    "hlg_nominal_peak_nits": null,
+    "sdr_rendition": "none",
+    "assumptions": [
+     "Untagged scene-linear pixels carry no inferable absolute luminance."
+    ]
+   }
+  },
+  "interpretation_override": {
+   "color_space": null,
+   "transfer_function": null,
+   "linear_reference": null
+  },
+  "global_adjustments": {
+   "hdr": {
+    "tone_section_enabled": true,
+    "highlight_section_enabled": false,
+    "tone_equalizer_section_enabled": true,
+    "color_section_enabled": true,
+    "hsl_section_enabled": true,
+    "hsl": {
+     "channels": [
+      {
+       "id": "all",
+       "name": "All",
+       "kind": "all",
+       "recipe": {
+        "version": 1,
+        "ranges": [
+         {
+          "center": 0.0,
+          "width": 180.0,
+          "feather": 1.0,
+          "subtract": false
+         }
+        ],
+        "hue": 0.0,
+        "saturation": 0.0,
+        "luminance": 0.0,
+        "uniformity": 0.0,
+        "opacity": 1.0,
+        "edge": 0.0,
+        "edge_feather": 0.0,
+        "edge_detail": 50.0
+       }
+      },
+      {
+       "id": "red",
+       "name": "Red",
+       "kind": "band",
+       "recipe": {
+        "version": 1,
+        "ranges": [
+         {
+          "center": 27.567096839175015,
+          "width": 10.0,
+          "feather": 14.0,
+          "subtract": false
+         }
+        ],
+        "hue": 0.0,
+        "saturation": 0.0,
+        "luminance": 0.0,
+        "uniformity": 0.0,
+        "opacity": 1.0,
+        "edge": 0.0,
+        "edge_feather": 0.0,
+        "edge_detail": 50.0
+       }
+      },
+      {
+       "id": "orange",
+       "name": "Orange",
+       "kind": "band",
+       "recipe": {
+        "version": 1,
+        "ranges": [
+         {
+          "center": 55.368364312609955,
+          "width": 10.0,
+          "feather": 14.0,
+          "subtract": false
+         }
+        ],
+        "hue": 0.0,
+        "saturation": 0.0,
+        "luminance": 0.0,
+        "uniformity": 0.0,
+        "opacity": 1.0,
+        "edge": 0.0,
+        "edge_feather": 0.0,
+        "edge_detail": 50.0
+       }
+      },
+      {
+       "id": "yellow",
+       "name": "Yellow",
+       "kind": "band",
+       "recipe": {
+        "version": 1,
+        "ranges": [
+         {
+          "center": 104.28494358789258,
+          "width": 15.0,
+          "feather": 21.0,
+          "subtract": false
+         }
+        ],
+        "hue": 0.0,
+        "saturation": 0.0,
+        "luminance": 0.0,
+        "uniformity": 0.0,
+        "opacity": 1.0,
+        "edge": 0.0,
+        "edge_feather": 0.0,
+        "edge_detail": 50.0
+       }
+      },
+      {
+       "id": "green",
+       "name": "Green",
+       "kind": "band",
+       "recipe": {
+        "version": 1,
+        "ranges": [
+         {
+          "center": 145.83171632155384,
+          "width": 15.0,
+          "feather": 21.0,
+          "subtract": false
+         }
+        ],
+        "hue": 0.0,
+        "saturation": 0.0,
+        "luminance": 0.0,
+        "uniformity": 0.0,
+        "opacity": 1.0,
+        "edge": 0.0,
+        "edge_feather": 0.0,
+        "edge_detail": 50.0
+       }
+      },
+      {
+       "id": "aqua",
+       "name": "Aqua",
+       "kind": "band",
+       "recipe": {
+        "version": 1,
+        "ranges": [
+         {
+          "center": 200.90440684867485,
+          "width": 19.0,
+          "feather": 28.0,
+          "subtract": false
+         }
+        ],
+        "hue": 0.0,
+        "saturation": 0.0,
+        "luminance": 0.0,
+        "uniformity": 0.0,
+        "opacity": 1.0,
+        "edge": 0.0,
+        "edge_feather": 0.0,
+        "edge_detail": 50.0
+       }
+      },
+      {
+       "id": "blue",
+       "name": "Blue",
+       "kind": "band",
+       "recipe": {
+        "version": 1,
+        "ranges": [
+         {
+          "center": 263.8626611509791,
+          "width": 10.0,
+          "feather": 15.0,
+          "subtract": false
+         }
+        ],
+        "hue": 0.0,
+        "saturation": 0.0,
+        "luminance": 0.0,
+        "uniformity": 0.0,
+        "opacity": 1.0,
+        "edge": 0.0,
+        "edge_feather": 0.0,
+        "edge_detail": 50.0
+       }
+      },
+      {
+       "id": "purple",
+       "name": "Purple",
+       "kind": "band",
+       "recipe": {
+        "version": 1,
+        "ranges": [
+         {
+          "center": 292.9870430072747,
+          "width": 10.0,
+          "feather": 15.0,
+          "subtract": false
+         }
+        ],
+        "hue": 0.0,
+        "saturation": 0.0,
+        "luminance": 0.0,
+        "uniformity": 0.0,
+        "opacity": 1.0,
+        "edge": 0.0,
+        "edge_feather": 0.0,
+        "edge_detail": 50.0
+       }
+      },
+      {
+       "id": "magenta",
+       "name": "Magenta",
+       "kind": "band",
+       "recipe": {
+        "version": 1,
+        "ranges": [
+         {
+          "center": 343.4308760131638,
+          "width": 15.0,
+          "feather": 22.0,
+          "subtract": false
+         }
+        ],
+        "hue": 0.0,
+        "saturation": 0.0,
+        "luminance": 0.0,
+        "uniformity": 0.0,
+        "opacity": 1.0,
+        "edge": 0.0,
+        "edge_feather": 0.0,
+        "edge_detail": 50.0
+       }
+      }
+     ]
+    },
+    "curves_section_enabled": true,
+    "detail_section_enabled": true,
+    "black_and_white_section_enabled": false,
+    "film_look_section_enabled": true,
+    "color_grading_section_enabled": true,
+    "vignette_section_enabled": true,
+    "film_look": {
+     "look_strength": 100.0,
+     "film_stock": "kodak_portra_400",
+     "stock_overrides": [
+      "push_pull",
+      "print_exposure",
+      "stock_print_warmth",
+      "stock_preflash",
+      "print_contrast",
+      "highlight_contrast",
+      "scan_sharpening"
+     ],
+     "stock_color": 100.0,
+     "stock_tone": 100.0,
+     "stock_exposure": 0.0,
+     "stock_separation": 0.0,
+     "stock_print_warmth": 6.0,
+     "stock_print_tint": 0.0,
+     "stock_preflash": 4.0,
+     "push_pull": 0,
+     "print_paper": "default",
+     "print_exposure": -0.18,
+     "shadow_contrast": 0.0,
+     "highlight_contrast": 19.0,
+     "scan_sharpening": 0.0,
+     "lab_levels": false,
+     "print_contrast": 25.0,
+     "grain_enabled": true,
+     "grain_amount": 24.0,
+     "grain_size": 30.0,
+     "grain_softness": 25.0,
+     "grain_chroma": 0.0,
+     "grain_film_format": "35mm",
+     "grain_capture_geometry": "frame",
+     "grain_film_type": "color_negative",
+     "grain_custom_width_mm": 36.0,
+     "grain_custom_height_mm": 24.0,
+     "grain_shadow_response": 100.0,
+     "grain_midtone_response": 100.0,
+     "grain_highlight_response": 100.0,
+     "grain_view_map": false,
+     "film_resolution": 100.0,
+     "halation_enabled": true,
+     "halation_amount": 3.571429,
+     "halation_radius": 0.450693909,
+     "halation_hue_offset": 21.320152,
+     "halation_saturation": 100.0,
+     "halation_view_map": false,
+     "lens_filter": "none",
+     "lens_strength": 0.5,
+     "lens_size": 1.0
+    },
+    "color_grading": {
+     "shadows": {
+      "hue": 0.0,
+      "saturation": 0.0,
+      "luminance_ev": 0.0
+     },
+     "midtones": {
+      "hue": 0.0,
+      "saturation": 0.0,
+      "luminance_ev": 0.0
+     },
+     "highlights": {
+      "hue": 0.0,
+      "saturation": 0.0,
+      "luminance_ev": 0.0
+     },
+     "blending": 50.0,
+     "balance": 0.0
+    },
+    "vignette": {
+     "amount": -11.0,
+     "midpoint": 50.0,
+     "roundness": 0.0,
+     "feather": 75.0,
+     "highlight_protection": 0.0,
+     "center_x": 0.5,
+     "center_y": 0.5,
+     "scale_x": 100.0,
+     "scale_y": 100.0
+    },
+    "detail": {
+     "texture_amount": 41.0,
+     "clarity_amount": 79.0,
+     "clarity_radius_percent": 0.75,
+     "sharpen_amount": 0.0,
+     "sharpen_radius_px": 0.8,
+     "sharpen_threshold": 10.0,
+     "softness": 0.0,
+     "microcontrast": 0.0
+    },
+    "black_and_white": {
+     "reds": 0.0,
+     "oranges": 0.0,
+     "yellows": 0.0,
+     "greens": 0.0,
+     "aquas": 0.0,
+     "blues": 0.0,
+     "purples": 0.0,
+     "magentas": 0.0
+    },
+    "exposure": 0.0,
+    "highlight_compression_start_nits": 400.0,
+    "highlight_compression_target_nits": 1000.0,
+    "highlight_compression_softness": 0.0,
+    "highlight_compression_mode": "peak_fit",
+    "highlight_compression_peak_measurement": "maximum",
+    "highlight_compression_source_peak_nits": 319.11478737990063,
+    "highlight_compression_manual_peak_nits": 1000.0,
+    "highlight_compression_peak_detail": 35.0,
+    "highlight_compression_bias": 0.0,
+    "highlight_compression_color_handling": "smooth_rolloff",
+    "highlight_compression_attenuation": 20.0,
+    "tone_equalizer_nodes": [
+     {
+      "input_ev": -6.0,
+      "adjustment_ev": -0.3778656126482218
+     },
+     {
+      "input_ev": -2.894020083333687,
+      "adjustment_ev": 0.3810276679841893
+     },
+     {
+      "input_ev": -0.0886188682802409,
+      "adjustment_ev": 0.35573122529644263
+     },
+     {
+      "input_ev": 3.0674574986548855,
+      "adjustment_ev": 0.22924901185770752
+     },
+     {
+      "input_ev": 6.0,
+      "adjustment_ev": 0.0
+     }
+    ],
+    "tone_equalizer_influence_radius": 1.5,
+    "tone_equalizer_smoothing": 0.5,
+    "blacks": 0.0,
+    "whites": 0.0,
+    "shadows": 0.0,
+    "midtones": 0.0,
+    "highlights": 0.0,
+    "shadows_center": -1.5,
+    "shadows_width": 5.0,
+    "midtones_center": 0.0,
+    "midtones_width": 4.0,
+    "highlights_center": 2.25,
+    "highlights_width": 4.5,
+    "contrast": 0.0,
+    "contrast_pivot": 0.1845,
+    "white_balance_kelvin": 6500,
+    "tint": 0.0,
+    "saturation": 0.0,
+    "vibrance": 0.0,
+    "highlight_desaturation": 0.0,
+    "highlight_desaturation_start": 1.0,
+    "shadow_desaturation": 0.0,
+    "shadow_desaturation_start": 0.125,
+    "red_hue": 0.0,
+    "red_purity": 0.0,
+    "green_hue": 0.0,
+    "green_purity": 0.0,
+    "blue_hue": 0.0,
+    "blue_purity": 0.0,
+    "tint_hue": 0.0,
+    "tint_purity": 0.0,
+    "luma_curve": [
+     [
+      0.0,
+      0.0
+     ],
+     [
+      0.2261904761904762,
+      0.21363636363636362
+     ],
+     [
+      0.4965986394557823,
+      0.5207792207792208
+     ],
+     [
+      0.7602040816326531,
+      0.8435064935064935
+     ],
+     [
+      1.0,
+      1.0
+     ]
+    ],
+    "red_curve": [
+     [
+      0.0,
+      0.0
+     ],
+     [
+      0.25,
+      0.25
+     ],
+     [
+      0.5,
+      0.5
+     ],
+     [
+      0.75,
+      0.75
+     ],
+     [
+      1.0,
+      1.0
+     ]
+    ],
+    "green_curve": [
+     [
+      0.0,
+      0.0
+     ],
+     [
+      0.25,
+      0.25
+     ],
+     [
+      0.5,
+      0.5
+     ],
+     [
+      0.75,
+      0.75
+     ],
+     [
+      1.0,
+      1.0
+     ]
+    ],
+    "blue_curve": [
+     [
+      0.0,
+      0.0
+     ],
+     [
+      0.25,
+      0.25
+     ],
+     [
+      0.5,
+      0.5
+     ],
+     [
+      0.75,
+      0.75
+     ],
+     [
+      1.0,
+      1.0
+     ]
+    ]
+   },
+   "sdr": {
+    "use_authored_base": false,
+    "linked_to_hdr": false,
+    "output_exposure": 0.0,
+    "tone_section_enabled": true,
+    "highlight_section_enabled": true,
+    "tone_equalizer_section_enabled": true,
+    "color_section_enabled": true,
+    "hsl_section_enabled": true,
+    "hsl": {
+     "channels": [
+      {
+       "id": "all",
+       "name": "All",
+       "kind": "all",
+       "recipe": {
+        "version": 1,
+        "ranges": [
+         {
+          "center": 0.0,
+          "width": 180.0,
+          "feather": 1.0,
+          "subtract": false
+         }
+        ],
+        "hue": 0.0,
+        "saturation": 0.0,
+        "luminance": 0.0,
+        "uniformity": 0.0,
+        "opacity": 1.0,
+        "edge": 0.0,
+        "edge_feather": 0.0,
+        "edge_detail": 50.0
+       }
+      },
+      {
+       "id": "red",
+       "name": "Red",
+       "kind": "band",
+       "recipe": {
+        "version": 1,
+        "ranges": [
+         {
+          "center": 27.567096839175015,
+          "width": 10.0,
+          "feather": 14.0,
+          "subtract": false
+         }
+        ],
+        "hue": 0.0,
+        "saturation": 0.0,
+        "luminance": 0.0,
+        "uniformity": 0.0,
+        "opacity": 1.0,
+        "edge": 0.0,
+        "edge_feather": 0.0,
+        "edge_detail": 50.0
+       }
+      },
+      {
+       "id": "orange",
+       "name": "Orange",
+       "kind": "band",
+       "recipe": {
+        "version": 1,
+        "ranges": [
+         {
+          "center": 55.368364312609955,
+          "width": 10.0,
+          "feather": 14.0,
+          "subtract": false
+         }
+        ],
+        "hue": 0.0,
+        "saturation": 0.0,
+        "luminance": 0.0,
+        "uniformity": 0.0,
+        "opacity": 1.0,
+        "edge": 0.0,
+        "edge_feather": 0.0,
+        "edge_detail": 50.0
+       }
+      },
+      {
+       "id": "yellow",
+       "name": "Yellow",
+       "kind": "band",
+       "recipe": {
+        "version": 1,
+        "ranges": [
+         {
+          "center": 104.28494358789258,
+          "width": 15.0,
+          "feather": 21.0,
+          "subtract": false
+         }
+        ],
+        "hue": 0.0,
+        "saturation": 0.0,
+        "luminance": 0.0,
+        "uniformity": 0.0,
+        "opacity": 1.0,
+        "edge": 0.0,
+        "edge_feather": 0.0,
+        "edge_detail": 50.0
+       }
+      },
+      {
+       "id": "green",
+       "name": "Green",
+       "kind": "band",
+       "recipe": {
+        "version": 1,
+        "ranges": [
+         {
+          "center": 145.83171632155384,
+          "width": 15.0,
+          "feather": 21.0,
+          "subtract": false
+         }
+        ],
+        "hue": 0.0,
+        "saturation": 0.0,
+        "luminance": 0.0,
+        "uniformity": 0.0,
+        "opacity": 1.0,
+        "edge": 0.0,
+        "edge_feather": 0.0,
+        "edge_detail": 50.0
+       }
+      },
+      {
+       "id": "aqua",
+       "name": "Aqua",
+       "kind": "band",
+       "recipe": {
+        "version": 1,
+        "ranges": [
+         {
+          "center": 200.90440684867485,
+          "width": 19.0,
+          "feather": 28.0,
+          "subtract": false
+         }
+        ],
+        "hue": 0.0,
+        "saturation": 0.0,
+        "luminance": 0.0,
+        "uniformity": 0.0,
+        "opacity": 1.0,
+        "edge": 0.0,
+        "edge_feather": 0.0,
+        "edge_detail": 50.0
+       }
+      },
+      {
+       "id": "blue",
+       "name": "Blue",
+       "kind": "band",
+       "recipe": {
+        "version": 1,
+        "ranges": [
+         {
+          "center": 263.8626611509791,
+          "width": 10.0,
+          "feather": 15.0,
+          "subtract": false
+         }
+        ],
+        "hue": 0.0,
+        "saturation": 0.0,
+        "luminance": 0.0,
+        "uniformity": 0.0,
+        "opacity": 1.0,
+        "edge": 0.0,
+        "edge_feather": 0.0,
+        "edge_detail": 50.0
+       }
+      },
+      {
+       "id": "purple",
+       "name": "Purple",
+       "kind": "band",
+       "recipe": {
+        "version": 1,
+        "ranges": [
+         {
+          "center": 292.9870430072747,
+          "width": 10.0,
+          "feather": 15.0,
+          "subtract": false
+         }
+        ],
+        "hue": 0.0,
+        "saturation": 0.0,
+        "luminance": 0.0,
+        "uniformity": 0.0,
+        "opacity": 1.0,
+        "edge": 0.0,
+        "edge_feather": 0.0,
+        "edge_detail": 50.0
+       }
+      },
+      {
+       "id": "magenta",
+       "name": "Magenta",
+       "kind": "band",
+       "recipe": {
+        "version": 1,
+        "ranges": [
+         {
+          "center": 343.4308760131638,
+          "width": 15.0,
+          "feather": 22.0,
+          "subtract": false
+         }
+        ],
+        "hue": 0.0,
+        "saturation": 0.0,
+        "luminance": 0.0,
+        "uniformity": 0.0,
+        "opacity": 1.0,
+        "edge": 0.0,
+        "edge_feather": 0.0,
+        "edge_detail": 50.0
+       }
+      }
+     ]
+    },
+    "curves_section_enabled": true,
+    "detail_section_enabled": true,
+    "black_and_white_section_enabled": false,
+    "film_look_section_enabled": true,
+    "color_grading_section_enabled": true,
+    "vignette_section_enabled": true,
+    "film_look": {
+     "look_strength": 100.0,
+     "film_stock": "kodak_portra_400",
+     "stock_overrides": [
+      "push_pull",
+      "print_exposure",
+      "stock_print_warmth",
+      "stock_preflash",
+      "print_contrast",
+      "highlight_contrast",
+      "scan_sharpening"
+     ],
+     "stock_color": 100.0,
+     "stock_tone": 100.0,
+     "stock_exposure": 0.0,
+     "stock_separation": 0.0,
+     "stock_print_warmth": 6.0,
+     "stock_print_tint": 0.0,
+     "stock_preflash": 4.0,
+     "push_pull": 0,
+     "print_paper": "default",
+     "print_exposure": -0.18,
+     "shadow_contrast": 0.0,
+     "highlight_contrast": 19.0,
+     "scan_sharpening": 0.0,
+     "lab_levels": false,
+     "print_contrast": 25.0,
+     "grain_enabled": true,
+     "grain_amount": 24.0,
+     "grain_size": 30.0,
+     "grain_softness": 25.0,
+     "grain_chroma": 0.0,
+     "grain_film_format": "35mm",
+     "grain_capture_geometry": "frame",
+     "grain_film_type": "color_negative",
+     "grain_custom_width_mm": 36.0,
+     "grain_custom_height_mm": 24.0,
+     "grain_shadow_response": 100.0,
+     "grain_midtone_response": 100.0,
+     "grain_highlight_response": 100.0,
+     "grain_view_map": false,
+     "film_resolution": 100.0,
+     "halation_enabled": true,
+     "halation_amount": 3.5707334737103085,
+     "halation_radius": 0.450693909,
+     "halation_hue_offset": 21.320152,
+     "halation_saturation": 100.0,
+     "halation_view_map": false,
+     "lens_filter": "none",
+     "lens_strength": 0.5,
+     "lens_size": 1.0
+    },
+    "color_grading": {
+     "shadows": {
+      "hue": 0.0,
+      "saturation": 0.0,
+      "luminance_ev": 0.0
+     },
+     "midtones": {
+      "hue": 0.0,
+      "saturation": 0.0,
+      "luminance_ev": 0.0
+     },
+     "highlights": {
+      "hue": 0.0,
+      "saturation": 0.0,
+      "luminance_ev": 0.0
+     },
+     "blending": 50.0,
+     "balance": 0.0
+    },
+    "vignette": {
+     "amount": -11.0,
+     "midpoint": 50.0,
+     "roundness": 0.0,
+     "feather": 75.0,
+     "highlight_protection": 0.0,
+     "center_x": 0.5,
+     "center_y": 0.5,
+     "scale_x": 100.0,
+     "scale_y": 100.0
+    },
+    "detail": {
+     "texture_amount": 41.0,
+     "clarity_amount": 79.0,
+     "clarity_radius_percent": 0.75,
+     "sharpen_amount": 0.0,
+     "sharpen_radius_px": 0.8,
+     "sharpen_threshold": 10.0,
+     "softness": 0.0,
+     "microcontrast": 0.0
+    },
+    "black_and_white": {
+     "reds": 0.0,
+     "oranges": 0.0,
+     "yellows": 0.0,
+     "greens": 0.0,
+     "aquas": 0.0,
+     "blues": 0.0,
+     "purples": 0.0,
+     "magentas": 0.0
+    },
+    "exposure": 0.0,
+    "highlight_compression_start_percent": 90.0,
+    "highlight_compression_softness": 100.0,
+    "highlight_compression_mode": "fixed_cap",
+    "highlight_compression_peak_measurement": "maximum",
+    "highlight_compression_source_peak_percent": 100.0,
+    "highlight_compression_manual_peak_percent": 100.0,
+    "highlight_compression_peak_detail": 35.0,
+    "highlight_compression_bias": 0.0,
+    "highlight_compression_color_handling": "smooth_rolloff",
+    "highlight_compression_attenuation": 20.0,
+    "tone_equalizer_nodes": [
+     {
+      "input_ev": -6.0,
+      "adjustment_ev": -0.7173913043478262
+     },
+     {
+      "input_ev": -3.6955632876346702,
+      "adjustment_ev": -0.03438735177865615
+     },
+     {
+      "input_ev": -1.7418017271510209,
+      "adjustment_ev": 0.5474308300395254
+     },
+     {
+      "input_ev": -0.0886188682802409,
+      "adjustment_ev": 0.8509881422924901
+     },
+     {
+      "input_ev": 1.3140817392464816,
+      "adjustment_ev": 0.8744848811449009
+     },
+     {
+      "input_ev": 2.566492995966769,
+      "adjustment_ev": 0.6980540689470773
+     },
+     {
+      "input_ev": 6.0,
+      "adjustment_ev": 0.06679841897233185
+     }
+    ],
+    "tone_equalizer_influence_radius": 1.5,
+    "tone_equalizer_smoothing": 0.5,
+    "blacks": 0.0,
+    "whites": 0.0,
+    "shadows": 0.0,
+    "midtones": 0.0,
+    "highlights": 0.0,
+    "shadows_center": -1.5,
+    "shadows_width": 5.0,
+    "midtones_center": 0.0,
+    "midtones_width": 4.0,
+    "highlights_center": 1.75,
+    "highlights_width": 3.5,
+    "contrast": 0.224,
+    "contrast_pivot": 0.5,
+    "white_balance_kelvin": 6500,
+    "tint": 0.0,
+    "saturation": 0.0,
+    "vibrance": 0.0,
+    "highlight_desaturation": 0.0,
+    "highlight_desaturation_start": 0.99,
+    "shadow_desaturation": 0.0,
+    "shadow_desaturation_start": 0.125,
+    "red_hue": 0.0,
+    "red_purity": 0.0,
+    "green_hue": 0.0,
+    "green_purity": 0.0,
+    "blue_hue": 0.0,
+    "blue_purity": 0.0,
+    "tint_hue": 0.0,
+    "tint_purity": 0.0,
+    "luma_curve": [
+     [
+      0.0,
+      0.0
+     ],
+     [
+      0.25,
+      0.25
+     ],
+     [
+      0.5,
+      0.5
+     ],
+     [
+      0.75,
+      0.75
+     ],
+     [
+      1.0,
+      1.0
+     ]
+    ],
+    "red_curve": [
+     [
+      0.0,
+      0.0
+     ],
+     [
+      0.25,
+      0.25
+     ],
+     [
+      0.5,
+      0.5
+     ],
+     [
+      0.75,
+      0.75
+     ],
+     [
+      1.0,
+      1.0
+     ]
+    ],
+    "green_curve": [
+     [
+      0.0,
+      0.0
+     ],
+     [
+      0.25,
+      0.25
+     ],
+     [
+      0.5,
+      0.5
+     ],
+     [
+      0.75,
+      0.75
+     ],
+     [
+      1.0,
+      1.0
+     ]
+    ],
+    "blue_curve": [
+     [
+      0.0,
+      0.0
+     ],
+     [
+      0.25,
+      0.25
+     ],
+     [
+      0.5,
+      0.5
+     ],
+     [
+      0.75,
+      0.75
+     ],
+     [
+      1.0,
+      1.0
+     ]
+    ]
+   },
+   "shared": {
+    "overlay_mode": "off",
+    "false_color_band_anchor": "project",
+    "false_color_ceiling_nits": 1000,
+    "overlay_opacity": 0.5,
+    "overlay_threshold": 100.0,
+    "film_grain_seed": 271828,
+    "local_adjustments_enabled": true,
+    "geometry": {
+     "rotation": 0,
+     "flip_horizontal": false,
+     "flip_vertical": false,
+     "straighten_angle": 0.0,
+     "perspective_horizontal": 0.0,
+     "perspective_vertical": 40.989028463292584,
+     "perspective_rotate": 0.8917898456453744,
+     "crop": {
+      "x": 0.0,
+      "y": 0.013253935631934936,
+      "width": 1.0,
+      "height": 0.95421356860359
+     },
+     "ratio_mode": "2:3",
+     "custom_ratio": {
+      "width": 1.0,
+      "height": 1.0
+     }
+    }
+   }
+  },
+  "local_adjustments": [
+   {
+    "id": "fc478088-574d-4338-a1eb-27b349323c98",
+    "name": "Local Adjustment 1",
+    "enabled": true,
+    "opacity": 1.0,
+    "mask": {
+     "id": "c30c5c69-aff3-4934-8b49-708d1454408c",
+     "enabled": true,
+     "operator": "leaf",
+     "leaf": {
+      "type": "brush",
+      "strokes": [
+       {
+        "points": [
+         {
+          "x": 0.7170901259977928,
+          "y": 0.47687534698584866,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.7170092629452397,
+          "y": 0.47207468650117645,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.7151227549726751,
+          "y": 0.4672637572408682,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.7114543373848505,
+          "y": 0.46363768280585665,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.7095756823805458,
+          "y": 0.45884169979711226,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.7059166387109549,
+          "y": 0.4552268438724992,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.7040457970906956,
+          "y": 0.45044573763959844,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.7003960869118147,
+          "y": 0.44684204817664364,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6967512160262215,
+          "y": 0.4432431369863119,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.693111174815381,
+          "y": 0.43964899457135204,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.689475953686231,
+          "y": 0.43605961145966493,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6840513004355938,
+          "y": 0.43245629610945374,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6804268766543153,
+          "y": 0.4288764151276444,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6750261428449729,
+          "y": 0.4264613527680448,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6696301636673105,
+          "y": 0.42404841655137493,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.664238932845354,
+          "y": 0.4216376036711885,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6588452445093296,
+          "y": 0.41805331177796506,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6534706912198431,
+          "y": 0.41682233671915697,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6480936679194473,
+          "y": 0.4144178770590618,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6427250145008013,
+          "y": 0.41318851068087453,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6373611842121436,
+          "y": 0.41313265308071145,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.631996060988069,
+          "y": 0.41190383786193085,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6266334005903289,
+          "y": 0.41184799194156363,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6212707355917396,
+          "y": 0.41179214597328384,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6159080659922954,
+          "y": 0.4117362999570913,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6105453917919904,
+          "y": 0.4116804538929862,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6051827129908187,
+          "y": 0.4116246077809684,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.599820029588774,
+          "y": 0.4115687616210377,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5944503761994031,
+          "y": 0.41268579055381194,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5890865044847867,
+          "y": 0.4126299325222492,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5837226281672567,
+          "y": 0.4125740744427529,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5783587472468067,
+          "y": 0.41251821631532287,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5729831747434437,
+          "y": 0.4136357020362257,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5676052327015618,
+          "y": 0.41475368034195725,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5622249195540858,
+          "y": 0.4158721515582842,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5568422337325586,
+          "y": 0.4169911160112611,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5514407319899701,
+          "y": 0.4192864551079142,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5460344666532602,
+          "y": 0.42158381846825344,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5423968902519325,
+          "y": 0.4250803218271662,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5369806682451392,
+          "y": 0.4273827773481398,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5315596622808942,
+          "y": 0.4296872665466904,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5261338660181462,
+          "y": 0.43199379211842176,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5207032731046324,
+          "y": 0.43430235676370366,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5152678771768537,
+          "y": 0.43661296318768245,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5098533694395994,
+          "y": 0.43774097337280043,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5061805152333088,
+          "y": 0.4412590304901095,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5007592007032811,
+          "y": 0.4423890686978489,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.49707705303845534,
+          "y": 0.44591332931799255,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.49339001118014775,
+          "y": 0.4494422742731837,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.48969806536405985,
+          "y": 0.4529759129090363,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.48600120579990186,
+          "y": 0.4565142545960423,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.48407215538641796,
+          "y": 0.4612706856749327,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.48213967655801654,
+          "y": 0.4660355701457884,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.48020376016681593,
+          "y": 0.4708089305644053,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.47648822225085874,
+          "y": 0.47437098918698767,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.4763549364880256,
+          "y": 0.47917806312831257,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.472631028553518,
+          "y": 0.48275127521603517,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.47249409387023766,
+          "y": 0.4875733304549794,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.47054178449759476,
+          "y": 0.49238510585040735,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.466804828401012,
+          "y": 0.4959759524558048,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.46666234686494945,
+          "y": 0.5008216941566951,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.4647000107524501,
+          "y": 0.5056571750397112,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.46273415816271113,
+          "y": 0.5105013210328269,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.46258764334965025,
+          "y": 0.5153731231264569,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.46061636588153015,
+          "y": 0.5202346856769016,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.4604676854993982,
+          "y": 0.525123983886681,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.4603187377694948,
+          "y": 0.530022073726947,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.4601695219700789,
+          "y": 0.5349289789318785,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.46002003737680947,
+          "y": 0.5398447233211638,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.45987028326273305,
+          "y": 0.5447693308003843,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.4597202588982729,
+          "y": 0.5497028253614029,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.4595699635512164,
+          "y": 0.5546452310827537,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.45941939648670327,
+          "y": 0.559596572130033,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.4592685569672142,
+          "y": 0.5645568727562945,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.4591174442525579,
+          "y": 0.5695261573024434,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.4589660575998596,
+          "y": 0.5745044501976363,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.45881439626354875,
+          "y": 0.5794917759596804,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.4586624594953467,
+          "y": 0.5844881591954367,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.4585102465442543,
+          "y": 0.5894936246012243,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.45835775665654005,
+          "y": 0.594508196963227,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.4582049890757267,
+          "y": 0.5995319011579037,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.4580519430425799,
+          "y": 0.6045647621523978,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.45789861779509466,
+          "y": 0.6096068050049525,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.4577450125684831,
+          "y": 0.6146580548653262,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.45759112659516193,
+          "y": 0.6197185369752101,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.45743695910473914,
+          "y": 0.6247882766686496,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.4572825093240016,
+          "y": 0.6298672993724657,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.4571277764769023,
+          "y": 0.6349556306066817,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.45697275978454627,
+          "y": 0.6400532959849496,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.456817458465179,
+          "y": 0.6451603212149802,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.4566618717341723,
+          "y": 0.6502767320989751,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.45650599880401127,
+          "y": 0.6554025545340613,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.4563498388842812,
+          "y": 0.6605378145127282,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.45619339118165425,
+          "y": 0.665682538123267,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.4560366548998755,
+          "y": 0.6708367515502122,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.4558796292397503,
+          "y": 0.6760004810747863,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.4557223133991297,
+          "y": 0.6811737530753461,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.45556470657289777,
+          "y": 0.6863565940278316,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.45540680795295707,
+          "y": 0.6915490305062189,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.45524861672821526,
+          "y": 0.6967510891829727,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.4550901320845712,
+          "y": 0.7019627968295044,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.45493135320490075,
+          "y": 0.7071841803166303,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.4547722792690429,
+          "y": 0.7124152666150345,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.4546129094537858,
+          "y": 0.7176560827957321,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.4544532429328521,
+          "y": 0.7229066560305373,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.4542932788768851,
+          "y": 0.7281670135925318,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.4541330164534344,
+          "y": 0.7334371828565384,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.4539724548269409,
+          "y": 0.7387171912995942,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.4538115931587231,
+          "y": 0.7440070665014303,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.4517491450516729,
+          "y": 0.7492870880463107,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.45158590095322515,
+          "y": 0.7545967622401597,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.4552720714422349,
+          "y": 0.7586251042065877,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.4609852734965,
+          "y": 0.758684441319533,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.46666112290500056,
+          "y": 0.7600746542411406,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.4723756528128373,
+          "y": 0.7601340045365901,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.47805549041817075,
+          "y": 0.7615248808799809,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.4837713487969485,
+          "y": 0.7615842443637783,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.489487201948942,
+          "y": 0.7616436077932915,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.49520304987415836,
+          "y": 0.7617029711685208,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5009188925726048,
+          "y": 0.7617623344894663,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5066347300442884,
+          "y": 0.7618216977561277,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5123505622892164,
+          "y": 0.7618810609685055,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.518066389307396,
+          "y": 0.7619404241265996,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5237822110988342,
+          "y": 0.7619997872304098,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5294980276635383,
+          "y": 0.7620591502799366,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.535235136993503,
+          "y": 0.7607868542054324,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5409496042096099,
+          "y": 0.7608462038497743,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5466640662014526,
+          "y": 0.7609055534398579,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5523785229690381,
+          "y": 0.7609649029756831,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5580929745123738,
+          "y": 0.7610242524572499,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5638074208314667,
+          "y": 0.7610836018845585,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.569521861926324,
+          "y": 0.7611429512576089,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5752482179885754,
+          "y": 0.7598711721892601,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5809613103840693,
+          "y": 0.7599305081632933,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5866743975577956,
+          "y": 0.7599898440830936,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5923874795097616,
+          "y": 0.7600491799486605,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5981005562399743,
+          "y": 0.7601085157599947,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.603813627748441,
+          "y": 0.7601678515170959,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.609526694035169,
+          "y": 0.7602271872199644,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6152397551001652,
+          "y": 0.7602865228686001,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6209528109434369,
+          "y": 0.7603458584630033,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6266658615649912,
+          "y": 0.7604051940031737,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6323789069648351,
+          "y": 0.7604645294891118,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6380919471429762,
+          "y": 0.7605238649208175,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6438049820994213,
+          "y": 0.7605832002982907,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6495180118341776,
+          "y": 0.7606425356215317,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6552310363472522,
+          "y": 0.7607018708905405,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6609440556386526,
+          "y": 0.7607612061053173,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6666570697083856,
+          "y": 0.7608205412658618,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6723700785564587,
+          "y": 0.7608798763721745,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6780952501333782,
+          "y": 0.7622705790366141,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6838230992312493,
+          "y": 0.7636619320982466,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6895387694503089,
+          "y": 0.763721293627864,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.695270632177911,
+          "y": 0.7651133107906689,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.7010051768087832,
+          "y": 0.7665059792697315,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.7067235108795308,
+          "y": 0.7665653672461409,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.7124620747705013,
+          "y": 0.7679587007580798,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.7182033249558468,
+          "y": 0.7693526865070676,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.7239472633222416,
+          "y": 0.7707473249511916,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.7276906910480727,
+          "y": 0.7667831226948109,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.7275955615503439,
+          "y": 0.7614534462705853,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.7275006101084793,
+          "y": 0.7561337455128442,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.7255050783381745,
+          "y": 0.7508042496207461,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.72541225701829,
+          "y": 0.7455044339935392,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.7253196089476207,
+          "y": 0.7402145103706397,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.723331691769532,
+          "y": 0.7349147610741544,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.7232411543390846,
+          "y": 0.7296445560988127,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.7231507854232478,
+          "y": 0.7243841603983175,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.7211704290402075,
+          "y": 0.7191139091321879,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.7210821515088621,
+          "y": 0.7138730674494471,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.7209940378284135,
+          "y": 0.7086419532318475,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.7209060875431019,
+          "y": 0.7034205394219475,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.7189351476575608,
+          "y": 0.698189231190902,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.7188492655856272,
+          "y": 0.6929871547511595,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.7168838715668289,
+          "y": 0.6877751648607984,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.7149221080550158,
+          "y": 0.682572802640779,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.7148401673971823,
+          "y": 0.6773995402055076,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.7147583778468758,
+          "y": 0.6722358178314559,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.7146767389864929,
+          "y": 0.667081609153561,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.7127242282971381,
+          "y": 0.6619174406606971,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.7126446099836542,
+          "y": 0.6567821977818058,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.71256513795553,
+          "y": 0.651656390054432,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.712485811809973,
+          "y": 0.6465399914991679,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.7124066311456684,
+          "y": 0.6414329762318969,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.7123275955627717,
+          "y": 0.6363353184633562,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.7122487046629027,
+          "y": 0.6312469924987034,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.712169958049138,
+          "y": 0.6261679727370839,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.7120913553260054,
+          "y": 0.621098233671202,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.7101572441020813,
+          "y": 0.6160184555901127,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.7100806202563941,
+          "y": 0.6109672186125163,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.7100041360397996,
+          "y": 0.6059251863365307,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.7099277910709829,
+          "y": 0.6008923336249258,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.7098515849700165,
+          "y": 0.5958686354319179,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.7097755173583538,
+          "y": 0.5908540668027551,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.7096995878588224,
+          "y": 0.5858486028733033,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.7096237960956188,
+          "y": 0.580852218869636,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.7095481416943016,
+          "y": 0.5758648901076248,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.7094726242817851,
+          "y": 0.5708865919925334,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.7093972434863339,
+          "y": 0.5659173000186138,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.709321998937556,
+          "y": 0.5609569897687027,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.7092468902663972,
+          "y": 0.5560056369138229,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.7073380260220932,
+          "y": 0.5510441396496464,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.7072648408414739,
+          "y": 0.5461106454197844,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.7053611985411349,
+          "y": 0.5411669914399894,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.7016490216812593,
+          "y": 0.5374412983504998,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6979418499335958,
+          "y": 0.5337206285970972,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6942396731824066,
+          "y": 0.5300049720272118,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6905424813391957,
+          "y": 0.5262943185156144,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6850522667827319,
+          "y": 0.525014230630818,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6795525244573507,
+          "y": 0.5225127247042446,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.674057710791549,
+          "y": 0.520013460531997,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6685773326323675,
+          "y": 0.5187362114812935,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6630994066302087,
+          "y": 0.5174595339267781,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6576309893133281,
+          "y": 0.5174026327018129,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6521567345576579,
+          "y": 0.5161265384291063,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6466895331936973,
+          "y": 0.5160696493234844,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6412223270477514,
+          "y": 0.5160127601681035,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.635755116119814,
+          "y": 0.5159558709629634,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6302879004098786,
+          "y": 0.5158989817080641,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6266434280454386,
+          "y": 0.5195201038607754,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6229940463908012,
+          "y": 0.5231461038497575,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6193397455196847,
+          "y": 0.5267769915376947,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6175059003169612,
+          "y": 0.5316574890091517,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6174981338540532,
+          "y": 0.5365658041166813,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6138310689084968,
+          "y": 0.5402147515876674,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6138199781193375,
+          "y": 0.5451385223184104,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6101410286576503,
+          "y": 0.5500330207935235,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6082910100358734,
+          "y": 0.5549554551383216,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6064376470351234,
+          "y": 0.5598867880345857,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6064198284087395,
+          "y": 0.5648461710962946,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6045614148078349,
+          "y": 0.5697953902287429,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6026996325177499,
+          "y": 0.5747535806585027,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6026783749876569,
+          "y": 0.5797399441184625,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6008115022857637,
+          "y": 0.5847161671548643,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6007884904569444,
+          "y": 0.589720645726378,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5989165025969728,
+          "y": 0.5947149998573615,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5970411059958837,
+          "y": 0.5997184483102945,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5970145958940345,
+          "y": 0.6047502769346751,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5951340436246285,
+          "y": 0.6097720055339042,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5951057443453232,
+          "y": 0.614822198002718,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5932200112182681,
+          "y": 0.6198623070443486,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5931899098424226,
+          "y": 0.6249309641378722,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5931597533622869,
+          "y": 0.6300089000348592,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5912670539975889,
+          "y": 0.6350767778903692,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5912350789657685,
+          "y": 0.6401733309997513,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5893371381411875,
+          "y": 0.6452598432978187,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5893033313886429,
+          "y": 0.6503751162600587,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5892694624641056,
+          "y": 0.6554997964172571,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.589235531195913,
+          "y": 0.6606339097436194,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5892015374117692,
+          "y": 0.6657774823090609,
+          "pressure": 1.0
+         }
+        ],
+        "radius": 0.116,
+        "hardness": 0.5,
+        "flow": 1.0,
+        "opacity": 1.0,
+        "smoothing": 0.35,
+        "erase": false
+       },
+       {
+        "points": [
+         {
+          "x": 0.5976821899701347,
+          "y": 0.47803560036670856,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5922526620267958,
+          "y": 0.4779790869754396,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5868143776659086,
+          "y": 0.4791248545055286,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5813636975015467,
+          "y": 0.4814744733447555,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5758857617190248,
+          "y": 0.48623660034255367,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5722123349300883,
+          "y": 0.49102611350225395,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5685323435128659,
+          "y": 0.4958241858017901,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5666633067786091,
+          "y": 0.5006497547536182,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5647909245318434,
+          "y": 0.5054839613105802,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5629151877819911,
+          "y": 0.5103268286849819,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5628585134650569,
+          "y": 0.5151973434729687,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5628017374464733,
+          "y": 0.5200765983643107,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5627448594522402,
+          "y": 0.5249646169062132,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5645152189715349,
+          "y": 0.5298804350181279,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5681177461447163,
+          "y": 0.5348241255613705,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5717390051461523,
+          "y": 0.5385472535669594,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5753651555207363,
+          "y": 0.5422754105440599,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5771524781661662,
+          "y": 0.5472223441196304,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5807880146223411,
+          "y": 0.5509622544784277,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5844284728179402,
+          "y": 0.5547072278766081,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5880738627542081,
+          "y": 0.5584572746025455,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5917241944595061,
+          "y": 0.5622124049725084,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5953794779894018,
+          "y": 0.5659726293307541,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.599033588886793,
+          "y": 0.5709814382435839,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6008516726082546,
+          "y": 0.5759801592654528,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6026730545785248,
+          "y": 0.5809879486406994,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6026517487863106,
+          "y": 0.5859856329115327,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6026304042659628,
+          "y": 0.5909924016126232,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6026090209117897,
+          "y": 0.5960082795360369,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.600736560625399,
+          "y": 0.6010140431886412,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5970079608185844,
+          "y": 0.6060096671386489,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5951269736449377,
+          "y": 0.6110336898970942,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5932425511787575,
+          "y": 0.6160668881502542,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5894968764167623,
+          "y": 0.621089971287693,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5876038552073176,
+          "y": 0.6261415791804021,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.583855833487148,
+          "y": 0.6299121730676989,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5819546075290585,
+          "y": 0.6349799660674341,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5800498941880934,
+          "y": 0.6400570548241771,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5781416838601839,
+          "y": 0.6451434649379537,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5743742293934279,
+          "y": 0.6489401436081775,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.574326643738176,
+          "y": 0.6540623329169947,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5724083368216819,
+          "y": 0.6591745052541443,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5704864957948408,
+          "y": 0.6642960957824072,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5685611108822732,
+          "y": 0.6694271305525803,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5666321722725151,
+          "y": 0.674567635711624,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5646996701178502,
+          "y": 0.6797176375031078,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5627635945341438,
+          "y": 0.684877162267656,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5608239356006731,
+          "y": 0.6900462364433969,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5607634481060899,
+          "y": 0.6952444506044576,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5607028484700252,
+          "y": 0.7004523020540542,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5606421363803302,
+          "y": 0.7056698176177947,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5643716708344427,
+          "y": 0.7096285361926898,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5700083231623395,
+          "y": 0.7123034458698222,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5756619359313948,
+          "y": 0.7136712690839829,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5813285812213521,
+          "y": 0.7137301436037007,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5870133966761457,
+          "y": 0.7111716501416625,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.590814002783845,
+          "y": 0.7072893587909236,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5964946926288686,
+          "y": 0.703432060447474,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6002894079889409,
+          "y": 0.6982581955292677,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6021952153227559,
+          "y": 0.6930743572812734,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6040974969715367,
+          "y": 0.6879001089748259,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6078704448300207,
+          "y": 0.6840501063536009,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6078873106792807,
+          "y": 0.6788730472498552,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6097795139439772,
+          "y": 0.6737250301816768,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6097945892326753,
+          "y": 0.6685670305743305,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6098096367590581,
+          "y": 0.6634185298239442,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6116948488756363,
+          "y": 0.6582989407175408,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.611708122218266,
+          "y": 0.653169342032265,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6117213711843447,
+          "y": 0.6480491638770776,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6080003455500699,
+          "y": 0.6441764127764849,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6042894443096156,
+          "y": 0.6390339421579184,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5987107196319102,
+          "y": 0.6364275068287345,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5931370997489084,
+          "y": 0.63382345651011,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5875509146479112,
+          "y": 0.633765382183347,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.581964724554545,
+          "y": 0.6337073078046831,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5763443243590356,
+          "y": 0.6374689196709581,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5725808156641201,
+          "y": 0.6412550938020924,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5669597881465216,
+          "y": 0.6437497860769995,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5631710363381098,
+          "y": 0.6488236882401787,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.559390656249816,
+          "y": 0.6526255265654837,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5574590456912453,
+          "y": 0.6577352072921219,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5555238773278587,
+          "y": 0.6628542994638444,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5535851413209936,
+          "y": 0.6679828291068215,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5572689823453748,
+          "y": 0.6731792943151774,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5628805435469252,
+          "y": 0.6745286458567039,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5685079857909148,
+          "y": 0.6745871306303084,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5741594027216438,
+          "y": 0.6720643997655398,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5798056047986131,
+          "y": 0.6695439967545991,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5835831858876043,
+          "y": 0.6657190879574078,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5892185421291283,
+          "y": 0.6632045119883345,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5929852766080067,
+          "y": 0.6593883823141797,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5967468134536135,
+          "y": 0.6555775184326301,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6023712103666741,
+          "y": 0.651791327113352,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6061210965460807,
+          "y": 0.6479909493608521,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6098658190294863,
+          "y": 0.6441958048326324,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6117444984205618,
+          "y": 0.6391114423247126,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6154793498853711,
+          "y": 0.6353284879549861,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6173498802260892,
+          "y": 0.6302603894756716,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.619216988911923,
+          "y": 0.6252015617809779,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6192233109126574,
+          "y": 0.6201326680024044,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6192296213719041,
+          "y": 0.6150730280309352,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6192359203212396,
+          "y": 0.6100226165489602,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6155376112981861,
+          "y": 0.6049428864888072,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6118427803569084,
+          "y": 0.6011295333561016,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6081529901036857,
+          "y": 0.5973213826058302,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6026143703967987,
+          "y": 0.5947534547063835,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5970807807752971,
+          "y": 0.5921878589577764,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5915600689493195,
+          "y": 0.5883726409958459,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5860286644038651,
+          "y": 0.5870636512164794,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5804997663267296,
+          "y": 0.5857552545850893,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5749733730146487,
+          "y": 0.584447450698603,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5694494827659017,
+          "y": 0.583140239154314,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5639139783164937,
+          "y": 0.5830826693735387,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.558393840298354,
+          "y": 0.5817760622252345,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.552876201379537,
+          "y": 0.5804700466094298,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5473431932020926,
+          "y": 0.5804125016845993,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5418101801268908,
+          "y": 0.5803549567088307,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5362771621539251,
+          "y": 0.580297411682124,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5307441392831889,
+          "y": 0.5802398666044789,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5252111115146757,
+          "y": 0.5801823214758955,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.519678078848379,
+          "y": 0.5801247762963738,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5141196352433611,
+          "y": 0.5813156017934857,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5085586642012053,
+          "y": 0.5825069687616999,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5029672094816996,
+          "y": 0.5849489240129414,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.4973999081907339,
+          "y": 0.5861419301868885,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.491799563206808,
+          "y": 0.5885872048871413,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.48801085740279154,
+          "y": 0.5923073489636138,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.48421697830544547,
+          "y": 0.596032572715715,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.48408772715637677,
+          "y": 0.6010587986121204,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.4821050580491179,
+          "y": 0.6060749182329073,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.48197364411440213,
+          "y": 0.6111194793082113,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.48369855727667643,
+          "y": 0.6161925575113228,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.4854266232907083,
+          "y": 0.6212749084499423,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.48904916880190835,
+          "y": 0.625116938441083,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.4926766858343098,
+          "y": 0.6289642411702743,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.49820056973498794,
+          "y": 0.6315643012459072,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.503701466997073,
+          "y": 0.6354398040962441,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5092635119006279,
+          "y": 0.636771563882326,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5148025840668473,
+          "y": 0.6393787729863533,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5203709906844521,
+          "y": 0.6407123491532305,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5259649213627571,
+          "y": 0.6407705005824479,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5315588470348726,
+          "y": 0.6408286519596237,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5371527677008051,
+          "y": 0.6408868032847579,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5427466833605615,
+          "y": 0.6409449545578506,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5483584286235367,
+          "y": 0.6397276045301111,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5539675964898523,
+          "y": 0.6385108136143319,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5595894375591084,
+          "y": 0.6360208075217697,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5652061243201639,
+          "y": 0.6335330843572847,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5708049995244169,
+          "y": 0.6323191087894148,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5764240632456443,
+          "y": 0.6285644742656207,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.580176329667144,
+          "y": 0.624795664893789,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5857812595927495,
+          "y": 0.6210513397313631,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5895219715674649,
+          "y": 0.6172928439030847,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5914102195924895,
+          "y": 0.6122573773671536,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5932950245655303,
+          "y": 0.6072310925556662,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5951763958951568,
+          "y": 0.6022139643784129,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5952045665150832,
+          "y": 0.5971867320217081,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5952326859168194,
+          "y": 0.5921686398878493,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5934143373635616,
+          "y": 0.587140460712353,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5897545458078393,
+          "y": 0.582102219724413,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5860923119957199,
+          "y": 0.5783199468522833,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5805824962205958,
+          "y": 0.575769345735197,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5750661001194106,
+          "y": 0.5744661699505427,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5695393789798622,
+          "y": 0.5744086876564762,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5658138976471991,
+          "y": 0.5781090412852027,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5639139783164937,
+          "y": 0.5830826693735387,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5620106064454731,
+          "y": 0.5880653355569194,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5601037726146253,
+          "y": 0.5930570644938382,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5600436756378118,
+          "y": 0.598077121052054,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5599834691718966,
+          "y": 0.6031063235193164,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5599231529173936,
+          "y": 0.6081446969124508,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5598627265737238,
+          "y": 0.6131922663396042,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5598021898392103,
+          "y": 0.6182490570006622,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5634731960285323,
+          "y": 0.6220863568108664,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5652758055478369,
+          "y": 0.6271787163847662,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5689564484429305,
+          "y": 0.6310282912930959,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.574516463330804,
+          "y": 0.6336298752190629,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5800921165704656,
+          "y": 0.6349606036855391,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5856795877813564,
+          "y": 0.6350186908139163,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5912670539975889,
+          "y": 0.6350767778903692,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.596861220376038,
+          "y": 0.633862172699118,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6024636593887857,
+          "y": 0.630105626858044,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.60805427182448,
+          "y": 0.6276234657199119,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6117839729353182,
+          "y": 0.6238561728236379,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6155085604365097,
+          "y": 0.6200940450772575,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.619228044837378,
+          "y": 0.6163370718655234,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6210887561190642,
+          "y": 0.6113036375690312,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6247984888204837,
+          "y": 0.6075586715413488,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6266511597679577,
+          "y": 0.6025412576130946,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6285004586921593,
+          "y": 0.59753297581732,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6284983097677798,
+          "y": 0.5925145822771288,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6284961647468912,
+          "y": 0.5875053045783545,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6266492920245805,
+          "y": 0.5824859323342979,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6211185090988361,
+          "y": 0.578684236674739,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6155904607863573,
+          "y": 0.5773798150205135,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6100649128745362,
+          "y": 0.5760759833713999,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6045369703443723,
+          "y": 0.5760184889247806,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5989967232373112,
+          "y": 0.5784541591296326,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5934440302293414,
+          "y": 0.5821405910873217,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5897297685588422,
+          "y": 0.5858512456536622,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5878490025568833,
+          "y": 0.5908386824838904,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5859648141630519,
+          "y": 0.5958351948520937,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5840771940273549,
+          "y": 0.6008408075526908,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5840388631943813,
+          "y": 0.6058748106990048,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5840004624320538,
+          "y": 0.6109179976944618,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5876829942214221,
+          "y": 0.6147450193377391,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5913705694296146,
+          "y": 0.6185772822862108,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5950631984245675,
+          "y": 0.6224147973146149,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6006320600141801,
+          "y": 0.6237402277808903,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6062034629239873,
+          "y": 0.6250662631002682,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6117806916649706,
+          "y": 0.625124248283636,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6173579154295797,
+          "y": 0.6251822334152655,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6229358659600579,
+          "y": 0.6239721176595253,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6285107197188331,
+          "y": 0.6214956012427075,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6340804762833858,
+          "y": 0.6190213491516854,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6377863864989285,
+          "y": 0.6152659735477485,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.643345551107444,
+          "y": 0.61279738981421,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6470408965465072,
+          "y": 0.609050554919366,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6507311893424135,
+          "y": 0.6053088430691753,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6525594026110356,
+          "y": 0.6002957716061864,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6562400522832664,
+          "y": 0.5965659937157878,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6580603493601395,
+          "y": 0.5915688451078536,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6598773401142556,
+          "y": 0.5865807731426127,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.659846730137784,
+          "y": 0.581582571810741,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6598161756503714,
+          "y": 0.576593431102865,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6579447128247391,
+          "y": 0.5715941783681221,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6560766358552185,
+          "y": 0.5666039702963003,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6523742984623317,
+          "y": 0.5616036674682856,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6505146247515272,
+          "y": 0.5566314917709952,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6468286515543982,
+          "y": 0.5528843912695267,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6468099937235524,
+          "y": 0.5479469895893699,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6467913695095542,
+          "y": 0.5430184838994278,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6467727788216315,
+          "y": 0.5380988501787427,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6504159529892436,
+          "y": 0.5344529813495386,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6540542130108543,
+          "y": 0.5308120303010672,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6576875688225339,
+          "y": 0.5271759870899098,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6613160303335828,
+          "y": 0.5235448417994357,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6649396074266241,
+          "y": 0.5199185845397131,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6703906222774344,
+          "y": 0.517535402149295,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6740684599600617,
+          "y": 0.5212343436992511,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.675937171081974,
+          "y": 0.5261423539933637,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6796245277306254,
+          "y": 0.5298529094654342,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6796726378525928,
+          "y": 0.5347573696109484,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6815510190210889,
+          "y": 0.5396897010309002,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6834327847750187,
+          "y": 0.5446309198360945,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6853179442704694,
+          "y": 0.5495810500689672,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6853713675619941,
+          "y": 0.5545210258563527,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6854248873915757,
+          "y": 0.5594699283805707,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6854785040211232,
+          "y": 0.564427781859967,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6836920948002443,
+          "y": 0.5693754709435884,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6837442387197238,
+          "y": 0.5743512827325303,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6837964772071734,
+          "y": 0.5793361186306036,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6820036766850747,
+          "y": 0.5843108136391657,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6802076183101514,
+          "y": 0.5892945485961122,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6784082931941393,
+          "y": 0.5942873481647595,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6747444591510928,
+          "y": 0.598013866918181,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6747887273679877,
+          "y": 0.60304182054895,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.672979950563349,
+          "y": 0.6080596715024548,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6730226896581856,
+          "y": 0.6131059663408814,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.671208995938709,
+          "y": 0.6181421750449831,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6693919860619333,
+          "y": 0.6231875919522529,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.669431559889903,
+          "y": 0.628261579014662,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6694712061953849,
+          "y": 0.6333448588338754,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6695109251776701,
+          "y": 0.6384374569621298,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6676856892164029,
+          "y": 0.6435200114315274,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6677238416009064,
+          "y": 0.6486313061706813,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6677620641165124,
+          "y": 0.6537519964099962,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6678003569567694,
+          "y": 0.6588821080792909,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6697106172677082,
+          "y": 0.6640411231551764,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6697507765371129,
+          "y": 0.6691901730158741,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.669791009899024,
+          "y": 0.6743487227010235,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.671708399093358,
+          "y": 0.6795363060399998,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6717505160272915,
+          "y": 0.6847139516654794,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6736732646006276,
+          "y": 0.689920718422191,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.673717278788254,
+          "y": 0.6951175661487721,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6756454133303985,
+          "y": 0.700343622999215,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6756913385668875,
+          "y": 0.7055597797759112,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6757373490845537,
+          "y": 0.7107856227300662,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6776727360483935,
+          "y": 0.7160408077600213,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.677720675264571,
+          "y": 0.7212861216509056,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6777687037504404,
+          "y": 0.7265412030680833,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6778168217555833,
+          "y": 0.7318060793197823,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.677865029530513,
+          "y": 0.7370807778161222,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6741059080429261,
+          "y": 0.7410038398148332,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6684128991498104,
+          "y": 0.740944703367635,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6627198850715296,
+          "y": 0.7408855668665755,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6570196587538113,
+          "y": 0.7395050336120487,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.651327962549889,
+          "y": 0.7394459101988957,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6456362611631996,
+          "y": 0.7393867867319057,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6399413337841139,
+          "y": 0.738006922530756,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6342509496641883,
+          "y": 0.7379478121459194,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6285599950850986,
+          "y": 0.7365686033959449,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6228716890063059,
+          "y": 0.7351900365127666,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6171839427671635,
+          "y": 0.7351309523286839,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6114961913524591,
+          "y": 0.7350718680908377,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6058131731480524,
+          "y": 0.733693968863627,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6001267371726514,
+          "y": 0.7336348976906251,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5944402960240797,
+          "y": 0.7335758264638836,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5887625614045222,
+          "y": 0.7321985944219408,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5830774350893422,
+          "y": 0.732139536254306,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5773923036033811,
+          "y": 0.732080478032956,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5717198482833946,
+          "y": 0.7307039127060198,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5660360310253318,
+          "y": 0.7306448675380423,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5603522085988762,
+          "y": 0.7305858223163739,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5546850282974364,
+          "y": 0.7292099232346217,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.549002519493804,
+          "y": 0.7291508910605957,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5433200055241649,
+          "y": 0.7290918588329032,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.537658095964496,
+          "y": 0.7277166255269508,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5319988177261469,
+          "y": 0.7263420313482539,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5263421689752201,
+          "y": 0.7249680758513732,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5207126817792145,
+          "y": 0.7222810459311921,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5170049021533671,
+          "y": 0.7183042882424684,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5113596142452346,
+          "y": 0.7169341120078256,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5076617917471798,
+          "y": 0.7129647706841837,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.502052725204925,
+          "y": 0.7102889198351656,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.49836566488038403,
+          "y": 0.7063288036038086,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.4927674055143596,
+          "y": 0.7036591283483276,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.4890910674492335,
+          "y": 0.6997082051418105,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.487335202776478,
+          "y": 0.6944814487541194,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.4836685861765058,
+          "y": 0.6905432902664304,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.48380031627083614,
+          "y": 0.6853529957060447,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.4820537980449114,
+          "y": 0.6801527737540056,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.4821867753303555,
+          "y": 0.6749816485412055,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.482319507386595,
+          "y": 0.6698200596256619,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.48245199489136187,
+          "y": 0.664667980652225,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.4825842385198929,
+          "y": 0.6595253853627702,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.4845856093972288,
+          "y": 0.6544116784395427,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.48471564991002347,
+          "y": 0.6492879550442273,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.4867113899997944,
+          "y": 0.6441930338634867,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.4868392426621989,
+          "y": 0.6390880786027167,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.4888293797651206,
+          "y": 0.6340118399051496,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.48895505971921904,
+          "y": 0.628925549778705,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.49093962144417774,
+          "y": 0.6238678910602689,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.4910631437099813,
+          "y": 0.6188001638203687,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.4930421574757225,
+          "y": 0.6137609833253985,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.495017561012412,
+          "y": 0.6087309955890314,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.49698936419002354,
+          "y": 0.6037101754792642,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.49895757684258585,
+          "y": 0.5986984979556209,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.4990732450612703,
+          "y": 0.5936767103342562,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5010359866742461,
+          "y": 0.5886832599620062,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.502995163997672,
+          "y": 0.5836988775704127,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5049507867317311,
+          "y": 0.5787235384810449,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5050606046148794,
+          "y": 0.5737380571369505,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5070108156221655,
+          "y": 0.5687807475949958,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5071185714075556,
+          "y": 0.5638132800656112,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5090633970082458,
+          "y": 0.5588739023108565,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5091691048686392,
+          "y": 0.5539243510746266,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5092746220095046,
+          "y": 0.5489837298845781,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5112122451990777,
+          "y": 0.5440710762903929,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5113157324811491,
+          "y": 0.5391482263985071,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5132480323104535,
+          "y": 0.5342532632348002,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5133495036421193,
+          "y": 0.5293480888648064,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5152765058275832,
+          "y": 0.5244707208126992,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5153759750067964,
+          "y": 0.5195831268754401,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5190961548332899,
+          "y": 0.5159611183978593,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5210132599436856,
+          "y": 0.5111077627733331,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5229269327214728,
+          "y": 0.5062630964641086,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5266328922127098,
+          "y": 0.5026589385373502,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5285385486699037,
+          "y": 0.49782940221497746,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.532234954600942,
+          "y": 0.4942365297014424,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5359264101339746,
+          "y": 0.4906484689291652,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5396129252070508,
+          "y": 0.48706521023845406,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5451063833602208,
+          "y": 0.4835056020599596,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5505756729160317,
+          "y": 0.4811540242296813,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5542458343670071,
+          "y": 0.4775834918620446,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5597049659408176,
+          "y": 0.47523716895452167,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.563364953616472,
+          "y": 0.4716745560777007,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.568813958840805,
+          "y": 0.4693334705470597,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5742581180278697,
+          "y": 0.4669944670455713,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5796871249111456,
+          "y": 0.46585394180823336,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.585104606457519,
+          "y": 0.46591033501205004,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5905220833085196,
+          "y": 0.4659667281669902,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.5959395554641533,
+          "y": 0.46602312127305406,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6013570229244265,
+          "y": 0.46607951433024153,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6067744856893452,
+          "y": 0.46613590733855287,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6121888463967596,
+          "y": 0.4673893028380476,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6176056082017998,
+          "y": 0.46864325417878017,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.623024772702036,
+          "y": 0.4698977617305796,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6284468549918277,
+          "y": 0.472351994098337,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6338737563738296,
+          "y": 0.4748084077631411,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6393025536711764,
+          "y": 0.4760656779417686,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.6411249154234615,
+          "y": 0.48089304429392804,
+          "pressure": 1.0
+         },
+         {
+          "x": 0.639326027068895,
+          "y": 0.4856912922785509,
+          "pressure": 1.0
+         }
+        ],
+        "radius": 0.116,
+        "hardness": 0.5,
+        "flow": 1.0,
+        "opacity": 1.0,
+        "smoothing": 0.35,
+        "erase": false
+       }
+      ],
+      "brush_radius": 0.058,
+      "brush_hardness": 0.0,
+      "brush_flow": 1.0,
+      "brush_opacity": 1.0,
+      "brush_smoothing": 0.35,
+      "mask_shift_edge": 0.0,
+      "mask_feather": 0.0,
+      "mask_opacity": 1.0,
+      "start": null,
+      "end": null,
+      "gradient_midpoint_1": 0.3333333333333333,
+      "gradient_midpoint_2": 0.6666666666666666,
+      "gradient_fan": 0.0,
+      "gradient_luma_enabled": false,
+      "fade_in_start_ev": -12.0,
+      "reference_start_ev": null,
+      "full_start_ev": -8.0,
+      "full_end_ev": 6.0,
+      "reference_end_ev": null,
+      "fade_out_end_ev": 10.0,
+      "nodes": [],
+      "feather": 0.0,
+      "feather_softness": 0.0,
+      "feather_mode": "symmetric",
+      "feather_nodes": [],
+      "sample": null,
+      "radius": 0.2,
+      "hue_center": null,
+      "hue_width": 16.0,
+      "hue_smoothness": 12.0,
+      "edge": 0.0,
+      "edge_feather": 0.0,
+      "edge_detail": 50.0,
+      "saturation_floor": 0.04,
+      "luma_tolerance_ev": 1.0,
+      "chroma_tolerance": 0.08
+     },
+     "children": [],
+     "inverted": false
+    },
+    "hdr_grade": {
+     "hsl_section_enabled": true,
+     "hsl": {
+      "version": 1,
+      "ranges": [],
+      "hue": 0.0,
+      "saturation": 0.0,
+      "luminance": 0.0,
+      "uniformity": 0.0,
+      "opacity": 1.0,
+      "edge": 0.0,
+      "edge_feather": 0.0,
+      "edge_detail": 50.0
+     },
+     "enabled": true,
+     "exposure": 0.85,
+     "highlights": 59.0,
+     "midtones": 24.0,
+     "shadows": -42.0,
+     "blacks": 0.0,
+     "whites": 0.0,
+     "shadows_center": -1.5,
+     "shadows_width": 5.0,
+     "midtones_center": 0.0,
+     "midtones_width": 4.0,
+     "highlights_center": 2.25,
+     "highlights_width": 4.5,
+     "contrast": 0.0,
+     "contrast_pivot": 0.18,
+     "white_balance_kelvin": 6500,
+     "tint": 0.0,
+     "saturation": 0.0,
+     "vibrance": 0.0,
+     "luma_curve": [
+      [
+       0.0,
+       0.0
+      ],
+      [
+       0.25,
+       0.25
+      ],
+      [
+       0.5,
+       0.5
+      ],
+      [
+       0.75,
+       0.75
+      ],
+      [
+       1.0,
+       1.0
+      ]
+     ],
+     "red_curve": [
+      [
+       0.0,
+       0.0
+      ],
+      [
+       0.25,
+       0.25
+      ],
+      [
+       0.5,
+       0.5
+      ],
+      [
+       0.75,
+       0.75
+      ],
+      [
+       1.0,
+       1.0
+      ]
+     ],
+     "green_curve": [
+      [
+       0.0,
+       0.0
+      ],
+      [
+       0.25,
+       0.25
+      ],
+      [
+       0.5,
+       0.5
+      ],
+      [
+       0.75,
+       0.75
+      ],
+      [
+       1.0,
+       1.0
+      ]
+     ],
+     "blue_curve": [
+      [
+       0.0,
+       0.0
+      ],
+      [
+       0.25,
+       0.25
+      ],
+      [
+       0.5,
+       0.5
+      ],
+      [
+       0.75,
+       0.75
+      ],
+      [
+       1.0,
+       1.0
+      ]
+     ],
+     "color_grading": {
+      "shadows": {
+       "hue": 0.0,
+       "saturation": 0.0,
+       "luminance_ev": 0.0
+      },
+      "midtones": {
+       "hue": 0.0,
+       "saturation": 0.0,
+       "luminance_ev": 0.0
+      },
+      "highlights": {
+       "hue": 0.0,
+       "saturation": 0.0,
+       "luminance_ev": 0.0
+      },
+      "blending": 50.0,
+      "balance": 0.0
+     },
+     "detail": {
+      "texture_amount": 0.0,
+      "clarity_amount": 0.0,
+      "clarity_radius_percent": 0.75,
+      "sharpen_amount": 0.0,
+      "sharpen_radius_px": 0.8,
+      "sharpen_threshold": 10.0
+     }
+    },
+    "sdr_grade": {
+     "hsl_section_enabled": true,
+     "hsl": {
+      "version": 1,
+      "ranges": [],
+      "hue": 0.0,
+      "saturation": 0.0,
+      "luminance": 0.0,
+      "uniformity": 0.0,
+      "opacity": 1.0,
+      "edge": 0.0,
+      "edge_feather": 0.0,
+      "edge_detail": 50.0
+     },
+     "enabled": true,
+     "exposure": 0.85,
+     "highlights": 59.0,
+     "midtones": 24.0,
+     "shadows": -42.0,
+     "blacks": 0.0,
+     "whites": 0.0,
+     "shadows_center": -1.5,
+     "shadows_width": 5.0,
+     "midtones_center": 0.0,
+     "midtones_width": 4.0,
+     "highlights_center": 2.25,
+     "highlights_width": 4.5,
+     "contrast": 0.0,
+     "contrast_pivot": 0.18,
+     "white_balance_kelvin": 6500,
+     "tint": 0.0,
+     "saturation": 0.0,
+     "vibrance": 0.0,
+     "luma_curve": [
+      [
+       0.0,
+       0.0
+      ],
+      [
+       0.25,
+       0.25
+      ],
+      [
+       0.5,
+       0.5
+      ],
+      [
+       0.75,
+       0.75
+      ],
+      [
+       1.0,
+       1.0
+      ]
+     ],
+     "red_curve": [
+      [
+       0.0,
+       0.0
+      ],
+      [
+       0.25,
+       0.25
+      ],
+      [
+       0.5,
+       0.5
+      ],
+      [
+       0.75,
+       0.75
+      ],
+      [
+       1.0,
+       1.0
+      ]
+     ],
+     "green_curve": [
+      [
+       0.0,
+       0.0
+      ],
+      [
+       0.25,
+       0.25
+      ],
+      [
+       0.5,
+       0.5
+      ],
+      [
+       0.75,
+       0.75
+      ],
+      [
+       1.0,
+       1.0
+      ]
+     ],
+     "blue_curve": [
+      [
+       0.0,
+       0.0
+      ],
+      [
+       0.25,
+       0.25
+      ],
+      [
+       0.5,
+       0.5
+      ],
+      [
+       0.75,
+       0.75
+      ],
+      [
+       1.0,
+       1.0
+      ]
+     ],
+     "color_grading": {
+      "shadows": {
+       "hue": 0.0,
+       "saturation": 0.0,
+       "luminance_ev": 0.0
+      },
+      "midtones": {
+       "hue": 0.0,
+       "saturation": 0.0,
+       "luminance_ev": 0.0
+      },
+      "highlights": {
+       "hue": 0.0,
+       "saturation": 0.0,
+       "luminance_ev": 0.0
+      },
+      "blending": 50.0,
+      "balance": 0.0
+     },
+     "detail": {
+      "texture_amount": 0.0,
+      "clarity_amount": 0.0,
+      "clarity_radius_percent": 0.75,
+      "sharpen_amount": 0.0,
+      "sharpen_radius_px": 0.8,
+      "sharpen_threshold": 10.0
+     }
+    },
+    "sdr_match": null
+   }
+  ],
+  "repairs": [],
+  "denoise": {
+   "schema_version": 1,
+   "hdr": {
+    "enabled": true,
+    "controls": {
+     "amount": 0.51,
+     "luminance": 0.5,
+     "color_noise": 0.75,
+     "detail_recovery": 0.5,
+     "finest_noise": 0.5,
+     "fine_noise": 0.5,
+     "medium_noise": 0.5,
+     "coarse_noise": 0.5,
+     "method": "clean_grain",
+     "micro_luminance": 0.5,
+     "micro_color": 0.5,
+     "micro_detail": 0.5,
+     "grain_evenness": 1.0,
+     "clean_color": true,
+     "color_splotches": 1.0,
+     "splotch_size": "small"
+    },
+    "analysis": {
+     "algorithm_version": "adaptive-atrous-v1"
+    }
+   },
+   "sdr": {
+    "enabled": true,
+    "controls": {
+     "amount": 0.51,
+     "luminance": 0.5,
+     "color_noise": 0.75,
+     "detail_recovery": 0.5,
+     "finest_noise": 0.5,
+     "fine_noise": 0.5,
+     "medium_noise": 0.5,
+     "coarse_noise": 0.5,
+     "method": "clean_grain",
+     "micro_luminance": 0.5,
+     "micro_color": 0.5,
+     "micro_detail": 0.5,
+     "grain_evenness": 1.0,
+     "clean_color": true,
+     "color_splotches": 1.0,
+     "splotch_size": "small"
+    },
+    "analysis": {
+     "algorithm_version": "adaptive-atrous-v1"
+    }
+   }
+  },
+  "sdr_match": {
+   "materialized_status": "matched",
+   "materialized_metrics": {
+    "median_luma_error": 0.0,
+    "p95_luma_error": 5.960464477539063e-08,
+    "median_oklab_error": 0.0,
+    "p95_oklab_error": 2.4575624024691933e-07
+   },
+   "rematch_required": false,
+   "link_fallback_reason": null
+  },
+  "framing": {
+   "enabled": true,
+   "frame": {
+    "enabled": true,
+    "color": "#000000",
+    "unit": "percent",
+    "value": 0.83
+   },
+   "border": {
+    "enabled": true,
+    "color": "#fff2d6",
+    "unit": "percent",
+    "value": 4.95
+   }
+  }
+ }
+}
