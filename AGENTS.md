@@ -413,7 +413,8 @@ same-Mac v0.9.2 comparisons and exact errors: `docs/known-limitations.md`,
    must pass without skips, and the backend log must not show
    `lens_coordinate_strips_unavailable`. Then one RAW import with lens
    correction on `IMG_0790.CR2` and `_DSC7970.ARW` must match whole-frame bytes.
-10. Confirm full-size Sony Clean Small AVIF export and Proof on Windows with the same CPU noise measurement. Check the 4 GB working-set peak, exact files, tiles and statistics, ceiling retry isolation, and scratch cleanup after eviction and exit.
+10. Confirm full-size Sony Clean Small AVIF export and Proof on Windows with the same CPU noise measurement. Check the 4 GB working-set peak, exact files, tiles and statistics, ceiling retry isolation, and scratch cleanup after eviction, normal quit and
+    a forced quit followed by relaunch.
 
 ## Disk space and test output
 

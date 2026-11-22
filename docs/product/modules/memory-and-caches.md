@@ -31,7 +31,10 @@ Full-size non-JPEG Proof takes the finished frames from export before the
 ceiling check can change HDR pixels. It reads the retained endpoints in bands
 and keeps two pairs on disk. Each full-size AVIF tile uses a temporary Y4M
 between tone-mapping and encoding, so the helpers run one after the other.
-The desktop clears the Proof scratch when the backend exits.
+The desktop clears Proof scratch after the backend exits. Windows shutdown
+stops the backend and its encoder processes before removing scratch. Startup
+also removes abandoned scratch once its owners have exited and the directory
+has aged past the cleanup grace period.
 [MacBook Neo measurements](../../technical/performance-table.md#november-22-2026--macbook-neo-proof-memory)
 
 ## November 21: Grade shares memory on Apple Silicon

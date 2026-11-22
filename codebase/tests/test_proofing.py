@@ -55,6 +55,19 @@ def test_proof_store_cleans_its_directory_under_desktop_scratch(monkeypatch, tmp
     assert tmp_path.is_dir()
 
 
+def test_empty_desktop_proof_root_uses_system_temp(monkeypatch, tmp_path):
+    from tempfile import gettempdir
+
+    monkeypatch.setenv("HDR_FINISHER_PROOF_ROOT", "")
+    monkeypatch.chdir(tmp_path)
+    store = ProofArtifactStore()
+    try:
+        assert store.root.parent == Path(gettempdir())
+        assert not list(tmp_path.iterdir())
+    finally:
+        store.clear()
+
+
 def test_delivery_test_pattern_is_float_hdr_and_has_known_patch_range() -> None:
     response = client.get("/api/proof/test-pattern")
     assert response.status_code == 200

@@ -236,7 +236,7 @@ def _jpeg_endpoint_bands(primary, raw, artifact):
 
 class ProofArtifactStore:
     def __init__(self) -> None:
-        self.root = Path(mkdtemp(prefix="hdr_finisher_proof_", dir=os.environ.get("HDR_FINISHER_PROOF_ROOT")))
+        self.root = Path(mkdtemp(prefix="hdr_finisher_proof_", dir=os.environ.get("HDR_FINISHER_PROOF_ROOT") or None))
         self._lock = RLock()
         self._artifacts: dict[str, ProofArtifact] = {}
         self._tiles: dict[str, ProofTile] = {}

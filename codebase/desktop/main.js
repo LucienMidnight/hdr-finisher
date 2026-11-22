@@ -18,6 +18,7 @@ const {
   safeSuggestedName,
 } = require("./lib/validation");
 const { backendCommand: resolveBackendCommand } = require("./lib/runtime");
+const { createProofScratch, markProofBackend, clearProofScratch, sweepProofScratch, stopBackendProcess } = require("./lib/backend-process");
 const { distributionChannel, linuxSessionState, serializeDisplay, updatesManagedByStore } = require("./lib/display-state");
 const { cachedUpdateResult } = require("./lib/updates");
 const { DEFAULT_WINDOW_BOUNDS, clampWindowBounds } = require("./lib/window-bounds");
@@ -69,6 +70,7 @@ async function collectDeliveryMemory(level = 'moderate') {
     await require('./memory-pressure.cjs').notifyChromiumPressure(deliveryWindow.webContents, level);
 }
 let backend = null;
+let backendProcess = null;
 let mainWindow = null;
 let forceClose = false;
 let shuttingDown = false;
@@ -350,15 +352,10 @@ async function startBackend() {
   fs.mkdirSync(logsDirectory, { recursive: true });
   const logPath = path.join(logsDirectory, "backend.log");
   const {log, write:writeBackendLog, events} = getBackendLogWriter();
-  const proofScratchRoot = fs.mkdtempSync(path.join(os.tmpdir(), "hdr-proof-"));
-  const clearProofScratch = () => {
-    try {
-      fs.rmSync(proofScratchRoot, { recursive: true, force: true, maxRetries: 3 });
-    } catch (error) {
-      console.warn(`Proof scratch cleanup failed: ${error.message}`);
-    }
-  };
-  const child = spawn(command.executable, command.args, {
+  sweepProofScratch(os.tmpdir());
+  const proofScratchRoot = createProofScratch(os.tmpdir());
+  const current = backendProcess = { authoringSecret, controlSecret, log, logPath, proofScratchRoot };
+  const child = current.child = spawn(command.executable, command.args, {
     cwd: command.cwd,
     env: {
       ...process.env,
@@ -377,13 +374,16 @@ async function startBackend() {
     stdio: ["ignore", "pipe", "pipe"],
   });
   // The desktop can terminate the backend before Python's exit handlers run.
-  child.once("exit", clearProofScratch);
-  child.once("error", clearProofScratch);
+  const clearExitedBackendScratch = () => {
+    if (backendProcess === current) clearProofScratch(proofScratchRoot);
+  };
+  child.once("exit", clearExitedBackendScratch);
+  child.once("error", clearExitedBackendScratch);
   const backendStarted = Date.now();
   libraryStage("backend_process_started", { pid: child.pid });
   readline.createInterface({ input: child.stderr }).on("line", line => events.backend(line, child.pid));
 
-  const ready = await new Promise((resolve, reject) => {
+  const readiness = new Promise((resolve, reject) => {
     const timeout = setTimeout(() => reject(new Error("The image-processing backend did not become ready in time.")), 30000);
     const lines = readline.createInterface({ input: child.stdout });
     lines.on("line", (line) => {
@@ -408,21 +408,27 @@ async function startBackend() {
     });
   });
 
+  try {
+    markProofBackend(proofScratchRoot, child.pid);
+  } catch (error) {
+    console.warn(`Could not record Proof scratch ownership: ${error.message}`);
+  }
+  const ready = await readiness;
   libraryStage("backend_ready", { duration_ms: Date.now() - backendStarted });
   if (ready.protocol_version !== 1 || ready.backend_version !== app.getVersion()) {
-    child.kill();
     throw new Error(`Desktop/backend version mismatch (${app.getVersion()} / ${ready.backend_version}).`);
   }
   const url = `http://127.0.0.1:${ready.port}`;
   const health = await fetch(`${url}/health`);
   const healthPayload = await health.json();
   if (!health.ok || healthPayload.status !== "ok") {
-    child.kill();
     throw new Error("The image-processing backend failed its health check.");
   }
-  backend = { authoringSecret, controlSecret, child, log, logPath, url };
+  if (shuttingDown) return;
+  current.url = url;
+  backend = current;
   child.once("exit", (code) => {
-    if (!shuttingDown && mainWindow && !mainWindow.isDestroyed()) {
+    if (backend === current && !shuttingDown && mainWindow && !mainWindow.isDestroyed()) {
       const dirty = documentState.dirty;
       dialog.showMessageBox(mainWindow, {
         type: "error",
@@ -445,24 +451,17 @@ async function startBackend() {
 }
 
 async function stopBackend() {
-  if (!backend) return;
-  const current = backend;
-  backend = null;
-  if (current.child.exitCode === null) {
-    current.child.kill();
-    await Promise.race([
-      new Promise((resolve) => current.child.once("exit", resolve)),
-      new Promise((resolve) => setTimeout(resolve, 3000)),
-    ]);
-    if (current.child.exitCode === null) {
-      if (process.platform === "win32") {
-        spawn("taskkill.exe", ["/PID", String(current.child.pid), "/T", "/F"], { windowsHide: true });
-      } else {
-        current.child.kill("SIGKILL");
-      }
-    }
+  if (!backendProcess) return;
+  const current = backendProcess;
+  backend = backendProcess = null;
+  try {
+    if (current.child) await stopBackendProcess(current.child);
+  } catch (error) {
+    console.warn(`Backend termination failed: ${error.message}`);
+  } finally {
+    clearProofScratch(current.proofScratchRoot);
+    current.log.end();
   }
-  current.log.end();
 }
 
 async function grantPath(filePath, intent) {
@@ -1591,6 +1590,8 @@ if (!gotLock) {
         duration_ms: Date.now() - libraryAppStarted,
       });
       splash?.close();
+      await stopBackend();
+      if (shuttingDown) return;
       await dialog.showMessageBox({ type: "error", title: "HDR Finisher could not start", message: "HDR Finisher could not start its image-processing backend.", detail: error.message, buttons: ["Quit"] });
       beginShutdown();
     }
