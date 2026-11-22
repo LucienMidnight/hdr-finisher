@@ -6,8 +6,9 @@ megapixel on the minimum Mac (``export_timing`` records, November 22). Stages
 that will not run get no weight. While the export runs, a stage's share moves
 with its loop ticks (Grain tiles, strips, Film Grain chunks, local tiles, Y4M
 bands) or, where a stage has no loop, with its own elapsed time against its
-expected cost, never past 95% until its lane finishes. The reported fraction
-never goes backwards.
+expected cost. A stage that runs past its estimate keeps creeping towards
+done without reaching it, so the bar never stalls; its lane finishing counts
+it whole. The reported fraction never goes backwards.
 
 The costs set only how the bar is divided between stages; a wrong estimate
 moves the bar unevenly but cannot stall it or run it backwards.
@@ -15,6 +16,7 @@ moves the bar unevenly but cannot stall it or run it backwards.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import math
 import threading
 from time import monotonic
 
@@ -51,7 +53,17 @@ LABELS = {
     "finish": "Finishing",
 }
 _FINISHING = {"validate", "metadata", "ceiling_verify"}
-_STAGE_CAP = 0.95
+_KNEE = 0.9  # Share of a stage reached at 90% of its expected time.
+
+
+def timed_share(elapsed: float, expected: float) -> float:
+    """A stage's share from its own time: linear, then creeping towards done."""
+    if expected <= 0.0:
+        return 0.0
+    ratio = elapsed / expected
+    if ratio <= _KNEE:
+        return ratio
+    return 1.0 - (1.0 - _KNEE) * math.exp(-(ratio - _KNEE) / 0.5)
 
 
 @dataclass
@@ -105,8 +117,7 @@ class ExportProgress:
         else:
             elapsed = self.clock.elapsed(lane, stage)
             ticked = self._ticks.get(key, 0.0)
-        timed = min(_STAGE_CAP, elapsed / expected) if expected > 0 else 0.0
-        return min(_STAGE_CAP, max(ticked, timed))
+        return max(ticked, timed_share(elapsed, expected))
 
     def fraction(self) -> float:
         total = self.plan.total

@@ -56,8 +56,8 @@ def test_progress_follows_ticks_and_lanes_and_never_goes_back():
                 tick(done, 4)
                 seen.append(progress.fraction())
             assert progress.label() == "Rendering HDR"
-        # Ticks cap a running stage below done; the finished lane counts whole.
-        assert seen[-1] == pytest.approx(.95 / 3, abs=.01)
+        # A finished loop counts its stage whole, as does its lane finishing.
+        assert seen[-1] == pytest.approx(1 / 3, abs=.01)
         seen.append(progress.fraction())
         assert seen[-1] == pytest.approx(1 / 3, abs=.01)
         with lane("sdr"), stage("film_grain"):
@@ -88,6 +88,15 @@ def test_photo_progress_moves_during_development_and_continues_from_it():
             pass
         halfway = photo.fraction()
         assert halfway == pytest.approx(photo.base + (1 - photo.base) / 2, abs=.01)
+
+
+def test_a_stage_past_its_estimate_keeps_moving_without_reaching_done():
+    from hdr_finisher.export_progress import timed_share
+    shares = [timed_share(elapsed, 5.0) for elapsed in (0, 2.5, 4.5, 5.0, 6.0, 8.0, 15.0)]
+    assert shares == sorted(set(shares)) and shares[-1] < 1.0
+    assert timed_share(4.5, 5.0) == pytest.approx(.9)
+    # Past the estimate, a half-second update still moves a 5% stage visibly.
+    assert (timed_share(10.5, 5.0) - timed_share(10.0, 5.0)) * .05 > 1e-4
 
 
 def test_remaining_time_waits_for_enough_progress():
