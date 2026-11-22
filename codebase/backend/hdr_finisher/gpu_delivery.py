@@ -249,8 +249,10 @@ def _render_pair(frame, owner, settings, adjustments):
                 "Native GPU delivery working set does not fit the existing app memory ceiling; using bounded CPU strips."}
             return None
         if grain_reconstruction and not grain_trial:
+            # The log keeps the reason code; the export result says it in plain words.
             reason = "cpu_delivery_policy"
-            record = {"renderer": "cpu", "fallback_reason": "GPU Grain delivery has not qualified for default use."}
+            record = {"renderer": "cpu", "fallback_reason":
+                "Exported on the CPU. Graphics-card export for Clean Grain is still being tested."}
             return None
         if root is None or not (root / "heartbeat").exists() or time.time() - (root / "heartbeat").stat().st_mtime > 5:
             cacheable = False
