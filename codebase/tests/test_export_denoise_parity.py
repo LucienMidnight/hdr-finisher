@@ -290,3 +290,71 @@ def test_adaptive_is_the_only_method() -> None:
         DenoiseDocumentSettings.model_validate(
             {"hdr": {"analysis": {"algorithm_version": "compact-haar-residual-v1"}}},
         )
+
+
+@pytest.fixture(scope="module")
+def pre_file_delivery_exporters():
+    from pathlib import Path
+    import subprocess
+    import sys
+    from types import ModuleType
+
+    from hdr_finisher import exporters
+
+    blob = "9b4c8a69:codebase/backend/hdr_finisher/exporters.py"
+    try:
+        source = subprocess.check_output(
+            ["git", "cat-file", "blob", blob], cwd=Path(__file__).resolve().parents[2], stderr=subprocess.DEVNULL)
+    except (OSError, subprocess.CalledProcessError):
+        pytest.skip("The pre-file-delivery revision is unavailable")
+    module = ModuleType("hdr_finisher.exporters_before_file_delivery")
+    module.__package__ = exporters.__package__
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setitem(sys.modules, module.__name__, module)
+        exec(compile(source, blob, "exec"), module.__dict__)
+        yield module
+
+
+@pytest.mark.parametrize("format_name", ["avif_gain_map", "jpeg_ultrahdr"])
+@pytest.mark.parametrize("denoise", ["off", "both", "hdr_only"])
+@pytest.mark.parametrize("highlights", [False, True])
+@pytest.mark.parametrize("linked", [False, True])
+def test_cpu_delivery_preserves_measurements_before_file_delivery(
+    monkeypatch, tmp_path, pre_file_delivery_exporters, format_name, denoise, highlights, linked,
+):
+    from hdr_finisher import exporters, gpu_delivery
+    from hdr_finisher.models import CapabilityInfo, CapabilityStatus, ExportSettings
+
+    monkeypatch.setattr(gpu_delivery, "render_pair", lambda *args: None)
+    session = _session(_document(enabled=denoise != "off"), _noisy(130, 64) * .4)
+    session.denoise.sdr.enabled = denoise == "both"
+    session.denoise.sdr.controls.method = "standard"
+    session.sdr_reference_image = _noisy(130, 64, seed=5) * .4
+    session.adjustments.sdr.use_authored_base = True
+    session.adjustments.sdr.linked_to_hdr = linked
+    for lane in (session.adjustments.hdr, session.adjustments.sdr):
+        lane.highlight_section_enabled = highlights
+        lane.highlight_compression_mode = "peak_fit"
+        lane.highlight_compression_peak_measurement = "robust"
+
+    name, suffix = (
+        ("AVIFGainMapExportBackend", ".avif") if format_name == "avif_gain_map"
+        else ("JPEGUltraHDRExportBackend", ".jpg")
+    )
+    binary = "avifgainmaputil" if format_name == "avif_gain_map" else "ultrahdr_app"
+    if exporters.resolve_binary(binary) is None:
+        pytest.skip(f"{binary} is unavailable")
+    capability = CapabilityInfo(name=format_name, status=CapabilityStatus.AVAILABLE, detail="")
+    measurements = {"hdr": {"peak": .3, "anchor": .4}, "sdr": {"peak": .5, "anchor": .3}}
+
+    def export(module, label):
+        path = tmp_path / f"{label}{suffix}"
+        settings = ExportSettings(format=format_name, output_path=str(path), editing_measurements=measurements)
+        result = getattr(module, name)(capability).export(session, settings)
+        assert result.accepted, result.message
+        return settings._exact_measurements, result.measurement_warnings, path.read_bytes()
+
+    expected = export(pre_file_delivery_exporters, "previous")
+    actual = export(exporters, "current")
+    assert actual[:2] == expected[:2]
+    assert actual[2] == expected[2]

@@ -118,6 +118,8 @@ class StripReport:
     refusals: tuple[str, ...] = ()
     measured_peak_transient_bytes: int | None = None
     scope_peak_value: float | None = None
+    delivery_anchor: float | None = None
+    linear_sdr_peak: float | None = None
 
     def payload(self) -> dict[str, object]:
         return {
@@ -310,6 +312,7 @@ def render_in_strips(
     is_current: Callable[[], bool] | None = None,
     allocate_output: Callable[[tuple[int, int, int]], np.ndarray] | None = None,
     parallel_sdr_output: bool = False,
+    measure_delivery: bool = False,
 ) -> tuple[np.ndarray, StripReport]:
     """Render the selected lane strip by strip and return the whole frame.
 
@@ -377,12 +380,14 @@ def render_in_strips(
                 frame_window=window(top),
             )
             report.strips_rendered += 1
-            if sdr.highlight_section_enabled:
+            if sdr.highlight_section_enabled or measure_delivery:
                 signal = sdr_highlight_peak_signal(output[top:bottom], sdr)
                 if signal is not None:
                     reducer.observe(signal)
         measured = reducer.value()
-        if measured is not None:
+        if measure_delivery:
+            report.delivery_anchor = measured
+        if measured is not None and sdr.highlight_section_enabled:
             anchor = HighlightAnchor(sdr_peak=measured)
             passes.append("sdr-anchor")
 
@@ -405,7 +410,8 @@ def render_in_strips(
         passes.append("sdr-output")
     else:
         anchor, passes_used = _render_hdr_strips(
-            image, adjustments, plan, region, check, output, color_context, source_pixel_scale, report, window
+            image, adjustments, plan, region, check, output, color_context, source_pixel_scale, report, window,
+            measure_delivery=measure_delivery,
         )
         passes.extend(passes_used)
 
@@ -416,10 +422,17 @@ def render_in_strips(
     from .scopes import scope_peak_value
 
     peak = 0.0
+    weights = np.array([.2126, .7152, .0722], dtype=np.float32) if measure_delivery and kind == PreviewKind.SDR else None
+    linear_peak = -np.inf
     for index, (top, bottom) in enumerate(plan.strips):
         check(index)
-        peak = max(peak, scope_peak_value(output[top:bottom], kind, color_context))
+        pixels = output[top:bottom]
+        peak = max(peak, scope_peak_value(pixels, kind, color_context))
+        if weights is not None:
+            linear_peak = np.maximum(linear_peak, np.max(pixels @ weights))
     report.scope_peak_value = peak
+    if weights is not None:
+        report.linear_sdr_peak = float(linear_peak)
     passes.append("scope-peak")
 
     report.passes = tuple(passes)
@@ -441,6 +454,8 @@ def _render_hdr_strips(
     source_pixel_scale: float,
     report: StripReport,
     window: Callable[[int], FrameWindow],
+    *,
+    measure_delivery: bool,
 ) -> tuple[HighlightAnchor | None, list[str]]:
     """Render the HDR lane, staging the output highlight pass over the buffer.
 
@@ -451,6 +466,8 @@ def _render_hdr_strips(
     graph twice.
     """
     hdr = adjustments.hdr
+    robust = hdr.highlight_compression_peak_measurement == "robust"
+    delivery_peak = _PeakReducer(plan.width * plan.height, robust=robust) if measure_delivery else None
     if not hdr.highlight_section_enabled:
         for index, (top, bottom) in enumerate(plan.strips):
             check(index)
@@ -463,10 +480,15 @@ def _render_hdr_strips(
                 frame_window=window(top),
             )
             report.strips_rendered += 1
+            if delivery_peak is not None:
+                signal = hdr_highlight_peak_signal(output[top:bottom], hdr)
+                if signal is not None:
+                    delivery_peak.observe(signal)
+        if delivery_peak is not None:
+            report.delivery_anchor = delivery_peak.value()
         return None, ["render"]
 
     mode = str(hdr.highlight_compression_mode)
-    robust = str(getattr(hdr, "highlight_compression_peak_measurement", "maximum")) == "robust"
     peak_reducer = _PeakReducer(plan.width * plan.height, robust=robust)
     clip_reducer = _PeakReducer(plan.width * plan.height * 3, robust=False)
     measured_peak = False
@@ -488,10 +510,19 @@ def _render_hdr_strips(
         if signal is not None and signal.size:
             measured_peak = True
             peak_reducer.observe(signal)
+        if delivery_peak is not None and signal is not None:
+            # Whole-frame export measures after the HDR grade has clamped RGB.
+            # The strip shoulder still uses its original unclamped anchor.
+            del signal
+            delivery_signal = hdr_highlight_peak_signal(np.maximum(graded, 0.0), hdr)
+            delivery_peak.observe(delivery_signal)
+            del delivery_signal
         if mode == "clip":
             clip_reducer.observe(hdr_output_transport_signal(graded))
         report.strips_rendered += 1
 
+    if delivery_peak is not None:
+        report.delivery_anchor = delivery_peak.value()
     peak_nits = None
     if measured_peak:
         measured = peak_reducer.value()

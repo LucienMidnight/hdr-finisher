@@ -292,8 +292,9 @@ def _render_unwatermarked_branch(
     # AVIF's prepared source is only for CPU rendering. Its GPU admission
     # still uses the same graph and checks as before.
     avif = settings.format == "avif_gain_map"
+    avif_denoise = avif and denoise_settings_for_export(session, kind) is not None
     gpu_prepared_denoise = not avif and denoise_source is not None
-    gpu_bounded = bounded and not (avif and denoise_settings_for_export(session, kind))
+    gpu_bounded = bounded and not avif_denoise
     if gpu_bounded and not streamed_delivery_enabled(session, settings, adjustments) and (not gpu_prepared_denoise or settings.format == "sdr_jpeg" or all(
         _bounded_export_eligible(session, settings, lane, adjustments, prepared_denoise=True)
         for lane in (PreviewKind.HDR, PreviewKind.SDR)
@@ -340,17 +341,20 @@ def _render_unwatermarked_branch(
         source, strip_adjustments = session.image, adjustments
         if denoise_source is not None:
             source, reference, strip_adjustments = denoise_source(kind)
+        measure_delivery = avif_denoise and kind.value in settings.editing_measurements
         image, report = render_in_strips(source, strip_adjustments, kind,
             sdr_reference_image=reference, color_context=color_context,
             allocate_output=allocate_output,
-            parallel_sdr_output=True)
+            parallel_sdr_output=True, measure_delivery=measure_delivery)
         if kind.value in settings.editing_measurements:
             peak = report.scope_peak_value
             if kind == PreviewKind.HDR:
                 peak *= .18 / color_context.hdr_reference_white_nits
-            measurement = {"peak": peak}
-            anchor = report.anchor
-            if anchor is not None:
+            measurement = {"peak": report.linear_sdr_peak if measure_delivery and kind == PreviewKind.SDR else peak}
+            if measure_delivery:
+                if report.delivery_anchor is not None:
+                    measurement["anchor"] = report.delivery_anchor
+            elif (anchor := report.anchor) is not None:
                 measured = anchor.hdr_source_peak_nits if kind == PreviewKind.HDR else anchor.sdr_peak
                 if measured is not None:
                     measurement["anchor"] = measured * .18 / color_context.hdr_reference_white_nits if kind == PreviewKind.HDR else measured
