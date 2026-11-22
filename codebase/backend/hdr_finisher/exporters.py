@@ -1923,10 +1923,12 @@ def _write_sdr_y4m(
 ) -> None:
     if bit_depth not in {8, 10, 12}:
         raise ValueError(f"Unsupported AVIF bit depth: {bit_depth}")
+    from .export_parallel import ordered_map
     with closing(row_bands(image, _AVIF_Y4M_BAND_ROWS)) as pixels:
-        bands = (
-            _linear_sdr_to_yuv(band, bit_depth, dithering, index * _AVIF_Y4M_BAND_ROWS)
-            for index, band in enumerate(pixels)
+        # Frame bands share one read buffer, so each converted band gets its own copy.
+        bands = ordered_map(
+            lambda item: _linear_sdr_to_yuv(item[1], bit_depth, dithering, item[0] * _AVIF_Y4M_BAND_ROWS),
+            ((index, np.array(band)) for index, band in enumerate(pixels)),
         )
         write_y4m_bands(path, *image.shape[:2], bands, bit_depth=bit_depth, chroma_subsampling=chroma_subsampling)
 
@@ -1962,8 +1964,10 @@ def _write_hdr_y4m(
         raise ValueError(f"Unsupported AVIF bit depth: {bit_depth}")
     if chroma_subsampling not in {"420", "422", "444"}:
         raise ValueError(f"Unsupported AVIF chroma subsampling: {chroma_subsampling}")
+    from .export_parallel import ordered_map
     with closing(row_bands(image, _AVIF_Y4M_BAND_ROWS)) as pixels:
-        bands = (_linear_to_bt2020_pq_yuv(band, bit_depth, reference_white_nits) for band in pixels)
+        bands = ordered_map(lambda band: _linear_to_bt2020_pq_yuv(band, bit_depth, reference_white_nits),
+                            (np.array(band) for band in pixels))
         write_y4m_bands(path, *image.shape[:2], bands, bit_depth=bit_depth, chroma_subsampling=chroma_subsampling)
 
 

@@ -98,11 +98,12 @@ def apply_detail(
     gain = np.exp2(delta).astype(np.float32)
     result = image.astype(np.float32, copy=False) * gain[..., None]
     # Detail precedes Film Look. Preserve SDR headroom for its shoulder;
-    # the lane applies its display-white ceiling after finishing.
-    clipped = result.astype(np.float32)
+    # the lane applies its display-white ceiling after finishing. Both arrays
+    # below are new float32 frames, so no further copy is made.
+    clipped = result.astype(np.float32, copy=False)
     # Preserve exact source samples wherever all selected bands made no change;
     # merely enabling Detail must never alter or soften the image.
-    return np.where((np.abs(delta) > 1e-7)[..., None], clipped, image).astype(np.float32)
+    return np.where((np.abs(delta) > 1e-7)[..., None], clipped, image).astype(np.float32, copy=False)
 
 
 # Clarity's base is built on a brightness pyramid: box-average the log
@@ -253,6 +254,11 @@ def _texture_edge_weight(log_luma: np.ndarray, coarse: np.ndarray, coarse_radius
 
 
 def _box_blur_axis(values: np.ndarray, radius: int, axis: int) -> np.ndarray:
+    from .export_parallel import blur_axis_in_blocks
+    return blur_axis_in_blocks(_box_blur_axis_lines, values, radius, axis)
+
+
+def _box_blur_axis_lines(values: np.ndarray, radius: int, axis: int) -> np.ndarray:
     if radius <= 0:
         return values
     padding = [(0, 0)] * values.ndim

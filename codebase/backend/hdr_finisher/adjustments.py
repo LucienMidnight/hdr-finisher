@@ -2090,6 +2090,11 @@ def _film_radius_pixels(
 
 
 def _box_blur_axis(image: np.ndarray, radius: int, axis: int) -> np.ndarray:
+    from .export_parallel import blur_axis_in_blocks
+    return blur_axis_in_blocks(_box_blur_axis_lines, image, radius, axis)
+
+
+def _box_blur_axis_lines(image: np.ndarray, radius: int, axis: int) -> np.ndarray:
     if radius <= 0:
         return image
     pads = [(0, 0)] * image.ndim
