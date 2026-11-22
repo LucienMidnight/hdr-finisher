@@ -461,7 +461,10 @@
   let restoring = 0;
   function setActive(active) {
     state.active = active;
-    if(active)for(const entry of gradeHandoffs.values())entry.returnedAt=Date.now();
+    if(active)for(const entry of gradeHandoffs.values()){
+      entry.returnedAt=Date.now();
+      entry.resumeThumbnailDraw?.();
+    }
     // Runs after this paint (queued work), on every return path.
     if (active) replaceDeferredGradeThumbnails();
     // Docking sends the saved place and then activates; the restore opens and
@@ -2419,6 +2422,22 @@
         entry.captured_lane=packet.lane;
         if((state.hdr?"hdr":"sdr")===packet.lane)await replaceGradeThumbnail(packet);
       } else if(packet.stage==="sources") {
+        // A zoomed CPU Micro edit and its next rendition share the same
+        // reduced source. Avoid drawing new tiles for a hidden Library while
+        // that working set is live. A visible Library can draw immediately.
+        if(!state.active&&!standalone&&parent.HDRLibraryHost?.deferThumbnailDraw?.()){
+          const signal=entry.controller.signal;
+          await new Promise(resolve=>{
+            const resume=()=>{
+              signal.removeEventListener("abort",resume);
+              entry.resumeThumbnailDraw=null;
+              resolve();
+            };
+            entry.resumeThumbnailDraw=resume;
+            signal.addEventListener("abort",resume,{once:true});
+          });
+        }
+        if(!current())return;
         const lane=state.hdr?"hdr":"sdr";
         // Only this edit's missing lanes are finished. This is explicit
         // hand-off work, never idle, neighbour or ahead development.
