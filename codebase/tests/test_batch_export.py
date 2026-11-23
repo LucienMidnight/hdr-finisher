@@ -623,3 +623,13 @@ def test_closed_queue_rejects_new_jobs(tmp_path):
     with pytest.raises(ValueError, match="closing"):
         queue.start(["photo.raw"], preset(), tmp_path)
     assert not queue.jobs
+
+
+def test_large_avif_memory_warning_gates_on_ram_and_megapixels():
+    from hdr_finisher.exporters import _large_avif_memory_warning
+
+    assert _large_avif_memory_warning((5320, 7968, 3), ram_bytes=8 * 1024**3) is None
+    assert _large_avif_memory_warning((6354, 9600, 3), ram_bytes=16 * 1024**3) is None
+    assert _large_avif_memory_warning((8334, 12000, 3), ram_bytes=32 * 1024**3) is None
+    warning = _large_avif_memory_warning((6354, 9600, 3), ram_bytes=8 * 1024**3)
+    assert warning is not None and "50 MP" in warning and "HDR JPEG XL" in warning

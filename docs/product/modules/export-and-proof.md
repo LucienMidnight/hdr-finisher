@@ -82,14 +82,18 @@ with Santorini edits, the batch worker stays at 1.43 GB while Grade's own
 interactive 100 MP preview/mask caches bring the whole app to 4.91–5.27 GB.
 [Steps 3–6 measurements](../../technical/performance-table.md#november-23-2026--macbook-neo-grade-open-sharing--native-encoder-probe-steps-56).
 
-**Export-memory Step 6 (native encoder limits, pending Steve's decision).**
+**Export-memory Step 6 (native encoder limits, Steve's decision November 23, 2026).**
 Bundled `avifgainmaputil combine` peaks at 2.47 GB (42 MP), 3.45 GB (61 MP) and
 5.54 GB (100 MP) regardless of `--grid` (`4×2` / `4×4` cuts `avifdec` decode RAM
 up to 9× but leaves `combine` unchanged), and `avifenc -j` leaves libaom RAM flat.
-`ultrahdr_app` enforces an upstream `8192 × 8192` dimension cap. No byte-changing
-encoder option has been enabled; 61–100 MP native AVIF on 8 GB machines awaits
-Steve's choice between an 8 GB preflight recommendation toward HDR JPEG XL or a
-byte-changing custom tiled-grid libavif encoder.
+`ultrahdr_app` enforces an upstream `8192 × 8192` dimension cap. For now, the app
+keeps single-tile AVIF output bytes 100% unchanged and shows a non-blocking
+warning on machines with under 16 GB RAM when exporting native-size AVIF gain
+maps above 50 MP (suggesting resizing or HDR JPEG XL).
+*Future area to consider:* a custom tiled-grid `libavif` encoder helper (similar
+to `hdrf-avif-decode`) could bring 100 MP AVIF encoding well below 4 GB and cut
+AVIF decode RAM up to 9×, at the cost of changing AVIF outputs to standard ISO
+grid AVIF with full viewer, Proof and HDR-ceiling qualification.
 
 ## November 22 — File-backed AVIF delivery and full-size Proof
 

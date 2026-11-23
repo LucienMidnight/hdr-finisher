@@ -119,6 +119,7 @@ async function loadCapabilities() {
   const response = await fetch("/api/capabilities");
   const data = await response.json();
   state.capabilities = data.capabilities;
+  state.machineRamBytes = Number(data.ram_bytes) || null;
 }
 
 async function loadDefaultExportDirectory() {
@@ -554,6 +555,22 @@ function renderFormatCards() {
   applyExportOptionTooltips();
   if (!sourceMetadataApplicable) els.exportMetadataPolicy.title = els.exportMetadataPolicyNote.textContent;
   if (!ditherApplicable) els.exportDithering.title = els.exportDitheringNote.textContent;
+  const avifRamWarning = largeAvifMemoryWarning();
+  if (avifRamWarning) {
+    els.exportStatus.textContent = avifRamWarning;
+  } else if (els.exportStatus?.textContent?.includes("Native AVIF above 50 MP")) {
+    els.exportStatus.textContent = state.lastExportMessage || "Choose a format and destination.";
+  }
+}
+
+function largeAvifMemoryWarning() {
+  if (!(state.machineRamBytes > 0 && state.machineRamBytes < 16 * 1024 ** 3)) return "";
+  if (els.exportFormat?.value !== "avif_gain_map") return "";
+  if ((els.exportResizeMode?.value || "original") !== "original") return "";
+  const width = Number(state.session?.source?.width) || 0;
+  const height = Number(state.session?.source?.height) || 0;
+  if (width * height <= 50_000_000) return "";
+  return "Native AVIF above 50 MP uses heavy memory on machines with under 16 GB RAM and may swap or fail. Resize down or use HDR JPEG XL if needed.";
 }
 
 function formatChroma(value) {

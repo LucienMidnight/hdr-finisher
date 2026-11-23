@@ -661,7 +661,8 @@ def save_desktop_project(session_id: str, request: DesktopProjectSaveRequest) ->
 
 @app.get("/api/capabilities")
 def api_capabilities() -> dict[str, object]:
-    return {"capabilities": get_capabilities()}
+    from .app_memory import machine_memory
+    return {"capabilities": get_capabilities(), "ram_bytes": machine_memory()}
 
 
 @app.get("/api/film-stocks")

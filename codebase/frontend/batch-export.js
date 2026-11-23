@@ -74,6 +74,7 @@
   const HDR_FORMATS=["avif_gain_map","jpeg_ultrahdr","jpegxl_hdr"];
   // An SDR-only photo only loses something when the preset has an HDR version.
   function hdrSkipped(photo,versions=model.draft?.versions||[]){return !!photo.sdr_only&&versions.some(v=>HDR_FORMATS.includes(v.settings.format));}
+  function largeAvifRisk(photo,versions=model.draft?.versions||[]){return Boolean(state.machineRamBytes>0&&state.machineRamBytes<16*1024**3&&(photo.megapixels||0)>50&&versions.some(v=>v.settings.format==="avif_gain_map"&&(v.settings.output_finishing?.resize_mode||"original")==="original"));}
   const OUTCOMES={exported:"Exported",renamed:"Renamed",skipped:"Skipped",failed:"Failed"};
   // The written file relative to the export folder, keeping its sub-folder.
   function writtenName(output,directory){if(!output)return "—";const unify=value=>String(value).replace(/\\/g,"/").replace(/\/+$/,"");const file=unify(output),folder=directory?unify(directory)+"/":"";const relative=folder&&file.toLowerCase().startsWith(folder.toLowerCase())?file.slice(folder.length):file.split("/").pop();return String(output).includes("\\")?relative.replace(/\//g,"\\"):relative;}
@@ -109,7 +110,7 @@
     $("batch-footer-count").hidden=true;
     const files=model.photos.reduce((n,p)=>n+fileCount(p),0);
     $("batch-count").textContent=`${model.photos.length} ${model.photos.length===1?"photo":"photos"} · ${model.draft.versions.length} ${model.draft.versions.length===1?"version":"versions"} · ${files} ${files===1?"file":"files"}${model.selected.size?` · ${model.selected.size} selected`:""}`;
-    const flagged=model.photos.filter(p=>p.unsaved||hdrSkipped(p)).length;
+    const flagged=model.photos.filter(p=>p.unsaved||hdrSkipped(p)||largeAvifRisk(p)).length;
     $("batch-notice").hidden=!flagged;
     $("batch-notice").textContent=`${flagged} ${flagged===1?"photo needs":"photos need"} a look before exporting. Details are on each photo below.`;
     $("batch-empty").hidden=!!model.photos.length;
@@ -141,7 +142,7 @@
       row.setAttribute("aria-selected",String(model.selected.has(p.path)));
       const picture=row.firstChild;
       const caption=row.lastChild;caption.replaceChildren(node("strong",p.name+(p.copy_name?` · ${p.copy_name}`:"")),node("small",`${fileCount(p)} ${fileCount(p)===1?"file":"files"}`));
-      for(const flag of [p.unsaved?"Unsaved changes in Grade · last saved grade used":"",hdrSkipped(p)?"SDR only · HDR version skipped":""])if(flag)caption.append(node("span",flag,"batch-flag"));
+      for(const flag of [p.unsaved?"Unsaved changes in Grade · last saved grade used":"",hdrSkipped(p)?"SDR only · HDR version skipped":"",largeAvifRisk(p)?"Native AVIF above 50 MP may swap or fail under 16 GB RAM · resize or use HDR JPEG XL":""])if(flag)caption.append(node("span",flag,"batch-flag"));
       picture.querySelectorAll(".batch-badge,progress").forEach(e=>e.remove());
       const results=model.job?.results.filter(r=>r.photo===p.path)||[],active=model.job?.active_photo===p.path&&!terminal(model.job);
       const skipped=results.filter(r=>r.outcome==="skipped").length,failed=results.some(r=>r.outcome==="failed");

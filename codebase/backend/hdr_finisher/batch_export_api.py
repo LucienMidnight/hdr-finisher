@@ -41,9 +41,17 @@ def create_batch_router(store, grants=None, desktop=False):
             if not grade and current and current.interpretation_override == SourceInterpretationOverride() and Path(current.source_path).resolve() == source.resolve():
                 sdr_only = current.analysis.classification.value == "SDR_ONLY"
                 compatibility = "known"
+            width = height = None
+            if current and Path(current.source_path).resolve() == source.resolve():
+                width, height = current.source.width, current.source.height
+            elif isinstance(grade, dict) and isinstance(grade.get("source"), dict):
+                width, height = grade["source"].get("width"), grade["source"].get("height")
+            if not (width and height):
+                width, height = facts.get("width"), facts.get("height")
+            megapixels = round((int(width) * int(height)) / 1_000_000, 1) if width and height else None
             return {"path":key,"source_path":str(source),"name":document.get("name") or source.name,"copy_name":document.get("name", "") if "|copy|" in key else "",
                     "grade":grade,"rating":document.get("marks",{}).get("rating",0),"capture_time":facts.get("capture_time"),"unsaved":unsaved,
-                    "sdr_only":sdr_only,"hdr_compatibility":compatibility}
+                    "sdr_only":sdr_only,"hdr_compatibility":compatibility,"megapixels":megapixels}
     queue = BatchExports(snapshot, shared_source=lambda photo, directory: share_grade_source(store, photo, directory))
     store.batch_exports = queue
     store.batch_export = queue

@@ -1174,6 +1174,7 @@ function bindEvents() {
   els.exportResizeMode?.addEventListener("change", () => {
     markExportPresetCustom();
     renderOutputFinishingControls();
+    renderFormatCards();
   });
   [els.exportLongEdge, els.exportWidth, els.exportHeight].forEach((control) => control?.addEventListener("change", markExportPresetCustom));
   els.exportPreventEnlargement?.addEventListener("change", markExportPresetCustom);

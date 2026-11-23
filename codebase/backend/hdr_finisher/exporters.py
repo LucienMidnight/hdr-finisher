@@ -1116,11 +1116,38 @@ class SDRJPEGXLExportBackend(ExportBackend):
             )
 
 
+LARGE_AVIF_WARN_PIXELS = 50_000_000
+LARGE_AVIF_WARN_RAM_BYTES = 16 * 1024**3
+
+
+def _large_avif_memory_warning(shape: tuple[int, ...], *, ram_bytes: int | None = None) -> str | None:
+    pixels = int(shape[0]) * int(shape[1]) if len(shape) >= 2 else 0
+    if pixels <= LARGE_AVIF_WARN_PIXELS:
+        return None
+    if ram_bytes is None:
+        from .app_memory import machine_memory
+        ram_bytes = machine_memory()
+    if int(ram_bytes) >= LARGE_AVIF_WARN_RAM_BYTES:
+        return None
+    return (
+        "Native AVIF above 50 MP uses heavy memory on machines with under 16 GB RAM "
+        "and may swap or fail. Resize down or use HDR JPEG XL if needed."
+    )
+
+
 def write_avif_gainmap_renditions(staged_output, hdr_image, sdr_image, settings, reference_white_nits=203, *, gainmaputil=None, timings_ms=None, ceiling_nits=None, encoding_allowance=0.0, notes=None):
     """Encode finished renditions; also used by Library pictures. No rendering.
 
     The decoded peak is checked with the selected encoding allowance (hdr_ceiling).
     """
+    warning = _large_avif_memory_warning(hdr_image.shape)
+    if warning:
+        from .diagnostics import log as diagnostic
+        diagnostic("export", "large_avif_memory_warning", level="warn",
+                   width_px=int(hdr_image.shape[1]), height_px=int(hdr_image.shape[0]),
+                   megapixels=round((int(hdr_image.shape[0]) * int(hdr_image.shape[1])) / 1_000_000, 1))
+        if notes is not None and warning not in notes:
+            notes.append(warning)
     def encode(hdr):
         _write_avif_gainmap_once(staged_output, hdr, sdr_image, settings, reference_white_nits,
             gainmaputil=gainmaputil, timings_ms=timings_ms)
