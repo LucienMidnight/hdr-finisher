@@ -58,6 +58,26 @@ def test_jxl_hdr_plans_sdr_only_for_a_proof(tmp_path):
         store.clear()
 
 
+def test_fused_film_stock_is_credited_by_grain_ticks(tmp_path):
+    store, session = _session(tmp_path)
+    try:
+        look = session.adjustments.hdr.film_look
+        look.film_stock = "kodak_portra_400"
+        settings = _settings(tmp_path, resize_mode="long_edge", long_edge=36)
+        stock_only = plan_export(session, settings, session.adjustments)
+        look.grain_enabled, look.grain_amount = True, 40
+        combined = plan_export(session, settings, session.adjustments)
+        assert ("hdr", "film_stock") not in combined.items
+        with export_clock() as clock:
+            progress = ExportProgress(clock, combined)
+            with lane("hdr"), stage("film_grain"):
+                before = progress.fraction()
+                tick(1, 1)
+                assert (progress.fraction() - before) * combined.total >= stock_only.items["hdr", "film_stock"]
+    finally:
+        store.clear()
+
+
 def test_linked_sdr_plan_uses_hdr_grade_and_full_single_lane_denoise_weight(tmp_path):
     store, session = _session(tmp_path)
     try:

@@ -134,9 +134,17 @@ def compose(image, layout, colors):
         raise ValueError("Photo pixels do not match the framing content rectangle")
     frame, border = colors
     result = np.empty((layout.height, layout.width, 3), dtype=np.float32)
-    result[:] = border
-    b = layout.border
-    result[b:layout.height-b or None, b:layout.width-b or None] = frame
     x, y, width, height = layout.photo
+    rim = layout.border
+    right, bottom = layout.width - rim, layout.height - rim
+    if rim:
+        result[:rim] = border
+        result[bottom:] = border
+        result[rim:bottom, :rim] = border
+        result[rim:bottom, right:] = border
+    result[rim:y, rim:right] = frame
+    result[y+height:bottom, rim:right] = frame
+    result[y:y+height, rim:x] = frame
+    result[y:y+height, x+width:right] = frame
     result[y:y+height, x:x+width] = image
     return result

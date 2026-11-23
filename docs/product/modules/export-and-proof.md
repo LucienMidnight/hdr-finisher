@@ -38,6 +38,14 @@ smaller of two float32 frames and 192 MiB for parallel scratch, with at
 least one chunk. JPEG XL releases shared masks before encoding. The progress
 bar follows the actual HDR and SDR renditions and the JPEG XL encoding stage.
 
+**Export-memory Step 1, pending integration.** CPU Tone and Color, Global HSL,
+vignette and output sharpen process rows without changing pixels. Film Grain
+feeds Film Stock in the original stock-sized batches rather than keeping a
+whole-image density map. Both Sony AVIF profiles match their golden hashes.
+Profile A's peak is lower but still above the worker target; spilling the
+decoded source and measuring with Grade open remain open.
+[Step 1 measurements](../../technical/performance-table.md#november-23-2026--macbook-neo-whole-frame-export-memory-step-1).
+
 ## November 22 — File-backed AVIF delivery and full-size Proof
 
 AVIF delivery stores Grain and finished frames in files owned by the export

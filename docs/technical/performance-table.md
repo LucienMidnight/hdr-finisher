@@ -1,3 +1,24 @@
+## November 23, 2026 — MacBook Neo whole-frame export memory (Step 1)
+
+MacBook Neo (A18 Pro, 8 GB), macOS 27, headless one-worker batch under the
+shared lock; Sony 42 MP `_DSC7970.ARW`, AVIF gain map, same grades and presets
+as Step 0. Step 1 is the working tree on `bcd6c16a`. Decimal GB.
+
+| Profile | Wall time, Step 0 → Step 1 | Process tree peak | Worker peak | Worker during `encode/encode` | SHA-256 |
+| --- | ---: | ---: | ---: | ---: | --- |
+| A — 34 MP cropped, 1920 px + frame | 105.71 → 89.35 s (-15.5%) | 6.423 → 4.390 GB (4.167 GB at 2 workers) | 6.356 → 4.323 GB | 4.763 → 2.591–2.668 GB | unchanged (`ff3961ee9b4e…`) |
+| B — native size, bounded strips | 28.61 → 29.10 s | 3.662 → 3.689 GB | 2.301 → 2.425 GB | 1.163 → 1.166 GB | unchanged (`ccfeedf49d0e…`) |
+| Max — 34 MP, all creative + finishing stages | 245.11 s (failed) → 193.65 s (exported) | 9.963 → 5.592 GB (-4.37 GB) | 9.896 → 5.526 GB | — → 4.191 GB (+2.40 GB encoder) | exported (`9be69993101b…`) |
+
+After shrinking Film Grain's row band dynamically to keep all six CPU cores
+active inside the 192 MiB scratch cap, Profile A dropped from 105.71 s to
+89.35 s (fused Film Grain + Stock 52.5 s across both lanes vs 53.9 s separate
+before Step 0; Tone & Colour 12.5 → 5.1 s; Vignette 1.9 → 0.54 s) while
+keeping the golden SHA-256 identical. Profile Max dropped 4.37 GB (removing
+the float64 Global HSL spike) and now completes framing and AVIF encoding.
+The remaining Profile A / Max whole-frame buffers (Geometry, Masks, Detail,
+Halation, Framing) and worker encode-time retention are addressed in Steps 2–4.
+
 ## November 23, 2026 — MacBook Neo export memory baselines (Step 0)
 
 MacBook Neo (A18 Pro, six cores, 8 GB), macOS 27, AC power, `feat/denoise-v1`

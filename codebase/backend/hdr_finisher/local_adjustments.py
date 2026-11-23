@@ -106,7 +106,7 @@ def apply_local_stack(
                 tile[...] = tile + (candidate - tile) * influence[..., None]
         tick(bottom, height)
     # Local corrections precede Film Look; finishing owns the SDR white ceiling.
-    return result.astype(np.float32)
+    return result
 
 
 def _mask_needs_full_frame_evaluation(expression: MaskExpression) -> bool:

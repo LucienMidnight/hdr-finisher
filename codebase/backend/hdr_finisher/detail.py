@@ -6,6 +6,7 @@ import math
 import numpy as np
 
 from .models import DetailAdjustments, PreviewKind
+from .pixel_rows import render_rows
 
 
 _ACESCG_LUMA = np.array([0.2722287, 0.6740818, 0.0536895], dtype=np.float32)
@@ -48,6 +49,7 @@ def apply_detail(
     # Log luminance makes equal local contrast changes read consistently in
     # shadows and highlights.  Values below black remain clamped and finite.
     log_luma = np.log2(original_luma)
+    del original_luma
     adjusted = log_luma.copy()
     diagonal = math.hypot(image.shape[0], image.shape[1])
 
@@ -63,6 +65,7 @@ def apply_detail(
         # while low-amplitude, non-coherent surface texture remains active.
         edge_weight = _texture_edge_weight(log_luma, coarse, coarse_radius)
         adjusted += band * edge_weight * np.float32(float(detail.texture_amount) / 100.0)
+        del fine, coarse, band, edge_weight
 
     if detail.clarity_amount:
         radius = max(0.5, diagonal * float(detail.clarity_radius_percent) / 100.0)
@@ -71,6 +74,7 @@ def apply_detail(
         # Suppress cross-edge bleeding while keeping texture inside surfaces.
         edge_weight = np.exp(-np.square(band / np.float32(0.75))).astype(np.float32)
         adjusted += band * edge_weight * np.float32(float(detail.clarity_amount) / 125.0)
+        del base, band, edge_weight
 
     if detail.sharpen_amount:
         radius = max(0.3, float(detail.sharpen_radius_px) * max(0.05, float(source_pixel_scale)))
@@ -93,17 +97,15 @@ def apply_detail(
         # cannot be sharpened into a value the picture never contained.
         allowance = np.minimum(np.float32(0.12) * (local_max - local_min), _SHARPEN_HALO_ALLOWANCE_EV)
         adjusted = np.clip(sharpened, local_min - allowance, local_max + allowance)
+        del base, edge, qualification, qualified, sharpened, local_min, local_max, allowance
 
-    delta = np.clip(adjusted - log_luma, -16.0, 16.0).astype(np.float32)
-    gain = np.exp2(delta).astype(np.float32)
-    result = image.astype(np.float32, copy=False) * gain[..., None]
-    # Detail precedes Film Look. Preserve SDR headroom for its shoulder;
-    # the lane applies its display-white ceiling after finishing. Both arrays
-    # below are new float32 frames, so no further copy is made.
-    clipped = result.astype(np.float32, copy=False)
-    # Preserve exact source samples wherever all selected bands made no change;
-    # merely enabling Detail must never alter or soften the image.
-    return np.where((np.abs(delta) > 1e-7)[..., None], clipped, image).astype(np.float32, copy=False)
+    def finish(part, rows):
+        delta = np.clip(adjusted[rows] - log_luma[rows], -16.0, 16.0).astype(np.float32, copy=False)
+        gain = np.exp2(delta)
+        result = part.astype(np.float32, copy=False) * gain[..., None]
+        return np.where((np.abs(delta) > 1e-7)[..., None], result, part).astype(np.float32, copy=False)
+
+    return render_rows(image, finish)
 
 
 # Clarity's base is built on a brightness pyramid: box-average the log

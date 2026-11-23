@@ -11,7 +11,8 @@ FONT = FRONTEND_DIR / "assets/fonts/ibm-plex-mono/IBMPlexMono-Regular.ttf"
 
 
 @_timed_stage("watermark")
-def apply_watermark(image, settings, lane, reference_white_nits=203, ceiling_nits=None):
+def apply_watermark(image, settings, lane, reference_white_nits=203, ceiling_nits=None, *, in_place: bool = False):
+    """Only overwrite pixels when the caller owns the writable render."""
     if settings.mode == "off" or settings.opacity == 0:
         return image
     text = settings.text.strip()
@@ -51,7 +52,7 @@ def apply_watermark(image, settings, lane, reference_white_nits=203, ceiling_nit
     backing = min(white * .2, ink)
     # A 10:1 maximum foreground/panel ratio fits Ultra HDR's chromatic latitude.
     mark = backing + alpha * (ink - backing)
-    result = image.copy()
+    result = image if in_place else image.copy()
     region = result[y:y+bh, x:x+bw, :3]
     region[:] = region * (1-settings.opacity) + mark * settings.opacity
     return result

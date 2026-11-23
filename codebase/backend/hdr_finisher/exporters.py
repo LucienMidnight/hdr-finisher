@@ -287,25 +287,30 @@ def delivery_denoise_inputs(session, kind, adjustments):
 def _render_export_branch(session, settings, kind, adjustments, *, denoise_source=None, allocate_output=None):
     from .export_timing import lane
     with lane(kind.value):
-        return _render_export_lane(session, settings, kind, adjustments, denoise_source=denoise_source,
-                                   allocate_output=allocate_output)
-
-
-def _render_export_lane(session, settings, kind, adjustments, *, denoise_source=None, allocate_output=None):
-    from .watermark import apply_watermark
-    image = (_render_unwatermarked_branch(session, settings, kind, adjustments, denoise_source=denoise_source,
-                                        allocate_output=allocate_output)
-             if denoise_source is not None or allocate_output is not None
-             else _render_unwatermarked_branch(session, settings, kind, adjustments))
-    return apply_watermark(image, settings.watermark, kind.value,
-        getattr(session, "hdr_reference_white_nits", 203), delivery_ceiling_nits(adjustments))
+        return _render_branch_pixels(session, settings, kind, adjustments, denoise_source=denoise_source,
+                                     allocate_output=allocate_output, watermark=True)
 
 
 def _render_unwatermarked_branch(
+    session, settings, kind, adjustments, *, denoise_source=None, allocate_output=None,
+):
+    return _render_branch_pixels(session, settings, kind, adjustments, denoise_source=denoise_source,
+                                 allocate_output=allocate_output)
+
+
+def _render_branch_pixels(
     session: object, settings: ExportSettings, kind: PreviewKind, adjustments: AdjustmentState,
-    *, denoise_source=None, allocate_output=None,
+    *, denoise_source=None, allocate_output=None, watermark=False,
 ) -> np.ndarray:
     from .gpu_delivery import grain_delivery_enabled, render_pair, streamed_delivery_enabled
+
+    def finish(pixels, *, owned):
+        if not watermark:
+            return pixels
+        from .watermark import apply_watermark
+        return apply_watermark(pixels, settings.watermark, kind.value,
+            getattr(session, "hdr_reference_white_nits", 203), delivery_ceiling_nits(adjustments), in_place=owned)
+
     object.__setattr__(settings, "_last_cpu_strips", False)
     bounded = _bounded_export_eligible(session, settings, kind, adjustments, prepared_denoise=denoise_source is not None)
     # AVIF's prepared source is only for CPU rendering. Its GPU admission
@@ -349,7 +354,7 @@ def _render_unwatermarked_branch(
                 weights = np.array([.2126, .7152, .0722], dtype=np.float32)
                 peak = max(float(np.max(band @ weights)) for band in bands)
             settings._exact_measurements[kind.value] = {"peak": peak}
-        return result
+        return finish(result, owned=False)
     color_context = getattr(session, "color_context", RenderColorContext(getattr(session, "hdr_reference_white_nits", 203)))
     if bounded:
         if streamed_delivery_enabled(session, settings, adjustments):
@@ -378,7 +383,13 @@ def _render_unwatermarked_branch(
                 if measured is not None:
                     measurement["anchor"] = measured * .18 / color_context.hdr_reference_white_nits if kind == PreviewKind.HDR else measured
             settings._exact_measurements[kind.value] = measurement
-        return image
+        if not watermark:
+            return image
+        image.setflags(write=True)
+        try:
+            return finish(image, owned=True)
+        finally:
+            image.setflags(write=False)
     source, reference, source_filter = delivery_denoise_inputs(session, kind, adjustments)
     image = apply_adjustments(
         source,
@@ -391,6 +402,7 @@ def _render_unwatermarked_branch(
         color_context=color_context,
         source_filter=source_filter,
     )
+    del source, reference, source_filter
     # Grain now develops inside the negative, before print and scan. Delivery
     # resizing/sharpening therefore resamples the completed film, like a scan.
     # Output finishing resamples and sharpens for the delivered size, neither of
@@ -404,10 +416,12 @@ def _render_unwatermarked_branch(
         result = apply_hdr_output_highlight_compression(image, adjustments, color_context=color_context)
     else:
         result = apply_sdr_output_highlight_compression(image, adjustments)
+    lane = kind.value
+    if lane not in settings.editing_measurements:
+        del image
     if layout:
         result = compose(result, layout, layer_colors(session.framing, kind.value,
             color_context.hdr_reference_white_nits, delivery_ceiling_nits(adjustments)))
-    lane = kind.value
     if lane in settings.editing_measurements:
         from .adjustments import hdr_highlight_peak_signal, sdr_highlight_peak_signal
         from .finishing import apply_geometry
@@ -425,7 +439,7 @@ def _render_unwatermarked_branch(
             robust = getattr(adjustments, lane).highlight_compression_peak_measurement == "robust"
             measurement["anchor"] = float(np.quantile(signal, .9999) if robust else np.max(signal))
         settings._exact_measurements[lane] = measurement
-    return result
+    return finish(result, owned=True)
 
 
 def _bounded_export_eligible(session, settings, kind, adjustments, *, prepared_denoise=False):
@@ -460,7 +474,6 @@ def _render_branch_to_file(path, render):
         pixels = render(allocate)
         if pixels is mapped:
             return frame
-    # Watermarking can return a new array after the strip render.
     return DeliveryFrame.spill(path, pixels)
 
 

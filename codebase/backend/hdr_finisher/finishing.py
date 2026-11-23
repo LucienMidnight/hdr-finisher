@@ -3,10 +3,12 @@ from __future__ import annotations
 from .export_timing import timed as _timed_stage
 import math
 from functools import lru_cache
+from collections import deque
 
 import numpy as np
 
 from .models import GeometryAdjustments, OutputFinishingSettings, PerspectiveGuideLine, PreviewKind
+from .pixel_rows import render_rows, row_slices
 
 
 @_timed_stage("geometry")
@@ -878,7 +880,8 @@ def apply_output_finishing(
     if settings.sharpening != "off":
         result = _edge_aware_multiscale_sharpen(result, settings.sharpening, kind)
     # The caller's final HDR limiter / SDR gamut mapper owns the ceiling.
-    return np.nan_to_num(result, nan=0.0, posinf=0.0, neginf=0.0).astype(np.float32)
+    return render_rows(result, lambda part, _: np.nan_to_num(part, nan=0.0, posinf=0.0, neginf=0.0)
+                       .astype(np.float32, copy=False))
 
 
 def _resize_lanczos(image: np.ndarray, width: int, height: int) -> np.ndarray:
@@ -886,13 +889,13 @@ def _resize_lanczos(image: np.ndarray, width: int, height: int) -> np.ndarray:
         from PIL import Image
     except ImportError as exc:  # pragma: no cover
         raise RuntimeError("Pillow is required for export resizing") from exc
-    channels: list[np.ndarray] = []
+    result = np.empty((height, width, image.shape[2]), dtype=np.float32)
     for index in range(image.shape[2]):
         source = image[..., index].astype(np.float32, copy=False)
         resized = Image.fromarray(source).resize((width, height), Image.Resampling.LANCZOS)
         channel = np.asarray(resized, dtype=np.float32)
-        channels.append(np.clip(channel, float(np.min(source)), float(np.max(source))))
-    return np.stack(channels, axis=-1).astype(np.float32)
+        np.clip(channel, float(np.min(source)), float(np.max(source)), out=result[..., index])
+    return result
 
 
 def _edge_aware_multiscale_sharpen(image: np.ndarray, strength: str, kind: PreviewKind) -> np.ndarray:
@@ -904,30 +907,62 @@ def _edge_aware_multiscale_sharpen(image: np.ndarray, strength: str, kind: Previ
         "strong": (0.58, 0.22),
     }
     fine_amount, medium_amount = amounts[strength]
-    source_luma = _luminance(image, kind)
-    if kind == PreviewKind.HDR:
-        signal = np.log2(np.maximum(source_luma, 1e-7) / np.float32(0.18))
+    if image.flags.c_contiguous:
+        luma = (_luminance(image[rows], kind) for rows in row_slices(len(image)))
     else:
-        signal = _srgb_encode(np.maximum(source_luma, 0.0))
+        luma_plane = _luminance(image, kind)
+        luma = (luma_plane[rows] for rows in row_slices(len(image)))
+    source_luma, signal_luma = _fork_bands(luma, 2)
+    signal, next_signal, blur_source, fine_source = _fork_bands((_sharpen_signal(part, kind) for part in signal_luma), 4)
+    fine_base, medium_input, medium_source = _fork_bands(_sharpen_box_bands(blur_source, 1), 3)
+    fine, residual_source = _fork_bands((source - base for source, base in zip(fine_source, fine_base)), 2)
+    medium_base, next_medium = _fork_bands(_sharpen_box_bands(medium_source, 2), 2)
+    next(next_medium, None)
+    next(next_signal, None)
+    residual = _sharpen_box_bands((np.abs(part) for part in residual_source), 1)
+    output = np.empty(image.shape, dtype=np.float32)
+    changed = False
+    top = 0
+    previous = None
+    for luma_part, signal_part, fine_part, medium_in, medium_out, residual_part in zip(
+        source_luma, signal, fine, medium_input, medium_base, residual,
+    ):
+        following_medium = next(next_medium, None)
+        following_signal = next(next_signal, None)
+        bottom = top + len(signal_part)
+        detail, active = _sharpen_detail(signal_part, fine_part, medium_in, medium_out, residual_part,
+            fine_amount, medium_amount, medium_out[-1:] if following_medium is None else following_medium[:1])
+        extent = np.concatenate((signal_part[:1] if previous is None else previous, signal_part,
+                                 signal_part[-1:] if following_signal is None else following_signal[:1]))
+        local_min, local_max = _local_extrema(extent)
+        output[top:bottom] = _finish_sharpen_rows(image[top:bottom], luma_part, signal_part, detail,
+                                                kind, strength, local_min[1:-1], local_max[1:-1])
+        changed |= active
+        previous = signal_part[-1:].copy()
+        top = bottom
+    return output if changed else image
 
-    fine_base = _box_blur(signal, 1)
-    medium_base = _box_blur(fine_base, 2)
-    fine = signal - fine_base
+
+def _sharpen_signal(source_luma, kind):
+    if kind == PreviewKind.HDR:
+        return np.log2(np.maximum(source_luma, 1e-7) / np.float32(0.18))
+    return _srgb_encode(np.maximum(source_luma, 0.0))
+
+
+def _sharpen_detail(signal, fine, fine_base, medium_base, residual, fine_amount, medium_amount, middle_next):
     medium = fine_base - medium_base
-
     gradient_x = np.abs(np.diff(medium_base, axis=1, append=medium_base[:, -1:]))
-    gradient_y = np.abs(np.diff(medium_base, axis=0, append=medium_base[-1:, :]))
+    gradient_y = np.abs(np.diff(medium_base, axis=0, append=middle_next))
     structure = np.sqrt(gradient_x * gradient_x + gradient_y * gradient_y)
-    residual = _box_blur(np.abs(fine), 1)
     # Coherent structure wins over stochastic residuals, while ordinary texture
     # retains a conservative floor. Flat fields remain exactly unchanged.
     mask = np.clip(0.18 + 2.8 * structure / (structure + residual + 1e-6), 0.0, 1.0)
     mask = np.where((np.abs(fine) + np.abs(medium)) > 1e-7, mask, 0.0).astype(np.float32)
     detail = mask * (np.float32(fine_amount) * fine + np.float32(medium_amount) * medium)
-    if not np.any(np.abs(detail) > 1e-7):
-        return image
+    return detail, bool(np.any(np.abs(detail) > 1e-7))
 
-    local_min, local_max = _local_extrema(signal)
+
+def _finish_sharpen_rows(image, source_luma, signal, detail, kind, strength, local_min, local_max):
     allowance = np.float32(0.12 if strength != "strong" else 0.18) * (local_max - local_min)
     sharpened = np.clip(signal + detail, local_min - allowance, local_max + allowance)
     if kind == PreviewKind.HDR:
@@ -939,7 +974,7 @@ def _edge_aware_multiscale_sharpen(image: np.ndarray, strength: str, kind: Previ
     # when other pixels do have detail (same per-pixel rule as GPU finishing).
     np.divide(target_luma, source_luma, out=gain,
               where=(source_luma > 1e-7) & (np.abs(sharpened - signal) > 1e-7))
-    return (image.astype(np.float32, copy=False) * gain[..., None]).astype(np.float32)
+    return image.astype(np.float32, copy=False) * gain[..., None]
 
 
 def _luminance(image: np.ndarray, kind: PreviewKind) -> np.ndarray:
@@ -947,25 +982,49 @@ def _luminance(image: np.ndarray, kind: PreviewKind) -> np.ndarray:
     return np.einsum("...c,c->...", image[..., :3], weights, optimize=True).astype(np.float32)
 
 
-def _box_blur(image: np.ndarray, radius: int) -> np.ndarray:
-    result = image.astype(np.float32, copy=False)
-    for axis in (0, 1):
-        padded = np.pad(result, [(radius, radius), (radius, radius)], mode="edge") if axis == 0 else None
-        if axis == 0:
-            padded = padded[:, radius:-radius] if radius else padded
-        else:
-            padded = np.pad(result, [(0, 0), (radius, radius)], mode="edge")
-        cumulative = np.cumsum(padded, axis=axis, dtype=np.float32)
-        zero_shape = list(cumulative.shape)
-        zero_shape[axis] = 1
-        cumulative = np.concatenate([np.zeros(zero_shape, dtype=np.float32), cumulative], axis=axis)
-        high = [slice(None), slice(None)]
-        low = [slice(None), slice(None)]
-        width = radius * 2 + 1
-        high[axis] = slice(width, None)
-        low[axis] = slice(None, -width)
-        result = (cumulative[tuple(high)] - cumulative[tuple(low)]) / np.float32(width)
-    return result.astype(np.float32)
+def _fork_bands(source, count):
+    """Share streaming inputs, releasing each band once every consumer reads it."""
+    waiting = tuple(deque() for _ in range(count))
+
+    def consume(own):
+        while True:
+            if own:
+                yield own.popleft()
+            else:
+                band = next(source, None)
+                if band is None:
+                    return
+                for other in waiting:
+                    if other is not own:
+                        other.append(band)
+                yield band
+
+    return tuple(consume(queue) for queue in waiting)
+
+
+def _sharpen_box_bands(bands, radius):
+    """Keep the original float32 vertical prefix, including at strip seams."""
+    current = next(bands)
+    history = np.zeros((radius + 1, current.shape[1]), dtype=np.float32)
+    history[1:] = current[:1]
+    np.cumsum(history, axis=0, out=history)
+    width = 2 * radius + 1
+    while current is not None:
+        following = next(bands, None)
+        ahead = current[:0] if following is None else following[:radius]
+        if len(ahead) < radius:
+            edge = current[-1:] if following is None else following[-1:]
+            ahead = np.concatenate((ahead, np.repeat(edge, radius - len(ahead), axis=0)))
+        prefix = np.concatenate((history, current, ahead))
+        np.cumsum(prefix[radius:], axis=0, out=prefix[radius:])
+        history = prefix[len(current):len(current) + radius + 1].copy()
+        vertical = (prefix[width:] - prefix[:-width]) / np.float32(width)
+        padded = np.pad(vertical, ((0, 0), (radius, radius)), mode="edge")
+        horizontal = np.empty((len(vertical), padded.shape[1] + 1), dtype=np.float32)
+        horizontal[:, 0] = 0
+        np.cumsum(padded, axis=1, out=horizontal[:, 1:])
+        yield (horizontal[:, width:] - horizontal[:, :-width]) / np.float32(width)
+        current = following
 
 
 def _local_extrema(signal: np.ndarray) -> tuple[np.ndarray, np.ndarray]:

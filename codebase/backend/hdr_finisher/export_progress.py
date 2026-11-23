@@ -209,11 +209,13 @@ def plan_export(session, settings, adjustments, *, develop_megapixels: float = 0
         look = branch.film_look
         if branch.film_look_section_enabled and look.look_strength > 0:
             from .adjustments import _film_stock_is_active
-            if _film_stock_is_active(look):
-                plan.add(lane, "film_stock", STAGE_COST["film_stock"] * megapixels)
+            grain = look.grain_enabled and look.grain_amount > 0
+            grain_map = look.grain_enabled and look.grain_view_map
+            if _film_stock_is_active(look) and not grain_map:
+                plan.add(lane, "film_grain" if grain else "film_stock", STAGE_COST["film_stock"] * megapixels)
             if look.halation_enabled and look.halation_amount > 0 and look.halation_radius > 0:
                 plan.add(lane, "halation", STAGE_COST["halation"] * megapixels)
-            if look.grain_enabled and look.grain_amount > 0:
+            if grain or grain_map:
                 plan.add(lane, "film_grain", STAGE_COST["film_grain"] * megapixels)
         if branch.vignette_section_enabled:
             plan.add(lane, "vignette", STAGE_COST["vignette"] * megapixels)

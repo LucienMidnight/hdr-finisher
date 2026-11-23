@@ -22,6 +22,7 @@ from . import film_grain
 from .film_stock import controlled_film_stock, measured_push_stock, render_film_stock, render_film_stock_with_grey, stock_parameters
 from .sdr_gamut import compress_to_srgb_gamut
 from .tone import apply_tone, reference_grey
+from .pixel_rows import PIXEL_ROWS, render_rows, row_slices
 
 
 TONE_EQUALIZER_MIN_EV = -6
@@ -282,7 +283,7 @@ def _apply_hdr_adjustments(
 ) -> np.ndarray:
     color_context = color_context or RenderColorContext()
     hdr = adjustments.hdr
-    result = _hdr_before_black_and_white(image.astype(np.float32, copy=True), adjustments)
+    result = _hdr_before_black_and_white(image.astype(np.float32, copy=False), adjustments)
     if hdr.black_and_white_section_enabled:
         result = _apply_black_and_white(
             result,
@@ -483,21 +484,22 @@ def _enforce_exact_hdr_output_target(image: np.ndarray, target_nits: float, refe
 def _hdr_before_black_and_white(image: np.ndarray, adjustments: AdjustmentState) -> np.ndarray:
     """HDR Tone and Color: every stage before Black & White. All pointwise."""
     hdr = adjustments.hdr
-    result = image
     if hdr.tone_section_enabled:
-        result = _apply_hdr_base_adjustments(result, adjustments)
-        result = _apply_luminance_section_controls(
-            result, hdr, PreviewKind.HDR, apply_primaries=False, apply_contrast=True
-        )
-    if hdr.color_section_enabled:
-        result = _apply_hdr_color(result, hdr)
-    return result
+        image = render_rows(image, lambda part, _: _hdr_prefix_rows(part, adjustments), preserve_order=True)
+    return _apply_hdr_color(image, hdr, owned=hdr.tone_section_enabled) if hdr.color_section_enabled else image
 
 
-def _apply_hdr_color(image: np.ndarray, hdr, kind: PreviewKind = PreviewKind.HDR) -> np.ndarray:
+def _hdr_prefix_rows(image, adjustments):
+    return _apply_luminance_section_controls(_apply_hdr_base_adjustments(image, adjustments),
+        adjustments.hdr, PreviewKind.HDR, apply_primaries=False, apply_contrast=True)
+
+
+def _apply_hdr_color(image: np.ndarray, hdr, kind: PreviewKind = PreviewKind.HDR, *, owned=False) -> np.ndarray:
+    """Keep the primaries multiply whole-frame: BLAS tile shapes can change rounding."""
     if _color_settings_are_neutral(hdr):
         return image
-    result = _apply_white_balance(image, hdr.white_balance_kelvin, hdr.tint)
+    result = _apply_white_balance(image, hdr.white_balance_kelvin, hdr.tint,
+                                  out=image if owned and image.dtype == np.float32 else None)
     primary_matrix = rgb_primaries_adjustment_matrix(
         hdr.red_hue,
         hdr.red_purity,
@@ -508,9 +510,13 @@ def _apply_hdr_color(image: np.ndarray, hdr, kind: PreviewKind = PreviewKind.HDR
         hdr.tint_hue,
         hdr.tint_purity,
     )
-    result = np.einsum("...c,dc->...d", result, primary_matrix, optimize=True).astype(np.float32)
-    result = _apply_saturation_vibrance(result, hdr.saturation, hdr.vibrance)
-    return _apply_color_desaturation(result, hdr, kind)
+    result = np.einsum("...c,dc->...d", result, primary_matrix, optimize=True).astype(np.float32, copy=False)
+    if not (hdr.saturation or hdr.vibrance or hdr.highlight_desaturation or hdr.shadow_desaturation):
+        return result
+    for rows in row_slices(len(result)):
+        part = _apply_saturation_vibrance(result[rows], hdr.saturation, hdr.vibrance)
+        result[rows] = _apply_color_desaturation(part, hdr, kind)
+    return result
 
 
 def _color_settings_are_neutral(settings: object) -> bool:
@@ -652,7 +658,15 @@ def _black_and_white_guide(image: np.ndarray, bw: object, before, adjustments: A
     """The neighbourhood colour each pixel's slider is chosen from, or None when no slider is set."""
     if not black_and_white_needs_guide(bw):
         return None
-    return before(_bw_lattice_mean(image), adjustments)
+    def render(part, rows):
+        if rows.start is None:
+            return _bw_lattice_mean(part)
+        bottom = min(rows.stop, len(image))
+        first = max(0, rows.start - BW_GUIDE_REACH)
+        last = min(len(image), bottom + BW_GUIDE_REACH)
+        return _bw_lattice_mean(image[first:last])[rows.start - first:bottom - first]
+
+    return before(render_rows(image, render, preserve_order=True), adjustments)
 
 
 def _apply_black_and_white(image: np.ndarray, bw: object, *, guide: np.ndarray | None = None) -> np.ndarray:
@@ -664,11 +678,17 @@ def _apply_black_and_white(image: np.ndarray, bw: object, *, guide: np.ndarray |
     and lightness are read from ``guide`` (the neighbourhood colour, see
     BW_GUIDE_STEP) when given, else from the pixel itself.
     """
-    luma = _acescg_luma(image).astype(np.float32)
     sliders = np.array([float(getattr(bw, name)) / 100.0 for name in BW_SLIDERS], dtype=np.float32)
-    if np.any(sliders != 0.0):
+    active = np.any(sliders != 0.0)
+    return render_rows(image, lambda part, rows: _black_and_white_rows(
+        part, sliders, active, None if guide is None else guide[rows]))
+
+
+def _black_and_white_rows(image, sliders, active, guide):
+    luma = _acescg_luma(image).astype(np.float32, copy=False)
+    if active:
         colour = image if guide is None else guide
-        lms = np.cbrt(colour.astype(np.float32) @ BW_ACESCG_TO_LMS.T)
+        lms = np.cbrt(colour.astype(np.float32, copy=False) @ BW_ACESCG_TO_LMS.T)
         lab = lms @ BW_LMS_TO_OKLAB.T
         lightness, a, b = lab[..., 0], lab[..., 1], lab[..., 2]
         hue = np.degrees(np.arctan2(b, a)).astype(np.float32) % np.float32(360.0)
@@ -678,7 +698,7 @@ def _apply_black_and_white(image: np.ndarray, bw: object, *, guide: np.ndarray |
         )
         stops = np.float32(BW_RESPONSE_STOPS) * weight * _bw_hue_response(hue, sliders)
         luma = (luma * np.exp2(stops)).astype(np.float32)
-    return np.repeat(luma[..., None], 3, axis=-1).astype(np.float32)
+    return np.repeat(luma[..., None], 3, axis=-1)
 
 
 def black_and_white_neutral_film_look(look: object) -> object:
@@ -833,9 +853,7 @@ def _apply_sdr_color_stage(result: np.ndarray, adjustments: AdjustmentState) -> 
     """
     if not _sdr_color_is_enabled(adjustments):
         return result
-    acescg = linear_srgb_to_acescg(result)
-    graded = _apply_hdr_color(acescg, adjustments.sdr, PreviewKind.SDR)
-    return acescg_to_linear_srgb(graded)
+    return acescg_to_linear_srgb(_apply_hdr_color(linear_srgb_to_acescg(result), adjustments.sdr, PreviewKind.SDR, owned=True))
 
 
 def _apply_sdr_post_highlight_tail(
@@ -915,7 +933,7 @@ def _sdr_pre_highlight(image: np.ndarray, adjustments: AdjustmentState) -> np.nd
     their finished result at the final output stage.
     """
     sdr = adjustments.sdr
-    result = _sdr_before_black_and_white(image.astype(np.float32, copy=True), adjustments)
+    result = _sdr_before_black_and_white(image.astype(np.float32, copy=False), adjustments)
     if sdr.black_and_white_section_enabled:
         # Before the highlight stage measures the picture (BW-01).
         result = _apply_black_and_white(
@@ -926,18 +944,15 @@ def _sdr_pre_highlight(image: np.ndarray, adjustments: AdjustmentState) -> np.nd
     # Neutral SDR placement: scene 0.18 is the 100-nit diffuse-white anchor
     # on the normalized 203-nit SDR canvas. The explicit highlight stage is
     # solely responsible for fitting the remaining scene headroom.
-    return acescg_to_linear_srgb(result * SDR_SCENE_TO_DISPLAY_SCALE)
+    return render_rows(result, lambda part, _: acescg_to_linear_srgb(part * SDR_SCENE_TO_DISPLAY_SCALE))
 
 
 def _sdr_before_black_and_white(image: np.ndarray, adjustments: AdjustmentState) -> np.ndarray:
     """SDR exposure, Blacks and Color in scene-linear ACEScg. All pointwise."""
     sdr = adjustments.sdr
-    result = image
     if sdr.tone_section_enabled:
-        result = result * np.float32(2.0 ** sdr.exposure)
-    if _sdr_color_is_enabled(adjustments):
-        result = _apply_hdr_color(result, adjustments.sdr, PreviewKind.SDR)
-    return result
+        image = image * np.float32(2.0 ** sdr.exposure)
+    return _apply_hdr_color(image, sdr, PreviewKind.SDR, owned=sdr.tone_section_enabled) if _sdr_color_is_enabled(adjustments) else image
 
 
 def _sdr_reference_before_black_and_white(image: np.ndarray, adjustments: AdjustmentState) -> np.ndarray:
@@ -953,18 +968,14 @@ def _sdr_reference_before_black_and_white(image: np.ndarray, adjustments: Adjust
 def _sdr_reference_pre_highlight(image: np.ndarray, adjustments: AdjustmentState) -> np.ndarray:
     """The authored-SDR-base equivalent of ``_sdr_pre_highlight``."""
     sdr = adjustments.sdr
-    result = _sdr_reference_before_black_and_white(image.astype(np.float32, copy=True), adjustments)
+    result = _sdr_reference_before_black_and_white(image.astype(np.float32, copy=False), adjustments)
     if sdr.black_and_white_section_enabled:
         # On this path Color runs after the highlight stage, but B&W must come
         # before it, so the stage measures and shapes the grey picture (BW-01).
         guide = _black_and_white_guide(image, sdr.black_and_white, _sdr_reference_before_black_and_white, adjustments)
-        result = acescg_to_linear_srgb(
-            _apply_black_and_white(
-                linear_srgb_to_acescg(result),
-                sdr.black_and_white,
-                guide=None if guide is None else linear_srgb_to_acescg(guide),
-            )
-        ).astype(np.float32)
+        result = render_rows(result, lambda part, rows: acescg_to_linear_srgb(_apply_black_and_white(
+            linear_srgb_to_acescg(part), sdr.black_and_white,
+            guide=None if guide is None else linear_srgb_to_acescg(guide[rows]))))
     return result
 
 
@@ -1013,13 +1024,13 @@ def _sdr_color_is_enabled(adjustments: AdjustmentState) -> bool:
     return not _color_settings_are_neutral(adjustments.sdr)
 
 
-def _apply_white_balance(image: np.ndarray, kelvin: int, tint: float) -> np.ndarray:
+def _apply_white_balance(image: np.ndarray, kelvin: int, tint: float, *, out=None) -> np.ndarray:
     temperature_offset = (kelvin - 6500) / 6500.0
     red_gain = 1.0 + (temperature_offset * 0.15)
     blue_gain = 1.0 - (temperature_offset * 0.15)
     green_gain = 1.0 + (tint * 0.08)
     gains = np.array([red_gain, green_gain, blue_gain], dtype=np.float32)
-    return image * gains.reshape((1, 1, 3))
+    return np.multiply(image, gains.reshape((1, 1, 3)), out=out)
 
 
 def _apply_luminance_section_controls(
@@ -1039,26 +1050,23 @@ def _apply_luminance_section_controls(
         return image
 
     if kind == PreviewKind.HDR:
-        return _apply_scene_luminance_controls(
-            image,
-            branch_adjustments,
-            apply_contrast=apply_contrast,
-        )
+        return render_rows(image, lambda part, _: _apply_scene_luminance_controls(part, branch_adjustments))
 
+    pivot = _contrast_pivot_in_curve_domain(branch_adjustments, kind)
+    return render_rows(image, lambda part, _: _apply_sdr_contrast_rows(part, contrast, pivot))
+
+
+def _apply_sdr_contrast_rows(image, contrast, pivot):
     # SDR contrast should feel perceptually uniform even though the pipeline
     # stores linear-light pixels. Work on an encoded luma signal, then scale
     # linear RGB together so the adjustment remains hue preserving.
     working = image.astype(np.float32, copy=True)
     linear_luma = np.maximum(_linear_luma(working), 0.0)
     luma = _srgb_encode(linear_luma, preserve_headroom=True)
-    target_luma = luma.copy()
-
-    if contrast != 0.0:
-        pivot = _contrast_pivot_in_curve_domain(branch_adjustments, kind)
-        # A full slider unit is one half-stop of contrast slope. The previous
-        # one-stop mapping was excessively strong for scene-linear sources.
-        slope = np.float32(2.0 ** (contrast * 0.5))
-        target_luma = (target_luma - pivot) * slope + pivot
+    # A full slider unit is one half-stop of contrast slope. The previous
+    # one-stop mapping was excessively strong for scene-linear sources.
+    slope = np.float32(2.0 ** (contrast * 0.5))
+    target_luma = (luma - pivot) * slope + pivot
 
     target_linear_luma = _srgb_decode(target_luma, preserve_headroom=True)
     luma_ratio = np.where(
@@ -1099,40 +1107,32 @@ def _apply_scene_luminance_controls(
 
 def _apply_hdr_tone_equalizer(image: np.ndarray, hdr_adjustments: object) -> np.ndarray:
     """Apply fixed scene-referred EV-band exposure corrections without clipping HDR headroom."""
-    node_ev, corrections = _tone_equalizer_nodes(hdr_adjustments)
-    if not np.any(corrections):
-        return image
-
-    result = image.astype(np.float32, copy=True)
-    luma = _acescg_luma(result)
-    positive_luma = np.clip(luma, 0.0, None)
-    input_ev = np.log2(np.maximum(positive_luma, 1e-8) / np.float32(0.18))
-    target_ev = _sample_tone_equalizer_target_ev(
-        input_ev,
-        node_ev,
-        corrections,
-        float(getattr(hdr_adjustments, "tone_equalizer_smoothing", 0.5)),
-    )
-    target_luma = np.float32(0.18) * np.exp2(np.clip(target_ev, -32.0, 32.0))
-    ratio = np.where(positive_luma > 1e-8, target_luma / np.maximum(positive_luma, 1e-8), 1.0).astype(np.float32)
-    return np.where(positive_luma[..., None] > 1e-8, result * ratio[..., None], result)
+    return _apply_tone_equalizer(image, hdr_adjustments, _acescg_luma)
 
 
 def _apply_sdr_tone_equalizer(image: np.ndarray, sdr_adjustments: object) -> np.ndarray:
     """Apply independent display-linear exposure bands to the SDR rendition."""
-    node_ev, corrections = _tone_equalizer_nodes(sdr_adjustments)
+    return _apply_tone_equalizer(image, sdr_adjustments, _linear_luma)
+
+
+def _apply_tone_equalizer(image, controls, luminance):
+    node_ev, corrections = _tone_equalizer_nodes(controls)
     if not np.any(corrections):
         return image
+    smoothing = float(getattr(controls, "tone_equalizer_smoothing", 0.5))
+    return render_rows(image, lambda part, _: _tone_equalizer_rows(part, luminance, node_ev, corrections, smoothing))
 
-    result = image.astype(np.float32, copy=True)
-    luma = _linear_luma(result)
+
+def _tone_equalizer_rows(image, luminance, node_ev, corrections, smoothing):
+    result = image.astype(np.float32, copy=False)
+    luma = luminance(result)
     positive_luma = np.clip(luma, 0.0, None)
     input_ev = np.log2(np.maximum(positive_luma, 1e-8) / np.float32(0.18))
     target_ev = _sample_tone_equalizer_target_ev(
         input_ev,
         node_ev,
         corrections,
-        float(getattr(sdr_adjustments, "tone_equalizer_smoothing", 0.5)),
+        smoothing,
     )
     target_luma = np.float32(0.18) * np.exp2(np.clip(target_ev, -32.0, 32.0))
     ratio = np.where(positive_luma > 1e-8, target_luma / np.maximum(positive_luma, 1e-8), 1.0).astype(np.float32)
@@ -1814,7 +1814,7 @@ def _apply_film_look(
     )
     if not module_active and not _structure_is_active(branch):
         return image
-    result = image.astype(np.float32, copy=True)
+    result = image.astype(np.float32, copy=False)
     if module_active:
         full = np.float32(1.0)
         if lens_active:
@@ -1833,28 +1833,51 @@ def _apply_film_look(
             return _apply_density_grain(result, look, kind, adjustments.shared.film_grain_seed,
                                         strength, view_map=True, frame_window=frame_window, preview_scale=source_pixel_scale)
         if _film_stock_is_active(look):
-            delta = _apply_density_grain(
-                result, look, kind, adjustments.shared.film_grain_seed, full,
-                frame_window=frame_window, preview_scale=source_pixel_scale, density_delta=True,
-            ) if grain else None
-            result = _apply_film_stock(result, look, kind, full, density_delta=delta)
+            if result is image:
+                result = result.copy()
+            if grain:
+                stock_render = _film_stock_renderer(look, kind, full)
+                if stock_render is not None:
+                    result = np.ascontiguousarray(result, dtype=np.float32)
+                    result = _apply_density_grain(
+                        result, look, kind, adjustments.shared.film_grain_seed, full,
+                        frame_window=frame_window, preview_scale=source_pixel_scale, density_delta=True,
+                        stock_render=stock_render,
+                    )
+            else:
+                result = _apply_film_stock(result, look, kind, full)
         elif grain:
             # Neutral's straight response preserves the existing density field.
             result = _apply_density_grain(result, look, kind, adjustments.shared.film_grain_seed,
                                          full, frame_window=frame_window, preview_scale=source_pixel_scale, clip_output=False)
         if look.scan_sharpening > 0:
             result = _apply_scan_sharpening(result, look.scan_sharpening / 100, source_pixel_scale)
-        result = image + (result - image) * strength
+        if image.dtype != np.float32:
+            result = image + (result - image) * strength
+        else:
+            if result is image:
+                result = result.copy()
+            for top in range(0, len(result), PIXEL_ROWS):
+                part = result[top:top + PIXEL_ROWS]
+                source = image[top:top + PIXEL_ROWS]
+                part[:] = source + (part - source) * strength
     if _structure_is_active(branch):
         result = _apply_image_structure(result, branch.detail, kind)
     # Keep SDR headroom through the strength mix; output gamut mapping runs last.
-    return result.astype(np.float32)
+    return result.astype(np.float32, copy=False)
 
 
 def _apply_color_grading(image: np.ndarray, grading: object, kind: PreviewKind) -> np.ndarray:
+    """Keep the luminance reduction order on frames whose rows are interleaved."""
     wheels = (grading.shadows, grading.midtones, grading.highlights)
     if all(wheel.saturation == 0.0 and wheel.luminance_ev == 0.0 for wheel in wheels):
         return image
+    if image.ndim == 3 and abs(image.strides[0]) < abs(image.strides[1]):
+        return _color_grading_rows(image, grading, kind, wheels)
+    return render_rows(image, lambda part, _: _color_grading_rows(part, grading, kind, wheels))
+
+
+def _color_grading_rows(image, grading, kind, wheels):
     weights = np.array([0.2722287, 0.6740818, 0.0536895], dtype=np.float32) if kind == PreviewKind.HDR else np.array([0.2126, 0.7152, 0.0722], dtype=np.float32)
     source_luma = np.maximum(_acescg_luma(image) if kind == PreviewKind.HDR else _linear_luma(image), 0.0)
     zone_signal = np.log2(np.maximum(source_luma, 1e-7) / np.float32(reference_grey(kind == PreviewKind.HDR)))
@@ -1905,27 +1928,34 @@ def _apply_vignette(
     # at this region's place in it rather than against the region itself.
     region_height, region_width = image.shape[:2]
     left, top, width, height = FrameWindow.resolve(frame_window, image)
-    y, x = np.mgrid[top:top + region_height, left:left + region_width].astype(np.float32)
     scale = np.float32(max(1.0, 0.5 * min(width, height)))
+    x = np.arange(left, left + region_width, dtype=np.float32)[None, :]
     dx = np.abs((x - np.float32(vignette.center_x * max(width - 1, 1))) / scale)
-    dy = np.abs((y - np.float32(vignette.center_y * max(height - 1, 1))) / scale)
     # Horizontal and Vertical Scale stretch the shape about its center. 100%
     # divides by exactly one, so an unscaled vignette keeps its pixels.
     dx /= np.float32(vignette.scale_x / 100.0)
-    dy /= np.float32(vignette.scale_y / 100.0)
     roundness = float(vignette.roundness) / 100.0
     exponent = 2.0 + 6.0 * roundness if roundness >= 0.0 else 2.0 + roundness
-    radius = np.power(np.power(dx, exponent) + np.power(dy, exponent), 1.0 / exponent)
+    dx_power = np.power(dx, exponent)
     midpoint = np.float32(0.15 + 0.70 * vignette.midpoint / 100.0)
     feather_width = np.float32(0.02 + 0.98 * vignette.feather / 100.0)
-    mask = _smoothstep(float(midpoint), float(midpoint + feather_width), radius)
     ev = np.float32(2.0 * vignette.amount / 100.0)
-    if ev < 0.0 and vignette.highlight_protection > 0.0:
-        luma = np.maximum(_film_luma(image, kind), 0.0)
-        highlight = _smoothstep(0.55, 0.95, _film_encode_luma(luma, kind))
-        mask *= 1.0 - highlight * np.float32(vignette.highlight_protection / 100.0)
-    gain = np.exp2(ev * mask)
-    return (image.astype(np.float32, copy=False) * gain[..., None]).astype(np.float32)
+
+    def render(part, rows):
+        first = top + (rows.start or 0)
+        y = np.arange(first, first + len(part), dtype=np.float32)[:, None]
+        dy = np.abs((y - np.float32(vignette.center_y * max(height - 1, 1))) / scale)
+        dy /= np.float32(vignette.scale_y / 100.0)
+        radius = np.power(dx_power + np.power(dy, exponent), 1.0 / exponent)
+        mask = _smoothstep(float(midpoint), float(midpoint + feather_width), radius)
+        if ev < 0.0 and vignette.highlight_protection > 0.0:
+            luma = np.maximum(_film_luma(part, kind), 0.0)
+            highlight = _smoothstep(0.55, 0.95, _film_encode_luma(luma, kind))
+            mask *= 1.0 - highlight * np.float32(vignette.highlight_protection / 100.0)
+        gain = np.exp2(ev * mask)
+        return (part.astype(np.float32, copy=False) * gain[..., None]).astype(np.float32, copy=False)
+
+    return render_rows(image, render)
 
 
 def _film_luma(image: np.ndarray, kind: PreviewKind) -> np.ndarray:
@@ -1975,13 +2005,36 @@ def _apply_film_stock(image: np.ndarray, look: object, kind: PreviewKind, master
     colour is evaluated at reference white and the stock's tone gain is held
     there, so HDR highlights keep their ratios instead of meeting paper white.
     """
-    if master <= 0.0 or not _film_stock_is_active(look):
+    render = _film_stock_renderer(look, kind, master)
+    if render is None:
         return image
+    image = np.ascontiguousarray(image, dtype=np.float32)
+    flat = image.reshape(-1, 3)
+    delta = None if density_delta is None else density_delta.reshape(-1, 3)
+
+    def render_span(span):
+        start, stop = span
+        render(flat[start:stop], None if delta is None else delta[start:stop])
+
+    spans = [(start, min(start + FILM_STOCK_CHUNK_PIXELS, len(flat)))
+             for start in range(0, len(flat), FILM_STOCK_CHUNK_PIXELS)]
+    if len(spans) <= 1:
+        for span in spans:
+            render_span(span)
+    else:
+        with CpuExecutor() as pool:
+            list(pool.map(render_span, spans))
+    return image
+
+
+def _film_stock_renderer(look, kind, master):
+    if master <= 0.0 or not _film_stock_is_active(look):
+        return None
     stock = controlled_film_stock(measured_push_stock(look.film_stock, look.push_pull),
         None if look.print_paper == "default" else look.print_paper,
         look.print_contrast, look.shadow_contrast, look.highlight_contrast, look.lab_levels)
     if stock is None:
-        return image
+        return None
     parameters = stock_parameters(look)
     tone = np.float32(float(look.stock_tone) / 100.0)
     color = np.float32(float(look.stock_color) / 100.0)
@@ -2005,11 +2058,7 @@ def _apply_film_stock(image: np.ndarray, look: object, kind: PreviewKind, master
     middle = from_srgb(render_film_stock(stock, middle_grey, replace(parameters, print_exposure_gain=np.float32(1))))
     tone_gain = np.float32(1) if stock.type.startswith("neutral") else lane_middle_grey / np.maximum(_film_luma(middle, kind)[0], np.float32(1e-6))
 
-    image = np.ascontiguousarray(image, dtype=np.float32)
-    flat = image.reshape(-1, 3)
-
-    def render(start: int, stop: int) -> None:
-        rgb = flat[start:stop]
+    def render(rgb, density_delta):
         luma = np.maximum(_film_luma(rgb, kind), np.float32(0.0))
         # sc = Yw / Y above reference white, else 1.
         highlight_scale = reference_white / np.maximum(luma, reference_white)
@@ -2020,7 +2069,7 @@ def _apply_film_stock(image: np.ndarray, look: object, kind: PreviewKind, master
             to_srgb(clamped) if color > 0.0 else None,
             to_srgb(np.repeat(grey_level[:, None], 3, axis=1)),
             parameters,
-            None if density_delta is None else density_delta.reshape(-1, 3)[start:stop],
+            density_delta,
         )
         film, grey = rendered[:2]
         grey_luma = np.maximum(_film_luma(from_srgb(grey), kind), np.float32(1e-6))
@@ -2033,19 +2082,9 @@ def _apply_film_stock(image: np.ndarray, look: object, kind: PreviewKind, master
         if film is not None:
             stocked = from_srgb(film) * (target / grey_luma)[:, None]
             result += (stocked - result) * color
-        flat[start:stop] = rgb + (result - rgb) * master
+        rgb[:] = rgb + (result - rgb) * master
 
-    spans = [
-        (start, min(start + FILM_STOCK_CHUNK_PIXELS, flat.shape[0]))
-        for start in range(0, flat.shape[0], FILM_STOCK_CHUNK_PIXELS)
-    ]
-    if len(spans) <= 1:
-        for span in spans:
-            render(*span)
-    else:
-        with CpuExecutor() as pool:
-            list(pool.map(lambda span: render(*span), spans))
-    return image
+    return render
 
 
 def _radius_pixels(image: np.ndarray, percent_diagonal: float, maximum: int = 256) -> int:
@@ -2185,7 +2224,7 @@ def _diffusion_blur(image: np.ndarray, radius: int) -> np.ndarray:
     result = image
     for box in _box_cascade_radii(variance):
         result = _box_blur_axis(_box_blur_axis(result, box, 1), box, 0)
-    return result.astype(np.float32)
+    return result.astype(np.float32, copy=False)
 
 
 def _weighted_blur_axis(
@@ -2212,7 +2251,7 @@ def _weighted_blur_axis(
         start = extent + int(round(float(offset)))
         window[axis] = slice(start, start + length)
         result += padded[tuple(window)] * weight
-    return result.astype(np.float32)
+    return result
 
 
 FILM_DETAIL_SIGMA_SCALE = np.float32(0.7)
@@ -2274,8 +2313,21 @@ def _halation_edge_source(
     sampled at a fraction of the authored physical extent, so smooth 4K edges
     qualify as reliably as the same edge in a smaller preview.
     """
-    qualified = np.maximum(_film_luma(image, kind), 0.0) * _highlight_mask(image, kind, sensitivity)
     edge_radius = max(1, min(int(edge_radius), 16))
+
+    def render(part, rows):
+        if rows.start is None:
+            return _halation_edge_rows(part, kind, sensitivity, edge_radius)
+        bottom = min(len(image), rows.stop)
+        first = max(0, rows.start - edge_radius)
+        last = min(len(image), bottom + edge_radius)
+        return _halation_edge_rows(image[first:last], kind, sensitivity, edge_radius)[rows.start - first:bottom - first]
+
+    return render_rows(image, render)
+
+
+def _halation_edge_rows(image, kind, sensitivity, edge_radius):
+    qualified = np.maximum(_film_luma(image, kind), 0.0) * _highlight_mask(image, kind, sensitivity)
     padded = np.pad(qualified, ((edge_radius, edge_radius), (edge_radius, edge_radius)), mode="edge")
     neighbour_mean = (
         padded[edge_radius:-edge_radius, :-2 * edge_radius]
@@ -2286,7 +2338,7 @@ def _halation_edge_source(
     bright_edge = np.maximum(qualified - neighbour_mean, 0.0)
     relative_edge = bright_edge / (qualified + np.float32(0.02))
     edge_gate = _smoothstep(0.004, 0.12, relative_edge)
-    return (qualified * edge_gate).astype(np.float32)
+    return (qualified * edge_gate).astype(np.float32, copy=False)
 
 
 def _halation_tint(hue_offset: float, saturation: float, kind: PreviewKind) -> np.ndarray:
@@ -2319,19 +2371,21 @@ def _apply_halation(
     )
     blurred = _diffusion_blur(source, max(1, radius))
     edge_scatter = np.maximum(blurred - source * np.float32(0.15), 0.0)
+    del blurred, source
     tint = _halation_tint(look.halation_hue_offset, look.halation_saturation, kind)
-    halo = edge_scatter[..., None] * tint
     amount = np.float32(0.42 * look.halation_amount / 100.0) * master
+    result = render_rows(image, lambda part, rows:
+                         (part + (edge_scatter[rows][..., None] * tint) * amount).astype(np.float32, copy=False))
     if not with_map:
-        return (image + halo * amount).astype(np.float32), None
+        return result, None
     map_signal = np.clip(_film_encode_luma(np.maximum(edge_scatter, 0.0), kind), 0.0, 1.0)
     if kind == PreviewKind.HDR:
         # The map is a 0-1 signal shown as grey. HDR scene values place SDR
         # white at 0.18 / (100 / 203), so an unscaled map lit the HDR view
         # several times brighter than white and read as solid white shapes.
         map_signal = map_signal * (SDR_SCENE_MIDDLE_GRAY / SDR_DISPLAY_REFERENCE_WHITE)
-    halation_map = np.repeat(map_signal[..., None], 3, axis=-1).astype(np.float32)
-    return (image + halo * amount).astype(np.float32), halation_map
+    halation_map = np.repeat(map_signal[..., None], 3, axis=-1).astype(np.float32, copy=False)
+    return result, halation_map
 
 
 def _structure_is_active(branch: object) -> bool:
@@ -2396,6 +2450,7 @@ def _apply_density_grain(
     density_delta: bool = False,
     clip_output: bool = True,
     preview_scale: float = 1.0,
+    stock_render=None,
 ) -> np.ndarray:
     """Modulate the frame by the film grain density field.
 
@@ -2415,6 +2470,7 @@ def _apply_density_grain(
     pixel_coverage = np.float32(min(1.0, physical_pitch / min(1.0, max(0.05, preview_scale))))
     amount = np.float32(0.18 * look.grain_amount / 100.0) * master * pixel_coverage
     neutral = _film_decode_luma(np.float32(0.5), kind)
+    apply_stock = None if stock_render is None else _grain_stock_chunks(image, stock_render)
 
     def render(first_row: int, last_row: int) -> np.ndarray:
         part = image[first_row:last_row]
@@ -2440,14 +2496,20 @@ def _apply_density_grain(
         )
         if density_delta:
             # Convert the renderer's log2 transmission field to optical density.
-            return -np.float32(np.log10(2.0)) * noise * (response * amount)[..., None]
+            delta = -np.float32(np.log10(2.0)) * noise * (response * amount)[..., None]
+            if apply_stock is None:
+                return delta
+            apply_stock(first_row * image.shape[1], delta.astype(np.float32, copy=False).reshape(-1, 3))
+            return part
         base = np.full_like(part, neutral) if view_map else part
         return np.maximum(base, 0.0) * np.exp2(noise * (response * amount)[..., None])
 
     from .export_timing import active_clock, tick
     from .grain_work import grain_allocation, checkpoint
     if active_clock() is not None and region_height > EXPORT_GRAIN_CHUNK_ROWS:
-        result = _render_grain_chunks_in_parallel(render, region_height)
+        result = _render_grain_chunks_in_parallel(
+            render, region_height, width=image.shape[1], in_place=image if stock_render is not None else None
+        )
     else:
         bounds = list(range(0, region_height, GRAIN_CHUNK_ROWS)) + [region_height]
         spans = list(zip(bounds[:-1], bounds[1:]))
@@ -2455,14 +2517,48 @@ def _apply_density_grain(
         for done, (first, last) in enumerate(spans, 1):
             checkpoint()
             with grain_allocation():
-                parts.append(render(first, last))
+                part = render(first, last)
+                if stock_render is None:
+                    parts.append(part)
             tick(done, len(spans))
-        result = parts[0] if len(parts) == 1 else np.concatenate(parts, axis=0)
+        result = image if stock_render is not None else parts[0] if len(parts) == 1 else np.concatenate(parts, axis=0)
     if density_delta or not clip_output:
         return result.astype(np.float32, copy=False)
     if result.dtype == np.float32:
         return np.clip(result, 0.0, None if kind == PreviewKind.HDR else 1.0, out=result)
     return np.clip(result, 0.0, None if kind == PreviewKind.HDR else 1.0).astype(np.float32)
+
+
+def _grain_stock_chunks(image, stock_render):
+    """Gather crossing grain bands without changing the stock math's batch shapes."""
+    from threading import Lock
+
+    rgb = image.reshape(-1, 3)
+    partial = {}
+    lock = Lock()
+
+    def consume(start, density):
+        stop = start + len(density)
+        for block in range(start // FILM_STOCK_CHUNK_PIXELS, (stop - 1) // FILM_STOCK_CHUNK_PIXELS + 1):
+            left = block * FILM_STOCK_CHUNK_PIXELS
+            right = min(len(rgb), left + FILM_STOCK_CHUNK_PIXELS)
+            first, last = max(start, left), min(stop, right)
+            part = density[first - start:last - start]
+            if first != left or last != right:
+                with lock:
+                    if block not in partial:
+                        partial[block] = np.empty((right - left, 3), dtype=np.float32), 0
+                    buffer, count = partial[block]
+                    buffer[first - left:last - left] = part
+                    count += len(part)
+                    if count != len(buffer):
+                        partial[block] = buffer, count
+                        continue
+                    del partial[block]
+                    part = buffer
+            stock_render(rgb[left:right], part)
+
+    return consume
 
 
 def grain_export_workers(height: int, rows: int, channels: int = 3, width: int | None = None) -> int:
@@ -2484,7 +2580,7 @@ def grain_export_workers(height: int, rows: int, channels: int = 3, width: int |
     return max(1, min(logical_cpus(), workers))
 
 
-def _render_grain_chunks_in_parallel(render, height: int) -> np.ndarray:
+def _render_grain_chunks_in_parallel(render, height: int, *, width: int | None = None, in_place=None) -> np.ndarray:
     """Render the same fixed grain field in row chunks on several workers.
 
     Grain is a fixed field over the frame, so any row chunk is exactly those
@@ -2496,15 +2592,24 @@ def _render_grain_chunks_in_parallel(render, height: int) -> np.ndarray:
     from functools import partial
     from itertools import count, islice
     from threading import Event, Lock
+    from .cpu_budget import logical_cpus
     from .export_timing import tick
     from .grain_work import grain_allocation, checkpoint
     rows = EXPORT_GRAIN_CHUNK_ROWS
+    if width is not None and width > 0:
+        # Shrink the row band before dropping CPU cores so wide frames still use
+        # the whole pool inside the fixed scratch cap.
+        budget = min(2 * width * height * 3 * 4, MAX_GRAIN_SCRATCH_BYTES)
+        per_worker_rows = budget // max(1, logical_cpus() * width * GRAIN_SCRATCH_BYTES_PER_PIXEL)
+        rows = max(4, min(EXPORT_GRAIN_CHUNK_ROWS, int(per_worker_rows)))
     spans = [(top, min(top + rows, height)) for top in range(0, height, rows)]
     checkpoint()
     with grain_allocation():
         first = render(*spans[0])
-    result = np.empty((height, *first.shape[1:]), dtype=first.dtype)
-    result[:spans[0][1]] = first
+    result = in_place
+    if result is None:
+        result = np.empty((height, *first.shape[1:]), dtype=first.dtype)
+        result[:spans[0][1]] = first
     del first
     workers = min(grain_export_workers(height, rows, result.shape[-1], width=result.shape[1]), len(spans) - 1)
     following, finished, lock = iter(spans[1:]), count(2), Lock()
@@ -2513,7 +2618,9 @@ def _render_grain_chunks_in_parallel(render, height: int) -> np.ndarray:
     def run_span(top, bottom):
         try:
             with grain_allocation(slots=workers):
-                result[top:bottom] = render(top, bottom)
+                part = render(top, bottom)
+                if in_place is None:
+                    result[top:bottom] = part
             with lock:
                 done = next(finished)
             tick(done, len(spans))
@@ -2581,22 +2688,27 @@ def _curve_is_neutral_points(curve: np.ndarray) -> bool:
 
 
 def _apply_curve_set(image: np.ndarray, curve_source: object, kind: PreviewKind) -> np.ndarray:
-    result = image.astype(np.float32, copy=True)
+    def prepare(name):
+        curve = _normalize_curve_points(getattr(curve_source, name))
+        return None if _curve_is_neutral_points(curve) else (curve, *_build_curve_lut(curve))
 
-    luma_curve = _normalize_curve_points(getattr(curve_source, "luma_curve"))
-    red_curve = _normalize_curve_points(getattr(curve_source, "red_curve"))
-    green_curve = _normalize_curve_points(getattr(curve_source, "green_curve"))
-    blue_curve = _normalize_curve_points(getattr(curve_source, "blue_curve"))
+    luma_curve = prepare("luma_curve")
+    rgb_curves = tuple((index, parameters) for index, name in enumerate(("red_curve", "green_curve", "blue_curve"))
+                       if (parameters := prepare(name)) is not None)
+    return render_rows(image, lambda part, _: _curve_rows(part, kind, luma_curve, rgb_curves))
+
+
+def _curve_rows(image, kind, luma_curve, rgb_curves):
+    result = image.astype(np.float32, copy=True)
 
     # A luma curve must operate on scene/display-linear luminance. Applying its
     # gain after logarithmically encoding each HDR channel makes the subsequent
     # per-channel exponential decode change RGB ratios, which can turn a small
     # shadow adjustment into an extreme blue/cyan cast.
-    if not _curve_is_neutral_points(luma_curve):
-        luma_lut_x, luma_lut_y = _build_curve_lut(luma_curve)
+    if luma_curve is not None:
         luma = _acescg_luma(result) if kind == PreviewKind.HDR else _linear_luma(result)
         curve_luma = _curve_domain_encode(luma, kind)
-        mapped_curve_luma = _sample_curve_extended(curve_luma, luma_curve, luma_lut_x, luma_lut_y)
+        mapped_curve_luma = _sample_curve_extended(curve_luma, *luma_curve)
         mapped_luma = _curve_domain_decode(mapped_curve_luma, kind)
         luma_gain = np.ones_like(luma, dtype=np.float32)
         np.divide(mapped_luma, luma, out=luma_gain, where=np.abs(luma) > 1e-5)
@@ -2604,17 +2716,13 @@ def _apply_curve_set(image: np.ndarray, curve_source: object, kind: PreviewKind)
 
     # RGB curves intentionally remain per-channel in the perceptual/log curve
     # domain. They can alter hue by design; the luma curve above cannot.
-    rgb_curves = (red_curve, green_curve, blue_curve)
-    active_rgb_channels = [index for index, curve in enumerate(rgb_curves) if not _curve_is_neutral_points(curve)]
-    if not active_rgb_channels:
+    if not rgb_curves:
         return result
 
     working = _curve_domain_encode(result, kind)
-    for channel_index in active_rgb_channels:
-        curve = rgb_curves[channel_index]
-        lut_x, lut_y = _build_curve_lut(curve)
+    for channel_index, curve in rgb_curves:
         channel = working[..., channel_index]
-        working[..., channel_index] = _sample_curve_extended(channel, curve, lut_x, lut_y)
+        working[..., channel_index] = _sample_curve_extended(channel, *curve)
 
     return _curve_domain_decode(working, kind)
 
