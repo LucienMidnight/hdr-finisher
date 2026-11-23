@@ -23,16 +23,46 @@ const sha256 = file => crypto.createHash('sha256').update(fs.readFileSync(file))
 function sampleMemory() {
   // The shared POSIX/Windows sampler, once a second, over the Electron tree.
   const python = path.join(root, process.platform === 'win32' ? '.venv/Scripts/python.exe' : '.venv/bin/python');
-  const child = spawn(python, [path.join(root, 'tools/sample-process-memory.py'), process.env.HDR_FINISHER_ELECTRON_MAIN_PID]);
-  const state = {peak: 0, at: 0, started: Date.now(), child};
+  const rootPid = Number(process.env.HDR_FINISHER_ELECTRON_MAIN_PID);
+  const child = spawn(python, ['-u', '-c', `
+import json, sys, time
+from export_speed_profile import process_category, process_rows
+
+root = int(sys.argv[1])
+while rows := process_rows(root):
+    print(json.dumps([dict(row, category=process_category(row, root)) for row in rows]))
+    time.sleep(1)
+`, String(rootPid)], {cwd: path.join(root, 'tools')});
+  const categoryPeaks = {electronGb: 0, backendGb: 0, workerGb: 0, encoderGb: 0};
+  const state = {peak: 0, at: 0, peakProcesses: [], categoryPeaks, started: Date.now(), child};
   let buffer = '';
   child.stdout.on('data', chunk => {
     const lines = (buffer + chunk).split('\n');
     buffer = lines.pop();
     for (const line of lines.filter(Boolean)) {
-      const sample = JSON.parse(line);
-      const bytes = sample.processes.reduce((sum, row) => sum + (row.chargedBytes ?? row.workingSetBytes ?? 0), 0);
-      if (bytes > state.peak) Object.assign(state, {peak: bytes, at: (Date.now() - state.started) / 1000});
+      const processes = JSON.parse(line);
+      const categories = {electronGb: 0, backendGb: 0, workerGb: 0, encoderGb: 0};
+      let bytes = 0;
+      for (const row of processes) {
+        const memory = row.chargedBytes ?? row.workingSetBytes ?? 0;
+        bytes += memory;
+        const name = row.name.replaceAll('\\', '/').split('/').at(-1);
+        let category = 'other';
+        if (row.category === 'encoder') category = 'encoder';
+        else if (row.category === 'python_worker') {
+          category = row.parentPid === rootPid ? 'backend' : 'worker';
+        } else if (row.pid === rootPid || /^(electron|hdr finisher|chrome_crashpad_handler)(?:[ ._-]|$)/i.test(name)) {
+          category = 'electron';
+        }
+        row.category = category;
+        if (category !== 'other') categories[`${category}Gb`] += memory;
+      }
+      for (const key of Object.keys(categories)) {
+        categoryPeaks[key] = Math.max(categoryPeaks[key], categories[key]);
+      }
+      if (bytes > state.peak) {
+        Object.assign(state, {peak: bytes, peakProcesses: processes, at: (Date.now() - state.started) / 1000});
+      }
     }
   });
   return state;
@@ -115,6 +145,9 @@ function progressCheck(samples, wall) {
         gradeMb: record.grade_bytes === undefined ? undefined : Math.round(record.grade_bytes / 1e6),
         t: Math.round((record.time * 1000 - started) / 100) / 10}));
     const result = {wallSeconds: wall, wholeAppPeakGb: Math.round(memory.peak / 1e6) / 1000, peakAtSeconds: memory.at,
+      peakProcesses: memory.peakProcesses,
+      categoryPeaksGb: Object.fromEntries(Object.entries(memory.categoryPeaks)
+        .map(([category, bytes]) => [category, Math.round(bytes / 1e6) / 1000])),
       sha256: sha256(output), renderer: job.results[0].renderer, fallbackReason: job.results[0].fallback_reason,
       progress: progressCheck(samples, wall), memoryEvents,
       trimRounds: memoryEvents.filter(event => event.event === 'cache_trim_requested').length,

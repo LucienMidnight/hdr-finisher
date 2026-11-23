@@ -1,3 +1,35 @@
+## November 23, 2026 — MacBook Neo export memory baselines (Step 0)
+
+MacBook Neo (A18 Pro, six cores, 8 GB), macOS 27, AC power, `feat/denoise-v1`
+after the Step 0 review fixes and single-worker `< 16 GB` batch default.
+Headless batch export through `tools/export_speed_profile.py` under the shared
+GPU lock, with 4 Hz process-tree sampling and per-stage peak attribution
+(decimal GB; no Electron window).
+
+* **2-photo batch (42 MP Sony `_DSC7970.ARW`, Profile B native AVIF)**:
+  `parallel=2` (old `< 16 GB` default) 47.26 s, **6.482 GB** peak (two
+  `avifgainmaputil` helpers overlapping at 4.79 GB); `parallel=1` (new default)
+  57.59 s, **3.687 GB** peak, identical SHA-256 `ccfeedf49d0e...`.
+
+| Source & profile | Format | Wall time | Peak footprint | Dominant stage & process split | Outcome / SHA-256 |
+| --- | --- | ---: | ---: | --- | --- |
+| Sony 42 MP, Profile A (1920 px + frame) | `avif_gain_map` | 105.71 s | 6.423 GB | `sdr/tone_colour` (worker 6.36 GB; `avifgainmaputil` 0.16 GB) | exported, `ff3961ee9b4e...` (golden) |
+| Sony 42 MP, Profile A-native (34 MP cropped) | `avif_gain_map` | 117.51 s | 6.783 GB | `sdr/tone_colour` (worker 6.72 GB; `avifgainmaputil` 1.98 GB) | exported, `2ad132186e81...` |
+| Sony 42 MP, Profile Max (34 MP, all stages on) | `avif_gain_map` | 245.11 s | 9.963 GB | `sdr/tone_colour` (worker 9.90 GB, float64 Global HSL) | failed at framing (out of available RAM) |
+| Sony 42 MP, Profile B (bounded strips) | `avif_gain_map` | 28.61 s | 3.662 GB | `encode/encode` (worker 1.16 + `avifgainmaputil` 2.46 GB) | exported, `ccfeedf49d0e...` (golden) |
+| Sony 42 MP, Profile B | `jpeg_ultrahdr` | 19.95 s | 3.986 GB | `encode/encode` (worker 2.02 + `ultrahdr_app` 1.93 GB) | exported, `6837353d3464...` |
+| Sony 42 MP, Profile B | `jpegxl_hdr` | 28.79 s | 4.157 GB | `encode/encode` (worker 4.09 GB; whole-frame path) | exported, `c8f0b6a1e578...` |
+| Sony 42 MP, Profile B | `sdr_jpeg` | 14.44 s | 2.534 GB | `sdr/denoise` (worker 2.47 GB) | exported, `25dfd32eba69...` |
+| Synthetic 61 MP EXR (`9600×6354`), Profile B | `avif_gain_map` | 49.34 s | 5.094 GB | `encode/encode` (worker 1.34 + `avifgainmaputil` 3.70 GB) | exported, `304f938e8cd4...` |
+| Synthetic 61 MP EXR, Profile B | `jpeg_ultrahdr` | 29.61 s | 3.273 GB | `encode/encode` (worker 2.54 + `ultrahdr_app` 0.67 GB) | failed (`ultrahdr_app` hard cap `8192×8192`) |
+| Synthetic 61 MP EXR, Profile B | `jpegxl_hdr` | 40.53 s | 4.877 GB | `encode/encode` (worker 4.81 GB; whole-frame path) | exported, `361791288a0a...` |
+| Synthetic 61 MP EXR, Profile B | `sdr_jpeg` | 25.51 s | 3.248 GB | `sdr/denoise` (worker 3.18 GB) | exported, `7c493e8c4001...` |
+| Synthetic 100 MP EXR (`12000×8334`), Profile B | `avif_gain_map` | 91.85 s | 7.247 GB | `encode/encode` (worker 1.91 + `avifgainmaputil` 5.84 GB) | exported, `8828ab35874b...` |
+| Synthetic 100 MP EXR, Profile B | `jpeg_ultrahdr` | 58.46 s | 4.551 GB | `hdr/denoise` (worker 4.49 GB) | failed (`ultrahdr_app` hard cap `8192×8192`) |
+| Synthetic 100 MP EXR, Profile B | `jpegxl_hdr` | 74.42 s | 6.951 GB | `hdr/output_finishing` (worker 6.88 GB; whole-frame path) | exported, `15d617854a59...` |
+| Synthetic 100 MP EXR, Profile B | `sdr_jpeg` | 44.34 s | 4.725 GB | `sdr/denoise` (worker 4.66 GB; `develop_raw` 3.26 GB) | exported, `cd4f347d406f...` |
+| Real 192 MP `pano_192mp.tif` (`16000×12000`), Profile B | `sdr_jpeg` | 89.77 s | 7.434 GB | worker render + Pillow validation | failed (`MAX_IMAGE_PIXELS` bomb guard during JPEG verify) |
+
 ## November 22, 2026 — MacBook Neo CPU AVIF export with Clean Grain
 
 MacBook Neo (A18 Pro, six cores, 8 GB), macOS 27, AC power, `feat/denoise-v1`
