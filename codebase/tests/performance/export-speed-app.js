@@ -25,11 +25,22 @@ function sampleMemory() {
   const python = path.join(root, process.platform === 'win32' ? '.venv/Scripts/python.exe' : '.venv/bin/python');
   const rootPid = Number(process.env.HDR_FINISHER_ELECTRON_MAIN_PID);
   const child = spawn(python, ['-u', '-c', `
-import json, sys, time
+import json, os, sys, time
 from export_speed_profile import process_category, process_rows
 
 root = int(sys.argv[1])
-while rows := process_rows(root):
+while True:
+    try:
+        rows = process_rows(root)
+    except OSError:
+        try:
+            os.kill(root, 0)
+        except OSError:
+            break
+        time.sleep(0.25)
+        continue
+    if not rows:
+        break
     print(json.dumps([dict(row, category=process_category(row, root)) for row in rows]))
     time.sleep(1)
 `, String(rootPid)], {cwd: path.join(root, 'tools')});

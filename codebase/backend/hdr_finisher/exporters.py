@@ -605,6 +605,9 @@ class _StagedDelivery:
         frame = self.mapped_frames.get(id(pixels))
         if frame is not None:
             return frame
+        frame = DeliveryFrame.borrow_grade_source(pixels)
+        if frame is not None:
+            return frame
         if (isinstance(pixels, np.memmap) and pixels.mode == "r" and pixels.offset == 0
                 and pixels.flags.c_contiguous and isinstance(pixels.filename, (str, Path))
                 and Path(pixels.filename).stat().st_size == pixels.nbytes):

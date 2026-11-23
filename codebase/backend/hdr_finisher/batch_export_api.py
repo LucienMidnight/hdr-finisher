@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 from .config import APP_DATA_DIR
 from .raw_import import RAW_EXTENSIONS
 from .models import SourceInterpretationOverride
-from .batch_export import BatchExports
+from .batch_export import BatchExports, share_grade_source
 from .export_presets import ExportPreset, ExportPresets
 
 class RunRequest(BaseModel):
@@ -44,7 +44,7 @@ def create_batch_router(store, grants=None, desktop=False):
             return {"path":key,"source_path":str(source),"name":document.get("name") or source.name,"copy_name":document.get("name", "") if "|copy|" in key else "",
                     "grade":grade,"rating":document.get("marks",{}).get("rating",0),"capture_time":facts.get("capture_time"),"unsaved":unsaved,
                     "sdr_only":sdr_only,"hdr_compatibility":compatibility}
-    queue = BatchExports(snapshot)
+    queue = BatchExports(snapshot, shared_source=lambda photo, directory: share_grade_source(store, photo, directory))
     store.batch_exports = queue
     store.batch_export = queue
     def library(directory):

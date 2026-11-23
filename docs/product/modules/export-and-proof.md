@@ -61,25 +61,35 @@ checks for this follow-up, Windows, and the remaining large-source formats are
 not yet qualified.
 [Step 2 measurements](../../technical/performance-table.md#november-23-2026--macbook-neo-file-backed-export-memory-step-2).
 
-**Export-memory Step 3, pending integration.** The file-backed CPU route
-supports guided B&W, Global HSL, output sharpening, framing and watermark.
-Resize keeps Pillow Lanczos exact by processing one
-channel at a time: the banded `box=` probe changed pixels. Highlight
-compression and the HDR ceiling run after resize and sharpening, before
-framing and watermark. Finished pixels and AVIF, HDR JPEG XL and SDR JPEG
-hashes are pinned against the whole-frame route on small fixtures. Roll and
-perspective with spatial grading or output finishing stay on the whole-frame
-route: the windowed transforms can change pixel values. Exact bounded roll,
-full-size Profile A/B hashes and worker memory/time validation remain open.
+**Export-memory Steps 3–5 (MacBook Neo verified).** The staged disk-backed CPU
+route covers geometry (channel-by-channel exact Pillow roll/perspective),
+disk-backed spatial masks, Detail (Texture, Clarity, Sharpen), Local Adjustments,
+Lens Filter, Film Resolution, Halation, fused Film Grain + Stock, Scan Sharpening,
+Look Strength, Image Structure, Vignette, guided B&W, Global HSL, whole-channel
+Lanczos resize, haloed output sharpening, highlight compression, streaming photo
+framing, in-place watermark patching, and linked-SDR HDR-grade reuse. Grade keeps
+large (`>= 256 MiB`) source frames in read-only scratch files and shares its
+immutable original pixels and authored SDR reference with the batch worker by
+hardlink or spill copy when the source and decode recipe match (ignoring Auto
+Lensfun resolved profile/database labels). On the 8 GB MacBook Neo with the same
+photo open in Grade, 42 MP Sony Profile A dropped from 5.04 GB to **1.655 GB**
+(golden SHA-256 exact, 0 trims), 42 MP A-native exported at **3.190 GB** (exact
+SHA-256), 42 MP Max (all stages on) dropped from a 9.963 GB failure to **3.951 GB**
+(exact SHA-256), and 61 MP HDR JPEG XL exported at **3.527 GB**. Headless 100 MP
+exports fit under 4 GB (3.587 GB HDR JXL, 3.577 GB SDR JPEG), and 192 MP SDR JPEG
+dropped from a 7.434 GB failure to 4.089 GB; with a 100 MP photo open in Grade
+with Santorini edits, the batch worker stays at 1.43 GB while Grade's own
+interactive 100 MP preview/mask caches bring the whole app to 4.91–5.27 GB.
+[Steps 3–6 measurements](../../technical/performance-table.md#november-23-2026--macbook-neo-grade-open-sharing--native-encoder-probe-steps-56).
 
-**Export-memory Step 4, pending integration.** The staged CPU route fixes
-geometry one channel at a time and reuses the fixed source and spatial masks
-when the renditions use the same input. Detail, local adjustments and spatial
-Film Look alternate between two disk-backed grade files. The pass preserves
-whole-image blur sums along complete lines and keeps the pre-Film Look input
-on disk for blending. Linked SDR can reuse the unclamped HDR grade when both
-renditions use identical Denoise settings. Full-size golden hashes, memory,
-speed and progress cadence remain open for the profile sweep.
+**Export-memory Step 6 (native encoder limits, pending Steve's decision).**
+Bundled `avifgainmaputil combine` peaks at 2.47 GB (42 MP), 3.45 GB (61 MP) and
+5.54 GB (100 MP) regardless of `--grid` (`4×2` / `4×4` cuts `avifdec` decode RAM
+up to 9× but leaves `combine` unchanged), and `avifenc -j` leaves libaom RAM flat.
+`ultrahdr_app` enforces an upstream `8192 × 8192` dimension cap. No byte-changing
+encoder option has been enabled; 61–100 MP native AVIF on 8 GB machines awaits
+Steve's choice between an 8 GB preflight recommendation toward HDR JPEG XL or a
+byte-changing custom tiled-grid libavif encoder.
 
 ## November 22 — File-backed AVIF delivery and full-size Proof
 

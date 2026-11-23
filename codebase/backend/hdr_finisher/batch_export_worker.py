@@ -57,7 +57,7 @@ def main():
     try:
         with process_scope("batch_worker"), action_scope(task.get("diagnostic_action")):
             results = export_photo(task["photo"], preset, task["directory"], task["sequence"], progress,
-                                   lambda: Path(task["cancel"]).exists(), live=live)
+                                   lambda: Path(task["cancel"]).exists(), live=live, shared_source=task.get("shared_source"))
     finally:
         stop.set()
         publisher.join()

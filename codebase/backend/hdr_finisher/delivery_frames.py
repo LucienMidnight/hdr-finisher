@@ -4,11 +4,13 @@ from __future__ import annotations
 from .export_timing import timed as _timed_stage
 from contextlib import contextmanager
 from contextvars import ContextVar
-from dataclasses import dataclass
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 import math
 import mmap
 import shutil
+import tempfile
+from weakref import finalize
 
 import numpy as np
 
@@ -26,7 +28,7 @@ def batch_source_buffers():
 
 
 def mapped_source_array(shape, dtype=np.float32, *, order="C"):
-    """Keep giant batch decode buffers out of malloc until the source is spilled."""
+    """Keep giant decode buffers out of malloc until the source is spilled."""
     if not _batch_source_buffers.get():
         return None
     size = math.prod(shape) * np.dtype(dtype).itemsize
@@ -56,6 +58,7 @@ class DeliveryFrame:
     path: Path
     shape: tuple[int, ...]
     dtype: np.dtype = np.dtype(np.float32)
+    _owner: np.ndarray | None = field(default=None, repr=False, compare=False)
 
     def check_space(self) -> None:
         size = math.prod(self.shape) * self.dtype.itemsize
@@ -85,12 +88,46 @@ class DeliveryFrame:
         frame.write(row_bands(pixels, 128))
         return frame
 
+    @classmethod
+    def spill_grade_source(cls, pixels):
+        if pixels is None:
+            return None
+        pixels.setflags(write=False)
+        if pixels.nbytes < SOURCE_SPILL_BYTES or cls.grade_source_frame(pixels) is not None:
+            return pixels
+        try:
+            directory = tempfile.TemporaryDirectory(prefix="grade-source-")
+            try:
+                frame = cls.spill(Path(directory.name) / "source.rgb", pixels)
+                mapped = frame._open_map("r")
+            except BaseException:
+                directory.cleanup()
+                raise
+        except OSError:
+            return pixels
+        mapped._grade_source_frame = frame
+        finalize(mapped, _close_grade_source, mapped._mmap, directory)
+        return mapped
+
+    @staticmethod
+    def grade_source_frame(pixels):
+        return getattr(pixels, "_grade_source_frame", None)
+
+    @classmethod
+    def borrow_grade_source(cls, pixels):
+        """Keep the Grade file alive while a delivery consumer reopens it by path."""
+        frame = cls.grade_source_frame(pixels)
+        return None if frame is None else replace(frame, _owner=pixels)
+
+    def _open_map(self, mode):
+        return np.memmap(self.path, mode=mode, shape=self.shape, dtype=self.dtype)
+
     @contextmanager
     def map(self, mode: str):
         if mode == "w+":
             self.check_space()
         try:
-            pixels = np.memmap(self.path, mode=mode, shape=self.shape, dtype=self.dtype)
+            pixels = self._open_map(mode)
             try:
                 yield pixels
                 if mode != "r":
@@ -111,6 +148,11 @@ class DeliveryFrame:
                 if file.readinto(memoryview(band).cast("B")) != band.nbytes:
                     raise OSError("Incomplete delivery frame.")
                 yield band
+
+
+def _close_grade_source(mapping, directory):
+    mapping.close()
+    directory.cleanup()
 
 
 def row_bands(image: np.ndarray | DeliveryFrame, rows: int):

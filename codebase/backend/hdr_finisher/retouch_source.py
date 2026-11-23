@@ -90,7 +90,12 @@ def build_repaired_source(session, records, checkpoint=lambda: None, *, previous
         oy = patch.origin[1] - record.recipe.search_rect[1]
         ph, pw = patch.pixels.shape[:2]
         patches.append((patch, alpha[oy:oy+ph, ox:ox+pw] > 0))
-    result = np.empty_like(base)
+    from .delivery_frames import batch_source_buffers, empty_source_array
+    if session.file_back_sources:
+        with batch_source_buffers():
+            result = empty_source_array(base.shape, base.dtype)
+    else:
+        result = np.empty_like(base)
     source = session.image if incremental else base
     for top in range(0, base.shape[0], 128):
         checkpoint()
@@ -114,6 +119,7 @@ def build_repaired_source(session, records, checkpoint=lambda: None, *, previous
 
 
 def install_repaired_source(session, pixels, identity):
+    pixels = session.retain_source_pixels(pixels)
     session.image = pixels
     session.render_cache.replace_source(pixels, session.sdr_reference_image,
         identity=identity, sdr_identity=session.render_cache.sdr_identity)

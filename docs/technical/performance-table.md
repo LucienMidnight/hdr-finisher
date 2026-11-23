@@ -1,3 +1,40 @@
+## November 23, 2026 — MacBook Neo Grade-open sharing & native encoder probe (Steps 5–6)
+
+MacBook Neo (A18 Pro, 8 GB), macOS 27, real unpackaged Electron app
+(`1408 × 794`) under the shared GPU lock. Step 5 keeps large (`>= 256 MiB`)
+Grade source frames in read-only scratch files and shares Grade's original
+decoded pixels and authored SDR reference with the batch worker by hardlink (or
+spill copy) when the source file and decode recipe match (ignoring Auto Lensfun
+resolved profile/database labels). Continuous 1 Hz whole-app physical-footprint
+sampling across every run (resilient to transient macOS exiting-child `EPERM`
+races). Decimal GB.
+
+| Source and profile (same photo open in Grade) | Format | Wall time | Whole-app peak | Peak process split | Shared source / outcome |
+| --- | --- | ---: | ---: | --- | --- |
+| 42 MP Sony A (1920 px + frame, `export-speed-app.js`) | `avif_gain_map` | 135.33 s (was 137.3 s) | **1.655 GB** (was 5.04 GB, -3.39 GB) | Electron 0.77 + worker 0.73 + backend 0.15 GB | File-backed Grade; 0 trims, 0 Grain reclaims; golden SHA-256 exact (`ff3961ee9b4e…`); `maxGapS` 0.27 s |
+| 42 MP Sony A-native (34 MP cropped) | `avif_gain_map` | 163.60 s | **3.190 GB** | `avifgainmaputil` 1.81 + Electron 0.98 + worker 0.23 + backend 0.17 GB | `sharedSource: true`; exact SHA-256 (`2ad132186e81…`); `maxGapS` 0.28 s |
+| 42 MP Sony Max (34 MP, **all stages on**) | `avif_gain_map` | 345.95 s | **3.951 GB** (was 9.963 GB fail headless) | `avifgainmaputil` 2.10 + Electron 1.45 + worker 0.23 + backend 0.18 GB | `sharedSource: true`; exact SHA-256 (`9be69993101b…`); `maxGapS` 0.26 s |
+| 61 MP synthetic EXR A-native | `jpegxl_hdr` | 159.37 s | **3.527 GB** | backend 2.36 + Electron 1.03 + worker 0.14 GB | `sharedSource: true`; `maxGapS` 0.26 s |
+| 100 MP synthetic EXR A-native | `jpegxl_hdr` | 348.42 s | 4.910 GB (3.587 GB headless) | backend 2.55 + worker 1.42 + Electron 0.94 GB | `sharedSource: true`; `maxGapS` 0.29 s (batch worker 1.43 GB; Grade interactive 100 MP preview/mask caches held 2.55–2.90 GB in backend) |
+| 100 MP synthetic EXR A-native | `sdr_jpeg` | 299.08 s | 5.269 GB (3.577 GB headless) | backend 2.95 + worker 1.42 + Electron 0.90 GB | `sharedSource: true`; `maxGapS` 0.38 s (same Grade 100 MP backend retention; direct EXR `share_grade_source` unit check exact SHA-256) |
+
+**Step 6 — Native encoder memory probe (no code or output-byte changes):**
+Bundled `avifgainmaputil 1.4.1 (libaom 3.13.2)`, `avifdec` and `avifenc` measured
+directly on 42 MP, 61 MP and 100 MP Y4M pairs (decimal GB):
+
+| Resolution | `avifgainmaputil combine` single → `--grid` | `avifdec` single → `--grid` | `avifgainmaputil tonemap` single → `--grid` | Notes |
+| --- | ---: | ---: | ---: | --- |
+| 42 MP (`7968 × 5320`) | 2.472 → 2.490 GB (`4×2`) | 3.223 → 0.574 GB | 2.234 → 1.670 GB | Fits under 4 GB with app + Grade |
+| 61 MP (`9600 × 6354`) | 3.449 → 3.437 GB (`4×4`) | 4.617 → 0.509 GB | 3.187 → 2.321 GB | Encoder alone 3.45 GB (~4.3–4.5 GB with Electron + Grade); `avifenc -j 1/2/all` flat at 1.31–1.33 GB (`-j 1` 13.47 s vs `-j all` 4.47 s, changes bytes) |
+| 100 MP (`12000 × 8334`) | **5.539 → 5.626 GB** (`4×4`) | 7.542 → 0.827 GB | 5.226 → 3.802 GB | Exceeds 4 GB on encoder alone; `ultrahdr_app` also enforces an upstream `8192 × 8192` hard cap |
+
+`avifgainmaputil` has no `--jobs` flag and holds both full Y4M frames plus gain-map
+buffers in RAM before grid tiling, so no byte-identical CLI flag reduces `combine`
+peak memory. Bringing 61–100 MP native AVIF under 4 GB requires either warning/guiding
+8 GB machines toward HDR JPEG XL (already 3.53 GB at 61 MP with Grade open, 3.59 GB
+at 100 MP headless) or a Steve-approved custom tiled-grid libavif encoder (changes
+AVIF bytes).
+
 ## November 23, 2026 — MacBook Neo staged strip pipeline (Step 4)
 
 MacBook Neo (A18 Pro, 8 GB), macOS 27, headless one-worker CPU batch and real

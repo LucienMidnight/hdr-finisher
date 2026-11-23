@@ -423,7 +423,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 instrument_work = InstrumentWork()
-store = SessionStore(grade_import_parallel=True)
+store = SessionStore(grade_import_parallel=True, file_back_sources=True)
 atexit.register(store.clear)
 capabilities = None
 export_backends = None

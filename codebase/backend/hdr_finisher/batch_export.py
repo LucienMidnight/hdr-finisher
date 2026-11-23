@@ -1,4 +1,5 @@
 """One isolated low-priority photo at a time, sharing GPU delivery."""
+from base64 import b64decode, b64encode
 from copy import deepcopy
 from contextlib import ExitStack
 from datetime import datetime, timezone
@@ -34,8 +35,9 @@ def export_state(item_key, grade, records=None):
     return {"exported": bool(record), "edited_since_export": bool(record and record["grade_identity"] != grade_identity(grade)), "last_export": record}
 
 class BatchExports:
-    def __init__(self, snapshot, record_path=RECORD_PATH, runner=None):
+    def __init__(self, snapshot, record_path=RECORD_PATH, runner=None, *, shared_source=None):
         self.snapshot, self.record_path, self.runner = snapshot, Path(record_path), runner or self._subprocess
+        self.shared_source = shared_source
         self.condition, self.jobs = Condition(), {}
         self._closing = False
         self._children = set()
@@ -196,7 +198,12 @@ class BatchExports:
             result = Path(temporary) / "result.json"
             progress_file = Path(temporary) / "progress.json"
             cancel_file = Path(temporary) / "cancel"
-            task.write_text(json.dumps({"photo":photo,"preset":preset.model_dump(mode="json"),"directory":directory,"sequence":sequence,"progress":str(progress_file),"cancel":str(cancel_file),"diagnostic_action":current_action()}), encoding="utf-8")
+            work = {"photo":photo,"preset":preset.model_dump(mode="json"),"directory":directory,"sequence":sequence,"progress":str(progress_file),"cancel":str(cancel_file),"diagnostic_action":current_action()}
+            if self.shared_source is not None and not cancelled():
+                shared = self.shared_source(photo, Path(temporary))
+                if shared is not None:
+                    work["shared_source"] = shared
+            task.write_text(json.dumps(work), encoding="utf-8")
             env = dict(os.environ)
             env.update(TMPDIR=temporary, TEMP=temporary, TMP=temporary)
             # Use the same native-library threading as an ordinary export.
@@ -327,32 +334,172 @@ class PhotoProgress:
         return {"fraction": round(fraction, 4), "label": label, "eta_s": eta}
 
 
-def _spill_worker_source(session, scratch):
+def _decode_settings(document):
+    from .color_context import DEFAULT_HDR_REFERENCE_WHITE_NITS
+    from .models import RawImportSettings, SourceInterpretationOverride
+
+    if document is None:
+        return RawImportSettings(), SourceInterpretationOverride(), DEFAULT_HDR_REFERENCE_WHITE_NITS
+    return document.source.raw_import_settings, document.interpretation_override, document.hdr_reference_white_nits
+
+
+def _raw_decode_recipe(settings):
+    """Auto Lensfun ignores the profile and database labels it reports back."""
+    if settings.lens.mode != "auto":
+        return settings
+    return settings.model_copy(update={"lens": settings.lens.model_copy(update={"profile_id": None, "database_version": None})})
+
+
+def _metadata_bytes(value):
+    if isinstance(value, bytes):
+        return {"__hdr_finisher_bytes__": b64encode(value).decode("ascii")}
+    raise TypeError("Unsupported shared source metadata")
+
+
+def _restore_metadata_bytes(value):
+    if set(value) == {"__hdr_finisher_bytes__"}:
+        return b64decode(value["__hdr_finisher_bytes__"], validate=True)
+    return value
+
+
+def share_grade_source(store, photo, directory):
+    from .delivery_frames import DeliveryFrame
+    from .projects import validate_saved_document
+    from .sessions import source_stat_key
+    from .source_luminance import describe_source_luminance
+
+    try:
+        with store._lock:
+            current = store.current()
+            if current is None or (decode := current.source_decode) is None:
+                return None
+            source_path = Path(photo["source_path"])
+            resolved = source_path.resolve(strict=True)
+            if current.source_path.resolve() != resolved or current.source_path.suffix.lower() != source_path.suffix.lower():
+                return None
+            document = validate_saved_document(photo["grade"]) if photo.get("grade") else None
+            if document is not None and source_path.suffix.lower() != resolved.suffix.lower():
+                return None
+            raw, override, white = _decode_settings(document)
+            original = current.retouch_original
+            reference = current.sdr_reference_image
+            if (not current.source_fingerprint_sha256 or decode.original() is not original
+                    or source_stat_key(resolved) != decode.stat_key or current.source_byte_size != decode.stat_key[2]
+                    or (document is not None and document.source.fingerprint_sha256 not in (None, current.source_fingerprint_sha256))
+                    or _raw_decode_recipe(raw) != _raw_decode_recipe(current.raw_import_settings) or override != current.interpretation_override
+                    or white != current.hdr_reference_white_nits
+                    or (_raw_decode_recipe(raw), override, white) != (
+                        _raw_decode_recipe(decode.raw_import_settings), decode.interpretation_override, decode.reference_white_nits)):
+                return None
+            highlights = raw.highlight_reconstruction
+            if current.metadata.get("dng_opcode_audit") or (current.metadata.get("raw_input")
+                    and highlights.enabled and highlights.method == "edge_colour_v1"):
+                return None
+            encoded_metadata = json.dumps(current.metadata, default=_metadata_bytes, allow_nan=False)
+            if json.loads(encoded_metadata, object_hook=_restore_metadata_bytes) != current.metadata:
+                return None
+            filename = document.source.filename if document is not None else source_path.name
+            source = current.source.model_copy(update={"filename": Path(filename.replace("\\", "/")).name})
+            luminance = describe_source_luminance(source, current.metadata, has_authored_sdr=reference is not None)
+            descriptor = {
+                "source": source.model_dump(mode="json"), "analysis": current.analysis.model_dump(mode="json"),
+                "metadata": json.loads(encoded_metadata), "source_luminance": luminance.model_dump(mode="json"),
+                "source_fingerprint_sha256": current.source_fingerprint_sha256, "source_byte_size": current.source_byte_size,
+                "source_stat_key": decode.stat_key, "raw_import_settings": raw.model_dump(mode="json"),
+                "interpretation_override": override.model_dump(mode="json"), "hdr_reference_white_nits": white,
+            }
+
+        def handoff(name, pixels):
+            target = directory / name
+            frame = DeliveryFrame.grade_source_frame(pixels)
+            if frame is not None:
+                try:
+                    os.link(frame.path, target)
+                except OSError:
+                    frame = None
+            if frame is None:
+                frame = DeliveryFrame.spill(target, pixels)
+            return {"path": str(target), "shape": frame.shape, "dtype": frame.dtype.str}
+
+        descriptor["image"] = handoff("shared_source.rgb", original)
+        if reference is not None:
+            descriptor["sdr_reference_image"] = handoff("shared_sdr_ref.rgb", reference)
+        return descriptor
+    except (OSError, ValueError, TypeError):
+        return None
+
+
+def _open_shared_source(shared, source_path, document, maps):
+    import numpy as np
+    from .delivery_frames import DeliveryFrame
+    from .models import HDRAnalysis, RawImportSettings, SourceImageDescriptor, SourceInterpretationOverride, SourceLuminanceDescriptor
+    from .sessions import LoadedSession, source_stat_key
+
+    def map_frame(descriptor):
+        shape = tuple(descriptor["shape"])
+        dtype = np.dtype(descriptor["dtype"])
+        path = Path(descriptor["path"])
+        if (len(shape) != 3 or shape[-1] != 3 or any(type(size) is not int or size <= 0 for size in shape)
+                or dtype != np.float32 or path.stat().st_size != math.prod(shape) * dtype.itemsize):
+            raise ValueError("Invalid shared source frame")
+        return opened.enter_context(DeliveryFrame(path, shape, dtype).map("r"))
+
+    try:
+        with ExitStack() as opened:
+            raw, override, white = _decode_settings(document)
+            source = SourceImageDescriptor.model_validate(shared["source"])
+            fingerprint = shared["source_fingerprint_sha256"]
+            stamp = tuple(shared["source_stat_key"])
+            if (source_stat_key(source_path) != stamp or shared["source_byte_size"] != stamp[2]
+                    or raw != RawImportSettings.model_validate(shared["raw_import_settings"])
+                    or override != SourceInterpretationOverride.model_validate(shared["interpretation_override"])
+                    or white != shared["hdr_reference_white_nits"]
+                    or not isinstance(fingerprint, str) or len(fingerprint) != 64
+                    or (document is not None and document.source.fingerprint_sha256 not in (None, fingerprint))):
+                return None
+            image = map_frame(shared["image"])
+            if image.shape != (source.height, source.width, source.channels) or source.dtype != str(image.dtype):
+                return None
+            reference = map_frame(shared["sdr_reference_image"]) if "sdr_reference_image" in shared else None
+            session = LoadedSession(
+                session_id=uuid4().hex, source_path=source_path, image=image, sdr_reference_image=reference,
+                source=source, analysis=HDRAnalysis.model_validate(shared["analysis"]),
+                metadata=json.loads(json.dumps(shared["metadata"]), object_hook=_restore_metadata_bytes),
+                hdr_reference_white_nits=white, raw_import_settings=raw, interpretation_override=override,
+                source_luminance=SourceLuminanceDescriptor.model_validate(shared["source_luminance"]),
+                prepared_fingerprint=fingerprint,
+            )
+            if source_stat_key(source_path) != stamp:
+                return None
+            maps.enter_context(opened.pop_all())
+            return session
+    except (OSError, ValueError, TypeError, KeyError, IndexError):
+        return None
+
+
+def _spill_worker_source(session, scratch, maps, skip=()):
     from .delivery_frames import DeliveryFrame, SOURCE_SPILL_BYTES
     fields = ("image", "sdr_reference_image", "retouch_original")
-    if not any(getattr(session, field, None) is not None and getattr(session, field).nbytes >= SOURCE_SPILL_BYTES
-               for field in fields):
+    sources = {field: pixels for field in fields if (pixels := getattr(session, field)) is not None
+               and pixels.nbytes >= SOURCE_SPILL_BYTES and id(pixels) not in skip}
+    if not sources:
         return
     directory = Path(scratch.enter_context(tempfile.TemporaryDirectory(prefix="batch-source-")))
-    maps = scratch.enter_context(ExitStack())
     replacements = {}
-    for field in fields:
-        source = getattr(session, field, None)
-        if source is None or source.nbytes < SOURCE_SPILL_BYTES:
-            continue
+    for field, source in sources.items():
         key = id(source)
         if key not in replacements:
             frame = DeliveryFrame.spill(directory / f"{field}.rgb", source)
             replacements[key] = maps.enter_context(frame.map("r"))
         setattr(session, field, replacements[key])
-    del source
+    del source, pixels
+    sources.clear()
     session.render_cache.image = session.image
     session.render_cache.sdr_reference_image = session.sdr_reference_image
-    session._batch_source_maps = maps
     gc.collect()
 
 
-def export_photo(photo, preset, directory, sequence, progress=None, cancelled=lambda: False, live=None):
+def export_photo(photo, preset, directory, sequence, progress=None, cancelled=lambda: False, live=None, *, shared_source=None):
     from .sessions import SessionStore
     from .projects import open_document, validate_saved_document
     from .exporters import build_export_backends
@@ -360,18 +507,32 @@ def export_photo(photo, preset, directory, sequence, progress=None, cancelled=la
     from .delivery_frames import batch_source_buffers
     from .export_timing import export_clock
     store = SessionStore(grade_import_parallel=True)
-    scratch = ExitStack()
+    scratch, maps = ExitStack(), ExitStack()
     results = []
     develop_started = monotonic()
     try:
         from .highlight_edge_gpu import source_work
+        source_path = Path(photo["source_path"])
+        document = validate_saved_document(photo["grade"]) if photo.get("grade") else None
+        skip = ()
         with source_work(priority=20, cancelled=cancelled), batch_source_buffers():
-            if photo.get("grade"): session = open_document(store, validate_saved_document(photo["grade"]), Path(photo["source_path"]))
+            shared_session = (_open_shared_source(shared_source, source_path.resolve() if document else source_path, document, maps)
+                              if shared_source is not None else None)
+            if shared_session is not None:
+                skip = (id(shared_session.retouch_original), id(shared_session.sdr_reference_image))
+                log("export", "batch_source_shared", reason="grade_source_reused", photo={"id": str(source_path), "name": source_path.name})
+            if document is not None:
+                session = open_document(store, document, source_path, prepared_session=shared_session)
+            elif shared_session is not None:
+                store.activate_session(shared_session)
+                session = shared_session
             else:
-                payload = store.create_session(Path(photo["source_path"]), owns_source_path=False)
+                payload = store.create_session(source_path, owns_source_path=False)
                 session = store.get(payload.session_id)
+            del shared_session
         session.delivery_cancelled = cancelled
-        _spill_worker_source(session, scratch)
+        _spill_worker_source(session, scratch, maps, skip)
+        session._batch_source_maps = maps
         develop_s = monotonic() - develop_started
         if live is not None: live.developed(first_format=preset.versions[0].settings.format)
         backends = build_export_backends(probe_capabilities())
@@ -429,5 +590,8 @@ def export_photo(photo, preset, directory, sequence, progress=None, cancelled=la
         try:
             store.clear()
         finally:
-            scratch.close()
+            try:
+                maps.close()
+            finally:
+                scratch.close()
     return results
