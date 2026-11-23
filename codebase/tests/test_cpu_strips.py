@@ -420,6 +420,26 @@ def test_cancellation_abandons_at_most_one_strip_of_work():
     assert seen < plan.strip_count
 
 
+@pytest.mark.parametrize(("kind", "highlights", "passes"), [
+    (PreviewKind.SDR, False, 3),
+    (PreviewKind.SDR, True, 3),
+    (PreviewKind.HDR, False, 2),
+    (PreviewKind.HDR, True, 4),
+])
+def test_strip_progress_counts_each_visited_band(monkeypatch, kind, highlights, passes):
+    from hdr_finisher import export_timing
+
+    state = AdjustmentState()
+    state.hdr.highlight_section_enabled = highlights
+    state.sdr.highlight_section_enabled = highlights
+    image = np.full((96, 128, 3), .18, dtype=np.float32)
+    calls = []
+    monkeypatch.setattr(export_timing, "tick", lambda done, total: calls.append((done, total)))
+    _, report = render_in_strips(image, state, kind, budget_bytes=32 * 1024)
+    total = passes * len(report.plan.strips)
+    assert calls == [(done, total) for done in range(1, total + 1)]
+
+
 def test_plan_divides_the_frame_without_gaps_or_overlap():
     plan = plan_strips(1000, 777, budget_bytes=256 * 1024)
     assert plan.strips[0][0] == 0

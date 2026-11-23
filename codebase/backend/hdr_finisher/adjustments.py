@@ -56,6 +56,7 @@ EXPORT_GRAIN_CHUNK_ROWS = 32
 # Peak scratch of one Film Grain chunk, bytes per pixel: 370 MB for a
 # 128 x 7206 colour-negative chunk on the MacBook Neo (November 22).
 GRAIN_SCRATCH_BYTES_PER_PIXEL = 400
+MAX_GRAIN_SCRATCH_BYTES = 192 * 1024 * 1024
 # HDR reference white (scene 0.18) onto SDR's (100 of 203 nits), for grain
 # development; mirrored in the shader.
 GRAIN_DEVELOP_HDR_SCALE = np.float32((100.0 / 203.0) / 0.18)
@@ -2464,18 +2465,23 @@ def _apply_density_grain(
     return np.clip(result, 0.0, None if kind == PreviewKind.HDR else 1.0).astype(np.float32)
 
 
-def grain_export_workers(height: int, rows: int, channels: int = 3) -> int:
+def grain_export_workers(height: int, rows: int, channels: int = 3, width: int | None = None) -> int:
     """Concurrent Film Grain chunks an export may run.
 
     The serial loop held its chunks, their concatenation and two more
     whole-frame copies. The parallel path holds one preallocated frame, so it
-    may spend two frames of float32 scratch on concurrent chunks, plus the one
-    chunk the serial loop also had, and never more than the CPU pool.
+    budgets the smaller of two float32 frames or 192 MiB for concurrent
+    chunks. At least one chunk can run, even if it exceeds that budget.
     """
     from .cpu_budget import logical_cpus
     frame_bytes_per_column = height * channels * 4
     chunk_bytes_per_column = rows * GRAIN_SCRATCH_BYTES_PER_PIXEL
-    return max(1, min(logical_cpus(), 1 + (2 * frame_bytes_per_column) // chunk_bytes_per_column))
+    if width is None:
+        workers = 1 + (2 * frame_bytes_per_column) // chunk_bytes_per_column
+    else:
+        budget = min(2 * width * frame_bytes_per_column, MAX_GRAIN_SCRATCH_BYTES)
+        workers = budget // (width * chunk_bytes_per_column)
+    return max(1, min(logical_cpus(), workers))
 
 
 def _render_grain_chunks_in_parallel(render, height: int) -> np.ndarray:
@@ -2486,9 +2492,10 @@ def _render_grain_chunks_in_parallel(render, height: int) -> np.ndarray:
     only the order in time changes. Each chunk writes into one preallocated
     output instead of a list that is concatenated afterwards.
     """
-    from itertools import count
-    from threading import Lock
-    from .cpu_budget import CpuExecutor
+    from concurrent.futures import FIRST_COMPLETED, wait
+    from functools import partial
+    from itertools import count, islice
+    from threading import Event, Lock
     from .export_timing import tick
     from .grain_work import grain_allocation, checkpoint
     rows = EXPORT_GRAIN_CHUNK_ROWS
@@ -2499,25 +2506,36 @@ def _render_grain_chunks_in_parallel(render, height: int) -> np.ndarray:
     result = np.empty((height, *first.shape[1:]), dtype=first.dtype)
     result[:spans[0][1]] = first
     del first
-    workers = min(grain_export_workers(height, rows, result.shape[-1]), len(spans) - 1)
-    following, finished, lock = count(1), count(2), Lock()
+    workers = min(grain_export_workers(height, rows, result.shape[-1], width=result.shape[1]), len(spans) - 1)
+    following, finished, lock = iter(spans[1:]), count(2), Lock()
+    failed = Event()
 
-    def runner():
-        while True:
-            with lock:
-                index = next(following)
-            if index >= len(spans):
-                return
-            top, bottom = spans[index]
-            checkpoint()
+    def run_span(top, bottom):
+        try:
             with grain_allocation(slots=workers):
                 result[top:bottom] = render(top, bottom)
-            tick(next(finished), len(spans))
+            with lock:
+                done = next(finished)
+            tick(done, len(spans))
+        except BaseException:
+            failed.set()
+            raise
 
     tick(1, len(spans))
     with CpuExecutor() as pool:
-        for future in [pool.submit(runner) for _ in range(workers)]:
-            future.result()
+        pending, available = set(), workers
+        while available:
+            for span in islice(following, available):
+                if failed.is_set():
+                    break
+                # Give queued Grade work a chance to run between export spans.
+                pending.add(pool.submit_background(partial(run_span, *span)))
+            if not pending:
+                break
+            completed, pending = wait(pending, return_when=FIRST_COMPLETED)
+            for future in completed:
+                future.result()
+            available = workers - len(pending)
     return result
 
 

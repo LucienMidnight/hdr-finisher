@@ -133,8 +133,9 @@ def test_sdr_only_skips_hdr_without_partial_output(tmp_path):
     assert not list(tmp_path.rglob("*.tmp*"))
 
 
-def test_real_workers_overlap_two_photos_and_keep_result_order(tmp_path):
+def test_real_workers_overlap_two_photos_and_keep_result_order(tmp_path, monkeypatch):
     # One photo decodes on the CPU while the previous one is on the GPU.
+    monkeypatch.setenv("HDR_FINISHER_BATCH_PARALLEL", "2")
     started, release = [], Event()
     photos = {str(i): {"path": str(i), "source_path": f"{i}.raw", "grade": {"n": i}} for i in range(3)}
     class Overlapping(BatchExports):
@@ -153,15 +154,53 @@ def test_real_workers_overlap_two_photos_and_keep_result_order(tmp_path):
     assert final["completed"] == 6
 
 
-def test_three_workers_with_16_gb_two_below_and_the_setting_wins(monkeypatch):
+def test_three_workers_with_16_gb_one_below_and_the_setting_wins(monkeypatch):
     from hdr_finisher import resource_preflight
     from hdr_finisher.resource_preflight import ResourceSnapshot
     monkeypatch.delenv("HDR_FINISHER_BATCH_PARALLEL", raising=False)
-    for total, expected in ((64 * 1024 ** 3, 3), (16 * 1024 ** 3, 3), (8 * 1024 ** 3, 2), (None, 2)):
+    for total, expected in ((64 * 1024 ** 3, 3), (16 * 1024 ** 3, 3), (16 * 1024 ** 3 - 1, 1),
+                            (8 * 1024 ** 3, 1), (None, 1)):
         monkeypatch.setattr(resource_preflight, "detect_memory_resources", lambda total=total: ResourceSnapshot(total, None, "test"))
         assert BatchExports._parallel() == expected
-    monkeypatch.setenv("HDR_FINISHER_BATCH_PARALLEL", "1")
-    assert BatchExports._parallel() == 1
+    monkeypatch.setenv("HDR_FINISHER_BATCH_PARALLEL", "2")
+    assert BatchExports._parallel() == 2
+
+
+@pytest.mark.parametrize("blocked_attempts", [2, 3])
+def test_batch_worker_progress_survives_windows_replace_collisions(tmp_path, monkeypatch, blocked_attempts):
+    from hdr_finisher import batch_export_worker, library_worker
+
+    task = tmp_path / "task.json"
+    progress_file = tmp_path / "progress.json"
+    result_file = tmp_path / "result.json"
+    rows = [{"photo": "photo.raw", "outcome": "exported"}]
+    task.write_text(json.dumps({"preset": preset().model_dump(mode="json"), "progress": str(progress_file),
+                               "directory": str(tmp_path), "cancel": str(tmp_path / "cancel"),
+                               "photo": {}, "sequence": 1}), encoding="utf-8")
+    monkeypatch.setattr(batch_export_worker.sys, "argv", ["batch_export_worker", str(task), str(result_file)])
+    monkeypatch.setattr(library_worker, "_lower_priority", lambda: None)
+    monkeypatch.setattr(batch_export_worker, "LIVE_INTERVAL_S", 60)
+    monkeypatch.setattr(batch_export_worker, "export_photo",
+                        lambda _photo, _preset, _directory, _sequence, progress, _cancelled, **_kwargs:
+                        progress(rows) or rows)
+    original_replace = Path.replace
+    attempts = []
+
+    def replace(source, target):
+        attempts.append(target)
+        if len(attempts) <= blocked_attempts:
+            raise PermissionError("progress reader has this file open")
+        return original_replace(source, target)
+
+    monkeypatch.setattr(Path, "replace", replace)
+    batch_export_worker.main()
+    assert attempts == [progress_file] * 3
+    assert json.loads(result_file.read_text(encoding="utf-8")) == rows
+    assert not progress_file.with_suffix(".tmp").exists()
+    if blocked_attempts < 3:
+        assert json.loads(progress_file.read_text(encoding="utf-8"))["results"] == rows
+    else:
+        assert not progress_file.exists()
 
 
 def test_export_snapshot_completes_during_grade_status(tmp_path):

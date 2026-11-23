@@ -137,7 +137,9 @@
       for (const line of quiet) panel.append(node("p", line));
       for (const job of exports?.jobs || (exports?.id ? [exports] : [])) {
         const section = node("section", "", "library-activity-job");
-        const time = job.estimated_seconds ? ` · about ${Math.ceil(job.estimated_seconds / 60)} min left` : "";
+        const seconds = job.estimated_seconds;
+        const remaining = seconds < 60 ? `${Math.round(seconds)}s` : `${Math.round(seconds / 60)} min`;
+        const time = seconds ? ` · about ${remaining} left` : "";
         const stage = job.state === "running" && job.stage ? ` · ${job.stage} ${Math.round(100 * (job.progress || 0))}%` : "";
         section.append(node("p", `Export: ${count(job.completed)} of ${count(job.total)} · ${job.state}${stage}${time}`));
         if (["running", "queued", "paused"].includes(job.state)) section.append(

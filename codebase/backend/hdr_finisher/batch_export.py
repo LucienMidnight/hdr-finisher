@@ -167,12 +167,12 @@ class BatchExports:
         # Each worker peaks at about 1.6 GB on a 42 MP RAW (October 20). With the
         # GPU turn down to ~2.7 s, the workers' CPU stages set the pace: three
         # exported six badminton RAWs in 41 s against 50 s for two; four were no
-        # faster. Machines under 16 GB keep two.
+        # faster. Use one worker below 16 GB or when RAM is unknown.
         try: return max(1, min(4, int(os.environ["HDR_FINISHER_BATCH_PARALLEL"])))
         except (KeyError, ValueError): pass
         from .resource_preflight import detect_memory_resources
         total = detect_memory_resources().total_ram_bytes
-        return 3 if total is not None and total >= 16 * 1024 ** 3 else 2
+        return 3 if total is not None and total >= 16 * 1024 ** 3 else 1
     def _record(self, photo, preset, results):
         exported = [r for r in results if r["outcome"] in {"exported","renamed"}]
         if not exported: return
@@ -241,10 +241,18 @@ class BatchExports:
 def _log_export_timing(clock, response, photo, export_format, develop_s=0.0):
     """One structured record per export: where its wait went, by lane and stage."""
     if develop_s:
-        clock.started -= develop_s
-        clock.lanes.setdefault("source", {})["develop_raw"] = develop_s
+        clock.record_development(develop_s)
     summary = clock.summary()
     source = Path(photo.get("source_path") or photo["path"])
+    trace_file = os.environ.get("HDR_FINISHER_EXPORT_STAGE_TRACE_FILE")
+    if trace_file and "stage_trace" in summary:
+        try:
+            line = json.dumps({"pid": os.getpid(), "photo": str(source), "format": export_format,
+                               "stage_trace": summary["stage_trace"]}, separators=(",", ":"))
+            with Path(trace_file).open("a", encoding="utf-8") as handle:
+                handle.write(line + "\n")
+        except OSError:
+            pass
     log("export", "export_timing", photo={"id": str(source), "name": source.name}, format=export_format,
         route=getattr(response, "renderer", None) or "cpu", reason="export_stage_timing",
         outcome="exported" if response.accepted else "failed", encoder_timings_ms=dict(response.timings_ms or {}),
@@ -265,6 +273,7 @@ class PhotoProgress:
 
     def __init__(self, versions):
         self.versions = max(1, versions)
+        self.export_format = None
         self.started = monotonic()
         self.developed_at = None
         self.base = 0.0
@@ -273,14 +282,23 @@ class PhotoProgress:
         self._reported = 0.0
         self._lock = Lock()
 
-    def developed(self):
-        self.base = self.fraction()
-        self.developed_at = monotonic()
+    def developed(self, *, first_format=None):
+        with self._lock:
+            self.base = self._fraction()
+            self.export_format = first_format
+            self.developed_at = monotonic()
 
-    def begin(self, index, clock):
-        self.index, self.clock = index, clock
+    def begin(self, index, clock, *, export_format=None):
+        with self._lock:
+            self.index, self.clock = index, clock
+            if export_format is not None:
+                self.export_format = export_format
 
     def fraction(self):
+        with self._lock:
+            return self._fraction()
+
+    def _fraction(self):
         if self.developed_at is None:
             elapsed = monotonic() - self.started
             value = self.DEVELOP_SHARE * (1.0 - math.exp(-elapsed / self.DEVELOP_TIME_CONSTANT_S))
@@ -288,21 +306,21 @@ class PhotoProgress:
             live = getattr(self.clock, "progress", None)
             version = live.fraction() if live is not None else 0.0
             value = self.base + (1.0 - self.base) * min(1.0, (self.index + version) / self.versions)
-        with self._lock:
-            self._reported = max(self._reported, min(value, .99))
-            return self._reported
+        self._reported = max(self._reported, min(value, .99))
+        return self._reported
 
     def snapshot(self):
-        from .export_progress import LABELS, estimate_remaining
-        fraction = self.fraction()
-        live = getattr(self.clock, "progress", None)
-        if self.developed_at is None:
-            label, eta = LABELS["source"], None
-        else:
-            label = live.label() if live is not None else LABELS["hdr"]
-            # Time the rest from the work after development, which the plan weighs.
-            rendered = (fraction - self.base) / max(1e-6, 1.0 - self.base)
-            eta = estimate_remaining(rendered, monotonic() - self.developed_at)
+        from .export_progress import LABELS, default_render_label, estimate_remaining
+        with self._lock:
+            fraction = self._fraction()
+            live = getattr(self.clock, "progress", None)
+            if self.developed_at is None:
+                label, eta = LABELS["source"], None
+            else:
+                label = live.label() if live is not None else default_render_label(self.export_format)
+                # Time the rest from the work after development, which the plan weighs.
+                rendered = (fraction - self.base) / max(1e-6, 1.0 - self.base)
+                eta = estimate_remaining(rendered, monotonic() - self.developed_at)
         return {"fraction": round(fraction, 4), "label": label, "eta_s": eta}
 
 
@@ -324,14 +342,14 @@ def export_photo(photo, preset, directory, sequence, progress=None, cancelled=la
                 session = store.get(payload.session_id)
         session.delivery_cancelled = cancelled
         develop_s = monotonic() - develop_started
-        if live is not None: live.developed()
+        if live is not None: live.developed(first_format=preset.versions[0].settings.format)
         backends = build_export_backends(probe_capabilities())
         original_white = session.hdr_reference_white_nits
         if not photo.get("grade"):
             photo = dict(photo, sdr_only=session.analysis.classification.value == "SDR_ONLY")
         for index, version in enumerate(preset.versions):
             if cancelled(): break
-            if live is not None: live.begin(index, None)
+            if live is not None: live.begin(index, None, export_format=version.settings.format)
             row = {"photo":photo["path"],"version":version.name}
             if session.grade_notice:
                 row["grade_warning"] = session.grade_notice["reason"]

@@ -1,4 +1,6 @@
 """Export renditions share work they would otherwise repeat, with the same pixels."""
+from weakref import ref
+
 import numpy as np
 import pytest
 
@@ -34,6 +36,35 @@ def test_one_export_compiles_each_fixed_mask_once_with_the_same_values():
     np.testing.assert_array_equal(first, fresh)
     with pytest.raises(ValueError):
         first[0, 0] = 1  # Shared between renditions, so it cannot be changed in place.
+
+
+def test_fixed_mask_memo_releases_old_masks_and_does_not_pin_sources():
+    mask = _brush()
+    hdr, sdr = _image(), _image()
+    hdr_ref, sdr_ref = ref(hdr), ref(sdr)
+    with share_fixed_masks():
+        hdr_mask = ref(compile_geometry_fixed_mask(hdr, mask, GEOMETRY, spatial_only=True))
+        assert hdr_mask() is not None
+        del hdr
+        assert hdr_ref() is None
+        sdr_mask = ref(compile_geometry_fixed_mask(sdr, mask, GEOMETRY, spatial_only=True))
+        assert hdr_mask() is None
+        assert compile_geometry_fixed_mask(sdr, mask, GEOMETRY, spatial_only=True) is sdr_mask()
+        del sdr
+        assert sdr_ref() is None
+    assert sdr_mask() is None
+
+
+def test_local_stack_reports_each_completed_tile_band(monkeypatch):
+    from hdr_finisher import export_timing
+    from hdr_finisher.local_adjustments import apply_local_stack
+
+    image = _image()
+    calls = []
+    monkeypatch.setattr(export_timing, "tick", lambda done, total: calls.append((done, total)))
+    local = LocalAdjustment(name="Brush", mask=_brush())
+    apply_local_stack(image, image, [local], PreviewKind.HDR, GeometryAdjustments(), tile_size=40)
+    assert calls == [(40, 96), (80, 96), (96, 96)]
 
 
 def test_a_resolved_shared_source_renders_like_its_full_path():

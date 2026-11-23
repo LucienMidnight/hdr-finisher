@@ -53,7 +53,12 @@ LABELS = {
     "finish": "Finishing",
 }
 _FINISHING = {"validate", "metadata", "ceiling_verify"}
+_SDR_FORMATS = {"sdr_jpeg", "sdr_png", "sdr_jpegxl"}
 _KNEE = 0.9  # Share of a stage reached at 90% of its expected time.
+
+
+def default_render_label(export_format: str | None) -> str:
+    return LABELS["sdr"] if export_format in _SDR_FORMATS else LABELS["hdr"]
 
 
 def timed_share(elapsed: float, expected: float) -> float:
@@ -70,6 +75,7 @@ def timed_share(elapsed: float, expected: float) -> float:
 class ExportPlan:
     """Expected seconds for each (lane, stage) that will run."""
     items: dict[tuple[str, str], float] = field(default_factory=dict)
+    default_label: str = LABELS["hdr"]
 
     def add(self, lane: str, stage: str, seconds: float) -> None:
         if seconds > 0.0:
@@ -94,11 +100,7 @@ class ExportProgress:
         clock.progress = self
 
     def tick(self, done: int, total: int) -> None:
-        clock = self.clock
-        try:
-            key = (clock.current_lane, clock.current_stage)
-        except IndexError:
-            return
+        key = self.clock.current()
         if key[1] is None:
             return
         with self._lock:
@@ -106,12 +108,12 @@ class ExportProgress:
 
     def _key_fraction(self, key: tuple[str, str], expected: float) -> float:
         lane, stage = key
-        if lane in self.clock.finished_lanes:
+        if self.clock.lane_finished(lane):
             return 1.0
         if lane == "*":  # Shared Grain: whichever rendition lane computed it.
             elapsed = sum(self.clock.elapsed(name, stage) for name in ("hdr", "sdr", "source"))
             ticked = max((value for (other, name), value in self._ticks.items() if name == stage), default=0.0)
-            finished = any(name in self.clock.finished_lanes and self.clock.elapsed(name, stage) > 0
+            finished = any(self.clock.lane_finished(name) and self.clock.elapsed(name, stage) > 0
                            for name in ("hdr", "sdr"))
             if finished:
                 return 1.0
@@ -136,25 +138,19 @@ class ExportProgress:
             return self._reported
 
     def label(self) -> str:
-        clock = self.clock
-        try:
-            lane, stage = clock.current_lane, clock.current_stage
-        except IndexError:
-            lane, stage = clock.lane, None
-        if stage == "denoise":
-            label = LABELS["denoise"]
-        elif lane == "encode":
-            label = LABELS["finish"] if stage in _FINISHING else LABELS["encode"]
-        elif lane in ("hdr", "sdr"):
-            label = LABELS[lane]
-        elif stage == "develop_raw":
-            label = LABELS["source"]
-        else:
-            # Between renditions (or before the first) keep the last label;
-            # the RAW is already developed when an export starts in Grade.
-            label = self._label or LABELS["hdr"]
-        self._label = label
-        return label
+        with self._lock:
+            lane, stage = self.clock.current()
+            if stage == "denoise":
+                self._label = LABELS["denoise"]
+            elif lane == "encode":
+                self._label = LABELS["finish"] if stage in _FINISHING else LABELS["encode"]
+            elif lane in ("hdr", "sdr"):
+                self._label = LABELS[lane]
+            elif stage == "develop_raw":
+                self._label = LABELS["source"]
+            # Between renditions keep the last label. In Grade the RAW
+            # is already developed when the export clock opens.
+            return self._label or self.plan.default_label
 
     def snapshot(self) -> dict:
         fraction = self.fraction()
@@ -178,21 +174,23 @@ def plan_export(session, settings, adjustments, *, develop_megapixels: float = 0
     from .finishing import geometry_output_dimensions, geometry_is_identity, resolve_output_dimensions
     from .models import PreviewKind
 
-    plan = ExportPlan()
+    plan = ExportPlan(default_label=default_render_label(settings.format))
     height, width = session.image.shape[:2]
     megapixels = width * height / 1e6
     plan.add("source", "develop_raw", STAGE_COST["develop_raw"] * develop_megapixels)
     geometry = adjustments.shared.geometry
     locals_ = adjustments.enabled_locals(getattr(session, "local_adjustments", None)) or []
     lanes = [PreviewKind.HDR, PreviewKind.SDR]
-    if settings.format in {"sdr_jpeg", "sdr_png", "sdr_jpegxl"}:
+    if settings.format in _SDR_FORMATS:
         lanes = [PreviewKind.SDR]
+    elif settings.format == "jpegxl_hdr" and getattr(settings, "_proof_endpoint_directory", None) is None:
+        lanes = [PreviewKind.HDR]
     shared_grain = _delivery_grain_shared(session, adjustments)
     for position, kind in enumerate(lanes):
         lane = kind.value
         if denoise_settings_for_export(session, kind) is not None:
             plan.add("*" if shared_grain else lane, "denoise",
-                     STAGE_COST["denoise"] * megapixels / (2 if shared_grain else 1))
+                     STAGE_COST["denoise"] * megapixels / (2 if shared_grain and len(lanes) > 1 else 1))
         if _bounded_export_eligible(session, settings, kind, adjustments, prepared_denoise=True):
             plan.add(lane, "strip_render", STAGE_COST["strip_render"] * megapixels)
             continue
@@ -204,7 +202,7 @@ def plan_export(session, settings, adjustments, *, develop_megapixels: float = 0
                 if position == 0:
                     plan.add(lane, "masks", STAGE_COST["masks"] * megapixels)
                 plan.add(lane, "local_stack", STAGE_COST["local_stack"] * megapixels)
-        branch = adjustments.hdr if kind == PreviewKind.HDR else adjustments.sdr
+        branch = adjustments.hdr if kind == PreviewKind.HDR or adjustments.sdr.linked_to_hdr else adjustments.sdr
         plan.add(lane, "tone_colour", STAGE_COST["tone_colour"] * megapixels)
         if branch.detail_section_enabled and _detail_active(branch.detail):
             plan.add(lane, "detail", STAGE_COST["detail"] * megapixels)

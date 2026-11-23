@@ -34,10 +34,10 @@ function pressureGate(cooldownMs = COOLDOWN_MS) {
   };
 }
 // A cache trim (with its renderer collections) that frees nothing is not
-// repeated. After a trim, the next one is skipped when neither the backend
-// caches nor Grade's bytes went down, and trimming stays quiet until caches
-// or Grade grow again, the operating system's pressure level changes, or the
-// level rises. An export worker above the target otherwise re-fired the whole
+// repeated. After a trim, an unchanged sample puts the guard to sleep.
+// Trimming stays quiet until pressure clears, caches or Grade grow again,
+// the operating system's pressure changes, or the level rises.
+// An export worker above the target otherwise re-fired the whole
 // round every cool-down for minutes. Grade's Grain reclaim passes through:
 // the renderer skips it itself when the last one released nothing.
 function cacheBytes(value) {
@@ -52,6 +52,9 @@ function emptyTrimGuard() {
     // A budget level flapping around the target is not a rise while Grade's
     // level has already been at least as high.
     const rank = Math.max(RANK[value?.level] ?? 0, RANK[value?.gradePressure] ?? 0);
+    if (rank === 0) {
+      round = quiet = null;
+    }
     let resumed = null;
     if (quiet) {
       if (caches > quiet.caches) resumed = 'cache_growth';
@@ -62,11 +65,11 @@ function emptyTrimGuard() {
       quiet = null; round = null;
     }
     if (!trimLevel) return {trimLevel, grainReclaim, quiet: false, resumed};
-    if (round && caches >= round.caches && grade >= round.grade) {
-      quiet = {caches, grade, system, rank: Math.max(rank, round.rank)};
+    if (round && caches === round.caches && grade === round.grade && rank <= round.rank && system === round.system) {
+      quiet = {caches, grade, system, rank: round.rank};
       return {trimLevel: null, grainReclaim, quiet: true, entered: true};
     }
-    round = {caches, grade, rank};
+    round = {caches, grade, system, rank};
     return {trimLevel, grainReclaim, quiet: false, resumed};
   };
 }

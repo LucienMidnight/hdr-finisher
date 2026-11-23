@@ -264,11 +264,12 @@ def _box_blur_axis_lines(values: np.ndarray, radius: int, axis: int) -> np.ndarr
     padding = [(0, 0)] * values.ndim
     padding[axis] = (radius, radius)
     padded = np.pad(values, padding, mode="edge")
-    zero_shape = list(padded.shape)
-    zero_shape[axis] = 1
-    cumulative = np.concatenate(
-        (np.zeros(zero_shape, dtype=np.float32), np.cumsum(padded, axis=axis, dtype=np.float32)), axis=axis
-    )
+    cumulative_shape = list(padded.shape)
+    cumulative_shape[axis] += 1
+    cumulative = np.zeros(cumulative_shape, dtype=np.float32)
+    tail = [slice(None)] * values.ndim
+    tail[axis] = slice(1, None)
+    np.cumsum(padded, axis=axis, dtype=np.float32, out=cumulative[tuple(tail)])
     width = radius * 2 + 1
     after = [slice(None)] * values.ndim
     before = [slice(None)] * values.ndim

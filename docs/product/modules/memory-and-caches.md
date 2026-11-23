@@ -1894,6 +1894,10 @@ Output started and ended at 2.1 GB, below the 100 GB limit.
 
 ## 8. Open work
 
+- **Grade Grain reclaim at the same byte count.** An empty reclaim can stay
+  suppressed after a source proxy becomes evictable without increasing held
+  bytes. Revisit the renderer guard with a test that makes a still-resident
+  proxy reclaimable, then verifies the next request evicts it.
 - **WDDM shared GPU memory on Windows laptops.** Integrated graphics textures in shared RAM sit outside private commit and are covered by system headroom today. Future accounting needs to avoid counting Chromium staging buffers twice.
 - **Windows Job Object.** `PeakJobMemoryUsed` would catch encoder spikes shorter than the 0.5 s poll and job membership would cover orphaned grandchildren. Chromium's nested sandbox jobs need care.
 - **Pagefile-backed shared memory.** `DeliveryMemory` and `library_raw` shared sections sit outside private commit. Admission reservations and commit headroom cover them today.

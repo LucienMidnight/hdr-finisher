@@ -706,7 +706,7 @@ def _execute_export(
     message = success_message(output_path, validation)
     if prepared.notes:
         message = f"{message} {' '.join(prepared.notes)}"
-    return ExportResponse(
+    response = ExportResponse(
         accepted=True,
         **rendering,
         backend=backend.name,
@@ -716,6 +716,11 @@ def _execute_export(
         timings_ms=timings,
         measurement_warnings=measurement_warnings(settings.editing_measurements, settings._exact_measurements),
     )
+    from .export_timing import active_clock
+    clock = active_clock()
+    if clock is not None and clock.progress is not None:
+        clock.progress.done = True
+    return response
 
 
 def _start_progress(session, settings) -> None:
@@ -724,13 +729,13 @@ def _start_progress(session, settings) -> None:
     clock = active_clock()
     if clock is None or clock.progress is not None:
         return
-    from .export_progress import ExportPlan, ExportProgress, plan_export
+    from .export_progress import ExportPlan, ExportProgress, default_render_label, plan_export
     try:
         plan = plan_export(session, settings, _finishing_adjustments_for_export(session))
     except Exception as error:  # noqa: BLE001 - progress is advisory
         from .diagnostics import log
         log("export", "progress_plan_failed", level="warn", reason="progress_plan_failed", error=type(error).__name__)
-        plan = ExportPlan()
+        plan = ExportPlan(default_label=default_render_label(settings.format))
     ExportProgress(clock, plan)
 
 
@@ -839,20 +844,27 @@ class SDRJPEGXLExportBackend(ExportBackend):
         def prepare() -> _PreparedExport:
             finishing_adjustments = _finishing_adjustments_for_export(session)
             sdr_image = _render_export_branch(session, settings, PreviewKind.SDR, finishing_adjustments)
-            payload = encode_sdr_jpegxl(
-                sdr_image,
-                int(settings.quality),
-                dithering=settings.dithering,
-                exif_payload=None,
-            )
-            if settings.jpegxl_high_fidelity:
-                verify_lossless_jpegxl(payload, sdr_image, hdr=False)
             shape = sdr_image.shape[:2]
-            return _PreparedExport(
-                ".sdr.tmp.jxl",
-                lambda staged: staged.write_bytes(payload),
-                lambda staged: validate_sdr_jpegxl(staged.read_bytes(), shape),
-            )
+
+            @_timed_stage("encode")
+            def write(staged: Path) -> None:
+                nonlocal sdr_image
+                payload = encode_sdr_jpegxl(
+                    sdr_image,
+                    int(settings.quality),
+                    dithering=settings.dithering,
+                    exif_payload=None,
+                )
+                if settings.jpegxl_high_fidelity:
+                    verify_lossless_jpegxl(payload, sdr_image, hdr=False)
+                sdr_image = None
+                staged.write_bytes(payload)
+
+            @_timed_stage("validate")
+            def validate(staged: Path) -> str:
+                return validate_sdr_jpegxl(staged.read_bytes(), shape)
+
+            return _PreparedExport(".sdr.tmp.jxl", write, validate)
 
         return _execute_export(
             self,
@@ -1212,10 +1224,10 @@ class JPEGXLHDRExportBackend(ExportBackend):
                     _decoded_jpegxl_channel_nits, _peak_ceiling(settings, finishing_adjustments), notes,
                     encoding_allowance=_peak_allowance(finishing_adjustments))
 
+            hdr_image, endpoints = None, None
             if proof_directory is None:
                 hdr_image = _render_export_branch(session, settings, PreviewKind.HDR, finishing_adjustments)
                 shape = hdr_image.shape[:2]
-                payload = encode(hdr_image)
             else:
                 try:
                     with share_delivery_grain(session, finishing_adjustments):
@@ -1228,17 +1240,24 @@ class JPEGXLHDRExportBackend(ExportBackend):
                     _release_delivery_pixels(session)
                 hdr_endpoint, _ = endpoints
                 shape = hdr_endpoint.shape[:2]
-                with hdr_endpoint.map("r") as hdr_image:
+
+            @_timed_stage("encode")
+            def write(staged: Path) -> None:
+                nonlocal hdr_image
+                if endpoints is None:
                     payload = encode(hdr_image)
-                object.__setattr__(settings, "_proof_endpoints", endpoints)
-            return _PreparedExport(
-                ".tmp.jxl",
-                lambda staged: staged.write_bytes(payload),
-                lambda staged: validate_jpegxl(
-                    staged.read_bytes(), shape, settings.jpegxl_precision
-                ),
-                notes,
-            )
+                    hdr_image = None
+                else:
+                    with endpoints[0].map("r") as pixels:
+                        payload = encode(pixels)
+                    object.__setattr__(settings, "_proof_endpoints", endpoints)
+                staged.write_bytes(payload)
+
+            @_timed_stage("validate")
+            def validate(staged: Path) -> str:
+                return validate_jpegxl(staged.read_bytes(), shape, settings.jpegxl_precision)
+
+            return _PreparedExport(".tmp.jxl", write, validate, notes)
 
         return _execute_export(
             self,

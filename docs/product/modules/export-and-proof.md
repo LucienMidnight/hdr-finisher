@@ -31,6 +31,13 @@ byte-identical to the app before the change.
   Graphics-card export for Clean Grain is still being tested." The log
   keeps `cpu_delivery_policy`.
 
+**Export-memory Step 0A, pending integration.** The batch default is one
+photo worker below 16 GiB or when RAM is unknown, and three from 16 GiB.
+`HDR_FINISHER_BATCH_PARALLEL` still overrides it. Film Grain budgets the
+smaller of two float32 frames and 192 MiB for parallel scratch, with at
+least one chunk. JPEG XL releases shared masks before encoding. The progress
+bar follows the actual HDR and SDR renditions and the JPEG XL encoding stage.
+
 ## November 22 — File-backed AVIF delivery and full-size Proof
 
 AVIF delivery stores Grain and finished frames in files owned by the export

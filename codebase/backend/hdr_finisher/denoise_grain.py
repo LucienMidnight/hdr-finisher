@@ -594,10 +594,13 @@ def resolve_grain(source, model, controls, *, allocate_output=None):
     from .export_timing import tick
     origins = list(_origins(height, width, size))
     finished = count(1)
+    lock = Lock()
 
     def run_and_report(origin):
         run(origin)
-        tick(next(finished), len(origins))
+        with lock:
+            done = next(finished)
+        tick(done, len(origins))
 
     with CpuExecutor() as pool:
         list(pool.map(run_and_report, origins))

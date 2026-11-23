@@ -150,7 +150,7 @@ its outcome.
 | GPU | `device_lost`, `device_rebuilt` and `gpu_rebuild_failed` track device recovery. `gpu_validation_error`, `transport_timeout`, `gpu_allocation_failed` and `gpu_render_failed` classify Grade failures. |
 | Match | `gpu_candidates_requested`, `gpu_candidates_completed`, `gpu_candidate_unavailable`, `cpu_candidates_selected` and `local_match_cpu` cover candidate routing. `match_failed` and `match_cancelled` describe action outcomes. |
 | Export and Proof | `cpu_delivery_policy`, `delivery_policy_unreadable`, `gpu_delivery_unavailable`, `gpu_delivery_failed`, `gpu_delivery_succeeded`, `gpu_preempted` and `delivery_cache_hit` describe delivery rendering. `delivery_completed`, `proof_artifact_available`, `encoder_unavailable`, `encoding_failed`, `encoder_completed`, `encoder_launch_failed`, `encoder_exit_failed` and `encoded_peak_exceeded` cover validation and encoding. `edit_sync_failed`, `export_cancelled`, `export_failed`, `export_transport_failed` and `proof_failed` describe action outcomes. Batch controls emit `batch_pause`, `batch_resume` and `batch_cancel`. Each rendition reports `batch_exported`, `batch_renamed`, `batch_skipped` or `batch_failed`. |
-| Memory and app | `app_memory_ceiling`, `cache_share_limit`, `memory_reclaim`, `system_memory_pressure` and `memory_sample_failed` describe admission, eviction and sampling. `cache_trim_requested` uses `budget_pressure` when the app is over its own target and the operating system reports no pressure. After a trim round with nothing to release, `cache_trim_paused` (`no_reclaimable_resources`) stops further trims, collections and Grade Grain reclaims; `cache_trim_resumed` names what woke it: `cache_growth`, `grade_growth`, `system_pressure_changed` or `pressure_rose`. `startup_failed` marks an unsuccessful desktop startup. |
+| Memory and app | `app_memory_ceiling`, `cache_share_limit`, `memory_reclaim`, `system_memory_pressure` and `memory_sample_failed` describe admission, eviction and sampling. `cache_trim_requested` uses `budget_pressure` when the app is over its own target and the operating system reports no pressure. After a trim round with nothing to release, `cache_trim_paused` (`no_reclaimable_resources`) pauses desktop cache trims and renderer collections. Grade Grain reclaim requests still pass through to the renderer's own guard. `cache_trim_resumed` can report `cache_growth`, `grade_growth`, `system_pressure_changed` or `pressure_rose`. `startup_failed` marks an unsuccessful desktop startup. |
 
 ## Export stage timing
 
@@ -166,6 +166,10 @@ stage's time counts only there. Work handed to the CPU pool is counted by the
 stage that waits for it. `unattributed_ms` and `unattributed_percent` are the
 rest of `total_ms`. `encoder_timings_ms` is the exporter's own
 `timings_ms`. The clock lives in `backend/hdr_finisher/export_timing.py`.
+Set `HDR_FINISHER_EXPORT_STAGE_TRACE=1` to also log `stage_trace`. Each
+entry contains the lane, stage name, and start and end times as Unix epoch
+seconds rounded to milliseconds. Nested stages split the parent into
+exclusive slices. Batch RAW development appears before the first export's slices.
 Run `python tools/export_speed_profile.py` from `codebase` to time the
 export-speed recipe on a test RAW.
 

@@ -1,14 +1,16 @@
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
 from PIL import Image
 
 from hdr_finisher.batch_export import PhotoProgress
-from hdr_finisher.export_progress import ExportPlan, ExportProgress, estimate_remaining, plan_export
-from hdr_finisher.export_timing import export_clock, lane, stage, tick
-from hdr_finisher.models import ExportSettings
+from hdr_finisher.export_progress import STAGE_COST, ExportPlan, ExportProgress, estimate_remaining, plan_export
+from hdr_finisher.export_timing import active_clock, export_clock, lane, stage, tick
+from hdr_finisher.models import ExportResponse, ExportSettings
 from hdr_finisher.sessions import SessionStore
 
 
@@ -41,6 +43,125 @@ def test_plan_weighs_only_the_stages_that_will_run(tmp_path):
         assert all(seconds > 0 for seconds in resized.items.values())
     finally:
         store.clear()
+
+
+def test_jxl_hdr_plans_sdr_only_for_a_proof(tmp_path):
+    store, session = _session(tmp_path)
+    try:
+        settings = ExportSettings(format="jpegxl_hdr")
+        direct = plan_export(session, settings, session.adjustments)
+        assert {"hdr", "encode"} == {name for name, _ in direct.items}
+        object.__setattr__(settings, "_proof_endpoint_directory", tmp_path)
+        proof = plan_export(session, settings, session.adjustments)
+        assert {"hdr", "sdr", "encode"} == {name for name, _ in proof.items}
+    finally:
+        store.clear()
+
+
+def test_linked_sdr_plan_uses_hdr_grade_and_full_single_lane_denoise_weight(tmp_path):
+    store, session = _session(tmp_path)
+    try:
+        settings = ExportSettings(format="sdr_jpegxl", output_finishing={"resize_mode": "long_edge", "long_edge": 36})
+        adjustments = session.adjustments
+        adjustments.sdr.linked_to_hdr = True
+        adjustments.hdr.film_look_section_enabled = True
+        adjustments.hdr.film_look.grain_enabled = True
+        adjustments.hdr.film_look.grain_amount = 40
+        for denoise in (session.denoise.hdr, session.denoise.sdr):
+            denoise.enabled = True
+            denoise.controls.method = "clean_grain"
+        plan = plan_export(session, settings, adjustments)
+        assert ("sdr", "film_grain") in plan.items
+        denoise_weight = sum(weight for (_, stage), weight in plan.items.items() if stage == "denoise")
+        assert denoise_weight == pytest.approx(STAGE_COST["denoise"] * 48 * 72 / 1e6)
+        with export_clock() as clock:
+            assert ExportProgress(clock, plan).label() == "Rendering SDR"
+    finally:
+        store.clear()
+
+
+def test_photo_progress_uses_version_format_before_the_clock_has_a_plan():
+    photo = PhotoProgress(versions=2)
+    photo.developed(first_format="sdr_jpeg")
+    assert photo.snapshot()["label"] == "Rendering SDR"
+    photo.begin(1, None, export_format="sdr_jpegxl")
+    with export_clock() as clock:
+        photo.begin(1, clock)
+        assert photo.snapshot()["label"] == "Rendering SDR"
+
+
+@pytest.mark.parametrize("format_name,proof", [
+    ("sdr_jpegxl", False), ("jpegxl_hdr", False), ("jpegxl_hdr", True),
+])
+def test_jxl_encodes_after_mask_scope_in_encode_lane(tmp_path, monkeypatch, format_name, proof):
+    from hdr_finisher import exporters, local_adjustments
+    from hdr_finisher.capabilities import probe_capabilities
+    from hdr_finisher.models import CapabilityStatus
+
+    capabilities = probe_capabilities()
+    if capabilities["jpegxl_export"].status != CapabilityStatus.AVAILABLE:
+        pytest.skip("JPEG XL encoder is unavailable")
+    store, session = _session(tmp_path)
+    try:
+        settings = ExportSettings(format=format_name, output_path=str(tmp_path / "out.jxl"))
+        if proof:
+            object.__setattr__(settings, "_proof_endpoint_directory", tmp_path)
+        name = "encode_hdr_jpegxl" if format_name == "jpegxl_hdr" else "encode_sdr_jpegxl"
+        encode = getattr(exporters, name)
+
+        def check_encode(*args, **kwargs):
+            assert local_adjustments._fixed_mask_memo.get() is None
+            clock = active_clock()
+            assert clock.current() == ("encode", "encode")
+            assert clock.progress.label() == "Encoding"
+            return encode(*args, **kwargs)
+
+        monkeypatch.setattr(exporters, name, check_encode)
+        with export_clock() as clock:
+            response = exporters.build_export_backends(capabilities)[format_name].export(session, settings)
+        assert response.accepted, response.message
+        assert clock.progress.fraction() == 1.0
+        assert "validate" in clock.summary()["lanes"]["encode"]
+        if proof:
+            assert all(endpoint.path.is_file() for endpoint in settings._proof_endpoints)
+    finally:
+        store.clear()
+
+
+def test_finishing_an_older_live_export_keeps_the_newer_export_visible(monkeypatch):
+    from hdr_finisher import main
+
+    older, newer = threading.Event(), threading.Event()
+    finish_older, finish_newer = threading.Event(), threading.Event()
+    session_id = "overlapping-export-progress"
+    stored_session = SimpleNamespace(source_path="photo.png", metadata={}, edit_revision=0)
+    monkeypatch.setattr(main, "store", SimpleNamespace(get=lambda _id: stored_session))
+    monkeypatch.setattr(main, "desktop_authoring_secret", None)
+
+    def export(_session, settings):
+        started, finish = (older, finish_older) if settings.format == "sdr_png" else (newer, finish_newer)
+        progress = ExportProgress(active_clock(), ExportPlan(default_label=settings.format))
+        started.set()
+        assert finish.wait(5)
+        return ExportResponse(accepted=True, backend=settings.format, message=progress.label())
+
+    backend = SimpleNamespace(export=export)
+    monkeypatch.setattr(main, "get_export_backends", lambda: {"sdr_png": backend, "sdr_jpeg": backend})
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        try:
+            first = pool.submit(main.export, session_id, ExportSettings(format="sdr_png"))
+            assert older.wait(5)
+            second = pool.submit(main.export, session_id, ExportSettings(format="sdr_jpeg"))
+            assert newer.wait(5)
+            finish_older.set()
+            assert first.result(5).accepted
+            assert main.export_progress(session_id)["label"] == "sdr_jpeg"
+            finish_newer.set()
+            assert second.result(5).accepted
+            assert not main.export_progress(session_id)["running"]
+        finally:
+            finish_older.set()
+            finish_newer.set()
 
 
 def test_progress_follows_ticks_and_lanes_and_never_goes_back():
@@ -138,7 +259,7 @@ def test_a_real_export_reports_rising_progress_and_stage_timing(tmp_path):
                 watcher.join()
         assert response.accepted, response.message
         assert len(seen) > 2 and seen == sorted(seen)
-        assert clock.progress.fraction() == .99  # Every lane finished; the caller reports done.
+        assert clock.progress.fraction() == 1.0
         summary = clock.summary()
         assert summary["lanes"]["hdr"]["film_grain"] > 0 and "encode" in summary["lanes"]
         assert summary["unattributed_percent"] < 50

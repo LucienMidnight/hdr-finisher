@@ -28,8 +28,9 @@ def _exporting() -> bool:
 
 def blur_axis_in_blocks(blur: Callable[[np.ndarray, int, int], np.ndarray], values: np.ndarray,
                         radius: int, axis: int) -> np.ndarray:
-    """``blur(values, radius, axis)`` on blocks across the other image axis."""
-    if radius <= 0 or values.ndim < 2 or axis not in (0, 1) or values.size < MINIMUM_BLOCK_PIXELS or not _exporting():
+    """Blur float32 blocks across the other axis, preserving other dtypes via the caller's blur."""
+    if (radius <= 0 or values.dtype != np.float32 or values.ndim < 2 or axis not in (0, 1)
+            or values.size < MINIMUM_BLOCK_PIXELS or not _exporting()):
         return blur(values, radius, axis)
     from .cpu_budget import CpuExecutor, logical_cpus
     across = 1 - axis

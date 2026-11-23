@@ -3,6 +3,7 @@ import json
 from pathlib import Path
 import sys
 from threading import Event, Lock, Thread
+from time import sleep
 from .batch_export import PhotoProgress, export_photo
 from .diagnostics import action_scope, process_scope
 from .export_presets import ExportPreset
@@ -16,23 +17,39 @@ def main():
     preset = ExportPreset.model_validate(task["preset"])
     live = PhotoProgress(len(preset.versions))
     state = {"results": [], "live": live.snapshot()}
+    target = Path(task["progress"])
+    temporary = target.with_suffix(".tmp")
     lock = Lock()
     def write():
-        # One writer: finished versions and live progress share the file.
-        with lock:
-            target = Path(task["progress"])
-            temporary = target.with_suffix(".tmp")
+        # Caller holds the lock. A Windows reader can briefly block replace.
+        try:
             temporary.write_text(json.dumps(state), encoding="utf-8")
-            temporary.replace(target)
+            for attempt in range(3):
+                try:
+                    temporary.replace(target)
+                    return
+                except OSError:
+                    if attempt < 2:
+                        sleep(.01)
+        except OSError:
+            pass
+        try:
+            temporary.unlink(missing_ok=True)
+        except OSError:
+            pass  # Progress is advisory. The final result has its own file.
+
     def progress(results):
-        state["results"] = list(results)
-        write()
+        with lock:
+            state["results"] = list(results)
+            write()
     stop = Event()
     def publish():
         while not stop.wait(LIVE_INTERVAL_S):
             try:
-                state["live"] = live.snapshot()
-                write()
+                snapshot = live.snapshot()
+                with lock:
+                    state["live"] = snapshot
+                    write()
             except Exception:  # noqa: BLE001 - progress is advisory
                 pass
     publisher = Thread(target=publish, daemon=True, name="batch-progress")

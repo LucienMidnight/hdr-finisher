@@ -73,6 +73,29 @@ test('rounds that free memory continue; growth or OS pressure wakes a quiet guar
     assert.ok(run.rounds.some(time=>time>=run.events[1][1]));
   }
 });
+test('a fresh pressure episode trims after pressure cleared and caches regrew',()=>{
+  const guard=emptyTrimGuard();
+  assert.equal(guard(sample(), 'moderate', true).trimLevel,'moderate');
+  assert.equal(guard(sample(), 'moderate', true).quiet,true);
+  const clear=sample({level:'none',gradePressure:'none'});
+  assert.equal(guard(clear,null,false).quiet,false);
+  const regrown={caches:{working:{bytes:50e6}}};
+  assert.equal(guard({...clear,...regrown},null,false).trimLevel,null);
+  assert.equal(guard(sample(regrown),'moderate',true).trimLevel,'moderate');
+});
+test('critical pressure trims even before an empty moderate round enters quiet',()=>{
+  const guard=emptyTrimGuard();
+  assert.equal(guard(sample(),'moderate',true).trimLevel,'moderate');
+  const critical=sample({level:'critical',gradePressure:'critical'});
+  assert.equal(guard(critical,'critical',true).trimLevel,'critical');
+  assert.equal(guard(critical,'critical',true).quiet,true);
+});
+test('cache growth or an OS pressure change between cooldowns permits a new trim',()=>{
+  const stable=Array.from({length:COOLDOWN_MS / 500},()=>sample());
+  for (const changed of [sample({caches:{working:{bytes:50e6}}}),sample({pressure:'moderate'})]) {
+    assert.deepEqual(exportRun([...stable,changed]),{rounds:[0,COOLDOWN_MS],events:[]});
+  }
+});
 test('a budget level flapping around the target with Grade open stays quiet',()=>{
   // Recorded November 23 on the MacBook Neo: Profile A export with Grade open.
   const samples=Array.from({length:300},(_,i)=>sample({level:Math.floor(i/7)%3?'none':'moderate'}));

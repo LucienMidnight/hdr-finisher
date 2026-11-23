@@ -9,6 +9,7 @@ import json
 import math
 import os
 from threading import Lock
+from weakref import ref
 
 import numpy as np
 
@@ -67,7 +68,6 @@ def apply_local_stack(
     from .export_timing import tick
     for top in range(0, height, tile_size):
         bottom = min(top + tile_size, height)
-        tick(top, height)
         for left in range(0, width, tile_size):
             right = min(left + tile_size, width)
             tile = result[top:bottom, left:right]
@@ -104,6 +104,7 @@ def apply_local_stack(
                     target_peak_nits=target_peak_nits,
                 )
                 tile[...] = tile + (candidate - tile) * influence[..., None]
+        tick(bottom, height)
     # Local corrections precede Film Look; finishing owns the SDR white ceiling.
     return result.astype(np.float32)
 
@@ -206,9 +207,12 @@ def compile_geometry_fixed_mask(
     memo = _fixed_mask_memo.get()
     key = None
     if memo is not None:
-        key = (id(source), source.shape, mask_expression.model_dump_json(), geometry.model_dump_json(), screen)
-        if key in memo:
-            return memo[key][1]
+        if memo.source is None or memo.source() is not source:
+            memo.source = ref(source)
+            memo.masks.clear()
+        key = (source.shape, mask_expression.model_dump_json(), geometry.model_dump_json(), screen)
+        if key in memo.masks:
+            return memo.masks[key]
     source_mask = compile_preview_mask(source, mask_expression, GeometryAdjustments())
     mask_checkpoint()
     fixed = apply_geometry(source_mask[..., None], geometry, screen=screen)[..., 0]
@@ -219,11 +223,17 @@ def compile_geometry_fixed_mask(
     if memo is not None:
         # Shared between renditions: nobody may change it in place.
         fixed.flags.writeable = False
-        memo[key] = (source, fixed)
+        memo.masks[key] = fixed
     return fixed
 
 
-_fixed_mask_memo: ContextVar[dict | None] = ContextVar("fixed_mask_memo", default=None)
+class _FixedMaskMemo:
+    def __init__(self):
+        self.source = None  # A weak reference leaves source ownership with the renderer.
+        self.masks = {}
+
+
+_fixed_mask_memo: ContextVar[_FixedMaskMemo | None] = ContextVar("fixed_mask_memo", default=None)
 
 
 @contextmanager
@@ -232,14 +242,17 @@ def share_fixed_masks():
 
     HDR and SDR compile the same spatial mask from the same source, mask and
     geometry; within this scope the second rendition reuses the first's.
+    When a rendition uses a different source, drop the previous masks.
     """
     if _fixed_mask_memo.get() is not None:
         yield
         return
-    token = _fixed_mask_memo.set({})
+    memo = _FixedMaskMemo()
+    token = _fixed_mask_memo.set(memo)
     try:
         yield
     finally:
+        memo.masks.clear()
         _fixed_mask_memo.reset(token)
 
 

@@ -348,12 +348,16 @@ def render_in_strips(
     report = StripReport(plan=plan)
 
     checks = iter(range(1, 1 << 30))
-    # Each pass visits every strip; HDR and SDR make about three passes.
-    passes_expected = 3 * max(1, len(plan.strips))
+    # Count full visits to the strips, including the final scope peak pass.
+    if kind == PreviewKind.SDR:
+        passes_per_strip = 3  # Render/measure, finish, scope.
+    else:
+        passes_per_strip = 4 if adjustments.hdr.highlight_section_enabled else 2
+    passes_expected = passes_per_strip * len(plan.strips)
 
     def check(index: int) -> None:
         from .export_timing import tick
-        tick(min(next(checks), passes_expected), passes_expected)
+        tick(next(checks), passes_expected)
         if is_current is not None and not is_current():
             report.cancelled_at_strip = index
             raise StripCancelled("A newer adjustment replaced this render.")
