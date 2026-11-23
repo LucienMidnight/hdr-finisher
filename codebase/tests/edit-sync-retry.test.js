@@ -59,7 +59,7 @@ test("leaving Grade cancels queued and running instruments without clearing the 
     pendingScopeRequest:{resolve:value=>calls.push(value)},
     pendingGpuScopeRequest:{resolve:value=>calls.push(value)},
     overlayAbortController:{abort:()=>calls.push("overlay")},scopeAwaitingPresentation:{} }});
-  vm.runInContext(definition("suspendGradeInstruments")+";suspendGradeInstruments()",context);
+  vm.runInContext(definition("clearZoomScopeRefresh")+"\n"+definition("suspendGradeInstruments")+";suspendGradeInstruments()",context);
   assert.deepEqual(calls,["scheduler","scope",false,false,"overlay"]);
   assert.equal(context.state.scopeGeneration,5);
   assert.equal(context.state.session,session);

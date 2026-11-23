@@ -60,7 +60,7 @@ function assert(condition, message) {
         const coordinator = state.renderCoordinator?.state(state.currentView);
         const accepted = state.acceptedPresentation;
         return viewerState().status === "ready" && !state.gpuDraftInFlight
-          && !state.zoomRefinementTimer && !coordinator?.panTimerPending && !coordinator?.inFlight && !coordinator?.pending
+          && !state.zoomRefinementTimer && !state.zoomScopeTimer && !coordinator?.panTimerPending && !coordinator?.inFlight && !coordinator?.pending
           && accepted?.processedLongEdge === requiredProcessingLongEdge()
           && ["ready", "error", "off"].includes(state.denoiseRuntime[state.currentView].status);
       }, null, { timeout: 900000 });

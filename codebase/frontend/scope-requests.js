@@ -1,9 +1,18 @@
+function clearZoomScopeRefresh() {
+  if (!state.zoomScopeTimer) return;
+  window.clearTimeout(state.zoomScopeTimer);
+  state.zoomScopeTimer = 0;
+  restoreScopeFreshnessIfIdle();
+}
+
 function suspendGradeInstruments() {
   state.gradeWorkGeneration = (state.gradeWorkGeneration || 0) + 1;
   state.previewScheduler?.cancel();
   state.cpuPreviewInflight?.clear();
   window.clearTimeout(state.refreshTimer);
   window.clearTimeout(state.settleTimer);
+  clearZoomScopeRefresh();
+  state.zoomRefinementInFlight = null;
   for (const [lane, controller] of Object.entries(state.previewControllers || {})) {
     controller?.abort();
     state.previewControllers[lane] = null;
@@ -36,6 +45,10 @@ function refreshScopes(longEdge = 960, { tier = "settled", generation = null, la
   // switched away from could only be a whole-picture CPU grade, and its answer
   // is discarded on arrival.
   if (lane !== state.currentView) return Promise.resolve(false);
+  if (state.zoomScopeTimer) {
+    if (tier === "settled") state.scopeAwaitingPresentation = { sessionId: state.session.session_id, lane };
+    return Promise.resolve(false);
+  }
   // A live GPU scope during a drag reads the presented canvas, not the
   // backend's copy, so it does not wait for a save round trip. Waiting put its
   // readback on the GPU beside the next drag frame. The save still runs at
@@ -85,10 +98,8 @@ function refreshScopes(longEdge = 960, { tier = "settled", generation = null, la
     controller: null,
   };
 
-  if (gpuScopeEligible(lane)) {
-    return enqueueGpuScopeRequest(request);
-  }
-  if (gpuPreviewEligible(lane)
+  const useGpu = gpuScopeEligible(lane);
+  if (!useGpu && gpuPreviewEligible(lane)
     && lane === state.currentView
     && els.previewCanvas.style.display !== "none"
     && !state.comparePeekActive
@@ -101,6 +112,11 @@ function refreshScopes(longEdge = 960, { tier = "settled", generation = null, la
     return Promise.resolve(false);
   }
 
+  const pending = state.scopeAwaitingPresentation;
+  if (tier === "settled" && pending?.sessionId === request.sessionId && pending.lane === lane) {
+    state.scopeAwaitingPresentation = null;
+  }
+  if (useGpu) return enqueueGpuScopeRequest(request);
   return new Promise((resolve) => {
     enqueueScopeRequest({ ...request, resolve });
   });
@@ -108,11 +124,9 @@ function refreshScopes(longEdge = 960, { tier = "settled", generation = null, la
 
 function refreshScopesAfterPresentation(lane) {
   const pending = state.scopeAwaitingPresentation;
-  if (!pending || pending.lane !== lane || !gpuScopeEligible(lane)) return;
-  state.scopeAwaitingPresentation = null;
-  if (pending.sessionId === state.session?.session_id) {
-    void refreshScopes(scopeLongEdge("settled"), { tier: "settled", lane });
-  }
+  if (state.zoomScopeTimer || pending?.sessionId !== state.session?.session_id
+    || pending?.lane !== lane || !gpuScopeEligible(lane)) return;
+  void refreshScopes(scopeLongEdge("settled"), { tier: "settled", lane });
 }
 
 function gpuScopeEligible(lane) {
@@ -132,7 +146,6 @@ function gpuScopeEligible(lane) {
 
 async function runGpuScopeRequest(request) {
   const { lane, mode, tier, generation, resolution, maxNits, scopeRegion } = request;
-  markScopeUpdating();
   const widthLimit = tier === "interactive"
     ? state.scopeQuality === "performance" ? 192 : state.scopeQuality === "reference" ? 384 : 320
     : state.scopeQuality === "performance" ? 384 : state.scopeQuality === "reference" ? 768 : 640;
@@ -154,8 +167,11 @@ async function runGpuScopeRequest(request) {
     && (accepted?.execution === "tiled" || state.acceptedPresentation?.sourceSerial === accepted?.sourceSerial)
     && accepted?.generation === state.previewGeneration[lane]
     && generation === state.scopeGeneration
+    && !state.zoomScopeTimer
     && request.sessionId === state.session?.session_id
     && lane === state.currentView && mode === state.scopeMode;
+  if (!isCurrent()) return false;
+  markScopeUpdating();
   let scopeCanvas = els.previewCanvas;
   let sourceSerial = accepted?.sourceSerial;
   if (accepted?.execution === "tiled") {
@@ -284,6 +300,8 @@ async function runQueuedGpuScopeRequest(request) {
   let applied = false;
   try {
     applied = await runGpuScopeRequest(request);
+  } catch (error) {
+    console.error("GPU scope refresh failed", error);
   } finally {
     request.resolve(applied);
     if (state.gpuScopeRequestInFlight !== request) return;
@@ -291,10 +309,7 @@ async function runQueuedGpuScopeRequest(request) {
     const next = state.pendingGpuScopeRequest;
     state.pendingGpuScopeRequest = null;
     if (next) void runQueuedGpuScopeRequest(next);
-    else if (!state.scopeRequestInFlight && gpuScopeEligible(state.currentView)) {
-      els.scopeFreshness.classList.remove("updating");
-      if (!applied) els.scopeFreshness.textContent = state.lastScope ? scopeFreshnessLabel(state.lastScope.tier) : "Waiting";
-    }
+    else if (!applied) restoreScopeFreshnessIfIdle();
   }
 }
 
@@ -323,9 +338,21 @@ function scopeFreshnessLabel(tier) {
   return scopeUi.freshnessLabel(tier);
 }
 
+function restoreScopeFreshnessIfIdle() {
+  if (state.scopeRequestInFlight || state.pendingScopeRequest
+    || state.gpuScopeRequestInFlight || state.pendingGpuScopeRequest) return;
+  if (els.scopeFreshness.textContent !== "Updating") return;
+  els.scopeFreshness.classList.remove("updating");
+  els.scopeFreshness.textContent = state.lastScope ? scopeFreshnessLabel(state.lastScope.tier) : "Waiting";
+}
+
 async function runScopeRequest(request) {
-  if (["import", "export"].includes(state.activeWorkflow) || document.hidden
-    || request.sessionId !== state.session?.session_id || request.lane !== state.currentView) { request.resolve(false); return; }
+  if (state.zoomScopeTimer || ["import", "export"].includes(state.activeWorkflow) || document.hidden
+    || request.sessionId !== state.session?.session_id || request.lane !== state.currentView) {
+    request.resolve(false);
+    restoreScopeFreshnessIfIdle();
+    return;
+  }
   const controller = new AbortController();
   request.controller = controller;
   state.scopeRequestInFlight = request;
@@ -362,7 +389,8 @@ async function runScopeRequest(request) {
       if (state.editRevision === edit_revision) {
         await refreshEditState({ preserveLocalDraft: state.localPreviewDirty });
       }
-      if (state.session?.session_id !== sessionId || lane !== state.currentView || mode !== state.scopeMode) return false;
+      if (state.zoomScopeTimer || state.session?.session_id !== sessionId
+        || lane !== state.currentView || mode !== state.scopeMode) return false;
       request.edit_revision = state.editRevision;
       response = await requestScope(state.editRevision);
     }
@@ -371,7 +399,7 @@ async function runScopeRequest(request) {
       return false;
     }
     const payload = await response.json();
-    if (state.session?.session_id !== sessionId || lane !== state.currentView || mode !== state.scopeMode) return false;
+    if (state.zoomScopeTimer || state.session?.session_id !== sessionId || lane !== state.currentView || mode !== state.scopeMode) return false;
     if (payload.generation !== null && payload.generation !== generation) return false;
     if (generation !== state.scopeGeneration) {
       state.previewScheduler?.recordStaleResult();
@@ -379,10 +407,9 @@ async function runScopeRequest(request) {
     }
     if (tier === "settled" && !request.scopeRegion) {
       const measured = await measureExactScopePeak({lane});
-      if (generation !== state.scopeGeneration || request.sessionId !== state.session?.session_id) return false;
+      if (state.zoomScopeTimer || generation !== state.scopeGeneration || state.session?.session_id !== sessionId
+        || lane !== state.currentView || mode !== state.scopeMode) return false;
       applyEditingScopePeak(payload, measured, lane);
-    } else if (tier === "settled" && !request.scopeRegion) {
-      applyEditingScopePeak(payload, null, lane);
     }
     applyAcceptedCpuScopePeak(payload, request);
     recordDisplayedScopePeak(payload, request);
@@ -399,10 +426,7 @@ async function runScopeRequest(request) {
     state.pendingScopeRequest = null;
     if (next) {
       void runScopeRequest(next);
-    } else {
-      els.scopeFreshness.classList.remove("updating");
-      if (!applied) els.scopeFreshness.textContent = state.lastScope ? scopeFreshnessLabel(state.lastScope.tier) : "Waiting";
-    }
+    } else if (!applied) restoreScopeFreshnessIfIdle();
   }
 }
 

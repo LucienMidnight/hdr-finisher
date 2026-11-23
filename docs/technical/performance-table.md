@@ -1,3 +1,20 @@
+## November 23, 2026 — Grade Film Look warm zoom
+
+MacBook Neo (A18 Pro, 8 GB, Electron 1408 × 794 at 2×), uncommitted change
+on `a6c626c6`. On IMG_3129.CR2 with the saved Copy 1 Film Look and grain,
+three warm zooms at the same processing size (1841 px) completed in
+1.1–2.7 ms from input to the zoom handler returning. The same-machine
+baseline took 494–505 ms. The histogram starts after 200 ms of quiet and
+waits for foreground rendering. It appeared 0.72–3.99 s after the single
+zooms and 0.91 s after the last of five rapid steps, with one pass for the
+sequence. The settled values matched a separate refresh. An Exposure edit
+immediately after zoom produced an updated histogram.
+[Timing evidence](../../codebase/output/film-look-grade-diagnostic/zoom-quiet-timing.json)
+After the review fixes, a rerun (direct GPU route, so not like-for-like with
+the tiled run above) measured 2.6–7.2 ms per warm zoom and one histogram
+refresh 259 ms after the last of five rapid steps.
+[Final timing evidence](../../codebase/output/film-look-grade-diagnostic/zoom-quiet-review-timing.json)
+
 ## November 23, 2026 — MacBook Neo Grade-open sharing & native encoder probe (Steps 5–6)
 
 MacBook Neo (A18 Pro, 8 GB), macOS 27, real unpackaged Electron app

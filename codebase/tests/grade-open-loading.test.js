@@ -15,7 +15,7 @@ function harness() {
     state: { session: { session_id: 'old' }, editDocument: {}, documentDirty: true,
       importGeneration: 0, projectOpenGeneration: 0, byteUploadQueue: Promise.resolve(),
       activeWorkflow: 'import', gpuPreview: { resetSession() {} } },
-    document: { querySelectorAll: () => panels }, els: {},
+    document: { querySelectorAll: () => panels }, els: { scopeFreshness: { classList: { remove() {} } } },
     fetch: async () => ({}),
     status: { post: e => events.push(e), clear() {} },
     HDRGradeSaving: { prepare: async () => null },
@@ -76,6 +76,7 @@ test('RAW redevelopment keeps the current picture and releases GPU work before s
   const originalSession = c.state.session;
   const zoomWork = new AbortController();
   c.state.zoomRefinementTimer = setTimeout(() => zoomWork.abort(), 0);
+  c.state.zoomScopeTimer = setTimeout(() => zoomWork.abort(), 0);
   const verifyGradeRecovery = trackGradeRecovery(c, events);
   const createImportJob = c.projectIo.createImportJob;
   c.state.activeWorkflow = 'grade';
@@ -95,6 +96,7 @@ test('RAW redevelopment keeps the current picture and releases GPU work before s
   assert.ok(panels.every(panel => panel.inert));
   assert.equal(events.includes('decode'), false);
   assert.equal(c.state.zoomRefinementTimer, 0);
+  assert.equal(c.state.zoomScopeTimer, 0);
   await new Promise(resolve => setTimeout(resolve, 0));
   assert.equal(zoomWork.signal.aborted, false);
   assert.equal(events.includes('clear'), false);
@@ -362,8 +364,10 @@ test('retiring Grade stops a queued zoom refinement before it can run', async ()
   c.state.localHiddenGizmoIds = new Set();
   let fired = false;
   c.state.zoomRefinementTimer = setTimeout(() => { fired = true; }, 0);
+  c.state.zoomScopeTimer = setTimeout(() => { fired = true; }, 0);
   realRetirement();
   assert.equal(c.state.zoomRefinementTimer, 0);
+  assert.equal(c.state.zoomScopeTimer, 0);
   await new Promise(resolve => setTimeout(resolve, 0));
   assert.equal(fired, false);
 });

@@ -6,7 +6,7 @@ const { spawn, execFileSync } = require('child_process');
 async function stable(page, timeout = 180000) {
   await page.waitForFunction(() => {
     const a = state.acceptedPresentation;
-    return viewerState().status === 'ready' && !state.gpuDraftInFlight
+    return viewerState().status === 'ready' && !state.gpuDraftInFlight && !state.zoomScopeTimer
       && a?.lane === state.currentView && a.generation === state.previewGeneration[state.currentView]
       && a.exact && a.processedLongEdge === requiredProcessingLongEdge()
       && !document.querySelector('#scope-freshness')?.classList.contains('updating');

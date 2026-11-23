@@ -25,7 +25,8 @@ async function settle(page) {
   await page.waitForFunction(() => pendingHighlightAnchors.size === 0 && exactHighlightAnchorInflight.size === 0, null, { timeout: 180000 });
   await page.waitForFunction(() => {
     const coordinator = state.renderCoordinator?.state(state.currentView);
-    return !state.zoomRefinementTimer && !coordinator?.panTimerPending && !coordinator?.inFlight && !coordinator?.pending;
+    return !state.zoomRefinementTimer && !state.zoomScopeTimer
+      && !coordinator?.panTimerPending && !coordinator?.inFlight && !coordinator?.pending;
   }, null, { timeout: 180000 });
   await c.stable(page, 180000);
 }

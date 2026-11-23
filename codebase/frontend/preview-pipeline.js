@@ -17,6 +17,7 @@ function pacedPreviewInteraction(lane) {
 }
 
 function debouncePreview(lane = state.currentView) {
+  clearZoomScopeRefresh();
   if (lane === "hdr" && state.adjustments?.sdr?.linked_to_hdr && state.currentView === "sdr") lane = "sdr";
   state.previewWatchdogRearms = 0;
   if (!state.previewScheduler) {
@@ -1486,6 +1487,7 @@ function previewInfoFromResponse(response, kind) {
 }
 
 function invalidatePreview(lane, { local = false, markDirty = true } = {}) {
+  if (state.zoomScopeTimer && lane === state.currentView) clearZoomScopeRefresh();
   if (lane === "hdr" && state.adjustments?.sdr?.linked_to_hdr) {
     invalidatePreview("sdr", { local: true, markDirty: false });
   }

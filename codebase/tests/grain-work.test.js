@@ -68,6 +68,7 @@ test('leaving Grade cancels both preview lanes and scope work',()=>{
 test('queued scope from old photo or lane never starts a fetch',async()=>{
   const state={session:{session_id:'new'},currentView:'sdr',activeWorkflow:'grade'};
   const ctx=context(state);let result;
+  ctx.els={scopeFreshness:{classList:{remove(){}}}};
   await ctx.runScopeRequest({sessionId:'old',lane:'hdr',resolve:v=>result=v});
   assert.equal(result,false);assert.equal(state.scopeRequestInFlight,undefined);
 });

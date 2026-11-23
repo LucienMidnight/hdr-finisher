@@ -159,7 +159,8 @@ function installPreviewWatchdog() {
       state.previewWatchdogRearms = 0;
       return;
     }
-    if (state.previewScheduler.interacting || state.gpuDraftInFlight) return;
+    if (state.previewScheduler.interacting || state.gpuDraftInFlight
+      || state.zoomRefinementTimer || state.zoomRefinementInFlight) return;
     const cpuFlight = state.cpuPreviewInflight?.get(state.currentView);
     if (cpuFlight?.sessionId === state.session.session_id
       && cpuFlight.generation === state.previewGeneration[state.currentView]) return;
@@ -168,6 +169,7 @@ function installPreviewWatchdog() {
     if (laneState?.inFlight || laneState?.pending) return;
     if (state.previewWatchdogRearms >= PREVIEW_WATCHDOG_MAX_REARMS) return;
     state.previewWatchdogRearms += 1;
+    if (state.zoomScopeTimer) clearZoomScopeRefresh();
     state.previewScheduler.schedule(state.currentView, state.previewGeneration[state.currentView]);
   }, PREVIEW_WATCHDOG_INTERVAL_MS);
 }

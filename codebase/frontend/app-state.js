@@ -511,6 +511,8 @@ const state = {
   groupPresetContext: null,
   previewCache: { hdr: null, sdr: null },
   zoomRefinementTimer: 0,
+  zoomRefinementInFlight: null,
+  zoomScopeTimer: 0,
   // Lost-wake-up safety net (see initializePreviewScheduler): the number of
   // consecutive automatic re-arms and the interval that makes them.
   previewWatchdogTimer: 0,

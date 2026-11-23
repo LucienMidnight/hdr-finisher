@@ -191,6 +191,7 @@ async function openStagedDesktopSource(selection) {
   } else {
     window.clearTimeout(state.zoomRefinementTimer);
     state.zoomRefinementTimer = 0;
+    clearZoomScopeRefresh();
   }
   const diagnostics = globalThis.HDRDiagnostics;
   const action = diagnostics?.start("grade", "open_photo", { id: selection.path, name });

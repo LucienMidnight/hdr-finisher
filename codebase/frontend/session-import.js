@@ -713,6 +713,7 @@ function retireActiveSession(replacementSessionId = null, { preservePicture = fa
   clearNavigationThumbnail();
   window.clearTimeout(state.zoomRefinementTimer);
   state.zoomRefinementTimer = 0;
+  clearZoomScopeRefresh();
   window.clearTimeout(state.localMaskDraftTimer);
   state.localMaskDraftTimer = 0;
   state.localMaskDraftController?.abort();

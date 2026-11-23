@@ -20,6 +20,7 @@ function setZoomMode(mode) {
     els.dropzone.scrollTop = 0;
   }
   applyZoomGeometry();
+  if (changed) scheduleZoomRefinement();
   if (cpuRegion) {
     const base = hdrMicro ? els.previewMicroHdrUnderlayer : els.previewMicroUnderlayer;
     acceptPresentation(state.currentView, "settled", base.naturalWidth || base.width, base.naturalHeight || base.height,
@@ -27,7 +28,6 @@ function setZoomMode(mode) {
       null, state.previewGeneration[state.currentView], null, 960, null, false, true);
   }
   scheduleNavigationThumbnail();
-  if (changed) scheduleZoomRefinement();
 }
 
 function holdingNativeDenoisePictureForFit() {
@@ -135,7 +135,7 @@ function scheduleNavigationThumbnail() {
 function navigationThumbnailWorkReady() {
   const lane = state.currentView;
   const accepted = state.acceptedPresentation;
-  return !state.importInProgress && !state.zoomRefinementTimer
+  return !state.importInProgress && !state.zoomRefinementTimer && !state.zoomScopeTimer
     && !state.gpuDraftInFlight && !state.previewScheduler?.interacting
     && !state.gpuScopeRequestInFlight && !state.scopeRequestInFlight
     && !(state.gpuPreview?.activeRenderCount > 0)
@@ -219,8 +219,62 @@ async function refreshNavigationThumbnail() {
   }
 }
 
+function scheduleZoomScopeRefresh({ sessionId, lane, generation, signature, target }) {
+  // Keep the last scope visible while foreground work settles at this zoom.
+  state.zoomScopeTimer = window.setTimeout(() => {
+    const pending = state.scopeAwaitingPresentation;
+    const scopeOwed = pending?.sessionId === sessionId && pending.lane === lane;
+    if (state.session?.session_id !== sessionId || state.currentView !== lane
+      || state.previewGeneration[lane] !== generation || state.importInProgress
+      || ["import", "export"].includes(state.activeWorkflow) || document.hidden
+      || state.previewScheduler?.current) {
+      clearZoomScopeRefresh();
+      return;
+    }
+    if (geometryDraftActive()) {
+      if (scopeOwed) {
+        restoreScopeFreshnessIfIdle();
+        scheduleZoomScopeRefresh({ sessionId, lane, generation, signature, target });
+      } else clearZoomScopeRefresh();
+      return;
+    }
+    if (geometrySignature() !== signature || requiredProcessingLongEdge() !== target) {
+      clearZoomScopeRefresh();
+      return;
+    }
+
+    const work = state.renderCoordinator?.state(lane);
+    if (state.comparePeekActive || state.zoomRefinementTimer || state.zoomRefinementInFlight
+      || state.gpuDraftInFlight || state.previewScheduler?.interacting
+      || state.gpuPreview?.activeRenderCount > 0 || state.cpuPreviewInflight?.has(lane)
+      || work?.inFlight || work?.pending || work?.panTimerPending) {
+      scheduleZoomScopeRefresh({ sessionId, lane, generation, signature, target });
+      return;
+    }
+    const accepted = state.acceptedPresentation;
+    const exact = accepted?.lane === lane && accepted.generation === generation
+      && accepted.geometrySignature === signature && accepted.exact && accepted.processedLongEdge === target;
+    if (!exact && !scopeOwed) {
+      clearZoomScopeRefresh();
+      return;
+    }
+
+    state.zoomScopeTimer = 0;
+    void Promise.resolve().then(() => refreshScopes(scopeLongEdge("settled"), { tier: "settled", lane }))
+      .catch((error) => console.error("Zoom scope refresh failed", error))
+      .finally(restoreScopeFreshnessIfIdle);
+  }, 200);
+}
+
 function scheduleZoomRefinement({ continuous = false } = {}) {
+  clearZoomScopeRefresh();
   if (!state.session || (!gpuPreviewEligible(state.currentView) && !cpuMicroPreviewSelected(state.currentView))) return;
+  const lane = state.currentView;
+  const sessionId = state.session.session_id;
+  if ([state.scopeRequestInFlight, state.pendingScopeRequest, state.gpuScopeRequestInFlight, state.pendingGpuScopeRequest]
+    .some((request) => request?.lane === lane && request.sessionId === sessionId)) {
+    state.scopeAwaitingPresentation = { sessionId, lane };
+  }
   window.clearTimeout(state.zoomRefinementTimer);
   // A pending adjustment settle from the previous scale can otherwise race
   // this zoom and start a whole-frame CPU fallback at the new edge.
@@ -230,6 +284,10 @@ function scheduleZoomRefinement({ continuous = false } = {}) {
   // Zoom changes the requested processing scale without changing the edit
   // generation. Recompute the visible status before the replacement starts.
   renderViewerStatus();
+  scheduleZoomScopeRefresh({
+    sessionId, lane, generation: state.previewGeneration[lane],
+    signature: geometrySignature(), target: requiredProcessingLongEdge(),
+  });
   // Single navigation actions need no gesture debounce. Retain it for wheel
   // and slider input so a gesture replaces pending work instead of flooding it.
   state.zoomRefinementTimer = window.setTimeout(async () => {
@@ -241,6 +299,8 @@ function scheduleZoomRefinement({ continuous = false } = {}) {
     const action = globalThis.HDRDiagnostics?.start("grade", "zoom", gradeDiagnosticPhoto(), {
       lane, requested_edge_px: target,
     });
+    const flight = {};
+    state.zoomRefinementInFlight = flight;
     try {
       const rendered = await refineZoomView(action, target, lane, sessionId);
       const current = state.session?.session_id === sessionId && state.currentView === lane
@@ -251,6 +311,8 @@ function scheduleZoomRefinement({ continuous = false } = {}) {
     } catch (error) {
       action?.finish("error", { level: "error", route: "refused", reason: "zoom_render_failed" });
       throw error;
+    } finally {
+      if (state.zoomRefinementInFlight === flight) state.zoomRefinementInFlight = null;
     }
   }, continuous ? 80 : 0);
 }
@@ -279,16 +341,6 @@ async function refineZoomView(action, target, lane, sessionId) {
     }
   } else {
     noteViewerPan();
-  }
-  // Zoom cancels the adjustment scheduler, including its scope obligation.
-  // Restore scopes only after the replacement frame is exact and current;
-  // a superseded zoom must not analyze the next zoom's old canvas.
-  const accepted = state.acceptedPresentation;
-  if (state.session?.session_id === sessionId && state.currentView === lane
-    && requiredProcessingLongEdge() === target && accepted?.lane === lane
-    && accepted.generation === state.previewGeneration[lane]
-    && accepted.exact && accepted.processedLongEdge === target) {
-    await refreshScopes(scopeLongEdge("settled"), { tier: "settled", lane });
   }
   return rendered;
 }
