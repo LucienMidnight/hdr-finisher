@@ -46,6 +46,21 @@ Profile A's peak is lower but still above the worker target; spilling the
 decoded source and measuring with Grade open remain open.
 [Step 1 measurements](../../technical/performance-table.md#november-23-2026--macbook-neo-whole-frame-export-memory-step-1).
 
+**Export-memory Step 2, pending integration.** The batch worker spills large
+sources to read-only scratch files and drops them before encoding the final
+version. Grade keeps its open image. EXR and eligible TIFF sources are decoded in
+bands or tiles. AVIF, Ultra HDR JPEG and JPEG XL encode from finished frames on
+disk; staged large SDR JPEG and PNG validation checks the expected pixel count
+without changing Pillow's global limit. On the Neo, Profile A AVIF's worker fell
+below 0.1 GB during encoding and the 192 MP TIFF exported. The checked baseline
+files matched their hashes, but elapsed times missed the 5% gate. The follow-up
+keeps normal worker allocation for short-lived chunks, maps large EXR, TIFF and
+camera RAW decode buffers outside that allocator, and writes delivery tiles
+through writable scratch maps closed before reading. The timing and worker RAM
+checks for this follow-up, Windows, and the remaining large-source formats are
+not yet qualified.
+[Step 2 measurements](../../technical/performance-table.md#november-23-2026--macbook-neo-file-backed-export-memory-step-2).
+
 ## November 22 — File-backed AVIF delivery and full-size Proof
 
 AVIF delivery stores Grain and finished frames in files owned by the export

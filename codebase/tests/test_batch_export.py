@@ -32,6 +32,66 @@ def preset(formats=("sdr_png","sdr_jpeg")):
     return ExportPreset(name="Delivery",versions=[ExportVersion(name=f"Version {i}",pattern="{filename}_{copy}_{sequence:3}_{date:YYYYMMDD}_{rating}_{version}",subfolder=f"set{i}",settings=ExportSettings(format=f,dithering="off")) for i,f in enumerate(formats,1)])
 
 
+@pytest.mark.parametrize("formats", [("sdr_jpeg",), ("sdr_png", "sdr_jpeg")])
+def test_batch_spills_sources_and_releases_only_after_final_prepare(tmp_path, monkeypatch, formats):
+    from hdr_finisher import batch_export, delivery_frames, export_metadata, exporters
+
+    photo = fixture_photo(tmp_path)
+    versions = preset(formats)
+    monkeypatch.setattr(delivery_frames, "SOURCE_SPILL_BYTES", 1)
+    original_render = exporters._render_export_branch
+    original_metadata = export_metadata.write_metadata
+    original_jpeg_write = exporters._write_sdr_jpeg
+    renders, encodes, maps, sessions = [], [], [], []
+
+    def render(session, settings, *args, **kwargs):
+        assert not session.image.flags.writeable
+        assert not session.sdr_reference_image.flags.writeable
+        assert session.image is session.retouch_original is session.render_cache.image
+        assert session.sdr_reference_image is session.render_cache.sdr_reference_image
+        renders.append(settings.format)
+        maps.extend((session.image, session.sdr_reference_image))
+        sessions.append(session)
+        return original_render(session, settings, *args, **kwargs)
+
+    def metadata(path, session, settings):
+        encodes.append(settings.format)
+        final = settings.format == versions.versions[-1].settings.format
+        assert (session.image is None) == final
+        assert (session.sdr_reference_image is None) == final
+        assert (session.render_cache is None) == final
+        assert all(pixels._mmap.closed == final for pixels in maps)
+        return original_metadata(path, session, settings)
+
+    def write_jpeg(*args, **kwargs):
+        assert sessions[-1].image is None
+        assert all(pixels._mmap.closed for pixels in maps)
+        return original_jpeg_write(*args, **kwargs)
+
+    with monkeypatch.context() as checks:
+        checks.setattr(exporters, "_render_export_branch", render)
+        checks.setattr(exporters, "_write_sdr_jpeg", write_jpeg)
+        checks.setattr(export_metadata, "write_metadata", metadata)
+        results = export_photo(photo, versions, tmp_path, 1)
+    assert renders == encodes == list(formats)
+    assert all(not Path(pixels.filename).exists() for pixels in maps)
+
+    store = SessionStore()
+    try:
+        interactive = open_document(store, validate_saved_document(photo["grade"]), Path(photo["source_path"]))
+        source, cache = interactive.image, interactive.render_cache
+        backends = build_export_backends(probe_capabilities())
+        for row, version in zip(results, versions.versions, strict=True):
+            assert row["outcome"] == "exported", row
+            settings = version.settings.model_copy(update={"output_path": str(tmp_path / f"grade-{version.name}")})
+            response = backends[settings.format].export(interactive, settings)
+            assert response.accepted, response.message
+            assert interactive.image is source and interactive.render_cache is cache
+            assert Path(response.output_path).read_bytes() == Path(row["output_path"]).read_bytes()
+    finally:
+        store.clear()
+
+
 def test_peak_check_is_saved_independently_for_each_preset_version(tmp_path):
     library = ExportPresets(tmp_path / "presets")
     delivery = preset(("jpeg_ultrahdr", "jpegxl_hdr"))

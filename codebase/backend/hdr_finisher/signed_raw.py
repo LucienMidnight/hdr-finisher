@@ -8,6 +8,7 @@ import sys
 import numpy as np
 
 from .config import BIN_DIR
+from .delivery_frames import empty_source_array, mapped_source_array
 
 
 @lru_cache(maxsize=1)
@@ -39,7 +40,7 @@ def demosaic(sensor, pattern, black, matrix, *, rows=256, half_size=False, cance
         raise ValueError("Signed AHD strip height must be even and at least 16")
     height, width = source.shape
     step = 2 if half_size else 1
-    result = np.empty(((height + step - 1) // step, (width + step - 1) // step, 3), dtype=np.float32)
+    result = empty_source_array(((height + step - 1) // step, (width + step - 1) // step, 3))
     library = _library()
     for top in range(0, height, rows):
         if cancelled is not None and cancelled():
@@ -65,4 +66,9 @@ def orient(image, flip):
         image = np.rot90(image, 1)
     elif flip == 6:
         image = np.rot90(image, -1)
+    if not image.flags.c_contiguous:
+        output = mapped_source_array(image.shape, image.dtype)
+        if output is not None:
+            np.copyto(output, image)
+            return output
     return np.ascontiguousarray(image)

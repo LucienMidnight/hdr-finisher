@@ -1,3 +1,38 @@
+## November 23, 2026 — MacBook Neo file-backed export memory (Step 2)
+
+MacBook Neo (A18 Pro, 8 GB), macOS 27, headless one-worker CPU batch under the
+shared lock. Step 2 on `420d212b`; same sources, grades and presets as Steps
+0–1. Figures are decimal GB. After an initial test with `MallocLargeCache=0`
+and per-row unbuffered tile writes regressed wall time by 30–45% (Profile A
+123.33 s), Step 2 keeps the normal macOS allocator, uses writable scratch
+mappings closed before readback, writes large (>= 256 MiB) EXR/TIFF/RAW loads
+directly into file-backed storage, routes HDR/SDR JXL and Ultra HDR through
+file-backed delivery, and releases batch sources before the final encode.
+
+| Source and format | Step 0 → Step 2 wall time | Step 0 → Step 2 peak | Result |
+| --- | ---: | ---: | --- |
+| 42 MP Sony A, AVIF (1920 px + frame) | 105.71 → 96.80 s (-8.4%) | 6.423 → 3.804 GB (-2.62 GB) | Golden SHA-256 unchanged (`ff3961ee9b4e…`) |
+| 42 MP Sony B, AVIF (native) | 28.61 → 31.94 s | 3.662 → 3.170 GB (-0.49 GB) | Golden SHA-256 unchanged (`ccfeedf49d0e…`); worker during encode 1.16 → 0.65 GB |
+| 42 MP Sony B, Ultra HDR JPEG | 19.95 → 22.38 s | 3.986 → 2.943 GB (-1.04 GB) | Same SHA-256 (`6837353d3464…`); worker during encode 2.02 → 0.98 GB |
+| 42 MP Sony B, HDR JPEG XL | 28.79 → 32.02 s | 4.157 → 1.758 GB (-2.40 GB) | Same SHA-256 (`c8f0b6a1e578…`); now uses bounded strips |
+| 42 MP Sony B, SDR JPEG | 14.44 → 16.47 s | 2.534 → 1.711 GB (-0.82 GB) | Same SHA-256 (`25dfd32eba69…`) |
+| 100 MP synthetic EXR B, HDR JPEG XL | 74.42 → 76.00 s (+2.1%) | 6.951 → 2.521 GB (-4.43 GB) | Same SHA-256 (`15d617854a59…`) |
+| 100 MP synthetic EXR B, SDR JPEG | 44.34 → 50.03 s | 4.725 → 2.528 GB (-2.20 GB) | Same SHA-256 (`cd4f347d406f…`); denoise 4.66 → 1.71 GB |
+| 192 MP TIFF B, SDR JPEG | 89.77 s (failed) → 95.66 s (exported) | 7.434 → 4.089 GB (-3.35 GB) | Exported and passed Pillow verify (`7e2eaad36b47…`) |
+
+The Mac probe confirmed that file-backed `mmap("w+")` charges only ~0.2 MB to
+macOS `phys_footprint`, while macOS `DefaultMallocZone` retains freed large
+heap allocations and ignores `malloc_zone_pressure_relief`. Bypassing the heap
+for large decoded sources avoids polluting that cache without paying the
+~30–38% page-fault penalty of `MallocLargeCache=0`. Evidence: `step2b-*-run.json`
+under `codebase/output/export-memory-2026-11-23/`.
+
+In Electron on the same Mac, the saved `DSC04375` 4000 px Ultra HDR export,
+full-size Proof and decode took 15.11 s on GPU and 18.60 s on forced CPU.
+Proof matched its export byte for byte on each route; both decoded to 1008.58
+nits against the 1000-nit target (within the 1% encoded allowance). Evidence:
+`codebase/output/gpu-delivery-ceiling/1795399332012/result.json`.
+
 ## November 23, 2026 — MacBook Neo whole-frame export memory (Step 1)
 
 MacBook Neo (A18 Pro, 8 GB), macOS 27, headless one-worker batch under the

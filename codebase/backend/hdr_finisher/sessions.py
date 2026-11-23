@@ -475,8 +475,9 @@ class SessionStore:
         if previous is not None and previous.owns_source_path:
             _remove_owned_source(previous.source_path)
         if previous is not None:
-            previous.render_cache.discard_grain_preparation()
-            previous.render_cache.close_micro_preview()
+            if previous.render_cache is not None:
+                previous.render_cache.discard_grain_preparation()
+                previous.render_cache.close_micro_preview()
             if previous.retouch_worker is not None:
                 previous.retouch_worker.close()
 

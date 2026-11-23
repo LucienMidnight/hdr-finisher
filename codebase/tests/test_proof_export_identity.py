@@ -225,6 +225,53 @@ def test_full_size_proof_is_the_export_byte_for_byte(backends, tmp_path: Path, f
         store.clear()
 
 
+@pytest.mark.parametrize("format_name", ["jpegxl_hdr", "sdr_jpegxl", "jpeg_ultrahdr"])
+def test_filed_delivery_matches_in_memory_denoise_and_encoding(backends, tmp_path, format_name):
+    from hdr_finisher import exporters
+    from hdr_finisher.models import DenoiseDocumentSettings, PreviewKind
+
+    capabilities, by_format = backends
+    capability, suffix = FORMATS.get(format_name, ("jpegxl_export", ".jxl"))
+    if capabilities[capability].status != CapabilityStatus.AVAILABLE:
+        pytest.skip(capabilities[capability].detail)
+    pixels = np.random.default_rng(22).uniform(.02, .55, (96, 141, 3)).astype(np.float32)
+    session = _session(pixels)
+    session.local_adjustments = []
+    session.denoise = DenoiseDocumentSettings()
+    for lane in (session.denoise.hdr, session.denoise.sdr):
+        lane.enabled = True
+        lane.controls.method = "clean_grain"
+        lane.controls.splotch_size = "small"
+    settings = ExportSettings(format=format_name, quality=87, dithering="off",
+                              output_path=str(tmp_path / f"export{suffix}"))
+    state = exporters._finishing_adjustments_for_export(session)
+    reference = tmp_path / f"reference{suffix}"
+    if format_name == "jpeg_ultrahdr":
+        prepared = exporters._jpeg_denoise_source(session, state)
+        hdr, sdr = (exporters._render_export_branch(session, settings, kind, state, denoise_source=prepared)
+                    for kind in (PreviewKind.HDR, PreviewKind.SDR))
+        exporters.write_jpeg_gainmap_renditions(reference, hdr, sdr, settings)
+    elif format_name == "jpegxl_hdr":
+        hdr = exporters._render_export_branch(session, settings, PreviewKind.HDR, state)
+        reference.write_bytes(exporters.encode_hdr_jpegxl(hdr, settings.quality, settings.jpegxl_precision))
+    else:
+        sdr = exporters._render_export_branch(session, settings, PreviewKind.SDR, state)
+        reference.write_bytes(exporters.encode_sdr_jpegxl(sdr, settings.quality, dithering=settings.dithering))
+    response = by_format[format_name].export(session, settings)
+    assert response.accepted, response.message
+    assert Path(response.output_path).read_bytes() == reference.read_bytes()
+    if format_name == "sdr_jpegxl":
+        return
+    store = ProofArtifactStore()
+    try:
+        proof = store.create(session, ProofArtifactRequest(
+            adjustments=state, format=format_name, quality=settings.quality, full_size=True, dithering="off",
+        ), by_format[format_name])
+        assert proof.sha256 == _sha(reference)
+    finally:
+        store.clear()
+
+
 def test_reduced_proof_of_a_small_frame_reports_full_size() -> None:
     """A frame no larger than the reduced edge is not downscaled, so not labelled reduced."""
 

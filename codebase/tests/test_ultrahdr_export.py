@@ -12,6 +12,7 @@ import hdr_finisher.binaries as binaries
 import hdr_finisher.capabilities as capability_module
 import hdr_finisher.exporters as exporter_module
 from hdr_finisher.gainmap_decoders import parse_jpeg_gain_map_probe
+from hdr_finisher.delivery_frames import row_bands
 from hdr_finisher.exporters import (
     AVIFGainMapExportBackend,
     ExportOverwriteRequired,
@@ -190,7 +191,9 @@ def test_export_uses_independent_hdr_and_sdr_branches_and_forces_jpg(monkeypatch
     observed: dict[str, object] = {}
     original_writer = exporter_module.write_jpeg_gainmap_renditions
     def capture_inputs(output, hdr, sdr, *args, **kwargs):
-        observed["hdr"], observed["sdr"] = hdr.copy(), sdr.copy()
+        observed["hdr"], observed["sdr"] = (
+            np.concatenate([band.copy() for band in row_bands(frame, 16)]) for frame in (hdr, sdr)
+        )
         return original_writer(output, hdr, sdr, *args, **kwargs)
 
     def fake_run(command: list[str]):

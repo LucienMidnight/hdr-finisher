@@ -103,7 +103,7 @@ def test_watermark_overwrite_counts_existing_frame_as_reusable(monkeypatch, tmp_
         mapped = allocate(pixels.shape)
         mapped[:] = pixels
         monkeypatch.setattr(delivery_frames.shutil, "disk_usage", lambda _: SimpleNamespace(free=0))
-        return mapped + pixels
+        return mapped[:] + pixels
 
     frame = exporters._render_branch_to_file(path, render)
     assert path.read_bytes() == (pixels + pixels).tobytes()

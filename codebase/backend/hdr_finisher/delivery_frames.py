@@ -1,14 +1,54 @@
-"""Job-owned float delivery frames. Readers stream bands without mapping."""
+"""Job-owned float delivery frames with bounded disk writes and reads."""
 from __future__ import annotations
 
 from .export_timing import timed as _timed_stage
 from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass
 from pathlib import Path
 import math
+import mmap
 import shutil
 
 import numpy as np
+
+SOURCE_SPILL_BYTES = 256 * 1024 * 1024
+_batch_source_buffers = ContextVar("batch_source_buffers", default=False)
+
+
+@contextmanager
+def batch_source_buffers():
+    token = _batch_source_buffers.set(True)
+    try:
+        yield
+    finally:
+        _batch_source_buffers.reset(token)
+
+
+def mapped_source_array(shape, dtype=np.float32, *, order="C"):
+    """Keep giant batch decode buffers out of malloc until the source is spilled."""
+    if not _batch_source_buffers.get():
+        return None
+    size = math.prod(shape) * np.dtype(dtype).itemsize
+    if size < SOURCE_SPILL_BYTES:
+        return None
+    return np.ndarray(shape, dtype=dtype, buffer=mmap.mmap(-1, size), order=order)
+
+
+def empty_source_array(shape, dtype=np.float32):
+    output = mapped_source_array(shape, dtype)
+    return np.empty(shape, dtype=dtype) if output is None else output
+
+
+def source_float32(source, *, copy=True):
+    if not copy and source.dtype == np.float32:
+        return source
+    order = "F" if source.flags.f_contiguous else "C"
+    output = mapped_source_array(source.shape, order=order)
+    if output is None:
+        return source.astype(np.float32, copy=copy)
+    np.copyto(output, source, casting="unsafe")
+    return output
 
 
 @dataclass(frozen=True)
@@ -28,9 +68,15 @@ class DeliveryFrame:
 
     def write(self, bands) -> None:
         self.check_space()
-        with self.path.open("wb") as file:
-            for band in bands:
-                file.write(memoryview(np.ascontiguousarray(band, dtype=self.dtype)).cast("B"))
+        try:
+            with self.path.open("wb") as file:
+                for band in bands:
+                    file.write(memoryview(np.ascontiguousarray(band, dtype=self.dtype)).cast("B"))
+                if file.tell() != math.prod(self.shape) * self.dtype.itemsize:
+                    raise OSError("Incomplete delivery frame.")
+        except BaseException:
+            self.path.unlink(missing_ok=True)
+            raise
 
     @classmethod
     @_timed_stage("frame_spill")
@@ -43,13 +89,18 @@ class DeliveryFrame:
     def map(self, mode: str):
         if mode == "w+":
             self.check_space()
-        pixels = np.memmap(self.path, mode=mode, shape=self.shape, dtype=self.dtype)
         try:
-            yield pixels
-            if mode != "r":
-                pixels.flush()
-        finally:
-            pixels._mmap.close()
+            pixels = np.memmap(self.path, mode=mode, shape=self.shape, dtype=self.dtype)
+            try:
+                yield pixels
+                if mode != "r":
+                    pixels.flush()
+            finally:
+                pixels._mmap.close()
+        except BaseException:
+            if mode == "w+":
+                self.path.unlink(missing_ok=True)
+            raise
 
     def bands(self, rows: int):
         height, *row_shape = self.shape

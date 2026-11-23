@@ -588,7 +588,7 @@ def resolve_grain(source, model, controls, *, allocate_output=None):
         rgb = base
         if clean:
             rgb = apply_colour(base, colour_delta(base, broad), splotches)
-        result[y:min(y+size, height), x:min(x+size, width), :3] = rgb[core]
+        result[y:y+size, x:x+size, :3] = rgb[core]
 
     from itertools import count
     from .export_timing import tick

@@ -1,8 +1,10 @@
 import numpy as np
 import pytest
+from PIL import Image
 
 from hdr_finisher import adjustments, detail, finishing, hsl, pixel_rows, tone
 from hdr_finisher.color import acescg_to_linear_srgb, linear_srgb_to_acescg
+from hdr_finisher.delivery_frames import DeliveryFrame
 from hdr_finisher.export_timing import export_clock
 from hdr_finisher.models import AdjustmentState, PreviewKind, VignetteAdjustments, WatermarkSettings
 from hdr_finisher.photo_framing import FramingLayout, compose
@@ -19,6 +21,83 @@ def image():
     pixels[127:130, :22] = [0.49, 0.12, 0.08]
     pixels[255:258, 22:] = [0.09, 0.29, 0.54]
     return pixels
+
+
+def test_delivery_frame_writes_and_reads_bands_and_tiles(tmp_path, image):
+    from hdr_finisher.exporters import _render_branch_to_file
+
+    frame = DeliveryFrame(tmp_path / "banded.rgb", image.shape)
+    written = []
+
+    def render(allocate):
+        writer = allocate(image.shape)
+        written.append(writer)
+        for top in range(0, len(image), 43):
+            rows = slice(top, top + 43)
+            writer[rows, :13] = image[rows, :13]
+            writer[rows, 13:] = image[rows, 13:]
+        np.testing.assert_array_equal(writer[40:167], image[40:167])
+        return writer
+
+    assert _render_branch_to_file(frame.path, render) == frame
+    assert written[0]._mmap.closed
+    with frame.map("r") as mapped:
+        assert not mapped.flags.writeable
+        np.testing.assert_array_equal(mapped, image)
+    assert mapped._mmap.closed
+    for top, band in enumerate(frame.bands(29)):
+        np.testing.assert_array_equal(band, image[top * 29: (top + 1) * 29])
+    assert frame.path.read_bytes() == image.tobytes()
+
+
+def test_delivery_frame_leaves_no_partial_file(tmp_path, image, monkeypatch):
+    from hdr_finisher import delivery_frames
+
+    frame = DeliveryFrame(tmp_path / "banded.rgb", image.shape)
+    with pytest.raises(RuntimeError, match="cancelled"), frame.map("w+") as writer:
+        writer[:2] = image[:2]
+        raise RuntimeError("cancelled")
+    assert not frame.path.exists()
+    with pytest.raises(OSError, match="Incomplete"):
+        frame.write([image[:2]])
+    assert not frame.path.exists()
+    monkeypatch.setattr(delivery_frames.shutil, "disk_usage", lambda _: type("Usage", (), {"free": image.nbytes - 1})())
+    with pytest.raises(OSError, match="free scratch disk space"), frame.map("w+"):
+        pytest.fail("Writer must reject insufficient space before opening the file")
+    with pytest.raises(OSError, match="free scratch disk space"):
+        frame.write([image])
+    assert not frame.path.exists()
+
+
+@pytest.mark.parametrize("method, amount", [("clean_grain", 0.75), ("standard", 0)])
+def test_mapped_denoise_matches_heap_bytes_across_tile_boundaries(tmp_path, method, amount):
+    from hdr_finisher.denoise_adaptive import AdaptiveControls, estimate_adaptive_model, resolve_adaptive
+    from hdr_finisher.exporters import _render_branch_to_file
+
+    source = np.random.default_rng(62).uniform(0, 1, (55, 525, 4)).astype(np.float32)
+    model = estimate_adaptive_model(source)
+    controls = AdaptiveControls(method=method, amount=amount)
+    expected = resolve_adaptive(source, model, controls)
+    frame = _render_branch_to_file(tmp_path / "grain.rgb", lambda allocate:
+        resolve_adaptive(source, model, controls, allocate_output=allocate))
+    with frame.map("r") as actual:
+        assert actual.tobytes() == expected.tobytes()
+        np.testing.assert_array_equal(actual[..., 3], source[..., 3])
+
+
+@pytest.mark.parametrize("suffix", ["jpg", "png"])
+def test_staged_image_validation_accepts_only_the_expected_large_output(tmp_path, monkeypatch, suffix):
+    from hdr_finisher.exporters import ExportProcessError, _validate_pillow_output
+
+    path = tmp_path / f"staged.{suffix}"
+    Image.new("RGB", (13, 11)).save(path)
+    monkeypatch.setattr(Image, "MAX_IMAGE_PIXELS", 50)
+    with pytest.raises(Image.DecompressionBombError):
+        _validate_pillow_output(path)
+    _validate_pillow_output(path, expected_pixels=143)
+    with pytest.raises(ExportProcessError, match="match the exported size"):
+        _validate_pillow_output(path, expected_pixels=144)
+    assert Image.MAX_IMAGE_PIXELS == 50
 
 
 @pytest.mark.parametrize("scale", [None, 1.0, 0.46, 0.01])

@@ -203,7 +203,7 @@ def test_loader_wraps_unexpected_decoder_errors(monkeypatch, tmp_path) -> None:
     source_path = tmp_path / "broken.tif"
     source_path.write_bytes(b"not a tiff")
 
-    def fail_tiff_decode(path, *, library_edge=None):
+    def fail_tiff_decode(path, *, library_edge=None, cancelled=None):
         assert library_edge is None
         _ = path
         raise ValueError("decoder exploded")
@@ -243,6 +243,76 @@ def test_load_blender_exr_recognizes_ocio_color_interop_id() -> None:
     assert analysis.classification == HDRClassification.HDR_TRUE
     assert analysis.needs_color_override is False
     assert sdr_reference is None
+
+
+@pytest.mark.parametrize("interop, color_space", [("lin_ap1_scene", "ACEScg"), ("lin_rec709_scene", "sRGB")])
+def test_banded_exr_import_matches_whole_frame_samples(tmp_path, interop, color_space):
+    import OpenEXR
+    from hdr_finisher.color import map_negative_acescg, normalize_to_acescg
+    from hdr_finisher.loader import EXR_BAND_ROWS, _load_exr
+
+    original = np.random.default_rng(41).uniform(-0.05, 3.0, (2 * EXR_BAND_ROWS + 7, 19, 3)).astype(np.float32)
+    path = tmp_path / "banded.exr"
+    OpenEXR.File({"compression": OpenEXR.ZIP_COMPRESSION, "colorInteropID": interop}, {"RGB": original}).write(str(path))
+    actual, _, metadata, _, _ = load_image(path)
+
+    assert metadata["color_space"] == color_space
+    expected = map_negative_acescg(normalize_to_acescg(original, color_space, "LINEAR"))
+    np.testing.assert_array_equal(actual, expected)
+    np.testing.assert_array_equal(_load_exr(path)[0], original)
+
+
+@pytest.mark.parametrize("layout", [{}, {"rowsperstrip": 7}, {"tile": (16, 16)}])
+def test_tiff_integer_import_matches_whole_frame_samples(tmp_path, layout):
+    from hdr_finisher.loader import _load_tiff
+
+    original = np.random.default_rng(31).integers(0, 65536, (39, 29, 3), dtype=np.uint16)
+    path = tmp_path / "packed.tiff"
+    tifffile.imwrite(path, original, photometric="rgb", compression="deflate" if layout else None, **layout)
+    actual, metadata = _load_tiff(path)
+
+    assert metadata["bit_depth"] == "uint16"
+    np.testing.assert_array_equal(actual, original.astype(np.float32) * np.float32(1 / 65535))
+
+
+@pytest.mark.parametrize("format", ["exr", "float_tiff", "integer_tiff", "sdr_tiff", "gray_tiff"])
+def test_batch_load_maps_large_sources_without_changing_bytes(tmp_path, monkeypatch, format):
+    import mmap
+    from hdr_finisher import delivery_frames
+
+    rgb = np.random.default_rng(25).uniform(0, 1, (139, 35, 3)).astype(np.float32)
+    path = tmp_path / ("mapped.exr" if format == "exr" else "mapped.tiff")
+    overrides = None
+    if format == "exr":
+        import OpenEXR
+        OpenEXR.File({"colorInteropID": "lin_ap1_scene"}, {"RGB": rgb}).write(str(path))
+    else:
+        samples = (rgb * 65535).astype(np.uint16) if format in {"integer_tiff", "sdr_tiff"} else rgb
+        if format == "gray_tiff":
+            samples = samples[..., 0]
+        tifffile.imwrite(path, samples, photometric="minisblack" if format == "gray_tiff" else "rgb",
+                         compression="deflate", rowsperstrip=19)
+        if format == "sdr_tiff":
+            overrides = {"color_space": "sRGB", "transfer_function": "sRGB"}
+
+    monkeypatch.setattr(delivery_frames, "SOURCE_SPILL_BYTES", rgb[..., 0].nbytes)
+    expected, _, _, _, expected_reference = load_image(path, overrides=overrides)
+    with delivery_frames.batch_source_buffers():
+        actual, _, _, _, reference = load_image(path, overrides=overrides)
+
+    def buffer_owner(pixels):
+        while isinstance(pixels, np.ndarray) and pixels.base is not None:
+            pixels = pixels.base
+        return pixels
+
+    assert isinstance(buffer_owner(actual), mmap.mmap)
+    assert not isinstance(buffer_owner(expected), mmap.mmap)
+    assert actual.tobytes() == expected.tobytes()
+    if expected_reference is not None:
+        assert isinstance(buffer_owner(reference), mmap.mmap)
+        assert reference.tobytes() == expected_reference.tobytes()
+    else:
+        assert reference is None
 
 
 def test_blender_rec2020_fixture_is_numerically_normalized_to_acescg() -> None:

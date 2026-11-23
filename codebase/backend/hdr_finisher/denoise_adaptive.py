@@ -306,13 +306,14 @@ def resolve_adaptive(image: np.ndarray, model: AdaptiveNoiseModel, controls: Ada
     return _resolve_standard(source, model, controls, allocate_output=allocate_output)
 
 
-def _denoise_output(source, allocate_output):
+def _denoise_output(source, allocate_output, *, copy_source=False):
     if allocate_output is None:
         return source.copy()
     result = allocate_output(source.shape)
-    # The filters write only RGB. Copy any extra channels without a full-frame
-    # intermediate, and preserve the direct-copy case for disabled filtering.
-    np.copyto(result, source)
+    if copy_source:
+        np.copyto(result, source)
+    elif source.shape[2] > 3:
+        result[..., 3:] = source[..., 3:]
     return result
 
 
@@ -321,8 +322,9 @@ def _denoise_is_finite(result):
 
 
 def _resolve_standard(source, model, controls, *, allocate_output=None):
-    result = _denoise_output(source, allocate_output)
-    if controls.amount <= 0.0 or (controls.luminance <= 0.0 and controls.color_noise <= 0.0):
+    disabled = controls.amount <= 0.0 or (controls.luminance <= 0.0 and controls.color_noise <= 0.0)
+    result = _denoise_output(source, allocate_output, copy_source=disabled)
+    if disabled:
         return result
     height, width = source.shape[:2]
 

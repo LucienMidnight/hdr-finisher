@@ -6,6 +6,7 @@ from concurrent.futures import ThreadPoolExecutor
 from contextlib import ExitStack, closing, contextmanager, nullcontext
 from contextvars import ContextVar
 from dataclasses import dataclass, field
+import gc
 from io import BytesIO
 import os
 from pathlib import Path
@@ -142,7 +143,14 @@ def denoise_delivery_key(session: object) -> tuple:
     )
 
 
-def _denoised_export_source(session: object, kind: PreviewKind, *, allocate_output=None) -> np.ndarray:
+def _resolve_export_denoise(image, model, controls, render_grain):
+    if render_grain is None:
+        return denoise_adaptive.resolve_adaptive(image, model, controls)
+    return render_grain(lambda allocate: denoise_adaptive.resolve_adaptive(
+        image, model, controls, allocate_output=allocate))
+
+
+def _denoised_export_source(session: object, kind: PreviewKind, *, render_grain=None) -> np.ndarray:
     """Apply the authored denoise to the full-resolution source.
 
     The preview replaces its *source proxy* with the reconstruction and grades
@@ -162,9 +170,8 @@ def _denoised_export_source(session: object, kind: PreviewKind, *, allocate_outp
         return resolve_source(session, MicroGrainControls.from_settings(controls))
     from .denoise_measurement import cpu_delivery_model
     model = cpu_delivery_model(session)
-    options = {"allocate_output": allocate_output} if allocate_output is not None else {}
-    return denoise_adaptive.resolve_adaptive(
-        image, model, denoise_adaptive.AdaptiveControls(**controls.model_dump()), **options)
+    return _resolve_export_denoise(
+        image, model, denoise_adaptive.AdaptiveControls(**controls.model_dump()), render_grain)
 
 
 def _authored_sdr_base(session, kind, adjustments):
@@ -172,7 +179,7 @@ def _authored_sdr_base(session, kind, adjustments):
             and adjustments.sdr.use_authored_base and not adjustments.sdr.linked_to_hdr)
 
 
-def _delivery_source_filter(session, kind, adjustments, *, authored, allocate_output=None):
+def _delivery_source_filter(session, kind, adjustments, *, authored, render_grain=None):
     lane = denoise_settings_for_export(session, kind)
     if lane is None:
         return None
@@ -189,8 +196,7 @@ def _delivery_source_filter(session, kind, adjustments, *, authored, allocate_ou
         from .denoise_measurement import cpu_delivery_model
         model = cpu_delivery_model(session, authored_image=image if authored else None,
                                    geometry=adjustments.shared.geometry)
-        options = {"allocate_output": allocate_output} if allocate_output is not None else {}
-        return denoise_adaptive.resolve_adaptive(image, model, controls, **options)
+        return _resolve_export_denoise(image, model, controls, render_grain)
 
     return resolve
 
@@ -201,7 +207,7 @@ class _DeliveryGrain:
     source: np.ndarray
     controls_key: str | None
     scratch: BinaryIO | None
-    allocate_output: Callable | None = None
+    render_grain: Callable | None = None
     pixels: np.ndarray | None = None
     mapped_shape: tuple[int, ...] | None = None
     mapped_dtype: np.dtype | None = None
@@ -237,7 +243,7 @@ def _delivery_grain_shared(session, adjustments) -> bool:
 
 
 @contextmanager
-def share_delivery_grain(session, adjustments, *, spans_encoding=False, allocate_output=None):
+def share_delivery_grain(session, adjustments, *, spans_encoding=False, render_grain=None):
     """Keep one resolved Grain source for the duration of an export or Proof."""
     active = _delivery_grain.get()
     if active is not None and active.session is session:
@@ -245,12 +251,12 @@ def share_delivery_grain(session, adjustments, *, spans_encoding=False, allocate
         return
     hdr = denoise_settings_for_export(session, PreviewKind.HDR)
     matched = _delivery_grain_shared(session, adjustments)
-    if not matched and allocate_output is None:
+    if not matched and render_grain is None:
         yield
         return
     key = hdr.controls.model_dump_json() if matched else None
     with TemporaryFile() if spans_encoding and matched else nullcontext() as scratch:
-        token = _delivery_grain.set(_DeliveryGrain(session, session.image, key, scratch, allocate_output))
+        token = _delivery_grain.set(_DeliveryGrain(session, session.image, key, scratch, render_grain))
         try:
             yield
         finally:
@@ -262,12 +268,12 @@ def delivery_denoise_inputs(session, kind, adjustments):
     shared = _delivery_grain.get()
     if shared is not None and (shared.session is not session or shared.source is not session.image):
         shared = None
-    allocate_output = shared.allocate_output if shared is not None else None
-    source_filter = _delivery_source_filter(session, kind, adjustments, authored=authored, allocate_output=allocate_output)
+    render_grain = shared.render_grain if shared is not None else None
+    source_filter = _delivery_source_filter(session, kind, adjustments, authored=authored, render_grain=render_grain)
     source = session.image
     if source_filter is None:
         def resolve_source():
-            options = {"allocate_output": allocate_output} if allocate_output is not None else {}
+            options = {"render_grain": render_grain} if render_grain is not None else {}
             return _denoised_export_source(session, kind, **options)
 
     lane = denoise_settings_for_export(session, kind) if shared is not None and shared.controls_key is not None else None
@@ -318,7 +324,8 @@ def _render_branch_pixels(
     avif = settings.format == "avif_gain_map"
     avif_denoise = avif and denoise_settings_for_export(session, kind) is not None
     gpu_prepared_denoise = not avif and denoise_source is not None
-    gpu_bounded = bounded and not avif_denoise
+    gpu_bounded = bounded and not avif_denoise and not (
+        gpu_prepared_denoise and settings.format in {"jpegxl_hdr", "sdr_jpegxl"})
     if gpu_bounded and not streamed_delivery_enabled(session, settings, adjustments) and (not gpu_prepared_denoise or settings.format == "sdr_jpeg" or all(
         _bounded_export_eligible(session, settings, lane, adjustments, prepared_denoise=True)
         for lane in (PreviewKind.HDR, PreviewKind.SDR)
@@ -459,21 +466,23 @@ def _bounded_export_eligible(session, settings, kind, adjustments, *, prepared_d
         source_width=width, source_height=height)
 
 
-def _render_branch_to_file(path, render):
-    """Close any strip output mapping before the next stage can use the file."""
-    with ExitStack() as maps:
-        mapped = None
-        frame = None
-
+def _render_mapped(path, render):
+    frame = mapped = None
+    with ExitStack() as writer:
         def allocate(shape):
-            nonlocal mapped, frame
+            nonlocal frame, mapped
             frame = DeliveryFrame(path, shape)
-            mapped = maps.enter_context(frame.map("w+"))
+            mapped = writer.enter_context(frame.map("w+"))
             return mapped
 
         pixels = render(allocate)
-        if pixels is mapped:
-            return frame
+        return frame if pixels is mapped else pixels
+
+
+def _render_branch_to_file(path, render):
+    pixels = _render_mapped(path, render)
+    if isinstance(pixels, DeliveryFrame):
+        return pixels
     return DeliveryFrame.spill(path, pixels)
 
 
@@ -497,26 +506,31 @@ def _prepared_delivery_source(session, adjustments, kind):
     return source_filter(apply_geometry(source, geometry), False), reference, fixed_adjustments
 
 
-def _render_delivery_files(session, settings, adjustments, directory, *, render=_render_export_branch):
-    with TemporaryDirectory(prefix="grain-", dir=directory, ignore_cleanup_errors=True) as grains, ExitStack() as maps:
-        def allocate_grain(shape):
+def _render_delivery_files(session, settings, adjustments, directory, *, render=None,
+                           lanes=(PreviewKind.HDR, PreviewKind.SDR), jpeg_denoise=False):
+    render = render or _render_export_branch
+    with TemporaryDirectory(prefix="grain-", dir=directory) as grains, ExitStack() as maps:
+        def render_grain(render_pixels):
             # Equal inputs resolve through the shared source below. A new
             # allocation therefore replaces a lane whose render has returned.
             maps.close()
-            return maps.enter_context(DeliveryFrame(Path(grains) / "source.rgb", shape).map("w+"))
+            pixels = _render_mapped(Path(grains) / "source.rgb", render_pixels)
+            return maps.enter_context(pixels.map("r")) if isinstance(pixels, DeliveryFrame) else pixels
 
         def prepared(kind):
             return _prepared_delivery_source(session, adjustments, kind)
 
-        denoise_source = prepared if any(denoise_settings_for_export(session, lane) is not None
-                                         for lane in (PreviewKind.HDR, PreviewKind.SDR)) else None
+        denoise_source = None
+        if any(denoise_settings_for_export(session, lane) is not None for lane in lanes):
+            denoise_source = (_jpeg_denoise_source(session, adjustments, render_grain=render_grain)
+                              if jpeg_denoise else prepared)
         try:
-            with share_delivery_grain(session, adjustments, allocate_output=allocate_grain):
+            with share_delivery_grain(session, adjustments, render_grain=render_grain):
                 return tuple(
                     _render_branch_to_file(directory / f"{lane.value}.rgb", lambda allocate:
                         render(session, settings, lane, adjustments, denoise_source=denoise_source,
                                allocate_output=allocate))
-                    for lane in (PreviewKind.HDR, PreviewKind.SDR))
+                    for lane in lanes)
         finally:
             # Reduced Proof still renders its matrix endpoints after export.
             if not getattr(settings, "_keep_proof_delivery_cache", False):
@@ -533,12 +547,7 @@ def _release_delivery_pixels(session):
             session._delivery_cache = None
 
 
-def _allocate_export_strip_output(scratch: ExitStack, shape: tuple[int, int, int]) -> np.memmap:
-    directory = scratch.enter_context(TemporaryDirectory(prefix="delivery-strip-"))
-    return scratch.enter_context(DeliveryFrame(Path(directory) / "strip.rgb", shape).map("w+"))
-
-
-def _jpeg_denoise_source(session, adjustments):
+def _jpeg_denoise_source(session, adjustments, *, render_grain=None):
     """Hand the strip renderer one prepared source, shared by equal renditions."""
     from .finishing import apply_geometry
     from .models import GeometryAdjustments
@@ -556,14 +565,15 @@ def _jpeg_denoise_source(session, adjustments):
         if lane is None:
             return session.image, reference, adjustments
         authored = _authored_sdr_base(session, kind, adjustments)
-        source_filter = _delivery_source_filter(session, kind, adjustments, authored=authored)
+        source_filter = _delivery_source_filter(session, kind, adjustments, authored=authored,
+                                                render_grain=render_grain)
         key = (authored, lane.controls.model_dump_json())
         if key != last_key:
             last_pixels = None
             if source_filter is not None:
                 last_pixels = source_filter(apply_geometry(reference if authored else session.image, geometry), authored)
             else:
-                last_pixels = _denoised_export_source(session, kind)
+                last_pixels = _denoised_export_source(session, kind, render_grain=render_grain)
             last_key = key
         if source_filter is None:
             return last_pixels, reference, adjustments
@@ -582,6 +592,19 @@ class _PreparedExport:
     write: Callable[[Path], None]
     validate: Callable[[Path], str | None]
     notes: list[str] = field(default_factory=list)
+
+
+def _release_batch_source(session):
+    if not getattr(session, "_release_batch_source_before_encode", False):
+        return
+    if session.render_cache is not None:
+        session.render_cache.discard_grain_preparation()
+        session.render_cache.close_micro_preview()
+        session.render_cache = None
+    session.image = session.sdr_reference_image = session.retouch_original = session._delivery_cache = None
+    if (maps := getattr(session, "_batch_source_maps", None)) is not None:
+        maps.close()
+    gc.collect()
 
 
 # Native 10.7 MP Neo measurement: 179.4 B/px HDR and 415.9 B/px
@@ -683,6 +706,7 @@ def _execute_export(
             prepared = prepare()
         from .retouch_routes import delivery_record
         rendering = delivery_record(session, getattr(session, "_delivery_record", rendering))
+        _release_batch_source(session)
         with NamedTemporaryFile(
             prefix=f".{output_path.stem}.",
             suffix=prepared.staging_suffix,
@@ -758,10 +782,16 @@ def _fsync_path(path: Path) -> None:
         os.fsync(handle.fileno())
 
 
-def _validate_pillow_output(path: Path) -> None:
-    from PIL import Image
+def _validate_pillow_output(path: Path, expected_pixels: int | None = None) -> None:
+    from PIL import Image, JpegImagePlugin, PngImagePlugin
 
-    with Image.open(path) as decoded:
+    opener = Image.open
+    if (expected_pixels is not None and Image.MAX_IMAGE_PIXELS is not None
+            and expected_pixels > Image.MAX_IMAGE_PIXELS):
+        opener = {".jpg": JpegImagePlugin.JpegImageFile, ".png": PngImagePlugin.PngImageFile}[path.suffix.lower()]
+    with path.open("rb") as file, opener(file) as decoded:
+        if expected_pixels is not None and decoded.width * decoded.height != expected_pixels:
+            raise ExportProcessError("The encoded image does not match the exported size.")
         decoded.verify()
 
 
@@ -772,31 +802,35 @@ class SDRPNGExportBackend(ExportBackend):
         if self.capability.status != CapabilityStatus.AVAILABLE:
             return ExportResponse(accepted=False, backend=self.name, message=self.capability.detail)
 
+        scratch = ExitStack()
+
         def prepare() -> _PreparedExport:
             finishing_adjustments = _finishing_adjustments_for_export(session)
-            image = _render_export_branch(session, settings, PreviewKind.SDR, finishing_adjustments)
-            exif_payload = None
+            directory = Path(scratch.enter_context(TemporaryDirectory(prefix="png-delivery-")))
+            image = DeliveryFrame.spill(directory / "sdr.rgb", _render_export_branch(
+                session, settings, PreviewKind.SDR, finishing_adjustments))
+
+            def write(staged):
+                with image.map("r") as pixels:
+                    _write_sdr_png(staged, pixels, bit_depth=settings.sdr_png_bit_depth,
+                                   dithering=settings.dithering, exif_payload=None)
+
             return _PreparedExport(
                 ".sdr.tmp.png",
-                lambda staged: _write_sdr_png(
-                    staged,
-                    image,
-                    bit_depth=settings.sdr_png_bit_depth,
-                    dithering=settings.dithering,
-                    exif_payload=exif_payload,
-                ),
-                _validate_pillow_output,
+                write,
+                lambda staged: _validate_pillow_output(staged, image.shape[0] * image.shape[1]),
             )
 
-        return _execute_export(
-            self,
-            session,
-            settings,
-            suffix=".png",
-            prepare=prepare,
-            success_message=lambda path, _validation: f"SDR PNG exported to {path}",
-            failure_prefix="SDR PNG export failed",
-        )
+        with scratch:
+            return _execute_export(
+                self,
+                session,
+                settings,
+                suffix=".png",
+                prepare=prepare,
+                success_message=lambda path, _validation: f"SDR PNG exported to {path}",
+                failure_prefix="SDR PNG export failed",
+            )
 
 
 class SDRJPEGExportBackend(ExportBackend):
@@ -810,16 +844,9 @@ class SDRJPEGExportBackend(ExportBackend):
 
         def prepare() -> _PreparedExport:
             finishing_adjustments = _finishing_adjustments_for_export(session)
-            kind = PreviewKind.SDR
-            if denoise_settings_for_export(session, kind) is not None:
-                image = _render_export_branch(
-                    session, settings, kind, finishing_adjustments,
-                    denoise_source=_jpeg_denoise_source(session, finishing_adjustments),
-                    allocate_output=lambda shape: _allocate_export_strip_output(scratch, shape),
-                )
-            else:
-                image = _render_export_branch(session, settings, kind, finishing_adjustments)
-            exif_payload = None
+            directory = Path(scratch.enter_context(TemporaryDirectory(prefix="jpeg-delivery-")))
+            image, = _render_delivery_files(session, settings, finishing_adjustments, directory,
+                                            lanes=(PreviewKind.SDR,), jpeg_denoise=True)
             return _PreparedExport(
                 ".sdr.tmp.jpg",
                 lambda staged: _write_sdr_jpeg(
@@ -828,9 +855,9 @@ class SDRJPEGExportBackend(ExportBackend):
                     quality=settings.quality,
                     chroma_subsampling=settings.jpeg_chroma_subsampling,
                     dithering=settings.dithering,
-                    exif_payload=exif_payload,
+                    exif_payload=None,
                 ),
-                _validate_pillow_output,
+                lambda staged: _validate_pillow_output(staged, image.shape[0] * image.shape[1]),
             )
 
         with scratch:
@@ -854,23 +881,22 @@ class SDRJPEGXLExportBackend(ExportBackend):
         if self.capability.status != CapabilityStatus.AVAILABLE:
             return ExportResponse(accepted=False, backend=self.name, message=self.capability.detail)
 
+        scratch = ExitStack()
+
         def prepare() -> _PreparedExport:
             finishing_adjustments = _finishing_adjustments_for_export(session)
-            sdr_image = _render_export_branch(session, settings, PreviewKind.SDR, finishing_adjustments)
+            directory = Path(scratch.enter_context(TemporaryDirectory(prefix="jxl-delivery-")))
+            sdr_image, = _render_delivery_files(session, settings, finishing_adjustments, directory,
+                                               lanes=(PreviewKind.SDR,))
             shape = sdr_image.shape[:2]
 
             @_timed_stage("encode")
             def write(staged: Path) -> None:
-                nonlocal sdr_image
-                payload = encode_sdr_jpegxl(
-                    sdr_image,
-                    int(settings.quality),
-                    dithering=settings.dithering,
-                    exif_payload=None,
-                )
-                if settings.jpegxl_high_fidelity:
-                    verify_lossless_jpegxl(payload, sdr_image, hdr=False)
-                sdr_image = None
+                with sdr_image.map("r") as pixels:
+                    payload = encode_sdr_jpegxl(pixels, int(settings.quality), dithering=settings.dithering,
+                                               exif_payload=None)
+                    if settings.jpegxl_high_fidelity:
+                        verify_lossless_jpegxl(payload, pixels, hdr=False)
                 staged.write_bytes(payload)
 
             @_timed_stage("validate")
@@ -879,15 +905,16 @@ class SDRJPEGXLExportBackend(ExportBackend):
 
             return _PreparedExport(".sdr.tmp.jxl", write, validate)
 
-        return _execute_export(
-            self,
-            session,
-            settings,
-            suffix=".jxl",
-            prepare=prepare,
-            success_message=lambda path, validation: f"JPEG XL SDR exported to {path}. {validation}",
-            failure_prefix="JPEG XL SDR export failed",
-        )
+        with scratch:
+            return _execute_export(
+                self,
+                session,
+                settings,
+                suffix=".jxl",
+                prepare=prepare,
+                success_message=lambda path, validation: f"JPEG XL SDR exported to {path}. {validation}",
+                failure_prefix="JPEG XL SDR export failed",
+            )
 
 
 def write_avif_gainmap_renditions(staged_output, hdr_image, sdr_image, settings, reference_white_nits=203, *, gainmaputil=None, timings_ms=None, ceiling_nits=None, encoding_allowance=0.0, notes=None):
@@ -1151,27 +1178,12 @@ class JPEGUltraHDRExportBackend(ExportBackend):
         scratch = ExitStack()
 
         def prepare() -> _PreparedExport:
-            from .gpu_delivery import streamed_delivery_enabled
-
             notes: list[str] = []
             finishing_adjustments = _finishing_adjustments_for_export(session)
-            lanes = (PreviewKind.HDR, PreviewKind.SDR)
-            denoise_source = (_jpeg_denoise_source(session, finishing_adjustments)
-                              if any(denoise_settings_for_export(session, lane) is not None for lane in lanes) else None)
-            if denoise_source is not None or streamed_delivery_enabled(session, settings, finishing_adjustments):
-                directory = Path(scratch.enter_context(TemporaryDirectory(prefix="jpeg-delivery-", ignore_cleanup_errors=True)))
-                try:
-                    hdr_image, sdr_image = (
-                        _render_branch_to_file(directory / f"{lane.value}.rgb", lambda allocate:
-                            _render_export_branch(session, settings, lane, finishing_adjustments,
-                                                  denoise_source=denoise_source, allocate_output=allocate))
-                        for lane in lanes)
-                finally:
-                    _release_delivery_pixels(session)
-                del denoise_source
-            else:
-                hdr_image, sdr_image = (_render_export_branch(session, settings, lane, finishing_adjustments)
-                                        for lane in lanes)
+            proof_directory = getattr(settings, "_proof_endpoint_directory", None)
+            directory = proof_directory or Path(scratch.enter_context(TemporaryDirectory(prefix="jpeg-delivery-")))
+            hdr_image, sdr_image = _render_delivery_files(session, settings, finishing_adjustments, directory,
+                                                          jpeg_denoise=True)
             if hdr_image.shape != sdr_image.shape or len(hdr_image.shape) != 3 or hdr_image.shape[2] < 3:
                 raise ExportProcessError(
                     "The independently authored HDR and SDR renditions must have matching RGB dimensions."
@@ -1187,6 +1199,8 @@ class JPEGUltraHDRExportBackend(ExportBackend):
                     exif_payload=None,
                     ceiling_nits=_peak_ceiling(settings, finishing_adjustments),
                     encoding_allowance=_peak_allowance(finishing_adjustments), notes=notes, photo_rect=photo_rect)
+                if proof_directory is not None:
+                    object.__setattr__(settings, "_proof_endpoints", (hdr_image, sdr_image))
 
             return _PreparedExport(
                 ".ultrahdr.tmp.jpg",
@@ -1216,53 +1230,42 @@ class JPEGXLHDRExportBackend(ExportBackend):
         if self.capability.status != CapabilityStatus.AVAILABLE:
             return ExportResponse(accepted=False, backend=self.name, message=self.capability.detail)
 
+        scratch = ExitStack()
+
         def prepare() -> _PreparedExport:
             notes: list[str] = []
             finishing_adjustments = _finishing_adjustments_for_export(session)
             proof_directory = getattr(settings, "_proof_endpoint_directory", None)
             reference_white_nits = getattr(session, "hdr_reference_white_nits", 203)
 
+            def encode_samples(frame, quality, precision):
+                with frame.map("r") as pixels:
+                    return encode_hdr_jpegxl(pixels, quality, precision, reference_white_nits=reference_white_nits)
+
             def encode(hdr_image):
                 if settings.jpegxl_high_fidelity:
-                    payload = encode_hdr_jpegxl(hdr_image, 100, "uint12", reference_white_nits=reference_white_nits)
-                    verify_lossless_jpegxl(payload, hdr_image, hdr=True,
-                        reference_white_nits=reference_white_nits,
-                        ceiling_nits=_peak_ceiling(settings, finishing_adjustments),
-                        encoding_allowance=_peak_allowance(finishing_adjustments))
+                    payload = encode_samples(hdr_image, 100, "uint12")
+                    with hdr_image.map("r") as pixels:
+                        verify_lossless_jpegxl(payload, pixels, hdr=True,
+                            reference_white_nits=reference_white_nits,
+                            ceiling_nits=_peak_ceiling(settings, finishing_adjustments),
+                            encoding_allowance=_peak_allowance(finishing_adjustments))
                     return payload
                 return encode_within_ceiling(
                     hdr_image, reference_white_nits,
-                    lambda hdr: encode_hdr_jpegxl(hdr, int(settings.quality), settings.jpegxl_precision,
-                        reference_white_nits=reference_white_nits),
+                    lambda hdr: encode_samples(hdr, int(settings.quality), settings.jpegxl_precision),
                     _decoded_jpegxl_channel_nits, _peak_ceiling(settings, finishing_adjustments), notes,
                     encoding_allowance=_peak_allowance(finishing_adjustments))
 
-            hdr_image, endpoints = None, None
-            if proof_directory is None:
-                hdr_image = _render_export_branch(session, settings, PreviewKind.HDR, finishing_adjustments)
-                shape = hdr_image.shape[:2]
-            else:
-                try:
-                    with share_delivery_grain(session, finishing_adjustments):
-                        endpoints = tuple(
-                            _render_branch_to_file(proof_directory / f"{lane.value}.rgb", lambda allocate:
-                                _render_export_branch(session, settings, lane, finishing_adjustments,
-                                                      allocate_output=allocate))
-                            for lane in (PreviewKind.HDR, PreviewKind.SDR))
-                finally:
-                    _release_delivery_pixels(session)
-                hdr_endpoint, _ = endpoints
-                shape = hdr_endpoint.shape[:2]
+            directory = proof_directory or Path(scratch.enter_context(TemporaryDirectory(prefix="jxl-delivery-")))
+            lanes = (PreviewKind.HDR,) if proof_directory is None else (PreviewKind.HDR, PreviewKind.SDR)
+            endpoints = _render_delivery_files(session, settings, finishing_adjustments, directory, lanes=lanes)
+            shape = endpoints[0].shape[:2]
 
             @_timed_stage("encode")
             def write(staged: Path) -> None:
-                nonlocal hdr_image
-                if endpoints is None:
-                    payload = encode(hdr_image)
-                    hdr_image = None
-                else:
-                    with endpoints[0].map("r") as pixels:
-                        payload = encode(pixels)
+                payload = encode(endpoints[0])
+                if proof_directory is not None:
                     object.__setattr__(settings, "_proof_endpoints", endpoints)
                 staged.write_bytes(payload)
 
@@ -1272,15 +1275,16 @@ class JPEGXLHDRExportBackend(ExportBackend):
 
             return _PreparedExport(".tmp.jxl", write, validate, notes)
 
-        return _execute_export(
-            self,
-            session,
-            settings,
-            suffix=".jxl",
-            prepare=prepare,
-            success_message=lambda path, validation: f"JPEG XL HDR exported to {path}. {validation}",
-            failure_prefix="JPEG XL HDR export failed",
-        )
+        with scratch:
+            return _execute_export(
+                self,
+                session,
+                settings,
+                suffix=".jxl",
+                prepare=prepare,
+                success_message=lambda path, validation: f"JPEG XL HDR exported to {path}. {validation}",
+                failure_prefix="JPEG XL HDR export failed",
+            )
 
 
 class ExportProcessError(RuntimeError):
@@ -1370,7 +1374,7 @@ def _write_sdr_png(
 
 def _write_sdr_jpeg(
     path: Path,
-    image: np.ndarray,
+    image: np.ndarray | DeliveryFrame,
     *,
     quality: int,
     chroma_subsampling: str = "420",
@@ -1378,9 +1382,10 @@ def _write_sdr_jpeg(
     exif_payload: bytes | None = None,
 ) -> None:
     image_8bit = np.empty((*image.shape[:2], 3), dtype=np.uint8)
-    for top in range(0, len(image), 128):
-        rows = slice(top, top + 128)
-        image_8bit[rows] = _linear_to_srgb8(image[rows, :, :3], dither=dithering, top=top)
+    with closing(row_bands(image, 128)) as bands:
+        for index, pixels in enumerate(bands):
+            top = index * 128
+            image_8bit[top:top + len(pixels)] = _linear_to_srgb8(pixels[..., :3], dither=dithering, top=top)
     _write_sdr_jpeg_pixels(
         path,
         image_8bit,
@@ -1390,6 +1395,7 @@ def _write_sdr_jpeg(
     )
 
 
+@_timed_stage("encode")
 def _write_sdr_jpeg_pixels(
     path: Path,
     image_8bit: np.ndarray,

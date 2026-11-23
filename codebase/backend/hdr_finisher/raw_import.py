@@ -11,6 +11,7 @@ import numpy as np
 from .import_bands import parallel_import_enabled, run_bands
 
 from .color import aces2065_to_acescg, transform_float32_bounded
+from .delivery_frames import empty_source_array, source_float32
 from .dng_color import D60_XYZ, XYZ_D60_TO_ACESCG, chromatic_adaptation_matrix
 from .lens_correction import correct_frame, native_lens_database
 from .models import LensCorrectionSettings, RawImportSettings
@@ -415,7 +416,7 @@ def _apply_raw_corrections(
             if decoded.highlight_reconstruction_diagnostics is not None:
                 decoded.highlight_reconstruction_diagnostics["edge_colour"] = edge_diagnostics
     else:
-        aces2065 = np.asarray(decoded.developed).astype(np.float32)
+        aces2065 = source_float32(np.asarray(decoded.developed))
         aces2065 *= np.float32(1.0 / 65535.0)
         decoded.developed = np.empty((0,), dtype=np.uint16)
     lens_metadata: dict[str, Any] = {}
@@ -455,6 +456,7 @@ def _apply_raw_corrections(
             cancelled=cancelled,
             consume_input=True,
             progress=progress,
+            allocate_output=empty_source_array,
         )
         diagnostic("raw", "development_lens", photo={"id": str(path), "name": path.name},
                    route="cpu", applied=lens_metadata.get("applied", False),
@@ -1073,7 +1075,7 @@ def _normalize_camera_rgb_float32(
     source = np.asarray(transport)
     if source.dtype not in (np.dtype(np.uint16), np.dtype(np.float32)) or source.ndim != 3 or source.shape[2] != 3:
         raise RawImportError("Camera-RGB transport must be a signed float32 H×W×3 image.")
-    output = source if source.dtype == np.float32 and source.flags.writeable else source.astype(np.float32)
+    output = source if source.dtype == np.float32 and source.flags.writeable else source_float32(source)
     inverse_range = (1.0 / (metadata.white_level - metadata.black_level)).astype(np.float32)
     def band(start):
         _raise_if_cancelled(cancelled)

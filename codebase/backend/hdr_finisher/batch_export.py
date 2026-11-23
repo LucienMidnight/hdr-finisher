@@ -1,6 +1,8 @@
 """One isolated low-priority photo at a time, sharing GPU delivery."""
 from copy import deepcopy
+from contextlib import ExitStack
 from datetime import datetime, timezone
+import gc
 import hashlib
 import json
 import math
@@ -196,6 +198,7 @@ class BatchExports:
             cancel_file = Path(temporary) / "cancel"
             task.write_text(json.dumps({"photo":photo,"preset":preset.model_dump(mode="json"),"directory":directory,"sequence":sequence,"progress":str(progress_file),"cancel":str(cancel_file),"diagnostic_action":current_action()}), encoding="utf-8")
             env = dict(os.environ)
+            env.update(TMPDIR=temporary, TEMP=temporary, TMP=temporary)
             # Use the same native-library threading as an ordinary export.
             # Isolation, below-normal priority and serial photos protect Grade.
             thread_limit = env.get("HDR_FINISHER_BATCH_NATIVE_THREADS")
@@ -324,23 +327,51 @@ class PhotoProgress:
         return {"fraction": round(fraction, 4), "label": label, "eta_s": eta}
 
 
+def _spill_worker_source(session, scratch):
+    from .delivery_frames import DeliveryFrame, SOURCE_SPILL_BYTES
+    fields = ("image", "sdr_reference_image", "retouch_original")
+    if not any(getattr(session, field, None) is not None and getattr(session, field).nbytes >= SOURCE_SPILL_BYTES
+               for field in fields):
+        return
+    directory = Path(scratch.enter_context(tempfile.TemporaryDirectory(prefix="batch-source-")))
+    maps = scratch.enter_context(ExitStack())
+    replacements = {}
+    for field in fields:
+        source = getattr(session, field, None)
+        if source is None or source.nbytes < SOURCE_SPILL_BYTES:
+            continue
+        key = id(source)
+        if key not in replacements:
+            frame = DeliveryFrame.spill(directory / f"{field}.rgb", source)
+            replacements[key] = maps.enter_context(frame.map("r"))
+        setattr(session, field, replacements[key])
+    del source
+    session.render_cache.image = session.image
+    session.render_cache.sdr_reference_image = session.sdr_reference_image
+    session._batch_source_maps = maps
+    gc.collect()
+
+
 def export_photo(photo, preset, directory, sequence, progress=None, cancelled=lambda: False, live=None):
     from .sessions import SessionStore
     from .projects import open_document, validate_saved_document
     from .exporters import build_export_backends
     from .capabilities import probe_capabilities
+    from .delivery_frames import batch_source_buffers
     from .export_timing import export_clock
     store = SessionStore(grade_import_parallel=True)
+    scratch = ExitStack()
     results = []
     develop_started = monotonic()
     try:
         from .highlight_edge_gpu import source_work
-        with source_work(priority=20, cancelled=cancelled):
+        with source_work(priority=20, cancelled=cancelled), batch_source_buffers():
             if photo.get("grade"): session = open_document(store, validate_saved_document(photo["grade"]), Path(photo["source_path"]))
             else:
                 payload = store.create_session(Path(photo["source_path"]), owns_source_path=False)
                 session = store.get(payload.session_id)
         session.delivery_cancelled = cancelled
+        _spill_worker_source(session, scratch)
         develop_s = monotonic() - develop_started
         if live is not None: live.developed(first_format=preset.versions[0].settings.format)
         backends = build_export_backends(probe_capabilities())
@@ -362,6 +393,7 @@ def export_photo(photo, preset, directory, sequence, progress=None, cancelled=la
                 session.hdr_reference_white_nits = version.reference_white or original_white
                 session.color_context = RenderColorContext(session.hdr_reference_white_nits)
                 session.render_cache.set_color_context(session.color_context)
+                session._release_batch_source_before_encode = index == len(preset.versions) - 1
                 target = version_destination(directory, version, photo, sequence, preset.name)
                 with tempfile.TemporaryDirectory(prefix=".hdr-export-", dir=target.parent) as staging:
                     staged = Path(staging) / target.name
@@ -393,5 +425,9 @@ def export_photo(photo, preset, directory, sequence, progress=None, cancelled=la
                 if cancelled(): break
                 results.append(dict(row,outcome="failed",reason=str(error)))
             if progress: progress(results)
-    finally: store.clear()
+    finally:
+        try:
+            store.clear()
+        finally:
+            scratch.close()
     return results

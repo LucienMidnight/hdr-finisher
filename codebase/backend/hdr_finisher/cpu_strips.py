@@ -449,8 +449,6 @@ def render_in_strips(
 
     report.passes = tuple(passes)
     report.anchor = anchor
-    if isinstance(output, np.memmap):
-        output.flush()
     output.setflags(write=False)
     return output, report
 

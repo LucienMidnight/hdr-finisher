@@ -38,7 +38,7 @@ def _session() -> object:
 def test_sdr_jpeg_export_uses_sdr_branch_quality_and_jpg_suffix(monkeypatch, tmp_path: Path) -> None:
     observed: dict[str, object] = {}
 
-    def fake_render(session, settings, kind, adjustments):
+    def fake_render(session, settings, kind, adjustments, **_kwargs):
         _ = session, settings, adjustments
         observed["kind"] = kind
         return np.full((4, 6, 3), 0.2, dtype=np.float32)
@@ -132,7 +132,7 @@ def test_sdr_export_failure_preserves_existing_output(monkeypatch, tmp_path: Pat
         path.write_bytes(b"partial")
         raise OSError("disk full")
 
-    monkeypatch.setattr(exporter_module, "_render_export_branch", lambda *_args: np.full((4, 6, 3), 0.2, dtype=np.float32))
+    monkeypatch.setattr(exporter_module, "_render_export_branch", lambda *_args, **_kwargs: np.full((4, 6, 3), 0.2, dtype=np.float32))
     backend = SDRJPEGExportBackend(_available_capability()) if format_name == "sdr_jpeg" else exporter_module.SDRPNGExportBackend(_available_capability())
     writer_name = "_write_sdr_jpeg" if format_name == "sdr_jpeg" else "_write_sdr_png"
     monkeypatch.setattr(exporter_module, writer_name, fail_after_partial_write)
@@ -146,7 +146,7 @@ def test_sdr_export_failure_preserves_existing_output(monkeypatch, tmp_path: Pat
 def test_sdr_jpegxl_export_uses_sdr_branch_quality_and_jxl_suffix(monkeypatch, tmp_path: Path) -> None:
     observed: dict[str, object] = {}
 
-    def fake_render(session, settings, kind, adjustments):
+    def fake_render(session, settings, kind, adjustments, **_kwargs):
         _ = session, settings, adjustments
         observed["kind"] = kind
         return np.full((4, 6, 3), 0.2, dtype=np.float32)

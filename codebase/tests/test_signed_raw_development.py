@@ -53,6 +53,31 @@ def test_signed_normalization_reuses_float_transport_and_applies_exposure_once()
     np.testing.assert_array_equal(converted, normalized)
 
 
+def test_batch_signed_raw_develops_into_mapped_rgb(monkeypatch):
+    import mmap
+    from hdr_finisher import delivery_frames, signed_raw
+
+    sensor = np.random.default_rng(53).integers(0, 4096, (33, 49), dtype=np.uint16)
+    pattern = [[0, 1], [1, 2]]
+    black = [[512, 512], [512, 512]]
+    matrix = np.eye(3, dtype=np.float32)
+    metadata = SimpleNamespace(white_level=np.full(3, 4095), black_level=np.full(3, 512),
+        as_shot_wb=np.array([1.8, 1., 1.4]), camera_to_acescg=np.eye(3))
+
+    def develop():
+        rgb = signed_raw.demosaic(sensor, pattern, black, matrix, rows=16)
+        rgb = signed_raw.orient(rgb, 6)
+        rgb = raw_import._normalize_camera_rgb_float32(rgb, metadata)
+        return raw_import._camera_rgb_to_acescg_float32(rgb, metadata)
+
+    expected = develop()
+    monkeypatch.setattr(delivery_frames, "SOURCE_SPILL_BYTES", expected.nbytes)
+    with delivery_frames.batch_source_buffers():
+        actual = develop()
+    assert isinstance(actual.base, mmap.mmap)
+    assert actual.tobytes() == expected.tobytes()
+
+
 @pytest.mark.parametrize("fail", [False, True])
 def test_lens_vignetting_preserves_signed_samples_across_bands(fail):
     image = np.linspace(-2, 3, 537 * 9 * 3, dtype=np.float32).reshape(537, 9, 3)
