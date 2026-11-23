@@ -2,6 +2,9 @@ from __future__ import annotations
 
 from .export_timing import timed as _timed_stage
 import math
+from contextlib import ExitStack
+from pathlib import Path
+from tempfile import TemporaryDirectory
 
 import numpy as np
 
@@ -42,22 +45,30 @@ def apply_detail(
     """Apply band-limited luminance detail while preserving RGB hue ratios."""
     if detail_is_neutral(detail):
         return image
+    log_luma = _detail_log_luma(image, kind)
+    return _finish_detail(image, log_luma, detail, math.hypot(*image.shape[:2]), source_pixel_scale,
+                          lambda name, radius: clarity_base(log_luma, radius) if name == "clarity"
+                          else _gaussian_blur(log_luma, radius))
+
+
+def _detail_log_luma(image, kind):
     weights = _ACESCG_LUMA if kind == PreviewKind.HDR else _SRGB_LUMA
     original_luma = np.maximum(
         np.einsum("...c,c->...", image[..., :3], weights, optimize=True), _DETAIL_LUMA_FLOOR
     )
     # Log luminance makes equal local contrast changes read consistently in
     # shadows and highlights.  Values below black remain clamped and finite.
-    log_luma = np.log2(original_luma)
-    del original_luma
+    return np.log2(original_luma)
+
+
+def _finish_detail(image, log_luma, detail, diagonal, source_pixel_scale, read_base):
     adjusted = log_luma.copy()
-    diagonal = math.hypot(image.shape[0], image.shape[1])
 
     if detail.texture_amount:
         fine_radius = max(0.35, diagonal * 0.0003)
         coarse_radius = max(0.70, diagonal * 0.0012)
-        fine = _gaussian_blur(log_luma, fine_radius)
-        coarse = _gaussian_blur(log_luma, coarse_radius)
+        fine = read_base("fine", fine_radius)
+        coarse = read_base("coarse", coarse_radius)
         band = fine - coarse
         # A difference of blurs rings around narrow, high-contrast structure.
         # Qualify the band with contrast measured across the coarse filter's
@@ -69,7 +80,7 @@ def apply_detail(
 
     if detail.clarity_amount:
         radius = max(0.5, diagonal * float(detail.clarity_radius_percent) / 100.0)
-        base = clarity_base(log_luma, radius)
+        base = read_base("clarity", radius)
         band = log_luma - base
         # Suppress cross-edge bleeding while keeping texture inside surfaces.
         edge_weight = np.exp(-np.square(band / np.float32(0.75))).astype(np.float32)
@@ -78,7 +89,7 @@ def apply_detail(
 
     if detail.sharpen_amount:
         radius = max(0.3, float(detail.sharpen_radius_px) * max(0.05, float(source_pixel_scale)))
-        base = _gaussian_blur(log_luma, radius)
+        base = read_base("sharpen", radius)
         edge = log_luma - base
         threshold = np.float32(float(detail.sharpen_threshold) / 100.0 * 0.50)
         if threshold <= 1e-8:
@@ -106,6 +117,116 @@ def apply_detail(
         return np.where((np.abs(delta) > 1e-7)[..., None], result, part).astype(np.float32, copy=False)
 
     return render_rows(image, finish)
+
+
+@_timed_stage("detail")
+def apply_detail_to_frame(src_frame, dst_frame, detail, kind, source_pixel_scale=1.0, *, rows=128, finish_band=None):
+    from .delivery_frames import DeliveryFrame, transform_lines
+    from .export_timing import tick
+
+    if detail_is_neutral(detail):
+        dst_frame.write(src_frame.bands(rows))
+        return dst_frame
+    height, width = src_frame.shape[:2]
+    shape = (height, width)
+    diagonal = math.hypot(height, width)
+    with TemporaryDirectory(prefix="detail-", dir=dst_frame.path.parent) as directory, ExitStack() as stack:
+        def plane(name):
+            return DeliveryFrame(Path(directory) / name, shape)
+
+        bases = {}
+        if detail.texture_amount:
+            bases["fine"] = max(.35, diagonal * .0003)
+            bases["coarse"] = max(.70, diagonal * .0012)
+        if detail.sharpen_amount:
+            bases["sharpen"] = max(.3, float(detail.sharpen_radius_px) * max(.05, float(source_pixel_scale)))
+        clarity_plan = clarity_map_plan(diagonal * float(detail.clarity_radius_percent) / 100.0) if detail.clarity_amount else None
+        total_steps = (
+            2
+            + sum(6 for sigma in bases.values() if sigma >= .35)
+            + (0 if clarity_plan is None else (2 if clarity_plan["scale"] == 1 else 1))
+        )
+        completed_steps = 0
+
+        def report_step(done, total=height):
+            if total > 0:
+                tick(completed_steps * 1000 + int(1000 * min(total, done) / total), total_steps * 1000)
+
+        def log_bands():
+            for index, band in enumerate(src_frame.bands(rows), start=1):
+                yield _detail_log_luma(band, kind)
+                report_step(index * rows)
+
+        log_frame = plane("log")
+        log_frame.write(log_bands())
+        completed_steps += 1
+        log_luma = stack.enter_context(log_frame.map("r"))
+        scratch = plane("scratch")
+        blurred = {}
+        for name, sigma in bases.items():
+            if sigma < .35:
+                blurred[name] = log_luma
+                continue
+            radius = _gaussian_box_radius(sigma)
+            base = plane(name)
+            previous = log_frame
+            for _ in range(3):
+                transform_lines(previous, scratch, 1, lambda part: _box_blur_axis(part, radius, 1), progress=report_step)
+                completed_steps += 1
+                transform_lines(scratch, base, 0, lambda part: _box_blur_axis(part, radius, 0), progress=report_step)
+                completed_steps += 1
+                previous = base
+            blurred[name] = stack.enter_context(base.map("r"))
+
+        clarity = None
+        if clarity_plan is not None:
+            scale = clarity_plan["scale"]
+            base_scale = min(scale, clarity_base_scale(height, width))
+            kernel = _clarity_kernel(clarity_plan["dense_sigma"], clarity_plan["taps"])
+            if scale == 1:
+                base = plane("clarity")
+                transform_lines(log_frame, scratch, 1, lambda part: _dense_blur_axis(part, kernel, 1), progress=report_step)
+                completed_steps += 1
+                transform_lines(scratch, base, 0, lambda part: _dense_blur_axis(part, kernel, 0), progress=report_step)
+                completed_steps += 1
+                blurred["clarity"] = stack.enter_context(base.map("r"))
+            else:
+                coarse = np.empty((-(-height // base_scale), -(-width // base_scale)), dtype=np.float32)
+                aligned_rows = max(base_scale, rows // base_scale * base_scale)
+                for top in range(0, height, aligned_rows):
+                    bottom = min(height, top + aligned_rows)
+                    coarse[top // base_scale:-(-bottom // base_scale)] = _block_mean(log_luma[top:bottom], base_scale)
+                    report_step(bottom)
+                completed_steps += 1
+                coarse = _block_mean(coarse, scale // base_scale)
+                clarity = _dense_blur_axis(_dense_blur_axis(coarse, kernel, 1), kernel, 0)
+
+        halo = max(1 if detail.sharpen_amount else 0,
+                   int(round(2 * bases.get("coarse", 0))))
+        source = stack.enter_context(src_frame.map("r"))
+
+        def bands():
+            for top in range(0, height, rows):
+                bottom = min(height, top + rows)
+                halo_top, halo_end = max(0, top - halo), min(height, bottom + halo)
+                region = slice(halo_top, halo_end)
+
+                def read_base(name, radius):
+                    if name == "clarity" and clarity is not None:
+                        first = max(0, halo_top // scale - 2)
+                        last = min(len(clarity), -(-halo_end // scale) + 3)
+                        horizontal = _bspline_upsample_axis(clarity[first:last], scale, width, 1)
+                        return _bspline_upsample_axis(horizontal, scale, halo_end - halo_top, 0,
+                                                     start=halo_top - first * scale)
+                    return blurred[name][region]
+
+                result = _finish_detail(source[region], log_luma[region], detail, diagonal, source_pixel_scale, read_base)
+                interior = result[top - halo_top:bottom - halo_top]
+                yield interior if finish_band is None else finish_band(interior, top)
+                report_step(bottom)
+
+        dst_frame.write(bands())
+    return dst_frame
 
 
 # Clarity's base is built on a brightness pyramid: box-average the log
@@ -187,9 +308,9 @@ def _dense_blur_axis(values: np.ndarray, kernel: np.ndarray, axis: int) -> np.nd
     return result
 
 
-def _bspline_upsample_axis(coarse: np.ndarray, scale: int, size: int, axis: int) -> np.ndarray:
+def _bspline_upsample_axis(coarse: np.ndarray, scale: int, size: int, axis: int, *, start=0) -> np.ndarray:
     # Pixel centre x sits at (x + 0.5) / scale - 0.5 in coarse texel units.
-    position = (np.arange(size, dtype=np.float64) + 0.5) / scale - 0.5
+    position = (np.arange(start, start + size, dtype=np.float64) + 0.5) / scale - 0.5
     base = np.floor(position).astype(np.int64)
     t = (position - base).astype(np.float32)
     weights = (
@@ -210,16 +331,16 @@ def _bspline_upsample_axis(coarse: np.ndarray, scale: int, size: int, axis: int)
 def _gaussian_blur(values: np.ndarray, sigma: float) -> np.ndarray:
     if sigma < 0.35:
         return values.astype(np.float32, copy=False)
-    # Three box passes approximate a Gaussian and remain linear in radius.
-    width = max(3, int(round(math.sqrt(4.0 * sigma * sigma + 1.0))))
-    if width % 2 == 0:
-        width += 1
-    radius = min(2048, width // 2)
+    radius = _gaussian_box_radius(sigma)
     result = values.astype(np.float32, copy=True)
     for _ in range(3):
         result = _box_blur_axis(result, radius, 1)
         result = _box_blur_axis(result, radius, 0)
     return result
+
+
+def _gaussian_box_radius(sigma):
+    return min(2048, max(3, int(round(math.sqrt(4.0 * sigma * sigma + 1.0)))) // 2)
 
 
 def _texture_edge_weight(log_luma: np.ndarray, coarse: np.ndarray, coarse_radius: float) -> np.ndarray:

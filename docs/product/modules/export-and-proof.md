@@ -72,6 +72,15 @@ perspective with spatial grading or output finishing stay on the whole-frame
 route: the windowed transforms can change pixel values. Exact bounded roll,
 full-size Profile A/B hashes and worker memory/time validation remain open.
 
+**Export-memory Step 4, pending integration.** The staged CPU route fixes
+geometry one channel at a time and reuses the fixed source and spatial masks
+when the renditions use the same input. Detail, local adjustments and spatial
+Film Look alternate between two disk-backed grade files. The pass preserves
+whole-image blur sums along complete lines and keeps the pre-Film Look input
+on disk for blending. Linked SDR can reuse the unclamped HDR grade when both
+renditions use identical Denoise settings. Full-size golden hashes, memory,
+speed and progress cadence remain open for the profile sweep.
+
 ## November 22 — File-backed AVIF delivery and full-size Proof
 
 AVIF delivery stores Grain and finished frames in files owned by the export

@@ -56,6 +56,25 @@ def assert_strips_match(actual, desired):
     else:
         np.testing.assert_array_equal(actual, desired)
 
+
+def test_linked_sdr_frame_uses_unclamped_hdr_scene(tmp_path):
+    from hdr_finisher.cpu_strips import linked_sdr_to_frame, render_staged_grade
+    from hdr_finisher.delivery_frames import DeliveryFrame
+
+    pixels = np.random.default_rng(731).uniform(-1, 4, (97, 151, 3)).astype(np.float32)
+    state = AdjustmentState()
+    state.sdr.linked_to_hdr = True
+    state.sdr.output_exposure = .37
+    reference = apply_adjustments(pixels, state, PreviewKind.SDR, include_output_highlight_compression=False)
+    source = DeliveryFrame.spill(tmp_path / "source.rgb", pixels)
+    hdr = render_staged_grade(source, None, state, PreviewKind.HDR, tmp_path, rows=19, apply_output_clamp=False)
+    with hdr.map("r") as scene:
+        assert np.any(scene < 0)
+    output = linked_sdr_to_frame(hdr, DeliveryFrame(tmp_path / "sdr.rgb", hdr.shape), state, rows=23)
+    with output.map("r") as actual:
+        np.testing.assert_array_equal(actual, reference)
+
+
 # The windowed projective resample perturbs float32 in its last bits, which
 # `test_geometry_region.py` measures at 6e-08 absolute. That difference is in
 # the strip's *input*, so the grade carries it forward; nothing else in this

@@ -1,3 +1,24 @@
+## November 23, 2026 — MacBook Neo staged strip pipeline (Step 4)
+
+MacBook Neo (A18 Pro, 8 GB), macOS 27, headless one-worker CPU batch and real
+Electron app (`1408 × 794`) under the shared GPU lock. Step 4 on `c080f8f5`
+moves channel-by-channel geometry, disk-backed spatial masks, Detail (Texture,
+Clarity, Sharpen), Local Adjustments, Lens Filter, Film Resolution, Halation,
+fused Film Grain + Stock, Scan Sharpening, Look Strength, Image Structure, and
+Vignette onto a 2-file ping-pong disk-backed strip pipeline, and reuses the
+pre-compression HDR frame for `linked_to_hdr` SDR. Decimal GB.
+
+| Source and profile | Format | Step 0 → Step 4 wall time | Step 0 → Step 4 peak | Result / SHA-256 |
+| --- | --- | ---: | ---: | --- |
+| 42 MP Sony A (1920 px + frame, headless) | `avif_gain_map` | 105.71 → 101.90 s | 6.423 → **2.091 GB** (-4.33 GB) | Golden SHA-256 exact (`ff3961ee9b4e…`) |
+| 42 MP Sony A (**real app, Grade open**) | `avif_gain_map` | 137.3 → 166.1 s | 5.04 → **2.432 GB** (-2.61 GB) | Golden SHA-256 exact; 0 trims, 0 Grain reclaims; worker 0.62 GB |
+| 42 MP Sony A-native (34 MP cropped) | `avif_gain_map` | 117.51 → 121.81 s | 6.783 → **2.703 GB** (-4.08 GB) | Exact SHA-256 (`2ad132186e81…`); worker 0.65 + encoder 1.98 GB |
+| 42 MP Sony Max (34 MP, **all stages on**) | `avif_gain_map` | 245.11 s (fail) → 253.68 s | 9.963 → **3.273 GB** (-6.69 GB) | Exact SHA-256 (`9be69993101b…`); worker 0.81 + encoder 2.39 GB |
+| 42 MP Sony B (native) | `avif_gain_map` | 28.61 → 30.87 s | 3.662 → **3.187 GB** (-0.48 GB) | Golden SHA-256 exact (`ccfeedf49d0e…`) |
+| 61 MP synthetic EXR A-native | `jpegxl_hdr` | — → 122.92 s | — → **2.578 GB** | Exported natively (`56e1385cd4b8…`) |
+| 100 MP synthetic EXR A-native | `sdr_jpeg` | — → 171.68 s | — → **3.577 GB** | Exported natively (`16ec18613dac…`; peak in `geometry`) |
+| 100 MP synthetic EXR A-native | `jpegxl_hdr` | — → 209.93 s | — → **3.587 GB** | Exported natively (`424f840e375b…`; peak in `geometry`) |
+
 ## November 23, 2026 — MacBook Neo bounded B&W, HSL and output finishing (Step 3)
 
 MacBook Neo (A18 Pro, 8 GB), macOS 27, headless one-worker CPU batch under the

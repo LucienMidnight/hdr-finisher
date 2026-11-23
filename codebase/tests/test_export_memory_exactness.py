@@ -1,4 +1,5 @@
 import hashlib
+import json
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -11,7 +12,7 @@ from hdr_finisher.color import acescg_to_linear_srgb, linear_srgb_to_acescg
 from hdr_finisher.delivery_frames import DeliveryFrame
 from hdr_finisher.export_timing import export_clock
 from hdr_finisher.hsl import HSLRange, HSLRecipe
-from hdr_finisher.models import (AdjustmentState, CapabilityStatus, ExportSettings, FramingLayer,
+from hdr_finisher.models import (AdjustmentState, CapabilityStatus, CropRectangle, DetailAdjustments, ExportSettings, FramingLayer,
     GeometryAdjustments, OutputFinishingSettings, PhotoFraming, PreviewKind, VignetteAdjustments, WatermarkSettings)
 from hdr_finisher.photo_framing import FramingLayout, compose
 from hdr_finisher.watermark import apply_watermark
@@ -27,6 +28,180 @@ def image():
     pixels[127:130, :22] = [0.49, 0.12, 0.08]
     pixels[255:258, 22:] = [0.09, 0.29, 0.54]
     return pixels
+
+
+@pytest.mark.parametrize("geometry", [
+    GeometryAdjustments(straighten_angle=6.3),
+    GeometryAdjustments(perspective_horizontal=12.0, perspective_vertical=-9.0, perspective_rotate=1.4),
+    GeometryAdjustments(rotation=90, flip_horizontal=True, flip_vertical=True,
+                        crop=CropRectangle(x=.07, y=.13, width=.81, height=.74)),
+])
+def test_geometry_delivery_frame_is_exact(tmp_path, image, geometry):
+    source = DeliveryFrame.spill(tmp_path / "source", image)
+    result = finishing.apply_geometry_to_frame(source, geometry, tmp_path / "fixed")
+    with result.map("r") as pixels:
+        np.testing.assert_array_equal(pixels, finishing.apply_geometry(image, geometry))
+
+
+@pytest.mark.parametrize("kind", [PreviewKind.HDR, PreviewKind.SDR])
+@pytest.mark.parametrize("controls", [dict(texture_amount=68), dict(clarity_amount=-58, clarity_radius_percent=.2),
+    dict(clarity_amount=-58, clarity_radius_percent=3), dict(sharpen_amount=85, sharpen_radius_px=2.1),
+    dict(texture_amount=74, clarity_amount=63, clarity_radius_percent=3, sharpen_amount=83,
+         sharpen_radius_px=2.7, sharpen_threshold=3)])
+def test_detail_delivery_frame_is_exact(tmp_path, image, kind, controls):
+    pixels = np.resize(image, (213, 257, 3))
+    source = DeliveryFrame.spill(tmp_path / "source", pixels)
+    destination = DeliveryFrame(tmp_path / "detail", source.shape)
+    recipe = DetailAdjustments(**controls)
+    detail.apply_detail_to_frame(source, destination, recipe, kind, rows=39)
+    with destination.map("r") as actual:
+        np.testing.assert_array_equal(actual, detail.apply_detail(pixels, recipe, kind))
+
+
+def test_lens_delivery_frame_is_exact_across_fft_tiles(tmp_path, image):
+    from hdr_finisher.lens_filter import apply_filter, apply_filter_to_frame
+
+    pixels = np.resize(image, (129, 551, 3))
+    source = DeliveryFrame.spill(tmp_path / "source", pixels)
+    destination = DeliveryFrame(tmp_path / "lens", source.shape)
+    arguments = ("black_pro_mist", 42, 1.2, 23)
+    apply_filter_to_frame(source, destination, *arguments)
+    with destination.map("r") as actual:
+        np.testing.assert_array_equal(actual, apply_filter(pixels, *arguments))
+
+
+@pytest.mark.parametrize("kind", [PreviewKind.HDR, PreviewKind.SDR])
+@pytest.mark.parametrize("strength,halation_radius", [(100, .05), (62, 4.8)])
+def test_film_delivery_frame_is_exact(tmp_path, image, kind, strength, halation_radius):
+    from hdr_finisher.cpu_strips import apply_film_to_frame
+
+    pixels = np.resize(image, (213, 257, 3))
+    source = DeliveryFrame.spill(tmp_path / "a", pixels)
+    destination = DeliveryFrame(tmp_path / "b", source.shape)
+    state = AdjustmentState()
+    branch = getattr(state, kind.value)
+    branch.film_look_section_enabled = branch.detail_section_enabled = branch.vignette_section_enabled = True
+    branch.film_look = branch.film_look.model_copy(update={
+        "look_strength": strength, "film_resolution": 57, "halation_enabled": True, "halation_amount": 48,
+        "halation_radius": halation_radius, "grain_enabled": True, "grain_amount": 37, "lens_filter": "black_pro_mist",
+        "scan_sharpening": 25, "film_stock": "kodak_portra_400", "grain_film_format": "super8",
+    })
+    branch.detail.softness = 31
+    branch.detail.microcontrast = 16
+    branch.vignette.amount = -37
+    with export_clock():
+        expected = adjustments._apply_film_look(pixels, state, kind)
+        expected = adjustments._apply_vignette(expected, branch.vignette, kind)
+    with export_clock():
+        result = apply_film_to_frame(source, destination, state, kind, rows=39)
+    with result.map("r") as actual:
+        np.testing.assert_array_equal(actual, expected)
+
+
+@pytest.mark.parametrize("geometry", [GeometryAdjustments(), GeometryAdjustments(straighten_angle=6.3,
+    perspective_vertical=7, rotation=90, flip_vertical=True, crop=CropRectangle(x=.08, width=.88))])
+@pytest.mark.parametrize("mask_kind", ["brush", "soft_brush", "linear_gradient", "luminance_range", "path"])
+def test_spatial_mask_delivery_frame_is_exact(tmp_path, image, geometry, mask_kind):
+    from hdr_finisher.local_adjustments import compile_geometry_fixed_mask, compile_geometry_fixed_mask_to_frame
+    from hdr_finisher.models import MaskExpression
+
+    pixels = np.resize(image, (213, 257, 3))
+    leaf = {"type": mask_kind, "mask_opacity": .71}
+    if mask_kind in {"brush", "soft_brush"}:
+        leaf.update(type="brush", strokes=[
+            {"points": [{"x": 0.02, "y": .05}, {"x": .43, "y": .49}, {"x": .91, "y": .96}],
+             "radius": .086, "hardness": .55, "opacity": .81, "flow": .67},
+            {"points": [{"x": .36, "y": .43}, {"x": .43, "y": .71}], "radius": .08, "erase": True},
+        ])
+        if mask_kind == "soft_brush":
+            leaf.update(mask_shift_edge=.04, mask_feather=.05)
+    elif mask_kind == "linear_gradient":
+        leaf.update(start={"x": .14, "y": .32}, end={"x": .87, "y": .72}, gradient_fan=.22)
+    elif mask_kind == "luminance_range":
+        leaf.update(full_start_ev=-2.5, full_end_ev=1.3, mask_feather=.03)
+    else:
+        leaf.update(nodes=[{"x": .12, "y": .1}, {"x": .78, "y": .31}, {"x": .31, "y": .79}], feather=.07)
+    expression = MaskExpression(leaf=leaf, inverted=True)
+    result = compile_geometry_fixed_mask_to_frame(pixels, expression, geometry, tmp_path / "mask", rows=39)
+    with result.map("r") as actual:
+        np.testing.assert_array_equal(actual, compile_geometry_fixed_mask(pixels, expression, geometry))
+
+
+def _spatial_grade_state():
+    from hdr_finisher.models import LocalAdjustment
+
+    state = AdjustmentState()
+    state.shared.geometry = GeometryAdjustments(straighten_angle=6.3, crop=CropRectangle(x=.01, width=.94))
+    state.shared.local_adjustments_enabled = True
+    recipe = HSLRecipe(ranges=[HSLRange(center=48, width=73, feather=25)], hue=33, saturation=21,
+                       edge=-7, edge_feather=8)
+    common = dict(exposure=.19, contrast=.21, highlights=21, hsl=recipe)
+    locals_ = [
+        LocalAdjustment(id="brush", opacity=.78,
+            mask={"leaf": {"type": "brush", "mask_shift_edge": -.01, "mask_feather": .04, "strokes": [
+                {"points": [{"x": .08, "y": .26}, {"x": .71, "y": .73}], "radius": .15}]}},
+            hdr_grade={**common, "detail": {"texture_amount": 25, "sharpen_amount": 50}}, sdr_grade=common),
+        LocalAdjustment(id="hue", opacity=.91,
+            mask={"leaf": {"type": "hue_range", "hue_center": 48, "hue_width": 110, "edge": 6, "edge_feather": 8}},
+            hdr_grade={"exposure": -.35}, sdr_grade={"exposure": -.55, "detail": {"clarity_amount": 12}}),
+        LocalAdjustment(id="gradient", opacity=.35, mask={"operator": "intersect", "children": [
+            {"leaf": {"type": "linear_gradient", "start": {"x": .2, "y": .2}, "end": {"x": .91, "y": .84}}},
+            {"leaf": {"type": "luminance_range", "full_start_ev": -3, "full_end_ev": 2, "mask_feather": .07 / 2}},
+        ]}, hdr_grade={"exposure": -.27}, sdr_grade={"exposure": .37}),
+    ]
+    for branch in (state.hdr, state.sdr):
+        branch.hsl_section_enabled = True
+        branch.hsl.channels[0].recipe = recipe
+        branch.black_and_white_section_enabled = True
+        branch.black_and_white.reds = 31
+        branch.film_look_section_enabled = branch.detail_section_enabled = branch.vignette_section_enabled = True
+        branch.detail = type(branch.detail)(texture_amount=64, clarity_amount=23, clarity_radius_percent=3,
+                                          sharpen_amount=27, softness=17, microcontrast=7)
+        branch.film_look = branch.film_look.model_copy(update={
+            "film_stock": "kodak_portra_400", "film_resolution": 62, "grain_amount": 23, "look_strength": 77,
+            "lens_filter": "pro_mist", "halation_amount": 43, "halation_radius": 4.3, "scan_sharpening": 37,
+            "halation_enabled": True, "grain_enabled": True,
+        })
+        branch.vignette.amount = -17
+    return state, locals_
+
+
+def test_santorini_mask_matches_whole_frame(tmp_path, image):
+    from hdr_finisher.local_adjustments import compile_geometry_fixed_mask, compile_geometry_fixed_mask_to_frame, has_hue_mask
+    from hdr_finisher.models import EditDocument
+
+    fixture = Path(__file__).parent / "fixtures" / "export-speed" / "santorini-2026-0068-grade.json"
+    document = EditDocument.model_validate(json.loads(fixture.read_text(encoding="utf-8"))["grade"])
+    geometry = document.global_adjustments.shared.geometry
+    pixels = np.resize(image, (213, 257, 3))
+    masks = [local.mask for local in document.local_adjustments if local.enabled and not has_hue_mask(local.mask)]
+    assert masks
+    for index, mask in enumerate(masks):
+        frame = compile_geometry_fixed_mask_to_frame(pixels, mask, geometry, tmp_path / f"mask_{index}.u8",
+                                                    spatial_only=True, rows=39)
+        with frame.map("r") as actual:
+            np.testing.assert_array_equal(actual, compile_geometry_fixed_mask(pixels, mask, geometry, spatial_only=True))
+
+
+@pytest.mark.parametrize("kind,linked", [(PreviewKind.HDR, False), (PreviewKind.SDR, False), (PreviewKind.SDR, True)])
+def test_staged_creative_graph_is_exact(tmp_path, image, kind, linked):
+    from hdr_finisher.cpu_strips import render_staged_grade
+    from hdr_finisher.local_adjustments import compile_geometry_fixed_mask_to_frame, has_hue_mask
+
+    pixels = np.resize(image, (213, 257, 3))
+    state, locals_ = _spatial_grade_state()
+    state.sdr.linked_to_hdr = linked
+    fixed = finishing.apply_geometry_to_frame(pixels, state.shared.geometry, tmp_path / "geometry")
+    masks = {local.id: compile_geometry_fixed_mask_to_frame(pixels, local.mask, state.shared.geometry,
+        tmp_path / f"{local.id}.u8", spatial_only=True, rows=39) for local in locals_ if not has_hue_mask(local.mask)}
+    with export_clock():
+        expected = adjustments.apply_adjustments(pixels, state, kind,
+            local_adjustments=locals_, include_output_highlight_compression=False)
+    with export_clock():
+        result = render_staged_grade(fixed, None, state, kind, tmp_path,
+                                     local_adjustments=locals_, compiled_masks=masks, rows=39)
+    with result.map("r") as actual:
+        np.testing.assert_array_equal(actual, expected)
 
 
 def test_delivery_frame_writes_and_reads_bands_and_tiles(tmp_path, image):
@@ -356,7 +531,7 @@ def test_delivery_preserves_whole_frame_roll_pixels(tmp_path, monkeypatch, kind)
         output_finishing=OutputFinishingSettings(resize_mode="long_edge", long_edge=83, sharpening="standard"))
     expected = exporters._render_export_branch(session, settings, kind, session.adjustments)
     frame, = exporters._render_delivery_files(session, settings, session.adjustments, tmp_path, lanes=(kind,))
-    assert not settings._last_cpu_strips
+    assert settings._last_cpu_strips
     with frame.map("r") as pixels:
         np.testing.assert_array_equal(pixels, expected)
 
@@ -401,12 +576,13 @@ def test_file_finishing_matches_whole_frame(image, tmp_path, monkeypatch, kind, 
     assert set(tmp_path.iterdir()) == {frame.path}
 
 
+@pytest.mark.parametrize("spatial", [False, True])
 @pytest.mark.parametrize(("format_name", "capability", "suffix"), [
     ("avif_gain_map", "avif_gain_map_encoder", ".avif"),
     ("jpegxl_hdr", "jpegxl_export", ".jxl"),
     ("sdr_jpeg", None, ".jpg"),
 ])
-def test_bounded_finishing_preserves_encoded_sha256(image, tmp_path, monkeypatch, format_name, capability, suffix):
+def test_bounded_finishing_preserves_encoded_sha256(image, tmp_path, monkeypatch, format_name, capability, suffix, spatial):
     from hdr_finisher import exporters, gpu_delivery
     from hdr_finisher.capabilities import probe_capabilities
 
@@ -416,6 +592,8 @@ def test_bounded_finishing_preserves_encoded_sha256(image, tmp_path, monkeypatch
     monkeypatch.setattr(gpu_delivery, "render_pair", lambda *args: None)
     backend = exporters.build_export_backends(capabilities)[format_name]
     session = _finishing_session(np.tile(image, (1, 3, 1)))
+    if spatial:
+        session.adjustments, session.local_adjustments = _spatial_grade_state()
     for branch in (session.adjustments.hdr, session.adjustments.sdr):
         branch.hsl_section_enabled = True
         branch.hsl.channels[0].recipe = HSLRecipe(ranges=[HSLRange(center=31, width=85, feather=28)],
@@ -439,3 +617,87 @@ def test_bounded_finishing_preserves_encoded_sha256(image, tmp_path, monkeypatch
     actual, used_strips = encode("bounded")
     assert used_strips
     assert actual == expected
+
+
+@pytest.mark.parametrize("linked", [False, True])
+@pytest.mark.parametrize("resize", [False, True])
+def test_staged_spatial_delivery_matches_whole_frame(tmp_path, image, monkeypatch, linked, resize):
+    from hdr_finisher import cpu_strips, exporters, gpu_delivery
+    from hdr_finisher.export_progress import ExportProgress, plan_export
+
+    monkeypatch.setattr(gpu_delivery, "render_pair", lambda *args: None)
+    session = _finishing_session(np.resize(image, (213, 257, 3)))
+    session.adjustments, session.local_adjustments = _spatial_grade_state()
+    state = session.adjustments
+    state.sdr.linked_to_hdr = linked
+    state.sdr.output_exposure = .38
+    for branch in (state.hdr, state.sdr):
+        branch.highlight_section_enabled = True
+        branch.highlight_compression_peak_measurement = "robust"
+    settings = ExportSettings(format="avif_gain_map", export_with_frame=resize,
+        watermark=WatermarkSettings(mode="rendition_test"),
+        output_finishing=OutputFinishingSettings(resize_mode="long_edge" if resize else "original",
+            long_edge=141 if resize else None, sharpening="strong" if resize else "off"))
+    lanes = (PreviewKind.HDR, PreviewKind.SDR)
+    references = [exporters._render_export_branch(session, settings, lane, state) for lane in lanes]
+    plan = plan_export(session, settings, state)
+    assert ("hdr", "strip_render") not in plan.items
+    assert {("hdr", name) for name in ("geometry", "masks", "tone_colour", "detail", "local_stack",
+        "halation", "film_grain", "vignette", "output_finishing", "highlight_compression", "watermark")} <= plan.items.keys()
+    calls = []
+    original = cpu_strips.render_staged_grade
+
+    def render(*args, **options):
+        calls.append(args[3])
+        return original(*args, rows=39, **options)
+
+    monkeypatch.setattr(cpu_strips, "render_staged_grade", render)
+    with export_clock() as clock:
+        progress = ExportProgress(clock, plan)
+        frames = exporters._render_delivery_files(session, settings, state, tmp_path, lanes=lanes)
+        assert progress.fraction() > 0
+    assert calls == ([PreviewKind.HDR] if linked else list(lanes))
+    assert {"geometry", "masks", "detail", "local_stack", "halation", "film_grain"} <= clock.lanes["hdr"].keys()
+    assert "geometry" not in clock.lanes["sdr"] or not linked
+    for frame, reference in zip(frames, references):
+        with frame.map("r") as pixels:
+            np.testing.assert_array_equal(pixels, reference)
+    assert set(tmp_path.iterdir()) == {frame.path for frame in frames}
+
+
+@pytest.mark.parametrize("source_filter", [False, True])
+def test_staged_local_luma_uses_the_reference_mask_source(tmp_path, image, monkeypatch, source_filter):
+    from hdr_finisher import exporters, gpu_delivery
+    from hdr_finisher.models import DenoiseDocumentSettings, LocalAdjustment
+
+    monkeypatch.setattr(gpu_delivery, "render_pair", lambda *args: None)
+    session = _finishing_session(np.resize(image, (213, 257, 3)))
+    session.denoise = DenoiseDocumentSettings()
+    for lane in (session.denoise.hdr, session.denoise.sdr):
+        lane.enabled = True
+        lane.controls.amount = .5
+    state = session.adjustments
+    state.shared.geometry = GeometryAdjustments(straighten_angle=6.3)
+    state.shared.local_adjustments_enabled = True
+    state.sdr.use_authored_base = source_filter
+    session.sdr_reference_image = acescg_to_linear_srgb(session.image) if source_filter else None
+    session.local_adjustments = [LocalAdjustment(id="luma", hdr_grade={"exposure": .9},
+        sdr_grade={"exposure": -.8}, mask={"leaf": {"type": "luminance_range", "full_start_ev": -2,
+            "full_end_ev": 1, "mask_feather": .02}})]
+
+    def filter_pixels(pixels, authored):
+        return pixels * np.float32(.74 if authored else .45)
+
+    def denoise_inputs(current, kind, adjustments):
+        return (current.image if source_filter else filter_pixels(current.image, False),
+                current.sdr_reference_image, filter_pixels if source_filter else None)
+
+    monkeypatch.setattr(exporters, "delivery_denoise_inputs", denoise_inputs)
+    settings = ExportSettings(format="avif_gain_map")
+    lanes = (PreviewKind.HDR, PreviewKind.SDR)
+    expected = [exporters._render_export_branch(session, settings, kind, state) for kind in lanes]
+    frames = exporters._render_delivery_files(session, settings, state, tmp_path, lanes=lanes)
+    assert settings._last_cpu_strips
+    for frame, desired in zip(frames, expected):
+        with frame.map("r") as actual:
+            np.testing.assert_array_equal(actual, desired)

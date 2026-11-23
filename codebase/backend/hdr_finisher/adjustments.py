@@ -2389,6 +2389,10 @@ def _apply_halation(
                          (part + (edge_scatter[rows][..., None] * tint) * amount).astype(np.float32, copy=False))
     if not with_map:
         return result, None
+    return result, _halation_map(edge_scatter, kind)
+
+
+def _halation_map(edge_scatter, kind):
     map_signal = np.clip(_film_encode_luma(np.maximum(edge_scatter, 0.0), kind), 0.0, 1.0)
     if kind == PreviewKind.HDR:
         # The map is a 0-1 signal shown as grey. HDR scene values place SDR
@@ -2396,7 +2400,7 @@ def _apply_halation(
         # several times brighter than white and read as solid white shapes.
         map_signal = map_signal * (SDR_SCENE_MIDDLE_GRAY / SDR_DISPLAY_REFERENCE_WHITE)
     halation_map = np.repeat(map_signal[..., None], 3, axis=-1).astype(np.float32, copy=False)
-    return result, halation_map
+    return halation_map
 
 
 def _structure_is_active(branch: object) -> bool:
@@ -2411,12 +2415,14 @@ def _apply_image_structure(
     kind: PreviewKind,
     *,
     spatial_source: np.ndarray | None = None,
+    radius: int | None = None,
 ) -> np.ndarray:
     softness = np.float32(detail.softness / 100.0)
     microcontrast = np.float32(detail.microcontrast / 100.0)
     if softness == 0.0 and microcontrast == 0.0:
         return image
-    radius = max(1, _radius_pixels(image, 0.06, maximum=24))
+    if radius is None:
+        radius = max(1, _radius_pixels(image, 0.06, maximum=24))
     source = image if spatial_source is None else spatial_source
     low_pass = _film_detail_blur(source, radius)
     result = image + (low_pass - image) * softness * np.float32(0.65)
@@ -2430,11 +2436,13 @@ def _apply_film_resolution(
     master: np.float32,
     *,
     spatial_source: np.ndarray | None = None,
+    radius: int | None = None,
 ) -> np.ndarray:
     loss = np.float32((100.0 - look.film_resolution) / 100.0) * master
     if loss <= 0.0:
         return image
-    radius = max(1, _film_radius_pixels(image, look, 0.04 + 0.08 * float(loss), maximum=32))
+    if radius is None:
+        radius = max(1, _film_radius_pixels(image, look, 0.04 + 0.08 * float(loss), maximum=32))
     source = image if spatial_source is None else spatial_source
     low_pass = _film_detail_blur(source, radius)
     fine_detail = source - low_pass
@@ -2462,6 +2470,7 @@ def _apply_density_grain(
     clip_output: bool = True,
     preview_scale: float = 1.0,
     stock_render=None,
+    output=None,
 ) -> np.ndarray:
     """Modulate the frame by the film grain density field.
 
@@ -2519,7 +2528,8 @@ def _apply_density_grain(
     from .grain_work import grain_allocation, checkpoint
     if active_clock() is not None and region_height > EXPORT_GRAIN_CHUNK_ROWS:
         result = _render_grain_chunks_in_parallel(
-            render, region_height, width=image.shape[1], in_place=image if stock_render is not None else None
+            render, region_height, width=image.shape[1], in_place=image if stock_render is not None else None,
+            output=output,
         )
     else:
         bounds = list(range(0, region_height, GRAIN_CHUNK_ROWS)) + [region_height]
@@ -2529,10 +2539,13 @@ def _apply_density_grain(
             checkpoint()
             with grain_allocation():
                 part = render(first, last)
-                if stock_render is None:
+                if output is not None:
+                    output[first:last] = part
+                elif stock_render is None:
                     parts.append(part)
             tick(done, len(spans))
-        result = image if stock_render is not None else parts[0] if len(parts) == 1 else np.concatenate(parts, axis=0)
+        result = output if output is not None else (
+            image if stock_render is not None else parts[0] if len(parts) == 1 else np.concatenate(parts, axis=0))
     if density_delta or not clip_output:
         return result.astype(np.float32, copy=False)
     if result.dtype == np.float32:
@@ -2591,7 +2604,7 @@ def grain_export_workers(height: int, rows: int, channels: int = 3, width: int |
     return max(1, min(logical_cpus(), workers))
 
 
-def _render_grain_chunks_in_parallel(render, height: int, *, width: int | None = None, in_place=None) -> np.ndarray:
+def _render_grain_chunks_in_parallel(render, height: int, *, width: int | None = None, in_place=None, output=None) -> np.ndarray:
     """Render the same fixed grain field in row chunks on several workers.
 
     Grain is a fixed field over the frame, so any row chunk is exactly those
@@ -2619,7 +2632,7 @@ def _render_grain_chunks_in_parallel(render, height: int, *, width: int | None =
         first = render(*spans[0])
     result = in_place
     if result is None:
-        result = np.empty((height, *first.shape[1:]), dtype=first.dtype)
+        result = output if output is not None else np.empty((height, *first.shape[1:]), dtype=first.dtype)
         result[:spans[0][1]] = first
     del first
     workers = min(grain_export_workers(height, rows, result.shape[-1], width=result.shape[1]), len(spans) - 1)

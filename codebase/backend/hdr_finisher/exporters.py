@@ -366,6 +366,16 @@ def _render_branch_pixels(
             settings._exact_measurements[kind.value] = {"peak": peak}
         return finish(result, owned=False)
     color_context = getattr(session, "color_context", RenderColorContext(getattr(session, "hdr_reference_white_nits", 203)))
+    job = _staged_delivery.get()
+    if (job is not None and job.session is session and delivery_path is not None
+            and _staged_export_needed(session, kind, adjustments)
+            and _bounded_export_eligible(session, settings, kind, adjustments, staged=True)):
+        object.__setattr__(settings, "_last_cpu_strips", True)
+        with TemporaryDirectory(prefix="stages-", dir=job.directory) as scratch:
+            directory = Path(scratch)
+            frame = job.grade(kind, adjustments, color_context, directory)
+            return _finish_delivery_grade(delivery_path, frame, adjustments, kind, settings,
+                color_context, target_size, layout, session, finish, directory)
     if bounded:
         if streamed_delivery_enabled(session, settings, adjustments):
             object.__setattr__(settings, "_bounded_cpu_delivery", True)
@@ -455,10 +465,25 @@ def _render_branch_pixels(
     return finish(result, owned=True)
 
 
-def _bounded_export_eligible(session, settings, kind, adjustments, *, prepared_denoise=False):
+def _staged_export_needed(session, kind, adjustments):
+    from .cpu_strips import strip_execution_refusals
+    from .finishing import geometry_is_identity
+
+    return not geometry_is_identity(adjustments.shared.geometry) or bool(strip_execution_refusals(
+        adjustments, kind, local_adjustments=adjustments.enabled_locals(getattr(session, "local_adjustments", None))))
+
+
+def _bounded_export_eligible(session, settings, kind, adjustments, *, prepared_denoise=False, staged=False):
     """Select the bounded CPU graph only for qualified stages."""
     from .cpu_strips import strip_execution_refusals
     from .finishing import geometry_resample_stage
+    if staged:
+        def supported(expression):
+            return (expression.leaf is None or expression.leaf.type not in {"sampled_point", "sampled_gradient"}) and all(
+                supported(child) for child in expression.children)
+
+        return all(supported(local.mask) for local in adjustments.enabled_locals(
+            getattr(session, "local_adjustments", None)) or ())
     height, width = session.image.shape[:2]
     if (geometry_resample_stage(adjustments.shared.geometry) == "perspective"
             and _delivery_finishing_plan(session, settings, adjustments)[2]):
@@ -483,39 +508,46 @@ def _delivery_finishing_plan(session, settings, adjustments):
 
 def _finish_bounded_delivery(path, source, reference, adjustments, kind, settings, color_context,
                              target_size, layout, session, watermark):
-    from .cpu_strips import finish_output_highlights, render_in_strips
-    from .finishing import finish_delivery_frame
-    from .photo_framing import layer_colors, stream_compose
+    from .cpu_strips import render_in_strips
 
     with TemporaryDirectory(prefix="finishing-", dir=path.parent) as scratch:
         directory = Path(scratch)
         frame, _ = render_in_strips(
             source, adjustments, kind, sdr_reference_image=reference, color_context=color_context,
             delivery_frame_path=directory / "grade.rgb")
-        frame = finish_delivery_frame(frame, settings.output_finishing, kind, directory, target_size)
-        measured = kind.value in settings.editing_measurements
-        with frame.map("r+") as pixels:
-            anchor = finish_output_highlights(pixels, adjustments, kind, color_context, measure=measured)
-        staged = directory / "delivery.rgb"
-        if layout is not None:
-            ceiling = delivery_ceiling_nits(adjustments)
-            colors = layer_colors(session.framing, kind.value, color_context.hdr_reference_white_nits, ceiling)
-            frame = stream_compose(frame, staged, layout, colors)
-        with frame.map("r+") as pixels:
-            if measured:
-                from .scopes import scope_peak_value
-                if kind == PreviewKind.HDR:
-                    peak = max(scope_peak_value(band, kind, color_context) for band in row_bands(pixels, 128))
-                    peak = peak * .18 / color_context.hdr_reference_white_nits
-                else:
-                    weights = np.array([.2126, .7152, .0722], dtype=np.float32)
-                    peak = max(float(np.max(band @ weights)) for band in row_bands(pixels, 128))
-                settings._exact_measurements[kind.value] = {"peak": peak}
-                if anchor is not None:
-                    settings._exact_measurements[kind.value]["anchor"] = anchor
-            watermark(pixels, owned=True)
-        frame.path.replace(path)
-        return DeliveryFrame(path, frame.shape)
+        return _finish_delivery_grade(path, frame, adjustments, kind, settings,
+            color_context, target_size, layout, session, watermark, directory)
+
+
+def _finish_delivery_grade(path, frame, adjustments, kind, settings, color_context,
+                           target_size, layout, session, watermark, directory):
+    from .cpu_strips import finish_output_highlights
+    from .finishing import finish_delivery_frame
+    from .photo_framing import layer_colors, stream_compose
+
+    frame = finish_delivery_frame(frame, settings.output_finishing, kind, directory, target_size)
+    measured = kind.value in settings.editing_measurements
+    with frame.map("r+") as pixels:
+        anchor = finish_output_highlights(pixels, adjustments, kind, color_context, measure=measured)
+    if layout is not None:
+        ceiling = delivery_ceiling_nits(adjustments)
+        colors = layer_colors(session.framing, kind.value, color_context.hdr_reference_white_nits, ceiling)
+        frame = stream_compose(frame, directory / "delivery.rgb", layout, colors)
+    with frame.map("r+") as pixels:
+        if measured:
+            from .scopes import scope_peak_value
+            if kind == PreviewKind.HDR:
+                peak = max(scope_peak_value(band, kind, color_context) for band in row_bands(pixels, 128))
+                peak = peak * .18 / color_context.hdr_reference_white_nits
+            else:
+                weights = np.array([.2126, .7152, .0722], dtype=np.float32)
+                peak = max(float(np.max(band @ weights)) for band in row_bands(pixels, 128))
+            settings._exact_measurements[kind.value] = {"peak": peak}
+            if anchor is not None:
+                settings._exact_measurements[kind.value]["anchor"] = anchor
+        watermark(pixels, owned=True)
+    frame.path.replace(path)
+    return DeliveryFrame(path, frame.shape)
 
 
 def _render_mapped(path, render):
@@ -558,16 +590,127 @@ def _prepared_delivery_source(session, adjustments, kind):
     return source_filter(apply_geometry(source, geometry), False), reference, fixed_adjustments
 
 
+@dataclass
+class _StagedDelivery:
+    session: object
+    directory: Path
+    share_hdr: bool
+    mapped_frames: dict = field(default_factory=dict)
+    fixed: dict = field(default_factory=dict)
+    masks: dict = field(default_factory=dict)
+    prepared: dict = field(default_factory=dict)
+    shared_hdr: DeliveryFrame | None = None
+
+    def _frame(self, pixels, name):
+        frame = self.mapped_frames.get(id(pixels))
+        if frame is not None:
+            return frame
+        if (isinstance(pixels, np.memmap) and pixels.mode == "r" and pixels.offset == 0
+                and pixels.flags.c_contiguous and isinstance(pixels.filename, (str, Path))
+                and Path(pixels.filename).stat().st_size == pixels.nbytes):
+            return DeliveryFrame(Path(pixels.filename), pixels.shape, pixels.dtype)
+        return DeliveryFrame.spill(self.directory / name, pixels)
+
+    def _fixed_frame(self, pixels, key, geometry, name):
+        from .finishing import apply_geometry_to_frame, geometry_is_identity
+
+        if key not in self.fixed:
+            self.fixed[key] = (self._frame(pixels, name) if geometry_is_identity(geometry)
+                               else apply_geometry_to_frame(pixels, geometry, self.directory / name))
+        return self.fixed[key]
+
+    def _sources(self, kind, adjustments):
+        from .local_adjustments import compile_geometry_fixed_mask_to_frame, has_hue_mask
+
+        session = self.session
+        lane = denoise_settings_for_export(session, kind)
+        controls = None if lane is None else lane.controls.model_dump_json()
+        authored = _authored_sdr_base(session, kind, adjustments)
+        shared = _delivery_grain.get()
+        private_lane = kind if controls is not None and (shared is None or shared.session is not session) else None
+        key = (authored, controls, private_lane)
+        if key in self.prepared:
+            return self.prepared[key]
+        geometry = adjustments.shared.geometry
+        locals_ = adjustments.enabled_locals(getattr(session, "local_adjustments", None)) or ()
+        pixels, reference, source_filter = delivery_denoise_inputs(session, kind, adjustments)
+        native_key = None if pixels is session.image else controls
+        index = len(self.prepared)
+        resolved = source_filter is not None and not authored and getattr(source_filter, "resolved", lambda: False)()
+        if resolved:
+            source = self._frame(source_filter(None, False), f"denoised-{index}.rgb")
+        else:
+            source = self._fixed_frame(pixels, (False, native_key), geometry,
+                "fixed_source.rgb" if native_key is None else f"fixed_source-{index}.rgb")
+        fixed_reference = (self._fixed_frame(reference, (True, None), geometry, "fixed_reference.rgb")
+                           if authored else None)
+        if native_key not in self.masks:
+            self.masks[native_key] = {
+                local.id: compile_geometry_fixed_mask_to_frame(pixels, local.mask, geometry,
+                    self.directory / f"mask_{index}_{number}.u8", spatial_only=True)
+                for number, local in enumerate(locals_)
+                if local.enabled and local.opacity > 0 and not has_hue_mask(local.mask)
+            }
+        if source_filter is not None and not resolved:
+            selected = fixed_reference if authored else source
+            with selected.map("r") as original:
+                filtered_pixels = source_filter(original, authored)
+                filtered = selected if filtered_pixels is original else self._frame(filtered_pixels, f"denoised-{index}.rgb")
+            if authored:
+                fixed_reference = filtered
+            else:
+                source = filtered
+        result = source, fixed_reference, locals_, self.masks[native_key]
+        self.prepared[key] = result
+        return result
+
+    def grade(self, kind, adjustments, color_context, directory):
+        from .cpu_strips import linked_sdr_to_frame, render_staged_grade
+        from .delivery_frames import transform_bands
+        from .export_timing import stage
+
+        if kind == PreviewKind.SDR and self.shared_hdr is not None:
+            common = self.shared_hdr
+            result = linked_sdr_to_frame(common, DeliveryFrame(directory / "stage_a.rgb", common.shape), adjustments)
+            common.path.unlink()
+            self.shared_hdr = None
+            return result
+        source, reference, locals_, masks = self._sources(kind, adjustments)
+        retain = kind == PreviewKind.HDR and self.share_hdr
+        frame = render_staged_grade(source, reference, adjustments, kind, directory,
+            local_adjustments=locals_, compiled_masks=masks, color_context=color_context,
+            apply_output_clamp=not retain)
+        if not retain:
+            return frame
+        retained_path = self.directory / "hdr_scene.rgb"
+        frame.path.replace(retained_path)
+        self.shared_hdr = DeliveryFrame(retained_path, frame.shape)
+        with stage("tone_colour"):
+            return transform_bands(self.shared_hdr, frame, lambda part, top: np.clip(part, 0.0, None))
+
+
+_staged_delivery: ContextVar[_StagedDelivery | None] = ContextVar("staged_delivery", default=None)
+
+
 def _render_delivery_files(session, settings, adjustments, directory, *, render=None,
                            lanes=(PreviewKind.HDR, PreviewKind.SDR), jpeg_denoise=False):
     render = render or _render_export_branch
     with TemporaryDirectory(prefix="grain-", dir=directory) as grains, ExitStack() as maps:
+        key_hdr, key_sdr = denoise_delivery_key(session)
+        share_hdr = (adjustments.sdr.linked_to_hdr and key_hdr == key_sdr
+                     and tuple(lanes) == (PreviewKind.HDR, PreviewKind.SDR))
+        job = _StagedDelivery(session, Path(grains), share_hdr)
+        grain_index = 0
+
         def render_grain(render_pixels):
-            # Equal inputs resolve through the shared source below. A new
-            # allocation therefore replaces a lane whose render has returned.
-            maps.close()
-            pixels = _render_mapped(Path(grains) / "source.rgb", render_pixels)
-            return maps.enter_context(pixels.map("r")) if isinstance(pixels, DeliveryFrame) else pixels
+            nonlocal grain_index
+            pixels = _render_mapped(job.directory / f"source-{grain_index}.rgb", render_pixels)
+            grain_index += 1
+            if not isinstance(pixels, DeliveryFrame):
+                return pixels
+            mapped = maps.enter_context(pixels.map("r"))
+            job.mapped_frames[id(mapped)] = pixels
+            return mapped
 
         def prepared(kind):
             return _prepared_delivery_source(session, adjustments, kind)
@@ -576,6 +719,7 @@ def _render_delivery_files(session, settings, adjustments, directory, *, render=
         if any(denoise_settings_for_export(session, lane) is not None for lane in lanes):
             denoise_source = (_jpeg_denoise_source(session, adjustments, render_grain=render_grain)
                               if jpeg_denoise else prepared)
+        token = _staged_delivery.set(job)
         try:
             with share_delivery_grain(session, adjustments, render_grain=render_grain):
                 return tuple(
@@ -584,6 +728,7 @@ def _render_delivery_files(session, settings, adjustments, directory, *, render=
                                allocate_output=allocate, delivery_path=directory / f"{lane.value}.rgb"))
                     for lane in lanes)
         finally:
+            _staged_delivery.reset(token)
             # Reduced Proof still renders its matrix endpoints after export.
             if not getattr(settings, "_keep_proof_delivery_cache", False):
                 _release_delivery_pixels(session)
@@ -859,9 +1004,7 @@ class SDRPNGExportBackend(ExportBackend):
         def prepare() -> _PreparedExport:
             finishing_adjustments = _finishing_adjustments_for_export(session)
             directory = Path(scratch.enter_context(TemporaryDirectory(prefix="png-delivery-")))
-            path = directory / "sdr.rgb"
-            image = _render_branch_to_file(path, lambda allocate: _render_export_branch(
-                session, settings, PreviewKind.SDR, finishing_adjustments, allocate_output=allocate, delivery_path=path))
+            image, = _render_delivery_files(session, settings, finishing_adjustments, directory, lanes=(PreviewKind.SDR,))
 
             def write(staged):
                 with image.map("r") as pixels:

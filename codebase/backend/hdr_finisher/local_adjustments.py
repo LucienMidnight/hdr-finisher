@@ -122,6 +122,119 @@ def _mask_needs_full_frame_evaluation(expression: MaskExpression) -> bool:
     return any(_mask_needs_full_frame_evaluation(child) for child in expression.children)
 
 
+def apply_local_stack_to_frame(source, scratch, fixed_source, local_adjustments, kind, geometry, *,
+                               compiled_masks, hue_source=None, rows=128, source_pixel_scale=1.0,
+                               reference_white_nits=203.0, target_peak_nits=1000.0):
+    from contextlib import ExitStack
+    from pathlib import Path
+    from tempfile import TemporaryDirectory
+    from .delivery_frames import DeliveryFrame, transform_bands
+    from .detail import apply_detail_to_frame
+    from .export_timing import stage, tick
+
+    active = [(local, local.hdr_grade if kind == PreviewKind.HDR else local.sdr_grade)
+              for local in local_adjustments if local.enabled and local.opacity > 0]
+    if not any(grade.enabled for _, grade in active):
+        return source
+    height, width = source.shape[:2]
+    needs_detail = any(not detail_is_neutral(grade.detail) for _, grade in active)
+    grade_options = dict(source_pixel_scale=source_pixel_scale, reference_white_nits=reference_white_nits,
+                         target_peak_nits=target_peak_nits)
+
+    def influence(mask, local):
+        result = mask.astype(np.float32) / np.float32(255.0)
+        result *= np.float32(mask_influence_opacity(local.mask))
+        return np.clip(result * np.float32(local.opacity), 0.0, 1.0)
+
+    with TemporaryDirectory(prefix="locals-", dir=scratch.path.parent) as directory, ExitStack() as masks_stack:
+        directory = Path(directory)
+        masks = {}
+        for index, (local, recipe) in enumerate(active):
+            if not recipe.enabled:
+                continue
+            if local.id in compiled_masks and not has_hue_mask(local.mask):
+                masks[local.id] = masks_stack.enter_context(compiled_masks[local.id].map("r"))
+            else:
+                with stage("masks"):
+                    mask = _compile_lane_mask(fixed_source, local.mask, geometry, hue_source, kind,
+                                              directory / str(index), rows, source_pixel_scale)
+                masks[local.id] = masks_stack.enter_context(mask.map("r"))
+
+        if not needs_detail:
+            with stage("local_stack"), source.map("r") as pixels, scratch.map("w+") as output:
+                for top in range(0, height, 512):
+                    bottom = min(height, top + 512)
+                    for left in range(0, width, 512):
+                        region = np.s_[top:bottom, left:left + 512]
+                        tile = pixels[region].copy()
+                        for local, recipe in active:
+                            if recipe.enabled:
+                                amount = influence(masks[local.id][region], local)
+                                if np.any(amount > 1e-6):
+                                    candidate = _apply_local_grade(tile, recipe, kind, **grade_options)
+                                    tile[...] = tile + (candidate - tile) * amount[..., None]
+                        output[region] = tile
+                    tick(bottom, height)
+            return scratch
+
+        candidate = DeliveryFrame(directory / "candidate.rgb", source.shape)
+        with stage("local_stack"):
+            for local, recipe in active:
+                if not recipe.enabled:
+                    continue
+                mask = masks[local.id]
+                if not any(np.any(influence(mask[top:top + rows], local) > 1e-6)
+                           for top in range(0, height, rows)):
+                    continue
+                if detail_is_neutral(recipe.detail):
+                    def render(part, top):
+                        amount = influence(mask[top:top + len(part)], local)
+                        graded = _apply_local_grade(part, recipe, kind, **grade_options)
+                        return part + (graded - part) * amount[..., None]
+
+                    transform_bands(source, scratch, render, rows=rows)
+                else:
+                    transform_bands(source, candidate, lambda part, top: _apply_local_grade(
+                        part, recipe, kind, **grade_options, include_detail=False), rows=rows)
+                    with source.map("r") as original:
+                        def blend(graded, top):
+                            region = slice(top, top + len(graded))
+                            part = original[region]
+                            return part + (graded - part) * influence(mask[region], local)[..., None]
+
+                        apply_detail_to_frame(candidate, scratch, recipe.detail, kind, source_pixel_scale,
+                                              rows=rows, finish_band=blend)
+                    candidate.path.unlink()
+                source, scratch = scratch, source
+    return source
+
+
+def _compile_lane_mask(fixed_source, expression, geometry, hue_source, kind, directory, rows, scale):
+    from contextlib import nullcontext
+    from .color import acescg_to_linear_srgb
+    from .delivery_frames import DeliveryFrame, transform_bands
+    from .hsl_selection import geometry as selection_geometry, prepare, select_hue
+
+    directory.mkdir()
+    geo = selection_geometry(scale)
+    hue_map = hue_source.map("r") if hue_source is not None else nullcontext(None)
+    with hue_map as hue, fixed_source.map("r") as pixels:
+        def hue_rows(leaf, top, bottom):
+            halo = geo.reach + math.ceil((abs(leaf.edge) + 2 * leaf.edge_feather) * scale) + geo.cell
+            first = max(0, (top - halo) // geo.cell * geo.cell)
+            last = min(len(pixels), (bottom + halo + geo.cell - 1) // geo.cell * geo.cell)
+            source = (hue if hue is not None else pixels)[first:last]
+            if kind == PreviewKind.HDR or hue is None:
+                source = acescg_to_linear_srgb(source)
+            selection = prepare(source, scale, origin=(0, first))
+            return select_hue(selection, leaf)[top - first:bottom - first]
+
+        alpha = _evaluate_mask_to_frame(pixels, spatial_mask_expression(expression), directory, rows,
+                                        geometry=geometry, hue_mask=hue_rows)
+    destination = DeliveryFrame(directory / "mask.u8", alpha.shape, np.dtype(np.uint8))
+    return transform_bands(alpha, destination, lambda band, top: np.rint(band * np.float32(255)), rows=rows)
+
+
 def compile_preview_mask(
     fixed_source: np.ndarray,
     expression: MaskExpression,
@@ -225,6 +338,177 @@ def compile_geometry_fixed_mask(
         fixed.flags.writeable = False
         memo.masks[key] = fixed
     return fixed
+
+
+@_timed_stage("masks")
+def compile_geometry_fixed_mask_to_frame(source, expression, geometry, path, *, spatial_only=False, rows=128):
+    from contextlib import nullcontext
+    from pathlib import Path
+    from tempfile import TemporaryDirectory
+    from .delivery_frames import DeliveryFrame, transform_bands
+    from .finishing import apply_geometry_to_frame, geometry_is_identity
+
+    source_map = source.map("r") if isinstance(source, DeliveryFrame) else nullcontext(source)
+    mask_expression = spatial_mask_expression(expression) if spatial_only else expression
+    with TemporaryDirectory(prefix="mask-", dir=path.parent) as directory, source_map as pixels:
+        directory = Path(directory)
+        alpha = _evaluate_mask_to_frame(pixels, mask_expression, directory, rows)
+        identity = geometry_is_identity(geometry)
+        source_mask = DeliveryFrame(path if identity else directory / "source.u8", alpha.shape, np.dtype(np.uint8))
+        transform_bands(alpha, source_mask, lambda part, top: np.rint(part * np.float32(255)), rows=rows)
+        if identity:
+            return source_mask
+        with source_mask.map("r") as mask:
+            fixed = apply_geometry_to_frame(mask[..., None], geometry, directory / "geometry")
+        result = DeliveryFrame(path, fixed.shape[:2], source_mask.dtype)
+        return transform_bands(fixed, result, lambda part, top: np.rint(np.clip(part[..., 0], 0, 255)), rows=rows)
+
+
+def _evaluate_mask_to_frame(pixels, expression, directory, rows, *, geometry=None, hue_mask=None):
+    from contextlib import ExitStack
+    from itertools import count
+    from .delivery_frames import DeliveryFrame, transform_bands
+    from .export_timing import tick
+
+    geometry = geometry or GeometryAdjustments()
+    height, width = pixels.shape[:2]
+    shape = (height, width)
+    serial = count()
+    anchor = source_coordinate_grid(width, height, 0, 0, min(2, width), min(2, height), geometry)
+
+    def plane():
+        return DeliveryFrame(directory / str(next(serial)), shape)
+
+    def visit(node):
+        leaf = node.leaf if node.operator == "leaf" else None
+        if not node.enabled and node.operator != "leaf" and node.children:
+            return visit(node.children[0])
+        if not node.enabled or (leaf is not None and leaf.type == "hue_range" and leaf.hue_center is None):
+            target = plane()
+            target.write(np.zeros((min(rows, height - top), width), dtype=np.float32)
+                         for top in range(0, height, rows))
+            return target
+        children = [visit(child) for child in node.children if child.enabled] if node.operator != "leaf" else []
+        raw = plane()
+        brush = leaf is not None and leaf.type == "brush"
+        erase = plane() if brush and any(stroke.erase for stroke in leaf.strokes) else None
+        peak = 0.0
+        with ExitStack() as stack:
+            masks = [stack.enter_context(child.map("r")) for child in children]
+            erased = stack.enter_context(erase.map("w+")) if erase is not None else None
+
+            def bands():
+                nonlocal peak
+                for top in range(0, height, rows):
+                    bottom = min(height, top + rows)
+                    region = slice(top, bottom)
+                    px, py = source_coordinate_grid(width, height, 0, top, width, bottom - top, geometry)
+                    if brush:
+                        mask, attenuation = _brush_masks(leaf, px, py, metric_anchor=anchor)
+                        if erased is not None:
+                            erased[region] = 1.0 if attenuation is None else attenuation
+                    elif leaf is not None:
+                        mask = (hue_mask(leaf, top, bottom) if leaf.type == "hue_range" and hue_mask is not None
+                                else _evaluate_leaf(leaf, pixels[region], px, py, width / max(height, 1)))
+                    elif masks:
+                        mask = masks[0][region]
+                        for child in masks[1:]:
+                            if node.operator == "union":
+                                mask = np.maximum(mask, child[region])
+                            elif node.operator == "intersect":
+                                mask = mask * child[region]
+                            else:
+                                mask = mask * (1.0 - child[region])
+                    else:
+                        mask = np.zeros(px.shape, dtype=np.float32)
+                    peak = max(peak, float(np.max(mask)))
+                    yield mask
+                    tick(bottom, height)
+
+            raw.write(bands())
+        for child in children:
+            child.path.unlink()
+        current = raw
+        if brush and leaf.mask_shift_edge and peak > 0:
+            radii = _mask_radii_pixels(*anchor, abs(leaf.mask_shift_edge))
+            if max(radii) >= .25:
+                normalized = transform_bands(raw, plane(), lambda band, top: band / np.float32(peak), rows=rows)
+                blurred = _blur_mask_to_frame(normalized, plane, radii, rows)
+                threshold = np.float32(.158655 if leaf.mask_shift_edge > 0 else .841345)
+                half_band = np.float32(.035)
+                with raw.map("r") as painted:
+                    def move(part, top):
+                        shifted = np.clip((part - (threshold - half_band)) / (half_band * 2.0), 0.0, 1.0)
+                        shifted = shifted * shifted * (np.float32(3) - np.float32(2) * shifted)
+                        shifted *= np.float32(peak)
+                        operation = np.maximum if leaf.mask_shift_edge > 0 else np.minimum
+                        return operation(painted[top:top + len(part)], shifted)
+
+                    current = transform_bands(blurred, plane(), move, rows=rows)
+                for temporary in (raw, normalized, blurred):
+                    temporary.path.unlink(missing_ok=True)
+                peak = _mask_frame_peak(current, rows)
+        if leaf is not None and leaf.type in {"brush", "luminance_range"} and leaf.mask_feather > 0 and peak > 0:
+            radius = (_painted_mask_feather_radius if brush else _luminance_mask_feather_radius)(leaf.mask_feather)
+            radii = _mask_radii_pixels(*anchor, radius)
+            if max(radii) >= .25:
+                factor = _reduced_blur_factor_for_shape(shape, radii[0]) if brush else 1
+                blurred = _blur_mask_to_frame(current, plane, radii, rows, factor=factor)
+                if brush:
+                    blurred_peak = _mask_frame_peak(blurred, rows)
+                    gain = np.float32(peak / blurred_peak) if blurred_peak > 0 else np.float32(0)
+                    softened = transform_bands(blurred, plane(), lambda band, top: np.clip(band * gain, 0, peak), rows=rows)
+                    blurred.path.unlink()
+                else:
+                    softened = blurred
+                current.path.unlink()
+                current = softened
+
+        with ExitStack() as stack:
+            attenuation = stack.enter_context(erase.map("r")) if erase is not None else None
+
+            def finish(part, top):
+                result = 1.0 - part if node.inverted else part.copy()
+                if leaf is not None:
+                    result *= np.float32(leaf.mask_opacity)
+                if attenuation is not None:
+                    result *= attenuation[top:top + len(part)]
+                return np.clip(result, 0, 1)
+
+            result = transform_bands(current, plane(), finish, rows=rows)
+        current.path.unlink()
+        if erase is not None:
+            erase.path.unlink()
+        return result
+
+    return visit(expression)
+
+
+def _mask_frame_peak(frame, rows):
+    return max(float(np.max(band)) for band in frame.bands(rows))
+
+
+def _blur_mask_to_frame(source, allocate, radii, rows, *, factor=1):
+    from .delivery_frames import transform_bands, transform_lines
+
+    if factor > 1:
+        target = allocate()
+        with source.map("r") as pixels:
+            target.write(_reduced_mask_bands(pixels, radii[0], factor, rows))
+        return target
+    current = source
+    for axis, radius_px in ((1, radii[0]), (0, radii[1])):
+        for width in _gaussian_box_widths(radius_px, 6):
+            if width > 1:
+                blurred = transform_lines(current, allocate(), axis,
+                    lambda band: _box_blur_axis(band, (width - 1) // 2, axis))
+                if current != source:
+                    current.path.unlink()
+                current = blurred
+    target = transform_bands(current, allocate(), lambda band, top: np.clip(band, 0.0, 1.0), rows=rows)
+    if current != source:
+        current.path.unlink()
+    return target
 
 
 class _FixedMaskMemo:
@@ -669,9 +953,9 @@ def _brush_executor() -> CpuExecutor:
         return _brush_pool
 
 
-def _brush_masks(leaf: MaskLeaf, x: np.ndarray, y: np.ndarray) -> tuple[np.ndarray, np.ndarray | None]:
+def _brush_masks(leaf: MaskLeaf, x: np.ndarray, y: np.ndarray, *, metric_anchor=None) -> tuple[np.ndarray, np.ndarray | None]:
     result = np.zeros(x.shape, dtype=np.float32)
-    metric_x, metric_y, metric_transform, metric_origin = _brush_display_metric(x, y)
+    metric_x, metric_y, metric_transform, metric_origin = _brush_display_metric(x, y, anchor=metric_anchor)
 
     def metric_point(point: MaskPoint) -> tuple[float, float]:
         transformed = metric_transform @ (
@@ -837,8 +1121,12 @@ _REDUCED_BLUR_MAX_FACTOR = 32
 
 def _reduced_blur_factor(mask: np.ndarray, sigma: float) -> int:
     """Block size for the reduced blur; 1 keeps the full-resolution blur."""
+    return _reduced_blur_factor_for_shape(mask.shape, sigma)
+
+
+def _reduced_blur_factor_for_shape(shape, sigma):
     factor = int(min(sigma / _REDUCED_BLUR_MIN_SIGMA, _REDUCED_BLUR_MAX_FACTOR))
-    return factor if factor >= 2 and min(mask.shape) >= 2 * factor else 1
+    return factor if factor >= 2 and min(shape) >= 2 * factor else 1
 
 
 def _gaussian_blur_reduced(mask: np.ndarray, sigma: float, factor: int) -> np.ndarray:
@@ -855,6 +1143,13 @@ def _gaussian_blur_reduced(mask: np.ndarray, sigma: float, factor: int) -> np.nd
       around it, so the value at the outermost pixel is carried through every
       pass alongside the block values instead of being inferred from them.
     """
+    result = np.empty(mask.shape, dtype=np.float32)
+    for index, band in enumerate(_reduced_mask_bands(mask, sigma, factor, 256)):
+        result[index * 256:index * 256 + len(band)] = band
+    return result
+
+
+def _reduced_mask_bands(mask, sigma, factor, band_rows):
     height, width = mask.shape
     passes = 6
     # Block averaging and the interpolation back add a little spread of their
@@ -912,8 +1207,17 @@ def _gaussian_blur_reduced(mask: np.ndarray, sigma: float, factor: int) -> np.nd
     # are what the first vertical pass pads with.
     column_edges, column_positions = layout(width)
     row_edges, row_positions = layout(height)
-    rows = np.concatenate((mask[:1], block_means(mask, 0), mask[-1:]), axis=0, dtype=np.float64)
-    coarse = np.concatenate((rows[:, :1], block_means(rows, 1), rows[:, -1:]), axis=1)
+    def across(values):
+        return np.concatenate((values[:, :1], block_means(values, 1), values[:, -1:]), axis=1)
+
+    coarse = np.empty((-(-height // factor) + 2, -(-width // factor) + 2), dtype=np.float64)
+    coarse[:1] = across(mask[:1].astype(np.float64))
+    coarse[-1:] = across(mask[-1:].astype(np.float64))
+    step = max(factor, band_rows // factor * factor)
+    for start in range(0, height, step):
+        block = across(block_means(mask[start:start + step], 0))
+        first = start // factor + 1
+        coarse[first:first + len(block)] = block
     for _ in range(passes):
         coarse = box_pass(coarse, column_edges, column_positions)
     coarse = np.ascontiguousarray(coarse.T)
@@ -928,22 +1232,24 @@ def _gaussian_blur_reduced(mask: np.ndarray, sigma: float, factor: int) -> np.nd
         return lower, np.clip((pixels - positions[lower]) / span, 0.0, 1.0).astype(np.float32)
 
     left, across = taps(width, column_positions)
-    wide = coarse[:, left]
-    wide += (coarse[:, left + 1] - wide) * across
     top, down = taps(height, row_positions)
-    result = np.empty((height, width), dtype=np.float32)
-    for start in range(0, height, 256):
+    for start in range(0, height, band_rows):
         mask_checkpoint()
-        band = slice(start, start + 256)
-        rows = wide[top[band]]
-        rows += (wide[top[band] + 1] - rows) * down[band, None]
-        result[band] = rows
-    return np.clip(result, 0.0, 1.0, out=result)
+        band = slice(start, start + band_rows)
+        base = int(top[band][0])
+        subset = coarse[base:top[band][-1] + 2]
+        wide = subset[:, left]
+        wide += (subset[:, left + 1] - wide) * across
+        indices = top[band] - base
+        rows = wide[indices]
+        rows += (wide[indices + 1] - rows) * down[band, None]
+        yield np.clip(rows, 0.0, 1.0, out=rows)
 
 
 def _brush_display_metric(
     x: np.ndarray,
     y: np.ndarray,
+    *, anchor=None,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """Map source coordinates to the browser brush's square-pixel metric.
 
@@ -954,16 +1260,17 @@ def _brush_display_metric(
     stored points back to display pixels, which we scale by one horizontal-pixel
     source step to retain the existing radius units.
     """
-    if x.ndim != 2 or y.ndim != 2 or x.shape != y.shape or min(x.shape) < 2:
+    anchor_x, anchor_y = (x, y) if anchor is None else anchor
+    if x.ndim != 2 or y.ndim != 2 or x.shape != y.shape or min(anchor_x.shape) < 2:
         identity = np.eye(2, dtype=np.float64)
         origin = np.zeros(2, dtype=np.float64)
         return x, y, identity, origin
 
-    origin = np.array([x[0, 0], y[0, 0]], dtype=np.float64)
+    origin = np.array([anchor_x[0, 0], anchor_y[0, 0]], dtype=np.float64)
     basis = np.array(
         [
-            [x[0, 1] - x[0, 0], x[1, 0] - x[0, 0]],
-            [y[0, 1] - y[0, 0], y[1, 0] - y[0, 0]],
+            [anchor_x[0, 1] - anchor_x[0, 0], anchor_x[1, 0] - anchor_x[0, 0]],
+            [anchor_y[0, 1] - anchor_y[0, 0], anchor_y[1, 0] - anchor_y[0, 0]],
         ],
         dtype=np.float64,
     )
@@ -1560,6 +1867,7 @@ def _apply_local_grade(
     hsl_stage_id: str | None = None,
     reference_white_nits: float = 203.0,
     target_peak_nits: float = 1000.0,
+    include_detail: bool = True,
 ) -> np.ndarray:
     from .adjustments import (
         _apply_color_grading,
@@ -1596,6 +1904,7 @@ def _apply_local_grade(
         result = apply_stage(result, [grade.hsl], kind)
     result = _apply_curve_set(result, grade, kind)
     result = _apply_color_grading(result, grade.color_grading, kind)
-    result = apply_detail(result, grade.detail, kind, source_pixel_scale=source_pixel_scale)
+    if include_detail:
+        result = apply_detail(result, grade.detail, kind, source_pixel_scale=source_pixel_scale)
     # Local corrections precede Film Look; finishing owns the SDR white ceiling.
     return result.astype(np.float32)

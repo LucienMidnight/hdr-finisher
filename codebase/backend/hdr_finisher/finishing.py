@@ -69,6 +69,35 @@ def geometry_is_identity(geometry: GeometryAdjustments) -> bool:
             and crop.x == 0.0 and crop.y == 0.0 and crop.width == 1.0 and crop.height == 1.0)
 
 
+@_timed_stage("geometry")
+def apply_geometry_to_frame(source, geometry: GeometryAdjustments, path):
+    from contextlib import nullcontext
+    from .delivery_frames import DeliveryFrame
+    from .export_timing import tick
+
+    source_map = source.map("r") if isinstance(source, DeliveryFrame) else nullcontext(source)
+    with source_map as pixels:
+        width, height = geometry_output_dimensions(pixels.shape[1], pixels.shape[0], geometry)
+        frame = DeliveryFrame(path, (height, width, pixels.shape[2]))
+        if geometry_resample_stage(geometry) == "index":
+            oriented = _oriented_view(pixels, geometry)
+            left, top, right, bottom = _crop_bounds(oriented.shape[1], oriented.shape[0], geometry)
+
+            def bands():
+                for rows in row_slices(height):
+                    end = rows.stop or height
+                    yield oriented[top + (rows.start or 0):top + end, left:right]
+                    tick(end, height)
+
+            frame.write(bands())
+        else:
+            with frame.map("w+") as output:
+                for channel in range(pixels.shape[2]):
+                    output[..., channel:channel + 1] = apply_geometry(pixels[..., channel:channel + 1], geometry)
+                    tick(channel + 1, pixels.shape[2])
+    return frame
+
+
 def _oriented_view(image: np.ndarray, geometry: GeometryAdjustments) -> np.ndarray:
     """Return the quarter-turn and flip stage as a view, allocating nothing.
 

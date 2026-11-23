@@ -119,3 +119,37 @@ def row_bands(image: np.ndarray | DeliveryFrame, rows: int):
     else:
         for top in range(0, image.shape[0], rows):
             yield image[top:top + rows]
+
+
+def transform_lines(source, destination, axis, transform, *, work_bytes=8 * 1024**2, progress=None):
+    from .export_timing import tick
+
+    report = tick if progress is None else progress
+    height, width = source.shape[:2]
+    length, count = (height, width) if axis == 0 else (width, height)
+    lines = max(1, work_bytes // (length * source.dtype.itemsize))
+    with source.map("r") as pixels, destination.map("w+") as output:
+        for start in range(0, count, lines):
+            stop = min(start + lines, count)
+            region = np.s_[:, start:stop] if axis == 0 else np.s_[start:stop, :]
+            output[region] = transform(pixels[region])
+            report(stop, count)
+    return destination
+
+
+def transform_bands(source, destination, transform, *, rows=128, halo=0, progress=None):
+    from .export_timing import tick
+
+    report = tick if progress is None else progress
+    height = source.shape[0]
+    with source.map("r") as pixels:
+        def bands():
+            for top in range(0, height, rows):
+                bottom = min(height, top + rows)
+                first = max(0, top - halo)
+                last = min(height, bottom + halo)
+                yield transform(pixels[first:last], first)[top - first:bottom - first]
+                report(bottom, height)
+
+        destination.write(bands())
+    return destination
