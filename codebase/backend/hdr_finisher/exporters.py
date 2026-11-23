@@ -290,24 +290,25 @@ def delivery_denoise_inputs(session, kind, adjustments):
     return source, getattr(session, "sdr_reference_image", None), source_filter
 
 
-def _render_export_branch(session, settings, kind, adjustments, *, denoise_source=None, allocate_output=None):
+def _render_export_branch(session, settings, kind, adjustments, *, denoise_source=None, allocate_output=None,
+                          delivery_path=None):
     from .export_timing import lane
     with lane(kind.value):
         return _render_branch_pixels(session, settings, kind, adjustments, denoise_source=denoise_source,
-                                     allocate_output=allocate_output, watermark=True)
+                                     allocate_output=allocate_output, watermark=True, delivery_path=delivery_path)
 
 
 def _render_unwatermarked_branch(
-    session, settings, kind, adjustments, *, denoise_source=None, allocate_output=None,
+    session, settings, kind, adjustments, *, denoise_source=None, allocate_output=None, delivery_path=None,
 ):
     return _render_branch_pixels(session, settings, kind, adjustments, denoise_source=denoise_source,
-                                 allocate_output=allocate_output)
+                                 allocate_output=allocate_output, delivery_path=delivery_path)
 
 
 def _render_branch_pixels(
     session: object, settings: ExportSettings, kind: PreviewKind, adjustments: AdjustmentState,
-    *, denoise_source=None, allocate_output=None, watermark=False,
-) -> np.ndarray:
+    *, denoise_source=None, allocate_output=None, watermark=False, delivery_path=None,
+) -> np.ndarray | DeliveryFrame:
     from .gpu_delivery import grain_delivery_enabled, render_pair, streamed_delivery_enabled
 
     def finish(pixels, *, owned):
@@ -319,6 +320,8 @@ def _render_branch_pixels(
 
     object.__setattr__(settings, "_last_cpu_strips", False)
     bounded = _bounded_export_eligible(session, settings, kind, adjustments, prepared_denoise=denoise_source is not None)
+    target_size, layout, defer_output = _delivery_finishing_plan(session, settings, adjustments)
+    bounded = bounded and (not defer_output or delivery_path is not None)
     # AVIF's prepared source is only for CPU rendering. Its GPU admission
     # still uses the same graph and checks as before.
     avif = settings.format == "avif_gain_map"
@@ -372,6 +375,9 @@ def _render_branch_pixels(
         source, strip_adjustments = session.image, adjustments
         if denoise_source is not None:
             source, reference, strip_adjustments = denoise_source(kind)
+        if defer_output:
+            return _finish_bounded_delivery(delivery_path, source, reference, strip_adjustments,
+                kind, settings, color_context, target_size, layout, session, finish)
         measure_delivery = avif_denoise and kind.value in settings.editing_measurements
         image, report = render_in_strips(source, strip_adjustments, kind,
             sdr_reference_image=reference, color_context=color_context,
@@ -450,20 +456,66 @@ def _render_branch_pixels(
 
 
 def _bounded_export_eligible(session, settings, kind, adjustments, *, prepared_denoise=False):
-    """Use the already-qualified exact strip graph only when finishing is identity."""
+    """Select the bounded CPU graph only for qualified stages."""
     from .cpu_strips import strip_execution_refusals
-    from .finishing import geometry_output_dimensions, resolve_output_dimensions
-    from .photo_framing import delivery_layout
+    from .finishing import geometry_resample_stage
     height, width = session.image.shape[:2]
-    native = geometry_output_dimensions(width, height, adjustments.shared.geometry)
-    if (settings.output_finishing.sharpening != "off"
-            or resolve_output_dimensions(*native, settings.output_finishing) != native
-            or delivery_layout(session, settings, adjustments) is not None):
+    if (geometry_resample_stage(adjustments.shared.geometry) == "perspective"
+            and _delivery_finishing_plan(session, settings, adjustments)[2]):
         return False
     return not strip_execution_refusals(adjustments, kind,
         local_adjustments=adjustments.enabled_locals(getattr(session, "local_adjustments", None)),
         denoise_active=not prepared_denoise and denoise_settings_for_export(session, kind) is not None,
         source_width=width, source_height=height)
+
+
+def _delivery_finishing_plan(session, settings, adjustments):
+    from .finishing import geometry_output_dimensions, resolve_output_dimensions
+    from .photo_framing import delivery_layout
+
+    height, width = session.image.shape[:2]
+    native = geometry_output_dimensions(width, height, adjustments.shared.geometry)
+    layout = delivery_layout(session, settings, adjustments, streaming=True)
+    finishing = settings.output_finishing
+    size = layout.photo[2:] if layout is not None else resolve_output_dimensions(*native, finishing)
+    return size, layout, layout is not None or size != native or finishing.sharpening != "off"
+
+
+def _finish_bounded_delivery(path, source, reference, adjustments, kind, settings, color_context,
+                             target_size, layout, session, watermark):
+    from .cpu_strips import finish_output_highlights, render_in_strips
+    from .finishing import finish_delivery_frame
+    from .photo_framing import layer_colors, stream_compose
+
+    with TemporaryDirectory(prefix="finishing-", dir=path.parent) as scratch:
+        directory = Path(scratch)
+        frame, _ = render_in_strips(
+            source, adjustments, kind, sdr_reference_image=reference, color_context=color_context,
+            delivery_frame_path=directory / "grade.rgb")
+        frame = finish_delivery_frame(frame, settings.output_finishing, kind, directory, target_size)
+        measured = kind.value in settings.editing_measurements
+        with frame.map("r+") as pixels:
+            anchor = finish_output_highlights(pixels, adjustments, kind, color_context, measure=measured)
+        staged = directory / "delivery.rgb"
+        if layout is not None:
+            ceiling = delivery_ceiling_nits(adjustments)
+            colors = layer_colors(session.framing, kind.value, color_context.hdr_reference_white_nits, ceiling)
+            frame = stream_compose(frame, staged, layout, colors)
+        with frame.map("r+") as pixels:
+            if measured:
+                from .scopes import scope_peak_value
+                if kind == PreviewKind.HDR:
+                    peak = max(scope_peak_value(band, kind, color_context) for band in row_bands(pixels, 128))
+                    peak = peak * .18 / color_context.hdr_reference_white_nits
+                else:
+                    weights = np.array([.2126, .7152, .0722], dtype=np.float32)
+                    peak = max(float(np.max(band @ weights)) for band in row_bands(pixels, 128))
+                settings._exact_measurements[kind.value] = {"peak": peak}
+                if anchor is not None:
+                    settings._exact_measurements[kind.value]["anchor"] = anchor
+            watermark(pixels, owned=True)
+        frame.path.replace(path)
+        return DeliveryFrame(path, frame.shape)
 
 
 def _render_mapped(path, render):
@@ -529,7 +581,7 @@ def _render_delivery_files(session, settings, adjustments, directory, *, render=
                 return tuple(
                     _render_branch_to_file(directory / f"{lane.value}.rgb", lambda allocate:
                         render(session, settings, lane, adjustments, denoise_source=denoise_source,
-                               allocate_output=allocate))
+                               allocate_output=allocate, delivery_path=directory / f"{lane.value}.rgb"))
                     for lane in lanes)
         finally:
             # Reduced Proof still renders its matrix endpoints after export.
@@ -807,8 +859,9 @@ class SDRPNGExportBackend(ExportBackend):
         def prepare() -> _PreparedExport:
             finishing_adjustments = _finishing_adjustments_for_export(session)
             directory = Path(scratch.enter_context(TemporaryDirectory(prefix="png-delivery-")))
-            image = DeliveryFrame.spill(directory / "sdr.rgb", _render_export_branch(
-                session, settings, PreviewKind.SDR, finishing_adjustments))
+            path = directory / "sdr.rgb"
+            image = _render_branch_to_file(path, lambda allocate: _render_export_branch(
+                session, settings, PreviewKind.SDR, finishing_adjustments, allocate_output=allocate, delivery_path=path))
 
             def write(staged):
                 with image.map("r") as pixels:
@@ -1190,7 +1243,7 @@ class JPEGUltraHDRExportBackend(ExportBackend):
                 )
 
             from .photo_framing import delivery_layout
-            layout = delivery_layout(session, settings, finishing_adjustments)
+            layout = delivery_layout(session, settings, finishing_adjustments, streaming=True)
             photo_rect = layout.photo if layout is not None and layout.inset else None
 
             def write(staged_output: Path) -> None:

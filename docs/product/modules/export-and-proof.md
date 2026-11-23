@@ -61,6 +61,17 @@ checks for this follow-up, Windows, and the remaining large-source formats are
 not yet qualified.
 [Step 2 measurements](../../technical/performance-table.md#november-23-2026--macbook-neo-file-backed-export-memory-step-2).
 
+**Export-memory Step 3, pending integration.** The file-backed CPU route
+supports guided B&W, Global HSL, output sharpening, framing and watermark.
+Resize keeps Pillow Lanczos exact by processing one
+channel at a time: the banded `box=` probe changed pixels. Highlight
+compression and the HDR ceiling run after resize and sharpening, before
+framing and watermark. Finished pixels and AVIF, HDR JPEG XL and SDR JPEG
+hashes are pinned against the whole-frame route on small fixtures. Roll and
+perspective with spatial grading or output finishing stay on the whole-frame
+route: the windowed transforms can change pixel values. Exact bounded roll,
+full-size Profile A/B hashes and worker memory/time validation remain open.
+
 ## November 22 — File-backed AVIF delivery and full-size Proof
 
 AVIF delivery stores Grain and finished frames in files owned by the export

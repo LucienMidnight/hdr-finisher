@@ -170,7 +170,8 @@ def estimate_remaining(fraction: float, elapsed: float) -> int | None:
 
 def plan_export(session, settings, adjustments, *, develop_megapixels: float = 0.0) -> ExportPlan:
     """The stages this export will run, with their expected seconds."""
-    from .exporters import _bounded_export_eligible, _delivery_grain_shared, denoise_settings_for_export
+    from .exporters import (_bounded_export_eligible, _delivery_finishing_plan, _delivery_grain_shared,
+                            denoise_settings_for_export)
     from .finishing import geometry_output_dimensions, geometry_is_identity, resolve_output_dimensions
     from .models import PreviewKind
 
@@ -186,6 +187,7 @@ def plan_export(session, settings, adjustments, *, develop_megapixels: float = 0
     elif settings.format == "jpegxl_hdr" and getattr(settings, "_proof_endpoint_directory", None) is None:
         lanes = [PreviewKind.HDR]
     shared_grain = _delivery_grain_shared(session, adjustments)
+    target, layout, defer_output = _delivery_finishing_plan(session, settings, adjustments)
     for position, kind in enumerate(lanes):
         lane = kind.value
         if denoise_settings_for_export(session, kind) is not None:
@@ -193,7 +195,13 @@ def plan_export(session, settings, adjustments, *, develop_megapixels: float = 0
                      STAGE_COST["denoise"] * megapixels / (2 if shared_grain and len(lanes) > 1 else 1))
         if _bounded_export_eligible(session, settings, kind, adjustments, prepared_denoise=True):
             plan.add(lane, "strip_render", STAGE_COST["strip_render"] * megapixels)
-            continue
+            if not defer_output:
+                continue
+            delivered_cost = STAGE_COST["output_finishing"] * target[0] * target[1] / 1e6
+            if kind == PreviewKind.SDR or adjustments.hdr.highlight_section_enabled:
+                plan.add(lane, "highlight_compression", delivered_cost)
+            if layout is not None:
+                plan.add(lane, "framing", STAGE_COST["output_finishing"] * layout.width * layout.height / 1e6)
         # A later rendition reuses shared Grain pixels and the compiled masks.
         if not geometry_is_identity(geometry) and (position == 0 or not shared_grain):
             plan.add(lane, "geometry", STAGE_COST["geometry"] * megapixels)

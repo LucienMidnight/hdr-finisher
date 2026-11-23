@@ -201,6 +201,7 @@ def apply_fixed_source_adjustments(
     highlight_anchor: HighlightAnchor | None = None,
     apply_output_clamp: bool = True,
     frame_window: FrameWindow | None = None,
+    selection_origin: tuple[int, int] = (0, 0),
 ) -> np.ndarray:
     """Grade an already geometry-fixed frame, or one bounded region of one.
 
@@ -223,6 +224,7 @@ def apply_fixed_source_adjustments(
             highlight_anchor=highlight_anchor,
             apply_output_clamp=apply_output_clamp,
             frame_window=frame_window,
+            selection_origin=selection_origin,
         )
     if adjustments.sdr.linked_to_hdr:
         # HDR creatives, source-anchored locals and Film run once; never apply
@@ -233,6 +235,7 @@ def apply_fixed_source_adjustments(
             local_adjustments=local_adjustments, fixed_source=fixed_source,
             compiled_local_masks=compiled_local_masks, color_context=color_context,
             source_pixel_scale=source_pixel_scale, frame_window=frame_window,
+            selection_origin=selection_origin,
         )
         result = acescg_to_linear_srgb(common) * SDR_SCENE_TO_DISPLAY_SCALE
         result *= np.float32(2.0 ** adjustments.sdr.output_exposure)
@@ -251,6 +254,7 @@ def apply_fixed_source_adjustments(
             source_pixel_scale=source_pixel_scale,
             highlight_anchor=highlight_anchor,
             frame_window=frame_window,
+            selection_origin=selection_origin,
         )
     return _apply_sdr_adjustments(
         fixed_source,
@@ -263,6 +267,7 @@ def apply_fixed_source_adjustments(
         source_pixel_scale=source_pixel_scale,
         highlight_anchor=highlight_anchor,
         frame_window=frame_window,
+        selection_origin=selection_origin,
     )
 
 
@@ -280,6 +285,7 @@ def _apply_hdr_adjustments(
     highlight_anchor: HighlightAnchor | None = None,
     apply_output_clamp: bool = True,
     frame_window: FrameWindow | None = None,
+    selection_origin: tuple[int, int] = (0, 0),
 ) -> np.ndarray:
     color_context = color_context or RenderColorContext()
     hdr = adjustments.hdr
@@ -300,7 +306,7 @@ def _apply_hdr_adjustments(
     if hdr.hsl_section_enabled:
         from .hsl import apply_stage
         result = apply_stage(result, [c.recipe for c in hdr.hsl.channels], PreviewKind.HDR,
-                             shared_selection=source_pixel_scale)
+                             shared_selection=source_pixel_scale, selection_origin=selection_origin)
     if hdr.curves_section_enabled:
         result = _apply_curves(result, adjustments, PreviewKind.HDR)
     if hdr.color_grading_section_enabled:
@@ -825,6 +831,7 @@ def _apply_sdr_adjustments(
     source_pixel_scale: float = 1.0,
     highlight_anchor: HighlightAnchor | None = None,
     frame_window: FrameWindow | None = None,
+    selection_origin: tuple[int, int] = (0, 0),
 ) -> np.ndarray:
     sdr = adjustments.sdr
     result = _sdr_pre_highlight(image, adjustments)
@@ -841,6 +848,7 @@ def _apply_sdr_adjustments(
         frame_window=frame_window,
         color_after_tone_controls=False,
         highlight_anchor=highlight_anchor,
+        selection_origin=selection_origin,
     )
 
 
@@ -870,6 +878,7 @@ def _apply_sdr_post_highlight_tail(
     frame_window: FrameWindow | None,
     color_after_tone_controls: bool,
     highlight_anchor: HighlightAnchor | None = None,
+    selection_origin: tuple[int, int] = (0, 0),
 ) -> np.ndarray:
     """The shared display-linear SDR creative and final-output tail.
 
@@ -895,7 +904,7 @@ def _apply_sdr_post_highlight_tail(
     if sdr.hsl_section_enabled:
         from .hsl import apply_stage
         result = apply_stage(result, [c.recipe for c in sdr.hsl.channels], PreviewKind.SDR,
-                             shared_selection=source_pixel_scale)
+                             shared_selection=source_pixel_scale, selection_origin=selection_origin)
     if sdr.curves_section_enabled:
         result = _apply_curves(result, adjustments, PreviewKind.SDR)
     if sdr.color_grading_section_enabled:
@@ -999,6 +1008,7 @@ def _apply_sdr_adjustments_to_reference(
     source_pixel_scale: float = 1.0,
     highlight_anchor: HighlightAnchor | None = None,
     frame_window: FrameWindow | None = None,
+    selection_origin: tuple[int, int] = (0, 0),
 ) -> np.ndarray:
     sdr = adjustments.sdr
     result = _sdr_reference_pre_highlight(image, adjustments)
@@ -1015,6 +1025,7 @@ def _apply_sdr_adjustments_to_reference(
         frame_window=frame_window,
         color_after_tone_controls=True,
         highlight_anchor=highlight_anchor,
+        selection_origin=selection_origin,
     )
 
 

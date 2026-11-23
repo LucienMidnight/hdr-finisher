@@ -33,6 +33,7 @@ from hdr_finisher.cpu_strips import (  # noqa: E402
     strip_execution_refusals,
 )
 from hdr_finisher.finishing import geometry_resample_stage  # noqa: E402
+from hdr_finisher.hsl import HSLRange, HSLRecipe  # noqa: E402
 from hdr_finisher.models import (  # noqa: E402
     AdjustmentState,
     CropRectangle,
@@ -145,6 +146,36 @@ def test_strip_render_equals_whole_frame(kind, geometry_name, budget):
     _assert_matches(strips, reference, geometry, f"{kind}/{geometry_name}/budget={budget}")
     assert report.strips_rendered == report.plan.strip_count
     assert report.cancelled_at_strip is None
+
+
+@pytest.mark.parametrize("lane", ["hdr", "sdr", "authored", "linked"])
+@pytest.mark.parametrize("stage", ["bw", "hsl", "combined"])
+def test_spatial_grade_matches_whole_frame_exactly(lane, stage):
+    rng = np.random.default_rng(174)
+    image = rng.random((213, 257, 3), dtype=np.float32) * np.float32(.65)
+    reference = rng.random(image.shape, dtype=np.float32) if lane == "authored" else None
+    state = AdjustmentState()
+    state.sdr.use_authored_base = lane == "authored"
+    state.sdr.linked_to_hdr = lane == "linked"
+    kind = PreviewKind.HDR if lane == "hdr" else PreviewKind.SDR
+    branch = state.hdr if lane in {"hdr", "linked"} else state.sdr
+    state.shared.geometry = GeometryAdjustments(
+        flip_horizontal=True, flip_vertical=True,
+        crop=CropRectangle(x=.07, y=.14, width=.87, height=.79),
+    )
+    if stage in {"bw", "combined"}:
+        branch.black_and_white_section_enabled = True
+        branch.black_and_white.reds = 55
+        branch.black_and_white.blues = -47
+    if stage in {"hsl", "combined"}:
+        branch.hsl_section_enabled = True
+        for channel, center, edge, detail in zip(branch.hsl.channels, (25, 151, 238), (7, -8, 4), (0, 50, 100)):
+            channel.recipe = HSLRecipe(ranges=[HSLRange(center=center, width=70, feather=39)],
+                hue=19, saturation=27, luminance=.42, edge=edge, edge_feather=12, edge_detail=detail)
+    expected = apply_adjustments(image, state, kind, sdr_reference_image=reference)
+    actual, report = render_in_strips(image, state, kind, sdr_reference_image=reference, budget_bytes=384 * 1024)
+    assert report.strips_rendered > 2
+    np.testing.assert_array_equal(actual, expected)
 
 
 @pytest.mark.parametrize("kind", [PreviewKind.HDR, PreviewKind.SDR])
@@ -308,7 +339,8 @@ def _local(identifier: str = "a") -> LocalAdjustment:
         (lambda s: setattr(s.hdr.film_look, "halation_amount", 50.0), "spatial film effects"),
         (lambda s: setattr(s.hdr.film_look, "film_resolution", 80.0), "spatial film effects"),
         (lambda s: setattr(s.hdr.detail, "sharpen_amount", 40.0), "detail"),
-        (lambda s: setattr(s.shared.geometry, "straighten_angle", 4.0), "roll geometry"),
+        (lambda s: setattr(s.shared, "geometry", GeometryAdjustments(straighten_angle=6.3)), "roll geometry"),
+        (lambda s: setattr(s.shared, "geometry", GeometryAdjustments(straighten_angle=45, perspective_rotate=45)), "roll geometry"),
     ],
 )
 def test_refusals_name_the_node(configure, expected):

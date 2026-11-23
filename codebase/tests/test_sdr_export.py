@@ -119,7 +119,7 @@ def test_standalone_sdr_jpeg_with_denoise_matches_the_whole_frame(
     result = SDRJPEGExportBackend(_available_capability()).export(session, settings)
 
     assert result.accepted, result.message
-    assert settings._last_cpu_strips is (not resize)
+    assert settings._last_cpu_strips is True
     assert output.read_bytes() == reference.read_bytes()
 
 

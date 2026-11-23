@@ -164,8 +164,9 @@ def apply_geometry_region(
         window = _clamp_rect(rect, right - left, bottom - top)
         offset_x = safe_left + left + window[0]
         offset_y = safe_top + top + window[1]
-        a, b, c, d, e, f = matrix
-        coefficients = (a, b, a * offset_x + b * offset_y + c, d, e, d * offset_x + e * offset_y + f, 0.0, 0.0)
+        xx, xy, cx, yx, yy, cy = matrix
+        coefficients = (xx, xy, xx * offset_x + xy * offset_y + cx,
+                        yx, yy, yx * offset_x + yy * offset_y + cy, 0.0, 0.0)
         return _resample_window(
             oriented,
             coefficients,
@@ -198,10 +199,14 @@ def _channel_ranges(
     cached = cache.get(key) if cacheable else None
     if cached is not None and cached[0] is image:
         return cached[1]
-    ranges = tuple(
-        (float(np.min(image[..., index])), float(np.max(image[..., index])))
-        for index in range(image.shape[2])
-    )
+    lows = np.full(image.shape[2], np.inf)
+    highs = np.full(image.shape[2], -np.inf)
+    for top in range(0, len(image), 256):
+        band = image[top:top + 256]
+        for index in range(image.shape[2]):
+            lows[index] = np.minimum(lows[index], np.min(band[..., index]))
+            highs[index] = np.maximum(highs[index], np.max(band[..., index]))
+    ranges = tuple((float(low), float(high)) for low, high in zip(lows, highs))
     if cacheable:
         cache.clear()
         cache[key] = (image, ranges)
@@ -885,22 +890,34 @@ def apply_output_finishing(
 
 
 def _resize_lanczos(image: np.ndarray, width: int, height: int) -> np.ndarray:
+    result = np.empty((height, width, image.shape[2]), dtype=np.float32)
+    for index in range(image.shape[2]):
+        _resize_lanczos_channel(image[..., index], width, height, out=result[..., index])
+    return result
+
+
+def _resize_lanczos_channel(source, width, height, *, out=None):
     try:
         from PIL import Image
     except ImportError as exc:  # pragma: no cover
         raise RuntimeError("Pillow is required for export resizing") from exc
-    result = np.empty((height, width, image.shape[2]), dtype=np.float32)
-    for index in range(image.shape[2]):
-        source = image[..., index].astype(np.float32, copy=False)
-        resized = Image.fromarray(source).resize((width, height), Image.Resampling.LANCZOS)
-        channel = np.asarray(resized, dtype=np.float32)
-        np.clip(channel, float(np.min(source)), float(np.max(source)), out=result[..., index])
-    return result
+    source = source.astype(np.float32, copy=False)
+    resized = Image.fromarray(source).resize((width, height), Image.Resampling.LANCZOS)
+    return np.clip(np.asarray(resized, dtype=np.float32), float(np.min(source)), float(np.max(source)), out=out)
 
 
 def _edge_aware_multiscale_sharpen(image: np.ndarray, strength: str, kind: PreviewKind) -> np.ndarray:
     if float(np.max(image) - np.min(image)) <= 1e-7:
         return image
+    output = np.empty(image.shape, dtype=np.float32)
+    changed = False
+    for rows, pixels, active in _multiscale_sharpen_bands(image, strength, kind):
+        output[rows] = pixels
+        changed |= active
+    return output if changed else image
+
+
+def _multiscale_sharpen_bands(image, strength, kind):
     amounts = {
         "subtle": (0.22, 0.08),
         "standard": (0.38, 0.14),
@@ -920,8 +937,6 @@ def _edge_aware_multiscale_sharpen(image: np.ndarray, strength: str, kind: Previ
     next(next_medium, None)
     next(next_signal, None)
     residual = _sharpen_box_bands((np.abs(part) for part in residual_source), 1)
-    output = np.empty(image.shape, dtype=np.float32)
-    changed = False
     top = 0
     previous = None
     for luma_part, signal_part, fine_part, medium_in, medium_out, residual_part in zip(
@@ -935,12 +950,85 @@ def _edge_aware_multiscale_sharpen(image: np.ndarray, strength: str, kind: Previ
         extent = np.concatenate((signal_part[:1] if previous is None else previous, signal_part,
                                  signal_part[-1:] if following_signal is None else following_signal[:1]))
         local_min, local_max = _local_extrema(extent)
-        output[top:bottom] = _finish_sharpen_rows(image[top:bottom], luma_part, signal_part, detail,
-                                                kind, strength, local_min[1:-1], local_max[1:-1])
-        changed |= active
+        rows = slice(top, bottom)
+        yield rows, _finish_sharpen_rows(image[rows], luma_part, signal_part, detail,
+                                         kind, strength, local_min[1:-1], local_max[1:-1]), active
         previous = signal_part[-1:].copy()
         top = bottom
-    return output if changed else image
+
+
+@_timed_stage("output_finishing")
+def finish_delivery_frame(source, settings, kind, directory, target_size):
+    """Run the same finishing kernels with file-backed intermediate frames."""
+    from contextlib import ExitStack
+    from .delivery_frames import DeliveryFrame
+    from .export_timing import tick
+
+    width, height = target_size
+    resize = source.shape[:2] != (height, width)
+    sharpen = settings.sharpening != "off"
+    passes = (4 if resize else 0) + (2 if sharpen else 0) + 1
+    done = 0
+    if resize:
+        result = DeliveryFrame(directory / "resized.rgb", (height, width, 3))
+        planes = []
+        with source.map("r") as pixels:
+            for channel in range(3):
+                plane = DeliveryFrame(directory / f"resized-{channel}.f32", (height, width))
+                plane.check_space()
+                _resize_lanczos_channel(pixels[..., channel], width, height).tofile(plane.path)
+                planes.append(plane)
+                done += 1
+                tick(done, passes)
+
+        def interleave():
+            with ExitStack() as maps:
+                channels = [maps.enter_context(plane.map("r")) for plane in planes]
+                for rows in row_slices(height):
+                    yield np.stack([channel[rows] for channel in channels], axis=-1)
+                    tick(done * height + rows.stop, passes * height)
+
+        result.write(interleave())
+        for plane in planes:
+            plane.path.unlink()
+        source.path.unlink()
+        source = result
+        done += 1
+
+    if sharpen:
+        low, high = np.float32(np.inf), np.float32(-np.inf)
+        with source.map("r") as pixels:
+            for rows in row_slices(height):
+                low = np.minimum(low, np.min(pixels[rows]))
+                high = np.maximum(high, np.max(pixels[rows]))
+                tick(done * height + rows.stop, passes * height)
+            done += 1
+            if not float(high - low) <= 1e-7:
+                changed = False
+
+                def sharpened():
+                    nonlocal changed
+                    for rows, band, active in _multiscale_sharpen_bands(pixels, settings.sharpening, kind):
+                        changed |= active
+                        yield band
+                        tick(done * height + rows.stop, passes * height)
+
+                result = DeliveryFrame(directory / "sharpened.rgb", source.shape)
+                result.write(sharpened())
+            else:
+                result, changed = source, False
+        if changed:
+            source.path.unlink()
+            source = result
+        elif result is not source:
+            result.path.unlink()
+        done += 1
+
+    with source.map("r+") as pixels:
+        for rows in row_slices(height):
+            np.nan_to_num(pixels[rows], copy=False, nan=0.0, posinf=0.0, neginf=0.0)
+            tick(done * height + rows.stop, passes * height)
+    return source
 
 
 def _sharpen_signal(source_luma, kind):

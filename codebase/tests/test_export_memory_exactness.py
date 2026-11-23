@@ -1,3 +1,7 @@
+import hashlib
+from pathlib import Path
+from types import SimpleNamespace
+
 import numpy as np
 import pytest
 from PIL import Image
@@ -6,7 +10,9 @@ from hdr_finisher import adjustments, detail, finishing, hsl, pixel_rows, tone
 from hdr_finisher.color import acescg_to_linear_srgb, linear_srgb_to_acescg
 from hdr_finisher.delivery_frames import DeliveryFrame
 from hdr_finisher.export_timing import export_clock
-from hdr_finisher.models import AdjustmentState, PreviewKind, VignetteAdjustments, WatermarkSettings
+from hdr_finisher.hsl import HSLRange, HSLRecipe
+from hdr_finisher.models import (AdjustmentState, CapabilityStatus, ExportSettings, FramingLayer,
+    GeometryAdjustments, OutputFinishingSettings, PhotoFraming, PreviewKind, VignetteAdjustments, WatermarkSettings)
 from hdr_finisher.photo_framing import FramingLayout, compose
 from hdr_finisher.watermark import apply_watermark
 
@@ -323,3 +329,113 @@ def test_watermark_in_place_matches_copying_and_preserves_cached_input(image, ki
     assert actual is owned
     assert np.any(actual != image)
     np.testing.assert_array_equal(actual, expected)
+
+
+def _finishing_session(image):
+    state = AdjustmentState()
+    state.shared.geometry = GeometryAdjustments(flip_horizontal=True)
+    for branch in (state.hdr, state.sdr):
+        branch.highlight_section_enabled = True
+        branch.highlight_compression_peak_measurement = "robust"
+    framing = PhotoFraming(enabled=True,
+        frame=FramingLayer(color="#f1ded0", unit="px", value=14),
+        border=FramingLayer(color="#413831", unit="px", value=7))
+    return SimpleNamespace(session_id="bounded-finishing", image=image, adjustments=state,
+        framing=framing, sdr_reference_image=None, local_adjustments=[], hdr_reference_white_nits=203)
+
+
+@pytest.mark.parametrize("kind", [PreviewKind.HDR, PreviewKind.SDR])
+def test_delivery_preserves_whole_frame_roll_pixels(tmp_path, monkeypatch, kind):
+    from hdr_finisher import exporters, gpu_delivery
+
+    monkeypatch.setattr(gpu_delivery, "render_pair", lambda *args: None)
+    image = np.random.default_rng(731).normal(0, 4, (97, 201, 3)).astype(np.float32)
+    session = _finishing_session(image)
+    session.adjustments.shared.geometry = GeometryAdjustments(straighten_angle=45, flip_horizontal=True)
+    settings = ExportSettings(format="avif_gain_map", export_with_frame=True,
+        output_finishing=OutputFinishingSettings(resize_mode="long_edge", long_edge=83, sharpening="standard"))
+    expected = exporters._render_export_branch(session, settings, kind, session.adjustments)
+    frame, = exporters._render_delivery_files(session, settings, session.adjustments, tmp_path, lanes=(kind,))
+    assert not settings._last_cpu_strips
+    with frame.map("r") as pixels:
+        np.testing.assert_array_equal(pixels, expected)
+
+
+@pytest.mark.parametrize("kind", [PreviewKind.HDR, PreviewKind.SDR])
+@pytest.mark.parametrize("strength", ["off", "subtle", "standard", "strong"])
+@pytest.mark.parametrize("resize", [False, True])
+def test_file_finishing_matches_whole_frame(image, tmp_path, monkeypatch, kind, strength, resize):
+    from hdr_finisher import cpu_strips, exporters, gpu_delivery, resource_preflight
+
+    monkeypatch.setattr(gpu_delivery, "render_pair", lambda *args: None)
+    original_plan = cpu_strips.plan_strips
+
+    def small_strips(width, height, **kwargs):
+        kwargs["budget_bytes"] = min(kwargs.get("budget_bytes", 192 * 1024), 192 * 1024)
+        return original_plan(width, height, **kwargs)
+
+    monkeypatch.setattr(cpu_strips, "plan_strips", small_strips)
+    wide_image = np.tile(image, (1, 3, 1))
+    session = _finishing_session(wide_image)
+    settings = ExportSettings(format="avif_gain_map", export_with_frame=True,
+        editing_measurements={kind.value: {"peak": 1.0}},
+        output_finishing=OutputFinishingSettings(resize_mode="long_edge" if resize else "original",
+            long_edge=301 if resize else None, sharpening=strength),
+        watermark=WatermarkSettings(mode="rendition_test", opacity=.72))
+    expected = exporters._render_export_branch(session, settings, kind, session.adjustments)
+    measurement = settings._exact_measurements[kind.value].copy()
+    assert not settings._last_cpu_strips
+
+    monkeypatch.setattr(resource_preflight, "estimate_resources", lambda **kwargs: SimpleNamespace(export_decision="reject"))
+    with pytest.raises(ValueError, match="framed canvas is too large"):
+        exporters._render_export_branch(session, settings, kind, session.adjustments)
+
+    with export_clock() as clock:
+        frame, = exporters._render_delivery_files(session, settings, session.adjustments, tmp_path, lanes=(kind,))
+    assert {"geometry", "tone_colour", "strip_render", "output_finishing", "highlight_compression",
+            "framing", "watermark"} <= set(clock.lanes[kind.value])
+    assert settings._last_cpu_strips
+    assert settings._exact_measurements[kind.value] == measurement
+    with frame.map("r") as pixels:
+        np.testing.assert_array_equal(pixels, expected)
+    assert set(tmp_path.iterdir()) == {frame.path}
+
+
+@pytest.mark.parametrize(("format_name", "capability", "suffix"), [
+    ("avif_gain_map", "avif_gain_map_encoder", ".avif"),
+    ("jpegxl_hdr", "jpegxl_export", ".jxl"),
+    ("sdr_jpeg", None, ".jpg"),
+])
+def test_bounded_finishing_preserves_encoded_sha256(image, tmp_path, monkeypatch, format_name, capability, suffix):
+    from hdr_finisher import exporters, gpu_delivery
+    from hdr_finisher.capabilities import probe_capabilities
+
+    capabilities = probe_capabilities()
+    if capability is not None and capabilities[capability].status != CapabilityStatus.AVAILABLE:
+        pytest.skip(capabilities[capability].detail)
+    monkeypatch.setattr(gpu_delivery, "render_pair", lambda *args: None)
+    backend = exporters.build_export_backends(capabilities)[format_name]
+    session = _finishing_session(np.tile(image, (1, 3, 1)))
+    for branch in (session.adjustments.hdr, session.adjustments.sdr):
+        branch.hsl_section_enabled = True
+        branch.hsl.channels[0].recipe = HSLRecipe(ranges=[HSLRange(center=31, width=85, feather=28)],
+            hue=19, saturation=24, edge=-7, edge_feather=10, edge_detail=50)
+    session.adjustments.sdr.black_and_white_section_enabled = True
+    session.adjustments.sdr.black_and_white.reds = 42
+    settings = ExportSettings(format=format_name, export_with_frame=True, dithering="off",
+        output_finishing=OutputFinishingSettings(resize_mode="long_edge", long_edge=191, sharpening="strong"),
+        watermark=WatermarkSettings(mode="rendition_test"))
+
+    def encode(name):
+        job = settings.model_copy(update={"output_path": str(tmp_path / (name + suffix))})
+        result = backend.export(session, job)
+        assert result.accepted, result.message
+        return hashlib.sha256(Path(result.output_path).read_bytes()).hexdigest(), job._last_cpu_strips
+
+    with monkeypatch.context() as reference:
+        reference.setattr(exporters, "_bounded_export_eligible", lambda *args, **kwargs: False)
+        expected, used_strips = encode("reference")
+        assert not used_strips
+    actual, used_strips = encode("bounded")
+    assert used_strips
+    assert actual == expected

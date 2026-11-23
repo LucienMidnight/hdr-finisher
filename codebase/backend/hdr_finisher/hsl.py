@@ -164,7 +164,7 @@ def recipe_active(recipe):
 _RECIPE_ROWS = 128
 
 
-def apply_recipes(image, recipes, mask=None, shared_selection=None):
+def apply_recipes(image, recipes, mask=None, shared_selection=None, *, selection_origin: tuple[int, int] = (0, 0)):
     """Add channel deltas from one input; neutral returns the original array.
 
     ``shared_selection`` is a processing scale: Global HSL then takes its
@@ -178,11 +178,11 @@ def apply_recipes(image, recipes, mask=None, shared_selection=None):
     if mask is not None and np.shape(mask) != image.shape[:-1]:
         raise ValueError("HSL mask dimensions must match the image")
     if image.ndim != 3:
-        return _apply_recipe_strip(image, active, mask, shared_selection, 0)
-    return _apply_recipe_rows(image, active, mask, shared_selection)
+        return _apply_recipe_strip(image, active, mask, shared_selection, selection_origin)
+    return _apply_recipe_rows(image, active, mask, shared_selection, selection_origin=selection_origin)
 
 
-def _apply_recipe_rows(image, active, mask, shared_selection, convert=None, restore=None):
+def _apply_recipe_rows(image, active, mask, shared_selection, convert=None, restore=None, *, selection_origin=(0, 0)):
     height = len(image)
     output = np.empty(image.shape, dtype=image.dtype if convert is None else np.float32)
     cell, halo = 1, 0
@@ -194,25 +194,26 @@ def _apply_recipe_rows(image, active, mask, shared_selection, convert=None, rest
         halo = geo.reach + max(math.ceil((abs(r.edge) + 2 * r.edge_feather) * selection_scale) + 1 for r in active)
     if mask is not None:
         mask = np.asarray(mask)
+    origin_x, origin_y = selection_origin
     for top in range(0, height, _RECIPE_ROWS):
         bottom = min(top + _RECIPE_ROWS, height)
-        first = max(0, (top - halo) // cell * cell)
-        last = min(height, (bottom + halo + cell - 1) // cell * cell)
+        first = max(0, (origin_y + top - halo) // cell * cell - origin_y)
+        last = min(height, (origin_y + bottom + halo + cell - 1) // cell * cell - origin_y)
         source = image[first:last]
         if convert is not None:
             source = convert(source)
         part = _apply_recipe_strip(source, active, None if mask is None else mask[first:last],
-                                   shared_selection, first, slice(top - first, bottom - first))
+                                   shared_selection, (origin_x, origin_y + first), slice(top - first, bottom - first))
         output[top:bottom] = part if restore is None else restore(part)
     return output
 
 
-def _apply_recipe_strip(image, active, mask, shared_selection, origin_y, interior=slice(None)):
+def _apply_recipe_strip(image, active, mask, shared_selection, selection_origin, interior=slice(None)):
     original = np.asarray(image[interior])[..., :3].astype(np.float64)
     prepared = None
     if shared_selection is not None:
         from .hsl_selection import prepare
-        prepared = prepare(image, shared_selection, origin=(0, origin_y))
+        prepared = prepare(image, shared_selection, origin=selection_origin)
     result = original.copy()
     for r in active:
         weight, target, lab, hue, chroma = selection(original, r.ranges)
@@ -232,7 +233,7 @@ def _apply_recipe_strip(image, active, mask, shared_selection, origin_y, interio
     return output
 
 
-def apply_stage(image, recipes, kind, shared_selection=None):
+def apply_stage(image, recipes, kind, shared_selection=None, *, selection_origin: tuple[int, int] = (0, 0)):
     """Apply in the engine's D65 space, retaining exact neutral passthrough."""
     active = [r for r in recipes if recipe_active(r)]
     if not active:
@@ -240,9 +241,11 @@ def apply_stage(image, recipes, kind, shared_selection=None):
     from .color import acescg_to_linear_srgb, linear_srgb_to_acescg
     if str(getattr(kind, "value", kind)) == "hdr":
         if image.ndim != 3:
-            return linear_srgb_to_acescg(apply_recipes(acescg_to_linear_srgb(image), active, shared_selection=shared_selection))
-        return _apply_recipe_rows(image, active, None, shared_selection, acescg_to_linear_srgb, linear_srgb_to_acescg)
-    return apply_recipes(image, active, shared_selection=shared_selection)
+            return linear_srgb_to_acescg(apply_recipes(acescg_to_linear_srgb(image), active,
+                shared_selection=shared_selection, selection_origin=selection_origin))
+        return _apply_recipe_rows(image, active, None, shared_selection, acescg_to_linear_srgb, linear_srgb_to_acescg,
+                                  selection_origin=selection_origin)
+    return apply_recipes(image, active, shared_selection=shared_selection, selection_origin=selection_origin)
 
 
 def sample_neighborhood(image, x, y, radius=2):

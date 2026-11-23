@@ -31,13 +31,16 @@ than merely close.
 
 from __future__ import annotations
 
-from .export_timing import timed as _timed_stage
+from .export_timing import stage as _stage, timed as _timed_stage
 from dataclasses import dataclass
+import math
+from pathlib import Path
 from typing import Callable, Sequence
 
 import numpy as np
 
 from .adjustments import (
+    BW_GUIDE_REACH,
     FrameWindow,
     HighlightAnchor,
     apply_fixed_source_adjustments,
@@ -52,6 +55,7 @@ from .adjustments import (
 )
 from .color_context import RenderColorContext
 from .cpu_budget import CpuExecutor
+from .delivery_frames import DeliveryFrame
 from .detail import detail_is_neutral
 from .finishing import apply_geometry_region, geometry_output_dimensions, geometry_resample_stage
 from .models import AdjustmentState, LocalAdjustment, PreviewKind
@@ -215,26 +219,18 @@ def strip_execution_refusals(
             reasons.append("spatial film effects")
     if branch.detail_section_enabled and (branch.detail.softness != 0.0 or branch.detail.microcontrast != 0.0):
         reasons.append("detail softness or microcontrast")
-    if branch.black_and_white_section_enabled and black_and_white_needs_guide(branch.black_and_white):
-        # Each pixel's colour is read from its neighbourhood (BW_GUIDE_REACH).
-        reasons.append("black & white colour response")
     # Grain and vignette are placed against the frame through ``FrameWindow``,
     # so a strip draws its share of the frame's vignette and samples the
     # frame's grain field rather than starting its own. Neither needs a
     # refusal any more; the GPU side lifted the same two in the same phase.
     if denoise_active:
         reasons.append("denoise")
-    from .hsl import recipe_active
-    if branch.hsl_section_enabled and any(recipe_active(c.recipe) for c in branch.hsl.channels):
-        # Global HSL's shared selection reads a neighbourhood of the HSL input.
-        reasons.append("HSL colour selection")
-
     geometry = adjustments.shared.geometry
-    if geometry_resample_stage(geometry) == "roll":
-        # `Image.rotate(expand=True)` owns the expansion and safe-inset
-        # geometry, so a windowed roll still materializes the whole rotated
-        # frame. Exact, but not bounded, which is the property this path sells.
+    geometry_stage = geometry_resample_stage(geometry)
+    if geometry_stage == "roll":
         reasons.append("roll geometry")
+    if geometry_stage == "perspective" and _grade_halo(branch, 1.0)[0]:
+        reasons.append("perspective with spatial grade")
     if long_edge is not None and source_width and source_height:
         output_width, output_height = geometry_output_dimensions(source_width, source_height, geometry)
         if max(output_width, output_height) > int(long_edge):
@@ -242,6 +238,23 @@ def strip_execution_refusals(
             # downsample does not reproduce a whole-frame one at the seams.
             reasons.append("post-geometry downsample")
     return reasons
+
+
+def _grade_halo(branch, source_pixel_scale):
+    from .hsl import recipe_active
+    from .hsl_selection import MIN_SCALE, geometry
+
+    reach = BW_GUIDE_REACH if (branch.black_and_white_section_enabled
+                              and black_and_white_needs_guide(branch.black_and_white)) else 0
+    active = [channel.recipe for channel in branch.hsl.channels
+              if branch.hsl_section_enabled and recipe_active(channel.recipe)]
+    if not active:
+        return reach, 1
+    scale = min(1.0, max(MIN_SCALE, float(source_pixel_scale)))
+    geo = geometry(scale)
+    edge = max(math.ceil(abs(recipe.edge) * scale) for recipe in active)
+    feather = max(math.ceil(4 * recipe.edge_feather * scale / 2) for recipe in active)
+    return reach + geo.reach + edge + feather + geo.cell, geo.cell
 
 
 class _PeakReducer:
@@ -315,7 +328,8 @@ def render_in_strips(
     allocate_output: Callable[[tuple[int, int, int]], np.ndarray] | None = None,
     parallel_sdr_output: bool = False,
     measure_delivery: bool = False,
-) -> tuple[np.ndarray, StripReport]:
+    delivery_frame_path: Path | None = None,
+) -> tuple[np.ndarray | DeliveryFrame, StripReport]:
     """Render the selected lane strip by strip and return the whole frame.
 
     Raises ``StripExecutionRefused`` before allocating anything when the graph
@@ -342,6 +356,7 @@ def render_in_strips(
         sdr_reference_image is not None
         and kind == PreviewKind.SDR
         and adjustments.sdr.use_authored_base
+        and not adjustments.sdr.linked_to_hdr
     )
     output_width, output_height = geometry_output_dimensions(source_width, source_height, geometry)
     plan = plan_strips(output_width, output_height, budget_bytes=budget_bytes)
@@ -349,7 +364,9 @@ def render_in_strips(
 
     checks = iter(range(1, 1 << 30))
     # Count full visits to the strips, including the final scope peak pass.
-    if kind == PreviewKind.SDR:
+    if delivery_frame_path is not None:
+        passes_per_strip = 1
+    elif kind == PreviewKind.SDR:
         passes_per_strip = 3  # Render/measure, finish, scope.
     else:
         passes_per_strip = 4 if adjustments.hdr.highlight_section_enabled else 2
@@ -362,14 +379,46 @@ def render_in_strips(
             report.cancelled_at_strip = index
             raise StripCancelled("A newer adjustment replaced this render.")
 
-    def region(source: np.ndarray, top: int, bottom: int) -> np.ndarray:
-        return apply_geometry_region(source, geometry, (0, top, output_width, bottom))
+    range_cache = {}
 
-    def window(top: int) -> FrameWindow:
-        """Where this strip sits in the frame, for the stages that are placed."""
-        return FrameWindow(left=0, top=top, width=output_width, height=output_height)
+    def region(source: np.ndarray, top: int, bottom: int) -> np.ndarray:
+        key = id(source)
+        with _stage("geometry"):
+            return apply_geometry_region(source, geometry, (0, top, output_width, bottom),
+                                         range_cache=range_cache.setdefault(key, {}), range_cache_key=key)
+
+    branch = adjustments.hdr if kind == PreviewKind.HDR or adjustments.sdr.linked_to_hdr else adjustments.sdr
+    halo, cell = _grade_halo(branch, source_pixel_scale)
+
+    def grade(top, bottom, *, clamp):
+        first = max(0, (top - halo) // cell * cell)
+        last = min(output_height, (bottom + halo + cell - 1) // cell * cell)
+        reference = region(sdr_reference_image, first, last) if authored_reference else None
+        pixels = apply_fixed_source_adjustments(
+            region(image, first, last), adjustments, kind, fixed_sdr_reference=reference,
+            color_context=color_context, source_pixel_scale=source_pixel_scale,
+            include_output_highlight_compression=False, apply_output_clamp=clamp,
+            frame_window=FrameWindow(left=0, top=first, width=output_width, height=output_height),
+            selection_origin=(0, first),
+        )
+        report.strips_rendered += 1
+        return pixels[top - first:bottom - first]
 
     shape = (output_height, output_width, 3)
+    if delivery_frame_path is not None:
+        if allocate_output is not None:
+            raise ValueError("Sequential delivery writes own their output allocation.")
+
+        def bands():
+            for index, (top, bottom) in enumerate(plan.strips):
+                check(index)
+                yield grade(top, bottom, clamp=True)
+
+        frame = DeliveryFrame(delivery_frame_path, shape)
+        frame.write(bands())
+        report.passes = ("render",)
+        return frame, report
+
     output = np.empty(shape, dtype=np.float32) if allocate_output is None else allocate_output(shape)
     passes: list[str] = []
     anchor: HighlightAnchor | None = None
@@ -380,18 +429,7 @@ def render_in_strips(
         reducer = _PeakReducer(plan.width * plan.height, robust=sdr.highlight_compression_peak_measurement == "robust")
         for index, (top, bottom) in enumerate(plan.strips):
             check(index)
-            reference = region(sdr_reference_image, top, bottom) if authored_reference else None
-            output[top:bottom] = apply_fixed_source_adjustments(
-                region(image, top, bottom),
-                adjustments,
-                kind,
-                fixed_sdr_reference=reference,
-                color_context=color_context,
-                source_pixel_scale=source_pixel_scale,
-                include_output_highlight_compression=False,
-                frame_window=window(top),
-            )
-            report.strips_rendered += 1
+            output[top:bottom] = grade(top, bottom, clamp=False)
             if sdr.highlight_section_enabled or measure_delivery:
                 signal = sdr_highlight_peak_signal(output[top:bottom], sdr)
                 if signal is not None:
@@ -422,7 +460,7 @@ def render_in_strips(
         passes.append("sdr-output")
     else:
         anchor, passes_used = _render_hdr_strips(
-            image, adjustments, plan, region, check, output, color_context, source_pixel_scale, report, window,
+            grade, adjustments, plan, check, output, color_context, report,
             measure_delivery=measure_delivery,
         )
         passes.extend(passes_used)
@@ -454,16 +492,13 @@ def render_in_strips(
 
 
 def _render_hdr_strips(
-    image: np.ndarray,
+    grade: Callable,
     adjustments: AdjustmentState,
     plan: StripPlan,
-    region: Callable[[np.ndarray, int, int], np.ndarray],
     check: Callable[[int], None],
     output: np.ndarray,
     color_context: RenderColorContext,
-    source_pixel_scale: float,
     report: StripReport,
-    window: Callable[[int], FrameWindow],
     *,
     measure_delivery: bool,
 ) -> tuple[HighlightAnchor | None, list[str]]:
@@ -481,15 +516,7 @@ def _render_hdr_strips(
     if not hdr.highlight_section_enabled:
         for index, (top, bottom) in enumerate(plan.strips):
             check(index)
-            output[top:bottom] = apply_fixed_source_adjustments(
-                region(image, top, bottom),
-                adjustments,
-                PreviewKind.HDR,
-                color_context=color_context,
-                source_pixel_scale=source_pixel_scale,
-                frame_window=window(top),
-            )
-            report.strips_rendered += 1
+            output[top:bottom] = grade(top, bottom, clamp=True)
             if delivery_peak is not None:
                 signal = hdr_highlight_peak_signal(output[top:bottom], hdr)
                 if signal is not None:
@@ -505,16 +532,7 @@ def _render_hdr_strips(
 
     for index, (top, bottom) in enumerate(plan.strips):
         check(index)
-        graded = apply_fixed_source_adjustments(
-            region(image, top, bottom),
-            adjustments,
-            PreviewKind.HDR,
-            color_context=color_context,
-            source_pixel_scale=source_pixel_scale,
-            include_output_highlight_compression=False,
-            apply_output_clamp=False,
-            frame_window=window(top),
-        )
+        graded = grade(top, bottom, clamp=False)
         output[top:bottom] = graded
         signal = hdr_highlight_peak_signal(graded, hdr)
         if signal is not None and signal.size:
@@ -529,7 +547,6 @@ def _render_hdr_strips(
             del delivery_signal
         if mode == "clip":
             clip_reducer.observe(hdr_output_transport_signal(graded))
-        report.strips_rendered += 1
 
     if delivery_peak is not None:
         report.delivery_anchor = delivery_peak.value()
@@ -542,7 +559,12 @@ def _render_hdr_strips(
         hdr_source_peak_nits=peak_nits,
         hdr_clip_transport_max=clip_reducer.value() if mode == "clip" else None,
     )
+    anchor = _finish_hdr_strips(output, adjustments, color_context, plan, anchor, check,
+                                ceiling=mode != "off", clamp=True)
+    return anchor, ["render", "hdr-shoulder", "hdr-ceiling"]
 
+
+def _finish_hdr_strips(output, adjustments, color_context, plan, anchor, check, *, ceiling, clamp):
     output_reducer = _PeakReducer(plan.width * plan.height * 3, robust=False)
     for index, (top, bottom) in enumerate(plan.strips):
         check(index)
@@ -550,22 +572,67 @@ def _render_hdr_strips(
             output[top:bottom], adjustments, color_context=color_context, anchor=anchor
         )
         output[top:bottom] = compressed
-        if mode != "off":
+        if ceiling:
             output_reducer.observe(hdr_output_transport_signal(compressed))
 
     anchor = HighlightAnchor(
         hdr_source_peak_nits=anchor.hdr_source_peak_nits,
         hdr_clip_transport_max=anchor.hdr_clip_transport_max,
-        hdr_output_transport_max=output_reducer.value() if mode != "off" else None,
+        hdr_output_transport_max=output_reducer.value() if ceiling else None,
     )
 
     for index, (top, bottom) in enumerate(plan.strips):
         check(index)
         strip = output[top:bottom]
-        if mode != "off":
+        if ceiling:
             strip = clip_hdr_output_target(
                 strip, adjustments, color_context=color_context, anchor=anchor
             )
-        output[top:bottom] = np.clip(strip, 0.0, None)
+        output[top:bottom] = np.clip(strip, 0.0, None) if clamp else strip
+    return anchor
 
-    return anchor, ["render", "hdr-shoulder", "hdr-ceiling"]
+
+@_timed_stage("highlight_compression")
+def finish_output_highlights(pixels, adjustments, kind, color_context, *, measure=False):
+    """Limit a writable, finished photo using the full-frame peak in each domain."""
+    from .export_timing import tick
+
+    height, width = pixels.shape[:2]
+    plan = plan_strips(width, height)
+    hdr = kind == PreviewKind.HDR
+    branch = adjustments.hdr if hdr else adjustments.sdr
+    enabled = branch.highlight_section_enabled
+    if hdr and not enabled and not measure:
+        return None
+    passes = 1 + (2 if enabled else 0) if hdr else 2
+    visits = iter(range(1, passes * plan.strip_count + 1))
+
+    def check(_index):
+        tick(next(visits), passes * plan.strip_count)
+
+    reducer = _PeakReducer(width * height, robust=branch.highlight_compression_peak_measurement == "robust")
+    clip_reducer = _PeakReducer(width * height * 3, robust=False)
+    signal = hdr_highlight_peak_signal if hdr else sdr_highlight_peak_signal
+    clip = hdr and enabled and branch.highlight_compression_mode == "clip"
+    for index, (top, bottom) in enumerate(plan.strips):
+        check(index)
+        band = pixels[top:bottom]
+        if enabled or measure:
+            values = signal(band, branch)
+            if values is not None:
+                reducer.observe(values)
+        if clip:
+            clip_reducer.observe(hdr_output_transport_signal(band))
+    measured = reducer.value()
+    if hdr and enabled:
+        anchor = HighlightAnchor(
+            hdr_source_peak_nits=None if measured is None else hdr_peak_nits_from_measured(measured, color_context),
+            hdr_clip_transport_max=clip_reducer.value(),
+        )
+        _finish_hdr_strips(pixels, adjustments, color_context, plan, anchor, check, ceiling=True, clamp=False)
+    elif not hdr:
+        anchor = HighlightAnchor(sdr_peak=measured)
+        for index, (top, bottom) in enumerate(plan.strips):
+            check(index)
+            pixels[top:bottom] = apply_sdr_output_highlight_compression(pixels[top:bottom], adjustments, anchor=anchor)
+    return measured

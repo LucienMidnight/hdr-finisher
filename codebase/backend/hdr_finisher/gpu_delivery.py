@@ -146,7 +146,7 @@ def streamed_delivery_enabled(frame, settings, adjustments):
             and getattr(frame, "framing_source_size", None) in (None, (width, height))
             and max(width, height) <= 16384
             and resolve_output_dimensions(width, height, settings.output_finishing) == (width, height)
-            and delivery_layout(frame, settings, adjustments) is None)
+            and delivery_layout(frame, settings, adjustments, streaming=True) is None)
 
 
 def _open_delivery_file(shape):

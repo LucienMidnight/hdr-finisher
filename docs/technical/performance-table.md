@@ -1,3 +1,21 @@
+## November 23, 2026 — MacBook Neo bounded B&W, HSL and output finishing (Step 3)
+
+MacBook Neo (A18 Pro, 8 GB), macOS 27, headless one-worker CPU batch under the
+shared lock. Step 3 on `95c10725` extends bounded strips to guided Black &
+White, Global HSL (`shared_selection` with frame-aligned halo), whole-channel
+Lanczos resize, haloed output multiscale sharpening, highlight compression,
+streaming photo framing, and in-place watermark patching. Shifted `roll`
+windows and Pillow banded `box=` Lanczos both altered pixel bits, so roll stays
+whole-frame until Step 4's shared channel-by-channel geometry stage and resize
+uses whole-channel Pillow. Decimal GB.
+
+| Source and profile | Format | Wall time | Peak footprint | Result |
+| --- | --- | ---: | ---: | --- |
+| 42 MP Sony A (1920 px + frame) | `avif_gain_map` | 97.22 s | — | Golden SHA-256 unchanged (`ff3961ee9b4e…`) |
+| 42 MP Sony B (native) | `avif_gain_map` | 31 s | — | Golden SHA-256 unchanged (`ccfeedf49d0e…`) |
+| 100 MP EXR + Clean Grain + B&W + Global HSL + Sharpen + Frame + Watermark | `sdr_jpeg` | 234.02 s | **2.525 GB** | Exported natively (render 1.75 GB; `develop_raw` 2.52 GB) |
+| 100 MP EXR + Clean Grain + B&W + Global HSL + Sharpen + Frame + Watermark | `jpegxl_hdr` | 274.72 s | **2.719 GB** | Exported natively (render < 1.7 GB; encode 2.72 GB) |
+
 ## November 23, 2026 — MacBook Neo file-backed export memory (Step 2)
 
 MacBook Neo (A18 Pro, 8 GB), macOS 27, headless one-worker CPU batch under the
