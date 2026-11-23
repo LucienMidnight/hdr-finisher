@@ -589,3 +589,59 @@ def test_selected_scene_transfers_atomic_gpu_ownership_and_yields(tmp_path, monk
         client.delete(url)
         activity=client.post('/api/delivery/gpu/activity',json={"bytes":100,"budget":1000}).json()
         assert activity["reserved"] == 0
+
+
+def test_deleted_spool_is_recreated_and_gpu_delivery_stays_available(monkeypatch):
+    # Steve, Nov 23: an agent run's temp cleanup deleted the spool while the
+    # app was open; every renderer poll then raised and exports fell to the CPU.
+    import os, shutil
+    from pathlib import Path
+    monkeypatch.setenv(gpu_delivery.ROOT_ENV, "")
+    app = FastAPI(); app.include_router(gpu_delivery.create_gpu_delivery_router())
+    root = Path(os.environ[gpu_delivery.ROOT_ENV])
+    with TestClient(app) as client:
+        shutil.rmtree(root)
+        assert client.get("/api/delivery/gpu/permit").status_code == 200
+        assert (root / "heartbeat").exists()
+        shutil.rmtree(root)
+        assert client.get("/api/delivery/gpu/next").status_code == 200
+        assert (root / "heartbeat").exists()
+
+
+def test_spool_deleted_mid_delivery_ends_the_wait_and_retries_gpu_next_time(tmp_path, monkeypatch):
+    # Review, Nov 23: once the renderer recreates the heartbeat, a worker whose
+    # job folder vanished must not wait forever, nor cache the CPU fallback.
+    import os, shutil, threading
+    from pathlib import Path
+    monkeypatch.setattr(delivery, "PREFERENCES_PATH", tmp_path / "policy.json")
+    monkeypatch.delenv(delivery.FORCE_CPU_ENV, raising=False)
+    monkeypatch.setenv(gpu_delivery.ROOT_ENV, "")
+    app = FastAPI(); app.include_router(gpu_delivery.create_gpu_delivery_router())
+    root = Path(os.environ[gpu_delivery.ROOT_ENV])
+    frame = SimpleNamespace(image=np.full((4, 6, 3), .18, dtype=np.float32),
+        local_adjustments=[], adjustments=AdjustmentState(), denoise=DenoiseDocumentSettings())
+    with TestClient(app) as client:
+        client.get("/api/delivery/gpu/permit")
+        stop = threading.Event()
+        def renderer():
+            while not stop.is_set():
+                client.get("/api/delivery/gpu/permit"); time.sleep(.02)
+        def delete_once_submitted():
+            while not stop.is_set():
+                if any(root.glob("delivery-*/request.json")):
+                    shutil.rmtree(root)
+                    return
+                stop.wait(.005)
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            pool.submit(renderer); pool.submit(delete_once_submitted)
+            started = time.monotonic()
+            try:
+                assert gpu_delivery.render_pair(frame, ExportSettings(), frame.adjustments) is None
+            finally:
+                stop.set()
+        assert time.monotonic() - started < 5
+        assert frame._delivery_record["renderer"] == "cpu"
+        assert frame._delivery_cache is None
+        assert (root / "heartbeat").exists()
+        if os.name != "nt":  # Windows ignores POSIX mode bits.
+            assert oct(root.stat().st_mode & 0o777) == "0o700"

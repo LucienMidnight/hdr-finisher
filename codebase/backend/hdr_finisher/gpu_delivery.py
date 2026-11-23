@@ -254,7 +254,9 @@ def _render_pair(frame, owner, settings, adjustments):
             record = {"renderer": "cpu", "fallback_reason":
                 "Exported on the CPU. Graphics-card export for Clean Grain is still being tested."}
             return None
-        if root is None or not (root / "heartbeat").exists() or time.time() - (root / "heartbeat").stat().st_mtime > 5:
+        try: beat_age = time.time() - (root / "heartbeat").stat().st_mtime if root is not None else None
+        except FileNotFoundError: beat_age = None
+        if beat_age is None or beat_age > 5:
             cacheable = False
             raise RuntimeError("The GPU delivery renderer is unavailable.")
         reference = getattr(frame, "sdr_reference_image", None)
@@ -284,7 +286,8 @@ def _render_pair(frame, owner, settings, adjustments):
         reason = "gpu_delivery_failed"
         identity = "delivery-" + uuid4().hex
         directory = root / identity
-        directory.mkdir()
+        try: directory.mkdir()
+        except FileNotFoundError as error: raise SpoolRemovedError(str(error)) from error
         output_releases = {}
         file_sources = None
         if streamed:
@@ -360,6 +363,11 @@ def _render_pair(frame, owner, settings, adjustments):
             total_ms=reply.get("total_ms"), **{k: round(v, 1) for k, v in reply.get("timings_ms", {}).items()})
     except (OSError, ValueError, RuntimeError) as error:
         record = {"renderer": "cpu", "fallback_reason": str(error)}
+        if isinstance(error, SpoolRemovedError) or (directory is not None and not directory.exists()):
+            # The spool vanished mid-request (while staging, waiting or
+            # reading the result); the renderer restores it, so the next
+            # export of this grade should try the GPU again.
+            cacheable = False
     finally:
         if directory is not None:
             with _lock:
@@ -381,6 +389,10 @@ def _render_pair(frame, owner, settings, adjustments):
 
 
 
+class SpoolRemovedError(FileNotFoundError):
+    """The delivery spool vanished mid-request; the renderer recreates it."""
+
+
 def _wait_for_result(directory, root, frame):
     # Queue time is not render time: a job waiting behind Library pictures
     # or another export keeps waiting while the renderer is alive. Only a
@@ -390,6 +402,11 @@ def _wait_for_result(directory, root, frame):
         if getattr(frame, "delivery_cancelled", lambda: False)():
             from concurrent.futures import CancelledError
             raise CancelledError("Delivery cancelled.")
+        if not directory.exists():
+            # Spool deleted from outside while waiting. The renderer recreates
+            # the root and its heartbeat, so the heartbeat check alone would
+            # wait forever for a request that no longer exists.
+            raise SpoolRemovedError("The GPU delivery spool was removed while waiting.")
         if deadline is None and (directory / "claimed").exists():
             deadline = time.monotonic() + RENDER_DEADLINE_SECONDS
         if (deadline is not None and time.monotonic() > deadline) or not (root / "heartbeat").exists() or time.time() - (root / "heartbeat").stat().st_mtime > 10:
@@ -414,6 +431,14 @@ def create_gpu_delivery_router():
     from .library_scheduler import scheduler
     budget_lock = scheduler.lock
     scheduler.gpu_draw_room = 640*640*64 + 64*1024*1024
+
+    def beat():
+        # The renderer's heartbeat proves the spool is alive. Something outside
+        # the app (an agent run's temp cleanup, macOS temp purging) can delete
+        # the folder; recreate it so GPU delivery keeps working instead of
+        # failing every poll and silently sending exports to the CPU.
+        root.mkdir(mode=0o700, parents=True, exist_ok=True)
+        (root / "heartbeat").touch()
 
     def budget_locked(function):
         @wraps(function)
@@ -544,7 +569,7 @@ def create_gpu_delivery_router():
     @router.get("/permit")
     @budget_locked
     def permit(identity: str | None = None):
-        (root / "heartbeat").touch()
+        beat()
         accounting()
         higher = False
         priority_reason = None
@@ -580,7 +605,7 @@ def create_gpu_delivery_router():
     @router.get("/next")
     @budget_locked
     def next_job():
-        (root / "heartbeat").touch()
+        beat()
         accounting()
         if time.monotonic() < _activity["until"] or active or raw_reserved() or scheduler.gpu_reserved():
             return None
@@ -593,7 +618,8 @@ def create_gpu_delivery_router():
             return None
         now = time.time()
         value, directory = min(candidates, key=lambda pair: (_effective_priority(pair[0], now), pair[0]["created"]))
-        (directory / "claimed").touch()
+        try: (directory / "claimed").touch()
+        except FileNotFoundError: return None
         if value.get("operation") in {"edge_colour", "dng_correction", "retouch"}:
             active[value["id"]] = (directory, value)
             value["budget"] = max(0, _activity["budget"] - _activity["bytes"])
@@ -823,6 +849,7 @@ def create_gpu_delivery_router():
             log("gpu_delivery_turn", priority=value.get("priority"), error=reply.get("error"),
                 total_ms=reply.get("total_ms"), **{k: round(v, 1) for k, v in (reply.get("timings_ms") or {}).items()
                     if isinstance(v, (int, float))})
-            if directory.exists(): _atomic(directory / "result.json", reply)
+            try: _atomic(directory / "result.json", reply)
+            except FileNotFoundError: pass  # The waiting worker already gave up.
         return {}
     return router
