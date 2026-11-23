@@ -165,3 +165,20 @@ test("the batch container rejects a bad magic and a truncated payload", () => {
   const truncated = Buffer.concat([good, manifestBytes, Buffer.from([4, 0, 0, 0, 1])].map(Buffer.from));
   assert.throws(() => HDRMaskTileBatch.parse(truncated), /truncated/);
 });
+
+test("a released drag aborts active mask requests without a replacement batch", async () => {
+  const coordinator = new HDRMaskRequestCoordinator(1);
+  const drag = new AbortController();
+  const started = [];
+  const run = coordinator.run("coarse", ["active", "queued"], (mask, _index, signal) => {
+    started.push(mask);
+    return new Promise((resolve, reject) => {
+      signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+    });
+  }, () => true, drag.signal);
+
+  drag.abort();
+  assert.equal((await run).current, false);
+  assert.deepEqual(started, ["active"]);
+  assert.equal(coordinator.snapshot().active, 0);
+});

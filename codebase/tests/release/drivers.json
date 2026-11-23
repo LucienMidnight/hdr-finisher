@@ -1103,6 +1103,17 @@
       }
     },
     {
+      "path": "tests/grade-grain-pruning.js",
+      "areas": [
+        "film"
+      ],
+      "tier": "area",
+      "protects": "Grade tile grain pruning preserves the original WebGPU grain samples bit for bit.",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
       "path": "tests/grain-parity.js",
       "areas": [
         "film"

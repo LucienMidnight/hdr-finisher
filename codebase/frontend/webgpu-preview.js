@@ -2485,15 +2485,15 @@
      * source fetch, scheduler, masks and graph execution. Small command
      * batches write an offscreen target; one final copy presents it.
      */
-    prefetchZoomMasks(canvas, sessionId, locals, editRevision, geometrySignature, sourceOptions, serial, longEdge = 0) {
+    prefetchZoomMasks(canvas, sessionId, locals, editRevision, geometrySignature, sourceOptions, serial, longEdge = 0, requestSignal) {
       if (!sourceOptions?.viewport || sourceOptions?.measureOnly) return;
       const generation = this.resourceGeneration;
       const current = () => generation === this.resourceGeneration
         && serial === this.renderSerials.get(canvas) && sourceOptions?.isCurrent?.() !== false;
       let uncropped = geometrySignature;
       try { uncropped = JSON.stringify({...JSON.parse(geometrySignature), crop: {x: 0, y: 0, width: 1, height: 1}}); } catch { /* keep */ }
+      const signal = requestSignal || this.sourceAbortSignal();
       for (const local of locals) {
-        const signal = this.sourceAbortSignal();
         // A straightened or perspective mask is warped on the GPU: prepare
         // its range (and feather field) instead of a bitmap it will not use.
         const recipe = this.gpuAnalyticMasksEnabled && this.resamplePlan(sessionId, local.mask, longEdge, geometrySignature);
@@ -4071,7 +4071,20 @@
       const denoiseIdentity = denoiseActive
         ? `|denoise:${denoiseSelector.identity}:${JSON.stringify(denoiseControls)}`
         : "";
-      const identity = `${proxy.identity}|${editRevision}|${surface.format}${noiseView ? "|noise" : ""}${denoiseIdentity}`;
+      const gradeTileParams = options.gradePreview && !activeLocals.length && !denoiseActive
+        ? new Float32Array(params) : null;
+      const previous = this.lastPresentedFrame;
+      // Saving an optimistic Grade edit leaves the picture's generation
+      // unchanged when the backend confirms it verbatim. Keep the retained
+      // tiles at that generation if the finish parameters also agree. Local
+      // and Denoise inputs can depend on backend assets at the new revision.
+      const tileRevision = gradeTileParams && (options.roiCatchUp || options.panPass)
+        && this.retainedTiledFrame(options.sessionId, lane, options.geometrySignature || "{}", surface.format)
+        && previous.width === proxy.width && previous.height === proxy.height
+        && previous.applicationGeneration === Number(options.applicationGeneration ?? 0)
+        && previous?.gradeTileParams?.every((value, index) => Object.is(value, gradeTileParams[index]))
+        ? previous.tileRevision : editRevision;
+      const identity = `${proxy.identity}|${tileRevision}|${surface.format}${noiseView ? "|noise" : ""}${denoiseIdentity}`;
       const nodes = ["geometry"];
       if (denoiseActive) nodes.push({ id: "denoise", halo });
       nodes.push("exposure", "white-balance", "curves", "color", "grading");
@@ -4290,7 +4303,7 @@
         : [];
       const sceneMaskSource = options.analysisMasks ? null : await this.loadSceneMaskRegion(
         options.sessionId, proxy, foregroundTiles, activeLocals, longEdge, editRevision,
-        options.geometrySignature || "{}", isCurrent, this.sourceAbortSignal());
+        options.geometrySignature || "{}", isCurrent, options.requestSignal || this.sourceAbortSignal());
       const scenePin = sceneMaskSource?.allocatorEntry && this.gpuAllocator
         ? this.gpuAllocator.pin(sceneMaskSource.allocatorEntry) : null;
       this.markResidentMaskFrame(options.sessionId, activeLocals, options.analysisMasks ? 1600 : longEdge,
@@ -4319,6 +4332,7 @@
                 { lane: options.lane, params, proxy });
             },
             isCurrent,
+            options.requestSignal,
           )
           : { results: [], current: isCurrent() };
       } finally {
@@ -4894,7 +4908,8 @@
           });
 
           this.encodeFilmChain(encoder, pipelines, graph, localSource.createView(),
-            (source, spatial, original) => bind(source, spatial, original), params, width, height);
+            (source, spatial, original) => bind(source, spatial, original), params, width, height,
+            { pruneGrain: options.gradePreview });
         }
         if (options.delivery) {
           encoder.copyTextureToTexture(
@@ -5103,6 +5118,8 @@
           // working space to derive the same parameters before its fetch.
           workingSpace: proxy.workingSpace,
           applicationGeneration: Number(options.applicationGeneration ?? 0),
+          gradeTileParams,
+          tileRevision,
         };
         this.recordFrameMasks({
           execution: "tiled", sessionId: options.sessionId, lane, width: proxy.width, height: proxy.height,
@@ -5306,7 +5323,9 @@
       // Native background measurement used to warm these preview bitmaps.
       // A requested zoom can overlap the same bounded fallback with its source
       // transfer, without compiling a native whole-image measurement mask.
-      this.prefetchZoomMasks(canvas, sessionId, activeLocals, editRevision, geometrySignature, sourceOptions, serial, longEdge);
+      const coarseFetchSignal = sourceOptions?.cancelCoarseFetches && sourceOptions.signal
+        ? AbortSignal.any([sourceOptions.signal, this.sourceAbortSignal()]) : undefined;
+      this.prefetchZoomMasks(canvas, sessionId, activeLocals, editRevision, geometrySignature, sourceOptions, serial, longEdge, coarseFetchSignal);
       // A Match candidate grades the scene picture as SDR whatever the SDR
       // lane's own source is, so it names the lane its source comes from.
       const sourceLane = sourceOptions?.sourceLane || lane;
@@ -5319,6 +5338,7 @@
         sourceIdentity,
         {
           isCurrent: () => this.sourceLoadIsCurrent(canvas, serial, resourceGeneration, sourceOptions),
+          signal: coarseFetchSignal,
           onProgress: sourceOptions?.onSourceProgress,
           region,
           reuseRegionOverlap: this.adaptiveDenoiseSelected()
@@ -5413,6 +5433,7 @@
             isCurrent: () => resourceGeneration === this.resourceGeneration
               && serial === this.renderSerials.get(canvas)
               && sourceOptions?.isCurrent?.() !== false,
+            signal: coarseFetchSignal,
           },
         );
         if (whole) {
@@ -5424,8 +5445,9 @@
       // reconstruction here, the first time this frame is drawn that way.
       const currentRender = () => resourceGeneration === this.resourceGeneration && serial === this.renderSerials.get(canvas)
         && sourceOptions?.isCurrent?.() !== false;
-      const reducedGrain = !microQuick && !sourceOptions?.fineGrainUnderlayer && !sourceOptions?.originalSource
-        && !sourceOptions?.delivery && !sourceOptions?.frameAnchor && !sourceOptions?.measureOnly
+      const reduceGrain = !microQuick && !sourceOptions?.fineGrainUnderlayer && !sourceOptions?.originalSource
+        && !sourceOptions?.delivery && !sourceOptions?.frameAnchor && !sourceOptions?.measureOnly;
+      const reducedGrain = reduceGrain
         ? await this.ensureFineGrainReduced(proxy, editRevision, currentRender, sourceOptions?.tier === "interactive", sourceOptions?.signal, sourceOptions?.action) : null;
       if (!currentRender()) return this.refuseRender("superseded-before-grain-blend");
       if (reducedGrain?.cleanGrainDelta) {
@@ -5433,6 +5455,9 @@
         cleanGrainBlend = this.blendReducedCleanGrain(reducedGrain, strength);
       }
       const fineGrainReduced = cleanGrainBlend || reducedGrain;
+      const approximateDenoise = Boolean(reduceGrain && sourceOptions?.tier === "interactive"
+        && cleanGrain?.gpu && !fineGrainReduced
+        && (proxy.width !== cleanGrain.width || proxy.height !== cleanGrain.height));
       if (fineGrainReduced && plan.decision.mode !== "tiled") sourceProxy = fineGrainReduced;
       else if (!sourceOptions?.originalSource && plan.decision.mode !== "tiled"
         && await this.ensureDenoiseResolved(proxy, currentRender, sourceOptions?.signal, quickCpuGrain)) {
@@ -5492,6 +5517,7 @@
           isCurrent: isMaskCurrent,
           remember: !sourceOptions?.measureOnly || Boolean(sourceOptions?.scopeAnalysis),
           hue: { lane, params: new Float32Array(params), proxy: sourceProxy },
+          requestSignal: coarseFetchSignal,
         });
         masks = loadedMasks.results;
         masksReadyAt = performance.now();
@@ -5583,6 +5609,8 @@
           signal: sourceOptions?.signal,
           action: sourceOptions?.action,
           originalSource: sourceOptions?.originalSource,
+          gradePreview: sourceOptions?.gradePreview,
+          requestSignal: coarseFetchSignal,
           delivery: sourceOptions?.delivery,
           beforeDeliverySubmit: sourceOptions?.beforeDeliverySubmit,
           tileBatchSize: sourceOptions?.delivery ? 4 : undefined,
@@ -5621,7 +5649,7 @@
         // size of the picture it produced: geometry trims the frame. The
         // viewer needs the former to decide whether the selected tier has
         // been reached.
-        return { ...tiled, sourceSerial: serial, processedLongEdge: proxy.longEdge };
+        return { ...tiled, approximate: tiled.approximate || approximateDenoise, sourceSerial: serial, processedLongEdge: proxy.longEdge };
       }
       const intermediate = this.ensureIntermediate(
         canvas,
@@ -6073,7 +6101,7 @@
       }
       draftReturned = true;
       return {
-        approximate: Boolean(sourceOptions?.tier === "interactive" && !sourceOptions?.delivery && !sourceOptions?.measureOnly
+        approximate: approximateDenoise || Boolean(sourceOptions?.tier === "interactive" && !sourceOptions?.delivery && !sourceOptions?.measureOnly
           && params[GPU_PARAMS.GRAIN_ENABLED] > 0.5 && params[GPU_PARAMS.GRAIN_AMOUNT] > 0),
         presentationTexture: draftPresentation,
         presentationFormat: surface.format,
@@ -8664,7 +8692,9 @@
         pass(filmView, pipelines.scatter, bind(finishView, a, originalView));
       }
       if (halation) spatial();
-      pass(finishView, options.interactive ? pipelines.finishInteractive : pipelines.finish, bind(filmView, a, originalView));
+      const finish = options.interactive ? pipelines.finishInteractive
+        : options.pruneGrain ? pipelines.finishPrunedGrain : pipelines.finish;
+      pass(finishView, finish, bind(filmView, a, originalView));
       const structure = params[GPU_PARAMS.STRUCTURE_ENABLED] > 0.5
         && (Math.abs(params[GPU_PARAMS.STRUCTURE_SOFTNESS]) > 0.000001 || Math.abs(params[GPU_PARAMS.STRUCTURE_MICROCONTRAST]) > 0.000001);
       const map = active && ((halation && params[GPU_PARAMS.HALATION_VIEW_MAP] > 0.5)
@@ -8794,6 +8824,12 @@
         fragment: { module: this.module, entryPoint: "finishFragmentMain", targets: [{ format: "rgba16float" }] },
         primitive: { topology: "triangle-list" },
       });
+      const finishPrunedGrain = create({
+        layout: this.pipelineLayout,
+        vertex: { module: this.module, entryPoint: "vertexMain" },
+        fragment: { module: this.module, entryPoint: "finishFragmentMain", constants: { pruneGrain: true }, targets: [{ format: "rgba16float" }] },
+        primitive: { topology: "triangle-list" },
+      });
       const finishInteractive = create({
         layout: this.pipelineLayout,
         vertex: { module: this.module, entryPoint: "vertexMain" },
@@ -8865,6 +8901,7 @@
         hslFields,
         hslMask,
         finish,
+        finishPrunedGrain,
         finishInteractive,
         scopePeakTile,
         local,
@@ -9301,7 +9338,7 @@
 
     async loadDirectMasks({
       generation, sessionId, activeLocals, longEdge, editRevision, geometrySignature, isCurrent = () => true,
-      remember = true, hue = null,
+      remember = true, hue = null, requestSignal,
     }) {
       const tasks = Array.from(activeLocals || []);
       if (!tasks.length) return { results: [], current: isCurrent() };
@@ -9310,7 +9347,7 @@
         for (const local of tasks) {
           if (!isCurrent()) break;
           results.push(await this.loadLocalMask(
-            sessionId, local, longEdge, editRevision, geometrySignature, isCurrent, undefined, remember, hue,
+            sessionId, local, longEdge, editRevision, geometrySignature, isCurrent, requestSignal, remember, hue,
           ));
         }
         while (results.length < tasks.length) results.push(null);
@@ -9323,6 +9360,7 @@
           sessionId, local, longEdge, editRevision, geometrySignature, isCurrent, signal, remember, hue,
         ),
         isCurrent,
+        requestSignal,
       );
     }
 

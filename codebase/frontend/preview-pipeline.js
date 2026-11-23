@@ -1,8 +1,10 @@
 // Selection work can outlast an input interval at native zoom. Finish one
 // exact snapshot, then render the scheduler's newest pending edit, as Denoise
-// already does. Source/lane/geometry changes and release still retire it.
-function pacedPreviewInteraction(lane) {
+// already does. A source, lane or geometry change retires the snapshot. On
+// release, a snapshot can present only if it still matches the latest edit.
+function pacedPreviewInteraction(lane, reason) {
   if (!state.previewScheduler?.interacting) return false;
+  if ((reason ?? state.renderCoordinator?.inFlight?.(lane)?.request.reason) === "drag-coarse") return true;
   if (state.denoise?.[lane]?.enabled) return true;
   const creativeLane = lane === "sdr" && state.adjustments?.sdr?.linked_to_hdr ? "hdr" : lane;
   const branch = state.adjustments?.[creativeLane];
@@ -130,9 +132,10 @@ async function settlePreviewInner(lane, task, action) {
   if (pendingEdits && await pendingEdits === false) return false;
   if (workGeneration !== state.gradeWorkGeneration) return false;
   if (!state.session || state.rotateDraftGeometry || state.perspectiveMode) return false;
+  if (task.isCurrent?.() === false) return false;
   if (task.applicationGeneration !== undefined
     && task.applicationGeneration !== state.previewGeneration[lane]) return false;
-  if (state.acceptedPresentation?.lane === lane
+  if (!task.localCommit && state.acceptedPresentation?.lane === lane
     && state.acceptedPresentation.exact
     && state.acceptedPresentation.generation === state.previewGeneration[lane]
     && state.acceptedPresentation.geometrySignature === geometrySignature()
@@ -153,6 +156,7 @@ async function settlePreviewInner(lane, task, action) {
     if (gpuPreviewEligible(lane)) {
       const options = { longEdge, tier, action, preservePicture: task.preservePicture };
       let rendered = await renderGpuDraft(lane, options);
+      if (task.isCurrent?.() === false) return false;
       // Latest-wins cancellation is expected while a mask proxy or edit
       // revision changes underneath a Full render. If this is still the
       // current scheduler task, retry once after the serialized edit queue has
@@ -832,7 +836,8 @@ function renderGpuDraft(lane = state.currentView, options = {}) {
       hideStatus: options.hideStatus !== false,
       preservePicture: Boolean(options.preservePicture),
       coarse: Boolean(options.coarse),
-      interactiveSnapshot: tier === "interactive" && pacedPreviewInteraction(lane),
+      interactiveSnapshot: (tier === "interactive" || options.reason === "drag-coarse")
+        && pacedPreviewInteraction(lane, options.reason || tier),
     })
     : renderGpuDraftInner(lane, { ...options, action });
   state.gpuDraftInFlight = pending;
@@ -1084,6 +1089,9 @@ async function renderGpuDraftForView(lane, request) {
     frameSize,
     roiCatchUp,
     panPass,
+    gradePreview: state.activeWorkflow === "grade" && Boolean(request.token)
+      && !allowInactive && !request.underlayerOnly,
+    cancelCoarseFetches: request.reason === "drag-coarse",
     // First paint only the visible CPU Grain tiles. Pan requests use the
     // ordinary padding once this preparation has an exact picture.
     minimumRoiFraction: boundedPresentation && cpuGrainToken && !preparedGrain.warmedRegion && !panPass

@@ -36,17 +36,18 @@ beforeEach(() => {
 
 function harness() {
   const events = [];
+  const settledGenerations = [];
   let finishFrame = null;
   const scheduler = new global.HDRPreviewScheduler({
     onFrame: () => new Promise((resolve) => {
       events.push("frame-start");
       finishFrame = () => { events.push("frame-end"); resolve(true); };
     }),
-    onSettle: async () => { events.push("settle"); },
+    onSettle: async (task) => { events.push("settle"); settledGenerations.push(task.applicationGeneration); },
     onScope: async (task) => { events.push(`scope:${task.tier}`); },
   });
   scheduler.lastScopeStartedAt = performance.now();
-  return { scheduler, events, finish: () => finishFrame?.() };
+  return { scheduler, events, settledGenerations, finish: () => finishFrame?.() };
 }
 
 test("release after a completed drag frame settles without the 110 ms wait", async () => {
@@ -73,8 +74,8 @@ test("release with a frame on the GPU settles as soon as that frame finishes", a
   const frame = animationFrames.shift()(0);
   await Promise.resolve();
   scheduler.endInteraction();
-  // Nothing may settle over the top of the frame still in flight except the
-  // ordinary debounce, which stays armed as the fallback.
+  // A release keeps a timer for queued work, but an in-flight frame must
+  // retire before settling.
   assert.ok(settleTimers().every((timer) => timer.delay > 0), "a zero-delay settle was armed over a frame in flight");
   finish();
   await frame;
@@ -92,6 +93,23 @@ test("input still arriving keeps the settle debounce", () => {
   scheduler.beginInteraction();
   scheduler.schedule("hdr", 1);
   assert.deepEqual(settleTimers().map((timer) => timer.delay), [110]);
+});
+
+test("release settles the latest value without drawing a coalesced drag frame", async () => {
+  const { scheduler, events, settledGenerations, finish } = harness();
+  scheduler.beginInteraction();
+  scheduler.schedule("hdr", 1);
+  const frame = animationFrames.shift()(0);
+  scheduler.schedule("hdr", 2);
+  scheduler.endInteraction();
+  finish();
+  await frame;
+  assert.equal(animationFrames.length, 0, "no extra drag frame should run after release");
+  const settle = settleTimers().at(-1);
+  assert.equal(settle.delay, 0);
+  await settle.callback();
+  assert.deepEqual(events, ["frame-start", "frame-end", "settle", "scope:settled"]);
+  assert.deepEqual(settledGenerations, [2]);
 });
 
 test("an edit without a gesture keeps the settle debounce", () => {
@@ -113,4 +131,57 @@ test("a release superseded by newer input does not settle the old task", async (
   await flush();
   // Only the newer input's own debounce may remain.
   assert.deepEqual(settleTimers().map((timer) => timer.delay), [110]);
+});
+
+test("a pause while holding waits for the paced frame, then settles once", async () => {
+  const { scheduler, events, finish } = harness();
+  scheduler.beginInteraction();
+  scheduler.schedule("hdr", 1);
+  const frame = animationFrames.shift()(0);
+  const debounce = settleTimers().at(-1);
+  await debounce.callback();
+  assert.deepEqual(events, ["frame-start"]);
+  finish();
+  await frame;
+  const settle = settleTimers().at(-1);
+  assert.equal(settle.delay, 0);
+  await settle.callback();
+  assert.equal(scheduler.interacting, true);
+  scheduler.endInteraction();
+  scheduler.endInteraction();
+  assert.equal(settleTimers().at(-1), settle);
+  assert.deepEqual(events, ["frame-start", "frame-end", "settle", "scope:settled"]);
+});
+
+test("slow release cannot settle from both the timer and the frame retirement", async () => {
+  const { scheduler, events, finish } = harness();
+  scheduler.beginInteraction();
+  scheduler.schedule("hdr", 1);
+  const frame = animationFrames.shift()(0);
+  scheduler.endInteraction();
+  const releaseTimer = settleTimers().at(-1);
+  await releaseTimer.callback();
+  assert.deepEqual(events, ["frame-start"]);
+  finish();
+  await frame;
+  await settleTimers().at(-1).callback();
+  scheduler.endInteraction();
+  assert.deepEqual(events, ["frame-start", "frame-end", "settle", "scope:settled"]);
+});
+
+test("a newer input after a pause still draws live", async () => {
+  const { scheduler, events, finish } = harness();
+  scheduler.beginInteraction();
+  scheduler.schedule("hdr", 1);
+  const firstFrame = animationFrames.shift()(0);
+  await settleTimers().at(-1).callback();
+  scheduler.schedule("hdr", 2);
+  finish();
+  await firstFrame;
+  const secondFrame = animationFrames.shift()(20);
+  finish();
+  await secondFrame;
+  assert.deepEqual(events, ["frame-start", "frame-end", "frame-start", "frame-end"]);
+  await settleTimers().at(-1).callback();
+  assert.deepEqual(events.slice(-2), ["settle", "scope:settled"]);
 });

@@ -1,3 +1,88 @@
+## November 23, 2026 — Grade Film Look edits and exact grain at zoom
+
+MacBook Neo (A18 Pro, 8 GB), real Electron at 1408 × 794 points and 2×,
+under the shared GPU lock. Warm IMG_3129.CR2 at 31% zoom, 1841 × 1229
+processing pixels, HDR Grade. The recipe was reconstructed with Vision3,
+2383, grain 23.6, halation 3.6 and Black Pro-Mist 1/8. The baseline is
+`e0acf2a9`. The intermediate column has the discrete-edit and scope fix.
+The final column includes slider scheduling and exact grain pruning. The
+exploratory timing tolerance is 20% due to window and app activity.
+Click timings end at the first exact presentation for the current edit.
+Release timings start at pointerup.
+
+| Action | Baseline | Discrete-edit fix | Final |
+| --- | ---: | ---: | ---: |
+| Film Look on, zoomed | 6.31 s | 3.28 s | 3.17 s across two warm toggles |
+| Tone eye, zoomed | 6.41 s | 3.35 s | 3.18 s |
+| Halation input, zoomed | 6.30 s | 3.35 s | 3.21 s |
+| Film Look on with grain disabled, zoomed | 4.27 s | 2.26 s | 2.24 s with the matched recipe |
+| Film Look off, zoomed | 46–49 ms | 163–174 ms | 156–169 ms |
+| Film Look on at Fit, feedback then exact | 24 / 141 ms | 23 / 143 ms | 13 / 132 ms |
+| Grain drag release at the value already rendering | — | 6.17 s, five foreground attempts and two complete tile passes | 2.88 s, one foreground attempt and one complete tile pass |
+| Grain drag release at a new value | — | 6.10 s, five foreground attempts and two complete tile passes | 5.91 s, two foreground attempts and two complete tile passes |
+
+The settled zoomed edits produced one foreground tile pass and one settled
+scope request. The whole-frame follow-up reused all 12 tiles. The intermediate
+slider run provides the matched release-to-Ready comparison and retains the
+old slider behavior. One final Film Look toggle was interrupted by an Electron
+display-state update. Its 6.19 s trace was repeated twice once the display
+had settled.
+[Intermediate trace](../../codebase/output/film-look-grade-diagnostic/render-path-part1-scope.json)
+[Final trace](../../codebase/output/film-look-grade-diagnostic/render-path-final.json)
+[Warm repeats](../../codebase/output/film-look-grade-diagnostic/render-path-final-warm.json)
+[Matched grain-disabled run](../../codebase/output/film-look-grade-diagnostic/render-path-final-warm-grainless.json)
+
+The follow-up check on the same Mac and recipe repeated Film Look on at
+3.17 s and the same-value grain release at 2.88 s. With Faster dragging
+enabled, continuous slider input presented two softer frames (at 0.92 s
+and 1.56 s), cancelled the pending coarse work on release and showed the
+exact frame 3.24 s after release.
+[Follow-up trace](../../codebase/output/film-look-grade-diagnostic/render-path-final-warm-review.json)
+
+After the brush and release fixes, the same Mac, photo, zoom and Film Look
+recipe showed the Film Look On picture in 3.31 s (within the 20% tolerance).
+With a painted brush adjustment selected, three `]` presses saved the larger
+brush without a GPU draw or scope refresh. Changing adjustment opacity to 60%
+showed one exact zoomed picture in 3.29 s and one settled scope at 3.83 s.
+The later whole-frame catch-up took 16 ms from draw to presentation.
+[Brush and release trace](../../codebase/output/film-look-grade-diagnostic/brush-release-electron.json)
+
+The 512 px tiles used a 104 px halo and processed 4.05 million pixels for a
+2.26 million-pixel picture. Warm full-look timing was 3.11–3.18 s. Turning
+off grain took 2.20 s. Turning off mist took 0.66–0.68 s and reduced the halo
+to 12 px. Turning off halation took 3.10 s with mist still on. Halation with
+stock and both mist and grain off took 30 ms versus 28 ms for stock alone and
+23 ms with stock bypassed. Each tile with mist runs one extract and 27
+horizontal/vertical blur pairs before applying diffusion. The CPU encoded
+the 12 tiles in about 3–7 ms. The 32 KiB peak readback spent roughly 3.1 s
+waiting for the queued graph to complete. Per-pass timestamp intervals
+overlapped or included queued work on this GPU, so feature costs come from
+matched wall-clock probes. The GPU processing scale was 0.353 in this
+fixture, so exact grain drew nine spatial samples over three colour layers
+for every pixel.
+
+Pruning impossible grain candidates in the Grade tile shader kept all
+18,100,712 bytes and the measured peak identical in the production
+before/after compare. Repeated isolated renders used the exact same grain
+samples. Full look render time fell from a 3.18 s median to 2.96 s. With
+mist off it fell from 663 to 553 ms. The production pair measured 3.14 to
+3.10 s. In two additional byte-exact pairs, a silver grain map at 1000 px
+and a 1841 px single-sample native-scale simulation exercised the same
+pruning. Native-scale colour grain with scan sharpening took 92 to 62 ms
+in that probe. Tile-size probes at 256, 768 and 1024 px took 5.54, 2.60 and
+2.36 s. The latter two matched pixels and peak on this photo with tile
+scratch of 69 and 109 MB versus 37 MB at 512 px. The shipping tile size
+remains 512 px.
+[Stage and tile probe](../../codebase/output/film-look-grade-diagnostic/grain-profile.json)
+[Matched pixel and timing comparison](../../codebase/output/film-look-grade-diagnostic/grain-profile-compare.json)
+
+The Python grain profile used a deterministic 256 × 256 RGB patch on the
+same Mac. CPU native uses one sample and took 48 ms. Most profiled time was
+in the band splat (31 ms of 47 ms). CPU proxy scale 0.31 used 16 samples and
+took 3.59 s, mostly in cell construction and allocation, hashing and band
+splats. CPU export uses the native one-sample kernel.
+[CPU grain profile](../../codebase/output/film-look-grade-diagnostic/cpu-grain-profile.json)
+
 ## November 23, 2026 — Grade Film Look warm zoom
 
 MacBook Neo (A18 Pro, 8 GB, Electron 1408 × 794 at 2×), uncommitted change

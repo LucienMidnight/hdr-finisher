@@ -336,3 +336,18 @@ test("a rejected GPU scope resolves false and releases the queue", async () => {
   assert.deepEqual(errors, [["GPU scope refresh failed", error]]);
   assert.equal(state.gpuScopeRequestInFlight, null);
 });
+
+test("the watchdog lets an active frame and its pending settle finish", () => {
+  const { c, state, edits } = fixture();
+  state.previewWatchdogRearms = 0;
+  c.installPreviewWatchdog();
+  state.previewScheduler.frameInFlight = true;
+  c.watchdogTick();
+  state.previewScheduler.frameInFlight = false;
+  state.previewScheduler.settleTimer = 1;
+  c.watchdogTick();
+  assert.equal(edits.length, 0);
+  state.previewScheduler.settleTimer = null;
+  c.watchdogTick();
+  assert.equal(edits.length, 1);
+});

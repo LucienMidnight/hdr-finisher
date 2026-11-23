@@ -159,7 +159,8 @@ function installPreviewWatchdog() {
       state.previewWatchdogRearms = 0;
       return;
     }
-    if (state.previewScheduler.interacting || state.gpuDraftInFlight
+    if (state.previewScheduler.interacting || state.previewScheduler.frameInFlight
+      || state.previewScheduler.settleTimer != null || state.gpuDraftInFlight
       || state.zoomRefinementTimer || state.zoomRefinementInFlight) return;
     const cpuFlight = state.cpuPreviewInflight?.get(state.currentView);
     if (cpuFlight?.sessionId === state.session.session_id
@@ -196,11 +197,10 @@ function initializePreviewScheduler() {
           coarse: true, scale: 0.5 };
       }
       if (decision.coarse) decision.edge = responseCoarseLongEdge(refinementProxyLongEdge());
-      // The renderer refuses a whole-frame tiled drag frame, but only after
-      // the source and parameters are prepared. Refuse it here, before that
-      // work; the settled pass draws the edit. A magnified view is a bounded
-      // region pass and goes through.
-      if (tiled && !decision.coarse && state.zoomMode !== "custom") {
+      // Let the settled pass draw exact tiles once the edit has synced.
+      // During a gesture, a magnified view can still draw a bounded region
+      // live. A whole-frame exact tiled drag would be refused by the renderer.
+      if (tiled && !decision.coarse && (!gesture || state.zoomMode !== "custom")) {
         const reason = "pre-dispatch-tiled";
         state.lastGpuDraftRefusal = { reason, lane: task.lane, tier: "interactive", at: performance.now() };
         const key = `interactive:${reason}`;
@@ -251,11 +251,22 @@ function initializePreviewScheduler() {
       // runs beside them rather than inside this callback so an overlay render
       // never delays or inflates the scope pass.
       if (task.lane === state.currentView) requestLiveOverlay(task.tier);
+      // Tiled previews get a whole-picture scope proxy at settle. An
+      // interactive request before the frame arrives would also ask for a
+      // settled proxy on presentation, racing the scheduler's settled scope.
+      if (task.tier === "interactive" && interactiveDraftGuaranteedTiled(task.lane)) return false;
       return refreshScopes(scopeLongEdge(task.tier), {
         tier: task.tier,
         generation: task.scopeGeneration,
         lane: task.lane,
       });
+    },
+    onRelease: ({ lane }) => {
+      const coordinator = state.renderCoordinator;
+      if (coordinator?.inFlight(lane)?.request.reason === "drag-coarse") {
+        coordinator.cancelInFlight(lane, "drag-released");
+      }
+      coordinator?.dropPending(lane, "drag-released", "drag-coarse");
     },
     onSettle: (task) => settlePreview(task.lane, task),
     onRefine: (task) => refinePreview(task.lane, task),

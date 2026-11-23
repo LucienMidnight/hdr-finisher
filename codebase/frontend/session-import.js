@@ -764,6 +764,7 @@ function retireActiveSession(replacementSessionId = null, { preservePicture = fa
   state.localPreviewDirty = false;
   state.localMaskCommitDepth = 0;
   state.localMaskCommitRefreshPending = false;
+  state.localMaskCommitSettlePending = false;
   state.localErase = false;
   clearPreviewCache({ preservePicture });
 }

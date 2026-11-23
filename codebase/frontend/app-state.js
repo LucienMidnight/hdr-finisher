@@ -364,6 +364,7 @@ const state = {
   localPreviewDirty: false,
   localMaskCommitDepth: 0,
   localMaskCommitRefreshPending: false,
+  localMaskCommitSettlePending: false,
   localErase: false,
   projectPath: "",
   globalEditDirty: false,

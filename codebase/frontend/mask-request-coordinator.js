@@ -27,10 +27,11 @@
       this.generation = null;
     }
 
-    async run(generation, tasks, worker, isCurrent = () => true) {
+    async run(generation, tasks, worker, isCurrent = () => true, requestSignal) {
       this.cancel();
       const serial = this.serial;
       const controller = new AbortController();
+      const signal = requestSignal ? AbortSignal.any([controller.signal, requestSignal]) : controller.signal;
       this.controller = controller;
       this.generation = generation;
       const queue = Array.from(tasks || []);
@@ -39,17 +40,17 @@
 
       const next = async () => {
         while (cursor < queue.length) {
-          if (serial !== this.serial || controller.signal.aborted || !isCurrent()) return;
+          if (serial !== this.serial || signal.aborted || !isCurrent()) return;
           const index = cursor;
           cursor += 1;
           // Recheck after claiming the slot. A generation can be superseded
           // between turns without allowing its queued request to reach fetch.
-          if (serial !== this.serial || controller.signal.aborted || !isCurrent()) return;
+          if (serial !== this.serial || signal.aborted || !isCurrent()) return;
           this.active += 1;
           this.started += 1;
           this.maxObserved = Math.max(this.maxObserved, this.active);
           try {
-            results[index] = await worker(queue[index], index, controller.signal);
+            results[index] = await worker(queue[index], index, signal);
           } catch (error) {
             if (error?.name !== "AbortError") throw error;
             this.cancelled += 1;
@@ -64,7 +65,7 @@
         () => next(),
       );
       await Promise.all(workers);
-      const current = serial === this.serial && !controller.signal.aborted && isCurrent();
+      const current = serial === this.serial && !signal.aborted && isCurrent();
       if (current && this.controller === controller) this.controller = null;
       return { results, current };
     }

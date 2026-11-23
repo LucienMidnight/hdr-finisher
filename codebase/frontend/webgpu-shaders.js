@@ -1002,6 +1002,7 @@ fn fineGrainResizeBase(@builtin(global_invocation_id) id: vec3u) {
 
   const SHADER_SOURCE = String.raw`
     override interactiveGrain: bool = false;
+    override pruneGrain: bool = false;
     @group(0) @binding(0) var sourceTexture: texture_2d<f32>;
     @group(0) @binding(1) var<storage, read> p: array<f32>;
     @group(0) @binding(2) var<storage, read> curveLuts: array<f32>;
@@ -2390,12 +2391,25 @@ fn fineGrainResizeBase(@builtin(global_invocation_id) id: vec3u) {
       for (var dy = -1; dy <= 1; dy++) {
         for (var dx = -1; dx <= 1; dx++) {
           let cell = base + vec2i(dx, dy);
+          if (pruneGrain) {
+            // Every center is inside its cell, and its radius is at most 0.7.
+            // Leave a margin before rejecting a cell at the f32 boundary.
+            let boxDistance = max(max(vec2f(cell) - u, u - (vec2f(cell) + vec2f(1.0))), vec2f(0.0));
+            if (dot(boxDistance, boxDistance) > 0.491401) { continue; } // 0.701 squared
+          }
           let hashed = grainCellHash(cell, seeded);
           let count = grainCount(grainUniform(hashed, 999u));
           for (var k = 0u; k < count; k++) {
             let key = 8u * k;
             let centre = vec2f(cell) + vec2f(grainUniform(hashed, key + 1u), grainUniform(hashed, key + 2u));
             let radius = 0.3 + 0.4 * grainUniform(hashed, key + 3u);
+            if (pruneGrain) {
+              // A conservative rejection keeps the original radius test and
+              // float arithmetic for every grain that could contribute.
+              let delta = u - centre;
+              let bound = radius + 0.0001;
+              if (dot(delta, delta) > bound * bound) { continue; }
+            }
             let rho = length(u - centre) / radius;
             if (rho < 1.0) {
               let t = clamp((rho - edge) / (1.0 - edge), 0.0, 1.0);

@@ -297,9 +297,9 @@
       return st.inFlight.token.cancel(reason);
     }
 
-    dropPending(lane, reason) {
+    dropPending(lane, reason, requestReason) {
       const st = this.laneState(lane);
-      if (!st.pending) return false;
+      if (!st.pending || (requestReason !== undefined && st.pending.request.reason !== requestReason)) return false;
       const pending = st.pending;
       st.pending = null;
       this.settleEntry(st, pending, false, reason);
