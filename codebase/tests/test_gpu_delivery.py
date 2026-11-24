@@ -642,6 +642,9 @@ def test_spool_deleted_mid_delivery_ends_the_wait_and_retries_gpu_next_time(tmp_
         assert time.monotonic() - started < 5
         assert frame._delivery_record["renderer"] == "cpu"
         assert frame._delivery_cache is None
+        # The worker can notice the missing folder before the renderer's next
+        # poll, so make that poll explicitly instead of racing the thread.
+        client.get("/api/delivery/gpu/permit")
         assert (root / "heartbeat").exists()
         if os.name != "nt":  # Windows ignores POSIX mode bits.
             assert oct(root.stat().st_mode & 0o777) == "0o700"
