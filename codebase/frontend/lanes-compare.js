@@ -121,6 +121,7 @@ async function renderBeforePreview({ force = false } = {}) {
 
 async function beginBeforePeek() {
   if (!state.session || state.compareLayout !== "single" || state.beforePeekWanted) return;
+  cancelGeometryUnderlayer();
   state.beforePeekWanted = true;
   const shown = await renderBeforePreview();
   if (!shown || !state.beforePeekWanted) {
@@ -141,6 +142,7 @@ function endBeforePeek() {
 
 async function switchLane(lane) {
   if (!["hdr", "sdr"].includes(lane)) return;
+  cancelGeometryUnderlayer();
   const switchGeneration = ++state.laneSwitchGeneration;
   state.comparePendingPeek = false;
   endBeforePeek();
@@ -175,6 +177,8 @@ async function switchLane(lane) {
   const attemptedGpu = gpuPreviewEligible(lane);
   const rendered = attemptedGpu && await renderGpuDraft(lane, { longEdge: settledProxyLongEdge() });
   if (switchGeneration !== state.laneSwitchGeneration || lane !== state.currentView) return;
+  if (attemptedGpu && !rendered && (previewSourceCapacityRefused()
+    || state.lastGpuDraftRefusal?.reason === "geometry-after-offscreen")) return;
   const denoiseFallback = !rendered && state.denoise[lane].enabled && (!attemptedGpu || !transientGpuRefusal());
   if (!rendered && !(cacheReady(lane) && await showCachedPreview(lane, { skipGpu: denoiseFallback }))) {
     if (switchGeneration !== state.laneSwitchGeneration || lane !== state.currentView) return;
@@ -362,6 +366,7 @@ async function endCompareHold() {
 
 async function peekOtherLane() {
   if (state.compareLayout !== "single") return false;
+  cancelGeometryUnderlayer();
   const other = state.currentView === "hdr" ? "sdr" : "hdr";
   if (!cacheReady(other)) {
     // Explicit comparison intent: prepare the lane now instead of leaving the
@@ -387,6 +392,7 @@ async function restoreActiveLane() {
 
 async function setCompareLayout(layout) {
   if (!COMPARE_LAYOUTS.has(layout)) return;
+  cancelGeometryUnderlayer();
   endBeforePeek();
   state.compareLayout = layout;
   state.comparePeekActive = false;

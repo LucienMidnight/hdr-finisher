@@ -103,6 +103,7 @@ function queueEditCommand(commandType, payload = {}, targetId = null, { refreshP
       && globalEditGeneration !== state.globalEditGeneration;
     const optimisticAdjustments = preserveNewerGlobalEdit ? state.adjustments : null;
     const draftGeometry = geometryDraftActive() ? state.adjustments.shared.geometry : null;
+    const previousGeometrySignature = geometrySignature();
     const shownInputs = refreshPreview === "if-changed"
       ? stablePreviewJson([state.adjustments, state.editDocument?.local_adjustments]) : null;
     const creativeBefore=stablePreviewJson([state.adjustments,state.editDocument?.local_adjustments,
@@ -147,6 +148,8 @@ function queueEditCommand(commandType, payload = {}, targetId = null, { refreshP
       }
     }
     if (draftGeometry) state.adjustments.shared.geometry = draftGeometry;
+    const geometryChanged = geometrySignature() !== previousGeometrySignature;
+    if (geometryChanged) state.geometryPresentationPending = true;
     if (state.geometryTransformHandoffSignature
       && state.geometryTransformHandoffSignature !== geometrySignature()) {
       state.geometryTransformHandoffSignature = null;
@@ -184,7 +187,7 @@ function queueEditCommand(commandType, payload = {}, targetId = null, { refreshP
     if (typeof window.HDRPhotoFramingUI!=="undefined") {
       window.HDRPhotoFramingUI.render();applyZoomGeometry();window.HDRProofing?.invalidate();
     }
-    if (previewInputsChanged && !framingOnlyHistory) {
+    if (geometryChanged || (previewInputsChanged && !framingOnlyHistory)) {
       invalidatePreview("hdr", { local: true });
       invalidatePreview("sdr", { local: true });
       debouncePreview(state.currentView);
@@ -292,6 +295,7 @@ async function refreshEditState({ preserveLocalDraft = false } = {}) {
   const result = await safeJson(response);
   if (!response.ok || state.session?.session_id !== sessionId) return;
   const draftGeometry = geometryDraftActive() ? state.adjustments.shared.geometry : null;
+  const previousGeometrySignature = geometrySignature();
   const previousRepairs = JSON.stringify(state.editDocument?.repairs || []);
   state.editRevision = result.revision;
   state.editDocument = result.document;
@@ -303,6 +307,12 @@ async function refreshEditState({ preserveLocalDraft = false } = {}) {
   state.documentDirty = state.globalEditDirty || Boolean(result.dirty);
   state.adjustments = result.document.global_adjustments;
   if (draftGeometry) state.adjustments.shared.geometry = draftGeometry;
+  if (state.geometryPresentationPending || geometrySignature() !== previousGeometrySignature) {
+    state.geometryPresentationPending = true;
+    invalidatePreview("hdr", { local: true });
+    invalidatePreview("sdr", { local: true });
+    debouncePreview(state.currentView);
+  }
   // Rebuilding the active range input releases pointer capture. Keep the
   // existing control alive while its optimistic local object is still in use.
   if (!preserveLocalDraft) renderLocalAdjustments();

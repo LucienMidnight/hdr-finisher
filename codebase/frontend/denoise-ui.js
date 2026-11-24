@@ -332,7 +332,7 @@ async function setDenoiseEnabled(enabled, { action } = {}) {
     if (rendered === false && saved && state.editRevision !== revision) {
       rendered = await renderGpuDraft(lane, { longEdge });
     }
-    if (rendered === false && !transientGpuRefusal() && saved && isCurrent() && lane === state.currentView) {
+    if (rendered === false && !transientGpuRefusal() && !previewSourceCapacityRefused() && saved && isCurrent() && lane === state.currentView) {
       await renderPreviewForLane(lane, true, longEdge, { denoiseFallback: true });
     }
     if (!isCurrent()) return;
@@ -367,7 +367,7 @@ async function setDenoiseEnabled(enabled, { action } = {}) {
     renderDenoiseControls();
     const rendered = await renderGpuDraft(lane, { longEdge });
     if (!isCurrent()) return;
-    if (rendered === false && lane === state.currentView && !transientGpuRefusal()) {
+    if (rendered === false && lane === state.currentView && !transientGpuRefusal() && !previewSourceCapacityRefused()) {
       if (!runtime.microBackup) denoiseRetryError(lane, "The GPU could not draw the denoised preview.");
       await renderPreviewForLane(lane, true, longEdge, { denoiseFallback: true });
       return;
@@ -389,8 +389,9 @@ function nativeDenoiseViewport(lane) {
     && gradeGrainGpuEnabled(lane)
     && requiredProcessingLongEdge() === previewTargetLongEdge("full");
   return state.zoomMode === "custom" && (state.zoomPercent >= 100 || nativeMicro)
-    && (Boolean(state.denoise[lane]?.enabled) || gradeGrainGpuPreferred(lane)
-      || (state.activeWorkflow === "grade" && lane === state.currentView && Boolean(els.previewCanvas.hdrFrameRegion)));
+    && (Boolean(state.denoise[lane]?.enabled) || (gradeGrainGpuPreferred(lane) && !nativeGeometryViewportActive(lane))
+      || (state.activeWorkflow === "grade" && lane === state.currentView && Boolean(els.previewCanvas.hdrFrameRegion)
+        && !els.previewCanvas.hdrFrameRegion.nativeGeometryViewport));
 }
 
 function gradeGrainGpuPreferred(lane) {
@@ -552,7 +553,7 @@ async function recalculateDenoiseForView(lane, options) {
       geometrySignature(), sourceIdentity);
     const rendered = await renderGpuDraft(lane, { longEdge: currentEdge, action: options.action });
     if (!current() || pending.generation !== runtime.generation) return false;
-    if (rendered === false && lane === state.currentView && !transientGpuRefusal()) {
+    if (rendered === false && lane === state.currentView && !transientGpuRefusal() && !previewSourceCapacityRefused()) {
       if (!runtime.microBackup) denoiseRetryError(lane, "The GPU could not draw the denoised preview.");
       await renderPreviewForLane(lane, true, currentEdge, { denoiseFallback: true });
       return false;

@@ -4,6 +4,9 @@ const { test } = require("node:test");
 const vm = require("node:vm");
 const { frontendSource, declarations } = require("./frontend-source.js");
 
+const { HDRPresentationGate } = require("../frontend/presentation-gate");
+const { HDRRenderCoordinator } = require("../frontend/render-coordinator");
+
 test("bypass draws the original without waiting and retries a stale source after acknowledgement", async () => {
   for (const method of ["standard", "clean_grain", "micro_grain"]) {
     const state = { session: { session_id: "photo" }, currentView: "hdr", editRevision: 1,
@@ -135,6 +138,7 @@ test("switching lanes after a hard Denoise failure uses the CPU without another 
     recalculateDenoise: async () => calls.push("gpu-recalculate"), debouncePreview: () => calls.push("refine"),
     currentCurveValues: () => [], settledProxyLongEdge: () => 1600, scopeLongEdge: () => 640,
     previewNeedsRefinement: () => true, endBeforePeek() {}, abandonPerspectiveDraft() {}, suspendGradeInstruments() {},
+    cancelGeometryUnderlayer() {}, previewSourceCapacityRefused: () => false,
     renderLaneChrome() {}, renderLocalAdjustments() {}, syncCurveControlsFromState() {}, renderCurveChannelTabs() {},
     drawCurveEditor() {}, renderReadouts() {}, refreshOverlay() {}, refreshScopes() {}, prepareInactivePreview() {} });
   vm.runInContext(declarations("switchLane"), context);
@@ -232,3 +236,294 @@ for (const method of ["standard", "clean_grain"]) {
     assert.equal(canvas.hdrFrameRegion, next);
   });
 }
+
+async function checkGeometryPatchOrder(scenario) {
+  const rendererSource = frontendSource("webgpu-preview.js");
+  const gateStart = rendererSource.lastIndexOf("const presentation = this.presentationGate");
+  const gateEnd = rendererSource.indexOf("this.configureSurface", gateStart);
+  const acquireDirectPresentation = vm.runInNewContext(`(async function (canvas, proxy, sourceOptions, backgroundUnderlayer) {
+    const serial = 1, resourceGeneration = this.resourceGeneration, refuse = () => null;
+    ${rendererSource.slice(gateStart, gateEnd)}
+    return presentation;
+  })`).bind({
+    presentationGate: new HDRPresentationGate(), renderSerials: { get: () => 1 }, resourceGeneration: 1,
+  });
+  const signature = JSON.stringify({ crop: { x: .2, y: .2, width: .1, height: .1 } });
+  const lane = scenario === "lane switch" ? "sdr" : "hdr";
+  const panPass = ["first far pan", "second pan"].includes(scenario);
+  const explicitWhole = scenario === "explicit whole frame at native zoom";
+  const pending = !["lane switch", "grade edit"].includes(scenario) && !panPass;
+  const cropped = scenario === "fully visible" || scenario === "explicit Full Fit";
+  const newFrame = cropped ? { width: 512, height: 341 } : { width: 1250, height: 900 };
+  const visible = cropped ? { x: 0, y: 0, ...newFrame } : { x: 250, y: 300, width: 1000, height: 600 };
+  const region = { ...visible, frameWidth: newFrame.width, frameHeight: newFrame.height };
+  const canvas = { hdrWholeFrame: { key: "old-crop", edge: 1600 }, width: 160, height: 107,
+    style: { display: "block" }, parentElement: { hasAttribute: () => false } };
+  const detail = {};
+  const state = {
+    activeWorkflow: "grade", currentView: lane, zoomMode: scenario === "explicit Full Fit" ? "fit" : "custom",
+    zoomPercent: explicitWhole ? 90 : 100,
+    previewResolutionOverride: true,
+    session: { session_id: "photo", source: { width: 5202, height: 3464 } },
+    previewGeneration: { [lane]: 2 }, acceptedPresentation: { lane: scenario === "lane switch" ? "hdr" : lane,
+      geometrySignature: pending ? "old-crop" : signature },
+    geometryPresentationPending: pending, adjustments: { shared: { geometry: JSON.parse(signature) } },
+    denoise: { [lane]: { enabled: false, controls: { method: "standard" } } }, denoiseRuntime: { [lane]: {} },
+    gpuDraftRefusals: {}, gpuPreparedLane: {}, previewInfoByLane: {}, displayInfo: {},
+  };
+  const drawn = [];
+  const animationFrames = [];
+  const idleTimers = [];
+  let finishBackground;
+  let backgroundOptions;
+  let detailState;
+  let handoffState;
+  state.gpuPreview = {
+    async render(...args) {
+      if (explicitWhole) {
+        assert.equal(args[4], 5202);
+        assert.equal(args.at(-1).viewport, null);
+        assert.equal(args.at(-1).backgroundUnderlayer, false);
+        drawn.push("whole frame");
+        return false;
+      }
+      drawn.push(`underlayer ${args[4]}`);
+      backgroundOptions = args.at(-1);
+      await new Promise(resolve => { finishBackground = resolve; });
+      const presentation = await acquireDirectPresentation(canvas, { width: 1600, height: 1152 },
+        backgroundOptions, backgroundOptions.backgroundUnderlayer);
+      if (!presentation) return false;
+      backgroundOptions.onFrameSubmitted(null, true);
+      presentation.release();
+      return { execution: "direct" };
+    },
+    async renderTo(target, ...args) {
+      drawn.push("detail");
+      const options = args.at(-1);
+      detailState = {
+        target, oldBase: canvas.hdrWholeFrame?.key, pending: state.geometryPresentationPending,
+        viewport: { ...options.viewport }, covers: options.coversViewport(region, newFrame.width, newFrame.height),
+      };
+      if (scenario === "zoom changes before submit") {
+        state.zoomPercent = 31;
+        detailState.coversAfterZoom = options.coversViewport({ x: 0, y: 0, ...newFrame }, newFrame.width, newFrame.height);
+        return false;
+      }
+      options.onFrameSubmitted(region, true);
+      return { execution: "tiled", ...newFrame };
+    },
+  };
+  const noop = () => {};
+  const context = vm.createContext({
+    state, performance, AbortController, CustomEvent: class {}, navigationThumbnail: {},
+    window: { dispatchEvent: () => drawn.push("presented"), clearTimeout: noop,
+      setTimeout: callback => idleTimers.push(callback),
+      HDRViewportRequest: require("../frontend/viewport-request").HDRViewportRequest, devicePixelRatio: 2 },
+    console, els: { dropzone: { clientWidth: 500, clientHeight: 300, scrollLeft: 1000, scrollTop: 900 },
+      previewCanvas: canvas, previewDenoiseDetail: detail,
+      previewImage: { style: {} }, emptyState: { style: {} } },
+    gpuPreviewEligible: () => true, geometryDraftActive: () => false, geometryTransformIsNeutral: () => false,
+    nativeDenoiseViewport: () => false, gradeGrainAction: () => null, liveGradeGrainSelected: () => false,
+    gradeSourceIdentity: () => "source", geometrySignature: () => signature, denoiseNoiseViewActive: () => false,
+    gpuLumaMaskOverlayOptions: () => null, projectReferenceWhiteNits: () => 203, requiredProcessingLongEdge: () => 5202,
+    gpuFrameSizeAt: () => newFrame, sourcePixelFrameDimensions: () => newFrame,
+    previewTargetLongEdge: () => 5202, localsBypassed: () => true, sampleCurvePoints: noop, setGpuSurfaceHdr: noop,
+    acceptPreviewGeometry: (width, height) => {
+      handoffState = { width, height, base: canvas.hdrWholeFrame, baseWidth: canvas.width };
+      state.geometryPresentationPending = false;
+    }, applyZoomGeometry: noop,
+    acceptPresentation: () => { state.acceptedPresentation = { lane, generation: 2, exact: true, geometrySignature: signature }; },
+    refinementProxyLongEdge: () => 5202, displayedLongEdge: () => 5202,
+    renderReadouts: noop, hidePreviewMessage: noop, requestAnimationFrame: callback => animationFrames.push(callback), setZoomMode: noop,
+    cpuMicroPreviewSelected: () => false,
+  });
+  vm.runInContext(frontendSource("preview-pipeline.js"), context);
+  context.visibleOutputRect = () => visible;
+  state.renderCoordinator = new HDRRenderCoordinator({ sessionId: "photo", activeLane: lane,
+    dispatch: request => context.renderGpuDraftInner(request.lane, request) });
+  state.renderCoordinator.noteEdit(lane);
+  state.renderCoordinator.noteEdit(lane);
+  const submitted = scenario !== "zoom changes before submit";
+  if (explicitWhole) {
+    assert.equal(await context.renderGpuDraft(lane, { longEdge: 5202, viewport: false }), false);
+    assert.deepEqual(drawn, ["whole frame"]);
+    assert.equal(animationFrames.length, 0);
+    return;
+  }
+  const foreground = context.renderGpuDraft(lane, { longEdge: 5202, viewportRequested: true, panPass });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(drawn, ["detail"]);
+  assert.equal(state.gpuDraftInFlight, null, "the sharp patch must release the foreground before background work");
+  assert.equal(await foreground, submitted);
+  assert.deepEqual(detailState, { target: detail, oldBase: "old-crop", pending, viewport: visible, covers: true,
+    ...(submitted ? {} : { coversAfterZoom: false }) });
+  if (submitted && pending) assert.deepEqual(handoffState, { ...newFrame, base: null, baseWidth: 1 });
+  assert.equal(Boolean(canvas.hdrFrameRegion?.nativeGeometryViewport), submitted);
+  if (submitted) assert.equal(canvas.width, 1, "the old underlayer retires at the sharp handoff");
+  if (scenario === "scopes busy before submit") state.zoomScopeTimer = 1;
+  while (animationFrames.length) void animationFrames.shift()(0);
+  if (scenario === "scopes busy before submit") {
+    assert.deepEqual(drawn, ["detail", "presented"]);
+    assert.equal(idleTimers.length, 1);
+    state.zoomScopeTimer = null;
+    void idleTimers.shift()();
+  }
+  await new Promise(resolve => setImmediate(resolve));
+  if (!submitted || cropped) {
+    assert.ok(!drawn.includes("underlayer 1600"));
+    return;
+  }
+  assert.deepEqual(drawn, ["detail", "presented", "underlayer 1600"]);
+  assert.equal(state.gpuDraftInFlight, null);
+  const patch = canvas.hdrFrameRegion;
+  const cancel = ["second pan", "switch while loading", "edit while loading", "zoom while loading", "replace session"].includes(scenario);
+  if (scenario === "second pan") {
+    vm.runInContext(declarations("noteViewerPan"), context);
+    context.visibleOutputRect = () => ({ ...visible, x: 0 });
+    context.noteViewerPan();
+  } else if (scenario === "covered pan") {
+    vm.runInContext(declarations("noteViewerPan"), context);
+    context.visibleOutputRect = () => ({ ...visible, x: visible.x + 1, width: visible.width - 1 });
+    context.noteViewerPan();
+    assert.equal(backgroundOptions.signal.aborted, false);
+  } else if (scenario === "switch while loading") {
+    Object.assign(context, { endBeforePeek: noop, abandonPerspectiveDraft: noop, syncGlobalEditState: async () => false });
+    vm.runInContext(declarations("switchLane"), context);
+    const switching = context.switchLane("sdr");
+    assert.ok(backgroundOptions.signal.aborted, "abort the outgoing stream before waiting for edit sync");
+    await switching;
+  } else if (scenario === "edit while loading") {
+    Object.assign(context, { clearGeometryMapCapacityRefusals: noop, cancelRoiCatchUp: noop, cancelRoiPanRefinement: noop,
+      renderCompareStatus: noop, updateExportAvailability: noop, renderViewerStatus: noop });
+    context.invalidatePreview(lane, { markDirty: false });
+  } else if (scenario === "zoom while loading") {
+    Object.assign(context, { clamp: (value, minimum, maximum) => Math.max(minimum, Math.min(maximum, value)),
+      MIN_ZOOM_PERCENT: 1, MAX_ZOOM_PERCENT: 400, activePreviewElement: noop,
+      previewIsVisible: () => false, syncOverlayPlacement: noop, scheduleNavigationThumbnail: noop, scheduleZoomRefinement: noop });
+    vm.runInContext(declarations("setCustomZoom"), context);
+    context.setCustomZoom(31, { clientX: 200, clientY: 100 });
+  } else if (scenario === "replace session") {
+    Object.assign(context, Object.fromEntries(["clearGeometryMapCapacityRefusals", "clearPerspectiveGpuDraft",
+      "setPerspectiveStatus", "renderGeometryToolState", "renderPerspectiveControls", "clearRotateDraftTransformProperties",
+      "endBeforePeek", "clearComparisonPreview"].map(name => [name, noop])));
+    Object.assign(context, { geometryCoordinateMapRequests: new Map(), geometryCoordinateMapCache: new Map(),
+      geometryFullOutputFrames: new Map() });
+    context.window.clearTimeout = noop;
+    context.els.scopeFreshness = { classList: { remove: noop } };
+    state.previewControllers = {};
+    state.previewCache = {};
+    context.clearPreviewCache({ preservePicture: true });
+    state.session = { session_id: "replacement" };
+    state.acceptedPresentation = null;
+  }
+  if (cancel) {
+    assert.ok(backgroundOptions.signal.aborted);
+    assert.ok(!backgroundOptions.isCurrent());
+  }
+  finishBackground();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(canvas.hdrFrameRegion, patch);
+  assert.equal(canvas.width, cancel ? 1 : 1600);
+  assert.equal(canvas.hdrWholeFrame?.edge, cancel ? undefined : 1600);
+  assert.equal(state.acceptedPresentation?.generation, scenario === "replace session" ? undefined : 2);
+}
+
+for (const scenario of ["geometry commit", "lane switch", "grade edit", "fully visible", "explicit Full Fit", "explicit whole frame at native zoom",
+  "zoom changes before submit", "scopes busy before submit", "first far pan", "second pan", "covered pan", "switch while loading", "edit while loading",
+  "zoom while loading", "replace session"]) {
+  test(`the exact geometry patch draws first: ${scenario}`, () => checkGeometryPatchOrder(scenario));
+}
+
+test("Crop & Rotate Reset keeps the mounted picture until its new Perspective geometry arrives", () => {
+  const state = { currentView: "hdr", adjustments: { shared: { geometry: { rotation: 90, perspective_horizontal: 12 } } } };
+  const presentations = [];
+  const context = vm.createContext({ state, controlGroups: { geometry: ["shared.geometry.rotation"] }, sectionPathForGroup: {},
+    defaultAdjustments: () => ({ shared: { geometry: { rotation: 0, perspective_horizontal: 0 } } }),
+    resolveAdjustmentPath: path => path, invalidatePreview() {}, renderControlState() {},
+    syncControlsFromState: () => presentations.push(state.geometryPresentationPending),
+    debouncePreview: () => presentations.push(state.geometryPresentationPending),
+  });
+  vm.runInContext(declarations("resetControlGroup", "getValueByPath", "setValueByPath", "valuesEqual", "cropRotateGeometryModified"), context);
+  context.resetControlGroup("geometry");
+  assert.deepEqual(state.adjustments.shared.geometry, { rotation: 0, perspective_horizontal: 12 });
+  assert.deepEqual(presentations, [true, true]);
+});
+
+for (const operation of ["undo", "redo"]) {
+  test(`${operation} between two corrected geometries waits for the new picture before reflow`, async () => {
+    const frame = { shared: { geometry: { rotation: 90, perspective_horizontal: 12 } } };
+    const previous = { shared: { geometry: { rotation: 0, perspective_horizontal: 12 } } };
+    const state = { currentView: "hdr", session: { session_id: "photo" }, adjustments: frame, editRevision: 1 };
+    const rendered = [];
+    const context = vm.createContext({ state, console, els: { hdrReferenceWhite: {} },
+      window: { HDRPhotoFramingUI: { render() {} } }, status: { get: () => null },
+      fetch: async () => ({ ok: true }), safeJson: async () => ({ revision: 2, document: { global_adjustments: previous } }),
+      geometryDraftActive: () => false, localAdjustments: () => [], projectReferenceWhiteNits: () => 203,
+      discardUnusedLocal() {}, resetRepairSource() {}, recordAcknowledgedLocals() {}, renderLocalAdjustments() {},
+      loadDenoiseDocument() {}, renderLaneChrome() {}, syncCurveControlsFromState() {}, drawCurveEditor() {},
+      drawToneEqualizerEditor() {}, renderOverlayPresetNote() {}, updateExportAvailability() {}, invalidatePreview() {},
+      applyZoomGeometry: () => rendered.push(state.geometryPresentationPending),
+      debouncePreview: () => rendered.push(state.geometryPresentationPending),
+    });
+    vm.runInContext(declarations("queueEditCommand", "stablePreviewJson", "geometrySignature"), context);
+    assert.equal(await context.queueEditCommand(operation), true);
+    assert.equal(state.adjustments, previous);
+    assert.deepEqual(rendered, [true, true]);
+  });
+}
+
+test("direct Straighten keeps its temporary transform until the matching sharp frame", () => {
+  const state = { currentView: "hdr", straightenGestureActive: true, straightenPreviewBaseAngle: 1,
+    adjustments: { shared: { geometry: { straighten_angle: 8, perspective_horizontal: 12 } } } };
+  const requested = [];
+  const context = vm.createContext({ state, hideStraightenGrid() {}, invalidatePreview() {},
+    debouncePreview: () => requested.push(state.geometryPresentationPending),
+  });
+  vm.runInContext(declarations("finishStraightenGesture", "geometrySignature"), context);
+  context.finishStraightenGesture();
+  assert.deepEqual(requested, [true]);
+  assert.equal(state.geometryTransformHandoffSignature, context.geometrySignature());
+});
+
+for (const operation of ["disable", "enable with preparation cached", "recalculate"]) {
+  test(`a source capacity refusal during Denoise ${operation} does not draw a CPU frame`, async () => {
+    const controls = { method: "standard" };
+    const runtime = { generation: 0, dirty: false, status: "ready" };
+    const refusal = { reason: "preview-source-capacity" };
+    const state = { session: { session_id: "photo" }, currentView: "hdr", activeWorkflow: "grade",
+      denoise: { hdr: { enabled: operation !== "enable with preparation cached", controls } },
+      denoiseRuntime: { hdr: runtime }, gpuPreview: { available: true,
+        diagnosticsSnapshot: () => ({ denoise: { cacheReady: true, identity: "photo:hdr:7968:{}:source" } }),
+        selectDenoiseSelectorSource() {} },
+    };
+    let gpuDraws = 0, cpuDraws = 0;
+    const context = vm.createContext({ state, window: { setTimeout },
+      refinementProxyLongEdge: () => 7968, geometrySignature: () => "{}", gradeSourceIdentity: () => "source",
+      renderDenoiseControls() {}, invalidatePreview() {}, debounceOverlayAndScopes() {}, markScopeUpdating() {},
+      persistDenoiseSettings: async () => true, recalculateDenoiseAnalysis: async () => true,
+      restoreScopeFreshnessIfIdle() {},
+      denoiseRetryError: () => { runtime.status = "error"; },
+      renderGpuDraft: async () => { gpuDraws++; state.lastGpuDraftRefusal = refusal; return false; },
+      renderPreviewForLane: async () => { cpuDraws++; },
+    });
+    vm.runInContext(declarations("setDenoiseEnabled", "restoreDenoiseStatus", "invalidateDenoisePreparation",
+      "deferDenoisePreparation", "recalculateDenoiseForView", "transientGpuRefusal", "previewSourceCapacityRefused"), context);
+    if (operation === "recalculate") await context.recalculateDenoiseForView("hdr", {});
+    else await context.setDenoiseEnabled(operation !== "disable");
+    assert.equal(gpuDraws, 1);
+    assert.equal(cpuDraws, 0);
+    assert.notEqual(runtime.status, "error");
+  });
+}
+
+test("a source capacity refusal after SDR Match leaves recovery in charge", async () => {
+  const state = { session: { session_id: "photo" }, currentView: "sdr", previewGeneration: { sdr: 3 }, denoise: {} };
+  let cpuDraws = 0;
+  const context = vm.createContext({ state,
+    renderGpuDraft: async () => { state.lastGpuDraftRefusal = { reason: "preview-source-capacity" }; return false; },
+    renderPreviewForLane: () => { cpuDraws++; },
+  });
+  vm.runInContext(declarations("presentMatchedSdrPreview", "transientGpuRefusal", "previewSourceCapacityRefused"), context);
+  assert.equal(await context.presentMatchedSdrPreview({ longEdge: 7968 }), true);
+  assert.equal(cpuDraws, 0);
+});

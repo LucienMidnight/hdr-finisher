@@ -73,6 +73,8 @@ test('A native patch left behind by a pan does not submit a replacement picture'
 
 const trimStart = source.indexOf('    scheduleTileCacheTrim()');
 const trimEnd = source.indexOf('    /** Encode', trimStart);
+const countStart = source.indexOf('    get resourceRenderCount()');
+const countEnd = source.indexOf('    destroyAfterActiveRenders(', countStart);
 test('Cache trim waits for submitted work and overlapping active renders', async () => {
   let drain, release, trimmed = 0;
   const Preview = vm.runInNewContext(`(class { ${source.slice(trimStart, trimEnd)} })`);
@@ -88,8 +90,9 @@ test('Cache trim waits for submitted work and overlapping active renders', async
 test('A render starting during queue drain requires another lifetime wait and drain', async () => {
   let trimmed = 0;
   const releases = [], drains = [];
-  const Preview = vm.runInNewContext(`(class { ${source.slice(trimStart, trimEnd)} })`);
+  const Preview = vm.runInNewContext(`(class { ${source.slice(countStart, countEnd)} ${source.slice(trimStart, trimEnd)} })`);
   const preview = new Preview();
+  preview.activeRenderCount = 0;
   preview.device = { queue: { onSubmittedWorkDone: () => new Promise(resolve => drains.push(resolve)) } };
   preview.destroyAfterActiveRenders = callback => releases.push(callback);
   preview.trimDetailBandTiles = preview.trimMaskTiles = preview.trimDenoiseTiles = () => trimmed++;

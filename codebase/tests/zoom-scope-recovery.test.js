@@ -54,12 +54,15 @@ function fixture() {
     renderViewerStatus() {},
     requiredProcessingLongEdge: () => viewer.target,
     geometrySignature: () => viewer.signature,
+    gradeSourceIdentity: () => viewer.source,
     geometryDraftActive: () => viewer.draft,
+    cancelGeometryUnderlayer() {},
     interactiveScaleDecision: () => ({ coarse: false }),
     noteViewerPan() {},
     scopeLongEdge: () => 960,
     localsBypassed: () => false,
     activeScopeRegion: () => null,
+    microGrainPreviewRequest: () => ({}),
     gpuScopeEligible: () => !state.comparePeekActive && state.acceptedPresentation?.lane === state.currentView,
     enqueueGpuScopeRequest: async (request) => { scopes.push({ ...request, at: now }); return true; },
     renderGpuDraft: async (_lane, { longEdge }) => {
@@ -69,7 +72,7 @@ function fixture() {
     },
   });
   vm.runInContext(declarations(
-    "scheduleZoomRefinement", "refineZoomView", "scheduleZoomScopeRefresh",
+    "scheduleZoomRefinement", "refineZoomView", "holdingNativeDenoisePictureForFit", "scheduleZoomScopeRefresh",
     "clearZoomScopeRefresh", "refreshScopes", "refreshScopesAfterPresentation", "suspendGradeInstruments",
     "debouncePreview", "runQueuedGpuScopeRequest",
     "installPreviewWatchdog", "restoreScopeFreshnessIfIdle", "scopeFreshnessLabel", "markScopeUpdating",
@@ -262,6 +265,17 @@ test("zoom scopes wait for foreground GPU work and a queued pan", async () => {
   assert.deepEqual(scopes.map(({ at }) => at), [600]);
 });
 
+test("a zoom at the painted edge redraws after a failed geometry handoff", async () => {
+  const { c, state, viewer } = fixture();
+  viewer.target = state.acceptedPresentation.processedLongEdge;
+  viewer.signature = "Reset geometry";
+  state.previewGeneration.sdr++;
+  const rendered = [];
+  c.renderGpuDraft = async (lane, { longEdge }) => { rendered.push([lane, longEdge]); return true; };
+  await c.refineZoomView(null, viewer.target, "sdr", "photo");
+  assert.deepEqual(rendered, [["sdr", viewer.target]]);
+});
+
 test("an edit after zoom cancels its scope timer and can refresh scopes normally", async () => {
   const { c, state, scopes, edits, tick } = fixture();
   c.scheduleZoomRefinement();
@@ -350,4 +364,50 @@ test("the watchdog lets an active frame and its pending settle finish", () => {
   state.previewScheduler.settleTimer = null;
   c.watchdogTick();
   assert.equal(edits.length, 1);
+});
+
+test("a settled scope request cancels a live fill before waiting for shared renderer state", async () => {
+  const { c, state, tick, errors } = fixture();
+  const events = [];
+  const canvas = {};
+  const fill = new AbortController();
+  state.session.source = { width: 7968, height: 5312 };
+  state.acceptedPresentation.execution = "tiled";
+  state.gpuPreview = {
+    activeRenderCount: 1,
+    async renderScopeProxy() {
+      assert.equal(fill.signal.aborted, true);
+      assert.equal(this.activeRenderCount, 0);
+      events.push("scope-proxy");
+      return { canvas, sourceSerial: 3 };
+    },
+    async analyzeScope(scopeCanvas) {
+      assert.equal(scopeCanvas, canvas);
+      return { sessionId: "photo", sourceSerial: 3, applicationGeneration: 4, geometrySignature: "crop" };
+    },
+  };
+  fill.signal.addEventListener("abort", () => {
+    events.push("cancel-fill");
+    c.window.setTimeout(() => { state.gpuPreview.activeRenderCount = 0; }, 8);
+  });
+  Object.assign(c, {
+    performance: { now: () => 0 },
+    cancelGeometryUnderlayer: () => fill.abort(),
+    sampleCurvePoints() {},
+    localAdjustments: () => [],
+    projectReferenceWhiteNits: () => 203,
+    measureExactScopePeak: async () => null,
+    buildGpuScopePayload: () => ({}),
+    applyEditingScopePeak() {},
+    recordDisplayedScopePeak() {},
+    presentScopePayload: () => events.push("scope-presented"),
+  });
+  vm.runInContext(declarations("enqueueGpuScopeRequest", "runGpuScopeRequest"), c);
+  const result = c.refreshScopes();
+  assert.deepEqual(events, ["cancel-fill"]);
+  await tick(16, { waitForCallbacks: false });
+  const applied = await result;
+  assert.deepEqual(errors, []);
+  assert.equal(applied, true);
+  assert.deepEqual(events, ["cancel-fill", "scope-proxy", "scope-presented"]);
 });

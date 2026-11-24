@@ -45,6 +45,7 @@ from .local_adjustments import (
     ACESCG_LUMA,
     compile_geometry_fixed_mask,
     compile_geometry_fixed_mask_region,
+    compile_geometry_fixed_mask_to_frame,
     mask_influence_opacity,
     sample_luminance_evs,
     spatial_mask_signature,
@@ -1655,6 +1656,7 @@ class SessionRenderCache:
         local_adjustment: LocalAdjustment,
         long_edge: int,
         rect: tuple[int, int, int, int],
+        *, bounded_fallback: bool = False,
     ) -> tuple[np.ndarray, tuple[int, int]] | None:
         """The spatial mask for one output rectangle, or ``None`` when it needs the whole image.
 
@@ -1666,14 +1668,27 @@ class SessionRenderCache:
         edge = max(256, int(long_edge))
         with mask_cache_lock(self._lock):
             with mask_phase("source"):
-                source, _sdr_reference = self._proxies_locked(edge)
+                if bounded_fallback:
+                    source = self._source_level_locked(edge, PreviewKind.HDR, persist=False)
+                else:
+                    source, _sdr_reference = self._proxies_locked(edge)
         from .local_adjustments import has_hue_mask
         if has_hue_mask(local_adjustment.mask):
             return None
         with mask_phase("compute"):
-            return compile_geometry_fixed_mask_region(
+            region = compile_geometry_fixed_mask_region(
                 source, local_adjustment.mask, adjustments.shared.geometry, rect, spatial_only=True,
             )
+            if region is not None or not bounded_fallback:
+                return region
+            geometry = adjustments.shared.geometry
+            size = geometry_output_dimensions(source.shape[1], source.shape[0], geometry)
+            with TemporaryDirectory(prefix="viewport-mask-", dir=os.environ.get("HDR_FINISHER_PROOF_ROOT") or None) as directory:
+                mask = compile_geometry_fixed_mask_to_frame(
+                    source, local_adjustment.mask, geometry, Path(directory) / "mask.u8",
+                    spatial_only=True, viewport=rect,
+                )
+            return mask, size
 
     def compiled_mask_draft(
         self,

@@ -106,6 +106,7 @@ function grade({ tiled = true, cpu = false, faster = false, blockDrag = false, c
       HDRWholeImagePreviewPipe: { edgeFor: (_kind, edge) => edge } },
     requestAnimationFrame: (fn) => setTimer(() => fn(now), 16),
     cancelAnimationFrame: clearTimer,
+    cancelGeometryUnderlayer() {},
     installPreviewWatchdog() {},
     gpuPreviewEligible: () => !cpu,
     geometryDraftActive: () => false,
@@ -154,10 +155,10 @@ function grade({ tiled = true, cpu = false, faster = false, blockDrag = false, c
     renderViewerStatus() {},
   });
   vm.runInContext(frontendSource("preview-scheduler.js"), c);
-  vm.runInContext(declarations("initializePreviewScheduler", "interactiveDraftGuaranteedTiled",
-    "settlePreview", "settlePreviewInner", "refreshScopes", "gpuScopeEligible", "refreshScopesAfterPresentation",
+  vm.runInContext(declarations("initializePreviewScheduler", "interactiveDraftGuaranteedTiled", "previewSourceCapacityRefused",
+    "settlePreview", "settlePreviewInner", "settlePreviewFrame", "refreshScopes", "gpuScopeEligible", "refreshScopesAfterPresentation",
     "clearZoomScopeRefresh", "debouncePreview", "scheduleZoomRefinement", "scheduleZoomScopeRefresh", "refineZoomView",
-    "scheduleLocalPreview", "commitSelectedLocal"), c);
+    "scheduleLocalPreview", "commitSelectedLocal", "holdingNativeDenoisePictureForFit"), c);
   if (denoiseMethod) state.gpuPreview = grainRenderer(c, denoiseMethod, target);
   c.initializePreviewScheduler();
   if (blockDrag) state.renderCoordinator = {
@@ -167,7 +168,9 @@ function grade({ tiled = true, cpu = false, faster = false, blockDrag = false, c
   };
   if (coordinated) {
     vm.runInContext(frontendSource("render-coordinator.js"), c);
-    vm.runInContext(declarations("renderGpuDraft", "invalidatePreview", "pacedPreviewInteraction"), c);
+    vm.runInContext("let previewCapacityRecovery = null, geometryMapCapacityRefusals = new Map();\n" +
+      declarations("renderGpuDraft", "invalidatePreview", "pacedPreviewInteraction",
+        "clearPreviewCapacityRecovery", "clearGeometryMapCapacityRefusals"), c);
     state.renderCoordinator = new c.window.HDRRenderCoordinator({
       dispatch: async (request) => {
         if (request.reason === "prior-render") {

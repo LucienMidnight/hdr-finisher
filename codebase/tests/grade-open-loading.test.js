@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 const path = require('node:path');
+const { declarations } = require('./frontend-source.js');
 function harness() {
   let resolve;
   const pending = new Promise(r => { resolve = r; });
@@ -34,6 +35,7 @@ function harness() {
   for (const name of ['session-import.js', 'project-documents.js', 'scope-requests.js', 'zoom-navigation.js']) {
     vm.runInContext(frontend(name), c);
   }
+  vm.runInContext(declarations('previewSourceCapacityRefused'), c);
   const realRetirement = c.retireActiveSession;
   Object.assign(c, { retireActiveSession, setImportCancelVisible, showUploadError });
   c.renderSourceFilename = name => events.push(name);
@@ -260,7 +262,7 @@ test('Electron load barrier remains blocked until main-frame completion and reje
 async function activateAtZoom({
   replace = true, previousSize = [6000, 4000], size = [6000, 4000],
   pan = [800, 600], extent = [1600, 1200], rotation = 0, pictureVisible = true, geometryDraft = false,
-  nativeDetail = false, cpuDetail = false,
+  nativeDetail = false, cpuDetail = false, capacityRefusal = false,
 } = {}) {
   const { c } = harness();
   const view = { scrollLeft: pan[0], scrollTop: pan[1], clientWidth: 1000, clientHeight: 700 };
@@ -299,6 +301,7 @@ async function activateAtZoom({
         assert.equal(Boolean(c.els.previewCanvas.hdrFrameRegion), cpuDetail || c.state.zoomMode === 'custom');
       }
       renders.push(['gpu', longEdge, ...snapshot()]);
+      if (capacityRefusal) c.state.lastGpuDraftRefusal = { reason: 'preview-source-capacity' };
       return false;
     },
     transientGpuRefusal: () => false,
@@ -316,6 +319,12 @@ test('same-photo RAW redevelopment preserves zoom and pan for the first GPU and 
   assert.deepEqual(await activateAtZoom({ nativeDetail: true }), [
     ['gpu', 4096, 'custom', 78, 800, 600],
     ['cpu', 4096, 'custom', 78, 800, 600],
+  ]);
+});
+
+test('opening a Grade session leaves the existing picture after a bounded source capacity refusal', async () => {
+  assert.deepEqual(await activateAtZoom({ nativeDetail: true, capacityRefusal: true }), [
+    ['gpu', 4096, 'custom', 78, 800, 600],
   ]);
 });
 

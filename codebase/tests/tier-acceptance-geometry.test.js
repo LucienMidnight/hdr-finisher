@@ -171,3 +171,32 @@ test("a straightened Full frame is exact at Full", () => {
   assert.equal(app.state.acceptedPresentation.exact, true);
   assert.equal(viewerStatus(app), "ready");
 });
+
+test("native geometry routing follows the zoom processing step and the clipped photo", () => {
+  const source = { width: 7968, height: 5312 };
+  const frame = { width: 7849, height: 5139 };
+  const dropzone = { clientWidth: 1336, clientHeight: 640, getBoundingClientRect() { return this; } };
+  const state = { session: { source }, activeWorkflow: "grade", currentView: "hdr", zoomMode: "custom",
+    previewResolutionOverride: false };
+  const context = vm.createContext({ state, els: { dropzone, previewCanvas: {} }, window: { devicePixelRatio: 2 },
+    geometryTransformIsNeutral: () => false, sourcePixelFrameDimensions: () => frame });
+  vm.runInContext('const PREVIEW_RESOLUTION_OPTIONS = new Set(["full"]);\n' + declarations(
+    "normalizedPreviewResolution", "previewTargetLongEdge", "requiredProcessingLongEdge",
+    "steppedProcessingLongEdge", "displayedLongEdge", "nativeGeometryViewportActive", "geometryViewportLayout",
+  ), context);
+  for (const percent of [99, 90, 75]) {
+    state.zoomPercent = percent;
+    assert.equal(context.requiredProcessingLongEdge(), source.width);
+    assert.equal(context.nativeGeometryViewportActive("hdr"), true, `${percent}% must use native geometry tiles`);
+  }
+  state.zoomPercent = 65;
+  assert.equal(context.requiredProcessingLongEdge(), Math.round(source.width / Math.sqrt(2)));
+  assert.equal(context.nativeGeometryViewportActive("hdr"), false);
+  state.zoomPercent = 100;
+  assert.equal(context.nativeGeometryViewportActive("hdr", 1600), false);
+  frame.width = 1500;
+  frame.height = 1000;
+  assert.equal(context.nativeGeometryViewportActive("hdr"), true, "Actual size keeps the existing sharp-first crop path");
+  state.zoomPercent = 99;
+  assert.equal(context.nativeGeometryViewportActive("hdr"), false, "The photo fits at the native processing step");
+});

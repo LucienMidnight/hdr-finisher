@@ -125,6 +125,18 @@ def _crop_bounds(width: int, height: int, geometry: GeometryAdjustments) -> tupl
     return left, top, right, bottom
 
 
+def _quarter_roll_view(oriented: np.ndarray, angle: float) -> np.ndarray:
+    height, width = oriented.shape[:2]
+    rotated = np.rot90(oriented, k=int(angle / 90) % 4)
+    rotated_height, rotated_width = rotated.shape[:2]
+    safe_width, safe_height = _largest_rotated_rectangle(width, height, math.radians(abs(angle)))
+    safe_width = max(1, min(math.floor(safe_width) - 4, rotated_width))
+    safe_height = max(1, min(math.floor(safe_height) - 4, rotated_height))
+    left = (rotated_width - safe_width) // 2
+    top = (rotated_height - safe_height) // 2
+    return rotated[top:top + safe_height, left:left + safe_width]
+
+
 def geometry_resample_stage(geometry: GeometryAdjustments) -> str:
     """Name the resampling stage a region extraction has to cross.
 
@@ -179,9 +191,7 @@ def apply_geometry_region(
         height, width = oriented.shape[:2]
         roll = _roll_stage(width, height, total_roll)
         if roll is None:
-            # A roll of exactly a quarter turn takes Pillow's transpose path,
-            # which has no window form. It is not reachable from one control.
-            rotated = _rotate_to_valid_pixels(np.ascontiguousarray(oriented, dtype=np.float32), total_roll)
+            rotated = _quarter_roll_view(oriented, total_roll)
             left, top, right, bottom = _crop_bounds(rotated.shape[1], rotated.shape[0], geometry)
             window = _clamp_rect(rect, right - left, bottom - top)
             return np.ascontiguousarray(
@@ -499,12 +509,13 @@ def _coordinate_ramp_samples(
     ramp_y = (np.arange(height, dtype=np.float32) + np.float32(0.5)) / max(height, 1)
     total_roll = geometry.straighten_angle + geometry.perspective_rotate
     if geometry_resample_stage(geometry) == "roll" and total_roll % 90.0 == 0.0:
-        # A roll of a whole quarter turn has no window form: each pixel would
-        # rotate the whole frame. Rotate it once instead.
-        ramps = np.stack(
-            (np.broadcast_to(ramp_x, (height, width)), np.broadcast_to(ramp_y[:, None], (height, width))), axis=-1
-        )
-        return apply_geometry(ramps, geometry)[ys, xs, :].astype(np.float64)
+        def sample(ramp: np.ndarray) -> np.ndarray:
+            oriented = _oriented_view(np.broadcast_to(ramp, (height, width)), geometry)
+            rotated = _quarter_roll_view(oriented, total_roll)
+            left, top, _, _ = _crop_bounds(rotated.shape[1], rotated.shape[0], geometry)
+            return rotated[ys + top, xs + left]
+
+        return np.column_stack((sample(ramp_x), sample(ramp_y[:, None]))).astype(np.float64)
     samples = np.empty((xs.size, 2), dtype=np.float64)
     for channel, (values, shape) in enumerate(((ramp_x, (1, width, 1)), (ramp_y, (height, 1, 1)))):
         ramp = np.broadcast_to(values.reshape(shape), (height, width, 1))

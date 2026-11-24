@@ -141,6 +141,7 @@ function noteViewerPan() {
   const region = els.previewCanvas.hdrFrameRegion;
   const accepted = state.acceptedPresentation;
   if (cpuMicroPreviewSelected(lane) && cpuMicroViewport(lane)) {
+    cancelGeometryUnderlayer();
     if (els.previewCanvas.hdrCpuMicroRegion !== cpuMicroViewportKey(lane)
       || !window.HDRViewportRequest.covers(region, visibleOutputRect(region.frameWidth, region.frameHeight, { includeWhole: true }))) {
       scheduleZoomRefinement({ continuous: true });
@@ -149,11 +150,12 @@ function noteViewerPan() {
   }
   const liveGpuGrain = liveGradeGrainSelected(lane);
   if (region && accepted?.exact && accepted.lane === lane && accepted.generation === state.previewGeneration[lane]
-      && liveGpuGrain && window.HDRViewportRequest.covers(region,
+      && (liveGpuGrain || region.nativeGeometryViewport) && window.HDRViewportRequest.covers(region,
         visibleOutputRect(region.frameWidth, region.frameHeight, { includeWhole: true }))) {
     state.renderCoordinator?.cancelPan(lane);
     return;
   }
+  cancelGeometryUnderlayer();
   const cleanGrain = state.denoise[lane]?.controls.method === "clean_grain";
   state.renderCoordinator?.notePan(lane, liveGpuGrain ? (cleanGrain ? 33 : 70) : undefined);
 }

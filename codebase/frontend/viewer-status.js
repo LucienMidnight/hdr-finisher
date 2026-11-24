@@ -11,6 +11,7 @@ function gpuPreviewEligible(lane = state.currentView) {
 function previewNeedsRefinement() {
   const accepted = state.acceptedPresentation;
   return !selectedTierReady()
+    || (state.zoomMode === "fit" && holdingNativeDenoisePictureForFit())
     || accepted?.generation !== state.previewGeneration[state.currentView]
     || accepted?.geometrySignature !== geometrySignature()
     || accepted?.processedLongEdge !== requiredProcessingLongEdge();
@@ -38,6 +39,7 @@ function deriveViewerState({
   lane,
   geometrySignature: currentGeometrySignature,
   requiredProcessingEdge = null,
+  presentationCoversView = true,
   unavailableReason = "",
 } = {}) {
   const tier = requestedTier === "display" ? "display"
@@ -56,8 +58,8 @@ function deriveViewerState({
   if (!selectedTierAccepted) return { status: "preparing", tier, presentedTier, detail: "",
     coarse: Boolean(laneMatches && accepted.coarse && accepted.generation === currentGeneration) };
   const geometryCurrent = accepted.geometrySignature === currentGeometrySignature;
-  const scaleCurrent = requiredProcessingEdge == null
-    || accepted.processedLongEdge === requiredProcessingEdge;
+  const scaleCurrent = presentationCoversView && (requiredProcessingEdge == null
+    || accepted.processedLongEdge === requiredProcessingEdge);
   const current = accepted.generation === currentGeneration && geometryCurrent && scaleCurrent;
   // A geometry change is the slow one -- it invalidates the source proxy, so
   // the whole frame is fetched and re-rolled rather than re-graded. Saying so
@@ -68,13 +70,30 @@ function deriveViewerState({
 }
 
 function viewerState(lane = state.currentView) {
+  const edge = requiredProcessingLongEdge();
+  const requestedTier = state.previewResolutionOverride === false ? "display" : normalizedPreviewResolution();
+  const accepted = state.acceptedPresentation;
+  const currentGeneration = state.previewGeneration[lane];
+  const signature = geometrySignature();
+  const coversFit = state.zoomMode !== "fit" || !holdingNativeDenoisePictureForFit();
+  if (state.previewUnavailableReason && coversFit && lane === state.currentView) {
+    const region = els.previewCanvas.style.display !== "none" && els.previewCanvas.hdrFrameRegion;
+    if (accepted?.exact && accepted.lane === lane && accepted.requestedTier === requestedTier
+      && accepted.generation === currentGeneration && accepted.geometrySignature === signature
+      && accepted.processedLongEdge === edge
+      && (!region || window.HDRViewportRequest.covers(region,
+        visibleOutputRect(region.frameWidth, region.frameHeight, { includeWhole: true, element: activePreviewElement() })))) {
+      state.previewUnavailableReason = "";
+    }
+  }
   return deriveViewerState({
-    requestedTier: state.previewResolutionOverride === false ? "display" : normalizedPreviewResolution(),
-    accepted: state.acceptedPresentation,
-    currentGeneration: state.previewGeneration[lane],
+    requestedTier,
+    accepted,
+    currentGeneration,
     lane,
-    geometrySignature: geometrySignature(),
-    requiredProcessingEdge: requiredProcessingLongEdge(),
+    geometrySignature: signature,
+    requiredProcessingEdge: edge,
+    presentationCoversView: coversFit,
     unavailableReason: state.previewUnavailableReason || "",
   });
 }
@@ -290,16 +309,20 @@ function markPreviewUnavailable(reason) {
   // accepted authoritative frame. If this tier is truthfully unavailable,
   // that frame will never arrive. End the handoff here so the retained last
   // frame remains usable and the user can select another tier or keep editing.
-  if (state.geometryTransformHandoffSignature === geometrySignature()) {
-    state.geometryTransformHandoffSignature = null;
-    state.geometryPresentationPending = false;
-    clearRotateDraftTransformProperties();
-    clearInteractiveStraightenPreview();
-    applyZoomGeometry();
-  }
+  finishFailedGeometryHandoff();
   renderCurrentPreviewSize();
   renderReadouts();
   renderViewerStatus();
+}
+
+function finishFailedGeometryHandoff() {
+  if (!state.geometryPresentationPending && state.geometryTransformHandoffSignature !== geometrySignature()) return;
+  state.geometryTransformHandoffSignature = null;
+  state.geometryPresentationPending = false;
+  if (geometryDraftActive()) return;
+  clearRotateDraftTransformProperties();
+  clearInteractiveStraightenPreview();
+  applyZoomGeometry();
 }
 
 function markRefining() {

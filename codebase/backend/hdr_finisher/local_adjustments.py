@@ -341,24 +341,27 @@ def compile_geometry_fixed_mask(
 
 
 @_timed_stage("masks")
-def compile_geometry_fixed_mask_to_frame(source, expression, geometry, path, *, spatial_only=False, rows=128):
+def compile_geometry_fixed_mask_to_frame(source, expression, geometry, path, *, spatial_only=False, rows=128, viewport=None):
     from contextlib import nullcontext
     from pathlib import Path
     from tempfile import TemporaryDirectory
     from .delivery_frames import DeliveryFrame, transform_bands
-    from .finishing import apply_geometry_to_frame, geometry_is_identity
+    from .finishing import apply_geometry_region, apply_geometry_to_frame, geometry_is_identity
 
     source_map = source.map("r") if isinstance(source, DeliveryFrame) else nullcontext(source)
     mask_expression = spatial_mask_expression(expression) if spatial_only else expression
     with TemporaryDirectory(prefix="mask-", dir=path.parent) as directory, source_map as pixels:
         directory = Path(directory)
         alpha = _evaluate_mask_to_frame(pixels, mask_expression, directory, rows)
-        identity = geometry_is_identity(geometry)
+        identity = viewport is None and geometry_is_identity(geometry)
         source_mask = DeliveryFrame(path if identity else directory / "source.u8", alpha.shape, np.dtype(np.uint8))
         transform_bands(alpha, source_mask, lambda part, top: np.rint(part * np.float32(255)), rows=rows)
         if identity:
             return source_mask
         with source_mask.map("r") as mask:
+            if viewport is not None:
+                window = apply_geometry_region(mask[..., None], geometry, viewport)[..., 0]
+                return np.rint(np.clip(window, 0, 255)).astype(np.uint8)
             fixed = apply_geometry_to_frame(mask[..., None], geometry, directory / "geometry")
         result = DeliveryFrame(path, fixed.shape[:2], source_mask.dtype)
         return transform_bands(fixed, result, lambda part, top: np.rint(np.clip(part[..., 0], 0, 255)), rows=rows)

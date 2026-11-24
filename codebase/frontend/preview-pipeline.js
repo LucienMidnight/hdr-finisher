@@ -90,11 +90,166 @@ function transientGpuRefusal() {
     // The coordinator's name for the same thing: a queued render replaced by
     // a newer one before it was dispatched.
     || reason === "coalesced-by-newer-render"
+    || reason === "geometry-after-offscreen"
     // One GPU retry is already scheduled: keep the frame, no CPU picture yet.
     || reason.startsWith("gpu-retry-scheduled:")
     || reason.startsWith("peak:newer-render-started")
     || reason.startsWith("peak:application-not-current")
     || (reason.startsWith("tiled-encode-failed:") && reason.includes("superseded"));
+}
+
+function previewSourceCapacityRefused() {
+  return state.lastGpuDraftRefusal?.reason === "preview-source-capacity";
+}
+
+function nativeGeometryViewportActive(lane, longEdge = requiredProcessingLongEdge(), capacityRecovery = false) {
+  if (state.activeWorkflow !== "grade" || lane !== state.currentView || geometryTransformIsNeutral()
+    || state.gpuPreview?.executionOverride === "direct") return false;
+  const region = els.previewCanvas.hdrFrameRegion;
+  if (capacityRecovery || (region?.capacityRecovery && state.acceptedPresentation?.processedLongEdge === longEdge
+    && state.acceptedPresentation.geometrySignature === geometrySignature())) return true;
+  if (longEdge !== previewTargetLongEdge("full")) return false;
+  const layout = geometryViewportLayout();
+  if (!layout) return false;
+  if (state.zoomMode === "fit") return layout.fitScale >= 1;
+  if (state.zoomMode !== "custom") return false;
+  if (state.zoomPercent >= 100) return true;
+  const { frame, horizontal, vertical, dpr } = layout;
+  const scale = state.zoomPercent / (100 * dpr);
+  return frame.width * scale * horizontal > els.dropzone.clientWidth
+    || frame.height * scale * vertical > els.dropzone.clientHeight;
+}
+
+function geometryViewportLayout() {
+  const frame = sourcePixelFrameDimensions();
+  if (!frame) return null;
+  const dropzone = els.dropzone;
+  const horizontal = state.compareLayout === "side-horizontal" ? 2 : 1;
+  const vertical = state.compareLayout === "side-vertical" ? 2 : 1;
+  const dpr = Math.max(1, window.devicePixelRatio || 1);
+  const framed = window.HDRPhotoFraming?.layout(frame.width, frame.height, window.HDRPhotoFramingUI?.settings()) || frame;
+  return { frame, framed, horizontal, vertical, dpr,
+    fitScale: Math.min(dropzone.clientWidth * dpr / (horizontal * framed.width),
+      dropzone.clientHeight * dpr / (vertical * framed.height)) };
+}
+
+function nativeGeometryOutputRect(frameSize) {
+  const { width, height } = frameSize;
+  if (state.zoomMode === "fit") return { x: 0, y: 0, width, height };
+  if (!state.geometryPresentationPending && state.zoomReferenceFrame?.geometrySignature === geometrySignature()) {
+    const visible = visibleOutputRect(width, height, { includeWhole: true, element: activePreviewElement() });
+    if (visible) return visible;
+  }
+  const layout = geometryViewportLayout();
+  if (!layout) return null;
+  const { frame, framed, horizontal, vertical, dpr } = layout;
+  const dropzone = els.dropzone;
+  const scale = state.zoomPercent / (100 * dpr);
+  const stageWidth = Math.max(dropzone.clientWidth, framed.width * scale * horizontal);
+  const stageHeight = Math.max(dropzone.clientHeight, framed.height * scale * vertical);
+  const regionAt = (output, display, stage, paneCount, view, scroll) => {
+    const pane = paneCount === 2 && els.previewStage?.dataset?.primaryLane === "sdr" ? 1 : 0;
+    const center = (pane + 0.5) * stage / paneCount;
+    const origin = center - display / 2;
+    const near = Math.min(Math.max(0, stage - view), Math.max(0, scroll));
+    const start = Math.max(0, Math.floor((near - origin) * output / display));
+    const end = Math.min(output, Math.ceil((near + view - origin) * output / display));
+    return { start, length: Math.max(0, end - start) };
+  };
+  const columns = regionAt(width, frame.width * scale, stageWidth, horizontal, dropzone.clientWidth, dropzone.scrollLeft);
+  const rows = regionAt(height, frame.height * scale, stageHeight, vertical, dropzone.clientHeight, dropzone.scrollTop);
+  return columns.length && rows.length ? { x: columns.start, y: rows.start, width: columns.length, height: rows.length } : null;
+}
+
+function resumeOffscreenGeometryPreview(lane) {
+  const pending = state.offscreenGeometryPreview;
+  if (!pending) return false;
+  if (pending.lane !== lane || !pending.isCurrent()) {
+    state.offscreenGeometryPreview = null;
+    return false;
+  }
+  if (pending.resuming || !nativeGeometryOutputRect(pending.frameSize)) return true;
+  pending.resuming = true;
+  void renderGpuDraft(lane, pending.options).then((rendered) => {
+    if (rendered && pending.isCurrent()) debounceOverlayAndScopes();
+  }).catch((error) => console.warn("Preview after scrolling failed.", error)).finally(() => {
+    if (state.offscreenGeometryPreview !== pending) return;
+    state.offscreenGeometryPreview = null;
+    if (pending.isCurrent()) finishFailedGeometryHandoff();
+  });
+  return true;
+}
+
+let geometryUnderlayerTask = null;
+
+function cancelGeometryUnderlayer() {
+  const task = geometryUnderlayerTask;
+  geometryUnderlayerTask = null;
+  if (task) {
+    window.clearTimeout(task.timer);
+    state.renderCoordinator?.cancelUnderlayer(task.lane);
+  }
+}
+
+function scheduleGeometryUnderlayer(intent) {
+  cancelGeometryUnderlayer();
+  const task = geometryUnderlayerTask = { ...intent, timer: null };
+  const { lane, edge, generation, current } = intent;
+  const isCurrent = () => geometryUnderlayerTask === task && current();
+  const dispatchWhenIdle = async () => {
+    const coordinator = state.renderCoordinator;
+    if (isCurrent() && coordinator && (state.gpuPreview?.activeRenderCount || state.gpuPreview?.activeScopeCount
+      || state.zoomRefinementTimer || state.zoomRefinementInFlight || state.zoomScopeTimer
+      || state.gpuScopeRequestInFlight || state.pendingGpuScopeRequest || state.scopeRequestInFlight
+      || state.pendingScopeRequest || navigationThumbnail.controller || !coordinator.canStartUnderlayer(lane))) {
+      task.timer = window.setTimeout(dispatchWhenIdle, 50);
+      return;
+    }
+    try {
+      if (!isCurrent()) return;
+      await coordinator?.submit({
+        lane, longEdge: edge, applicationGeneration: generation, reason: "geometry-underlayer",
+        backgroundUnderlayer: true, hideStatus: false, isCurrent,
+      });
+    } catch {
+      return;
+    } finally {
+      if (geometryUnderlayerTask === task) geometryUnderlayerTask = null;
+    }
+  };
+  requestAnimationFrame(() => requestAnimationFrame(dispatchWhenIdle));
+}
+
+let previewCapacityRecovery = null;
+
+function clearPreviewCapacityRecovery() {
+  if (previewCapacityRecovery) window.clearTimeout(previewCapacityRecovery.timer);
+  previewCapacityRecovery = null;
+}
+
+function schedulePreviewCapacityRecovery(error, lane, sessionId, generation, tier, longEdge) {
+  const zoomMode = state.zoomMode;
+  const zoomPercent = state.zoomPercent;
+  const revision = state.editRevision;
+  const current = () => state.session?.session_id === sessionId && lane === state.currentView
+    && generation === state.previewGeneration[lane] && revision === state.editRevision
+    && zoomMode === state.zoomMode && zoomPercent === state.zoomPercent && !geometryDraftActive();
+  const retryAfter = error.retryAfter ?? performance.now() + 4000;
+  const key = JSON.stringify([sessionId, lane, generation, revision, tier, longEdge, retryAfter]);
+  if (previewCapacityRecovery?.key === key) return;
+  clearPreviewCapacityRecovery();
+  const timer = window.setTimeout(async () => {
+    previewCapacityRecovery = null;
+    if (!current() || !state.previewUnavailableReason) return;
+    try {
+      const rendered = await renderGpuDraft(lane, { longEdge, tier, reason: "source-capacity-recovery",
+        viewport: nativeGeometryViewportActive(lane, longEdge, true) ? true : undefined });
+      if (rendered && current()) debounceOverlayAndScopes();
+    } catch (error) {
+      if (current()) console.warn("Preview capacity recovery failed.", error);
+    }
+  }, Math.max(0, Math.ceil(retryAfter - performance.now())));
+  previewCapacityRecovery = { key, timer };
 }
 
 async function settlePreview(lane = state.currentView, task = {}) {
@@ -114,12 +269,31 @@ async function settlePreview(lane = state.currentView, task = {}) {
 }
 
 async function settlePreviewInner(lane, task, action) {
+  const sessionId = state.session?.session_id;
+  const signature = state.geometryPresentationPending ? geometrySignature() : null;
+  const generation = state.previewGeneration[lane];
+  const workGeneration = state.gradeWorkGeneration;
+  try {
+    return await settlePreviewFrame(lane, task, action);
+  } finally {
+    if (signature && state.geometryPresentationPending && state.session?.session_id === sessionId
+      && lane === state.currentView && generation === state.previewGeneration[lane]
+      && workGeneration === state.gradeWorkGeneration && signature === geometrySignature()
+      && !geometryDraftActive() && task.isCurrent?.() !== false
+      && !state.offscreenGeometryPreview?.isCurrent()
+      && (task.applicationGeneration === undefined || task.applicationGeneration === generation)) {
+      finishFailedGeometryHandoff();
+    }
+  }
+}
+
+async function settlePreviewFrame(lane, task, action) {
   const workGeneration = state.gradeWorkGeneration;
   // Rotate/Straighten is an explicit Apply/Cancel transaction. A scheduler
   // task left resident by an earlier grading gesture must never settle the
   // transient geometry on slider release.
   if (!state.session || state.rotateDraftGeometry || state.perspectiveMode) return false;
-  await syncGlobalEditState();
+  if (await syncGlobalEditState() === false) return false;
   if (workGeneration !== state.gradeWorkGeneration) return false;
   // A local slider's `change` handler persists its optimistic value through
   // the serialized edit queue. The scheduler's settle timer is independent of
@@ -135,7 +309,8 @@ async function settlePreviewInner(lane, task, action) {
   if (task.isCurrent?.() === false) return false;
   if (task.applicationGeneration !== undefined
     && task.applicationGeneration !== state.previewGeneration[lane]) return false;
-  if (!task.localCommit && state.acceptedPresentation?.lane === lane
+  if (!task.localCommit && !(state.zoomMode === "fit" && holdingNativeDenoisePictureForFit())
+    && state.acceptedPresentation?.lane === lane
     && state.acceptedPresentation.exact
     && state.acceptedPresentation.generation === state.previewGeneration[lane]
     && state.acceptedPresentation.geometrySignature === geometrySignature()
@@ -157,6 +332,7 @@ async function settlePreviewInner(lane, task, action) {
       const options = { longEdge, tier, action, preservePicture: task.preservePicture };
       let rendered = await renderGpuDraft(lane, options);
       if (task.isCurrent?.() === false) return false;
+      if (!rendered && state.offscreenGeometryPreview?.isCurrent()) return false;
       // Latest-wins cancellation is expected while a mask proxy or edit
       // revision changes underneath a Full render. If this is still the
       // current scheduler task, retry once after the serialized edit queue has
@@ -176,7 +352,7 @@ async function settlePreviewInner(lane, task, action) {
         }
       }
       if (rendered) await refreshOverlay(longEdge);
-      else if (!supersededByScheduledWork(task) && !transientGpuRefusal()) {
+      else if (!supersededByScheduledWork(task) && !transientGpuRefusal() && !previewSourceCapacityRefused()) {
         state.cpuFallbacks.settle.push(state.lastGpuDraftRefusal?.reason || "unknown");
         await renderPreviewForLane(lane, true, longEdge, { showProgress: false, denoiseFallback: state.denoise?.[lane]?.enabled, action });
       }
@@ -209,7 +385,7 @@ async function refinePreview(lane, task = {}) {
     ? await renderGpuDraft(lane, { longEdge: targetLongEdge, tier: "refinement" })
     : false;
   if (rendered || geometryDraftActive() || !previewNeedsRefinement() || lane !== state.currentView || targetLongEdge !== refinementProxyLongEdge()) return;
-  if (transientGpuRefusal()) return;
+  if (transientGpuRefusal() || previewSourceCapacityRefused()) return;
   state.cpuFallbacks.refine.push(state.lastGpuDraftRefusal?.reason || "unknown");
   await renderPreviewForLane(lane, true, targetLongEdge, { showProgress: false, denoiseFallback: state.denoise?.[lane]?.enabled });
   if (generation !== state.previewGeneration[lane] || signature !== geometrySignature() || !previewNeedsRefinement()) return;
@@ -889,7 +1065,7 @@ function markStripPreviewUnavailable(lane, payload, reasons) {
 }
 
 async function renderGpuDraftInner(lane = state.currentView, request = {}) {
-  if (request.action || request.allowInactive || request.tier === "interactive" || request.panPass) {
+  if (request.action || request.allowInactive || request.tier === "interactive" || request.panPass || request.backgroundUnderlayer) {
     return renderGpuDraftForView(lane, request);
   }
   const action = gradeGrainAction(lane, request.reason === "grade-grain-control" ? "release_grain_control" : "grade_grain_view");
@@ -919,12 +1095,12 @@ async function renderGpuDraftForView(lane, request) {
   const diagnostics = globalThis.HDRDiagnostics;
   const context = request.action ?? state.gradeOpen?.action;
   const logDecision = tier !== "interactive" && request.reason !== "drag-coarse"
-    && !panPass && !state.denoise?.[lane]?.enabled;
+    && !panPass && !request.backgroundUnderlayer && !state.denoise?.[lane]?.enabled;
   const diagnosticFields = () => ({ lane, tier, requested_edge_px: longEdge, photo: gradeDiagnosticPhoto() });
   // Record why a draft declined. A silent false is very hard to diagnose from
   // a failing browser test, and every one of these is a legitimate refusal.
   const refuse = (reason, detail = null) => {
-    if (!request.token?.detached) {
+    if (!request.token?.detached && !request.backgroundUnderlayer) {
       state.lastGpuDraftRefusal = { reason, detail, lane, tier, at: performance.now() };
     }
     // Cumulative, because the interesting refusals arrive in bursts during a
@@ -932,7 +1108,7 @@ async function renderGpuDraftForView(lane, request) {
     // repeated supersession that PERF-03 is about.
     const key = `${tier}:${reason}`;
     state.gpuDraftRefusals[key] = (state.gpuDraftRefusals[key] || 0) + 1;
-    if (logDecision) diagnostics?.event("grade", "preview_refused", {
+    if (logDecision && reason !== "geometry-after-offscreen") diagnostics?.event("grade", "preview_refused", {
       ...diagnosticFields(), route: "refused", reason: previewDiagnosticReason(reason),
       budget_bytes: state.gpuPreview?.memoryBudgetBytes?.(),
     }, context);
@@ -950,8 +1126,13 @@ async function renderGpuDraftForView(lane, request) {
   // The coordinator assigns the dispatch serial when the render actually
   // starts; a superseded or coalesced intent never consumes one.
   const serial = Number(request.dispatchSerial) || 0;
-  state.gpuRenderSerial = serial;
-  if (!allowInactive) state.gpuPreview?.backgroundMaskRequestCoordinator?.cancel();
+  if (!request.backgroundUnderlayer) {
+    state.gpuRenderSerial = serial;
+    if (!allowInactive) {
+      cancelGeometryUnderlayer();
+      state.gpuPreview?.backgroundMaskRequestCoordinator?.cancel();
+    }
+  }
   const sessionId = state.session.session_id;
   const generation = Number.isFinite(Number(request.applicationGeneration))
     ? Number(request.applicationGeneration)
@@ -959,8 +1140,34 @@ async function renderGpuDraftForView(lane, request) {
   const requestedGeometrySignature = geometrySignature();
   const sourceIdentity = gradeSourceIdentity(lane);
   const canvas = els.previewCanvas;
-  const boundedPresentation = !allowInactive && nativeDenoiseViewport(lane)
-    && Boolean(request.viewport) && state.gpuPreview.executionOverride !== "direct";
+  const denoiseViewport = !allowInactive && !request.underlayerOnly && !roiCatchUp
+    && nativeDenoiseViewport(lane) && Boolean(request.viewport)
+    && state.gpuPreview.executionOverride !== "direct";
+  const geometryViewport = !allowInactive && !request.underlayerOnly && !roiCatchUp
+    && state.activeWorkflow === "grade" && state.zoomMode === "custom"
+    && (request.viewportRequested || request.viewport) && !geometryTransformIsNeutral()
+    && state.gpuPreview.executionOverride !== "direct";
+  const capacityRecovery = request.reason === "source-capacity-recovery";
+  const recoveredRegion = canvas.hdrFrameRegion?.capacityRecovery
+    && state.acceptedPresentation?.processedLongEdge === longEdge
+    && state.acceptedPresentation.geometrySignature === requestedGeometrySignature;
+  const nativeGeometryViewport = !allowInactive && !request.underlayerOnly && !request.backgroundUnderlayer
+    && !roiCatchUp && request.viewport !== false && (state.zoomMode !== "custom" || request.viewportRequested !== false)
+    && nativeGeometryViewportActive(lane, longEdge, capacityRecovery);
+  const boundedPresentation = denoiseViewport || nativeGeometryViewport;
+  const sideBySideGeometryViewport = nativeGeometryViewport
+    && (state.compareLayout === "side-horizontal" || state.compareLayout === "side-vertical");
+  const sourceCapacityRefusal = (error) => {
+    if (!allowInactive && !roiCatchUp && !request.coarse && !request.backgroundUnderlayer && tier !== "interactive"
+      && request.isCurrent?.() !== false && lane === state.currentView) {
+      if (state.previewUnavailableReason !== error.message) markPreviewUnavailable(error.message);
+      if (request.reason !== "source-capacity-recovery") {
+        schedulePreviewCapacityRecovery(error, lane, sessionId, generation, tier,
+          request.recoveryLongEdge || longEdge);
+      }
+    }
+    return refuse("preview-source-capacity", error.message);
+  };
   const liveGpuGrain = liveGradeGrainSelected(lane);
   const denoiseActive = state.denoise?.[lane]?.enabled && !state.denoiseRuntime?.[lane]?.showOriginal;
   const denoiseMethod = state.denoise[lane]?.controls.method;
@@ -990,25 +1197,61 @@ async function renderGpuDraftForView(lane, request) {
     } : underlayerDenoise, state.denoiseRuntime[lane]?.showOriginal,
     denoiseNoiseViewActive(lane), gpuLumaMaskOverlayOptions(), projectReferenceWhiteNits(),
     Boolean(window.matchMedia?.("(dynamic-range: high)").matches)]);
-  if (boundedPresentation) {
+  const viewportCurrent = () => request.isCurrent?.() !== false && state.session?.session_id === sessionId
+    && (generation === state.previewGeneration[lane]
+      || (request.interactiveSnapshot && state.previewScheduler?.interacting))
+    && requestedGeometrySignature === geometrySignature();
+  const deferOffscreen = (frameSize) => {
+    if (!request.coarse && tier !== "interactive") {
+      const { editRevision, zoomMode, zoomPercent } = state;
+      state.offscreenGeometryPreview = {
+        lane, frameSize,
+        options: { longEdge, tier, viewport: true, reason: request.reason, preservePicture: request.preservePicture },
+        isCurrent: () => state.session?.session_id === sessionId && state.editRevision === editRevision
+          && state.previewGeneration[lane] === generation && geometrySignature() === requestedGeometrySignature
+          && state.zoomMode === zoomMode && state.zoomPercent === zoomPercent && !geometryDraftActive()
+          && nativeGeometryViewportActive(lane, longEdge, capacityRecovery),
+      };
+    }
+    return refuse("geometry-after-offscreen");
+  };
+  if (nativeGeometryViewport && !gpuFrameSizeAt(longEdge)) {
+    try {
+      await ensureGeometryCoordinateMap(longEdge, { reportFailure: true });
+    } catch (error) {
+      if (!viewportCurrent() || error?.status === 409) return refuse("superseded-before-viewport");
+      if (error?.status === 507) return sourceCapacityRefusal(error);
+      return refuse("geometry-map-unavailable", error?.message);
+    }
+    if (!viewportCurrent()) return refuse("superseded-before-viewport");
+  }
+  if (sideBySideGeometryViewport) {
+    const frameSize = gpuFrameSizeAt(longEdge);
+    if (frameSize && !nativeGeometryOutputRect(frameSize)) return deferOffscreen(frameSize);
+  }
+  const geometryUnderlayerEdge = nativeGeometryViewport && longEdge > 1600 ? 1600 : 0;
+  const retireGeometryUnderlayer = nativeGeometryViewport && canvas.hdrWholeFrame?.key !== wholeFrameKey;
+  if (denoiseViewport && !nativeGeometryViewport) {
     const softEdge = denoiseUnderlayerEdge();
     const accepted = state.acceptedPresentation;
     const samePicturePan = liveGpuGrain && panPass && canvas.hdrFrameRegion && accepted?.exact
       && accepted.lane === lane && accepted.generation === generation
       && accepted.geometrySignature === requestedGeometrySignature;
-    const reusable = canvas.hdrWholeFrame && canvas.style.display !== "none"
+    const reusable = !state.geometryPresentationPending && canvas.hdrWholeFrame && canvas.style.display !== "none"
       && (samePicturePan || (canvas.hdrWholeFrame.key === wholeFrameKey && canvas.hdrWholeFrame.edge <= softEdge + 1));
-    if (!reusable && !((micro || request.preservePicture) && canvas.hdrWholeFrame && state.acceptedPresentation?.lane === lane
-      && state.acceptedPresentation?.geometrySignature === requestedGeometrySignature)) {
+    const retainedUnderlayer = !state.geometryPresentationPending && (micro || request.preservePicture)
+      && canvas.hdrWholeFrame && accepted?.lane === lane
+      && accepted.geometrySignature === requestedGeometrySignature;
+    if (!reusable && !retainedUnderlayer) {
       const drawn = await renderGpuDraftInner(lane, {
         ...request, longEdge: softEdge, viewport: null, panPass: false, roiCatchUp: false, underlayerOnly: true,
+        recoveryLongEdge: longEdge,
       });
       if (!drawn) return false;
-      if (request.isCurrent?.() === false || state.session?.session_id !== sessionId
-        || !nativeDenoiseViewport(lane) || lane !== state.currentView) return refuse("superseded-after-underlayer");
+      if (!viewportCurrent() || lane !== state.currentView || !nativeDenoiseViewport(lane)) return refuse("superseded-after-underlayer");
     }
   }
-  if (denoiseActive && (!microSelected || micro)) {
+  if (!request.backgroundUnderlayer && denoiseActive && (!microSelected || micro)) {
     if (!allowInactive) {
       const regionOnly = Boolean(request.viewport && nativeDenoiseViewport(lane)
         && longEdge === requiredProcessingLongEdge() && state.gpuPreview.executionOverride !== "direct");
@@ -1048,7 +1291,7 @@ async function renderGpuDraftForView(lane, request) {
     if (!quick || !microStillCurrent() || request.isCurrent?.() === false) return refuse("superseded-after-micro-quick");
   }
   const preparedGrain = denoiseActive ? state.gpuPreview.denoiseSourceSelector?.cache?.grain : null;
-  const cpuGrainToken = preparedGrain?.token;
+  const cpuGrainToken = !request.backgroundUnderlayer && preparedGrain?.token;
   if (cpuGrainToken && !allowInactive && state.zoomMode === "fit" && !request.preservePicture && !request.underlayerOnly
     && tier !== "interactive" && canvas.hdrCpuGrainQuickToken !== cpuGrainToken) {
     const quick = await renderGpuDraftInner(lane, { ...request, underlayerOnly: true });
@@ -1058,19 +1301,27 @@ async function renderGpuDraftForView(lane, request) {
   }
   // A magnified pass fetches a region of the frame it will produce, so it has
   // to know that frame's exact size first.
-  if (request.viewport && !gpuFrameSizeAt(longEdge)) await ensureGeometryCoordinateMap(longEdge);
+  let viewportFrame;
+  try {
+    viewportFrame = await resolveGpuViewport(longEdge, request.viewport, {
+      remeasure: geometryViewport || boundedPresentation, includeWhole: boundedPresentation,
+      measure: nativeGeometryViewport ? nativeGeometryOutputRect : null, isCurrent: viewportCurrent,
+    });
+  } catch (error) {
+    if (!viewportCurrent() || error?.status === 409) return refuse("superseded-before-viewport");
+    if (error?.status === 507) return sourceCapacityRefusal(error);
+    return refuse("geometry-map-unavailable", error?.message);
+  }
+  if (!viewportFrame) return refuse("superseded-before-viewport");
+  const { frameSize, viewport } = viewportFrame;
+  if (sideBySideGeometryViewport && frameSize && !viewport) return deferOffscreen(frameSize);
+  if (boundedPresentation && !viewport) return refuse("superseded-before-viewport");
   const repairSourceGeneration = state.repairSourceGeneration || 0;
   const adjustmentsSnapshot = JSON.parse(JSON.stringify(state.adjustments));
   const localSnapshot = localsBypassed()
     ? []
     : JSON.parse(JSON.stringify(localAdjustments()));
   const maskOverlay = gpuLumaMaskOverlayOptions();
-  const frameSize = geometrySignature() === requestedGeometrySignature ? gpuFrameSizeAt(longEdge) : null;
-  // A scroll event can run while the old Fit bitmap is still mounted. Use
-  // the requested processing dimensions for this native viewport.
-  const viewport = boundedPresentation && frameSize
-    ? visibleOutputRect(frameSize.width, frameSize.height, { includeWhole: true }) : request.viewport;
-  if (boundedPresentation && !viewport) return refuse("superseded-before-viewport");
   let viewportMoved = false;
   const replacingDetail = !allowInactive && Boolean(canvas.hdrFrameRegion);
   // Refreshing the lower layer of the same picture must leave the previous
@@ -1087,11 +1338,15 @@ async function renderGpuDraftForView(lane, request) {
     // The frame this pass will produce, so that the first magnified pass can
     // fetch only the region it draws.
     frameSize,
+    nativeGeometryViewport,
     roiCatchUp,
     panPass,
     gradePreview: state.activeWorkflow === "grade" && Boolean(request.token)
       && !allowInactive && !request.underlayerOnly,
     cancelCoarseFetches: request.reason === "drag-coarse",
+    backgroundUnderlayer: request.backgroundUnderlayer,
+    cancelUnderlayer: request.backgroundUnderlayer ? () => request.token?.cancel("superseded-at-renderer") : null,
+    keepProxies: request.backgroundUnderlayer,
     // First paint only the visible CPU Grain tiles. Pan requests use the
     // ordinary padding once this preparation has an exact picture.
     minimumRoiFraction: boundedPresentation && cpuGrainToken && !preparedGrain.warmedRegion && !panPass
@@ -1103,25 +1358,36 @@ async function renderGpuDraftForView(lane, request) {
     signal: request.token?.signal,
     fineGrainGrade: liveGradeGrainSelected(lane),
     action: request.action,
-    originalSource: !denoiseActive || (microSelected && (!micro || !(microControls.microLuminance || microControls.microColor))),
+    originalSource: request.backgroundUnderlayer || !denoiseActive
+      || (microSelected && (!micro || !(microControls.microLuminance || microControls.microColor))),
     deferSurface: request.underlayerOnly || (replacingDetail && !boundedPresentation && !viewport),
     coversViewport: boundedPresentation ? (region, width, height) => {
-      if (!nativeDenoiseViewport(lane)) return false;
-      const visible = visibleOutputRect(width, height, { includeWhole: true });
+      if (nativeGeometryViewport ? !nativeGeometryViewportActive(lane, longEdge, capacityRecovery) : !nativeDenoiseViewport(lane)) return false;
+      const visible = nativeGeometryViewport ? nativeGeometryOutputRect({ width, height })
+        : visibleOutputRect(width, height, { includeWhole: true });
       viewportMoved = !window.HDRViewportRequest.covers(region, visible);
       return !viewportMoved;
     } : null,
     onFrameSubmitted: boundedPresentation || request.underlayerOnly || replacingDetail ? (region, hdr) => {
+      if (request.backgroundUnderlayer) return;
       if (canvas.hdrCpuMicroRegion) clearDenoiseDetail();
-      if (region || retainedDetail) canvas.hdrFrameRegion = region || retainedDetail;
+      if (region || retainedDetail) canvas.hdrFrameRegion = nativeGeometryViewport && region
+        ? { ...region, nativeGeometryViewport: true, capacityRecovery: capacityRecovery || Boolean(recoveredRegion) }
+        : (region || retainedDetail);
       else clearDenoiseDetail();
-      if (request.underlayerOnly) {
+      if (retireGeometryUnderlayer) {
+        canvas.hdrWholeFrame = null;
+        state.gpuPreview.scopeSources?.delete(canvas);
+        if (canvas.width !== 1) canvas.width = 1;
+        if (canvas.height !== 1) canvas.height = 1;
+      }
+      if (request.underlayerOnly || (nativeGeometryViewport && region && state.geometryPresentationPending)) {
         els.previewImage.style.display = "none";
         canvas.style.display = "block";
         els.emptyState.style.display = "none";
         state.gpuPreparedLane[lane] = true;
         setGpuSurfaceHdr(lane, hdr);
-        if (!retainedDetail) acceptPreviewGeometry(canvas.width, canvas.height, longEdge);
+        if (!retainedDetail) acceptPreviewGeometry(region?.frameWidth || canvas.width, region?.frameHeight || canvas.height, longEdge);
       } else {
         applyZoomGeometry();
       }
@@ -1129,7 +1395,7 @@ async function renderGpuDraftForView(lane, request) {
     // Adaptive reconstruction reads ungraded source pixels. A slider changes
     // the render, but leaves these pixels useful to its replacement. Keep the
     // load alive while the photo and geometry remain the same.
-    isSourceCurrent: state.denoise?.[lane]?.enabled || boundedPresentation
+    isSourceCurrent: !request.backgroundUnderlayer && (state.denoise?.[lane]?.enabled || boundedPresentation)
       ? () => !geometryDraftActive() && state.session?.session_id === sessionId
         && gradeSourceIdentity(lane) === sourceIdentity
         && requestedGeometrySignature === geometrySignature()
@@ -1164,7 +1430,7 @@ async function renderGpuDraftForView(lane, request) {
       && !(request.coarse && request.reason === "drag-coarse" && !state.previewScheduler?.interacting),
   };
   const renderer = state.gpuPreview;
-  const gpuGrain = liveGradeGrainSelected(lane) && renderer.denoiseSourceSelector.cache.grain;
+  const gpuGrain = !request.backgroundUnderlayer && liveGradeGrainSelected(lane) && renderer.denoiseSourceSelector.cache.grain;
   if (!sourceOptions.isCurrent()) return refuse("superseded-before-render");
   try {
     const draw = boundedPresentation
@@ -1184,6 +1450,8 @@ async function renderGpuDraftForView(lane, request) {
     );
     const result = await (cpuGrainToken ? trackGrainCpuWork(lane, denoiseMethod, render) : render());
     if (!result) {
+      if (sideBySideGeometryViewport && viewportMoved && sourceOptions.isCurrent()
+        && !nativeGeometryOutputRect(frameSize)) return deferOffscreen(frameSize);
       const reason = renderer.lastRenderRefusal?.reason;
       if (gpuGrain && (reason?.startsWith("tiled-encode-failed:validation:")
         || reason === "tiled-encode-failed:tile graph allocation failed"
@@ -1288,7 +1556,7 @@ async function renderGpuDraftForView(lane, request) {
           animationFrameAt,
         });
         window.dispatchEvent(new CustomEvent("hdrfinisher:preview-presented", {
-          detail: { serial, sourceSerial: result.sourceSerial, generation, lane, longEdge, submittedAt, presentedAt, sessionId, tier, coarse:Boolean(request.coarse), wholeFrame:!request.viewport, execution: result.execution },
+          detail: { serial, sourceSerial: result.sourceSerial, generation, lane, longEdge, submittedAt, presentedAt, sessionId, tier, coarse:Boolean(request.coarse), wholeFrame:!viewport, execution: result.execution },
         }));
         if (maskOverlay) {
           window.dispatchEvent(new CustomEvent("hdrfinisher:mask-presented", {
@@ -1305,12 +1573,29 @@ async function renderGpuDraftForView(lane, request) {
           }));
         }
       });
+      if (geometryUnderlayerEdge && canvas.hdrWholeFrame?.key !== wholeFrameKey && !sourceOptions.noiseView
+        && (viewport.width !== frameSize.width || viewport.height !== frameSize.height)) {
+        const region = canvas.hdrFrameRegion;
+        const revision = state.editRevision;
+        const zoomPercent = state.zoomPercent;
+        scheduleGeometryUnderlayer({ lane, edge: geometryUnderlayerEdge, generation,
+          current: () => state.session?.session_id === sessionId && state.gpuPreview === renderer
+            && state.editRevision === revision && state.previewGeneration[lane] === generation
+            && state.zoomPercent === zoomPercent && geometrySignature() === requestedGeometrySignature
+            && gradeSourceIdentity(lane) === sourceIdentity && canvas.hdrFrameRegion === region
+            && !geometryDraftActive() && !state.comparePeekActive && !state.beforePeekWanted
+            && !state.comparePendingPeek && nativeGeometryViewportActive(lane, longEdge),
+        });
+      }
+      if (nativeGeometryViewport && !request.coarse && tier !== "interactive") state.offscreenGeometryPreview = null;
       return true;
   } catch (error) {
+    if (request.backgroundUnderlayer) return refuse("background-underlayer-failed", error?.message);
     if (!sourceOptions.isCurrent() || error?.name === "AbortError" || (denoiseActive && error?.status === 409)) {
       renderer?.grainEvent?.("grain_cancelled", "refused", "superseded", request.action, { lane, method: denoiseMethod });
       return refuse("superseded-during-render");
     }
+    if (error?.status === 507) return sourceCapacityRefusal(error);
     if (micro || (gpuGrain && renderer.denoiseSourceSelector?.cache?.grain === gpuGrain)) {
       const current = () => sourceOptions.isCurrent() && state.gpuPreview === renderer;
       const key = gpuGrain?.sourceKey ?? renderer.grainSourceKey(sessionId, requestedGeometrySignature,
@@ -1391,6 +1676,20 @@ async function renderGpuDraftForView(lane, request) {
     renderReadouts();
     return false;
   }
+}
+
+async function resolveGpuViewport(longEdge, measuredViewport, { remeasure, includeWhole, measure, isCurrent }) {
+  let frameSize = gpuFrameSizeAt(longEdge);
+  if ((measuredViewport || remeasure) && !frameSize) {
+    await ensureGeometryCoordinateMap(longEdge, { reportFailure: true });
+    frameSize = gpuFrameSizeAt(longEdge);
+    if (!frameSize && isCurrent()) throw new Error("The exact preview frame dimensions are unavailable.");
+  }
+  if (!isCurrent()) return null;
+  const viewport = remeasure && frameSize
+    ? (measure ? measure(frameSize) : visibleOutputRect(frameSize.width, frameSize.height, { includeWhole }))
+    : measuredViewport;
+  return { frameSize, viewport };
 }
 
 function clearPreviewImage() {
@@ -1495,6 +1794,12 @@ function previewInfoFromResponse(response, kind) {
 }
 
 function invalidatePreview(lane, { local = false, markDirty = true } = {}) {
+  if (lane === state.currentView) {
+    cancelGeometryUnderlayer();
+    clearPreviewCapacityRecovery();
+  }
+  window.HDRSourceTransport?.clearCapacityRefusals(state.gpuPreview);
+  clearGeometryMapCapacityRefusals();
   if (state.zoomScopeTimer && lane === state.currentView) clearZoomScopeRefresh();
   if (lane === "hdr" && state.adjustments?.sdr?.linked_to_hdr) {
     invalidatePreview("sdr", { local: true, markDirty: false });
@@ -1532,6 +1837,13 @@ function invalidatePreview(lane, { local = false, markDirty = true } = {}) {
 }
 
 function clearPreviewCache({ preservePicture = false } = {}) {
+  cancelGeometryUnderlayer();
+  clearPreviewCapacityRecovery();
+  window.HDRSourceTransport?.clearCapacityRefusals(state.gpuPreview);
+  clearGeometryMapCapacityRefusals();
+  geometryCoordinateMapRequests.clear();
+  geometryCoordinateMapCache.clear();
+  geometryFullOutputFrames.clear();
   // Source/project replacement must retire tool transactions, without copying
   // their old snapshots into the newly loaded document.
   state.perspectiveSolveController?.abort();
@@ -1720,7 +2032,7 @@ function prepareInactivePreview({ immediate = false } = {}) {
 async function holdSourceForPanning(lane, longEdge) {
   // The view may have left this size since the catch-up was armed.
   if (!state.session || lane !== state.currentView || !gpuPreviewEligible(lane)
-    || nativeDenoiseViewport(lane) || requiredProcessingLongEdge() !== longEdge
+    || nativeDenoiseViewport(lane) || nativeGeometryViewportActive(lane) || requiredProcessingLongEdge() !== longEdge
     || !state.gpuPreview?.holdSourceForPanning) return;
   const sessionId = state.session.session_id;
   const sourceIdentity = gradeSourceIdentity(lane);

@@ -62,6 +62,7 @@ from .models import (
     FavoritePathRequest,
     GeometryMapRequest,
     GeometryMapResponse,
+    MAX_MASK_TILE_BATCH_BYTES,
     PerspectiveSolveRequest,
     PerspectiveSolveResponse,
     ImportJobRequest,
@@ -94,7 +95,7 @@ from .overlay import encode_processed_overlay_bytes
 from .preview import encode_processed_preview_bytes, encode_processed_rgba8
 from .cpu_strips import StripExecutionRefused
 from .render_cache import StaleRender, TileUnavailableError, downsample_target_dimensions, encode_rgba_proxy, encode_rgba_proxy_rows, rgba_proxy_pixel_format
-from .finishing import geometry_output_dimensions, perspective_guide_transform, solve_perspective_guides
+from .finishing import geometry_is_identity, geometry_output_dimensions, perspective_guide_transform, solve_perspective_guides
 from .display_probe import probe_displays
 from .proofing import ProofArtifactStore
 from .projects import ProjectError, ProjectSourceRelinkRequired, open_project, save_project
@@ -2052,7 +2053,17 @@ def local_mask_tiles_batch_proxy(
     """
     session = _checked_edit_session(session_id, request.edit_revision)
     _check_mask_geometry(session, request.geometry_signature)
-    _guard_preview_resources(session, request.long_edge)
+    geometry = session.adjustments.shared.geometry
+    bounded_geometry = request.bounded_geometry and not geometry_is_identity(geometry)
+    mip_working_bytes = 0
+    if bounded_geometry:
+        native_width, native_height = session.source.width, session.source.height
+        mip_width, mip_height = downsample_target_dimensions(native_width, native_height, request.long_edge)
+        output_width, output_height = geometry_output_dimensions(mip_width, mip_height, geometry)
+        if (mip_width, mip_height) != (native_width, native_height):
+            mip_working_bytes = native_width * native_height * 12 + mip_width * mip_height * 24
+    else:
+        _guard_preview_resources(session, request.long_edge)
 
     locals_by_id = {item.id: item for item in session.local_adjustments}
     compiled: dict[tuple[str, str | None], np.ndarray] = {}
@@ -2110,16 +2121,31 @@ def local_mask_tiles_batch_proxy(
             if identity not in regions:
                 box = bounds[identity]
                 origin = (max(0, box[0]), max(0, box[1]))
-                region = _compile_current_mask(session, session.render_cache.compiled_local_mask_region,
-                    session.adjustments,
-                    mask_source,
-                    request.long_edge,
-                    (origin[0], origin[1], box[2], box[3]),
-                    timing=timing, expected_revision=request.edit_revision,
-                    identity=lambda tile=tile: _committed_mask_identity(session, tile.local_id, tile.mask_path),
-                )
+                if bounded_geometry:
+                    width = max(0, min(box[2], output_width) - origin[0])
+                    height = max(0, min(box[3], output_height) - origin[1])
+                    if width * height > MAX_MASK_TILE_BATCH_BYTES:
+                        raise HTTPException(status_code=422, detail="The mask tiles span too much of the output.")
+                if bounded_geometry and (not width or not height):
+                    region = (np.empty((0, 0), dtype=np.uint8), (output_width, output_height))
+                else:
+                    if mip_working_bytes:
+                        available = _preview_resource_payload(session, request.long_edge)["safely_available_bytes"] or 0
+                        working_bytes = mip_working_bytes + width * height * 24 + mip_width * 256 * 64
+                        if working_bytes > available:
+                            raise HTTPException(status_code=507, detail="Not enough host memory for this mask batch.")
+                    region = _compile_current_mask(session, session.render_cache.compiled_local_mask_region,
+                        session.adjustments,
+                        mask_source,
+                        request.long_edge,
+                        (origin[0], origin[1], box[2], box[3]),
+                        timing=timing, expected_revision=request.edit_revision, bounded_fallback=bounded_geometry,
+                        identity=lambda tile=tile: _committed_mask_identity(session, tile.local_id, tile.mask_path),
+                    )
                 regions[identity] = None if region is None else (region[0], region[1], origin)
             if regions[identity] is None:
+                if bounded_geometry:
+                    _guard_preview_resources(session, request.long_edge)
                 mask = _compile_current_mask(session, session.render_cache.compiled_local_mask,
                     session.adjustments,
                     mask_source,
@@ -2267,7 +2293,7 @@ def local_mask_preview_proxy(
     response_model=GeometryMapResponse,
 )
 def geometry_map(session_id: str, request: GeometryMapRequest) -> GeometryMapResponse:
-    """Return the cached bidirectional map used by source-anchored editor tools."""
+    """Calculate frame dimensions and two small matrices without fetching pixels."""
     try:
         session = store.get(session_id)
         _check_revision(session.edit_revision, request.edit_revision)
@@ -2275,7 +2301,6 @@ def geometry_map(session_id: str, request: GeometryMapRequest) -> GeometryMapRes
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except RevisionConflictError as exc:
         raise _revision_conflict(exc) from exc
-    _guard_preview_resources(session, request.long_edge)
     adjustments = request.adjustments or session.adjustments
     output_to_source, source_to_output, width, height = session.render_cache.geometry_map(
         adjustments,

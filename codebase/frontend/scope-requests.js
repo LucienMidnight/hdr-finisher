@@ -6,6 +6,7 @@ function clearZoomScopeRefresh() {
 }
 
 function suspendGradeInstruments() {
+  cancelGeometryUnderlayer();
   state.gradeWorkGeneration = (state.gradeWorkGeneration || 0) + 1;
   state.previewScheduler?.cancel();
   state.cpuPreviewInflight?.clear();
@@ -180,45 +181,50 @@ async function runGpuScopeRequest(request) {
     // settlement. Live input keeps the last scope until its settled request;
     // it never starts an extra grading graph beside the gesture's tiles.
     if (tier === "interactive") return false;
-    let sourceSuperseded = false;
+    let sourceConflictRevision = null;
     const renderProxy = async () => {
+      if (!isCurrent()) return null;
+      cancelGeometryUnderlayer();
       while (isCurrent() && (state.gpuDraftInFlight || state.gpuPreview.activeRenderCount > 0)) {
         await new Promise((resolve) => window.setTimeout(resolve, 16));
       }
       if (!isCurrent()) return null;
+      const revision = state.editRevision;
       return state.gpuPreview.renderScopeProxy(
         request.sessionId, lane, state.adjustments, sampleCurvePoints,
         request.longEdge, request.include_locals ? localAdjustments() : [],
-        request.edit_revision, projectReferenceWhiteNits(),
+        revision, projectReferenceWhiteNits(),
         { width: state.session.source.width, height: state.session.source.height },
         { applicationGeneration: accepted.generation, isCurrent },
       ).catch((error) => {
         // A newer generation stopping this one's source load is not a failure;
         // the scope that replaces it is already on its way.
-        // Source publication can reach the backend before its edit response
-        // reaches this browser. A 409 then belongs to the old source even
-        // while the browser still has that revision; its replacement follows.
-        if (error?.status === 409) { sourceSuperseded = true; return null; }
-        if (error?.superseded || !isCurrent() || request.edit_revision !== state.editRevision) return null;
+        // A save can reach the backend before its revision reaches this browser.
+        // Retry only if the acknowledgement leaves the picture identity intact.
+        if (error?.status === 409) { sourceConflictRevision = revision; return null; }
+        if (error?.superseded || !isCurrent() || revision !== state.editRevision) return null;
         throw error;
       });
     };
     const startedAt = performance.now();
     let rendered = await renderProxy();
-    if (!isCurrent() || sourceSuperseded) return false;
-    // A pan or catch-up pass of the same generation can start meanwhile and
-    // take this pass's masks. That is not the GPU refusing the scope, and no
-    // later request replaces it: wait for that pass and ask once more.
+    if (!isCurrent()) return false;
     const refusal = state.gpuPreview.lastRenderRefusal;
-    if (!rendered && refusal?.at >= startedAt && String(refusal.reason).startsWith("superseded")) {
+    if (sourceConflictRevision !== null) {
+      await state.editCommandQueue;
+      if (!isCurrent() || state.editRevision === sourceConflictRevision) return false;
+      sourceConflictRevision = null;
+      rendered = await renderProxy();
+    } else if (!rendered && refusal?.at >= startedAt && String(refusal.reason).startsWith("superseded")) {
+      // A same-generation pan can take this pass's masks without replacing the scope.
       rendered = await renderProxy();
     }
-    if (!isCurrent()) return false;
+    if (!isCurrent() || sourceConflictRevision !== null) return false;
     if (!rendered) {
       // The accepted tiled picture is current, but an auxiliary GPU graph
       // can still be refused under memory pressure. Keep the same generation
       // guards and settle through the established CPU scope fallback.
-      return new Promise(resolve => enqueueScopeRequest({...request,resolve}));
+      return new Promise(resolve => enqueueScopeRequest({ ...request, edit_revision: state.editRevision, resolve }));
     }
     scopeCanvas = rendered.canvas;
     sourceSerial = rendered.sourceSerial;

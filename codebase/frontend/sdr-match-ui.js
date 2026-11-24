@@ -389,6 +389,7 @@ async function presentMatchedSdrPreview(options) {
   }
   if (!current()) return true;
   if (!rendered) {
+    if (previewSourceCapacityRefused()) return true;
     if (transientGpuRefusal()) {
       // A second cancellation still has no CPU failure to recover from. Arm
       // real replacement work rather than claiming an exact frame is ready.

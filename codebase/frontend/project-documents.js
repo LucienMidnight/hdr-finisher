@@ -406,8 +406,10 @@ async function activateDesktopSession(session, projectPath, openGeneration = nul
     if (openGeneration !== null && openGeneration !== state.importGeneration) return;
   }
   // A second supersession means newer scheduled work will present the frame.
-  const denoiseFallback = !gpuReady && !transientGpuRefusal() && state.denoise.hdr.enabled;
-  if (!gpuReady && !transientGpuRefusal()) {
+  const sourceCapacityRefused = !gpuReady && previewSourceCapacityRefused();
+  const useCpuPreview = !gpuReady && !transientGpuRefusal() && !sourceCapacityRefused;
+  const denoiseFallback = useCpuPreview && state.denoise.hdr.enabled;
+  if (useCpuPreview) {
     const options = { progressSteps: [36, 76, 92], denoiseFallback };
     if (zoom) await renderPreviewForLane("hdr", true, settledProxyLongEdge(), options);
     else await refreshPreview(options);
@@ -430,11 +432,11 @@ async function activateDesktopSession(session, projectPath, openGeneration = nul
     if (state.session?.session_id === session.session_id) console.error("Photo analysis could not finish.", error);
   });
   if (openGeneration !== null && openGeneration !== state.importGeneration) return;
-  if (!denoiseFallback && state.denoise.hdr.enabled) await recalculateDenoise();
+  if (!denoiseFallback && !sourceCapacityRefused && state.denoise.hdr.enabled) await recalculateDenoise();
   if (openGeneration !== null && openGeneration !== state.importGeneration) return;
-  hidePreviewMessage();
+  if (!sourceCapacityRefused) hidePreviewMessage();
   prepareInactivePreview();
-  if (!denoiseFallback && previewNeedsRefinement()) debouncePreview("hdr");
+  if (!denoiseFallback && !sourceCapacityRefused && previewNeedsRefinement()) debouncePreview("hdr");
   syncDesktopDocumentState();
   window.HDRGradeSaving?.activated(session, projectPath);
 }

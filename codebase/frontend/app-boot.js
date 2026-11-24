@@ -306,7 +306,7 @@ function initializePreviewScheduler() {
       // route exists to remove; the pan pass draws what the view reaches.
       // Native Denoise can reconstruct or read the next visible region as
       // the view reaches it. Avoid a whole native source and follow-up draw.
-      canCatchUp: (lane, longEdge) => !nativeDenoiseViewport(lane) && (
+      canCatchUp: (lane, longEdge) => !nativeDenoiseViewport(lane) && !nativeGeometryViewportActive(lane) && (
         state.roiPreviewMode === "refinement" || Boolean(
           state.session && state.gpuPreview?.catchUpNeedsNoBackendMasks?.(
             state.session.session_id, lane, longEdge, geometrySignature(),
@@ -1052,7 +1052,7 @@ function bindEvents() {
     const edge = requiredProcessingLongEdge();
     const frame = gpuFrameSizeAt(edge) || approximateGpuFrameSizeAt(edge);
     state.renderCoordinator?.noteViewport(state.currentView, visibleOutputRect(frame.width, frame.height));
-    noteViewerPan();
+    if (!resumeOffscreenGeometryPreview(state.currentView)) noteViewerPan();
   }, { passive: true });
   // Press and drag pans continuously; keyboard activation centres the view.
   const panFromNavigation = (x, y) => {

@@ -152,6 +152,7 @@
     noteEdit(lane, { preserveInteractive = false } = {}) {
       const st = this.laneState(lane);
       st.editGeneration += 1;
+      this.cancelUnderlayer(lane, "superseded-by-edit");
       this.cancelFollowUps(lane);
       // A paced slider frame may take longer than the interval between inputs.
       // Let that snapshot finish; the scheduler will draw the latest one next.
@@ -195,6 +196,7 @@
       for (const lane of this.lanes.keys()) {
         const st = this.laneState(lane);
         st.sourceGeneration += 1;
+        this.cancelUnderlayer(lane, "superseded-by-source");
         this.cancelFollowUps(lane);
         this.cancelInFlight(lane, "superseded-by-source");
         this.dropPending(lane, "superseded-by-source");
@@ -208,6 +210,7 @@
     /** The lane the viewer currently shows. */
     noteActiveLane(lane) {
       if (this.activeLane === lane) return false;
+      this.cancelUnderlayer(this.activeLane, "superseded-by-lane");
       this.activeLane = lane;
       this.laneState(lane).laneGeneration += 1;
       this.emitChange(lane, "lane");
@@ -220,6 +223,7 @@
      * the transaction itself will supersede.
      */
     cancelLane(lane, reason = "cancelled", { detach = false } = {}) {
+      this.cancelUnderlayer(lane, reason);
       this.cancelFollowUps(lane);
       this.cancelInFlight(lane, reason);
       this.dropPending(lane, reason);
@@ -297,6 +301,17 @@
       return st.inFlight.token.cancel(reason);
     }
 
+    cancelUnderlayer(lane, reason = "superseded-underlayer") {
+      const st = this.laneState(lane);
+      const entry = st.inFlight;
+      if (!entry?.request.backgroundUnderlayer) return false;
+      entry.token.cancel(reason);
+      entry.token.detached = true;
+      st.inFlight = null;
+      this.settleEntry(st, entry, false);
+      return true;
+    }
+
     dropPending(lane, reason, requestReason) {
       const st = this.laneState(lane);
       if (!st.pending || (requestReason !== undefined && st.pending.request.reason !== requestReason)) return false;
@@ -346,21 +361,24 @@
         action: intent.action,
         priority: intent.priority,
         allowInactive: Boolean(intent.allowInactive),
-        applicationGeneration: st.editGeneration,
+        applicationGeneration: intent.applicationGeneration ?? st.editGeneration,
         viewportGeneration: st.viewportGeneration,
         scaleGeneration: st.scaleGeneration,
         sourceGeneration: st.sourceGeneration,
         laneGeneration: st.laneGeneration,
+        viewportRequested: Boolean(intent.viewport) && !intent.catchUp,
         viewport: this.viewportFor(intent, st),
         roiCatchUp: Boolean(intent.catchUp),
         panPass: Boolean(intent.panPass),
+        backgroundUnderlayer: intent.backgroundUnderlayer,
+        underlayerOnly: intent.backgroundUnderlayer,
         coarse: Boolean(intent.coarse),
         interactiveSnapshot: Boolean(intent.interactiveSnapshot),
         hideStatus: intent.hideStatus !== false,
         preservePicture: Boolean(intent.preservePicture),
         sessionId: this.sessionId,
         token,
-        isCurrent: token.isCurrent,
+        isCurrent: intent.isCurrent ? () => token.isCurrent() && intent.isCurrent() : token.isCurrent,
       };
       let resolve = null;
       let reject = null;
@@ -383,6 +401,11 @@
       };
     }
 
+    canStartUnderlayer(lane) {
+      return lane === this.activeLane && Boolean(this.sessionId)
+        && ![...this.lanes.values()].some((other) => other.inFlight || other.pending || other.panTimer !== null);
+    }
+
     /**
      * Submit render intent. Foreground intent supersedes the in-flight render
      * (the token stops it at its next boundary) and becomes the one latest
@@ -392,7 +415,8 @@
      */
     submit(intent = {}) {
       const lane = intent.lane || this.activeLane || "hdr";
-      const priority = intent.priority === "background" ? "background" : "foreground";
+      const backgroundUnderlayer = Boolean(intent.backgroundUnderlayer);
+      const priority = backgroundUnderlayer || intent.priority === "background" ? "background" : "foreground";
       const normalized = {
         lane,
         tier: intent.tier || "settled",
@@ -408,11 +432,17 @@
         hideStatus: intent.hideStatus !== false,
         preservePicture: Boolean(intent.preservePicture),
         allowInactive: Boolean(intent.allowInactive),
+        backgroundUnderlayer,
+        applicationGeneration: backgroundUnderlayer ? intent.applicationGeneration : undefined,
+        isCurrent: backgroundUnderlayer ? intent.isCurrent : null,
       };
       const st = this.laneState(lane);
       this.metrics.submits += 1;
       const entry = this.buildEntry(normalized, st);
 
+      if (backgroundUnderlayer && (!this.canStartUnderlayer(lane)
+        || !entry.request.isCurrent())) return this.refuseEntry(st, entry, "underlayer-deferred");
+      if (priority === "foreground") this.cancelUnderlayer(this.activeLane);
       if (!st.inFlight && st.pending) {
         const orphan = st.pending;
         st.pending = null;
@@ -458,7 +488,7 @@
       if (st.inFlight !== entry) return;
       st.inFlight = null;
 
-      if (!error && result && entry.token.isCurrent()) {
+      if (!error && result && !entry.request.backgroundUnderlayer && entry.token.isCurrent()) {
         let record = null;
         try {
           record = this.present ? this.present(entry.request, result) : null;
@@ -512,6 +542,7 @@
     }
 
     recordRefusal(st, entry, reason, detail = null) {
+      if (entry.request.backgroundUnderlayer) return;
       st.lastRefusal = {
         reason,
         lane: st.lane,

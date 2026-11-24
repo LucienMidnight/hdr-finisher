@@ -293,6 +293,7 @@ function resetControlGroup(group) {
     // popup until the window lost and regained focus.
     if (state.cropMode) closeCropMode(false);
     if (state.rotateDraftGeometry) closeRotateMode(false);
+    state.geometryPresentationPending = true;
   }
   paths.forEach((path) => setValueByPath(state.adjustments, path, getValueByPath(defaults, path)));
   const sectionPath = sectionPathForGroup[group];

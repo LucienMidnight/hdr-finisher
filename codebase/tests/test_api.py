@@ -953,6 +953,50 @@ def test_local_mask_tile_answers_to_the_whole_mask_resource_policy(monkeypatch) 
     assert whole.status_code == 507
 
 
+@pytest.mark.parametrize("long_edge", [390, 260])
+def test_warped_luminance_mask_tiles_do_not_need_whole_frame_admission(monkeypatch, long_edge) -> None:
+    import numpy as np
+    from hdr_finisher import main as main_module
+
+    upload = client.post("/api/session", files={"file": ("native-mask.png", _mask_tile_batch_png_bytes(390, 286), "image/png")})
+    session = upload.json()["session"]
+    route = f'/api/session/{session["session_id"]}'
+    adjustments = session["adjustments"]
+    adjustments["shared"]["geometry"].update(straighten_angle=3.5, perspective_horizontal=6.0)
+    session_edit = client.post(f"{route}/edit-commands", json={"commands": [
+        {"expected_revision": 0, "command_type": "set_global_adjustments", "payload": {"adjustments": adjustments}},
+        {"expected_revision": 1, "command_type": "create_local", "payload": {"local": {
+            "id": "native-luma", "name": "Native luma", "mask": {"operator": "leaf", "leaf": {
+                "type": "luminance_range", "fade_in_start_ev": -6, "full_start_ev": -1,
+                "full_end_ev": 0, "fade_out_end_ev": 2, "mask_feather": .015,
+            }},
+        }}},
+    ]})
+    assert session_edit.status_code == 200, session_edit.text
+    geometry = session_edit.json()["document"]["global_adjustments"]["shared"]["geometry"]
+    params = {"long_edge": long_edge, "edit_revision": 2, "geometry_signature": json.dumps(geometry, separators=(",", ":"))}
+    reference = client.get(f"{route}/local-mask/native-luma", params={**params, "spatial_only": True})
+    assert reference.status_code == 200
+    full = np.frombuffer(reference.content, dtype=np.uint8).reshape(
+        int(reference.headers["x-image-height"]), int(reference.headers["x-image-width"]),
+    )
+    monkeypatch.setattr(main_module, "_guard_preview_resources", lambda *_: (_ for _ in ()).throw(
+        main_module.HTTPException(status_code=507, detail="Not enough for a full mask"),
+    ))
+    batch = {**params, "tiles": [
+        {"local_id": "native-luma", "x": 15, "y": 18, "width": 120, "height": 70, "halo": 4},
+        {"local_id": "native-luma", "x": full.shape[1], "y": 18, "width": 30, "height": 30, "halo": 0},
+    ]}
+    assert client.post(f"{route}/local-mask-tiles", json=batch).status_code == 507
+    response = client.post(f"{route}/local-mask-tiles", json={**batch, "bounded_geometry": True})
+    assert response.status_code == 200, response.text
+    assert response.headers["x-mask-batch-compiles"] == "0"
+    _, (tile, outside) = parse_mask_tile_batch(response.content)
+    assert outside["status"] == "outside"
+    block = np.frombuffer(tile["payload"], dtype=np.uint8).reshape(78, 128)
+    np.testing.assert_allclose(block, full[14:92, 11:139], atol=1)
+
+
 def test_local_luminance_sampling_returns_a_low_precision_scene_ev_range() -> None:
     upload = client.post("/api/session", files={"file": ("luma.png", make_png_bytes(), "image/png")})
     assert upload.status_code == 200
@@ -995,6 +1039,28 @@ def test_geometry_map_returns_bidirectional_source_anchored_editor_coordinates()
         [0.0, -1.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0],
         abs=2e-6,
     )
+
+
+def test_geometry_map_still_answers_when_pixel_work_is_refused(monkeypatch) -> None:
+    image = BytesIO()
+    Image.new("RGB", (4101, 67), (125, 121, 109)).save(image, format="PNG")
+    upload = client.post("/api/session", files={"file": ("bounded-map.png", image.getvalue(), "image/png")})
+    session = upload.json()["session"]
+    session_id = session["session_id"]
+    endpoint = f"/api/session/{session_id}"
+    adjustments = session["adjustments"]
+    adjustments["shared"]["geometry"]["rotation"] = 90
+    monkeypatch.setattr("hdr_finisher.main.detect_memory_resources", lambda: ResourceSnapshot(8 * GIB, 1, "test"))
+
+    request = {"adjustments": adjustments, "edit_revision": 0, "long_edge": 8192}
+    response = client.post(f"{endpoint}/geometry-map", json=request)
+
+    assert response.status_code == 200
+    result = response.json()
+    assert (result["output_width"], result["output_height"]) == (session["source"]["height"], session["source"]["width"])
+    assert client.get(f"{endpoint}/proxy-stream/hdr", params={"long_edge": 8192}).status_code == 507
+    assert client.post(f"{endpoint}/geometry-map", json={**request, "edit_revision": 1}).status_code == 409
+    assert client.post(f"{endpoint}/geometry-map", json={**request, "long_edge": 16385}).status_code == 422
 
 
 def test_perspective_solve_accepts_guides_without_committing_session_state() -> None:

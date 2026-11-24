@@ -64,6 +64,38 @@ function deferred() {
   return { promise, resolve, reject };
 }
 
+test("geometry underlayers neither queue behind busy lanes nor block newer foreground work", async () => {
+  const held = deferred();
+  const canceled = deferred();
+  const calls = [];
+  const presented = [];
+  const coordinator = new HDRRenderCoordinator({ sessionId: "photo",
+    dispatch: request => {
+      calls.push(request);
+      if (request.backgroundUnderlayer) return canceled.promise;
+      return request.lane === "sdr" ? held.promise : true;
+    },
+    present: request => presented.push(request.reason),
+  });
+  const background = { lane: "hdr", backgroundUnderlayer: true, applicationGeneration: 8 };
+  const inactive = coordinator.submit({ lane: "sdr", reason: "inactive-work" });
+  assert.equal(await coordinator.submit(background), false);
+  assert.deepEqual(calls.map(request => request.reason), ["inactive-work"]);
+  assert.equal(coordinator.state().lastRefusal, null);
+  held.resolve(true);
+  await inactive;
+  const pending = coordinator.submit(background);
+  const underlayer = calls.at(-1);
+  assert.equal(underlayer.underlayerOnly, true);
+  assert.equal(underlayer.applicationGeneration, 8);
+  assert.equal(await coordinator.submit({ reason: "new-edit" }), true);
+  assert.equal(underlayer.token.signal.aborted, true);
+  assert.equal(await pending, false);
+  canceled.resolve(true);
+  await flush();
+  assert.deepEqual(presented, ["inactive-work", "new-edit"]);
+});
+
 function deferredDispatch() {
   const queue = [];
   let immediate = false;

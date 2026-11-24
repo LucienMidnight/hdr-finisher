@@ -1305,6 +1305,7 @@ class LocalMaskTileBatchRequest(BaseModel):
     long_edge: int = Field(default=1600, ge=256, le=16384)
     edit_revision: int | None = Field(default=None, ge=0)
     geometry_signature: str | None = None
+    bounded_geometry: bool = False
 
     @model_validator(mode="after")
     def validate_batch_bytes(self) -> "LocalMaskTileBatchRequest":

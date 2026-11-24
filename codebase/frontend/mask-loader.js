@@ -156,6 +156,7 @@
     editRevision,
     geometrySignature,
     maskSignature,
+    boundedGeometry = false,
     isCurrent,
     signal,
   }) {
@@ -188,6 +189,7 @@
           edit_revision: editRevision,
           geometry_signature: geometrySignature,
           long_edge: longEdge,
+          bounded_geometry: boundedGeometry,
           tiles: missing.map(({ tile }) => ({
             local_id: batch.local.id,
             x: tile.rect.x,
@@ -200,6 +202,9 @@
       },
     );
     if (!response.ok || !renderer.maskTileBatch) {
+      if (boundedGeometry && response.status === 507) {
+        throw await window.HDRSourceTransport.sourceResponseError(response, "The viewport mask could not be loaded");
+      }
       await response.body?.cancel?.().catch(() => null);
       return { localIndex: batch.localIndex, entries };
     }

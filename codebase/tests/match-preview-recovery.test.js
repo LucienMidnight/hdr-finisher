@@ -18,7 +18,7 @@ function fixture(outcomes) {
     debouncePreview: lane => calls.scheduled.push(lane),
     geometrySignature: () => 'geometry',
   });
-  vm.runInContext(`${definition('transientGpuRefusal')}\n${definition('presentMatchedSdrPreview')}`, context);
+  vm.runInContext(`${definition('transientGpuRefusal')}\n${definition('previewSourceCapacityRefused')}\n${definition('presentMatchedSdrPreview')}`, context);
   return { calls, context, run: () => vm.runInContext('presentMatchedSdrPreview({ longEdge: 1606, tier: "refinement" })', context) };
 }
 test('Match retries a peak handoff on GPU without CPU fallback', async () => {

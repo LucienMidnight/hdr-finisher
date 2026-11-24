@@ -54,6 +54,175 @@ came from a longer session and is not the matched baseline.
 [Before trace](../../codebase/output/grade-sweep/edge-before.json) ·
 [After trace](../../codebase/output/grade-sweep/edge-after.json)
 
+## November 24, 2026 — Grade geometry at 100% on 42 MP Sony
+
+MacBook Neo (A18 Pro, 8 GB), Electron at 1408 × 794 points and 2× under
+the shared GPU lock. `_DSC7970.ARW`, 7968 × 5320 source pixels, Lens Auto,
+HDR Grade. The picture clock requires an exact frame for the current edit;
+it does not count the previous picture moving. Peak app memory is the
+one-second process-tree physical-footprint sample in decimal GB. These
+are single-run comparisons with a 15% exploratory timing band, not a
+matched benchmark for effects other than geometry.
+
+| Action at 100% | Exact picture / fresh Histogram before → after | HTTP 507s before → after | Sampled peak app memory before → after |
+| --- | --- | ---: | ---: |
+| Crop enable | Neither by 22 s → 1.61 / 1.79 s | 166 → 0 | 2.86 → 1.88 GB |
+| Rotate enable | Neither by 22 s → 1.87 / 4.09 s | 164 → 0 | 3.53 → 3.33 GB |
+| Rotate edit/release, warm-1 | Neither by 25 s → 1.57 / 4.12 s | 166 → 0 | 2.08 → 3.27 GB |
+| Perspective enable | Neither by 22 s → 2.25 / 4.59 s | 160 → 0 | Not sampled → 2.14 GB |
+
+Rotate's pan after the warm edit went from timing out at 25 s with no
+accepted frame to presenting the same, now-current edit in 0.69 s. A pan
+does not request another Histogram. The first native pixels for all three
+tools came from source tiles, not a native whole-image stream; no processing
+tier was reduced. Fit and 31% all reached exact pictures and fresh scopes.
+At Fit, Perspective's picture took 0.86 → 1.00 s (just outside the 15% band);
+the Histogram was within the band (2.89 → 3.21 s).
+
+With the backend's test memory snapshot reporting 3.25 GiB safely available
+(below the old 3.41 GiB estimate), all three 100% enables again accepted the
+current generation with zero 507s: Crop 0.88 / 1.11 s, Rotate 2.50 / 4.64 s,
+Perspective 1.50 / 3.81 s. Sampled peak across geometry actions in that run
+was 2.31 GB. No production memory limit changed.
+
+[Sweep baseline](../../codebase/output/grade-sweep/sony.json) ·
+[Rotate baseline](../../codebase/output/grade-sweep/sony-rotate-fill.json) ·
+[Fit, 31% and 100%](../../codebase/output/grade-sweep/sony-geometry-bounded.json) ·
+[Constrained admission](../../codebase/output/grade-sweep/sony-geometry-headroom.json)
+
+**Review follow-up:** The first frame now replaces the old picture before
+measuring the post-edit viewport. A repeat cold sweep gave exact picture /
+fresh Histogram of Crop 1.20 / 1.45 s, Rotate 2.42 / 5.28 s, and Perspective
+3.69 / 6.86 s, with zero 507s. Crop was faster than the first fix, while
+Rotate and Perspective were slower in this single repeat.
+
+In a separate combined-edit run on the same Sony at 100%, exact picture times
+(Denoise off / Clean Grain on) were Rotate 4.35 / 11.21 s, large Crop
+2.38 / 8.03 s, Perspective 3.16 / 7.44 s, and a fully visible small Crop
+0.53 / 0.71 s. Opposite-edge pans settled in 0.61 / 0.79 s. Both lane
+round trips, the luminance local, 31%, and small-crop Fit passed with no
+natural 507s. An injected 507 during an SDR lane switch recovered in 4.32 s
+without a whole-frame CPU retry. These timings are not a matched benchmark.
+
+[Repeat cold sweep](../../codebase/output/grade-sweep/sony-geometry-round2.json) ·
+[Combined-edit trace and screenshots](../../codebase/output/overnight/geometry-review/)
+
+**Patch-first follow-up (`787754f2` plus working-tree changes):** The current
+sharp tiles now replace the old geometry before the viewer changes size.
+A fully visible crop does not need a background image. On an edge pan that
+needs one, sharp tiles draw first; the optional softer background then uses the
+standard 1600 px source level instead of building a custom level. The first
+far pan can briefly show a blank area while the new tiles arrive; it does not
+show any of the old geometry at the new position.
+
+| Exact picture at 100% | Round 1, Denoise off | Round 2, off / Clean Grain | Patch-first, off / Clean Grain |
+| --- | ---: | ---: | ---: |
+| Rotate | 1.87 s | 4.35 / 11.21 s | 0.74 / 7.52 s |
+| Large Crop | 1.61 s | 2.38 / 8.03 s | 0.67 / 6.32 s |
+| Perspective | 2.25 s | 3.16 / 7.44 s | 0.64 / 6.16 s |
+| Small Crop | — | 0.53 / 0.71 s | 0.28 / 0.50 s |
+
+The first far pan with Denoise off presented sharp tiles in 0.70 s. The
+opposite-edge Clean Grain pan submitted sharp tiles in 0.93 s; no fresh grain
+calibration was recorded for that pan. Both HDR/SDR round trips passed, as did
+a Rotate while viewing SDR. The 31% step took 1.12 s, and explicit Full at Fit
+took 0.12 s on the small crop, using native tiles rather than a full-image
+source stream. There were no natural 507s. Two injected 507 responses during
+a Denoise-off toggle recovered in 4.21 s with no whole-image CPU retry.
+
+These are single runs, not a matched benchmark; for example, a heavily loaded
+run showed 3.16 s for Rotate with Denoise off. This check does not establish a
+new memory peak or scope timing. Clean Grain calibration accounted for
+6.36 of the 7.52 s Rotate (18 native chunks). A crop changes the samples and
+their boundary neighbours; a warp changes both the noise and its correlation
+between pixels. Unwarped or visible-only calibration could save time but would
+generally produce different pixels, so the fit stays keyed to the geometry.
+
+[Patch-first trace and screenshots](../../codebase/output/overnight/geometry-review-r3-confirmed/) ·
+[Immediate edge pan](../../codebase/output/overnight/geometry-review-r3-confirmed/04-off-pan-far-in-flight.png)
+
+**Round 4 (MacBook Neo, not timed):** At 100% with non-neutral geometry, the
+sharp patch now draws first after geometry changes, grade edits, lane changes,
+and pans. When only part of the photo is visible, a separate 1600 px background
+render starts after the patch is shown. It does not hold up foreground renders
+or scopes, and new interaction cancels it. An immediate far pan can still show
+a blank area if that background is not ready; it must not reuse old geometry.
+Electron launched, but its Python backend could not start because macOS had
+exhausted POSIX semaphores (`Errno 28` with 137 GiB free). No Round 4 timings or
+screenshots were captured; the numbers and images above are from Round 3.
+
+**Round 5 (November 24, 2026):** The sharp patch still draws first. The
+1600 px whole-picture fill now waits until the renderer is idle and does not
+share GPU working buffers with foreground pictures, scopes or the navigator.
+New work cancels it rather than waiting for it to finish. Panning inside the
+sharp patch keeps the fill. An immediate far pan can briefly expose blank
+space instead of showing the old geometry.
+
+Real Electron at 100% on the 42 MP Sony `_DSC7970.ARW` with Lens Auto,
+same MacBook Neo, 1408 × 794 window and shared GPU lock. Because the host
+was out of POSIX semaphores, a test-only shim replaced the Library EXIF
+pause event. Times from input to first exact HDR picture, in seconds:
+
+| Action | R3 Denoise off | R5 Denoise off | R3 Clean Grain | R5 Clean Grain |
+| --- | ---: | ---: | ---: | ---: |
+| Rotate | 0.74 | 1.38 | 7.52 | 11.60 |
+| Large crop | 0.67 | 0.96 | 6.32 | 7.69 |
+| Perspective | 0.64 | 0.64 | 6.16 | 9.02 |
+
+These are individual runs on different worktree snapshots, not a controlled
+benchmark. Round 5 was slower in five of six samples. The exact picture after
+an immediate far pan or a double pan took 1.55–1.63 s from the last movement.
+The later fill arrived 5.36–6.71 s from the first movement with Denoise off.
+
+Histogram bins, peak, normalization and clipping matched with the fill on
+and off in HDR (with and without Clean Grain) and SDR (with Clean Grain).
+An injected Reset memory refusal kept the previous picture and cleared the
+temporary Straighten transform; the automatic retry drew exact at 100%
+after 4.00 s. Fit and 31% worked. A separate retry at 99% reached the backend
+but hit the host limit for that full-frame route (3.41 GiB needed, 2.96 GiB
+available); the viewer was not stuck waiting for geometry.
+
+[Round 5 report and screenshots](../../codebase/output/overnight/geometry-review-r5/report.md) ·
+[Main trace](../../codebase/output/overnight/geometry-review-r5/results.json) ·
+[Histogram A/B](../../codebase/output/overnight/geometry-review-r5/scope-confirm/results.json) ·
+[Reset retry](../../codebase/output/overnight/geometry-review-r5/reset-confirm/results.json)
+
+**Round 6 (November 24, 2026):** With Lens Auto and 1.3° Rotate, 75%, 90%,
+and 99% all select the Sony's 7968 px processing step. From Fit, all six
+checks (Denoise off and Clean Grain) painted the current visible area at
+native resolution with no HTTP 507s. The existing actual-size small-crop
+path still paints the sharp picture first. The 65% lower processing step
+is unchanged; an exploratory run there still hit a whole-proxy memory refusal.
+
+A settled scope change cancelled a live fill before waiting for its GPU
+resources. In a test that held the fill just before painting, the cancellation
+took about 0.1 ms and the new scope appeared in about 58 ms. The fill reported
+51.7 MB of temporary GPU textures without asking the export worker to yield.
+
+The Sony's full-source export used the CPU even at idle because of its
+3.41 GiB memory estimate. A matched pair of GPU exports from a 3000 px JPEG
+gave 3.44 s at idle and 3.69 s with the fill held live; the GPU portion was
+2.10 s and 2.07 s, respectively. Neither export was asked to yield. This
+checks scheduling, not throughput. During a separate export, foreground
+Rotate and pan did take priority and the export finished on the CPU.
+
+One cold/warm check per action using the repeated Round 5 timing setup:
+
+| Edit | Off, cold / warm | Clean Grain, cold / warm |
+| --- | ---: | ---: |
+| Rotate | 0.63 / 0.59 s | 8.90 / 0.73 s |
+| Large Crop | 0.30 / 0.29 s | 2.85 / 0.23 s |
+| Perspective | 0.59 / 0.57 s | 8.42 / 0.64 s |
+
+No slowdown stood out against the repeated Round 5 measurements; one pair
+per action cannot establish a speed change. The first Clean Grain fit still
+dominates cold Rotate and Perspective.
+
+[Round 6 app trace](../../codebase/output/overnight/geometry-review-r6/results.json) ·
+[Round 6 export trace](../../codebase/output/overnight/geometry-review-r6/export/results.json) ·
+[Round 6 timing runs](../../codebase/output/overnight/geometry-timing-r6/) ·
+[Round 5 repeated timings](../../codebase/output/overnight/geometry-timing-r5/report.md)
+
 ## November 23, 2026 — Grade Film Look edits and exact grain at zoom
 
 MacBook Neo (A18 Pro, 8 GB), real Electron at 1408 × 794 points and 2×,

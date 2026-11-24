@@ -31,24 +31,32 @@ function projectivePoint(matrix, point) {
   return geometryMath.projectivePoint(matrix, point);
 }
 
-async function ensureGeometryCoordinateMap(longEdge = settledProxyLongEdge()) {
+let geometryMapCapacityRefusals = new Map();
+
+function clearGeometryMapCapacityRefusals() {
+  geometryMapCapacityRefusals = new Map();
+}
+
+async function ensureGeometryCoordinateMap(longEdge = settledProxyLongEdge(), { reportFailure = false } = {}) {
   if (!state.session || geometryTransformIsNeutral()) return IDENTITY_GEOMETRY_COORDINATE_MAP;
   const frameKey = geometryFrameKey();
   const signature = geometrySignature();
   const key = geometryCoordinateMapKey(signature, longEdge);
   const cached = geometryCoordinateMapCache.get(key);
   if (cached) return cached;
-  const inflight = geometryCoordinateMapRequests.get(key);
-  if (inflight) return inflight;
+  const editRevision = state.editRevision;
+  const requestKey = `${key}:${editRevision}`;
   const adjustments = JSON.parse(JSON.stringify(state.adjustments));
-  const request = fetch(`/api/session/${state.session.session_id}/geometry-map`, {
+  const transport = window.HDRSourceTransport;
+  const request = geometryCoordinateMapRequests.get(requestKey) || transport.withCapacityBackoff(geometryMapCapacityRefusals, requestKey, () => fetch(`/api/session/${state.session.session_id}/geometry-map`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ adjustments, edit_revision: state.editRevision, long_edge: longEdge }),
+    body: JSON.stringify({ adjustments, edit_revision: editRevision, long_edge: longEdge }),
   }).then(async (response) => {
-    if (!response.ok) throw new Error(`Geometry coordinate map failed (${response.status}).`);
+    if (!response.ok) throw await transport.sourceResponseError(response, `Geometry coordinate map failed (${response.status}).`);
     const payload = await response.json();
-    if (geometryFrameKey() !== frameKey || signature !== geometrySignature()) return null;
+    if (geometryCoordinateMapRequests.get(requestKey) !== request
+      || geometryFrameKey() !== frameKey || signature !== geometrySignature()) return null;
     const result = {
       outputToSource: payload.output_to_source,
       sourceToOutput: payload.source_to_output,
@@ -69,12 +77,19 @@ async function ensureGeometryCoordinateMap(longEdge = settledProxyLongEdge()) {
     applyZoomGeometry();
     if (state.cropMode) constrainCropToRatio();
     return result;
-  }).catch((error) => {
-    console.warn("Source-anchored editor geometry is unavailable.", error);
+  })).finally(() => {
+    if (geometryCoordinateMapRequests.get(requestKey) === request) geometryCoordinateMapRequests.delete(requestKey);
+  });
+  geometryCoordinateMapRequests.set(requestKey, request);
+  try {
+    return await request;
+  } catch (error) {
+    if (reportFailure) throw error;
+    if (error?.status !== 409 && error?.status !== 507) {
+      console.warn("Source-anchored editor geometry is unavailable.", error);
+    }
     return null;
-  }).finally(() => geometryCoordinateMapRequests.delete(key));
-  geometryCoordinateMapRequests.set(key, request);
-  return request;
+  }
 }
 
 function bindCropEditor() {
@@ -254,6 +269,7 @@ function geometryDraftActive() {
 }
 
 function suspendGeometryPreviewWork() {
+  cancelGeometryUnderlayer();
   // Retire ordinary preview work, including frames already decoding or waiting
   // on a GPU proxy, before this transaction can change the geometry.
   state.previewScheduler?.cancel();
@@ -879,6 +895,10 @@ function finishStraightenGesture() {
   state.straightenGestureActive = false;
   hideStraightenGrid();
   if (!state.rotateDraftGeometry) {
+    if (state.adjustments.shared.geometry.straighten_angle !== state.straightenPreviewBaseAngle) {
+      state.geometryTransformHandoffSignature = geometrySignature();
+      state.geometryPresentationPending = true;
+    }
     invalidatePreview("hdr");
     invalidatePreview("sdr");
     debouncePreview(state.currentView);

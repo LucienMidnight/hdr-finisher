@@ -8,7 +8,8 @@ function setup(){
  const state={previewScheduler:{interacting:true},adjustments:{hdr:{hsl:HDRHSL.defaultSettings()},sdr:{hsl:HDRHSL.defaultSettings()},shared:{}},denoise:{},previewGeneration:{hdr:0,sdr:0}};
  const locals=[];let preserved;
  const context={state,HDRHSL,HDRMaskExpression,localAdjustments:()=>locals,markGlobalEditDirty(){},window:{},renderCompareStatus(){},updateExportAvailability(){},renderViewerStatus(){}};
- vm.createContext(context);vm.runInContext(declarations('pacedPreviewInteraction','invalidatePreview'),context);
+ vm.createContext(context);vm.runInContext('let previewCapacityRecovery = null, geometryMapCapacityRefusals = new Map();\n'+
+  declarations('pacedPreviewInteraction','invalidatePreview','clearPreviewCapacityRecovery','clearGeometryMapCapacityRefusals'),context);
  state.renderCoordinator={noteEdit:(_lane,options)=>{preserved=options.preserveInteractive;},generation:()=>1};
  return {state,locals,active:lane=>context.pacedPreviewInteraction(lane),invalidate:()=>{context.invalidatePreview('hdr');return preserved;}};
 }

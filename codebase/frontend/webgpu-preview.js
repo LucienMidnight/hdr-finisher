@@ -210,6 +210,7 @@
       this.adapterInfo = null;
       this.resourceGeneration = 0;
       this.activeRenderCount = 0;
+      this.geometryUnderlayerRender = null;
       this.activeScopeCount = 0;
       this.deferredDestroy = [];
       // Planner state. The budget is an application allocation budget
@@ -313,7 +314,8 @@
       return Number.isFinite(this.deliveryBudgetBytes) ? Math.min(configured, this.deliveryBudgetBytes) : configured;
     }
 
-    async reportDeliveryActivity(active = this.activeRenderCount > 0 || this.activeScopeCount > 0 || this.deliveryWaitingCount > 0) {
+    async reportDeliveryActivity(active = (this.resourceRenderCount > 0 && !this.geometryUnderlayerRender)
+      || this.activeScopeCount > 0 || this.deliveryWaitingCount > 0) {
       if (globalThis.location?.pathname?.endsWith("gpu-delivery.html")) return {reserved:0};
       this.deliveryClientId ||= crypto.randomUUID();
       // Report the configured/calibrated budget, before the shared deduction.
@@ -591,7 +593,7 @@
         allocationBackoff: this.allocationBackoff?.reason || null,
         ...options,
       });
-      this.lastRenderPlan = plan;
+      if (!options.backgroundUnderlayer) this.lastRenderPlan = plan;
       return plan;
     }
 
@@ -900,6 +902,7 @@
     }
 
     resetSession(sessionId = null) {
+      if (typeof window !== "undefined") window.HDRSourceTransport?.clearCapacityRefusals(this);
       this.resourceGeneration += 1;
       this.denoisePreparationController?.abort();
       this.fineGrainFits = new Map();
@@ -1053,13 +1056,17 @@
       if (target || retiredProxy) await this.waitForSubmittedWork();
     }
 
+    get resourceRenderCount() {
+      return this.activeRenderCount;
+    }
+
     destroyAfterActiveRenders(callback) {
-      if (this.activeRenderCount > 0 || this.activeScopeCount > 0) this.deferredDestroy.push(callback);
+      if (this.resourceRenderCount > 0 || this.activeScopeCount > 0) this.deferredDestroy.push(callback);
       else callback();
     }
 
     flushDeferredDestroy() {
-      if (this.activeRenderCount > 0 || this.activeScopeCount > 0) return;
+      if (this.resourceRenderCount > 0 || this.activeScopeCount > 0) return;
       const callbacks = this.deferredDestroy.splice(0);
       callbacks.forEach((callback) => callback());
       if (this.pendingGrainReclaim) {
@@ -1083,8 +1090,16 @@
 
     sourceLoadIsCurrent(canvas, serial, resourceGeneration, options) {
       if (resourceGeneration !== this.resourceGeneration) return false;
-      if (typeof options?.isSourceCurrent === "function") return options.isSourceCurrent() !== false;
+      if (options?.backgroundUnderlayer && options.signal?.aborted) return false;
+      if (!options?.backgroundUnderlayer && typeof options?.isSourceCurrent === "function") return options.isSourceCurrent() !== false;
       return serial === this.renderSerials.get(canvas) && options?.isCurrent?.() !== false;
+    }
+
+    stopGeometryUnderlayerRender() {
+      const underlayer = this.geometryUnderlayerRender;
+      if (!underlayer) return null;
+      underlayer.cancel?.();
+      return underlayer.unwound;
     }
 
     async render(sessionId, lane, adjustments, curveSampler, longEdge = 1600, localAdjustments = [], editRevision = 0, maskOverlay = null, referenceWhiteNits = 203, sourceSize = null, sourceOptions = null) {
@@ -1191,6 +1206,8 @@
         0,
       );
       const intermediateEntries = [...this.intermediates.values()];
+      const underlayerIntermediate = this.geometryUnderlayerRender?.intermediate;
+      if (underlayerIntermediate) intermediateEntries.push(underlayerIntermediate);
       const gradingCoreBytes = intermediateEntries.reduce(
         (sum, entry) => sum + entry.width * entry.height * 8 * 4,
         0,
@@ -2281,7 +2298,7 @@
       const geometrySignature = JSON.stringify(adjustments.shared?.geometry || {});
       // Luma leaves need the scene picture and a globally aligned feather
       // halo. Supported expression graphs compose those same regional leaves.
-      if (lane === "hdr" && (sourceOptions?.identity || "source") === "source"
+      if (!sourceOptions?.nativeGeometryViewport && lane === "hdr" && (sourceOptions?.identity || "source") === "source"
         && (activeLocals || []).some((local) => maskUsesLuminance(local.mask)
           && !isGpuLumaMask(local.mask) && !gpuRegionalGraphEligible(local.mask, geometrySignature)
           && !this.sourceSpaceMask(sessionId, local.mask, longEdge, geometrySignature))) return null;
@@ -2308,12 +2325,13 @@
         // A repair resets finished frames but can retain an updated native
         // source region. Its working-space metadata is enough to plan a fresh
         // ROI; no previously graded pixels are accepted as a completed frame.
-        const known = this.lastPresentedFrame || [...this.proxies.values()].find(proxy =>
-          proxy.sessionId === sessionId && proxy.lane === lane && proxy.longEdge === longEdge
-          && proxy.geometrySignature === geometrySignature && proxy.sourceIdentity === (sourceOptions?.identity || "source"));
-        if (!(size?.width > 0 && size?.height > 0) || !known?.workingSpace
-          || known.sessionId !== sessionId || known.lane !== lane) return null;
-        previousFrame = { width: size.width, height: size.height, longEdge, workingSpace: known.workingSpace };
+        const known = [this.lastPresentedFrame, ...this.proxies.values()].find(proxy =>
+          proxy && proxy.sessionId === sessionId && proxy.lane === lane
+          && proxy.sourceIdentity === (sourceOptions?.identity || "source"));
+        const workingSpace = known?.workingSpace || (sourceOptions?.nativeGeometryViewport
+          ? (lane === "sdr" && sourceOptions.identity === "authored-sdr" ? "linear-srgb" : "acescg") : null);
+        if (!(size?.width > 0 && size?.height > 0) || !workingSpace) return null;
+        previousFrame = { width: size.width, height: size.height, longEdge, workingSpace };
       }
       if (!previousFrame.workingSpace) return null;
       const Scheduler = typeof window !== "undefined" ? window.HDRTileScheduler : null;
@@ -2344,7 +2362,7 @@
           const factor = lumaFeatherPlan(leaf.mask_feather, previousFrame.width,
             previousFrame.height, this.featherReferenceScale?.(geometrySignature) || 1).factor;
           alignment = alignment / gcd(alignment,factor) * factor;
-          if (alignment > 512) return null;
+          if (alignment > 512) return sourceOptions?.nativeGeometryViewport ? { ...region, backendLumaMasks: true } : null;
         }
         const x = Math.floor(region.x/alignment)*alignment, y = Math.floor(region.y/alignment)*alignment;
         region = {x,y,width:Math.min(previousFrame.width,Math.ceil((region.x+region.width)/alignment)*alignment)-x,
@@ -2585,20 +2603,20 @@
 
     async renderTiledTo(canvas, sessionId, lane, adjustments, curveSampler, longEdge = 1600, localAdjustments = [], editRevision = 0, maskOverlay = null, referenceWhiteNits = 203, sourceSize = null, sourceOptions = null) {
       if (!this.available || !this.device) return false;
-      if (this.deliveryActivityTimer) await this.acquireForegroundDeliveryBudget();
-      if (sourceSize) this.maskSourceSize = {sessionId,...sourceSize};
+      if (this.geometryUnderlayerRender) await this.stopGeometryUnderlayerRender();
       const Scheduler = typeof window !== "undefined" ? window.HDRTileScheduler : null;
       if (!Scheduler) return { rendered: false, refusals: ["tile scheduler is unavailable"] };
       this.activeRenderCount += 1;
+      let proxyPin = null;
+      try {
+      if (this.deliveryActivityTimer) await this.acquireForegroundDeliveryBudget();
+      if (sourceSize) this.maskSourceSize = {sessionId,...sourceSize};
       const serial = (this.renderSerials.get(canvas) || 0) + 1;
       // Read-only reductions do not supersede the visible canvas generation.
       if (!sourceOptions?.measureOnly) this.renderSerials.set(canvas, serial);
       // The source this pass reads is pinned for the pass: a cache allocation
       // inside the pass may trigger global eviction, and the texture being
       // copied from must never be the victim.
-      let proxyPin = null;
-      try {
-
       const tileSize = Math.max(64, Math.floor(Number(sourceOptions?.tileSize) || Scheduler.DEFAULT_TILE_SIZE));
       // The signature is derived from the adjustments this render was handed,
       // exactly as the Direct path derives it, so both request the same proxy.
@@ -2934,7 +2952,7 @@
       const budget = Math.max(0, this.denoiseTileBudget() - this.fineGrainReducedBytes());
       for (const [key, entry] of [...this.denoiseTiles]) {
         if (bytes + pendingBytes <= budget) break;
-        if (protectedKeys.has(key) || (pendingBytes && this.activeRenderCount)) continue;
+        if (protectedKeys.has(key) || (pendingBytes && this.resourceRenderCount)) continue;
         this.denoiseTiles.delete(key);
         this.destroyAfterActiveRenders(() => entry.texture.destroy());
         bytes -= entry.byteSize;
@@ -2969,7 +2987,7 @@
      */
     async loadLocalMaskTiles(
       sessionId, batch, longEdge, editRevision, geometrySignature, isCurrent, signal, proxy = null,
-      sceneMaskSource = null, hue = null,
+      sceneMaskSource = null, hue = null, boundedGeometry = false,
     ) {
       const signature = gpuMaskIdentity(batch.local.mask);
       if (hue && proxy && maskHasHueLeaf(batch.local.mask)) {
@@ -3084,7 +3102,7 @@
         }
       }
       return maskLoader().loadCpuMaskTiles(this, {
-        sessionId, batch, longEdge, editRevision, geometrySignature, maskSignature: signature, isCurrent, signal,
+        sessionId, batch, longEdge, editRevision, geometrySignature, maskSignature: signature, boundedGeometry, isCurrent, signal,
       });
     }
 
@@ -3775,7 +3793,7 @@
      * A refused region keeps the existing mask fallback; no whole-source load.
      */
     async loadSceneMaskRegion(sessionId, proxy, tiles, locals, longEdge, editRevision,
-      geometrySignature, isCurrent, signal) {
+      geometrySignature, isCurrent, signal, boundedGeometry = false) {
       if (!this.gpuAnalyticMasksEnabled || !proxy?.region || proxy.lane !== "sdr"
         || lumaSceneSource(proxy.lane, proxy.sourceIdentity, proxy.workingSpace)) return null;
       const leaves = locals.filter(local => (isGpuLumaMask(local.mask)
@@ -3800,9 +3818,9 @@
       if (alignment > 1) region.alignment = alignment;
       const limit = this.device?.limits?.maxTextureDimension2D || 8192;
       if (!(region.width > 0 && region.height > 0) || region.width > limit || region.height > limit
-        || region.width*region.height >= proxy.width*proxy.height*.9) return null;
+        || (!boundedGeometry && region.width*region.height >= proxy.width*proxy.height*.9)) return null;
       const source = await this.loadProxy(sessionId, "hdr", longEdge, geometrySignature,
-        editRevision, "source", {region, regionOnly:true, signal, isCurrent});
+        editRevision, "source", {region, regionOnly:true, requireRegion:boundedGeometry, signal, isCurrent});
       if (!source || !isCurrent() || signal?.aborted || source.width !== proxy.width || source.height !== proxy.height
         || !source.region || source.workingSpace !== "acescg"
         || !lumaSceneSource(source.lane, source.sourceIdentity, source.workingSpace)) return null;
@@ -3982,7 +4000,7 @@
         this.destroyAfterActiveRenders(() => {
           device.queue.onSubmittedWorkDone().then(() => {
             if (this.device !== device) return resolve();
-            if (this.activeRenderCount > 0 || this.activeScopeCount > 0) {
+            if (this.resourceRenderCount > 0 || this.activeScopeCount > 0) {
               resolve(trimWhenIdle());
               return;
             }
@@ -4327,7 +4345,7 @@
         : [];
       const sceneMaskSource = options.analysisMasks ? null : await this.loadSceneMaskRegion(
         options.sessionId, proxy, foregroundTiles, activeLocals, longEdge, editRevision,
-        options.geometrySignature || "{}", isCurrent, options.requestSignal || this.sourceAbortSignal());
+        options.geometrySignature || "{}", isCurrent, options.requestSignal || this.sourceAbortSignal(), options.nativeGeometryViewport);
       const scenePin = sceneMaskSource?.allocatorEntry && this.gpuAllocator
         ? this.gpuAllocator.pin(sceneMaskSource.allocatorEntry) : null;
       this.markResidentMaskFrame(options.sessionId, activeLocals, options.analysisMasks ? 1600 : longEdge,
@@ -4351,9 +4369,14 @@
                 const entry = mask ? {...mask, wholeFrame:true} : null;
                 return {localIndex:batch.localIndex, entries:new Map(batch.tiles.map(tile => [tile.key,entry]))};
               }
+              if (options.backendLumaMasks && maskUsesLuminance(batch.local.mask) && !maskHasHueLeaf(batch.local.mask)) {
+                return maskLoader().loadCpuMaskTiles(this, { sessionId: options.sessionId, batch, longEdge, editRevision,
+                  geometrySignature: options.geometrySignature || "{}", maskSignature: gpuMaskIdentity(batch.local.mask),
+                  boundedGeometry: options.nativeGeometryViewport, isCurrent, signal });
+              }
               return this.loadLocalMaskTiles(options.sessionId, batch, longEdge, editRevision,
                 options.geometrySignature || "{}", isCurrent, signal, proxy, sceneMaskSource,
-                { lane: options.lane, params, proxy });
+                { lane: options.lane, params, proxy }, options.nativeGeometryViewport);
             },
             isCurrent,
             options.requestSignal,
@@ -5315,14 +5338,37 @@
     }
 
     /** Record why a render declined, so a falsy result is diagnosable. */
-    refuseRender(reason) {
-      this.lastRenderRefusal = { reason, at: performance.now() };
-      this.recordStage("render-refused", { reason });
+    refuseRender(reason, backgroundUnderlayer = false) {
+      if (!backgroundUnderlayer) this.lastRenderRefusal = { reason, at: performance.now() };
+      this.recordStage("render-refused", { reason, backgroundUnderlayer });
       return false;
     }
 
     async renderTo(canvas, sessionId, lane, adjustments, curveSampler, longEdge = 1600, localAdjustments = [], editRevision = 0, maskOverlay = null, referenceWhiteNits = 203, sourceSize = null, sourceOptions = null) {
-      if (!this.available || !sessionId) return this.refuseRender("unavailable-or-no-session");
+      const renderFrame = () => this.renderToFrame(canvas, sessionId, lane, adjustments, curveSampler, longEdge,
+        localAdjustments, editRevision, maskOverlay, referenceWhiteNits, sourceSize, sourceOptions);
+      if (!sourceOptions?.backgroundUnderlayer) {
+        if (this.geometryUnderlayerRender) await this.stopGeometryUnderlayerRender();
+        return renderFrame();
+      }
+      if (this.geometryUnderlayerRender || this.activeRenderCount || this.activeScopeCount
+        || this.deliveryWaitingCount || sourceOptions.isCurrent?.() === false) return false;
+      let release;
+      const unwound = new Promise((resolve) => { release = resolve; });
+      this.geometryUnderlayerRender = { cancel: sourceOptions.cancelUnderlayer, unwound };
+      try {
+        return await renderFrame();
+      } finally {
+        this.geometryUnderlayerRender = null;
+        release();
+      }
+    }
+
+    async renderToFrame(canvas, sessionId, lane, adjustments, curveSampler, longEdge, localAdjustments, editRevision, maskOverlay, referenceWhiteNits, sourceSize, sourceOptions) {
+      const backgroundUnderlayer = Boolean(sourceOptions?.backgroundUnderlayer);
+      const backgroundSignal = backgroundUnderlayer ? sourceOptions.signal : null;
+      const refuse = (reason) => this.refuseRender(reason, backgroundUnderlayer);
+      if (!this.available || !sessionId) return refuse("unavailable-or-no-session");
       if (lane === "sdr" && adjustments.sdr.linked_to_hdr) {
         localAdjustments = localAdjustments.map(local => ({ ...local, sdr_grade: local.hdr_grade }));
       }
@@ -5330,12 +5376,8 @@
       // Eligibility is deliberately checked before resetting a session or
       // requesting a proxy. Unsupported local modules use the CPU renderer,
       // and must not first pay for a WebGPU proxy that cannot be presented.
-      if (!activeLocals.every((local) => gpuLocalSupported(local[`${lane}_grade`]))) return this.refuseRender("unsupported-local-adjustment");
-      if (this.deliveryActivityTimer) await this.acquireForegroundDeliveryBudget();
+      if (!activeLocals.every((local) => gpuLocalSupported(local[`${lane}_grade`]))) return refuse("unsupported-local-adjustment");
       const renderStartedAt = performance.now();
-      if (this.sessionId !== sessionId) this.resetSession(sessionId);
-      if (sourceSize) this.maskSourceSize = {sessionId,...sourceSize};
-      const resourceGeneration = this.resourceGeneration;
       this.activeRenderCount += 1;
       let proxyPin = null;
       let draftPresentation = null;
@@ -5343,13 +5385,17 @@
       let draftReturned = false;
       let lensGlowKey = null;
       try {
+      if (this.deliveryActivityTimer && !backgroundUnderlayer) await this.acquireForegroundDeliveryBudget();
+      if (this.sessionId !== sessionId) this.resetSession(sessionId);
+      if (sourceSize) this.maskSourceSize = {sessionId,...sourceSize};
+      const resourceGeneration = this.resourceGeneration;
       const serial = (this.renderSerials.get(canvas) || 0) + 1;
       this.renderSerials.set(canvas, serial);
       // Physical paper/scan variants must arrive before this recipe is drawn.
       const filmRecipe = adjustments[lane === "sdr" && adjustments.sdr.linked_to_hdr ? "hdr" : lane]?.film_look || {};
-      await window.HDRFilmStocks?.request(filmRecipe.film_stock || "none", filmRecipe);
+      await this.waitForUnderlayerPreparation(window.HDRFilmStocks?.request(filmRecipe.film_stock || "none", filmRecipe), backgroundSignal);
       if (resourceGeneration !== this.resourceGeneration || serial !== this.renderSerials.get(canvas)
-        || sourceOptions?.isCurrent?.() === false) return this.refuseRender("superseded-before-stock");
+        || sourceOptions?.isCurrent?.() === false) return refuse("superseded-before-stock");
       const geometrySignature = JSON.stringify(adjustments.shared?.geometry || {});
       const sourceIdentity = sourceOptions?.identity || "source";
       const context = canvas.getContext("webgpu");
@@ -5371,12 +5417,15 @@
       // Native background measurement used to warm these preview bitmaps.
       // A requested zoom can overlap the same bounded fallback with its source
       // transfer, without compiling a native whole-image measurement mask.
-      const coarseFetchSignal = sourceOptions?.cancelCoarseFetches && sourceOptions.signal
+      const coarseFetchSignal = (sourceOptions?.cancelCoarseFetches || backgroundUnderlayer) && sourceOptions.signal
         ? AbortSignal.any([sourceOptions.signal, this.sourceAbortSignal()]) : undefined;
       this.prefetchZoomMasks(canvas, sessionId, activeLocals, editRevision, geometrySignature, sourceOptions, serial, longEdge, coarseFetchSignal);
       // A Match candidate grades the scene picture as SDR whatever the SDR
       // lane's own source is, so it names the lane its source comes from.
       const sourceLane = sourceOptions?.sourceLane || lane;
+      const requireRegion = sourceOptions?.nativeGeometryViewport && (Boolean(region)
+        || !this.wholeSourceResident(sessionId, sourceLane, longEdge, geometrySignature, sourceIdentity));
+      if (requireRegion && !region) return refuse("required-source-region-unavailable");
       let proxy = await this.loadProxy(
         sessionId,
         sourceLane,
@@ -5387,8 +5436,10 @@
         {
           isCurrent: () => this.sourceLoadIsCurrent(canvas, serial, resourceGeneration, sourceOptions),
           signal: coarseFetchSignal,
+          backgroundUnderlayer,
           onProgress: sourceOptions?.onSourceProgress,
           region,
+          requireRegion,
           reuseRegionOverlap: this.adaptiveDenoiseSelected()
             && this.denoiseSourceSelector.cache.grain?.gpu
             && this.denoiseSourceSelector.controls.method === "clean_grain",
@@ -5397,8 +5448,8 @@
       const proxyReadyAt = performance.now();
       if (resourceGeneration !== this.resourceGeneration
         || serial !== this.renderSerials.get(canvas)
-        || !proxy
-        || sourceOptions?.isCurrent?.() === false) return this.refuseRender("superseded-before-proxy");
+        || sourceOptions?.isCurrent?.() === false) return refuse("superseded-before-proxy");
+      if (!proxy) return refuse(requireRegion ? "required-source-region-unavailable" : "superseded-before-proxy");
       let sourceProxy = this.selectedDenoiseSource(proxy);
       // Export's Match analysis reads the source as decoded, not a reconstruction.
       // So does the Before view, which shows the picture without Denoise.
@@ -5465,7 +5516,9 @@
         sourceBytesPerPixel: proxy.pixelFormat === "rgba16float" ? 8 : 16,
         tier: sourceOptions?.tier ?? null,
         hslSelectionChannels: this.hslSelectionTemplate ? this.hslSelectionChannels(params).length : 0,
+        backgroundUnderlayer,
       });
+      if (backgroundUnderlayer && plan.decision.mode !== "direct") return null;
       // A region source belongs to the tiled route. When admission chooses
       // Direct for a viewport request, Direct executes every active node over
       // the whole frame, so it needs the whole-frame source: load it here.
@@ -5497,7 +5550,7 @@
         && !sourceOptions?.delivery && !sourceOptions?.frameAnchor && !sourceOptions?.measureOnly;
       const reducedGrain = reduceGrain
         ? await this.ensureFineGrainReduced(proxy, editRevision, currentRender, sourceOptions?.tier === "interactive", sourceOptions?.signal, sourceOptions?.action) : null;
-      if (!currentRender()) return this.refuseRender("superseded-before-grain-blend");
+      if (!currentRender()) return refuse("superseded-before-grain-blend");
       if (reducedGrain?.cleanGrainDelta) {
         const strength = this.denoiseSourceSelector.controls.colorSplotches;
         cleanGrainBlend = this.blendReducedCleanGrain(reducedGrain, strength);
@@ -5511,7 +5564,7 @@
         && await this.ensureDenoiseResolved(proxy, currentRender, sourceOptions?.signal, quickCpuGrain)) {
         if (resourceGeneration !== this.resourceGeneration
           || serial !== this.renderSerials.get(canvas)
-          || sourceOptions?.isCurrent?.() === false) return this.refuseRender("superseded-before-proxy");
+          || sourceOptions?.isCurrent?.() === false) return refuse("superseded-before-proxy");
         sourceProxy = sourceOptions?.frameAnchor || sourceOptions?.originalSource ? proxy : this.selectedDenoiseSource(proxy);
       }
       // The anchor is measured before anything is encoded, so this render can
@@ -5526,16 +5579,19 @@
       const anchor = noiseView ? null : this.highlightAnchorRequest(lane, adjustments, sourceProxy, params, localAdjustments);
       const finishedSdrAnchor = anchor && lane === "sdr" && plan.decision.mode !== "tiled"
         && (sourceOptions?.tier !== "interactive" || sourceOptions?.frameAnchor || this.liveMode);
-      if (anchor && !finishedSdrAnchor) {
+      if (backgroundUnderlayer && anchor && !finishedSdrAnchor) {
+        params[GPU_PARAMS.HIGHLIGHT_ANCHOR] = this.peakReductionCache.get(anchor.key) ?? anchor.cached
+          ?? this.carriedHighlightAnchor(lane, sourceProxy, params) ?? params[GPU_PARAMS.HIGHLIGHT_ANCHOR];
+      } else if (anchor && !finishedSdrAnchor) {
         const interactive = sourceOptions?.tier === "interactive";
         // An interactive frame that stopped for a whole-image reduction would
         // miss its deadline, so it carries the last measurement instead and
         // the skipped measurement runs afterwards.
         params[GPU_PARAMS.HIGHLIGHT_ANCHOR] = await this.resolveHighlightAnchor(anchor, sourceProxy, params, { interactive, lane });
         if (!interactive && anchor.cached === undefined) {
-          if (resourceGeneration !== this.resourceGeneration) return this.refuseRender("peak:resource-generation");
-          if (serial !== this.renderSerials.get(canvas)) return this.refuseRender("peak:newer-render-started");
-          if (sourceOptions?.isCurrent?.() === false) return this.refuseRender("peak:application-not-current");
+          if (resourceGeneration !== this.resourceGeneration) return refuse("peak:resource-generation");
+          if (serial !== this.renderSerials.get(canvas)) return refuse("peak:newer-render-started");
+          if (sourceOptions?.isCurrent?.() === false) return refuse("peak:application-not-current");
         }
       }
       // Changing a visible canvas's backing size clears its presented frame.
@@ -5563,6 +5619,7 @@
           editRevision,
           geometrySignature,
           isCurrent: isMaskCurrent,
+          backgroundUnderlayer,
           remember: !sourceOptions?.measureOnly || Boolean(sourceOptions?.scopeAnalysis),
           hue: { lane, params: new Float32Array(params), proxy: sourceProxy },
           requestSignal: coarseFetchSignal,
@@ -5571,7 +5628,7 @@
         masksReadyAt = performance.now();
         if (!loadedMasks.current || !isMaskCurrent()
           || masks.some((mask) => !mask)
-        ) return this.refuseRender("superseded-after-masks");
+        ) return refuse("superseded-after-masks");
       }
       const measuredPeak = params[GPU_PARAMS.HIGHLIGHT_ANCHOR];
       // The resize happens at presentation time, not here. Resizing a visible
@@ -5637,7 +5694,7 @@
         if (sourceOptions?.scopeAnalysis) refusals.push("auxiliary render");
         if (refusals.length) {
           this.recordStage("tiled-refused", { lane, longEdge, refusals });
-          return this.refuseRender(`tiled-refused:${refusals.join(",")}`);
+          return refuse(`tiled-refused:${refusals.join(",")}`);
         }
         this.recordStage("admission", {
           mode: "tiled",
@@ -5676,6 +5733,8 @@
           allowPlaceholder: true,
           panPass: sourceOptions?.panPass,
           boundedPresentation: sourceOptions?.boundedPresentation,
+          backendLumaMasks: region?.backendLumaMasks,
+          nativeGeometryViewport: sourceOptions?.nativeGeometryViewport,
           coversViewport: sourceOptions?.coversViewport,
           onFrameSubmitted: sourceOptions?.onFrameSubmitted,
           lane,
@@ -5692,7 +5751,7 @@
             && sourceOptions?.isCurrent?.() !== false,
         });
         if (!tiled?.rendered) {
-          return this.refuseRender(`tiled-encode-failed:${(tiled?.refusals || []).join(",")}`);
+          return refuse(`tiled-encode-failed:${(tiled?.refusals || []).join(",")}`);
         }
         // The resolution this generation was processed at, which is not the
         // size of the picture it produced: geometry trims the frame. The
@@ -5707,8 +5766,10 @@
         spatialActive,
         detailActive || localDetailActive,
         lensGlowCache,
+        !backgroundUnderlayer,
       );
       if (!intermediate) {
+        if (backgroundUnderlayer) return refuse("underlayer-scratch-allocation-failed");
         // An allocation failed and the backoff is recorded. Abandon this render
         // and keep the previous presentation; the selected tier is unchanged.
         this.recordStage("admission", {
@@ -5719,7 +5780,7 @@
           peakLogicalBytes: plan.totals.peakLogicalBytes,
           budgetBytes: plan.budgetBytes,
         });
-        return this.refuseRender("intermediate-allocation-failed");
+        return refuse("intermediate-allocation-failed");
       }
       // Direct's passes each own a whole parameter buffer, while Tiled binds
       // one buffer at a per-tile offset, so this adapts the buffer to the
@@ -5989,14 +6050,15 @@
       }
       if (finishedSdrAnchor && !sourceOptions?.delivery) {
         this.device.queue.submit([encoder.finish()]);
-        const pipeline = await this.ensurePeakReductionPipeline("scaledFilmPeakReductionMain");
+        const pipeline = await this.waitForUnderlayerPreparation(
+          this.ensurePeakReductionPipeline("scaledFilmPeakReductionMain"), backgroundSignal);
         const key = `frame:${serial}:${anchor.key}`;
         params[GPU_PARAMS.HIGHLIGHT_ANCHOR] = await this.runPeakReduction(pipeline,
-          intermediate.finishTexture, proxy.width, proxy.height, params, anchor.measurement, key);
+          intermediate.finishTexture, proxy.width, proxy.height, params, anchor.measurement, key, backgroundSignal);
         this.peakReductionCache.delete(key);
-        this.noteHighlightMeasurement(lane, sourceProxy, params, params[GPU_PARAMS.HIGHLIGHT_ANCHOR]);
         if (resourceGeneration !== this.resourceGeneration || serial !== this.renderSerials.get(canvas)
-          || sourceOptions?.isCurrent?.() === false) return this.refuseRender("peak:superseded");
+          || sourceOptions?.isCurrent?.() === false) return refuse("peak:superseded");
+        if (!backgroundUnderlayer) this.noteHighlightMeasurement(lane, sourceProxy, params, params[GPU_PARAMS.HIGHLIGHT_ANCHOR]);
         this.device.queue.writeBuffer(this.paramBuffer, 0, params);
         encoder = this.device.createCommandEncoder();
       }
@@ -6021,13 +6083,21 @@
             && resourceGeneration === this.resourceGeneration
             && sourceOptions?.isCurrent?.() !== false,
           () => {
+            if (backgroundUnderlayer) return;
             canvas.hdrFrameRegion = null;
             if (canvas.width !== proxy.width) canvas.width = proxy.width;
             if (canvas.height !== proxy.height) canvas.height = proxy.height;
           },
         )
         : { current: () => true, release: () => {} };
-      if (!presentation) return this.refuseRender("superseded-before-presentation");
+      if (!presentation?.current()) {
+        presentation?.release();
+        return refuse("superseded-before-presentation");
+      }
+      if (backgroundUnderlayer) {
+        if (canvas.width !== proxy.width) canvas.width = proxy.width;
+        if (canvas.height !== proxy.height) canvas.height = proxy.height;
+      }
       this.configureSurface(canvas, context, lane === "hdr" && !sourceOptions?.forceSdrSurface);
       try {
       this.device.queue.writeBuffer(intermediate.compositeParamBuffer, 0, params);
@@ -6058,7 +6128,7 @@
         encoder.copyBufferToBuffer(gpuTiming.resolveBuffer, 0, gpuTiming.readBuffer, 0, 16);
       }
       this.device.queue.submit([encoder.finish()]);
-      if (canvas === this.canvas && !sourceOptions?.measureOnly && !sourceOptions?.delivery) {
+      if (canvas === this.canvas && !sourceOptions?.measureOnly && !sourceOptions?.delivery && !backgroundUnderlayer) {
         this.setLensGlowTileFrameKey(null);
       }
       if (lensGlowKey) intermediate.lensGlowKey = lensGlowKey;
@@ -6073,7 +6143,7 @@
       }
       // Direct composites straight to the canvas, so there is no retained
       // target behind this frame and a later tiled pass must redraw it whole.
-      if (!sourceOptions?.measureOnly) {
+      if (!sourceOptions?.measureOnly && !backgroundUnderlayer) {
       this.lastPresentedFrame = {
         sessionId,
         lane,
@@ -6110,7 +6180,7 @@
       });
       // Scopes describe the graded picture; the noise view has no finished
       // texture for them to read this generation.
-      if (noiseView) this.scopeSources.delete(canvas);
+      if (noiseView || backgroundUnderlayer) this.scopeSources.delete(canvas);
       else this.scopeSources.set(canvas, {
         serial,
         applicationGeneration: sourceOptions?.applicationGeneration ?? null,
@@ -6169,6 +6239,11 @@
         if (!draftReturned) draftPresentation?.destroy();
         if (cleanGrainBlend) this.destroyAfterActiveRenders(() => cleanGrainBlend.texture.destroy());
         if (proxyPin) this.gpuAllocator.unpin(proxyPin);
+        const underlayer = backgroundUnderlayer ? this.geometryUnderlayerRender : null;
+        if (underlayer?.intermediate) {
+          this.destroyIntermediate(underlayer.intermediate);
+          underlayer.intermediate = null;
+        }
         this.finishActiveRender();
       }
     }
@@ -6727,10 +6802,10 @@
     }
 
     reclaimGrainResources(before, context, reservation = false) {
-      const busy = this.activeRenderCount || this.activeScopeCount;
+      const busy = this.resourceRenderCount || this.activeScopeCount;
       // Only source proxies are pinned before a render uses them. Other
       // entries can still be held by a render or a scope outside the ledger.
-      if (busy && (!reservation || this.activeScopeCount || this.activeRenderCount > 1)) return false;
+      if (busy && (!reservation || this.activeScopeCount || this.resourceRenderCount > 1)) return false;
       const visible = this.lastPresentedFrame;
       const selector = this.denoiseSourceSelector;
       const reclaimable = new Set(["source-proxy", "detail-band-tile", "mask-tile", "scene-luminance", "lens-glow-tile",
@@ -9084,8 +9159,12 @@
         Object.fromEntries(Object.entries(staged).map(([name, token]) => [name, compiled.get(token)])));
     }
 
-    ensureIntermediate(canvas, width, height, spatialActive = false, detailActive = false, lensGlowCache = false) {
-      const current = this.intermediates.get(canvas);
+    destroyIntermediate(intermediate) {
+      for (const resource of Object.values(intermediate)) resource?.destroy?.();
+    }
+
+    ensureIntermediate(canvas, width, height, spatialActive = false, detailActive = false, lensGlowCache = false, retain = true) {
+      const current = retain ? this.intermediates.get(canvas) : null;
       const spatialGrid = spatialGridScale(width, height);
       const spatialWidth = Math.max(1, Math.ceil(width / spatialGrid));
       const spatialHeight = Math.max(1, Math.ceil(height / spatialGrid));
@@ -9106,7 +9185,7 @@
         try {
           return create();
         } catch (error) {
-          this.recordAllocationFailure(kind, error, { width, height });
+          if (retain) this.recordAllocationFailure(kind, error, { width, height });
           throw error;
         }
       };
@@ -9144,41 +9223,43 @@
         current.spatialActive = spatialActive;
         return current;
       }
-      current?.baseTexture?.destroy();
-      current?.filmTexture?.destroy();
-      current?.finishTexture?.destroy();
-      current?.spatialATexture?.destroy();
-      current?.spatialBTexture?.destroy();
-      current?.lensGlowTexture?.destroy();
-      current?.localTexture?.destroy();
-      current?.detailATexture?.destroy();
-      current?.detailBTexture?.destroy();
-      current?.compositeParamBuffer?.destroy();
+      if (current) {
+        this.intermediates.delete(canvas);
+        this.destroyAfterActiveRenders(() => this.destroyIntermediate(current));
+      }
       let intermediate;
+      const allocated = [];
+      const allocate = (create, kind) => {
+        const texture = guard(create, kind);
+        allocated.push(texture);
+        return texture;
+      };
       try {
         intermediate = {
-          baseTexture: guard(createTexture, "grading-base"),
-          filmTexture: guard(createTexture, "grading-film"),
+          baseTexture: allocate(createTexture, "grading-base"),
+          filmTexture: allocate(createTexture, "grading-film"),
           // Film Look, Vignette and grain resolve here so the output limiter can
           // measure the finished picture instead of predicting it, and so the
           // scope pass reads that result instead of computing it a second time.
-          finishTexture: guard(createTexture, "grading-finish"),
-          localTexture: guard(createTexture, "grading-local"),
-          detailATexture: detailActive ? guard(createTexture, "grading-detail-a") : null,
-          detailBTexture: detailActive ? guard(createTexture, "grading-detail-b") : null,
-          spatialATexture: spatialActive ? guard(createSpatialTexture, "spatial-a") : null,
-          spatialBTexture: spatialActive ? guard(createSpatialTexture, "spatial-b") : null,
-          lensGlowTexture: lensGlowCache ? guard(createSpatialTexture, "lens-glow") : null,
+          finishTexture: allocate(createTexture, "grading-finish"),
+          localTexture: allocate(createTexture, "grading-local"),
+          detailATexture: detailActive ? allocate(createTexture, "grading-detail-a") : null,
+          detailBTexture: detailActive ? allocate(createTexture, "grading-detail-b") : null,
+          spatialATexture: spatialActive ? allocate(createSpatialTexture, "spatial-a") : null,
+          spatialBTexture: spatialActive ? allocate(createSpatialTexture, "spatial-b") : null,
+          lensGlowTexture: lensGlowCache ? allocate(createSpatialTexture, "lens-glow") : null,
           spatialActive,
           width,
           height,
         };
       } catch {
+        for (const texture of allocated) texture.destroy();
         // The backoff is already recorded. Returning null abandons this render
         // and leaves the previous accepted presentation on screen.
         return null;
       }
-      this.intermediates.set(canvas, intermediate);
+      if (retain) this.intermediates.set(canvas, intermediate);
+      else if (this.geometryUnderlayerRender) this.geometryUnderlayerRender.intermediate = intermediate;
       this.recordAllocation(
         "grading-intermediates",
         width * height * 8 * (4 + (detailActive ? 2 : 0)) + (spatialActive ? spatialWidth * spatialHeight * 8 * 2 : 0)
@@ -9276,7 +9357,18 @@
       return first;
     }
 
-    async runPeakReduction(pipeline, texture, width, height, params, measurement, cacheKey) {
+    waitForUnderlayerPreparation(work, signal) {
+      if (!signal) return work;
+      return new Promise((resolve, reject) => {
+        const abort = () => reject(signal.reason);
+        if (signal.aborted) abort();
+        else signal.addEventListener("abort", abort, { once: true });
+        Promise.resolve(work).then(resolve, reject).finally(() => signal.removeEventListener("abort", abort));
+      });
+    }
+
+    async runPeakReduction(pipeline, texture, width, height, params, measurement, cacheKey, signal) {
+      signal?.throwIfAborted();
       const valueCount = 1 + PEAK_HISTOGRAM_BINS;
       const byteSize = valueCount * 4;
       const resultBuffer = this.device.createBuffer({
@@ -9307,7 +9399,8 @@
       encoder.copyBufferToBuffer(resultBuffer, 0, readBuffer, 0, byteSize);
       this.device.queue.submit([encoder.finish()]);
       try {
-        await readBuffer.mapAsync(GPUMapMode.READ);
+        await this.waitForUnderlayerPreparation(readBuffer.mapAsync(GPUMapMode.READ), signal);
+        signal?.throwIfAborted();
         const values = new Uint32Array(readBuffer.getMappedRange());
         let peak = new Float32Array(new Uint32Array([values[0]]).buffer)[0];
         if (measurement === "robust") {
@@ -9473,11 +9566,12 @@
 
     async loadDirectMasks({
       generation, sessionId, activeLocals, longEdge, editRevision, geometrySignature, isCurrent = () => true,
-      remember = true, hue = null, requestSignal,
+      remember = true, hue = null, requestSignal, backgroundUnderlayer = false,
     }) {
       const tasks = Array.from(activeLocals || []);
       if (!tasks.length) return { results: [], current: isCurrent() };
-      if (!this.maskRequestCoordinator) {
+      const coordinator = backgroundUnderlayer ? this.backgroundMaskRequestCoordinator : this.maskRequestCoordinator;
+      if (!coordinator) {
         const results = [];
         for (const local of tasks) {
           if (!isCurrent()) break;
@@ -9488,7 +9582,7 @@
         while (results.length < tasks.length) results.push(null);
         return { results, current: isCurrent() };
       }
-      return this.maskRequestCoordinator.run(
+      return coordinator.run(
         generation,
         tasks,
         (local, _index, signal) => this.loadLocalMask(

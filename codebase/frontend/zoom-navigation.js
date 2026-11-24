@@ -8,6 +8,7 @@ function setZoomMode(mode) {
     return;
   }
   const changed = state.zoomMode !== "fit";
+  if (changed) cancelGeometryUnderlayer();
   state.zoomMode = "fit";
   const cpuRegion = Boolean(els.previewCanvas.hdrCpuMicroRegion);
   const hdrMicro = Boolean(els.previewCanvas.hdrCpuMicroUrls);
@@ -31,8 +32,11 @@ function setZoomMode(mode) {
 }
 
 function holdingNativeDenoisePictureForFit() {
+  const region = els.previewCanvas.hdrFrameRegion;
+  const completeGeometry = region?.nativeGeometryViewport && region.x === 0 && region.y === 0
+    && region.width === region.frameWidth && region.height === region.frameHeight;
   return state.zoomMode === "fit" && els.previewCanvas.style.display !== "none"
-    && Boolean(els.previewCanvas.hdrFrameRegion) && !els.previewCanvas.hdrCpuMicroRegion
+    && Boolean(region) && !completeGeometry && !els.previewCanvas.hdrCpuMicroRegion
     && els.chromeProofImage?.style.display === "none";
 }
 
@@ -321,8 +325,14 @@ async function refineZoomView(action, target, lane, sessionId) {
   if (cpuMicroPreviewSelected(lane)) {
     return renderPreviewForLane(lane, true, target, { denoiseFallback: true, showProgress: false, action });
   }
+  const exactAtTarget = () => {
+    const frame = state.acceptedPresentation;
+    return frame?.lane === lane && frame.exact && frame.processedLongEdge === target
+      && frame.generation === state.previewGeneration[lane] && frame.geometrySignature === geometrySignature()
+      && !holdingNativeDenoisePictureForFit();
+  };
   let rendered = true;
-  if (state.acceptedPresentation?.processedLongEdge !== target) {
+  if (!exactAtTarget()) {
     const decision = interactiveScaleDecision(lane);
     if (decision.coarse && decision.edge < target && !state.denoise[lane]?.enabled) {
       // Zoom can require the tiled renderer even for its reduced pass.
@@ -335,8 +345,7 @@ async function refineZoomView(action, target, lane, sessionId) {
     // obligation. A newer zoom owns its own request and wins at presentation.
     if (state.session?.session_id !== sessionId || state.currentView !== lane
       || requiredProcessingLongEdge() !== target) return;
-    if (state.acceptedPresentation?.processedLongEdge !== target
-      || !state.acceptedPresentation.exact) {
+    if (!exactAtTarget()) {
       rendered = await renderGpuDraft(lane, { tier: "refinement", longEdge: target, reason: "zoom-scale", action });
     }
   } else {
@@ -354,6 +363,7 @@ function shouldKeepHdrGpuSurface(lane) {
 function setCustomZoom(percent, anchor = null, { continuous = false } = {}) {
   const nextPercent = clamp(Number(percent) || 100, MIN_ZOOM_PERCENT, MAX_ZOOM_PERCENT);
   const changed = state.zoomMode !== "custom" || Math.abs(state.zoomPercent - nextPercent) > 0.001;
+  if (changed) cancelGeometryUnderlayer();
   const preview = anchor?.previewElement || activePreviewElement();
   const imageVisible = previewIsVisible();
   const oldRect = imageVisible ? preview.getBoundingClientRect() : null;
@@ -409,10 +419,12 @@ function applyZoomGeometry() {
   const interactiveRotationSwapsAxes = interactiveQuarterTurns % 2 === 1;
   const sessionId = state.session?.session_id || null;
   const geometrySignature = JSON.stringify(state.adjustments?.shared?.geometry || {});
+  const retainedFrame = state.zoomReferenceFrame?.sessionId === sessionId
+    && state.zoomReferenceFrame.geometrySignature !== geometrySignature ? state.zoomReferenceFrame : null;
   const previewFrameReady = canvasActive
     ? Boolean(state.gpuPreparedLane[state.currentView])
     : Boolean(preview.complete && preview.naturalWidth > 0);
-  if (previewFrameReady && !interactiveRotationSwapsAxes && (
+  if (previewFrameReady && !retainedFrame && !interactiveRotationSwapsAxes && (
     !state.zoomReferenceFrame
     || state.zoomReferenceFrame.sessionId !== sessionId
     || state.zoomReferenceFrame.geometrySignature !== geometrySignature
@@ -455,7 +467,11 @@ function applyZoomGeometry() {
   const draftScale = Math.min(1, perspectiveDraftLongEdge() / Math.max(state.session.source.width, state.session.source.height));
   const sourceFrame = draftFrame
     ? { width: draftFrame.width / draftScale, height: draftFrame.height / draftScale }
-    : sourcePixelFrameDimensions(state.rotateDraftGeometry || state.adjustments?.shared?.geometry);
+    : retainedFrame ? retainedFrame.sourceFrame
+      : sourcePixelFrameDimensions(state.rotateDraftGeometry || state.adjustments?.shared?.geometry);
+  if (!draftFrame && !retainedFrame && !state.rotateDraftGeometry && state.zoomReferenceFrame?.sessionId === sessionId) {
+    state.zoomReferenceFrame.sourceFrame = sourceFrame;
+  }
   const sourceWidth = sourceFrame?.width
     || (referenceAspect >= 1 ? referenceLongEdge : referenceLongEdge * referenceAspect);
   const sourceHeight = sourceFrame?.height
