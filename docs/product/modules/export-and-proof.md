@@ -31,22 +31,22 @@ byte-identical to the app before the change.
   Graphics-card export for Clean Grain is still being tested." The log
   keeps `cpu_delivery_policy`.
 
-**Export-memory Step 0A, pending integration.** The batch default is one
+**Export-memory Step 0A (built).** The batch default is one
 photo worker below 16 GiB or when RAM is unknown, and three from 16 GiB.
 `HDR_FINISHER_BATCH_PARALLEL` still overrides it. Film Grain budgets the
 smaller of two float32 frames and 192 MiB for parallel scratch, with at
 least one chunk. JPEG XL releases shared masks before encoding. The progress
 bar follows the actual HDR and SDR renditions and the JPEG XL encoding stage.
 
-**Export-memory Step 1, pending integration.** CPU Tone and Color, Global HSL,
+**Export-memory Step 1 (built).** CPU Tone and Color, Global HSL,
 vignette and output sharpen process rows without changing pixels. Film Grain
 feeds Film Stock in the original stock-sized batches rather than keeping a
 whole-image density map. Both Sony AVIF profiles match their golden hashes.
-Profile A's peak is lower but still above the worker target; spilling the
-decoded source and measuring with Grade open remain open.
+At Step 1, Profile A's peak was still above the worker target. Steps 2–5
+added source spilling and verified the recipe with Grade open.
 [Step 1 measurements](../../technical/performance-table.md#november-23-2026--macbook-neo-whole-frame-export-memory-step-1).
 
-**Export-memory Step 2, pending integration.** The batch worker spills large
+**Export-memory Step 2 (built).** The batch worker spills large
 sources to read-only scratch files and drops them before encoding the final
 version. Grade keeps its open image. EXR and eligible TIFF sources are decoded in
 bands or tiles. AVIF, Ultra HDR JPEG and JPEG XL encode from finished frames on
@@ -88,8 +88,10 @@ Bundled `avifgainmaputil combine` peaks at 2.47 GB (42 MP), 3.45 GB (61 MP) and
 up to 9× but leaves `combine` unchanged), and `avifenc -j` leaves libaom RAM flat.
 `ultrahdr_app` enforces an upstream `8192 × 8192` dimension cap. For now, the app
 keeps single-tile AVIF output bytes 100% unchanged and shows a non-blocking
-warning on machines with under 16 GB RAM when exporting native-size AVIF gain
-maps above 50 MP (suggesting resizing or HDR JPEG XL).
+warning on machines with under 16 GiB RAM when exporting AVIF gain maps above
+50 MP (suggesting resizing or HDR JPEG XL). The Export panel checks the source
+dimensions when Original size is selected. The encoder checks the actual
+output dimensions.
 *Future area to consider:* a custom tiled-grid `libavif` encoder helper (similar
 to `hdrf-avif-decode`) could bring 100 MP AVIF encoding well below 4 GB and cut
 AVIF decode RAM up to 9×, at the cost of changing AVIF outputs to standard ISO
@@ -104,7 +106,8 @@ after use, and the encoder inputs read the files in row bands.
 Native AVIF helpers run with the finished delivery frames on disk. Ceiling
 retries work on a private HDR copy, so Proof keeps the authored frame.
 
-Full-size AVIF and JPEG XL Proof reuse the export’s finished HDR and SDR frames.
+Full-size AVIF and JPEG XL Proof reuse the finished HDR and SDR frames when
+the exporter supplies them. Otherwise Proof renders the endpoints to files.
 Proof converts SDR and calculates tile statistics in 128-row bands. It keeps
 the endpoint files for the two latest full-size artifacts. Full-size AVIF tiles
 are tone-mapped to temporary Y4M, then encoded with one worker and the same
@@ -1299,12 +1302,16 @@ No pixel change.
    October 27 status above; macOS/Linux packaging awaits CI execution and
    Steve's on-screen HDR acceptance remains manual.
 4. AVIF gain-map denoise: only if a corpus shows a net benefit.
-5. **Export memory with Film Look on a 42 MP RAW (found November 23).**
-   Profile A's export worker alone peaks at 5.9–6.2 GB on the MacBook Neo,
-   above the 4 GB whole-app ceiling, before and after the speed work. The
-   whole-frame CPU path keeps several full-size float frames alive per
-   rendition. Needs a memory plan (bounded creative stages or a lower
-   working precision) and Steve's decision on its cost.
+5. **Export memory qualification after Steps 0A–6.**
+   Before the memory changes, the 42 MP Sony Profile A export worker peaked
+   at 5.9–6.2 GB on the MacBook Neo. The staged route subsequently peaked
+   at 1.655 GB for the whole app with the same photo open in Grade and
+   matched the golden file's SHA-256. Remaining work includes the timing
+   gate, Windows qualification and the remaining large-source formats.
+   The basic CPU strip path can leave a seam with Film Look Scan Sharpening
+   because it omits neighbouring rows at strip edges. The staged Film Look
+   path already includes those rows. Check resized export and full-size
+   Proof with a test edge crossing a strip boundary.
 6. **Later options from the November 23 export-speed work** (recorded, not
    built):
    - Share Film Grain between HDR and SDR: about 15 s on Profile A, but it can

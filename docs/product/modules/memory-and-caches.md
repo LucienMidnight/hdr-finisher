@@ -1905,6 +1905,12 @@ Output started and ended at 2.1 GB, below the 100 GB limit.
 
 ## 8. Open work
 
+- **Grade GPU preview admission on unified memory.** The November 24 manual
+  MacBook Neo session at `65046433` reached 6.03 GB against a 4 GB ceiling and
+  switched Clean Grain preparation to the CPU. Specific Grain reservations
+  check whole-app headroom. Tiled Grade preview source and graph admission
+  still need the same check. Count active sharp Clean Grain surfaces and
+  enforce the Denoise tile allowance while retaining the displayed picture.
 - **Grade Grain reclaim at the same byte count.** An empty reclaim can stay
   suppressed after a source proxy becomes evictable without increasing held
   bytes. Revisit the renderer guard with a test that makes a still-resident

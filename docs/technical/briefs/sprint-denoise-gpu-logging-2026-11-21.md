@@ -1171,6 +1171,12 @@ candidates for defaults.
 | R2-7 | Export depends on whether Grade was opened first (pre-existing, also on `deb2fc6f`)? | **Steve and reviewer, Nov 21: leave for later.**<br>- Grade, Proof and export on the same machine already share one measurement.<br>- The difference appears only for an export without Grade first, for example on the other machine or after clearing the cache. HDR ΔE ITP mean / p99 0.669 / 2.075, within limits.<br>- Cause, checked in code: the GPU measures a 4×4 grid of 256 px windows; the CPU measures up to 64 windows and every pixel of the tail sample, where the GPU samples 16,384.<br>- Root fix after v1: make CPU and GPU measure the same windows. This is an output change and needs Steve's yes.<br>- Do not store noise models in saved grades. |
 | R2-5 | Route label look and wording | **Steve, Nov 21:** no label and no Method heading. Show nothing while the GPU works. One line appears only when the slower CPU route is in use, saying why (or when the method cannot run). Coordinator applied this after ROUTE-1 merged. |
 
+Export-memory Step 5 partly superseded the November 21 deferral in R2-3.
+Grade now attempts to map read-only source frames of at least 256 MiB and
+keeps an in-memory frame if spilling fails. Library pressure still subtracts
+retained Grade bytes from its census, while Grade pressure uses the full
+census. [Export memory results](../../product/modules/export-and-proof.md)
+
 ### FOLD-1 · Fine Grain folded into Clean Grain (Steve, R2-1)
 
 **Goal.** One Grain method instead of two. Clean Grain stays the default.

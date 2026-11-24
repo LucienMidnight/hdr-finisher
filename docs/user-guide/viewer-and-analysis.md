@@ -180,7 +180,14 @@ Use full-size output/Proof for final delivery judgement.
 
 On supported WebGPU paths, histogram, waveform, and vectorscope are generated from a compact render of the same current GPU output used by the visible preview. Unsupported geometry, proof/comparison states, and WebGPU fallback use the CPU scope path. Both routes describe the processed authored rendition; they are deterministic numerical diagnostics, not instruments measuring the screen. With **Exact peak** enabled, the peak and clipping readouts are reduced over the pixels of the accepted selected-tier frame on both GPU and bounded CPU routes, independently of the compact distributions used to draw the scopes.
 
-The freshness badge reads **Updating**, **Preview**, **Settled**, or **Refined**. The last valid scope remains on screen while the next generation is computed. Preview scopes trade density for cadence; a higher-density result replaces them after the interaction settles. The peak readout and clipping flag are calculated separately from drawing normalization so a tiny highlight cannot be hidden merely by the drawing scale.
+The freshness badge can show **Updating**, **Preview**, **Settled**, or
+**Refined**. Preview scopes use fewer samples during live edits. During zoom
+and tiled live edits, the scope can hold the previous result until the
+picture settles. With CPU Micro Grain, a missing matching whole-photo preview
+can leave the Histogram **Unavailable**. Return to Fit to let Grade build the
+whole-photo preview. The peak readout and clipping flag are calculated
+separately from drawing normalization so a tiny highlight cannot be hidden
+merely by the drawing scale.
 
 They cannot reveal:
 

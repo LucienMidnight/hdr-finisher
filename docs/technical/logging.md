@@ -1,10 +1,10 @@
 # Desktop diagnostics
 
-The desktop writes the current log to `<userData>/logs/backend.log`. The
-default user-data folders are `%APPDATA%\HDR Finisher` on Windows and
-`~/Library/Application Support/HDR Finisher` on macOS. The desktop process
-writes the actual path in `session_started`. The test launcher uses a
-disposable profile.
+The desktop writes the current log to `<userData>/logs/backend.log`.
+Packaged builds use the application name for the profile folder. A source
+launch uses `hdr-finisher-desktop` under `%APPDATA%` on Windows or
+`~/Library/Application Support` on macOS. The `session_started` record gives
+the actual path. The test launcher uses a disposable profile.
 
 The current file and seven numbered backups each hold up to 20 MiB.
 `backend.log.1` is the newest backup. The writer caps queued output at
@@ -82,6 +82,7 @@ credentials, full requests and opaque payloads out of the log.
 | `gpu_initialization_failed` | The renderer could not initialise a usable GPU. |
 | `gpu_budget_exceeded` | The request plus the greater of resident and allocator bytes exceeded 90% of the effective GPU budget. Temporary. |
 | `gpu_request_too_large` | The reservation by itself exceeds 90% of the configured budget. Sticky for this source key. |
+| `app_memory_ceiling` | The whole-app memory sample left less room than this Grain reservation needed on a unified-memory machine. This can happen before a GPU allocation is attempted. |
 | `gpu_allocation_pressure` | The driver failed a GPU allocation. Retry only after more room becomes available or the device changes. |
 | `source_too_large` | A source, texture, strip, dispatch or buffer exceeds a hard limit. Sticky. |
 | `gpu_reservation_granted` | A calibration, Fit reduction or Bayer region reservation was admitted. See `requested_bytes` and `stage` in `grain_gpu_reserved`. |
@@ -90,7 +91,7 @@ credentials, full requests and opaque payloads out of the log.
 | `transport_timeout` | A timeout, network failure or transient server response interrupted a GPU request. Temporary. |
 | `device_lost` | Retry can follow a successful device rebuild. |
 | `unsupported_lens_correction`, `unsupported_grain_source` | The input or its geometry is incompatible with the selected Grain GPU route. Sticky. |
-| `grain_gpu_error` | An uncategorised GPU failure. Sticky. |
+| `grain_gpu_error` | An uncategorised GPU failure. Latched on the original device, with one retry on a later request after device replacement. |
 | `prior_failure_latched` | A previous failure is still active. See `prior_reason`, `temporary` and `retry_used`. |
 | `superseded` | The action was replaced and did not latch a failure. |
 | `rebuildable_cache_released`, `no_reclaimable_resources` | The eviction pass released cache entries or found none that it could safely release. |

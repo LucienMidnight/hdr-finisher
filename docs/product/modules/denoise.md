@@ -85,12 +85,13 @@ correction and GPU draw paths still render the same pixels.
 An unclassified Grain GPU failure can retry once after the renderer acquires
 a replacement GPU device. The failure stays recorded on the original device.
 
-The Grain methods show GPU, CPU backup, Reduced preview or Paused beside
-Method. The label describes the preview on screen, so CPU preparation still
-shows CPU backup when the GPU draws the picture. The panel explains
-fallbacks and shows when CPU work takes more than two seconds. Retry on GPU
-uses the same one-retry policy after a temporary failure. Micro Grain on the
-CPU also offers Switch to Clean Grain when a GPU retry is unavailable.
+Normal GPU Grain work adds no route message. The Denoise status line explains
+CPU preparation, reduced preview size or an unavailable method when those
+conditions apply. It reports CPU preparation even when the GPU draws the
+picture. It shows progress when CPU work takes more than two seconds.
+**Retry on GPU** uses the one-retry policy for eligible temporary failures.
+Micro Grain on the CPU offers **Switch to Clean Grain** when a GPU retry is
+unavailable.
 
 ### November 21: CPU Micro Grain reuse in Grade
 

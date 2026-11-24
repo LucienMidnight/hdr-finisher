@@ -10,6 +10,10 @@ background metadata still wait for foreground development. Overdue CPU
 repair replay cancels that photo's job in the helper. A hung native decoder
 still restarts the helper.
 
+Open: a marks-only sidecar save during live repair replay can reject the
+batch because replay checks the whole sidecar's file stamp. The batch needs
+to stay valid when the source recipe and enabled repairs are identical.
+
 ### November 17, 2026: plain-app check visibility diagnostics
 
 The Library quick check requires actual visible animation frames. macOS can
