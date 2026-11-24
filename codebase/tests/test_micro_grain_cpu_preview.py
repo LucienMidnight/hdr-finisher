@@ -626,3 +626,53 @@ def test_late_gpu_micro_region_does_not_retain_bayer_tiles_after_cpu_handoff(mon
         assert app_memory.cache_snapshot()["working"]["bytes"] == initial
     finally:
         module._trim_recent_source(0)
+
+
+def test_lens_off_micro_refreshes_memory_after_native_scratch(micro_frame, monkeypatch):
+    frame, controls, _, rendered = micro_frame
+    frame.metadata["lens_correction"]["applied"] = False
+    refreshes = []
+    monkeypatch.setattr(app_memory, "refresh_after_scratch", lambda size: refreshes.append(size))
+
+    micro = MicroGrainControls.from_settings(controls)
+    image, _ = frame.render_cache.micro_preview_source(frame, micro, 256, None)
+    cached, _ = frame.render_cache.micro_preview_source(frame, micro, 256, None)
+    assert refreshes == [image.nbytes]
+    assert cached is image
+    assert len(rendered) == 1
+
+
+def test_cpu_cache_evicts_derived_pixels_before_micro_sources(micro_frame, monkeypatch):
+    frame, controls, built, rendered = micro_frame
+    cache = frame.render_cache
+    micro = MicroGrainControls.from_settings(controls)
+    first, _ = cache.micro_preview_source(frame, micro, 256, None)
+    # Give the cache room for both Micro sizes, but not another derived image.
+    other = np.zeros((512, 512, 3), dtype=np.float32)
+    with cache._lock:
+        cache._remember_proxies_locked(512, other, None)
+    limit = cache.diagnostics()["micro_source_bytes"] + 288 * 272 * 12
+    monkeypatch.setitem(app_memory.LIMITS, "working", limit)
+
+    second, _ = cache.micro_preview_source(frame, micro, 288, None)
+    assert cache.micro_preview_source(frame, micro, 256, None)[0] is first
+    assert cache.micro_preview_source(frame, micro, 288, None)[0] is second
+    assert len(built) == 1
+    assert len(rendered) == 2
+
+
+def test_moderate_app_reclaim_keeps_the_active_micro_source(micro_frame):
+    frame, controls, built, rendered = micro_frame
+    cache = frame.render_cache
+    micro = MicroGrainControls.from_settings(controls)
+    first, _ = cache.micro_preview_source(frame, micro, 256, None)
+    with cache._lock:
+        cache._remember_proxies_locked(128, np.zeros((128, 128, 3), dtype=np.float32), None)
+
+    app_memory.reclaim_all("moderate")
+    assert cache.diagnostics()["proxy_bytes"] == 0
+    assert cache.diagnostics()["micro_source_bytes"] > first.nbytes
+    assert cache.micro_preview_source(frame, micro, 256, None)[0] is first
+    assert len(built) == len(rendered) == 1
+    app_memory.reclaim_all("critical")
+    assert cache.diagnostics()["micro_source_bytes"] == 0

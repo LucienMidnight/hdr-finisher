@@ -131,9 +131,16 @@ def trim_library_shares(caps=None):
     return remaining
 
 
-def register(key, share, trim=None):
+def register(key, share, trim=None, *, trim_moderate=None):
+    def reference(callback):
+        if callback is None:
+            return None
+        if getattr(callback, '__self__', None) is not None:
+            return weakref.WeakMethod(callback)
+        return lambda: callback
+
     with _lock:
-        _caches[key] = dict(share=share,bytes=0,trim=(weakref.WeakMethod(trim) if getattr(trim,'__self__',None) is not None else lambda:trim) if trim else None)
+        _caches[key] = dict(share=share, bytes=0, trim=reference(trim), trim_moderate=reference(trim_moderate))
 
 
 def claim(key, share, size):
@@ -205,7 +212,8 @@ def reclaim(level='moderate', needed=None):
 
 def reclaim_all(level='moderate'):
     with _lock:
-        callbacks=[(v['trim'](),0 if level in ('critical','shortage') else v['bytes']//2)
+        callbacks=[((v.get('trim_moderate') or v['trim'])() if level == 'moderate' else v['trim'](),
+                    0 if level in ('critical','shortage') else v['bytes']//2)
                    for v in _caches.values() if v.get('trim') and
                    (level != 'shortage' or v['share'] in ('raw','handoff','working'))]
     for callback,target in callbacks:

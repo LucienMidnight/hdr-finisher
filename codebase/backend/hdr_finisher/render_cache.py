@@ -822,7 +822,7 @@ class SessionRenderCache:
         self._hsl_inputs: OrderedDict = OrderedDict()
         self._ram_lru = OrderedDict()
         self._ram_key = 'grade-session-' + str(id(self))
-        app_memory.register(self._ram_key, 'working', self.trim_memory)
+        app_memory.register(self._ram_key, 'working', self.trim_memory, trim_moderate=self.trim_moderate_memory)
         self._peak_candidates = {}
         if eager_peak_candidates:
             self._build_peak_candidates()
@@ -899,7 +899,8 @@ class SessionRenderCache:
             if not matching:
                 raise MicroScopeSourceUnavailable()
             selected = min(matching, key=lambda candidate: (candidate[-1] < edge, abs(candidate[-1] - edge)))
-            self._touch_ram_locked("_micro_previews", selected)
+            # Histogram and Navigate can read a different size from the one
+            # on screen. Keep foreground use as the eviction priority.
             return self._micro_previews[selected], selected
 
     def micro_preview_source(self, frame, controls, edge, is_current):
@@ -922,8 +923,7 @@ class SessionRenderCache:
 
         path = Path(frame.source_path)
         key = self._micro_preview_key(frame, controls, edge, epoch)
-        _, source_key, lens_key, _, _ = key
-        lens_applied = lens_key[0]
+        _, source_key, _, _, _ = key
         photo = {"id": str(path), "name": path.name}
 
         while True:
@@ -973,19 +973,18 @@ class SessionRenderCache:
                 if owner:
                     try:
                         reduced = self._build_micro_preview(frame, controls, edge, epoch, source_key, needed, cache_details)
-                        if lens_applied:
-                            # A census taken while Lensfun and the resize were
-                            # live can reject the completed preview after their
-                            # scratch is gone. Keep the same admission check.
-                            readings = app_memory.refresh_after_scratch(reduced.nbytes)
-                            if readings is not None:
-                                cache_details.update(before_refresh_bytes=readings[0], after_refresh_bytes=readings[1])
+                        # The census can still include the native render and
+                        # resize scratch, even with Lens Correction off.
+                        readings = app_memory.refresh_after_scratch(reduced.nbytes)
+                        if readings is not None:
+                            cache_details.update(before_refresh_bytes=readings[0], after_refresh_bytes=readings[1])
                         with self._lock:
                             if self._micro_source_epoch != epoch or self._micro_closed:
                                 raise StaleRender("The CPU Micro Grain source changed.")
-                            self._micro_previews[key] = reduced
-                            self._touch_ram_locked("_micro_previews", key)
-                            self._rebalance_locked()
+                            if reduced.nbytes <= app_memory.limit("working"):
+                                self._micro_previews[key] = reduced
+                                self._touch_ram_locked("_micro_previews", key)
+                                self._rebalance_locked()
                             cache_details["preview_kept"] = key in self._micro_previews
                             self._micro_flights.pop(key)
                             future.set_result(reduced)
@@ -1086,10 +1085,11 @@ class SessionRenderCache:
             with self._lock:
                 if self._micro_source_epoch != epoch or self._micro_closed:
                     raise StaleRender("The CPU Micro Grain source changed.")
-                self._micro_prepared.clear()
-                self._micro_prepared[source_key] = source
-                self._touch_ram_locked("_micro_prepared", source_key)
-                self._rebalance_locked()
+                if source.prepared_nbytes <= app_memory.limit("working"):
+                    self._micro_prepared.clear()
+                    self._micro_prepared[source_key] = source
+                    self._touch_ram_locked("_micro_prepared", source_key)
+                    self._rebalance_locked()
         return source
 
     def micro_preview_region(self, frame, controls, adjustments, kind, viewport, local_adjustments, is_current):
@@ -2538,17 +2538,32 @@ class SessionRenderCache:
                 '_masks', '_geometry_maps', '_hue_stages', '_hsl_inputs', '_peak_candidates', '_source_ranges',
                 '_micro_prepared', '_micro_previews')
 
-    def _rebalance_locked(self, target=None):
+    def _rebalance_locked(self, target=None, *, preserve_micro=False):
         live = {(name, key) for name in self._ram_collections() for key in getattr(self, name)}
         for old in list(self._ram_lru):
             if old not in live: del self._ram_lru[old]
         for name in self._ram_collections():
             for key in getattr(self, name):
                 if (name, key) not in self._ram_lru: self._touch_ram_locked(name, key)
+        micro_caches = ('_micro_prepared', '_micro_previews')
+        protected = set()
+        if preserve_micro:
+            # Keep the most recently used preparation and preview on periodic
+            # pressure trims. Reservations and critical pressure may still free them.
+            for name in micro_caches:
+                entry = next((entry for entry in reversed(self._ram_lru) if entry[0] == name), None)
+                if entry is not None:
+                    protected.add(entry)
+        # Preserve LRU order within each group. A newly built Micro result is
+        # last to go, even when masks or adjusted frames were used more recently.
+        eviction_order = sorted(self._ram_lru, key=lambda entry: entry[0] in micro_caches)
         size = self._retained_bytes_locked()
-        while self._ram_lru and ((target is not None and size > target) or
-                not app_memory.claim(self._ram_key, 'working', size)):
-            (name, key), _ = self._ram_lru.popitem(last=False)
+        for name, key in eviction_order:
+            if (target is None or size <= target) and app_memory.claim(self._ram_key, 'working', size):
+                return
+            if (name, key) in protected:
+                continue
+            del self._ram_lru[(name, key)]
             getattr(self, name).pop(key, None)
             if name == '_frames': self._frame_scope_peaks.pop(key, None)
             self._evictions += 1
@@ -2557,6 +2572,9 @@ class SessionRenderCache:
 
     def trim_memory(self, target):
         with self._lock: self._rebalance_locked(target)
+
+    def trim_moderate_memory(self, target):
+        with self._lock: self._rebalance_locked(target, preserve_micro=True)
 
     def _evict_locked(self) -> None:
         while len(self._frames) > self.max_frames:
