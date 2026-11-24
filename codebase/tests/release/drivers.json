@@ -1188,7 +1188,7 @@
         "lens"
       ],
       "tier": "full",
-      "protects": "Physical lens filters: exact Direct/Tiled bytes at Fit and native.",
+      "protects": "Physical lens filters: exact Direct/Tiled bytes at Fit and native, and exact Mist reuse and invalidation with Grade edits.",
       "launch": {
         "method": "electron"
       }

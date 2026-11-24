@@ -470,15 +470,26 @@ same retained-byte accounting, LRU and pressure trimming as the other Grade
 arrays, inside the unchanged 600 MB cap, not beside it. Source replacement
 clears both entries. No new allowance or whole-app ceiling is introduced.
 
-### November 14: P1-B direct-preview summed lens glow
+### November 24: Exact Mist glow in Direct and Tiled Grade
 
 An active direct-preview lens may retain one summed-glow `rgba16float` texture
-per existing canvas intermediate, at the existing spatial grid resolution.
-Its bytes are charged to direct resident admission, the render plan and GPU
-diagnostics; resize/reset destroys it alongside the other intermediates. Only
-Strength-only edits can reuse it. Delivery/measurement and tiled rendering do
-not use this cache. The existing whole-app, Grade array and GPU budgets stay
-unchanged; if the extra resource does not fit, normal planning/fallback applies.
+per existing canvas intermediate at the spatial grid resolution. Its bytes
+are charged to direct resident admission, the render plan and GPU diagnostics.
+Resize and reset release it alongside the other intermediates.
+
+Direct and Tiled Grade reuse the exact summed glow when the source pixels,
+pre-Mist grade and masks, and lens kernel agree. The input key includes the
+Denoise reconstruction or the cached reduced Clean Grain base and its blend
+strength. Mist strength, Film Grain, halation amount, and stock happen after
+the glow is calculated and do not invalidate it by themselves.
+
+Tiled Grade retains only the current glow's halo rectangles. It checks the
+existing GPU budget and contingency margin before allocating each tile,
+including other tiles and working memory added so far. The shared allocator
+can evict entries. A new glow recipe replaces the old set; Mist or Film Look
+off, a lane without Mist, a Direct presentation (such as Fit), or disabling
+the cache releases it. Outstanding GPU work may delay texture destruction
+until it finishes. Measurements and delivery neither use nor clear the set.
 
 ### November 13: 8 GB Mac native preflight and failed-photo admission
 

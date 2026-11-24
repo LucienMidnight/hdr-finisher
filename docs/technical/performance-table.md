@@ -1,3 +1,35 @@
+## November 24, 2026 — Exact Mist glow reuse
+
+MacBook Neo (A18 Pro, 8 GB), Electron at 1408 × 794 points and 2× under
+the shared GPU lock. Warm IMG_3129.CR2 in HDR Grade at 31% zoom,
+1841 × 1229 pixels and twelve 512 px tiles. The reconstructed recipe used
+Vision3 250D and 2383, grain 23.616, halation 3.571 at radius 0.347,
+and Black Pro-Mist 1/8 at size 1. Timing starts at the control input and
+ends at the first exact presentation for that edit. The exploratory timing
+tolerance is 20% for window and app activity.
+
+| Action | Before (`787754f2`) | With exact glow reuse |
+| --- | ---: | ---: |
+| Grain amount edit, median of three | 3.19 s | 1.13 s |
+| Mist strength edit, median of three | 3.18 s | 1.14 s |
+| First Film Look on | 3.17 s | 3.17 s |
+
+[Before](../../codebase/output/mist-speed/render-path-baseline.json)
+· [After](../../codebase/output/mist-speed/render-path-mist-final.json)
+· [Parity and memory check](../../codebase/output/mist-speed/final-tiled-parity.log)
+
+Final runs ranged from 1.13–1.16 s for Grain and 1.13–1.25 s for Mist
+strength. In a separate six-tile parity check at 1520 px, turning Mist off
+released 22.6 MiB of tracked GPU glow textures in each lane (HDR and SDR).
+Cached and uncached Grain, Mist strength, halation, and stock edits matched
+exactly on both render routes; the HDR check kept Standard Denoise on.
+
+Only exact glow reuse remains. The half- and quarter-resolution trial was
+removed: strong Pro-Mist and CineBloom showed ringing and tile joins, the
+trial still needed the tile halo, and it disabled exact glow reuse. Delivery
+and CPU preview are unchanged. The rejected trial's [comparison crops and
+measurements](../../codebase/output/mist-speed/) are retained as evidence.
+
 ## November 23, 2026 — Grade Film Look edits and exact grain at zoom
 
 MacBook Neo (A18 Pro, 8 GB), real Electron at 1408 × 794 points and 2×,

@@ -51,6 +51,15 @@
     return (expression.children || []).some(maskHasHueLeaf);
   }
 
+  function lensGlowActive(params) {
+    return params[GPU_PARAMS.FILM_RESPONSE_ENABLED] >= 0.5 && params[GPU_PARAMS.FILM_LOOK_STRENGTH] > 0
+      && params[GPU_PARAMS.LENS_FILTER] > 0.5 && params[GPU_PARAMS.LENS_SCATTER] > 0;
+  }
+
+  const CLARITY_IGNORED_FILM_PARAMS = Object.entries(GPU_PARAMS)
+    .filter(([name]) => name === "LENS_SCATTER" || name.startsWith("GRAIN_"))
+    .map(([, index]) => index);
+
   class HDRWebGPUPreview {
     static directPreviewMemoryModel(width, height, options = {}) {
       return directPreviewMemoryModel(width, height, options);
@@ -170,6 +179,7 @@
       this.bindGroupLayout = null;
       this.clarityMaps = null;
       this.clarityFrameMap = null;
+      this.clarityFrameMapVersion = 0;
       this.pipelineLayout = null;
       this.maskBindGroupLayout = null;
       this.maskPipelineLayout = null;
@@ -247,6 +257,9 @@
       this.detailBandTiles = new Map();
       this.maskTiles = new Map();
       this.denoiseTiles = new Map();
+      this.lensGlowTiles = this.trackGpuCache("lens-glow-tile", new Map());
+      this.lensTextureIds = new WeakMap();
+      this.nextLensTextureId = 0;
       // Every cache map is registered through the allocator, so
       // a set, delete or clear *is* an allocation event and no call site can
       // forget to report one. Reads touch the global LRU order.
@@ -515,6 +528,11 @@
         this.denoiseTiles.delete(key);
         this.denoiseTileCounters.evictions += 1;
         this.destroyAfterActiveRenders(() => entry.texture?.destroy());
+      } else if (kind === "lens-glow-tile") {
+        const entry = this.lensGlowTiles.get(key);
+        if (!entry) return;
+        this.lensGlowTiles.delete(key);
+        this.releaseGpuCacheValue(kind, entry);
       } else if (kind === "scene-luminance") {
         const entry = this.sceneLuminance.get(key);
         if (!entry) return;
@@ -921,6 +939,7 @@
       this.destroyTileGraph("analysisTileGraph");
       for (const entry of this.detailBandTiles.values()) this.destroyAfterActiveRenders(() => entry.texture?.destroy());
       this.detailBandTiles.clear();
+      this.clearLensGlowTiles();
       for (const entry of this.maskTiles.values()) this.destroyAfterActiveRenders(() => entry.texture?.destroy());
       this.maskTiles.clear();
       this.dropDenoiseTiles();
@@ -1165,6 +1184,7 @@
         .reduce((sum, entry) => sum + (entry.byteSize || 0), 0);
       const maskTileBytes = [...this.maskTiles.values()].reduce((sum, entry) => sum + (entry.byteSize || 0), 0);
       const denoiseTileBytes = [...this.denoiseTiles.values()].reduce((sum, entry) => sum + (entry.byteSize || 0), 0);
+      const lensGlowTileBytes = [...this.lensGlowTiles.values()].reduce((sum, entry) => sum + entry.byteSize, 0);
       const tileGraphBytes = (this.tileGraph?.byteSize || 0) + (this.analysisTileGraph?.byteSize || 0);
       const scopeBytes = [...this.scopeResources.values()].reduce(
         (sum, pool) => sum + pool.reduce((poolSum, resource) => poolSum + (resource.byteSize || 0), 0),
@@ -1219,6 +1239,7 @@
         detailBandCacheBytes,
         maskTileBytes,
         denoiseTileBytes,
+        lensGlowTileBytes,
         tileGraphBytes,
         scopeBytes,
         denoiseEvidenceBytes,
@@ -1236,6 +1257,7 @@
         detailBandCacheBytes,
         maskTileBytes,
         denoiseTileBytes,
+        lensGlowTileBytes,
         denoiseEvidenceBytes,
         denoiseReconstructionScratchBytes,
       };
@@ -2163,8 +2185,8 @@
       // each axis, the same ratio the Direct graph uses.
       const spatialWidth = Math.max(1, Math.ceil(width / spatialGrid));
       const spatialHeight = Math.max(1, Math.ceil(height / spatialGrid));
-      const makeSpatial = () => this.device.createTexture({
-        size: { width: spatialWidth, height: spatialHeight }, format: "rgba16float", usage: attachment,
+      const makeSpatial = (extraUsage = 0) => this.device.createTexture({
+        size: { width: spatialWidth, height: spatialHeight }, format: "rgba16float", usage: attachment | extraUsage,
       });
       try {
         this[graphKey] = {
@@ -2182,7 +2204,7 @@
           // A measurement copies its patch out of the finished tile.
           finishTexture: make("rgba16float", attachment | GPUTextureUsage.COPY_SRC),
           spatialATexture: spatialActive ? makeSpatial() : null,
-          spatialBTexture: spatialActive ? makeSpatial() : null,
+          spatialBTexture: spatialActive ? makeSpatial(GPUTextureUsage.COPY_SRC) : null,
           spatialWidth,
           spatialHeight,
           spatialGrid,
@@ -2677,6 +2699,7 @@
         beforeDeliverySubmit: sourceOptions?.beforeDeliverySubmit,
         tileBatchSize: sourceOptions?.tileBatchSize,
         analysisPatch: sourceOptions?.analysisPatch,
+        lensGlowRecipe: adjustments,
         neutralPaperAnchor: highlightAnchorOnly && adjustments[lane].film_look.film_stock === "none",
         analysisMasks: sourceOptions?.analysisMasks,
         analysisNativeLuma: sourceOptions?.analysisNativeLuma,
@@ -3987,6 +4010,7 @@
         || (typeof window !== "undefined" ? window.HDRTileScheduler : null);
       if (!Scheduler) return { rendered: false, refusals: ["tile scheduler is unavailable"] };
       let analysisTileParams = null;
+      const newLensGlowTiles = new Map();
       try {
       const tileSize = Math.max(64, Math.floor(Number(options.tileSize) || Scheduler.DEFAULT_TILE_SIZE));
       // A measurement pass renders the graph to read one number off it and
@@ -4364,7 +4388,7 @@
         ? this.planClarityFrameMap({
           proxy,
           params,
-          identity: `${detailBandIdentity(params, proxy.identity, "global")}|${denoiseActive ? JSON.stringify(denoiseControls) : "-"}`,
+          identity: this.clarityFrameInputIdentity(params, proxy, denoiseActive ? denoiseControls : null),
           tiles: foregroundTiles,
           workWidth,
           workHeight,
@@ -4768,6 +4792,22 @@
         }
       }
 
+      let lensTileFrameKey = null;
+      if (canvas === this.canvas && !measureOnly && !options.delivery && !cancelled && foregroundTiles.length) {
+        const lensGlowRecipe = !noiseView && !surround && !this.disableLensGlowCache
+          && (!clarityFrame || clarityFrame.state === this.clarityFrameMap)
+          && lensGlowActive(params) && options.lensGlowRecipe;
+        if (lensGlowRecipe) {
+          const preparedSource = denoiseActive && options.fineGrainReduced;
+          const reconstruction = denoiseActive && !preparedSource
+            ? this.lensGlowDenoiseKey(denoiseSelector, denoiseControls, options)
+            : null;
+          lensTileFrameKey = this.lensGlowCacheKey(preparedSource || proxy, lane, lensGlowRecipe, activeLocals, params,
+            [reconstruction, tileSize, halo, clarityFrame?.state.version], !denoiseActive);
+        }
+        this.setLensGlowTileFrameKey(lensTileFrameKey);
+      }
+
       // Denoise reconstructs into the same encoder, one tile at a time, so this
       // loop has to be able to wait for it. Command order is call order, and
       // every tile is reconstructed before the copy that reads it.
@@ -4907,9 +4947,12 @@
             localSource = target;
           });
 
+          const lensGlowTile = this.lensGlowTileFor(
+            lensTileFrameKey, tile.haloRect, graph.spatialGrid, maskMatrix[index], newLensGlowTiles,
+          );
           this.encodeFilmChain(encoder, pipelines, graph, localSource.createView(),
             (source, spatial, original) => bind(source, spatial, original), params, width, height,
-            { pruneGrain: options.gradePreview });
+            { pruneGrain: options.gradePreview, lensGlowTile });
         }
         if (options.delivery) {
           encoder.copyTextureToTexture(
@@ -5100,6 +5143,8 @@
         this.recordStage("tiled-validation-error", { message: validationError.message });
         return { rendered: false, refusals: [`validation: ${validationError.message}`] };
       }
+      for (const entry of newLensGlowTiles.values()) entry.ready = true;
+      newLensGlowTiles.clear();
       if (!measureOnly) {
         // What the canvas now shows. A later ROI pass of this exact size and
         // identity may keep it and process only its foreground tiles.
@@ -5262,6 +5307,9 @@
       };
       } finally {
         analysisTileParams?.destroy();
+        for (const [key, entry] of newLensGlowTiles) {
+          if (this.lensGlowTiles.get(key) === entry) this.evictGpuCacheEntry("lens-glow-tile", key);
+        }
         this.scheduleTileCacheTrim();
       }
     }
@@ -5610,6 +5658,7 @@
           action: sourceOptions?.action,
           originalSource: sourceOptions?.originalSource,
           gradePreview: sourceOptions?.gradePreview,
+          lensGlowRecipe: sourceOptions?.gradePreview ? adjustments : null,
           requestSignal: coarseFetchSignal,
           delivery: sourceOptions?.delivery,
           beforeDeliverySubmit: sourceOptions?.beforeDeliverySubmit,
@@ -5929,8 +5978,8 @@
           localPass.end();
           localSource = target;
         }
-        lensGlowKey = lensGlowCache && !sourceOptions?.delivery && !sourceOptions?.measureOnly
-          ? this.lensGlowCacheKey(sourceProxy, lane, adjustments, localAdjustments, params) : null;
+        lensGlowKey = lensGlowCache && !this.disableLensGlowCache && !sourceOptions?.delivery && !sourceOptions?.measureOnly
+          ? this.lensGlowCacheKey(sourceProxy, lane, adjustments, activeLocals, params, this.lensMaskKey(masks)) : null;
         const glowEncoded = this.encodeFilmChain(encoder, pipelines, intermediate, localSource.createView(),
           (source, spatial, original) => makeBindGroup(source, spatial, this.paramBuffer, original),
           params, proxy.width, proxy.height,
@@ -6009,6 +6058,9 @@
         encoder.copyBufferToBuffer(gpuTiming.resolveBuffer, 0, gpuTiming.readBuffer, 0, 16);
       }
       this.device.queue.submit([encoder.finish()]);
+      if (canvas === this.canvas && !sourceOptions?.measureOnly && !sourceOptions?.delivery) {
+        this.setLensGlowTileFrameKey(null);
+      }
       if (lensGlowKey) intermediate.lensGlowKey = lensGlowKey;
       sourceOptions?.onPresented?.(context.getCurrentTexture());
       if (!sourceOptions?.measureOnly) sourceOptions?.onFrameSubmitted?.(null, presentationSurface.hdr);
@@ -6500,7 +6552,8 @@
       try {
         params = this.encodePreparedDenoise(encoder, entry, { ...origin, width, height }, target, origin, strength);
         this.device.queue.submit([encoder.finish()]);
-        return { ...entry, ...target, cleanGrainDelta: false };
+        return { ...entry, ...target, cleanGrainDelta: false,
+          lensGlowInput: [this.lensTextureToken(entry.texture), strength] };
       } catch (error) {
         target.texture.destroy();
         throw error;
@@ -6680,7 +6733,7 @@
       if (busy && (!reservation || this.activeScopeCount || this.activeRenderCount > 1)) return false;
       const visible = this.lastPresentedFrame;
       const selector = this.denoiseSourceSelector;
-      const reclaimable = new Set(["source-proxy", "detail-band-tile", "mask-tile", "scene-luminance",
+      const reclaimable = new Set(["source-proxy", "detail-band-tile", "mask-tile", "scene-luminance", "lens-glow-tile",
         "local-mask", "oriented-luminance", "fine-grain-reduced", "denoise-tile"]);
       const allocator = this.gpuAllocator;
       let count = 0;
@@ -7906,6 +7959,7 @@
         selector.resolvedFor = JSON.stringify(selector.controls);
         selector.resolvedQuickCpuGrain = quickCpuGrain;
         selector.resolvedRegion = region ? target : null;
+        selector.resolved.sourceEpoch = source.sourceEpoch;
         this.denoiseCounters.atomicSwaps += 1;
         this.recordStage("denoise-resolve", stage);
         return true;
@@ -8635,12 +8689,90 @@
       });
     }
 
-    lensGlowCacheKey(proxy, lane, adjustments, locals, params) {
-      const film = { ...adjustments[lane].film_look };
-      delete film.lens_strength;
-      const recipe = { ...adjustments, [lane]: { ...adjustments[lane], film_look: film } };
-      return JSON.stringify([proxy.identity, this.highlightSourceToken(proxy), lane, proxy.width, proxy.height,
-        params[GPU_PARAMS.SOURCE_PIXEL_SCALE], lane === "sdr" ? params[GPU_PARAMS.HIGHLIGHT_ANCHOR] : null, recipe, locals]);
+    clearLensGlowTiles() {
+      for (const key of this.lensGlowTiles.keys()) this.evictGpuCacheEntry("lens-glow-tile", key);
+      this.lensGlowTileFrameKey = null;
+    }
+
+    setLensGlowTileFrameKey(key) {
+      if (key === this.lensGlowTileFrameKey) return;
+      this.clearLensGlowTiles();
+      this.lensGlowTileFrameKey = key;
+    }
+
+    lensGlowTileFor(frameKey, { x, y, width, height }, grid, masks, pending) {
+      if (!frameKey || this.lensGlowTileFrameKey !== frameKey) return null;
+      const key = `${x},${y},${width},${height}`;
+      const maskKey = this.lensMaskKey(masks);
+      const cached = this.lensGlowTiles.get(key);
+      if (cached && cached.maskKey === maskKey) return cached.ready ? cached : null;
+      if (cached) this.evictGpuCacheEntry("lens-glow-tile", key);
+      const spatialWidth = Math.ceil(width / grid);
+      const spatialHeight = Math.ceil(height / grid);
+      const byteSize = spatialWidth * spatialHeight * 8;
+      const resident = this.resourceMemorySnapshot().resident.totalBytes;
+      if (byteSize + Math.max(resident, this.gpuAllocator?.usedBytes() || 0) > this.memoryBudgetBytes() * 0.9) return null;
+      const texture = this.device.createTexture({
+        label: "lens-glow-tile", size: [spatialWidth, spatialHeight], format: "rgba16float",
+        usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+      });
+      const entry = { texture, byteSize, maskKey, ready: false };
+      this.lensGlowTiles.set(key, entry);
+      pending.set(key, entry);
+      return entry;
+    }
+
+    lensTextureToken(texture) {
+      let token = this.lensTextureIds.get(texture);
+      if (!token) this.lensTextureIds.set(texture, token = ++this.nextLensTextureId);
+      return token;
+    }
+
+    lensMaskKey(masks) {
+      return masks.length ? JSON.stringify(masks.map(entry => [
+        this.lensTextureToken(entry.texture), entry.key, entry.wholeFrame, entry.soft, entry.frameRect,
+      ])) : null;
+    }
+
+    lensGlowDenoiseKey(selector, controls, { microQuick, quickCpuGrain }) {
+      return [selector.cache.identity, selector.cache.grain?.fitKey, controls, Boolean(microQuick), Boolean(quickCpuGrain)];
+    }
+
+    lensGlowSourceKey(proxy, reuseRegion) {
+      if (proxy.lensGlowInput) return proxy.lensGlowInput;
+      if (reuseRegion && proxy.regionTransport && proxy.region && Number.isSafeInteger(proxy.sourceEpoch)) {
+        return [proxy.sessionId, proxy.lane, proxy.longEdge, proxy.geometrySignature, proxy.sourceIdentity];
+      }
+      const selector = this.denoiseSourceSelector;
+      const resolved = proxy === selector?.resolved
+        ? [selector.resolvedVersion, Boolean(selector.resolvedQuickCpuGrain)] : null;
+      return [this.lensTextureToken(proxy.texture), proxy.identity, proxy.region, resolved];
+    }
+
+    lensGlowCacheKey(proxy, lane, adjustments, locals, params, extra, reuseRegion = false) {
+      // The response pass copies the base/Detail/local result. Mist's kernel
+      // reads that picture, working scale, gate and the lens, before any film
+      // response, resolution loss, halation, grain or finishing transform.
+      const branch = adjustments[lane === "sdr" && adjustments.sdr.linked_to_hdr ? "hdr" : lane];
+      const {
+        film_look, film_look_section_enabled, vignette, vignette_section_enabled, output_exposure,
+        highlight_section_enabled, detail: detailRecipe, ...grade
+      } = branch;
+      const { softness, microcontrast, ...detail } = detailRecipe || {};
+      // The HDR ceiling also feeds the Tone stage. Its pre-Mist values
+      // are read from the packed Tone slots below.
+      const baseGrade = Object.entries(grade).filter(([name]) => !name.startsWith("highlight_compression_"));
+      return JSON.stringify([
+        this.resourceGeneration, this.lensGlowSourceKey(proxy, reuseRegion), proxy.sourceEpoch,
+        lane, proxy.width, proxy.height, proxy.pixelFormat, proxy.workingSpace, adjustments.shared?.geometry,
+        baseGrade, detail, locals, extra,
+        params[GPU_PARAMS.HDR_LANE], params[GPU_PARAMS.SOURCE_LINEAR_SRGB],
+        params[GPU_PARAMS.LINKED_SDR], params[GPU_PARAMS.PROJECT_REFERENCE_WHITE_NITS],
+        params[GPU_PARAMS.TONE_PEAK], params[GPU_PARAMS.TONE_KNEE], params[GPU_PARAMS.TONE_LIMITER],
+        params[GPU_PARAMS.SOURCE_PIXEL_SCALE], params[GPU_PARAMS.LENS_FILTER], params[GPU_PARAMS.LENS_SIZE],
+        params[GPU_PARAMS.FILM_GATE_WIDTH_MM], params[GPU_PARAMS.FILM_GATE_HEIGHT_MM], params[GPU_PARAMS.FILM_GATE_AXIS],
+        params[GPU_PARAMS.HSL_SHARED_SELECTION],
+      ]);
     }
 
     encodeFilmChain(encoder, pipelines, graph, originalView, bind, params, width, height, options = {}) {
@@ -8649,7 +8781,10 @@
       const fallback = originalView;
       const a = graph.spatialATexture?.createView() || fallback;
       const b = graph.spatialBTexture?.createView() || fallback;
-      const glow = options.lensGlowKey && graph.lensGlowTexture?.createView();
+      const glowTexture = options.lensGlowTile?.texture || (options.lensGlowKey && graph.lensGlowTexture);
+      const glow = glowTexture?.createView();
+      const glowHit = options.lensGlowTile ? options.lensGlowTile.ready
+        : Boolean(glow && graph.lensGlowKey === options.lensGlowKey);
       const pass = (view, pipeline, group, w = width, h = height, instance = 0, accumulate = false) => {
         const render = encoder.beginRenderPass({ colorAttachments: [{
           view, clearValue: { r: 0, g: 0, b: 0, a: 0 }, loadOp: accumulate ? "load" : "clear", storeOp: "store",
@@ -8662,7 +8797,7 @@
         render.end();
       };
       const active = params[GPU_PARAMS.FILM_RESPONSE_ENABLED] >= 0.5 && params[GPU_PARAMS.FILM_LOOK_STRENGTH] > 0;
-      const bloom = active && params[GPU_PARAMS.LENS_FILTER] > 0.5 && params[GPU_PARAMS.LENS_SCATTER] > 0;
+      const bloom = lensGlowActive(params);
       const halation = active && params[GPU_PARAMS.HALATION_ENABLED] > 0.5;
       const scatter = active && params[GPU_PARAMS.FILM_RESOLUTION] < 1;
       const spatial = () => {
@@ -8675,16 +8810,16 @@
       pass(filmView, pipelines.response, bind(originalView, fallback, originalView));
       if (bloom || scatter) {
         if (bloom) {
-          const grid = graph.spatialGrid || spatialGridScale(width,height);
-          const sw = Math.ceil(width/grid), sh = Math.ceil(height/grid);
-          if (!glow || graph.lensGlowKey !== options.lensGlowKey) {
-            if (glow) graph.lensGlowKey = null;
-            pass(finishView,pipelines.lensExtract,bind(filmView,fallback,originalView),sw,sh);
-            for(let component=0;component<27;component++) {
-              pass(a,pipelines.lensHorizontal,bind(filmView,finishView,originalView),sw,sh,component);
-              pass(b,pipelines.lensVertical,bind(filmView,a,originalView),sw,sh,component,component>0);
+          const grid = graph.spatialGrid || spatialGridScale(width, height);
+          const sw = Math.ceil(width / grid), sh = Math.ceil(height / grid);
+          if (!glowHit) {
+            if (options.lensGlowKey) graph.lensGlowKey = null;
+            pass(finishView, pipelines.lensExtract, bind(filmView, fallback, originalView), sw, sh);
+            for (let component = 0; component < 27; component++) {
+              pass(a, pipelines.lensHorizontal, bind(filmView, finishView, originalView), sw, sh, component);
+              pass(b, pipelines.lensVertical, bind(filmView, a, originalView), sw, sh, component, component > 0);
             }
-            if (glow) encoder.copyTextureToTexture({ texture: graph.spatialBTexture }, { texture: graph.lensGlowTexture }, [sw, sh]);
+            if (glow) encoder.copyTextureToTexture({ texture: graph.spatialBTexture }, { texture: glowTexture }, [sw, sh]);
             this.recordStage("lens-glow", { reused: false, width, height });
           } else this.recordStage("lens-glow", { reused: true, width, height });
         }
@@ -10268,6 +10403,12 @@
       }
     }
 
+    clarityFrameInputIdentity(params, proxy, denoiseControls) {
+      const baseParams = params.slice();
+      CLARITY_IGNORED_FILM_PARAMS.forEach((index) => { baseParams[index] = 0; });
+      return `${detailBandIdentity(baseParams, proxy.identity, "global")}|${proxy.sourceEpoch}|${JSON.stringify(denoiseControls)}`;
+    }
+
     /**
      * Decide what the tiled path's whole-frame Clarity map still needs.
      *
@@ -10344,10 +10485,11 @@
         }
       }
       const blurKey = `${reducedKey}|${plan.scale}|${plan.denseSigma}|${plan.taps}`;
+      const reblur = chunks.length > 0 || state.blurKey !== blurKey;
       return {
         plan, extents, state, chunks, columns, rows, blurKey,
         textures: entry.textures,
-        reblur: chunks.length > 0 || state.blurKey !== blurKey,
+        reblur,
         // Recorded as filled only once the work that fills them is encoded;
         // a generation that stops early discards the whole map instead.
         commit: () => {
@@ -10357,6 +10499,7 @@
             }
           });
           state.blurKey = blurKey;
+          if (reblur) state.version = ++this.clarityFrameMapVersion;
         },
       };
     }

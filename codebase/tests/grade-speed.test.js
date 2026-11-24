@@ -4,34 +4,153 @@ const { test } = require('node:test');
 const { frontendSource, declarations } = require('./frontend-source.js');
 const { HDRGpuParamLayout } = require('../frontend/gpu-param-layout.js');
 
-const context = vm.createContext({ window: {}, performance: { now: () => 0 }, console });
+const context = vm.createContext({ window: {}, performance: { now: () => 0 }, console,
+  GPUTextureUsage: { TEXTURE_BINDING: 4, COPY_DST: 2 } });
 vm.runInContext(frontendSource('graph-scale.js'), context);
 vm.runInContext(frontendSource('webgpu-shaders.js'), context);
 vm.runInContext(frontendSource('webgpu-preview.js'), context);
 const Preview = context.window.HDRWebGPUPreview;
 const indices = HDRGpuParamLayout.indices;
 
-test('lens glow identity ignores only Strength and follows source, lane and upstream edits', () => {
+test('lens glow identity follows its source and kernel and ignores downstream edits', () => {
   const preview = new Preview(null);
-  let source = 'source-a';
-  preview.highlightSourceToken = () => source;
-  const proxy = { identity: 'proxy-a', width: 1200, height: 800 };
-  const recipe = { hdr: { exposure: 0, film_look: { lens_strength: .125, lens_size: 1 } },
-    sdr: { exposure: 0, film_look: { lens_strength: .125, lens_size: 1 } } };
+  const proxy = { identity: 'proxy-a', texture: {}, sourceEpoch: 1, width: 1200, height: 800 };
+  const recipe = { shared: { geometry: {} }, hdr: { exposure: 0 }, sdr: { exposure: 0, film_look: {} } };
   const params = new Float32Array(HDRGpuParamLayout.count);
   const key = () => preview.lensGlowCacheKey(proxy, 'sdr', recipe, [], params);
   const original = key();
-  recipe.sdr.film_look.lens_strength = 2;
+  Object.assign(recipe.sdr.film_look, { lens_strength: 2, grain_amount: 45, halation_amount: 6, film_stock: 'kodak_portra_400' });
+  params[indices.LENS_SCATTER] = 0.6;
+  params[indices.HIGHLIGHT_ANCHOR] = 5;
   assert.equal(key(), original);
-  for (const edit of [() => { recipe.sdr.exposure = 1; },
-    () => { recipe.sdr.film_look.lens_size = 2; },
-    () => { proxy.width = 900; }, () => { source = 'denoise-b'; },
-    () => { params[indices.HIGHLIGHT_ANCHOR] = 5; }]) {
+  for (const edit of [
+    () => { recipe.sdr.exposure = 1; },
+    () => { params[indices.LENS_SIZE] = 2; },
+    () => { params[indices.LENS_FILTER] = 3; },
+    () => { params[indices.FILM_GATE_HEIGHT_MM] = 7.41; },
+    () => { proxy.width = 900; },
+    () => { params[indices.SOURCE_PIXEL_SCALE] = 0.5; },
+    () => { recipe.shared.geometry.crop = { x: 0.1, y: 0.1, width: 0.8, height: 0.8 }; },
+    () => { proxy.region = { x: 128, y: 0, width: 500, height: 500 }; },
+    () => { proxy.sourceEpoch += 1; },
+    () => { proxy.texture = {}; },
+    () => { params[indices.TONE_PEAK] = 1; },
+    () => { params[indices.PROJECT_REFERENCE_WHITE_NITS] = 100; },
+    () => { recipe.sdr.linked_to_hdr = true; params[indices.LINKED_SDR] = 1; },
+  ]) {
     const before = key();
     edit();
     assert.notEqual(key(), before);
   }
   assert.notEqual(preview.lensGlowCacheKey(proxy, 'hdr', recipe, [], params), key());
+});
+
+test('tiled Mist follows Denoise refresh, fit and the live reconstruction recipe', () => {
+  const preview = new Preview(null);
+  const controls = { amount: 0.75 };
+  const selector = { cache: { identity: 'model-1', grain: { fitKey: 'fit-1' } } };
+  const options = {};
+  const key = () => JSON.stringify(preview.lensGlowDenoiseKey(selector, controls, options));
+  for (const edit of [() => { selector.cache.identity = 'model-2'; },
+    () => { selector.cache.grain.fitKey = 'fit-2'; }, () => { controls.amount = 0.5; },
+    () => { options.microQuick = true; }, () => { options.quickCpuGrain = true; }]) {
+    const before = key();
+    edit();
+    assert.notEqual(key(), before);
+  }
+});
+
+test('Direct Mist follows an in-place CPU Grain settlement and its source epoch', async () => {
+  const preview = new Preview(null);
+  const texture = {};
+  const original = { width: 64, height: 64, sourceEpoch: 4 };
+  const selector = { original, resolved: { texture }, selected: 'resolved',
+    cache: { grain: { token: 'native', controls: { amount: 0.75, luminance: 0.5, colorNoise: 0.75, detailRecovery: 0.5 } } } };
+  preview.denoiseSourceSelector = selector;
+  preview.ensureAdaptiveDenoisePipelines = async () => {};
+  const routes = [];
+  preview.preparedGrainTile = async () => ({});
+  preview.encodeAdaptiveDenoise = () => { routes.push('wavelet'); return { dispatches: 1, tiles: 1 }; };
+  preview.encodePreparedDenoise = () => { routes.push('prepared'); return { dispatches: 1, tiles: 1 }; };
+  preview.device = { createCommandEncoder: () => ({ finish() {} }), queue: { submit() {}, async onSubmittedWorkDone() {} } };
+  const key = () => JSON.stringify(preview.lensGlowSourceKey(selector.resolved, false));
+  const resolve = quick => preview.resolveAdaptiveDenoise(selector, [0.75, 0.5, 0.75, 0.5], {},
+    preview.denoiseSelectorGeneration, 0, null, null, null, original, () => true, null, quick);
+  assert.equal(await resolve(true), true);
+  const underlayer = key();
+  assert.equal(await resolve(false), true);
+  assert.deepEqual(routes, ['wavelet', 'prepared']);
+  assert.equal(selector.resolved.texture, texture);
+  assert.equal(selector.resolved.sourceEpoch, 4);
+  const settled = key();
+  assert.notEqual(settled, underlayer);
+  selector.resolvedVersion += 1;
+  assert.notEqual(key(), settled);
+  const newer = key();
+  selector.resolvedQuickCpuGrain = true;
+  assert.notEqual(key(), newer);
+});
+
+test('reduced Clean Grain blends use the cached base and strength, not temporary textures', () => {
+  const preview = new Preview(null);
+  const base = { texture: {}, width: 64, height: 64, cleanGrainDelta: true };
+  preview.createDenoiseTexture = () => ({ texture: {} });
+  preview.encodePreparedDenoise = () => ({ paramBuffer: { destroy() {} } });
+  preview.device = { createCommandEncoder: () => ({ finish() {} }), queue: { submit() {} } };
+  const first = preview.blendReducedCleanGrain(base, 0.5);
+  const next = preview.blendReducedCleanGrain(base, 0.5);
+  const key = proxy => JSON.stringify(preview.lensGlowSourceKey(proxy, false));
+  assert.notEqual(first.texture, next.texture);
+  assert.equal(key(first), key(next));
+  assert.notEqual(key(first), key(preview.blendReducedCleanGrain(base, 0.75)));
+  assert.notEqual(key(first), key(preview.blendReducedCleanGrain({ ...base, texture: {} }, 0.5)));
+});
+
+test('tiled Mist can keep overlapping halo rectangles across same-epoch region uploads', () => {
+  const preview = new Preview(null);
+  const first = { texture: {}, identity: 'region-1', sourceIdentity: 'source', sessionId: 'session', lane: 'hdr',
+    width: 1200, height: 800, longEdge: 1200, geometrySignature: '{}', regionTransport: true, sourceEpoch: 0,
+    region: { x: 0, y: 0, width: 900, height: 800 } };
+  const next = { ...first, texture: {}, identity: 'region-2', region: { ...first.region, x: 300 } };
+  const params = new Float32Array(HDRGpuParamLayout.count);
+  const key = (proxy, reuse) => preview.lensGlowCacheKey(proxy, 'hdr', { hdr: {} }, [], params, null, reuse);
+  assert.equal(key(first, true), key(next, true));
+  assert.notEqual(key(first, false), key(next, false));
+  assert.notEqual(key(first, true), key({ ...next, sourceEpoch: 1 }, true));
+  assert.notEqual(key(first, true), key({ ...next, sourceIdentity: 'another-source' }, true));
+});
+
+test('tiled Mist waits for ready tiles, replaces changed masks and checks live GPU headroom', () => {
+  const preview = new Preview(null);
+  const pending = new Map();
+  const firstRect = { x: 0, y: 0, width: 64, height: 64 };
+  const secondRect = { ...firstRect, x: 64 };
+  const masks = [{ key: 'brush', texture: {} }];
+  const destroyed = [];
+  let otherBytes = 0;
+  preview.memoryBudgetBytes = () => 6000;
+  preview.resourceMemorySnapshot = () => ({ resident: { totalBytes: otherBytes
+    + [...preview.lensGlowTiles.values()].reduce((total, entry) => total + entry.byteSize, 0) } });
+  preview.device = { createTexture: () => { const texture = { destroy: () => destroyed.push(texture) }; return texture; } };
+  preview.setLensGlowTileFrameKey('frame');
+  const tile = (rect, currentMasks = masks, frame = 'frame') => preview.lensGlowTileFor(frame, rect, 4, currentMasks, pending);
+  const first = tile(firstRect);
+  assert.equal(first.ready, false);
+  assert.equal(tile(firstRect), null);
+  first.ready = true;
+  assert.equal(tile(firstRect), first);
+  otherBytes += 1500;
+  assert.equal(tile(secondRect), null);
+  otherBytes = 0;
+  assert.ok(tile(secondRect));
+  const replacement = tile(firstRect, [{ ...masks[0], texture: {} }]);
+  assert.notEqual(replacement, first);
+  assert.equal(replacement.ready, false);
+  assert.deepEqual(destroyed, [first.texture]);
+  preview.setLensGlowTileFrameKey(null);
+  assert.equal(preview.lensGlowTiles.size, 0);
+  assert.equal(destroyed.length, 3);
+  assert.equal(tile(firstRect), null);
 });
 
 test('lens cache skips only the summed glow and grain quality changes only the finish pass', () => {
