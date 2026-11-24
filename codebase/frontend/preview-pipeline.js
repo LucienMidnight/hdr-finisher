@@ -519,6 +519,7 @@ async function renderPreviewForLaneInner(
     body: JSON.stringify({
       edit_revision: state.editRevision,
       include_locals: !localsBypassed(),
+      background_preview: !displayWhenReady,
       ...microGrainPreviewRequest(lane),
       local_adjustments: state.localPreviewDirty && !localsBypassed()
         ? JSON.parse(JSON.stringify(localAdjustments()))
@@ -804,6 +805,7 @@ async function renderRawPreviewForLane(lane, displayWhenReady, longEdge, { showP
     body: JSON.stringify({
       edit_revision: state.editRevision,
       include_locals: !localsBypassed(),
+      background_preview: !displayWhenReady,
       ...microGrainPreviewRequest(lane),
       cpu_fallback_reason: cpuPreviewReason(lane),
       long_edge: Math.min(longEdge, CPU_PREVIEW_MAX_LONG_EDGE),

@@ -105,6 +105,32 @@ test("changing colour cleaning while bypassed prepares the new settings on enabl
   assert.deepEqual(draws, [{ method: "clean_grain", clean_color: true, grain_evenness: 0.65 }]);
 });
 
+test("CPU comparison requests leave Micro Grain cache priority with the viewer", async () => {
+  const requests = [];
+  const state = {
+    session: { session_id: "photo" }, currentView: "hdr", previewCache: {},
+    previewGeneration: { sdr: 1 }, previewControllers: {},
+  };
+  const context = vm.createContext({ state, AbortController,
+    geometryDraftActive: () => false, geometrySignature: () => "{}", syncGlobalEditState: async () => true,
+    cpuPreviewReason: () => "test", localsBypassed: () => false, previewExecutionForTier: () => "whole",
+    mediaQueryMatch: () => false, microGrainPreviewKey: () => null, microGrainPreviewRequest: () => ({}),
+    grainCpuPreviewHeaders: () => ({}), safeJson: async () => null, CPU_PREVIEW_MAX_LONG_EDGE: 16384,
+    fetch: async (url, options) => {
+      requests.push([url, JSON.parse(options.body).background_preview]);
+      return { ok: false };
+    },
+  });
+  vm.runInContext(declarations("renderPreviewForLaneInner", "renderRawPreviewForLane"), context);
+  for (const raw of [false, true]) {
+    await context.renderPreviewForLaneInner("sdr", false, 256, { raw, showProgress: false });
+  }
+  assert.deepEqual(requests, [
+    ["/api/session/photo/preview/sdr", true],
+    ["/api/session/photo/preview-raw/sdr", true],
+  ]);
+});
+
 test("the reduced CPU Denoise image is presented at its actual size without another GPU render", async () => {
   for (const { reduced, stale } of [{}, { reduced: 4096 }, { reduced: 4096, stale: true }]) {
     const state = { session: { session_id: "photo" }, currentView: "hdr", gpuPreview: { available: true },

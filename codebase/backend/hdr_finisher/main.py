@@ -1004,7 +1004,7 @@ def _render_selected_execution(session, request, kind, adjustments, preview_long
             preview_long_edge = min(preview_long_edge, cached_micro[1][-1])
             kwargs.update(cached_micro=cached_micro, scope_source=True)
     elif micro is not None:
-        kwargs["micro_preview"] = (session, micro)
+        kwargs.update(micro_preview=(session, micro), prioritize_micro=not request.background_preview)
     processed = session.render_cache.adjusted_frame(
         adjustments,
         kind,

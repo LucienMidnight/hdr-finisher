@@ -25,6 +25,26 @@ finished, so periodic cleanup kept that smaller result in place of the
 passes once foreground reads alone set eviction priority. The timing above
 predates that follow-up and covers a short session with a requested trim.
 
+### November 24 re-check after the histogram and comparison cache fixes
+
+MacBook Neo (A18 Pro, 8 GB), unpackaged Electron at 1408 × 794 points under
+the shared GPU lock, on the cache follow-up based on `3d90d674`. Sony
+`_DSC7970.ARW` in HDR Grade with Micro Grain. Each value is one Exposure
+commit to the first exact picture after that edit. Each lens setting used
+its own app session, with a warm edit followed by an edit after a requested
+moderate CPU and GPU trim. Processing edges were 1285 px at Fit and 2817 px
+at 31%. The comparison uses the same 20% single-run timing band.
+
+| Lens and zoom | Warm | After trim | Route |
+| --- | ---: | ---: | --- |
+| Off, Fit | 0.071 s | 0.097 s | GPU Direct |
+| Off, 31% | 0.381 s | 0.085 s | GPU Tiled |
+| Auto, Fit | 0.226 s | 0.206 s | CPU cache hit for both edits |
+| Auto, 31% | 0.684 s | 0.862 s | CPU cache hit for both edits |
+
+At Auto 31%, the post-trim edit fell from 25.403 s to 0.862 s. The backend
+logged a 0.02 ms lookup of the 2817 px Micro source for that edit.
+
 ## November 24, 2026 — Grade local masks at 100%
 
 MacBook Neo (A18 Pro, 8 GB), Electron at 1408 × 794 points and 2× under

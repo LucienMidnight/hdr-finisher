@@ -903,7 +903,7 @@ class SessionRenderCache:
             # on screen. Keep foreground use as the eviction priority.
             return self._micro_previews[selected], selected
 
-    def micro_preview_source(self, frame, controls, edge, is_current):
+    def micro_preview_source(self, frame, controls, edge, is_current, *, foreground=True):
         from .denoise_micro_grain import unavailable_reason
         from .diagnostics import log
         from .grain_work import current_check
@@ -933,9 +933,10 @@ class SessionRenderCache:
                     raise StaleRender("The CPU Micro Grain preview was replaced.")
                 cached = self._micro_previews.get(key)
                 if cached is not None:
-                    if source_key in self._micro_prepared:
-                        self._touch_ram_locked("_micro_prepared", source_key)
-                    self._touch_ram_locked("_micro_previews", key)
+                    if foreground:
+                        if source_key in self._micro_prepared:
+                            self._touch_ram_locked("_micro_prepared", source_key)
+                        self._touch_ram_locked("_micro_previews", key)
                     log("denoise", "micro_cpu_source", photo=photo, route="cpu",
                         reason="micro_source_cache_hit", edge_px=edge,
                         duration_ms=round((time.perf_counter() - started) * 1000, 2))
@@ -981,9 +982,12 @@ class SessionRenderCache:
                         with self._lock:
                             if self._micro_source_epoch != epoch or self._micro_closed:
                                 raise StaleRender("The CPU Micro Grain source changed.")
-                            if reduced.nbytes <= app_memory.limit("working"):
-                                self._micro_previews[key] = reduced
+                            if reduced.nbytes <= app_memory.limit("working") and self._store_derived_locked(
+                                "_micro_previews", key, reduced, protect_micro=not foreground,
+                            ):
                                 self._touch_ram_locked("_micro_previews", key)
+                                if not foreground:
+                                    self._ram_lru.move_to_end(("_micro_previews", key), last=False)
                                 self._rebalance_locked()
                             cache_details["preview_kept"] = key in self._micro_previews
                             self._micro_flights.pop(key)
@@ -1005,6 +1009,11 @@ class SessionRenderCache:
                 outcome = "completed"
                 if not caller_current():
                     raise StaleRender("The CPU Micro Grain preview was replaced.")
+                if foreground and not owner:
+                    # A viewer may have joined a comparison that started this work.
+                    with self._lock:
+                        if self._micro_previews.get(key) is result:
+                            self._touch_ram_locked("_micro_previews", key)
                 return result, key
             except StaleRender:
                 if outcome != "completed":
@@ -1895,7 +1904,7 @@ class SessionRenderCache:
         is_current: Callable[[], bool] | None = None,
         local_adjustments: list[LocalAdjustment] | None = None,
         _record_diagnostics: bool = True,
-        *, denoise_controls=None, micro_preview=None, scope_source=False, cached_micro=None,
+        *, denoise_controls=None, micro_preview=None, scope_source=False, cached_micro=None, prioritize_micro=True,
     ) -> np.ndarray:
         edge = max(256, int(long_edge))
         with self._lock:
@@ -1908,7 +1917,7 @@ class SessionRenderCache:
 
             frame, controls = micro_preview
             source, micro_key = self.micro_preview_source(
-                frame, MicroGrainControls.from_settings(controls), edge, is_current,
+                frame, MicroGrainControls.from_settings(controls), edge, is_current, foreground=prioritize_micro,
             )
             signature += repr(("micro", micro_key))
         elif cached_micro is not None:

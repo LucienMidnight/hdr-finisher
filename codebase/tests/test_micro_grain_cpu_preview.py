@@ -684,6 +684,81 @@ def test_moderate_app_reclaim_keeps_the_active_micro_source_after_scopes(micro_f
     assert cache.diagnostics()["micro_source_bytes"] == 0
 
 
+def test_moderate_trim_keeps_the_visible_micro_region(monkeypatch):
+    both_cached = Event()
+    calls = []
+    cores = [(0, 0, 4, 3), (4, 0, 8, 3)]
+    claim = app_memory.claim
+
+    class Source:
+        def cores(self, rect):
+            return (core for core in cores if core[0] < rect[2] and core[2] > rect[0])
+
+        def render_core(self, _, core, **kwargs):
+            calls.append(core)
+            return np.full((3, 4, 3), core[0], dtype=np.float32)
+
+    def observe_claim(key, share, size):
+        admitted = claim(key, share, size)
+        if key == tiles.ram_key and admitted and size == 2 * 3 * 4 * 3 * 4:
+            both_cached.set()
+        return admitted
+
+    source = Source()
+    tiles = denoise_micro_grain.MicroPreviewTiles(source, MicroGrainControls())
+    monkeypatch.setattr(app_memory, "claim", observe_claim)
+    try:
+        tiles.read(source, cores[0], cancelled=lambda: False)
+        visible = tiles.read(source, cores[1], cancelled=lambda: False)
+        assert both_cached.wait(3)
+
+        app_memory.reclaim_all("moderate")
+        assert tiles.bytes == visible.nbytes
+        np.testing.assert_array_equal(tiles.read(source, cores[1], cancelled=lambda: False), visible)
+        assert calls == cores
+        app_memory.reclaim_all("critical")
+        assert tiles.bytes == 0
+    finally:
+        tiles.close()
+
+
+@pytest.mark.parametrize("endpoint", ["preview", "preview-raw"])
+@pytest.mark.parametrize("cached_fit", [True, False])
+def test_cpu_comparison_keeps_the_visible_micro_source(micro_frame, monkeypatch, endpoint, cached_fit):
+    from hdr_finisher import main
+
+    frame, controls, _, rendered = micro_frame
+    frame.session_id = "photo"
+    frame.adjustments = AdjustmentState()
+    frame.edit_revision = 7
+    frame.hdr_reference_white_nits = 203
+    frame.preview_tokens = {PreviewKind.HDR: 5, PreviewKind.SDR: 5}
+    monkeypatch.setattr(main.store, "_current", frame)
+    cache = frame.render_cache
+    micro = MicroGrainControls.from_settings(controls)
+    if cached_fit:
+        cache.micro_preview_source(frame, micro, 256, None)
+    visible, _ = cache.micro_preview_source(frame, micro, 288, None)
+
+    response = TestClient(main.app).post(
+        f"/api/session/photo/{endpoint}/sdr",
+        json={"edit_revision": 7, "long_edge": 256, "hdr_display": False, "background_preview": True},
+    )
+    assert response.status_code == 200
+    if endpoint == "preview-raw":
+        assert response.headers["x-image-width"] == "256"
+    else:
+        from io import BytesIO
+        from PIL import Image
+
+        with Image.open(BytesIO(response.content)) as image:
+            assert image.width == 256
+
+    app_memory.reclaim_all("moderate")
+    assert cache.micro_preview_source(frame, micro, 288, None)[0] is visible
+    assert len(rendered) == 2
+
+
 def test_cpu_navigation_only_uses_a_cached_micro_source(micro_frame, monkeypatch):
     from hdr_finisher import main
 

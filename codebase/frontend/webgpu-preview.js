@@ -3002,6 +3002,7 @@
       let bytes = [...this.denoiseTiles.values()].reduce((sum, entry) => sum + entry.byteSize, 0);
       if (!bytes) return 0;
       const protectedKeys = new Set(pinned);
+      if (!pendingBytes) for (const key of this.presentedDenoiseTileKeys || []) protectedKeys.add(key);
       const budget = Math.max(0, this.denoiseTileBudget() - this.fineGrainReducedBytes());
       for (const [key, entry] of [...this.denoiseTiles]) {
         if (bytes + pendingBytes <= budget) break;
@@ -4685,6 +4686,8 @@
         if (hslTileEngine.retired.length) this.destroyAfterActiveRenders(() => hslTileEngine.dropRetired());
       }
       let encodeError = null;
+      const viewerTiles = (canvas === this.canvas || pictureRegion)
+        && !measureOnly && !options.delivery && !options.underlayerOnly;
       let validationError = null;
       let validationScopeOpen = false;
       let processedTiles = 0;
@@ -4911,8 +4914,6 @@
         }
       }
 
-      const viewerTiles = (canvas === this.canvas || pictureRegion)
-        && !measureOnly && !options.delivery && !options.underlayerOnly;
       if (viewerTiles && !cancelled && !foregroundTiles.length && retainedFrame) {
         lensTileFrameKey = this.presentedLensGlowTileFrameKey;
       }
@@ -5272,7 +5273,7 @@
       }
       for (const entry of newLensGlowTiles.values()) entry.ready = true;
       newLensGlowTiles.clear();
-      if (!measureOnly && !options.delivery && !options.underlayerOnly) {
+      if (viewerTiles) {
         const keptDenoise = denoiseActive && !options.fineGrainReduced
           ? reusedTiles.map(tile => denoiseTileKey(tile.haloRect)).filter(Boolean) : [];
         this.retainPresentedTiles(pinnedMasks, [...denoiseTilesUsed, ...keptDenoise], lensTileFrameKey);
@@ -6241,9 +6242,10 @@
         encoder.copyBufferToBuffer(gpuTiming.resolveBuffer, 0, gpuTiming.readBuffer, 0, 16);
       }
       this.device.queue.submit([encoder.finish()]);
-      if (!sourceOptions?.measureOnly && !sourceOptions?.delivery && !backgroundUnderlayer && !sourceOptions?.underlayerOnly) {
+      if ((canvas === this.canvas || sourceOptions?.boundedPresentation)
+        && !sourceOptions?.measureOnly && !sourceOptions?.delivery && !backgroundUnderlayer && !sourceOptions?.underlayerOnly) {
         this.retainPresentedTiles();
-        if (canvas === this.canvas || sourceOptions?.boundedPresentation) this.setLensGlowTileFrameKey(null);
+        this.setLensGlowTileFrameKey(null);
       }
       if (lensGlowKey) intermediate.lensGlowKey = lensGlowKey;
       sourceOptions?.onPresented?.(context.getCurrentTexture());
@@ -8301,6 +8303,7 @@
 
     selectDenoiseSelectorSource(enabled) {
       if (!this.denoiseSourceSelector) return false;
+      if (!enabled && this.denoiseSourceSelector.selected === "resolved") this.emptyGrainReclaimBytes = null;
       this.denoiseSourceSelector.selected = enabled ? "resolved" : "original";
       this.denoiseCounters.toggles += 1;
       this.recordStage("selector-toggle", { source: this.denoiseSourceSelector.selected });
@@ -8311,6 +8314,7 @@
       const generation = ++this.denoiseSelectorGeneration;
       this.denoisePreparationController?.abort();
       if (selectOriginal && this.denoiseSourceSelector) {
+        if (this.denoiseSourceSelector.selected === "resolved") this.emptyGrainReclaimBytes = null;
         this.denoiseSourceSelector.selected = "original";
       }
       this.recordStage("denoise-cancel", {

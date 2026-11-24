@@ -1239,6 +1239,7 @@ class PreviewRequest(BaseModel):
     micro_grain_controls: DenoiseLiveControls | None = None
     micro_grain_original: bool = False
     micro_grain_viewport: ScopeRegion | None = None
+    background_preview: bool = False
     local_adjustments: list[LocalAdjustment] | None = None
     scope_region: ScopeRegion | None = None
     # Engineering-only. "whole" is the shipped route; "strips" asks for the

@@ -409,6 +409,55 @@ test("idle pressure keeps active Grain and Mist work until a real allocation or 
   assert.deepEqual(destroyed, ["offscreen", "previous", reduced, "visible", "mist"]);
 });
 
+test("idle cache trimming keeps presented Denoise tiles until a real allocation needs them", async () => {
+  const context = vm.createContext({ window: {}, performance });
+  vm.runInContext(frontendSource("webgpu-shaders.js"), context);
+  vm.runInContext(frontendSource("webgpu-preview.js"), context);
+  const renderer = new context.window.HDRWebGPUPreview(null);
+  const destroyed = [];
+  renderer.device = { queue: { onSubmittedWorkDone: async () => {} } };
+  renderer.denoiseTileBudget = () => 100;
+  for (const key of ["visible", "offscreen"]) {
+    renderer.denoiseTiles.set(key, { byteSize: 100, texture: { destroy: () => destroyed.push(key) } });
+  }
+  renderer.retainPresentedTiles([], ["visible"]);
+
+  await renderer.scheduleTileCacheTrim();
+  assert.deepEqual(destroyed, ["offscreen"]);
+  assert.deepEqual([...renderer.denoiseTiles.keys()], ["visible"]);
+  renderer.trimDenoiseTiles([], 100);
+  assert.deepEqual(destroyed, ["offscreen", "visible"]);
+});
+
+for (const [label, deselect] of [
+  ["toggle", renderer => renderer.selectDenoiseSelectorSource(false)],
+  ["cancel", renderer => renderer.cancelDenoiseProcessing()],
+]) {
+  test(`idle reclaim releases Direct Grain after ${label} deselects the result`, () => {
+    const context = vm.createContext({ window: {}, performance, HDRGrainRoute: { headroom } });
+    for (const name of ["gpu-allocator.js", "webgpu-shaders.js", "webgpu-preview.js"]) {
+      vm.runInContext(frontendSource(name), context);
+    }
+    const renderer = new context.window.HDRWebGPUPreview(null);
+    renderer.gpuAllocator = new context.window.HDRGpuAllocator({ budgetBytes: 1000 });
+    renderer.resourceMemorySnapshot = () => ({ resident: { totalBytes: renderer.gpuAllocator.usedBytes(), categories: {} } });
+    const selector = renderer.denoiseSourceSelector = {
+      selected: "resolved", original: { width: 320, height: 240, workingSpace: "acescg" },
+      controls: { method: "micro_grain" }, cache: { grain: { gpu: true, micro: true, fitKey: "photo" } },
+    };
+    const reduced = renderer.reducedGrainKey(selector.original, selector);
+    const destroyed = [];
+    renderer.gpuAllocator.register({ kind: "fine-grain-reduced", key: reduced, bytes: 200, evict: () => destroyed.push(reduced) });
+    const sample = { unifiedMemory: false, pressure: "moderate", grainReclaim: true };
+
+    renderer.acceptGrainMemorySample(sample);
+    assert.deepEqual(destroyed, []);
+    deselect(renderer);
+    renderer.acceptGrainMemorySample(sample);
+    assert.deepEqual(destroyed, [reduced]);
+  });
+}
+
 test("replacing a tiled frame makes its mask tiles reclaimable without new GPU growth", () => {
   const context = vm.createContext({ window: {}, performance, HDRGrainRoute: { headroom } });
   for (const name of ["gpu-allocator.js", "webgpu-shaders.js", "webgpu-preview.js"]) {

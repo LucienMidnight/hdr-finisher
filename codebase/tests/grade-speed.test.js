@@ -314,9 +314,9 @@ test('the bounded zoom canvas reuses Mist tiles and invalidates them on a change
   const params = new Float32Array(HDRGpuParamLayout.count);
   for (const field of ['FILM_RESPONSE_ENABLED', 'FILM_LOOK_STRENGTH', 'LENS_FILTER', 'LENS_SCATTER']) params[indices[field]] = 1;
   const proxy = { identity: 'photo', width: 64, height: 64, texture: texture(), pixelFormat: 'rgba16float' };
-  const render = async (exposure, measureOnly = false) => {
-    const result = await preview.encodeTiledGeneration(detail, context, proxy, { format: 'rgba16float' }, {}, params, {
-      Scheduler, measureOnly, tileSize: 64, boundedPresentation: !measureOnly, lensGlowRecipe: { hdr: { exposure } },
+  const render = async (exposure, { measureOnly = false, comparison = false } = {}) => {
+    const result = await preview.encodeTiledGeneration(comparison ? {} : detail, context, proxy, { format: 'rgba16float' }, {}, params, {
+      Scheduler, measureOnly, tileSize: 64, boundedPresentation: !measureOnly && !comparison, lensGlowRecipe: { hdr: { exposure } },
     });
     assert.equal(result.rendered, true);
   };
@@ -324,15 +324,23 @@ test('the bounded zoom canvas reuses Mist tiles and invalidates them on a change
   await render(0);
   assert.ok(used[0]?.ready, 'the finished tile is retained on the detail canvas');
   assert.equal(used[1], used[0]);
-  await render(1, true);
+  await render(1, { measureOnly: true });
   assert.equal(used[2], null);
   assert.equal(preview.lensGlowTiles.size, 1);
   await render(1);
   assert.ok(used[3]?.ready);
   assert.notEqual(used[3], used[0]);
+
+  const viewerGlow = preview.presentedLensGlowTileFrameKey;
+  assert.ok(viewerGlow);
+  preview.retainPresentedTiles(['visible-mask'], ['visible-denoise'], viewerGlow);
+  await render(1, { comparison: true });
+  assert.deepEqual([...preview.presentedMaskKeys], ['visible-mask']);
+  assert.deepEqual([...preview.presentedDenoiseTileKeys], ['visible-denoise']);
+  assert.equal(preview.presentedLensGlowTileFrameKey, viewerGlow);
 });
 
-test('only a Direct viewer presentation releases the previous tiled mask pins', async () => {
+test('only a Direct viewer presentation releases the previous tiled pins', async () => {
   const texture = { createView: () => ({}) };
   const canvas = { getContext: () => ({ getCurrentTexture: () => texture }) };
   const preview = new Preview(canvas);
@@ -349,12 +357,18 @@ test('only a Direct viewer presentation releases the previous tiled mask pins', 
     highlightAnchorRequest: () => null, uploadParamsAndCurves: noop, bindGraphResources: noop, encodeFilmChain: noop,
     ensureIntermediate: () => ({ baseTexture: texture, finishTexture: texture, compositeParamBuffer: { size: Infinity } }),
   });
-  const present = options => preview.renderToFrame(canvas, 'photo', 'hdr', { hdr: {}, sdr: {}, shared: {} },
+  const comparison = { getContext: canvas.getContext };
+  const present = (options, target = canvas) => preview.renderToFrame(target, 'photo', 'hdr', { hdr: {}, sdr: {}, shared: {} },
     () => [], 64, [], 1, null, 203, null, options);
-  preview.presentedMaskKeys = new Set(["visible-tile"]);
+  preview.retainPresentedTiles(['visible-mask'], ['visible-denoise'], 'visible-glow');
   assert.equal((await present({ measureOnly: true })).execution, 'direct');
   assert.equal((await present({ underlayerOnly: true })).execution, 'direct');
-  assert.ok(preview.presentedMaskKeys.has("visible-tile"));
+  assert.equal((await present({}, comparison)).execution, 'direct');
+  assert.deepEqual([...preview.presentedMaskKeys], ['visible-mask']);
+  assert.deepEqual([...preview.presentedDenoiseTileKeys], ['visible-denoise']);
+  assert.equal(preview.presentedLensGlowTileFrameKey, 'visible-glow');
   assert.equal((await present({})).execution, 'direct');
-  assert.equal(preview.presentedMaskKeys?.has("visible-tile") ?? false, false);
+  assert.equal(preview.presentedMaskKeys.size, 0);
+  assert.equal(preview.presentedDenoiseTileKeys.size, 0);
+  assert.equal(preview.presentedLensGlowTileFrameKey, null);
 });

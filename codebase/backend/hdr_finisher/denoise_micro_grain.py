@@ -658,7 +658,8 @@ class MicroPreviewTiles:
         self.controls = controls
         self.pool = CpuExecutor(work_limit=_TILE_WORK)
         self.lock = RLock()
-        self.ready = {}
+        self.ready = OrderedDict()
+        self.visible_cores = set()
         self.inflight = {}
         self.bytes = 0
         self.closed = False
@@ -666,17 +667,23 @@ class MicroPreviewTiles:
         self.consuming = False
         self.fill = None
         self.ram_key = f"micro-preview-tiles-{id(self)}"
-        app_memory.register(self.ram_key, "working", self.trim)
+        app_memory.register(self.ram_key, "working", self.trim, trim_moderate=self.trim_moderate)
 
-    def trim(self, target):
+    def trim(self, target, *, keep_visible=False):
         with self.lock:
             if target < self.bytes:
                 # Reclamation ends this fill. A later visible read can restart it.
                 self.fill = None
-            while self.ready and self.bytes > target:
-                _, tile = self.ready.popitem()
-                self.bytes -= tile.nbytes
+            for core in list(self.ready):
+                if self.bytes <= target:
+                    break
+                if keep_visible and core in self.visible_cores:
+                    continue
+                self.bytes -= self.ready.pop(core).nbytes
             app_memory.claim(self.ram_key, "working", self.bytes)
+
+    def trim_moderate(self, target):
+        self.trim(target, keep_visible=True)
 
     def close(self):
         with self.lock:
@@ -739,6 +746,7 @@ class MicroPreviewTiles:
 
         left, top, right, bottom = rect
         output = np.empty((bottom - top, right - left, 3), dtype=np.float32)
+        cores = tuple(source.cores(rect))
         with self.lock:
             if self.closed:
                 raise StaleRender("The CPU Micro Grain source changed.")
@@ -746,12 +754,14 @@ class MicroPreviewTiles:
             if consume:
                 self.consuming = True
                 self.fill = None
+            else:
+                self.visible_cores = set(cores)
         try:
             # Submit only a worker batch at a time. Completed futures cannot
             # hold an unaccounted whole frame alongside the destination.
             from itertools import islice
-            cores = source.cores(rect)
-            while batch := list(islice(cores, _TILE_WORK.workers)):
+            pending_cores = iter(cores)
+            while batch := list(islice(pending_cores, _TILE_WORK.workers)):
                 if cancelled():
                     raise StaleRender("The CPU Micro Grain preview was replaced.")
                 with self.lock:
@@ -763,6 +773,8 @@ class MicroPreviewTiles:
                         if tile is not None:
                             if consume:
                                 self.bytes -= tile.nbytes
+                            else:
+                                self.ready.move_to_end(core)
                             pending.append((core, tile, None))
                         else:
                             pending.append((core, None, self._submit(source, core, retain=not consume)))
