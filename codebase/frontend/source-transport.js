@@ -537,6 +537,7 @@
       error.recoverable = true;
       throw error;
     }
+    if (options.probeOnly) return { width: outputWidth, height: outputHeight };
     const delivered = {
       x: Math.max(0, Math.min(region.x, outputWidth)),
       y: Math.max(0, Math.min(region.y, outputHeight)),

@@ -184,6 +184,7 @@ test("native geometry routing follows the zoom processing step and the clipped p
   vm.runInContext('const PREVIEW_RESOLUTION_OPTIONS = new Set(["full"]);\n' + declarations(
     "normalizedPreviewResolution", "previewTargetLongEdge", "requiredProcessingLongEdge",
     "steppedProcessingLongEdge", "displayedLongEdge", "nativeGeometryViewportActive", "geometryViewportLayout",
+    "cleanGrainZoomViewport",
   ), context);
   for (const percent of [99, 90, 75]) {
     state.zoomPercent = percent;

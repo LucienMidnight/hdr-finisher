@@ -60,12 +60,14 @@ Fit regions use the usual Lanczos filter and local range limit. The screen
 draw applies the stored correction strength on the GPU. During an Amount
 or other base-setting drag, wavelet feedback remains available until the
 new preparation commits on release. Color Splotches updates the prepared
-colour blend live when **Clean color splotches and fringes** is on. With
-the checkbox off, the extra colour pass is skipped and zero evenness uses
-the Simple reconstruction.
+colour blend live when **Clean color splotches** is on. **Clean edge fringes**
+has its own saved switch and applies its correction independently of splotch
+strength. With both switches off and zero evenness, Clean Grain uses the
+Simple reconstruction.
 
-The temporary result holds float32 RGB and two float16 opponent corrections
-packed into 16 bytes per pixel. It is reserved under the existing full-size
+The temporary result holds float32 RGB with the fringe correction applied
+and two float16 opponent corrections for the splotch blend, packed into
+16 bytes per pixel. It is reserved under the existing full-size
 disk allowance before preparation starts. Grade checks physical free space
 and, if the allowance is short, evicts only as many oldest disposable
 full-size previews as it needs. Eviction and reservation share the ledger's
@@ -80,7 +82,32 @@ existing Denoise tile allowance.
 Toggling colour cleaning replaces the preparation and reuses the brightness
 fit when its inputs match. Source, geometry, noise model, Recalculate and
 the settings that affect brightness are part of the fit identity.
-The Small and Large colour passes keep their original native margins.
+Small applies its 12-pixel splotch correction to the original normalised
+chroma. Large applies its 28-pixel pass after Small and any fringe correction.
+Both suppress corrections near a coherent colour boundary. The edge check
+compares opposing samples across the edge and repeats the comparison
+five pixels in either direction along it. It checks that the nearer pair
+captures enough of the colour transition to distinguish an edge from a
+gradual colour change. Small and Large keep their native margins. Fringe-only
+uses a smaller margin. Micro Grain still uses its original combined colour
+recipe.
+
+In Grade at display-selected magnified zoom, Clean Grain reconstructs at
+native resolution inside the visible region and its padding. The compositor
+applies zoom and pan immediately. The previous sharp region and a
+budgeted recent region fill what they cover, with the prepared full-picture
+layer behind them. The requested viewport governs the coverage check before
+submission. Fit's reduced result survives moderate idle reclaim for the
+current preparation. Critical pressure and reservations can reclaim cached
+regions and the reduced result under the existing GPU allowance.
+
+The GPU brightness fit overlaps one strip upload with the previous strip's
+GPU work and maps the accumulated partials once, then sums in the original
+strip, band and block order. At zero evenness it skips the fit and probes the
+native frame dimensions. Raising evenness prepares the fit before presenting
+that setting. The action log includes fit and reduced cache decisions,
+source fetch and upload, fit waits, GPU render, presentation and refusal
+details.
 
 Grade and Show noise use WebGPU. Proof and export use the same GPU reconstruction
 when admitted and retain the CPU fallback. The experimental CPU delivery filters

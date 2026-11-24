@@ -1,3 +1,29 @@
+## November 24, 2026 — Clean Grain zoom and Fit on the Windows PC
+
+DSC09738.ARW, HDR saved grade, Clean Grain Small, both colour passes on,
+display-selected resolution, 2560×1440 Electron under the shared GPU lock.
+The baseline used the `b3cd5f21` frontend on the same PC. The updated runs
+used `perf/clean-grain-zoom`. These are short action-to-settled-view
+samples. Treat differences within 10% as timing
+variation because source reads and GPU scheduling vary between runs.
+
+| Action | Before | After |
+| --- | ---: | ---: |
+| Open the saved grade at Fit | 23.76 s | 23.20–23.74 s on focused colour runs, 30.01 s while fast checks ran |
+| Re-enable a warm Fit result | 64 ms | 65–72 ms |
+| Fit to 60.6%, exact view | 6.21 s | 2.74–2.75 s |
+| 60.6% to 100% | 3.48 s | Already sharp inside the previous native region. 0.74–0.80 s including capture and idle wait |
+| First pan to an uncovered region at 100% | 1.13 s | 1.46–1.50 s |
+| Pan back into a held region | 1.01 s | 4–6 ms through the input handler, without another draw |
+| Return to Fit | 2.46 s | 0.13 s |
+
+The earlier Fit calibration in the PC logs was 2.4–3.3 s. A cold spot check
+of the new calibration took 1.98 s over 22 chunks, with 1.92 s cumulative
+fetch and upload and 78 ms waiting on GPU validation and final readback.
+These stages overlap. At zero evenness, the app skipped the fit. Raising
+evenness ran it again or reused the matching fit. The first pan into
+uncovered territory needs another draw, so it remains slower in this sample.
+
 ## November 24, 2026 — Sony Micro Grain Exposure after a memory trim
 
 MacBook Neo (A18 Pro, 8 GB), unpackaged Electron at 1408 × 794 points under

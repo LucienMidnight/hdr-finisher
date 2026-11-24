@@ -295,7 +295,7 @@ for lane, pair in (("sdr", [_hdr_to_sdr_display(rgb) for rgb in (fit, actual)]),
     // Standard doesn't apply live Evenness input. Save the value before
     // selecting Clean Grain with colour cleaning off.
     await page.evaluate(() => commitDenoiseControl("grain_evenness", 0));
-    await page.evaluate(() => commitDenoiseControl("clean_color", false));
+    await page.evaluate(async () => { await commitDenoiseControl("clean_splotches", false); await commitDenoiseControl("clean_fringes", false); });
     await change("denoise-method", "clean_grain");
     await waitReady();
     const zero = nextPixels(await readResult());
@@ -312,7 +312,7 @@ for lane, pair in (("sdr", [_hdr_to_sdr_display(rgb) for rgb in (fit, actual)]),
     await compareZoom("Clean Grain without colour cleaning", fine, finePixels);
 
     const cleanStart = performance.now();
-    await page.evaluate(() => commitDenoiseControl("clean_color", true));
+    await page.evaluate(async () => { await commitDenoiseControl("clean_splotches", true); await commitDenoiseControl("clean_fringes", true); });
     await waitReady();
     const clean = await readResult();
     console.log("Clean Grain preview preparation and readback ms", Math.round(performance.now() - cleanStart));

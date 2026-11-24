@@ -1,6 +1,20 @@
 # Module PRD: Denoise
 
-**November 21, 2026 working changes.** New lanes start with Clean Grain selected and Denoise off. Saved enabled grades with no method still use Simple. Clean Grain has a per-rendition colour-cleaning checkbox, on by default. Micro Grain is experimental. Grade defaults to the GPU for the Grain methods. Micro Grain uses signed Bayer samples; its export and full-size Proof use the CPU source stage.
+**November 24, 2026 Clean Grain navigation and colour.** Intermediate zooms use native regions, and recent sharp regions stay available under the existing memory allowance. Separate per-rendition switches control colour splotches and edge fringes. Both default on. The splotch pass protects coherent colour boundaries. MacBook Neo real-app confirmation remains open.
+
+The petal-edge comparison on `DSC09738.ARW` isolated the halo to the
+splotch pass. Opposing samples could span the petal and background, and
+the resulting correction changed the transition between them. The new
+edge check reduces that correction. On Canon `IMG_0790.CR2`, the previous
+and revised Small passes both cleared 11 of the 32 marked locations with
+colour contrast above twice the surrounding grain. [PC timings](../../technical/performance-table.md#november-24-2026--clean-grain-zoom-and-fit-on-the-windows-pc)
+
+The retired combined setting is ignored when a grade opens. The five
+sidecars found with it were `_DSC7970.ARW.hdrf`, `DSC00786.ARW.hdrf`,
+`DSC02059.ARW.hdrf`, `DSC09738.ARW.hdrf` and `Santorini2026_0068.CR3.hdrf`.
+Only the saved HDR grade of `DSC09738.ARW` had the old switch off.
+
+**November 21, 2026 working changes.** New lanes start with Clean Grain selected and Denoise off. Saved enabled grades with no method still use Simple. Micro Grain is experimental. Grade defaults to the GPU for the Grain methods. Micro Grain uses signed Bayer samples. Its export and full-size Proof use the CPU source stage.
 
 **November 23, 2026 export speed.** CPU AVIF Gain Map export with Clean Grain is faster and shows real progress; Clean Grain itself was under 10% of that wait, so GPU Grain delivery stays deferred. [Export and Proof](export-and-proof.md#november-23--faster-cpu-clean-grain-avif-export-real-progress-quiet-trims)
 
@@ -29,8 +43,9 @@ Denoise works on developed camera RAWs, HDR files and renders. It measures noise
 | Medium · ~8 px | 50% | Soft blotches. |
 | Coarse · 16–32 px | 50% | Broad cloudy patches. Each size slider uses the measured amount at 50% and leaves that band alone at 0%. |
 | Grain Evenness | 100% | Evens out retained brightness grain using the fitted 18-pixel setting. With colour cleaning off, 0% follows Simple. |
-| Clean color splotches and fringes | On | Toggles Clean Grain’s additional colour pass independently for each rendition. Color Splotches and Splotch Size retain their values while disabled. |
-| Color Splotches | 100% | Clean Grain. Pulls outlying colour toward nearby colour while preserving scene luminance. Blends live once prepared. At 0% the colour correction is off. |
+| Clean color splotches | On | Toggles splotch cleanup for this rendition. Color Splotches and Splotch Size retain their values while disabled. |
+| Clean edge fringes | On | Toggles the narrow bright-edge fringe correction for this rendition. |
+| Color Splotches | 100% | Pulls outlying colour toward nearby colour while protecting coherent colour edges and preserving scene luminance. Blends live once prepared. At 0% splotch cleanup has no effect. |
 | Splotch Size | Small | Clean Grain. Small has a 12-pixel reach. Large adds a 28-pixel pass. Changing reach can require new preparation. |
 | Micro Grain: Luminance, Color, Detail | 50% each | Sets brightness cleaning, colour cleaning and texture protection in the round 3 recipe. These replace the common controls for this method. |
 | Advanced | Collapsed initially | Reveals Luminance, Color Noise and the four noise sizes. |
@@ -66,6 +81,9 @@ Temporary source keys expire after 30 seconds. Size, shader validation and
 unsupported inputs stay recorded for that source key. The existing CPU
 correction and GPU draw paths still render the same pixels.
 [Diagnostic log and reason codes](../../technical/logging.md)
+
+An unclassified Grain GPU failure can retry once after the renderer acquires
+a replacement GPU device. The failure stays recorded on the original device.
 
 The Grain methods show GPU, CPU backup, Reduced preview or Paused beside
 Method. The label describes the preview on screen, so CPU preparation still

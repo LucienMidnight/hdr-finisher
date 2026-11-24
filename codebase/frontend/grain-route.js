@@ -10,6 +10,7 @@
     if (error?.grainReason) return error.grainReason;
     if (deviceLost) return "device_lost";
     const message = String(error?.message || "");
+    if (/device (?:was |has been |is )?lost|GPU process (?:crashed|exited)/i.test(message)) return "device_lost";
     if (error?.name === "TimeoutError" || error?.status === 503 || /\((502|503|504)\)/.test(message)) return "transport_timeout";
     if (/supported source size|strip.*exceeds.*limit/i.test(message)) return "source_too_large";
     if (/lens correction/i.test(message)) return "unsupported_lens_correction";
@@ -109,7 +110,9 @@
     }
 
     canRetry(failure, snapshot, device, available) {
-      if (!available || !this.canOfferRetry(failure)) return false;
+      if (!available || !failure || failure.retried) return false;
+      if (failure.reason === "grain_gpu_error") return Boolean(device && device !== failure.device);
+      if (!this.canOfferRetry(failure)) return false;
       if (device && device !== failure.device) return true;
       switch (failure.reason) {
         case "transport_timeout": return this.now() >= failure.retryAt;

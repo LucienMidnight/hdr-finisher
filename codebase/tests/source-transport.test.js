@@ -238,7 +238,7 @@ test('Wide panorama Grain at Fit requests a measurement the API can serve', asyn
     },
   });
   assert.equal(await renderer.analyzeDenoiseProxy('photo', 'hdr', {}, 1600, 0, 'source',
-    { method: 'clean_grain', cleanColor: false, grainEvenness: 1 }, 0, 18001), true);
+    { method: 'clean_grain', cleanSplotches: false, cleanFringes: false, grainEvenness: 1 }, 0, 18001), true);
   assert.equal(measurementEdge, 1600);
 });
 
@@ -1435,14 +1435,17 @@ test("Fine Grain calibration matches the whole-width fit when GPU readback force
         limits: { maxTextureDimension2D: 4096, maxBufferSize: 8 * 1024 * 1024, maxStorageBufferBindingSize },
         pushErrorScope() {},
         async popErrorScope() { return null; },
-        createBuffer({ size }) {
+        createBuffer({ size, usage }) {
           const data = new Float32Array(size / 4);
-          const buffer = { data, async mapAsync() {}, getMappedRange: () => data.buffer, destroy() { this.destroyed = true; } };
+          const buffer = { data, usage, maps: 0, async mapAsync() { this.maps++; },
+            getMappedRange: () => data.buffer, destroy() { this.destroyed = true; } };
           buffers.push(buffer);
           return buffer;
         },
         createCommandEncoder: () => ({
-          copyBufferToBuffer(source, sourceOffset, target) { target.data.set(source.data); },
+          copyBufferToBuffer(source, sourceOffset, target, targetOffset, size) {
+            target.data.set(source.data.subarray(sourceOffset / 4, (sourceOffset + size) / 4), targetOffset / 4);
+          },
           finish() {},
         }),
         queue: { submit() {} },
@@ -1488,7 +1491,10 @@ test("Fine Grain calibration matches the whole-width fit when GPU readback force
     });
     const result = await renderer.measureFineGrain("photo", "hdr", width, "{}", 1, "source", {}, {}, null, () => true);
     assert.ok(buffers.every(buffer => buffer.destroyed));
-    assert.ok(buffers.every(buffer => buffer.data.byteLength <= maxStorageBufferBindingSize));
+    const [storage, readback] = buffers;
+    assert.ok(storage.data.byteLength <= maxStorageBufferBindingSize);
+    assert.ok(readback.data.byteLength <= renderer.device.limits.maxBufferSize);
+    assert.equal(readback.maps, 1);
     return { result, targets };
   }
 

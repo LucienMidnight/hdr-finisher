@@ -1311,9 +1311,24 @@ body[data-active-lane="sdr"] .lane-dot {
   dynamic-range-limit: no-limit;
 }
 
-#preview-canvas-frame[data-region] > #preview-denoise-detail {
+#preview-canvas-frame[data-region]:not([data-grain-region]) > #preview-denoise-detail {
   display: block;
   z-index: 2;
+}
+
+.grain-preview-layer {
+  display: none;
+  position: absolute;
+  dynamic-range-limit: no-limit;
+}
+
+#preview-canvas-frame[data-region]:not([data-micro-region]) > .grain-preview-layer:not([hidden]) {
+  display: block;
+  z-index: 2;
+}
+
+#preview-canvas-frame[data-region] > .grain-preview-layer.primary {
+  z-index: 3;
 }
 
 #preview-micro-underlayer,
@@ -1351,6 +1366,7 @@ body[data-active-lane="sdr"] .lane-dot {
 /* Above 100% zoom each source pixel is drawn as a sharp square. */
 #preview-canvas.pixel-magnified,
 #preview-denoise-detail.pixel-magnified,
+.grain-preview-layer.pixel-magnified,
 #preview-micro-detail.pixel-magnified,
 #preview-micro-hdr-detail.pixel-magnified,
 #comparison-canvas.pixel-magnified,

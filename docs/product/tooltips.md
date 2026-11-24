@@ -249,7 +249,8 @@ Clipped lane, scope, preview and filename labels use their visible text; dynamic
 | Color | Reduces colour noise and blotches. | fixed | codebase/frontend/index.html::for=denoise-micro-color · [source](../../codebase/frontend/index.html#L727) |
 | Detail | Keeps more texture and edge detail at higher settings. | fixed | codebase/frontend/index.html::for=denoise-micro-detail · [source](../../codebase/frontend/index.html#L728) |
 | Grain Evenness | Spreads the remaining brightness grain more evenly. 0% gives Standard’s grain and 100% uses the grain-matched 18-pixel setting. | fixed | codebase/frontend/index.html::for=denoise-evenness · [source](../../codebase/frontend/index.html#L740) |
-| Clean color splotches and fringes | Turn off to keep brightness-grain evening and skip the extra correction for coloured blotches and fringes. | fixed | codebase/frontend/index.html:743 · [source](../../codebase/frontend/index.html#L743) |
+| Clean color splotches | Reduce coloured blotches using the Color Splotches strength and Splotch Size. | fixed | codebase/frontend/index.html:740 · [source](../../codebase/frontend/index.html#L740) |
+| Clean edge fringes | Reduce narrow colour fringes along bright edges. | fixed | codebase/frontend/index.html:741 · [source](../../codebase/frontend/index.html#L741) |
 | Color Splotches | Pulls coloured blotches toward their surroundings while preserving scene brightness. 0% switches off this correction. | fixed | codebase/frontend/index.html::for=denoise-splotches · [source](../../codebase/frontend/index.html#L744) |
 | Splotch Size | Small samples colour about 12 pixels away. Large also samples about 28 pixels away to reach beyond wider blotches. | fixed | codebase/frontend/index.html::for=denoise-splotch-size · [source](../../codebase/frontend/index.html#L746) |
 | Small | Small | name only (selected option, when clipped) | codebase/frontend/index.html:747 · [source](../../codebase/frontend/index.html#L747) |

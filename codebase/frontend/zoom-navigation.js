@@ -378,6 +378,7 @@ function setCustomZoom(percent, anchor = null, { continuous = false } = {}) {
 
   state.zoomMode = "custom";
   state.zoomPercent = nextPercent;
+  restoreCleanGrainLayer(state.currentView);
   applyZoomGeometry();
 
   if (oldRect) {
@@ -391,7 +392,7 @@ function setCustomZoom(percent, anchor = null, { continuous = false } = {}) {
 }
 
 function applyZoomGeometry() {
-  if (holdingNativeDenoisePictureForFit()) return;
+  if (holdingNativeDenoisePictureForFit() && !els.previewCanvas.hdrWholeFrame?.cleanGrain) return;
   const preview = activePreviewElement();
   const visible = previewIsVisible();
   els.dropzone.classList.toggle("zoom-custom", state.zoomMode === "custom");
@@ -517,16 +518,25 @@ function applyZoomGeometry() {
   const pictureFrame = pictureCanvas.parentElement;
   const region = pictureCanvas.hdrFrameRegion;
   pictureFrame.toggleAttribute("data-region", Boolean(region));
+  pictureFrame.toggleAttribute("data-grain-region", Boolean(region && pictureCanvas.hdrSharpDetail));
   if (region) {
     pictureFrame.style.width = `${displayWidth}px`;
     pictureFrame.style.height = `${displayHeight}px`;
     const detail = pictureCanvas.hdrCpuMicroRegion
       ? (pictureCanvas.hdrCpuMicroUrls ? els.previewMicroHdrDetail : els.previewMicroDetail)
-      : els.previewDenoiseDetail;
-    detail.style.left = `${100 * region.x / region.frameWidth}%`;
-    detail.style.top = `${100 * region.y / region.frameHeight}%`;
-    detail.style.width = `${100 * region.width / region.frameWidth}%`;
-    detail.style.height = `${100 * region.height / region.frameHeight}%`;
+      : pictureCanvas.hdrSharpDetail?.element || els.previewDenoiseDetail;
+    const place = (element, bounds) => {
+      element.style.left = `${100 * bounds.x / bounds.frameWidth}%`;
+      element.style.top = `${100 * bounds.y / bounds.frameHeight}%`;
+      element.style.width = `${100 * bounds.width / bounds.frameWidth}%`;
+      element.style.height = `${100 * bounds.height / bounds.frameHeight}%`;
+    };
+    place(detail, region);
+    for (const layer of pictureCanvas.hdrSharpLayers || []) {
+      if (layer.element === detail) continue;
+      layer.element.hidden = layer.key !== cleanGrainLayerIdentity(state.currentView);
+      if (!layer.element.hidden) place(layer.element, layer.region);
+    }
     pictureCanvas.style.width = "100%";
     pictureCanvas.style.height = "100%";
   } else {
@@ -552,6 +562,7 @@ function applyZoomGeometry() {
   for (const element of [els.previewCanvas, els.previewDenoiseDetail, els.previewMicroDetail, els.previewMicroHdrDetail, els.comparisonCanvas, els.previewImage, els.comparisonImage]) {
     element.classList.toggle("pixel-magnified", magnified);
   }
+  for (const layer of pictureCanvas.hdrSharpLayers || []) layer.element.classList.toggle("pixel-magnified", magnified);
   state.zoomPercent = percent;
   updateZoomReadout();
   syncOverlayPlacement();

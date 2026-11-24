@@ -772,6 +772,42 @@ fn cleanMedian(p: vec2i) -> vec2f {
   return lower[12];
 }
 
+fn cleanCross(p: vec2i, axis: vec2i, reach: i32) -> vec2f {
+  return cleanRead(p + reach * axis).xy - cleanRead(p - reach * axis).xy;
+}
+
+fn cleanEdgeWeight(p: vec2i, grain: f32) -> f32 {
+  let axes = array<vec2i, 4>(vec2i(1,0), vec2i(0,1), vec2i(1,1), vec2i(-1,1));
+  var strongest = 0.0;
+  for (var i = 0; i < 4; i++) {
+    let axis = axes[i];
+    let tangent = 5 * vec2i(-axis.y, axis.x);
+    let direction = cleanCross(p, axis, 6);
+    let contrast = max(length(direction), 1e-7);
+    if (contrast <= 4.0 * grain) { continue; }
+    let sides = min(dot(direction, cleanCross(p + tangent, axis, 6)),
+                    dot(direction, cleanCross(p - tangent, axis, 6))) / contrast;
+    let sharpness = contrast / max(length(cleanCross(p, axis, 12)), contrast);
+    strongest = max(strongest, cleanRamp(min(contrast, sides) / grain, 4.0, 9.0) * cleanRamp(sharpness, .4, .7));
+  }
+  return 1.0 - strongest;
+}
+
+fn cleanFringe(p: vec2i, weight: f32, grain: f32) -> vec2f {
+  if (weight <= 0.0) { return vec2f(0.0); }
+  let delta = cleanRead(p).xy - cleanMedian(p);
+  return delta * (weight * cleanRamp(length(delta) / grain, 3.0, 8.0));
+}
+
+@compute @workgroup_size(8, 8)
+fn cleanFringeMain(@builtin(global_invocation_id) id: vec3u) {
+  if (any(id.xy >= vec2u(ap.model.zw))) { return; }
+  let p = vec2i(ap.model.xy) + vec2i(id.xy);
+  let grain = max(1.25 * textureLoad(sumTex, p, 0).x, 1e-7);
+  let weight = textureLoad(aux3Tex, p, 0).z;
+  textureStore(dstTex, p, vec4f(-cleanFringe(p, weight, grain) * cleanRead(p).z, 0.0, 0.0));
+}
+
 @compute @workgroup_size(8, 8)
 fn cleanRepairMain(@builtin(global_invocation_id) id: vec3u) {
   if (any(id.xy >= vec2u(ap.model.zw))) { return; }
@@ -791,10 +827,12 @@ fn cleanRepairMain(@builtin(global_invocation_id) id: vec3u) {
     let darkPeak = guides.y * cleanRamp(relative / max(peak, 1e-6), .55, .95) * cleanRamp(relative, 1.8, 4.0);
     correction = mix(correction, (input - pair.zw) * guides.x, darkPeak);
   }
-  if (ap.frame.z == 12.0 && guides.z > 0.0) {
-    let fringe = input - cleanMedian(p);
-    let grain = max(1.25 * textureLoad(sumTex, p, 0).x, 1e-7);
-    correction += fringe * (guides.z * cleanRamp(length(fringe) / grain, 3.0, 8.0));
+  let grain = max(1.25 * textureLoad(sumTex, p, 0).x, 1e-7);
+  if (ap.strength.z > 0.5 && any(correction != vec2f(0.0))) {
+    correction *= cleanEdgeWeight(p, grain);
+  }
+  if (ap.frame.z == 12.0 && ap.strength.w > 0.5) {
+    correction += cleanFringe(p, guides.z, grain);
   }
   textureStore(dstTex, p, vec4f(input - correction, 0.0, 0.0));
 }
@@ -805,14 +843,21 @@ fn cleanCorrection(p: vec2i, base: vec3f) -> vec2f {
   return fixed * light - toOpponent(base).yz;
 }
 
+fn cleanAddColour(rgb: vec3f, correction: vec2f) -> vec3f {
+  let delta = fromOpponent(vec3f(0.0, correction));
+  return rgb + delta - vec3f(dot(delta, ACES_LUMA));
+}
+
 @compute @workgroup_size(8, 8)
 fn cleanOutputMain(@builtin(global_invocation_id) id: vec3u) {
   if (any(id.xy >= vec2u(ap.tile.zw))) { return; }
   let at = vec2i(ap.tile.xy) + vec2i(id.xy);
   let p = at - scratchOrigin();
   let base = cleanRead(p).rgb;
-  let delta = fromOpponent(vec3f(0.0, cleanCorrection(p, base) * ap.strength.x));
-  textureStore(outTex, at - vec2i(ap.dest.xy), vec4f(base + delta - vec3f(dot(delta, ACES_LUMA)), 1.0));
+  let fringe = textureLoad(aux3Tex, p, 0).xy;
+  let splotch = select(vec2f(0.0), cleanCorrection(p, base) - fringe, ap.strength.z > 0.5);
+  let corrected = cleanAddColour(cleanAddColour(base, fringe), splotch * ap.strength.x);
+  textureStore(outTex, at - vec2i(ap.dest.xy), vec4f(corrected, 1.0));
 }
 
 @group(0) @binding(8) var cleanPacked: texture_storage_2d<rgba32uint, write>;
@@ -823,8 +868,10 @@ fn cleanPackMain(@builtin(global_invocation_id) id: vec3u) {
   let at = vec2i(ap.tile.xy) + vec2i(id.xy);
   let p = at - scratchOrigin();
   let base = cleanRead(p).rgb;
-  let delta = cleanCorrection(p, base);
-  textureStore(cleanPacked, at - vec2i(ap.dest.xy), vec4u(bitcast<vec3u>(base), pack2x16float(delta)));
+  let fringe = textureLoad(aux3Tex, p, 0).xy;
+  let splotch = select(vec2f(0.0), cleanCorrection(p, base) - fringe, ap.strength.z > 0.5);
+  textureStore(cleanPacked, at - vec2i(ap.dest.xy),
+    vec4u(bitcast<vec3u>(cleanAddColour(base, fringe)), pack2x16float(splotch)));
 }`;
 
   const MICRO_GRAIN_SHADER_SOURCE = CLEAN_GRAIN_SHADER_SOURCE + `

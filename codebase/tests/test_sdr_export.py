@@ -99,7 +99,8 @@ def test_standalone_sdr_jpeg_with_denoise_matches_the_whole_frame(
     session.denoise = DenoiseDocumentSettings()
     session.denoise.sdr.enabled = True
     session.denoise.sdr.controls.method = "clean_grain"
-    session.denoise.sdr.controls.clean_color = clean_color
+    session.denoise.sdr.controls.clean_splotches = clean_color
+    session.denoise.sdr.controls.clean_fringes = clean_color
     if authored:
         session.sdr_reference_image = session.image * np.float32(.65)
         session.adjustments.sdr.use_authored_base = True

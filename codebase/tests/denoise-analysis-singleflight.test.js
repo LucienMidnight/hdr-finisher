@@ -26,7 +26,7 @@ for (const clean_color of [false, true]) {
 const toggle = 'enableGradeCleanGrainGpu';
 test(`Grade only prepares GPU Clean Grain while Denoise is enabled (clean color: ${clean_color})`, async () => {
   const routes = [];
-  const settings = { enabled: true, controls: { method: 'clean_grain', clean_color } };
+  const settings = { enabled: true, controls: { method: 'clean_grain', clean_splotches: clean_color, clean_fringes: clean_color } };
   const runtime = { generation: 0 };
   const gpuPreview = {
     available: true,

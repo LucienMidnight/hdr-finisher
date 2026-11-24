@@ -52,7 +52,7 @@ def old_cleanup():
 def controls_for_case(case):
     # The pre-fold reference files use the Fine Grain case name.
     if case == "fine_grain":
-        return DenoiseLiveControls(method="clean_grain", clean_color=False)
+        return DenoiseLiveControls(method="clean_grain", clean_splotches=False, clean_fringes=False)
     return DenoiseLiveControls(method=case)
 
 

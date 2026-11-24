@@ -156,10 +156,11 @@ function renderDenoiseControls() {
   els.denoiseDetail.closest(".control-row").classList.toggle("hidden", micro);
   els.denoiseAdvancedToggle.classList.toggle("hidden", micro);
   els.denoiseCleanControls.classList.toggle("hidden", settings.controls.method !== "clean_grain");
-  els.denoiseCleanColor.checked = settings.controls.clean_color !== false;
-  els.denoiseCleanColor.disabled = !editable;
+  els.denoiseCleanSplotches.checked = settings.controls.clean_splotches !== false;
+  els.denoiseCleanFringes.checked = settings.controls.clean_fringes !== false;
+  els.denoiseCleanSplotches.disabled = els.denoiseCleanFringes.disabled = !editable;
   els.denoiseSplotchSize.value = settings.controls.splotch_size;
-  els.denoiseSplotchSize.disabled = !editable || !els.denoiseCleanColor.checked;
+  els.denoiseSplotchSize.disabled = !editable || !els.denoiseCleanSplotches.checked;
   els.denoiseBypass.classList.toggle("bypassed", !enabled);
   els.denoiseBypass.setAttribute("aria-pressed", String(enabled));
   group?.classList.toggle("bypassed", !enabled);
@@ -180,7 +181,7 @@ function renderDenoiseControls() {
   for (const [input, output, value] of controls) {
     input.value = String(value);
     output.textContent = `${Math.round(value * 100)}%`;
-    input.disabled = !editable || (input === els.denoiseSplotches && !els.denoiseCleanColor.checked);
+    input.disabled = !editable || (input === els.denoiseSplotches && !els.denoiseCleanSplotches.checked);
     updateRangeVisual(input);
   }
   els.denoiseRecalculate.disabled = !editable || ["preparing", "recalculating"].includes(runtime.status);
@@ -386,6 +387,13 @@ async function setDenoiseEnabled(enabled, { action } = {}) {
   if (await afterCommit && isCurrent()) await recalculateDenoise(lane, { operation: "enable_grain", action });
 }
 
+function cleanGrainZoomViewport(lane) {
+  return state.activeWorkflow === "grade" && lane === state.currentView
+    && state.previewResolutionOverride === false && state.zoomPercent > state.fitZoomPercent
+    && state.denoise?.[lane]?.controls.method === "clean_grain"
+    && gpuPreviewEligible(lane) && gradeGrainGpuEnabled(lane);
+}
+
 function nativeDenoiseViewport(lane) {
   // Keep the original picture bounded at native zoom too. It can stay on
   // screen while Grain starts, without keeping a native-sized canvas alive.
@@ -395,7 +403,7 @@ function nativeDenoiseViewport(lane) {
   const nativeMicro = state.denoise[lane]?.controls.method === "micro_grain"
     && gradeGrainGpuEnabled(lane)
     && requiredProcessingLongEdge() === previewTargetLongEdge("full");
-  return state.zoomMode === "custom" && (state.zoomPercent >= 100 || nativeMicro)
+  return state.zoomMode === "custom" && (state.zoomPercent >= 100 || nativeMicro || cleanGrainZoomViewport(lane))
     && (Boolean(state.denoise[lane]?.enabled) || (gradeGrainGpuPreferred(lane) && !nativeGeometryViewportActive(lane))
       || (state.activeWorkflow === "grade" && lane === state.currentView && Boolean(els.previewCanvas.hdrFrameRegion)
         && !els.previewCanvas.hdrFrameRegion.nativeGeometryViewport));
@@ -534,7 +542,8 @@ async function recalculateDenoiseForView(lane, options) {
   const nativePreparation = preparationControls.amount
     && (preparationControls.luminance || preparationControls.color_noise)
     && preparationControls.method === "clean_grain"
-    && (preparationControls.clean_color !== false || preparationControls.grain_evenness !== 0);
+    && (preparationControls.clean_splotches !== false || preparationControls.clean_fringes !== false
+      || preparationControls.grain_evenness !== 0);
   const key = JSON.stringify([
     sessionId, lane, nativePreparation ? "native" : longEdge, geometrySignature(),
     pixels, state.repairSourceGeneration || 0, settings.analysis, refresh,
@@ -734,8 +743,11 @@ async function commitDenoiseControl(key, value) {
     return;
   }
   const usesStandard = settings.controls.method === "clean_grain"
-    && settings.controls.clean_color === false && settings.controls.grain_evenness === 0;
-  if (!usesStandard && runtime.status === "ready" && liveGrainControl(key, lane) && liveGradeGrainSelected(lane)) {
+    && settings.controls.clean_splotches === false && settings.controls.clean_fringes === false
+    && settings.controls.grain_evenness === 0;
+  const needsGrainFit = key === "grain_evenness" && settings.controls.grain_evenness > 0
+    && state.gpuPreview?.denoiseSourceSelector?.cache?.grain?.fit === null;
+  if (!usesStandard && !needsGrainFit && runtime.status === "ready" && liveGrainControl(key, lane) && liveGradeGrainSelected(lane)) {
     const generation = runtime.generation;
     const saved = await persistDenoiseSettings().catch(() => false);
     if (state.session?.session_id !== sessionId || state.denoiseRuntime[lane] !== runtime
@@ -815,8 +827,9 @@ function denoiseRendererControls(controls) {
     coarseNoise: controls.coarse_noise ?? 0.5,
     method: controls.method,
     grainEvenness: controls.grain_evenness,
-    cleanColor: controls.clean_color !== false,
-    colorSplotches: controls.clean_color === false ? 0 : controls.color_splotches,
+    cleanSplotches: controls.clean_splotches !== false,
+    cleanFringes: controls.clean_fringes !== false,
+    colorSplotches: controls.clean_splotches === false ? 0 : controls.color_splotches,
     splotchSize: controls.splotch_size,
     ...(controls.method === "micro_grain" ? { microLuminance: controls.micro_luminance,
       microColor: controls.micro_color, microDetail: controls.micro_detail } : {}),
@@ -868,6 +881,8 @@ async function runLiveDenoise({ lane, sessionId, generation, controls, wholeFram
   }
   const viewport = nativeDenoiseViewport(lane);
   const interacting = !wholeFrame && Boolean(state.previewScheduler?.interacting);
+  if (liveGrainControl === "grain_evenness" && controls.grainEvenness > 0
+    && state.gpuPreview?.denoiseSourceSelector?.cache?.grain?.fit === null) return;
   if (liveGrainControl && lane === state.currentView && liveGradeGrainSelected(lane)
     && (viewport || wholeFrame || controls.method === "clean_grain" || controls.method === "micro_grain")) {
     state.gpuPreview.setDenoiseControls(controls);
