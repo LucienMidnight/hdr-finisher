@@ -1286,7 +1286,8 @@ async function renderGpuDraftForView(lane, request) {
     }
   }
   const fitSize = micro ? gpuFrameSizeAt(longEdge) : null;
-  if (micro && !allowInactive && state.zoomMode === "fit" && !request.preservePicture && !request.microQuick && tier !== "interactive"
+  if (micro && !allowInactive && state.zoomMode === "fit" && !request.preservePicture
+    && !request.microQuick && !request.skipMicroQuick && tier !== "interactive"
     && !state.gpuPreview.hasReducedMicroGrain(fitSize?.width, fitSize?.height)) {
     const quick = await renderGpuDraftInner(lane, { ...request, microQuick: true });
     if (!quick || !microStillCurrent() || request.isCurrent?.() === false) return refuse("superseded-after-micro-quick");
@@ -1605,7 +1606,7 @@ async function renderGpuDraftForView(lane, request) {
       const failure = renderer.noteGrainFailure(key, error, request.action);
       if (!failure) return refuse("superseded-during-render");
       if (await renderer.recoverGrainFailure(key, failure, current, request.action)) {
-        return renderGpuDraftForView(lane, request);
+        return renderGpuDraftForView(lane, { ...request, skipMicroQuick: true });
       }
       if (!current()) return refuse("superseded-during-render");
       if (!micro) {

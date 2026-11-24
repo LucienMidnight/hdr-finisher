@@ -33,6 +33,7 @@
       this.scopePending = null;
       this.settleTimer = null;
       this.settleStarted = null;
+      this.settleTask = null;
       this.refinementTimer = null;
       this.idleHandle = null;
       this.idleKind = null;
@@ -257,6 +258,10 @@
       }, delay);
     }
 
+    get settleInFlight() {
+      return this.settleTask !== null && this.settleTask === this.current;
+    }
+
     armSettle(task, delay = this.timings.settleMs) {
       window.clearTimeout(this.settleTimer);
       this.settleTimer = window.setTimeout(async () => {
@@ -268,12 +273,18 @@
         }
         this.settleAfterFrame = null;
         this.settleStarted = task;
+        this.settleTask = task;
         const started = performance.now();
-        await this.callbacks.onSettle?.({ ...task, tier: "settled", isCurrent: () => this.current === task });
-        if (this.current !== task) return;
-        await this.runScope({ task, tier: "settled" });
-        this.recordMetric("settleMs", performance.now() - started);
-        this.armRefinement(task);
+        try {
+          await this.callbacks.onSettle?.({ ...task, tier: "settled", isCurrent: () => this.current === task });
+          if (this.current !== task) return;
+          await this.runScope({ task, tier: "settled" });
+          if (this.current !== task) return;
+          this.recordMetric("settleMs", performance.now() - started);
+          this.armRefinement(task);
+        } finally {
+          if (this.settleTask === task) this.settleTask = null;
+        }
       }, delay);
     }
 

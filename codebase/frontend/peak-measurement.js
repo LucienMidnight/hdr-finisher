@@ -33,15 +33,39 @@ async function measureExactScopePeak({ lane = state.currentView, force = false, 
   if (state.importInProgress) return null;
   const key = exactScopePeakKey(lane);
   if (!force && exactScopePeakCache.has(key)) return exactScopePeakCache.get(key);
-  if (signal) return measureExactScopePeakInner(lane, key, signal);
-  if (exactScopePeakInflight.has(key)) return exactScopePeakInflight.get(key);
-  const run = measureExactScopePeakInner(lane, key);
-  exactScopePeakInflight.set(key, run);
-  try {
-    return await run;
-  } finally {
-    if (exactScopePeakInflight.get(key) === run) exactScopePeakInflight.delete(key);
+  // A newer foreground render or viewport can make in-flight work stale
+  // without changing the key of a completed, reusable measurement.
+  const flightKey = JSON.stringify([key, state.importGeneration, state.gpuRenderSerial, requiredProcessingLongEdge()]);
+  let flight = exactScopePeakInflight.get(flightKey);
+  if (!flight) {
+    const controller = new AbortController();
+    flight = { controller, callers: 0, run: null };
+    exactScopePeakInflight.set(flightKey, flight);
+    flight.run = measureExactScopePeakInner(lane, key, controller.signal).finally(() => {
+      if (exactScopePeakInflight.get(flightKey) === flight) exactScopePeakInflight.delete(flightKey);
+    });
   }
+
+  flight.callers += 1;
+  return new Promise((resolve, reject) => {
+    let waiting = true;
+    const finish = (complete, value) => {
+      if (!waiting) return false;
+      waiting = false;
+      signal?.removeEventListener("abort", abort);
+      flight.callers -= 1;
+      complete(value);
+      return true;
+    };
+    const abort = () => {
+      if (!finish(resolve, null) || flight.callers) return;
+      if (exactScopePeakInflight.get(flightKey) === flight) exactScopePeakInflight.delete(flightKey);
+      flight.controller.abort();
+    };
+    signal?.addEventListener("abort", abort, { once: true });
+    flight.run.then(value => finish(resolve, value), error => finish(reject, error));
+    if (signal?.aborted) abort();
+  });
 }
 
 async function measureExactScopePeakInner(lane, key, signal) {

@@ -617,3 +617,43 @@ for (const [name, settings, operation, expected] of [
     assert.equal(freshness.textContent, "Settled");
   });
 }
+
+test("a temporary Micro Grain failure retries the exact Fit frame without drawing another quick frame", async () => {
+  const draws = [];
+  const state = {
+    activeWorkflow: "grade", zoomMode: "fit", currentView: "hdr",
+    session: { session_id: "photo", source: { width: 5202, height: 3464 } },
+    previewGeneration: { hdr: 2 }, adjustments: {}, denoiseRuntime: { hdr: {} },
+    denoise: { hdr: { enabled: true, controls: { method: "micro_grain" } } },
+    gpuDraftRefusals: {}, gpuPreparedLane: {}, previewInfoByLane: {},
+    gpuPreview: {
+      diagnosticsSnapshot: () => ({ denoise: { cacheReady: true, identity: "photo:hdr:1600:{}:source" } }),
+      hasReducedMicroGrain: () => false,
+      grainSourceKey: () => "source", noteGrainFailure: () => ({}),
+      recoverGrainFailure: async () => true,
+      async render(...args) {
+        const { microQuick } = args.at(-1);
+        draws.push(microQuick);
+        if (draws.length === 2) throw Error("temporary allocation pressure");
+        return { execution: "direct", approximate: true };
+      },
+    },
+  };
+  const noop = () => {};
+  const canvas = { style: {} };
+  const context = vm.createContext({
+    state, performance, window: {}, els: { previewCanvas: canvas, previewImage: { style: {} }, emptyState: { style: {} } },
+    geometryDraftActive: () => false, gpuPreviewEligible: () => true, nativeDenoiseViewport: () => false,
+    geometryTransformIsNeutral: () => true, gradeGrainAction: () => null, liveGradeGrainSelected: () => false, gradeGrainGpuPreferred: () => false,
+    gradeSourceIdentity: () => "source", microGrainUnavailable: () => "", denoiseRendererControls: () => ({}),
+    microGrainControlsMatch: () => true, geometrySignature: () => "{}", denoiseNoiseViewActive: () => false,
+    gpuLumaMaskOverlayOptions: () => null, projectReferenceWhiteNits: () => 203, requiredProcessingLongEdge: () => 1600,
+    gpuFrameSizeAt: () => ({ width: 1600, height: 1065 }), localsBypassed: () => true,
+    sampleCurvePoints: noop, setGpuSurfaceHdr: noop, acceptPresentation: noop, setZoomMode: noop,
+    refinementProxyLongEdge: () => 1600, displayedLongEdge: () => 1600, renderReadouts: noop,
+    renderDenoiseControls: noop, hidePreviewMessage: noop, requestAnimationFrame: noop,
+  });
+  vm.runInContext(frontendSource("preview-pipeline.js"), context);
+  assert.equal(await context.renderGpuDraftInner("hdr", { longEdge: 1600 }), true);
+  assert.deepEqual(draws, [true, false, false]);
+});

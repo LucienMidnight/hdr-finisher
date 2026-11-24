@@ -185,3 +185,35 @@ test("a newer input after a pause still draws live", async () => {
   await settleTimers().at(-1).callback();
   assert.deepEqual(events.slice(-2), ["settle", "scope:settled"]);
 });
+
+test("the watchdog leaves a settling preview and its scopes alone", async () => {
+  const { runInNewContext } = require("node:vm");
+  const { declarations } = require("./frontend-source.js");
+  const settling = Promise.withResolvers();
+  const scopes = Promise.withResolvers();
+  const scopeStarted = Promise.withResolvers();
+  const scheduler = new global.HDRPreviewScheduler({
+    onSettle: () => settling.promise,
+    onScope: () => { scopeStarted.resolve(); return scopes.promise; },
+  });
+  const state = { session: { session_id: "photo" }, currentView: "hdr", previewGeneration: { hdr: 1 },
+    previewScheduler: scheduler, previewWatchdogRearms: 0 };
+  let watchdog;
+  runInNewContext(declarations("installPreviewWatchdog") + "\ninstallPreviewWatchdog()", {
+    state, stopPreviewWatchdog() {}, viewerState: () => ({ status: "updating" }),
+    geometryDraftActive: () => false, PREVIEW_WATCHDOG_MAX_REARMS: 2, PREVIEW_WATCHDOG_INTERVAL_MS: 1000,
+    window: { setInterval: callback => { watchdog = callback; } },
+  });
+  scheduler.schedule("hdr", 1);
+  const settle = settleTimers().at(-1).callback();
+  watchdog();
+  assert.equal(state.previewWatchdogRearms, 0, "during settle");
+  settling.resolve();
+  await scopeStarted.promise;
+  watchdog();
+  assert.equal(state.previewWatchdogRearms, 0, "during scopes");
+  scopes.resolve();
+  await settle;
+  watchdog();
+  assert.equal(state.previewWatchdogRearms, 1, "after work has finished");
+});

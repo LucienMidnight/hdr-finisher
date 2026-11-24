@@ -159,9 +159,13 @@ function installPreviewWatchdog() {
       state.previewWatchdogRearms = 0;
       return;
     }
-    if (state.previewScheduler.interacting || state.previewScheduler.frameInFlight
-      || state.previewScheduler.settleTimer != null || state.gpuDraftInFlight
+    const scheduler = state.previewScheduler;
+    if (scheduler.interacting || scheduler.frameInFlight || scheduler.settleTimer != null
+      || scheduler.settleInFlight || scheduler.scopeInFlight || state.gpuDraftInFlight
+      || state.gpuScopeRequestInFlight || state.scopeRequestInFlight
       || state.zoomRefinementTimer || state.zoomRefinementInFlight) return;
+    const denoise = state.denoiseRuntime?.[state.currentView];
+    if (denoise?.analysisInFlight || denoise?.preparationAfterCommit) return;
     const cpuFlight = state.cpuPreviewInflight?.get(state.currentView);
     if (cpuFlight?.sessionId === state.session.session_id
       && cpuFlight.generation === state.previewGeneration[state.currentView]) return;

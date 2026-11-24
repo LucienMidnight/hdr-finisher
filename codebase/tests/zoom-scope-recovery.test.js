@@ -846,3 +846,17 @@ for (const phase of ["CPU fallback fetch", "CPU fallback peak", "GPU scope peak"
     assert.deepEqual(errors, []);
   });
 }
+
+test("watchdog waits for the current lane's Denoise preparation", () => {
+  const { c, state, edits } = fixture();
+  state.previewWatchdogRearms = 0;
+  c.installPreviewWatchdog();
+  for (const field of ["analysisInFlight", "preparationAfterCommit"]) {
+    state.denoiseRuntime = { sdr: { [field]: Promise.resolve() } };
+    c.watchdogTick();
+    assert.equal(edits.length, 0, field);
+  }
+  state.denoiseRuntime = { hdr: { analysisInFlight: Promise.resolve() }, sdr: {} };
+  c.watchdogTick();
+  assert.equal(edits.length, 1);
+});

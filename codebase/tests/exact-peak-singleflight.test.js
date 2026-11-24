@@ -8,7 +8,7 @@ function fixture() {
     adjustments: {}, editRevision: 1, previewGeneration: { hdr: 2 }, importGeneration: 3,
     currentView: 'hdr', requestedEdge: 1600, gpuPreview: { available: true,
       measureEditingPeak: (...args) => new Promise((resolve, reject) => jobs.push({ resolve, reject, options: args.at(-1) })) } };
-  const context = vm.createContext({ localsBypassed: () => false, state, exactScopePeakCache: cache, exactScopePeakInflight: inflight,
+  const context = vm.createContext({ AbortController, localsBypassed: () => false, state, exactScopePeakCache: cache, exactScopePeakInflight: inflight,
     exactScopePeakKey: lane => [state.session.session_id, lane, state.editRevision, state.previewGeneration[lane]].join('|'),
     previewTargetLongEdge: () => 8000, performance: { now: () => 1 }, els: { previewCanvas: {} },
     sampleCurvePoints: () => {}, localAdjustments: () => [], projectReferenceWhiteNits: () => 203,
@@ -244,17 +244,48 @@ test('Old completion cannot remove or satisfy a newer edit measurement', async (
   assert.equal(f.inflight.size, 0); assert.equal(f.cache.size, 1);
 });
 
-test('A cancelled scope peak cannot publish evidence or abort an independent measurement', async () => {
-  const f = fixture(), controller = new AbortController();
-  const independent = f.run(), scope = f.run({ signal: controller.signal });
-  assert.equal(f.jobs.length, 2);
-  assert.equal(f.jobs[1].options.signal, controller.signal);
+test('Cancelling one scope leaves the shared measurement available to the other callers', async () => {
+  const f = fixture(), controller = new AbortController(), other = new AbortController();
+  const scope = f.run({ signal: controller.signal });
+  const independent = f.run(), remaining = f.run({ signal: other.signal });
+  assert.equal(f.jobs.length, 1);
   controller.abort();
-  assert.equal(f.jobs[1].options.isCurrent(), false);
-  f.jobs[1].resolve(result);
   assert.equal(await scope, null);
   assert.equal(f.cache.size, 0);
   assert.equal(f.jobs[0].options.isCurrent(), true);
   f.jobs[0].resolve(result);
   assert.equal((await independent).peak, 3);
+  assert.equal(await independent, await remaining);
+});
+
+test('Cancelling every scope aborts its measurement and a replacement starts fresh', async () => {
+  const f = fixture(), first = new AbortController(), second = new AbortController();
+  const a = f.run({ signal: first.signal }), b = f.run({ signal: second.signal });
+  assert.equal(f.jobs.length, 1);
+  first.abort();
+  assert.equal(f.jobs[0].options.signal.aborted, false);
+  second.abort();
+  assert.equal(f.jobs[0].options.signal.aborted, true);
+  assert.equal(await a, null);
+  assert.equal(await b, null);
+  const replacement = f.run();
+  assert.equal(f.jobs.length, 2);
+  f.jobs[0].resolve(result);
+  assert.equal(f.cache.size, 0);
+  f.jobs[1].resolve(result);
+  assert.equal((await replacement).peak, 3);
+});
+
+test('A zoom or foreground render can supersede a running scope at the same grade revision', async () => {
+  for (const advance of [state => state.requestedEdge++, state => { state.gpuRenderSerial = 1; }]) {
+    const f = fixture();
+    const stale = f.run();
+    advance(f.state);
+    const fresh = f.run();
+    assert.equal(f.jobs.length, 2);
+    f.jobs[0].resolve(result);
+    assert.equal(await stale, null);
+    f.jobs[1].resolve(result);
+    assert.equal((await fresh).peak, 3);
+  }
 });
