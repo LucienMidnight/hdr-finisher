@@ -4579,6 +4579,7 @@
       const tiledLocalState = buildTiledLocalState(
         proxy.identity, params, activeLocals, lane, options.sourcePixelScale || 1,this.localCurveOffsets,
       );
+      const localBandReads = tiledLocalState.map(({ params }) => graphScaleContract().localDetailReadsPackedBands(params));
       const localBuffers = activeLocals.map((local, localIndex) => {
         const localStride = Math.ceil(PARAM_COUNT * 4 / alignment) * alignment;
         const buffer = this.device.createBuffer({
@@ -5003,26 +5004,30 @@
             if (gpuLocalDetailActive(local[`${lane}_grade`])) {
               pass(finishView, pipelines.localCandidate,
                 bind(localSource.createView(), localSource.createView(), localSource.createView(), localBinding), width, height);
-              const prefix = tiledLocalState[localIndex].detailPrefix;
-              const key = bandTileKey(prefix, tile);
-              const packed = this.detailBandTile(key, tile.rect.width, tile.rect.height, "local");
-              pinnedDetail.push(key);
-              const assembled = packed.hit && assemblePackedHalo(prefix, tile);
-              if (!assembled) {
-                pass(scratchView, pipelines.localDetailHorizontal,
-                  bind(finishView, finishView, finishView, localBinding), width, height, 0);
-                pass(detailResultView, pipelines.localDetailVertical,
-                  bind(scratchView, scratchView, scratchView, localBinding), width, height, 0);
-                encoder.copyTextureToTexture(
-                  { texture: graph.detailResultTexture, origin: { x: tile.rect.x - tile.haloRect.x, y: tile.rect.y - tile.haloRect.y, z: 0 } },
-                  { texture: packed.texture },
-                  { width: tile.rect.width, height: tile.rect.height, depthOrArrayLayers: 1 },
-                );
+              let packedBandsView = finishView;
+              if (localBandReads[localIndex]) {
+                packedBandsView = detailResultView;
+                const prefix = tiledLocalState[localIndex].detailPrefix;
+                const key = bandTileKey(prefix, tile);
+                const packed = this.detailBandTile(key, tile.rect.width, tile.rect.height, "local");
+                pinnedDetail.push(key);
+                const assembled = packed.hit && assemblePackedHalo(prefix, tile);
+                if (!assembled) {
+                  pass(scratchView, pipelines.localDetailHorizontal,
+                    bind(finishView, finishView, finishView, localBinding), width, height, 0);
+                  pass(detailResultView, pipelines.localDetailVertical,
+                    bind(scratchView, scratchView, scratchView, localBinding), width, height, 0);
+                  encoder.copyTextureToTexture(
+                    { texture: graph.detailResultTexture, origin: { x: tile.rect.x - tile.haloRect.x, y: tile.rect.y - tile.haloRect.y, z: 0 } },
+                    { texture: packed.texture },
+                    { width: tile.rect.width, height: tile.rect.height, depthOrArrayLayers: 1 },
+                  );
+                }
               }
               // A local's Clarity map is built here, from this tile's candidate.
               // The halo carries the map's whole reach, so every texel the
               // tile's own pixels read is the one the whole-frame map holds.
-              let localClarityView = detailResultView;
+              let localClarityView = packedBandsView;
               const radiusPercent = Number(local[`${lane}_grade`].detail?.clarity_radius_percent) || 0.75;
               if (surround?.locals.has(local.id)) {
                 localClarityView = this.encodeSurroundClarityMap(
@@ -5040,7 +5045,7 @@
                 ).createView();
               }
               pass(scratchView, pipelines.localDetailComposite,
-                bind(finishView, detailResultView, localClarityView, localBinding), width, height);
+                bind(finishView, packedBandsView, localClarityView, localBinding), width, height);
               pass(targetView, pipelines.localDetailMix,
                 bind(localSource.createView(), maskView, scratchView, localBinding), width, height);
             } else {
@@ -5393,8 +5398,7 @@
         denoiseTileCacheBytes,
         clarityMapReblurred: Boolean(clarityFrame?.reblur),
         clarityMapScale: clarityFrame ? clarityFrame.plan.scale : null,
-        detailBandStacks: (detailActive ? 1 : 0)
-          + activeLocals.filter((local) => gpuLocalDetailActive(local[`${lane}_grade`])).length,
+        detailBandStacks: (detailActive ? 1 : 0) + localBandReads.filter(Boolean).length,
         presentableGeneration: scheduler.presentableGeneration(plan), durationMs,
       };
       this.recordStage("detail-cache", { ...this.tiledExecutionMetrics });
@@ -6007,10 +6011,11 @@
             // Preserve the pre-local source until the final mask mix. The normal
             // ping-pong target holds the unmasked candidate, while the two Detail
             // scratch textures are reused serially for every local adjustment.
+            const candidateView = target.createView();
             const candidateBindGroup = makeBindGroup(localSource.createView(), localSource.createView(), localBuffer);
             const candidatePass = encoder.beginRenderPass({
               colorAttachments: [{
-                view: target.createView(),
+                view: candidateView,
                 clearValue: { r: 0, g: 0, b: 0, a: 1 },
                 loadOp: "clear",
                 storeOp: "store",
@@ -6021,61 +6026,62 @@
             candidatePass.draw(3);
             candidatePass.end();
 
-            const horizontalBindGroup = makeBindGroup(target.createView(), target.createView(), localBuffer);
-            const horizontalPass = encoder.beginRenderPass({
-              colorAttachments: [{
-                view: intermediate.detailATexture.createView(),
-                clearValue: { r: 0, g: 0, b: 0, a: 0 },
-                loadOp: "clear",
-                storeOp: "store",
-              }],
-            });
-            horizontalPass.setPipeline(pipelines.localDetailHorizontal);
-            horizontalPass.setBindGroup(0, horizontalBindGroup);
-            horizontalPass.draw(3);
-            horizontalPass.end();
+            const values = this.localParamValues.get(`${local.id}:${lane}`);
+            const scratchView = intermediate.detailATexture.createView();
+            let packedBandsView = candidateView;
+            if (graphScaleContract().localDetailReadsPackedBands(values)) {
+              packedBandsView = intermediate.detailBTexture.createView();
+              const horizontalBindGroup = makeBindGroup(candidateView, candidateView, localBuffer);
+              const horizontalPass = encoder.beginRenderPass({
+                colorAttachments: [{
+                  view: scratchView,
+                  clearValue: { r: 0, g: 0, b: 0, a: 0 },
+                  loadOp: "clear",
+                  storeOp: "store",
+                }],
+              });
+              horizontalPass.setPipeline(pipelines.localDetailHorizontal);
+              horizontalPass.setBindGroup(0, horizontalBindGroup);
+              horizontalPass.draw(3);
+              horizontalPass.end();
 
-            const verticalBindGroup = makeBindGroup(
-              intermediate.detailATexture.createView(),
-              intermediate.detailATexture.createView(),
-              localBuffer,
-            );
-            const verticalPass = encoder.beginRenderPass({
-              colorAttachments: [{
-                view: intermediate.detailBTexture.createView(),
-                clearValue: { r: 0, g: 0, b: 0, a: 0 },
-                loadOp: "clear",
-                storeOp: "store",
-              }],
-            });
-            verticalPass.setPipeline(pipelines.localDetailVertical);
-            verticalPass.setBindGroup(0, verticalBindGroup);
-            verticalPass.draw(3);
-            verticalPass.end();
+              const verticalBindGroup = makeBindGroup(scratchView, scratchView, localBuffer);
+              const verticalPass = encoder.beginRenderPass({
+                colorAttachments: [{
+                  view: packedBandsView,
+                  clearValue: { r: 0, g: 0, b: 0, a: 0 },
+                  loadOp: "clear",
+                  storeOp: "store",
+                }],
+              });
+              verticalPass.setPipeline(pipelines.localDetailVertical);
+              verticalPass.setBindGroup(0, verticalBindGroup);
+              verticalPass.draw(3);
+              verticalPass.end();
+            }
 
-            let clarityMapView = intermediate.detailBTexture.createView();
+            let clarityMapView = packedBandsView;
             if (graphScaleContract().localClarityActive(local[`${lane}_grade`])) {
-              const values = this.localParamValues.get(`${local.id}:${lane}`);
               const extents = clarityMapExtents({
                 scale: values[CLARITY_MAP_SCALE_INDEX], baseScale: values[CLARITY_BASE_SCALE_INDEX],
               }, 0, 0, proxy.width, proxy.height);
               const maps = this.clarityMapTextures("work", extents.baseWidth, extents.baseHeight);
               const map = this.encodeClarityMap(
                 encoder, pipelines, (view) => makeBindGroup(view, view, localBuffer, view),
-                target.createView(), maps.textures, extents,
+                candidateView, maps.textures, extents,
               );
               sourceOptions?.captureClarity?.locals.set(local.id, this.captureClarityMap(encoder, map, extents));
               clarityMapView = map.createView();
             }
             const detailCompositeBindGroup = makeBindGroup(
-              target.createView(),
-              intermediate.detailBTexture.createView(),
+              candidateView,
+              packedBandsView,
               localBuffer,
               clarityMapView,
             );
             const detailCompositePass = encoder.beginRenderPass({
               colorAttachments: [{
-                view: intermediate.detailATexture.createView(),
+                view: scratchView,
                 clearValue: { r: 0, g: 0, b: 0, a: 1 },
                 loadOp: "clear",
                 storeOp: "store",
@@ -6090,7 +6096,7 @@
               localSource.createView(),
               masks[index].texture.createView(),
               localBuffer,
-              intermediate.detailATexture.createView(),
+              scratchView,
             );
             const mixPass = encoder.beginRenderPass({
               colorAttachments: [{

@@ -98,6 +98,62 @@ Histogram, with no HTTP 507s; v5 timed out after two memory refusals.
 [Full-viewport legacy comparison](../../codebase/output/grade-sweep/batch6-masks-v2-parity.json) ·
 [Hue crop and band comparisons](../../codebase/output/grade-sweep/batch6-masks-v2-hue-edges.json)
 
+## November 24, 2026 — Skip unused packed bands for Local Clarity
+
+MacBook Neo (A18 Pro, 8 GB), Electron at 1408 × 794 points and 2×, HDR Grade,
+Lens Auto, shared GPU lock. One before/after sample per action. At 100%, the
+12-local stack has three Clarity layers at +45 and 2.75% radius, with no local
+Texture or Sharpen. Times are seconds to the exact picture / fresh Histogram;
+panning keeps the same Histogram, so no fresh Histogram is expected.
+
+| Action | Sony `_DSC7970.ARW` (42 MP) | Canon `IMG_3129.CR2` (18 MP) |
+| --- | ---: | ---: |
+| Enable 12 locals at 100% | 17.09 / 19.99 → 9.66 / 13.61 | 8.42 / 10.65 → 6.10 / 7.79 |
+| Exposure 0 → +0.55 at 100% | 15.51 / 18.59 → 8.67 / 12.08 | 7.57 / 10.09 → 5.31 / 7.14 |
+| Pan to exact viewport at 100% | 15.14 → 9.62 | 7.06 → 4.84 |
+| Enable a single Clarity local at 100% | 3.12 / 5.89 → 1.30 / 2.06 | 1.98 / 2.68 → 1.17 / 1.83 |
+| Exposure edit at Fit, same stack | 0.287 / 2.50 → 0.284 / 2.35 | 0.279 / 3.06 → 0.304 / 2.00 |
+
+The 18 foreground tiles for Exposure skipped 108 packed Texture/Sharpen draws
+and 54 tile-cache copies on each RAW. The tiled picture stage fell from 14.81
+to 8.01 s on Sony and 7.26 to 5.06 s on Canon; neither the tile apron nor the
+Clarity algorithm changed. All six visible RGBA16F buffers matched byte for
+byte (centered and lower-right at 100%, entire Fit frame, each RAW), with
+identical measured peaks on both 100% Exposure edits. Sony's three tested
+actions reached the sub-10-second picture target, so suffix cropping and
+shared native Clarity maps were not implemented. The Histogram still takes
+12.08 s on Sony after the Exposure edit.
+
+GPU timestamps from five foreground Exposure batches, in seconds, before →
+after. Metal overlaps passes, so each row assigns the gap between consecutive
+pass completions; these are not isolated shader times. The matched run with
+and without pruning used the same app build and produced the same viewport bytes.
+
+| GPU pass | Sony | Canon |
+| --- | ---: | ---: |
+| Ordinary local | 0.565 → 0.534 | 0.269 → 0.245 |
+| Detail candidate | 0.147 → 0.148 | 0.070 → 0.067 |
+| Packed horizontal | 3.474 → 0 | 0.995 → 0 |
+| Packed vertical | 3.049 → 0 | 0.879 → 0 |
+| Clarity reduce | 0.104 → 0.087 | 0.052 → 0.044 |
+| Clarity level | 0.050 → 0.046 | 0.013 → 0.011 |
+| Clarity horizontal blur | 0.005 → 0.004 | 0.004 → 0.004 |
+| Clarity vertical blur | 0.005 → 0.004 | 0.005 → 0.004 |
+| Detail composite | 0.936 → 0.853 | 0.444 → 0.395 |
+| Final mask mix | 0.098 → 0.092 | 0.040 → 0.038 |
+| Foreground batches, all passes | 8.84 → 2.16 | 2.96 → 0.99 |
+
+The [apron analysis](../../codebase/output/local-clarity-apron/report.md) found
+112.50 MP of padded tile area on Sony and 56.01 MP on Canon, against unions of
+17.83 and 12.06 MP. Shared ordered maps could reduce repeated work across those
+tiles, but this area comparison does not predict time savings or guarantee
+matching pixels.
+
+[Before](../../codebase/output/grade-sweep/batch8-before.json) ·
+[After](../../codebase/output/grade-sweep/batch8-after.json) ·
+[Unmodified GPU baseline](../../codebase/output/grade-sweep/batch8-before-profile.json) ·
+[Paired GPU timestamps](../../codebase/output/grade-sweep/batch8-profile-pair.json)
+
 ## November 24, 2026 — Film Resolution and Detail blur
 
 MacBook Neo (A18 Pro, 8 GB), Electron at 1408 × 794 points and 2× under
