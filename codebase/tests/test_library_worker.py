@@ -206,6 +206,51 @@ def test_decoder_deadline_does_not_count_queued_or_grade_pause_time(tmp_path, mo
     assert not any(f.done() for f in helper._pending.values())
 
 
+def test_retouch_replay_allowance_cancels_only_the_timed_out_job(tmp_path, monkeypatch):
+    from concurrent.futures import Future
+    from hdr_finisher.library_worker import DecoderTimeout, retouch_replay_allowance
+
+    assert retouch_replay_allowance(84) > retouch_replay_allowance(4)
+    assert retouch_replay_allowance(1000) == retouch_replay_allowance(2000)
+    helper = LibraryWorker(tmp_path)
+    messages = []
+    monkeypatch.setattr(helper, '_send', messages.append)
+    waiting, replay = Future(), Future()
+    helper._requests = {'waiting':dict(command='live-scene'), 'replay':dict(command='live-scene')}
+    helper._pending = {'waiting':waiting, 'replay':replay}
+    helper._work['replay'] = dict(phase='retouch_replay', repair_count=4, retouch_elapsed=2)
+    helper._deadline_sample -= .5
+    helper._check_deadlines()
+    assert not replay.done()
+    helper._deadline_sample -= .6
+    helper._check_deadlines()
+    with pytest.raises(DecoderTimeout,match='Retouch replay'):
+        replay.result()
+    assert messages == [dict(command='cancel', id='replay')]
+    assert not waiting.done()
+    assert not helper._identified_failure
+
+
+def test_foreground_scene_gates_cpu_pictures_only_while_reading(worker, tmp_path):
+    photo = source(tmp_path, 'cpu-photo.png')
+    source(tmp_path, 'background.png')
+    worker.foreground_source('gpu-photo', True)
+    worker.reading_source('gpu-photo', True)
+    _, picture = worker.submit_library('live-scene', path=str(photo), edge=640)
+    background_id, indexing = worker.submit_library('scan', path=str(tmp_path), background=True)
+    try:
+        with pytest.raises(TimeoutError):
+            picture.result(timeout=.2)
+        worker.reading_source('gpu-photo', False)
+        assert picture.result(timeout=15)['renderer'] == 'cpu'
+        assert worker.status()['source_busy']
+        assert not indexing.done()
+    finally:
+        worker.cancel(background_id)
+        worker.reading_source('gpu-photo', False)
+        worker.foreground_source('gpu-photo', False)
+
+
 def test_helper_attaches_another_tier_to_the_active_source(worker, tmp_path):
     from hdr_finisher.library_live import quality
     image=source(tmp_path); before=image.read_bytes()

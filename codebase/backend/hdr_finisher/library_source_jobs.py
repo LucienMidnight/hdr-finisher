@@ -37,8 +37,9 @@ def shared_fingerprint(owner, path, identity, compute):
 
 
 class SourceJobs:
-    def __init__(self, released=lambda token: None):
+    def __init__(self, released=lambda token: None, reading=lambda token, active: None):
         self.released = released
+        self.reading = reading
         self.lock = RLock()
         self.jobs = {}
         self.preparations = {}
@@ -49,8 +50,12 @@ class SourceJobs:
         with self.lock:
             self.preparations[token] = dict(path=str(path), stage="Developing photo", state="running", stage_started=started)
         log("picture_source_preparation_started", path=str(path), job=token)
+        self.reading(token, True)
         try:
-            result = function(*args)
+            try:
+                result = function(*args)
+            finally:
+                self.reading(token, False)
             with self.lock: job=dict(self.preparations.get(token,{})); stopping=job.get("state")=="stopping"
             log("picture_source_preparation_cancelled" if stopping else "picture_source_preparation_completed", path=str(path), job=token, duration_ms=(monotonic()-started)*1000, last_stage=job.get("stage"), stage_ms=(monotonic()-job.get("stage_started",started))*1000)
             return result
@@ -103,7 +108,17 @@ class SourceJobs:
             if not job or (not job.get('active') and monotonic() - job['touched'] >= 60) or job['epoch'] != epoch or picture_key(job['path'], 100000 if job['edge'] == 100000 else 0, job['quality']) != job['key']:
                 raise ValueError('Source preparation expired or was invalidated; request it again.')
             job['touched'] = monotonic()
-            return {k:v for k,v in job.items() if k not in {'cancel','promote'}}
+            return {k:v for k,v in job.items() if k not in {'cancel','promote','retouch'}}
+
+    def set_retouch(self, token, epoch, plan):
+        with self.lock:
+            owner = self.check(token, epoch)
+            self.jobs[owner["key"]]["retouch"] = plan
+
+    def retouch(self, token, epoch):
+        with self.lock:
+            owner = self.check(token, epoch)
+            return self.jobs[owner["key"]]["retouch"]
 
     @contextmanager
     def holding(self, token, epoch):

@@ -1,3 +1,15 @@
+### November 24, 2026: Saved Retouch replay
+
+The Library keeps GPU source development and draws as before. It gathers
+the original pixels for Heal and Clone in byte-bounded batches, sends each
+batch to the CPU, and applies the completed patches on the GPU in saved
+order before picture reduction. Inpaint still uses the GPU repair kernel
+when the source fits the GPU route. A CPU picture can start as soon as the
+GPU photo finishes reading and decoding its original. Indexing and
+background metadata still wait for foreground development. Overdue CPU
+repair replay cancels that photo's job in the helper. A hung native decoder
+still restarts the helper.
+
 ### November 17, 2026: plain-app check visibility diagnostics
 
 The Library quick check requires actual visible animation frames. macOS can

@@ -597,7 +597,7 @@ def test_preview_acceptance_does_not_block_memory_poll(tmp_path, monkeypatch):
     entered, release = Event(), Event()
     def accept(self, result):
         entered.set(); assert release.wait(3)
-    monkeypatch.setattr(LivePictures, 'document', lambda *args: None)
+    monkeypatch.setattr(LivePictures, 'document', lambda *args, **kwargs: None)
     monkeypatch.setattr(LivePictures, 'describe', lambda *args: {'key': 'accepted'})
     monkeypatch.setattr(LibraryPictureCache, 'cached', lambda *args: {'key': 'cached'})
     monkeypatch.setattr(LibraryPictureCache, 'accept_transient', accept)

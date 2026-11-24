@@ -987,8 +987,9 @@
       await stage("combine_colour_measure");
 
       if(meta.repairs?.length){
-        const repaired=await root.HDRLibraryRetouch({device,meta,planes,make,release,read,
-          budget:()=>memoryBudget-liveBytes,permit:beforeSubmit|| (async()=>{}),signal,peaks,samples});
+        root.HDRLibraryScenes?.stage(meta.path,"Replaying saved repairs");
+        const repaired=await root.HDRLibraryRetouch({device,repairDevice:sharedContext.baseDevice||device,meta,planes,make,release,read,
+          budget:()=>memoryBudget-liveBytes,permit:beforeSubmit|| (async()=>{}),signal,peaks,samples,timings});
         planes.forEach(release);planes.splice(0,3,...repaired);await stage("retouch");
       }
       const reduced = {};

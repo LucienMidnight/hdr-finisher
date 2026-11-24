@@ -60,9 +60,11 @@ def frame_chunks(header: dict, *payload):
             yield view[offset:offset + 1024 * 1024]
 
 
-async def receive_frame(request):
+async def receive_frame(request, *, max_bytes=None):
     """Fill one body, rather than retaining chunks plus Starlette's joined copy."""
     length = int(request.headers.get("content-length", 0))
+    if max_bytes is not None and not 4 <= length <= max_bytes:
+        raise ValueError("The developed picture exceeds its bounded upload size.")
     if not length:
         return unframe(await request.body())
     from starlette.concurrency import run_in_threadpool

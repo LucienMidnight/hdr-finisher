@@ -7294,3 +7294,35 @@ Faster options that would change what the app shows, not implemented:
 [after](../../codebase/output/overnight/batch7-stages-after.jsonl) ·
 [Developed endpoint hashes before](../../codebase/output/overnight/batch7-develop-ends-before.jsonl) ·
 [after](../../codebase/output/overnight/batch7-develop-ends-after.jsonl)
+## November 24, 2026 — Saved Retouch replay on the Windows PC
+
+Cold Library grid before from the owning app log on `b3cd5f21`. After uses
+disposable copies of the same two photos and sidecars, requested together
+at 640 px in locked, unpackaged Electron at 2560 × 1440. The harness measures
+from request through draw and two animation frames. The older operation was
+real navigation with other Library activity, so the whole waits are indicative.
+The comparison uses 5% as the timing noise band for repeated conditions.
+
+| Photo | Retouch before | Retouch after | Whole wait before / after |
+| --- | ---: | ---: | ---: |
+| P7080774.ORF, 84 Heal repairs, GPU-developed source | 28.422 s | 0.747 s in Library | 38.32 / 11.72 s |
+| IMG_0432.CR2, four Heal repairs, CPU-developed source | 3.6–3.9 s | 0.125–0.134 s in a standalone run of the same replay function | 52.11 / 11.49 s |
+
+The ORF used one batch. Gather and readback took 21 ms, recipe read,
+validation and planning took 68 ms, the backend batch took 642 ms wall
+time with a 181 ms slowest solve, and upload and scatter took 8.5 ms.
+The browser request took 673 ms including the backend batch. The CR2
+CPU replay took 9–10 ms to copy the source, 116–124 ms to solve and
+0.25–0.27 ms to composite. Its slowest solve took 115–124 ms. The
+single-core reference solve alone measured 296–329 ms on the ORF
+and 179–182 ms on the CR2, before replay, transport and copying.
+
+Inside the saved repair masks, mean and maximum absolute scene-linear RGB
+differences against the old GPU kernels were 2.11e-9 and 2.38e-7 for the
+ORF, and 1.53e-9 and 1.49e-8 for the CR2. Both comparisons used the same
+native scene pixels per photo. ORF finished mean and p99.9 were
+0.00000936 and 0.000188 ΔE ITP for HDR, and 0.00000347 and 0.0000930
+ΔE 2000 for SDR. The CR2 straightens before finishing, so the raw repair
+mask was used only for scene-linear figures. The review shows both saved
+grades with Denoise bypassed to isolate Retouch. Its HDR AVIFs and SDR PNGs
+are in `codebase/output/review/retouch-cpu-heal/`.

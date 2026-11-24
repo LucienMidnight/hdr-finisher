@@ -194,9 +194,11 @@ def test_http_source_coalesces_before_decode_and_clear_blocks_publication(tmp_pa
         yield 'admitted'
     monkeypatch.setattr(library_grants,'backend_grant',grant)
     foreground=[]
+    reading=[]
     class Helper:
         def status(self):return {'running':True,'paused':False,'pending':0,'failure':None}
         def foreground_source(self, token, active): foreground.append((token,active))
+        def reading_source(self, token, active): reading.append((token,active))
     path=tmp_path/('photo.'+suffix)
     if suffix=='jxl':
         from hdr_finisher.jpegxl import encode_sdr_jpegxl
@@ -211,6 +213,7 @@ def test_http_source_coalesces_before_decode_and_clear_blocks_publication(tmp_pa
         assert a.status_code==200,a.text
         header,_=unframe(a.content);token=header['source_job']
         assert foreground[-1] == (token,True)
+        assert reading == [(token,True),(token,False)]
         b=client.post('/api/library/live-scene',json={'path':str(path),'edge':2560,'gpu':True,'priority':0})
         assert b.status_code==202 and len(calls)==1
         assert client.post('/api/library/live-source/'+token).json()['priority']==0
@@ -553,7 +556,7 @@ def test_rgb_description_precedes_pixels_and_keeps_publication_guards(tmp_path, 
     Image.new("RGB", (8, 4), (120, 80, 20)).save(photo)
     profile = tmp_path / "profile"
     grade = [None]
-    monkeypatch.setattr(LivePictures, "document", lambda self, path: grade[0])
+    monkeypatch.setattr(LivePictures, "document", lambda self, path, **kwargs: grade[0])
     # Full-size detail admission measures the parent process tree. In a long
     # test run that is the test runner itself, so measure only this tiny app.
     from hdr_finisher import app_memory

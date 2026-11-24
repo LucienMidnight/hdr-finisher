@@ -866,3 +866,28 @@ Retouch jobs inherit the existing source-work priority/cancellation context:
 interactive 0, Library CPU source fallback 15, batch 20. Cancellation is checked
 before cached-patch reuse and during GPU or CPU work. These are transient owners
 and scheduling values; there are no new saved fields or pixel algorithm changes.
+
+### Saved Heal and Clone replay, November 24, 2026
+
+Heal and Clone now use the float64 transfer reference before Grade, Proof,
+export or Library finishing. Bounded groups of independent repairs use
+below-normal CPU lanes. A group reads the immutable original, and its
+ordered results are consumed before allocating the next group. Inpaint
+retains the GPU route and its CPU fallback. The former GPU transfer kernels
+remain available to the GPU comparison drivers.
+
+The Library's source token carries the validated repair recipes and native
+rectangles. Each Heal/Clone batch is at most 16 MiB of gathered pixels or
+masked patch data. The GPU gathers the rectangles with one readback and
+scatters one uploaded batch using a shared pipeline and ordered dispatches.
+An oversized transfer uses CPU scene development. Inpaint prepares and
+consumes one bounded GPU packet at a time and reuses immutable uniforms and
+bind groups when dispatch parameters repeat. The source, sidecar, grant
+and publication checks prevent stale pixels from being accepted.
+
+The CPU Library helper runs replay at source priority 15. Its replay phase
+has a 2 s setup allowance plus 250 ms per enabled repair, capped at 30 s
+across the job. Overrun cancels that request without restarting the helper.
+The restart deadline still applies to native decode. Original-file reading
+for a GPU scene gates helper pictures only during preparation, while the
+foreground signal keeps background indexing paused through development.

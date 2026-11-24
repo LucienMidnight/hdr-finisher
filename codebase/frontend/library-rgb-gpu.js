@@ -359,12 +359,13 @@ window.HDRLibraryRGB = (() => {
       if(meta.colour.authored_sdr) await run("RGB_SDR",[uniform,mosaicBuf,null,null,...planes.slice(3),peaks],wgX,wgY);
       await device.queue.onSubmittedWorkDone(); release(mosaicBuf);
       await stage(meta.dng_warp?"warp_colour_measure":"colour_measure");
-      window.HDRLibraryScenes?.stage(meta.path,"Reducing Library pictures on GPU");
       if(meta.repairs?.length&&!meta.reference_only){
-        const repaired=await root.HDRLibraryRetouch({device,meta,planes:planes.slice(0,3),make,release,read,
-          budget:()=>memoryBudget-liveBytes,permit:beforeSubmit|| (async()=>{}),signal,peaks,samples});
+        window.HDRLibraryScenes?.stage(meta.path,"Replaying saved repairs");
+        const repaired=await root.HDRLibraryRetouch({device,repairDevice:shared.baseDevice||device,meta,planes:planes.slice(0,3),make,release,read,
+          budget:()=>memoryBudget-liveBytes,permit:beforeSubmit|| (async()=>{}),signal,peaks,samples,timings});
         planes.slice(0,3).forEach(release);planes.splice(0,3,...repaired);await stage("retouch");
       }
+      window.HDRLibraryScenes?.stage(meta.path,"Reducing Library pictures on GPU");
       const reduced = {};
       for (const edge of edges) {
         const lastEdge = edge === edges.at(-1);
