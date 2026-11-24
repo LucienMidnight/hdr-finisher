@@ -1047,7 +1047,7 @@ def test_dense_brush_counts_prepared_segments_even_for_a_tiny_mask_tile(monkeypa
 
 
 @pytest.mark.parametrize("disconnect", [False, True])
-def test_mask_reservation_lasts_through_slow_body_delivery(monkeypatch, disconnect) -> None:
+def test_mask_response_bytes_remain_reserved_with_zero_headroom(monkeypatch, disconnect) -> None:
     import asyncio
     from threading import Event
     from types import SimpleNamespace
@@ -1100,8 +1100,8 @@ def test_mask_reservation_lasts_through_slow_body_delivery(monkeypatch, disconne
         await asyncio.wait_for(blocked.wait(), 2)
         pending = asyncio.create_task(prepare())
         try:
-            assert main_module._mask_batch_reserved_bytes > 0
-            assert main_module._mask_batch_serial_active
+            assert main_module._mask_batch_reserved_bytes == len(response.body) + response.chunk_size
+            assert not main_module._mask_batch_serial_active
             assert await asyncio.to_thread(waiting.wait, 2)
             assert not pending.done()
         finally:
@@ -1883,3 +1883,28 @@ def test_tiff_manual_interpretation_clears_gate_and_auto_restores_it(linear) -> 
         assert restored["analysis"]["needs_color_override"] is True
     finally:
         store.clear()
+
+
+def test_mask_batch_stream_preserves_only_the_response_reservation(monkeypatch):
+    import asyncio
+    from hdr_finisher import main as main_module
+    from hdr_finisher.models import LocalMaskTileBatchRequest
+
+    session_id, signature, revision = _create_mask_batch_session(["slow-response-mask"])
+    monkeypatch.setattr(main_module, "_preview_resource_payload", lambda *_: {"safely_available_bytes": 0})
+    request = LocalMaskTileBatchRequest(long_edge=1600, edit_revision=revision, geometry_signature=signature,
+                                      tiles=[{"local_id": "slow-response-mask", "width": 64, "height": 64}])
+    response = main_module.local_mask_tiles_batch_proxy.__wrapped__(session_id, request)
+    body_reservation = len(response.body) * 2
+
+    async def send(message):
+        if message["type"] == "http.response.start":
+            assert main_module._mask_batch_reserved_bytes == body_reservation
+            # A second batch can compute while this response is backpressured.
+            with main_module._reserve_mask_batch(100, body_reservation + 100, lambda: None, lambda: 0):
+                assert main_module._mask_batch_reserved_bytes == body_reservation + 100
+            raise ConnectionError("client closed the stream")
+
+    with pytest.raises(ConnectionError):
+        asyncio.run(response({}, None, send))
+    assert main_module._mask_batch_reserved_bytes == 0

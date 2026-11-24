@@ -963,7 +963,7 @@ def open_project_file(request: ProjectOpenRequest) -> SessionSummary:
     return SessionSummary(session=session.to_payload())
 
 
-def _render_selected_execution(session, request, kind, adjustments, preview_long_edge, is_current):
+def _render_selected_execution(session, request, kind, adjustments, preview_long_edge, is_current, *, navigation=False):
     """Render one preview frame through the route the request asked for.
 
     ``execution="strips"`` selects the bounded CPU path. A request it cannot
@@ -996,7 +996,14 @@ def _render_selected_execution(session, request, kind, adjustments, preview_long
         )
         return processed, report
     kwargs = {"denoise_controls": denoise.controls} if denoise is not None else {}
-    if micro is not None:
+    if micro is not None and navigation:
+        from .denoise_micro_grain import unavailable_reason
+
+        if not unavailable_reason(session):
+            cached_micro = session.render_cache.cached_micro_preview_source(session, micro, preview_long_edge)
+            preview_long_edge = min(preview_long_edge, cached_micro[1][-1])
+            kwargs.update(cached_micro=cached_micro, scope_source=True)
+    elif micro is not None:
         kwargs["micro_preview"] = (session, micro)
     processed = session.render_cache.adjusted_frame(
         adjustments,
@@ -1061,7 +1068,8 @@ def _cancellable_preview(endpoint):
     @wraps(endpoint)
     async def wrapped(*args, **kwargs):
         http_request = kwargs.pop("http_request")
-        key = (kwargs["session_id"], kwargs["kind"], "preview")
+        purpose = "navigation" if kwargs.get("purpose") == "navigation" else "preview"
+        key = (kwargs["session_id"], kwargs["kind"], purpose)
         try:
             return await _preview_work.run(key, http_request, lambda current: endpoint(*args, **kwargs))
         except StaleRender:
@@ -1098,7 +1106,7 @@ def _log_cpu_preview(session, kind, edge, request, requested_edge):
 
 @app.post("/api/session/{session_id}/preview/{kind}")
 @_cancellable_preview
-def preview(session_id: str, kind: PreviewKind, request: PreviewRequest) -> Response:
+def preview(session_id: str, kind: PreviewKind, request: PreviewRequest, purpose: str | None = None) -> Response:
     if request.transient_adjustments and request.adjustments is None:
         raise HTTPException(status_code=422, detail="Transient preview adjustments are required.")
     try:
@@ -1117,7 +1125,24 @@ def preview(session_id: str, kind: PreviewKind, request: PreviewRequest) -> Resp
     preview_long_edge = _cpu_preview_edge(session, kind, request, requested_edge)
     _guard_preview_resources(session, preview_long_edge)
     _log_cpu_preview(session, kind, preview_long_edge, request, requested_edge)
-    token = store.next_preview_token(session_id, kind)
+    navigation = purpose == "navigation"
+    if navigation:
+        from .grain_work import current_check
+
+        source_epoch = session.render_cache.source_epoch
+        edit_revision = session.edit_revision
+        caller_current = current_check()
+
+        def is_current():
+            return (caller_current is None or caller_current()) and (
+                session.edit_revision == edit_revision and store.is_source_current(session_id, source_epoch)
+            )
+    else:
+        token = store.next_preview_token(session_id, kind)
+
+        def is_current():
+            return session.preview_tokens[kind] == token
+
     try:
         processed, strip_report = _render_selected_execution(
             session,
@@ -1125,7 +1150,8 @@ def preview(session_id: str, kind: PreviewKind, request: PreviewRequest) -> Resp
             kind,
             adjustments,
             preview_long_edge,
-            lambda: session.preview_tokens[kind] == token,
+            is_current,
+            navigation=navigation,
         )
         started = perf_counter()
         body, media_type = encode_processed_preview_bytes(
@@ -1141,12 +1167,14 @@ def preview(session_id: str, kind: PreviewKind, request: PreviewRequest) -> Resp
                        duration_ms=round((perf_counter() - started) * 1000, 2))
     except StripExecutionRefused as exc:
         return _strip_execution_conflict(exc)
+    except MicroScopeSourceUnavailable:
+        return JSONResponse(status_code=409, content={"detail": {"code": "micro_navigation_source_unavailable"}})
     except StaleRender:
         return JSONResponse(status_code=409, content={"detail": "Stale preview request dropped."})
     except RuntimeError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
-    if not store.is_preview_current(session_id, kind, token):
+    if not (is_current() if navigation else store.is_preview_current(session_id, kind, token)):
         return JSONResponse(status_code=409, content={"detail": "Stale preview request dropped."})
     headers = _strip_report_headers(strip_report)
     if preview_long_edge < requested_edge:
@@ -2075,6 +2103,18 @@ def local_mask_tile_proxy(
 @contextmanager
 def _reserve_mask_batch(working_bytes, available_bytes, check, read_headroom, *, allow_serial=False):
     global _mask_batch_reserved_bytes, _mask_batch_serial_active
+    serial = False
+
+    def keep_response(response_bytes):
+        nonlocal working_bytes, serial
+        global _mask_batch_reserved_bytes, _mask_batch_serial_active
+        with _MASK_BATCH_CAPACITY:
+            _mask_batch_reserved_bytes += response_bytes - working_bytes
+            working_bytes = response_bytes
+            if serial:
+                _mask_batch_serial_active = serial = False
+            _MASK_BATCH_CAPACITY.notify_all()
+
     with _MASK_BATCH_CAPACITY:
         while True:
             check()
@@ -2084,21 +2124,24 @@ def _reserve_mask_batch(working_bytes, available_bytes, check, read_headroom, *,
                 if not _mask_batch_reserved_bytes:
                     if not allow_serial or working_bytes > _MASK_BATCH_SERIAL_LIMIT_BYTES:
                         raise HTTPException(status_code=507, detail="Not enough host memory for this mask batch.")
-                    _mask_batch_serial_active = True
+                    _mask_batch_serial_active = serial = True
                     break
             _MASK_BATCH_CAPACITY.wait(timeout=.05)
             available_bytes = read_headroom()
         _mask_batch_reserved_bytes += working_bytes
     try:
-        yield
+        yield keep_response
     finally:
         with _MASK_BATCH_CAPACITY:
             _mask_batch_reserved_bytes -= working_bytes
-            _mask_batch_serial_active = False
+            if serial:
+                _mask_batch_serial_active = False
             _MASK_BATCH_CAPACITY.notify_all()
 
 
 class _ReservedMaskBatchResponse(Response):
+    chunk_size = 256 * 1024
+
     def __init__(self, response):
         super().__init__(response.body, status_code=response.status_code, headers=response.headers)
 
@@ -2109,9 +2152,8 @@ class _ReservedMaskBatchResponse(Response):
     async def __call__(self, scope, receive, send):
         try:
             await send({"type": "http.response.start", "status": self.status_code, "headers": self.raw_headers})
-            chunk_size = 256 * 1024
-            for offset in range(0, len(self.body), chunk_size):
-                await send({"type": "http.response.body", "body": self.body[offset:offset + chunk_size], "more_body": True})
+            for offset in range(0, len(self.body), self.chunk_size):
+                await send({"type": "http.response.body", "body": self.body[offset:offset + self.chunk_size], "more_body": True})
             await send({"type": "http.response.body", "body": b""})
         finally:
             self.release()
@@ -2184,13 +2226,17 @@ def local_mask_tiles_batch_proxy(session_id: str, request: LocalMaskTileBatchReq
     timing = {}
     with ExitStack() as reservation:
         with request_work(check, timing):
-            reservation.enter_context(_reserve_mask_batch(
+            keep_response = reservation.enter_context(_reserve_mask_batch(
                 retained_bytes + peak_scratch + 4 * payload_bytes, estimate["safely_available_bytes"],
                 checkpoint, lambda: _preview_resource_payload(session, request.long_edge)["safely_available_bytes"],
                 allow_serial=request.long_edge <= FULL_PREVIEW_BASELINE_DIMENSION or not guarded_full_compile,
             ))
             response = _assemble_mask_tile_batch(session, request, adjustments, revision, locals_by_id, plans, invalid, timing)
         held_response = _ReservedMaskBatchResponse(response)
+        # The compute scratch and compiled masks are gone. Keep charging the
+        # body and one streaming slice until send finishes or disconnects.
+        body_bytes = len(held_response.body)
+        keep_response(body_bytes + min(body_bytes, held_response.chunk_size))
         held_response.reservation = reservation.pop_all()
         return held_response
 

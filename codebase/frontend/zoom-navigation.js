@@ -197,7 +197,7 @@ async function refreshNavigationThumbnail() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ edit_revision: request.editRevision, include_locals: !localsBypassed(),
           cpu_fallback_reason: `navigation-thumbnail: ${cpuPreviewReason(lane)}`.slice(0, 1024),
-          long_edge: request.longEdge, execution: "whole", hdr_display: false }),
+          long_edge: request.longEdge, execution: "whole", hdr_display: false, ...microGrainPreviewRequest(lane) }),
         signal: controller.signal,
       });
       if (!response.ok) return;

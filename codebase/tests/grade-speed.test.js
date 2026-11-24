@@ -5,7 +5,7 @@ const { frontendSource, declarations } = require('./frontend-source.js');
 const { HDRGpuParamLayout } = require('../frontend/gpu-param-layout.js');
 
 const context = vm.createContext({ window: {}, performance: { now: () => 0 }, console,
-  GPUTextureUsage: { TEXTURE_BINDING: 4, COPY_DST: 2 } });
+  GPUTextureUsage: { TEXTURE_BINDING: 4, COPY_DST: 2 }, GPUBufferUsage: { STORAGE: 1, COPY_DST: 2 } });
 vm.runInContext(frontendSource('graph-scale.js'), context);
 vm.runInContext(frontendSource('webgpu-shaders.js'), context);
 vm.runInContext(frontendSource('webgpu-preview.js'), context);
@@ -280,4 +280,81 @@ test('presentation records processing resolution and never accepts drag grain as
     assert.equal(state.acceptedPresentation.exact, exact);
     assert.equal(state.acceptedPresentation.processedLongEdge, processedEdge || width);
   }
+});
+
+test('the bounded zoom canvas reuses Mist tiles and invalidates them on a changed input', async () => {
+  const preview = new Preview({});
+  const detail = {};
+  const texture = () => ({ createView: () => ({}), destroy() {} });
+  const graph = Object.fromEntries(['source', 'base', 'local', 'detailScratch', 'detailResult', 'film', 'finish']
+    .map(name => [name + 'Texture', texture()]));
+  graph.spatialGrid = 4;
+  const noop = () => {};
+  const draw = { setViewport: noop, setScissorRect: noop, setPipeline: noop, setBindGroup: noop, draw: noop, end: noop };
+  const region = { x: 0, y: 0, width: 64, height: 64 };
+  const used = [];
+  const context = { getCurrentTexture: texture };
+  const Scheduler = require('../frontend/tile-scheduler.js').HDRTileScheduler;
+  Object.assign(preview, {
+    device: {
+      createBuffer: ({ size }) => ({ size, destroy: noop }),
+      createCommandEncoder: () => ({ beginRenderPass: () => draw, copyTextureToTexture: noop, finish: noop }),
+      createTexture: texture, pushErrorScope: noop, popErrorScope: async () => null,
+      queue: { submit: noop, writeBuffer: noop },
+    },
+    tileViewportRequest: () => ({ fit: true, roi: region }),
+    composedTileHalo: () => ({ halo: 0 }),
+    memoryBudgetBytes: () => 2 ** 20, resourceMemorySnapshot: () => ({ resident: { totalBytes: 0 } }),
+    ensurePresentationTarget: (width, height) => ({ width, height, texture: texture() }),
+    ensureTileGraph: () => graph, ensureScopePeakTarget: () => null, bindGraphResources: noop,
+    configureSurface: noop, loadSceneMaskRegion: async () => null, markResidentMaskFrame: noop,
+    scheduleTileCacheTrim: noop, recordSubmission: noop, recordFrameMasks: noop,
+    encodeFilmChain: (_encoder, _pipelines, _graph, _source, _bind, _params, _width, _height, { lensGlowTile }) => used.push(lensGlowTile),
+  });
+  const params = new Float32Array(HDRGpuParamLayout.count);
+  for (const field of ['FILM_RESPONSE_ENABLED', 'FILM_LOOK_STRENGTH', 'LENS_FILTER', 'LENS_SCATTER']) params[indices[field]] = 1;
+  const proxy = { identity: 'photo', width: 64, height: 64, texture: texture(), pixelFormat: 'rgba16float' };
+  const render = async (exposure, measureOnly = false) => {
+    const result = await preview.encodeTiledGeneration(detail, context, proxy, { format: 'rgba16float' }, {}, params, {
+      Scheduler, measureOnly, tileSize: 64, boundedPresentation: !measureOnly, lensGlowRecipe: { hdr: { exposure } },
+    });
+    assert.equal(result.rendered, true);
+  };
+  await render(0);
+  await render(0);
+  assert.ok(used[0]?.ready, 'the finished tile is retained on the detail canvas');
+  assert.equal(used[1], used[0]);
+  await render(1, true);
+  assert.equal(used[2], null);
+  assert.equal(preview.lensGlowTiles.size, 1);
+  await render(1);
+  assert.ok(used[3]?.ready);
+  assert.notEqual(used[3], used[0]);
+});
+
+test('only a Direct viewer presentation releases the previous tiled mask pins', async () => {
+  const texture = { createView: () => ({}) };
+  const canvas = { getContext: () => ({ getCurrentTexture: () => texture }) };
+  const preview = new Preview(canvas);
+  const proxy = { width: 64, height: 48, longEdge: 64, texture, identity: 'source', workingSpace: 'acescg' };
+  const noop = () => {};
+  const pass = { setPipeline: noop, setBindGroup: noop, draw: noop, end: noop };
+  context.HDRTone = require("../frontend/tone-engine.js");
+  Object.assign(preview, {
+    available: true, sessionId: 'photo',
+    device: { createCommandEncoder: () => ({ beginRenderPass: () => pass, finish: noop }), queue: { submit: noop, writeBuffer: noop } },
+    loadProxy: async () => proxy, roiRegionFor: () => null, evictStaleProxies: noop,
+    configureSurface: () => ({ format: 'rgba16float' }), pipelineFor: () => ({}),
+    composedTileHalo: () => ({ halo: 0 }), planRender: () => ({ decision: { mode: 'direct' } }),
+    highlightAnchorRequest: () => null, uploadParamsAndCurves: noop, bindGraphResources: noop, encodeFilmChain: noop,
+    ensureIntermediate: () => ({ baseTexture: texture, finishTexture: texture, compositeParamBuffer: { size: Infinity } }),
+  });
+  const present = options => preview.renderToFrame(canvas, 'photo', 'hdr', { hdr: {}, sdr: {}, shared: {} },
+    () => [], 64, [], 1, null, 203, null, options);
+  preview.presentedMaskKeys = new Set(["visible-tile"]);
+  assert.equal((await present({ measureOnly: true })).execution, 'direct');
+  assert.equal((await present({ underlayerOnly: true })).execution, 'direct');
+  assert.ok(preview.presentedMaskKeys.has("visible-tile"));
+  assert.equal((await present({})).execution, 'direct');
+  assert.equal(preview.presentedMaskKeys?.has("visible-tile") ?? false, false);
 });

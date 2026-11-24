@@ -885,7 +885,7 @@ class SessionRenderCache:
                       "focus_distance_m", "camera_maker", "camera_model", "lens_maker", "lens_model", "lens_name")))
         return (epoch, preparation_key(frame), lens_key, controls, edge)
 
-    def _cached_micro_scope_source(self, frame, controls, edge):
+    def cached_micro_preview_source(self, frame, controls, edge):
         from .denoise_micro_grain import MicroGrainControls, unavailable_reason
 
         with self._lock:
@@ -2141,7 +2141,7 @@ class SessionRenderCache:
         edge = max(256, int(long_edge))
         with self._lock:
             source_epoch = self._source_epoch
-            cached_micro = self._cached_micro_scope_source(*micro_preview, edge) if micro_preview is not None else None
+            cached_micro = self.cached_micro_preview_source(*micro_preview, edge) if micro_preview is not None else None
         signature = adjustment_signature(adjustments) + local_adjustment_signature(local_adjustments) + repr(self.color_context.cache_key)
         if cached_micro is not None:
             source, micro_key = cached_micro

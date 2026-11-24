@@ -1,3 +1,30 @@
+## November 24, 2026 — Sony Micro Grain Exposure after a memory trim
+
+MacBook Neo (A18 Pro, 8 GB), unpackaged Electron at 1408 × 794 points under
+the shared GPU lock. One warm Exposure edit per cell on Sony
+`_DSC7970.ARW` in HDR Grade. The second edit followed a requested moderate
+CPU and GPU cache trim in the same short session. Times are from committing
+Exposure to the first exact picture. The check used a 20% band for
+single-run timing noise.
+
+| Lens and zoom | Warm | After trim | Route |
+| --- | ---: | ---: | --- |
+| Off, Fit | 0.090 s | 0.079 s | GPU Direct |
+| Off, 31% | 0.716 s | 0.705 s | GPU Tiled |
+| Auto, Fit | 0.277 s | 0.216 s | CPU cache hit for both edits |
+| Auto, 31% | 0.817 s | 25.403 s | CPU cache hit, then a 24.628 s Micro rebuild |
+
+The cold Fit enable with Lens Off produced two HDR GPU presentations. Warm
+Lens Off Exposure edits produced one or two. Lens Auto used the CPU because
+the active lens profile is unsupported by GPU Micro Grain.
+
+The Auto 31% timing exposed a remaining priority error in the checked build.
+The histogram used a smaller cached source after the visible preview
+finished, so periodic cleanup kept that smaller result in place of the
+31% source. The follow-up regression test reproduces that sequence and
+passes once foreground reads alone set eviction priority. The timing above
+predates that follow-up and covers a short session with a requested trim.
+
 ## November 24, 2026 — Grade local masks at 100%
 
 MacBook Neo (A18 Pro, 8 GB), Electron at 1408 × 794 points and 2× under

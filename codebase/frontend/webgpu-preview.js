@@ -4911,7 +4911,12 @@
         }
       }
 
-      if (canvas === this.canvas && !measureOnly && !options.delivery && !cancelled && foregroundTiles.length) {
+      const viewerTiles = (canvas === this.canvas || pictureRegion)
+        && !measureOnly && !options.delivery && !options.underlayerOnly;
+      if (viewerTiles && !cancelled && !foregroundTiles.length && retainedFrame) {
+        lensTileFrameKey = this.presentedLensGlowTileFrameKey;
+      }
+      if (viewerTiles && !cancelled && foregroundTiles.length) {
         const lensGlowRecipe = !noiseView && !surround && !this.disableLensGlowCache
           && (!clarityFrame || clarityFrame.state === this.clarityFrameMap)
           && lensGlowActive(params) && options.lensGlowRecipe;
@@ -6238,7 +6243,7 @@
       this.device.queue.submit([encoder.finish()]);
       if (!sourceOptions?.measureOnly && !sourceOptions?.delivery && !backgroundUnderlayer && !sourceOptions?.underlayerOnly) {
         this.retainPresentedTiles();
-        if (canvas === this.canvas) this.setLensGlowTileFrameKey(null);
+        if (canvas === this.canvas || sourceOptions?.boundedPresentation) this.setLensGlowTileFrameKey(null);
       }
       if (lensGlowKey) intermediate.lensGlowKey = lensGlowKey;
       sourceOptions?.onPresented?.(context.getCurrentTexture());

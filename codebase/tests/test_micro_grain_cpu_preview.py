@@ -661,18 +661,53 @@ def test_cpu_cache_evicts_derived_pixels_before_micro_sources(micro_frame, monke
     assert len(rendered) == 2
 
 
-def test_moderate_app_reclaim_keeps_the_active_micro_source(micro_frame):
+def test_moderate_app_reclaim_keeps_the_active_micro_source_after_scopes(micro_frame):
     frame, controls, built, rendered = micro_frame
     cache = frame.render_cache
     micro = MicroGrainControls.from_settings(controls)
-    first, _ = cache.micro_preview_source(frame, micro, 256, None)
+    cache.micro_preview_source(frame, micro, 256, None)
+    visible, _ = cache.micro_preview_source(frame, micro, 288, None)
+    # The histogram reads the smaller source after the larger preview is shown.
+    scope = cache.scope_result(AdjustmentState(), PreviewKind.HDR, 256, "histogram", 256, 512,
+                               micro_preview=(frame, controls))
+    assert scope.micro_source_long_edge == 256
     with cache._lock:
         cache._remember_proxies_locked(128, np.zeros((128, 128, 3), dtype=np.float32), None)
 
     app_memory.reclaim_all("moderate")
     assert cache.diagnostics()["proxy_bytes"] == 0
-    assert cache.diagnostics()["micro_source_bytes"] > first.nbytes
-    assert cache.micro_preview_source(frame, micro, 256, None)[0] is first
-    assert len(built) == len(rendered) == 1
+    assert cache.diagnostics()["micro_source_bytes"] > visible.nbytes
+    assert cache.micro_preview_source(frame, micro, 288, None)[0] is visible
+    assert len(built) == 1
+    assert len(rendered) == 2
     app_memory.reclaim_all("critical")
     assert cache.diagnostics()["micro_source_bytes"] == 0
+
+
+def test_cpu_navigation_only_uses_a_cached_micro_source(micro_frame, monkeypatch):
+    from hdr_finisher import main
+
+    frame, controls, _, rendered = micro_frame
+    frame.session_id = "photo"
+    frame.adjustments = AdjustmentState()
+    frame.edit_revision = 7
+    frame.hdr_reference_white_nits = 203
+    frame.preview_tokens = {PreviewKind.HDR: 5}
+    monkeypatch.setattr(main.store, "_current", frame)
+    client = TestClient(main.app)
+    url = "/api/session/photo/preview/hdr?purpose=navigation"
+    body = {"edit_revision": 7, "long_edge": 512, "hdr_display": False}
+
+    assert client.post(url, json=body).status_code == 409
+    assert rendered == []
+    source, _ = frame.render_cache.micro_preview_source(frame, MicroGrainControls.from_settings(controls), 320, None)
+    frame.adjustments.hdr.exposure = 0.6
+    expected_grade = apply_adjustments(
+        source, frame.adjustments, PreviewKind.HDR, color_context=frame.render_cache.color_context,
+    )
+    expected, _ = main.encode_processed_preview_bytes(expected_grade, PreviewKind.HDR, hdr_display=False, reference_white_nits=203)
+    warm = client.post(url, json=body)
+    assert warm.status_code == 200
+    assert warm.content == expected
+    assert len(rendered) == 1
+    assert frame.preview_tokens[PreviewKind.HDR] == 5
