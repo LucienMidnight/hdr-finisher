@@ -69,6 +69,10 @@ class StaleRender(RuntimeError):
     """Raised before expensive work when a newer render superseded this one."""
 
 
+class MicroScopeSourceUnavailable(RuntimeError):
+    """Raised when a scope cannot reuse a matching whole-picture Micro source."""
+
+
 def adjustment_signature(adjustments: AdjustmentState) -> str:
     payload = adjustments.model_dump(mode="json")
     shared = payload.get("shared", {})
@@ -855,8 +859,35 @@ class SessionRenderCache:
             raise StaleRender("The Denoise measurement source changed.")
         return model
 
+    def _micro_preview_key(self, frame, controls, edge, epoch):
+        from .denoise_micro_grain import preparation_key
+
+        lens_applied = bool(frame.metadata.get("lens_correction", {}).get("applied"))
+        exif = frame.metadata.get("raw_exif", {})
+        lens_key = (lens_applied, frame.raw_import_settings.lens.model_dump_json(),
+                    *(exif.get(name) for name in ("focal_length_mm", "aperture",
+                      "focus_distance_m", "camera_maker", "camera_model", "lens_maker", "lens_model", "lens_name")))
+        return (epoch, preparation_key(frame), lens_key, controls, edge)
+
+    def _cached_micro_scope_source(self, frame, controls, edge):
+        from .denoise_micro_grain import MicroGrainControls, unavailable_reason
+
+        with self._lock:
+            if self._micro_closed or unavailable_reason(frame):
+                raise MicroScopeSourceUnavailable()
+            try:
+                key = self._micro_preview_key(frame, MicroGrainControls.from_settings(controls), edge, self._micro_source_epoch)
+            except OSError as exc:
+                raise MicroScopeSourceUnavailable() from exc
+            matching = [candidate for candidate in self._micro_previews if candidate[:-1] == key[:-1]]
+            if not matching:
+                raise MicroScopeSourceUnavailable()
+            selected = min(matching, key=lambda candidate: (candidate[-1] < edge, abs(candidate[-1] - edge)))
+            self._touch_ram_locked("_micro_previews", selected)
+            return self._micro_previews[selected], selected
+
     def micro_preview_source(self, frame, controls, edge, is_current):
-        from .denoise_micro_grain import preparation_key, unavailable_reason
+        from .denoise_micro_grain import unavailable_reason
         from .diagnostics import log
         from .grain_work import current_check
 
@@ -874,13 +905,9 @@ class SessionRenderCache:
             return downsample_image(frame.image, edge), None
 
         path = Path(frame.source_path)
-        source_key = preparation_key(frame)
-        lens_applied = bool(frame.metadata.get("lens_correction", {}).get("applied"))
-        exif = frame.metadata.get("raw_exif", {})
-        lens_key = (lens_applied, frame.raw_import_settings.lens.model_dump_json(),
-                    *(exif.get(name) for name in ("focal_length_mm", "aperture",
-                    "focus_distance_m", "camera_maker", "camera_model", "lens_maker", "lens_model", "lens_name")))
-        key = (epoch, source_key, lens_key, controls, edge)
+        key = self._micro_preview_key(frame, controls, edge, epoch)
+        _, source_key, lens_key, _, _ = key
+        lens_applied = lens_key[0]
         photo = {"id": str(path), "name": path.name}
 
         while True:
@@ -1780,7 +1807,7 @@ class SessionRenderCache:
         is_current: Callable[[], bool] | None = None,
         local_adjustments: list[LocalAdjustment] | None = None,
         _record_diagnostics: bool = True,
-        *, denoise_controls=None, micro_preview=None, scope_source=False,
+        *, denoise_controls=None, micro_preview=None, scope_source=False, cached_micro=None,
     ) -> np.ndarray:
         edge = max(256, int(long_edge))
         with self._lock:
@@ -1796,6 +1823,9 @@ class SessionRenderCache:
                 frame, MicroGrainControls.from_settings(controls), edge, is_current,
             )
             signature += repr(("micro", micro_key))
+        elif cached_micro is not None:
+            source, micro_key = cached_micro
+            signature += repr(("micro", micro_key))
         key = (source_epoch, kind.value, edge, signature)
         flight_key = ("frame", *key)
         cached, flight = self._acquire_frame_flight(
@@ -1805,11 +1835,16 @@ class SessionRenderCache:
             return cached
         assert flight is not None
         try:
-            if scope_source:
+            if cached_micro is not None:
+                try:
+                    source = downsample_image(source, edge, is_current=is_current, bounded=True)
+                except ResizeCancelled as exc:
+                    raise StaleRender("A newer scope request replaced this one.") from exc
+            if scope_source and cached_micro is None:
                 source, sdr_reference = self._scope_proxies(edge, source_epoch, is_current)
             else:
                 with self._lock:
-                    if micro_preview is None:
+                    if micro_preview is None and cached_micro is None:
                         source, sdr_reference = self._proxies_locked(edge)
                     elif kind == PreviewKind.SDR and self.sdr_reference_image is not None and adjustments.sdr.use_authored_base:
                         sdr_reference = self._source_level_locked(edge, PreviewKind.SDR)
@@ -1842,7 +1877,7 @@ class SessionRenderCache:
             with render_work(is_current):
                 # Reuse the reduced Micro source, but keep SDR finishing
                 # intermediates in strips when the grade supports exact strips.
-                if (micro_preview is not None and kind == PreviewKind.SDR
+                if ((micro_preview is not None or cached_micro is not None) and kind == PreviewKind.SDR
                         and sdr_reference is None and not adjustments.sdr.linked_to_hdr
                         and (not adjustments.sdr.film_look_section_enabled or adjustments.sdr.film_look == FilmLookAdjustments())
                         and (not adjustments.sdr.vignette_section_enabled or adjustments.sdr.vignette.amount == 0)
@@ -2012,18 +2047,26 @@ class SessionRenderCache:
         local_adjustments: list[LocalAdjustment] | None = None,
         channel_names: tuple[str, ...] | None = None,
         scope_region: tuple[float, float, float, float] | None = None,
+        *, micro_preview=None,
     ) -> Any:
         """Return a cached, single-flight scope payload for the adjusted proxy."""
         edge = max(256, int(long_edge))
         with self._lock:
             source_epoch = self._source_epoch
+            cached_micro = self._cached_micro_scope_source(*micro_preview, edge) if micro_preview is not None else None
         signature = adjustment_signature(adjustments) + local_adjustment_signature(local_adjustments) + repr(self.color_context.cache_key)
+        if cached_micro is not None:
+            source, micro_key = cached_micro
+            edge = min(edge, micro_key[-1])
+            signature += repr(("micro", micro_key))
         requested_channels = tuple(channel_names or ("R", "G", "B", "Y"))
         region_key = tuple(round(float(value), 6) for value in scope_region) if scope_region is not None else None
         key = (source_epoch, kind.value, edge, signature, mode, int(bins), int(columns), int(max_nits), requested_channels, region_key)
         flight_key = ("scope", *key)
         while True:
             with self._lock:
+                if self._source_epoch != source_epoch or (cached_micro is not None and self._micro_source_epoch != micro_key[0]):
+                    raise StaleRender("The scope source changed.")
                 cached = self._scopes.get(key)
                 if cached is not None:
                     self._hits += 1
@@ -2054,6 +2097,7 @@ class SessionRenderCache:
                 local_adjustments=local_adjustments,
                 _record_diagnostics=False,
                 scope_source=True,
+                cached_micro=cached_micro,
             )
             if is_current is not None and not is_current():
                 with self._lock:
@@ -2070,12 +2114,14 @@ class SessionRenderCache:
                 color_context=self.color_context,
                 channel_names=requested_channels,
             )
+            if cached_micro is not None:
+                result.micro_source_long_edge = min(edge, max(source.shape[:2]))
             if is_current is not None and not is_current():
                 with self._lock:
                     self._stale_cancellations += 1
                 raise StaleRender("A newer scope request replaced this one.")
             with self._lock:
-                if self._source_epoch != source_epoch:
+                if self._source_epoch != source_epoch or (cached_micro is not None and self._micro_source_epoch != micro_key[0]):
                     raise StaleRender("The scope source changed.")
                 if self._store_derived_locked('_scopes', key, result.model_copy(deep=True), protect_micro=True):
                     while len(self._scopes) > 12:

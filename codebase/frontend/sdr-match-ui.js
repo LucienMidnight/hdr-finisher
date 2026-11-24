@@ -149,33 +149,28 @@ async function setSdrMatchWithDiagnostics(action) {
     // A Match action is already a discrete, blocking operation. When SDR is
     // visible, render the selected preview tier directly instead of presenting
     // the bounded settled proxy and leaving 2K/4K to the idle refiner.
-    const previewLongEdge = state.currentView === "sdr"
-      ? refinementProxyLongEdge()
-      : settledProxyLongEdge();
-    const previewTier = previewLongEdge >= refinementProxyLongEdge() ? "refinement" : "settled";
-    const gpuOptions = {
-      hideStatus: false,
-      longEdge: previewLongEdge,
-      allowInactive: state.currentView !== "sdr",
-      tier: previewTier,
-    };
-    const previewDeferred = await presentMatchedSdrPreview(gpuOptions);
-    if (!isCurrent()) return false;
-    if (previewDeferred) {
-      syncDesktopDocumentState();
-      status.post({ id: "match", severity: "info", message: "HDR grade matched to SDR · preview updating." });
-      return true;
-    }
-    // Scopes describe the lane on screen. With HDR showing, an SDR scope
-    // could only come from a whole-picture CPU grade that nothing displays;
-    // switching to SDR measures it from the GPU picture instead.
     if (state.currentView === "sdr") {
-      await refreshScopes(scopeLongEdge("settled"), { tier: "settled", lane: "sdr" });
+      const previewDeferred = await presentMatchedSdrPreview({
+        hideStatus: false,
+        longEdge: refinementProxyLongEdge(),
+        tier: "refinement",
+      });
+      if (!isCurrent()) return false;
+      if (previewDeferred && state.currentView === "sdr") {
+        syncDesktopDocumentState();
+        status.post({ id: "match", severity: "info", message: "HDR grade matched to SDR · preview updating." });
+        return true;
+      }
+      if (state.currentView === "sdr") {
+        await refreshScopes(scopeLongEdge("settled"), { tier: "settled", lane: "sdr" });
+      }
     }
     if (!isCurrent()) return false;
     if (state.compareLayout !== "single") {
       const other = state.currentView === "hdr" ? "sdr" : "hdr";
       await renderComparisonPreview(other, { force: true });
+    } else if (state.currentView === "hdr") {
+      prepareInactivePreview();
     }
     if (!isCurrent()) return false;
     syncDesktopDocumentState();
@@ -366,13 +361,14 @@ async function presentMatchedSdrPreview(options) {
   const sessionId = state.session?.session_id;
   const generation = state.previewGeneration.sdr;
   const current = () => state.session?.session_id === sessionId
-    && state.previewGeneration.sdr === generation;
+    && state.previewGeneration.sdr === generation && state.currentView === "sdr";
   const presented = () => current()
     && state.acceptedPresentation?.lane === "sdr"
     && state.acceptedPresentation.generation === generation
     && state.acceptedPresentation.exact
     && state.acceptedPresentation.processedLongEdge === options.longEdge
     && state.acceptedPresentation.geometrySignature === geometrySignature();
+  if (!current()) return true;
   if (presented()) return false;
   let rendered = await renderGpuDraft("sdr", options);
   // Peak/mask work can supersede the first presentation after Match. As in
@@ -384,7 +380,7 @@ async function presentMatchedSdrPreview(options) {
     if (pending) await pending.catch(() => null);
     if (presented()) return false;
     if (editsReady && current()) {
-      rendered = await renderGpuDraft("sdr", { ...options, allowInactive: state.currentView !== "sdr" });
+      rendered = await renderGpuDraft("sdr", options);
     }
   }
   if (!current()) return true;
@@ -396,7 +392,7 @@ async function presentMatchedSdrPreview(options) {
       debouncePreview("sdr");
       return true;
     }
-    await renderPreviewForLane("sdr", state.currentView === "sdr", options.longEdge, {
+    await renderPreviewForLane("sdr", true, options.longEdge, {
       progressSteps: [20, 60, 90],
       denoiseFallback: state.denoise?.sdr?.enabled,
     });

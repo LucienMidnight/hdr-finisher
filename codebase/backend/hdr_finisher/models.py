@@ -1418,6 +1418,7 @@ class ScopeResponse(BaseModel):
     generation: int | None = None
     normalization_peak: int = 1
     peak_value: float = 0.0
+    micro_source_long_edge: int | None = None
     clipped: bool = False
     x_axis: str = "normalized"
     bin_edges: list[float] = Field(default_factory=list)

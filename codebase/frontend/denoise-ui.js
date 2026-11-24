@@ -308,6 +308,7 @@ async function setDenoiseEnabled(enabled, { action } = {}) {
   if (!state.session) return;
   const sessionId = state.session.session_id;
   const lane = state.currentView;
+  const micro = state.denoise[lane].controls.method === "micro_grain";
   state.denoise[lane].enabled = Boolean(enabled);
   const runtime = state.denoiseRuntime[lane];
   runtime.showOriginal = !enabled;
@@ -317,6 +318,7 @@ async function setDenoiseEnabled(enabled, { action } = {}) {
     && state.denoiseRuntime[lane] === runtime && generation === runtime.generation;
   state.renderCoordinator?.cancelLane(lane, "superseded-by-denoise-toggle", { detach: true });
   invalidatePreview(lane, { markDirty: false });
+  if (micro) markScopeUpdating();
   if (!enabled) {
     runtime.status = "off";
     state.denoiseNoiseView = false;
@@ -333,9 +335,11 @@ async function setDenoiseEnabled(enabled, { action } = {}) {
       rendered = await renderGpuDraft(lane, { longEdge });
     }
     if (rendered === false && !transientGpuRefusal() && !previewSourceCapacityRefused() && saved && isCurrent() && lane === state.currentView) {
-      await renderPreviewForLane(lane, true, longEdge, { denoiseFallback: true });
+      rendered = await renderPreviewForLane(lane, true, longEdge, { denoiseFallback: true });
     }
-    if (!isCurrent()) return;
+    if (!isCurrent() || lane !== state.currentView) return;
+    if (rendered) debounceOverlayAndScopes();
+    else if (micro) restoreScopeFreshnessIfIdle();
     renderDenoiseControls();
     return;
   }
@@ -347,6 +351,7 @@ async function setDenoiseEnabled(enabled, { action } = {}) {
   if (!isCurrent()) return;
   runtime.saveFailed = !applied;
   if (!applied) {
+    if (micro && lane === state.currentView) restoreScopeFreshnessIfIdle();
     denoiseRetryError(lane, "Denoise settings could not be saved.");
     return;
   }
@@ -365,14 +370,16 @@ async function setDenoiseEnabled(enabled, { action } = {}) {
     state.gpuPreview.selectDenoiseSelectorSource(true);
     runtime.status = "ready";
     renderDenoiseControls();
-    const rendered = await renderGpuDraft(lane, { longEdge });
+    let rendered = await renderGpuDraft(lane, { longEdge });
     if (!isCurrent()) return;
     if (rendered === false && lane === state.currentView && !transientGpuRefusal() && !previewSourceCapacityRefused()) {
       if (!runtime.microBackup) denoiseRetryError(lane, "The GPU could not draw the denoised preview.");
-      await renderPreviewForLane(lane, true, longEdge, { denoiseFallback: true });
-      return;
+      rendered = await renderPreviewForLane(lane, true, longEdge, { denoiseFallback: true });
     }
-    debounceOverlayAndScopes();
+    if (isCurrent() && lane === state.currentView) {
+      if (rendered) debounceOverlayAndScopes();
+      else if (micro) restoreScopeFreshnessIfIdle();
+    }
     renderDenoiseControls();
     return;
   }
@@ -456,6 +463,13 @@ async function recalculateDenoiseForView(lane, options) {
   const current = () => state.session?.session_id === sessionId && state.denoiseRuntime[lane] === runtime
     && settings.enabled && !runtime.showOriginal && settings.controls.method === method
     && state.activeWorkflow === workflow && gradeSourceIdentity(lane) === sourceIdentity;
+  const renderFallback = async (edge) => {
+    const generation = runtime.generation;
+    const rendered = await renderPreviewForLane(lane, true, edge, { denoiseFallback: true });
+    if (!current() || generation !== runtime.generation || lane !== state.currentView) return;
+    if (rendered) debounceOverlayAndScopes();
+    else restoreScopeFreshnessIfIdle();
+  };
   const afterCommit = runtime.preparationAfterCommit;
   if (afterCommit && !(options.force && runtime.saveFailed)) {
     const generation = runtime.generation;
@@ -488,7 +502,7 @@ async function recalculateDenoiseForView(lane, options) {
       denoiseRetryError(lane, "The GPU is unavailable.");
     }
     if (options.renderAfter !== false && lane === state.currentView) {
-      await renderPreviewForLane(lane, true, options.longEdge || refinementProxyLongEdge(), { denoiseFallback: true });
+      await renderFallback(options.longEdge || refinementProxyLongEdge());
     }
     return false;
   }
@@ -502,7 +516,7 @@ async function recalculateDenoiseForView(lane, options) {
       { prior_reason: runtime.microBackup.reason });
     useMicroGrainCpu(lane, null, options.action);
     if (options.renderAfter !== false && lane === state.currentView) {
-      await renderPreviewForLane(lane, true, options.longEdge || refinementProxyLongEdge(), { denoiseFallback: true });
+      await renderFallback(options.longEdge || refinementProxyLongEdge());
     }
     return false;
   }
@@ -543,7 +557,9 @@ async function recalculateDenoiseForView(lane, options) {
   if (!current() || pending.generation !== runtime.generation) return false;
   if (!ready) {
     if (options.renderAfter !== false && lane === state.currentView && (runtime.status === "error" || runtime.microBackup)) {
-      await renderPreviewForLane(lane, true, longEdge, { denoiseFallback: true });
+      await renderFallback(longEdge);
+    } else if (options.renderAfter !== false && lane === state.currentView) {
+      restoreScopeFreshnessIfIdle();
     }
     return false;
   }
@@ -555,10 +571,13 @@ async function recalculateDenoiseForView(lane, options) {
     if (!current() || pending.generation !== runtime.generation) return false;
     if (rendered === false && lane === state.currentView && !transientGpuRefusal() && !previewSourceCapacityRefused()) {
       if (!runtime.microBackup) denoiseRetryError(lane, "The GPU could not draw the denoised preview.");
-      await renderPreviewForLane(lane, true, currentEdge, { denoiseFallback: true });
+      await renderFallback(currentEdge);
       return false;
     }
-    debounceOverlayAndScopes();
+    if (lane === state.currentView) {
+      if (rendered) debounceOverlayAndScopes();
+      else restoreScopeFreshnessIfIdle();
+    }
   }
   return true;
 }
@@ -694,14 +713,23 @@ async function commitDenoiseControl(key, value) {
   if (key.startsWith("micro_") && runtime.microBackup && settings.enabled) {
     invalidateDenoisePreparation(lane);
     const generation = runtime.generation;
+    markScopeUpdating();
     const saved = await deferDenoisePreparation(runtime, persistDenoiseSettings().catch(() => false));
     if (state.denoiseRuntime[lane] !== runtime || runtime.generation !== generation) return;
     runtime.saveFailed = !saved;
-    if (!saved) return denoiseRetryError(lane, "Denoise settings could not be saved.");
+    if (!saved) {
+      restoreScopeFreshnessIfIdle();
+      return denoiseRetryError(lane, "Denoise settings could not be saved.");
+    }
     useMicroGrainCpu(lane);
     if (lane === state.currentView) {
       invalidatePreview(lane, { markDirty: false });
-      await renderPreviewForLane(lane, true, refinementProxyLongEdge(), { denoiseFallback: true });
+      const rendered = await renderPreviewForLane(lane, true, refinementProxyLongEdge(), { denoiseFallback: true });
+      if (state.denoiseRuntime[lane] === runtime && runtime.generation === generation
+        && lane === state.currentView) {
+        if (rendered) debounceOverlayAndScopes();
+        else restoreScopeFreshnessIfIdle();
+      }
     }
     return;
   }
@@ -834,7 +862,8 @@ async function runLiveDenoise({ lane, sessionId, generation, controls, wholeFram
   if (!isCurrent()) return;
   if (controls.method === "micro_grain" && state.denoiseRuntime[lane].microBackup) {
     invalidatePreview(lane, { markDirty: false });
-    await renderPreviewForLane(lane, true, refinementProxyLongEdge(), { denoiseFallback: true, showProgress: false });
+    const rendered = await renderPreviewForLane(lane, true, refinementProxyLongEdge(), { denoiseFallback: true, showProgress: false });
+    if (rendered && isCurrent() && lane === state.currentView) debounceOverlayAndScopes();
     return;
   }
   const viewport = nativeDenoiseViewport(lane);

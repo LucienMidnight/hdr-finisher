@@ -29,14 +29,16 @@ test("scope refresh proceeds after one successful sync", async () => {
   let syncCalls = 0;
   const context = vm.createContext({ document: {hidden:false}, localsBypassed: () => false,
     state: { session: { session_id: "test" }, currentView: "hdr", globalEditDirty: true,
-      scopeGeneration: 0, scopeMode: "histogram" },
+      previewGeneration: { hdr: 1 }, scopeGeneration: 0, scopeMode: "histogram" },
     syncGlobalEditState: async () => { syncCalls++; context.state.globalEditDirty = false; return true; },
     activeScopeRegion: () => null,
+    geometrySignature: () => "frame",
+    microGrainPreviewRequest: () => ({}),
     window: { HDRWholeImagePreviewPipe: { edgeFor: (_purpose, edge) => Math.min(1600, edge) } },
     gpuScopeEligible: () => true,
     enqueueGpuScopeRequest: async () => true,
   });
-  vm.runInContext(`${definition("geometryDraftActive")}\n${definition("refreshScopes")}`, context);
+  vm.runInContext(declarations("geometryDraftActive", "gradeSourceIdentity", "microGrainPreviewKey", "scopePresentationIdentity", "refreshScopes"), context);
   assert.equal(await vm.runInContext("refreshScopes()", context), true);
   assert.equal(syncCalls, 1);
 });

@@ -1,3 +1,59 @@
+## November 24, 2026 — Grade Micro Grain Histogram at zoom
+
+MacBook Neo (A18 Pro, 8 GB), Electron at 1408 × 794 points and 2× under
+the shared GPU lock. HDR Grade on the 42 MP Sony `_DSC7970.ARW`, Lens Auto
+applied, Micro Grain luminance at 55%. Each row measures one Exposure commit
+to its exact picture and to the Histogram outcome, from `787754f2` plus the
+working fixes. The probe primes the whole-picture cache through a preview
+request; forced evictions are test controls, not automatic app actions.
+
+| Zoom and cache state | Exact picture | Histogram outcome |
+| --- | ---: | --- |
+| 100%, no whole-picture Micro source | 0.914 s | Unavailable at 0.912 s |
+| 100%, whole-picture source warmed, first edit at zoom | 3.173 s | Fresh at 3.246 s |
+| 100%, whole-picture and viewport caches warm | 0.912 s | Fresh at 1.001 s |
+| 31%, whole-picture source warm | 0.816 s | Fresh at 1.533 s |
+| 31%, source evicted before edit | 25.059 s | Fresh at 25.263 s |
+| 31%, source evicted between picture and Histogram | 0.811 s | Unavailable at 0.816 s |
+
+Fresh results use a 960 px whole-picture Micro preview, not the zoomed patch.
+At 31%, a cold picture itself rebuilt the whole-picture source; the Histogram
+reused it. When the source is missing at request time, the Histogram clears,
+offers Fit view, and does not start a rebuild. Picture timings include two
+paint callbacks; the status can change just before that measurement ends.
+
+The previous Grade sweep used drag/release, so picture times are not a matched
+speed comparison: 100% pictures took 0.695–0.844 s but the Histogram was still
+Updating at 70 s with no scope request; at 31%, pictures took 0.759–0.804 s and
+the old undenoised Histogram appeared idle after 1.98–2.02 s.
+
+[Sweep baseline](../../codebase/output/grade-sweep/sony-micro-fill.json) ·
+[Sony cache-case trace](../../codebase/output/overnight/micro-scope-app.json)
+
+The follow-up on the same Sony and window size checked Micro slider changes,
+Fit recovery, and Denoise toggles, including with GPU Preview disabled.
+Times are from the action to the picture and to the Histogram outcome.
+
+| Action | Exact picture | Histogram outcome |
+| --- | ---: | --- |
+| 100%, Exposure, cold whole-picture source | 1.166 s | Unavailable at 1.161 s |
+| 100%, Exposure, warm whole-picture source | 3.724 s | Settled at 3.839 s |
+| 100%, new Micro strength | 4.112 s | Unavailable at 4.239 s |
+| Return to Fit after Unavailable | 26.884 s | Settled at 27.150 s |
+| Fit, new Micro strength | 25.884 s | Settled at 26.162 s |
+| Fit, Denoise off / back on | 0.027 / 28.837 s | Settled at 0.480 / 29.080 s |
+| Fit, switch to CPU-only preview | 0.269 s | Settled at 0.368 s |
+| Fit, CPU-only Denoise off / back on | 0.297 / 0.378 s | Settled at 0.751 / 0.484 s |
+
+Cold Fit runs spent 25–29 s preparing the picture; the Histogram then reused
+its whole-picture Micro source. The Fit strength edit changed the bins, and
+warm Micro bins matched across the CPU-only switch and off/on round trip.
+The ineligible Edge Colour case passed the API pixel-histogram comparison.
+After reopening in GPU mode, a Histogram refresh settled in 33 ms. These
+are single-run observations, not speed comparisons.
+
+[Sony review follow-up trace](../../codebase/output/overnight/micro-scope-app-v2.json)
+
 ## November 24, 2026 — Exact Mist glow reuse
 
 MacBook Neo (A18 Pro, 8 GB), Electron at 1408 × 794 points and 2× under

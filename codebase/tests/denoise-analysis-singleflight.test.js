@@ -14,7 +14,7 @@ test('Denoise method controls recover after a rejected save, missing GPU, or exp
     const context = vm.createContext({ state, HDRGrainRoute, console, AbortController, structuredClone, window: { setTimeout, clearTimeout }, renderDenoiseControls: () => {}, invalidatePreview: () => {},
       persistDenoiseSettings: async () => scenario !== 'save', refinementProxyLongEdge: () => 1600,
       geometrySignature: () => '{}', denoiseRendererControls: controls => controls,
-      renderPreviewForLane: async () => true });
+      renderPreviewForLane: async () => true, debounceOverlayAndScopes() {} });
     vm.runInContext(declarations('restoreDenoiseStatus', 'gradeGrainGpuPreferred', 'gradeGrainGpuEnabled', 'gradeSourceIdentity', 'denoiseRetryError', 'recalculateDenoise', 'recalculateDenoiseForView', 'recalculateDenoiseAnalysis', 'trackGrainCpuWork', 'liveGrainControl', 'invalidateDenoisePreparation', 'deferDenoisePreparation', 'commitDenoiseControl', 'gradeGrainAction'), context);
     await context.commitDenoiseControl('method', 'clean_grain');
     assert.equal(runtime.status, 'error', scenario);

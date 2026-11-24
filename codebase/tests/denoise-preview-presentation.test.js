@@ -3,7 +3,6 @@ const assert = require("node:assert/strict");
 const { test } = require("node:test");
 const vm = require("node:vm");
 const { frontendSource, declarations } = require("./frontend-source.js");
-
 const { HDRPresentationGate } = require("../frontend/presentation-gate");
 const { HDRRenderCoordinator } = require("../frontend/render-coordinator");
 
@@ -13,7 +12,7 @@ test("bypass draws the original without waiting and retries a stale source after
       denoise: { hdr: { enabled: true, controls: { method } } }, denoiseRuntime: { hdr: { generation: 0 } } };
     const draws = [];
     const context = vm.createContext({ state, refinementProxyLongEdge: () => 5202,
-      renderDenoiseControls() {}, invalidatePreview() {}, debounceOverlayAndScopes() {},
+      renderDenoiseControls() {}, invalidatePreview() {}, debounceOverlayAndScopes() {}, markScopeUpdating() {},
       persistDenoiseSettings: async () => { await Promise.resolve(); state.editRevision++; return true; },
       renderGpuDraft: async () => {
         draws.push({ revision: state.editRevision, original: state.denoiseRuntime.hdr.showOriginal });
@@ -45,6 +44,45 @@ test("switching methods while enabling does not leave the original selected", as
   await change;
   assert.deepEqual(pictures, ["micro_grain"]);
 });
+
+for (const transition of ["slider commit", "live adjustment", "recalculate", "disable", "enable"]) {
+  test(`a CPU Micro ${transition} refreshes scopes after presenting the picture`, async () => {
+    const controls = { method: "micro_grain", micro_luminance: 0.55 };
+    const runtime = { generation: 0, microBackup: { reason: "unsupported_lens_correction" } };
+    const state = { session: { session_id: "photo" }, currentView: "hdr", activeWorkflow: "grade", editRevision: 1,
+      denoise: { hdr: { enabled: transition !== "enable", controls } }, denoiseRuntime: { hdr: runtime } };
+    const events = [];
+    let finishPreview, notifyPreview;
+    const previewStarted = new Promise(resolve => { notifyPreview = resolve; });
+    const context = vm.createContext({ state, window: { setTimeout: fn => queueMicrotask(fn) },
+      refinementProxyLongEdge: () => 1600, markScopeUpdating() {}, renderDenoiseControls() {},
+      invalidatePreview() {}, useMicroGrainCpu() {}, microGrainUnavailable: () => "",
+      persistDenoiseSettings: async () => { state.editRevision++; return true; },
+      debounceOverlayAndScopes: () => events.push("scope"), renderGpuDraft: async () => false,
+      transientGpuRefusal: () => false, previewSourceCapacityRefused: () => false,
+      renderPreviewForLane: () => new Promise(resolve => { finishPreview = resolve; notifyPreview(); }),
+    });
+    vm.runInContext(declarations("setDenoiseEnabled", "restoreDenoiseStatus", "invalidateDenoisePreparation",
+      "deferDenoisePreparation", "recalculateDenoiseForView", "gradeSourceIdentity", "commitDenoiseControl",
+      "runLiveDenoise", "microGrainControlsMatch"), context);
+    context.recalculateDenoise = (lane, options) => context.recalculateDenoiseForView(lane, options);
+    const action = {
+      "slider commit": () => context.commitDenoiseControl("micro_luminance", 0.8),
+      "live adjustment": () => context.runLiveDenoise({ lane: "hdr", sessionId: "photo", generation: 0,
+        controls: { method: "micro_grain", microLuminance: 0.55 } }),
+      recalculate: () => context.recalculateDenoiseForView("hdr", {}),
+      disable: () => context.setDenoiseEnabled(false),
+      enable: () => context.setDenoiseEnabled(true),
+    }[transition];
+    const complete = action();
+    await Promise.race([previewStarted, complete]);
+    assert.equal(typeof finishPreview, "function");
+    assert.deepEqual(events, []);
+    finishPreview(true);
+    await complete;
+    assert.deepEqual(events, ["scope"]);
+  });
+}
 
 test("changing colour cleaning while bypassed prepares the new settings on enable", async () => {
   const runtime = { generation: 0, showOriginal: true, status: "off" };
@@ -130,7 +168,7 @@ test("switching lanes after a hard Denoise failure uses the CPU without another 
   const state = { currentView: "hdr", laneSwitchGeneration: 0, compareLayout: "single",
     denoise: { sdr: { enabled: true } }, denoiseRuntime: { sdr: {} } };
   const calls = [];
-  const context = vm.createContext({ state, syncGlobalEditState: async () => true, cacheReady: () => true,
+  const context = vm.createContext({ state, cancelGeometryUnderlayer() {}, syncGlobalEditState: async () => true, cacheReady: () => true,
     gpuPreviewEligible: () => true, renderGpuDraft: async () => { calls.push("gpu"); return false; },
     transientGpuRefusal: () => false, showCachedPreview: async (_, options) => {
       calls.push(options?.skipGpu ? "cpu-cache" : "gpu-cache"); return false;
@@ -138,10 +176,9 @@ test("switching lanes after a hard Denoise failure uses the CPU without another 
     recalculateDenoise: async () => calls.push("gpu-recalculate"), debouncePreview: () => calls.push("refine"),
     currentCurveValues: () => [], settledProxyLongEdge: () => 1600, scopeLongEdge: () => 640,
     previewNeedsRefinement: () => true, endBeforePeek() {}, abandonPerspectiveDraft() {}, suspendGradeInstruments() {},
-    cancelGeometryUnderlayer() {}, previewSourceCapacityRefused: () => false,
     renderLaneChrome() {}, renderLocalAdjustments() {}, syncCurveControlsFromState() {}, renderCurveChannelTabs() {},
     drawCurveEditor() {}, renderReadouts() {}, refreshOverlay() {}, refreshScopes() {}, prepareInactivePreview() {} });
-  vm.runInContext(declarations("switchLane"), context);
+  vm.runInContext(declarations("switchLane", "previewSourceCapacityRefused"), context);
   await context.switchLane("sdr");
   assert.deepEqual(calls, ["gpu", "cpu-cache", "denoised-cpu"]);
 });
@@ -414,7 +451,6 @@ async function checkGeometryPatchOrder(scenario) {
     state.previewCache = {};
     context.clearPreviewCache({ preservePicture: true });
     state.session = { session_id: "replacement" };
-    state.acceptedPresentation = null;
   }
   if (cancel) {
     assert.ok(backgroundOptions.signal.aborted);
@@ -527,3 +563,57 @@ test("a source capacity refusal after SDR Match leaves recovery in charge", asyn
   assert.equal(await context.presentMatchedSdrPreview({ longEdge: 7968 }), true);
   assert.equal(cpuDraws, 0);
 });
+
+function denoiseScopeFixture({ enabled, method = "micro_grain", saved = true, gpu = false, cpu = false, refused = false, backup = false }) {
+  const runtime = { generation: 0, status: enabled ? "ready" : "off", microBackup: backup ? { reason: "gpu_unavailable" } : null };
+  const state = { session: { session_id: "photo" }, currentView: "hdr", activeWorkflow: "grade", editRevision: 1,
+    denoise: { hdr: { enabled, controls: { method } } }, denoiseRuntime: { hdr: runtime },
+    acceptedPresentation: {}, lastScope: { tier: "settled" } };
+  const freshness = { textContent: "Settled", classList: { add() {}, remove() {} } };
+  const calls = [];
+  const context = vm.createContext({ state, HDRGrainRoute, window: { setTimeout: queueMicrotask },
+    els: { scopeFreshness: freshness },
+    scopeUi: { freshnessLabel: () => "Settled" }, scopePresentationMatches: () => false,
+    refinementProxyLongEdge: () => 1600, geometrySignature: () => "crop", gradeSourceIdentity: () => "source",
+    renderDenoiseControls() {}, invalidatePreview() {},
+    debounceOverlayAndScopes: () => { calls.push("scope"); context.els.scopeFreshness.textContent = "Settled"; },
+    persistDenoiseSettings: async () => { await Promise.resolve(); if (saved) state.editRevision++; return saved; },
+    renderGpuDraft: async () => { calls.push("gpu"); return gpu; },
+    renderPreviewForLane: async () => { calls.push("cpu"); return cpu; },
+    transientGpuRefusal: () => refused, previewSourceCapacityRefused: () => false,
+    recalculateDenoise: (lane) => context.recalculateDenoiseForView(lane, {}),
+  });
+  vm.runInContext(declarations("setDenoiseEnabled", "commitDenoiseControl", "liveGrainControl", "recalculateDenoiseForView", "denoiseRetryError",
+    "useMicroGrainCpu", "restoreDenoiseStatus", "invalidateDenoisePreparation", "deferDenoisePreparation",
+    "markScopeUpdating", "restoreScopeFreshnessIfIdle", "scopeFreshnessLabel"), context);
+  return { state, context, freshness, calls };
+}
+
+for (const [name, settings, operation, expected] of [
+  ["failed enable save", { enabled: false, saved: false }, "enable", []],
+  ["cached enable with CPU fallback", { enabled: false, cpu: true }, "cached enable", ["gpu", "cpu", "scope"]],
+  ["cached enable with refused fallback", { enabled: false }, "cached enable", ["gpu", "cpu"]],
+  ["saved Micro bypass with no new picture", { enabled: true, refused: true }, "disable", ["gpu", "gpu"]],
+  ["saved Micro bypass after a successful draw", { enabled: true, gpu: true }, "disable", ["gpu", "scope"]],
+  ["standard bypass after a successful draw", { enabled: true, method: "standard", gpu: true }, "disable", ["gpu", "scope"]],
+  ["saved CPU Micro control with no new picture", { enabled: true, backup: true }, "micro control", ["cpu"]],
+  ["CPU switch to Standard", { enabled: true, cpu: true }, "standard", ["cpu", "scope"]],
+  ["CPU switch to Clean Grain", { enabled: true, cpu: true }, "clean_grain", ["cpu", "scope"]],
+]) {
+  test(`the histogram recovers after ${name}`, async () => {
+    const { state, context, freshness, calls } = denoiseScopeFixture(settings);
+    if (operation === "cached enable") {
+      state.gpuPreview = { diagnosticsSnapshot: () => ({ denoise: { cacheReady: true, identity: "photo:hdr:1600:crop:source" } }),
+        denoiseSourceSelector: { controls: { method: "micro_grain" } }, selectDenoiseSelectorSource() {} };
+    }
+    if (operation === "enable" || operation === "cached enable") await context.setDenoiseEnabled(true);
+    else if (operation === "disable") await context.setDenoiseEnabled(false);
+    else if (operation === "micro control") await context.commitDenoiseControl("micro_luminance", 0.7);
+    else {
+      freshness.textContent = "Unavailable";
+      await context.commitDenoiseControl("method", operation);
+    }
+    assert.deepEqual(calls, expected);
+    assert.equal(freshness.textContent, "Settled");
+  });
+}

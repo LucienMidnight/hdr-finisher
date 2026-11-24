@@ -27,10 +27,10 @@ function harness() {
   const context = vm.createContext({ state, HDRGrainRoute, els: {}, console, performance, structuredClone, AbortController,
     window: { HDRLatestWorkQueue, setTimeout, clearTimeout },
     refinementProxyLongEdge: () => 1024, geometrySignature: () => '',
-    renderGpuDraft: async lane => { calls.renders.push(lane); },
+    renderGpuDraft: async lane => { calls.renders.push(lane); return true; },
     renderPreviewForLane: async () => true,
     renderLaneChrome() {}, invalidatePreview() {}, clamp: (x, a, b) => Math.min(b, Math.max(a, x)),
-    debounceOverlayAndScopes: () => { calls.scopes++; },
+    debounceOverlayAndScopes: () => { calls.scopes++; }, markScopeUpdating() {}, restoreScopeFreshnessIfIdle() {},
     queueEditCommand: async (...args) => { calls.saves.push({ sessionId: state.session?.session_id, args }); return true; },
   });
   vm.runInContext(fs.readFileSync(path.join(__dirname, '../frontend/denoise-ui.js'), 'utf8'), context);

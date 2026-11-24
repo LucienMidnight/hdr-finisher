@@ -33,7 +33,7 @@ test('inactive preloads skip CPU Micro and native size but keep GPU Fit and expl
   let edge = 1600, gpuAllowed = true;
   Object.assign(ctx, {
     AbortController, cacheReady: () => false, renderCompareStatus() {},
-    gpuPreviewEligible: () => gpuAllowed, geometrySignature: () => 'geometry',
+    gpuPreviewEligible: () => gpuAllowed, geometrySignature: () => 'geometry', microGrainUnavailable: () => '',
     gradeSourceIdentity: () => 'generated-sdr', settledProxyLongEdge: () => edge, previewTargetLongEdge: () => 7968,
   });
 
@@ -66,11 +66,24 @@ test('leaving Grade cancels both preview lanes and scope work',()=>{
   assert.equal(state.scopeGeneration,4);assert.equal(state.previewControllers.hdr,null);assert.equal(state.pendingScopeRequest,null);
 });
 test('queued scope from old photo or lane never starts a fetch',async()=>{
-  const state={session:{session_id:'new'},currentView:'sdr',activeWorkflow:'grade'};
-  const ctx=context(state);let result;
-  ctx.els={scopeFreshness:{classList:{remove(){}}}};
-  await ctx.runScopeRequest({sessionId:'old',lane:'hdr',resolve:v=>result=v});
-  assert.equal(result,false);assert.equal(state.scopeRequestInFlight,undefined);
+  const state = {
+    session: { session_id: 'new' }, currentView: 'sdr', activeWorkflow: 'grade',
+    previewGeneration: { hdr: 2, sdr: 2 }, scopeGeneration: 3, scopeMode: 'histogram',
+  };
+  const ctx = context(state);
+  Object.assign(ctx, {
+    geometryDraftActive: () => false, geometrySignature: () => 'geometry', gradeSourceIdentity: () => 'generated-sdr',
+    els: { scopeFreshness: { classList: { remove() {} } } },
+  });
+  for (const [sessionId, lane] of [['old', 'sdr'], ['new', 'hdr']]) {
+    let result;
+    await ctx.runScopeRequest({
+      sessionId, lane, generation: state.scopeGeneration, mode: state.scopeMode,
+      presentation: { ...ctx.scopePresentationIdentity(lane), sessionId }, resolve: value => { result = value; },
+    });
+    assert.equal(result, false);
+    assert.equal(state.scopeRequestInFlight, undefined);
+  }
 });
 test('a CPU preview waiting for edit sync cannot restart after Grade leaves',async()=>{
   const state={session:{session_id:'photo'},currentView:'sdr'};

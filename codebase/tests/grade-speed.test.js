@@ -208,7 +208,8 @@ test('presentation records processing resolution and never accepts drag grain as
     applyZoomGeometry() {}, renderCurrentPreviewSize() {}, renderReadouts() {},
     scheduleNavigationThumbnail() {}, finishPerspectivePresentation() {}, renderViewerStatus() {},
     refreshScopesAfterPresentation() {} });
-  vm.runInContext(declarations('acceptPreviewGeometry', 'acceptPresentation', 'renderDenoiseRoute', 'currentGrainFrame') + '\nglobalThis.accept = acceptPresentation;', ui);
+  vm.runInContext(declarations('acceptPreviewGeometry', 'acceptPresentation', 'scopePresentationIdentity', 'gradeSourceIdentity',
+    'microGrainPreviewKey', 'renderDenoiseRoute', 'currentGrainFrame') + '\nglobalThis.accept = acceptPresentation;', ui);
   ui.accept('sdr', 'interactive', 1200, 800, 'WebGPU', '', null, 1, 'direct', 1200, null, false, true);
   assert.equal(state.acceptedPresentation.exact, false);
   assert.equal(state.acceptedPresentation.approximate, true);

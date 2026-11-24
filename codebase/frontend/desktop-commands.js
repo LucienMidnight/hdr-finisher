@@ -260,9 +260,12 @@ async function applyRenderingMode(mode) {
   state.gpuPreparedLane = { hdr: false, sdr: false };
   state.gpuPreview?.resetSession(state.session?.session_id || null);
   if (state.session) {
+    const lane = state.currentView;
     invalidatePreview("hdr", { markDirty: false });
     invalidatePreview("sdr", { markDirty: false });
-    await settlePreview(state.currentView);
+    await settlePreview(lane);
+    if (state.denoise?.[lane]?.enabled && state.denoise[lane].controls.method === "micro_grain"
+      && scopePresentationMatches(state.acceptedPresentation, lane)) debounceOverlayAndScopes();
   }
   renderReadouts();
   return true;

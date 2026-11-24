@@ -627,6 +627,7 @@ function cpuMicroPreviewSelected(lane, fallback = false) {
   return state.activeWorkflow === "grade"
     && settings?.enabled && settings.controls.method === "micro_grain" && !runtime?.showOriginal
     && (settings.controls.micro_luminance || settings.controls.micro_color)
+    && !microGrainUnavailable(lane)
     && (runtime?.microBackup || fallback || !gpuPreviewEligible(lane));
 }
 
@@ -1890,6 +1891,10 @@ function clearPreviewCache({ preservePicture = false } = {}) {
   state.scopeRequestInFlight = null;
   state.pendingScopeRequest = null;
   state.pendingGpuScopeRequest = null;
+  state.scopeAwaitingPresentation = null;
+  state.scopeUnavailable = null;
+  state.scopeResultPresentation = null;
+  state.acceptedPresentation = null;
   state.overlayAbortController?.abort();
   state.overlayAbortController = null;
   // The coordinator retires every lane's tokens, retained-frame facts and

@@ -95,6 +95,7 @@ from .overlay import encode_processed_overlay_bytes
 from .preview import encode_processed_preview_bytes, encode_processed_rgba8
 from .cpu_strips import StripExecutionRefused
 from .render_cache import StaleRender, TileUnavailableError, downsample_target_dimensions, encode_rgba_proxy, encode_rgba_proxy_rows, rgba_proxy_pixel_format
+from .render_cache import MicroScopeSourceUnavailable
 from .finishing import geometry_is_identity, geometry_output_dimensions, perspective_guide_transform, solve_perspective_guides
 from .display_probe import probe_displays
 from .proofing import ProofArtifactStore
@@ -1308,6 +1309,17 @@ async def overlay(session_id: str, kind: PreviewKind, request: PreviewRequest, h
     return Response(content=body, media_type=media_type)
 
 
+def _scope_render_options(session, kind, request, adjustments):
+    from .denoise_micro_grain import unavailable_reason
+
+    controls = _preview_micro_controls(session, kind, request, adjustments)
+    return {"micro_preview": (session, controls)} if controls is not None and not unavailable_reason(session) else {}
+
+
+def _micro_scope_unavailable():
+    return JSONResponse(status_code=409, content={"detail": {"code": "micro_scope_source_unavailable"}})
+
+
 @app.get("/api/session/{session_id}/scopes")
 async def scopes(
     session_id: str,
@@ -1340,11 +1352,14 @@ async def scopes(
             is_current=is_current,
             local_adjustments=session.adjustments.enabled_locals(session.local_adjustments),
             channel_names=("R", "G", "B") if channels == "rgb" else (("Y",) if channels == "luma" else None),
+            **_scope_render_options(session, kind, PreviewRequest(), session.adjustments),
         )
     try:
         return await instrument_work.run((session_id, kind, "scopes"), http_request, render)
     except StaleRender:
         return JSONResponse(status_code=409, content={"detail": "Stale scope request dropped."})
+    except MicroScopeSourceUnavailable:
+        return _micro_scope_unavailable()
 
 
 @app.post("/api/session/{session_id}/scopes")
@@ -1388,11 +1403,14 @@ async def scopes_for_adjustments(
                 request.scope_region.width,
                 request.scope_region.height,
             ) if request.scope_region is not None else None,
+            **_scope_render_options(session, kind, request, adjustments),
         )
     try:
         result = await instrument_work.run((session_id, kind, "scopes"), http_request, render)
     except StaleRender:
         return JSONResponse(status_code=409, content={"detail": "Stale scope request dropped."})
+    except MicroScopeSourceUnavailable:
+        return _micro_scope_unavailable()
     result.tier = request.tier
     result.generation = request.generation
     return result

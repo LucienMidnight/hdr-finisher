@@ -4,6 +4,7 @@ from types import SimpleNamespace
 
 import numpy as np
 import pytest
+from fastapi.testclient import TestClient
 
 from hdr_finisher import app_memory, denoise_micro_grain, lens_correction, raw_import
 from hdr_finisher.adjustments import apply_adjustments
@@ -14,6 +15,7 @@ from hdr_finisher.main import _render_selected_execution
 from hdr_finisher.models import AdjustmentState, DenoiseLiveControls, PreviewKind, PreviewRequest, RawImportSettings
 from hdr_finisher.preview import downsample_image
 from hdr_finisher.render_cache import SessionRenderCache, StaleRender
+from hdr_finisher.scopes import build_scope_from_processed
 from test_lens_correction import canon_settings, numpy_bilinear, reference_frame
 
 
@@ -89,6 +91,98 @@ def test_micro_preview_reuses_source_across_grade_and_view_changes(micro_frame):
     preview(frame, controls, edge=288)
     assert len(built) == 1
     assert rendered == [MicroGrainControls.from_settings(c) for c in (controls, changed, controls)]
+
+
+def test_histogram_matches_whole_micro_grade_across_zooms_and_lanes(micro_frame, monkeypatch):
+    from hdr_finisher import main
+
+    frame, controls, _, rendered = micro_frame
+    preview(frame, controls, edge=320)
+    sdr_controls = controls.model_copy(update={"micro_luminance": 0.9})
+    preview(frame, sdr_controls, edge=320, kind=PreviewKind.SDR)
+    frame.adjustments = AdjustmentState()
+    frame.adjustments.hdr.exposure = 0.6
+    frame.adjustments.sdr.linked_to_hdr = False
+    frame.adjustments.sdr.exposure = -0.3
+    frame.edit_revision = 7
+    monkeypatch.setattr(main.store, "get", lambda _: frame)
+    client = TestClient(main.app)
+    for kind, lane_controls in ((PreviewKind.HDR, controls), (PreviewKind.SDR, sdr_controls), (PreviewKind.HDR, controls)):
+        micro_scene, _ = frame.render_cache.micro_preview_source(
+            frame, MicroGrainControls.from_settings(lane_controls), 320, None,
+        )
+        for edge in (320, 256, 320):
+            grade = apply_adjustments(
+                downsample_image(micro_scene, edge), frame.adjustments, kind,
+                color_context=frame.render_cache.color_context, source_pixel_scale=edge / 320,
+            )
+            expected = build_scope_from_processed(grade, kind, color_context=frame.render_cache.color_context)
+            response = client.post(
+                f"/api/session/photo/scopes?kind={kind.value}&long_edge={edge}",
+                json={"edit_revision": 7, "generation": 15, "micro_grain_controls": lane_controls.model_dump()},
+            )
+            assert response.status_code == 200
+            payload = response.json()
+            assert payload["channels"] == expected.model_dump(mode="json")["channels"]
+            assert payload["micro_source_long_edge"] == edge
+            assert payload["generation"] == 15
+    assert len(rendered) == 2
+
+
+def test_histogram_refuses_missing_or_mismatched_micro_source_without_building(micro_frame, monkeypatch):
+    from hdr_finisher import main
+
+    frame, controls, _, rendered = micro_frame
+    frame.adjustments = AdjustmentState()
+    frame.edit_revision = 7
+    monkeypatch.setattr(main.store, "get", lambda _: frame)
+    client = TestClient(main.app)
+    url = "/api/session/photo/scopes?long_edge=256"
+    original = client.post(url, json={"micro_grain_original": True})
+    assert original.status_code == 200
+    cold = client.post(url, json={})
+    assert cold.status_code == 409
+    assert cold.json()["detail"]["code"] == "micro_scope_source_unavailable"
+    assert rendered == []
+
+    preview(frame, controls)
+    assert client.post(url, json={}).status_code == 200
+    changed_controls = controls.model_copy(update={"micro_luminance": 0.9})
+    wrong_controls = client.post(url, json={"micro_grain_controls": changed_controls.model_dump()})
+    assert wrong_controls.status_code == 409
+    assert wrong_controls.json()["detail"]["code"] == "micro_scope_source_unavailable"
+    frame.metadata["raw_exif"]["aperture"] = 11.0
+    assert client.get(url).status_code == 409
+    assert len(rendered) == 1
+
+
+@pytest.mark.parametrize("ineligible", ["edge_colour", "retouch", "dng", "non_raw"])
+def test_ineligible_micro_histogram_matches_the_ordinary_preview(micro_frame, monkeypatch, ineligible):
+    from hdr_finisher import main
+
+    frame, controls, built, rendered = micro_frame
+    frame.adjustments = AdjustmentState()
+    frame.edit_revision = 7
+    if ineligible == "edge_colour":
+        frame.raw_import_settings.highlight_reconstruction.enabled = True
+        frame.raw_import_settings.highlight_reconstruction.method = "edge_colour_v1"
+    elif ineligible == "retouch":
+        frame.repairs = [object()]
+    elif ineligible == "dng":
+        frame.metadata["dng_input"] = True
+    else:
+        frame.metadata.clear()
+    monkeypatch.setattr(main.store, "get", lambda _: frame)
+    client = TestClient(main.app)
+    pixels = preview(frame, controls)
+    expected = build_scope_from_processed(pixels, PreviewKind.HDR, color_context=frame.render_cache.color_context)
+    url = "/api/session/photo/scopes?long_edge=256"
+    for response in (client.get(url), client.post(url, json={"edit_revision": 7})):
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["channels"] == expected.model_dump(mode="json")["channels"]
+        assert payload["micro_source_long_edge"] is None
+    assert built == rendered == []
 
 
 def test_finished_micro_frame_does_not_displace_reusable_source(micro_frame, monkeypatch):

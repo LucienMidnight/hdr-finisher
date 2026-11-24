@@ -68,7 +68,7 @@ function grade({ tiled = true, cpu = false, faster = false, blockDrag = false, c
     fasterDragging: faster,
     zoomMode: tiled ? "custom" : "fit",
     gpuPreview: { available: !cpu, minimumExecutionDecision: () => ({ mode: "direct" }) },
-    acceptedPresentation: { lane: "hdr", generation: 1, geometrySignature: "frame",
+    acceptedPresentation: { sessionId: "photo", lane: "hdr", generation: 1, geometrySignature: "frame",
       execution: tiled ? "tiled" : "direct", processedLongEdge: target, exact: true, width: target, height: 1000,
       transport: cpu ? "PNG" : "WebGPU", sourceSerial: 1 },
     gpuDraftRefusals: {},
@@ -91,7 +91,7 @@ function grade({ tiled = true, cpu = false, faster = false, blockDrag = false, c
       { hdr: {}, sdr: {}, shared: {} }, null, longEdge, [], state.editRevision, null, 203, null,
       { tier, keepProxies: true, viewport: { x: 0, y: 0, width: 300, height: 200 } }) : {};
     if (denoiseMethod) events.push(["denoise", tier, result.nativeReduced, result.approximate]);
-    state.acceptedPresentation = { ...state.acceptedPresentation, generation: state.previewGeneration.hdr,
+    state.acceptedPresentation = { ...state.acceptedPresentation, ...c.scopePresentationIdentity("hdr"),
       processedLongEdge: longEdge, exact: longEdge === target && !result.approximate, sourceSerial: ++serial };
     c.refreshScopesAfterPresentation("hdr");
     return true;
@@ -145,6 +145,7 @@ function grade({ tiled = true, cpu = false, faster = false, blockDrag = false, c
     scopeLongEdge: () => 960,
     localsBypassed: () => false,
     activeScopeRegion: () => null,
+    microGrainPreviewRequest: () => ({}),
     prepareInactivePreview() {},
     wakePendingHighlightAnchor() {},
     refreshOverlay() {},
@@ -157,8 +158,11 @@ function grade({ tiled = true, cpu = false, faster = false, blockDrag = false, c
   vm.runInContext(frontendSource("preview-scheduler.js"), c);
   vm.runInContext(declarations("initializePreviewScheduler", "interactiveDraftGuaranteedTiled", "previewSourceCapacityRefused",
     "settlePreview", "settlePreviewInner", "settlePreviewFrame", "refreshScopes", "gpuScopeEligible", "refreshScopesAfterPresentation",
+    "scopePresentationIdentity", "scopePresentationMatches",
+    "gradeSourceIdentity", "microGrainPreviewKey",
     "clearZoomScopeRefresh", "debouncePreview", "scheduleZoomRefinement", "scheduleZoomScopeRefresh", "refineZoomView",
     "scheduleLocalPreview", "commitSelectedLocal", "holdingNativeDenoisePictureForFit"), c);
+  Object.assign(state.acceptedPresentation, c.scopePresentationIdentity("hdr"));
   if (denoiseMethod) state.gpuPreview = grainRenderer(c, denoiseMethod, target);
   c.initializePreviewScheduler();
   if (blockDrag) state.renderCoordinator = {

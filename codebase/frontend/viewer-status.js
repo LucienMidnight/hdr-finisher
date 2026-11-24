@@ -210,9 +210,8 @@ function acceptPresentation(lane, schedulerTier, width, height, transport, fallb
   // are the ones every zoom level reuses (see maskOverviewLongEdge).
   if (state.zoomMode === "fit" && exact) state.fitProcessingLongEdge = processedEdge;
   state.acceptedPresentation = {
-    lane,
+    ...scopePresentationIdentity(lane),
     generation,
-    geometrySignature: geometrySignature(),
     requestedTier,
     tier: exact ? (requestedTier === "display" ? "display"
       : processedEdge === previewTargetLongEdge(requestedTier) ? requestedTier : "native-region") : null,

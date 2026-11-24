@@ -85,6 +85,15 @@ the existing Grade cache allowance and are released on source change or
 Grade close. The reduced CPU preview is labelled with its processing size
 in the status bar.
 
+### November 24: Grade Histogram on the CPU Micro Grain route
+
+After the current picture arrives, the Histogram reuses a cached whole-picture
+Micro Grain preview with matching source, lens settings and Denoise controls.
+It applies the current grade for the visible rendition. If the matching source
+is missing, the Histogram clears, shows Unavailable and suggests Fit view.
+It does not measure just the visible patch, use undenoised pixels or start its
+own Micro Grain rebuild. [Sony timings](../../technical/performance-table.md#november-24-2026--grade-micro-grain-histogram-at-zoom)
+
 ### November 21: CPU Micro Grain tile workers
 
 The first CPU Grade picture, export and full-size Proof use the same

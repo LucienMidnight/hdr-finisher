@@ -35,7 +35,7 @@ function harness() {
   for (const name of ['session-import.js', 'project-documents.js', 'scope-requests.js', 'zoom-navigation.js']) {
     vm.runInContext(frontend(name), c);
   }
-  vm.runInContext(declarations('previewSourceCapacityRefused'), c);
+  vm.runInContext(declarations('gradeSourceIdentity', 'microGrainPreviewKey', 'previewSourceCapacityRefused'), c);
   const realRetirement = c.retireActiveSession;
   Object.assign(c, { retireActiveSession, setImportCancelVisible, showUploadError });
   c.renderSourceFilename = name => events.push(name);
@@ -121,6 +121,7 @@ function trackGradeRecovery(c, events) {
     acceptedPresentation: accepted, zoomMode: 'custom', zoomPercent: 78 });
   c.els.previewCanvas = { style: { display: 'block' } };
   c.geometrySignature = () => 'original';
+  Object.assign(accepted, c.scopePresentationIdentity('sdr'));
   c.state.gpuPreview.available = true;
   c.state.gpuPreview.resetSession = sessionId => events.push(['gpu-source', sessionId]);
   c.suspendGradeInstruments = () => events.push('suspended');
@@ -131,7 +132,7 @@ function trackGradeRecovery(c, events) {
     events.push(['settle', lane]);
     request = options;
     await settled;
-    c.state.acceptedPresentation = { ...accepted, sourceSerial: 43 };
+    c.state.acceptedPresentation = { ...accepted, ...c.scopePresentationIdentity(lane), sourceSerial: 43 };
   };
   let instrumentsResumed;
   const resumed = new Promise(resolve => { instrumentsResumed = resolve; });

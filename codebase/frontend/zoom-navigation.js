@@ -226,8 +226,7 @@ async function refreshNavigationThumbnail() {
 function scheduleZoomScopeRefresh({ sessionId, lane, generation, signature, target }) {
   // Keep the last scope visible while foreground work settles at this zoom.
   state.zoomScopeTimer = window.setTimeout(() => {
-    const pending = state.scopeAwaitingPresentation;
-    const scopeOwed = pending?.sessionId === sessionId && pending.lane === lane;
+    const scopeOwed = scopePresentationMatches(state.scopeAwaitingPresentation, lane);
     if (state.session?.session_id !== sessionId || state.currentView !== lane
       || state.previewGeneration[lane] !== generation || state.importInProgress
       || ["import", "export"].includes(state.activeWorkflow) || document.hidden
@@ -256,9 +255,13 @@ function scheduleZoomScopeRefresh({ sessionId, lane, generation, signature, targ
       return;
     }
     const accepted = state.acceptedPresentation;
-    const exact = accepted?.lane === lane && accepted.generation === generation
-      && accepted.geometrySignature === signature && accepted.exact && accepted.processedLongEdge === target;
-    if (!exact && !scopeOwed) {
+    const exact = scopePresentationMatches(accepted, lane)
+      && accepted.exact && accepted.processedLongEdge === target;
+    const reducedWholePicture = state.zoomMode === "custom" && state.zoomPercent < 100
+      && accepted?.reducedNotice && scopePresentationMatches(accepted, lane) && cpuMicroPreviewSelected(lane);
+    const recoveringScope = (state.zoomMode === "fit" || reducedWholePicture)
+      && scopePresentationMatches(state.scopeUnavailable, lane);
+    if (!exact && !scopeOwed && !recoveringScope) {
       clearZoomScopeRefresh();
       return;
     }
@@ -277,7 +280,7 @@ function scheduleZoomRefinement({ continuous = false } = {}) {
   const sessionId = state.session.session_id;
   if ([state.scopeRequestInFlight, state.pendingScopeRequest, state.gpuScopeRequestInFlight, state.pendingGpuScopeRequest]
     .some((request) => request?.lane === lane && request.sessionId === sessionId)) {
-    state.scopeAwaitingPresentation = { sessionId, lane };
+    state.scopeAwaitingPresentation = scopePresentationIdentity(lane);
   }
   window.clearTimeout(state.zoomRefinementTimer);
   // A pending adjustment settle from the previous scale can otherwise race
