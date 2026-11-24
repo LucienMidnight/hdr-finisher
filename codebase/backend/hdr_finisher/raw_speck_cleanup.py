@@ -4,7 +4,7 @@ from __future__ import annotations
 import cv2
 import numpy as np
 
-from .raw_pixel_cleanup import STRIP_ROWS, _normalise
+from .raw_pixel_cleanup import CANDIDATE_BATCH, STRIP_ROWS, _normalise, _store_repairs
 from .denoise_quality import BAYER_NOISE_REFERENCE, enabled
 
 ABSOLUTE_FLOOR = .005
@@ -17,6 +17,7 @@ LIGHT_SIGMA = 3.5
 LIGHT_FLOOR = .005
 LIGHT_NEIGHBOURHOOD = np.ones((3, 3), np.uint8)
 LIGHT_MARGIN = np.ones((5, 5), np.uint8)
+SUPPORT_OFFSETS = tuple((row, column) for row in range(-2, 3) for column in range(-2, 3) if row or column)
 
 
 def tame_plane(plane, shot, read, threshold=2.5, *, absolute_floor=ABSOLUTE_FLOOR,
@@ -43,29 +44,42 @@ def tame_plane(plane, shot, read, threshold=2.5, *, absolute_floor=ABSOLUTE_FLOO
     if light_evidence is not None:
         light_evidence[:] = (residual > light_floor) & (distance > LIGHT_SIGMA)
     candidates = distance > threshold
-    candidates &= ~cv2.dilate((source >= .98).astype('uint8'), np.ones((5, 5), 'uint8')).astype(bool)
+    clipped = source >= .98
+    if clipped.any():
+        candidates &= ~cv2.dilate(clipped.astype(np.uint8), LIGHT_MARGIN).astype(bool)
     candidates[:BORDER] = candidates[-BORDER:] = False
     candidates[:, :BORDER] = candidates[:, -BORDER:] = False
+    result = source.copy()
+    if not candidates.any():
+        return result
     eligible = candidates.copy()
     for polarity in (residual > 0, residual < 0):
+        same_sign = candidates & polarity
+        if not same_sign.any():
+            continue
         count, labels, stats, _ = cv2.connectedComponentsWithStats(
-            (candidates & polarity).astype('uint8'), connectivity=8)
+            same_sign.astype(np.uint8), connectivity=8)
         rejected = np.zeros(count, bool)
         rejected[1:] = stats[1:, cv2.CC_STAT_AREA] > MAX_AREA
         eligible &= ~rejected[labels]
-    support = np.zeros(source.shape, np.uint8)
-    padded = np.pad(source, 2, mode='reflect')
-    height, width = source.shape
-    for row in range(5):
-        for column in range(5):
-            if row == column == 2:
-                continue
-            support += np.abs(padded[row:row + height, column:column + width] - source) <= sigma
-    eligible &= (support < 2) & (np.abs(residual) > absolute_floor)
-    ramp = np.clip((distance - threshold) / (threshold - ENVELOPE), 0, 1)
-    ramp *= ramp * (3 - 2 * ramp)
-    correction = np.sign(residual) * np.maximum(np.abs(residual) - ENVELOPE * sigma, 0)
-    return (source - np.where(eligible, STRENGTH * ramp * correction, 0)).astype(np.float32)
+    rows, columns = np.nonzero(eligible & (np.abs(residual) > absolute_floor))
+    for start in range(0, len(rows), CANDIDATE_BATCH):
+        batch = slice(start, start + CANDIDATE_BATCH)
+        batch_rows, batch_columns = rows[batch], columns[batch]
+        samples = source[batch_rows, batch_columns]
+        noise = sigma[batch_rows, batch_columns]
+        support = np.zeros(len(samples), np.uint8)
+        for delta_row, delta_column in SUPPORT_OFFSETS:
+            neighbours = source[batch_rows + delta_row, batch_columns + delta_column]
+            support += np.abs(neighbours - samples) <= noise
+        isolated = support < 2
+        sites = batch_rows[isolated], batch_columns[isolated]
+        ramp = np.clip((distance[sites] - threshold) / (threshold - ENVELOPE), 0, 1)
+        ramp *= ramp * (3 - 2 * ramp)
+        tail = residual[sites]
+        correction = np.sign(tail) * np.maximum(np.abs(tail) - ENVELOPE * noise[isolated], 0)
+        result[sites] = samples[isolated] - STRENGTH * ramp * correction
+    return result
 
 
 def filter_sensor(mosaic, config, threshold=2.5, *, absolute_floor=ABSOLUTE_FLOOR):
@@ -98,7 +112,7 @@ def filter_sensor(mosaic, config, threshold=2.5, *, absolute_floor=ABSOLUTE_FLOO
     return result
 
 
-def apply(sensor, config, threshold=2.5, *, cancelled=None, absolute_floor=ABSOLUTE_FLOOR):
+def apply(sensor, config, threshold=2.5, *, cancelled=None, absolute_floor=ABSOLUTE_FLOOR, repairs=None):
     """Encode changed readings into the existing DN buffer in bounded strips.
 
     Signed black-subtracted readings stay signed after DN rounding. Original
@@ -121,11 +135,10 @@ def apply(sensor, config, threshold=2.5, *, cancelled=None, absolute_floor=ABSOL
         previous = original[max(0, bottom - first - CONTEXT):bottom - first].copy()
         filtered = filter_sensor(original, config, threshold, absolute_floor=absolute_floor)
         for phase in range(4):
-            rows, columns = slice(top - first + phase // 2, bottom - first, 2), slice(phase % 2, None, 2)
+            first_row, first_column = top + phase // 2, phase % 2
+            rows, columns = slice(first_row - first, bottom - first, 2), slice(first_column, None, 2)
             before, after = original[rows, columns], filtered[rows, columns]
-            changed = before != after
-            destination = sensor[top + phase // 2:bottom:2, columns]
-            encoded = np.clip(np.rint(after[changed].astype(float) * spans[phase] + black[phase]), 0, 65535).astype(np.uint16)
-            changed_count += int(np.count_nonzero(encoded != destination[changed]))
-            destination[changed] = encoded
+            changed_rows, changed_columns = np.nonzero(before != after)
+            changed_count += _store_repairs(sensor, changed_rows * 2 + first_row, changed_columns * 2 + first_column,
+                after[changed_rows, changed_columns], black[phase], spans[phase], repairs)
     return changed_count

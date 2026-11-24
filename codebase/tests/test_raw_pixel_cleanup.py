@@ -1,3 +1,4 @@
+import os
 from types import SimpleNamespace
 
 import numpy as np
@@ -172,3 +173,89 @@ def test_bayer_fit_gives_quiet_bins_more_weight():
 def test_cancelled_cleanup_does_not_process_a_strip():
     with pytest.raises(InterruptedError, match='cancelled'):
         cleanup.apply(np.full((48, 48), 1120, np.uint16), config(), cancelled=lambda: True)
+
+
+def test_in_place_hot_pixel_cleanup_rejects_nonfinite_strip():
+    sensor = np.full((cleanup.STRIP_ROWS + 32, 48), 1120, np.float32)
+    sensor[-12, 24] = np.nan
+    with pytest.raises(ValueError, match='Expected finite signed normalized Bayer samples'):
+        cleanup.apply(sensor, config())
+
+
+@pytest.mark.parametrize('preserve_file_stamp', [False, True], ids=['new-stamp', 'same-stamp'])
+def test_raw_redevelopment_reuses_only_matching_sensor_repairs(tmp_path, monkeypatch, preserve_file_stamp):
+    from contextlib import nullcontext
+    from hdr_finisher import raw_import, raw_speck_cleanup as specks
+
+    path = tmp_path / 'sensor.ARW'
+    path.write_bytes(b'original')
+    os.utime(path, (1_700_000_000, 1_700_000_000))
+    original_stat = path.stat()
+    if preserve_file_stamp:
+        original_stamp = cleanup.source_stamp(path)
+        monkeypatch.setattr(cleanup, 'source_stamp', lambda path: original_stamp)
+    camera = metadata()
+    sensor = np.full((64, 65), 1120, np.uint16)
+    sensor[16, 16], sensor[32, 32] = 7000, 1048
+    counts = {'noise': 0, 'hot': 0, 'speck': 0}
+    original_hot, original_speck = cleanup.apply, specks.apply
+
+    def noise(*args, **kwargs):
+        counts['noise'] += 1
+        return {**config(), 'noise': [dict(a=0., b=.0022**2)] * 4}
+
+    def hot(*args, **kwargs):
+        counts['hot'] += 1
+        return original_hot(*args, **kwargs)
+
+    def speck(*args, **kwargs):
+        counts['speck'] += 1
+        return original_speck(*args, **kwargs)
+
+    def open_sensor(_path):
+        backing = np.zeros((66, 67), np.uint16)
+        visible = backing[1:-1, 1:-1]
+        visible[:] = sensor
+        return nullcontext(SimpleNamespace(raw_image_visible=visible, raw_pattern=camera.raw_pattern))
+
+    monkeypatch.setattr(cleanup, 'configuration', noise)
+    monkeypatch.setattr(cleanup, 'apply', hot)
+    monkeypatch.setattr(specks, 'apply', speck)
+    monkeypatch.setattr(raw_import, '_camera_linear_metadata_from_libraw', lambda raw: camera)
+    monkeypatch.setattr(raw_import, '_read_libraw_metadata', lambda raw: {})
+    monkeypatch.setattr(raw_import, '_apply_raw_highlight_reconstruction', lambda *args, **kwargs: None)
+    monkeypatch.setattr(raw_import, '_develop_libraw_camera_rgb', lambda raw, *args, **kwargs: raw.raw_image_visible.copy())
+    monkeypatch.setattr(raw_import, '_transport_diagnostics', lambda *args, **kwargs: {})
+    plan = SimpleNamespace(rawpy=SimpleNamespace(imread=open_sensor), opcode_plan=False)
+
+    def decode(hot=True, harsh=True, threshold=2.5, lens='auto'):
+        settings = RawImportSettings(lens={'mode': lens}, pixel_cleanup={
+            'remove_hot_pixels': hot, 'even_out_specks': harsh, 'speck_threshold': threshold})
+        result = raw_import._execute_raw_decode(path, settings, SimpleNamespace(exif={}), plan,
+                                              progress=None, cancelled=None)
+        return result.developed
+
+    first = decode()
+    assert first[16, 16] == 1120 and first[32, 32] != sensor[32, 32]
+    np.testing.assert_array_equal(decode(lens='off'), first)
+    np.testing.assert_array_equal(decode(hot=False, harsh=False), sensor)
+    np.testing.assert_array_equal(decode(), first)
+    assert counts == {'noise': 1, 'hot': 1, 'speck': 1}
+
+    changed = decode(threshold=2.9)
+    assert changed[32, 32] != first[32, 32]
+    without_hot = decode(hot=False)
+    assert without_hot[16, 16] != 1120
+    np.testing.assert_array_equal(decode(threshold=2.9), changed)
+    assert counts == {'noise': 1, 'hot': 1, 'speck': 3}
+
+    path.write_bytes(b'changed!')
+    if preserve_file_stamp:
+        os.utime(path, ns=(original_stat.st_atime_ns, original_stat.st_mtime_ns))
+        assert path.stat().st_size == original_stat.st_size
+        assert path.stat().st_mtime_ns == original_stat.st_mtime_ns
+    else:
+        os.utime(path, (1_700_000_002, 1_700_000_002))
+    sensor[16, 16], sensor[32, 32] = 1121, 1121
+    np.testing.assert_array_equal(decode(), sensor)
+    assert counts == {'noise': 2, 'hot': 2, 'speck': 4}

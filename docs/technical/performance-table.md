@@ -7107,3 +7107,87 @@ records the perceptual comparison. The coordinate strips stay out of the app.
 | --- | --- | --- |
 | Plain Library observation at `2db4de36` | Outer 130 s deadline; diagnostic reproduction reaches the final animation-frame wait, but its last frame is over 110 s old | MacBook Neo A18 Pro / 8 GB / 1408×794, shared GPU lock, fresh isolated profiles, frozen v1. Safari fullscreen on the active desktop; Library document hidden after 20 frames, native window visible/non-minimized but unfocused. This is an invalid drawing measurement, not a Library speed regression or speed comparison. `output/quick-library-check/observe-diagnostic-progress/{report.json,quick-diagnostic.json,backend.log}`. |
 | Final plain / Single checks at `f65abf62` | Harness exits with explicit hidden/occluded-window failures in 95.746 / 6.979 s, not timeouts; plain scenario 90.895 s, Single stops at step 1 | Same Neo / 8 GB / 1408×794, shared lock, fresh isolated profiles, frozen v1, fast suites finished before app runs. Not valid performance baselines or passing checks. Plain additionally fails the existing system reserve and settled-memory guards (peak 3.546 GB); attribution not investigated. `output/quick-library-check/observe-final-{plain,single}/report.json` and `quick-diagnostic.json`. |
+
+## November 24, 2026 — Grade RAW pixel cleanup
+
+MacBook Neo (A18 Pro, 8 GB). Each RAW control change reopens the source and
+develops the whole sensor, even at Fit. In the baseline with cleanup off,
+Sony `_DSC7970.ARW` (42 MP) spent 3.41 s in demosaic, 0.23 s in highlight
+reconstruction and 0.48 s in Lensfun (6.43 s total RAW development); Canon
+`IMG_3129.CR2` (18 MP) spent 1.66 s, 0.40 s and under 0.01 s respectively
+(3.30 s total, no matching automatic lens correction).
+
+In the separate cold sensor-only runs, ×2.5 Harsh Specks cleanup (including
+noise estimation) went from 5.19 to 2.73 s on Sony and 2.83 to 1.26 s on
+Canon. Hot Pixels alone took about 0.9–1.0 s on Sony and went from 0.97 to
+0.63 s on Canon; Sony had no hot repairs and Canon had 13. With both on, a
+previously unseen ×2.9 still runs the speck scan; the backend sample went
+from 6.39 to 2.56 s of cleanup on Sony and 3.10 to 0.87 s on Canon. The
+before software checked all 24 neighbours across each whole plane. It now
+checks them only at candidate sites, after the same component and level
+rules. Hot-pixel candidate vetting and repair are batched, with the same
+directional ties. Both still read unchanged strip context.
+
+When a downstream lens edit or toggle back to the same settings needs a new
+development, it reuses the noise fit and the exact changed sensor samples,
+not a copy of the sensor or an RGB frame. The cache is limited to 24 MiB and
+16 entries per process and uses the source file identity and Bayer metadata.
+On the matching ×2.5 lens and toggle-back rows, cleanup dropped to 11 ms on
+Sony and about 1 ms on Canon; demosaic still ran. A Grade exposure edit does
+not reopen or reclean the RAW at all.
+
+All 30 whole-sensor and 22 fully developed image comparisons against the
+previous code matched SHA-256 byte for byte, with identical cleanup counts.
+This includes Hot Pixels alone, Harsh Specks alone, both together at ×2.5
+and ×2.9, and both together at ×2 and ×4; the sensor comparison covered all
+four thresholds for each speck mode. Fujifilm `DSCF6495.RAF` is X-Trans 6×6;
+the Bayer cleanup remained unsupported and left its sensor and developed
+pixels unchanged. The new cache test passes with this patch and fails on
+the previous code, which reruns all three cleanup operations on an identical
+sensor during a lens edit and an off/on toggle.
+
+**Time to the exact picture in Grade, in seconds (before → after).**
+Electron used the app's staged RAW replacement path under the GPU lock.
+All 76 timed actions per version presented the final generation at the
+requested zoom without a cutoff. Canon 100% uses the completed baseline
+rerun. These are one-sample waits under different shared machine loads:
+even the cleanup-off control moved, so the whole wait difference is not
+all due to this change. In particular, Sony Hot Pixels alone did not show a
+reliable enable improvement. Exposure edits were 0.05–0.23 s across both
+runs and made no RAW-import requests.
+
+| RAW | Zoom | Cleanup | Enable ×2.5 | New ×2.9 | Back to ×2.5 | Lens off | Toggle off | Toggle on |
+| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Sony | Fit | Hot | 6.45 → 7.28 | — | — | 6.14 → 5.45 | 5.16 → 5.41 | 5.81 → 5.10 |
+| Sony | Fit | Specks | 14.11 → 7.98 | 12.63 → 7.72 | 12.47 → 5.25 | 12.65 → 5.11 | 6.33 → 4.79 | 13.24 → 4.73 |
+| Sony | Fit | Both | 13.45 → 8.25 | 13.39 → 7.47 | 13.06 → 4.99 | 15.02 → 5.17 | 6.33 → 5.07 | 12.98 → 5.00 |
+| Sony | 100% | Hot | 7.55 → 6.00 | — | — | 7.39 → 5.16 | 6.27 → 5.01 | 10.00 → 5.18 |
+| Sony | 100% | Specks | 14.80 → 7.46 | 15.59 → 7.50 | 20.38 → 5.81 | 18.10 → 4.96 | 9.48 → 11.71 | 17.19 → 8.61 |
+| Sony | 100% | Both | 20.14 → 8.59 | 23.91 → 7.74 | 24.41 → 5.50 | 22.06 → 5.20 | 15.85 → 5.20 | 20.40 → 5.20 |
+| Canon | Fit | Hot | 6.32 → 2.90 | — | — | 6.00 → 2.62 | 4.39 → 2.61 | 5.41 → 2.46 |
+| Canon | Fit | Specks | 9.60 → 3.43 | 8.42 → 3.40 | 7.70 → 2.44 | 8.96 → 2.62 | 4.04 → 2.43 | 7.98 → 2.49 |
+| Canon | Fit | Both | 8.84 → 3.65 | 8.27 → 3.38 | 7.89 → 2.41 | 7.68 → 2.65 | 3.50 → 2.42 | 6.59 → 2.41 |
+| Canon | 100% | Hot | 3.32 → 3.08 | — | — | 3.32 → 2.83 | 2.79 → 2.85 | 3.12 → 2.61 |
+| Canon | 100% | Specks | 4.84 → 3.80 | 4.87 → 3.61 | 4.65 → 2.63 | 4.81 → 2.82 | 2.63 → 2.65 | 4.65 → 2.87 |
+| Canon | 100% | Both | 5.10 → 4.08 | 5.36 → 3.59 | 5.16 → 2.58 | 5.35 → 2.80 | 2.65 → 2.59 | 4.94 → 2.60 |
+
+[Grade baseline](../../codebase/output/grade-sweep/batch7-pixel-before.jsonl) ·
+[Canon 100% baseline rerun](../../codebase/output/grade-sweep/batch7-pixel-before-canon100.jsonl) ·
+[Grade after](../../codebase/output/grade-sweep/batch7-pixel-after.jsonl)
+
+Faster options that would change what the app shows, not implemented:
+
+- A reduced first picture at Fit could hide some of Sony's 3–5 s full
+  demosaic wait. It would not speed up the final exact picture or help at
+  100%.
+- A simpler speck model could save part of the remaining 1–3 s cold scan
+  on these files. It could also change which stars, fine texture and bright
+  edges are protected. An exact alternative for repeats would be to reuse a
+  developed result, subject to the app's existing memory limit.
+
+[Sensor byte hashes before](../../codebase/output/overnight/batch7-sensor-before.jsonl) ·
+[after](../../codebase/output/overnight/batch7-sensor-after.jsonl) ·
+[Developed hashes and stages before](../../codebase/output/overnight/batch7-stages-before.jsonl) ·
+[after](../../codebase/output/overnight/batch7-stages-after.jsonl) ·
+[Developed endpoint hashes before](../../codebase/output/overnight/batch7-develop-ends-before.jsonl) ·
+[after](../../codebase/output/overnight/batch7-develop-ends-after.jsonl)

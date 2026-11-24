@@ -222,6 +222,8 @@ def _execute_raw_decode(
     progress: Callable[[str, str], None] | None,
     cancelled: Callable[[], bool] | None,
 ) -> _RawDecodeResult:
+    from .raw_pixel_cleanup import apply_raw, source_stamp
+
     rawpy = plan.rawpy
     exif = inspection.exif
     bridge_metadata: CameraLinearMetadata | None = None
@@ -232,6 +234,8 @@ def _execute_raw_decode(
     try:
         if progress:
             progress("developing_raw", "Developing RAW with AHD demosaic")
+        pixel = settings.pixel_cleanup
+        cleanup_stamp = source_stamp(path) if pixel.remove_hot_pixels or pixel.even_out_specks else None
         with rawpy.imread(str(path)) as raw:
             exif = _merge_missing_metadata(exif, _read_libraw_metadata(raw))
             raw_pattern = getattr(raw, "raw_pattern", None)
@@ -255,8 +259,8 @@ def _execute_raw_decode(
                 if camera.raw_pattern.shape != (2, 2):
                     raise RawImportError("Mandatory DNG opcode signed development requires a Bayer sensor.")
                 pattern = camera.raw_pattern
-                from .raw_pixel_cleanup import apply_raw
-                pixel_cleanup_diagnostics = apply_raw(raw, camera, settings, cancelled=cancelled)
+                pixel_cleanup_diagnostics = apply_raw(raw, camera, settings, cancelled=cancelled,
+                    source_path=path, original_stamp=cleanup_stamp)
                 developed = demosaic(raw.raw_image_visible, camera.raw_channel_to_rgb[pattern],
                     camera.raw_black_level[pattern], _ahd_lab_matrix(raw, camera_rgb_matrix=rgb_cam), cancelled=cancelled)
                 developed *= (65535.0 / (camera.white_level - camera.black_level)).astype(np.float32)
@@ -266,8 +270,8 @@ def _execute_raw_decode(
                 except _CameraLinearUnsupported as exc:
                     legacy_fallback_reason = str(exc)
                 if bridge_metadata is not None:
-                    from .raw_pixel_cleanup import apply_raw
-                    pixel_cleanup_diagnostics = apply_raw(raw, bridge_metadata, settings, cancelled=cancelled)
+                    pixel_cleanup_diagnostics = apply_raw(raw, bridge_metadata, settings, cancelled=cancelled,
+                        source_path=path, original_stamp=cleanup_stamp)
                     highlight_reconstruction_diagnostics = _apply_raw_highlight_reconstruction(
                         raw,
                         bridge_metadata,
