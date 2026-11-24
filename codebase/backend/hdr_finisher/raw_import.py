@@ -376,8 +376,7 @@ def _apply_raw_corrections(
         # Measured before conversion, which happens in place: the brightest
         # camera channel against the opposed-colour clipping level.
         clip_ratio = (
-            np.max(camera_linear, axis=-1)
-            / np.float32(highlights.clipping_threshold * OPPOSED_COLOR_THRESHOLD_SAFETY)
+            _edge_clip_ratio(camera_linear, highlights.clipping_threshold, cancelled)
             if edge_colour
             else None
         )
@@ -1083,6 +1082,20 @@ def _normalize_camera_rgb_float32(
     for _ in run_bands(band, range(0, output.shape[0], rows)):
         pass
     return output
+
+
+def _edge_clip_ratio(camera_rgb, clipping_threshold, cancelled):
+    """Form the brightest pre-white-balance channel's ratio in one output plane."""
+    ratio = np.empty(camera_rgb.shape[:2], dtype=np.float32)
+    level = np.float32(clipping_threshold * OPPOSED_COLOR_THRESHOLD_SAFETY)
+    for start in range(0, camera_rgb.shape[0], 128):
+        _raise_if_cancelled(cancelled)
+        pixels = camera_rgb[start:start + 128]
+        part = ratio[start:start + 128]
+        np.maximum(pixels[..., 0], pixels[..., 1], out=part)
+        np.maximum(part, pixels[..., 2], out=part)
+        part /= level
+    return ratio
 
 
 def _camera_rgb_to_acescg_float32(

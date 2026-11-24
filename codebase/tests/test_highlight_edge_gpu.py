@@ -8,7 +8,64 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from hdr_finisher import delivery, gpu_delivery, highlight_edge_gpu
+from hdr_finisher import delivery, gpu_delivery, highlight_edge_gpu, raw_import
+from hdr_finisher.highlight_edge_colour import reconstruct_edge_colour
+
+
+def available_renderer(monkeypatch, tmp_path):
+    monkeypatch.setattr(delivery, "preferences", lambda: {"effective_force_cpu": False})
+    monkeypatch.setenv(gpu_delivery.ROOT_ENV, str(tmp_path))
+    (tmp_path / "heartbeat").touch()
+
+
+def test_raw_clip_ratio_is_unchanged_for_all_camera_channels():
+    camera_rgb = np.random.default_rng(13).uniform(-.05, 1.05, (130, 16, 3)).astype(np.float32)
+    clipping_threshold = .98
+    level = np.float32(clipping_threshold * raw_import.OPPOSED_COLOR_THRESHOLD_SAFETY)
+    expected = np.max(camera_rgb, axis=-1) / level
+    ratio = raw_import._edge_clip_ratio(camera_rgb, clipping_threshold, None)
+    assert ratio.dtype == np.float32
+    np.testing.assert_array_equal(ratio, expected)
+
+
+@pytest.mark.parametrize("ratio_value", [np.float32(.5), np.float32(.96)])
+def test_no_edge_seed_skips_delivery_and_preserves_pixels(monkeypatch, tmp_path, ratio_value):
+    available_renderer(monkeypatch, tmp_path)
+
+    def unexpected_handoff(*args):
+        pytest.fail("A no-op should not allocate delivery memory.")
+
+    monkeypatch.setattr(highlight_edge_gpu.DeliveryMemory, "allocate", unexpected_handoff)
+    image = np.linspace(-.5, 2, 130 * 16 * 3, dtype=np.float32).reshape(130, 16, 3)
+    ratio = np.full(image.shape[:2], .5, np.float32)
+    ratio[-1, -1] = ratio_value
+    original = image.copy()
+    cpu_image, cpu_diagnostics = reconstruct_edge_colour(image, ratio, .5)
+    result, diagnostics = highlight_edge_gpu.reconstruct(image, ratio, .5)
+
+    assert result is cpu_image is image
+    np.testing.assert_array_equal(result, original)
+    assert diagnostics["applied"] is cpu_diagnostics["applied"] is False
+    assert diagnostics["clipped_pixel_fraction"] == cpu_diagnostics["clipped_pixel_fraction"] == 0
+    assert diagnostics["reason"] == "no_clipped_pixels"
+    assert diagnostics["total_ms"] >= 0
+    assert not list(tmp_path.glob("delivery-*"))
+
+
+@pytest.mark.parametrize("sample", [np.nan, np.inf, -np.finfo(np.float32).max])
+def test_no_edge_seed_does_not_bypass_invalid_image_validation(monkeypatch, tmp_path, sample):
+    available_renderer(monkeypatch, tmp_path)
+    image = np.ones((12, 16, 3), np.float32)
+    image[-1, -1, -1] = sample
+    ratio = np.full(image.shape[:2], .5, np.float32)
+
+    def reject_invalid_input(*args):
+        return {"error": "GPU rejected invalid input pixels."}
+
+    monkeypatch.setattr(gpu_delivery, "_wait_for_result", reject_invalid_input)
+    result, diagnostics = highlight_edge_gpu.reconstruct(image, ratio, .5)
+    assert result is None
+    assert diagnostics["fallback_reason"] == "GPU rejected invalid input pixels."
 
 
 def test_unavailable_gpu_reports_fallback_without_mutating_input(monkeypatch, tmp_path):
@@ -31,7 +88,10 @@ def test_edge_turn_round_trips_planes_and_cancelled_turn_releases_memory(monkeyp
     app = FastAPI()
     app.include_router(gpu_delivery.create_gpu_delivery_router())
     image = np.full((12, 16, 3), .5, np.float32)
-    ratio = np.ones((12, 16), np.float32)
+    ratio = np.full((12, 16), np.float32(.96))
+    ratio[-1, -1] = np.nextafter(np.float32(.96), np.float32(1))
+    _, cpu_diagnostics = reconstruct_edge_colour(image, ratio, .5)
+    assert cpu_diagnostics["clipped_pixel_fraction"] == 1 / ratio.size
     with TestClient(app) as client, ThreadPoolExecutor(max_workers=1) as worker:
         client.get("/api/delivery/gpu/permit")
         future = worker.submit(highlight_edge_gpu.reconstruct, image, ratio, .5)

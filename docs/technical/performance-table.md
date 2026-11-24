@@ -30,6 +30,30 @@ trial still needed the tile halo, and it disabled exact glow reuse. Delivery
 and CPU preview are unchanged. The rejected trial's [comparison crops and
 measurements](../../codebase/output/mist-speed/) are retained as evidence.
 
+## November 24, 2026 — Grade Edge colour with no clipped seeds
+
+MacBook Neo (A18 Pro, 8 GB), Electron at 1408 × 794 points and 2× under the
+shared GPU lock. One matched enable per photo and build, HDR Grade at 31% zoom,
+Lens Auto, clipping threshold 0.98, Expand 0.5%, fresh app profile for each run.
+Baseline `787754f2`; after is the same HEAD with the uncommitted Edge colour
+change. Peak app memory is the one-second process-tree physical-footprint
+sample, not logical GPU memory. The clipped control allows up to 10% regression
+in timing or sampled peak memory to account for run-to-run variation.
+
+| RAW | Picture before → after | Settled Histogram before → after | Peak app memory before → after | Edge colour stage before → after |
+| --- | ---: | ---: | ---: | ---: |
+| `_DSC7970.ARW` (42 MP, no seeds) | 12.11 → 5.50 s | 13.02 → 6.19 s | 6.55 → 1.81 GB | 5.11 s → 29 ms |
+| `IMG_0790.CR2` (18 MP, 3.04% seeds) | 5.58 → 5.29 s | 6.01 → 5.89 s | 4.29 → 3.76 GB | 2.43 → 2.64 s |
+
+The Sony skipped the Edge colour GPU handoff and kept the original developed
+pixels. Its full RAW development fell from 9.27 to 3.48 s. The Canon still
+ran Edge colour on the GPU with the same seed fraction and clip luminance. The
+earlier full Grade sweep's Sony result (19.04 s picture, 20.69 s Histogram)
+came from a longer session and is not the matched baseline.
+
+[Before trace](../../codebase/output/grade-sweep/edge-before.json) ·
+[After trace](../../codebase/output/grade-sweep/edge-after.json)
+
 ## November 23, 2026 — Grade Film Look edits and exact grain at zoom
 
 MacBook Neo (A18 Pro, 8 GB), real Electron at 1408 × 794 points and 2×,

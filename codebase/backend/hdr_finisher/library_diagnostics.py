@@ -31,7 +31,9 @@ def log(event, **fields):
         fields.setdefault("action_id", current_action())
     record = {"event": event, "time": time.time(), **fields}
     with _lock:
-        if "reason" in fields and event not in {"writer_pause", "writer_resume", "helper_pause", "helper_resume", "kept_picture_replaced", "kept_picture_cancelled"}:
+        if ("reason" in fields
+                and (event, fields["reason"]) != ("highlight_edge_colour", "no_clipped_pixels")
+                and event not in {"writer_pause", "writer_resume", "helper_pause", "helper_resume", "kept_picture_replaced", "kept_picture_cancelled"}):
             _recent.append(record)
     if _sink is not None:
         _sink(record)
