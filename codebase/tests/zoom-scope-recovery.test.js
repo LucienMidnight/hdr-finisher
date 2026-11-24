@@ -31,6 +31,7 @@ function fixture() {
   const c = vm.createContext({
     state,
     AbortController,
+    AbortSignal,
     els: { scopeFreshness: freshness, previewCanvas: { style: {} }, previewImage: { style: { display: "none" } } },
     scopeUi: { freshnessLabel: () => "Settled" },
     stopPreviewWatchdog() {},
@@ -74,6 +75,7 @@ function fixture() {
   vm.runInContext(declarations(
     "scheduleZoomRefinement", "refineZoomView", "holdingNativeDenoisePictureForFit", "scheduleZoomScopeRefresh",
     "clearZoomScopeRefresh", "refreshScopes", "refreshScopesAfterPresentation", "suspendGradeInstruments",
+    "cancelGpuScopeRequests", "rescheduleGpuScopeAfterPan",
     "scopePresentationIdentity", "scopePresentationMatches", "showUnavailableMicroScope", "microGrainPreviewKey",
     "debouncePreview", "runQueuedGpuScopeRequest",
     "installPreviewWatchdog", "restoreScopeFreshnessIfIdle", "scopeFreshnessLabel", "markScopeUpdating",
@@ -743,3 +745,104 @@ test("a settled scope request cancels a live fill before waiting for shared rend
   assert.equal(applied, true);
   assert.deepEqual(events, ["cancel-fill", "scope-proxy", "scope-presented"]);
 });
+
+test("panning aborts the histogram proxy fetch and only the replacement histogram is presented", async () => {
+  const { c, state, tick, errors } = fixture();
+  const signals = [];
+  const presented = [];
+  state.session.source = { width: 3200, height: 2000 };
+  state.acceptedPresentation.execution = "tiled";
+  const picture = new AbortController();
+  state.denoise = {};
+  state.previewControllers = { sdr: picture };
+  state.gpuPreview = {
+    async renderScopeProxy(...args) {
+      const { signal, cancelCoarseFetches } = args[9];
+      assert.ok(signal);
+      assert.equal(cancelCoarseFetches, true);
+      signals.push(signal);
+      if (signals.length === 1) await new Promise((_resolve, reject) => {
+        signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+      });
+      return { canvas: c.els.previewCanvas, sourceSerial: 7 };
+    },
+    async analyzeScope() {
+      return { sessionId: "photo", sourceSerial: 7, applicationGeneration: 4, geometrySignature: "crop" };
+    },
+  };
+  Object.assign(c, {
+    performance: { now: () => 0 }, liveGradeGrainSelected: () => false,
+    sampleCurvePoints() {}, localAdjustments: () => [], projectReferenceWhiteNits: () => 203,
+    measureExactScopePeak: async () => null, buildGpuScopePayload: () => ({}),
+    applyEditingScopePeak() {}, recordDisplayedScopePeak() {},
+    presentScopePayload: (_payload, { generation }) => presented.push(generation),
+  });
+  vm.runInContext(declarations("enqueueGpuScopeRequest", "runGpuScopeRequest", "noteViewerPan"), c);
+  state.renderCoordinator.notePan = () => {};
+  const obsolete = c.refreshScopes();
+  assert.equal(signals.length, 1);
+  c.noteViewerPan();
+  assert.equal(signals[0].aborted, true);
+  assert.equal(picture.signal.aborted, false);
+  assert.equal(await obsolete, false);
+  await tick(200);
+  await new Promise(setImmediate);
+  assert.equal(signals.length, 2);
+  assert.equal(signals[1].aborted, false);
+  assert.deepEqual(presented, [2]);
+  assert.deepEqual(errors, []);
+});
+
+for (const phase of ["CPU fallback fetch", "CPU fallback peak", "GPU scope peak"]) {
+  test(`panning cancels the ${phase} and settles the replacement histogram`, async () => {
+    const { c, state, tick, errors, freshness, updating } = fixture();
+    const presented = [];
+    const entered = Promise.withResolvers();
+    const hang = (signal) => {
+      entered.resolve(signal);
+      if (!signal) return Promise.reject(new Error("scope work has no cancellation signal"));
+      return new Promise((_resolve, reject) => signal.addEventListener("abort", () => reject(signal.reason), { once: true }));
+    };
+    state.session.source = { width: 3200, height: 2000 };
+    state.acceptedPresentation.execution = "tiled";
+    state.denoise = {};
+    state.gpuPreview = {
+      async renderScopeProxy() {
+        if (state.scopeGeneration === 1 && phase.startsWith("CPU")) return null;
+        return { canvas: c.els.previewCanvas, sourceSerial: 7 };
+      },
+      async analyzeScope() {
+        return { sessionId: "photo", sourceSerial: 7, applicationGeneration: 4, geometrySignature: "crop" };
+      },
+    };
+    Object.assign(c, {
+      performance: { now: () => 0 }, liveGradeGrainSelected: () => false,
+      sampleCurvePoints() {}, localAdjustments: () => [], projectReferenceWhiteNits: () => 203,
+      fetch: async (_url, { signal }) => phase === "CPU fallback fetch" ? hang(signal)
+        : { ok: true, json: async () => ({ generation: null }) },
+      measureExactScopePeak: async ({ signal }) => state.scopeGeneration === 1 ? hang(signal) : null,
+      buildGpuScopePayload: () => ({}), applyEditingScopePeak() {}, recordDisplayedScopePeak() {},
+      presentScopePayload: (_payload, { generation }) => {
+        presented.push(generation);
+        freshness.textContent = "Settled";
+        updating.delete("updating");
+      },
+    });
+    vm.runInContext(declarations("enqueueGpuScopeRequest", "runGpuScopeRequest", "noteViewerPan"), c);
+    state.renderCoordinator.notePan = () => {};
+    const obsolete = c.refreshScopes();
+    const signal = await entered.promise;
+    assert.ok(signal);
+    assert.equal(freshness.textContent, "Updating");
+    c.noteViewerPan();
+    assert.equal(signal.aborted, true);
+    assert.equal(await obsolete, false);
+    assert.ok(!state.scopeRequestInFlight);
+    assert.deepEqual(presented, []);
+    await tick(200);
+    await new Promise(setImmediate);
+    assert.deepEqual(presented, [2]);
+    assert.equal(freshness.textContent, "Settled");
+    assert.deepEqual(errors, []);
+  });
+}

@@ -953,8 +953,298 @@ def test_local_mask_tile_answers_to_the_whole_mask_resource_policy(monkeypatch) 
     assert whole.status_code == 507
 
 
-@pytest.mark.parametrize("long_edge", [390, 260])
-def test_warped_luminance_mask_tiles_do_not_need_whole_frame_admission(monkeypatch, long_edge) -> None:
+def test_mask_batch_reservations_serialize_when_their_bytes_do_not_fit() -> None:
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Event
+    from hdr_finisher import main as main_module
+
+    waiting = Event()
+
+    def read_headroom():
+        waiting.set()
+        return 100
+
+    def second_batch():
+        with main_module._reserve_mask_batch(60, 100, lambda: None, read_headroom):
+            return "admitted"
+
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        with main_module._reserve_mask_batch(60, 100, lambda: None, read_headroom):
+            pending = executor.submit(second_batch)
+            assert waiting.wait(timeout=2)
+            assert not pending.done()
+        assert pending.result(timeout=2) == "admitted"
+    with pytest.raises(main_module.HTTPException) as refusal:
+        with main_module._reserve_mask_batch(101, 100, lambda: None, read_headroom):
+            pytest.fail("A batch larger than available headroom was admitted")
+    assert refusal.value.status_code == 507
+
+
+def test_over_budget_mask_batch_can_run_alone_but_not_concurrently() -> None:
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Event
+    from hdr_finisher import main as main_module
+
+    waiting = Event()
+
+    def read_headroom():
+        waiting.set()
+        return 1000
+
+    def batch():
+        return main_module._reserve_mask_batch(200, 0, lambda: None, read_headroom, allow_serial=True)
+
+    def second_batch():
+        with main_module._reserve_mask_batch(100, 1000, lambda: None, read_headroom):
+            return "admitted"
+
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        with batch():
+            pending = executor.submit(second_batch)
+            assert waiting.wait(timeout=2)
+            assert not pending.done()
+        assert pending.result(timeout=2) == "admitted"
+
+
+def test_mask_batch_exception_stops_at_the_8_gb_machine_budget() -> None:
+    from hdr_finisher import main as main_module
+
+    cap = 512 * 1024**2
+    with main_module._reserve_mask_batch(cap, 0, lambda: None, lambda: 0, allow_serial=True):
+        pass
+    for headroom in (0, None):
+        with pytest.raises(main_module.HTTPException) as refusal:
+            with main_module._reserve_mask_batch(cap + 1, headroom, lambda: None, lambda: headroom, allow_serial=True):
+                pytest.fail("Oversized batch was admitted without measured memory")
+        assert refusal.value.status_code == 507
+    with main_module._reserve_mask_batch(cap + 1, cap + 1, lambda: None, lambda: cap + 1):
+        pass
+
+
+def test_dense_brush_counts_prepared_segments_even_for_a_tiny_mask_tile(monkeypatch) -> None:
+    from hdr_finisher import main as main_module
+    from hdr_finisher.models import BrushStroke, MaskExpression, MaskLeaf, MaskPoint
+
+    session_id, signature, revision = _create_mask_batch_session(["dense-brush"])
+    session = store.get(session_id)
+    monkeypatch.setattr(main_module, "_preview_resource_payload", lambda *_: {"safely_available_bytes": 0})
+    request = {"long_edge": 256, "edit_revision": revision, "geometry_signature": signature,
+               "tiles": [{"local_id": "dense-brush", "x": 32, "y": 32, "width": 16, "height": 16}]}
+    url = f"/api/session/{session_id}/local-mask-tiles"
+    assert client.post(url, json=request).status_code == 200
+
+    stroke = BrushStroke(points=[MaskPoint(x=.15, y=.15)] * 16384, radius=.02)
+    local = session.local_adjustments[0]
+    local.mask = MaskExpression(operator="union", children=[local.mask, MaskExpression(
+        leaf=MaskLeaf(type="brush", strokes=[stroke] * 48),
+    )])
+
+    def unexpected_compile(*_args, **_kwargs):
+        pytest.fail("The dense brush reached the rasterizer despite the serial memory cap")
+
+    monkeypatch.setattr(session.render_cache, "compiled_local_mask_region", unexpected_compile)
+    assert client.post(url, json=request).status_code == 507
+
+
+@pytest.mark.parametrize("disconnect", [False, True])
+def test_mask_reservation_lasts_through_slow_body_delivery(monkeypatch, disconnect) -> None:
+    import asyncio
+    from threading import Event
+    from types import SimpleNamespace
+    from hdr_finisher import main as main_module
+    from hdr_finisher.models import LocalMaskTileBatchRequest
+
+    session_id, signature, revision = _create_mask_batch_session(["slow-client"])
+    waiting = Event()
+    probes = 0
+
+    def headroom(*_args):
+        nonlocal probes
+        probes += 1
+        if probes >= 3:
+            waiting.set()
+        return {"safely_available_bytes": 0}
+
+    monkeypatch.setattr(main_module, "_preview_resource_payload", headroom)
+    request = LocalMaskTileBatchRequest.model_validate({
+        "long_edge": 256, "edit_revision": revision, "geometry_signature": signature,
+        "tiles": [{"local_id": "slow-client", "x": 0, "y": 0, "width": 256, "height": 192}] * 8,
+    })
+
+    async def scenario():
+        async def is_disconnected():
+            return False
+
+        async def prepare():
+            return await main_module.local_mask_tiles_batch_proxy(session_id, request,
+                http_request=SimpleNamespace(is_disconnected=is_disconnected))
+
+        blocked = asyncio.Event()
+        consume = asyncio.Event()
+        chunks = []
+
+        async def slow_send(message):
+            if message["type"] == "http.response.body" and message.get("body"):
+                chunks.append(message["body"])
+                blocked.set()
+                await consume.wait()
+                if disconnect:
+                    raise OSError("client disconnected")
+
+        async def discard(_message):
+            pass
+
+        response = await prepare()
+        scope = {"type": "http"}
+        sending = asyncio.create_task(response(scope, None, slow_send))
+        await asyncio.wait_for(blocked.wait(), 2)
+        pending = asyncio.create_task(prepare())
+        try:
+            assert main_module._mask_batch_reserved_bytes > 0
+            assert main_module._mask_batch_serial_active
+            assert await asyncio.to_thread(waiting.wait, 2)
+            assert not pending.done()
+        finally:
+            consume.set()
+            if disconnect:
+                with pytest.raises(OSError, match="client disconnected"):
+                    await sending
+            else:
+                await sending
+            next_response = await asyncio.wait_for(pending, 2)
+            await next_response(scope, None, discard)
+        if not disconnect:
+            assert len(chunks) > 1
+            assert all(entry["status"] == "ok" for entry in parse_mask_tile_batch(b"".join(chunks))[1])
+        assert main_module._mask_batch_reserved_bytes == 0
+        assert not main_module._mask_batch_serial_active
+
+    asyncio.run(scenario())
+
+
+def test_mask_batch_bounds_total_regions_for_tiny_distant_tiles(monkeypatch) -> None:
+    from hdr_finisher import main as main_module
+
+    local_ids = [f"opposite-corners-{index}" for index in range(5)]
+    session_id, signature, revision = _create_mask_batch_session(local_ids)
+    session = store.get(session_id)
+    monkeypatch.setattr(session.render_cache, "local_mask_region_plan", lambda *args, **kwargs: (
+        (8192, 4096), "strips", 0, 0, 64 * 1024**2,
+    ))
+    monkeypatch.setattr(main_module, "_preview_resource_payload", lambda *_: {"safely_available_bytes": 0})
+    monkeypatch.setattr(main_module, "_assemble_mask_tile_batch", lambda *_: main_module.Response())
+
+    def request(ids):
+        return client.post(f"/api/session/{session_id}/local-mask-tiles", json={
+            "long_edge": 8192, "edit_revision": revision, "geometry_signature": signature,
+            "tiles": [{"local_id": local_id, "x": x, "y": y, "width": 1, "height": 1}
+                      for local_id in ids for x, y in [(0, 0), (8191, 4095)]],
+        })
+
+    assert request(local_ids[:-1]).status_code == 200
+    assert request(local_ids).status_code == 422
+
+
+@pytest.mark.parametrize("long_edge,bounded,status", [(4096, False, 200), (8192, True, 200), (8192, False, 507)])
+def test_mask_batch_low_headroom_distinguishes_bounded_and_full_compiles(monkeypatch, long_edge, bounded, status):
+    from hdr_finisher import main as main_module
+
+    session_id, signature, revision = _create_mask_batch_session(["low-headroom"])
+    session = store.get(session_id)
+    if not bounded:
+        monkeypatch.setattr(session.render_cache, "local_mask_region_plan", lambda *args, **kwargs: None)
+    monkeypatch.setattr(main_module, "_preview_resource_payload", lambda *_: {
+        "allowed": True, "safely_available_bytes": 0, "pixel_count": 100, "estimated_peak_bytes": 1000,
+    })
+    response = client.post(f"/api/session/{session_id}/local-mask-tiles", json={
+        "long_edge": long_edge, "edit_revision": revision, "geometry_signature": signature,
+        "tiles": [{"local_id": "low-headroom", "x": 0, "y": 0, "width": 4, "height": 4, "halo": 0}],
+    })
+    assert response.status_code == status, response.text
+    if bounded:
+        assert response.headers["x-mask-batch-compiles"] == "0"
+
+
+@pytest.mark.parametrize("level", ["session", "memory", "disk", "cold", "lost-disk"])
+def test_mask_batch_admits_only_the_mip_it_will_allocate(monkeypatch, tmp_path, level):
+    import numpy as np
+    from hdr_finisher import main as main_module
+    from hdr_finisher.render_cache import SourceMipIdentity, SourceMipStore
+
+    session_id, signature, revision = _create_mask_batch_session(["reduced"])
+    cache = store.get(session_id).render_cache
+    edge = 320
+    width, height = 9504, 6336
+    image = np.broadcast_to(np.float32(0.18), (height, width, 3))
+    mip = np.full((213, edge, 3), 0.18, dtype=np.float32)
+    monkeypatch.setattr(cache, "image", image)
+    monkeypatch.setattr(main_module, "_preview_resource_payload", lambda *_: {"safely_available_bytes": 0})
+    cache_store = SourceMipStore(tmp_path)
+    identity = SourceMipIdentity(level, 0, width, height, "decoder", "color")
+    monkeypatch.setattr(cache, "source_identity", identity)
+    monkeypatch.setattr(cache, "mip_store", None if level == "session" else cache_store)
+    if level == "session":
+        monkeypatch.setitem(cache._source_proxies, edge, mip)
+    if level in {"memory", "disk", "lost-disk"}:
+        cache_store._write_disk_level(identity, edge, mip)
+    if level == "memory":
+        cache_store.level(identity, edge, image, persist=False)
+
+    if level in {"memory", "session", "lost-disk"}:
+        assemble_batch = main_module._assemble_mask_tile_batch
+
+        def evict_before_compile(*args):
+            cache_store.discard_memory(identity)
+            cache_store._level_path(identity, edge).unlink(missing_ok=True)
+            if level == "session":
+                cache._source_proxies.pop(edge, None)
+            return assemble_batch(*args)
+
+        monkeypatch.setattr(main_module, "_assemble_mask_tile_batch", evict_before_compile)
+
+    def unexpected_resize(*_args, **_kwargs):
+        pytest.fail("The admitted mask batch must not resize the full decoded source")
+
+    monkeypatch.setattr("hdr_finisher.render_cache.downsample_image", unexpected_resize)
+    response = client.post(f"/api/session/{session_id}/local-mask-tiles", json={
+        "long_edge": edge, "edit_revision": revision, "geometry_signature": signature,
+        "tiles": [{"local_id": "reduced", "x": 10, "y": 10, "width": 32, "height": 32}],
+    })
+    assert response.status_code == {"cold": 507, "lost-disk": 409}.get(level, 200), response.text
+    if response.status_code == 200:
+        assert response.headers["x-mask-batch-regions"] == "1"
+
+
+@pytest.mark.parametrize("endpoint", ["proxy", "proxy-stream", "source-tile"])
+def test_proxy_epoch_stays_through_exposure_and_changes_with_source(endpoint):
+    session_id, signature, revision = _create_mask_batch_session(["epoch"])
+    session = store.get(session_id)
+    url = f"/api/session/{session_id}/{endpoint}/hdr"
+
+    def epoch(current_revision):
+        response = client.get(url, params={"long_edge": 256, "width": 8, "height": 8,
+            "geometry_signature": signature, "edit_revision": current_revision})
+        assert response.status_code == 200, response.text
+        return int(response.headers["x-source-epoch"])
+
+    before = epoch(revision)
+    adjustments = session.adjustments.model_dump(mode="json")
+    adjustments["hdr"]["exposure"] = .5
+    response = client.post(f"/api/session/{session_id}/edit-commands", json={"commands": [{
+        "expected_revision": revision, "command_type": "set_global_adjustments", "payload": {"adjustments": adjustments},
+    }]})
+    assert response.status_code == 200, response.text
+    updated = response.json()["revision"]
+    assert updated > revision
+    assert response.json()["source_epoch"] == before
+    assert epoch(updated) == before
+    session.render_cache.release_development_cache()
+    assert epoch(updated) == before + 1
+    assert client.get(f"/api/session/{session_id}/edit-state").json()["source_epoch"] == before + 1
+
+
+@pytest.mark.parametrize("warped, long_edge", [(True, 390), (True, 260), (False, 390)])
+def test_mask_tiles_do_not_need_whole_frame_admission(monkeypatch, warped, long_edge) -> None:
     import numpy as np
     from hdr_finisher import main as main_module
 
@@ -962,20 +1252,23 @@ def test_warped_luminance_mask_tiles_do_not_need_whole_frame_admission(monkeypat
     session = upload.json()["session"]
     route = f'/api/session/{session["session_id"]}'
     adjustments = session["adjustments"]
-    adjustments["shared"]["geometry"].update(straighten_angle=3.5, perspective_horizontal=6.0)
+    if warped:
+        adjustments["shared"]["geometry"].update(straighten_angle=3.5, perspective_horizontal=6.0)
+    leaf = ({"type": "luminance_range", "fade_in_start_ev": -6, "full_start_ev": -1,
+             "full_end_ev": 0, "fade_out_end_ev": 2, "mask_feather": .015} if warped else {
+                "type": "brush", "mask_feather": .042, "strokes": [{"radius": .1, "hardness": .32,
+                    "points": [{"x": .1, "y": .15}, {"x": .7, "y": .45}]}],
+             })
     session_edit = client.post(f"{route}/edit-commands", json={"commands": [
         {"expected_revision": 0, "command_type": "set_global_adjustments", "payload": {"adjustments": adjustments}},
         {"expected_revision": 1, "command_type": "create_local", "payload": {"local": {
-            "id": "native-luma", "name": "Native luma", "mask": {"operator": "leaf", "leaf": {
-                "type": "luminance_range", "fade_in_start_ev": -6, "full_start_ev": -1,
-                "full_end_ev": 0, "fade_out_end_ev": 2, "mask_feather": .015,
-            }},
+            "id": "native-mask", "name": "Native mask", "mask": {"operator": "leaf", "leaf": leaf},
         }}},
     ]})
     assert session_edit.status_code == 200, session_edit.text
     geometry = session_edit.json()["document"]["global_adjustments"]["shared"]["geometry"]
     params = {"long_edge": long_edge, "edit_revision": 2, "geometry_signature": json.dumps(geometry, separators=(",", ":"))}
-    reference = client.get(f"{route}/local-mask/native-luma", params={**params, "spatial_only": True})
+    reference = client.get(f"{route}/local-mask/native-mask", params={**params, "spatial_only": True})
     assert reference.status_code == 200
     full = np.frombuffer(reference.content, dtype=np.uint8).reshape(
         int(reference.headers["x-image-height"]), int(reference.headers["x-image-width"]),
@@ -984,17 +1277,18 @@ def test_warped_luminance_mask_tiles_do_not_need_whole_frame_admission(monkeypat
         main_module.HTTPException(status_code=507, detail="Not enough for a full mask"),
     ))
     batch = {**params, "tiles": [
-        {"local_id": "native-luma", "x": 15, "y": 18, "width": 120, "height": 70, "halo": 4},
-        {"local_id": "native-luma", "x": full.shape[1], "y": 18, "width": 30, "height": 30, "halo": 0},
+        {"local_id": "native-mask", "x": 15, "y": 18, "width": 120, "height": 70, "halo": 4},
+        {"local_id": "native-mask", "x": full.shape[1], "y": 18, "width": 30, "height": 30, "halo": 0},
     ]}
-    assert client.post(f"{route}/local-mask-tiles", json=batch).status_code == 507
-    response = client.post(f"{route}/local-mask-tiles", json={**batch, "bounded_geometry": True})
+    if warped:
+        assert client.post(f"{route}/local-mask-tiles", json=batch).status_code == 507
+    response = client.post(f"{route}/local-mask-tiles", json={**batch, "bounded_geometry": warped})
     assert response.status_code == 200, response.text
     assert response.headers["x-mask-batch-compiles"] == "0"
     _, (tile, outside) = parse_mask_tile_batch(response.content)
     assert outside["status"] == "outside"
     block = np.frombuffer(tile["payload"], dtype=np.uint8).reshape(78, 128)
-    np.testing.assert_allclose(block, full[14:92, 11:139], atol=1)
+    np.testing.assert_allclose(block, full[14:92, 11:139], atol=int(warped))
 
 
 def test_local_luminance_sampling_returns_a_low_precision_scene_ev_range() -> None:

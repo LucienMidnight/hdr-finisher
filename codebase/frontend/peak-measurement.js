@@ -24,8 +24,8 @@ function exactScopePeakKey(lane = state.currentView) {
  * The historical function/cache names remain for performance-driver callers.
  * Returns null on refusal or when foreground work supersedes the measurement.
  */
-async function measureExactScopePeak({ lane = state.currentView, force = false } = {}) {
-  if (!state.gpuPreview?.available || !state.session) return null;
+async function measureExactScopePeak({ lane = state.currentView, force = false, signal } = {}) {
+  if (!state.gpuPreview?.available || !state.session || signal?.aborted) return null;
   // Background measurement paints nothing and yields to foreground work.
   // Importing a source replaces the session this would be measuring, so there
   // is nothing to measure and every reason not to compete for the network and
@@ -33,6 +33,7 @@ async function measureExactScopePeak({ lane = state.currentView, force = false }
   if (state.importInProgress) return null;
   const key = exactScopePeakKey(lane);
   if (!force && exactScopePeakCache.has(key)) return exactScopePeakCache.get(key);
+  if (signal) return measureExactScopePeakInner(lane, key, signal);
   if (exactScopePeakInflight.has(key)) return exactScopePeakInflight.get(key);
   const run = measureExactScopePeakInner(lane, key);
   exactScopePeakInflight.set(key, run);
@@ -43,7 +44,7 @@ async function measureExactScopePeak({ lane = state.currentView, force = false }
   }
 }
 
-async function measureExactScopePeakInner(lane, key) {
+async function measureExactScopePeakInner(lane, key, signal) {
   const started = performance.now();
   // Never attribute a completed estimate to a replaced session or edit.
   const sessionId = state.session.session_id;
@@ -53,7 +54,7 @@ async function measureExactScopePeakInner(lane, key) {
   const generation = state.previewGeneration[lane];
   const revision = state.editRevision;
   const requestedEdge = requiredProcessingLongEdge();
-  const current = () => state.session?.session_id === sessionId
+  const current = () => !signal?.aborted && state.session?.session_id === sessionId
     && state.importGeneration === importGeneration && !state.importInProgress
     && state.gpuRenderSerial === foregroundSerial
     && state.previewGeneration[lane] === generation && state.editRevision === revision
@@ -74,6 +75,7 @@ async function measureExactScopePeakInner(lane, key) {
         measureOnly: true,
         applicationGeneration: state.previewGeneration[lane],
         isCurrent: current,
+        signal,
       },
     );
     if (!current() || exactScopePeakKey(lane) !== key) {

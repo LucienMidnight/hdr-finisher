@@ -10,6 +10,7 @@ import numpy as np
 import pytest
 
 from hdr_finisher.local_adjustments import (
+    brush_mask_working_bytes,
     compile_geometry_fixed_mask,
     compile_geometry_fixed_mask_region,
     mask_region_margin,
@@ -48,6 +49,72 @@ def _image() -> np.ndarray:
 
 def _expression(leaf: dict, **fields) -> MaskExpression:
     return MaskExpression.model_validate({"leaf": leaf, **fields})
+
+
+@pytest.mark.parametrize("geometry_name", ["none", "crop-quarter-turn"])
+@pytest.mark.parametrize("enabled,center,inverted", [(True, 80, False), (True, 160, True), (True, None, True), (False, 80, True)])
+@pytest.mark.parametrize("edge,shift", [(WIDTH, -3.5), (620, 4.0)])
+def test_standalone_hue_regions_match_the_full_hsl_stage_mask(geometry_name, enabled, center, inverted, edge, shift):
+    from hdr_finisher.models import AdjustmentState, LocalAdjustment
+    from hdr_finisher.render_cache import SessionRenderCache
+
+    image = _image()
+    cache = SessionRenderCache(image, None, eager_peak_candidates=False)
+    adjustments = AdjustmentState.model_validate({"hdr": {"exposure": .6, "saturation": 1.2},
+                                                  "shared": {"geometry": GEOMETRIES[geometry_name]}})
+    expression = _expression({"type": "hue_range", "hue_center": center, "edge": shift,
+                              "edge_feather": 9, "mask_opacity": .42}, enabled=enabled, inverted=inverted)
+    local = LocalAdjustment(mask=expression)
+    whole = cache.compiled_local_mask(adjustments, local, edge, spatial_only=True)
+    for left, top, right, bottom in [(0, 0, 85, 101), (173, 121, 411, 419),
+                                     (whole.shape[1] - 100, whole.shape[0] - 91, whole.shape[1], whole.shape[0])]:
+        region, size = cache.compiled_local_mask_region(adjustments, local, edge, (left, top, right, bottom))
+        assert size == whole.shape[::-1]
+        np.testing.assert_array_equal(region, whole[top:bottom, left:right])
+
+
+@pytest.mark.parametrize("operator, leaf", [("union", GRADIENT), ("intersect", LUMINANCE), ("union", BRUSH)])
+@pytest.mark.parametrize("geometry_name", ["none", "crop-quarter-turn"])
+def test_compound_hue_regions_match_whole_at_edges_and_chunk_joins(monkeypatch, operator, leaf, geometry_name):
+    from hdr_finisher import local_adjustments
+    from hdr_finisher.models import AdjustmentState, LocalAdjustment
+    from hdr_finisher.render_cache import SessionRenderCache
+
+    monkeypatch.setattr(local_adjustments, "MASK_REGION_CHUNK_PIXELS", 256**2)
+    cache = SessionRenderCache(_image(), None, eager_peak_candidates=False)
+    adjustments = AdjustmentState.model_validate({"hdr": {"exposure": .6, "saturation": 1.2},
+                                                  "shared": {"geometry": GEOMETRIES[geometry_name]}})
+    hue = _expression({"type": "hue_range", "hue_center": 160, "hue_width": 100,
+                       "edge": -4, "edge_feather": 7, "mask_opacity": .81}, inverted=True)
+    expression = MaskExpression(operator=operator, children=[hue, _expression({**leaf, "mask_opacity": .95})])
+    local = LocalAdjustment(mask=expression)
+    whole = cache.compiled_local_mask(adjustments, local, WIDTH, spatial_only=True)
+    assert np.ptp(whole) > 0
+    width, height = whole.shape[::-1]
+    for rect in [(0, 0, width - 47, height - 35), (83, 119, width, height)]:
+        region, size = cache.compiled_local_mask_region(adjustments, local, WIDTH, rect)
+        assert size == (width, height)
+        left, top, right, bottom = rect
+        np.testing.assert_array_equal(region, whole[top:bottom, left:right])
+
+
+@pytest.mark.parametrize("compound", [False, True])
+def test_hue_region_memory_plan_reserves_expression_scratch(compound):
+    from hdr_finisher.models import AdjustmentState
+    from hdr_finisher.render_cache import SessionRenderCache
+
+    cache = SessionRenderCache(_image(), None, eager_peak_candidates=False)
+    hue = _expression({"type": "hue_range", "hue_center": 160, "hue_width": 100})
+    expression = MaskExpression(operator="union", children=[hue, _expression(GRADIENT)]) if compound else hue
+    size, method, margin, block, _, _, reserved = cache.local_mask_region_plan(
+        AdjustmentState(), expression, WIDTH, (0, 0, 100, 80),
+    )
+    assert size == (WIDTH, HEIGHT)
+    assert method == "hue"
+    working_width = min(WIDTH, min(block, 100) + 2 * margin + 32)
+    working_height = min(WIDTH, min(block, 80) + 2 * margin + 32)
+    bytes_per_pixel = 152 if compound else 128
+    assert reserved == 100 * 80 + working_width * working_height * bytes_per_pixel
 
 
 @pytest.mark.parametrize("geometry_name", list(GEOMETRIES))
@@ -108,3 +175,37 @@ def test_resampling_geometry_is_refused() -> None:
     for fields in ({"straighten_angle": 2.0}, {"perspective_horizontal": 0.1}):
         geometry = GeometryAdjustments.model_validate(fields)
         assert compile_geometry_fixed_mask_region(image, _expression(GRADIENT), geometry, (0, 0, 100, 100)) is None
+
+
+def test_disabled_brush_combination_accounts_for_the_first_child_only() -> None:
+    brush = _expression(BRUSH)
+    disabled = MaskExpression.model_validate({"operator": "union", "enabled": False, "children": [
+        {"operator": "union", "enabled": False, "children": [{"leaf": BRUSH}, {"leaf": BRUSH}]},
+        {"leaf": BRUSH},
+    ]})
+    geometry = GeometryAdjustments()
+    image = _image()
+    np.testing.assert_array_equal(compile_geometry_fixed_mask(image, disabled, geometry),
+                                  compile_geometry_fixed_mask(image, brush, geometry))
+    expected = brush_mask_working_bytes(brush)
+    assert expected > 0
+    assert brush_mask_working_bytes(disabled) == expected
+
+
+@pytest.mark.parametrize("leaf", [{**BRUSH, "mask_feather": .042}, {**LUMINANCE, "mask_feather": .05}])
+def test_warm_reduced_wide_mask_strips_match_whole_compile(leaf) -> None:
+    from hdr_finisher.models import AdjustmentState, LocalAdjustment
+    from hdr_finisher.render_cache import SessionRenderCache
+
+    image = np.tile(_image(), (2, 3, 1))
+    cache = SessionRenderCache(image, None, eager_peak_candidates=False)
+    adjustments = AdjustmentState()
+    expression = _expression(leaf, inverted=True)
+    local = LocalAdjustment(mask=expression)
+    edge = 1800
+    assert mask_region_margin(expression, edge) is None
+    whole = cache.compiled_local_mask(adjustments, local, edge, spatial_only=True)
+    left, top, right, bottom = rect = (173, 121, 1245, 751)
+    region, size = cache.compiled_local_mask_region(adjustments, local, edge, rect)
+    assert size == whole.shape[::-1]
+    np.testing.assert_array_equal(region, whole[top:bottom, left:right])

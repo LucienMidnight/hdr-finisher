@@ -198,6 +198,26 @@ test("Grade shares the app ceiling and reclaims after the final active scope", a
   assert.equal(headroom(renderer.grainMemorySnapshot()), 740);
 });
 
+test("pressure preserves presented mask tiles and reservations evict them last", () => {
+  const context = vm.createContext({ window: {}, performance, HDRGrainRoute: { headroom } });
+  for (const name of ["webgpu-shaders.js", "webgpu-preview.js"]) vm.runInContext(frontendSource(name), context);
+  const renderer = new context.window.HDRWebGPUPreview(null);
+  const released = [];
+  const entries = new Map(["visible-a", "old", "visible-b"].map(key => [key, {
+    key, kind: "mask-tile", bytes: 100, evict: () => released.push(key),
+  }]));
+  renderer.presentedMaskKeys = new Set(["visible-a", "visible-b"]);
+  renderer.gpuAllocator = { entries, unregister: entry => entries.delete(entry.key), usedBytes: () => entries.size * 100 };
+  renderer.resourceMemorySnapshot = () => ({ resident: { totalBytes: entries.size * 100, categories: {} } });
+  renderer.memoryBudgetBytes = () => 333;
+  renderer.acceptGrainMemorySample({ unifiedMemory: false, pressure: "warning", grainReclaim: true });
+  assert.deepEqual(released, ["old"]);
+  assert.equal(renderer.reclaimGrainResources(renderer.grainMemorySnapshot(90)), false);
+  assert.equal(renderer.reclaimGrainResources(renderer.grainMemorySnapshot(150)), true);
+  assert.deepEqual(released, ["old", "visible-a"]);
+  assert.deepEqual([...entries.keys()], ["visible-b"]);
+});
+
 test("a live Grain reservation releases an unused source proxy immediately", async () => {
   const context = vm.createContext({ window: {}, performance, HDRGrainRoute: { headroom } });
   for (const name of ["webgpu-shaders.js", "webgpu-preview.js"]) vm.runInContext(frontendSource(name), context);
@@ -219,3 +239,137 @@ test("a live Grain reservation releases an unused source proxy immediately", asy
   assert.deepEqual(destroyed, ["old"]);
   assert.deepEqual([...renderer.proxies.keys()], ["visible", "render"]);
 });
+
+test("a live Grain reservation reclaims only mask tiles not pinned by the render", async () => {
+  const context = vm.createContext({ window: {}, performance, HDRGrainRoute: { headroom } });
+  for (const name of ["gpu-allocator.js", "webgpu-shaders.js", "webgpu-preview.js"]) {
+    vm.runInContext(frontendSource(name), context);
+  }
+  const renderer = new context.window.HDRWebGPUPreview(null);
+  renderer.gpuAllocator = new context.window.HDRGpuAllocator({ budgetBytes: 250 });
+  const destroyed = [];
+  for (const key of ["current", "previous"]) {
+    renderer.maskTiles.set(key, { key, byteSize: 100, texture: { destroy: () => destroyed.push(key) } });
+  }
+  renderer.presentedMaskKeys = new Set(["previous"]);
+  renderer.gpuAllocator.pin(renderer.maskTiles.get("current").allocatorEntry);
+  renderer.resourceMemorySnapshot = () => ({ resident: { totalBytes: renderer.maskTiles.size * 100, categories: {} } });
+  renderer.memoryBudgetBytes = () => 250;
+  renderer.waitForSubmittedWork = async () => assert.deepEqual(destroyed, ["previous"]);
+  renderer.activeRenderCount = 1;
+  const reservation = await renderer.reserveFineGrain("grain", { strip: 120 }, { id: "render" });
+  assert.equal(reservation.bytes, 120);
+  assert.deepEqual([...renderer.maskTiles.keys()], ["current"]);
+  assert.deepEqual(destroyed, ["previous"]);
+});
+
+test("Grain cannot reclaim a mask collected while another render batch is loading", async () => {
+  const context = vm.createContext({ window: {}, performance, AbortController, HDRGrainRoute: { headroom } });
+  for (const name of ["gpu-allocator.js", "mask-request-coordinator.js", "webgpu-shaders.js", "webgpu-preview.js"]) {
+    vm.runInContext(frontendSource(name), context);
+  }
+  const renderer = new context.window.HDRWebGPUPreview(null);
+  renderer.gpuAllocator = new context.window.HDRGpuAllocator({ budgetBytes: 250 });
+  renderer.activeRenderCount = 1;
+  renderer.resourceMemorySnapshot = () => ({ resident: { totalBytes: renderer.maskTiles.size * 100, categories: {} } });
+  renderer.memoryBudgetBytes = () => 250;
+  renderer.waitForSubmittedWork = async () => {};
+  renderer.loadSceneMaskRegion = async () => null;
+  renderer.markResidentMaskFrame = () => {};
+  const destroyed = [];
+  const makeMask = (key) => {
+    const mask = { key, byteSize: 100, texture: { destroy: () => destroyed.push(key) } };
+    renderer.maskTiles.set(key, mask);
+    return mask;
+  };
+  const early = makeMask("early");
+  makeMask("unused");
+  const finish = Promise.withResolvers();
+  renderer.loadLocalMaskTiles = async (_session, batch) => ({ localIndex: batch.localIndex,
+    entries: new Map([["tile", batch.localIndex === 0 ? early : await finish.promise]]) });
+  renderer.maskRequestCoordinator = new context.window.HDRMaskRequestCoordinator(2);
+  const source = frontendSource("webgpu-preview.js");
+  const start = source.indexOf("      const sceneMaskSource = options.analysisMasks");
+  const end = source.indexOf("      // Global Clarity", start);
+  const cleanup = source.match(/^        for \(const pin of maskPins\).*$/m)[0];
+  Object.assign(context, { renderer, early, maskPins: new Set(), isCurrent: () => true, proxy: {}, params: {},
+    activeLocals: [{}, {}], foregroundTiles: [{ key: "tile" }], maskIndices: [[0], [1]],
+    longEdge: 3200, editRevision: 4, measureOnly: false, identity: "viewport", options: { sessionId: "session" } });
+  const collect = vm.runInContext(`(async function () {
+    const plan = { tiles: foregroundTiles };
+    const maskBatches = activeLocals.map((local, localIndex) => ({ local, localIndex }));
+    try { ${source.slice(start, end)} return maskMatrix; }
+    finally { ${cleanup} }
+  }).call(renderer)`, context);
+  await new Promise(setImmediate);
+  let reservation;
+  try {
+    reservation = await renderer.reserveFineGrain("grain", { strip: 120 }, { id: "independent calibration" });
+    assert.deepEqual(destroyed, ["unused"]);
+  } finally {
+    finish.resolve(early);
+    if (reservation) renderer.gpuAllocator.releaseReservation(reservation);
+    await collect;
+  }
+  assert.equal((await collect)[0][0].texture, early.texture);
+  assert.equal(early.allocatorEntry.pins, 0);
+});
+
+for (const type of ['hue_range', 'luminance_range']) {
+  test(`Grain cannot reclaim a regional analytic leaf while ${type} is loading`, async () => {
+    const context = vm.createContext({ window: {}, performance, HDRGrainRoute: { headroom } });
+    for (const name of ['gpu-allocator.js', 'webgpu-shaders.js', 'webgpu-preview.js']) {
+      vm.runInContext(frontendSource(name), context);
+    }
+    const renderer = new context.window.HDRWebGPUPreview(null);
+    renderer.gpuAllocator = new context.window.HDRGpuAllocator({ budgetBytes: 250 });
+    renderer.activeRenderCount = 1;
+    renderer.gpuAnalyticMasksEnabled = true;
+    renderer.resourceMemorySnapshot = () => ({ resident: { totalBytes: renderer.maskTiles.size * 100, categories: {} } });
+    renderer.memoryBudgetBytes = () => 250;
+    renderer.waitForSubmittedWork = async () => {};
+    renderer.hueContextIdentity = () => 'source';
+    renderer.retainLocalMask = () => {};
+    renderer.maskPipelines = {};
+    renderer.createMaskTexture = () => ({});
+    renderer.createStorageBuffer = () => ({ destroy() {} });
+    renderer.device = { createCommandEncoder: () => ({ finish() {} }), queue: { writeBuffer() {}, submit() {} } };
+    renderer.encodeMaskPass = () => {};
+    renderer.createMaskBindGroup = (left) => assert.equal(left.destroyed, false);
+    const tile = key => ({ key, width: 4, height: 4, byteSize: 100,
+      texture: { destroyed: false, destroy() { this.destroyed = true; } } });
+    const active = tile('graph-leaf'), unused = tile('unused'), pins = new Set();
+    renderer.maskTiles.set(active.key, active);
+    renderer.maskTiles.set(unused.key, unused);
+    renderer.loadGpuAnalyticRegion = (_session, batch, _edge, _geometry, _signature, _current, _proxy, retainMask) => {
+      if (batch.local.mask.operator !== 'leaf') return null;
+      retainMask?.(active);
+      return { entries: new Map([['region', active]]) };
+    };
+    const sibling = Promise.withResolvers(), siblingStarted = Promise.withResolvers();
+    renderer.loadGpuHueLeaf = renderer.loadGpuLumaMask = () => {
+      siblingStarted.resolve();
+      return sibling.promise;
+    };
+    const region = { x: 0, y: 0, width: 4, height: 4 }, proxy = { region, lane: 'hdr' };
+    const local = { id: 'compound', mask: { operator: 'union', children: [
+      { operator: 'leaf', leaf: { type: 'linear_gradient', start: { x: 0, y: 0 }, end: { x: 1, y: 1 },
+        gradient_midpoint_1: .25, gradient_midpoint_2: .75 } },
+      { operator: 'leaf', leaf: { type } },
+    ] } };
+    const graph = renderer.loadLocalMaskTiles('session', { local, localIndex: 0, tiles: [{ key: 'tile', haloRect: region }] },
+      3200, 1, '{}', () => true, undefined, proxy, null, type === 'hue_range' ? { lane: 'hdr', proxy } : null,
+      false, entry => pins.add(renderer.gpuAllocator.pin(entry.allocatorEntry)));
+    await Promise.race([siblingStarted.promise, graph.then(() => { throw new Error('No sibling mask load'); })]);
+    const reservation = await renderer.reserveFineGrain('grain', { strip: 120 }, { id: 'calibration' });
+    sibling.resolve({ width: 4, height: 4, texture: {} });
+    try {
+      assert.equal((await graph).entries.get('tile').kind, 'gpu-mask-graph');
+      assert.equal(active.texture.destroyed, false);
+      assert.equal(unused.texture.destroyed, true);
+    } finally {
+      for (const pin of pins) renderer.gpuAllocator.unpin(pin);
+      renderer.gpuAllocator.releaseReservation(reservation);
+    }
+  });
+}

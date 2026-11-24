@@ -138,6 +138,7 @@ function cancelRoiPanRefinement() {
  */
 function noteViewerPan() {
   const lane = state.currentView;
+  if (state.gpuScopeRequestInFlight || state.pendingGpuScopeRequest) rescheduleGpuScopeAfterPan(lane);
   const region = els.previewCanvas.hdrFrameRegion;
   const accepted = state.acceptedPresentation;
   if (cpuMicroPreviewSelected(lane) && cpuMicroViewport(lane)) {

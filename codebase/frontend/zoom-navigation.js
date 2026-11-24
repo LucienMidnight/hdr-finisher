@@ -225,6 +225,7 @@ async function refreshNavigationThumbnail() {
 
 function scheduleZoomScopeRefresh({ sessionId, lane, generation, signature, target }) {
   // Keep the last scope visible while foreground work settles at this zoom.
+  if (state.gpuScopeRequestInFlight || state.pendingGpuScopeRequest) cancelGpuScopeRequests();
   state.zoomScopeTimer = window.setTimeout(() => {
     const scopeOwed = scopePresentationMatches(state.scopeAwaitingPresentation, lane);
     if (state.session?.session_id !== sessionId || state.currentView !== lane

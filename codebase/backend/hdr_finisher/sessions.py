@@ -229,6 +229,7 @@ class LoadedSession:
         return EditStateResponse(
             repair_rendering=records(self),
             revision=self.edit_revision,
+            source_epoch=self.render_cache.source_epoch,
             document=self.edit_document(),
             dirty=self.dirty,
             can_undo=bool(self.undo_history),

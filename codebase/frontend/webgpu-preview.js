@@ -45,9 +45,18 @@
   function grainWorkRefused(reason, message, details) {
     return Object.assign(new Error(message), { grainReason: reason, grainDetails: details });
   }
+  function standaloneHueMask(expression) {
+    return expression?.operator === "leaf" && expression.leaf?.type === "hue_range";
+  }
+
+  function regionalHueGraphEligible(mask, geometrySignature, lane, sourceIdentity, workingSpace) {
+    return gpuRegionalGraphEligible(mask, geometrySignature, { allowHue: true })
+      && (!gpuLumaLeaves(mask).length || lumaSceneSource(lane, sourceIdentity, workingSpace));
+  }
+
   function maskHasHueLeaf(expression) {
     if (!expression) return false;
-    if (expression.operator === "leaf") return expression.leaf?.type === "hue_range";
+    if (expression.operator === "leaf") return standaloneHueMask(expression);
     return (expression.children || []).some(maskHasHueLeaf);
   }
 
@@ -506,12 +515,12 @@
     }
 
     /** Release one registered cache entry by kind and key, through its owner. */
-    evictGpuCacheEntry(kind, key, unpinnedProxy = false) {
+    evictGpuCacheEntry(kind, key, unreferenced = false) {
       if (kind === "source-proxy") {
         const proxy = this.proxies.get(key);
         if (!proxy) return;
         this.proxies.delete(key);
-        if (unpinnedProxy) proxy.texture?.destroy();
+        if (unreferenced) proxy.texture?.destroy();
         else this.destroyAfterActiveRenders(() => proxy.texture?.destroy());
       } else if (kind === "detail-band-tile") {
         const entry = this.detailBandTiles.get(key);
@@ -523,7 +532,8 @@
         const entry = this.maskTiles.get(key);
         if (!entry) return;
         this.maskTiles.delete(key);
-        this.destroyAfterActiveRenders(() => entry.texture?.destroy());
+        if (unreferenced) entry.texture?.destroy();
+        else this.destroyAfterActiveRenders(() => entry.texture?.destroy());
       } else if (kind === "denoise-tile") {
         const entry = this.denoiseTiles.get(key);
         if (!entry) return;
@@ -913,6 +923,7 @@
       this.denoiseModelWarm = null;
       this.editingCandidateCache?.clear();
       this.editingAnalysisCanvas = null;
+      this.highlightAnchorCanvas = null;
       this.analysisClarityFrameMap = null;
       this.releaseClaritySurround(this.claritySurround);
       this.claritySurround = null;
@@ -1462,16 +1473,20 @@
      * operations. The returned bounded native patches evaluate those stages
      * on real neighbours; the candidate atlas never invents their input.
      */
-    async rankEditingPeakCandidates(sessionId, lane, adjustments, curveSampler, locals, revision, white, sourceSize, isCurrent) {
+    async rankEditingPeakCandidates(sessionId, lane, adjustments, curveSampler, locals, revision, white, sourceSize, isCurrent, signal) {
       if (lane === "sdr" && adjustments.sdr.linked_to_hdr) {
         locals = locals.map(local => ({ ...local, sdr_grade: local.hdr_grade }));
       }
       const signature = JSON.stringify(adjustments.shared?.geometry || {});
+      const sourceSignal = this.sourceAbortSignal();
+      const requestSignal = signal ? AbortSignal.any([signal, sourceSignal]) : sourceSignal;
       this.editingCandidateCache ||= new Map();
       const evidenceKey = `${sessionId}:${lane}:${signature}:${adjustments.sdr?.use_authored_base}`;
       let evidence = this.editingCandidateCache.get(evidenceKey);
       if (!evidence) {
-        const response = await fetch(`/api/session/${sessionId}/peak-candidates/${lane}?edit_revision=${revision}`, { signal: this.sourceAbortSignal() });
+        const response = await fetch(`/api/session/${sessionId}/peak-candidates/${lane}?edit_revision=${revision}`, {
+          signal: requestSignal,
+        });
         if (!response.ok) throw new Error(`Peak candidate evidence: ${response.status}`);
         evidence = await response.json();
         if (!isCurrent()) return null;
@@ -1516,7 +1531,7 @@
         const masks = [];
         if (lane === "hdr") this.markResidentMaskFrame(sessionId, locals, 1600, signature);
         if (lane === "hdr") for (const local of activeGpuLocals(lane, locals)) {
-          const entry = await this.loadEditingMask(sessionId, local, revision, signature, evidence, sourceSize, isCurrent, this.sourceAbortSignal());
+          const entry = await this.loadEditingMask(sessionId, local, revision, signature, evidence, sourceSize, isCurrent, requestSignal);
           if (!entry || !isCurrent()) return null;
           masks.push({ local, entry });
         }
@@ -1572,23 +1587,38 @@
       }
       const isCurrent = options.isCurrent || (() => true);
       if (options.highlightAnchorOnly && adjustments[lane]?.highlight_compression_peak_measurement === "robust") {
-        const signature = JSON.stringify(adjustments.shared?.geometry || {});
-        const proxy = await this.loadProxy(sessionId, lane, 1600, signature, revision, options.identity || "source", {isCurrent});
-        if (!proxy || !isCurrent()) return null;
-        const params = buildParams(lane, adjustments, proxy.workingSpace, lane === "hdr", white, this.sourcePixelScaleFor(proxy, sourceSize));
-        const anchor = this.highlightAnchorRequest(lane, adjustments, proxy, params, locals);
-        if (!anchor) return null;
-        this.editingAnalysisCanvas ||= document.createElement("canvas");
-        const uncompressed = structuredClone(adjustments);
-        uncompressed[lane].highlight_section_enabled = false;
-        const rendered = await this.renderTo(this.editingAnalysisCanvas, sessionId, lane, uncompressed, curveSampler, 1600, locals, revision, null, white, sourceSize, {isCurrent, measureOnly:true});
-        const finished = this.scopeSources.get(this.editingAnalysisCanvas);
-        if (!rendered?.width || !finished || !isCurrent()) return null;
-        const pipeline = await this.ensurePeakReductionPipeline("scaledFilmPeakReductionMain");
-        const value = await this.runPeakReduction(pipeline, finished.filmTexture, finished.width, finished.height, params, "robust", anchor.key);
-        return {highlightAnchor:{key:anchor.key, value}};
+        const generation = this.resourceGeneration;
+        const current = () => !options.signal?.aborted && isCurrent() && generation === this.resourceGeneration;
+        while (current() && this.highlightAnchorInflight) await this.highlightAnchorInflight.catch(() => null);
+        if (!current()) return null;
+        const work = (async () => {
+          const signature = JSON.stringify(adjustments.shared?.geometry || {});
+          const identity = options.identity || "source";
+          const proxy = await this.loadProxy(sessionId, lane, 1600, signature, revision, identity, {isCurrent: current});
+          if (!proxy || !current()) return null;
+          const params = buildParams(lane, adjustments, proxy.workingSpace, lane === "hdr", white, this.sourcePixelScaleFor(proxy, sourceSize));
+          const anchor = this.highlightAnchorRequest(lane, adjustments, proxy, params, locals);
+          if (!anchor) return null;
+          const pipeline = await this.ensurePeakReductionPipeline("scaledFilmPeakReductionMain");
+          if (!current()) return null;
+          const anchorCanvas = (this.highlightAnchorCanvas ||= document.createElement("canvas"));
+          const uncompressed = structuredClone(adjustments);
+          uncompressed[lane].highlight_section_enabled = false;
+          const rendered = await this.renderTo(anchorCanvas, sessionId, lane, uncompressed, curveSampler, 1600, locals, revision,
+            null, white, sourceSize, {identity, isCurrent: current, measureOnly: true});
+          const finished = this.scopeSources.get(anchorCanvas);
+          if (!rendered?.width || !finished || !current()) return null;
+          const value = await this.runPeakReduction(pipeline, finished.filmTexture, finished.width, finished.height, params, "robust", anchor.key);
+          return current() ? {highlightAnchor: {key: anchor.key, value}} : null;
+        })();
+        this.highlightAnchorInflight = work;
+        try {
+          return await work;
+        } finally {
+          if (this.highlightAnchorInflight === work) this.highlightAnchorInflight = null;
+        }
       }
-      const ranked = await this.rankEditingPeakCandidates(sessionId, lane, adjustments, curveSampler, locals, revision, white, sourceSize, isCurrent);
+      const ranked = await this.rankEditingPeakCandidates(sessionId, lane, adjustments, curveSampler, locals, revision, white, sourceSize, isCurrent, options.signal);
       if (!ranked || !isCurrent()) return null;
       const signature = JSON.stringify(adjustments.shared?.geometry || {});
       const frame = {width: ranked.width, height: ranked.height,
@@ -2012,7 +2042,8 @@
         if (leaf.hue_center != null) {
           const engine = (this.hslMaskEngine ||= this.hslSelectionTemplate.fork());
           const scale = hue.params[GPU_PARAMS.SOURCE_PIXEL_SCALE] || 1;
-          const reach = globalThis.HDRHslSelectionGpu.geometry(scale, leaf).reach;
+          const reach = globalThis.HDRHslSelectionGpu.geometry(scale, leaf).reach
+            + graphScaleContract().blackAndWhiteGuideReach(hue.params);
           const bandRows = Math.max(64, Math.floor(HUE_MASK_BAND_PIXELS / Math.max(1, width)));
           const single = height <= bandRows;
           const channels = [{ ranges: [{ center: leaf.hue_center, width: leaf.hue_width, feather: leaf.hue_smoothness, subtract: false }],
@@ -2295,12 +2326,14 @@
       if (!viewport) return null;
       // Only the tiled route draws a region; anything else needs the frame.
       if (this.executionOverrideFor(sourceOptions) !== "tiled") return null;
-      const geometrySignature = JSON.stringify(adjustments.shared?.geometry || {});
+      const geometry = adjustments.shared?.geometry || {};
+      const geometrySignature = JSON.stringify(geometry);
       // Luma leaves need the scene picture and a globally aligned feather
       // halo. Supported expression graphs compose those same regional leaves.
       if (!sourceOptions?.nativeGeometryViewport && lane === "hdr" && (sourceOptions?.identity || "source") === "source"
         && (activeLocals || []).some((local) => maskUsesLuminance(local.mask)
-          && !isGpuLumaMask(local.mask) && !gpuRegionalGraphEligible(local.mask, geometrySignature)
+          && !maskHasHueLeaf(local.mask) && !isGpuLumaMask(local.mask)
+          && !gpuRegionalGraphEligible(local.mask, geometrySignature)
           && !this.sourceSpaceMask(sessionId, local.mask, longEdge, geometrySignature))) return null;
       // The whole frame's source, once resident, serves every region of it
       // with no fetch at all.
@@ -2334,6 +2367,9 @@
         previousFrame = { width: size.width, height: size.height, longEdge, workingSpace };
       }
       if (!previousFrame.workingSpace) return null;
+      if (!sourceOptions?.nativeGeometryViewport && !sourceOptions?.analysisMasks
+        && (activeLocals || []).some(({mask}) => maskHasHueLeaf(mask) && !standaloneHueMask(mask)
+          && !regionalHueGraphEligible(mask, geometrySignature, lane, sourceOptions?.identity, previousFrame.workingSpace))) return null;
       const Scheduler = typeof window !== "undefined" ? window.HDRTileScheduler : null;
       const tileSize = Math.max(64, Math.floor(Number(sourceOptions?.tileSize) || Scheduler?.DEFAULT_TILE_SIZE || 512));
       // A mask finished in source space is not feathered on the picture.
@@ -2354,11 +2390,15 @@
         request.halo,
         request.minimumRoiFraction,
       );
-      if (region && lumaSceneSource(lane, sourceOptions?.identity, previousFrame.workingSpace)) {
+      if (region) {
         // Downsampling must start on the same cells as a whole-frame mask.
-        let alignment = 1;
+        const hueGrid = !sourceOptions?.analysisMasks && (activeLocals || []).some(local => maskHasHueLeaf(local.mask))
+          ? window.HDRHslSelectionGpu?.geometry(this.sourcePixelScaleFor(previousFrame, sourceSize)) : null;
+        let alignment = hueGrid?.cell || 1;
         const gcd = (a,b) => b ? gcd(b,a%b) : a;
-        for (const leaf of pictureLumaLocals.flatMap(local => gpuLumaLeaves(local.mask))) {
+        const lumaLeaves = lumaSceneSource(lane, sourceOptions?.identity, previousFrame.workingSpace)
+          ? pictureLumaLocals.flatMap(local => gpuLumaLeaves(local.mask)) : [];
+        for (const leaf of lumaLeaves) {
           const factor = lumaFeatherPlan(leaf.mask_feather, previousFrame.width,
             previousFrame.height, this.featherReferenceScale?.(geometrySignature) || 1).factor;
           alignment = alignment / gcd(alignment,factor) * factor;
@@ -2367,6 +2407,11 @@
         const x = Math.floor(region.x/alignment)*alignment, y = Math.floor(region.y/alignment)*alignment;
         region = {x,y,width:Math.min(previousFrame.width,Math.ceil((region.x+region.width)/alignment)*alignment)-x,
           height:Math.min(previousFrame.height,Math.ceil((region.y+region.height)/alignment)*alignment)-y};
+        const indexGeometry = [0, 90, 180, 270].includes(Number(geometry.rotation || 0))
+          && !Number(geometry.straighten_angle || 0) && !Number(geometry.perspective_rotate || 0)
+          && !Number(geometry.perspective_horizontal || 0) && !Number(geometry.perspective_vertical || 0);
+        if (!sourceOptions?.analysisMasks && ((hueGrid && indexGeometry) || lumaLeaves.length)
+          && region.width * region.height >= previousFrame.width * previousFrame.height * .9) region.requireRegion = true;
         // A resident region may only stand in for this one on the same cells.
         if (alignment > 1) region.alignment = alignment;
       }
@@ -2495,6 +2540,11 @@
       // just their halos: its reach, rounded out to whole blocks and to the
       // denoise grid. The source region has to cover that too.
       const contract = graphScaleContract();
+      if (!sourceOptions?.analysisMasks && activeLocals.some(local => maskHasHueLeaf(local.mask))) {
+        const grid = window.HDRHslSelectionGpu?.geometry(params[GPU_PARAMS.SOURCE_PIXEL_SCALE] || 1,
+          { edge: 8, edge_feather: 16 });
+        if (grid) halo += grid.reach + grid.cell + contract.blackAndWhiteGuideReach(params);
+      }
       if (contract.clarityActive(params) && !surround?.global) {
         const clarity = contract.clarityMapPlan(contract.claritySigma(frame.width, frame.height, params[GPU_PARAMS.CLARITY_RADIUS]));
         halo = Math.max(halo, clarity.reach + clarity.scale + alignment);
@@ -2650,10 +2700,12 @@
         canvas, context, sessionId, lane, adjustments, sourceSize, referenceWhiteNits, sourceOptions, activeLocals, longEdge,
       );
       this.prefetchZoomMasks(canvas, sessionId, activeLocals, editRevision, geometrySignature, sourceOptions, serial, longEdge);
+      const requestSignal = sourceOptions?.signal
+        ? AbortSignal.any([sourceOptions.signal, this.sourceAbortSignal()]) : undefined;
       let proxy = sourceOptions?.analysisPatch
         ? await this.loadProxyRegion(sessionId, lane, longEdge, geometrySignature, editRevision, sourceIdentity,
           `${sessionId}:${lane}:${longEdge}:${geometrySignature}:${sourceIdentity}:analysis:${JSON.stringify(region)}`, region,
-          {isCurrent: sourceOptions?.isCurrent})
+          {isCurrent: sourceOptions?.isCurrent, signal: requestSignal})
         : await this.loadProxy(
         sessionId, lane, longEdge, geometrySignature, editRevision, sourceIdentity,
         { isCurrent: sourceOptions?.isCurrent, onProgress: sourceOptions?.onSourceProgress, region },
@@ -2725,6 +2777,7 @@
         Scheduler,
         serial,
         signal: sourceOptions?.signal,
+        requestSignal,
         isCurrent: sourceOptions?.isCurrent || null,
         viewport: sourceOptions?.viewport || null,
         panPass: sourceOptions?.panPass,
@@ -2987,10 +3040,12 @@
      */
     async loadLocalMaskTiles(
       sessionId, batch, longEdge, editRevision, geometrySignature, isCurrent, signal, proxy = null,
-      sceneMaskSource = null, hue = null, boundedGeometry = false,
+      sceneMaskSource = null, hue = null, boundedGeometry = false, retainMask,
     ) {
       const signature = gpuMaskIdentity(batch.local.mask);
-      if (hue && proxy && maskHasHueLeaf(batch.local.mask)) {
+      if (hue && proxy && maskHasHueLeaf(batch.local.mask)
+        && (!proxy.region || standaloneHueMask(batch.local.mask)
+          || regionalHueGraphEligible(batch.local.mask, geometrySignature, proxy.lane, proxy.sourceIdentity, proxy.workingSpace))) {
         // One GPU mask over the region this generation processes, shared by
         // its tiles, made from this lane's picture before HSL.
         // Crop only a single leaf. Its selection needs neighbours beyond the
@@ -3002,21 +3057,23 @@
         let maskRegion = null;
         if (batch.local.mask.operator === "leaf" && halos.length
           && globalThis.HDRHueMaskRegionalSelection !== false) {
-          const reach = globalThis.HDRHslSelectionGpu.geometry(
-            hue.params[GPU_PARAMS.SOURCE_PIXEL_SCALE] || 1, { edge: 8, edge_feather: 16 }).reach;
+          const grid = globalThis.HDRHslSelectionGpu.geometry(
+            hue.params[GPU_PARAMS.SOURCE_PIXEL_SCALE] || 1, { edge: 8, edge_feather: 16 });
+          const { cell } = grid;
+          const reach = grid.reach + graphScaleContract().blackAndWhiteGuideReach(hue.params);
           const sx = proxy.region?.x || 0, sy = proxy.region?.y || 0;
           const sw = proxy.textureWidth || proxy.width, sh = proxy.textureHeight || proxy.height;
-          const x = Math.max(sx, Math.min(...halos.map(r => r.x)) - reach);
-          const y = Math.max(sy, Math.min(...halos.map(r => r.y)) - reach);
-          const right = Math.min(sx + sw, Math.max(...halos.map(r => r.x + r.width)) + reach);
-          const bottom = Math.min(sy + sh, Math.max(...halos.map(r => r.y + r.height)) + reach);
+          const x = Math.max(sx, Math.floor((Math.min(...halos.map(r => r.x)) - reach) / cell) * cell);
+          const y = Math.max(sy, Math.floor((Math.min(...halos.map(r => r.y)) - reach) / cell) * cell);
+          const right = Math.min(sx + sw, Math.ceil((Math.max(...halos.map(r => r.x + r.width)) + reach) / cell) * cell);
+          const bottom = Math.min(sy + sh, Math.ceil((Math.max(...halos.map(r => r.y + r.height)) + reach) / cell) * cell);
           maskRegion = { x, y, width: right - x, height: bottom - y };
           if (maskRegion.width === sw && maskRegion.height === sh) maskRegion = null;
         }
         const entry = batch.local.mask.operator === "leaf"
           ? await this.loadGpuHueLeaf(sessionId, batch.local.mask, hue, longEdge, isCurrent, proxy, false, maskRegion)
           : await this.loadGpuMaskGraph(sessionId, batch.local, longEdge, editRevision, geometrySignature,
-            isCurrent, signal, true, proxy, hue);
+            isCurrent, signal, true, proxy, hue, retainMask);
         if (entry) {
           entry.wholeFrame = true;
           return { localIndex: batch.localIndex, entries: new Map(batch.tiles.map((tile) => [tile.key, entry])) };
@@ -3041,24 +3098,24 @@
       }
       if (this.gpuAnalyticMasksEnabled && proxy?.region) {
         const generated = this.loadGpuAnalyticRegion(
-          sessionId, batch, longEdge, geometrySignature, signature, isCurrent, proxy,
+          sessionId, batch, longEdge, geometrySignature, signature, isCurrent, proxy, retainMask,
         );
         if (generated) return generated;
       }
       if (this.gpuAnalyticMasksEnabled && proxy
         && window.HDRMaskRaster?.eligible(batch.local.mask, geometrySignature)) {
-        const generated = this.loadGpuShapeTiles(sessionId, batch, longEdge, geometrySignature, signature, isCurrent, proxy);
+        const generated = this.loadGpuShapeTiles(sessionId, batch, longEdge, geometrySignature, signature, isCurrent, proxy, retainMask);
         if (generated) return generated;
       }
       if (this.gpuAnalyticMasksEnabled && proxy && isGpuLinearGradientMask(batch.local.mask, geometrySignature)) {
-        return this.loadGpuLinearGradientTiles(sessionId, batch, longEdge, geometrySignature, signature, isCurrent, proxy);
+        return this.loadGpuLinearGradientTiles(sessionId, batch, longEdge, geometrySignature, signature, isCurrent, proxy, retainMask);
       }
       const lumaRegionSource = sceneMaskSource || (proxy?.region
         && lumaSceneSource(proxy.lane, proxy.sourceIdentity, proxy.workingSpace) ? proxy : null);
       if (this.gpuAnalyticMasksEnabled && lumaRegionSource
         && gpuRegionalGraphEligible(batch.local.mask, geometrySignature)) {
         const graph = await this.loadGpuMaskGraph(sessionId, batch.local, longEdge, editRevision,
-          geometrySignature, isCurrent, signal, true, lumaRegionSource);
+          geometrySignature, isCurrent, signal, true, lumaRegionSource, null, retainMask);
         if (graph) return { localIndex: batch.localIndex,
           entries: new Map(batch.tiles.map(tile => [tile.key, graph])) };
         if (signal?.aborted || !isCurrent()) return { localIndex: batch.localIndex, entries: new Map() };
@@ -3102,7 +3159,9 @@
         }
       }
       return maskLoader().loadCpuMaskTiles(this, {
-        sessionId, batch, longEdge, editRevision, geometrySignature, maskSignature: signature, boundedGeometry, isCurrent, signal,
+        sessionId, batch, longEdge, editRevision, geometrySignature, maskSignature: signature,
+        sourceEpoch: proxy?.sourceEpoch, pictureRevision: maskHasHueLeaf(batch.local.mask) ? editRevision : undefined,
+        boundedGeometry, isCurrent, signal, retainMask,
       });
     }
 
@@ -3854,7 +3913,7 @@
       return {geometrySignature:normalized,width:w,height:h,x,y};
     }
 
-    loadGpuAnalyticRegion(sessionId, batch, longEdge, geometrySignature, signature, isCurrent, proxy) {
+    loadGpuAnalyticRegion(sessionId, batch, longEdge, geometrySignature, signature, isCurrent, proxy, retainMask) {
       const sourceRect = proxy.region;
       const limit = this.device?.limits?.maxTextureDimension2D || 8192;
       if (!sourceRect || !batch.tiles.length
@@ -3879,8 +3938,8 @@
       // Keep region entries distinct from tile entries, even if their bounds
       // happen to coincide, since the latter have implicit pass placement.
       const result = shape
-        ? this.loadGpuShapeTiles(sessionId, regionBatch, longEdge, geometrySignature, `${signature}:region`, isCurrent, proxy)
-        : this.loadGpuLinearGradientTiles(sessionId, regionBatch, longEdge, geometrySignature, `${signature}:region`, isCurrent, proxy);
+        ? this.loadGpuShapeTiles(sessionId, regionBatch, longEdge, geometrySignature, `${signature}:region`, isCurrent, proxy, retainMask)
+        : this.loadGpuLinearGradientTiles(sessionId, regionBatch, longEdge, geometrySignature, `${signature}:region`, isCurrent, proxy, retainMask);
       if (!result) return null;
       const entry = result.entries.get("region");
       if (!entry) return { localIndex: batch.localIndex, entries: new Map() };
@@ -3890,7 +3949,7 @@
       return { localIndex: batch.localIndex, entries: new Map(batch.tiles.map(tile => [tile.key, entry])) };
     }
 
-    loadGpuLinearGradientTiles(sessionId, batch, longEdge, geometrySignature, signature, isCurrent, proxy) {
+    loadGpuLinearGradientTiles(sessionId, batch, longEdge, geometrySignature, signature, isCurrent, proxy, retainMask) {
       const frame=this.analyticMaskFrame(sessionId,longEdge,geometrySignature,proxy.width,proxy.height);
       if(!frame)return null;
       const prefix = `${sessionId}:${batch.local.id}:${longEdge}:${geometrySignature}:${signature}:`;
@@ -3917,10 +3976,8 @@
             byteSize: rect.width * rect.height * 2, kind: "gpu-linear-gradient" };
           this.maskTiles.set(key, entry);
           generated += 1;
-        } else {
-          this.maskTiles.delete(key);
-          this.maskTiles.set(key, entry);
         }
+        retainMask?.(entry);
         entries.set(tile.key, entry);
       }
       if (generated) {
@@ -3933,7 +3990,7 @@
       return { localIndex: batch.localIndex, entries };
     }
 
-    loadGpuShapeTiles(sessionId, batch, longEdge, geometrySignature, signature, isCurrent, proxy) {
+    loadGpuShapeTiles(sessionId, batch, longEdge, geometrySignature, signature, isCurrent, proxy, retainMask) {
       const frame=this.analyticMaskFrame(sessionId,longEdge,geometrySignature,proxy.width,proxy.height);
       if(!frame)return null;
       const prefix = `${sessionId}:${batch.local.id}:${longEdge}:${geometrySignature}:${signature}:gpu-shape:`;
@@ -3958,7 +4015,8 @@
           entry = {key,texture,width:rect.width,height:rect.height,byteSize:rect.width*rect.height*2,
             kind:`gpu-${batch.local.mask.leaf.type}-raster`};
           this.maskTiles.set(key,entry);generated++;
-        } else {this.maskTiles.delete(key);this.maskTiles.set(key,entry);}
+        }
+        retainMask?.(entry);
         entries.set(tile.key,entry);
       }
       if (generated) {
@@ -3979,7 +4037,7 @@
       let bytes = [...this.maskTiles.values()].reduce((sum, entry) => sum + entry.byteSize, 0);
       for (const [key, entry] of [...this.maskTiles]) {
         if (bytes <= budget) break;
-        if (protectedKeys.has(key)) continue;
+        if (protectedKeys.has(key) || entry.allocatorEntry?.pins) continue;
         this.maskTiles.delete(key);
         this.destroyAfterActiveRenders(() => entry.texture.destroy());
         bytes -= entry.byteSize;
@@ -4029,6 +4087,7 @@
       if (!Scheduler) return { rendered: false, refusals: ["tile scheduler is unavailable"] };
       let analysisTileParams = null;
       const newLensGlowTiles = new Map();
+      const maskPins = new Set();
       try {
       const tileSize = Math.max(64, Math.floor(Number(options.tileSize) || Scheduler.DEFAULT_TILE_SIZE));
       // A measurement pass renders the graph to read one number off it and
@@ -4340,8 +4399,22 @@
       // Tiles are grouped by local and sent as bounded batches: one HTTP
       // request and one coordinator slot per batch, and one mask identity per
       // batch for the backend to compile once.
-      const maskBatches = activeLocals.length && foregroundTiles.length && this.maskTileBatch
-        ? this.maskTileBatch.plan({ locals: activeLocals, tiles: foregroundTiles })
+      const shareMasks = Boolean(options.viewport && !options.analysisMasks && longEdge > SOFT_MASK_MAX_EDGE);
+      const uniqueLocals = [], maskIndices = [], indicesBySignature = new Map();
+      activeLocals.forEach((local, index) => {
+        const signature = shareMasks && !maskHasHueLeaf(local.mask) ? gpuMaskIdentity(local.mask) : null;
+        let owner = signature === null ? undefined : indicesBySignature.get(signature);
+        if (owner === undefined) {
+          owner = uniqueLocals.length;
+          if (signature !== null) indicesBySignature.set(signature, owner);
+          uniqueLocals.push(local);
+          maskIndices.push([]);
+        }
+        maskIndices[owner].push(index);
+      });
+      const maskBatches = uniqueLocals.length && foregroundTiles.length && this.maskTileBatch
+        ? this.maskTileBatch.plan({ locals: uniqueLocals, tiles: foregroundTiles,
+          maxRegionEdge: shareMasks ? Math.min(8192, this.device.limits.maxTextureDimension2D) : 0 })
         : [];
       const sceneMaskSource = options.analysisMasks ? null : await this.loadSceneMaskRegion(
         options.sessionId, proxy, foregroundTiles, activeLocals, longEdge, editRevision,
@@ -4361,6 +4434,13 @@
             maskGeneration,
             maskBatches,
             async (batch, _index, signal) => {
+              const retainMask = (entry) => {
+                if (signal.aborted || !isCurrent()) return;
+                const allocation = entry?.allocatorEntry;
+                if (allocation?.kind === "mask-tile" && !maskPins.has(allocation)) {
+                  maskPins.add(this.gpuAllocator.pin(allocation));
+                }
+              };
               if (options.analysisMasks) {
                 const mask = (options.analysisNativeLuma
                   && this.analysisLumaMask(batch.local, proxy, options.geometrySignature || "{}"))
@@ -4369,14 +4449,15 @@
                 const entry = mask ? {...mask, wholeFrame:true} : null;
                 return {localIndex:batch.localIndex, entries:new Map(batch.tiles.map(tile => [tile.key,entry]))};
               }
-              if (options.backendLumaMasks && maskUsesLuminance(batch.local.mask) && !maskHasHueLeaf(batch.local.mask)) {
-                return maskLoader().loadCpuMaskTiles(this, { sessionId: options.sessionId, batch, longEdge, editRevision,
+              const loaded = options.backendLumaMasks && maskUsesLuminance(batch.local.mask) && !maskHasHueLeaf(batch.local.mask)
+                ? await maskLoader().loadCpuMaskTiles(this, { sessionId: options.sessionId, batch, longEdge, editRevision,
                   geometrySignature: options.geometrySignature || "{}", maskSignature: gpuMaskIdentity(batch.local.mask),
-                  boundedGeometry: options.nativeGeometryViewport, isCurrent, signal });
-              }
-              return this.loadLocalMaskTiles(options.sessionId, batch, longEdge, editRevision,
-                options.geometrySignature || "{}", isCurrent, signal, proxy, sceneMaskSource,
-                { lane: options.lane, params, proxy }, options.nativeGeometryViewport);
+                  boundedGeometry: options.nativeGeometryViewport, sourceEpoch: proxy.sourceEpoch, isCurrent, signal, retainMask })
+                : await this.loadLocalMaskTiles(options.sessionId, batch, longEdge, editRevision,
+                  options.geometrySignature || "{}", isCurrent, signal, proxy, sceneMaskSource,
+                  { lane: options.lane, params, proxy }, options.nativeGeometryViewport, retainMask);
+              loaded.entries.forEach(retainMask);
+              return loaded;
             },
             isCurrent,
             options.requestSignal,
@@ -4392,7 +4473,9 @@
           if (!loaded) continue;
           loaded.entries.forEach((entry, tileKey) => {
             const tileIndex = tileIndexByKey.get(tileKey);
-            if (tileIndex !== undefined) maskMatrix[tileIndex][loaded.localIndex] = entry;
+            if (tileIndex !== undefined) {
+              for (const index of maskIndices[loaded.localIndex]) maskMatrix[tileIndex][index] = entry;
+            }
           });
         }
       }
@@ -4401,7 +4484,6 @@
       ))) {
         return { rendered: false, refusals: ["mask tile unavailable or superseded"] };
       }
-
       // Global Clarity reads one brightness map of the whole frame, filled by a
       // pre-pass that runs only the base grade, so it adds nothing to the
       // tile halo. The map is keyed by the picture entering Detail, and by
@@ -5328,6 +5410,7 @@
       };
       } finally {
         analysisTileParams?.destroy();
+        for (const pin of maskPins) this.gpuAllocator.unpin(pin);
         for (const [key, entry] of newLensGlowTiles) {
           if (this.lensGlowTiles.get(key) === entry) this.evictGpuCacheEntry("lens-glow-tile", key);
         }
@@ -5421,8 +5504,8 @@
       // A Match candidate grades the scene picture as SDR whatever the SDR
       // lane's own source is, so it names the lane its source comes from.
       const sourceLane = sourceOptions?.sourceLane || lane;
-      const requireRegion = sourceOptions?.nativeGeometryViewport && (Boolean(region)
-        || !this.wholeSourceResident(sessionId, sourceLane, longEdge, geometrySignature, sourceIdentity));
+      const requireRegion = region?.requireRegion || (sourceOptions?.nativeGeometryViewport && (Boolean(region)
+        || !this.wholeSourceResident(sessionId, sourceLane, longEdge, geometrySignature, sourceIdentity)));
       if (requireRegion && !region) return refuse("required-source-region-unavailable");
       let proxy = await this.loadProxy(
         sessionId,
@@ -5434,6 +5517,7 @@
         {
           isCurrent: () => this.sourceLoadIsCurrent(canvas, serial, resourceGeneration, sourceOptions),
           signal: coarseFetchSignal,
+          scopeRequest: Boolean(sourceOptions?.scopeAnalysis && coarseFetchSignal),
           backgroundUnderlayer,
           onProgress: sourceOptions?.onSourceProgress,
           region,
@@ -5618,6 +5702,7 @@
           geometrySignature,
           isCurrent: isMaskCurrent,
           backgroundUnderlayer,
+          measureOnly: sourceOptions?.measureOnly,
           remember: !sourceOptions?.measureOnly || Boolean(sourceOptions?.scopeAnalysis),
           hue: { lane, params: new Float32Array(params), proxy: sourceProxy },
           requestSignal: coarseFetchSignal,
@@ -6801,8 +6886,8 @@
 
     reclaimGrainResources(before, context, reservation = false) {
       const busy = this.resourceRenderCount || this.activeScopeCount;
-      // Only source proxies are pinned before a render uses them. Other
-      // entries can still be held by a render or a scope outside the ledger.
+      // Source proxies and active mask tiles are pinned. Other entries can
+      // still be held by a render or a scope outside the ledger.
       if (busy && (!reservation || this.activeScopeCount || this.resourceRenderCount > 1)) return false;
       const visible = this.lastPresentedFrame;
       const selector = this.denoiseSourceSelector;
@@ -6816,9 +6901,17 @@
       const proxies = new Map(this.proxies);
       const presentation = this.presentationTarget;
       const evictedByKind = {};
-      for (const entry of [...(allocator?.entries.values() || [])]) {
+      const requested = before.requested_bytes;
+      if (requested != null && HDRGrainRoute.headroom(before) >= requested) return false;
+      const entries = [], presentedMasks = [];
+      for (const entry of allocator?.entries.values() || []) {
+        if (entry.kind === "mask-tile" && this.presentedMaskKeys?.has(entry.key)) presentedMasks.push(entry);
+        else entries.push(entry);
+      }
+      if (requested != null) entries.push(...presentedMasks);
+      for (const entry of entries) {
         if (entry.pins || !entry.evict || !reclaimable.has(entry.kind)
-            || (busy && entry.kind !== "source-proxy")) continue;
+            || (busy && entry.kind !== "source-proxy" && entry.kind !== "mask-tile")) continue;
         if (entry.kind === "source-proxy") {
           const proxy = proxies.get(entry.key);
           if (this.proxyInflight.size || !proxy || proxy === selector?.original || (proxy.lane === visible?.lane
@@ -6830,7 +6923,7 @@
         count++;
         released += entry.bytes;
         evictedByKind[entry.kind] = (evictedByKind[entry.kind] || 0) + entry.bytes;
-        if (HDRGrainRoute.headroom(this.grainMemorySnapshot()) >= (before.requested_bytes ?? Infinity)) break;
+        if (requested != null && HDRGrainRoute.headroom(this.grainMemorySnapshot()) >= requested) break;
       }
       this.grainEvent?.("grain_eviction", count ? "gpu" : "refused",
         count ? "rebuildable_cache_released" : "no_reclaimable_resources", context, {
@@ -9588,11 +9681,11 @@
 
     async loadDirectMasks({
       generation, sessionId, activeLocals, longEdge, editRevision, geometrySignature, isCurrent = () => true,
-      remember = true, hue = null, requestSignal, backgroundUnderlayer = false,
+      remember = true, hue = null, requestSignal, backgroundUnderlayer = false, measureOnly = false,
     }) {
       const tasks = Array.from(activeLocals || []);
       if (!tasks.length) return { results: [], current: isCurrent() };
-      const coordinator = backgroundUnderlayer ? this.backgroundMaskRequestCoordinator : this.maskRequestCoordinator;
+      const coordinator = backgroundUnderlayer || measureOnly ? this.backgroundMaskRequestCoordinator : this.maskRequestCoordinator;
       if (!coordinator) {
         const results = [];
         for (const local of tasks) {
@@ -9655,7 +9748,7 @@
         if (signal?.aborted || !isCurrent()) return null;
       }
       const leafLocal = { ...local, id: maskPath ? `${local.id}:${maskPath}` : local.id, mask: expression };
-      if (longEdge <= SOFT_MASK_MAX_EDGE && this.gpuAnalyticMasksEnabled) {
+      if ((longEdge <= SOFT_MASK_MAX_EDGE || hue) && this.gpuAnalyticMasksEnabled) {
         const shape = this.loadGpuAnalyticLeaf(sessionId,expression,longEdge,geometrySignature,isCurrent);
         if (shape) return shape;
       }
@@ -9917,12 +10010,13 @@
       remember = true,
       sourceOverride = null,
       hue = null,
+      retainMask,
     ) {
       const startedAt = performance.now();
       const layoutIdentity = gpuMaskGraphLayoutIdentity(local.mask);
       const hueIdentity = maskHasHueLeaf(local.mask) ? (hue ? this.hueContextIdentity(hue, sourceOverride || hue.proxy) : "cpu") : "";
       const key = `${sessionId}:${local.id}:${longEdge}:${geometrySignature}:gpu-mask-graph:${layoutIdentity}`
-        + (sourceOverride ? `:region:${JSON.stringify(sourceOverride.region)}` : "") + (hueIdentity ? `:hue:${hue?.lane}` : "");
+        + (sourceOverride?.region ? `:region:${JSON.stringify(sourceOverride.region)}` : "") + (hueIdentity ? `:hue:${hue?.lane}` : "");
       let entry = this.localMasks.get(key);
       const influenceIdentity = JSON.stringify(gpuMaskRenderPayload(local.mask)) + hueIdentity;
       if (entry?.influenceIdentity === influenceIdentity) {
@@ -9938,14 +10032,14 @@
             const leafEntry = await this.loadGpuHueLeaf(sessionId, expression, hue, longEdge, isCurrent, sourceOverride, !remember);
             return leafEntry ? { expression, leafEntry, children: [] } : null;
           }
-          if (sourceOverride) {
+          if (sourceOverride?.region) {
             const leafLocal = { ...local, id: `${local.id}:${path}`, mask: expression };
             const leafEntry = isGpuLumaMask(expression)
               ? await this.loadGpuLumaMask(sessionId, leafLocal, longEdge, editRevision,
                 geometrySignature, isCurrent, signal, false, sourceOverride)
               : this.loadGpuAnalyticRegion(sessionId, { localIndex: 0, local: leafLocal,
                 tiles: [{ key: "region", rect: sourceOverride.region, haloRect: sourceOverride.region, halo: 0 }] },
-                longEdge, geometrySignature, gpuMaskIdentity(expression), isCurrent, sourceOverride)?.entries.get("region");
+                longEdge, geometrySignature, gpuMaskIdentity(expression), isCurrent, sourceOverride, retainMask)?.entries.get("region");
             return leafEntry ? { expression, leafEntry, children: [] } : null;
           }
           // A combination is built texel for texel from its leaves, so each
@@ -10734,20 +10828,27 @@
       if (lane === "sdr" && adjustments.sdr.linked_to_hdr) {
         locals = locals.map(local => ({ ...local, sdr_grade: local.hdr_grade }));
       }
-      const isCurrent = options.isCurrent || (() => true);
+      const isCurrent = () => !options.signal?.aborted && options.isCurrent?.() !== false;
       const key = JSON.stringify([sessionId, lane, revision, adjustments.shared?.geometry || {}, adjustments[lane],
         lane === "sdr" && adjustments.sdr.linked_to_hdr ? adjustments.hdr : null, locals,
         white, options.identity || "source", this.highlightSourceToken({})]);
-      const kept = this.claritySurround;
-      if (kept?.key === key && kept.generation === this.resourceGeneration) return kept;
       // The Peak readout and the highlight anchor are measured side by side
       // for one edit. They share one render: two on the same canvas would
       // each supersede the other's source load.
-      const flight = this.claritySurroundInflight;
-      if (flight?.key === key && flight.generation === this.resourceGeneration) {
-        flight.current.push(isCurrent);
-        return flight.promise;
+      while (isCurrent()) {
+        const kept = this.claritySurround;
+        if (kept?.key === key && kept.generation === this.resourceGeneration) return kept;
+        const flight = this.claritySurroundInflight;
+        if (!flight) break;
+        if (flight.key === key && flight.generation === this.resourceGeneration
+            && (!flight.signal || flight.signal === options.signal)) {
+          flight.current.push(isCurrent);
+          const result = await flight.promise;
+          return isCurrent() && flight.generation === this.resourceGeneration ? result : null;
+        }
+        await flight.promise.catch(() => null);
       }
+      if (!isCurrent()) return null;
       const current = [isCurrent];
       const anyCurrent = () => current.some((check) => check());
       const promise = (async () => {
@@ -10758,7 +10859,8 @@
         if (lane === "hdr") reduced.hdr.highlight_section_enabled = false;
         const surround = { key, generation: this.resourceGeneration, frameWidth: 0, frameHeight: 0, global: null, locals: new Map() };
         const rendered = await this.renderTo(this.editingAnalysisCanvas, sessionId, lane, reduced, curveSampler, 1600, locals,
-          revision, null, white, sourceSize, { isCurrent: anyCurrent, measureOnly: true, captureClarity: surround });
+          revision, null, white, sourceSize, { isCurrent: anyCurrent, measureOnly: true, captureClarity: surround,
+            signal: options.signal, cancelCoarseFetches: Boolean(options.signal) });
         if (!rendered?.width || !surround.frameWidth || !anyCurrent() || surround.generation !== this.resourceGeneration) {
           this.releaseClaritySurround(surround);
           return null;
@@ -10767,10 +10869,11 @@
         this.claritySurround = surround;
         return surround;
       })();
-      const record = { key, generation: this.resourceGeneration, current, promise };
+      const record = { key, generation: this.resourceGeneration, current, promise, signal: options.signal };
       this.claritySurroundInflight = record;
       try {
-        return await promise;
+        const result = await promise;
+        return isCurrent() && record.generation === this.resourceGeneration ? result : null;
       } finally {
         if (this.claritySurroundInflight === record) this.claritySurroundInflight = null;
       }

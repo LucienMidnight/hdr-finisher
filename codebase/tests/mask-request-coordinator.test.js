@@ -65,6 +65,28 @@ test("a newer generation aborts active work and never starts obsolete queued req
   assert.equal(coordinator.snapshot().cancelled, 2);
 });
 
+test("a capacity refusal cancels sibling requests and leaves queued work unstarted", async () => {
+  const coordinator = new HDRMaskRequestCoordinator(2);
+  const gate = deferred();
+  const started = [];
+  let siblingAborted = false;
+  const run = coordinator.run("overlap", ["refused", "pending", "queued"], async (task, _index, signal) => {
+    started.push(task);
+    if (task === "refused") {
+      await gate.promise;
+      throw Object.assign(new Error("capacity"), { status: 507 });
+    }
+    await new Promise(resolve => signal.addEventListener("abort", () => {
+      siblingAborted = true;
+      resolve();
+    }, { once: true }));
+  });
+  gate.resolve();
+  await assert.rejects(run, { status: 507 });
+  assert.deepEqual(started, ["refused", "pending"]);
+  assert.equal(siblingAborted, true);
+});
+
 function makeTile(x, y, halo = 0, size = 32) {
   return {
     key: `${x},${y}|h${halo}`,
@@ -93,6 +115,19 @@ test("mask batches group tiles by local and respect the tile and byte caps", () 
   assert.equal(byBytes.length, 2);
   assert.deepEqual(byBytes.map((batch) => batch.tiles.length), [2, 2]);
   assert.ok(byBytes.every((batch) => batch.bytes <= 64 * 64 * 2));
+});
+
+test("overlapping halo tiles share one rectangle only when it fits the byte and texture caps", () => {
+  const locals = [{ id: "a" }];
+  const tiles = [0, 32, 64].map((x) => ({ ...makeTile(x, 8, 8),
+    haloRect: { x: Math.max(0, x - 8), y: 0, width: x ? 48 : 40, height: 48 } }));
+  const options = { locals, tiles, maxBytes: 5000, maxRegionEdge: 128 };
+  const [shared] = HDRMaskTileBatch.plan(options);
+  assert.equal(shared.sharedRegion, true);
+  assert.equal(shared.bytes, 104 * 48);
+  assert.equal(shared.tiles.length, 3);
+  assert.equal(HDRMaskTileBatch.plan({ ...options, maxBytes: 4900 }).length, 2);
+  assert.equal(HDRMaskTileBatch.plan({ ...options, maxRegionEdge: 103 }).length, 2);
 });
 
 test("batches are coordinator slots, not tiles", async () => {

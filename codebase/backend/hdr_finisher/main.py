@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import atexit
 import asyncio
-from contextlib import asynccontextmanager
-from threading import Event, Lock
+from contextlib import ExitStack, asynccontextmanager, contextmanager
+from threading import Condition, Event, Lock
 import base64
 import binascii
 import json
@@ -40,7 +40,7 @@ from .library_worker import LibraryWorker
 from .library_api import create_library_router
 from .import_jobs import ImportJobManager
 from .import_opening import add_opening_routes
-from .local_adjustments import spatial_mask_signature
+from .local_adjustments import has_hue_mask, spatial_mask_signature
 from .hsl_sampling import HSLSampleRequest, sample_stage
 from .mask_softness import SOFT_ESTIMATE_LIMIT, bitmap_frame_rect, gpu_bitmap_soft_verdict, soft_mask_verdict
 from .raw_import import list_lens_profiles
@@ -156,6 +156,10 @@ _EXPORT_SUFFIXES = {
 PROXY_STREAM_CHUNK_BYTES = 16 * 1024 * 1024
 # How long an aborted mask request's work survives with nobody waiting on it.
 MASK_ABANDON_GRACE_SECONDS = 0.15
+_MASK_BATCH_CAPACITY = Condition()
+_MASK_BATCH_SERIAL_LIMIT_BYTES = 512 * 1024**2
+_mask_batch_reserved_bytes = 0
+_mask_batch_serial_active = False
 
 
 def _preview_resource_payload(session, max_dimension: int) -> dict[str, object]:
@@ -227,6 +231,7 @@ def _cancellable_mask_request(endpoint):
         disconnected_at = 0.0
         queued_at = perf_counter()
         queue_ms = 0.0
+        response = None
         def abandon():
             # A client that aborts usually asks again at once under a newer
             # request. Give that request a moment to join the shared compile
@@ -234,10 +239,10 @@ def _cancellable_mask_request(endpoint):
             if disconnected.is_set() and perf_counter() - disconnected_at >= MASK_ABANDON_GRACE_SECONDS:
                 raise HTTPException(status_code=409, detail="Disconnected local mask work cancelled.")
         def work():
-            nonlocal queue_ms
+            nonlocal queue_ms, response
             queue_ms = (perf_counter() - queued_at) * 1000
             with request_work(None, None, abandon=abandon):
-                return endpoint(*args, **kwargs)
+                response = endpoint(*args, **kwargs)
         async def watch():
             nonlocal disconnected_at
             while True:
@@ -247,18 +252,23 @@ def _cancellable_mask_request(endpoint):
                     return
                 await anyio.sleep(.05)
         error = None
-        async with anyio.create_task_group() as group:
-            group.start_soon(watch)
-            try:
-                response = await run_in_threadpool(work)
-            except Exception as exc:
-                error = exc
-            finally:
-                group.cancel_scope.cancel()
-        if error is not None:
-            raise error
-        response.headers["X-Mask-Worker-Queue-Ms"] = f"{queue_ms:.3f}"
-        return response
+        try:
+            async with anyio.create_task_group() as group:
+                group.start_soon(watch)
+                try:
+                    await run_in_threadpool(work)
+                except Exception as exc:
+                    error = exc
+                finally:
+                    group.cancel_scope.cancel()
+            if error is not None:
+                raise error
+            response.headers["X-Mask-Worker-Queue-Ms"] = f"{queue_ms:.3f}"
+            return response
+        except BaseException:
+            if isinstance(response, _ReservedMaskBatchResponse):
+                response.release()
+            raise
     signature = inspect.signature(endpoint)
     wrapped.__signature__ = signature.replace(parameters=[*signature.parameters.values(),
         inspect.Parameter("http_request", inspect.Parameter.KEYWORD_ONLY, annotation=Request)])
@@ -272,7 +282,9 @@ def _committed_mask_identity(session, local_id: str, mask_path: str | None):
         expression = _mask_expression_at_path(local.mask, mask_path)
     except (StopIteration, HTTPException):
         return None
-    return session.adjustments.shared.geometry.model_dump_json(), spatial_mask_signature(expression)
+    adjustments = session.adjustments
+    return (session.render_cache.source_epoch, adjustments.shared.geometry.model_dump_json(),
+            spatial_mask_signature(expression), adjustments.hdr.model_dump_json() if has_hue_mask(expression) else None)
 
 
 def _compile_current_mask(session, method, *args, timing=None, expected_revision=None, identity=None, **kwargs):
@@ -1472,20 +1484,21 @@ def webgpu_proxy(
 ) -> Response:
     try:
         session = store.get(session_id)
-        _check_revision(session.edit_revision, edit_revision)
+        revision = session.edit_revision
+        _check_revision(revision, edit_revision)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except RevisionConflictError as exc:
         raise _revision_conflict(exc) from exc
+    epoch = session.render_cache.source_epoch
     adjustments = _perspective_draft_base(session, long_edge) if perspective_draft_base else session.adjustments
     _guard_preview_resources(session, long_edge)
-    revision = session.edit_revision
     try:
         proxy, working_space, authoritative_geometry_signature = session.render_cache.geometry_source_proxy(
             kind,
             long_edge,
             adjustments,
-            is_current=lambda: session.edit_revision == revision,
+            is_current=lambda: session.edit_revision == revision and session.render_cache.source_epoch == epoch,
             persist_mips=False,
         )
     except StaleRender:
@@ -1502,6 +1515,8 @@ def webgpu_proxy(
     else:
         accepted_geometry_signature = authoritative_geometry_signature
     body, bytes_per_row, pixel_format = encode_rgba_proxy(proxy, prefer_half=format == "rgba16f")
+    if session.edit_revision != revision or session.render_cache.source_epoch != epoch:
+        return JSONResponse(status_code=409, content={"detail": "Stale source mip request dropped."})
     height, width = proxy.shape[:2]
     source_state = session.render_cache.source_level_state(long_edge)
     # ASGI sends the complete picture body before running these tasks. They
@@ -1509,7 +1524,6 @@ def webgpu_proxy(
     background = BackgroundTasks()
     mip_store = session.render_cache.mip_store
     if mip_store is not None:
-        epoch = session.render_cache.source_epoch
         for identity in (session.render_cache.source_identity, session.render_cache.sdr_identity):
             if identity is not None:
                 background.add_task(mip_store.persist_cached, identity, long_edge,
@@ -1525,7 +1539,8 @@ def webgpu_proxy(
             "X-Working-Space": working_space,
             "X-Pixel-Format": pixel_format,
             "X-Geometry-Signature": accepted_geometry_signature,
-            "X-Edit-Revision": str(session.edit_revision),
+            "X-Edit-Revision": str(revision),
+            "X-Source-Epoch": str(epoch),
             "X-Source-Level-State": source_state or "unknown",
         },
     )
@@ -1661,11 +1676,13 @@ def webgpu_proxy_stream(
     """
     try:
         session = store.get(session_id)
-        _check_revision(session.edit_revision, edit_revision)
+        revision = session.edit_revision
+        _check_revision(revision, edit_revision)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except RevisionConflictError as exc:
         raise _revision_conflict(exc) from exc
+    epoch = session.render_cache.source_epoch
     adjustments = _perspective_draft_base(session, long_edge) if perspective_draft_base else session.adjustments
     native_stream = session.render_cache.native_source_stream(kind, long_edge, adjustments)
     if native_stream is None:
@@ -1678,13 +1695,12 @@ def webgpu_proxy_stream(
         )
         if not estimate.allowed:
             raise HTTPException(status_code=507, detail=estimate.reason)
-    revision = session.edit_revision
     try:
         proxy, working_space, authoritative_geometry_signature = native_stream or session.render_cache.geometry_source_proxy(
             kind,
             long_edge,
             adjustments,
-            is_current=lambda: session.edit_revision == revision,
+            is_current=lambda: session.edit_revision == revision and session.render_cache.source_epoch == epoch,
         )
     except StaleRender:
         return JSONResponse(status_code=409, content={"detail": "Stale source mip request dropped."})
@@ -1711,7 +1727,7 @@ def webgpu_proxy_stream(
         for top in range(0, height, rows_per_chunk):
             # A superseded edit ends the body early; the client sees a short
             # stream and treats it as recoverable rather than as pixels.
-            if session.edit_revision != revision:
+            if session.edit_revision != revision or session.render_cache.source_epoch != epoch:
                 return
             body, _stride = encode_rgba_proxy_rows(
                 proxy,
@@ -1723,6 +1739,8 @@ def webgpu_proxy_stream(
             yield body
 
     source_state = "native" if native_stream is not None else session.render_cache.source_level_state(long_edge)
+    if session.edit_revision != revision or session.render_cache.source_epoch != epoch:
+        return JSONResponse(status_code=409, content={"detail": "Stale source mip request dropped."})
     return StreamingResponse(
         row_strips(),
         media_type="application/octet-stream",
@@ -1734,7 +1752,8 @@ def webgpu_proxy_stream(
             "X-Working-Space": working_space,
             "X-Pixel-Format": pixel_format,
             "X-Geometry-Signature": accepted_geometry_signature,
-            "X-Edit-Revision": str(session.edit_revision),
+            "X-Edit-Revision": str(revision),
+            "X-Source-Epoch": str(epoch),
             "X-Source-Level-State": source_state or "unknown",
         },
     )
@@ -2053,41 +2072,62 @@ def local_mask_tile_proxy(
     )
 
 
+@contextmanager
+def _reserve_mask_batch(working_bytes, available_bytes, check, read_headroom, *, allow_serial=False):
+    global _mask_batch_reserved_bytes, _mask_batch_serial_active
+    with _MASK_BATCH_CAPACITY:
+        while True:
+            check()
+            if not _mask_batch_serial_active:
+                if _mask_batch_reserved_bytes + working_bytes <= (available_bytes or 0):
+                    break
+                if not _mask_batch_reserved_bytes:
+                    if not allow_serial or working_bytes > _MASK_BATCH_SERIAL_LIMIT_BYTES:
+                        raise HTTPException(status_code=507, detail="Not enough host memory for this mask batch.")
+                    _mask_batch_serial_active = True
+                    break
+            _MASK_BATCH_CAPACITY.wait(timeout=.05)
+            available_bytes = read_headroom()
+        _mask_batch_reserved_bytes += working_bytes
+    try:
+        yield
+    finally:
+        with _MASK_BATCH_CAPACITY:
+            _mask_batch_reserved_bytes -= working_bytes
+            _mask_batch_serial_active = False
+            _MASK_BATCH_CAPACITY.notify_all()
+
+
+class _ReservedMaskBatchResponse(Response):
+    def __init__(self, response):
+        super().__init__(response.body, status_code=response.status_code, headers=response.headers)
+
+    def release(self):
+        self.body = b""
+        self.reservation.close()
+
+    async def __call__(self, scope, receive, send):
+        try:
+            await send({"type": "http.response.start", "status": self.status_code, "headers": self.raw_headers})
+            chunk_size = 256 * 1024
+            for offset in range(0, len(self.body), chunk_size):
+                await send({"type": "http.response.body", "body": self.body[offset:offset + chunk_size], "more_body": True})
+            await send({"type": "http.response.body", "body": b""})
+        finally:
+            self.release()
+
+
 @app.post("/api/session/{session_id}/local-mask-tiles")
 @_cancellable_mask_request
-def local_mask_tiles_batch_proxy(
-    session_id: str,
-    request: LocalMaskTileBatchRequest,
-) -> Response:
-    """Serve a bounded batch of globally anchored local-mask tiles.
+def local_mask_tiles_batch_proxy(session_id: str, request: LocalMaskTileBatchRequest) -> Response:
+    from .local_adjustments import brush_mask_working_bytes
 
-    One request carries many tiles.  Mask compilation remains authoritative
-    and whole-image, and every distinct mask identity in the batch is compiled
-    once and sliced for each of its requested rectangles, so a tiled
-    generation no longer needs one HTTP request per tile or a cold compile per
-    tile.  Entries outside the compiled mask are reported per entry instead of
-    failing the batch, and the payload is one length-prefixed container so the
-    browser parses a single response.
-    """
     session = _checked_edit_session(session_id, request.edit_revision)
     _check_mask_geometry(session, request.geometry_signature)
-    geometry = session.adjustments.shared.geometry
-    bounded_geometry = request.bounded_geometry and not geometry_is_identity(geometry)
-    mip_working_bytes = 0
-    if bounded_geometry:
-        native_width, native_height = session.source.width, session.source.height
-        mip_width, mip_height = downsample_target_dimensions(native_width, native_height, request.long_edge)
-        output_width, output_height = geometry_output_dimensions(mip_width, mip_height, geometry)
-        if (mip_width, mip_height) != (native_width, native_height):
-            mip_working_bytes = native_width * native_height * 12 + mip_width * mip_height * 24
-    else:
-        _guard_preview_resources(session, request.long_edge)
-
+    revision, epoch = session.edit_revision, session.render_cache.source_epoch
+    adjustments = session.adjustments
+    bounded_geometry = request.bounded_geometry and not geometry_is_identity(adjustments.shared.geometry)
     locals_by_id = {item.id: item for item in session.local_adjustments}
-    compiled: dict[tuple[str, str | None], np.ndarray] = {}
-    # A mask that can be evaluated for a region is evaluated once for the
-    # rectangle around all of its requested tiles and never for the whole image.
-    regions: dict[tuple[str, str | None], tuple[np.ndarray, tuple[int, int], tuple[int, int]] | None] = {}
     bounds: dict[tuple[str, str | None], list[int]] = {}
     for tile in request.tiles:
         box = bounds.setdefault((tile.local_id, tile.mask_path), [tile.x - tile.halo, tile.y - tile.halo,
@@ -2097,9 +2137,69 @@ def local_mask_tiles_batch_proxy(
         box[1] = min(box[1], tile.y - tile.halo)
         box[2] = max(box[2], tile.x + tile.width + tile.halo)
         box[3] = max(box[3], tile.y + tile.height + tile.halo)
+    plans = {}
+    invalid = {}
+    retained_bytes = retained_region_bytes = peak_scratch = 0
+    estimate = _preview_resource_payload(session, request.long_edge)
+    guarded_full_compile = False
+    for identity, box in bounds.items():
+        local_id, mask_path = identity
+        local = locals_by_id.get(local_id)
+        if local is None:
+            continue
+        try:
+            expression = _mask_expression_at_path(local.mask, mask_path)
+        except HTTPException as exc:
+            invalid[identity] = str(exc.detail)
+            continue
+        rect = (max(0, box[0]), max(0, box[1]), box[2], box[3])
+        plan = session.render_cache.local_mask_region_plan(adjustments, expression, request.long_edge, rect,
+                                                          bounded_fallback=bounded_geometry)
+        if plan is None:
+            if not guarded_full_compile:
+                _guard_preview_resources(session, request.long_edge)
+                guarded_full_compile = True
+            area = estimate["pixel_count"]
+            scratch = estimate["estimated_peak_bytes"]
+        else:
+            size = plan[0]
+            area = max(0, min(size[0], rect[2]) - rect[0]) * max(0, min(size[1], rect[3]) - rect[1])
+            retained_region_bytes += area
+            if retained_region_bytes > MAX_MASK_TILE_BATCH_BYTES:
+                raise HTTPException(status_code=422, detail="The mask tiles span too much of the output.")
+            scratch = max(0, plan[-1] - area)
+        retained_bytes += area
+        brush_scratch = brush_mask_working_bytes(expression) if area else 0
+        peak_scratch = max(peak_scratch, scratch + brush_scratch)
+        plans[identity] = (local.model_copy(update={"id": f"{local_id}:{mask_path}" if mask_path else local_id,
+                                                    "mask": expression}), rect, plan)
+    payload_bytes = sum((tile.width + 2 * tile.halo) * (tile.height + 2 * tile.halo) for tile in request.tiles)
+    from .mask_work import checkpoint, request_work
+
+    def check():
+        if ((request.edit_revision is not None and request.edit_revision != revision)
+                or session.edit_revision != revision or session.render_cache.source_epoch != epoch):
+            raise HTTPException(status_code=409, detail="The edit or source changed while preparing mask tiles.")
+
+    timing = {}
+    with ExitStack() as reservation:
+        with request_work(check, timing):
+            reservation.enter_context(_reserve_mask_batch(
+                retained_bytes + peak_scratch + 4 * payload_bytes, estimate["safely_available_bytes"],
+                checkpoint, lambda: _preview_resource_payload(session, request.long_edge)["safely_available_bytes"],
+                allow_serial=request.long_edge <= FULL_PREVIEW_BASELINE_DIMENSION or not guarded_full_compile,
+            ))
+            response = _assemble_mask_tile_batch(session, request, adjustments, revision, locals_by_id, plans, invalid, timing)
+        held_response = _ReservedMaskBatchResponse(response)
+        held_response.reservation = reservation.pop_all()
+        return held_response
+
+
+def _assemble_mask_tile_batch(session, request, adjustments, revision, locals_by_id, plans, invalid, timing):
+    compiled = {}
+    regions = {}
     entries: list[dict[str, object]] = []
     payloads: list[bytes] = []
-    timing = {}
     started = perf_counter()
     for index, tile in enumerate(request.tiles):
         entry: dict[str, object] = {
@@ -2120,57 +2220,24 @@ def local_mask_tiles_batch_proxy(
             continue
         identity = (tile.local_id, tile.mask_path)
         mask = compiled.get(identity)
-        if mask is None and regions.get(identity) is None:
-            try:
-                selected_mask = _mask_expression_at_path(local.mask, tile.mask_path)
-            except HTTPException as exc:
+        if mask is None and identity not in regions:
+            if identity not in plans:
                 entry["status"] = "invalid"
-                entry["error"] = str(exc.detail)
+                entry["error"] = invalid[identity]
                 entries.append(entry)
                 payloads.append(b"")
                 continue
-            mask_source = local.model_copy(
-                update={
-                    "id": f"{local.id}:{tile.mask_path}" if tile.mask_path else local.id,
-                    "mask": selected_mask,
-                },
-                deep=True,
-            )
-            if identity not in regions:
-                box = bounds[identity]
-                origin = (max(0, box[0]), max(0, box[1]))
-                if bounded_geometry:
-                    width = max(0, min(box[2], output_width) - origin[0])
-                    height = max(0, min(box[3], output_height) - origin[1])
-                    if width * height > MAX_MASK_TILE_BATCH_BYTES:
-                        raise HTTPException(status_code=422, detail="The mask tiles span too much of the output.")
-                if bounded_geometry and (not width or not height):
-                    region = (np.empty((0, 0), dtype=np.uint8), (output_width, output_height))
-                else:
-                    if mip_working_bytes:
-                        available = _preview_resource_payload(session, request.long_edge)["safely_available_bytes"] or 0
-                        working_bytes = mip_working_bytes + width * height * 24 + mip_width * 256 * 64
-                        if working_bytes > available:
-                            raise HTTPException(status_code=507, detail="Not enough host memory for this mask batch.")
-                    region = _compile_current_mask(session, session.render_cache.compiled_local_mask_region,
-                        session.adjustments,
-                        mask_source,
-                        request.long_edge,
-                        (origin[0], origin[1], box[2], box[3]),
-                        timing=timing, expected_revision=request.edit_revision, bounded_fallback=bounded_geometry,
-                        identity=lambda tile=tile: _committed_mask_identity(session, tile.local_id, tile.mask_path),
-                    )
-                regions[identity] = None if region is None else (region[0], region[1], origin)
-            if regions[identity] is None:
-                if bounded_geometry:
-                    _guard_preview_resources(session, request.long_edge)
-                mask = _compile_current_mask(session, session.render_cache.compiled_local_mask,
-                    session.adjustments,
-                    mask_source,
-                    request.long_edge,
-                    spatial_only=True, timing=timing, expected_revision=request.edit_revision,
-                    identity=lambda tile=tile: _committed_mask_identity(session, tile.local_id, tile.mask_path),
-                )
+            mask_source, rect, plan = plans[identity]
+            if plan is not None:
+                try:
+                    region = session.render_cache.compiled_local_mask_region(
+                        adjustments, mask_source, request.long_edge, rect, plan=plan)
+                except StaleRender as exc:
+                    raise HTTPException(status_code=409, detail=str(exc)) from exc
+                regions[identity] = (region[0], region[1], rect[:2])
+            else:
+                mask = session.render_cache.compiled_local_mask(
+                    adjustments, mask_source, request.long_edge, spatial_only=True)
                 compiled[identity] = mask
         region = regions.get(identity)
         if region is not None:
@@ -2193,7 +2260,7 @@ def local_mask_tiles_batch_proxy(
     manifest = {
         "version": 1,
         "long_edge": request.long_edge,
-        "edit_revision": session.edit_revision,
+        "edit_revision": revision,
         "entries": entries,
     }
     manifest_bytes = json.dumps(manifest, separators=(",", ":")).encode("utf-8")
@@ -2209,7 +2276,7 @@ def local_mask_tiles_batch_proxy(
             "X-Mask-Batch-Bytes": str(len(body)),
             "X-Mask-Batch-Compiles": str(len(compiled)),
             "X-Mask-Batch-Regions": str(sum(1 for region in regions.values() if region is not None)),
-            "X-Edit-Revision": str(session.edit_revision),
+            "X-Edit-Revision": str(revision),
             "X-CPU-Mask-Ms": f"{cpu_mask_ms:.3f}",
         },
     )

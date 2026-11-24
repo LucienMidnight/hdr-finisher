@@ -547,6 +547,69 @@ def share_fixed_masks():
 # the blur's whole reach is evaluated around it. Beyond this reach the region
 # would be most of the image anyway and the whole mask is compiled instead.
 _REGION_MARGIN_LIMIT = 768
+MASK_REGION_CHUNK_PIXELS = 2 * 1024**2
+
+
+def hue_region_margin(expression, adjustments, scale, long_edge):
+    from .adjustments import BW_GUIDE_REACH, black_and_white_needs_guide
+    from .finishing import geometry_resample_stage
+    from .hsl_selection import MIN_SCALE, geometry as selection_geometry
+
+    if geometry_resample_stage(adjustments.shared.geometry) != "index":
+        return None
+    grid = selection_geometry(scale)
+    scale = min(1.0, max(MIN_SCALE, scale))
+    hdr = adjustments.hdr
+    guide = BW_GUIDE_REACH if hdr.black_and_white_section_enabled and black_and_white_needs_guide(hdr.black_and_white) else 0
+    def margin(node):
+        if node.operator != "leaf":
+            children = ([child for child in node.children if child.enabled] if node.enabled else node.children[:1])
+            margins = [margin(child) for child in children]
+            return None if any(value is None for value in margins) else max(margins, default=0)
+        leaf = node.leaf
+        if not node.enabled or leaf is None:
+            return 0
+        if leaf.type == "hue_range":
+            return grid.reach + grid.cell + math.ceil(abs(leaf.edge) * scale) + math.ceil(2 * leaf.edge_feather * scale) + guide
+        if leaf.type == "luminance_range" and leaf.mask_feather > 0:
+            return None
+        return mask_region_margin(node, long_edge)
+
+    return margin(expression)
+
+
+def compile_hue_mask_region(source, expression, adjustments, color_context, scale, size, rect, margin):
+    from .finishing import apply_geometry_region
+    from .hsl_sampling import capture_stage_input
+    from .hsl_selection import geometry as selection_geometry, prepare, select_hue
+    from .hue_mask import stage as hue_stage
+
+    left, top, right, bottom = rect
+    leaf = expression.leaf
+    standalone = expression.operator == "leaf"
+    if standalone and (not expression.enabled or leaf.hue_center is None):
+        return np.zeros((bottom - top, right - left), dtype=np.uint8)
+    cell = selection_geometry(scale).cell
+    start_x = max(0, (left - margin) // cell * cell)
+    start_y = max(0, (top - margin) // cell * cell)
+    end_x = min(size[0], math.ceil((right + margin) / cell) * cell)
+    end_y = min(size[1], math.ceil((bottom + margin) / cell) * cell)
+    pixels = apply_geometry_region(source, adjustments.shared.geometry, (start_x, start_y, end_x, end_y))
+    fixed = adjustments.model_copy(update={"shared": adjustments.shared.model_copy(update={"geometry": GeometryAdjustments()})})
+    stage = capture_stage_input(pixels, fixed, PreviewKind.HDR, color_context=color_context, source_pixel_scale=scale)
+    prepared = prepare(acescg_to_linear_srgb(stage), scale, origin=(start_x, start_y))
+    if standalone:
+        mask = select_hue(prepared, leaf)
+        if expression.inverted:
+            mask = 1.0 - mask
+    else:
+        source_x, source_y = source_coordinate_grid(*size, start_x, start_y, end_x - start_x, end_y - start_y,
+                                                   adjustments.shared.geometry)
+        anchor = source_coordinate_grid(*size, 0, 0, min(2, size[0]), min(2, size[1]), adjustments.shared.geometry)
+        with hue_stage(prepared):
+            mask = evaluate_mask(expression, pixels, source_x, source_y, size[0] / size[1], metric_anchor=anchor)
+    mask = mask[top - start_y:bottom - start_y, left - start_x:right - start_x]
+    return np.rint(np.clip(mask, 0, 1) * np.float32(255)).astype(np.uint8)
 
 
 def mask_region_margin(expression: MaskExpression, long_edge: int) -> int | None:
@@ -666,6 +729,8 @@ def evaluate_mask(
     source_x: np.ndarray,
     source_y: np.ndarray,
     pixel_aspect: float = 1.0,
+    *,
+    metric_anchor=None,
 ) -> np.ndarray:
     mask_checkpoint()
     if (expression.operator == "leaf" and expression.leaf is not None
@@ -679,18 +744,19 @@ def evaluate_mask(
                 source_x,
                 source_y,
                 pixel_aspect,
+                metric_anchor=metric_anchor,
             )
         return np.zeros(source_x.shape, dtype=np.float32)
     brush_erase_attenuation: np.ndarray | None = None
     if expression.operator == "leaf":
         if expression.leaf is not None and expression.leaf.type == "brush":
-            result, brush_erase_attenuation = _brush_masks(expression.leaf, source_x, source_y)
+            result, brush_erase_attenuation = _brush_masks(expression.leaf, source_x, source_y, metric_anchor=metric_anchor)
         else:
             result = _evaluate_leaf(expression.leaf, fixed_source_tile, source_x, source_y, pixel_aspect)
     else:
         active_children = [child for child in expression.children if child.enabled]
         children = [
-            evaluate_mask(child, fixed_source_tile, source_x, source_y, pixel_aspect)
+            evaluate_mask(child, fixed_source_tile, source_x, source_y, pixel_aspect, metric_anchor=metric_anchor)
             for child in active_children
         ]
         if not children:
@@ -954,6 +1020,19 @@ def _brush_executor() -> CpuExecutor:
         if _brush_pool is None:
             _brush_pool = CpuExecutor()
         return _brush_pool
+
+
+def brush_mask_working_bytes(expression: MaskExpression) -> int:
+    """Bound raster preparation: segment tuples, ROI slices, scalars and lists."""
+    if not expression.enabled:
+        if expression.operator != "leaf" and expression.children:
+            return brush_mask_working_bytes(expression.children[0])
+        return 0
+    if expression.leaf is not None:
+        if expression.leaf.type != "brush":
+            return 0
+        return sum(512 + 768 * max(1, len(stroke.points) - 1) for stroke in expression.leaf.strokes)
+    return sum(brush_mask_working_bytes(child) for child in expression.children if child.enabled)
 
 
 def _brush_masks(leaf: MaskLeaf, x: np.ndarray, y: np.ndarray, *, metric_anchor=None) -> tuple[np.ndarray, np.ndarray | None]:

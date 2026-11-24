@@ -583,20 +583,25 @@
     return (expression.children || []).flatMap(gpuLumaLeaves);
   }
 
-  function gpuRegionalGraphEligible(expression, geometrySignature) {
+  function gpuRegionalGraphEligible(expression, geometrySignature, { allowHue = false } = {}) {
     if (!expression || expression.enabled === false || expression.operator === "leaf") return false;
+    if (allowHue && gpuLumaLeaves(expression).some(leaf => Number(leaf.mask_feather) > 0)) return false;
     // Index crops change placement, not leaf raster eligibility. The region
     // loader separately verifies the rounded uncropped frame and crop bounds.
     let geometry;
     try { geometry = JSON.parse(geometrySignature); } catch { return false; }
     const leafGeometry = JSON.stringify({...geometry, crop:{x:0,y:0,width:1,height:1}});
+    const sceneHue = allowHue && [0, 90, 180, 270].includes(Number(geometry.rotation || 0))
+      && !Number(geometry.straighten_angle || 0) && !Number(geometry.perspective_rotate || 0)
+      && !Number(geometry.perspective_horizontal || 0) && !Number(geometry.perspective_vertical || 0);
     const children = (expression.children || []).filter(child => child.enabled !== false);
     // A proper combination has at least two operands. Degenerate/disabled
     // graphs retain the established path and its opacity/inversion contract.
     return children.length >= 2 && children.every(child => child.operator === "leaf"
-      ? isGpuLumaMask(child) || window.HDRMaskRaster?.eligible(child, leafGeometry)
+      ? (sceneHue && child.leaf?.type === "hue_range")
+        || isGpuLumaMask(child) || window.HDRMaskRaster?.eligible(child, leafGeometry)
         || isGpuLinearGradientMask(child, leafGeometry)
-      : gpuRegionalGraphEligible(child, geometrySignature));
+      : gpuRegionalGraphEligible(child, geometrySignature, { allowHue }));
   }
 
   /**

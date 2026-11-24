@@ -39,6 +39,18 @@
     if (renderer) capacityRefusalsByRenderer.delete(renderer);
   }
 
+  function withRendererCapacityBackoff(renderer, key, load) {
+    let refusals = capacityRefusalsByRenderer.get(renderer);
+    if (!refusals) capacityRefusalsByRenderer.set(renderer, refusals = new Map());
+    return withCapacityBackoff(refusals, key, load);
+  }
+
+  function responseSourceEpoch(response) {
+    const value = response.headers.get("X-Source-Epoch");
+    const epoch = Number(value);
+    return value != null && value !== "" && Number.isSafeInteger(epoch) && epoch >= 0 ? epoch : undefined;
+  }
+
   function supersededError(message) {
     const error = new Error(message || "Source preparation was superseded");
     error.recoverable = true;
@@ -266,6 +278,7 @@
         pixelFormat,
         geometrySignature,
         sourceIdentity,
+        sourceEpoch: responseSourceEpoch(response),
         identity: key,
         byteSize,
         streamed: true,
@@ -414,6 +427,7 @@
       pixelFormat,
       geometrySignature,
       sourceIdentity,
+      sourceEpoch,
       identity: key,
       byteSize,
       streamed: true,
@@ -786,6 +800,7 @@
       pixelFormat,
       geometrySignature,
       sourceIdentity,
+      sourceEpoch: responseSourceEpoch(response),
       identity: key,
       byteSize,
       bindGroups: new Map(),
@@ -859,7 +874,7 @@
         return renderer.proxies.get(resident.identity);
       }
     }
-    const requestKey = options.backgroundUnderlayer ? Symbol(key)
+    const requestKey = options.backgroundUnderlayer || options.scopeRequest ? Symbol(key)
       : `${key}:${editRevision}:${Boolean(options.regionOnly)}:${Boolean(options.requireRegion)}`;
     if (renderer.proxyInflight.has(requestKey)) return renderer.proxyInflight.get(requestKey);
     const signal = options.signal || renderer.sourceAbortSignal();
@@ -950,7 +965,7 @@
    * never rerun repair at a display tier. All derived render caches are reset.
    * Any refusal drops the retained textures and uses the normal full loader.
    */
-  async function refreshRepairs(renderer, {sessionId, editRevision, sourceSize, geometry, records, isCurrent}) {
+  async function refreshRepairs(renderer, {sessionId, editRevision, sourceEpoch, sourceSize, geometry, records, isCurrent}) {
     const [width, height] = sourceSize;
     const crop = geometry.crop;
     const untransformed = !geometry.rotation && !geometry.flip_horizontal && !geometry.flip_vertical
@@ -984,9 +999,9 @@
     const refreshed = new Set();
     let transferredBytes = 0;
     try {
+      if (!Number.isInteger(sourceEpoch)) throw new Error("Repair source epoch is unavailable");
       for (const proxy of retained.values()) {
         if (refreshed.has(proxy.texture)) continue;
-        let epoch;
         const region = proxy.region || {x:0, y:0, width, height};
         for (const rectangle of rectangles) {
           const left = Math.max(rectangle[0], region.x), top = Math.max(rectangle[1], region.y);
@@ -995,12 +1010,13 @@
           const query = new URLSearchParams({long_edge: proxy.longEdge, format: proxy.pixelFormat === "rgba16float" ? "rgba16f" : "rgba32f",
             edit_revision: editRevision, geometry_signature: proxy.geometrySignature,
             x: left, y: top, width: right-left, height: bottom-top, halo: 0});
-          if (epoch !== undefined) query.set("source_epoch", epoch);
+          query.set("source_epoch", sourceEpoch);
           const response = await fetch(`/api/session/${sessionId}/source-tile/${proxy.lane}?${query}`, {signal});
           if (!response.ok) throw new Error("Repair texture refresh refused");
           const data = await response.arrayBuffer();
           const headers = response.headers;
-          if (!current() || headers.get("X-Geometry-Signature") !== proxy.geometrySignature
+          if (!current() || responseSourceEpoch(response) !== sourceEpoch
+              || headers.get("X-Geometry-Signature") !== proxy.geometrySignature
               || Number(headers.get("X-Edit-Revision")) !== editRevision
               || headers.get("X-Pixel-Format") !== proxy.pixelFormat
               || (proxy.workingSpace && headers.get("X-Working-Space") !== proxy.workingSpace)
@@ -1009,7 +1025,6 @@
               || Number(headers.get("X-Output-Width")) !== width || Number(headers.get("X-Output-Height")) !== height) {
             throw supersededError("Repair texture refresh superseded");
           }
-          epoch = headers.get("X-Source-Epoch");
           const bytesPerRow = Number(headers.get("X-Bytes-Per-Row"));
           if (data.byteLength !== bytesPerRow * (bottom-top)) throw new Error("Incomplete repair texture data");
           renderer.device.queue.writeTexture({texture: proxy.texture, origin: {x:left-region.x, y:top-region.y}}, data,
@@ -1025,6 +1040,7 @@
       for (const [key, proxy] of retained) {
         // A foreground request may already have loaded the new source.
         if (renderer.proxies.has(key)) continue;
+        proxy.sourceEpoch = sourceEpoch;
         renderer.proxies.set(key, proxy);
       }
       renderer.recordStage("repair-source-refresh", {bytes: transferredBytes, textures: refreshed.size});
@@ -1047,6 +1063,7 @@
     supersededError,
     sourceResponseError,
     withCapacityBackoff,
+    withRendererCapacityBackoff,
     clearCapacityRefusals,
     readChunk,
     SOURCE_TILE_REQUEST_EDGE,

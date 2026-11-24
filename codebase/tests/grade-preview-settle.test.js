@@ -157,11 +157,12 @@ function grade({ tiled = true, cpu = false, faster = false, blockDrag = false, c
   });
   vm.runInContext(frontendSource("preview-scheduler.js"), c);
   vm.runInContext(declarations("initializePreviewScheduler", "interactiveDraftGuaranteedTiled", "previewSourceCapacityRefused",
-    "settlePreview", "settlePreviewInner", "settlePreviewFrame", "refreshScopes", "gpuScopeEligible", "refreshScopesAfterPresentation",
+    "settlePreview", "settlePreviewInner", "settlePreviewFrame", "holdingNativeDenoisePictureForFit", "refreshScopes", "cancelGpuScopeRequests",
+    "gpuScopeEligible", "refreshScopesAfterPresentation",
     "scopePresentationIdentity", "scopePresentationMatches",
     "gradeSourceIdentity", "microGrainPreviewKey",
     "clearZoomScopeRefresh", "debouncePreview", "scheduleZoomRefinement", "scheduleZoomScopeRefresh", "refineZoomView",
-    "scheduleLocalPreview", "commitSelectedLocal", "holdingNativeDenoisePictureForFit"), c);
+    "scheduleLocalPreview", "commitSelectedLocal"), c);
   Object.assign(state.acceptedPresentation, c.scopePresentationIdentity("hdr"));
   if (denoiseMethod) state.gpuPreview = grainRenderer(c, denoiseMethod, target);
   c.initializePreviewScheduler();

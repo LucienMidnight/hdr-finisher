@@ -242,6 +242,16 @@ class SourceMipStore:
             "singleflight_waits": 0,
         }
 
+    def peek_level(self, identity: SourceMipIdentity, edge: int) -> np.ndarray | None:
+        with self._lock:
+            return self._memory.get((identity.digest(), edge))
+
+    def has_disk_level(self, identity: SourceMipIdentity, edge: int) -> bool:
+        try:
+            return self.disk_budget_bytes > 0 and self._level_path(identity, edge).is_file()
+        except OSError:
+            return False
+
     def level(
         self,
         identity: SourceMipIdentity,
@@ -252,6 +262,7 @@ class SourceMipStore:
         progress: Callable[[int, int], None] | None = None,
         persist: bool = True,
         bounded: bool = False,
+        cached_only: bool = False,
     ) -> tuple[np.ndarray, str]:
         """Return the level for ``long_edge`` and how it was answered.
 
@@ -289,7 +300,7 @@ class SourceMipStore:
         try:
             if persist:
                 self._ensure_cleaned()
-            array, state = self._load_or_build(identity, edge, image, is_current, progress, persist, bounded)
+            array, state = self._load_or_build(identity, edge, image, is_current, progress, persist, bounded, cached_only)
             with self._lock:
                 if is_current is not None and not is_current():
                     raise StaleRender("A newer source replaced this mip request.")
@@ -437,6 +448,7 @@ class SourceMipStore:
         progress: Callable[[int, int], None] | None,
         persist: bool,
         bounded: bool,
+        cached_only: bool,
     ) -> tuple[np.ndarray, str]:
         if self.disk_budget_bytes > 0:
             loaded = self._read_disk_level(identity, edge)
@@ -447,6 +459,8 @@ class SourceMipStore:
                     self._counters["disk_hits"] += 1
                     self._counters["bytes_read"] += int(loaded.nbytes)
                 return loaded, "disk"
+        if cached_only:
+            raise StaleRender("The reserved source mip is no longer available.")
         if is_current is not None and not is_current():
             raise StaleRender("A newer source replaced this mip build.")
         started = time.perf_counter()
@@ -505,16 +519,18 @@ class SourceMipStore:
 
     def _read_disk_level(self, identity: SourceMipIdentity, edge: int) -> np.ndarray | None:
         path = self._level_path(identity, edge)
+        expected_width, expected_height = downsample_target_dimensions(identity.width, identity.height, edge)
+        header_size = _SOURCE_MIP_HEADER.size
+        expected_bytes = header_size + expected_width * expected_height * 12
         try:
-            data = path.read_bytes()
+            with path.open("rb") as stream:
+                data = stream.read(expected_bytes + 1)
         except FileNotFoundError:
             return None
         except OSError as exc:
             self._record_filesystem_failure("read", path, exc)
             return None
-        expected_width, expected_height = downsample_target_dimensions(identity.width, identity.height, edge)
-        header_size = _SOURCE_MIP_HEADER.size
-        if len(data) < header_size:
+        if len(data) != expected_bytes:
             self._discard_corrupt(path)
             return None
         magic, version, width, height, channels, dtype, _reserved, data_bytes, crc = _SOURCE_MIP_HEADER.unpack_from(data, 0)
@@ -526,7 +542,7 @@ class SourceMipStore:
             and width == expected_width
             and height == expected_height
             and data_bytes == len(data) - header_size
-            and (zlib.crc32(data[header_size:]) & 0xFFFFFFFF) == crc
+            and (zlib.crc32(memoryview(data)[header_size:]) & 0xFFFFFFFF) == crc
         )
         if not valid:
             self._discard_corrupt(path)
@@ -1677,13 +1693,64 @@ class SessionRenderCache:
         return downsample_image(
             compile_geometry_fixed_mask(source, local_adjustment.mask, adjustments.shared.geometry), edge)
 
+    def local_mask_region_plan(self, adjustments, expression, long_edge, rect, *, bounded_fallback=False):
+        from .local_adjustments import MASK_REGION_CHUNK_PIXELS, has_hue_mask, hue_region_margin, mask_region_margin
+
+        long_edge = max(256, int(long_edge))
+        source_height, source_width = self.image.shape[:2]
+        width, height = downsample_target_dimensions(source_width, source_height, long_edge)
+        size = geometry_output_dimensions(width, height, adjustments.shared.geometry)
+        if max(size) > long_edge:
+            return None
+        left, top, right, bottom = rect
+        area = max(0, min(size[0], right) - left) * max(0, min(size[1], bottom) - top)
+        if not area:
+            return size, "empty", 0, 0, None, None, 0
+        scale = min(1.0, long_edge / max(source_width, source_height))
+        resident_mip = disk_mip = None
+        mip_scratch = 0
+        if scale < 1:
+            with mask_cache_lock(self._lock):
+                if self.mip_store is None or self.source_identity is None:
+                    resident_mip = self._source_proxies.get(long_edge)
+                else:
+                    resident_mip = self.mip_store.peek_level(self.source_identity, long_edge)
+                    if resident_mip is None and self.mip_store.has_disk_level(self.source_identity, long_edge):
+                        disk_mip = (self.mip_store, self.source_identity)
+            if disk_mip is not None:
+                mip_scratch = width * height * 12 + _SOURCE_MIP_HEADER.size + 1
+            elif resident_mip is None:
+                mip_scratch = source_width * source_height * 12 + width * height * 24
+        if has_hue_mask(expression):
+            method = "hue"
+            margin = hue_region_margin(expression, adjustments, scale, max(size))
+            if margin is None:
+                return None
+        else:
+            method = "spatial"
+            index_geometry = geometry_resample_stage(adjustments.shared.geometry) == "index"
+            margin = mask_region_margin(expression, max(width, height)) if index_geometry else None
+            if margin is None:
+                if not bounded_fallback and not (index_geometry and (scale == 1 or resident_mip is not None or disk_mip is not None)):
+                    return None
+                return size, "strips", 0, 0, resident_mip, disk_mip, area * 24 + width * 256 * 64 + mip_scratch
+        block = max(256, int(MASK_REGION_CHUNK_PIXELS**.5) - 2 * margin)
+        working_width = min(max(width, height), min(block, right - left) + 2 * margin + 32)
+        working_height = min(max(width, height), min(block, bottom - top) + 2 * margin + 32)
+        def node_count(node):
+            return 1 + sum(node_count(child) for child in node.children)
+        scratch = working_width * working_height * (
+            (128 if method == "hue" else 56) + (0 if method == "hue" and expression.operator == "leaf" else 8 * node_count(expression))
+        )
+        return size, method, margin, block, resident_mip, disk_mip, area + scratch + mip_scratch
+
     def compiled_local_mask_region(
         self,
         adjustments: AdjustmentState,
         local_adjustment: LocalAdjustment,
         long_edge: int,
         rect: tuple[int, int, int, int],
-        *, bounded_fallback: bool = False,
+        *, bounded_fallback: bool = False, plan=None,
     ) -> tuple[np.ndarray, tuple[int, int]] | None:
         """The spatial mask for one output rectangle, or ``None`` when it needs the whole image.
 
@@ -1692,29 +1759,50 @@ class SessionRenderCache:
         on screen. Nothing is cached here: the renderer keeps the tiles it was
         sent, and a whole-image compile of the same mask is never started.
         """
+        from .local_adjustments import compile_hue_mask_region
+
         edge = max(256, int(long_edge))
+        expression = local_adjustment.mask
+        plan = plan or self.local_mask_region_plan(adjustments, expression, edge, rect, bounded_fallback=bounded_fallback)
+        if plan is None:
+            return None
+        size, method, margin, block, resident_mip, disk_mip, _ = plan
+        left, top, right, bottom = rect
+        if method == "empty":
+            return np.empty((0, 0), dtype=np.uint8), size
+        right, bottom = min(right, size[0]), min(bottom, size[1])
         with mask_cache_lock(self._lock):
             with mask_phase("source"):
-                if bounded_fallback:
-                    source = self._source_level_locked(edge, PreviewKind.HDR, persist=False)
+                if resident_mip is not None:
+                    source = resident_mip
+                elif disk_mip is not None:
+                    store, identity = disk_mip
+                    source, state = store.level(identity, edge, self.image, persist=False, cached_only=True)
+                    self._source_level_states[edge] = state
                 else:
-                    source, _sdr_reference = self._proxies_locked(edge)
-        from .local_adjustments import has_hue_mask
-        if has_hue_mask(local_adjustment.mask):
-            return None
+                    source = self._source_level_locked(edge, PreviewKind.HDR, persist=False)
+                scale = min(1.0, edge / max(self.image.shape[:2]))
+                context = self.color_context
         with mask_phase("compute"):
-            region = compile_geometry_fixed_mask_region(
-                source, local_adjustment.mask, adjustments.shared.geometry, rect, spatial_only=True,
-            )
-            if region is not None or not bounded_fallback:
-                return region
             geometry = adjustments.shared.geometry
-            size = geometry_output_dimensions(source.shape[1], source.shape[0], geometry)
-            with TemporaryDirectory(prefix="viewport-mask-", dir=os.environ.get("HDR_FINISHER_PROOF_ROOT") or None) as directory:
-                mask = compile_geometry_fixed_mask_to_frame(
-                    source, local_adjustment.mask, geometry, Path(directory) / "mask.u8",
-                    spatial_only=True, viewport=rect,
-                )
+            if method == "strips":
+                with TemporaryDirectory(prefix="viewport-mask-", dir=os.environ.get("HDR_FINISHER_PROOF_ROOT") or None) as directory:
+                    mask = compile_geometry_fixed_mask_to_frame(
+                        source, expression, geometry, Path(directory) / "mask.u8",
+                        spatial_only=True, viewport=(left, top, right, bottom),
+                    )
+                return mask, size
+            mask = np.empty((bottom - top, right - left), dtype=np.uint8)
+            for row in range(top, bottom, block):
+                for column in range(left, right, block):
+                    mask_checkpoint()
+                    end_x, end_y = min(right, column + block), min(bottom, row + block)
+                    window = (column, row, end_x, end_y)
+                    if method == "hue":
+                        pixels = compile_hue_mask_region(source, expression, adjustments, context, scale, size, window, margin)
+                    else:
+                        pixels, _ = compile_geometry_fixed_mask_region(source, expression, geometry, window, spatial_only=True)
+                    mask[row - top:end_y - top, column - left:end_x - left] = pixels
             return mask, size
 
     def compiled_mask_draft(

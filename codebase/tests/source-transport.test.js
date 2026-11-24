@@ -29,6 +29,66 @@ const gpuAllocatorSource = fs.readFileSync(
   "utf8",
 );
 
+test("in-place repair refresh retains native textures with their new source epoch", async () => {
+  let transport;
+  const geometry = { crop: { x: 0, y: 0, width: 1, height: 1 } };
+  const geometrySignature = JSON.stringify(geometry);
+  const requests = [];
+  const uploads = [];
+  const texture = {};
+  const proxy = { texture, geometrySignature, sourceEpoch: 3, pixelFormat: "rgba16float",
+    sessionId: "session", lane: "hdr", sourceIdentity: "source", width: 16, height: 12, longEdge: 16 };
+  const alias = { ...proxy };
+  const Preview = loadPreview(async (url) => {
+    const params = new URLSearchParams(url.split("?")[1]);
+    requests.push(params.get("source_epoch"));
+    const headers = new Map([
+      ["X-Edit-Revision", "8"], ["X-Geometry-Signature", geometrySignature],
+      ["X-Pixel-Format", "rgba16float"], ["X-Source-Epoch", "4"],
+      ["X-Tile-X", params.get("x")], ["X-Tile-Y", params.get("y")],
+      ["X-Tile-Width", "4"], ["X-Tile-Height", "4"], ["X-Output-Width", "16"],
+      ["X-Output-Height", "12"], ["X-Bytes-Per-Row", "32"],
+    ]);
+    return { ok: true, headers, arrayBuffer: async () => new ArrayBuffer(128) };
+  }, { setup: ({ window }) => { transport = window.HDRSourceTransport; } });
+  const renderer = new Preview(null);
+  renderer.device = { queue: { writeTexture: (...args) => uploads.push(args) } };
+  renderer.proxies.set("native", proxy);
+  renderer.proxies.set("alias", alias);
+  const refreshed = await transport.refreshRepairs(renderer, { sessionId: "session", editRevision: 8,
+    sourceEpoch: 4, sourceSize: [16, 12], geometry, isCurrent: () => true,
+    records: [[0, 0, 4, 4], [4, 4, 8, 8]].map(search_rect => ({ enabled: true, recipe: { search_rect } })),
+  });
+  assert.equal(refreshed, true);
+  assert.deepEqual(requests, ["4", "4"]);
+  assert.equal(uploads.length, 2);
+  for (const key of ["native", "alias"]) {
+    assert.equal(renderer.proxies.get(key).texture, texture);
+    assert.equal(renderer.proxies.get(key).sourceEpoch, 4);
+  }
+});
+
+test("a repair outside every cached viewport updates the epoch without fetching pixels", async () => {
+  let transport;
+  let fetches = 0;
+  const Preview = loadPreview(async () => { fetches++; throw new Error("unexpected pixel fetch"); }, {
+    setup: ({ window }) => { transport = window.HDRSourceTransport; },
+  });
+  const geometry = { crop: { x: 0, y: 0, width: 1, height: 1 } };
+  const texture = {};
+  const renderer = new Preview(null);
+  renderer.proxies.set("viewport", { texture, geometrySignature: JSON.stringify(geometry), sourceEpoch: 3,
+    pixelFormat: "rgba16float", sessionId: "session", lane: "hdr", sourceIdentity: "source",
+    width: 3200, height: 2400, longEdge: 3200, regionTransport: true, region: { x: 0, y: 0, width: 800, height: 500 } });
+  assert.equal(await transport.refreshRepairs(renderer, { sessionId: "session", editRevision: 8,
+    sourceEpoch: 5, sourceSize: [3200, 2400], geometry, isCurrent: () => true,
+    records: [{ enabled: true, recipe: { search_rect: [1600, 1000, 1650, 1050] } }],
+  }), true);
+  assert.equal(fetches, 0);
+  assert.equal(renderer.proxies.get("viewport").texture, texture);
+  assert.equal(renderer.proxies.get("viewport").sourceEpoch, 5);
+});
+
 function loadPreview(fetchImpl, { now = () => Date.now(), setup = null } = {}) {
   const context = vm.createContext({
     window: {},
@@ -63,6 +123,26 @@ function loadPreview(fetchImpl, { now = () => Date.now(), setup = null } = {}) {
   setup?.(context);
   return context.window.HDRWebGPUPreview;
 }
+
+test("a cancellable scope source flight does not own the foreground fetch", async () => {
+  const requests = [];
+  const scope = new AbortController();
+  const Preview = loadPreview(async (_url, { signal }) => {
+    requests.push(signal);
+    if (signal === scope.signal) return new Promise((_resolve, reject) => {
+      signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+    });
+    return { ok: false, status: 418, json: async () => ({ detail: "Foreground reached backend" }) };
+  });
+  const renderer = new Preview(null);
+  const load = (options) => renderer.loadProxy("photo", "hdr", 960, "{}", 7, "source", options);
+  const obsolete = assert.rejects(load({ scopeRequest: true, signal: scope.signal }), { name: "AbortError" });
+  const foreground = assert.rejects(load({}), { status: 418 });
+  scope.abort();
+  await Promise.all([obsolete, foreground]);
+  assert.equal(requests.length, 2);
+  assert.equal(requests[1].aborted, false);
+});
 
 test("whole-source 507 backs off without blocking a first region or caching a 409", async () => {
   let status = 507;
@@ -270,6 +350,7 @@ function createBackend({
         ["X-Working-Space", "acescg"],
         ["X-Pixel-Format", "rgba16float"],
         ["X-Geometry-Signature", geometrySignature],
+        ["X-Source-Epoch", String(epoch)],
       ]);
       return {
         ok: true,
@@ -324,6 +405,7 @@ function createBackend({
       ["X-Working-Space", "acescg"],
       ["X-Pixel-Format", "rgba16float"],
       ["X-Geometry-Signature", geometrySignature],
+      ["X-Source-Epoch", String(epoch)],
     ]);
     return {
       ok: true,
@@ -467,6 +549,7 @@ test("the streaming route reads one response through the same bounded ring", asy
 
   const proxy = await preview.loadProxy("session", "hdr", 8192, "{}", 0, "source");
   assert.ok(proxy);
+  assert.equal(proxy.sourceEpoch, 3);
   const metrics = preview.sourceTransportMetrics;
   assert.equal(metrics.route, "streamed");
   assert.equal(metrics.endpoint, "proxy-stream");
@@ -507,7 +590,7 @@ test("the streaming route reads one response through the same bounded ring", asy
 test("single mode reads the prebuilt whole-frame response the same way", async () => {
   const width = 512;
   const height = 900;
-  const backend = createBackend({ width, height });
+  const backend = createBackend({ width, height, epoch: 0 });
   const Preview = loadPreview(backend.fetchImpl);
   const preview = new Preview(null);
   const harness = createDevice();
@@ -518,11 +601,74 @@ test("single mode reads the prebuilt whole-frame response the same way", async (
 
   const proxy = await preview.loadProxy("session", "hdr", 8192, "{}", 0, "source");
   assert.ok(proxy);
+  assert.equal(proxy.sourceEpoch, 0);
   assert.equal(preview.sourceTransportMetrics.route, "streamed");
   assert.equal(preview.sourceTransportMetrics.endpoint, "proxy");
   assert.ok(backend.requests[0].includes("/proxy/"));
   assert.equal(backend.requests.some((url) => url.includes("/source-tile/")), false);
   assert.equal(preview.sourceTransportMetrics.transferredBytes, alignRow(width * 8) * height);
+});
+
+test("a directly uploaded whole-frame proxy retains the source epoch", async () => {
+  const backend = createBackend({ width: 256, height: 80, epoch: 9 });
+  const Preview = loadPreview(backend.fetchImpl);
+  const renderer = new Preview(null);
+  renderer.device = createDevice().device;
+  const proxy = await renderer.loadProxy("session", "hdr", 256, "{}", 0, "source");
+  assert.equal(renderer.sourceTransportMetrics.route, "whole-frame");
+  assert.equal(proxy.sourceEpoch, 9);
+});
+
+function hueMaskRenderer() {
+  let params;
+  const Preview = loadPreview(null, { setup: context => {
+    vm.runInContext(frontendSource("hsl-selection-gpu.js"), context);
+    const { count, indices } = context.window.HDRGpuParamLayout;
+    params = new Float32Array(count);
+    params[indices.SOURCE_PIXEL_SCALE] = 1;
+    params[indices.BLACK_AND_WHITE_ENABLED] = 1;
+    params[indices.BLACK_AND_WHITE_ENABLED + 1] = 0.3;
+  } });
+  const local = { id: "hue", mask: { operator: "leaf", leaf: { type: "hue_range", hue_center: 90 } } };
+  return { renderer: new Preview(null), params, local };
+}
+
+test("a viewport Hue mask snaps its crop outward and retains the non-grid frame edges", async () => {
+  const { renderer, params, local } = hueMaskRenderer();
+  const viewport = { x: 253, y: 241, width: 417, height: 319 };
+  const tile = { key: "viewport", haloRect: viewport };
+  const proxy = { width: 5202, height: 3463 };
+  const regions = [];
+  renderer.loadGpuHueLeaf = async (...args) => { regions.push({ ...args.at(-1) }); return {}; };
+  const load = () => renderer.loadLocalMaskTiles("photo", { local, localIndex: 0, tiles: [tile] },
+    5202, 0, "{}", () => true, null, proxy, null, { params });
+  assert.equal((await load()).entries.size, 1);
+  assert.deepEqual(regions[0], { x: 172, y: 160, width: 580, height: 480 });
+  Object.assign(viewport, { x: 4831, y: 3197, width: 371, height: 266 });
+  await load();
+  assert.deepEqual(regions[1], { x: 4748, y: 3116, width: 454, height: 347 });
+});
+
+test("a tall Hue mask reads the Black & White guide neighbourhood on both sides of a seam", async () => {
+  const { renderer, params, local } = hueMaskRenderer();
+  const pass = Object.fromEntries(["setViewport", "setScissorRect", "setPipeline", "setBindGroup", "draw", "end"]
+    .map(name => [name, () => {}]));
+  const engine = Object.fromEntries(["ensure", "commit", "dropRetired", "release"].map(name => [name, () => {}]));
+  const copies = [];
+  const texture = { format: "rgba16float", createView() {}, destroy() {} };
+  Object.assign(renderer, {
+    hslSelectionTemplate: { fork: () => engine },
+    device: { createTexture: () => texture, queue: { submit() {}, writeBuffer() {} }, createCommandEncoder: () => ({
+      copyTextureToTexture: (from, _to, size) => copies.push([from.origin.y, size.height]),
+      beginRenderPass: () => pass, finish() {},
+    }) },
+    createMaskTexture: () => texture, createStorageBuffer: () => ({ destroy() {} }),
+    hueContextIdentity: () => "hue", pipelineFor: () => ({}), bindGraphResources() {},
+    encodeHslSelection: () => ({}), retainLocalMask() {},
+  });
+  const proxy = { width: 4096, height: 2800, texture };
+  await renderer.loadGpuHueLeaf("photo", local.mask, { proxy, params }, 4096);
+  assert.deepEqual(copies, [[0, 1064], [984, 1104], [2008, 792]]);
 });
 
 test("a streamed response that ends early is recoverable and publishes nothing", async () => {
@@ -979,6 +1125,78 @@ test("native geometry keeps the viewport when local luminance needs a different 
   assert.ok(unsupported?.width < frameSize.width);
   assert.ok(alignment?.width < frameSize.width);
   assert.equal(alignment.backendLumaMasks, true);
+});
+
+function hueViewportPreview(fetchImpl) {
+  const Preview = loadPreview(fetchImpl, { setup: (context) => {
+    vm.runInContext(frontendSource("viewport-request.js"), context);
+    vm.runInContext(frontendSource("hsl-selection-gpu.js"), context);
+    context.window.HDRHslSelectionGpu = context.HDRHslSelectionGpu;
+  } });
+  const preview = new Preview(null);
+  preview.configureSurface = () => ({ format: "rgba16float" });
+  preview.executionOverrideFor = () => "tiled";
+  preview.roiSourceHalo = () => 0;
+  preview.retainedTiledFrame = () => true;
+  return preview;
+}
+
+const hueLeaf = { operator: "leaf", leaf: { type: "hue_range", hue_center: 90 } };
+
+test("both SDR pictures keep compound Hue on the GPU at Fit and native zoom", async () => {
+  const sourceSize = { width: 7968, height: 5320 };
+  const gradient = { operator: "leaf", leaf: { type: "linear_gradient", start: { x: 0, y: 0 }, end: { x: 1, y: 1 },
+    gradient_midpoint_1: .3, gradient_midpoint_2: .7 } };
+  const luma = { operator: "leaf", leaf: { type: "luminance_range", mask_feather: 0 } };
+  const featheredLuma = { operator: "leaf", leaf: { ...luma.leaf, mask_feather: .004 } };
+  const featheredBrush = { operator: "leaf", leaf: { type: "brush", mask_feather: .05 } };
+  for (const [sourceIdentity, workingSpace] of [["source", "acescg"], ["generated-sdr", "acescg"], ["authored-sdr", "linear-srgb"]]) {
+    const preview = hueViewportPreview(async () => assert.fail("unexpected mask request"));
+    const full = { ...sourceSize, longEdge: sourceSize.width, lane: "sdr", sourceIdentity, workingSpace };
+    preview.lastPresentedFrame = full;
+    const gpuCalls = [];
+    preview.loadGpuMaskGraph = async (...args) => { gpuCalls.push(args[8]); return { kind: "gpu-graph" }; };
+    preview.loadCpuMaskTiles = async () => { throw Object.assign(new Error("whole CPU mask exceeds budget"), { status: 507 }); };
+    for (const [leaf, regional] of [[gradient, true], [luma, sourceIdentity === "source"],
+      [featheredLuma, false], [featheredBrush, false]]) {
+      const local = { mask: { operator: "intersect", children: [hueLeaf, leaf] } };
+      const tile = { key: "tile" };
+      const options = { identity: sourceIdentity, viewport: { x: 792, y: 648, width: 1691, height: 895 } };
+      const region = preview.roiRegionFor({}, {}, "session", "sdr", {}, sourceSize, 203, options, [local], sourceSize.width);
+      assert.equal(Boolean(region), regional, `${sourceIdentity} / ${leaf.leaf.type} / ${leaf.leaf.mask_feather ?? 0}`);
+      const zoom = region ? { ...full, region } : full;
+      for (const proxy of [full, zoom]) {
+        const result = await preview.loadLocalMaskTiles("session", { local, localIndex: 0, tiles: [tile] },
+          sourceSize.width, 1, "{}", () => true, undefined, proxy, null, { lane: "sdr", proxy });
+        assert.equal(result.entries.get(tile.key).kind, "gpu-graph");
+        assert.equal(gpuCalls.at(-1), proxy);
+      }
+    }
+  }
+});
+
+test("a near-full Hue source accepts whole-frame fallback when geometry tiles cannot downsample", async () => {
+  const sourceSize = { width: 7968, height: 5320 };
+  for (const geometry of [{ straighten_angle: 2 }, { perspective_vertical: 12 }]) {
+    let probes = 0;
+    const preview = hueViewportPreview(async (url) => {
+      assert.match(url, /\/source-tile\/sdr/);
+      probes++;
+      return { ok: false, status: 409, arrayBuffer: async () => new ArrayBuffer(0) };
+    });
+    preview.lastPresentedFrame = { ...sourceSize, longEdge: sourceSize.width, workingSpace: "acescg" };
+    const full = { ...sourceSize, region: null };
+    preview.loadProxyStreaming = async () => full;
+    preview.loadProxyStreamed = async () => full;
+    const options = { viewport: { x: 0, y: 0, width: 7400, height: 5100 } };
+    const region = preview.roiRegionFor({}, {}, "session", "sdr", { shared: { geometry } }, sourceSize, 203,
+      options, [{ mask: hueLeaf }], sourceSize.width);
+    assert.ok(region.width * region.height >= sourceSize.width * sourceSize.height * .9);
+    const proxy = await preview.loadProxy("session", "sdr", sourceSize.width, JSON.stringify(geometry), 1, "source",
+      { region, requireRegion: region.requireRegion });
+    assert.equal(proxy, full);
+    assert.equal(probes, 1);
+  }
 });
 
 test("a region-only refusal does not start a whole-source fallback", async () => {

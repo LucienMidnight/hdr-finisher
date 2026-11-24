@@ -21,9 +21,8 @@ function suspendGradeInstruments() {
   state.scopeGeneration += 1;
   state.scopeRequestInFlight?.controller?.abort();
   state.pendingScopeRequest?.resolve(false);
-  state.pendingGpuScopeRequest?.resolve(false);
+  cancelGpuScopeRequests();
   state.pendingScopeRequest = null;
-  state.pendingGpuScopeRequest = null;
   state.scopeAwaitingPresentation = null;
   state.overlayAbortController?.abort();
 }
@@ -71,6 +70,7 @@ function refreshScopes(longEdge = 960, { tier = "settled", generation = null, la
   // so an older response can never become current again.
   const requestGeneration = Math.max(state.scopeGeneration + 1, generation ?? 0);
   state.scopeGeneration = requestGeneration;
+  cancelGpuScopeRequests();
   const mode = state.scopeMode;
   const resolution = mode === "waveform"
     ? waveformRequestResolution(tier)
@@ -175,6 +175,7 @@ function gpuScopeEligible(lane) {
 
 async function runGpuScopeRequest(request) {
   const { lane, mode, tier, generation, resolution, maxNits, scopeRegion } = request;
+  const signal = request.controller?.signal;
   const widthLimit = tier === "interactive"
     ? state.scopeQuality === "performance" ? 192 : state.scopeQuality === "reference" ? 384 : 320
     : state.scopeQuality === "performance" ? 384 : state.scopeQuality === "reference" ? 768 : 640;
@@ -190,7 +191,7 @@ async function runGpuScopeRequest(request) {
     return false;
   }
   const accepted = state.acceptedPresentation;
-  const isCurrent = () => scopePresentationMatches(request.presentation, lane)
+  const isCurrent = () => !signal?.aborted && scopePresentationMatches(request.presentation, lane)
     && scopePresentationMatches(state.acceptedPresentation, lane)
     && request.importGeneration === state.importGeneration
     && request.rawRedevelopGeneration === state.rawRedevelopGeneration
@@ -224,7 +225,7 @@ async function runGpuScopeRequest(request) {
         request.longEdge, request.include_locals ? localAdjustments() : [],
         revision, projectReferenceWhiteNits(),
         { width: state.session.source.width, height: state.session.source.height },
-        { applicationGeneration: accepted.generation, isCurrent },
+        { applicationGeneration: accepted.generation, isCurrent, signal, cancelCoarseFetches: true },
       ).catch((error) => {
         // A newer generation stopping this one's source load is not a failure;
         // the scope that replaces it is already on its way.
@@ -253,7 +254,7 @@ async function runGpuScopeRequest(request) {
       // The accepted tiled picture is current, but an auxiliary GPU graph
       // can still be refused under memory pressure. Keep the same generation
       // guards and settle through the established CPU scope fallback.
-      return new Promise(resolve => enqueueScopeRequest({ ...request, edit_revision: state.editRevision, resolve }));
+      return new Promise(resolve => enqueueScopeRequest({ ...request, edit_revision: state.editRevision, signal, resolve }));
     }
     scopeCanvas = rendered.canvas;
     sourceSerial = rendered.sourceSerial;
@@ -287,7 +288,7 @@ async function runGpuScopeRequest(request) {
   // proxy peak is the right trade, and it is labelled as such.
   let exactPeak = null;
   if (tier === "settled" && !scopeRegion) {
-    exactPeak = await measureExactScopePeak({ lane });
+    exactPeak = await measureExactScopePeak({ lane, signal });
     // The measurement is a render of its own and takes time. Anything that
     // moved underneath it invalidates this payload exactly as it would have
     // above, so the same question is asked again rather than presenting a
@@ -317,6 +318,24 @@ async function runGpuScopeRequest(request) {
   return true;
 }
 
+function cancelGpuScopeRequests() {
+  state.gpuScopeRequestInFlight?.controller?.abort();
+  state.pendingGpuScopeRequest?.resolve(false);
+  state.pendingGpuScopeRequest = null;
+}
+
+function rescheduleGpuScopeAfterPan(lane) {
+  const sessionId = state.session?.session_id;
+  if (![state.gpuScopeRequestInFlight, state.pendingGpuScopeRequest].some((request) => (
+    request?.lane === lane && request.sessionId === sessionId && !request.controller?.signal.aborted
+  ))) return;
+  cancelGpuScopeRequests();
+  state.scopeAwaitingPresentation = scopePresentationIdentity(lane);
+  clearZoomScopeRefresh();
+  scheduleZoomScopeRefresh({ sessionId, lane, generation: state.previewGeneration[lane],
+    signature: geometrySignature(), target: requiredProcessingLongEdge() });
+}
+
 function enqueueGpuScopeRequest(request) {
   return new Promise((resolve) => {
     const queued = { ...request, resolve };
@@ -331,12 +350,13 @@ function enqueueGpuScopeRequest(request) {
 }
 
 async function runQueuedGpuScopeRequest(request) {
+  request.controller = new AbortController();
   state.gpuScopeRequestInFlight = request;
   let applied = false;
   try {
     applied = await runGpuScopeRequest(request);
   } catch (error) {
-    console.error("GPU scope refresh failed", error);
+    if (!request.controller.signal.aborted) console.error("GPU scope refresh failed", error);
   } finally {
     request.resolve(applied);
     if (state.gpuScopeRequestInFlight !== request) return;
@@ -387,7 +407,8 @@ function restoreScopeFreshnessIfIdle() {
 }
 
 async function runScopeRequest(request) {
-  const isCurrentPresentation = () => !state.zoomScopeTimer && !geometryDraftActive()
+  let signal = request.signal;
+  const isCurrentPresentation = () => !signal?.aborted && !state.zoomScopeTimer && !geometryDraftActive()
     && !["import", "export"].includes(state.activeWorkflow) && !document.hidden
     && scopePresentationMatches(request.presentation, request.lane)
     && request.importGeneration === state.importGeneration
@@ -400,6 +421,7 @@ async function runScopeRequest(request) {
     return;
   }
   const controller = new AbortController();
+  signal = signal ? AbortSignal.any([signal, controller.signal]) : controller.signal;
   request.controller = controller;
   state.scopeRequestInFlight = request;
   markScopeUpdating();
@@ -422,7 +444,7 @@ async function runScopeRequest(request) {
         scope_region: scopeRegion,
         ...request.microGrain,
       }),
-      signal: controller.signal,
+      signal,
     });
     let response = await requestScope(edit_revision);
     if (response.status === 409) {
@@ -455,7 +477,7 @@ async function runScopeRequest(request) {
     if (payload.micro_source_long_edge != null) {
       applyEditingScopePeak(payload, null, lane);
     } else if (tier === "settled" && !request.scopeRegion) {
-      const measured = await measureExactScopePeak({lane});
+      const measured = await measureExactScopePeak({lane, signal});
       if (!isCurrent()) return false;
       applyEditingScopePeak(payload, measured, lane);
     }
@@ -466,7 +488,7 @@ async function runScopeRequest(request) {
     applied = true;
     return true;
   } catch (error) {
-    if (error.name !== "AbortError") console.error(error);
+    if (!signal.aborted && error.name !== "AbortError") console.error(error);
     return false;
   } finally {
     if (state.scopeRequestInFlight === request) state.scopeRequestInFlight = null;

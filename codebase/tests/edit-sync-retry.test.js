@@ -38,7 +38,8 @@ test("scope refresh proceeds after one successful sync", async () => {
     gpuScopeEligible: () => true,
     enqueueGpuScopeRequest: async () => true,
   });
-  vm.runInContext(declarations("geometryDraftActive", "gradeSourceIdentity", "microGrainPreviewKey", "scopePresentationIdentity", "refreshScopes"), context);
+  vm.runInContext(declarations("geometryDraftActive", "gradeSourceIdentity", "microGrainPreviewKey",
+    "scopePresentationIdentity", "refreshScopes", "cancelGpuScopeRequests"), context);
   assert.equal(await vm.runInContext("refreshScopes()", context), true);
   assert.equal(syncCalls, 1);
 });
@@ -61,7 +62,8 @@ test("leaving Grade cancels queued and running instruments without clearing the 
     pendingScopeRequest:{resolve:value=>calls.push(value)},
     pendingGpuScopeRequest:{resolve:value=>calls.push(value)},
     overlayAbortController:{abort:()=>calls.push("overlay")},scopeAwaitingPresentation:{} }});
-  vm.runInContext(definition("clearZoomScopeRefresh")+"\n"+definition("suspendGradeInstruments")+";suspendGradeInstruments()",context);
+  vm.runInContext(declarations("clearZoomScopeRefresh", "cancelGpuScopeRequests", "suspendGradeInstruments")
+    + ";suspendGradeInstruments()", context);
   assert.deepEqual(calls,["underlayer","scheduler","scope",false,false,"overlay"]);
   assert.equal(context.state.scopeGeneration,5);
   assert.equal(context.state.session,session);

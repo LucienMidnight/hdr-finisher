@@ -954,14 +954,14 @@ def test_source_mip_read_failure_is_recorded_instead_of_looking_like_a_miss(
     SourceMipStore(root).level(identity, 256, image)
     store = SourceMipStore(root)
     target = store._level_path(identity, 256)
-    original_read = render_cache_module.Path.read_bytes
+    original_open = render_cache_module.Path.open
 
-    def deny(self):
-        if self == target:
+    def deny(self, mode="r", *args, **kwargs):
+        if self == target and mode == "rb":
             raise PermissionError("denied by test")
-        return original_read(self)
+        return original_open(self, mode, *args, **kwargs)
 
-    monkeypatch.setattr(render_cache_module.Path, "read_bytes", deny)
+    monkeypatch.setattr(render_cache_module.Path, "open", deny)
     level, state = store.level(identity, 256, image)
 
     assert state == "built"

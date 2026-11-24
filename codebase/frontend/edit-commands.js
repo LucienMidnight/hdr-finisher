@@ -129,7 +129,7 @@ function queueEditCommand(commandType, payload = {}, targetId = null, { refreshP
       }
       renderRawImportControls(session);
     }
-    await resetRepairSource(previousRepairs, result.document);
+    await resetRepairSource(previousRepairs, result.document, result.source_epoch);
     if (state.session?.session_id !== sessionId || state.editRevision !== result.revision) return false;
     recordAcknowledgedLocals(result.document);
     if (commandType === "replace_document") loadDenoiseDocument(state.editDocument);
@@ -243,7 +243,7 @@ async function syncGlobalEditState() {
   return state.globalEditDirty || state.globalEditSyncPending ? syncGlobalEditState() : true;
 }
 
-async function resetRepairSource(previousRepairs, documentState) {
+async function resetRepairSource(previousRepairs, documentState, sourceEpoch) {
   if (previousRepairs === JSON.stringify(documentState.repairs || [])) return;
   state.repairSourceGeneration = (state.repairSourceGeneration || 0) + 1;
   const sessionId = state.session.session_id, revision = state.editRevision;
@@ -264,7 +264,7 @@ async function resetRepairSource(previousRepairs, documentState) {
   const reordered = JSON.stringify(oldRepairs.filter(r => r.enabled && newIds.has(r.id)).map(r => r.id)) !==
     JSON.stringify(newRepairs.filter(r => r.enabled && oldIds.has(r.id)).map(r => r.id));
   if (renderer) await HDRSourceTransport.refreshRepairs(renderer, {
-    sessionId, editRevision: revision,
+    sessionId, editRevision: revision, sourceEpoch,
     sourceSize: [state.session.source.width, state.session.source.height],
     geometry: documentState.global_adjustments.shared.geometry,
     records: reordered ? [...oldRepairs, ...newRepairs] : [...changedRepairs(oldRepairs, newRepairs), ...changedRepairs(newRepairs, oldRepairs)],
@@ -299,7 +299,7 @@ async function refreshEditState({ preserveLocalDraft = false } = {}) {
   const previousRepairs = JSON.stringify(state.editDocument?.repairs || []);
   state.editRevision = result.revision;
   state.editDocument = result.document;
-  await resetRepairSource(previousRepairs, result.document);
+  await resetRepairSource(previousRepairs, result.document, result.source_epoch);
   if (state.session?.session_id !== sessionId || state.editRevision !== result.revision) return;
   recordAcknowledgedLocals(result.document);
   loadDenoiseDocument(state.editDocument);

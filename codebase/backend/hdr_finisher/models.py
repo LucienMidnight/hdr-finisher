@@ -1169,6 +1169,7 @@ class SdrMatchActionRequest(BaseModel):
 class EditStateResponse(BaseModel):
     repair_rendering: list[dict] = Field(default_factory=list)
     revision: int = Field(ge=0)
+    source_epoch: int = Field(ge=0)
     document: EditDocument
     dirty: bool = False
     can_undo: bool = False

@@ -156,32 +156,54 @@
     editRevision,
     geometrySignature,
     maskSignature,
+    sourceEpoch,
+    pictureRevision,
     boundedGeometry = false,
     isCurrent,
     signal,
+    retainMask,
   }) {
     // Grade values, opacity and bypass do not alter the spatial mask. Spatial
     // identity plus geometry is the actual cache invalidation boundary, and a
     // tile of it is the same tile whichever edit or source level asked: the
     // plan's own tile key carries the edit revision, so it is not used here.
-    const prefix = `${sessionId}:${batch.local.id}:${longEdge}:${geometrySignature}:${maskSignature}:`;
+    const prefix = JSON.stringify([sessionId, batch.local.id, sourceEpoch ?? `revision:${editRevision}`, longEdge,
+      geometrySignature, maskSignature, pictureRevision, boundedGeometry]);
     const entries = new Map();
     const missing = [];
+    const reused = new Map();
+    const reusable = batch.sharedRegion ? [...renderer.maskTiles.values()].filter(entry => entry.regionPrefix === prefix) : [];
     for (const tile of batch.tiles) {
-      const key = `${prefix}${spatialTileKey(tile)}`;
-      const cached = renderer.maskTiles.get(key);
+      const key = `${prefix}:${spatialTileKey(tile)}`;
+      const halo = tile.haloRect;
+      const cached = renderer.maskTiles.get(key) || reusable.find(({ rect }) => halo.x >= rect.x && halo.y >= rect.y
+        && halo.x + halo.width <= rect.x + rect.width && halo.y + halo.height <= rect.y + rect.height);
       if (cached) {
-        renderer.maskTiles.delete(key);
-        renderer.maskTiles.set(key, cached);
+        reused.set(cached.key, cached);
         entries.set(tile.key, cached);
         continue;
       }
       missing.push({ tile, key });
     }
-    if (!missing.length) return { localIndex: batch.localIndex, entries };
-    const response = await fetch(
-      `/api/session/${sessionId}/local-mask-tiles`,
-      {
+    for (const [key, entry] of reused) {
+      retainMask?.(entry);
+      if (!entry.allocatorEntry?.pins) {
+        renderer.maskTiles.delete(key);
+        renderer.maskTiles.set(key, entry);
+      } else {
+        renderer.touchGpuCache?.(entry);
+      }
+    }
+    if (renderer.instrumentationEnabled) {
+      renderer.performanceMetrics.maskEvents ||= [];
+      renderer.performanceMetrics.maskEvents.push({ kind: "cpu-mask-tile-cache", hits: entries.size, misses: missing.length });
+    }
+    if (!missing.length || !isCurrent() || signal?.aborted) return { localIndex: batch.localIndex, entries };
+    const region = batch.sharedRegion && renderer.maskTileBatch?.cover(missing.map(({ tile }) => tile));
+    const requests = region ? [{ tile: { rect: region, halo: 0 }, key: `${prefix}:region:${JSON.stringify(region)}` }] : missing;
+    const transport = window.HDRSourceTransport;
+    const load = async () => {
+      const response = await fetch(`/api/session/${sessionId}/local-mask-tiles`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         signal,
@@ -190,7 +212,7 @@
           geometry_signature: geometrySignature,
           long_edge: longEdge,
           bounded_geometry: boundedGeometry,
-          tiles: missing.map(({ tile }) => ({
+          tiles: requests.map(({ tile }) => ({
             local_id: batch.local.id,
             x: tile.rect.x,
             y: tile.rect.y,
@@ -199,24 +221,33 @@
             halo: tile.halo,
           })),
         }),
-      },
-    );
-    if (!response.ok || !renderer.maskTileBatch) {
-      if (boundedGeometry && response.status === 507) {
-        throw await window.HDRSourceTransport.sourceResponseError(response, "The viewport mask could not be loaded");
+      });
+      if (response.status === 507) {
+        const message = "The viewport mask could not be loaded";
+        throw transport?.sourceResponseError ? await transport.sourceResponseError(response, message)
+          : Object.assign(new Error(message), { status: 507 });
       }
+      return response;
+    };
+    const capacityKey = `mask:${JSON.stringify([sessionId, sourceEpoch, longEdge, geometrySignature, editRevision, boundedGeometry])}`;
+    const response = transport?.withRendererCapacityBackoff
+      ? await transport.withRendererCapacityBackoff(renderer, capacityKey, load) : await load();
+    if (!response.ok || !renderer.maskTileBatch) {
       await response.body?.cancel?.().catch(() => null);
       return { localIndex: batch.localIndex, entries };
     }
     const parsed = renderer.maskTileBatch.parse(new Uint8Array(await response.arrayBuffer()));
     if (!isCurrent()) return { localIndex: batch.localIndex, entries };
     parsed.entries.forEach((entry, index) => {
-      const target = missing[index];
+      const target = requests[index];
       if (!target || entry.status !== "ok") return;
       const width = Number(entry.tile_width);
       const height = Number(entry.tile_height);
       const bytes = entry.payload;
       if (!width || !height || !bytes || bytes.byteLength < width * height) return;
+      const frameWidth = Number(entry.output_width), frameHeight = Number(entry.output_height);
+      if (region && (!(frameWidth > 0 && frameHeight > 0) || Number(entry.tile_x) !== region.x
+        || Number(entry.tile_y) !== region.y || width !== region.width || height !== region.height)) return;
       const bytesPerRow = Math.ceil(width / 256) * 256;
       const padded = bytesPerRow === width ? bytes : new Uint8Array(bytesPerRow * height);
       if (padded !== bytes) {
@@ -233,7 +264,12 @@
       );
       const cached = { texture, width, height, byteSize: width * height, key: target.key };
       renderer.maskTiles.set(target.key, cached);
-      entries.set(target.tile.key, cached);
+      retainMask?.(cached);
+      if (region) {
+        Object.assign(cached, { wholeFrame: true, rect: region, regionPrefix: prefix,
+          frameRect: [region.x / frameWidth, region.y / frameHeight, width / frameWidth, height / frameHeight] });
+        for (const { tile } of missing) entries.set(tile.key, cached);
+      } else entries.set(target.tile.key, cached);
     });
     return { localIndex: batch.localIndex, entries };
   }

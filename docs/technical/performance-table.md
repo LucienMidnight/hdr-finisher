@@ -1,3 +1,103 @@
+## November 24, 2026 — Grade local masks at 100%
+
+MacBook Neo (A18 Pro, 8 GB), Electron at 1408 × 794 points and 2× under
+the shared GPU lock. One run per case, Lens Auto, HDR Grade. Times are to
+the first exact current picture and fresh settled Histogram. Memory is a
+one-second process-tree physical-footprint sample in decimal GB, not a
+hardware peak. The test-only EXIF pause shim let Grade start on a host with
+exhausted POSIX semaphores; production memory and processing limits did not change.
+
+| 100% action | Exact picture / Histogram before → after | Sampled peak app memory before → after |
+| --- | --- | ---: |
+| Sony `_DSC7970.ARW`, 12 locals, enable | Neither by 60.7 s → 16.68 / 18.49 s | 9.11 → 5.41 GB |
+| Canon `IMG_3129.CR2`, 12 locals, enable | 17.34 / 19.11 s → 7.84 / 10.08 s | 7.06 → 5.97 GB |
+| Canon `IMG_0790.CR2`, 12 locals, edit/release | 10.8–17.6 s picture → 7.55 / 10.39 s | — → 5.77 GB |
+| Sony `_DSC7970.ARW`, Hue, enable | — → 0.80 / 1.94 s | — → 1.53 GB |
+| Canon `IMG_3129.CR2`, Hue, enable | 1.32 / 2.04 s on fresh launch → 1.07 / 1.84 s | 1.91 → 2.26 GB |
+
+Sony Overlap went from 55 mask-batch and 47 source-stream memory refusals to
+zero. Wide Luma feathering still needs the entire 323 MiB source on that
+viewport: it arrives via bounded tile requests once, rather than repeated
+whole-frame streams. The Hue-only picture source is 41.6 MiB on both photos
+(Canon was 138.3 MiB). A previous pressured Canon Hue run recorded 61 source
+refusals. There were no 507s in the after sweep, including at Fit and 31%.
+Cold Overlap at Fit took 0.26–0.34 s picture / 0.64–2.85 s Histogram; at 31%
+it still took 10.36–14.76 s picture / 11.39–15.26 s Histogram. Cold Hue at
+Fit and 31% stayed under 0.38 s picture / 0.58 s Histogram.
+
+The Canon native Overlap enable went from 216 logical mask tiles and 12 batch
+requests to 144 tiles and 3 requests. Identical local mask definitions share
+one result. Bounded batches send one region when the overlapping tile halos
+fit, and can reuse it for contained requests with the same mask, source and
+geometry. The first version still fetched three batches on a same-viewport
+rerender. The review fixes retain the presented tiles under opportunistic
+memory reclaim, carry the source epoch through every upload route, and keep
+background Histogram masks from cancelling foreground masks.
+
+| 12 locals at 100%, reviewed build | Enable picture | Exposure edit picture | Pan to exact viewport |
+| --- | ---: | ---: | ---: |
+| Sony `_DSC7970.ARW` | 17.87 s | 15.48 s | 15.26 s |
+| Canon `IMG_3129.CR2` | 8.96 s | 8.14 s | 7.43 s |
+
+Both Exposure edits reused 54 of 54 CPU-backed tile placements and sent no
+mask POSTs. Each pan reused 30 of 54 and sent three successful batches for
+newly visible tiles. These single-run timings overlapped the fast test suites;
+the counters exclude separate GPU-only masks. The Sony did not get well under
+the original 16.7 s cold reference: 14.78 s of its Exposure render was in the
+tiled picture stage despite zero CPU mask misses.
+Three Local Clarity layers at 2.75% radius still make every tile pay a 626 px
+detail halo on the Canon and 994 px on the Sony. The Canon still processes
+about 55 million pixels for an 18 MP frame. Separating those local map
+pre-passes, as for Global Clarity, requires preserving the input from preceding
+locals.
+
+The earlier nine-patch Overlap check changed the source route, not the mask
+route. The new check compared every RGBA sample in the 2054 × 858 far-corner
+viewport on `IMG_0790.CR2` (5202 × 3464), including tile joins, the right and
+bottom edges, and a sharp path at high coordinates. Four shared mask regions
+matched 72 legacy whole-image mask tile responses with zero differing samples
+out of 7,049,328. The old endpoint refused with 507 on this host; only the
+reference run bypassed its admission gate and serialized the GETs. Mask
+arithmetic was unchanged. GPU Luma stayed on the same route on both sides.
+At the opposite corner, the Hue and Local Clarity viewport with Black & White
+matched both the five-band whole-source and single-band references with the
+four-pixel guide active. The far-corner Hue and Local Clarity crop also matched
+the whole Hue mask on the same full source, with no differing samples in either
+viewport. The right edge is off the four-pixel grid; the bottom edge is on it.
+The automated crop test also checks an off-grid bottom edge. These are preview
+checks, not whole-image export parity.
+
+With the unused Local Clarity passes pruned, both v4 Sony runs at 100% kept
+the same reuse as v3: Exposure reused all 54 placements with no mask requests
+(7.51–7.91 s picture vs 8.09 s); pan reused 30 of 54 with three requests
+(7.68–8.41 s vs 8.24 s). Panning stopped an intentionally held CPU Histogram
+fallback in 2–14 ms and the replacement reached Settled. Clean Grain with
+12 locals stayed on GPU and delivered the picture in 22.95–23.87 s.
+
+Masks v6 reuses one offscreen render target for robust Highlight Anchor
+measurements. On the same MacBook Neo at 100%, Gradient + Hue, Hue intersected
+with unfeathered Luma, and Hue combined with an unfeathered Brush stayed in
+the viewport on both Sony and Canon. All six 2054 × 858 viewports matched the
+whole-frame GPU route exactly, including the frame edges and tile joins
+(42,295,968 RGBA samples; no differences). These are preview checks. Compound
+Hue with feathered Luma keeps the whole-source route: the bounded GPU result
+did not match it on the 42 MP Sony.
+
+Sony showed the picture in 0.61–0.77 s, compared with 4.59–4.85 s when the
+whole frame was forced; Canon took 0.68–0.87 s versus 2.16–2.34 s. Sony
+Clean Grain with Gradient + Hue settled at 100% in 9.18 s picture / 10.04 s
+Histogram, with no HTTP 507s; v5 timed out after two memory refusals.
+
+[Compound Hue viewport comparison](../../codebase/output/grade-sweep/batch6-masks-v6-parity.json) ·
+[Sony Clean Grain reproduction](../../codebase/output/grade-sweep/batch6-masks-v6-grain.json)
+
+[Sony baseline](../../codebase/output/grade-sweep/sony-overlap-alone.json) ·
+[Canon baseline](../../codebase/output/grade-sweep/canon3129-native-fill.json) ·
+[After sweep](../../codebase/output/grade-sweep/batch6-masks-exact.json) ·
+[Reviewed reuse](../../codebase/output/grade-sweep/batch6-masks-v2-reuse-fixed.json) ·
+[Full-viewport legacy comparison](../../codebase/output/grade-sweep/batch6-masks-v2-parity.json) ·
+[Hue crop and band comparisons](../../codebase/output/grade-sweep/batch6-masks-v2-hue-edges.json)
+
 ## November 24, 2026 — Film Resolution and Detail blur
 
 MacBook Neo (A18 Pro, 8 GB), Electron at 1408 × 794 points and 2× under

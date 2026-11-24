@@ -1886,6 +1886,7 @@ function clearPreviewCache({ preservePicture = false } = {}) {
   if (state.perspectivePreviewUrl) URL.revokeObjectURL(state.perspectivePreviewUrl);
   state.perspectivePreviewUrl = null;
   state.scopeRequestInFlight?.controller?.abort();
+  state.gpuScopeRequestInFlight?.controller?.abort();
   state.pendingScopeRequest?.resolve(false);
   state.pendingGpuScopeRequest?.resolve(false);
   state.scopeRequestInFlight = null;
