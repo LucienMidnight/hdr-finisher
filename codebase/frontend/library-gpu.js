@@ -172,7 +172,9 @@ class HDRLibraryGPU extends HDRWebGPUPreview {
         enumerable:true,get:()=>{
           if(!token.pipeline){
             if(token.pending)throw Error('Library pipeline must finish preparation before drawing.');
-            token.pipeline=this.device.createRenderPipeline(token.descriptor);HDRLibraryStopwatch("picture_pipeline_demand",{name,format,path:this.libraryMeta?.path});
+            token.pipeline=token.descriptor.compute
+              ? this.device.createComputePipeline(token.descriptor) : this.device.createRenderPipeline(token.descriptor);
+            HDRLibraryStopwatch("picture_pipeline_demand",{name,format,path:this.libraryMeta?.path});
           }
           return token.pipeline;
         }
@@ -204,9 +206,15 @@ class HDRLibraryGPU extends HDRWebGPUPreview {
       if(this.pipelines.get(format)!==pipelines)return;
       const token=tokens[name];
       if (!token || token.pipeline) continue;
-      if(!token.pending){const started=performance.now();token.pending=this.device.createRenderPipelineAsync(token.descriptor).then(pipeline=>{
-        HDRLibraryStopwatch('picture_pipeline_prepared',{name,format,duration_ms:performance.now()-started});return token.pipeline ||= pipeline;
-      }).catch(error=>{token.pending=null;throw error;});}
+      if(!token.pending){
+        const started=performance.now();
+        const descriptor=token.descriptor;
+        const compilation=descriptor.compute
+          ? this.device.createComputePipelineAsync(descriptor) : this.device.createRenderPipelineAsync(descriptor);
+        token.pending=compilation.then(pipeline=>{
+          HDRLibraryStopwatch('picture_pipeline_prepared',{name,format,duration_ms:performance.now()-started});return token.pipeline ||= pipeline;
+        }).catch(error=>{token.pending=null;throw error;});
+      }
       await token.pending;
     }
   }

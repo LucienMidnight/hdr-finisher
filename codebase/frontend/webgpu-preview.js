@@ -2217,9 +2217,9 @@
           localTexture: make("rgba16float", attachment),
           detailScratchTexture: make("rgba16float", attachment),
           detailResultTexture: make("rgba16float", attachment | GPUTextureUsage.COPY_SRC | GPUTextureUsage.COPY_DST),
-          filmTexture: make("rgba16float", attachment),
+          filmTexture: make("rgba16float", attachment | GPUTextureUsage.STORAGE_BINDING),
           // A measurement copies its patch out of the finished tile.
-          finishTexture: make("rgba16float", attachment | GPUTextureUsage.COPY_SRC),
+          finishTexture: make("rgba16float", attachment | GPUTextureUsage.COPY_SRC | GPUTextureUsage.STORAGE_BINDING),
           spatialATexture: spatialActive ? makeSpatial() : null,
           spatialBTexture: spatialActive ? makeSpatial(GPUTextureUsage.COPY_SRC) : null,
           spatialWidth,
@@ -4544,11 +4544,9 @@
       const peakBytes = (1 + PEAK_HISTOGRAM_BINS) * 4;
       const floatPeakResult = floatPeak ? this.device.createBuffer({size:peakBytes,usage:GPUBufferUsage.STORAGE|GPUBufferUsage.COPY_DST|GPUBufferUsage.COPY_SRC}) : null;
       const floatPeakRead = floatPeak ? this.device.createBuffer({size:4,usage:GPUBufferUsage.COPY_DST|GPUBufferUsage.MAP_READ}) : null;
-      const floatPeakParams = floatPeak ? this.createStorageBuffer(params) : null;
       if (floatPeak) {
         this.device.queue.writeBuffer(floatPeakResult,0,new Uint32Array(1+PEAK_HISTOGRAM_BINS));
-        this.device.queue.writeBuffer(floatPeakParams,0,params);
-        localBuffers.push({buffer:floatPeakResult},{buffer:floatPeakParams});
+        localBuffers.push({buffer:floatPeakResult});
       }
       const peakTarget = noiseView || floatPeak ? null : this.ensureScopePeakTarget();
       const peakView = peakTarget?.texture.createView() || null;
@@ -4975,7 +4973,7 @@
           );
           this.encodeFilmChain(encoder, pipelines, graph, localSource.createView(),
             (source, spatial, original) => bind(source, spatial, original), params, width, height,
-            { pruneGrain: options.gradePreview, lensGlowTile });
+            { pruneGrain: options.gradePreview, lensGlowTile, parameterBinding });
         }
         if (options.delivery) {
           encoder.copyTextureToTexture(
@@ -5020,10 +5018,10 @@
             reduction.setPipeline(floatPeakPipeline);
             reduction.setBindGroup(0,this.device.createBindGroup({layout:floatPeakPipeline.getBindGroupLayout(0),entries:[
               {binding:0,resource:peakTexture.createView()},
-              {binding:1,resource:{buffer:floatPeakParams}},
+              {binding:1,resource:parameterBinding},
               {binding:2,resource:{buffer:floatPeakResult}},
             ]}));
-            reduction.dispatchWorkgroups(Math.ceil(peakTexture.width/8),Math.ceil(peakTexture.height/8));
+            reduction.dispatchWorkgroups(Math.ceil(Math.min(width,peakTexture.width)/8),Math.ceil(Math.min(height,peakTexture.height)/8));
             reduction.end();
           } else {
           const peakPass = encoder.beginRenderPass({
@@ -6045,7 +6043,7 @@
           (source, spatial, original) => makeBindGroup(source, spatial, this.paramBuffer, original),
           params, proxy.width, proxy.height,
           { interactive: sourceOptions?.tier === "interactive" && !sourceOptions?.delivery && !sourceOptions?.measureOnly,
-            lensGlowKey });
+            lensGlowKey, parameterBinding: { buffer: this.paramBuffer } });
         if (!glowEncoded) lensGlowKey = null;
       }
       if (finishedSdrAnchor && !sourceOptions?.delivery) {
@@ -8871,6 +8869,22 @@
         render.draw(3,1,0,instance);
         render.end();
       };
+      const detailPass = (name, source, target) => {
+        const pipeline = pipelines[name];
+        const entries = [
+          { binding: 0, resource: source },
+          { binding: 1, resource: options.parameterBinding ?? { buffer: this.paramBuffer } },
+          { binding: 8, resource: target },
+        ];
+        if (name === "structure") entries.push({ binding: 6, resource: this.filmStockBinding() });
+        const group = this.device.createBindGroup({ layout: pipeline.getBindGroupLayout(0), entries });
+        const block = window.HDRWebGPUShaders.FILM_DETAIL_BLOCK;
+        const compute = encoder.beginComputePass({ label: `film-detail-${name}` });
+        compute.setPipeline(pipeline);
+        compute.setBindGroup(0, group);
+        compute.dispatchWorkgroups(Math.ceil(width / block.width), Math.ceil(height / block.height));
+        compute.end();
+      };
       const active = params[GPU_PARAMS.FILM_RESPONSE_ENABLED] >= 0.5 && params[GPU_PARAMS.FILM_LOOK_STRENGTH] > 0;
       const bloom = lensGlowActive(params);
       const halation = active && params[GPU_PARAMS.HALATION_ENABLED] > 0.5;
@@ -8899,7 +8913,8 @@
           } else this.recordStage("lens-glow", { reused: true, width, height });
         }
         pass(finishView, pipelines.lens, bind(filmView, glow || b, originalView));
-        pass(filmView, pipelines.scatter, bind(finishView, a, originalView));
+        if (scatter) detailPass("scatter", finishView, filmView);
+        else pass(filmView, pipelines.response, bind(finishView, a, originalView));
       }
       if (halation) spatial();
       const finish = options.interactive ? pipelines.finishInteractive
@@ -8911,7 +8926,7 @@
         || (params[GPU_PARAMS.GRAIN_ENABLED] > 0.5 && params[GPU_PARAMS.GRAIN_VIEW_MAP] > 0.5));
       pass(filmView, pipelines.scan, bind(finishView, fallback, originalView));
       if (structure && !map) {
-        pass(finishView, pipelines.structure, bind(filmView, fallback, originalView));
+        detailPass("structure", filmView, finishView);
       } else {
         pass(finishView, pipelines.response, bind(filmView, fallback, originalView));
       }
@@ -8919,7 +8934,8 @@
     }
 
     pipelineFor(format, factory = null) {
-      const create = factory || (descriptor => this.device.createRenderPipeline(descriptor));
+      const create = factory || (descriptor => descriptor.compute
+        ? this.device.createComputePipeline(descriptor) : this.device.createRenderPipeline(descriptor));
       if (this.pipelines.has(format)) return this.pipelines.get(format);
       const base = create({
         layout: this.pipelineLayout,
@@ -9101,11 +9117,15 @@
           fragment: { module: this.module, entryPoint: "peakCandidateLocalFragmentMain", targets: [{ format: "rgba16float" }] },
           primitive: { topology: "triangle-list" },
         }),
-        ...Object.fromEntries(["lens", "scatter", "structure", "scan"].map((name) => [name, create({
+        ...Object.fromEntries(["lens", "scan"].map((name) => [name, create({
           layout: this.pipelineLayout,
           vertex: { module: this.module, entryPoint: "vertexMain" },
           fragment: { module: this.module, entryPoint: `${name}FragmentMain`, targets: [{ format: "rgba16float" }] },
           primitive: { topology: "triangle-list" },
+        })])),
+        ...Object.fromEntries(["scatter", "structure"].map((name) => [name, create({
+          layout: "auto",
+          compute: { module: this.module, entryPoint: `${name}ComputeMain` },
         })])),
         base,
         hslFields,
@@ -9153,7 +9173,8 @@
       for (const [token, descriptor] of pending) {
         await beforeNext();
         if (this.pipelines.has(format)) return; // Foreground already needed it.
-        compiled.set(token, await this.device.createRenderPipelineAsync(descriptor));
+        compiled.set(token, await (descriptor.compute
+          ? this.device.createComputePipelineAsync(descriptor) : this.device.createRenderPipelineAsync(descriptor)));
       }
       if (!this.pipelines.has(format)) this.pipelines.set(format,
         Object.fromEntries(Object.entries(staged).map(([name, token]) => [name, compiled.get(token)])));
@@ -9173,11 +9194,12 @@
         format: "rgba16float",
         usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_SRC | GPUTextureUsage.COPY_DST,
       });
-      const createTexture = () => this.device.createTexture({
+      const createTexture = (extraUsage = 0) => this.device.createTexture({
         size: { width, height },
         format: "rgba16float",
-        usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_SRC,
+        usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_SRC | extraUsage,
       });
+      const createFilmTexture = () => createTexture(GPUTextureUsage.STORAGE_BINDING);
       // PRD 4.3: an allocation failure records a durable backoff. This render
       // retains the last valid presentation; the next plan selects Tiled. The
       // selected preview resolution is never reduced.
@@ -9237,11 +9259,11 @@
       try {
         intermediate = {
           baseTexture: allocate(createTexture, "grading-base"),
-          filmTexture: allocate(createTexture, "grading-film"),
+          filmTexture: allocate(createFilmTexture, "grading-film"),
           // Film Look, Vignette and grain resolve here so the output limiter can
           // measure the finished picture instead of predicting it, and so the
           // scope pass reads that result instead of computing it a second time.
-          finishTexture: allocate(createTexture, "grading-finish"),
+          finishTexture: allocate(createFilmTexture, "grading-finish"),
           localTexture: allocate(createTexture, "grading-local"),
           detailATexture: detailActive ? allocate(createTexture, "grading-detail-a") : null,
           detailBTexture: detailActive ? allocate(createTexture, "grading-detail-b") : null,

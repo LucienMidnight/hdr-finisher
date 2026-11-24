@@ -332,8 +332,8 @@
 
     // Full-resolution reads: halation's edge source from `filmPhysicalOffset`,
     // the image-structure blur from `outputRelativeOffset(0.06, 24)`, and the
-    // film-resolution blur from `filmPhysicalBlur(<= 0.12, 32)`. `blurAtRadius`
-    // spans a square of exactly +/- its radius on each axis.
+    // film-resolution blur from `filmPhysicalBlur(<= 0.12, 32)`. The separable
+    // passes reach exactly +/- their radius on each axis.
     const frameWidth = Math.max(1, finiteNumber(width, 1));
     const frameHeight = Math.max(1, finiteNumber(height, 1));
     const frameDiagonal = Math.hypot(frameWidth, frameHeight);

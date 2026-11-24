@@ -1,3 +1,43 @@
+## November 24, 2026 — Film Resolution and Detail blur
+
+MacBook Neo (A18 Pro, 8 GB), Electron at 1408 × 794 points and 2× under
+the shared GPU lock. One warm HDR Grade edit per case, from the edit to
+the first exact picture. Fit used Direct; 31% and 100% used Tiled.
+Image Softness was 80 and Microcontrast −50 in both recipes; Film Resolution
+was 0 on Super 8 and 10 on 35 mm. Times are milliseconds, before → after.
+
+| RAW / gate | Fit | 31% | 100% |
+| --- | ---: | ---: | ---: |
+| `IMG_3129.CR2` (18 MP) / Super 8 | 339 → 252 | 487 → 236 | 1,290 → 350 |
+| `_DSC7970.ARW` (42 MP) / Super 8 | 406 → 276 | 1,013 → 300 | 1,467 → 330 |
+| `IMG_3129.CR2` / 35 mm | 217 → 249 | 251 → 235 | 305 → 231 |
+| `_DSC7970.ARW` / 35 mm | 349 → 311 | 304 → 279 | 452 → 273 |
+
+Super 8 at 100% saved 0.94–1.14 s. Small timing shifts are not conclusive:
+neutral controls moved by −46 to +45 ms. The GPU filters across rows and
+then columns, sharing full-precision sums without another picture-sized
+texture. The blur radius and tile borders are unchanged.
+
+For a separate whole-picture Canon comparison at 1201 px with a custom
+1 mm gate, Direct and Tiled finished pixels matched exactly. Against the
+old shader, each preview route moved by p99.9 ΔE 0.015 SDR / 0.051 HDR.
+GPU delivery, resized and sharpened to 900 × 600 before encoding, moved by
+0.010 SDR / 0.030 HDR. All were below the 0.5 review threshold.
+
+On a synthetic image with the same 1 mm gate, finished GPU and CPU delivery
+matched within the existing caps (mean / p99.9: SDR 0.010 / 0.046; HDR
+0.045 / 0.161). Proof matched the exported Ultra HDR JPEG byte for byte on
+both renderers, and its decoded peak was under 1,000 nits. The enforced
+preview-versus-export check also passed on a separate 675 × 450 synthetic
+fixture with the same recipe: HDR p99 luminance difference was 0.241%, and
+every SDR pixel was within one 8-bit level.
+
+[Before timings](../../codebase/output/separable-detail/before.json) ·
+[After timings](../../codebase/output/separable-detail/after.json) ·
+[Finished-pixel comparison](../../codebase/output/separable-detail/parity.json) ·
+[Export checks](../../codebase/output/separable-detail/export-proof.json) ·
+[Preview versus export](../../codebase/output/separable-detail/preview-export.json)
+
 ## November 24, 2026 — Grade Micro Grain Histogram at zoom
 
 MacBook Neo (A18 Pro, 8 GB), Electron at 1408 × 794 points and 2× under

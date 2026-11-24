@@ -103,11 +103,8 @@ def test_webgpu_pipeline_preserves_cpu_section_order_and_lane_specific_exposure_
     assert "let requiredRatio = clamp(" in shader
     assert "let targetValue = exp2(effectiveStartStop + stopSpan * mapped)" in shader
     assert "fn lensDiffusion(coordinate: vec2i)" in shader
-    assert "fn resolutionScatter(coordinate: vec2i)" in shader
     assert "rgb = filmStockStage(rgb, -0.3010299956639812 * stops)" in shader
     assert "rgb = mix(original, rgb, p[79])" in shader
-    chain = shader[shader.index("encodeFilmChain(encoder, pipelines, graph, originalView"):]
-    assert chain.index("pipelines.lens") < chain.index("pipelines.scatter") < chain.index("pipelines.finish")
     assert "spatialExtractFragmentMain" in shader
     assert "fn applyColorGrading" in shader
     assert "fn applyVignette" in shader
@@ -195,22 +192,19 @@ def test_film_look_panel_exposes_cinema_controls_and_branch_matching() -> None:
     assert "exp2(0.55 * p[81] * p[79])" not in shader
     assert "mapped -= p[82] * p[79]" not in shader
     assert "mapped -= p[83] * p[79]" not in shader
-    assert "if (p[108] < 1.0)" in shader
-    assert "if (p[100] > 0.5 && p[108] < 1.0)" not in shader
-    assert "let structureBlur = filmBlur(coordinate, 0.06);\n      if (p[97] > 0.5)" not in shader
-    assert "if (p[97] > 0.5 && (abs(p[98]) > 0.000001 || abs(p[99]) > 0.000001))" in shader
     assert "fn filmPixelsPerMm(dimensions: vec2f) -> f32" in shader
     # Halation is a film-plane distance, and the spatial grid is anchored
     # to the frame, so the pixels-per-mm it scales by is the frame's at quarter
     # resolution rather than whatever texture the blur happens to run in.
     assert "filmPixelsPerMm(frameSpatial) * halationRadiusMm" in shader
     assert "fn frameSpatialDimensions() -> vec2f" in shader
-    assert "filmPhysicalBlur(coordinate, 0.04 + 0.08 * resolutionLoss, 32)" in shader
+    assert "const filmResolutionMaxRadius = 32;" in shader
+    assert "filmPhysicalOffset(0.04 + 0.08 * loss, filmResolutionMaxRadius)" in shader
     # The lens replacement retains the exact existing halation blur cap.
     assert "let blurCap = 256.0 / spatialScale();" in shader
     assert "clamp(filmPixelsPerMm(frameSpatial) * halationRadiusMm, 0.25, blurCap)" in shader
     assert "length(frameSpatial) * max(p[88], 0.0) / 100.0" not in shader
-    assert "filmStoredBlur(coordinate, outputRelativeOffset(0.06,24))" in shader
+    assert "outputRelativeOffset(0.06, 24)" in shader
     assert "let canonicalTintSrgb = mix(vec3f(warmY), warm" in shader
     assert "select(canonicalTintSrgb, srgbToAcescg(canonicalTintSrgb), p[0] > 0.5)" in shader
     assert "let tint = mix(vec3f(warmY), warm" not in shader

@@ -9,14 +9,31 @@ function setup() {
   Object.assign(gpu,{pipelines:new Map(),module:{},pipelineLayout:{}});
   return gpu;
 }
-test("idle Library compilation uses the same complete descriptors as foreground, asynchronously",async()=>{
-  const gpu=setup(), foreground=setup(); let gates=0;
-  gpu.device={createRenderPipeline(){throw Error("Idle compilation must be asynchronous");},
-    createRenderPipelineAsync:async descriptor=>({descriptor})};
-  foreground.device={createRenderPipeline:descriptor=>({descriptor})};
-  await gpu.warmPipelines("rgba16float",async()=>{gates++;});
-  const warmed=gpu.pipelines.get("rgba16float"), expected=foreground.pipelineFor("rgba16float");
-  assert.equal(JSON.stringify(warmed),JSON.stringify(expected));
+test("Library prepares every render and compute pipeline asynchronously when no names are given",async()=>{
+  const gpu=setup(), descriptors=setup();
+  const format="rgba16float";
+  const expected=descriptors.pipelineFor(format,descriptor=>descriptor);
+  const compiled=[];
+  let gates=0;
+  const compile=kind=>async descriptor=>{
+    assert.ok(descriptor[kind],`Expected a ${kind} pipeline descriptor`);
+    const pipeline={kind,descriptor};
+    compiled.push(pipeline);
+    return pipeline;
+  };
+  const noSync=()=>{throw Error("Preparation must be asynchronous");};
+  gpu.device={createRenderPipeline:noSync,createComputePipeline:noSync,
+    createRenderPipelineAsync:compile("fragment"),createComputePipelineAsync:compile("compute")};
+  await gpu.prepareLibraryPipelines(format,null,async()=>{gates++;});
+  const warmed=gpu.pipelineFor(format);
+  assert.equal(warmed.scatter.kind,"compute");
+  assert.equal(warmed.structure.kind,"compute");
+  assert.deepEqual(Object.keys(warmed),Object.keys(expected));
+  assert.equal(compiled.length,Object.keys(expected).length);
+  for(const [index,[name,descriptor]] of Object.entries(expected).entries()){
+    assert.equal(warmed[name],compiled[index],name);
+    assert.equal(JSON.stringify(warmed[name].descriptor),JSON.stringify(descriptor),name);
+  }
   assert.equal(gates,Object.keys(expected).length);
 });
 test("foreground can take over between idle pipeline compilations",async()=>{

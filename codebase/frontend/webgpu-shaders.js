@@ -14,6 +14,7 @@
 
   const HSL_WGSL = globalThis.HDRHslShader || require("./hsl-shader.js");
   const PEAK_HISTOGRAM_BINS = 4096;
+  const FILM_DETAIL_BLOCK = Object.freeze({ width: 8, height: 32 });
   function toneZonesWgsl(indices, name) {
     return `    fn ${name}(input: vec3f, y: f32) -> vec3f {
       if (p[${indices.BLACKS}] == 0.0 && p[${indices.WHITES}] == 0.0 && p[${indices.SHADOWS}] == 0.0 && p[${indices.MIDTONES}] == 0.0 && p[${indices.HIGHLIGHTS}] == 0.0) { return input; }
@@ -268,8 +269,11 @@ fn finishedPeakReductionMain(@builtin(global_invocation_id) id: vec3u) {
   const SCALED_FILM_PEAK_REDUCTION_SHADER_SOURCE = PEAK_REDUCTION_SHADER_SOURCE + `
 @compute @workgroup_size(8, 8)
 fn scaledFilmPeakReductionMain(@builtin(global_invocation_id) id: vec3u) {
-  let dimensions = textureDimensions(peakSource);
-  if (id.x >= dimensions.x || id.y >= dimensions.y) { return; }
+  var dimensions = textureDimensions(peakSource);
+  if (arrayLength(&peakParams) > ${GPU_PARAMS.TILE_VALID_HEIGHT}u && peakParams[${GPU_PARAMS.TILE_VALID_WIDTH}] > 0.0 && peakParams[${GPU_PARAMS.TILE_VALID_HEIGHT}] > 0.0) {
+    dimensions = min(dimensions, vec2u(u32(peakParams[${GPU_PARAMS.TILE_VALID_WIDTH}]), u32(peakParams[${GPU_PARAMS.TILE_VALID_HEIGHT}])));
+  }
+  if (any(id.xy >= dimensions)) { return; }
   let stored = textureLoad(peakSource, vec2i(id.xy), 0);
   recordPeak(peakSignalOf(stored.rgb * stored.a, (peakParams[${GPU_PARAMS.HDR_LANE}] < 0.5 || peakParams[${GPU_PARAMS.LINKED_SDR}] > 0.5)));
 }`;
@@ -1014,6 +1018,7 @@ fn fineGrainResizeBase(@builtin(global_invocation_id) id: vec3u) {
     // four channels per layer, one texel per base-pass pixel. Other passes
     // bind a 1x1 placeholder, which keeps HSL pointwise there.
     @group(0) @binding(7) var hslSelection: texture_2d_array<f32>;
+    @group(0) @binding(8) var filmDetailOutput: texture_storage_2d<rgba16float, write>;
 
     struct VertexOut { @builtin(position) position: vec4f, @location(0) @interpolate(flat) lensComponent: u32 }
 
@@ -2149,41 +2154,42 @@ fn fineGrainResizeBase(@builtin(global_invocation_id) id: vec3u) {
     // star's width on the star's support, since the star carried its width by
     // putting weight at exactly +/- radius. The response still falls
     // monotonically, so the cutoff reads as a glow that ends, not as a rim.
-    // There is no bilinear
-    // pair trick available here: binding 0 is unfilterable, so sampleFilm is
-    // a texel load and the kernel reads every texel it spans. The radii are
-    // small by construction -- 0.06% of the output diagonal and at most 0.12%
-    // of the film gate, four and nine pixels on a 6K frame -- which is what
-    // keeps a dense two-dimensional kernel affordable without its own passes.
-    fn blurAtRadius(coordinate: vec2i, radius: i32) -> vec3f {
-      let sigma = max(f32(radius), 1.0) * 0.7;
-      let denominator = 2.0 * sigma * sigma;
-      // The bound is read once. sampleFilm resolves it per call, out of the
-      // params storage buffer, which costs more than the texel fetch does and
-      // is what made a dense kernel look unaffordable when it is not.
-      let bound = validTileDimensions() - vec2i(1);
-      var total = vec3f(0.0);
-      var weightTotal = 0.0;
-      for (var y: i32 = -radius; y <= radius; y = y + 1) {
-        // The kernel is separable, so the row's weight is a common factor and
-        // only the column term changes inside the inner loop.
-        let rowOffset = f32(y);
-        let rowWeight = exp(-rowOffset * rowOffset / denominator);
-        for (var x: i32 = -radius; x <= radius; x = x + 1) {
-          let columnOffset = f32(x);
-          let weight = rowWeight * exp(-columnOffset * columnOffset / denominator);
-          let texel = clamp(coordinate + vec2i(x, y), vec2i(0), bound);
-          total += textureLoad(sourceTexture, texel, 0).rgb * weight;
-          weightTotal += weight;
-        }
+    const filmDetailBlock = vec2i(${FILM_DETAIL_BLOCK.width}, ${FILM_DETAIL_BLOCK.height});
+    const filmResolutionMaxRadius = 32;
+    var<workgroup> filmDetailWeights: array<f32, filmResolutionMaxRadius + 1>;
+    var<workgroup> filmDetailRows: array<vec3f, filmDetailBlock.x * (filmDetailBlock.y + 2 * filmResolutionMaxRadius)>;
+    fn filmDetailTap(coordinate: vec2i, bound: vec2i, stored: bool) -> vec3f {
+      let texel = textureLoad(sourceTexture, clamp(coordinate, vec2i(0), bound), 0);
+      return select(texel.rgb, filmStoredRgb(texel), stored);
+    }
+    fn filmDetailBlur(coordinate: vec2i, local: vec2i, bound: vec2i, radius: i32, stored: bool) -> vec3f {
+      let weightIndex = local.y * filmDetailBlock.x + local.x;
+      if (weightIndex <= radius) {
+        let sigma = max(f32(radius), 1.0) * 0.7;
+        filmDetailWeights[weightIndex] = exp(-f32(weightIndex * weightIndex) / (2.0 * sigma * sigma));
       }
-      return total / weightTotal;
-    }
-    fn filmBlur(coordinate: vec2i, percentDiagonal: f32, maximumRadius: i32) -> vec3f {
-      return blurAtRadius(coordinate, outputRelativeOffset(percentDiagonal, maximumRadius));
-    }
-    fn filmPhysicalBlur(coordinate: vec2i, percent35mmDiagonal: f32, maximumRadius: i32) -> vec3f {
-      return blurAtRadius(coordinate, filmPhysicalOffset(percent35mmDiagonal, maximumRadius));
+      workgroupBarrier();
+      for (var row = local.y; row < filmDetailBlock.y + 2 * radius; row += filmDetailBlock.y) {
+        let center = vec2i(coordinate.x, coordinate.y - local.y + row - radius);
+        var horizontal = filmDetailTap(center, bound, stored);
+        for (var offset = 1; offset <= radius; offset++) {
+          let step = vec2i(offset, 0);
+          horizontal += (filmDetailTap(center - step, bound, stored)
+            + filmDetailTap(center + step, bound, stored)) * filmDetailWeights[offset];
+        }
+        filmDetailRows[row * filmDetailBlock.x + local.x] = horizontal;
+      }
+      workgroupBarrier();
+      let center = (local.y + radius) * filmDetailBlock.x + local.x;
+      var vertical = filmDetailRows[center];
+      var weightTotal = 1.0;
+      for (var offset = 1; offset <= radius; offset++) {
+        let step = offset * filmDetailBlock.x;
+        let weight = filmDetailWeights[offset];
+        vertical += (filmDetailRows[center - step] + filmDetailRows[center + step]) * weight;
+        weightTotal += 2.0 * weight;
+      }
+      return vertical / (weightTotal * weightTotal);
     }
     fn filmHighlightMask(rgb: vec3f, sensitivity: f32) -> f32 {
       let threshold = 0.92 - 0.50 * clamp(sensitivity, 0.0, 1.0);
@@ -2514,51 +2520,23 @@ fn fineGrainResizeBase(@builtin(global_invocation_id) id: vec3u) {
       }
       return rgb;
     }
-    fn resolutionScatter(coordinate: vec2i) -> vec3f {
-      var rgb = sampleFilm(coordinate);
-      if (filmModuleActive()) {
-        if (p[${GPU_PARAMS.FILM_RESOLUTION}] < 1.0) {
-          let resolutionLoss = (1.0 - p[${GPU_PARAMS.FILM_RESOLUTION}]);
-          let resolutionSource = sampleFilm(coordinate);
-          let resolutionBlur = filmPhysicalBlur(coordinate, 0.04 + 0.08 * resolutionLoss, 32);
-          let fineDetail = resolutionSource - resolutionBlur;
-          let relativeDetail = max(abs(fineDetail.r), max(abs(fineDetail.g), abs(fineDetail.b)))
-            / (max(abs(resolutionSource.r), max(abs(resolutionSource.g), abs(resolutionSource.b))) + 0.02);
-          let edgeProtection = smoothRange(0.025, 0.20, relativeDetail);
-          rgb -= fineDetail * resolutionLoss * 0.85 * (1.0 - edgeProtection);
-        }
-      }
-      return rgb;
+    fn resolutionScatter(rgb: vec3f, blur: vec3f, loss: f32) -> vec3f {
+      if (!filmModuleActive()) { return rgb; }
+      let fineDetail = rgb - blur;
+      let relativeDetail = max(abs(fineDetail.r), max(abs(fineDetail.g), abs(fineDetail.b)))
+        / (max(abs(rgb.r), max(abs(rgb.g), abs(rgb.b))) + 0.02);
+      let edgeProtection = smoothRange(0.025, 0.20, relativeDetail);
+      return rgb - fineDetail * loss * 0.85 * (1.0 - edgeProtection);
     }
     fn filmStoredRgb(sample: vec4f) -> vec3f { return sample.rgb * sample.a; }
     fn sampleScannedFilm(coordinate: vec2i) -> vec3f {
       return filmStoredRgb(textureLoad(sourceTexture, boundedCoordinate(coordinate), 0));
     }
-    fn filmStoredBlur(coordinate: vec2i, radius: i32) -> vec3f {
-      let sigma = max(f32(radius),1.0)*0.7;
-      let bound = validTileDimensions()-vec2i(1);
-      var total = vec3f(0.0); var weightTotal = 0.0;
-      for (var y = -radius; y <= radius; y++) {
-        let rowWeight = exp(-f32(y*y)/(2.0*sigma*sigma));
-        for (var x = -radius; x <= radius; x++) {
-          let weight = rowWeight*exp(-f32(x*x)/(2.0*sigma*sigma));
-          let texel = clamp(coordinate+vec2i(x,y),vec2i(0),bound);
-          total += filmStoredRgb(textureLoad(sourceTexture,texel,0))*weight;
-          weightTotal += weight;
-        }
-      }
-      return total/weightTotal;
-    }
-    fn finishStructure(coordinate: vec2i) -> vec3f {
-      var rgb = sampleScannedFilm(coordinate);
-      if (p[${GPU_PARAMS.STRUCTURE_ENABLED}] > 0.5 && (abs(p[${GPU_PARAMS.STRUCTURE_SOFTNESS}]) > 0.000001 || abs(p[${GPU_PARAMS.STRUCTURE_MICROCONTRAST}]) > 0.000001)) {
-        let structureBlur = filmStoredBlur(coordinate, outputRelativeOffset(0.06,24));
-        let structureSource = rgb;
-        rgb = structureSource
-          + (structureBlur - structureSource) * p[${GPU_PARAMS.STRUCTURE_SOFTNESS}] * 0.65
-          + (structureSource - structureBlur) * p[${GPU_PARAMS.STRUCTURE_MICROCONTRAST}] * 0.5;
-      }
-      return applyVignette(rgb, coordinate);
+    fn finishStructure(rgb: vec3f, blur: vec3f, coordinate: vec2i) -> vec3f {
+      let adjusted = rgb
+        + (blur - rgb) * p[${GPU_PARAMS.STRUCTURE_SOFTNESS}] * 0.65
+        + (rgb - blur) * p[${GPU_PARAMS.STRUCTURE_MICROCONTRAST}] * 0.5;
+      return applyVignette(adjusted, coordinate);
     }
     fn applyFilmLook(coordinate: vec2i) -> vec3f {
       var rgb = sampleFilm(coordinate);
@@ -3321,14 +3299,27 @@ fn fineGrainResizeBase(@builtin(global_invocation_id) id: vec3u) {
       return vec4f(lensDiffusion(coordinate), 1.0);
     }
 
-    @fragment fn scatterFragmentMain(input: VertexOut) -> @location(0) vec4f {
-      let coordinate = clamp(vec2i(input.position.xy), vec2i(0), validTileDimensions() - vec2i(1));
-      return vec4f(resolutionScatter(coordinate), 1.0);
+    @compute @workgroup_size(${FILM_DETAIL_BLOCK.width}, ${FILM_DETAIL_BLOCK.height})
+    fn scatterComputeMain(@builtin(global_invocation_id) id: vec3u, @builtin(local_invocation_id) local: vec3u) {
+      let coordinate = vec2i(id.xy);
+      let bound = validTileDimensions() - vec2i(1);
+      let loss = 1.0 - p[${GPU_PARAMS.FILM_RESOLUTION}];
+      let radius = filmPhysicalOffset(0.04 + 0.08 * loss, filmResolutionMaxRadius);
+      let blur = filmDetailBlur(coordinate, vec2i(local.xy), bound, radius, false);
+      if (any(coordinate > bound)) { return; }
+      let rgb = textureLoad(sourceTexture, coordinate, 0).rgb;
+      textureStore(filmDetailOutput, coordinate, vec4f(resolutionScatter(rgb, blur, loss), 1.0));
     }
 
-    @fragment fn structureFragmentMain(input: VertexOut) -> @location(0) vec4f {
-      let coordinate = clamp(vec2i(input.position.xy), vec2i(0), validTileDimensions() - vec2i(1));
-      return storeFilm(linkedSdrOutput(finishStructure(coordinate)));
+    @compute @workgroup_size(${FILM_DETAIL_BLOCK.width}, ${FILM_DETAIL_BLOCK.height})
+    fn structureComputeMain(@builtin(global_invocation_id) id: vec3u, @builtin(local_invocation_id) local: vec3u) {
+      let coordinate = vec2i(id.xy);
+      let bound = validTileDimensions() - vec2i(1);
+      let radius = outputRelativeOffset(0.06, 24);
+      let blur = filmDetailBlur(coordinate, vec2i(local.xy), bound, radius, true);
+      if (any(coordinate > bound)) { return; }
+      let rgb = filmStoredRgb(textureLoad(sourceTexture, coordinate, 0));
+      textureStore(filmDetailOutput, coordinate, storeFilm(linkedSdrOutput(finishStructure(rgb, blur, coordinate))));
     }
 
     const LENS_COMPONENTS = array<vec4f,108>(${LENS_COMPONENTS_WGSL});
@@ -3869,6 +3860,7 @@ fn fineGrainResizeBase(@builtin(global_invocation_id) id: vec3u) {
 
   const HDRWebGPUShaders = Object.freeze({
     BLACK_AND_WHITE_PARAM,
+    FILM_DETAIL_BLOCK,
     PEAK_REDUCTION_SHADER_SOURCE,
     SCALED_FILM_PEAK_REDUCTION_SHADER_SOURCE,
     ADAPTIVE_DENOISE_SHADER_SOURCE,

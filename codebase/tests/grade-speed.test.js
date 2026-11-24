@@ -199,6 +199,63 @@ test('lens glow is charged to existing resident GPU admission', () => {
   assert.equal(plan.entries.find(entry => entry.id === 'lens-glow').bytes, cached.categories.lensGlowBytes);
 });
 
+test('film detail dispatches over the whole partial tile without a frame scratch texture', () => {
+  const preview = new Preview(null);
+  const encoded = [];
+  const order = [];
+  const encoder = {
+    beginRenderPass: () => ({ setViewport() {}, setScissorRect() {},
+      setPipeline(name) { order.push(name); }, setBindGroup() {}, draw() {}, end() {} }),
+    beginComputePass: () => ({ setPipeline({ name }) { this.name = name; },
+      setBindGroup(index, entries) { this.entries = entries; },
+      dispatchWorkgroups(width, height) {
+        order.push(this.name);
+        encoded.push({ name: this.name, width, height, entries: this.entries });
+      }, end() {} }),
+  };
+  preview.device = { createBindGroup: ({entries}) => Object.fromEntries(entries.map(({binding, resource}) => [binding, resource])) };
+  preview.filmStockBinding = () => ({ buffer: 'stock' });
+  const pipelines = Object.fromEntries(['scatter','structure'].map(name => [name, {
+    name, getBindGroupLayout: () => name,
+  }]));
+  Object.assign(pipelines, { response: 'response', lens: 'lens', finish: 'finish', scan: 'scan' });
+  const graph = { filmTexture: { createView: () => 'film' }, finishTexture: { createView: () => 'finish' } };
+  const params = new Float32Array(HDRGpuParamLayout.count);
+  const parameterBinding = { buffer: 'tile parameters', offset: 256, size: params.byteLength };
+  const set = (name, value) => { params[indices[name]] = value; };
+  set('FILM_RESPONSE_ENABLED', 1);
+  set('FILM_LOOK_STRENGTH', 1);
+  set('FILM_RESOLUTION', 1);
+  set('STRUCTURE_ENABLED', 1);
+  const render = () => preview.encodeFilmChain(encoder, pipelines, graph, 'original', () => ({}),
+    params, 257, 129, { parameterBinding });
+  render();
+  assert.deepEqual(encoded, []);
+  order.length = 0;
+  set('FILM_RESOLUTION', 0);
+  set('STRUCTURE_SOFTNESS', 0.8);
+  set('STRUCTURE_MICROCONTRAST', -0.5);
+  render();
+  assert.deepEqual(order, ['response', 'lens', 'scatter', 'finish', 'scan', 'structure']);
+  assert.deepEqual(encoded.map(({name}) => name), ['scatter', 'structure']);
+  const block = context.window.HDRWebGPUShaders.FILM_DETAIL_BLOCK;
+  assert.deepEqual(encoded.map(({name,width,height,entries}) => [name,width,height,entries[0],entries[8]]), [
+    ['scatter', Math.ceil(257/block.width), Math.ceil(129/block.height), 'finish', 'film'],
+    ['structure', Math.ceil(257/block.width), Math.ceil(129/block.height), 'film', 'finish'],
+  ]);
+  assert.ok(encoded.every(({entries}) => entries[1] === parameterBinding));
+  assert.equal(encoded[1].entries[6].buffer, 'stock');
+  encoded.length = 0;
+  set('GRAIN_ENABLED', 1);
+  set('GRAIN_VIEW_MAP', 1);
+  render();
+  assert.deepEqual(encoded.map(({name}) => name), ['scatter']);
+  encoded.length = 0;
+  set('FILM_RESPONSE_ENABLED', 0);
+  render();
+  assert.deepEqual(encoded.map(({name}) => name), ['structure']);
+});
+
 test('presentation records processing resolution and never accepts drag grain as settled', () => {
   const state = { currentView: 'sdr', previewGeneration: { hdr: 1, sdr: 1 }, zoomMode: 'fit',
     adjustments: { shared: { geometry: {} } } };
