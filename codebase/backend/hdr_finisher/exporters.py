@@ -187,7 +187,7 @@ def _delivery_source_filter(session, kind, adjustments, *, authored, render_grai
         return (lambda image, authored: image) if authored else None
     controls = denoise_adaptive.AdaptiveControls(**lane.controls.model_dump())
     experimental = controls.method == "clean_grain" and (
-        controls.grain_evenness or (controls.clean_color and controls.color_splotches)
+        controls.grain_evenness or controls.clean_fringes or (controls.clean_splotches and controls.color_splotches)
     )
     if not authored and not experimental:
         return None

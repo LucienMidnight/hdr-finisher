@@ -421,6 +421,34 @@ test("idle pressure keeps active Grain and Mist work until a real allocation or 
   assert.deepEqual(destroyed, ["offscreen", "previous", reduced, "visible", "mist"]);
 });
 
+test("Clean Grain's Fit result survives moderate pressure after the original proxy is retired", () => {
+  const context = vm.createContext({ window: {}, performance, HDRGrainRoute: { headroom } });
+  for (const name of ["gpu-allocator.js", "webgpu-shaders.js", "webgpu-preview.js"]) {
+    vm.runInContext(frontendSource(name), context);
+  }
+  const renderer = new context.window.HDRWebGPUPreview(null);
+  renderer.fineGrainReduced = new Map();
+  renderer.gpuAllocator = new context.window.HDRGpuAllocator({ budgetBytes: 1000 });
+  renderer.memoryBudgetBytes = () => 1000;
+  renderer.resourceMemorySnapshot = () => ({ resident: { totalBytes: renderer.gpuAllocator.usedBytes(), categories: {} } });
+  const sourceFrame = { width: 320, height: 240, workingSpace: "acescg" };
+  const selector = renderer.denoiseSourceSelector = {
+    selected: "resolved", original: null,
+    controls: { method: "clean_grain", cleanSplotches: true, cleanFringes: false },
+    cache: { grain: { gpu: true, fitKey: "photo" } },
+  };
+  const key = renderer.reducedGrainKey(sourceFrame, selector);
+  const released = [];
+  for (const id of [key, "different settings"]) {
+    renderer.fineGrainReduced.set(id, { sourceFrame });
+    renderer.gpuAllocator.register({ kind: "fine-grain-reduced", key: id, bytes: 100, evict: () => released.push(id) });
+  }
+  renderer.reclaimGrainResources({ ...renderer.grainMemorySnapshot(), pressure_level: "moderate" });
+  assert.deepEqual(released, ["different settings"]);
+  renderer.reclaimGrainResources({ ...renderer.grainMemorySnapshot(), pressure_level: "critical" });
+  assert.deepEqual(released, ["different settings", key]);
+});
+
 test("idle cache trimming keeps presented Denoise tiles until a real allocation needs them", async () => {
   const context = vm.createContext({ window: {}, performance });
   vm.runInContext(frontendSource("webgpu-shaders.js"), context);

@@ -283,10 +283,12 @@ async function measurePicture(page, button, method, { pan = false, switchMethod 
       } else if (switchMethod) {
         const cleanColor = method !== "clean_grain_off";
         if (state.denoise[state.currentView].controls.method === "clean_grain") {
-          els.denoiseCleanColor.checked = cleanColor;
-          els.denoiseCleanColor.dispatchEvent(new Event("change", { bubbles: true }));
+          els.denoiseCleanSplotches.checked = cleanColor;
+          els.denoiseCleanFringes.checked = cleanColor;
+          els.denoiseCleanSplotches.dispatchEvent(new Event("change", { bubbles: true }));
         } else {
-          state.denoise[state.currentView].controls.clean_color = cleanColor;
+          state.denoise[state.currentView].controls.clean_splotches = cleanColor;
+          state.denoise[state.currentView].controls.clean_fringes = cleanColor;
           els.denoiseMethod.value = "clean_grain";
           els.denoiseMethod.dispatchEvent(new Event("change", { bubbles: true }));
         }
@@ -472,7 +474,8 @@ async function measurePhaseOne(page, name, record, setZoom) {
   const selectMethod = () => page.evaluate(async ({ method, cleanGrade }) => {
     if (cleanGrade) await commitDenoiseControl("splotch_size", cleanGrade);
     await commitDenoiseControl("method", "clean_grain");
-    await commitDenoiseControl("clean_color", method !== "clean_grain_off");
+    await commitDenoiseControl("clean_splotches", method !== "clean_grain_off");
+    await commitDenoiseControl("clean_fringes", method !== "clean_grain_off");
   }, { method, cleanGrade });
   const check = async (action, button, options = {}, fallback = false) => {
     const result = await record(method, `${phaseOne}: ${action}`, button, { trace: true, ...options });
@@ -622,7 +625,8 @@ async function measurePhaseOne(page, name, record, setZoom) {
         // reconstruction with colour cleaning, with no matching old tile.
         await commitDenoiseControl("grain_evenness", 0.92);
         await commitDenoiseControl("method", "clean_grain");
-        await commitDenoiseControl("clean_color", false);
+        await commitDenoiseControl("clean_splotches", false);
+        await commitDenoiseControl("clean_fringes", false);
       });
       await setZoom("110%");
       await page.evaluate(() => setDenoiseEnabled(true));
@@ -855,7 +859,8 @@ async function measureBaseline(page, harness, name, record, setZoom) {
         await page.evaluate(async method => {
           if (state.denoise.hdr.enabled) await setDenoiseEnabled(false);
           await commitDenoiseControl("method", method === "clean_grain_off" ? "clean_grain" : method);
-          await commitDenoiseControl("clean_color", method !== "clean_grain_off");
+          await commitDenoiseControl("clean_splotches", method !== "clean_grain_off");
+          await commitDenoiseControl("clean_fringes", method !== "clean_grain_off");
           // Delivery reads the authored settings from both lanes. Grade is
           // already covered by the zoom sequence above.
           state.denoise.hdr.enabled = true;
@@ -874,7 +879,8 @@ async function measureBaseline(page, harness, name, record, setZoom) {
       await page.evaluate(async () => {
         if (state.denoise.hdr.enabled) await setDenoiseEnabled(false);
         await commitDenoiseControl("method", "clean_grain");
-        await commitDenoiseControl("clean_color", false);
+        await commitDenoiseControl("clean_splotches", false);
+        await commitDenoiseControl("clean_fringes", false);
         await setDenoiseEnabled(true);
       });
       await runDelivery(method, false);
@@ -884,7 +890,8 @@ async function measureBaseline(page, harness, name, record, setZoom) {
       await page.evaluate(async method => {
         if (state.denoise.hdr.enabled) await setDenoiseEnabled(false);
         await commitDenoiseControl("method", method === "clean_grain_off" ? "clean_grain" : method);
-        await commitDenoiseControl("clean_color", method !== "clean_grain_off");
+        await commitDenoiseControl("clean_splotches", method !== "clean_grain_off");
+        await commitDenoiseControl("clean_fringes", method !== "clean_grain_off");
         const runtime = state.denoiseRuntime.hdr;
         runtime.refresh = (runtime.refresh || 0) + 1;
         runtime.dirty = true;
@@ -1295,7 +1302,8 @@ while True:
         });
         await page.evaluate(async () => {
           await commitDenoiseControl("method", "clean_grain");
-          await commitDenoiseControl("clean_color", false);
+          await commitDenoiseControl("clean_splotches", false);
+          await commitDenoiseControl("clean_fringes", false);
         });
         await record("clean_grain_off", "enable at Fit", "#denoise-bypass", { trace: true });
         await record("clean_grain_off", "Fit to 100%", "#zoom-actual", { trace: true });
@@ -1326,7 +1334,8 @@ while True:
         for (const [index, method] of methods.entries()) {
           if (!index) await page.evaluate(async method => {
             await commitDenoiseControl("method", method === "clean_grain_off" ? "clean_grain" : method);
-            await commitDenoiseControl("clean_color", method !== "clean_grain_off");
+            await commitDenoiseControl("clean_splotches", method !== "clean_grain_off");
+            await commitDenoiseControl("clean_fringes", method !== "clean_grain_off");
           }, method);
           await record(method, "prepare at Fit", index ? null : "#denoise-bypass",
             { switchMethod: index > 0, trace: panCoverage });
@@ -1385,7 +1394,8 @@ while True:
           state.denoiseRuntime.hdr.showOriginal = true;
           state.denoiseRuntime.sdr.showOriginal = true;
           state.denoise.hdr.controls.method = method === "clean_grain_off" ? "clean_grain" : method;
-          state.denoise.hdr.controls.clean_color = method !== "clean_grain_off";
+          state.denoise.hdr.controls.clean_splotches = method !== "clean_grain_off";
+          state.denoise.hdr.controls.clean_fringes = method !== "clean_grain_off";
           state.denoise.hdr.enabled = true;
         }, fullProofMethod);
         await measureDelivery(page, harness, name, fullProofMethod,
@@ -1405,7 +1415,8 @@ while True:
           await page.evaluate(async method => {
             if (state.denoise[state.currentView].enabled) await setDenoiseEnabled(false);
             await commitDenoiseControl("method", method === "clean_grain_off" ? "clean_grain" : method);
-            await commitDenoiseControl("clean_color", method !== "clean_grain_off");
+            await commitDenoiseControl("clean_splotches", method !== "clean_grain_off");
+            await commitDenoiseControl("clean_fringes", method !== "clean_grain_off");
             // Force a fresh preparation for this sample. Keep the loaded
             // photo and any already measured noise model, as in the editor.
             const runtime = state.denoiseRuntime[state.currentView];
@@ -1425,7 +1436,8 @@ while True:
         await page.evaluate(async method => {
           if (state.denoise[state.currentView].enabled) await setDenoiseEnabled(false);
           await commitDenoiseControl("method", method === "clean_grain_off" ? "clean_grain" : method);
-          await commitDenoiseControl("clean_color", method !== "clean_grain_off");
+          await commitDenoiseControl("clean_splotches", method !== "clean_grain_off");
+          await commitDenoiseControl("clean_fringes", method !== "clean_grain_off");
         }, method);
         await setZoom("#zoom-fit");
         await measurePicture(page, "#denoise-bypass", method);

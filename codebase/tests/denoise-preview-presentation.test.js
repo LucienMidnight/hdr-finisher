@@ -6,6 +6,47 @@ const { frontendSource, declarations } = require("./frontend-source.js");
 const { HDRPresentationGate } = require("../frontend/presentation-gate");
 const { HDRRenderCoordinator } = require("../frontend/render-coordinator");
 
+test("panning back reveals a covering Clean Grain picture immediately and skips a stale grade", () => {
+  const frame = { frameWidth: 5202, frameHeight: 3464, y: 0, width: 100, height: 100 };
+  const accepted = { ...frame, x: 0 };
+  const other = { ...frame, x: 200 };
+  const element = () => ({
+    width: 100, height: 100, isConnected: true, hidden: false,
+    classList: { add() {}, remove() {} },
+  });
+  const renderer = {
+    available: true, gpuAllocator: { register: () => ({}), unregister() {} },
+    grainMemorySnapshot: () => ({ budget_bytes: 20e6, resident_bytes: 0, allocator_bytes: 0 }),
+    denoiseTileBudget: () => 10e6, fineGrainReducedBytes: () => 0,
+  };
+  const versions = { hdr: 1 };
+  const base = {};
+  let visible = accepted;
+  let layouts = 0;
+  const context = vm.createContext({
+    els: { previewCanvas: base }, state: { gpuPreview: renderer, session: { session_id: "photo" },
+      denoiseRuntime: { hdr: {} }, previewGeneration: versions },
+    geometrySignature: () => "{}", denoiseNoiseViewActive: () => false,
+    nativeGeometryOutputRect: () => visible, HDRGrainRoute,
+    window: { HDRViewportRequest: require("../frontend/viewport-request").HDRViewportRequest },
+    applyZoomGeometry: () => layouts++,
+  });
+  vm.runInContext(declarations("cleanGrainLayerIdentity", "cacheCleanGrainLayer",
+    "drawCleanGrainLayer", "showCachedCleanGrainViewport"), context);
+  const key = context.cleanGrainLayerIdentity("hdr");
+  const first = { key, element: element(), renderer, region: accepted, entry: {} };
+  const second = { key, element: element(), renderer, region: other };
+  Object.assign(base, { hdrSharpLayers: [first, second], hdrSharpDetail: second, hdrFrameRegion: other });
+  assert.equal(context.showCachedCleanGrainViewport("hdr"), true);
+  assert.equal(base.hdrSharpDetail, first);
+  assert.equal(base.hdrFrameRegion, accepted);
+  assert.equal(layouts, 1);
+  visible = other;
+  versions.hdr++;
+  assert.equal(context.showCachedCleanGrainViewport("hdr"), false);
+  assert.equal(base.hdrFrameRegion, accepted);
+});
+
 test("bypass draws the original without waiting and retries a stale source after acknowledgement", async () => {
   for (const method of ["standard", "clean_grain", "micro_grain"]) {
     const state = { session: { session_id: "photo" }, currentView: "hdr", editRevision: 1,
@@ -86,11 +127,11 @@ for (const transition of ["slider commit", "live adjustment", "recalculate", "di
 
 test("changing colour cleaning while bypassed prepares the new settings on enable", async () => {
   const runtime = { generation: 0, showOriginal: true, status: "off" };
-  const controls = { method: "clean_grain", clean_color: false, grain_evenness: 0.65 };
+  const controls = { method: "clean_grain", clean_splotches: false, clean_fringes: false, grain_evenness: 0.65 };
   const draws = [];
   const state = { session: { session_id: "photo" }, currentView: "hdr", denoise: { hdr: { enabled: false, controls } },
     denoiseRuntime: { hdr: runtime },
-    gpuPreview: { denoiseSourceSelector: { controls: { method: "clean_grain", cleanColor: false } },
+    gpuPreview: { denoiseSourceSelector: { controls: { method: "clean_grain", cleanSplotches: false, cleanFringes: false } },
       diagnosticsSnapshot: () => ({ denoise: { cacheReady: true, identity: "photo:hdr:1600:{}:source" } }),
       selectDenoiseSelectorSource: () => draws.push("stale") } };
   const context = vm.createContext({ state, window: { setTimeout }, renderDenoiseControls() {}, invalidatePreview() {},
@@ -99,10 +140,10 @@ test("changing colour cleaning while bypassed prepares the new settings on enabl
     recalculateDenoise: async () => draws.push({ ...controls }) });
   vm.runInContext(declarations("restoreDenoiseStatus", "invalidateDenoisePreparation", "deferDenoisePreparation",
     "setDenoiseEnabled", "commitDenoiseControl"), context);
-  await context.commitDenoiseControl("clean_color", true);
+  await context.commitDenoiseControl("clean_splotches", true);
   assert.deepEqual(draws, []);
   await context.setDenoiseEnabled(true);
-  assert.deepEqual(draws, [{ method: "clean_grain", clean_color: true, grain_evenness: 0.65 }]);
+  assert.deepEqual(draws, [{ method: "clean_grain", clean_splotches: true, clean_fringes: false, grain_evenness: 0.65 }]);
 });
 
 test("CPU comparison requests leave Micro Grain cache priority with the viewer", async () => {
@@ -213,7 +254,7 @@ test("a validation failure drawing the quick CPU Grain picture still requests th
   const state = {
     currentView: "sdr", session: { session_id: "photo", source: { width: 1600, height: 1000 } },
     zoomMode: "fit", previewGeneration: { sdr: 1 }, gpuDraftRefusals: {}, displayInfo: {}, adjustments: {},
-    denoise: { sdr: { enabled: true, controls: { method: "clean_grain", clean_color: false } } },
+    denoise: { sdr: { enabled: true, controls: { method: "clean_grain", clean_splotches: false, clean_fringes: false } } },
     denoiseRuntime: { sdr: {} },
     gpuFailurePolicy: { record: error => ({ kind: "validation", detail: error.message, recoverable: true }) },
   };
@@ -292,7 +333,7 @@ for (const method of ["standard", "clean_grain"]) {
     vm.runInContext(frontendSource("preview-pipeline.js"), context);
     vm.runInContext(declarations("gradeGrainGpuPreferred", "gradeGrainGpuEnabled", "gradeSourceIdentity", "liveGradeGrainSelected", "gradeGrainAction"), context);
     context.denoiseUnderlayerEdge = () => 1600;
-    context.visibleOutputRect = () => previous;
+    context.nativeGeometryOutputRect = () => previous;
     assert.equal(await context.renderGpuDraftInner("hdr", { longEdge: 5202, viewport: previous }), true);
     assert.equal(underlayerDraws, 1);
     assert.deepEqual(detailBeforeReplacement, { target: detail, region: previous, width: previous.width });

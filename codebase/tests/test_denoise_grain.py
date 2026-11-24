@@ -18,7 +18,7 @@ def test_experimental_grain_matches_research():
     rgb[100:109, 316:327] -= .06
     model = adaptive.AdaptiveNoiseModel(.0003, .00008, 0, ((1., .6, .36, .21, .12),) * 3)
     standard = adaptive.AdaptiveControls()
-    fine = replace(standard, method="clean_grain", clean_color=False)
+    fine = replace(standard, method="clean_grain", clean_splotches=False, clean_fringes=False)
 
     np.testing.assert_array_equal(
         adaptive.resolve_adaptive(rgb, model, replace(fine, grain_evenness=0)),
@@ -59,12 +59,47 @@ def test_grain_settings_round_trip_with_standard_default():
     assert existing_grade.hdr.controls.amount == .35
     grade = DenoiseDocumentSettings.model_validate({"hdr": {"enabled": True, "controls": {
         "method": "clean_grain", "grain_evenness": .57, "color_splotches": .33,
-        "splotch_size": "large", "clean_color": False,
-    }}})
+        "splotch_size": "large", "clean_splotches": False, "clean_fringes": True,
+    }}, "sdr": {"controls": {"clean_splotches": True, "clean_fringes": False}}})
     restored = DenoiseDocumentSettings.model_validate_json(grade.model_dump_json())
     assert restored == grade
-    assert restored.hdr.controls.clean_color is False
-    assert restored.sdr.controls.clean_color is True
+    assert restored.hdr.controls.clean_splotches is False
+    assert restored.hdr.controls.clean_fringes is True
+    assert restored.sdr.controls.clean_splotches is True
+    assert restored.sdr.controls.clean_fringes is False
+
+    old = DenoiseDocumentSettings.model_validate({"hdr": {"controls": {"clean_color": False}}})
+    assert old.hdr.controls.clean_splotches and old.hdr.controls.clean_fringes
+    assert "clean_color" not in old.hdr.controls.model_dump()
+
+
+def test_clean_grain_protects_a_colour_edge_while_removing_a_local_blotch():
+    height, width = 155, 171
+    y, x = np.ogrid[:height, :width]
+    rng = np.random.default_rng(787)
+    source = np.full((height, width, 3), .026, np.float32)
+    source += rng.normal(0, .0005, source.shape).astype(np.float32)
+    source += (.014 * np.clip((x - 80) / 8 + .5, 0, 1))[..., None] * grain.CHROMA[0]
+    source += (.006 * np.exp(-((y - 75)**2 + (x - 45)**2) / 22))[..., None] * grain.CHROMA[1]
+
+    old = grain.colour_delta(source, False)
+    _, new = grain.colour_delta(source, False, fringes=False, separate=True)
+    edge = np.s_[28:-28, 76:85, :]
+    assert np.linalg.norm(new[edge]) < .5 * np.linalg.norm(old[edge])
+    assert abs(new[75, 45, 1]) >= .9 * abs(old[75, 45, 1])
+
+
+def test_fringe_strength_is_independent_of_splotch_strength():
+    rgb = np.full((80, 80, 3), 0.025, np.float32)
+    rgb[40:, :, :] += .24
+    rgb[39, 10:70] += .10 * grain.CHROMA[0]
+    fringe, delta = grain.colour_delta(rgb, False, separate=True)
+    fringe_only, unused = grain.colour_delta(rgb, True, splotches=False, separate=True)
+    assert unused is None
+    assert np.linalg.norm(fringe_only) > 0
+    np.testing.assert_array_equal(fringe_only, fringe)
+    np.testing.assert_array_equal(grain.apply_colour(rgb, fringe, 1),
+                                  grain.apply_colour(grain.apply_colour(rgb, fringe, 1), delta, 0))
 
 
 def test_clean_color_controls_native_and_reduced_correction(tmp_path):
@@ -73,8 +108,8 @@ def test_clean_color_controls_native_and_reduced_correction(tmp_path):
     source = np.random.default_rng(41).normal(.025, .006, (575, 601, 3)).astype(np.float32)
     height, width = source.shape[:2]
     model = adaptive.AdaptiveNoiseModel(.0003, .00008, 0, ((1., .6, .36, .21, .12),) * 3)
-    fine = adaptive.AdaptiveControls(method="clean_grain", clean_color=False)
-    clean = replace(fine, clean_color=True, splotch_size="large")
+    fine = adaptive.AdaptiveControls(method="clean_grain", clean_splotches=False, clean_fringes=False)
+    clean = replace(fine, clean_splotches=True, clean_fringes=True, splotch_size="large")
     read = lambda top, left, bottom, right: source[top:bottom, left:right]
     fit = grain.fit_grain(height, width, read, model, fine)
     cache = LibraryCache(tmp_path)
@@ -128,7 +163,7 @@ def test_native_warmup_does_not_fill_the_rest_and_visible_reads_share_work(tmp_p
     monkeypatch.setattr(pool, "submit", observe)
     monkeypatch.setattr(grain, "_resolved_tile", resolve)
     read = lambda y, x, b, r: source[y:b, x:r]
-    settings = adaptive.AdaptiveControls(method="clean_grain", clean_color=False)
+    settings = adaptive.AdaptiveControls(method="clean_grain", clean_splotches=False, clean_fringes=False)
     prepared = grain.GrainPreparation(16, width, read, None, settings, None, lambda: True, LibraryCache(tmp_path))
     warm = (0, 3 * size, 1, 1, 16, width)
     visible = (0, 2 * size, 1, 1, 16, width)
@@ -171,7 +206,7 @@ def test_clean_prepares_only_requested_tiles_under_memory_pressure(tmp_path, mon
 
     monkeypatch.setattr(grain, "_resolved_tile", resolve)
     monkeypatch.setattr(grain, "colour_delta", lambda rgb, broad: np.zeros_like(rgb))
-    settings = adaptive.AdaptiveControls(method="clean_grain", clean_color=False)
+    settings = adaptive.AdaptiveControls(method="clean_grain", clean_splotches=False, clean_fringes=False)
     prepared = grain.GrainPreparation(8, width, lambda y, x, b, r: source[y:b, x:r],
                                       None, settings, None, lambda: True, LibraryCache(tmp_path))
     try:
@@ -202,7 +237,7 @@ def test_native_warmup_runs_visible_tiles_together(tmp_path, monkeypatch):
     monkeypatch.setattr(cpu_budget, "_cpu_pool", pool)
     monkeypatch.setattr(grain, "_resolved_tile", resolve)
     read = lambda y, x, b, r: source[y:b, x:r]
-    settings = adaptive.AdaptiveControls(method="clean_grain", clean_color=False)
+    settings = adaptive.AdaptiveControls(method="clean_grain", clean_splotches=False, clean_fringes=False)
     prepared = grain.GrainPreparation(8, 3 * size, read, None, settings, None, lambda: True, LibraryCache(tmp_path))
     try:
         prepared.region(0, size, 8, 2 * size, 8, 3 * size, warm_only=True)
@@ -265,7 +300,7 @@ def test_colour_shader_uses_the_cpu_offsets_and_ramp_bounds():
     gpu = {tuple(map(float, re.search(bounds, call).groups()))
            for call in colour.split("cleanRamp(")[1:]}
     cpu = set()
-    for function in (denoise_grain._colour_pass, denoise_grain.colour_delta):
+    for function in (denoise_grain._colour_pass, denoise_grain.colour_delta, denoise_grain._splotch_edge_weight):
         for call in ast.walk(ast.parse(inspect.getsource(function))):
             if isinstance(call, ast.Call) and isinstance(call.func, ast.Name) and call.func.id == "_ramp":
                 cpu.add(tuple(ast.literal_eval(arg) for arg in call.args[1:]))

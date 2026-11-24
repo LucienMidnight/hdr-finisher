@@ -86,7 +86,8 @@ async function selectGrain(page, lane, method, useGpu) {
     await commitDenoiseControl("method", cleanColor ? method : "clean_grain");
     if (method !== "micro_grain") {
       await commitDenoiseControl("grain_evenness", 0.65);
-      await commitDenoiseControl("clean_color", cleanColor);
+      await commitDenoiseControl("clean_splotches", cleanColor);
+      await commitDenoiseControl("clean_fringes", cleanColor);
       await commitDenoiseControl("splotch_size", "small");
     }
     await setDenoiseEnabled(true);
@@ -101,8 +102,8 @@ async function waitForFrame(page, lane, method, view, previous) {
     const frame = capture.frame;
     const controls = state.gpuPreview.denoiseSourceSelector?.controls;
     const matchingMethod = method === "clean_grain_off"
-      ? controls?.method === "clean_grain" && controls.cleanColor === false
-      : controls?.method === method && controls.cleanColor !== false;
+      ? controls?.method === "clean_grain" && controls.cleanSplotches === false && controls.cleanFringes === false
+      : controls?.method === method && controls.cleanSplotches !== false && controls.cleanFringes !== false;
     return state.currentView === lane && state.acceptedPresentation?.exact && previewIdleNow()
       && state.acceptedPresentation.processedLongEdge === requiredProcessingLongEdge()
       && capture.generation > previous && frame?.lane === lane

@@ -1035,6 +1035,9 @@ function renderGpuDraft(lane = state.currentView, options = {}) {
 
 function clearDenoiseDetail() {
   const canvas = els.previewCanvas;
+  for (const layer of canvas.hdrSharpLayers || []) releaseCleanGrainLayer(layer);
+  canvas.hdrSharpLayers = null;
+  canvas.hdrSharpDetail = null;
   if (!canvas.hdrFrameRegion && !canvas.parentElement.hasAttribute("data-region")) return;
   canvas.hdrFrameRegion = null;
   if (canvas.hdrCpuMicroRegion) {
@@ -1050,6 +1053,99 @@ function clearDenoiseDetail() {
   // Release the old swap chain when only the whole picture is showing.
   els.previewDenoiseDetail.width = 1;
   els.previewDenoiseDetail.height = 1;
+}
+
+function releaseCleanGrainLayer(layer) {
+  layer.renderer.gpuAllocator?.unregister(layer.entry);
+  layer.element.remove();
+  layer.element.width = 1;
+  layer.element.height = 1;
+  layer.region = null;
+}
+
+function cleanGrainLayerIdentity(lane) {
+  return JSON.stringify([state.session?.session_id, lane, state.previewGeneration[lane], geometrySignature(),
+    state.denoiseRuntime[lane]?.showOriginal, state.comparePeekActive]);
+}
+
+function cacheCleanGrainLayer(base, layer, key) {
+  const { renderer } = layer;
+  const evict = () => {
+    releaseCleanGrainLayer(layer);
+    base.hdrSharpLayers = base.hdrSharpLayers?.filter(item => item !== layer);
+  };
+  // Charge the cached canvas's backing images to the same allowance as
+  // prepared Grain pixels. The active canvas stays mounted under pressure.
+  const bytes = layer.element.width * layer.element.height * 8 * 3;
+  const snapshot = renderer.grainMemorySnapshot();
+  const spare = renderer.denoiseTileBudget() - renderer.fineGrainReducedBytes()
+    - (snapshot.resident_by_kind?.denoiseTileBytes || 0);
+  if (layer.key !== key || snapshot.pressure_level === "critical" || !renderer.gpuAllocator
+      || bytes > spare || bytes > HDRGrainRoute.headroom(snapshot)) {
+    evict();
+    return;
+  }
+  layer.entry = renderer.gpuAllocator.register({ kind: "grain-preview-layer", bytes, evict });
+  layer.element.classList.remove("primary");
+}
+
+function drawCleanGrainLayer(base, layer, region, key) {
+  layer.renderer.gpuAllocator?.unregister(layer.entry);
+  layer.entry = null;
+  const previous = base.hdrSharpDetail;
+  if (previous && previous !== layer) cacheCleanGrainLayer(base, previous, key);
+  for (const cached of base.hdrSharpLayers || []) {
+    if (cached !== previous && cached !== layer && cached.key !== key) releaseCleanGrainLayer(cached);
+  }
+  if (base.hdrSharpLayers) base.hdrSharpLayers = base.hdrSharpLayers.filter(item => item.region);
+  layer.key = key;
+  layer.region = region;
+  base.hdrSharpLayers ||= [];
+  if (!base.hdrSharpLayers.includes(layer)) base.hdrSharpLayers.push(layer);
+  base.hdrSharpDetail = layer;
+  layer.element.hidden = false;
+  layer.element.classList.add("primary");
+  if (!layer.element.isConnected) base.parentElement.append(layer.element);
+}
+
+function parkCleanGrainLayers(base, lane) {
+  const current = base.hdrSharpDetail;
+  for (const layer of base.hdrSharpLayers || []) {
+    if (layer !== current) releaseCleanGrainLayer(layer);
+  }
+  base.hdrSharpLayers = current ? [current] : null;
+  base.hdrSharpDetail = null;
+  base.hdrFrameRegion = null;
+  if (current) cacheCleanGrainLayer(base, current, cleanGrainLayerIdentity(lane));
+}
+
+function restoreCleanGrainLayer(lane) {
+  const base = els.previewCanvas;
+  if (base.hdrFrameRegion || !base.hdrWholeFrame?.cleanGrain
+      || denoiseNoiseViewActive(lane)
+      || !state.denoise[lane]?.enabled || state.denoise[lane].controls.method !== "clean_grain") return;
+  const key = cleanGrainLayerIdentity(lane);
+  const layer = [...(base.hdrSharpLayers || [])].reverse().find(item => item.key === key);
+  if (!layer) return;
+  drawCleanGrainLayer(base, layer, layer.region, key);
+  base.hdrFrameRegion = layer.region;
+}
+
+function showCachedCleanGrainViewport(lane) {
+  const base = els.previewCanvas;
+  const current = base.hdrSharpDetail;
+  if (!current || !state.gpuPreview?.available || state.comparePeekActive || denoiseNoiseViewActive(lane)) return false;
+  const key = cleanGrainLayerIdentity(lane);
+  const { frameWidth: width, frameHeight: height } = current.region;
+  const visible = nativeGeometryOutputRect({ width, height });
+  const covered = layer => layer.key === key && window.HDRViewportRequest.covers(layer.region, visible);
+  if (covered(current)) return true;
+  const cached = base.hdrSharpLayers.find(covered);
+  if (!cached) return false;
+  drawCleanGrainLayer(base, cached, cached.region, key);
+  base.hdrFrameRegion = cached.region;
+  applyZoomGeometry();
+  return true;
 }
 
 function denoiseUnderlayerEdge() {
@@ -1241,7 +1337,11 @@ async function renderGpuDraftForView(lane, request) {
       && accepted.lane === lane && accepted.generation === generation
       && accepted.geometrySignature === requestedGeometrySignature;
     const reusable = !state.geometryPresentationPending && canvas.hdrWholeFrame && canvas.style.display !== "none"
-      && (samePicturePan || (canvas.hdrWholeFrame.key === wholeFrameKey && canvas.hdrWholeFrame.edge <= softEdge + 1));
+      && (samePicturePan || (canvas.hdrWholeFrame.key === wholeFrameKey
+        && (denoiseActive && denoiseMethod === "clean_grain" || canvas.hdrWholeFrame.edge <= softEdge + 1))
+        || (denoiseActive && denoiseMethod === "clean_grain" && canvas.hdrWholeFrame.cleanGrain
+          && canvas.hdrWholeFrame.sessionId === sessionId && canvas.hdrWholeFrame.lane === lane
+          && canvas.hdrWholeFrame.geometrySignature === requestedGeometrySignature));
     const retainedUnderlayer = !state.geometryPresentationPending && (micro || request.preservePicture)
       && canvas.hdrWholeFrame && accepted?.lane === lane
       && accepted.geometrySignature === requestedGeometrySignature;
@@ -1309,7 +1409,7 @@ async function renderGpuDraftForView(lane, request) {
   try {
     viewportFrame = await resolveGpuViewport(longEdge, request.viewport, {
       remeasure: geometryViewport || boundedPresentation, includeWhole: boundedPresentation,
-      measure: nativeGeometryViewport ? nativeGeometryOutputRect : null, isCurrent: viewportCurrent,
+      measure: boundedPresentation ? nativeGeometryOutputRect : null, isCurrent: viewportCurrent,
     });
   } catch (error) {
     if (!viewportCurrent() || error?.status === 409) return refuse("superseded-before-viewport");
@@ -1320,6 +1420,14 @@ async function renderGpuDraftForView(lane, request) {
   const { frameSize, viewport } = viewportFrame;
   if (sideBySideGeometryViewport && frameSize && !viewport) return deferOffscreen(frameSize);
   if (boundedPresentation && !viewport) return refuse("superseded-before-viewport");
+  const sharpKey = !allowInactive && denoiseViewport && !nativeGeometryViewport && denoiseMethod === "clean_grain"
+    && liveGpuGrain && !denoiseNoiseViewActive(lane) ? cleanGrainLayerIdentity(lane) : null;
+  const activeSharp = sharpKey && canvas.hdrSharpDetail;
+  const sharpLayer = sharpKey ? (activeSharp?.key === sharpKey && !window.HDRViewportRequest.covers(activeSharp.region, viewport)
+    ? canvas.hdrSharpLayers.find(layer => layer !== activeSharp) : activeSharp) || {
+    renderer: state.gpuPreview, element: Object.assign(document.createElement("canvas"), { className: "grain-preview-layer" }),
+  } : null;
+  sharpLayer?.element.setAttribute("aria-hidden", "true");
   const repairSourceGeneration = state.repairSourceGeneration || 0;
   const adjustmentsSnapshot = JSON.parse(JSON.stringify(state.adjustments));
   const localSnapshot = localsBypassed()
@@ -1368,18 +1476,21 @@ async function renderGpuDraftForView(lane, request) {
     deferSurface: request.underlayerOnly || (replacingDetail && !boundedPresentation && !viewport),
     coversViewport: boundedPresentation ? (region, width, height) => {
       if (nativeGeometryViewport ? !nativeGeometryViewportActive(lane, longEdge, capacityRecovery) : !nativeDenoiseViewport(lane)) return false;
-      const visible = nativeGeometryViewport ? nativeGeometryOutputRect({ width, height })
-        : visibleOutputRect(width, height, { includeWhole: true });
+      const visible = nativeGeometryOutputRect({ width, height });
       viewportMoved = !window.HDRViewportRequest.covers(region, visible);
       return !viewportMoved;
     } : null,
     onFrameSubmitted: boundedPresentation || request.underlayerOnly || replacingDetail ? (region, hdr) => {
       if (request.backgroundUnderlayer) return;
       if (canvas.hdrCpuMicroRegion) clearDenoiseDetail();
+      if (sharpLayer && region) drawCleanGrainLayer(canvas, sharpLayer, region, sharpKey);
+      else if (region && !request.underlayerOnly && canvas.hdrSharpLayers) clearDenoiseDetail();
       if (region || retainedDetail) canvas.hdrFrameRegion = nativeGeometryViewport && region
         ? { ...region, nativeGeometryViewport: true, capacityRecovery: capacityRecovery || Boolean(recoveredRegion) }
         : (region || retainedDetail);
-      else clearDenoiseDetail();
+      else if (denoiseActive && denoiseMethod === "clean_grain" && state.zoomMode === "fit" && canvas.hdrSharpDetail) {
+        parkCleanGrainLayers(canvas, lane);
+      } else clearDenoiseDetail();
       if (retireGeometryUnderlayer) {
         canvas.hdrWholeFrame = null;
         state.gpuPreview.scopeSources?.delete(canvas);
@@ -1439,7 +1550,7 @@ async function renderGpuDraftForView(lane, request) {
   if (!sourceOptions.isCurrent()) return refuse("superseded-before-render");
   try {
     const draw = boundedPresentation
-      ? renderer.renderTo.bind(renderer, els.previewDenoiseDetail) : renderer.render.bind(renderer);
+      ? renderer.renderTo.bind(renderer, sharpLayer?.element || els.previewDenoiseDetail) : renderer.render.bind(renderer);
     const render = () => draw(
       sessionId,
       lane,
@@ -1467,7 +1578,10 @@ async function renderGpuDraftForView(lane, request) {
     }
     if (!sourceOptions.isCurrent()) return refuse("superseded-during-render");
     if (!allowInactive && !boundedPresentation) {
-      canvas.hdrWholeFrame = !viewport || result.execution === "direct" ? { key: wholeFrameKey, edge: longEdge } : null;
+      canvas.hdrWholeFrame = !viewport || result.execution === "direct" ? {
+        key: wholeFrameKey, edge: longEdge, sessionId, lane, geometrySignature: requestedGeometrySignature,
+        cleanGrain: denoiseActive && denoiseMethod === "clean_grain" && !sourceOptions.noiseView && !result.approximate,
+      } : null;
     }
     if (request.underlayerOnly) return true;
     if (logDecision && diagnostics) {
@@ -1560,6 +1674,12 @@ async function renderGpuDraftForView(lane, request) {
           submitToPresentMs: presentedAt - submittedAt,
           animationFrameAt,
         });
+        if (request.action && denoiseActive && denoiseMethod === "clean_grain" && !result.approximate) {
+          diagnostics?.event?.("denoise", "grain_frame_visible", {
+            lane, long_edge_px: longEdge, duration_ms: presentedAt - renderStartedAt,
+            submit_to_present_ms: presentedAt - submittedAt,
+          }, request.action);
+        }
         window.dispatchEvent(new CustomEvent("hdrfinisher:preview-presented", {
           detail: { serial, sourceSerial: result.sourceSerial, generation, lane, longEdge, submittedAt, presentedAt, sessionId, tier, coarse:Boolean(request.coarse), wholeFrame:!viewport, execution: result.execution },
         }));
@@ -1802,6 +1922,11 @@ function invalidatePreview(lane, { local = false, markDirty = true } = {}) {
   if (lane === state.currentView) {
     cancelGeometryUnderlayer();
     clearPreviewCapacityRecovery();
+    const base = els.previewCanvas;
+    for (const layer of base?.hdrSharpLayers || []) {
+      if (layer !== base.hdrSharpDetail) releaseCleanGrainLayer(layer);
+    }
+    if (base?.hdrSharpLayers) base.hdrSharpLayers = base.hdrSharpLayers.filter(layer => layer.region);
   }
   window.HDRSourceTransport?.clearCapacityRefusals(state.gpuPreview);
   clearGeometryMapCapacityRefusals();

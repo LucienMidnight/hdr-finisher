@@ -137,7 +137,7 @@ def streamed_delivery_enabled(frame, settings, adjustments):
         if settings.format != "sdr_jpeg" or width * height > CLEAN_LARGE_SDR_DEFAULT_MAX_PIXELS:
             return False
         lane = denoise_settings_for_export(frame, PreviewKind.SDR)
-        if (lane is None or lane.controls.method != "clean_grain" or not lane.controls.clean_color
+        if (lane is None or lane.controls.method != "clean_grain" or not lane.controls.clean_splotches
                 or lane.controls.splotch_size != "large"):
             return False
     reference = getattr(frame, "sdr_reference_image", None)

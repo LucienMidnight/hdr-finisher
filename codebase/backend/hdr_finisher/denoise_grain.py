@@ -23,6 +23,7 @@ from .library_diagnostics import log
 GRAIN_RADIUS = 18
 SMALL_COLOUR_MARGIN = 40
 LARGE_COLOUR_MARGIN = 76
+FRINGE_MARGIN = 24
 LUMA = adaptive.ACESCG_LUMINANCE
 CHROMA = adaptive.OPPONENT[1:]
 # Native Grade and Library share one workspace per pair of logical CPUs,
@@ -188,7 +189,27 @@ def _colour_pass(chroma, noise, limit, dark, reach, tap, centre, native=None):
     return moderate + isolated_dark[..., None] * (pixel_delta * limit[..., None] - moderate)
 
 
-def colour_delta(rgb, broad):
+def _splotch_edge_weight(chroma, noise):
+    """Protect an abrupt colour boundary that continues along the edge."""
+    pad = 12
+    field = np.pad(chroma, ((pad, pad), (pad, pad), (0, 0)), mode="edge")
+    shape = chroma.shape[:2]
+    longest = np.zeros_like(noise)
+    for y, x in ((0, 1), (1, 0), (1, 1), (1, -1)):
+        def cross(reach, along):
+            return (_shift(field, shape, pad + reach*y + along*x, pad + reach*x - along*y)
+                    - _shift(field, shape, pad - reach*y + along*x, pad - reach*x - along*y))
+        direction = cross(6, 0)
+        length = np.maximum(_magnitude(direction), 1e-7)
+        coherent = length.copy()
+        for along in (-5, 5):
+            coherent = np.minimum(coherent, np.sum(direction * cross(6, along), axis=-1) / length)
+        sharp = length / np.maximum(_magnitude(cross(pad, 0)), length)
+        longest = np.maximum(longest, _ramp(coherent / noise, 4, 9) * _ramp(sharp, .4, .7))
+    return 1 - longest
+
+
+def colour_delta(rgb, broad, *, splotches=True, fringes=True, separate=False):
     """Full-strength opponent-colour correction, leaving scene luminance alone."""
     native = denoise_filters.library()
     if not denoise_filters.supports(rgb) or not hasattr(native, "colour_guides"):
@@ -231,9 +252,19 @@ def colour_delta(rgb, broad):
             native.colour_guides_relative(*args, reference)
         else:
             native.colour_guides(*args)
+    if separate:
+        fringe_fix = fringe * edge_weight[..., None] if fringes else np.float32(0)
+        fringe_delta = -fringe_fix * light[..., None] if fringes else np.zeros_like(original)
+        if not splotches:
+            return fringe_delta, None
+        small = _colour_pass(chroma, noise, limit, dark, 12, 2, 1, native)
+        chroma -= small * _splotch_edge_weight(chroma, noise)[..., None] + fringe_fix
+        if broad:
+            large = _colour_pass(chroma, noise, limit, dark, 28, 4, 3, native)
+            chroma -= large * _splotch_edge_weight(chroma, noise)[..., None]
+        return fringe_delta, chroma * light[..., None] - original - fringe_delta
+    # Micro Grain uses the original combined pass.
     chroma -= _colour_pass(chroma, noise, limit, dark, 12, 2, 1, native) + fringe * edge_weight[..., None]
-    if broad:
-        chroma -= _colour_pass(chroma, noise, limit, dark, 28, 4, 3, native)
     return chroma * light[..., None] - original
 
 
@@ -241,6 +272,17 @@ def apply_colour(rgb, delta, blend):
     output = rgb + (delta * np.float32(blend)) @ CHROMA
     output += ((rgb @ LUMA) - (output @ LUMA))[..., None]
     return output
+
+
+def _colour_controls(controls):
+    clean = controls.method == "clean_grain"
+    return clean and controls.clean_splotches, clean and controls.clean_fringes
+
+
+def _colour_margin(splotches, fringes, broad):
+    if splotches:
+        return LARGE_COLOUR_MARGIN if broad else SMALL_COLOUR_MARGIN
+    return FRINGE_MARGIN if fringes else 0
 
 
 def _resolved_tile(read, height, width, origin, size, downstream, model, controls, fit):
@@ -321,16 +363,22 @@ class GrainPreparation:
         self._close = finalize(self, close)
         self._tile_offsets = {}
         self._written_bytes = 0
-        clean = controls.method == "clean_grain" and controls.clean_color
-        broad = controls.splotch_size == "large"
-        margin = (LARGE_COLOUR_MARGIN if broad else SMALL_COLOUR_MARGIN) if clean else 0
+        splotches, fringes = _colour_controls(controls)
+        broad = splotches and controls.splotch_size == "large"
+        margin = _colour_margin(splotches, fringes, broad)
         size = adaptive.TILE_SIZE - 2 * margin
 
         def resolve(origin):
             start = perf_counter()
             rgb, inner = _resolved_tile(read, height, width, origin, size, margin, model, controls, fit)
             resolved = perf_counter()
-            delta = colour_delta(rgb, broad)[inner] if clean else None
+            delta = None
+            if splotches or fringes:
+                fringe_delta, splotch_delta = colour_delta(rgb, broad, splotches=splotches, fringes=fringes, separate=True)
+                if fringes:
+                    rgb = apply_colour(rgb, fringe_delta, 1)
+                if splotch_delta is not None:
+                    delta = splotch_delta[inner]
             coloured = perf_counter()
             rows = _pack(rgb[inner], delta)
             if not np.isfinite(rgb[inner]).all():
@@ -569,8 +617,10 @@ class GrainPreparation:
 def resolve_grain(source, model, controls, *, allocate_output=None):
     evenness = controls.grain_evenness
     splotches = controls.color_splotches
-    broad = controls.splotch_size == "large"
-    clean = controls.method == "clean_grain" and controls.clean_color and splotches > 0
+    clean_splotches, clean_fringes = _colour_controls(controls)
+    clean_splotches = clean_splotches and splotches > 0
+    broad = clean_splotches and controls.splotch_size == "large"
+    clean = clean_splotches or clean_fringes
     if (not clean and not evenness) or controls.amount <= 0 or not (controls.luminance or controls.color_noise):
         return adaptive._resolve_standard(source, model, controls, allocate_output=allocate_output)
     height, width = source.shape[:2]
@@ -578,8 +628,7 @@ def resolve_grain(source, model, controls, *, allocate_output=None):
     read = lambda y, x, b, r: source[y:b, x:r]
     fit = fit_grain(height, width, read, model, controls) if evenness else None
     # Stage only the core and the pixels the next stage will read.
-    margin = LARGE_COLOUR_MARGIN if broad else SMALL_COLOUR_MARGIN
-    downstream = margin if clean else 0
+    downstream = _colour_margin(clean_splotches, clean_fringes, broad)
     size = adaptive.TILE_SIZE - 2 * downstream
 
     def run(origin):
@@ -587,7 +636,11 @@ def resolve_grain(source, model, controls, *, allocate_output=None):
         y, x = origin
         rgb = base
         if clean:
-            rgb = apply_colour(base, colour_delta(base, broad), splotches)
+            fringe, delta = colour_delta(base, broad, splotches=clean_splotches, fringes=clean_fringes, separate=True)
+            if clean_fringes:
+                rgb = apply_colour(rgb, fringe, 1)
+            if delta is not None:
+                rgb = apply_colour(rgb, delta, splotches)
         result[y:y+size, x:x+size, :3] = rgb[core]
 
     from itertools import count

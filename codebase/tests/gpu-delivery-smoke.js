@@ -85,11 +85,12 @@ async function authoredSdr(page, api) {
     state.gpuPreview.enableGradeCleanGrainGpu=false;
     await commitDenoiseControl("method","clean_grain");
     await commitDenoiseControl("grain_evenness",0.65);
-    await commitDenoiseControl("clean_color",false);
+    await commitDenoiseControl("clean_splotches", false);
+    await commitDenoiseControl("clean_fringes", false);
   });
   await page.waitForFunction(()=>{
     const selector = state.gpuPreview.denoiseSourceSelector;
-    return selector?.identity.endsWith(":authored-sdr") && selector.controls.cleanColor === false
+    return selector?.identity.endsWith(":authored-sdr") && selector.controls.cleanSplotches === false && selector.controls.cleanFringes === false
       && selector.cache?.grain?.token && !selector.cache.grain.gpu && previewIdleNow();
   });
   const fallback = await page.evaluate(async ()=>{
@@ -126,18 +127,27 @@ async function authoredSdr(page, api) {
     if(!upload.ok())throw Error(await upload.text());
     console.log("fixture uploaded");
     const session=(await upload.json()).session;
-    for (const [method, size, cleanColor] of [["standard", "small", true], ["clean_grain", "small", false], ["clean_grain", "small", true], ["clean_grain", "large", true]]) {
-      const output = path.join(root, `${method}-${size}-${cleanColor}`);
+    const cases = [
+      ["standard", "small", true, true],
+      ["clean_grain", "small", false, false],
+      ["clean_grain", "small", true, false],
+      ["clean_grain", "small", false, true],
+      ["clean_grain", "small", true, true],
+      ["clean_grain", "large", true, true],
+    ];
+    for (const [method, size, splotches, fringes] of cases) {
+      const output = path.join(root, `${method}-${size}-${splotches}-${fringes}`);
       fs.mkdirSync(output);
-      console.log("Denoise delivery", method, size);
+      console.log("Denoise delivery", method, size, { splotches, fringes });
       const edits=await page.request.get(api(`/api/session/${session.session_id}/edit-state`));
       const editState=await edits.json();
       for (const lane of ["hdr", "sdr"]) {
         editState.document.denoise[lane].enabled = true;
         editState.document.denoise[lane].controls.method = method;
         editState.document.denoise[lane].controls.splotch_size = size;
-        editState.document.denoise[lane].controls.grain_evenness = cleanColor ? 0 : 0.65;
-        editState.document.denoise[lane].controls.clean_color = cleanColor;
+        editState.document.denoise[lane].controls.grain_evenness = splotches || fringes ? 0 : 0.65;
+        editState.document.denoise[lane].controls.clean_splotches = splotches;
+        editState.document.denoise[lane].controls.clean_fringes = fringes;
       }
       // The clipped calibration fixture exceeds 1000 nits without an authored cap.
       editState.document.global_adjustments.hdr.highlight_section_enabled=true;

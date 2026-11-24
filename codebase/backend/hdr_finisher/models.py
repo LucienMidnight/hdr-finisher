@@ -928,7 +928,7 @@ class LocalAdjustment(BaseModel):
 
 
 class DenoiseLiveControls(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="ignore")
 
     amount: float = Field(default=0.75, ge=0.0, le=1.0)
     luminance: float = Field(default=0.5, ge=0.0, le=1.0)
@@ -945,7 +945,8 @@ class DenoiseLiveControls(BaseModel):
     micro_color: float = Field(default=0.5, ge=0.0, le=1.0)
     micro_detail: float = Field(default=0.5, ge=0.0, le=1.0)
     grain_evenness: float = Field(default=1.0, ge=0.0, le=1.0)
-    clean_color: bool = True
+    clean_splotches: bool = True
+    clean_fringes: bool = True
     color_splotches: float = Field(default=1.0, ge=0.0, le=1.0)
     splotch_size: Literal["small", "large"] = "small"
 

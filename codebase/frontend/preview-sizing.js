@@ -21,6 +21,9 @@ function previewTargetLongEdge(value = state.previewResolution) {
 }
 
 function requiredProcessingLongEdge() {
+  if (state.zoomMode === "custom" && cleanGrainZoomViewport(state.currentView)) {
+    return previewTargetLongEdge("full");
+  }
   if (state.previewResolutionOverride === false) {
     const nativeEdge = previewTargetLongEdge("full");
     const edge = state.zoomMode !== "custom" ? displayedLongEdge()
@@ -150,6 +153,11 @@ function noteViewerPan() {
     return;
   }
   const liveGpuGrain = liveGradeGrainSelected(lane);
+  if (state.zoomMode === "custom" && els.previewCanvas.hdrSharpDetail && liveGpuGrain
+    && showCachedCleanGrainViewport(lane)) {
+    state.renderCoordinator?.cancelPan(lane);
+    return;
+  }
   if (region && accepted?.exact && accepted.lane === lane && accepted.generation === state.previewGeneration[lane]
       && (liveGpuGrain || region.nativeGeometryViewport) && window.HDRViewportRequest.covers(region,
         visibleOutputRect(region.frameWidth, region.frameHeight, { includeWhole: true }))) {

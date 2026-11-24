@@ -3,13 +3,15 @@ const vm = require("node:vm");
 const test = require("node:test");
 
 const { declarations } = require("./frontend-source.js");
-function scaleFor(width, height, geometry = {}, zoomMode = "fit", zoomPercent = 100) {
+function scaleFor(width, height, geometry = {}, zoomMode = "fit", zoomPercent = 100, denoise = null) {
   const state = { session: { source: { width, height } }, adjustments: { shared: { geometry } },
-    previewResolutionOverride: false, zoomMode, zoomPercent, compareLayout: "single" };
+    previewResolutionOverride: false, zoomMode, zoomPercent, compareLayout: "single", fitZoomPercent: 20,
+    activeWorkflow: "grade", currentView: "hdr", denoise: { hdr: denoise } };
   const context = vm.createContext({ state, window: { devicePixelRatio: 1 },
     els: { dropzone: { getBoundingClientRect: () => ({ width: 1200, height: 800 }) } },
+    gpuPreviewEligible: () => true, gradeGrainGpuEnabled: lane => Boolean(state.denoise[lane]?.enabled),
     previewTargetLongEdge: () => Math.max(width, height) });
-  vm.runInContext(declarations("requiredProcessingLongEdge", "steppedProcessingLongEdge", "displayedLongEdge")
+  vm.runInContext(declarations("requiredProcessingLongEdge", "steppedProcessingLongEdge", "displayedLongEdge", "cleanGrainZoomViewport")
     + "\nglobalThis.edge = requiredProcessingLongEdge();", context);
   return context.edge;
 }
@@ -17,6 +19,13 @@ function scaleFor(width, height, geometry = {}, zoomMode = "fit", zoomPercent = 
 test("Fit uses the source scale needed by the displayed aspect and crop", () => {
   assert.equal(scaleFor(2400, 1600), 1200);
   assert.equal(scaleFor(2400, 1600, { crop: { width: 0.5, height: 0.5 } }), 2400);
+});
+
+test("Clean Grain zoom uses a native view below 100%, while Fit remains display sized", () => {
+  const clean = { enabled: true, controls: { method: "clean_grain" } };
+  assert.equal(scaleFor(7968, 5320, {}, "custom", 60.6, clean), 7968);
+  assert.equal(scaleFor(7968, 5320, {}, "fit", 60.6, clean), 1198);
+  assert.equal(scaleFor(7968, 5320, {}, "custom", 60.6, { ...clean, enabled: false }), 5634);
 });
 
 test("a quarter-turn recomputes Fit without undersampling portrait sources", () => {

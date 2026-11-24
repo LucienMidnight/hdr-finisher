@@ -54,7 +54,7 @@ else:
         row["differences"]=[]
         for method, clean_color in (("standard", True), ("clean_grain", False), ("clean_grain", True)):
             for amount in (.5,.85):
-                controls=da.AdaptiveControls(method=method,clean_color=clean_color,amount=amount,luminance=.7,color_noise=.8,detail_recovery=.3)
+                controls=da.AdaptiveControls(method=method,clean_splotches=clean_color, clean_fringes=clean_color,amount=amount,luminance=.7,color_noise=.8,detail_recovery=.3)
                 reference=da.resolve_adaptive(image,model(item["cpu"]),controls)
                 measured=da.resolve_adaptive(image,model(item["gpu"]),controls)
                 grade=AdjustmentState()

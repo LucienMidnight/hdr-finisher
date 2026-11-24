@@ -220,7 +220,8 @@ def test_cpu_grade_fallback_renders_grain_even_when_full_strips_are_requested():
     kind = PreviewKind.SDR
     settings = session.denoise.sdr
     settings.controls.method = "clean_grain"
-    settings.controls.clean_color = False
+    settings.controls.clean_splotches = False
+    settings.controls.clean_fringes = False
     request = PreviewRequest(execution="strips")
     denoised, _ = _render_selected_execution(session, request, kind, session.adjustments, 640, lambda: True)
     settings.enabled = False
