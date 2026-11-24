@@ -120,6 +120,18 @@ test("cancellations do not latch and validation and source limits are distinct",
   assert.equal(failureReason(new Error("Micro Grain does not support applied lens correction.")), "unsupported_lens_correction");
   assert.equal(failureReason(new Error("Invalid Fine Grain calibration statistics")), "gpu_validation_error");
   assert.equal(failureReason({ name: "TimeoutError" }), "transport_timeout");
+  assert.equal(failureReason(new Error("The GPU device was lost.")), "device_lost");
+});
+
+test("an unclassified refusal can retry once after a device replacement", () => {
+  const failures = new Failures();
+  const replacement = {};
+  failures.record("unknown", "grain_gpu_error", snapshot, device);
+  failures.record("invalid", "gpu_validation_error", snapshot, device);
+  assert.equal(failures.takeRetry("unknown", snapshot, device, true), false);
+  assert.equal(failures.takeRetry("unknown", snapshot, replacement, true), true);
+  assert.equal(failures.takeRetry("unknown", snapshot, {}, true), false);
+  assert.equal(failures.takeRetry("invalid", snapshot, replacement, true), false);
 });
 
 test("reclaim drains submitted work, preserves the visible proxy and skips pinned entries", async () => {
