@@ -1,3 +1,13 @@
+## November 24, 2026: Saved Heal and Clone replay
+
+Heal and Clone use the float64 CPU solver for saved and visible repairs in
+Library, Grade, Proof and export. Independent repairs can solve across the
+available cores from the original source. The app composites them in saved
+order so overlaps and donor locations keep their meaning. Inpaint still
+attempts the GPU with the existing CPU fallback. Expected Heal and Clone CPU
+work is recorded as the renderer in diagnostics. Only an actual fallback
+shows the fallback notice.
+
 ## November 19, 2026: Signed channels in SDR output
 
 The final SDR gamut mapping eases negative channels into display black at

@@ -23,8 +23,11 @@ const folder=path.resolve('output/retouch-delivery');fs.mkdirSync(folder,{recurs
      source_point:mode==='inpaint'?null:{x:.25,y:.5},radius_px:6,settings:{seed:20261028+(forced?1:0)}
     }}]);if(!applied)throw Error(document.getElementById('retouch-status').textContent);renderRetouchControls();return state.session.repair_rendering;
    },{mode,forced});
-   assert.equal(routes[0].renderer,forced?'cpu':'gpu');
-   if(forced)assert.match(await page.evaluate(()=>status.get('retouch-route')?.message||''),/CPU fallback.*Delivery spot/);
+   const repairFallback=forced&&mode==='inpaint';
+   assert.equal(routes[0].renderer,forced||mode!=='inpaint'?'cpu':'gpu');
+   const notice=await page.evaluate(()=>status.get('retouch-route')?.message||'');
+   if(repairFallback)assert.match(notice,/CPU fallback.*Delivery spot/);
+   else assert.doesNotMatch(notice,/Retouch CPU fallback/);
    const file=path.join(folder,`${mode}-${forced?'cpu':'gpu'}.jpg`);fs.rmSync(file,{force:true});
    await global.HDRFinisherElectronTestHarness.selectExportPath(file);
    const grant=await page.evaluate(()=>hdrFinisherDesktop.chooseExportPath({extension:'jpg',suggestedName:'repair.jpg'}));
@@ -33,9 +36,12 @@ const folder=path.resolve('output/retouch-delivery');fs.mkdirSync(folder,{recurs
    assert(exported.accepted);assert.equal(proof.renderer,exported.renderer);
    const bytes=await page.request.get(new URL(`/api/proof/artifact/${proof.artifact_id}.jpg`,base).href);
    assert(fs.readFileSync(file).equals(await bytes.body()),'Full Proof equals exported file');
-   for(const record of [exported,proof])if(forced)assert.match(record.fallback_reason,/Retouch CPU fallback.*Delivery spot/);
+   for(const record of [exported,proof]){
+    if(repairFallback)assert.match(record.fallback_reason,/Retouch CPU fallback.*Delivery spot/);
+    else assert.doesNotMatch(record.fallback_reason||'',/Retouch CPU fallback/);
+   }
    // Reusing a CPU patch with GPU finishing must still disclose its repair route.
-   if(forced){await api('/api/delivery/preferences',{force_cpu:false});
+   if(repairFallback){await api('/api/delivery/preferences',{force_cpu:false});
     const mixed=await api(`/api/session/${id}/proof/artifact`,{...settings,quality:94,full_size:true});
     assert.equal(mixed.renderer,'gpu');
     assert.match(mixed.fallback_reason,/Retouch CPU fallback/);
@@ -49,7 +55,8 @@ const folder=path.resolve('output/retouch-delivery');fs.mkdirSync(folder,{recurs
     await new Promise(r=>setTimeout(r,100));const r=await page.request.get(new URL('/api/batch-export/'+batch.id,base).href);batch=await r.json();
    }
    assert.equal(batch.results[0].renderer,forced?'cpu':'gpu',JSON.stringify(batch));
-   if(forced)assert.match(batch.results[0].fallback_reason,/Retouch CPU fallback/);
+   if(repairFallback)assert.match(batch.results[0].fallback_reason,/Retouch CPU fallback/);
+   else assert.doesNotMatch(batch.results[0].fallback_reason||'',/Retouch CPU fallback/);
    fs.rmSync(batch.results[0].output_path,{force:true});
    results.push({mode,forced,batch:batch.results,routes,renderer:exported.renderer,proofIdentical:true,fallback:exported.fallback_reason});
    fs.rmSync(file,{force:true});console.log(JSON.stringify(results.at(-1)));

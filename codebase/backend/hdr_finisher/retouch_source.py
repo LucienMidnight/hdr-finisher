@@ -5,6 +5,8 @@ frame, so publication needs one additional native frame while repairs exist.
 It is copied in cancellable bands; no full-frame grading or inpainting occurs.
 """
 import json
+from itertools import groupby
+from time import perf_counter
 
 import numpy as np
 
@@ -78,19 +80,23 @@ def build_repaired_source(session, records, checkpoint=lambda: None, *, previous
                     session.raw_import_settings.model_dump(mode="json")], sort_keys=True),
         session.edit_revision)
     worker.set_current(token)
-    patches = []
     from .retouch_routes import solve_record
-    for record in needed:
-        checkpoint()
-        # Immutable original pixels and frozen donor footprints keep every
-        # completed correction independent of later additions/removals.
+    from .retouch_parallel import ordered_transfers
+    from .library_diagnostics import log
+    if not hasattr(session, '_repair_routes'):
+        session._repair_routes = {}
+
+    def solve(record):
+        started = perf_counter()
         patch = solve_record(session, record, worker, token, base, checkpoint)
         alpha = stroke_mask(record.recipe, checkpoint)
         ox = patch.origin[0] - record.recipe.search_rect[0]
         oy = patch.origin[1] - record.recipe.search_rect[1]
         ph, pw = patch.pixels.shape[:2]
-        patches.append((patch, alpha[oy:oy+ph, ox:ox+pw] > 0))
+        return patch, alpha[oy:oy+ph, ox:ox+pw] > 0, (perf_counter()-started)*1000
+
     from .delivery_frames import batch_source_buffers, empty_source_array
+    started = perf_counter()
     if session.file_back_sources:
         with batch_source_buffers():
             result = empty_source_array(base.shape, base.dtype)
@@ -100,20 +106,37 @@ def build_repaired_source(session, records, checkpoint=lambda: None, *, previous
     for top in range(0, base.shape[0], 128):
         checkpoint()
         result[top:top+128] = source[top:top+128]
-    for left, top, right, bottom in dirty:
-        checkpoint()
-        window = result[top:bottom, left:right]
-        window[:] = base[top:bottom, left:right]
-        for patch, mask in patches:
+    if incremental:
+        for left, top, right, bottom in dirty:
+            checkpoint()
+            result[top:bottom, left:right] = base[top:bottom, left:right]
+    copied_ms = (perf_counter()-started)*1000
+    started = perf_counter()
+    scatter_ms = solve_sum_ms = solve_max_ms = 0
+    # Every patch reads the immutable original. Consume bounded groups in
+    # saved order so overlapping targets retain their precedence.
+    for is_transfer, group in groupby(needed, key=lambda r: r.recipe.mode != 'inpaint'):
+        patches = ordered_transfers(solve, group, checkpoint) if is_transfer else map(solve, group)
+        for patch, mask, elapsed in patches:
+            checkpoint()
+            solve_sum_ms += elapsed
+            solve_max_ms = max(solve_max_ms, elapsed)
+            scatter_start = perf_counter()
             px, py = patch.origin
             ph, pw = mask.shape
-            x0, y0 = max(left, px), max(top, py)
-            x1, y1 = min(right, px+pw), min(bottom, py+ph)
-            if x0 < x1 and y0 < y1:
-                target = window[y0-top:y1-top, x0-left:x1-left]
-                patch_region = np.s_[y0-py:y1-py, x0-px:x1-px]
-                np.copyto(target, patch.pixels[patch_region], where=mask[patch_region][..., None])
+            for left, top, right, bottom in dirty:
+                x0, y0 = max(left, px), max(top, py)
+                x1, y1 = min(right, px+pw), min(bottom, py+ph)
+                if x0 < x1 and y0 < y1:
+                    patch_region = np.s_[y0-py:y1-py, x0-px:x1-px]
+                    np.copyto(result[y0:y1, x0:x1], patch.pixels[patch_region],
+                        where=mask[patch_region][..., None])
+            scatter_ms += (perf_counter()-scatter_start)*1000
     checkpoint()
+    duration_ms = (perf_counter()-started)*1000
+    log('retouch_replay_timing', path=str(getattr(session, 'source_path', '')), repairs=len(needed),
+        duration_ms=duration_ms+copied_ms, copy_ms=copied_ms, solve_wall_ms=duration_ms-scatter_ms,
+        solve_sum_ms=solve_sum_ms, solve_max_ms=solve_max_ms, scatter_ms=scatter_ms)
     result.setflags(write=False)
     return result
 

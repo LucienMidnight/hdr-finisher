@@ -53,6 +53,53 @@ def test_memory_refusal_preserves_repair_pixels_and_document(photo, monkeypatch)
     assert session.undo_history == []
 
 
+def test_parallel_transfers_keep_overlap_order_and_original_donors(photo):
+    from hdr_finisher.retouch_source import build_repaired_source
+
+    _, session = photo
+    base = np.broadcast_to(np.arange(80, dtype=np.float32)[None,:,None],(64,80,3)).copy()
+    session.image = session.retouch_original = base
+
+    def clone(identity, target, donor):
+        return RepairRecord(id=identity, recipe=InpaintRecipe(
+            mode='clone', source_size=(80,64), search_rect=(8,8,72,56),
+            points=[dict(x=target/80,y=.5)],source_point=dict(x=donor/80,y=.5),
+            radius_px=6, hardness=1))
+
+    first, second = clone('first',40,20), clone('second',43,40)
+    forward = build_repaired_source(session,[first,second])
+    reverse = build_repaired_source(session,[second,first])
+    np.testing.assert_array_equal(forward[32,43],base[32,40])
+    np.testing.assert_array_equal(reverse[32,43],base[32,23])
+
+
+def test_cancelled_transfer_lanes_leave_the_published_source_alone(photo, monkeypatch):
+    from concurrent.futures import CancelledError
+    from hdr_finisher import retouch_routes
+    from hdr_finisher.retouch_source import build_repaired_source
+
+    _, session = photo
+    original = session.image
+    stop = Event()
+    template = record().recipe.model_copy(update=dict(mode='clone', source_point=RepairPoint(x=.25,y=.5)))
+    repairs = [RepairRecord(id=str(index), recipe=template) for index in range(3)]
+    transfer = retouch_routes.transfer_repair
+
+    def cancel(recipe, base, checkpoint, **kwargs):
+        stop.set()
+        return transfer(recipe, base, checkpoint, **kwargs)
+
+    def checkpoint():
+        if stop.is_set():
+            raise CancelledError()
+
+    monkeypatch.setattr(retouch_routes, 'transfer_repair', cancel)
+    with pytest.raises(CancelledError):
+        build_repaired_source(session, repairs, checkpoint)
+    assert session.image is original
+    assert session.retouch_worker._bytes == 0
+
+
 @pytest.mark.parametrize("available", [None, 8 * 1024**3 * 51 // 100])
 def test_memory_admission_does_not_change_repair_pixels(photo, monkeypatch, available):
     from hdr_finisher import resource_preflight, retouch_source

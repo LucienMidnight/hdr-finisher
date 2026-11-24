@@ -9,12 +9,6 @@ from .retouch_transfer import transfer_repair
 
 
 def solve_record(session, record, worker, token, base, checkpoint):
-    from . import retouch_gpu
-    from .delivery import preferences
-    try:
-        force_cpu=preferences()['effective_force_cpu']
-    except (OSError,ValueError,AttributeError):
-        force_cpu=False
     from .highlight_edge_gpu import _work
     source_priority,source_cancelled=_work.get()
     outer_checkpoint=checkpoint
@@ -24,8 +18,19 @@ def solve_record(session, record, worker, token, base, checkpoint):
             raise CancelledError('Source repair cancelled')
     recipe=record.recipe
     signature=recipe.model_dump_json()
+    force_cpu = None
+    if recipe.mode == 'inpaint':
+        from .delivery import preferences
+        try:
+            force_cpu = preferences()['effective_force_cpu']
+        except (OSError, ValueError, AttributeError):
+            force_cpu = False
     key='finished:'+hashlib.sha256(json.dumps([token.source,signature,force_cpu]).encode()).hexdigest()
     def solve(check):
+        if recipe.mode != 'inpaint':
+            patch, _ = transfer_repair(recipe, base, check, replay=True)
+            return replace(patch, renderer='cpu')
+        from . import retouch_gpu
         try:
             return retouch_gpu.solve(recipe,base,check,priority=getattr(session,'delivery_priority',source_priority))
         except CancelledError:
@@ -33,14 +38,11 @@ def solve_record(session, record, worker, token, base, checkpoint):
         except (OSError,ValueError,RuntimeError) as error:
             reason=str(error)
         check()
-        if recipe.mode!='inpaint':
-            patch,_=transfer_repair(recipe,base,check)
-        else:
-            request=prepare_repair(recipe,lambda t,l,b,r:base[t:b,l:r],checkpoint=check)
-            patch=worker.engine.solve(request,recipe.settings,check)
-            patch=finish_repair(recipe,request,patch,stroke_mask(recipe,check),check)
+        request=prepare_repair(recipe,lambda t,l,b,r:base[t:b,l:r],checkpoint=check)
+        patch=worker.engine.solve(request,recipe.settings,check)
+        patch=finish_repair(recipe,request,patch,stroke_mask(recipe,check),check)
         return replace(patch,renderer='cpu',fallback_reason=reason)
-    patch=worker.completed_recipe(key,token,solve,checkpoint)
+    patch=worker.completed_recipe(key,token,solve,checkpoint,bounded_replay=recipe.mode!='inpaint')
     checkpoint()
     if not hasattr(session,'_repair_routes'):session._repair_routes={}
     session._repair_routes[signature]={'renderer':patch.renderer,'fallback_reason':patch.fallback_reason}
@@ -58,7 +60,7 @@ def records(session):
 
 
 def notice(session):
-    cpu=[r for r in records(session) if r['renderer']=='cpu']
+    cpu=[r for r in records(session) if r['fallback_reason']]
     if not cpu:return None
     return 'Retouch CPU fallback: '+'; '.join(f"{r['name']} ({r['mode']}): {r['fallback_reason']}" for r in cpu)
 
