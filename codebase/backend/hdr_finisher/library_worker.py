@@ -18,6 +18,11 @@ class DecoderTimeout(ValueError):
     """A retryable deadline, never a broken-photo receipt."""
 
 
+def retouch_replay_allowance(repair_count):
+    """Base setup and per-repair allowance, with a fixed ceiling per job."""
+    return min(30, 2 + 0.25 * repair_count)
+
+
 class LibraryWorker:
     def __init__(self, root: Path) -> None:
         self.root = Path(root).resolve()
@@ -42,6 +47,7 @@ class LibraryWorker:
         self._grade_active = True
         self._native_caches = WeakSet()
         self._source_foreground = set()
+        self._source_reading = set()
         self._closed = False
         self._failure: str | None = None
         self.info: dict = {}
@@ -284,6 +290,14 @@ class LibraryWorker:
                 self._source_foreground.discard(key)
             self._send({"command": "source-busy", "active": bool(self._source_foreground)})
 
+    def reading_source(self, key, active):
+        with self._lock:
+            if active:
+                self._source_reading.add(key)
+            else:
+                self._source_reading.discard(key)
+            self._send({"command": "source-reading", "active": bool(self._source_reading)})
+
     def grade_active(self, active):
         """Revoke this view's leases; an old request cannot reacquire on return."""
         with self._lock:
@@ -365,6 +379,12 @@ class LibraryWorker:
                 request = self._requests.get(key, {})
                 if request.get("command") not in {"thumbnail", "picture", "native", "live-scene", "live-fallback"}:
                     continue
+                if work.get("phase") == "retouch_replay":
+                    work["retouch_elapsed"] += elapsed
+                    if work["retouch_elapsed"] > retouch_replay_allowance(work["repair_count"]):
+                        self._send({"command": "cancel", "id": key})
+                        self._set_aside(key, "Library Retouch replay took too long. Try again.", timed_out=True)
+                    continue
                 if request.get("gpu_invalid_pixels") and work.get("phase") == "cpu_edge_fallback":
                     from .library_edge_fallback import RECONSTRUCTION_TIMEOUT_SECONDS
                     work["edge_elapsed"] = work.get("edge_elapsed", 0) + elapsed
@@ -431,7 +451,10 @@ class LibraryWorker:
                             previous = self._work.get(message["id"], {})
                             self._work[message["id"]] = dict(path=message.get("path"), stage=message["stage"],
                                 state=previous.get("state", "running" if message["id"] in self._pending else "stopping"),
-                                elapsed=previous.get("elapsed", 0), edge_elapsed=previous.get("edge_elapsed", 0), phase=message.get("phase"))
+                                elapsed=previous.get("elapsed", 0), edge_elapsed=previous.get("edge_elapsed", 0),
+                                retouch_elapsed=previous.get("retouch_elapsed", 0),
+                                repair_count=previous.get("repair_count") or message.get("repair_count", 0),
+                                phase=message.get("phase"))
                     continue
                 if message.get("event") == "ready":
                     log("helper_ready", pid=message.get("pid"))
@@ -443,6 +466,7 @@ class LibraryWorker:
                         ready = True
                         self._recovering = False
                         connection.send({"command": "source-busy", "active": bool(self._source_foreground)})
+                        connection.send({"command": "source-reading", "active": bool(self._source_reading)})
                         for job in self._requests.values():
                             connection.send(job)
                         self._ready.set()
@@ -571,7 +595,8 @@ def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> N
     stopping = Event()
     sequence = 0
     scene_edges = {}
-    state = {"paused": paused, "foreground": 0, "checking": 0, "source_busy": False, "developing": 0, "scanning": 0}
+    state = {"paused": paused, "foreground": 0, "checking": 0, "source_busy": False,
+             "source_reading": False, "developing": 0, "scanning": 0}
 
     lane = helper_lane
 
@@ -605,7 +630,8 @@ def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> N
             with condition:
                 while not stopping.is_set():
                     candidates = [(item, index) for index, item in enumerate(queue) if lane(item[2]) == kind]
-                    if candidates and not state["paused"] and (kind in {"main", "stored"} or not state["source_busy"]) and (kind != "picture" or state["foreground"] < lanes):
+                    blocked = state["source_reading"] if kind in {"picture", "edge-cpu"} else state["source_busy"]
+                    if candidates and not state["paused"] and (kind in {"main", "stored"} or not blocked) and (kind != "picture" or state["foreground"] < lanes):
                         _, index = min(candidates)
                         _priority, _sequence, job = queue.pop(index)
                         heapq.heapify(queue)
@@ -656,7 +682,12 @@ def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> N
                 log("picture_preparation_stage", edge=job.get("edge"), job=job["id"], path=job.get("path"), stage=stage,
                     previous_stage=last_stage[0], duration_ms=(now-last_stage[1])*1000)
                 last_stage[:] = [stage, now]
-                reply({"event":"work", "id":job["id"], "path":job.get("path"), "stage":text, "phase":stage})
+                message = {"event":"work", "id":job["id"], "path":job.get("path"), "stage":text, "phase":stage}
+                if stage == "retouch_replay":
+                    message["repair_count"] = sum(
+                        isinstance(record, dict) and record.get("enabled", True) is not False
+                        for record in (job.get("document") or {}).get("repairs", []))
+                reply(message)
             if job["command"] in {"thumbnail", "picture", "native", "live-scene", "live-fallback"}:
                 progress("reading", "Reading photo")
             check = yielding if kind in {"index", "check", "kept", "stored"} else cancelled.is_set
@@ -800,6 +831,8 @@ def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> N
                     pictures.pause_native(message["paused"])
                 elif message["command"] == "source-busy":
                     state["source_busy"] = message["active"]
+                elif message["command"] == "source-reading":
+                    state["source_reading"] = message["active"]
                 elif message["command"] == "scene-tier":
                     edges = scene_edges.get(message["id"])
                     if edges is not None and message["edge"] not in edges: edges.append(message["edge"])

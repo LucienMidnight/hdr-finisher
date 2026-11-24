@@ -27,8 +27,8 @@ _registry = OrderedDict()
 _registry_lock = RLock()
 
 
-def recipe(document):
-    if document is not None:
+def recipe(document, *, validated=False):
+    if document is not None and not validated:
         from .models import EditDocument
         document = validate_saved(EditDocument, document).model_dump(mode="json")
     document = document or {}
@@ -38,6 +38,16 @@ def recipe(document):
         "hdr_reference_white_nits": document.get("hdr_reference_white_nits", 203),
         "repairs": document.get("repairs", []),
     }
+
+
+def document_payload(saved):
+    if saved is None:
+        return None
+    from .saved_grades import notice, whole_grade_fallback
+    result = saved.model_dump(mode="json")
+    if whole_grade_fallback(notice(saved)):
+        result.pop("global_adjustments", None)
+    return result
 
 
 def _saved_setting(document, *fields):
@@ -95,8 +105,8 @@ def equivalent_qualities(value):
         return _quality_aliases.get(value, (value,))
 
 
-def quality(document):
-    inputs = recipe(document)
+def quality(document, *, inputs=None):
+    inputs = recipe(document) if inputs is None else inputs
     bayer_cleanup = uses_raw_pixel_cleanup(document)
     canonical = deepcopy(inputs)
     highlights = canonical["raw_import_settings"]["highlight_reconstruction"]
@@ -189,9 +199,12 @@ def _develop_cpu(root, path, document, edge, cancelled=None, cache=None, progres
                     if cancelled is not None and cancelled():
                         raise CancelledError("Library repair cancelled")
                 try:
-                    pixels = recover_repairs(saved, source, checkpoint)
-                    source.repairs = saved.repairs
-                    install_repaired_source(source, pixels, _source_mip_identity(source))
+                    if progress and any(record.enabled for record in saved.repairs):
+                        progress("retouch_replay", "Replaying saved repairs")
+                    with source_work(priority=15, cancelled=cancelled, cpu_only=True):
+                        pixels = recover_repairs(saved, source, checkpoint)
+                        source.repairs = saved.repairs
+                        install_repaired_source(source, pixels, _source_mip_identity(source))
                 finally:
                     if source.retouch_worker is not None:
                         source.retouch_worker.close()
@@ -330,7 +343,7 @@ class LivePictures:
         self._held_timer = None
         self._held_token = None
 
-    def document(self, path):
+    def document(self, path, *, validated=False):
         raw = self.documents.request(path)["grade"] if self.documents else None
         if raw is None:
             return None
@@ -339,10 +352,9 @@ class LivePictures:
         saved = validate_saved(EditDocument, raw)
         errors = getattr(self.marks, "picture_errors", None)
         if errors: errors.observe_grade(path, notice(saved))
-        result = saved.model_dump(mode="json")
-        from .saved_grades import whole_grade_fallback
-        if whole_grade_fallback(notice(saved)): result.pop("global_adjustments", None)
-        return result
+        if validated:
+            return saved
+        return document_payload(saved)
 
     def describe(self, path, metadata, *, document=_UNSET, source_identity=None):
         document = (self.document(path) if document is _UNSET else document) or {}

@@ -74,8 +74,9 @@ def _healing_field(difference, mask, checkpoint):
     return field
 
 
-def transfer_repair(recipe, base, checkpoint=lambda: None):
-    recipe=InpaintRecipe.model_validate_json(recipe.model_dump_json())
+def transfer_repair(recipe, base, checkpoint=lambda: None, *, replay=False):
+    if not replay:
+        recipe=InpaintRecipe.model_validate_json(recipe.model_dump_json())
     if recipe.mode not in ("clone","heal"):
         raise ValueError("Expected a Clone or Heal repair")
     checkpoint()
@@ -100,7 +101,12 @@ def transfer_repair(recipe, base, checkpoint=lambda: None):
     def sample_lane(part):
         checkpoint()
         donor[part]=_sample(base,sy[part],sx)
-    ordered(sample_lane,bands(h))
+    replay_bands = [slice(start, min(start+128, h)) for start in range(0, h, 128)]
+    if replay:
+        for part in replay_bands:
+            sample_lane(part)
+    else:
+        ordered(sample_lane,bands(h))
     field=None
     if recipe.mode=="heal":
         field=_healing_field(original.astype(np.float64)-donor,alpha,checkpoint)
@@ -114,7 +120,11 @@ def transfer_repair(recipe, base, checkpoint=lambda: None):
             filled+=_sample(field,fy,fx)
         blend=alpha[part,:,None].astype(np.float64)*recipe.strength
         result[part]=original[part].astype(np.float64)*(1-blend)+filled*blend
-    ordered(finish_lane,bands(h))
+    if replay:
+        for part in replay_bands:
+            finish_lane(part)
+    else:
+        ordered(finish_lane,bands(h))
     checkpoint()
     if not np.isfinite(result).all(): raise ValueError("Repair produced non-finite pixels")
     result.setflags(write=False)

@@ -279,7 +279,7 @@ fn neighbors(off:u32,p:vec2i)->vec3f{return WX*(at(off,p+vec2i(-1,0))+at(off,p+v
     {binding:2,visibility:GPUShaderStage.COMPUTE,buffer:{type:'storage'}},
     {binding:3,visibility:GPUShaderStage.COMPUTE,buffer:{type:'uniform'}},
     {binding:4,visibility:GPUShaderStage.COMPUTE,buffer:{type:'uniform'}}]});
-   entry={module,pipelines:new Map(),layout:device.createPipelineLayout({bindGroupLayouts:[bind]})};modules.set(code,entry);
+   entry={module,bind,pipelines:new Map(),layout:device.createPipelineLayout({bindGroupLayouts:[bind]})};modules.set(code,entry);
    if(modules.size>16)modules.delete(modules.keys().next().value);
   }
   device.pushErrorScope('out-of-memory');device.pushErrorScope('validation');
@@ -288,17 +288,22 @@ fn neighbors(off:u32,p:vec2i)->vec3f{return WX*(at(off,p+vec2i(-1,0))+at(off,p+v
   const buffers=sizes.map(size=>make(size,GPUBufferUsage.STORAGE|GPUBufferUsage.COPY_DST|GPUBufferUsage.COPY_SRC));
   device.queue.writeBuffer(buffers[0],0,body);
   const recipeBuffer=make(parameters.bytes.byteLength,GPUBufferUsage.UNIFORM|GPUBufferUsage.COPY_DST);device.queue.writeBuffer(recipeBuffer,0,parameters.bytes);
+  const groups=new Map();
   let encoder=device.createCommandEncoder();let passes=0;
   const dispatch=async(name,count,params=[0,0,0,0])=>{
    let pipeline=entry.pipelines.get(name);
    if(!pipeline){pipeline=await device.createComputePipelineAsync({layout:entry.layout,compute:{module:entry.module,entryPoint:name}});entry.pipelines.set(name,pipeline);}
-   // A separate immutable uniform per dispatch prevents later writes changing
-   // earlier phases in an unsubmitted command buffer.
-   uniformBytes+=16;if(uniformBytes>4*1024*1024)throw Error('GPU repair command reservation exceeded.');
-   const p=make(16,GPUBufferUsage.UNIFORM|GPUBufferUsage.COPY_DST);device.queue.writeBuffer(p,0,new Uint32Array(params));
-   const bindings=buffers.map((buffer,binding)=>({binding,resource:{buffer}}));bindings.push({binding:3,resource:{buffer:p}},{binding:4,resource:{buffer:recipeBuffer}});
-   const layout=pipeline.getBindGroupLayout(0);
-   const group=device.createBindGroup({layout,entries:bindings});
+   // Reuse immutable parameters across passes, especially the alternating
+   // texture-relaxation passes. All entry points share one explicit layout.
+   const key=params.join(',');
+   let group=groups.get(key);
+   if(!group){
+    uniformBytes+=16;if(uniformBytes>4*1024*1024)throw Error('GPU repair command reservation exceeded.');
+    const p=make(16,GPUBufferUsage.UNIFORM|GPUBufferUsage.COPY_DST);device.queue.writeBuffer(p,0,new Uint32Array(params));
+    const bindings=buffers.map((buffer,binding)=>({binding,resource:{buffer}}));
+    bindings.push({binding:3,resource:{buffer:p}},{binding:4,resource:{buffer:recipeBuffer}});
+    group=device.createBindGroup({layout:entry.bind,entries:bindings});groups.set(key,group);
+   }
    const pass=encoder.beginComputePass();pass.setPipeline(pipeline);pass.setBindGroup(0,group);pass.dispatchWorkgroups(Math.ceil(count/(name==='texture_choose'||['heal_seed','heal_step','heal_beta'].includes(name)?1:64)));pass.end();passes++;
   };
   const submit=async()=>{await permit();device.queue.submit([encoder.finish()]);encoder=device.createCommandEncoder();passes=0;};

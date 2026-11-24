@@ -36,6 +36,36 @@ def ordered(function, values):
                     pass
 
 
+def transfer_groups(records):
+    """Limit simultaneous transfer scratch using the size of the saved ROIs."""
+    group = []
+    used = 0
+    for record in records:
+        left, top, right, bottom = record.recipe.search_rect
+        # Includes donor sampling intermediates, the float64 Heal field,
+        # output, and mask. Large jobs keep the existing single-repair route.
+        cost = (right-left) * (bottom-top) * 384
+        if group and (used + cost > 64 * 1024**2 or len(group) == logical_cpus()):
+            yield group
+            group, used = [], 0
+        group.append(record)
+        used += cost
+    if group:
+        yield group
+
+
+def ordered_transfers(function, records, checkpoint):
+    from contextvars import copy_context
+    for group in transfer_groups(records):
+        checkpoint()
+        if len(group) == 1:
+            yield function(group[0])
+        else:
+            # Each lane owns its copy of the source priority/cancellation context.
+            inputs = [(copy_context(), record) for record in group]
+            yield from ordered(lambda item: item[0].run(function, item[1]), inputs)
+
+
 def score(candidate, target, source, source_mean, offsets, confidence, align_tone, checkpoint):
     def lane(part):
         checkpoint()

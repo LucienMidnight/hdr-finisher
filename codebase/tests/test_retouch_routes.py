@@ -11,9 +11,9 @@ from hdr_finisher.retouch_recipe import InpaintRecipe, RepairPoint
 from hdr_finisher import retouch_routes, retouch_gpu, delivery
 
 
-def setup(monkeypatch):
-    recipe=InpaintRecipe(source_size=(80,64),search_rect=(16,8,64,56),mode='clone',
-        points=(RepairPoint(x=.5,y=.5),),source_point=RepairPoint(x=.25,y=.25),radius_px=6)
+def setup(monkeypatch, mode='inpaint'):
+    recipe=InpaintRecipe(source_size=(80,64),search_rect=(16,8,64,56),mode=mode,
+        points=(RepairPoint(x=.5,y=.5),),source_point=RepairPoint(x=.25,y=.25) if mode!='inpaint' else None,radius_px=6)
     record=RepairRecord(id='spot',name='Dust spot',recipe=recipe)
     session=SimpleNamespace(repairs=[record],source_path='photo.ARW',source=SimpleNamespace(filename='photo.ARW'))
     token=RepairRevision('document','frozen-source',1)
@@ -42,7 +42,9 @@ def test_failed_gpu_is_disclosed_per_photo_and_in_proof_export(monkeypatch,capsy
     record,session,worker,token,patch=setup(monkeypatch)
     def fail(*a,**kw):raise RuntimeError('Device lost during repair')
     monkeypatch.setattr(retouch_gpu,'solve',fail)
-    monkeypatch.setattr(retouch_routes,'transfer_repair',lambda *a:(patch,None))
+    monkeypatch.setattr(retouch_routes,'prepare_repair',lambda *a,**k:None)
+    monkeypatch.setattr(worker.engine,'solve',lambda *a:patch)
+    monkeypatch.setattr(retouch_routes,'finish_repair',lambda *a:patch)
     try:
         result=retouch_routes.solve_record(session,record,worker,token,None,lambda:None)
         assert result.renderer=='cpu' and result.fallback_reason=='Device lost during repair'
@@ -50,7 +52,7 @@ def test_failed_gpu_is_disclosed_per_photo_and_in_proof_export(monkeypatch,capsy
         proxy=SimpleNamespace(delivery_owner=session)
         for consumer in (session,proxy):
             report=retouch_routes.delivery_record(consumer,{'renderer':'gpu','fallback_reason':None})
-            assert 'Dust spot (clone): Device lost' in report['fallback_reason']
+            assert 'Dust spot (inpaint): Device lost' in report['fallback_reason']
         log=capsys.readouterr().err
         assert 'photo.ARW' in log and 'retouch_delivery_fallback' in log
         session.repairs=[]
@@ -70,7 +72,8 @@ def test_cancelled_gpu_never_becomes_a_cpu_fallback(monkeypatch):
     finally:worker.close()
 
 
-def test_saved_replay_keeps_cpu_fallback_for_batch_delivery(monkeypatch,tmp_path):
+@pytest.mark.parametrize('mode',['clone','heal'])
+def test_saved_replay_uses_cpu_by_default_for_batch_delivery(monkeypatch,tmp_path,mode):
     from PIL import Image
     from hdr_finisher.sessions import SessionStore
     from hdr_finisher.projects import open_document
@@ -79,21 +82,16 @@ def test_saved_replay_keeps_cpu_fallback_for_batch_delivery(monkeypatch,tmp_path
     store=SessionStore()
     try:
         session=store.get(store.create_session(path,owns_source_path=False).session_id)
-        record,_,worker,_,_=setup(monkeypatch)
+        record,_,worker,_,_=setup(monkeypatch,mode)
         worker.close()
         document=session.edit_document().model_copy(update={'repairs':[record]})
-        calls=[]
-        def fail(*a,**kw):
-            calls.append(1)
-            raise RuntimeError('GPU unavailable on replay')
-        monkeypatch.setattr(retouch_gpu,'solve',fail)
+        monkeypatch.setattr(retouch_gpu,'solve',lambda *a,**kw:pytest.fail('Transfer replay must use the CPU'))
         reopened=open_document(store,document,path)
         assert retouch_routes.records(reopened)[0]['renderer']=='cpu'
         report=retouch_routes.delivery_record(reopened,{'renderer':'gpu'})
-        assert 'GPU unavailable on replay' in report['fallback_reason']
+        assert not report.get('fallback_reason')
         from hdr_finisher.retouch_source import build_repaired_source
         np.testing.assert_array_equal(build_repaired_source(reopened,reopened.repairs),reopened.image)
-        assert calls==[1], 'Saved replay patches must survive in the open session'
     finally:store.clear()
 
 
@@ -110,6 +108,13 @@ def test_declared_context_matches_whole_photo_preparation(mode):
     (meta,result),_=retouch_gpu.packet(recipe,bounded)
     assert meta==full_meta
     np.testing.assert_array_equal(result,full)
+    if mode != 'inpaint':
+        bounded.shape = base.shape
+        full_patch, full_mask = retouch_routes.transfer_repair(recipe, base, replay=True)
+        bounded_patch, mask = retouch_routes.transfer_repair(recipe, bounded, replay=True)
+        assert bounded_patch.origin == full_patch.origin
+        np.testing.assert_array_equal(mask, full_mask)
+        np.testing.assert_array_equal(bounded_patch.pixels, full_patch.pixels)
     with pytest.raises(ValueError,match='outside'):
         bounded[0:1,0:1]
 
@@ -129,3 +134,64 @@ def test_repair_inherits_source_priority_and_cancellation(monkeypatch,priority):
                 retouch_routes.solve_record(session,record,worker,token,None,lambda:None)
         assert received==[priority]
     finally:worker.close()
+
+
+def test_library_batches_share_validated_saved_recipes(tmp_path, monkeypatch):
+    from PIL import Image
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from hdr_finisher.library_api import create_library_router
+    from hdr_finisher.library_documents import LibraryDocuments
+    from hdr_finisher.library_gpu_raw import frame, unframe
+    from hdr_finisher.library_retouch import plan
+    from hdr_finisher.media_browser import MediaBrowserStore
+    from hdr_finisher.sessions import SessionStore
+
+    path = tmp_path / 'clone.png'
+    Image.new('RGB', (80,64)).save(path)
+    store = SessionStore()
+    session = store.prepare_session(path)
+    first, _, worker, _, _ = setup(monkeypatch, 'clone')
+    worker.close()
+    second = first.model_copy(update={'id':'other'})
+    grade = session.edit_document().model_copy(update={'repairs':[first,second]})
+    sidecar = path.with_suffix('.png.hdrf')
+    sidecar.write_text(grade.model_dump_json())
+    reads = []
+
+    def read_document(_, item):
+        reads.append(item)
+        return {'grade': __import__('json').loads(sidecar.read_text())}
+
+    monkeypatch.setattr(LibraryDocuments, 'request', read_document)
+    helper = SimpleNamespace(status=lambda:dict(paused=False))
+    app = FastAPI()
+    app.include_router(create_library_router(helper, MediaBrowserStore(tmp_path/'profile'), store))
+    client = TestClient(app)
+    try:
+        result = client.post('/api/library/live-scene', json={'path':str(path),'edge':640,'gpu':True})
+        assert result.status_code == 200, result.text
+        header, _ = unframe(result.content)
+        assert len(header['repairs']) == 1
+        assert len(header['repairs'][0]) == 2
+        base = np.arange(64*80*3, dtype=np.float32).reshape(64,80,3) / (64*80*3)
+        batch, = plan([first,second], (80,64))
+        body = b''.join(base[t:b,l:r].tobytes() for _, rectangles in batch for l,t,r,b in rectangles)
+        packet = frame(dict(source_job=header['source_job'], item_path=str(path), batch=0),body)
+        response = client.post('/api/library/retouch-packet',content=packet)
+        assert response.status_code == 200, response.text
+        info, pixels = unframe(response.content)
+        for record, meta in zip((first,second), info['repairs'], strict=True):
+            patch, mask = retouch_routes.transfer_repair(record.recipe, base, replay=True)
+            start = meta['offset']
+            actual = np.frombuffer(pixels[start:start+meta['bytes']],dtype='<f4').reshape(*mask.shape,4)
+            np.testing.assert_array_equal(actual[...,:3], patch.pixels)
+            np.testing.assert_array_equal(actual[...,3],mask)
+        assert reads == [str(path)]
+        with sidecar.open('a') as handle:
+            handle.write(' ')
+        assert client.post('/api/library/retouch-packet',content=packet).status_code == 409
+        assert reads == [str(path)]
+    finally:
+        client.close()
+        store.clear()
