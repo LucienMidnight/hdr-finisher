@@ -265,6 +265,8 @@ def colour_delta(rgb, broad, *, splotches=True, fringes=True, separate=False):
         return fringe_delta, chroma * light[..., None] - original - fringe_delta
     # Micro Grain uses the original combined pass.
     chroma -= _colour_pass(chroma, noise, limit, dark, 12, 2, 1, native) + fringe * edge_weight[..., None]
+    if broad:
+        chroma -= _colour_pass(chroma, noise, limit, dark, 28, 4, 3, native)
     return chroma * light[..., None] - original
 
 
