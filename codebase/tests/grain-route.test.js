@@ -373,3 +373,57 @@ for (const type of ['hue_range', 'luminance_range']) {
     }
   });
 }
+
+test("idle pressure keeps active Grain and Mist work until a real allocation or critical pressure", () => {
+  const context = vm.createContext({ window: {}, performance, HDRGrainRoute: { headroom } });
+  for (const name of ["gpu-allocator.js", "webgpu-shaders.js", "webgpu-preview.js"]) {
+    vm.runInContext(frontendSource(name), context);
+  }
+  const renderer = new context.window.HDRWebGPUPreview(null);
+  renderer.gpuAllocator = new context.window.HDRGpuAllocator({ budgetBytes: 1000 });
+  const destroyed = [];
+  function register(kind, key, bytes) {
+    renderer.gpuAllocator.register({ kind, key, bytes, evict: () => destroyed.push(key) });
+  }
+  const selector = renderer.denoiseSourceSelector = {
+    selected: "resolved", original: { width: 320, height: 240, workingSpace: "acescg" },
+    controls: { method: "micro_grain", microLuminance: 1 }, cache: { grain: { gpu: true, micro: true, fitKey: "photo" } },
+  };
+  const reduced = renderer.reducedGrainKey(selector.original, selector);
+  renderer.presentedDenoiseTileKeys = new Set(["visible"]);
+  renderer.presentedLensGlowTileFrameKey = renderer.lensGlowTileFrameKey = "mist";
+  register("fine-grain-reduced", reduced, 200);
+  register("denoise-tile", "visible", 200);
+  register("lens-glow-tile", "mist", 100);
+  register("denoise-tile", "offscreen", 100);
+  register("fine-grain-reduced", "previous", 100);
+  renderer.resourceMemorySnapshot = () => ({ resident: { totalBytes: renderer.gpuAllocator.usedBytes(), categories: {} } });
+  renderer.memoryBudgetBytes = () => 1000;
+
+  renderer.acceptGrainMemorySample({ unifiedMemory: false, pressure: "moderate", grainReclaim: true });
+  assert.deepEqual(destroyed, ["offscreen", "previous"]);
+  assert.equal(renderer.reclaimGrainResources(renderer.grainMemorySnapshot(450)), true);
+  assert.deepEqual(destroyed, ["offscreen", "previous", reduced]);
+
+  renderer.acceptGrainMemorySample({ unifiedMemory: false, pressure: "critical", grainReclaim: true });
+  assert.deepEqual(destroyed, ["offscreen", "previous", reduced, "visible", "mist"]);
+});
+
+test("replacing a tiled frame makes its mask tiles reclaimable without new GPU growth", () => {
+  const context = vm.createContext({ window: {}, performance, HDRGrainRoute: { headroom } });
+  for (const name of ["gpu-allocator.js", "webgpu-shaders.js", "webgpu-preview.js"]) {
+    vm.runInContext(frontendSource(name), context);
+  }
+  const renderer = new context.window.HDRWebGPUPreview(null);
+  renderer.gpuAllocator = new context.window.HDRGpuAllocator({ budgetBytes: 1000 });
+  renderer.resourceMemorySnapshot = () => ({ resident: { totalBytes: renderer.gpuAllocator.usedBytes(), categories: {} } });
+  const destroyed = [];
+  renderer.maskTiles.set("visible", { byteSize: 100, texture: { destroy: () => destroyed.push("visible") } });
+  renderer.retainPresentedTiles(["visible"]);
+  const sample = { unifiedMemory: false, pressure: "moderate", grainReclaim: true };
+  renderer.acceptGrainMemorySample(sample);
+  assert.deepEqual(destroyed, []);
+  renderer.retainPresentedTiles();
+  renderer.acceptGrainMemorySample(sample);
+  assert.deepEqual(destroyed, ["visible"]);
+});

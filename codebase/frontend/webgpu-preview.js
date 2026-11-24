@@ -938,7 +938,7 @@
       this.frameMaskRecord = null;
       this.softMasks.clear();
       this.placeholderSource = null;
-      this.presentedMaskKeys = null;
+      this.retainPresentedTiles();
       if (this.presentationTarget) {
         const target = this.presentationTarget;
         if (target.allocatorEntry) {
@@ -4045,6 +4045,20 @@
       return bytes;
     }
 
+    retainPresentedTiles(maskKeys = [], denoiseKeys = [], lensGlowFrameKey = null) {
+      const masks = new Set(maskKeys);
+      const denoise = new Set(denoiseKeys);
+      // A frame change can make tiles reclaimable without changing held bytes.
+      if ([...(this.presentedMaskKeys || [])].some(key => !masks.has(key))
+        || [...(this.presentedDenoiseTileKeys || [])].some(key => !denoise.has(key))
+        || this.presentedLensGlowTileFrameKey !== lensGlowFrameKey) {
+        this.emptyGrainReclaimBytes = null;
+      }
+      this.presentedMaskKeys = masks;
+      this.presentedDenoiseTileKeys = denoise;
+      this.presentedLensGlowTileFrameKey = lensGlowFrameKey;
+    }
+
     scheduleTileCacheTrim() {
       const device = this.device;
       if (!device?.queue) return;
@@ -4324,6 +4338,7 @@
         if (options.isCurrent?.() === false) return { rendered: false, refusals: ["superseded during Grain warmup"] };
       }
       let cancelled = false;
+      let lensTileFrameKey = null;
       const graph = this.ensureTileGraph(
         workWidth, workHeight, surface.format, proxy.pixelFormat, spatialActive, denoiseActive,
         spatialGridScale(proxy.width, proxy.height), Boolean(options.analysisPatch),
@@ -4896,7 +4911,6 @@
         }
       }
 
-      let lensTileFrameKey = null;
       if (canvas === this.canvas && !measureOnly && !options.delivery && !cancelled && foregroundTiles.length) {
         const lensGlowRecipe = !noiseView && !surround && !this.disableLensGlowCache
           && (!clarityFrame || clarityFrame.state === this.clarityFrameMap)
@@ -5253,6 +5267,11 @@
       }
       for (const entry of newLensGlowTiles.values()) entry.ready = true;
       newLensGlowTiles.clear();
+      if (!measureOnly && !options.delivery && !options.underlayerOnly) {
+        const keptDenoise = denoiseActive && !options.fineGrainReduced
+          ? reusedTiles.map(tile => denoiseTileKey(tile.haloRect)).filter(Boolean) : [];
+        this.retainPresentedTiles(pinnedMasks, [...denoiseTilesUsed, ...keptDenoise], lensTileFrameKey);
+      }
       if (!measureOnly) {
         // What the canvas now shows. A later ROI pass of this exact size and
         // identity may keep it and process only its foreground tiles.
@@ -5313,7 +5332,6 @@
           identity: proxy.identity,
         };
       }
-      if (!measureOnly) this.presentedMaskKeys = new Set(pinnedMasks);
       const detailCacheBytes = this.trimDetailBandTiles(pinnedDetail);
       const maskCacheBytes = this.trimMaskTiles(pinnedMasks);
       const denoiseTileCacheBytes = this.trimDenoiseTiles(denoiseTilesUsed);
@@ -5820,6 +5838,7 @@
           allowPlaceholder: true,
           panPass: sourceOptions?.panPass,
           boundedPresentation: sourceOptions?.boundedPresentation,
+          underlayerOnly: sourceOptions?.underlayerOnly,
           backendLumaMasks: region?.backendLumaMasks,
           nativeGeometryViewport: sourceOptions?.nativeGeometryViewport,
           coversViewport: sourceOptions?.coversViewport,
@@ -6217,8 +6236,9 @@
         encoder.copyBufferToBuffer(gpuTiming.resolveBuffer, 0, gpuTiming.readBuffer, 0, 16);
       }
       this.device.queue.submit([encoder.finish()]);
-      if (canvas === this.canvas && !sourceOptions?.measureOnly && !sourceOptions?.delivery && !backgroundUnderlayer) {
-        this.setLensGlowTileFrameKey(null);
+      if (!sourceOptions?.measureOnly && !sourceOptions?.delivery && !backgroundUnderlayer && !sourceOptions?.underlayerOnly) {
+        this.retainPresentedTiles();
+        if (canvas === this.canvas) this.setLensGlowTileFrameKey(null);
       }
       if (lensGlowKey) intermediate.lensGlowKey = lensGlowKey;
       sourceOptions?.onPresented?.(context.getCurrentTexture());
@@ -6786,8 +6806,9 @@
         // system pressure and the configured limit change.
         Object.assign(this.grainMemorySample, value);
       }
-      if ((value.pressure || "none") !== this.grainReclaimPressure) {
-        this.grainReclaimPressure = value.pressure || "none";
+      const reclaimPressure = value.gradePressure || value.pressure || "none";
+      if (reclaimPressure !== this.grainReclaimPressure) {
+        this.grainReclaimPressure = reclaimPressure;
         this.emptyGrainReclaimBytes = null;
       }
       if (value.grainReclaim) {
@@ -6909,11 +6930,20 @@
       const evictedByKind = {};
       const requested = before.requested_bytes;
       if (requested != null && HDRGrainRoute.headroom(before) >= requested) return false;
-      const entries = [], presentedMasks = [];
+      const protectActive = requested == null
+        && before.pressure_level !== "critical" && this.grainReclaimPressure !== "critical";
+      const reducedKey = selector?.selected === "resolved" && selector.original && selector.cache?.grain?.gpu
+        ? this.reducedGrainKey(selector.original, selector) : null;
+      const activeGlow = this.lensGlowTileFrameKey && this.lensGlowTileFrameKey === this.presentedLensGlowTileFrameKey;
+      const entries = [], activeGrain = [], presentedMasks = [];
       for (const entry of allocator?.entries.values() || []) {
         if (entry.kind === "mask-tile" && this.presentedMaskKeys?.has(entry.key)) presentedMasks.push(entry);
+        else if ((entry.kind === "fine-grain-reduced" && entry.key === reducedKey)
+          || (entry.kind === "denoise-tile" && this.presentedDenoiseTileKeys?.has(entry.key))
+          || (entry.kind === "lens-glow-tile" && activeGlow)) activeGrain.push(entry);
         else entries.push(entry);
       }
+      if (!protectActive) entries.push(...activeGrain);
       if (requested != null) entries.push(...presentedMasks);
       for (const entry of entries) {
         if (entry.pins || !entry.evict || !reclaimable.has(entry.kind)

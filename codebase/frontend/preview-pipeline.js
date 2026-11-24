@@ -1354,6 +1354,7 @@ async function renderGpuDraftForView(lane, request) {
       ? 0 : boundedPresentation && liveGradeGrainSelected(lane) ? 0.18 : undefined,
     noiseView: denoiseNoiseViewActive(lane),
     boundedPresentation,
+    underlayerOnly: request.underlayerOnly,
     fineGrainUnderlayer: request.underlayerOnly,
     microQuick: Boolean(request.microQuick),
     signal: request.token?.signal,
