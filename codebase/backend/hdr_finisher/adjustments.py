@@ -2865,14 +2865,18 @@ def _monotone_cubic_interpolate(x: np.ndarray, y: np.ndarray, sample_x: np.ndarr
     return h00 * y0 + h10 * segment * m0 + h01 * y1 + h11 * segment * m1
 
 
+def _scan_sharpening_kernel(source_pixel_scale: float) -> tuple[float, int]:
+    sigma = 0.7 * max(0.05, min(1, source_pixel_scale))
+    return sigma, int(4 * sigma + 0.5)
+
+
 def _apply_scan_sharpening(image: np.ndarray, amount: float, source_pixel_scale: float = 1) -> np.ndarray:
     """Scanner RGB unsharp mask (sigma 0.7 source pixels), before Look Strength.
 
     Unlike Detail this has no edge threshold, luma-only mask or texture band.
     The finite Gaussian uses upstream's four-sigma support, at most 3 pixels.
     """
-    sigma = 0.7 * max(0.05, min(1, source_pixel_scale))
-    radius = int(4 * sigma + 0.5)
+    sigma, radius = _scan_sharpening_kernel(source_pixel_scale)
     if amount <= 0 or radius == 0:
         return image
     offsets = np.arange(-radius, radius + 1)

@@ -17,8 +17,8 @@ whole transformed frame is built either.
 (``tiledExecutionRefusals`` in ``webgpu-preview.js``) because they exist for
 the same reason: a strip would silently treat itself as the whole image.
 Vignette normalizes to the frame, grain seeds on absolute coordinates, Detail
-derives its radii from the frame diagonal, and masks, Denoise and the spatial
-Film Look kernels need halos or full-frame inputs this phase does not carry.
+derives its radii from the frame diagonal, and masks, Denoise and wider spatial
+Film Look kernels need inputs this route does not carry.
 Those are Phases 5 to 7.
 
 The one thing a *pointwise* graph still takes from the whole frame is the
@@ -45,6 +45,7 @@ from .adjustments import (
     BW_GUIDE_REACH,
     FrameWindow,
     HighlightAnchor,
+    _scan_sharpening_kernel,
     apply_fixed_source_adjustments,
     black_and_white_needs_guide,
     clip_hdr_output_target,
@@ -158,19 +159,22 @@ def plan_strips(
     *,
     budget_bytes: int = DEFAULT_STRIP_BUDGET_BYTES,
     working_set_multiplier: int = STRIP_WORKING_SET_MULTIPLIER,
+    halo_rows: int = 0,
 ) -> StripPlan:
     """Divide an output frame into strips whose intermediates fit the budget.
 
     Strips span the full width so every extraction keeps the whole-frame row
     pitch, which is what makes the region result equal to the corresponding
-    slice of the whole-frame result.
+    slice of the whole-frame result. Reserve room above and below each band
+    for any requested halo, subject to the one-output-row minimum.
     """
     width = max(1, int(width))
     height = max(1, int(height))
     budget = max(1, int(budget_bytes))
     multiplier = max(1, int(working_set_multiplier))
     row_bytes = width * _BYTES_PER_PIXEL * multiplier
-    strip_rows = max(1, min(height, budget // max(1, row_bytes)))
+    working_rows = budget // row_bytes
+    strip_rows = height if working_rows >= height else max(1, working_rows - 2 * halo_rows)
     strips = tuple(
         (top, min(height, top + strip_rows)) for top in range(0, height, strip_rows)
     )
@@ -180,7 +184,7 @@ def plan_strips(
         strip_rows=strip_rows,
         strips=strips,
         budget_bytes=budget,
-        planned_transient_bytes=strip_rows * row_bytes,
+        planned_transient_bytes=min(height, strip_rows + 2 * halo_rows) * row_bytes,
         output_bytes=width * height * _BYTES_PER_PIXEL,
     )
 
@@ -257,6 +261,14 @@ def _grade_halo(branch, source_pixel_scale):
     edge = max(math.ceil(abs(recipe.edge) * scale) for recipe in active)
     feather = max(math.ceil(4 * recipe.edge_feather * scale / 2) for recipe in active)
     return reach + geo.reach + edge + feather + geo.cell, geo.cell
+
+
+def _scan_sharpening_halo(branch, source_pixel_scale):
+    look = branch.film_look
+    if (not branch.film_look_section_enabled or look.look_strength <= 0
+            or look.scan_sharpening <= 0 or (look.grain_enabled and look.grain_view_map)):
+        return 0
+    return _scan_sharpening_kernel(source_pixel_scale)[1]
 
 
 def _halation_to_frame(source, destination, look, kind, rows):
@@ -390,7 +402,8 @@ def apply_film_to_frame(source, scratch, state, kind, *, rows=128, source_pixel_
                     advance()
                 if look.scan_sharpening > 0:
                     run("scan_sharpening", lambda part, top: grade._apply_scan_sharpening(
-                        part, look.scan_sharpening / 100, source_pixel_scale), 3)
+                        part, look.scan_sharpening / 100, source_pixel_scale),
+                        _scan_sharpening_kernel(source_pixel_scale)[1])
                 with pre_film.map("r") as original:
                     def blend(part, top):
                         base = original[top:top + len(part)]
@@ -579,7 +592,9 @@ def render_in_strips(
         and not adjustments.sdr.linked_to_hdr
     )
     output_width, output_height = geometry_output_dimensions(source_width, source_height, geometry)
-    plan = plan_strips(output_width, output_height, budget_bytes=budget_bytes)
+    branch = adjustments.hdr if kind == PreviewKind.HDR or adjustments.sdr.linked_to_hdr else adjustments.sdr
+    scan_halo = _scan_sharpening_halo(branch, source_pixel_scale)
+    plan = plan_strips(output_width, output_height, budget_bytes=budget_bytes, halo_rows=scan_halo)
     report = StripReport(plan=plan)
 
     checks = iter(range(1, 1 << 30))
@@ -609,8 +624,10 @@ def render_in_strips(
             return apply_geometry_region(source, geometry, (0, top, output_width, bottom),
                                          range_cache=range_cache.setdefault(key, {}), range_cache_key=key)
 
-    branch = adjustments.hdr if kind == PreviewKind.HDR or adjustments.sdr.linked_to_hdr else adjustments.sdr
     halo, cell = _grade_halo(branch, source_pixel_scale)
+    # Scan Sharpening runs after B&W and HSL. Its input neighbours need their
+    # own guide halo too, before snapping the band to the HSL grid.
+    halo += scan_halo
 
     def grade(top, bottom, *, clamp):
         from .hsl_sampling import observe_stage_input

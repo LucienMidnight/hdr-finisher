@@ -1308,10 +1308,14 @@ No pixel change.
    at 1.655 GB for the whole app with the same photo open in Grade and
    matched the golden file's SHA-256. Remaining work includes the timing
    gate, Windows qualification and the remaining large-source formats.
-   The basic CPU strip path can leave a seam with Film Look Scan Sharpening
-   because it omits neighbouring rows at strip edges. The staged Film Look
-   path already includes those rows. Check resized export and full-size
-   Proof with a test edge crossing a strip boundary.
+   **Scan Sharpening seams fixed November 25.** Basic CPU strips read the
+   neighbouring rows Scan Sharpening needs (up to three per side), inside
+   the existing strip budget. No delivery path is rerouted to a whole-frame
+   grade. A slanted edge crossing strip boundaries matches the whole-frame
+   HDR and SDR results at native and resized output sizes. On the MacBook Neo,
+   a headless 42.4 MP Sony RAW with Scan Sharpening gave byte-identical Ultra
+   HDR JPEG export and full-size Proof at native size and 4000 px, with
+   3.16 GB peak across the backend and encoder helpers (4 GB limit).
 6. **Later options from the November 23 export-speed work** (recorded, not
    built):
    - Share Film Grain between HDR and SDR: about 15 s on Profile A, but it can

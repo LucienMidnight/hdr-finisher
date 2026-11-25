@@ -34,7 +34,9 @@ from hdr_finisher.models import (
     MaskExpression,
     MaskLeaf,
     MaskPoint,
+    OutputFinishingSettings,
     PathNode,
+    PreviewKind,
     ProofArtifactRequest,
 )
 from hdr_finisher.proofing import ProofArtifactStore
@@ -341,6 +343,66 @@ def test_film_density_grain_proof_is_export_byte_for_byte(backends, tmp_path, st
             adjustments=session.adjustments, format="jpeg_ultrahdr", quality=settings.quality, full_size=True,
         ), backend)
         assert proof.sha256 == _sha(Path(result.output_path))
+    finally:
+        store.clear()
+
+
+@pytest.mark.parametrize("resize", [False, True])
+def test_scan_sharpening_finished_pixels_and_full_proof_match_export(backends, tmp_path, resize):
+    from hdr_finisher.adjustments import (
+        apply_adjustments, apply_hdr_output_highlight_compression, apply_sdr_output_highlight_compression,
+    )
+    from hdr_finisher.exporters import _finishing_adjustments_for_export, _render_delivery_files, _render_export_branch
+    from hdr_finisher.finishing import apply_output_finishing
+    from test_cpu_strips import assert_strips_match
+
+    # 912-pixel rows split this frame at the normal delivery budget. The
+    # slanted step crosses those strip edges even when the output is resized.
+    width, height = 912, 720
+    y, x = np.ogrid[:height, :width]
+    edge = (y > 55 + x * .64).astype(np.float32)
+    image = .03 + edge[..., None] * np.array([.3, .6, .4], dtype=np.float32)
+    session = _session(image)
+    session.local_adjustments = []
+    for branch in (session.adjustments.hdr, session.adjustments.sdr):
+        branch.film_look_section_enabled = True
+        branch.film_look.scan_sharpening = 100
+    finishing = OutputFinishingSettings(resize_mode="long_edge", long_edge=599) if resize else OutputFinishingSettings()
+    format_name = "jpeg_ultrahdr"
+    settings = ExportSettings(format=format_name, output_path=str(tmp_path / "scan.jpg"),
+                              overwrite=True, output_finishing=finishing)
+    state = _finishing_adjustments_for_export(session)
+    kinds = (PreviewKind.HDR, PreviewKind.SDR)
+    for kind, frame, limit in zip(kinds, _render_delivery_files(session, settings, state, tmp_path), (
+            apply_hdr_output_highlight_compression, apply_sdr_output_highlight_compression)):
+        whole = apply_adjustments(image, state, kind, color_context=session.color_context,
+                                  include_output_highlight_compression=False)
+        expected = limit(apply_output_finishing(whole, finishing, kind), state,
+                         **({"color_context": session.color_context} if kind == PreviewKind.HDR else {}))
+        with frame.map("r") as pixels:
+            assert_strips_match(pixels, expected)
+        frame.path.unlink()
+        if not resize:
+            # Native Proof's JPEG decoder fallback can render without a
+            # staged delivery job or output path. It must still use strips.
+            assert_strips_match(_render_export_branch(session, settings, kind, state), expected)
+            assert settings._last_cpu_strips
+
+    capabilities, export_backends = backends
+    if capabilities["ultrahdr_encoder"].status != CapabilityStatus.AVAILABLE:
+        pytest.skip("Finished pixels passed but the Ultra HDR encoder is unavailable")
+    backend = export_backends[format_name]
+    exported = backend.export(session, settings)
+    assert exported.accepted and exported.renderer == "cpu", exported.message
+    store = ProofArtifactStore()
+    try:
+        proof = store.create(session, ProofArtifactRequest(
+            adjustments=session.adjustments, format=format_name, quality=settings.quality,
+            full_size=True, output_finishing=finishing,
+        ), backend)
+        assert proof.full_size
+        assert (proof.width, proof.height) == (expected.shape[1], expected.shape[0])
+        assert proof.sha256 == _sha(Path(exported.output_path))
     finally:
         store.clear()
 

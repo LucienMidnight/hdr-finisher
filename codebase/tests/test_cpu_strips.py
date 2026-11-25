@@ -167,8 +167,36 @@ def test_strip_render_equals_whole_frame(kind, geometry_name, budget):
     assert report.cancelled_at_strip is None
 
 
+@pytest.mark.parametrize("kind", [PreviewKind.HDR, PreviewKind.SDR])
+@pytest.mark.parametrize("scale", [1.0, 0.4])
+def test_scan_sharpening_strips_match_whole_frame(kind, scale):
+    image = _source(height=173, width=79)
+    state = AdjustmentState()
+    branch = getattr(state, kind.value)
+    branch.film_look_section_enabled = True
+    branch.film_look.look_strength = 65
+    budget = 384 * 1024
+
+    neutral, neutral_report = render_in_strips(image, state, kind, source_pixel_scale=scale, budget_bytes=budget)
+    assert_strips_match(neutral, apply_adjustments(image, state, kind, source_pixel_scale=scale))
+    branch.film_look_section_enabled = False
+    disabled, disabled_report = render_in_strips(image, state, kind, source_pixel_scale=scale, budget_bytes=budget)
+    np.testing.assert_array_equal(neutral, disabled)
+    assert neutral_report.plan == disabled_report.plan
+
+    branch.film_look_section_enabled = True
+    branch.film_look.scan_sharpening = 100
+    expected = apply_adjustments(image, state, kind, source_pixel_scale=scale)
+    actual, report = render_in_strips(image, state, kind, source_pixel_scale=scale, budget_bytes=budget)
+
+    assert report.plan.strip_count > 2
+    assert report.plan.planned_transient_bytes <= budget
+    assert not np.allclose(expected, neutral)
+    assert_strips_match(actual, expected)
+
+
 @pytest.mark.parametrize("lane", ["hdr", "sdr", "authored", "linked"])
-@pytest.mark.parametrize("stage", ["bw", "hsl", "combined"])
+@pytest.mark.parametrize("stage", ["bw", "hsl", "combined", "combined_with_scan"])
 def test_spatial_grade_matches_whole_frame_exactly(lane, stage):
     rng = np.random.default_rng(174)
     image = rng.random((213, 257, 3), dtype=np.float32) * np.float32(.65)
@@ -182,15 +210,18 @@ def test_spatial_grade_matches_whole_frame_exactly(lane, stage):
         flip_horizontal=True, flip_vertical=True,
         crop=CropRectangle(x=.07, y=.14, width=.87, height=.79),
     )
-    if stage in {"bw", "combined"}:
+    if stage in {"bw", "combined", "combined_with_scan"}:
         branch.black_and_white_section_enabled = True
         branch.black_and_white.reds = 55
         branch.black_and_white.blues = -47
-    if stage in {"hsl", "combined"}:
+    if stage in {"hsl", "combined", "combined_with_scan"}:
         branch.hsl_section_enabled = True
         for channel, center, edge, detail in zip(branch.hsl.channels, (25, 151, 238), (7, -8, 4), (0, 50, 100)):
             channel.recipe = HSLRecipe(ranges=[HSLRange(center=center, width=70, feather=39)],
                 hue=19, saturation=27, luminance=.42, edge=edge, edge_feather=12, edge_detail=detail)
+    if stage == "combined_with_scan":
+        branch.film_look_section_enabled = True
+        branch.film_look.scan_sharpening = 100
     expected = apply_adjustments(image, state, kind, sdr_reference_image=reference)
     actual, report = render_in_strips(image, state, kind, sdr_reference_image=reference, budget_bytes=384 * 1024)
     assert report.strips_rendered > 2
