@@ -174,7 +174,10 @@ async function activePreviewBox(page) {
     const pathSettings = page.locator("#local-mask-tree-summary details.local-mask-subpanel");
     if (!await pathSettings.evaluate((details) => details.open)) await pathSettings.locator("summary").click();
 
-    const feather = page.locator('input[type="range"][data-default-value="4"]');
+    // Scope to the Path settings panel: Local Tone's Midtones Width slider also
+    // declares a default of 4 (since the five-control local Tone change), so a
+    // page-wide search finds two sliders.
+    const feather = pathSettings.locator('input[type="range"][data-default-value="4"]');
     assert(await feather.count() === 1, "Path Feather did not expose its dedicated range input.");
     const featherDom = await feather.evaluate((input) => ({
       shell: input.parentElement?.classList.contains("range-shell"),
