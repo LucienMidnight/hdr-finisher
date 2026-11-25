@@ -120,7 +120,8 @@ async function library(app,page) {
   await page.evaluate(()=>{const original=state.capabilities;state.capabilities={...original,ultrahdr_encoder:{status:'unavailable',detail:'Test missing encoder'}};renderCapabilities();window.restoreCapabilities=()=>{state.capabilities=original;renderCapabilities();};});
   assert.equal(await page.locator('#capability-summary').count(),0);
   assert(await page.locator('#export-format option[value="jpeg_ultrahdr"]').isDisabled());
-  assert.equal(await page.locator('#export-format option[value="jpeg_ultrahdr"]').getAttribute('title'),'Test missing encoder');
+  // The shared tooltip layer moves title text into data-native-tooltip.
+  assert.equal(await page.locator('#export-format option[value="jpeg_ultrahdr"]').evaluate(o=>o.dataset.nativeTooltip??o.getAttribute('title')),'Test missing encoder');
   await page.evaluate(()=>restoreCapabilities());
   await page.evaluate(async () => {
     await settlePreview(state.currentView);

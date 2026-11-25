@@ -365,7 +365,7 @@ async function main() {
     assert.equal(fs.existsSync(path.join(defaultPresetDirectory, "Grading")), true);
     await window.locator('[data-settings-tab="shortcuts"]').click();
     assert.equal(await window.locator(".shortcut-hardware-note strong").count(), 0);
-    assert.match(await window.locator(".shortcut-hardware-note").textContent(), /Ctrl.*10× finer.*Shift.*snap/i);
+    assert.match(await window.locator(".shortcut-hardware-note").textContent(), process.platform === "darwin" ? /⌃.*10× finer.*⇧.*snap/i : /Ctrl.*10× finer.*Shift.*snap/i);
     const analysisShortcut = window.locator(".shortcut-row").filter({ hasText: "Toggle analysis panel" }).first();
     assert.equal(await analysisShortcut.locator(".shortcut-record").textContent(), "Not assigned");
     const screenshotShortcutPrevented = await window.evaluate(() => {

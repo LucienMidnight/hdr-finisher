@@ -106,7 +106,9 @@ function halfToFloat(bits) {
       const region = await state.gpuPreview.readDenoiseResolvedRegion(selector.original.width, selector.original.height, 0, 0);
       let gpu=null;
       if(region){
-        const bytes=new Uint8Array(region.values.buffer,region.values.byteOffset,region.values.byteLength);
+        // readDenoiseResolvedRegion returns plain numbers; pack them as float32 for transport.
+        const floats=region.values instanceof Float32Array?region.values:Float32Array.from(region.values);
+        const bytes=new Uint8Array(floats.buffer,floats.byteOffset,floats.byteLength);
         let binary='';for(let offset=0;offset<bytes.length;offset+=32768)binary+=String.fromCharCode(...bytes.subarray(offset,offset+32768));
         gpu=btoa(binary);
       }
