@@ -92,6 +92,28 @@ def test_clean_grain_protects_a_colour_edge_while_removing_a_local_blotch():
     assert np.linalg.norm(unprotected[edge]) > 2 * np.linalg.norm(new[edge])
 
 
+def test_edge_protection_ignores_flat_noise_and_other_hues_on_an_edge():
+    # Steve, November 25: protection fired on splotch rims all over flat
+    # backgrounds, and held back dots of a different hue sitting on an edge.
+    height, width = 155, 171
+    y, x = np.ogrid[:height, :width]
+    rng = np.random.default_rng(787)
+    source = np.full((height, width, 3), .026, np.float32)
+    source += rng.normal(0, .0005, source.shape).astype(np.float32)
+    source += (.014 * np.clip((x - 80) / 8 + .5, 0, 1))[..., None] * grain.CHROMA[0]
+    source += (.006 * np.exp(-((y - 75)**2 + (x - 45)**2) / 22))[..., None] * grain.CHROMA[0]
+    source += (.006 * np.exp(-((y - 110)**2 + (x - 80)**2) / 22))[..., None] * grain.CHROMA[1]
+
+    _, protected = grain.colour_delta(source, False, fringes=False, separate=True)
+    _, plain = grain.colour_delta(source, False, fringes=False, separate=True, protect_edges=False)
+    # A same-hue blotch away from the edge is cleaned as if unprotected.
+    assert abs(protected[75, 45, 0]) >= .95 * abs(plain[75, 45, 0])
+    # A different-hue dot on the edge keeps its cleanup across the edge's colour.
+    # The correction is in opponent colour: the edge steps in channel 0, the dot in 1.
+    dot = np.s_[106:115, 76:85, 1]
+    assert np.linalg.norm(protected[dot]) >= .9 * np.linalg.norm(plain[dot])
+
+
 def test_fringe_strength_is_independent_of_splotch_strength():
     rgb = np.full((80, 80, 3), 0.025, np.float32)
     rgb[40:, :, :] += .24
@@ -303,7 +325,7 @@ def test_colour_shader_uses_the_cpu_offsets_and_ramp_bounds():
     gpu = {tuple(map(float, re.search(bounds, call).groups()))
            for call in colour.split("cleanRamp(")[1:]}
     cpu = set()
-    for function in (denoise_grain._colour_pass, denoise_grain.colour_delta, denoise_grain._splotch_edge_weight):
+    for function in (denoise_grain._colour_pass, denoise_grain.colour_delta, denoise_grain._splotch_edge):
         for call in ast.walk(ast.parse(inspect.getsource(function))):
             if isinstance(call, ast.Call) and isinstance(call.func, ast.Name) and call.func.id == "_ramp":
                 cpu.add(tuple(ast.literal_eval(arg) for arg in call.args[1:]))

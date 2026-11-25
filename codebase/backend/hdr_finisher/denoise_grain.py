@@ -189,24 +189,54 @@ def _colour_pass(chroma, noise, limit, dark, reach, tap, centre, native=None):
     return moderate + isolated_dark[..., None] * (pixel_delta * limit[..., None] - moderate)
 
 
-def _splotch_edge_weight(chroma, noise):
-    """Protect an abrupt colour boundary that continues along the edge."""
-    pad = 12
+# A colour edge must continue this far along itself (both ways) to count as
+# an edge. Splotches up to about 30 pixels across do not. Steve, November 25:
+# the shorter 5-pixel check protected the splotches' own rims all over flat
+# backgrounds.
+EDGE_CONTINUES = (5, 10, 15)
+
+
+def _splotch_edge(chroma, noise):
+    """How surely each pixel sits on a long colour edge, and the edge's colour step."""
+    reach = 6
+    far = max(EDGE_CONTINUES)
+    pad = 2 * reach + far
     field = np.pad(chroma, ((pad, pad), (pad, pad), (0, 0)), mode="edge")
     shape = chroma.shape[:2]
-    longest = np.zeros_like(noise)
+    height, width = shape
+    strongest = np.zeros_like(noise)
+    step = np.zeros_like(chroma)
+    # Every colour step across the edge at one reach, kept for a band `far`
+    # pixels wide so the steps further along the edge are plain slices.
+    inner = (height + 2 * far, width + 2 * far)
     for y, x in ((0, 1), (1, 0), (1, 1), (1, -1)):
-        def cross(reach, along):
-            return (_shift(field, shape, pad + reach*y + along*x, pad + reach*x - along*y)
-                    - _shift(field, shape, pad - reach*y + along*x, pad - reach*x - along*y))
-        direction = cross(6, 0)
-        length = np.maximum(_magnitude(direction), 1e-7)
-        coherent = length.copy()
-        for along in (-5, 5):
-            coherent = np.minimum(coherent, np.sum(direction * cross(6, along), axis=-1) / length)
-        sharp = length / np.maximum(_magnitude(cross(pad, 0)), length)
-        longest = np.maximum(longest, _ramp(coherent / noise, 4, 9) * _ramp(sharp, .4, .7))
-    return 1 - longest
+        o = pad - far
+        steps = (_shift(field, inner, o + reach*y, o + reach*x) - _shift(field, inner, o - reach*y, o - reach*x))
+        first, second = cv2.split(steps)
+        direction = steps[far:far+height, far:far+width]
+        a, b = first[far:far+height, far:far+width], second[far:far+height, far:far+width]
+        length = np.maximum(cv2.magnitude(a, b), 1e-7)
+        coherent = length * length
+        for along in EDGE_CONTINUES:
+            for side in (-along, along):
+                dy, dx = far + side*x, far - side*y
+                np.minimum(coherent, a * first[dy:dy+height, dx:dx+width] + b * second[dy:dy+height, dx:dx+width],
+                           out=coherent)
+        coherent /= length
+        wide = _shift(field, shape, pad + 2*reach*y, pad + 2*reach*x) - _shift(field, shape, pad - 2*reach*y, pad - 2*reach*x)
+        sharp = length / np.maximum(_magnitude(wide), length)
+        weight = _ramp(coherent / noise, 4, 9) * _ramp(sharp, .4, .7)
+        better = weight > strongest
+        strongest[better] = weight[better]
+        step[better] = (direction / length[..., None])[better]
+    return strongest, step
+
+
+def _protect_splotch_edges(correction, chroma, noise):
+    """Keep a long edge's two colours apart, but still clean other hues on it."""
+    strength, step = _splotch_edge(chroma, noise)
+    across = np.sum(correction * step, axis=-1)
+    return correction - (strength * across)[..., None] * step
 
 
 def colour_delta(rgb, broad, *, splotches=True, fringes=True, separate=False, protect_edges=True):
@@ -259,12 +289,12 @@ def colour_delta(rgb, broad, *, splotches=True, fringes=True, separate=False, pr
             return fringe_delta, None
         small = _colour_pass(chroma, noise, limit, dark, 12, 2, 1, native)
         if protect_edges:
-            small *= _splotch_edge_weight(chroma, noise)[..., None]
+            small = _protect_splotch_edges(small, chroma, noise)
         chroma -= small + fringe_fix
         if broad:
             large = _colour_pass(chroma, noise, limit, dark, 28, 4, 3, native)
             if protect_edges:
-                large *= _splotch_edge_weight(chroma, noise)[..., None]
+                large = _protect_splotch_edges(large, chroma, noise)
             chroma -= large
         return fringe_delta, chroma * light[..., None] - original - fringe_delta
     # Micro Grain uses the original combined pass.

@@ -776,21 +776,28 @@ fn cleanCross(p: vec2i, axis: vec2i, reach: i32) -> vec2f {
   return cleanRead(p + reach * axis).xy - cleanRead(p - reach * axis).xy;
 }
 
-fn cleanEdgeWeight(p: vec2i, grain: f32) -> f32 {
+// Matches _protect_splotch_edges: a colour edge must continue 5, 10 and 15
+// pixels both ways, and only the correction along its colour step is held.
+fn cleanProtectEdge(p: vec2i, grain: f32, correction: vec2f) -> vec2f {
   let axes = array<vec2i, 4>(vec2i(1,0), vec2i(0,1), vec2i(1,1), vec2i(-1,1));
   var strongest = 0.0;
+  var step = vec2f(0.0);
   for (var i = 0; i < 4; i++) {
     let axis = axes[i];
-    let tangent = 5 * vec2i(-axis.y, axis.x);
     let direction = cleanCross(p, axis, 6);
     let contrast = max(length(direction), 1e-7);
     if (contrast <= 4.0 * grain) { continue; }
-    let sides = min(dot(direction, cleanCross(p + tangent, axis, 6)),
-                    dot(direction, cleanCross(p - tangent, axis, 6))) / contrast;
+    var sides = contrast;
+    for (var j = 1; j <= 3; j++) {
+      let tangent = 5 * j * vec2i(-axis.y, axis.x);
+      sides = min(sides, min(dot(direction, cleanCross(p + tangent, axis, 6)),
+                             dot(direction, cleanCross(p - tangent, axis, 6))) / contrast);
+    }
     let sharpness = contrast / max(length(cleanCross(p, axis, 12)), contrast);
-    strongest = max(strongest, cleanRamp(min(contrast, sides) / grain, 4.0, 9.0) * cleanRamp(sharpness, .4, .7));
+    let weight = cleanRamp(sides / grain, 4.0, 9.0) * cleanRamp(sharpness, .4, .7);
+    if (weight > strongest) { strongest = weight; step = direction / contrast; }
   }
-  return 1.0 - strongest;
+  return correction - strongest * dot(correction, step) * step;
 }
 
 fn cleanFringe(p: vec2i, weight: f32, grain: f32) -> vec2f {
@@ -829,7 +836,7 @@ fn cleanRepairMain(@builtin(global_invocation_id) id: vec3u) {
   }
   let grain = max(1.25 * textureLoad(sumTex, p, 0).x, 1e-7);
   if (ap.strength.z > 0.5 && ap.sigma.x > 0.5 && any(correction != vec2f(0.0))) {
-    correction *= cleanEdgeWeight(p, grain);
+    correction = cleanProtectEdge(p, grain, correction);
   }
   if (ap.frame.z == 12.0 && ap.strength.w > 0.5) {
     correction += cleanFringe(p, guides.z, grain);
