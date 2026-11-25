@@ -1056,11 +1056,15 @@ function renderGpuDraft(lane = state.currentView, options = {}) {
   return pending;
 }
 
-function clearDenoiseDetail() {
-  const canvas = els.previewCanvas;
+function releaseCleanGrainLayers(canvas) {
   for (const layer of canvas.hdrSharpLayers || []) releaseCleanGrainLayer(layer);
   canvas.hdrSharpLayers = null;
   canvas.hdrSharpDetail = null;
+}
+
+function clearDenoiseDetail() {
+  const canvas = els.previewCanvas;
+  releaseCleanGrainLayers(canvas);
   if (!canvas.hdrFrameRegion && !canvas.parentElement.hasAttribute("data-region")) return;
   canvas.hdrFrameRegion = null;
   if (canvas.hdrCpuMicroRegion) {
@@ -1518,7 +1522,10 @@ async function renderGpuDraftForView(lane, request) {
       if (request.backgroundUnderlayer) return;
       if (canvas.hdrCpuMicroRegion) clearDenoiseDetail();
       if (sharpLayer && region) drawCleanGrainLayer(canvas, sharpLayer, region, sharpKey);
-      else if (region && !request.underlayerOnly && canvas.hdrSharpLayers) clearDenoiseDetail();
+      // This pass drew the visible patch into the plain detail canvas. Retire
+      // the Grain layers only; clearing the detail canvas would blank the
+      // picture just drawn (black view after Denoise off at 100%+).
+      else if (region && !request.underlayerOnly && canvas.hdrSharpLayers) releaseCleanGrainLayers(canvas);
       if (region || retainedDetail) canvas.hdrFrameRegion = nativeGeometryViewport && region
         ? { ...region, nativeGeometryViewport: true, capacityRecovery: capacityRecovery || Boolean(recoveredRegion) }
         : (region || retainedDetail);
