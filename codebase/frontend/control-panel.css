@@ -25,7 +25,7 @@
   width: 8px; height: 10px; flex: 0 0 8px; margin-right: 9px;
   -webkit-mask: none; mask: none; clip-path: polygon(0 0, 100% 50%, 0 100%);
 }
-.raw-development-group .disclosure-trigger { padding-left: 16px; }
+.raw-development-group .disclosure-trigger { padding-left: 12px; }
 .grade-folder-tabs { display: grid; gap: 6px; position: sticky; top: 92px; z-index: 3; background: var(--panel); padding: 10px 12px; border-bottom: 1px solid var(--hairline); }
 .grade-folder-tabs .control-shared-label { padding: 0; }
 .lane-folder-shell, .local-lane-folder { margin: 0 0 12px; padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
