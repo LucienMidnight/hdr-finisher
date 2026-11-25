@@ -101,7 +101,7 @@ def test_new_denoise_settings_use_approved_d1_defaults() -> None:
     expected = dict(amount=0.75, luminance=0.5, color_noise=0.75,
                     detail_recovery=0.5, finest_noise=0.5, fine_noise=0.5,
                     medium_noise=0.5, coarse_noise=0.5, method="standard",
-                    grain_evenness=1, clean_splotches=True, clean_fringes=True, color_splotches=1, splotch_size="small")
+                    grain_evenness=1, clean_splotches=True, clean_fringes=True, protect_color_edges=True, color_splotches=1, splotch_size="small")
     expected |= dict(micro_luminance=0.5, micro_color=0.5, micro_detail=0.5)
     assert DenoiseLiveControls().model_dump() == expected
     assert asdict(AdaptiveControls()) == expected

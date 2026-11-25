@@ -25,7 +25,7 @@ If you open another photo while Denoise is preparing or updating, the old work i
 
 ## Choose a method
 
-- **Clean Grain** is selected for new photos. **Clean color splotches** pulls coloured blotches toward the nearby colour while protecting colour boundaries. **Splotch Size** starts at Small. Choose Large for a wider reach. **Color Splotches** blends live after preparation and switches off at 0%. **Clean edge fringes** separately reduces narrow colour fringes along bright edges. Both switches are saved separately for HDR and SDR.
+- **Clean Grain** is selected for new photos. **Clean color splotches** pulls coloured blotches toward the nearby colour while protecting colour boundaries. **Splotch Size** starts at Small. Choose Large for a wider reach. **Color Splotches** blends live after preparation and switches off at 0%. **Protect color edges** keeps splotch cleanup off sharp colour boundaries; turn it off if splotches remain next to an edge. **Clean edge fringes** separately reduces narrow colour fringes along bright edges. Both switches are saved separately for HDR and SDR.
 - **Simple** uses the original Denoise. Saved grades with no recorded method keep using Simple.
 - **Micro Grain · Experimental** cleans noise in Bayer RAW sensor data before the app builds the colour image. It aims to leave finer brightness grain. It has three controls, all starting at 50%:
   - **Luminance** reduces speckling in brightness.

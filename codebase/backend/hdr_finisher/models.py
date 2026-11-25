@@ -947,6 +947,7 @@ class DenoiseLiveControls(BaseModel):
     grain_evenness: float = Field(default=1.0, ge=0.0, le=1.0)
     clean_splotches: bool = True
     clean_fringes: bool = True
+    protect_color_edges: bool = True
     color_splotches: float = Field(default=1.0, ge=0.0, le=1.0)
     splotch_size: Literal["small", "large"] = "small"
 

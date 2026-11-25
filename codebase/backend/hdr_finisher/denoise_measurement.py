@@ -423,7 +423,7 @@ def create_router(store):
         base_signature = (key, epoch, geometry.model_dump_json(), refresh, model_signature)
         signature = (*base_signature, tuple(options.items()))
         fit_signature = (*base_signature, tuple((k, v) for k, v in options.items()
-                                               if k not in {"method", "grain_evenness", "clean_splotches", "clean_fringes", "splotch_size"}))
+                                               if k not in {"method", "grain_evenness", "clean_splotches", "clean_fringes", "protect_color_edges", "splotch_size"}))
         with cache.grain_preparation_lock:
             if not is_current():
                 raise InterruptedError("A newer edit replaced the Denoise preparation.")

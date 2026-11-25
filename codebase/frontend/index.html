@@ -739,6 +739,7 @@
           <div id="denoise-clean-controls" class="hidden">
             <label class="checkbox-row" data-tooltip="Reduce coloured blotches using the Color Splotches strength and Splotch Size."><input id="denoise-clean-splotches" type="checkbox" checked> Clean color splotches</label>
             <label class="checkbox-row" data-tooltip="Reduce narrow colour fringes along bright edges."><input id="denoise-clean-fringes" type="checkbox" checked> Clean edge fringes</label>
+            <label class="checkbox-row" data-tooltip="Leave splotch cleanup off sharp colour boundaries that run in a line, so skin, clothing and sky edges keep their colour. Turn off if it leaves splotches near edges."><input id="denoise-protect-edges" type="checkbox" checked> Protect color edges</label>
             <div class="control-row"><div class="control-heading"><label for="denoise-splotches" data-tooltip="Pulls coloured blotches toward their surroundings while preserving scene brightness. 0% switches off this correction.">Color Splotches</label><output id="denoise-splotches-value">100%</output></div><input id="denoise-splotches" type="range" min="0" max="1" step="0.01" value="1"></div>
             <div class="control-row">
               <label for="denoise-splotch-size" data-tooltip="Small samples colour about 12 pixels away. Large also samples about 28 pixels away to reach beyond wider blotches.">Splotch Size</label>

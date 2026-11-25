@@ -828,7 +828,7 @@ fn cleanRepairMain(@builtin(global_invocation_id) id: vec3u) {
     correction = mix(correction, (input - pair.zw) * guides.x, darkPeak);
   }
   let grain = max(1.25 * textureLoad(sumTex, p, 0).x, 1e-7);
-  if (ap.strength.z > 0.5 && any(correction != vec2f(0.0))) {
+  if (ap.strength.z > 0.5 && ap.sigma.x > 0.5 && any(correction != vec2f(0.0))) {
     correction *= cleanEdgeWeight(p, grain);
   }
   if (ap.frame.z == 12.0 && ap.strength.w > 0.5) {

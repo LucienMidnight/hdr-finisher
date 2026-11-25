@@ -87,6 +87,9 @@ def test_clean_grain_protects_a_colour_edge_while_removing_a_local_blotch():
     edge = np.s_[28:-28, 76:85, :]
     assert np.linalg.norm(new[edge]) < .5 * np.linalg.norm(old[edge])
     assert abs(new[75, 45, 1]) >= .9 * abs(old[75, 45, 1])
+    # With protection off the splotch pass reaches the edge again.
+    _, unprotected = grain.colour_delta(source, False, fringes=False, separate=True, protect_edges=False)
+    assert np.linalg.norm(unprotected[edge]) > 2 * np.linalg.norm(new[edge])
 
 
 def test_fringe_strength_is_independent_of_splotch_strength():

@@ -133,12 +133,13 @@ async function authoredSdr(page, api) {
       ["clean_grain", "small", true, false],
       ["clean_grain", "small", false, true],
       ["clean_grain", "small", true, true],
+      ["clean_grain", "small", true, true, false],
       ["clean_grain", "large", true, true],
     ];
-    for (const [method, size, splotches, fringes] of cases) {
-      const output = path.join(root, `${method}-${size}-${splotches}-${fringes}`);
+    for (const [method, size, splotches, fringes, protectEdges = true] of cases) {
+      const output = path.join(root, `${method}-${size}-${splotches}-${fringes}${protectEdges ? "" : "-unprotected"}`);
       fs.mkdirSync(output);
-      console.log("Denoise delivery", method, size, { splotches, fringes });
+      console.log("Denoise delivery", method, size, { splotches, fringes, protectEdges });
       const edits=await page.request.get(api(`/api/session/${session.session_id}/edit-state`));
       const editState=await edits.json();
       for (const lane of ["hdr", "sdr"]) {
@@ -148,6 +149,7 @@ async function authoredSdr(page, api) {
         editState.document.denoise[lane].controls.grain_evenness = splotches || fringes ? 0 : 0.65;
         editState.document.denoise[lane].controls.clean_splotches = splotches;
         editState.document.denoise[lane].controls.clean_fringes = fringes;
+        editState.document.denoise[lane].controls.protect_color_edges = protectEdges;
       }
       // The clipped calibration fixture exceeds 1000 nits without an authored cap.
       editState.document.global_adjustments.hdr.highlight_section_enabled=true;

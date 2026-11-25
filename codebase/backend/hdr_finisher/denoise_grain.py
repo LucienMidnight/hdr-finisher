@@ -209,7 +209,7 @@ def _splotch_edge_weight(chroma, noise):
     return 1 - longest
 
 
-def colour_delta(rgb, broad, *, splotches=True, fringes=True, separate=False):
+def colour_delta(rgb, broad, *, splotches=True, fringes=True, separate=False, protect_edges=True):
     """Full-strength opponent-colour correction, leaving scene luminance alone."""
     native = denoise_filters.library()
     if not denoise_filters.supports(rgb) or not hasattr(native, "colour_guides"):
@@ -258,10 +258,14 @@ def colour_delta(rgb, broad, *, splotches=True, fringes=True, separate=False):
         if not splotches:
             return fringe_delta, None
         small = _colour_pass(chroma, noise, limit, dark, 12, 2, 1, native)
-        chroma -= small * _splotch_edge_weight(chroma, noise)[..., None] + fringe_fix
+        if protect_edges:
+            small *= _splotch_edge_weight(chroma, noise)[..., None]
+        chroma -= small + fringe_fix
         if broad:
             large = _colour_pass(chroma, noise, limit, dark, 28, 4, 3, native)
-            chroma -= large * _splotch_edge_weight(chroma, noise)[..., None]
+            if protect_edges:
+                large *= _splotch_edge_weight(chroma, noise)[..., None]
+            chroma -= large
         return fringe_delta, chroma * light[..., None] - original - fringe_delta
     # Micro Grain uses the original combined pass.
     chroma -= _colour_pass(chroma, noise, limit, dark, 12, 2, 1, native) + fringe * edge_weight[..., None]
@@ -376,7 +380,8 @@ class GrainPreparation:
             resolved = perf_counter()
             delta = None
             if splotches or fringes:
-                fringe_delta, splotch_delta = colour_delta(rgb, broad, splotches=splotches, fringes=fringes, separate=True)
+                fringe_delta, splotch_delta = colour_delta(rgb, broad, splotches=splotches, fringes=fringes, separate=True,
+                                                          protect_edges=controls.protect_color_edges)
                 if fringes:
                     rgb = apply_colour(rgb, fringe_delta, 1)
                 if splotch_delta is not None:
@@ -638,7 +643,8 @@ def resolve_grain(source, model, controls, *, allocate_output=None):
         y, x = origin
         rgb = base
         if clean:
-            fringe, delta = colour_delta(base, broad, splotches=clean_splotches, fringes=clean_fringes, separate=True)
+            fringe, delta = colour_delta(base, broad, splotches=clean_splotches, fringes=clean_fringes, separate=True,
+                                         protect_edges=controls.protect_color_edges)
             if clean_fringes:
                 rgb = apply_colour(rgb, fringe, 1)
             if delta is not None:

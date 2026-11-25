@@ -45,6 +45,7 @@ Denoise works on developed camera RAWs, HDR files and renders. It measures noise
 | Grain Evenness | 100% | Evens out retained brightness grain using the fitted 18-pixel setting. With colour cleaning off, 0% follows Simple. |
 | Clean color splotches | On | Toggles splotch cleanup for this rendition. Color Splotches and Splotch Size retain their values while disabled. |
 | Clean edge fringes | On | Toggles the narrow bright-edge fringe correction for this rendition. |
+| Protect color edges | On | Keeps splotch cleanup off sharp, continuous colour boundaries. Off restores the November 24 pre-tuning splotch cleanup. Available only while Clean color splotches is on. Temporary tuning switch (November 25). |
 | Color Splotches | 100% | Pulls outlying colour toward nearby colour while protecting coherent colour edges and preserving scene luminance. Blends live once prepared. At 0% splotch cleanup has no effect. |
 | Splotch Size | Small | Clean Grain. Small has a 12-pixel reach. Large adds a 28-pixel pass. Changing reach can require new preparation. |
 | Micro Grain: Luminance, Color, Detail | 50% each | Sets brightness cleaning, colour cleaning and texture protection in the round 3 recipe. These replace the common controls for this method. |

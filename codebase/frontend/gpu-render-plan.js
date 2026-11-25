@@ -176,7 +176,8 @@ const GPU_PARAMS = window.HDRGpuParamLayout.indices;
         microColor: controls.microColor ?? 0.5, microDetail: controls.microDetail ?? 0.5 };
     }
     const options = { ...sizes, method: controls.method, cleanSplotches: controls.cleanSplotches !== false,
-      cleanFringes: controls.cleanFringes !== false, splotchSize: controls.splotchSize ?? "small" };
+      cleanFringes: controls.cleanFringes !== false,
+      protectColorEdges: controls.protectColorEdges !== false, splotchSize: controls.splotchSize ?? "small" };
     for (const key of ["grainEvenness", "colorSplotches"]) {
       const value = Number(controls[key] ?? 1);
       if (!Number.isFinite(value) || value < 0 || value > 1) throw new Error(`${key} must be between 0 and 1`);

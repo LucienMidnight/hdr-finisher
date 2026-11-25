@@ -302,7 +302,7 @@ const defaultDenoiseLane = () => ({
   controls: {
     amount: 0.75, luminance: 0.5, color_noise: 0.75, detail_recovery: 0.5,
     finest_noise: 0.5, fine_noise: 0.5, medium_noise: 0.5, coarse_noise: 0.5,
-    method: "clean_grain", grain_evenness: 1, clean_splotches: true, clean_fringes: true, color_splotches: 1, splotch_size: "small",
+    method: "clean_grain", grain_evenness: 1, clean_splotches: true, clean_fringes: true, protect_color_edges: true, color_splotches: 1, splotch_size: "small",
     micro_luminance: 0.5, micro_color: 0.5, micro_detail: 0.5,
   },
   analysis: { algorithm_version: "adaptive-atrous-v1" },
@@ -957,6 +957,7 @@ const els = {
   denoiseEvennessValue: document.getElementById("denoise-evenness-value"),
   denoiseCleanSplotches: document.getElementById("denoise-clean-splotches"),
   denoiseCleanFringes: document.getElementById("denoise-clean-fringes"),
+  denoiseProtectEdges: document.getElementById("denoise-protect-edges"),
   denoiseSplotches: document.getElementById("denoise-splotches"),
   denoiseSplotchesValue: document.getElementById("denoise-splotches-value"),
   denoiseSplotchSize: document.getElementById("denoise-splotch-size"),

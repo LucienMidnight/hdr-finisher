@@ -159,8 +159,9 @@ function renderDenoiseControls() {
   els.denoiseCleanSplotches.checked = settings.controls.clean_splotches !== false;
   els.denoiseCleanFringes.checked = settings.controls.clean_fringes !== false;
   els.denoiseCleanSplotches.disabled = els.denoiseCleanFringes.disabled = !editable;
+  els.denoiseProtectEdges.checked = settings.controls.protect_color_edges !== false;
   els.denoiseSplotchSize.value = settings.controls.splotch_size;
-  els.denoiseSplotchSize.disabled = !editable || !els.denoiseCleanSplotches.checked;
+  els.denoiseSplotchSize.disabled = els.denoiseProtectEdges.disabled = !editable || !els.denoiseCleanSplotches.checked;
   els.denoiseBypass.classList.toggle("bypassed", !enabled);
   els.denoiseBypass.setAttribute("aria-pressed", String(enabled));
   group?.classList.toggle("bypassed", !enabled);
@@ -837,6 +838,7 @@ function denoiseRendererControls(controls) {
     grainEvenness: controls.grain_evenness,
     cleanSplotches: controls.clean_splotches !== false,
     cleanFringes: controls.clean_fringes !== false,
+    protectColorEdges: controls.protect_color_edges !== false,
     colorSplotches: controls.clean_splotches === false ? 0 : controls.color_splotches,
     splotchSize: controls.splotch_size,
     ...(controls.method === "micro_grain" ? { microLuminance: controls.micro_luminance,
