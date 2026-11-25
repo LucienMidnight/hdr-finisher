@@ -4,6 +4,11 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
 const {chromium}=require('playwright');
 const root=path.resolve(__dirname,'..'),folder=path.join(root,'output/library-export-live-tiles',String(Date.now()));fs.mkdirSync(folder,{recursive:true});
 const photos=['DSC00264','DSC04375','DSC06615'].map(n=>{const p=path.join(folder,n+'.ARW');return reusePhoto(reusePhoto.source(n+'.ARW'),p);});
+// Exports land beside the reused photos. Delete this run's exports and export
+// staging, pass or fail; keep the reused photo copies and anything already there.
+const photoFolder=path.dirname(photos[0]),existing=new Set(fs.readdirSync(photoFolder)),exported=new Set();
+function removeExports(){for(const file of exported)fs.rmSync(file,{force:true});
+ for(const name of fs.readdirSync(photoFolder))if(!existing.has(name)&&(/_Version \d/.test(name)||name.startsWith('.hdr-export-')))fs.rmSync(path.join(photoFolder,name),{recursive:true,force:true});}
 (async()=>{const browser=await chromium.launch();try{
  const page=await browser.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));
  await page.goto(process.env.HDR_FINISHER_URL,{waitUntil:'networkidle'});
@@ -38,6 +43,7 @@ const photos=['DSC00264','DSC04375','DSC06615'].map(n=>{const p=path.join(folder
   await page.evaluate(()=>document.getElementById('batch-run').click());
   await page.waitForFunction(previous=>batchExport.activity()?.id!==previous&&['finished','failed','cancelled'].includes(batchExport.activity()?.state),previousJob,{timeout:240000,polling:50});
   const seconds=(Date.now()-started)/1000,job=await page.evaluate(()=>batchExport.activity());
+  for(const result of job.results||[])if(result.output_path)exported.add(result.output_path);
   assert.equal(job.state,'finished',JSON.stringify(job));assert.equal(job.results.length,1);
   assert.equal(job.results[0].renderer,'gpu',JSON.stringify(job.results));assert.ok(['exported','renamed'].includes(job.results[0].outcome),JSON.stringify(job.results));
   const after=await page.locator('#library-frame').evaluate(e=>e.contentWindow.__tileDraws);
@@ -53,4 +59,4 @@ const photos=['DSC00264','DSC04375','DSC06615'].map(n=>{const p=path.join(folder
  const report={measurements,closedSecondsPerPhoto:closed,openSecondsPerPhoto:open,changePercent,withinAllowance:open<=closed*1.05};
  fs.writeFileSync(path.join(folder,'result.json'),JSON.stringify(report,null,2));console.log(JSON.stringify(report));
  assert.ok(report.withinAllowance,'Open Export page exceeds the agreed 5% timing allowance');
-}finally{await browser.close();reusePhoto.cleanup();fs.rmSync(folder,{recursive:true,force:true});}})().catch(error=>{console.error(error);process.exitCode=1;}).finally(()=>reusePhoto.cleanup());
+}finally{await browser.close();reusePhoto.cleanup();removeExports();fs.rmSync(folder,{recursive:true,force:true});}})().catch(error=>{console.error(error);process.exitCode=1;}).finally(()=>reusePhoto.cleanup());
