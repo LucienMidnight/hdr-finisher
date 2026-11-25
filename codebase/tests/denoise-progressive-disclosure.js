@@ -1,7 +1,7 @@
 // PRD 6.3 -- progressive disclosure for the Denoise controls.
 //
-// Amount and Detail Recovery are always visible; Luminance and Colour Noise
-// sit behind Advanced. Clean Grain offers an optional colour correction.
+// Amount, Detail Recovery and Color Noise are always visible; Luminance and
+// the noise sizes sit behind Advanced. Clean Grain offers an optional colour correction.
 //
 //   node tests/denoise-progressive-disclosure.js --url http://127.0.0.1:8765
 //
@@ -83,13 +83,17 @@ function assert(condition, message) {
     assert(JSON.stringify(options.slice(0, 2)) === JSON.stringify([
       ["clean_grain", "Clean Grain"], ["standard", "Simple"],
     ]) && options[2]?.[0] === "micro_grain" && options.length === 3, "The Denoise menu changed.");
-    assert(await page.locator("#denoise-clean-color").isChecked(), "Clean Grain should start with colour cleaning on.");
+    // Steve, November 25: Color Noise moved out of Advanced, and Color
+    // Splotches at 0% replaced the Clean color splotches checkbox.
+    assert(await page.locator("#denoise-clean-splotches").count() === 0, "The Clean color splotches checkbox is back.");
+    assert(await shown("denoise-splotches") && await page.locator("#denoise-splotches").inputValue() === "1",
+      "Clean Grain should start with Color Splotches at 100%.");
+    assert(await page.locator("#denoise-protect-edges").isChecked(), "Protect color edges should start on.");
+    assert(await shown("denoise-color"), "Color Noise is not in the main panel.");
     assert(!await shown("denoise-luminance"), "Luminance is visible before Advanced is opened.");
-    assert(!await shown("denoise-color"), "Colour Noise is visible before Advanced is opened.");
 
     await page.click("#denoise-advanced-toggle");
     assert(await shown("denoise-luminance"), "Advanced did not reveal Luminance.");
-    assert(await shown("denoise-color"), "Advanced did not reveal Colour Noise.");
     assert(await page.evaluate(
       () => document.getElementById("denoise-advanced-toggle").getAttribute("aria-expanded"),
     ) === "true", "Advanced did not report itself expanded.");
@@ -184,6 +188,29 @@ function assert(condition, message) {
     assert(digest(before) !== digest(afterHiddenEdit),
       "Luminance made no difference to the picture while hidden, so disclosure "
       + "has detached it from the render.");
+
+    // A grade saved with the old checkbox off shows Color Splotches at 0%.
+    // Raising the slider must prepare the splotch pass and reach the render.
+    await page.evaluate(() => commitDenoiseControl("clean_splotches", false));
+    await page.waitForFunction(() => state.denoiseRuntime[state.currentView].status === "ready"
+      && state.gpuPreview.denoiseSourceSelector?.controls?.cleanSplotches === false, null, { timeout: 300000 });
+    assert(await page.locator("#denoise-splotches").inputValue() === "0", "Splotches off did not show 0%.");
+    assert(await page.locator("#denoise-splotch-size").isDisabled(), "Splotch Size stayed enabled at 0%.");
+    await page.evaluate(() => {
+      const input = document.querySelector("#denoise-splotches");
+      input.value = "0.6";
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await page.waitForFunction(() => {
+      const controls = state.gpuPreview.denoiseSourceSelector?.controls;
+      return state.denoiseRuntime[state.currentView].status === "ready"
+        && controls?.cleanSplotches === true && controls.colorSplotches === 0.6;
+    }, null, { timeout: 300000 });
+    const raised = await page.evaluate(() => state.denoise[state.currentView].controls);
+    assert(raised.clean_splotches === true && raised.color_splotches === 0.6,
+      "Raising Color Splotches from 0% did not turn splotch cleanup back on: " + JSON.stringify(raised));
+    assert(!await page.locator("#denoise-splotch-size").isDisabled(), "Splotch Size stayed disabled above 0%.");
 
     // The reset routes must agree with the fresh-photo values, including
     // Advanced controls. Dispatch the actual double-click handler.

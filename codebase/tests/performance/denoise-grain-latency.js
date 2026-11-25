@@ -283,9 +283,9 @@ async function measurePicture(page, button, method, { pan = false, switchMethod 
       } else if (switchMethod) {
         const cleanColor = method !== "clean_grain_off";
         if (state.denoise[state.currentView].controls.method === "clean_grain") {
-          els.denoiseCleanSplotches.checked = cleanColor;
+          state.denoise[state.currentView].controls.clean_splotches = cleanColor;
           els.denoiseCleanFringes.checked = cleanColor;
-          els.denoiseCleanSplotches.dispatchEvent(new Event("change", { bubbles: true }));
+          els.denoiseCleanFringes.dispatchEvent(new Event("change", { bubbles: true }));
         } else {
           state.denoise[state.currentView].controls.clean_splotches = cleanColor;
           state.denoise[state.currentView].controls.clean_fringes = cleanColor;

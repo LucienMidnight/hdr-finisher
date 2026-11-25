@@ -865,7 +865,6 @@ function bindEvents() {
   for (const event of ["input", "change"]) {
     els.denoiseMethod?.addEventListener(event, () => commitDenoiseControl("method", els.denoiseMethod.value));
   }
-  els.denoiseCleanSplotches?.addEventListener("change", () => commitDenoiseControl("clean_splotches", els.denoiseCleanSplotches.checked));
   els.denoiseCleanFringes?.addEventListener("change", () => commitDenoiseControl("clean_fringes", els.denoiseCleanFringes.checked));
   els.denoiseProtectEdges?.addEventListener("change", () => commitDenoiseControl("protect_color_edges", els.denoiseProtectEdges.checked));
   els.denoiseSplotchSize?.addEventListener("change", () => commitDenoiseControl("splotch_size", els.denoiseSplotchSize.value));

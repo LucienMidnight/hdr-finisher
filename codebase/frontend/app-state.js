@@ -955,7 +955,6 @@ const els = {
   denoiseCleanControls: document.getElementById("denoise-clean-controls"),
   denoiseEvenness: document.getElementById("denoise-evenness"),
   denoiseEvennessValue: document.getElementById("denoise-evenness-value"),
-  denoiseCleanSplotches: document.getElementById("denoise-clean-splotches"),
   denoiseCleanFringes: document.getElementById("denoise-clean-fringes"),
   denoiseProtectEdges: document.getElementById("denoise-protect-edges"),
   denoiseSplotches: document.getElementById("denoise-splotches"),

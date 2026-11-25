@@ -37,19 +37,18 @@ Denoise works on developed camera RAWs, HDR files and renders. It measures noise
 | Amount | 75% | Overall cleaning. At 50% it uses the measured amount. At 0% it leaves the input alone. |
 | Detail Recovery | 50% | Returns fine detail that would otherwise be removed with noise. |
 | Luminance | 50% | Brightness noise removal. |
-| Color Noise | 75% | Colour noise removal. |
+| Color Noise | 75% | Colour noise removal at every size, before splotch cleanup. Shown in the main panel (not Advanced) since November 25, because it is the strongest control for colour blotches. |
 | Finest · 1–2 px | 50% | Pixel speckle. |
 | Fine · 2–4 px | 50% | Small grain. |
 | Medium · ~8 px | 50% | Soft blotches. |
 | Coarse · 16–32 px | 50% | Broad cloudy patches. Each size slider uses the measured amount at 50% and leaves that band alone at 0%. |
 | Grain Evenness | 100% | Evens out retained brightness grain using the fitted 18-pixel setting. With colour cleaning off, 0% follows Simple. |
-| Clean color splotches | On | Toggles splotch cleanup for this rendition. Color Splotches and Splotch Size retain their values while disabled. |
 | Clean edge fringes | On | Toggles the narrow bright-edge fringe correction for this rendition. |
-| Protect color edges | On | Keeps splotch cleanup off sharp, continuous colour boundaries. Off restores the November 24 pre-tuning splotch cleanup. Available only while Clean color splotches is on. Temporary tuning switch (November 25). |
-| Color Splotches | 100% | Pulls outlying colour toward nearby colour while protecting coherent colour edges and preserving scene luminance. Blends live once prepared. At 0% splotch cleanup has no effect. |
+| Protect color edges | On | Keeps splotch cleanup off sharp, continuous colour boundaries. Off restores the November 24 pre-tuning splotch cleanup. Unavailable while Color Splotches is 0%. Temporary tuning switch (November 25). |
+| Color Splotches | 100% | Pulls outlying colour toward nearby colour while protecting coherent colour edges and preserving scene luminance. Blends live once prepared. At 0% splotch cleanup has no effect; this replaced the Clean color splotches checkbox on November 25. Older grades saved with that checkbox off show 0%, and raising the slider prepares the splotch pass again. |
 | Splotch Size | Small | Clean Grain. Small has a 12-pixel reach. Large adds a 28-pixel pass. Changing reach can require new preparation. |
 | Micro Grain: Luminance, Color, Detail | 50% each | Sets brightness cleaning, colour cleaning and texture protection in the round 3 recipe. These replace the common controls for this method. |
-| Advanced | Collapsed initially | Reveals Luminance, Color Noise and the four noise sizes. |
+| Advanced | Collapsed initially | Reveals Luminance and the four noise sizes. |
 | Show noise | Off | Displays what Denoise removed. Scopes keep the normal picture and update when the noise view closes. |
 | Recalculate Denoise | On request | Refreshes the measurement and preparation. The last good picture stays visible while work runs. A failed attempt offers a retry. |
 | Reset and Default preset | Clean Grain and the values above | Restore the starting settings. Saved grades and presets carry the method and controls. |

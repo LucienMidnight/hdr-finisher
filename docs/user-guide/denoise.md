@@ -21,11 +21,11 @@ Click the switch again to compare. Turning Denoise off shows the original pictur
 
 If you open another photo while Denoise is preparing or updating, the old work is discarded; it cannot change the new photo’s settings or status.
 
-**Reset** in the group header and the **Default** preset select Clean Grain, restore Amount and Color Noise to 75%, and set Detail Recovery, Luminance and all four noise-size sliders to 50%. They restore Grain Evenness and Color Splotches to 100%, switch on **Clean color splotches** and **Clean edge fringes**, and set Splotch Size to Small. Saved grades and presets carry the method and its settings. Denoise starts off for new photos.
+**Reset** in the group header and the **Default** preset select Clean Grain, restore Amount and Color Noise to 75%, and set Detail Recovery, Luminance and all four noise-size sliders to 50%. They restore Grain Evenness and Color Splotches to 100%, switch on **Protect color edges** and **Clean edge fringes**, and set Splotch Size to Small. Saved grades and presets carry the method and its settings. Denoise starts off for new photos.
 
 ## Choose a method
 
-- **Clean Grain** is selected for new photos. **Clean color splotches** pulls coloured blotches toward the nearby colour while protecting colour boundaries. **Splotch Size** starts at Small. Choose Large for a wider reach. **Color Splotches** blends live after preparation and switches off at 0%. **Protect color edges** keeps splotch cleanup off sharp colour boundaries; turn it off if splotches remain next to an edge. **Clean edge fringes** separately reduces narrow colour fringes along bright edges. Both switches are saved separately for HDR and SDR.
+- **Clean Grain** is selected for new photos. **Color Noise** sits in the main panel: raise it first when colour blotches remain. **Color Splotches** pulls coloured blotches toward the nearby colour, blends live after preparation and switches off at 0%. **Splotch Size** starts at Small. Choose Large for a wider reach. **Protect color edges** keeps splotch cleanup off sharp colour boundaries; turn it off if splotches remain next to an edge. **Clean edge fringes** separately reduces narrow colour fringes along bright edges. Both switches are saved separately for HDR and SDR.
 - **Simple** uses the original Denoise. Saved grades with no recorded method keep using Simple.
 - **Micro Grain · Experimental** cleans noise in Bayer RAW sensor data before the app builds the colour image. It aims to leave finer brightness grain. It has three controls, all starting at 50%:
   - **Luminance** reduces speckling in brightness.
@@ -51,7 +51,7 @@ using that result. The first preparation at Fit can take as long as at 100%.
 Check bright edges, faces, lashes and fine dark hair at 100%. Clean Grain
 reduces wide colour pulls around bright lights and still works on narrow
 fringes. Some noisy colour marks can remain. Use **Show noise** to see what
-was removed, lower Color Splotches, or toggle the splotch and edge fringe switches to compare.
+was removed, raise Color Noise, lower Color Splotches, or toggle the edge switches to compare.
 
 ## Basic controls
 
@@ -60,12 +60,13 @@ was removed, lower Color Splotches, or toggle the splotch and edge fringe switch
 
 Both sliders update the picture as you drag.
 
+**Color Noise**, in the main panel, sets how much colour speckle is removed. It starts at 75%. Colour noise is usually easy to remove without losing detail, so this often tolerates a high setting.
+
 ## Advanced controls
 
 Click **Advanced** to show more.
 
 - **Luminance** sets how much brightness noise is removed. It starts at 50%.
-- **Color Noise** sets how much colour speckle is removed. It starts at 75%. Colour noise is usually easy to remove without losing detail, so this often tolerates a high setting.
 - **Noise size** has four sliders. Each sets how strongly noise of that size is removed:
   - **Finest · 1–2 px:** pixel-level speckle.
   - **Fine · 2–4 px:** small grain.

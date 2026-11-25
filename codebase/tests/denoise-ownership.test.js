@@ -360,7 +360,7 @@ test('Denoise sliders and Splotch Size stay editable through preparation and err
   const element = () => ({ classList: { toggle() {} }, setAttribute() {}, closest: element, querySelector: () => null });
   Object.assign(h.context.els, Object.fromEntries([
     'Bypass', 'Method', 'GrainControls', 'MicroControls', 'Amount', 'Detail', 'AdvancedToggle',
-    'CleanControls', 'CleanSplotches', 'CleanFringes', 'ProtectEdges', 'SplotchSize', 'Luminance', 'Color', 'Finest', 'Fine', 'Medium', 'Coarse',
+    'CleanControls', 'CleanFringes', 'ProtectEdges', 'SplotchSize', 'Luminance', 'Color', 'Finest', 'Fine', 'Medium', 'Coarse',
     'Evenness', 'Splotches', 'Recalculate', 'Status', 'AmountValue', 'LuminanceValue', 'ColorValue',
     'DetailValue', 'FinestValue', 'FineValue', 'MediumValue', 'CoarseValue', 'EvennessValue', 'SplotchesValue',
   ].map(name => ['denoise' + name, element()])), { denoiseMicroSliders: [] });
@@ -380,6 +380,9 @@ test('Denoise sliders and Splotch Size stay editable through preparation and err
   assert.equal(h.context.els.denoiseProtectEdges.checked, true);
   assert.equal(h.context.els.denoiseSplotchSize.disabled, true);
   assert.equal(h.context.els.denoiseProtectEdges.disabled, true);
+  // An older grade saved with splotch cleanup off shows the slider at 0%.
+  assert.equal(h.context.els.denoiseSplotches.value, '0');
+  assert.equal(h.context.els.denoiseSplotches.disabled, false);
 });
 
 test('Reset from Simple prepares and draws the Clean Grain defaults', async () => {

@@ -154,14 +154,16 @@ function renderDenoiseControls() {
   els.denoiseMicroControls?.classList.toggle("hidden", !micro);
   els.denoiseAmount.closest(".control-row").classList.toggle("hidden", micro);
   els.denoiseDetail.closest(".control-row").classList.toggle("hidden", micro);
+  els.denoiseColor.closest(".control-row").classList.toggle("hidden", micro);
   els.denoiseAdvancedToggle.classList.toggle("hidden", micro);
   els.denoiseCleanControls.classList.toggle("hidden", settings.controls.method !== "clean_grain");
-  els.denoiseCleanSplotches.checked = settings.controls.clean_splotches !== false;
+  // Color Splotches at 0% is the off switch; older grades saved a separate one.
+  const splotches = settings.controls.clean_splotches === false ? 0 : settings.controls.color_splotches;
   els.denoiseCleanFringes.checked = settings.controls.clean_fringes !== false;
-  els.denoiseCleanSplotches.disabled = els.denoiseCleanFringes.disabled = !editable;
+  els.denoiseCleanFringes.disabled = !editable;
   els.denoiseProtectEdges.checked = settings.controls.protect_color_edges !== false;
   els.denoiseSplotchSize.value = settings.controls.splotch_size;
-  els.denoiseSplotchSize.disabled = els.denoiseProtectEdges.disabled = !editable || !els.denoiseCleanSplotches.checked;
+  els.denoiseSplotchSize.disabled = els.denoiseProtectEdges.disabled = !editable || splotches <= 0;
   els.denoiseBypass.classList.toggle("bypassed", !enabled);
   els.denoiseBypass.setAttribute("aria-pressed", String(enabled));
   group?.classList.toggle("bypassed", !enabled);
@@ -176,13 +178,13 @@ function renderDenoiseControls() {
     [els.denoiseMedium, els.denoiseMediumValue, settings.controls.medium_noise ?? 0.5],
     [els.denoiseCoarse, els.denoiseCoarseValue, settings.controls.coarse_noise ?? 0.5],
     [els.denoiseEvenness, els.denoiseEvennessValue, settings.controls.grain_evenness],
-    [els.denoiseSplotches, els.denoiseSplotchesValue, settings.controls.color_splotches],
+    [els.denoiseSplotches, els.denoiseSplotchesValue, splotches],
     ...els.denoiseMicroSliders.map(([input, key, output]) => [input, output, settings.controls[key]]),
   ];
   for (const [input, output, value] of controls) {
     input.value = String(value);
     output.textContent = `${Math.round(value * 100)}%`;
-    input.disabled = !editable || (input === els.denoiseSplotches && !els.denoiseCleanSplotches.checked);
+    input.disabled = !editable;
     updateRangeVisual(input);
   }
   els.denoiseRecalculate.disabled = !editable || ["preparing", "recalculating"].includes(runtime.status);
@@ -686,7 +688,14 @@ async function updateLiveDenoiseControl(key, value) {
   const next = clamp(value, 0, 1);
   if (settings.controls.method === "micro_grain" && key.startsWith("micro_") && settings.controls[key] === next) return;
   settings.controls[key] = next;
+  if (key === "color_splotches" && next > 0 && settings.controls.clean_splotches === false) {
+    // The prepared picture has no splotch pass yet; release prepares it.
+    settings.controls.clean_splotches = true;
+    runtime.splotchesTurnedOn = true;
+    return renderDenoiseControls();
+  }
   renderDenoiseControls();
+  if (runtime.splotchesTurnedOn && key === "color_splotches") return;
   if (key === "grain_evenness" && !liveGradeGrainSelected(lane)) return;
   if (!settings.enabled || runtime.status !== "ready" || runtime.showOriginal) return;
   // Section 5.6: reconstruction is coalesced to one in-flight run plus one
@@ -721,6 +730,13 @@ async function commitDenoiseControl(key, value) {
   const sessionId = state.session?.session_id;
   if (!sessionId) return;
   if (key === "method" && value === settings.controls.method) return;
+  if (key === "color_splotches" && (runtime.splotchesTurnedOn
+    || (value > 0 && settings.controls.clean_splotches === false))) {
+    runtime.splotchesTurnedOn = false;
+    if (value !== undefined) settings.controls.color_splotches = value;
+    settings.controls.clean_splotches = false;
+    return commitDenoiseControl("clean_splotches", true);
+  }
   const previous = settings.controls[key];
   if (value !== undefined) settings.controls[key] = value;
   if (key === "method") {
