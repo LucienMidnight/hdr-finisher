@@ -1369,8 +1369,12 @@ async function renderGpuDraftForView(lane, request) {
         || (denoiseActive && denoiseMethod === "clean_grain" && canvas.hdrWholeFrame.cleanGrain
           && canvas.hdrWholeFrame.sessionId === sessionId && canvas.hdrWholeFrame.lane === lane
           && canvas.hdrWholeFrame.geometrySignature === requestedGeometrySignature));
+    // A Denoise toggle keeps whatever picture of this photo is showing (Steve,
+    // Nov 25): the outgoing view stays until the sharp patch replaces it.
+    const showingPicture = canvas.hdrWholeFrame
+      || (request.preservePicture && canvas.style.display !== "none" && canvas.width > 1);
     const retainedUnderlayer = !state.geometryPresentationPending && (micro || request.preservePicture)
-      && canvas.hdrWholeFrame && accepted?.lane === lane
+      && showingPicture && accepted?.lane === lane
       && accepted.geometrySignature === requestedGeometrySignature;
     if (!reusable && !retainedUnderlayer) {
       const drawn = await renderGpuDraftInner(lane, {

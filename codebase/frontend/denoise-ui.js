@@ -328,12 +328,14 @@ async function setDenoiseEnabled(enabled, { action } = {}) {
     const saving = persistDenoiseSettings().catch(() => false);
     const revision = state.editRevision;
     const longEdge = refinementProxyLongEdge();
-    let rendered = await renderGpuDraft(lane, { longEdge });
+    // Keep the Denoise picture on screen until the original is ready, rather
+    // than a screen-sized underlayer enlarged to the current zoom.
+    let rendered = await renderGpuDraft(lane, { longEdge, preservePicture: true });
     const saved = await saving;
     if (!isCurrent() || lane !== state.currentView) return;
     runtime.saveFailed = !saved;
     if (rendered === false && saved && state.editRevision !== revision) {
-      rendered = await renderGpuDraft(lane, { longEdge });
+      rendered = await renderGpuDraft(lane, { longEdge, preservePicture: true });
     }
     if (rendered === false && !transientGpuRefusal() && !previewSourceCapacityRefused() && saved && isCurrent() && lane === state.currentView) {
       rendered = await renderPreviewForLane(lane, true, longEdge, { denoiseFallback: true });
@@ -357,7 +359,7 @@ async function setDenoiseEnabled(enabled, { action } = {}) {
     return;
   }
   if (runtime.microBackup && state.denoise[lane].controls.method === "micro_grain") {
-    await recalculateDenoise(lane, { operation: "enable_grain", action });
+    await recalculateDenoise(lane, { operation: "enable_grain", action, preservePicture: true });
     return;
   }
   const denoise = state.gpuPreview?.diagnosticsSnapshot?.().denoise;
@@ -371,7 +373,9 @@ async function setDenoiseEnabled(enabled, { action } = {}) {
     state.gpuPreview.selectDenoiseSelectorSource(true);
     runtime.status = "ready";
     renderDenoiseControls();
-    let rendered = await renderGpuDraft(lane, { longEdge });
+    // Steve, Nov 25: keep the original on screen until the denoised picture
+    // is ready; no soft whole-picture underlayer or quick pass in between.
+    let rendered = await renderGpuDraft(lane, { longEdge, preservePicture: true });
     if (!isCurrent()) return;
     if (rendered === false && lane === state.currentView && !transientGpuRefusal() && !previewSourceCapacityRefused()) {
       if (!runtime.microBackup) denoiseRetryError(lane, "The GPU could not draw the denoised preview.");
@@ -384,7 +388,9 @@ async function setDenoiseEnabled(enabled, { action } = {}) {
     renderDenoiseControls();
     return;
   }
-  if (await afterCommit && isCurrent()) await recalculateDenoise(lane, { operation: "enable_grain", action });
+  if (await afterCommit && isCurrent()) {
+    await recalculateDenoise(lane, { operation: "enable_grain", action, preservePicture: true });
+  }
 }
 
 function cleanGrainZoomViewport(lane) {
@@ -576,7 +582,9 @@ async function recalculateDenoiseForView(lane, options) {
     const currentEdge = nativePreparation ? refinementProxyLongEdge() : longEdge;
     state.gpuPreview.retargetPreparedDenoise?.(state.session.session_id, lane, currentEdge,
       geometrySignature(), sourceIdentity);
-    const rendered = await renderGpuDraft(lane, { longEdge: currentEdge, action: options.action });
+    const rendered = await renderGpuDraft(lane, {
+      longEdge: currentEdge, action: options.action, preservePicture: Boolean(options.preservePicture),
+    });
     if (!current() || pending.generation !== runtime.generation) return false;
     if (rendered === false && lane === state.currentView && !transientGpuRefusal() && !previewSourceCapacityRefused()) {
       if (!runtime.microBackup) denoiseRetryError(lane, "The GPU could not draw the denoised preview.");
