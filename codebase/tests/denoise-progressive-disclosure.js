@@ -88,7 +88,7 @@ function assert(condition, message) {
     assert(await page.locator("#denoise-clean-splotches").count() === 0, "The Clean color splotches checkbox is back.");
     assert(await shown("denoise-splotches") && await page.locator("#denoise-splotches").inputValue() === "1",
       "Clean Grain should start with Color Splotches at 100%.");
-    assert(await page.locator("#denoise-protect-edges").isChecked(), "Protect color edges should start on.");
+    assert(!await page.locator("#denoise-protect-edges").isChecked(), "Protect color edges should start off.");
     assert(await shown("denoise-color"), "Color Noise is not in the main panel.");
     assert(!await shown("denoise-luminance"), "Luminance is visible before Advanced is opened.");
 

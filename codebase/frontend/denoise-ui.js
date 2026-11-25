@@ -161,7 +161,7 @@ function renderDenoiseControls() {
   const splotches = settings.controls.clean_splotches === false ? 0 : settings.controls.color_splotches;
   els.denoiseCleanFringes.checked = settings.controls.clean_fringes !== false;
   els.denoiseCleanFringes.disabled = !editable;
-  els.denoiseProtectEdges.checked = settings.controls.protect_color_edges !== false;
+  els.denoiseProtectEdges.checked = settings.controls.protect_color_edges === true;
   els.denoiseSplotchSize.value = settings.controls.splotch_size;
   els.denoiseSplotchSize.disabled = els.denoiseProtectEdges.disabled = !editable || splotches <= 0;
   els.denoiseBypass.classList.toggle("bypassed", !enabled);
@@ -854,7 +854,7 @@ function denoiseRendererControls(controls) {
     grainEvenness: controls.grain_evenness,
     cleanSplotches: controls.clean_splotches !== false,
     cleanFringes: controls.clean_fringes !== false,
-    protectColorEdges: controls.protect_color_edges !== false,
+    protectColorEdges: controls.protect_color_edges === true,
     colorSplotches: controls.clean_splotches === false ? 0 : controls.color_splotches,
     splotchSize: controls.splotch_size,
     ...(controls.method === "micro_grain" ? { microLuminance: controls.micro_luminance,

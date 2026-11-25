@@ -6576,7 +6576,7 @@
           grainEvenness: controls.grainEvenness ?? controls.grain_evenness ?? 1,
           cleanSplotches: (controls.cleanSplotches ?? controls.clean_splotches) !== false,
           cleanFringes: (controls.cleanFringes ?? controls.clean_fringes) !== false,
-          protectColorEdges: (controls.protectColorEdges ?? controls.protect_color_edges) !== false,
+          protectColorEdges: (controls.protectColorEdges ?? controls.protect_color_edges) === true,
           colorSplotches: (controls.cleanSplotches ?? controls.clean_splotches) === false
             ? 0 : (controls.colorSplotches ?? controls.color_splotches ?? 1),
           splotchSize: controls.splotchSize ?? controls.splotch_size ?? "small",
@@ -7916,7 +7916,7 @@
               finest_noise: controls.finestNoise, fine_noise: controls.fineNoise,
               medium_noise: controls.mediumNoise, coarse_noise: controls.coarseNoise,
               grain_evenness: controls.grainEvenness, clean_splotches: controls.cleanSplotches,
-              clean_fringes: controls.cleanFringes, protect_color_edges: controls.protectColorEdges !== false,
+              clean_fringes: controls.cleanFringes, protect_color_edges: controls.protectColorEdges === true,
               splotch_size: controls.splotchSize,
             }),
           });
@@ -8296,7 +8296,7 @@
           domain.x - area.x, domain.y - area.y, domain.width, domain.height,
           controls.colorSplotches, window.HDRDenoiseQuality?.colourReference ?? 0,
           splotches && !microDelta ? 1 : 0, fringes ? 1 : 0,
-          controls.protectColorEdges !== false ? 1 : 0, 0, 0, 0,
+          controls.protectColorEdges === true ? 1 : 0, 0, 0, 0,
         ];
         dispatch(pipeline, { src: src.createView(), dst, ...inputs }, params, size);
       };

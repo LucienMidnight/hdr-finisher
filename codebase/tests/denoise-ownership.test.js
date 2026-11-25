@@ -377,7 +377,7 @@ test('Denoise sliders and Splotch Size stay editable through preparation and err
   h.state.denoise.hdr.controls.clean_splotches = false;
   h.context.renderDenoiseControls();
   assert.equal(h.context.els.denoiseCleanFringes.checked, true);
-  assert.equal(h.context.els.denoiseProtectEdges.checked, true);
+  assert.equal(h.context.els.denoiseProtectEdges.checked, false);
   assert.equal(h.context.els.denoiseSplotchSize.disabled, true);
   assert.equal(h.context.els.denoiseProtectEdges.disabled, true);
   // An older grade saved with splotch cleanup off shows the slider at 0%.

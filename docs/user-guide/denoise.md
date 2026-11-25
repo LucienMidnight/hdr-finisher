@@ -21,11 +21,11 @@ Click the switch again to compare. Turning Denoise off shows the original pictur
 
 If you open another photo while Denoise is preparing or updating, the old work is discarded; it cannot change the new photo’s settings or status.
 
-**Reset** in the group header and the **Default** preset select Clean Grain, restore Amount and Color Noise to 75%, and set Detail Recovery, Luminance and all four noise-size sliders to 50%. They restore Grain Evenness and Color Splotches to 100%, switch on **Protect color edges** and **Clean edge fringes**, and set Splotch Size to Small. Saved grades and presets carry the method and its settings. Denoise starts off for new photos.
+**Reset** in the group header and the **Default** preset select Clean Grain, restore Amount and Color Noise to 75%, and set Detail Recovery, Luminance and all four noise-size sliders to 50%. They restore Grain Evenness and Color Splotches to 100%, switch on **Clean edge fringes**, switch off **Protect color edges**, and set Splotch Size to Small. Saved grades and presets carry the method and its settings. Denoise starts off for new photos.
 
 ## Choose a method
 
-- **Clean Grain** is selected for new photos. **Color Noise** sits in the main panel: raise it first when colour blotches remain. **Color Splotches** pulls coloured blotches toward the nearby colour, blends live after preparation and switches off at 0%. **Splotch Size** starts at Small. Choose Large for a wider reach. **Protect color edges** keeps splotch cleanup off sharp colour boundaries; turn it off if splotches remain next to an edge. **Clean edge fringes** separately reduces narrow colour fringes along bright edges. Both switches are saved separately for HDR and SDR.
+- **Clean Grain** is selected for new photos. **Color Noise** sits in the main panel: raise it first when colour blotches remain. **Color Splotches** pulls coloured blotches toward the nearby colour, blends live after preparation and switches off at 0%. **Splotch Size** starts at Small. Choose Large for a wider reach. **Protect color edges** starts off. Turn it on to stop splotch cleanup from blending the two colours of a long, sharp colour edge. **Clean edge fringes** separately reduces narrow colour fringes along bright edges. Both switches are saved separately for HDR and SDR.
 - **Simple** uses the original Denoise. Saved grades with no recorded method keep using Simple.
 - **Micro Grain · Experimental** cleans noise in Bayer RAW sensor data before the app builds the colour image. It aims to leave finer brightness grain. It has three controls, all starting at 50%:
   - **Luminance** reduces speckling in brightness.
