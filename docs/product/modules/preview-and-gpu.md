@@ -311,11 +311,13 @@ photo to it. Initialization failure still disables the GPU everywhere.
 5. The "Later" performance rows, when Steve asks.
 6. Narrow Grade's out-of-memory/timeout retry classification to established
    external contention; Library's P1-C recovery bound does not change it.
-7. Recover Navigate and scopes after a refused zoom or auxiliary GPU
-   result. The viewer can retain a valid smaller picture while Navigate
-   waits for the requested scale and the settled scope refresh exits.
-   CPU Micro Grain also needs a matching whole-picture source for both
-   instruments. A visible zoom tile alone cannot supply it.
+7. **Completed November 25:** Navigate and scopes recover after a
+   refused zoom or auxiliary GPU request without waiting for native
+   resolution. The scope peak remains labelled as a preview or estimate.
+   CPU Micro Grain instruments retry when a matching whole-picture source
+   arrives; a viewport tile alone cannot supply it. The CPU Micro Grain
+   viewport now grades Scan Sharpening's three-pixel reach around the
+   visible region and trims it, so its edges match the whole frame.
 
 ## 6. Detail and history
 

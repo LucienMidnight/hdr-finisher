@@ -1,3 +1,20 @@
+## November 25, 2026 — Grade shared-memory admission and Scan Sharpening strips
+
+Grade shared-memory admission (`3757b324`), MacBook Neo, 42 MP Sony, Clean
+Grain Small at 110%: first sharp picture 4.01 s, wide pan 0.78 s, sampled
+app peak 2.485 GB against the 4 GB ceiling. Partial replay only: neither
+Electron replay completed (one expected Standard when the app defaulted to
+Clean Grain; the other stopped on a separate 640 px Library preparation), so
+the full replay peak is unverified.
+
+Scan Sharpening strip halo (`101d532d`), MacBook Neo, 1600 px DSC00264
+ceiling fixture: single export requests across three codecs took
+1.94–7.63 s on the GPU and 1.98–12.39 s on the CPU. Ceiling and full-size
+Proof identity passed. A 42.4 MP RAW exported to CPU JPEG Ultra HDR at
+native size and 4000 px with export and Proof byte-identical, peaking at
+3.16 GB across backend and encoder helpers (4 GB limit). No speed
+comparison.
+
 ## November 24, 2026 — Clean Grain zoom and Fit on the Windows PC
 
 DSC09738.ARW, HDR saved grade, Clean Grain Small, both colour passes on,

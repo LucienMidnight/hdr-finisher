@@ -10,9 +10,11 @@ background metadata still wait for foreground development. Overdue CPU
 repair replay cancels that photo's job in the helper. A hung native decoder
 still restarts the helper.
 
-Open: a marks-only sidecar save during live repair replay can reject the
-batch because replay checks the whole sidecar's file stamp. The batch needs
-to stay valid when the source recipe and enabled repairs are identical.
+November 25: rating, tag and album saves no longer interrupt a Library
+repair when the source settings and ordered enabled repairs are unchanged.
+This also applies to virtual copies. Outdated repair work is discarded
+without disabling GPU development. Genuine replay failures still fall back
+to the CPU after one GPU attempt.
 
 ### November 17, 2026: plain-app check visibility diagnostics
 
