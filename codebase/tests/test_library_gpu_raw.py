@@ -389,3 +389,37 @@ def test_native_detail_uses_whole_app_room_before_allocating(tmp_path, monkeypat
     finally:
         cache.finish_native_upload('detail')
         cache.trim_native(0)
+
+
+def test_lens_grid_rows_match_grades_whole_picture_lensfun_call():
+    """Library 100% must land where Grade/export's one Lensfun call lands.
+
+    Lensfun drifts row positions in a whole-picture call (float32 steps);
+    asking for one row at a time shifted GPU RAW detail ~0.1-0.2 px on 42 MP.
+    """
+    lensfunpy = pytest.importorskip("lensfunpy")
+    from hdr_finisher import raw_import
+    from hdr_finisher.models import RawImportSettings
+    info = {"camera_maker": "SONY", "camera_model": "ILCE-7RM3", "lens_model": "E 35mm F2.8 F053",
+            "focal_length_mm": 35.0, "aperture": 4.0}
+    # Node rows/columns fall on whole pixels when (size - 1) is a multiple of 16.
+    width, height = 1201, 1601
+    lens = gpu_raw._lens_settings(info, RawImportSettings().lens)
+    profile = raw_import._resolve_lens_profile(raw_import._lens_database(), lens, camera_maker="SONY",
+        camera_model="ILCE-7RM3", lens_maker=None, lens_name="E 35mm F2.8 F053")
+    if profile is None:
+        pytest.skip("Lensfun profile unavailable")
+    result = gpu_raw._lens_grid(info, width, height, 1, RawImportSettings().lens)
+    assert result is not None
+    meta, data = result
+    gw, gh = meta["coordinate_width"], meta["coordinate_height"]
+    assert (gw, gh) == (76, 101)
+    start = meta["gain_width"] * meta["gain_height"]
+    grid = data[start:start + gw * gh * 6].reshape(gh, gw, 3, 2)
+    camera, lensfun_lens, _ = profile
+    modifier = lensfunpy.Modifier(lensfun_lens, float(camera.crop_factor or 1.0), width, height)
+    flags = lensfunpy.ModifyFlags
+    modifier.initialize(35.0, 4.0, 1000.0, scale=0.0, pixel_format=np.float32,
+                        flags=flags.SCALE | flags.DISTORTION | flags.TCA | flags.VIGNETTING)
+    whole = np.asarray(modifier.apply_subpixel_geometry_distortion())[::16, ::16]
+    assert np.abs(grid - whole).max() < 0.005

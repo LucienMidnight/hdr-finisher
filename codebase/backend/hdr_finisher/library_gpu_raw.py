@@ -227,14 +227,46 @@ def _lens_settings(info: dict, lens=None):
     })
 
 
+def _lensfun_row_drift(lens, crop: float, width: int, height: int, focal: float,
+                       aperture: float, distance: float) -> np.ndarray:
+    """Where Lensfun evaluates each row when it maps a whole picture in one call.
+
+    Grade (raw_import.apply_lens_correction) asks Lensfun for the whole
+    picture at once. Lensfun 0.3 advances the input row by repeated float32
+    additions, so row r is evaluated slightly off r: from 0 to about -0.21 px
+    down a 42 MP frame. A call for a single row has no such drift, so grid rows
+    asked for one at a time put the GPU picture up to a fifth of a pixel away
+    from Grade and export, which shows at 100 %. A scale-only modifier with the
+    same size and lens maps one column in one call (a few KB); its difference
+    from the drift-free rows, in input pixels, is the drift to reproduce.
+    """
+    import lensfunpy
+    if height < 2:
+        return np.zeros(max(height, 0), dtype=np.float64)
+    probe = lensfunpy.Modifier(lens, crop, width, height)
+    probe.initialize(focal, aperture, distance, scale=2.0, pixel_format=np.float32,
+                     flags=lensfunpy.ModifyFlags.SCALE)
+    whole = probe.apply_geometry_distortion(0.0, 0.0, 1, height)
+    first = probe.apply_geometry_distortion(0.0, 0.0, 1, 1)
+    last = probe.apply_geometry_distortion(0.0, float(height - 1), 1, 1)
+    if whole is None or first is None or last is None:
+        raise NotEligible("Lensfun could not measure its row positions")
+    whole = np.asarray(whole, dtype=np.float64)[:, 0, 1]
+    first = float(np.asarray(first, dtype=np.float64)[0, 0, 1])
+    slope = (float(np.asarray(last, dtype=np.float64)[0, 0, 1]) - first) / (height - 1)
+    return (whole - (first + slope * np.arange(height))) / slope
+
+
 def _lens_grid(info: dict, width: int, height: int, flip: int, settings=None) -> tuple[dict, np.ndarray] | None:
     """Grade's automatic Lensfun correction on a small grid over the turned picture.
 
     Grade corrects the full source, after colour conversion and before its
     measurements: vignetting gain first, then distortion and colour fringing
     by a bilinear remap. Lensfun evaluates both here on a grid (point k at
-    k * (size - 1) / (grid - 1)); the GPU interpolates them per pixel. Both
-    vary smoothly, so the remap lands within about a pixel at full size.
+    k * (size - 1) / (grid - 1)); the GPU interpolates them per pixel. Grid
+    rows are evaluated where Grade's single whole-picture call evaluates them
+    (see _lensfun_row_drift), so the remap lands within about a thousandth of
+    a pixel of Grade's at full size.
     Returns None when no profile applies, as Grade's automatic mode does.
     """
     lens = _lens_settings(info, settings)
@@ -284,9 +316,12 @@ def _lens_grid(info: dict, width: int, height: int, flip: int, settings=None) ->
             node_x = np.linspace(0.0, out_w - 1.0, nodes_w)
             columns = np.arange(out_w, dtype=np.float64)
             grid = np.empty((nodes_h, nodes_w, 3, 2), dtype=np.float32)
+            drift = _lensfun_row_drift(lensfun_lens, crop, out_w, out_h, float(focal), aperture, distance)
+            rows = np.arange(out_h, dtype=np.float64)
             for k, row in enumerate(np.linspace(0.0, out_h - 1.0, nodes_h)):
-                line = (modifier.apply_subpixel_geometry_distortion(0.0, float(row), out_w, 1) if lens.chromatic_aberration
-                        else modifier.apply_geometry_distortion(0.0, float(row), out_w, 1))
+                row = float(row + np.interp(row, rows, drift))
+                line = (modifier.apply_subpixel_geometry_distortion(0.0, row, out_w, 1) if lens.chromatic_aberration
+                        else modifier.apply_geometry_distortion(0.0, row, out_w, 1))
                 if line is None:
                     grid = None
                     break
