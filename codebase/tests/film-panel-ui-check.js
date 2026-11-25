@@ -6,6 +6,8 @@ module.exports = async function checkFilmPanel(page) {
  if (await head.getAttribute('aria-expanded') !== 'true') await head.click();
  const originalFilm=await page.evaluate(()=>JSON.stringify(state.adjustments[state.currentView].film_look));
  const stage = name => group.locator(`[data-film-section="${name}"] .film-stage-heading`);
+ // tooltips.js moves title into data-native-tooltip, the text the hover tooltip shows.
+ const modTip = name => group.locator(`[data-film-section="${name}"] .film-stage-mod`).evaluate(e => e.getAttribute('title') ?? e.dataset.nativeTooltip ?? '');
  for (const name of ['camera','negative','development','print','scan']) {
   const button = stage(name);
   assert.equal(await button.getAttribute('aria-expanded'), name === 'negative' ? 'true' : 'false');
@@ -37,14 +39,14 @@ module.exports = async function checkFilmPanel(page) {
  assert.equal(await group.locator('[data-film-grain-custom]').isVisible(),false);
  // A format choice is deliberate, and dots must be reset buttons before names.
  await format.selectOption('65mm');
- assert.match(await group.locator('[data-film-section="camera"] .film-stage-mod').getAttribute('title'),/^1 modified/);
+ assert.match(await modTip('camera'),/^1 modified/);
  assert.equal(await group.locator('[data-stock-reset="grain_film_format"]').isVisible(),true);
  await group.locator('[data-stock-reset="grain_film_format"]').click();
  assert.equal(await group.locator('[data-film-section="camera"] .film-stage-mod').innerText(),'');
  await stage('camera').click();
  const grain = group.locator('#film-grain-amount');
  await grain.evaluate(c=>{c.value='24';c.dispatchEvent(new Event('input',{bubbles:true}));});
- assert.equal(await group.locator('[data-film-section="negative"] .film-stage-mod').getAttribute('title'),'1 modified controls');
+ assert.equal(await modTip('negative'),'1 modified controls');
  assert.equal(await group.locator('[data-control-path="current.film_look.grain_amount"]').evaluate(e=>e.classList.contains('modified')),true);
  await grain.dblclick();
  assert.equal(await group.locator('[data-stock-reset="grain_amount"]').isVisible(),false);
@@ -52,7 +54,7 @@ module.exports = async function checkFilmPanel(page) {
  await stage('development').click();
  await group.locator('[data-film-push="0"]').focus();await page.keyboard.press('ArrowRight');
  assert.equal(await group.locator('[data-film-push="1"]').getAttribute('aria-pressed'),'true');
- assert.equal(await group.locator('[data-film-section="development"] .film-stage-mod').getAttribute('title'),'1 modified controls');
+ assert.equal(await modTip('development'),'1 modified controls');
  await group.locator('[data-stock-reset="push_pull"]').click();
  assert.equal(await group.locator('[data-film-push="0"]').getAttribute('aria-pressed'),'true');
  await stage('development').click();
