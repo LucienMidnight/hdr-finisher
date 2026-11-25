@@ -25,13 +25,34 @@ for(let repeat=0;repeat<3;repeat++)for(const source of sources)for(const mode of
   let captured;
   // Force one mid-preparation broker preemption. It must yield and retry,
   // retaining the decoded RGB source rather than asking for CPU development.
-  const originalFetch=w.fetch.bind(w);let leases=0,yielded=false;
+  // The preemption lands on the first permit check of the first admitted GPU
+  // development (its lease was granted and it is preparing the source), so it
+  // does not depend on how many leases a fast or slow machine happens to make.
+  // Development leases carry a `grant` field; draw leases and probes do not.
+  const originalFetch=w.fetch.bind(w),originalStopwatch=w.HDRLibraryStopwatch;
+  const preemption={url:null,released:false,granted:new Set(),developmentLeases:0,otherLeases:0,events:[]};
   w.fetch=async(url,options)=>{
-   const response=await originalFetch(url,options);
-   if(String(url).includes('/api/delivery/gpu/raw-budget/')&&options?.method==='POST'&&!JSON.parse(options.body).release&&++leases===15){
-    yielded=true;const value=await response.json();return new w.Response(JSON.stringify({...value,preempt:true}),{status:200,headers:{'Content-Type':'application/json'}});
+   const response=await originalFetch(url,options),key=String(url);
+   if(!key.includes('/api/delivery/gpu/raw-budget/'))return response;
+   if(options?.method==='DELETE'){if(key===preemption.url)preemption.released=true;return response;}
+   if(options?.method!=='POST')return response;
+   const body=JSON.parse(options.body);
+   if(body.release&&key===preemption.url)preemption.released=true;
+   if(body.release||body.retain||!('grant' in body)){preemption.otherLeases++;return response;}
+   preemption.developmentLeases++;
+   const value=await response.clone().json();
+   if(!preemption.url&&preemption.granted.has(key)){
+    preemption.url=key;
+    return new w.Response(JSON.stringify({...value,preempt:true}),{status:200,headers:{'Content-Type':'application/json'}});
    }
+   if(value.granted&&!value.preempt)preemption.granted.add(key);
    return response;
+  };
+  // Record development stages to prove the preempted work yielded and was
+  // admitted again on the GPU, not merely that a reply was rewritten.
+  w.HDRLibraryStopwatch=(stage,fields={})=>{
+   if(stage.startsWith('picture_development'))preemption.events.push({stage,path:fields.path,afterPreempt:!!preemption.url});
+   return originalStopwatch?.(stage,fields);
   };
   gpu.renderTo=async function(canvas,...args){const result=await original.call(this,canvas,...args);captured=await this.analyzeScope(canvas,{width:args[9].width,height:args[9].height,tier:'picture',raw:true});return result;};
   const location=(await(await w.fetch('/api/library/cache-settings')).json()).location;
@@ -69,7 +90,16 @@ for(let repeat=0;repeat<3;repeat++)for(const source of sources)for(const mode of
    await meta.directScene?.store();
    rows.push({photo,meta,large,native,nativeMemoryRefusal,prepareMs,lanes});
   }
-  gpu.renderTo=original;w.fetch=originalFetch;if(!yielded)throw Error("Preemption was not exercised");return {location,rows,yielded};
+  gpu.renderTo=original;w.fetch=originalFetch;w.HDRLibraryStopwatch=originalStopwatch;
+  const diagnosis=()=>JSON.stringify({developmentLeases:preemption.developmentLeases,otherLeases:preemption.otherLeases,
+   preempted:!!preemption.url,released:preemption.released,events:preemption.events});
+  if(!preemption.url)throw Error("Preemption was not exercised: no admitted GPU development asked for a permit "+diagnosis());
+  const yieldIndex=preemption.events.findIndex(event=>event.afterPreempt&&/requeued|restart/.test(event.stage));
+  if(yieldIndex<0||!preemption.released)throw Error("Preempted development did not yield its GPU lease "+diagnosis());
+  const yieldedPath=preemption.events[yieldIndex].path;
+  if(!preemption.events.slice(yieldIndex+1).some(event=>event.stage==='picture_development_admitted'&&event.path===yieldedPath))
+   throw Error("Preempted development was not admitted again on the GPU "+diagnosis());
+  const yielded=true;return {location,rows,yielded};
  },photos);
  console.log("RGB source preemption yielded and resumed without CPU fallback.");
  const timing=await page.locator('#library-frame').evaluate(async(element,cases)=>{
