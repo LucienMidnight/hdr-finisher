@@ -10,15 +10,27 @@ from hdr_finisher.models import AdjustmentState,PreviewKind,LocalAdjustment,Deno
 from hdr_finisher.exporters import _denoised_export_source
 from types import SimpleNamespace
 
+def meta_assumed(row): return row["meta"].get("assumed_interpretation")
 data=json.loads(Path(sys.argv[1]).read_text());root=Path(data["location"]);results=[]
 for row in data["rows"]:
     from hdr_finisher.sessions import SessionStore
     from hdr_finisher.library_pictures import reduce_picture
     from hdr_finisher.models import SourceInterpretationOverride
+    from hdr_finisher.library_rgb import assumed_interpretation
     photo=Path(row["photo"]);sidecar=photo.with_name(photo.name+".hdrf")
     document=json.loads(sidecar.read_text())["grade"] if sidecar.exists() else {}
+    # Untagged or ProPhoto colour gets the Library's starting assumption
+    # (Steve, November 2, 2026): integer samples sRGB, float samples linear
+    # Rec.709. Grade asks instead. Compare with Grade given that same choice,
+    # as the Library's own CPU route does (library_live.py).
+    interpretation=dict(document.get("interpretation_override",{}))
+    assumed=assumed_interpretation(photo,interpretation)
+    if assumed:
+        assert meta_assumed(row)==assumed["label"],dict(photo=str(photo),library=meta_assumed(row),expected=assumed["label"])
+        interpretation.update(color_space=assumed["color_space"],
+            transfer_function=interpretation.get("transfer_function") or assumed["transfer_function"])
     session=SessionStore().prepare_session(photo, owns_source_path=False,
-        interpretation_override=SourceInterpretationOverride.model_validate(document.get("interpretation_override",{})),
+        interpretation_override=SourceInterpretationOverride.model_validate(interpretation),
         hdr_reference_white_nits=document.get("hdr_reference_white_nits",203))
     meta=row["meta"]
     image=reduce_picture(session.image,meta["edge"])
@@ -49,7 +61,7 @@ for row in data["rows"]:
         # Lanczos reader, then reduces to the tier (library_rgb.py). Follow that route.
         if photo.suffix.lower() in {".tif",".tiff"} and product["edge"]<=2560 and reduced:
             sampled=sampled or SessionStore().prepare_session(photo, owns_source_path=False,
-                interpretation_override=SourceInterpretationOverride.model_validate(document.get("interpretation_override",{})),
+                interpretation_override=SourceInterpretationOverride.model_validate(interpretation),
                 hdr_reference_white_nits=document.get("hdr_reference_white_nits",203),library_edge=5120)
             source=sampled
         file=next(root.glob("library-*/"+product["source_key"]+".npz"))
