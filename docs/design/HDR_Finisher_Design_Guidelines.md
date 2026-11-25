@@ -560,3 +560,13 @@ plate-down and accent-strong; hovered/focused options use plate-up-hover and
 accent-strong. Focused options use an accent-strong outline rather than the
 system focus colour. The top-layer popup scrolls within the window. The closed
 control keeps its established plate and ink chevron.
+
+## November 25: module header hover and click target
+
+Control Panel module headers (and Raw development) take the
+`--module-header-hover` face on hover: a flat neutral one step above the
+rail (Modern Dark #202020, Default Light #e9e9e9, Studio Gray #424242).
+`--raised` is not used because collapsed rows already sit on it. Clicking
+anywhere on the header row opens or closes the module, except on the right-side
+preset, reset and bypass buttons. Unavailable modules get no hover and no
+pointer.

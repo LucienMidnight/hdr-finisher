@@ -99,6 +99,13 @@ function initializeControlPanel() {
     label.textContent = names[text.textContent.trim()] || text.textContent.trim();
     text.replaceWith(label);
   });
+  // A click anywhere on a module header row opens it, except on its own buttons and fields.
+  document.addEventListener("click", event => {
+    const header = event.target.closest?.(".control-group > .control-group-header");
+    if (!header || event.target.closest("button, input, select, textarea, label, a")) return;
+    const toggle = header.querySelector(":scope > .group-toggle");
+    if (toggle && !toggle.disabled) toggle.click();
+  });
 }
 
 // A newly opened photo starts with every Grade module and the RAW settings closed.

@@ -26,6 +26,10 @@
   -webkit-mask: none; mask: none; clip-path: polygon(0 0, 100% 50%, 0 100%);
 }
 .raw-development-group .disclosure-trigger { padding-left: 12px; }
+/* Module rows: a quiet neutral face on hover; the whole row (except its right-side buttons) opens the module. */
+.control-group:not(.module-unavailable) > .control-group-header { cursor: pointer; }
+:root .control-group:not(.module-unavailable) > .control-group-header:hover,
+:root .raw-development-group:not(.module-unavailable) > .disclosure-trigger:hover { background: var(--module-header-hover); }
 .grade-folder-tabs { display: grid; gap: 6px; position: sticky; top: 92px; z-index: 3; background: var(--panel); padding: 10px 12px; border-bottom: 1px solid var(--hairline); }
 .grade-folder-tabs .control-shared-label { padding: 0; }
 .lane-folder-shell, .local-lane-folder { margin: 0 0 12px; padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; }

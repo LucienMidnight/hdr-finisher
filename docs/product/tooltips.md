@@ -1139,9 +1139,9 @@ Clipped lane, scope, preview and filename labels use their visible text; dynamic
 | Control / visible name | Text | Flags | ID and source |
 | --- | --- | --- | --- |
 | actions aria-label | Mask actions | name only (fallback candidate) | codebase/frontend/control-panel.js:40 · [source](../../codebase/frontend/control-panel.js#L40) |
-| note.title | hint | dynamic expression | codebase/frontend/control-panel.js:130 · [source](../../codebase/frontend/control-panel.js#L130) |
+| note.title | hint | dynamic expression | codebase/frontend/control-panel.js:137 · [source](../../codebase/frontend/control-panel.js#L137) |
 | Foldout title | Default | fixed | codebase/frontend/control-panel.js:56 · [source](../../codebase/frontend/control-panel.js#L56) |
-| Foldout title | hint | dynamic expression | codebase/frontend/control-panel.js:120 · [source](../../codebase/frontend/control-panel.js#L120) |
+| Foldout title | hint | dynamic expression | codebase/frontend/control-panel.js:127 · [source](../../codebase/frontend/control-panel.js#L127) |
 
 ### group presets
 
