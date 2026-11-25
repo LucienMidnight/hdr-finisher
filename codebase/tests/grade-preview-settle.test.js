@@ -159,7 +159,7 @@ function grade({ tiled = true, cpu = false, faster = false, blockDrag = false, c
   vm.runInContext(declarations("initializePreviewScheduler", "interactiveDraftGuaranteedTiled", "previewSourceCapacityRefused",
     "settlePreview", "settlePreviewInner", "settlePreviewFrame", "holdingNativeDenoisePictureForFit", "refreshScopes", "cancelGpuScopeRequests",
     "gpuScopeEligible", "refreshScopesAfterPresentation",
-    "scopePresentationIdentity", "scopePresentationMatches",
+    "scopePresentationIdentity", "scopePresentationMatches", "scopeWaitingForWholePicture", "wholeScopePresentation",
     "gradeSourceIdentity", "microGrainPreviewKey",
     "clearZoomScopeRefresh", "debouncePreview", "scheduleZoomRefinement", "scheduleZoomScopeRefresh", "refineZoomView",
     "scheduleLocalPreview", "commitSelectedLocal"), c);

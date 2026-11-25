@@ -76,7 +76,8 @@ function fixture() {
     "scheduleZoomRefinement", "refineZoomView", "holdingNativeDenoisePictureForFit", "scheduleZoomScopeRefresh",
     "clearZoomScopeRefresh", "refreshScopes", "refreshScopesAfterPresentation", "suspendGradeInstruments",
     "cancelGpuScopeRequests", "rescheduleGpuScopeAfterPan",
-    "scopePresentationIdentity", "scopePresentationMatches", "showUnavailableMicroScope", "microGrainPreviewKey",
+    "scopePresentationIdentity", "scopePresentationMatches", "wholeScopePresentation", "scopeWaitingForWholePicture",
+    "auxiliaryGpuCancelled", "auxiliaryGpuRefusalCancelled", "showUnavailableMicroScope", "microGrainPreviewKey",
     "debouncePreview", "runQueuedGpuScopeRequest",
     "installPreviewWatchdog", "restoreScopeFreshnessIfIdle", "scopeFreshnessLabel", "markScopeUpdating",
     "enqueueScopeRequest", "runScopeRequest", "renderPreviewForLane",
@@ -345,7 +346,8 @@ for (const [name, change] of [
 }
 
 for (const [name, zoomMode, zoomPercent, expected] of [
-  ["Fit", "fit", 30, 1], ["60%", "custom", 60, 1], ["100%", "custom", 100, 0],
+  ["Fit", "fit", 30, 1], ["60%", "custom", 60, 1], ["100% viewport", "custom", 100, 0],
+  ["100% whole picture", "custom", 100, 1],
 ]) test(`${name} retries an unavailable Micro scope only at a whole-picture scale`, async () => {
   const { c, state, scopes, tick, viewer } = fixture();
   c.gpuPreviewEligible = c.gpuScopeEligible = () => false;
@@ -354,11 +356,12 @@ for (const [name, zoomMode, zoomPercent, expected] of [
   c.syncGlobalEditState = async () => true;
   c.renderPreviewForLaneInner = async () => {
     state.acceptedPresentation = { ...c.scopePresentationIdentity("sdr"), exact: false,
-      transport: "Raw RGBA8", processedLongEdge: viewer.target - 200, reducedNotice: "Reduced" };
+      transport: "Raw RGBA8", processedLongEdge: viewer.target - 200, reducedNotice: "Reduced",
+      execution: expected ? null : "cpu-viewport" };
     return true;
   };
   c.enqueueScopeRequest = request => { scopes.push(request); request.resolve(true); };
-  state.scopeUnavailable = c.scopePresentationIdentity("sdr");
+  state.scopeUnavailable = { ...c.scopePresentationIdentity("sdr"), accepted: state.acceptedPresentation };
   Object.assign(state, { zoomMode, zoomPercent });
   c.scheduleZoomRefinement();
   await tick(200);
@@ -859,4 +862,82 @@ test("watchdog waits for the current lane's Denoise preparation", () => {
   state.denoiseRuntime = { hdr: { analysisInFlight: Promise.resolve() }, sdr: {} };
   c.watchdogTick();
   assert.equal(edits.length, 1);
+});
+
+test("a refused zoom refreshes settled scopes for the retained current lower picture without an earlier request", async () => {
+  const { c, state, viewer, scopes, tick } = fixture();
+  state.acceptedPresentation.processedLongEdge = 1200;
+  c.renderGpuDraft = async () => false;
+  assert.equal(state.scopeAwaitingPresentation, undefined);
+  c.scheduleZoomRefinement();
+  await tick(400);
+  assert.equal(viewer.target, 1600);
+  assert.equal(state.acceptedPresentation.processedLongEdge, 1200);
+  assert.deepEqual(scopes.map(({ at, longEdge }) => [at, longEdge]), [[200, 960]]);
+  assert.equal(state.zoomScopeTimer, 0);
+});
+
+for (const failure of ["null readback", "failed readback", "failed proxy", "aborted", "superseded"]) {
+  test(`settled scope handles a GPU ${failure} without analysing a native-size CPU frame`, async () => {
+    const f = fixture();
+    const { c, state, scopes, errors } = f;
+    useRealGpuScopes(f);
+    let cpuCalls = 0;
+    c.enqueueScopeRequest = request => {
+      cpuCalls++;
+      assert.equal(request.longEdge, 960);
+      assert.equal(request.tier, "settled");
+      c.presentScopePayload({}, { mode: request.mode, source: "cpu" });
+      request.resolve(true);
+    };
+    if (failure === "failed proxy") {
+      state.session.source = { width: 7000, height: 4000 };
+      state.acceptedPresentation.execution = "tiled";
+      Object.assign(c, { sampleCurvePoints() {}, localAdjustments: () => [], projectReferenceWhiteNits: () => 203 });
+      state.gpuPreview.renderScopeProxy = async () => { throw Error("allocation failed"); };
+    } else {
+      state.gpuPreview.analyzeScope = async () => {
+        if (failure === "aborted") throw Object.assign(Error("cancelled"), { name: "AbortError" });
+        if (failure === "superseded") state.previewGeneration.sdr++;
+        if (failure === "failed readback") throw Error("readback failed");
+        return null;
+      };
+    }
+    const cancelled = ["aborted", "superseded"].includes(failure);
+    assert.equal(await c.refreshScopes(), !cancelled);
+    assert.equal(cpuCalls, cancelled ? 0 : 1);
+    assert.deepEqual(scopes, cancelled ? [] : [{ mode: "histogram", source: "cpu" }]);
+    assert.deepEqual(errors, []);
+  });
+}
+
+test("an unavailable Micro histogram wakes for a matching whole source but not a second zoom tile", async () => {
+  const { c, state, scopes } = fixture();
+  c.gpuScopeEligible = () => false;
+  state.acceptedPresentation.execution = "cpu-viewport";
+  state.scopeUnavailable = { ...c.scopePresentationIdentity("sdr"), accepted: state.acceptedPresentation };
+  c.enqueueScopeRequest = request => { scopes.push(request); request.resolve(true); };
+  state.acceptedPresentation = { ...state.acceptedPresentation };
+  c.refreshScopesAfterPresentation("sdr");
+  assert.equal(scopes.length, 0);
+  state.acceptedPresentation = { ...state.acceptedPresentation, execution: null };
+  c.refreshScopesAfterPresentation("sdr");
+  assert.equal(scopes.length, 1);
+});
+
+test("failed auxiliary scope fallback is rescheduled once and then stops", async () => {
+  const f = fixture();
+  const { c, state, tick } = f;
+  useRealGpuScopes(f);
+  let gpuCalls = 0;
+  let cpuCalls = 0;
+  state.gpuPreview.analyzeScope = async () => { gpuCalls++; return null; };
+  c.enqueueScopeRequest = request => { cpuCalls++; request.resolve(false); };
+  assert.equal(await c.refreshScopes(), false);
+  assert.equal(cpuCalls, 1);
+  await tick(600);
+  await new Promise(setImmediate);
+  assert.equal(gpuCalls, 2);
+  assert.equal(cpuCalls, 2);
+  assert.equal(state.zoomScopeTimer, undefined);
 });

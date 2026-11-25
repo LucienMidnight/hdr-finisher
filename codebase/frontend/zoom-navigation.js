@@ -40,7 +40,7 @@ function holdingNativeDenoisePictureForFit() {
     && els.chromeProofImage?.style.display === "none";
 }
 
-const navigationThumbnail = { timer: 0, controller: null, key: "", url: "", inflightKey: "" };
+const navigationThumbnail = { timer: 0, controller: null, key: "", url: "", inflightKey: "", waitingForMicro: null };
 
 function clearNavigationThumbnail() {
   window.clearTimeout(navigationThumbnail.timer);
@@ -48,6 +48,7 @@ function clearNavigationThumbnail() {
   navigationThumbnail.controller?.abort();
   navigationThumbnail.controller = null;
   navigationThumbnail.key = "";
+  navigationThumbnail.waitingForMicro = null;
   if (navigationThumbnail.url) URL.revokeObjectURL(navigationThumbnail.url);
   navigationThumbnail.url = "";
   els.navigationThumbImage.removeAttribute("src");
@@ -132,78 +133,121 @@ function updateNavigationViewport() {
 function scheduleNavigationThumbnail() {
   updateNavigationViewport();
   window.clearTimeout(navigationThumbnail.timer);
+  navigationThumbnail.timer = 0;
   if (!navigationWindowWanted()) return;
   navigationThumbnail.timer = window.setTimeout(() => { void refreshNavigationThumbnail(); }, 300);
 }
 
-function navigationThumbnailWorkReady() {
+function navigationThumbnailWorkPending() {
   const lane = state.currentView;
-  const accepted = state.acceptedPresentation;
-  return !state.importInProgress && !state.zoomRefinementTimer && !state.zoomScopeTimer
-    && !state.gpuDraftInFlight && !state.previewScheduler?.interacting
-    && !state.gpuScopeRequestInFlight && !state.scopeRequestInFlight
-    && !(state.gpuPreview?.activeRenderCount > 0)
-    && !(state.gpuPreview?.activeScopeCount > 0)
-    && accepted?.lane === lane && accepted.exact
-    && accepted.generation === state.previewGeneration[lane]
-    && accepted.geometrySignature === geometrySignature()
-    && accepted.processedLongEdge >= requiredProcessingLongEdge();
+  const work = state.renderCoordinator?.state(lane);
+  return Boolean(state.importInProgress || state.zoomRefinementTimer || state.zoomRefinementInFlight
+    || state.zoomScopeTimer || state.gpuDraftInFlight || state.previewScheduler?.interacting
+    || state.cpuPreviewInflight?.has(lane) || work?.inFlight || work?.pending || work?.panTimerPending
+    || state.gpuScopeRequestInFlight || state.scopeRequestInFlight
+    || state.gpuPreview?.activeRenderCount > 0 || state.gpuPreview?.activeScopeCount > 0);
 }
 
-async function refreshNavigationThumbnail() {
+function navigationThumbnailWorkReady() {
+  const accepted = state.acceptedPresentation;
+  return !navigationThumbnailWorkPending()
+    && scopePresentationMatches(accepted, state.currentView) && accepted.processedLongEdge > 0;
+}
+
+async function refreshNavigationThumbnail(retry = true) {
+  navigationThumbnail.timer = 0;
   if (!navigationWindowWanted()) return;
-  // Overview work starts only after the requested picture and scopes settle.
-  // The GPU route grades a separate 512-edge canvas; CPU mode keeps its small
-  // fallback here, outside foreground refinement.
-  if (!navigationThumbnailWorkReady()) {
-    navigationThumbnail.timer = window.setTimeout(() => { void refreshNavigationThumbnail(); }, 300);
+  if (navigationThumbnailWorkPending()) {
+    navigationThumbnail.timer = window.setTimeout(() => { void refreshNavigationThumbnail(retry); }, 300);
     return;
   }
+  // The overview grades its own whole-picture proxy. Once active work settles,
+  // it can follow the current picture even if the requested zoom was refused.
+  // No current picture means wait for a presentation, not another poll.
+  if (!navigationThumbnailWorkReady()) return;
   const sessionId = state.session.session_id;
   const lane = state.currentView;
   if (await syncGlobalEditState() === false || state.session?.session_id !== sessionId) return;
   if (!navigationThumbnailWorkReady()) {
-    navigationThumbnail.timer = window.setTimeout(() => { void refreshNavigationThumbnail(); }, 300);
+    if (navigationThumbnailWorkPending() && !navigationThumbnail.timer) {
+      navigationThumbnail.timer = window.setTimeout(() => { void refreshNavigationThumbnail(retry); }, 300);
+    }
     return;
   }
   const request = window.HDRWholeImagePreviewPipe.request("navigation", state.session.source.width,
     { sessionId, lane, editRevision: state.editRevision, generation: state.previewGeneration[lane],
       geometrySignature: geometrySignature(), includeLocals: !localsBypassed() });
-  const key = JSON.stringify(request);
+  const presentation = scopePresentationIdentity(lane);
+  const accepted = state.acceptedPresentation;
+  const key = JSON.stringify([request, presentation]);
+  const waiting = navigationThumbnail.waitingForMicro;
+  if (waiting?.key === key && (waiting.accepted === accepted || !wholeScopePresentation(accepted))) return;
   if (navigationThumbnail.key === key && navigationThumbnail.url) return;
   if (navigationThumbnail.inflightKey === key && navigationThumbnail.controller) return;
   navigationThumbnail.controller?.abort();
   const controller = new AbortController();
   navigationThumbnail.controller = controller;
   navigationThumbnail.inflightKey = key;
-  const isCurrent = () => controller === navigationThumbnail.controller
+  const isCurrent = () => !controller.signal.aborted && controller === navigationThumbnail.controller
+    && scopePresentationMatches(presentation, lane) && scopePresentationMatches(state.acceptedPresentation, lane)
     && state.session?.session_id === sessionId && state.currentView === lane
     && state.editRevision === request.editRevision && !state.globalEditDirty
     && state.previewGeneration[lane] === request.generation
     && geometrySignature() === request.geometrySignature
     && navigationWindowWanted()
     && request.includeLocals === !localsBypassed()
-    && !state.previewScheduler?.interacting && !state.gpuDraftInFlight;
+    && !state.previewScheduler?.interacting && !state.gpuDraftInFlight
+    && !state.zoomRefinementTimer && !state.zoomRefinementInFlight;
+  const reschedule = () => {
+    if (retry && isCurrent() && !navigationThumbnail.timer) {
+      navigationThumbnail.timer = window.setTimeout(() => { void refreshNavigationThumbnail(false); }, 300);
+    }
+  };
   try {
     let blob;
     if (gpuPreviewEligible(lane) && state.activeWorkflow !== "proof") {
-      blob = await state.gpuPreview.renderNavigationProxy(sessionId, lane, state.adjustments, sampleCurvePoints,
-        request.includeLocals ? localAdjustments() : [], request.editRevision, projectReferenceWhiteNits(),
-        { width: state.session.source.width, height: state.session.source.height },
-        { applicationGeneration: request.generation, isCurrent });
-    } else {
+      const renderer = state.gpuPreview;
+      const previousRefusal = renderer.lastRenderRefusal;
+      try {
+        blob = await renderer.renderNavigationProxy(sessionId, lane, state.adjustments, sampleCurvePoints,
+          request.includeLocals ? localAdjustments() : [], request.editRevision, projectReferenceWhiteNits(),
+          { width: state.session.source.width, height: state.session.source.height },
+          { applicationGeneration: request.generation, isCurrent, signal: controller.signal });
+      } catch (error) {
+        if (auxiliaryGpuCancelled(error)) { reschedule(); return; }
+      }
+      if (!blob && auxiliaryGpuRefusalCancelled(renderer, previousRefusal)) {
+        reschedule();
+        return;
+      }
+    }
+    if (!isCurrent()) return;
+    if (!blob) {
       const response = await fetch(`/api/session/${sessionId}/preview/${lane}?purpose=navigation`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ edit_revision: request.editRevision, include_locals: !localsBypassed(),
+        body: JSON.stringify({ edit_revision: request.editRevision, include_locals: request.includeLocals,
           cpu_fallback_reason: `navigation-thumbnail: ${cpuPreviewReason(lane)}`.slice(0, 1024),
           long_edge: request.longEdge, execution: "whole", hdr_display: false, ...microGrainPreviewRequest(lane) }),
         signal: controller.signal,
       });
-      if (!response.ok) return;
+      if (!response.ok) {
+        const conflict = response.status === 409 ? await safeJson(response) : null;
+        if (!isCurrent()) return;
+        if (conflict?.detail?.code === "micro_navigation_source_unavailable") {
+          navigationThumbnail.waitingForMicro = { key, accepted };
+          if (state.acceptedPresentation !== accepted && wholeScopePresentation(state.acceptedPresentation)) {
+            reschedule();
+          }
+        } else {
+          reschedule();
+        }
+        return;
+      }
       blob = await response.blob();
     }
     if (!blob || !isCurrent()) return;
+    navigationThumbnail.waitingForMicro = null;
     const url = URL.createObjectURL(blob);
     const previous = navigationThumbnail.url;
     navigationThumbnail.url = url;
@@ -214,7 +258,10 @@ async function refreshNavigationThumbnail() {
     els.navigationThumbImage.src = url;
     if (previous) URL.revokeObjectURL(previous);
   } catch (error) {
-    if (error.name !== "AbortError") console.warn("Navigation thumbnail unavailable", error);
+    if (!auxiliaryGpuCancelled(error) && isCurrent()) {
+      console.warn("Navigation thumbnail unavailable", error);
+      reschedule();
+    }
   } finally {
     if (navigationThumbnail.controller === controller) {
       navigationThumbnail.controller = null;
@@ -256,13 +303,13 @@ function scheduleZoomScopeRefresh({ sessionId, lane, generation, signature, targ
       return;
     }
     const accepted = state.acceptedPresentation;
-    const exact = scopePresentationMatches(accepted, lane)
-      && accepted.exact && accepted.processedLongEdge === target;
-    const reducedWholePicture = state.zoomMode === "custom" && state.zoomPercent < 100
-      && accepted?.reducedNotice && scopePresentationMatches(accepted, lane) && cpuMicroPreviewSelected(lane);
-    const recoveringScope = (state.zoomMode === "fit" || reducedWholePicture)
-      && scopePresentationMatches(state.scopeUnavailable, lane);
-    if (!exact && !scopeOwed && !recoveringScope) {
+    const currentPicture = scopePresentationMatches(accepted, lane);
+    const exact = currentPicture && accepted.exact && accepted.processedLongEdge === target;
+    const lowerPicture = currentPicture && accepted.processedLongEdge > 0
+      && accepted.processedLongEdge < target;
+    const recoveringScope = currentPicture && scopeWaitingForWholePicture(lane);
+    if ((scopePresentationMatches(state.scopeUnavailable, lane) && !recoveringScope)
+      || (!exact && !lowerPicture && !scopeOwed && !recoveringScope)) {
       clearZoomScopeRefresh();
       return;
     }
