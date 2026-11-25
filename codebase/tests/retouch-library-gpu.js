@@ -20,14 +20,19 @@ const breakdown=process.argv.includes('--breakdown'),plain=process.argv.includes
    // are transferred, and the backend's answer for each live-scene upload.
    const upload=w.HDRLibraryUpload,isScene=url=>new URL(url,w.location.href).pathname==='/api/library/live-developed';
    const sizeOf=body=>body instanceof w.ArrayBuffer||w.ArrayBuffer.isView(body)?body.byteLength:0;
-   w.__retouchUpload={count:0,bytes:0,accepted:0,restore:()=>{w.HDRLibraryUpload=upload;delete w.__retouchUpload;}};
+   // The framed header is read before the body is transferred, so a refusal
+   // names its photo, size and the backend's reason.
+   const headerOf=body=>{try{const u=body instanceof w.ArrayBuffer?new Uint8Array(body):new Uint8Array(body.buffer,body.byteOffset,body.byteLength);
+    return JSON.parse(new TextDecoder().decode(u.subarray(4,4+new DataView(u.buffer,u.byteOffset).getUint32(0,true))));}catch{return null;}};
+   w.__retouchUpload={count:0,bytes:0,accepted:0,rejected:[],restore:()=>{w.HDRLibraryUpload=upload;delete w.__retouchUpload;}};
    w.HDRLibraryUpload=Object.freeze({...upload,
     send:async(url,options={})=>{
      if(!isScene(url))return upload.send(url,options);
-     const bytes=sizeOf(options.body),answer=await upload.send(url,options);
+     const bytes=sizeOf(options.body),head=headerOf(options.body),answer=await upload.send(url,options);
      w.__retouchUpload.count++;w.__retouchUpload.bytes+=bytes;
      let parsed=null;try{parsed=JSON.parse(answer.text||'null');}catch{}
      if(answer.ok&&parsed&&typeof parsed==='object')w.__retouchUpload.accepted++;
+     else w.__retouchUpload.rejected.push({path:head?.item_path??head?.path,edge:head?.edge,describe:!!head?.describe_only,status:answer.status,detail:parsed?.detail??String(answer.text||'').slice(0,200)});
      return answer;
     }});
    // Profile this source alone: browsing also starts unrelated grid work.
@@ -48,6 +53,13 @@ const breakdown=process.argv.includes('--breakdown'),plain=process.argv.includes
   assert.equal(result.cold.renderer,'gpu');
   if(breakdown){const output=path.resolve('output/retouch-library');fs.mkdirSync(output,{recursive:true});fs.writeFileSync(path.join(output,'breakdown-'+(plain?'plain':'repaired')+'.json'),JSON.stringify(result,null,2));console.log(JSON.stringify({plain,coldMs:result.coldMs,sourceMs:result.sourceMs,drawAndPresentMs:result.drawAndPresentMs}));return;}
   assert.equal(result.warm.key,result.cold.key);
+  // Every scene upload answered before this driver edits the sidecar and
+  // clears the cache must be accepted. After that point the backend must
+  // refuse stale work still in flight from browsing (source jobs invalidated
+  // by cache-clear, or a repair recipe that no longer matches), so only that
+  // refusal is allowed there.
+  const settled=await page.locator('#library-frame').evaluate(el=>{const u=el.contentWindow.__retouchUpload;return {count:u.count,bytes:u.bytes,accepted:u.accepted,rejected:[...u.rejected]};});
+  assert.equal(settled.accepted,settled.count,'Backend did not accept every scene upload: '+JSON.stringify(settled));
   // Compare source development with the same disposable photo and saved grade,
   // omitting repairs only for the baseline. Never touch the owner sidecar.
   const saved=fs.readFileSync(copy+'.hdrf');
@@ -60,9 +72,10 @@ const breakdown=process.argv.includes('--breakdown'),plain=process.argv.includes
     return {ms:performance.now()-started,meta:plain};
    },copy);
   }finally{fs.writeFileSync(copy+'.hdrf',saved);}
-  const uploads=await page.locator('#library-frame').evaluate(el=>{const u=el.contentWindow.__retouchUpload;return {count:u.count,bytes:u.bytes,accepted:u.accepted};});
+  const uploads=await page.locator('#library-frame').evaluate(el=>{const u=el.contentWindow.__retouchUpload;return {count:u.count,bytes:u.bytes,accepted:u.accepted,rejected:u.rejected};});
   assert.ok(uploads.count>0 && uploads.bytes>0,'Full scene upload did not go through the Library upload worker: '+JSON.stringify(uploads));
-  assert.equal(uploads.accepted,uploads.count,'Backend did not accept every scene upload: '+JSON.stringify(uploads));
+  const stale=uploads.rejected.slice(settled.rejected.length);
+  assert.ok(stale.every(r=>r.status===409 && /expired or was invalidated|changed/i.test(r.detail)),'Backend refused a scene upload for a reason other than stale work: '+JSON.stringify(uploads));
   console.log(JSON.stringify({uploads,coldMs:result.coldMs,warmMs:result.warmMs,withoutRepairsMs:result.withoutRepairs.ms}));
   const output=path.resolve('output/retouch-library');fs.mkdirSync(output,{recursive:true});
   fs.writeFileSync(path.join(output,'result.json'),JSON.stringify(result,null,2));

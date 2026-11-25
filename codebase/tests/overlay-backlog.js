@@ -22,22 +22,46 @@ const c = require('./performance/heavy-project-review-common');
     await page.waitForFunction(() => state.overlayPresented && els.previewOverlay.naturalWidth > 0);
     console.log("Overlay presented");
     assert.equal(await page.locator('#preview-overlay').isVisible(), true);
+    // Let the app's own preview and live-overlay work finish first, so none
+    // of it is already on its way to the overlay lane when the burst starts.
+    await page.evaluate(() => { state.previewScheduler.cancel(); clearTimeout(state.refreshTimer); });
+    await page.waitForFunction(() => !state.gpuDraftInFlight && !state.liveOverlay?.running);
     // Different edges prevent the requests from sharing one cached frame flight.
-    const burst = await page.evaluate(async () => {
+    // The backend keeps the newest request to ARRIVE, not the newest sent: the
+    // browser opens about 6 connections per host, so the last few requests
+    // race each other to the server. Any overlay the app itself sends during
+    // the burst is counted, because it is newer and may rightly win instead.
+    const { statuses: burst, appOverlays } = await page.evaluate(async () => {
       state.previewScheduler.cancel(); clearTimeout(state.refreshTimer);
-      const adjustments = structuredClone(state.adjustments);
-      const requests = [];
-      for (let i=0; i<40; i++) {
-        const grade = structuredClone(adjustments);
-        requests.push(fetch(`/api/session/${state.session.session_id}/overlay/hdr`, {
-          method:'POST', headers:{'Content-Type':'application/json'},
-          body:JSON.stringify({adjustments:grade, long_edge:960+i})
-        }).then(async r => { await r.arrayBuffer(); return r.status; }));
-      }
-      return Promise.all(requests);
+      const send = window.fetch;
+      let appOverlays = 0;
+      window.fetch = (url, init) => { if (String(url).includes('/overlay/')) appOverlays++; return send(url, init); };
+      try {
+        const adjustments = structuredClone(state.adjustments);
+        const requests = [];
+        for (let i=0; i<40; i++) {
+          const grade = structuredClone(adjustments);
+          requests.push(send(`/api/session/${state.session.session_id}/overlay/hdr`, {
+            method:'POST', headers:{'Content-Type':'application/json'},
+            body:JSON.stringify({adjustments:grade, long_edge:960+i})
+          }).then(async r => { await r.arrayBuffer(); return r.status; }));
+        }
+        return { statuses: await Promise.all(requests), appOverlays };
+      } finally { window.fetch = send; }
     });
+    console.log(JSON.stringify({ burstStatuses: burst, appOverlays }));
+    assert(burst.every(s => s === 200 || s === 409), `Unexpected overlay statuses: ${burst}`);
     assert(burst.includes(409), 'Superseded overlay requests were not dropped');
-    assert.equal(burst.at(-1), 200);
+    if (appOverlays === 0) {
+      // Nothing newer than the burst reached the lane, so the newest arrival
+      // must have been rendered, and it can only be one of the final requests
+      // still in flight together.
+      assert(burst.lastIndexOf(200) >= burst.length - 6, `Newest overlay request was dropped: ${burst}`);
+    }
+    // What the user sees: after a burst, the overlay is current again.
+    await page.evaluate(async () => { await syncGlobalEditState(); await refreshOverlay(960); });
+    await page.waitForFunction(() => state.overlayPresented?.revision === state.editRevision
+      && state.overlayPresented?.longEdge === 960 && els.previewOverlay.naturalWidth > 0);
     await page.evaluate(() => activateWorkflowTab('import'));
     await page.frameLocator('#library-frame').locator('#popout-library').click();
     await page.evaluate(() => activateWorkflowTab('grade'));

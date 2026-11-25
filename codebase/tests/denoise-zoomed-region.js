@@ -47,16 +47,92 @@ function assert(condition, message) {
   const pageErrors = [];
   page.on("pageerror", (error) => pageErrors.push(error.message));
 
+  // Report only. The waits below use the release runner's own 900 s attempt
+  // deadline, so a wait that never ends is killed before it can say anything.
+  // Every minute, print the step and each settle condition; a page that does
+  // not answer at all is reported as such.
+  let phase = "open";
+  const startedAt = Date.now();
+  let reportPending = null;
+  const report = () => page.evaluate(() => {
+    const lane = state.currentView;
+    const coordinator = state.renderCoordinator?.state(lane);
+    const accepted = state.acceptedPresentation;
+    const scheduler = state.previewScheduler;
+    const runtime = state.denoiseRuntime?.[lane];
+    return {
+      viewer: viewerState(),
+      gpuAvailable: state.gpuPreview?.available,
+      gpuDraftInFlight: Boolean(state.gpuDraftInFlight),
+      gpuDraftInFlightTier: state.gpuDraftInFlightTier,
+      zoomRefinementTimer: Boolean(state.zoomRefinementTimer),
+      zoom: { mode: state.zoomMode, percent: state.zoomPercent },
+      required: requiredProcessingLongEdge(),
+      previewGeneration: state.previewGeneration?.[lane],
+      accepted: accepted && {
+        lane: accepted.lane, generation: accepted.generation, exact: accepted.exact,
+        processedLongEdge: accepted.processedLongEdge, execution: accepted.execution, coarse: accepted.coarse,
+      },
+      coordinator: coordinator && {
+        inFlight: coordinator.inFlight, pending: coordinator.pending,
+        panTimerPending: coordinator.panTimerPending, catchUpTimerPending: coordinator.catchUpTimerPending,
+        lastRefusal: coordinator.lastRefusal, generations: coordinator.generations,
+      },
+      coordinatorCounts: state.renderCoordinator && {
+        submits: state.renderCoordinator.metrics.submits,
+        dispatched: state.renderCoordinator.metrics.dispatched,
+        cancelled: state.renderCoordinator.metrics.cancelled,
+      },
+      denoise: runtime && {
+        status: runtime.status, error: runtime.error, dirty: runtime.dirty,
+        analysisInFlight: Boolean(runtime.analysisInFlight),
+      },
+      scheduler: scheduler && {
+        frame: scheduler.frame !== null, frameInFlight: scheduler.frameInFlight,
+        framePending: scheduler.framePending, interacting: scheduler.interacting, current: Boolean(scheduler.current),
+      },
+      watchdog: window.HDRFinisherPerformance?.previewWatchdog?.(),
+      lastGpuDraftRefusal: state.lastGpuDraftRefusal,
+      gpuDraftRefusals: state.gpuDraftRefusals,
+      gpuFailures: state.gpuFailurePolicy?.snapshot?.().records?.slice(-5),
+      highlightFailures: state.gpuPreview?.highlightMeasurementFailures?.slice(-3),
+      visibility: document.visibilityState,
+    };
+  });
+  const heartbeat = setInterval(() => {
+    const seconds = Math.round((Date.now() - startedAt) / 1000);
+    if (reportPending) {
+      console.log(`[diagnostic +${seconds}s] ${phase}: the page has not answered since +${reportPending}s (renderer busy or frozen).`);
+      return;
+    }
+    reportPending = seconds;
+    report().then(
+      (value) => console.log(`[diagnostic +${seconds}s] ${phase}: ${JSON.stringify(value)}`),
+      (error) => console.log(`[diagnostic +${seconds}s] ${phase}: report failed: ${error.message}`),
+    ).finally(() => { reportPending = null; });
+  }, 60000);
+  // A viewer that reports Unavailable stays so until new input. Fail with its
+  // reason instead of waiting the whole deadline out for Ready.
+  const assertNotUnavailable = async () => {
+    const viewer = await page.evaluate(() => viewerState());
+    assert(viewer.status !== "unavailable", `${phase}: the viewer is Unavailable: ${JSON.stringify(viewer)}`);
+  };
+
   try {
     await page.goto(url, { waitUntil: "networkidle" });
     await page.setInputFiles("#file-input", source);
     await page.waitForFunction(() => state.session?.session_id, null, { timeout: 900000 });
     await page.waitForFunction(() => state.gpuPreview?.available === true, null, { timeout: 120000 });
-    await page.waitForFunction(() => viewerState().status === "ready", null, { timeout: 900000 });
+    phase = "first picture";
+    await page.waitForFunction(() => ["ready", "unavailable"].includes(viewerState().status), null, { timeout: 900000 });
+    await assertNotUnavailable();
 
     const settle = async () => {
+      const step = phase;
+      phase = `${step} / settle`;
       await page.waitForTimeout(100);
       await page.waitForFunction(() => {
+        if (viewerState().status === "unavailable") return true;
         const coordinator = state.renderCoordinator?.state(state.currentView);
         const accepted = state.acceptedPresentation;
         return viewerState().status === "ready" && !state.gpuDraftInFlight
@@ -64,8 +140,11 @@ function assert(condition, message) {
           && accepted?.processedLongEdge === requiredProcessingLongEdge()
           && ["ready", "error", "off"].includes(state.denoiseRuntime[state.currentView].status);
       }, null, { timeout: 900000 });
+      await assertNotUnavailable();
+      phase = `${step} / GPU queue`;
       await page.evaluate(async () => state.gpuPreview.waitForSubmittedWork());
       await page.waitForTimeout(700);
+      phase = step;
     };
     // A fixed patch of the viewer's picture, clear of the status rows at its
     // top and the navigator in its corner. A fixed size, because the viewer's
@@ -137,6 +216,7 @@ function assert(condition, message) {
     });
     // Denoise goes on at Fit, as it does in use, so the zoom is what has to
     // bring it to the screen at full size.
+    phase = "Denoise on at Fit";
     await toggle();
     assert(await page.evaluate(() => state.denoiseRuntime[state.currentView].status) === "ready",
       "Denoise did not become ready at Fit.");
@@ -146,10 +226,12 @@ function assert(condition, message) {
     await page.evaluate(() => { state.renderCoordinator.canCatchUp = () => false; });
 
     let mark = await stageCount();
+    phase = "zoom to 100%";
     await page.click("#zoom-actual");
     await settle();
     // The fixture is darkest, and noisiest to the eye, towards the top-left;
     // far enough in that the view has source on every side of it.
+    phase = "pan at 100%";
     await page.evaluate(() => {
       els.dropzone.scrollLeft = 300;
       els.dropzone.scrollTop = 200;
@@ -167,8 +249,10 @@ function assert(condition, message) {
 
     // The bypass, with the view left exactly where it is: what it shows must
     // be what a fresh draw with Denoise off shows.
+    phase = "Denoise bypassed at 100%";
     await toggle();
     const bypassedView = await capture();
+    phase = "fresh draw with Denoise off";
     await page.evaluate(() => {
       invalidatePreview(state.currentView, { markDirty: false });
       debouncePreview(state.currentView);
@@ -181,12 +265,14 @@ function assert(condition, message) {
     const effect = await difference(plain, denoised);
     assert(effect.fraction > MIN_DIFFERING_FRACTION,
       `Denoise changed ${(effect.fraction * 100).toFixed(2)}% of the zoomed view.`);
+    phase = "Denoise back on at 100%";
     await toggle();
     const restored = await difference(denoised, await capture());
     assert(restored.max === 0, `Turning Denoise back on did not restore the picture: max delta ${restored.max}.`);
     assert(!(await sources()).wholeFrame, "The whole frame was loaded before the reference pass asked for it.");
 
     // The reference: the same view with the whole frame's source loaded.
+    phase = "whole-frame reference";
     await page.evaluate(async () => {
       const lane = state.currentView;
       await state.gpuPreview.loadProxy(
@@ -205,11 +291,14 @@ function assert(condition, message) {
       `Denoise from a region differs from the whole frame: max delta ${parity.max}, ${(parity.fraction * 100).toFixed(3)}%.`);
 
     // A geometry change: back at 100%, Denoise is on screen from a region again.
+    phase = "zoom to Fit";
     await page.click("#zoom-fit");
     await settle();
+    phase = "straighten at Fit";
     await page.evaluate(() => commitAdjustmentValue("shared.geometry.straighten_angle", 2, { manual: true }));
     await settle();
     mark = await stageCount();
+    phase = "zoom to 100% after straighten";
     await page.click("#zoom-actual");
     await settle();
     now = await sources(mark);
@@ -223,6 +312,7 @@ function assert(condition, message) {
     console.log(`Denoise zoomed in: region only, ${(effect.fraction * 100).toFixed(1)}% of the view denoised, `
       + `bypass exact, region equals whole frame to ${parity.max} level(s), region again after a straighten.`);
   } finally {
+    clearInterval(heartbeat);
     await browser.close();
   }
 })().catch((error) => {
