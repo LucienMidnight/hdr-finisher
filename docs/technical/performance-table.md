@@ -7111,6 +7111,39 @@ cache-file index is proposed, requiring publication/eviction/recovery tests;
 not attempted as a same-day design change. Under-one-second screen completion
 on Steve's cache remains unqualified. No tolerance or budget changed.
 
+### November 25: Library Delete, two originals on the MacBook Neo
+
+| Backend action | Before | After |
+| --- | ---: | ---: |
+| Delete two originals without sidecars, preview + confirm | 140–148 ms | 114–121 ms |
+| Delete two originals with unchanged sidecars, preview + confirm | 151–153 ms | 123–138 ms |
+
+MacBook Neo, local APFS, seven warm trials per case with two disposable 32 MiB
+files in the same folder. Compared with `9ed134f2`. The system Trash call was
+substituted with a local no-replace move into a disposable folder. The native
+bookmark and content checks still ran. These times exclude the confirmation
+dialog, UI repaint and background membership upkeep. A 10% difference is
+treated as timing noise on this short test because filesystem flushes vary.
+The separate native Electron check passed actual Trash and Undo. Steve's
+large Library and click-to-screen time were not measured.
+
+| Phase median, ms | No sidecars before → after | Unchanged sidecars before → after |
+| --- | ---: | ---: |
+| Preview | 30.86 → 30.10 | 35.95 → 36.25 |
+| Confirm to backend result | 110.57 → 86.40 | 116.10 → 87.27 |
+| Uncontended command lane and writer wait | <0.01 → <0.01 | <0.01 → <0.01 |
+| Conflict scan / marks read | 0.15 / 2.54 → 0.04 / 1.96 | 0.16 / 8.05 → 0.05 / 7.55 |
+| SHA-256 across phases | 126.98 → 102.78 | 127.86 → 102.62 |
+| Prepare settings | 0.70 → 0.50 | 4.28 → 0.52 |
+| Durable command checkpoints | 4.03 → 3.90 | 6.92 → 5.17 |
+| Recovery bookmark / substitute Trash move | 0.92 / 0.20 → 0.89 / 0.19 | 1.57 / 0.37 → 1.53 / 0.36 |
+| Receipt verification | 24.94 → 25.24 | 25.20 → 25.27 |
+| Index updates / picture cleanup | 0.16 / 0.44 → 0.15 / 0.45 | 0.15 / 0.46 → 0.14 / 0.46 |
+
+Phase timings overlap. Receipt verification includes its SHA-256 and settings
+preparation includes its own checkpoints. The hashing reduction is one
+full read per original on a fresh command with stable file identities.
+
 Local evidence: codebase/output/w3-audit/timings-before.json,
 timings-after.json and measurement harness/logs in the same folder.
 

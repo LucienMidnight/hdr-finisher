@@ -1853,11 +1853,26 @@ failure is Needs attention; it never changes the already-confirmed route.
 The API contract is documented by [Microsoft](https://learn.microsoft.com/en-us/windows/win32/api/shobjidl_core/nf-shobjidl_core-itransfersource-recycleitem).
 
 Before deletion, complete pending settings are safely prepared beside the photo.
+The preview scans each selected folder once and shares each validated settings
+document with the marks lookup. When there are no pending changes, the checked
+settings file is recycled as-is. If settings need to change, the complete
+document is still written durably before removing the original.
 Photo removal is recorded before removing settings the same way. After restart,
 a leftover settings file follows a proved deletion. If the photo is restored,
 its leftover settings are retained. Restore both the photo and `.hdrf` entries
-from Windows' Bin to bring back marks, grades, albums and copies; the next folder
-check rebuilds the Library. Original Delete has no app Undo.
+from the system bin to bring back marks, grades, albums and copies. The next
+folder check rebuilds the Library. On macOS a completed Trash Delete also
+registers app Undo. Windows original Delete has no app Undo.
+
+A synchronous confirmation keeps the command lane and settings-writer fence
+through execution, so the retry worker cannot take a freshly recorded Delete.
+A fresh original on a volume with stable file IDs keeps its preview hash,
+full-selection confirmation hash, last pre-removal hash and receipt check.
+Recovery and volumes without stable IDs still hash again at run start.
+Automatic retries skip non-transient Needs attention items. Try again remains
+available in Activity. Health retains the last 32 result revisions so
+separate Library windows can apply changes in order without replaying a
+result already applied from the direct response.
 
 If a permanent removal happened but the PC stopped before its completion could
 be recorded, absence alone cannot distinguish deletion from an Explorer move.

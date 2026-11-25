@@ -2,13 +2,59 @@
 (() => {
  'use strict';
  const {make,ask}=HDRLibraryDialogs;
+ const phases={
+  waiting_lane:'Waiting for another file command…',
+  waiting_writer:'Waiting for settings to finish saving…',
+  checking_files:'Checking selected files…',
+  conflicts_and_marks:'Checking for conflicting settings and unsaved changes…',
+  check_trash:'Checking whether files can be recycled on this volume…',
+  verify_files:'Verifying selected files…',
+  prepare_settings:'Preparing photo settings…',
+  durable_checkpoints:'Recording recovery information…',
+  trash_reference:'Recording the recovery location…',
+  trash:'Moving files to the system bin…',
+  receipt_verify:'Verifying recycled files…',
+  permanent_delete:'Deleting files…',
+  retarget:'Updating the Library…',
+  pictures_cleanup:'Removing cached pictures…',
+ };
+ function createChangeFeed(apply) {
+  let fileRevision=0, pending=Promise.resolve();
+  function receive(result) {
+   if (!(result.revision > fileRevision)) return pending;
+   const changes=result.recent_changes.filter(entry=>entry.revision>fileRevision);
+   const missed=changes[0]?.revision!==fileRevision+1;
+   fileRevision=Math.max(fileRevision,result.revision);
+   // Claim revisions before asynchronous refreshes so health and the direct
+   // response cannot apply the same deletion twice.
+   const task=pending.then(()=>apply(changes,missed));
+   pending=task.catch(()=>{});
+   return task;
+  }
+  return Object.freeze({receive});
+ }
  function create(options) {
   async function command(body) {
-   options.status(body.token ? 'Finishing file command… Waiting for any current background work.' : 'Checking selected files… Waiting for any current background work.');
+   const request_id=crypto.randomUUID();
+   const isDelete=body.action==='delete'||body.action==='delete_rejected';
+   let done=false,timer;
+   options.status(phases.waiting_lane);
+   async function poll() {
+    try {
+     const result=await options.api('/api/library/file-jobs');
+     const active=result.active.find(job=>job.request_id===request_id);
+     if(!done && active && phases[active.phase]) {
+      options.status(phases[active.phase]+(active.total ? ` ${active.done} of ${active.total} items processed.` : ''));
+     }
+    } catch {} // Progress is optional. The original request owns errors.
+    if(!done) timer=setTimeout(poll,350);
+   }
+   if(isDelete) timer=setTimeout(poll,350);
    const started=performance.now();
    window.HDRLibraryStopwatch?.('file_command_request',{route:body.action,step:body.token?'execute':'plan'});
-   try { return await options.api('/api/library/file-command',body); }
+   try { return await options.api('/api/library/file-command',{...body,request_id}); }
    catch(error) { window.HDRLibraryStopwatch?.('file_command_request_failed',{route:body.action,reason:error.message,duration_ms:performance.now()-started});throw error; }
+   finally { done=true;clearTimeout(timer); }
   }
   async function confirm(details) {
    window.HDRLibraryStopwatch?.('file_command_confirmation_shown',{route:details.title});
@@ -99,5 +145,5 @@
   }
   return Object.freeze({rename,move,folder,remove,destination,clash});
  }
- window.HDRLibraryFileCommands=Object.freeze({create});
+ window.HDRLibraryFileCommands=Object.freeze({create,createChangeFeed});
 })();

@@ -3,11 +3,12 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
+const { randomUUID } = require('node:crypto');
 
 for (const recycleLabel of ['Recycle Bin','Trash']) {
   test(`Delete uses the backend's ${recycleLabel} destination without changing its confirmation route`, async () => {
     const dialogs = [], requests = [];
-    const context = vm.createContext({performance, setTimeout, clearTimeout,
+    const context = vm.createContext({performance, setTimeout, clearTimeout, crypto:{randomUUID},
       HDRLibraryDialogs: {ask:async options => {dialogs.push(options);return false;}},
     });
     context.window = context;
@@ -27,7 +28,7 @@ test('Delete shows waiting status before planning and logs a cancelled confirmat
   const events = [], listeners = {}, statuses = [], requests = [];
   let release;
   const pending = new Promise(resolve => {release = resolve;});
-  const context = vm.createContext({performance, setTimeout, clearTimeout,
+  const context = vm.createContext({performance, setTimeout, clearTimeout, crypto:{randomUUID},
     addEventListener: (name, callback) => {listeners[name] = callback;},
     fetch: async (_url, options) => {events.push(...JSON.parse(options.body));},
     HDRLibraryDialogs: {ask:async () => false},
@@ -51,4 +52,41 @@ test('Delete shows waiting status before planning and logs a cancelled confirmat
   const decision=events.find(event=>event.stage==='file_command_confirmation_decision');
   assert.equal(decision.reason,'cancelled');
   assert.equal(decision.route,'Delete photos');
+});
+
+test('Direct and health results apply each deletion once and catch up another window', async () => {
+  const context = vm.createContext({HDRLibraryDialogs:{}});
+  context.window=context;
+  vm.runInContext(fs.readFileSync(path.join(__dirname,'../frontend/library-file-commands.js'),'utf8'),context);
+  const deleted=[], otherWindow=[];
+  const apply=target=>(changes,missed)=>{
+    assert.equal(missed,false);
+    for (const entry of changes) for (const change of entry.changes) target.push(change.old);
+  };
+  const direct=context.HDRLibraryFileCommands.createChangeFeed(apply(deleted));
+  const observer=context.HDRLibraryFileCommands.createChangeFeed(apply(otherWindow));
+  const entries=['a.ARW','b.ARW'].map((old,i)=>({revision:i+1,changes:[{old,new:'Trash'}],removed_copies:[]}));
+  const first={revision:1,recent_changes:entries.slice(0,1)}, second={revision:2,recent_changes:entries};
+  await Promise.all([direct.receive(first),direct.receive(first),direct.receive(second),direct.receive(first),direct.receive(second),observer.receive(second)]);
+  assert.deepEqual(deleted,['a.ARW','b.ARW']);
+  assert.deepEqual(otherWindow,deleted);
+});
+
+test('A queued Delete shows its current wait phase and item count', async () => {
+  let release,poll;
+  const request=new Promise(resolve=>{release=resolve;});
+  const context=vm.createContext({performance,crypto:{randomUUID:()=> 'delete-request'},setTimeout:fn=>{poll=fn;},clearTimeout:()=>{},
+    HDRLibraryDialogs:{ask:async()=>false}});
+  context.window=context;
+  vm.runInContext(fs.readFileSync(path.join(__dirname,'../frontend/library-file-commands.js'),'utf8'),context);
+  const statuses=[];
+  const commands=context.HDRLibraryFileCommands.create({status:text=>statuses.push(text),api:async(route,body)=>{
+    if(body) return request;
+    return {active:[{request_id:'delete-request',phase:'waiting_writer',done:0,total:2}]};
+  }});
+  const pending=commands.remove([{path:'a.ARW'},{path:'b.ARW'}]);
+  await poll();
+  assert.match(statuses.at(-1),/Waiting for settings to finish saving.*0 of 2/);
+  release({count:2,attached_copies:0,recycle:2,warnings:[]});
+  await pending;
 });

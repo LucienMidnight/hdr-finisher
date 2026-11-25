@@ -675,6 +675,12 @@ needs a separate coordinated default change and new per-machine baselines.
 
 ## November 14: native macOS file commands
 
+November 25 follow-up. A multi-photo Delete preview reads each folder once.
+When there are no pending changes, the existing settings file goes to the
+system bin unchanged. The file command retains its recovery record and
+macOS Undo. A waiting Delete names the current step in the status bar, and
+the Library applies the result once without rebuilding the folder tree.
+
 Original photo rename and move, same-volume folder rename/move, and confirmed
 Delete/Delete all rejected now run on macOS as well as Windows. The Mac port
 uses Foundation's `trashItemAtURL:resultingItemURL:error:` and checks the returned

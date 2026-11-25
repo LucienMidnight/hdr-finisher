@@ -158,23 +158,30 @@
     showTag: tag => browseCollection("tag", tag), indexing: () => state.indexing?.state === "indexing",
     labelNames: () => state.labelNames,
     setLabelNames: async names => { state.labelNames = (await api("/api/library/preferences", { label_names: names })).label_names; updateDetails(); paintGrid(); paintFilm(); } });
-  async function filesChanged(result) {
-    culling.setUndo(result.undo_available); $("library-undo").hidden = !result.undo_available;
-    for(const change of result.changes || []) {
-      if (["Recycle Bin", "Trash", "Gone for good"].includes(change.new)) continue;
+  const deleteTargets=new Set(["Recycle Bin", "Trash", "Gone for good"]);
+  const fileFeed=HDRLibraryFileCommands.createChangeFeed(async (entries,missed) => {
+    const changes=entries.flatMap(entry=>entry.changes);
+    for (const change of changes) {
+      if (deleteTargets.has(change.new)) continue;
       const remap = p => p === change.old || p.startsWith(change.old + "\\") || p.startsWith(change.old + "/") ? change.new + p.slice(change.old.length) : p;
       state.path = remap(state.path); if(state.lastFolder) state.lastFolder=remap(state.lastFolder);
     }
-    const deleted = new Set((result.changes || []).filter(change => ["Recycle Bin", "Trash", "Gone for good"].includes(change.new)).map(change => change.old));
-    for (const path of result.removed_copies || []) deleted.add(path);
+    if (missed || changes.some(change=>!deleteTargets.has(change.new))) {
+      await refreshPins().catch(error => status(error.message));
+      await reopen();
+      return;
+    }
+    const deleted = new Set(changes.map(change=>change.old));
+    for (const entry of entries) for (const path of entry.removed_copies) deleted.add(path);
     if (deleted.size) {
       // Keep the old visible order until applyQuery chooses a surviving neighbour.
       state.allPhotos = state.allPhotos.filter(photo => !deleted.has(photo.path) && !deleted.has(photo.source_path));
       applyQuery();
     }
-    await refreshPins().catch(error => status(error.message));
-    if (!deleted.size) await reopen();
-
+  });
+  async function filesChanged(result) {
+    culling.setUndo(result.undo_available); $("library-undo").hidden = !result.undo_available;
+    await fileFeed.receive(result);
   }
   const fileCommands = HDRLibraryFileCommands.create({api,status,pins:()=>state.pins,changed:filesChanged,removeCopies:removeCopy});
   const reopen = () => state.collection ? browseCollection(state.collection.kind, state.collection.name) : openPlace({ path: state.path, refresh: true });
@@ -2231,11 +2238,10 @@
     const before = state.indexing?.passes; state.indexing = next;
     if (before !== next.passes) void albums.refresh().catch(error => status(error.message));
   }
-  let fileRevision = 0;
   const activity = HDRLibraryActivity.create({ button: $("index-status"), panel: $("library-activity"), api, status,
     acceptsPhoto: path=>state.photos.some(photo=>photo.path===path),
     onPictureError: record => pictureErrors.show(record),
-    onHealth: next => { pictureErrors.update(next.picture_errors || [], next.picture_errors_checked_at); if(next.file_commands && next.file_commands.revision !== fileRevision) {fileRevision=next.file_commands.revision;if(next.file_commands.changes.length || next.file_commands.removed_copies?.length)void filesChanged({...next.file_commands,undo_available:culling.undoAvailable()});} showIndexing(next.index); void refreshCheckedFolders(next.index.checks); } });
+    onHealth: next => { pictureErrors.update(next.picture_errors || [], next.picture_errors_checked_at); if(next.file_commands)void fileFeed.receive(next.file_commands).catch(error=>status(error.message)); showIndexing(next.index); void refreshCheckedFolders(next.index.checks); } });
   $("library-undo").addEventListener("click", () => { void culling.undo(); });
   let checkEvent = 0, refreshingCheck = false;
   const checkClient = crypto.randomUUID();

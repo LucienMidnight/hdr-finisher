@@ -225,9 +225,12 @@ def test_folder_children_reserved_during_controlled_activation(setup):
     from hdr_finisher.sessions import SessionStore
     photo,_,c,_=setup;c.store=SessionStore()
     entered,release=Event(),Event()
-    record={'items':[{'old':str(photo.parent),'new':str(photo.parent)+'-new','children':[{'old':str(photo),'new':str(photo)+'-new'}]}]}
-    def hold(*args):
+    record={'id':'folder-command','action':'folder_rename','warnings':[],
+            'items':[{'old':str(photo.parent),'new':str(photo.parent)+'-new','children':[{'old':str(photo),'new':str(photo)+'-new'}]}]}
+    c.save(record)
+    def hold(*args,**kwargs):
         entered.set();assert release.wait(5)
+        return {'count':0}
     c._run_reserved=hold
     thread=Thread(target=c.run,args=(record,));thread.start()
     try:
