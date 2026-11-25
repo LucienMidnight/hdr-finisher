@@ -467,8 +467,10 @@ def test_parallel_measurement_reads_each_window_once():
     assert reads == [(0, 0), (0, 2)]
 
 
-@pytest.mark.parametrize("rotation,flip", [(0, False), (90, True), (180, False), (270, True)])
-def test_lens_corrected_micro_viewport_matches_full_grade(micro_frame, monkeypatch, rotation, flip):
+@pytest.mark.parametrize("rotation,flip,scan", [
+    (0, False, 0), (90, True, 0), (180, False, 0), (270, True, 0), (0, False, 60), (90, True, 60),
+])
+def test_lens_corrected_micro_viewport_matches_full_grade(micro_frame, monkeypatch, rotation, flip, scan):
     from hdr_finisher.adjustments import apply_adjustments
     from hdr_finisher.models import CropRectangle, ScopeRegion
     import lensfunpy
@@ -508,6 +510,9 @@ def test_lens_corrected_micro_viewport_matches_full_grade(micro_frame, monkeypat
     grade.shared.geometry.rotation = rotation
     grade.shared.geometry.flip_horizontal = flip
     grade.shared.geometry.crop = CropRectangle(x=.13, y=.14, width=.7, height=.7)
+    if scan:
+        grade.hdr.film_look_section_enabled = True
+        grade.hdr.film_look.scan_sharpening = scan
     vignetted = pixels.copy()
     raw_import._apply_signed_vignetting(modifier, vignetted)
     corrected = numpy_bilinear(vignetted, modifier.apply_subpixel_geometry_distortion())

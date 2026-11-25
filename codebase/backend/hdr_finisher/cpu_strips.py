@@ -263,7 +263,7 @@ def _grade_halo(branch, source_pixel_scale):
     return reach + geo.reach + edge + feather + geo.cell, geo.cell
 
 
-def _scan_sharpening_halo(branch, source_pixel_scale):
+def scan_sharpening_halo(branch, source_pixel_scale):
     look = branch.film_look
     if (not branch.film_look_section_enabled or look.look_strength <= 0
             or look.scan_sharpening <= 0 or (look.grain_enabled and look.grain_view_map)):
@@ -593,7 +593,7 @@ def render_in_strips(
     )
     output_width, output_height = geometry_output_dimensions(source_width, source_height, geometry)
     branch = adjustments.hdr if kind == PreviewKind.HDR or adjustments.sdr.linked_to_hdr else adjustments.sdr
-    scan_halo = _scan_sharpening_halo(branch, source_pixel_scale)
+    scan_halo = scan_sharpening_halo(branch, source_pixel_scale)
     plan = plan_strips(output_width, output_height, budget_bytes=budget_bytes, halo_rows=scan_halo)
     report = StripReport(plan=plan)
 

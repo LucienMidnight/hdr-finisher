@@ -31,6 +31,7 @@ from .cpu_strips import (
     StripExecutionRefused,
     StripReport,
     render_in_strips,
+    scan_sharpening_halo,
     strip_execution_refusals,
 )
 from .finishing import (
@@ -1158,6 +1159,15 @@ class SessionRenderCache:
         end_y = min(height, int(np.ceil((viewport.y + viewport.height) * height)) + 8)
         if (end_x - x) * (end_y - y) >= width * height:
             raise MicroRegionRefused("micro_whole_frame_viewport")
+        # Scan Sharpening reads up to three neighbouring pixels. Grade a band
+        # that wide around the region, then trim it, so the edges match the
+        # whole-frame result.
+        branch = (adjustments.hdr if kind == PreviewKind.HDR or adjustments.sdr.linked_to_hdr
+                  else adjustments.sdr)
+        halo = scan_sharpening_halo(branch, 1.0)
+        out_x, out_y, out_end_x, out_end_y = x, y, end_x, end_y
+        x, y = max(0, x - halo), max(0, y - halo)
+        end_x, end_y = min(width, end_x + halo), min(height, end_y + halo)
 
         l, t, r, b = x + left, y + top, end_x + left, end_y + top
         if geometry.flip_horizontal:
@@ -1225,6 +1235,9 @@ class SessionRenderCache:
             fixed, adjustments, kind, color_context=self.color_context,
             frame_window=FrameWindow(left=x, top=y, width=width, height=height),
         )
+        if halo:
+            result = np.ascontiguousarray(result[out_y - y:out_end_y - y, out_x - x:out_end_x - x])
+            x, y, end_x, end_y = out_x, out_y, out_end_x, out_end_y
         if cancelled():
             raise StaleRender("The CPU Micro Grain preview was replaced.")
         tiles.start_fill(source)
