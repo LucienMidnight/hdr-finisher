@@ -83,7 +83,15 @@ window.HDRLibraryRetouch=async function({device,repairDevice,meta,planes,make,re
    started=performance.now();
    const response=await fetch('/api/library/retouch-packet',{method:'POST',signal,body:new Blob([prefix,part])});
    if(response.status===499)throw new DOMException('Library Retouch replay was cancelled.','AbortError');
-   if(!response.ok)throw Error('Library repair preparation failed: '+await response.text());
+   if(!response.ok){
+    const body=await response.text();
+    if(response.status===409){
+     let conflict;
+     try{conflict=JSON.parse(body);}catch{}
+     if(conflict?.superseded===true)throw Object.assign(new DOMException(conflict.detail,'AbortError'),{repairSuperseded:true});
+    }
+    throw Error('Library repair preparation failed: '+body);
+   }
    const body=await response.arrayBuffer(),length=new DataView(body).getUint32(0,true);
    const answer=JSON.parse(new TextDecoder().decode(new Uint8Array(body,4,length)));
    recordTiming('request_ms',performance.now()-started);

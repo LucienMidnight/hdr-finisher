@@ -188,6 +188,54 @@ test('yields wait their turn, real failures are explained once, cancellations pa
 });
 
 
+test('a superseded repair aborts without blocking the next GPU attempt; a replay error falls back', async () => {
+  const fs=require('node:fs'),vm=require('node:vm');
+  const source=fs.readFileSync(require.resolve('../frontend/library-gpu-raw'),'utf8');
+  const scheduled=source.slice(source.indexOf('  function allocationScope('),source.indexOf('  async function develop(path,'));
+  const retouch=fs.readFileSync(require.resolve('../frontend/library-retouch-gpu'),'utf8');
+  const signal=new AbortController().signal;
+  const device={
+    limits:{minStorageBufferOffsetAlignment:32},
+    createShaderModule(){},
+    createComputePipelineAsync:async()=>({getBindGroupLayout(){}}),
+    createBindGroup(){},
+    createCommandEncoder:()=>({copyBufferToBuffer(){},finish(){},beginComputePass:()=>({
+      setPipeline(){},setBindGroup(){},dispatchWorkgroups(){},end(){}})}),
+    queue:{submit(){},writeBuffer(){},onSubmittedWorkDone:async()=>{}},
+  };
+  const meta={path:'photo.arw',width:2,height:2,repairs:[[{rectangles:[[0,0,1,1]]}]]};
+  for(const superseded of [true,false]){
+    let developments=0,packets=0;
+    const context={window:{},performance,crypto:require('node:crypto').webcrypto,DOMException,Blob,TextEncoder,
+      gpu:async()=>({state:{lost:false}}),rawBudget:()=>60,root:{},
+      fetch:async(url)=>{
+        if(url==='/api/library/retouch-packet'){
+          packets++;
+          return new Response(JSON.stringify({detail:'Repair conflict',...(superseded?{superseded:true}:{})}),{status:409});
+        }
+        return {ok:true,json:async()=>({granted:true})};
+      },
+      developRaw:async({beforeSubmit})=>{
+        if(++developments>1)return {developed:true};
+        await context.window.HDRLibraryRetouch({device,meta,signal,planes:[{},{},{}],make:()=>({}),
+          release(){},read:async()=>new ArrayBuffer(12),permit:beforeSubmit,timings:{}});
+      },
+    };
+    vm.runInNewContext(retouch,context);
+    compileScheduled(context,scheduled);
+    const run=()=>context.run({meta,edges:[640]},signal);
+    if(superseded){
+      await assert.rejects(run(),error=>error.name==='AbortError'&&!error.gpuUnavailable);
+      assert.deepEqual(await run(),{developed:true});
+    }else{
+      await assert.rejects(run(),error=>error.gpuUnavailable&&!error.libraryRequeue&&error.cause?.message.includes('Repair conflict'));
+      await assert.rejects(run(),error=>error.gpuUnavailable);
+    }
+    assert.equal(developments,superseded?2:1);
+    assert.equal(packets,1);
+  }
+});
+
 test('small RGB direct scene reservation covers source, reductions and retained textures',()=>{
  const estimate=globalThis.HDRLibraryGpuRaw.rawBudget({rgb:true,width:2400,height:1801,colour:{authored_sdr:true}},[640,2560]);
  assert.ok(estimate>=190_786_160,'IMG_0267 measured peak must fit');

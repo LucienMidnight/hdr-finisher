@@ -1176,6 +1176,8 @@
           return result;
         }
         catch (error) {
+          // A newer saved recipe made this attempt obsolete, not invalid.
+          if(error.repairSuperseded)throw error;
           const rejected=!!(error.gpuInvalidPixels || error.emptyChannel);
           if(context.state?.lost && !rejected){
             throw error;
@@ -1220,7 +1222,7 @@
         await lease(true); await wait(50, signal);
       }
     } catch (error) {
-      if(context.state?.lost && !error.gpuInvalidPixels && !error.emptyChannel){
+      if(context.state?.lost && !error.repairSuperseded && !error.gpuInvalidPixels && !error.emptyChannel){
         if(!work.lossCounted){work.lossCounted=true;gpuFailures.set(key,(gpuFailures.get(key)||0)+1);}
         const failures=gpuFailures.get(key),retry=!!grant && failures<2;
         root.HDRLibraryStopwatch?.(retry ? 'picture_development_gpu_retry' : 'picture_development_gpu_fallback',

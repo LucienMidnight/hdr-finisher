@@ -572,9 +572,28 @@ def create_library_router(worker, browser, store=None):
     def repair_stamp(path):
         try:
             stat = marks._sidecar(Path(path)).stat()
-            return stat.st_mtime_ns, stat.st_size, stat.st_ino
-        except FileNotFoundError:
+            return stat.st_mtime_ns, stat.st_ctime_ns, stat.st_size, stat.st_ino
+        except OSError:
             return None
+
+    def repair_is_current(item, path, snapshot):
+        fresh = repair_stamp(path)
+        if fresh is None:
+            return False
+        if fresh == snapshot["stamp"]:
+            return True
+        try:
+            saved = live.document(item, validated=True)
+        except (ValueError, OSError):
+            return False
+        # The canonical live quality includes enabled recipes in replay order.
+        # The expected source file fingerprint is checked separately by decode.
+        if (saved is None or saved.source.fingerprint_sha256 != snapshot["fingerprint"]
+                or live_quality(document_payload(saved)) != snapshot["quality"]
+                or repair_stamp(path) != fresh):
+            return False
+        snapshot["stamp"] = fresh
+        return True
 
     def detail_memory(path):
         from . import app_memory
@@ -768,8 +787,10 @@ def create_library_router(worker, browser, store=None):
                                 batches = await run_in_threadpool(plan, saved.repairs, size)
                             except ValueError as error:
                                 return Response(status_code=204, headers={"X-Library-Fallback": str(error)})
+                            snapshot = dict(stamp=stamp, quality=source_quality,
+                                            fingerprint=saved.source.fingerprint_sha256)
                             source_jobs.set_retouch(token, file_commands.epoch,
-                                (command.path, path, stamp, command.grant, size, batches))
+                                (command.path, path, snapshot, command.grant, size, batches))
                             header["repairs"] = [[dict(id=r.id, rectangles=rectangles)
                                 for r, rectangles in batch] for batch in batches]
                             header.setdefault("source_timings_ms", {})["retouch_recipe_ms"] = (
@@ -812,14 +833,21 @@ def create_library_router(worker, browser, store=None):
         try:
             header, body = await library_gpu_raw.receive_frame(request, max_bytes=MAX_UPLOAD_BYTES)
             token = header["source_job"]
-            item, path, stamp, grant, size, batches = source_jobs.retouch(token, file_commands.epoch)
+            item, path, snapshot, grant, size, batches = source_jobs.retouch(token, file_commands.epoch)
             index = header["batch"]
             if header["item_path"] != item or type(index) is not int or not 0 <= index < len(batches):
                 raise ValueError("Repair batch does not match its source")
-            if await run_in_threadpool(repair_stamp, path) != stamp:
-                raise ValueError("Repair source changed during development")
         except (KeyError, ValueError, TypeError, OSError) as error:
             raise HTTPException(409, str(error)) from error
+
+        def superseded():
+            detail = "Repair source changed during development"
+            log("request_changed", operation=request.url.path, reason=detail,
+                action="work discarded; refresh the picture")
+            return JSONResponse({"detail": detail, "superseded": True}, status_code=409)
+
+        if not await run_in_threadpool(repair_is_current, item, path, snapshot):
+            return superseded()
         cancelled = Event()
 
         def checkpoint():
@@ -830,7 +858,7 @@ def create_library_router(worker, browser, store=None):
             checkpoint()
             metadata, parts = replay(batches[index], size, body, path, checkpoint)
             source_jobs.check(token, file_commands.epoch)
-            return metadata, parts
+            return (metadata, parts) if repair_is_current(item, path, snapshot) else None
 
         job = asyncio.create_task(run_in_threadpool(build))
         try:
@@ -838,13 +866,16 @@ def create_library_router(worker, browser, store=None):
                 if await request.is_disconnected():
                     cancelled.set()
                 await asyncio.wait({job}, timeout=.05)
-            metadata, parts = job.result()
+            result = job.result()
         except CancelledError:
             return Response(status_code=499)
         except (ValueError, OSError) as error:
             raise HTTPException(409, str(error)) from error
         finally:
             cancelled.set()
+        if result is None:
+            return superseded()
+        metadata, parts = result
         return StreamingResponse(library_gpu_raw.frame_chunks(metadata, *parts), media_type="application/octet-stream")
 
     @router.post("/live-developed")

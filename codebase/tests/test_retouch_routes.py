@@ -136,14 +136,17 @@ def test_repair_inherits_source_priority_and_cancellation(monkeypatch,priority):
     finally:worker.close()
 
 
-def test_library_batches_share_validated_saved_recipes(tmp_path, monkeypatch):
+@pytest.mark.parametrize('virtual_copy', [False, True], ids=['original', 'virtual-copy'])
+def test_library_batches_share_validated_saved_recipes(tmp_path, monkeypatch, virtual_copy):
+    from copy import deepcopy
+    import json
     from PIL import Image
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
     from hdr_finisher.library_api import create_library_router
-    from hdr_finisher.library_documents import LibraryDocuments
+    from hdr_finisher.library_documents import LibraryDocuments, atomic_json
     from hdr_finisher.library_gpu_raw import frame, unframe
-    from hdr_finisher.library_retouch import plan
+    from hdr_finisher import library_retouch
     from hdr_finisher.media_browser import MediaBrowserStore
     from hdr_finisher.sessions import SessionStore
 
@@ -153,15 +156,26 @@ def test_library_batches_share_validated_saved_recipes(tmp_path, monkeypatch):
     session = store.prepare_session(path)
     first, _, worker, _, _ = setup(monkeypatch, 'clone')
     worker.close()
-    second = first.model_copy(update={'id':'other'})
-    grade = session.edit_document().model_copy(update={'repairs':[first,second]})
+    second = first.model_copy(update={'id':'other', 'recipe':first.recipe.model_copy(update={'radius_px':8})})
+    grade = session.edit_document().model_copy(update={'repairs':[first,second]}).model_dump(mode='json')
     sidecar = path.with_suffix('.png.hdrf')
-    sidecar.write_text(grade.model_dump_json())
+    document = {'format':'HDR Finisher Photo', 'schema_version':1, 'photo_id':'original'}
+    item = str(path)
+    if virtual_copy:
+        document['virtual_copies'] = [{'photo_id':'copy', 'name':'Copy 1', 'grade':grade}]
+        item += '|copy|copy'
+    else:
+        document['grade'] = grade
+    atomic_json(sidecar, document)
     reads = []
+    writer = None
+    request_document = LibraryDocuments.request
 
-    def read_document(_, item):
+    def read_document(reader, item, **kwargs):
+        nonlocal writer
+        writer = reader.marks.writer
         reads.append(item)
-        return {'grade': __import__('json').loads(sidecar.read_text())}
+        return request_document(reader, item, **kwargs)
 
     monkeypatch.setattr(LibraryDocuments, 'request', read_document)
     helper = SimpleNamespace(status=lambda:dict(paused=False))
@@ -169,16 +183,21 @@ def test_library_batches_share_validated_saved_recipes(tmp_path, monkeypatch):
     app.include_router(create_library_router(helper, MediaBrowserStore(tmp_path/'profile'), store))
     client = TestClient(app)
     try:
-        result = client.post('/api/library/live-scene', json={'path':str(path),'edge':640,'gpu':True})
+        result = client.post('/api/library/live-scene', json={'path':item,'edge':640,'gpu':True})
         assert result.status_code == 200, result.text
         header, _ = unframe(result.content)
         assert len(header['repairs']) == 1
         assert len(header['repairs'][0]) == 2
         base = np.arange(64*80*3, dtype=np.float32).reshape(64,80,3) / (64*80*3)
-        batch, = plan([first,second], (80,64))
+        batch, = library_retouch.plan([first,second], (80,64))
         body = b''.join(base[t:b,l:r].tobytes() for _, rectangles in batch for l,t,r,b in rectangles)
-        packet = frame(dict(source_job=header['source_job'], item_path=str(path), batch=0),body)
-        response = client.post('/api/library/retouch-packet',content=packet)
+        packet_header = dict(source_job=header['source_job'], item_path=item, batch=0)
+
+        def submit(data=body, **overrides):
+            packet = frame({**packet_header, **overrides}, data)
+            return client.post('/api/library/retouch-packet', content=packet)
+
+        response = submit()
         assert response.status_code == 200, response.text
         info, pixels = unframe(response.content)
         for record, meta in zip((first,second), info['repairs'], strict=True):
@@ -187,11 +206,57 @@ def test_library_batches_share_validated_saved_recipes(tmp_path, monkeypatch):
             actual = np.frombuffer(pixels[start:start+meta['bytes']],dtype='<f4').reshape(*mask.shape,4)
             np.testing.assert_array_equal(actual[...,:3], patch.pixels)
             np.testing.assert_array_equal(actual[...,3],mask)
-        assert reads == [str(path)]
-        with sidecar.open('a') as handle:
-            handle.write(' ')
-        assert client.post('/api/library/retouch-packet',content=packet).status_code == 409
-        assert reads == [str(path)]
+        assert reads == [item]
+        marked = client.post('/api/library/marks', json={'paths':[item], 'change':{'rating':4, 'add_tag':'To print'}})
+        assert marked.status_code == 200, marked.text
+        writer.drain()
+        marked_document = json.loads(sidecar.read_text())
+        marked_item = marked_document['virtual_copies'][0] if virtual_copy else marked_document
+        assert marked_item['marks']['rating'] == 4
+        assert marked_item['marks']['tags'] == ['To print']
+        for _ in range(2):
+            accepted = submit()
+            assert accepted.status_code == 200, accepted.text
+            assert unframe(accepted.content)[1] == pixels
+        assert reads == [item, item]  # Only the first batch after the write re-reads the grade.
+
+        for malformed in (submit(batch=1), submit(data=body[:-4])):
+            assert malformed.status_code == 409
+            assert 'superseded' not in malformed.json()
+
+        for change in ('repair', 'order', 'source-settings', 'fingerprint', 'unreadable', 'deleted'):
+            current = deepcopy(marked_document)
+            current_grade = (current['virtual_copies'][0] if virtual_copy else current)['grade']
+            if change == 'repair':
+                current_grade['repairs'][0]['recipe']['radius_px'] = 7
+            elif change == 'order':
+                current_grade['repairs'].reverse()
+            elif change == 'source-settings':
+                current_grade['source']['raw_import_settings']['pixel_cleanup']['remove_hot_pixels'] = True
+            elif change == 'fingerprint':
+                current_grade['source']['fingerprint_sha256'] = 'a' * 64
+            if change == 'unreadable':
+                sidecar.write_text('{')
+            elif change == 'deleted':
+                sidecar.unlink()
+            else:
+                atomic_json(sidecar, current)
+            rejected = submit()
+            assert rejected.status_code == 409, (change, rejected.text)
+            assert rejected.json()['superseded'] is True
+
+        atomic_json(sidecar, marked_document)
+        replay = library_retouch.replay
+
+        def edit_during_replay(*args):
+            result = replay(*args)
+            marked_item['grade']['repairs'].reverse()
+            atomic_json(sidecar, marked_document)
+            return result
+
+        monkeypatch.setattr(library_retouch, 'replay', edit_during_replay)
+        rejected = submit()
+        assert rejected.status_code == 409 and rejected.json()['superseded'] is True
     finally:
         client.close()
         store.clear()
