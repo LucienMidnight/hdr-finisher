@@ -725,18 +725,21 @@
             <div class="control-row"><div class="control-heading"><label for="denoise-micro-detail" data-tooltip="Keeps more texture and edge detail at higher settings.">Detail</label><output id="denoise-micro-detail-value">50%</output></div><input id="denoise-micro-detail" type="range" min="0" max="1" step="0.01" value="0.5"></div>
           </div>
           <!-- PRD 6.3 progressive disclosure: Amount and Detail Recovery are
-               always visible; Luminance and Colour Noise sit under Advanced.
+               always visible. Steve, November 25: Luminance and Color Noise
+               sit right under Amount, which scales both; only the noise sizes
+               stay under Advanced.
                Amount keeps its name. 6.3 calls the always-visible master
                "Strength" but also forbids changing labels, defaults, math or
                schema before the presets are measured against the corpus, and
                that measurement is deferred with DENOISE-01 -- so renaming it
                now would be the one thing 6.3 rules out. -->
           <div class="control-row"><div class="control-heading"><label for="denoise-amount">Amount</label><output id="denoise-amount-value">75%</output></div><input id="denoise-amount" type="range" min="0" max="1" step="0.01" value="0.75"></div>
+          <div class="control-row"><div class="control-heading"><label for="denoise-luminance" data-tooltip="How much brightness noise is removed. Amount scales this and Color Noise together.">Luminance</label><output id="denoise-luminance-value">50%</output></div><input id="denoise-luminance" type="range" min="0" max="1" step="0.01" value="0.5"></div>
+          <div class="control-row"><div class="control-heading"><label for="denoise-color" data-tooltip="How much colour noise of every size is removed, before splotch cleanup. Amount scales this and Luminance together. Raise it first when colour blotches remain.">Color Noise</label><output id="denoise-color-value">75%</output></div><input id="denoise-color" type="range" min="0" max="1" step="0.01" value="0.75"></div>
           <div class="control-row"><div class="control-heading"><label for="denoise-detail">Detail Recovery</label><output id="denoise-detail-value">50%</output></div><input id="denoise-detail" type="range" min="0" max="1" step="0.01" value="0.5"></div>
           <div id="denoise-grain-controls" class="hidden">
             <div class="control-row"><div class="control-heading"><label for="denoise-evenness" data-tooltip="Spreads the remaining brightness grain more evenly. 0% gives Standard’s grain and 100% uses the grain-matched 18-pixel setting.">Grain Evenness</label><output id="denoise-evenness-value">100%</output></div><input id="denoise-evenness" type="range" min="0" max="1" step="0.01" value="1"></div>
           </div>
-          <div class="control-row"><div class="control-heading"><label for="denoise-color" data-tooltip="Reduces colour noise of every size before splotch cleanup. Raise it first when colour blotches remain.">Color Noise</label><output id="denoise-color-value">75%</output></div><input id="denoise-color" type="range" min="0" max="1" step="0.01" value="0.75"></div>
           <div id="denoise-clean-controls" class="hidden">
             <div class="control-row"><div class="control-heading"><label for="denoise-splotches" data-tooltip="Pulls coloured blotches toward their surroundings while preserving scene brightness. 0% switches off this correction.">Color Splotches</label><output id="denoise-splotches-value">100%</output></div><input id="denoise-splotches" type="range" min="0" max="1" step="0.01" value="1"></div>
             <div class="control-row">
@@ -750,7 +753,6 @@
             <span>Advanced</span>
           </button>
           <div id="denoise-advanced-panel" class="disclosure-content hidden">
-            <div class="control-row"><div class="control-heading"><label for="denoise-luminance">Luminance</label><output id="denoise-luminance-value">50%</output></div><input id="denoise-luminance" type="range" min="0" max="1" step="0.01" value="0.5"></div>
             <div id="denoise-size-controls" class="denoise-size-controls">
               <p class="denoise-size-heading tooltip-trigger" data-tooltip="How strongly each size of noise is removed. 50% is the measured amount; 0% leaves that size alone. Luminance and Color Noise still decide brightness versus colour.">Noise size</p>
               <div class="control-row"><div class="control-heading"><label for="denoise-finest">Finest · 1–2 px</label><output id="denoise-finest-value">50%</output></div><input id="denoise-finest" type="range" min="0" max="1" step="0.01" value="0.5"></div>

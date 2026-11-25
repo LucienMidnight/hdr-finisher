@@ -1,7 +1,7 @@
 // PRD 6.3 -- progressive disclosure for the Denoise controls.
 //
-// Amount, Detail Recovery and Color Noise are always visible; Luminance and
-// the noise sizes sit behind Advanced. Clean Grain offers an optional colour correction.
+// Amount, Luminance, Color Noise and Detail Recovery are always visible; the
+// noise sizes sit behind Advanced. Clean Grain offers an optional colour correction.
 //
 //   node tests/denoise-progressive-disclosure.js --url http://127.0.0.1:8765
 //
@@ -90,15 +90,16 @@ function assert(condition, message) {
       "Clean Grain should start with Color Splotches at 100%.");
     assert(!await page.locator("#denoise-protect-edges").isChecked(), "Protect color edges should start off.");
     assert(await shown("denoise-color"), "Color Noise is not in the main panel.");
-    assert(!await shown("denoise-luminance"), "Luminance is visible before Advanced is opened.");
+    assert(await shown("denoise-luminance"), "Luminance is not in the main panel.");
+    assert(!await shown("denoise-finest"), "Noise sizes are visible before Advanced is opened.");
 
     await page.click("#denoise-advanced-toggle");
-    assert(await shown("denoise-luminance"), "Advanced did not reveal Luminance.");
+    assert(await shown("denoise-finest"), "Advanced did not reveal the noise sizes.");
     assert(await page.evaluate(
       () => document.getElementById("denoise-advanced-toggle").getAttribute("aria-expanded"),
     ) === "true", "Advanced did not report itself expanded.");
     await page.click("#denoise-advanced-toggle");
-    assert(!await shown("denoise-luminance"), "Advanced did not hide Luminance again.");
+    assert(!await shown("denoise-finest"), "Advanced did not hide the noise sizes again.");
 
     assert(await shown("denoise-recalculate"), "Recalculate is not reachable.");
 
@@ -166,27 +167,27 @@ function assert(condition, message) {
       "Opening and closing Advanced changed the stored controls: "
       + JSON.stringify({ documentBefore, documentAfterToggle }));
 
-    // A control that is hidden must still apply. Drive Luminance to an
+    // A control that is hidden must still apply. Drive Finest to an
     // extreme with the panel shut; the picture has to move. If disclosure had
     // quietly detached the control, this is what would catch it.
-    const luminanceHidden = await shown("denoise-luminance");
-    assert(!luminanceHidden, "Luminance should be hidden for this step.");
+    const finestHidden = await shown("denoise-finest");
+    assert(!finestHidden, "Finest should be hidden for this step.");
     await page.evaluate(() => {
-      const input = document.querySelector("#denoise-luminance");
+      const input = document.querySelector("#denoise-finest");
       input.value = "0";
       input.dispatchEvent(new Event("input", { bubbles: true }));
       input.dispatchEvent(new Event("change", { bubbles: true }));
     });
     await settled();
     const afterHiddenEdit = await capture();
-    const storedLuminance = await page.evaluate(
-      () => state.denoise[state.currentView].controls.luminance,
+    const storedFinest = await page.evaluate(
+      () => state.denoise[state.currentView].controls.finest_noise,
     );
 
-    assert(storedLuminance === 0,
-      "A hidden control did not reach the document: luminance is " + storedLuminance);
+    assert(storedFinest === 0,
+      "A hidden control did not reach the document: finest_noise is " + storedFinest);
     assert(digest(before) !== digest(afterHiddenEdit),
-      "Luminance made no difference to the picture while hidden, so disclosure "
+      "Finest made no difference to the picture while hidden, so disclosure "
       + "has detached it from the render.");
 
     // A grade saved with the old checkbox off shows Color Splotches at 0%.

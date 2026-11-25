@@ -154,6 +154,7 @@ function renderDenoiseControls() {
   els.denoiseMicroControls?.classList.toggle("hidden", !micro);
   els.denoiseAmount.closest(".control-row").classList.toggle("hidden", micro);
   els.denoiseDetail.closest(".control-row").classList.toggle("hidden", micro);
+  els.denoiseLuminance.closest(".control-row").classList.toggle("hidden", micro);
   els.denoiseColor.closest(".control-row").classList.toggle("hidden", micro);
   els.denoiseAdvancedToggle.classList.toggle("hidden", micro);
   els.denoiseCleanControls.classList.toggle("hidden", settings.controls.method !== "clean_grain");

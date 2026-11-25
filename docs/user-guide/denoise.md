@@ -56,17 +56,15 @@ was removed, raise Color Noise, lower Color Splotches, or toggle the edge switch
 ## Basic controls
 
 - **Amount** sets how much cleaning is applied overall. It starts at 75%. At 50% you get the amount the app measured. Raise it for stubborn noise. At 0% nothing changes.
+- **Luminance** and **Color Noise**, just below Amount, split that cleaning between brightness noise and colour noise. Amount scales both by the same factor. Luminance starts at 50% and Color Noise at 75%. Colour noise is usually easy to remove without losing detail, so Color Noise often tolerates a high setting; raise it first when colour blotches remain.
 - **Detail Recovery** gives back fine detail that Denoise took out along with the noise. Raise it if textures such as hair, fabric or foliage look smooth. It starts at 50%.
 
-Both sliders update the picture as you drag.
-
-**Color Noise**, in the main panel, sets how much colour speckle is removed. It starts at 75%. Colour noise is usually easy to remove without losing detail, so this often tolerates a high setting.
+These sliders update the picture as you drag.
 
 ## Advanced controls
 
 Click **Advanced** to show more.
 
-- **Luminance** sets how much brightness noise is removed. It starts at 50%.
 - **Noise size** has four sliders. Each sets how strongly noise of that size is removed:
   - **Finest · 1–2 px:** pixel-level speckle.
   - **Fine · 2–4 px:** small grain.
