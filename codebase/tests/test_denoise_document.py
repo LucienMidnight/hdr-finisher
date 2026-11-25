@@ -20,11 +20,13 @@ from hdr_finisher.sessions import SessionStore
     (True, False, (21, 24, 3), "opposed_color_v1", "complete Bayer cells"),
     (True, False, (20, 24, 3), "edge_colour_v1", "Edge Colour"),
 ])
-def test_micro_grain_requires_supported_sensor_source(signed, dng, shape, method, reason):
+def test_micro_grain_requires_supported_sensor_source(tmp_path, signed, dng, shape, method, reason):
     from hdr_finisher.denoise_micro_grain import unavailable_reason
     from hdr_finisher.models import RawImportSettings
 
-    frame = SimpleNamespace(image=np.zeros(shape, dtype=np.float32),
+    source = tmp_path / "synthetic.ARW"
+    source.touch()
+    frame = SimpleNamespace(image=np.zeros(shape, dtype=np.float32), source_path=source,
                             metadata={"raw_development": {"signed_sensor_samples": signed}, "dng_input": dng},
                             raw_import_settings=RawImportSettings(highlight_reconstruction={"enabled": True, "method": method}))
     actual = unavailable_reason(frame)

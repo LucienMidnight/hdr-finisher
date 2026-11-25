@@ -999,7 +999,7 @@ def _render_selected_execution(session, request, kind, adjustments, preview_long
     if micro is not None and navigation:
         from .denoise_micro_grain import unavailable_reason
 
-        if not unavailable_reason(session):
+        if not unavailable_reason(session, check_source=False):
             cached_micro = session.render_cache.cached_micro_preview_source(session, micro, preview_long_edge)
             preview_long_edge = min(preview_long_edge, cached_micro[1][-1])
             kwargs.update(cached_micro=cached_micro, scope_source=True)
@@ -1086,7 +1086,7 @@ def _log_cpu_preview(session, kind, edge, request, requested_edge):
     from .library_diagnostics import log
     from .diagnostics import log as diagnostic
     h, w = session.image.shape[:2]
-    path = Path(session.source_path)
+    source_path = str(getattr(session, "source_path", "") or "")
     reported = (request.cpu_fallback_reason or "").partition(":")[0]
     reasons = {
         "user-selected-cpu": "user_selected_cpu", "gpu-unavailable": "gpu_unavailable",
@@ -1094,12 +1094,12 @@ def _log_cpu_preview(session, kind, edge, request, requested_edge):
         "unsupported-local-adjustments": "unsupported_local_adjustments",
         "gpu-failed": "gpu_render_failed", "gpu-retry-scheduled": "gpu_retry_scheduled",
     }
-    diagnostic("grade", "preview_route", lane=kind.value, photo={"id": str(path), "name": path.name},
+    diagnostic("grade", "preview_route", lane=kind.value, photo={"id": source_path, "name": Path(source_path).name},
                route="cpu_reduced" if edge < requested_edge else "cpu",
                reason="preview_edge_reduced" if edge < requested_edge else reasons.get(reported, "backend_preview_requested"),
                requested_edge_px=requested_edge, rendered_edge_px=edge, requested_execution=request.execution)
     scale = min(1.0, edge / max(h, w))
-    log("grade_preview_cpu", path=str(session.source_path), lane=kind.value,
+    log("grade_preview_cpu", path=source_path, lane=kind.value,
         width=round(w * scale), height=round(h * scale), long_edge=edge,
         reason=request.cpu_fallback_reason or "CPU preview requested without renderer reason")
 
@@ -1269,8 +1269,8 @@ def _micro_preview_raw(session_id, session, kind, request, adjustments):
             request.micro_grain_viewport, locals_for_preview, current,
         )
     except MicroRegionRefused as error:
-        path = Path(session.source_path)
-        log("denoise", "micro_cpu_region", photo={"id": str(path), "name": path.name},
+        source_path = str(getattr(session, "source_path", "") or "")
+        log("denoise", "micro_cpu_region", photo={"id": source_path, "name": Path(source_path).name},
             route="cpu_reduced", reason=str(error))
         return None
     # Ordinary bounded whole-picture underlayer for offscreen pixels, panning
@@ -1353,7 +1353,7 @@ def _scope_render_options(session, kind, request, adjustments):
     from .denoise_micro_grain import unavailable_reason
 
     controls = _preview_micro_controls(session, kind, request, adjustments)
-    return {"micro_preview": (session, controls)} if controls is not None and not unavailable_reason(session) else {}
+    return {"micro_preview": (session, controls)} if controls is not None and not unavailable_reason(session, check_source=False) else {}
 
 
 def _micro_scope_unavailable():

@@ -886,14 +886,14 @@ class SessionRenderCache:
         return (epoch, preparation_key(frame), lens_key, controls, edge)
 
     def cached_micro_preview_source(self, frame, controls, edge):
-        from .denoise_micro_grain import MicroGrainControls, unavailable_reason
+        from .denoise_micro_grain import MicroGrainControls, MicroSourceUnavailable, unavailable_reason
 
         with self._lock:
-            if self._micro_closed or unavailable_reason(frame):
+            if self._micro_closed or unavailable_reason(frame, check_source=False):
                 raise MicroScopeSourceUnavailable()
             try:
                 key = self._micro_preview_key(frame, MicroGrainControls.from_settings(controls), edge, self._micro_source_epoch)
-            except OSError as exc:
+            except MicroSourceUnavailable as exc:
                 raise MicroScopeSourceUnavailable() from exc
             matching = [candidate for candidate in self._micro_previews if candidate[:-1] == key[:-1]]
             if not matching:
@@ -904,7 +904,7 @@ class SessionRenderCache:
             return self._micro_previews[selected], selected
 
     def micro_preview_source(self, frame, controls, edge, is_current, *, foreground=True):
-        from .denoise_micro_grain import unavailable_reason
+        from .denoise_micro_grain import MicroSourceUnavailable, unavailable_reason
         from .diagnostics import log
         from .grain_work import current_check
 
@@ -918,12 +918,23 @@ class SessionRenderCache:
 
         if not caller_current():
             raise StaleRender("The CPU Micro Grain preview was replaced.")
-        if unavailable_reason(frame):
-            return downsample_image(frame.image, edge), None
+        def ordinary_source():
+            if not caller_current():
+                raise StaleRender("The CPU Micro Grain preview was replaced.")
+            try:
+                return downsample_image(frame.image, edge, is_current=caller_current), None
+            except ResizeCancelled as error:
+                raise StaleRender("The CPU Micro Grain preview was replaced.") from error
 
-        path = Path(frame.source_path)
-        key = self._micro_preview_key(frame, controls, edge, epoch)
+        if unavailable_reason(frame, check_source=False):
+            return ordinary_source()
+
+        try:
+            key = self._micro_preview_key(frame, controls, edge, epoch)
+        except MicroSourceUnavailable:
+            return ordinary_source()
         _, source_key, _, _, _ = key
+        path = source_key[0]
         photo = {"id": str(path), "name": path.name}
 
         while True:
@@ -1015,6 +1026,10 @@ class SessionRenderCache:
                         if self._micro_previews.get(key) is result:
                             self._touch_ram_locked("_micro_previews", key)
                 return result, key
+            except MicroSourceUnavailable:
+                # The owner has removed the flight and woken its waiters.
+                # Do not cache the ordinary image under a Micro source key.
+                return ordinary_source()
             except StaleRender:
                 if outcome != "completed":
                     outcome = "cancelled"
@@ -1078,7 +1093,7 @@ class SessionRenderCache:
             self._micro_render_lock.release()
 
     def _micro_source(self, frame, epoch, source_key, cancelled):
-        from .denoise_micro_grain import MicroGrainSource, take_recent_preparation
+        from .denoise_micro_grain import MicroGrainSource, MicroSourceUnavailable, take_recent_preparation
 
         with self._lock:
             source = self._micro_prepared.get(source_key)
@@ -1088,7 +1103,10 @@ class SessionRenderCache:
             if frame.metadata.get("lens_correction", {}).get("applied"):
                 source = take_recent_preparation(source_key)
             if source is None:
-                source = MicroGrainSource(frame.source_path, frame.raw_import_settings, cancelled=cancelled)
+                try:
+                    source = MicroGrainSource(source_key[0], frame.raw_import_settings, cancelled=cancelled)
+                except OSError as error:
+                    raise MicroSourceUnavailable("The Micro Grain RAW source could not be read.") from error
             if cancelled():
                 raise StaleRender("The CPU Micro Grain preview was replaced.")
             with self._lock:
@@ -1104,7 +1122,8 @@ class SessionRenderCache:
     def micro_preview_region(self, frame, controls, adjustments, kind, viewport, local_adjustments, is_current):
         from .adjustments import FrameWindow, apply_fixed_source_adjustments
         from .denoise_micro_grain import (
-            MicroPreviewTiles, MicroRegionRefused, _lens_region, _vignette_region, preparation_key, unavailable_reason,
+            MicroPreviewTiles, MicroRegionRefused, MicroSourceUnavailable, _lens_region, _vignette_region,
+            preparation_key, unavailable_reason,
         )
         from .diagnostics import log
         from .finishing import _crop_bounds
@@ -1113,7 +1132,7 @@ class SessionRenderCache:
         from .raw_import import _raise_if_cancelled
 
         geometry = adjustments.shared.geometry
-        if unavailable_reason(frame):
+        if unavailable_reason(frame, check_source=False):
             raise MicroRegionRefused("micro_unsupported_source")
         if geometry_resample_stage(geometry) != "index":
             raise MicroRegionRefused("micro_resampled_geometry")
@@ -1152,8 +1171,11 @@ class SessionRenderCache:
             270: (image_width - b, l, image_width - t, r),
         }[geometry.rotation]
 
-        path = Path(frame.source_path)
-        source_key = preparation_key(frame)
+        try:
+            source_key = preparation_key(frame)
+        except MicroSourceUnavailable as error:
+            raise MicroRegionRefused("micro_source_unavailable") from error
+        path = source_key[0]
         epoch = self._micro_source_epoch
         parent = current_check()
         started = time.perf_counter()
@@ -1193,6 +1215,8 @@ class SessionRenderCache:
         except (InterruptedError, RuntimeError, ValueError) as error:
             if cancelled():
                 raise StaleRender("The CPU Micro Grain preview was replaced.") from error
+            if isinstance(error, MicroSourceUnavailable):
+                raise MicroRegionRefused("micro_source_unavailable") from error
             raise
         finally:
             self._micro_render_lock.release()

@@ -786,3 +786,72 @@ def test_cpu_navigation_only_uses_a_cached_micro_source(micro_frame, monkeypatch
     assert warm.content == expected
     assert len(rendered) == 1
     assert frame.preview_tokens[PreviewKind.HDR] == 5
+
+
+@pytest.mark.parametrize("bad_path", ["missing", "invalid", "directory", "lost_after_stat"])
+def test_missing_micro_source_refuses_region_and_does_not_poison_whole_preview(
+    micro_frame, monkeypatch, bad_path,
+):
+    frame, controls, built, rendered = micro_frame
+    cache = frame.render_cache
+    original_path = frame.source_path
+    original_sensor = denoise_micro_grain.MicroGrainSource
+    if bad_path == "missing":
+        original_path.unlink()
+    elif bad_path == "invalid":
+        frame.source_path = None
+    elif bad_path == "directory":
+        frame.source_path = original_path.parent
+    else:
+        def failed_open(*args, **kwargs):
+            raise FileNotFoundError(original_path)
+        monkeypatch.setattr(denoise_micro_grain, "MicroGrainSource", failed_open)
+
+    grade = AdjustmentState()
+    viewport = SimpleNamespace(x=0.25, y=0.25, width=0.25, height=0.25)
+    micro = MicroGrainControls.from_settings(controls)
+    with pytest.raises(denoise_micro_grain.MicroRegionRefused, match="micro_source_unavailable"):
+        cache.micro_preview_region(frame, micro, grade, PreviewKind.HDR, viewport, [], lambda: True)
+    pixels, key = cache.micro_preview_source(frame, micro, 256, lambda: True)
+    np.testing.assert_array_equal(pixels, downsample_image(frame.image, 256))
+    assert key is None and not cache._micro_flights
+    assert not built and not rendered
+
+    frame.source_path = original_path
+    original_path.touch()
+    monkeypatch.setattr(denoise_micro_grain, "MicroGrainSource", original_sensor)
+    recovered, key = cache.micro_preview_source(frame, micro, 256, lambda: True)
+    assert key is not None and not cache._micro_flights
+    assert not np.array_equal(recovered, pixels)
+    assert len(rendered) == 1
+
+
+def test_missing_micro_raw_gives_clean_http_refusals_and_recovers(micro_frame, monkeypatch):
+    from hdr_finisher import main
+
+    frame, controls, _, rendered = micro_frame
+    frame.session_id = "photo"
+    frame.adjustments = AdjustmentState()
+    frame.edit_revision = 7
+    frame.hdr_reference_white_nits = 203
+    frame.preview_tokens = {PreviewKind.HDR: 5}
+    path = frame.source_path
+    frame.source_path = None
+    monkeypatch.setattr(main.store, "_current", frame)
+    client = TestClient(main.app)
+    endpoints = {
+        "/api/session/photo/preview/hdr?purpose=navigation": "micro_navigation_source_unavailable",
+        "/api/session/photo/scopes?kind=hdr": "micro_scope_source_unavailable",
+    }
+    body = {"edit_revision": 7, "long_edge": 512, "hdr_display": False}
+    for endpoint, code in endpoints.items():
+        response = client.post(endpoint, json=body)
+        assert response.status_code == 409
+        assert response.json()["detail"]["code"] == code
+    assert rendered == []
+
+    frame.source_path = path
+    frame.render_cache.micro_preview_source(frame, MicroGrainControls.from_settings(controls), 320, None)
+    for endpoint in endpoints:
+        assert client.post(endpoint, json=body).status_code == 200
+    assert len(rendered) == 1

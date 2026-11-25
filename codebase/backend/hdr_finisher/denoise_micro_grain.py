@@ -8,6 +8,7 @@ from collections import OrderedDict
 from contextvars import Context
 from dataclasses import dataclass
 from pathlib import Path
+from stat import S_ISREG
 from threading import RLock
 import weakref
 
@@ -305,7 +306,22 @@ class MicroGrainUnavailable(ValueError):
     pass
 
 
-def unavailable_reason(frame):
+class MicroSourceUnavailable(MicroGrainUnavailable):
+    pass
+
+
+def _source_file(frame):
+    try:
+        path = Path(frame.source_path)
+        info = path.stat()
+        if S_ISREG(info.st_mode):
+            return path, info
+    except (AttributeError, OSError, TypeError, ValueError) as error:
+        raise MicroSourceUnavailable("The Micro Grain RAW source is unavailable.") from error
+    raise MicroSourceUnavailable("The Micro Grain RAW source is unavailable.")
+
+
+def unavailable_reason(frame, *, check_source=True):
     owner = getattr(frame, "delivery_owner", frame)
     metadata = getattr(owner, "metadata", {})
     if not metadata.get("raw_development", {}).get("signed_sensor_samples") or metadata.get("dng_input"):
@@ -317,6 +333,11 @@ def unavailable_reason(frame):
         return "Micro Grain is not available with Edge Colour highlight reconstruction."
     if getattr(owner, "repairs", None):
         return "Micro Grain is not available with retouch repairs."
+    if check_source:
+        try:
+            _source_file(owner)
+        except MicroSourceUnavailable as error:
+            return str(error)
     return None
 
 
@@ -338,7 +359,11 @@ class MicroGrainSource:
         from . import raw_import, raw_pixel_cleanup, raw_speck_cleanup
         from .import_defaults import RAW_CALIBRATION_EV, fuji_dynamic_range
 
-        with rawpy.imread(str(path)) as raw:
+        try:
+            raw_file = rawpy.imread(str(path))
+        except (OSError, rawpy.LibRawIOError, rawpy.LibRawFileUnsupportedError, rawpy.LibRawDataError) as error:
+            raise MicroSourceUnavailable("The Micro Grain RAW source could not be read.") from error
+        with raw_file as raw:
             camera = raw_import._camera_linear_metadata_from_libraw(raw)
             mosaic = raw.raw_image_visible
             if camera.raw_pattern.shape != (2, 2):
@@ -495,11 +520,10 @@ app_memory.register(_SOURCE_RAM_KEY, "working", _trim_recent_source)
 
 
 def preparation_key(frame):
-    path = Path(frame.source_path)
-    stat = path.stat()
+    path, info = _source_file(frame)
     # Lensfun is applied to the finished Micro RGB, after the sensor
     # preparation and noise fit. Keep every other RAW setting in this key.
-    return (path, stat.st_mtime_ns, stat.st_size, getattr(frame, "source_fingerprint_sha256", None),
+    return (path, info.st_mtime_ns, info.st_size, getattr(frame, "source_fingerprint_sha256", None),
             frame.raw_import_settings.model_dump_json(exclude={"lens"}))
 
 
@@ -539,7 +563,9 @@ def prepare_source(frame, *, cancelled=None, retain=True):
 
 def resolve_source(frame, controls, *, cancelled=None):
     owner = getattr(frame, "delivery_owner", frame)
-    if unavailable_reason(owner) or not (controls.luminance or controls.color):
+    # A delivery with Micro selected must still fail if the RAW is lost,
+    # rather than silently exporting the ordinary decoded picture.
+    if unavailable_reason(owner, check_source=False) or not (controls.luminance or controls.color):
         return frame.image
     source = prepare_source(owner, cancelled=cancelled, retain=False)
     source.clear_bayer_cache()
