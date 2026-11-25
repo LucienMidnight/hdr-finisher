@@ -1903,14 +1903,25 @@ Evidence under `codebase/output/badminton/`: `scroll.json`, `cell-timings.csv`
 profile/cache scratch is removed after measurement; evidence is retained.
 Output started and ended at 2.1 GB, below the 100 GB limit.
 
+### November 25: shared-memory admission for Grade preview
+
+The November 24 MacBook Neo session at `65046433` reached 6.03 GB and
+started a tiled preview at 5.70 GB. Grade now checks shared app headroom
+before uploading a source and before replacing a tiled target, tile graph
+or Direct graph. If headroom is short, it reclaims unused resources,
+drains submitted work and refreshes the process census before refusing.
+The last picture remains visible while the screen-sized CPU replacement
+is prepared.
+
+The ledger includes the whole-picture and sharp Clean Grain swaps even
+while both are live. The retained tile target is a separate texture.
+On Apple Silicon only growth after the last process census is added,
+since the census already includes graphics memory. Presented Denoise
+tiles have retention priority only within the existing allowance.
+No app ceiling, GPU budget, cache share or tile dimensions changed.
+
 ## 8. Open work
 
-- **Grade GPU preview admission on unified memory.** The November 24 manual
-  MacBook Neo session at `65046433` reached 6.03 GB against a 4 GB ceiling and
-  switched Clean Grain preparation to the CPU. Specific Grain reservations
-  check whole-app headroom. Tiled Grade preview source and graph admission
-  still need the same check. Count active sharp Clean Grain surfaces and
-  enforce the Denoise tile allowance while retaining the displayed picture.
 - **Grade Grain reclaim at the same byte count.** An empty reclaim can stay
   suppressed after a source proxy becomes evictable without increasing held
   bytes. Revisit the renderer guard with a test that makes a still-resident

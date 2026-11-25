@@ -106,3 +106,153 @@ test("memory model includes retained-presentation overlap only in peak", () => {
   assert.equal(model.cachedBytes, 1024 * 512 * 8);
   assert.equal(model.peakLogicalBytes, model.residentBytes + model.retainedPresentationOverlapBytes);
 });
+
+const HDRGrainRoute = require("../frontend/grain-route");
+context.HDRGrainRoute = HDRGrainRoute;
+context.GPUTextureUsage = { COPY_DST: 1, COPY_SRC: 2, STORAGE_BINDING: 4, TEXTURE_BINDING: 8 };
+vm.runInContext(frontendSource("gpu-allocator.js"), context);
+
+const ceiling = 4_000_000_000;
+function sample(preview, id, bytes, measurement = "physical-footprint") {
+  preview.acceptGrainMemorySample({ sampleId: id, ceilingBytes: ceiling, totalBytes: bytes,
+    reservedBytes: 0, unifiedMemory: true, measurement });
+}
+
+test("Grade charges the soft and sharp swaps once, including during parking and the next census", () => {
+  const base = { width: 2000, height: 1000 };
+  const sharp = { width: 1000, height: 800, hdrGrainLayer: {} };
+  const preview = new Preview(base);
+  preview.gpuAllocator = new context.window.HDRGpuAllocator({ budgetBytes: 2 ** 30 });
+  preview.presentationTarget = { byteSize: 6_400_000 };
+  preview.noteGradeCanvasSwap(base, "bgra8unorm");
+  sample(preview, 1, 3_000_000_000);
+  const baselineBytes = preview.grainMemorySample.gpuBytes;
+  preview.noteGradeCanvasSwap(sharp, "rgba16float");
+  const baseBytes = base.width * base.height * 4 * 3;
+  const sharpBytes = sharp.width * sharp.height * 8 * 3;
+  assert.equal(preview.cachedGrainCanvasBytes(), sharpBytes);
+  const { categories } = preview.resourceMemorySnapshot().resident;
+  assert.equal(categories.canvasSwapBytes, baseBytes + sharpBytes);
+  assert.equal(categories.presentationSurfaceBytes, preview.presentationTarget.byteSize);
+  assert.equal(preview.grainMemorySnapshot().app_headroom_bytes, 1_000_000_000 - sharpBytes);
+
+  sharp.hdrGrainLayer.entry = preview.gpuAllocator.register({ kind: "grain-preview-layer", bytes: sharpBytes });
+  assert.equal(preview.grainMemorySnapshot().app_headroom_bytes, 1_000_000_000 - sharpBytes);
+  sample(preview, 1, 3_000_000_000);
+  assert.equal(preview.grainMemorySample.gpuBytes, baselineBytes, "the same census does not swallow new GPU bytes");
+  sample(preview, 2, 3_000_000_000 + sharpBytes);
+  assert.equal(preview.grainMemorySnapshot().app_headroom_bytes, 1_000_000_000 - sharpBytes);
+  sample(preview, 3, 3_000_000_000, "proportional-resident");
+  assert.equal(preview.grainMemorySnapshot().app_headroom_bytes,
+    1_000_000_000 - baseBytes - sharpBytes - preview.presentationTarget.byteSize);
+});
+
+test("Grade checks native source growth before starting an upload and rechecks the census after draining", async () => {
+  for (const [width, height] of [[7952, 5304], [9504, 6336], [11648, 8736]]) {
+    const events = [];
+    const canvas = { width: 2000, height: 1000, getContext: () => ({}) };
+    const preview = new Preview(canvas);
+    preview.available = preview.observeGradeMemory = true;
+    preview.sessionId = "photo";
+    preview.noteGradeCanvasSwap(canvas, "bgra8unorm");
+    const visible = preview.lastPresentedFrame = {};
+    const target = preview.presentationTarget = { byteSize: 8_000_000, valid: true };
+    preview.memoryBudgetBytes = () => 2 ** 31;
+    preview.loadProxy = () => { events.push("upload"); return null; };
+    preview.reclaimGrainResources = () => events.push("reclaim");
+    preview.waitForSubmittedWork = async () => events.push("drain");
+    const render = () => preview.renderToFrame(canvas, "photo", "hdr", { hdr: {} }, null,
+      width, [], 0, null, 203, { width, height }, { frameSize: { width, height } });
+
+    sample(preview, 1, 3_700_000_000);
+    preview.refreshGrainMemorySample = async () => {
+      events.push("census");
+      sample(preview, 2, 3_800_000_000);
+    };
+    assert.equal(await render(), false);
+    assert.equal(preview.lastRenderRefusal.reason, "app-memory-ceiling");
+    assert.deepEqual(events, ["reclaim", "drain", "census"]);
+    assert.equal(preview.lastPresentedFrame, visible);
+    assert.equal(preview.presentationTarget, target);
+    assert.deepEqual([canvas.width, canvas.height], [2000, 1000]);
+
+    events.length = 0;
+    preview.refreshGrainMemorySample = async () => {
+      events.push("census");
+      sample(preview, 3, 1_500_000_000);
+    };
+    await render();
+    assert.deepEqual(events, ["reclaim", "drain", "census", "upload"]);
+  }
+});
+
+test("the tiled shared-memory refusal leaves the visible canvas and target untouched", async () => {
+  const canvas = { width: 2000, height: 1000 };
+  const preview = new Preview(canvas);
+  const visible = preview.lastPresentedFrame = {};
+  const target = preview.presentationTarget = { byteSize: 8_000_000, valid: true };
+  preview.noteGradeCanvasSwap(canvas, "bgra8unorm");
+  preview.graphActivity = () => ({});
+  preview.composedTileHalo = () => ({ halo: 0 });
+  preview.tileViewportRequest = () => ({ fit: true });
+  preview.memoryBudgetBytes = () => 2 ** 31;
+  const events = [];
+  preview.ensurePresentationTarget = () => { throw Error("visible target was replaced"); };
+  preview.ensureTileGraph = () => { throw Error("graph was allocated"); };
+  preview.waitForSubmittedWork = async () => events.push("drain");
+  preview.refreshGrainMemorySample = async () => {
+    events.push("census");
+    sample(preview, 2, 4_010_000_000);
+  };
+  sample(preview, 1, 4_020_000_000);
+  class Scheduler { plan() { return { tiles: [] }; } }
+  Scheduler.DEFAULT_TILE_SIZE = 512;
+  const result = await preview.encodeTiledGeneration(canvas, {}, { width: 9504, height: 6336 },
+    { format: "rgba16float" }, {}, new Float32Array(1024), { Scheduler, gradeMemory: true });
+  assert.equal(result.appMemoryRefused, true);
+  assert.deepEqual(events, ["drain", "census"]);
+  assert.equal(preview.lastPresentedFrame, visible);
+  assert.equal(preview.presentationTarget, target);
+  assert.equal(target.valid, true);
+  assert.deepEqual([canvas.width, canvas.height], [2000, 1000]);
+});
+
+test("Denoise tiles already used by the visible frame still obey the retention allowance", () => {
+  const preview = new Preview(null);
+  const destroyed = [];
+  preview.denoiseTileBudget = () => 100;
+  preview.fineGrainReducedBytes = () => 16;
+  preview.device = { createTexture: () => ({ destroy() {} }) };
+  for (const key of ["old", "onscreen-1", "onscreen-2"]) {
+    preview.denoiseTiles.set(key, { byteSize: 64, texture: { destroy: () => destroyed.push(key) } });
+  }
+  preview.presentedDenoiseTileKeys = new Set(["onscreen-1", "onscreen-2"]);
+  assert.equal(preview.trimDenoiseTiles(["onscreen-1", "onscreen-2"]), 64);
+  assert.deepEqual(destroyed, ["old", "onscreen-1"]);
+  assert.deepEqual([...preview.denoiseTiles.keys()], ["onscreen-2"]);
+  preview.activeRenderCount = 1;
+  assert.equal(preview.denoiseTile("scratch-only", 4, 4), null);
+  const endpoint = preview.denoiseTile("endpoint", 4, 4, true, true);
+  assert.equal(endpoint.transient, true);
+  assert.deepEqual([...preview.denoiseTiles.keys()], ["onscreen-2"]);
+});
+
+test("a tiled memory preflight can drain and release rebuildable Denoise tiles without releasing the picture", async () => {
+  const preview = new Preview(null);
+  const target = preview.presentationTarget = { byteSize: 16, valid: true };
+  preview.activeRenderCount = 1;
+  const events = [];
+  preview.denoiseTiles.set("shown", { byteSize: 24, texture: { destroy: () => events.push("release-tile") } });
+  preview.presentedDenoiseTileKeys = new Set(["shown"]);
+  sample(preview, 1, ceiling + 1);
+  preview.waitForSubmittedWork = async () => events.push("drain");
+  preview.refreshGrainMemorySample = async () => {
+    events.push("census");
+    sample(preview, 2, ceiling - 16);
+  };
+  assert.equal(await preview.admitGradeMemory("tiled-preview", () => 8), true);
+  assert.deepEqual(events, ["drain", "release-tile", "census"]);
+  assert.equal(preview.denoiseTiles.size, 0);
+  assert.equal(preview.presentationTarget, target);
+  assert.equal(target.valid, true);
+});

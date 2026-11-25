@@ -160,6 +160,7 @@
       this.curveSampleCache = new Map();
       this.lastCurveSamples = null;
       this.surfaceKeys = new WeakMap();
+      this.gradeCanvasSwaps = new Map();
       this.intermediates = new Map();
       this.localMasks = new Map();
       this.localMaskInflight = new Map();
@@ -867,6 +868,7 @@
       // then replace everything the device owned.
       const grainFailures = this._grainFailures;
       this.resetSession(sessionId);
+      this.gradeCanvasSwaps.clear();
       this._grainFailures = grainFailures;
       this.device = null;
       this.adapter = null;
@@ -1261,7 +1263,8 @@
       // (and a pinned allocator reservation). It used to be missing from the
       // resident categories while the peak-agreement driver counted it, which
       // is exactly the drift the exit gate measures.
-      const presentationSurfaceBytes = (this.presentationTarget?.byteSize || 0) + this.cachedGrainCanvasBytes();
+      const presentationSurfaceBytes = this.presentationTarget?.byteSize || 0;
+      const canvasSwapBytes = this.gradeCanvasSwapBytes();
       const residentCategories = {
         sourceProxyBytes: proxyBytes,
         gradingCoreBytes,
@@ -1281,6 +1284,7 @@
         fineGrainReducedBytes: this.fineGrainReducedBytes(),
         parameterBufferBytes,
         presentationSurfaceBytes,
+        canvasSwapBytes,
       };
       const residentBytes = Object.values(residentCategories).reduce((sum, value) => sum + value, 0);
       const cachedCategories = {
@@ -2220,13 +2224,22 @@
      * stop following the image and follow the tile instead, so peak residency
      * stays flat as the selected tier grows.
      */
+    tileGraphMatches(graph, width, height, outputFormat, sourceFormat, spatialActive, denoiseActive, spatialGrid) {
+      return graph && graph.width === width && graph.height === height
+        && graph.outputFormat === outputFormat && graph.sourceFormat === sourceFormat
+        && graph.spatialActive === spatialActive && graph.denoiseActive === denoiseActive
+        && graph.spatialGrid === spatialGrid;
+    }
+
+    tileGraphBytes(width, height, sourceFormat, spatialActive, denoiseActive, spatialGrid) {
+      return width * height * (8 * 6 + (sourceFormat === "rgba16float" ? 8 : 16) + (denoiseActive ? 8 : 0))
+        + (spatialActive ? Math.ceil(width / spatialGrid) * Math.ceil(height / spatialGrid) * 8 * 2 : 0);
+    }
+
     ensureTileGraph(width, height, outputFormat, sourceFormat, spatialActive = false, denoiseActive = false, spatialGrid = 4, analysis = false) {
       const graphKey = analysis ? "analysisTileGraph" : "tileGraph";
       const current = this[graphKey];
-      if (current && current.width === width && current.height === height
-        && current.outputFormat === outputFormat && current.sourceFormat === sourceFormat
-        && current.spatialActive === spatialActive && current.denoiseActive === denoiseActive
-        && current.spatialGrid === spatialGrid) {
+      if (this.tileGraphMatches(current, width, height, outputFormat, sourceFormat, spatialActive, denoiseActive, spatialGrid)) {
         return current;
       }
       this.destroyTileGraph(graphKey);
@@ -2275,9 +2288,7 @@
                 | GPUTextureUsage.COPY_SRC,
             })
             : null,
-          byteSize: width * height * (8 * 6 + (sourceFormat === "rgba16float" ? 8 : 16))
-            + (spatialActive ? spatialWidth * spatialHeight * 8 * 2 : 0)
-            + (denoiseActive ? width * height * 8 : 0),
+          byteSize: this.tileGraphBytes(width, height, sourceFormat, spatialActive, denoiseActive, spatialGrid),
         };
       } catch (error) {
         this.recordAllocationFailure("tile-graph", error, { width, height });
@@ -2345,7 +2356,8 @@
       if (this.wholeSourceResident(sessionId, lane, longEdge, geometrySignature, sourceOptions?.identity || "source")) {
         return null;
       }
-      const surface = this.configureSurface(canvas, context, lane === "hdr");
+      const probe = this.observeGradeMemory ? this.surfaceProbeCanvas() : canvas;
+      const surface = this.configureSurface(probe, probe === canvas ? context : probe.getContext("webgpu"), lane === "hdr");
       const Contract = typeof window !== "undefined" ? window.HDRViewportRequest : null;
       if (!Contract?.sourceFetchRegion) return null;
       let previousFrame = this.retainedTiledFrame(sessionId, lane, geometrySignature, surface.format)
@@ -2887,10 +2899,12 @@
         this.denoiseTileCounters.hits += 1;
         return { ...entry, hit: true };
       }
-      if (entry) {
-        const previous = entry;
-        this.destroyAfterActiveRenders(() => previous.texture.destroy());
-      }
+      if (entry) this.dropDenoiseTiles([key]);
+      const byteSize = width * height * (packed ? 16 : 8);
+      const cached = this.canRetainDenoiseTile(byteSize);
+      // Endpoint blends still need one tile of scratch to keep the same
+      // result when the cache is full. Plain resolves already have scratch.
+      if (!cached && !endpoints) return null;
       const texture = this.device.createTexture({
         label: "denoise-tile",
         size: { width, height },
@@ -2898,8 +2912,8 @@
         usage: GPUTextureUsage.COPY_DST | GPUTextureUsage.COPY_SRC
           | (endpoints ? GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.STORAGE_BINDING : 0),
       });
-      entry = { texture, width, height, byteSize: width * height * (packed ? 16 : 8), endpoints };
-      this.denoiseTiles.set(key, entry);
+      entry = { texture, width, height, byteSize, endpoints, transient: !cached };
+      if (cached) this.denoiseTiles.set(key, entry);
       this.denoiseTileCounters.misses += 1;
       return { ...entry, hit: false };
     }
@@ -2940,7 +2954,7 @@
         }
       }
       const byteSize = width * height * 16;
-      const cached = this.trimDenoiseTiles([], byteSize) + byteSize <= this.denoiseTileBudget() - this.fineGrainReducedBytes();
+      const cached = this.canRetainDenoiseTile(byteSize);
       const texture = this.device.createTexture({
         label: "prepared-grain",
         size: { width, height },
@@ -2988,19 +3002,45 @@
       }
     }
 
+    // Use the same three backing images previously charged for parked Grain
+    // canvases. A retained render target is a separate texture, not a swap.
+    gradeCanvasSwapCost(width, height, format) {
+      return width * height * (format === "rgba16float" ? 8 : 4) * 3;
+    }
+
+    gradeCanvasSwapGrowth(canvas, width, height, format) {
+      const previous = this.gradeCanvasSwaps.get(canvas);
+      return previous?.width === width && previous?.height === height && previous?.format === format
+        ? 0 : this.gradeCanvasSwapCost(width, height, format);
+    }
+
+    noteGradeCanvasSwap(canvas, format) {
+      this.gradeCanvasSwaps.set(canvas, { width: canvas.width, height: canvas.height, format });
+    }
+
+    gradeCanvasSwapBytes({ sharpOnly = false, unregisteredOnly = false } = {}) {
+      let bytes = 0;
+      for (const [canvas, swap] of this.gradeCanvasSwaps) {
+        const sharp = canvas.hdrGrainLayer;
+        if (canvas.width !== swap.width || canvas.height !== swap.height
+          || (canvas.isConnected === false && !sharp)) {
+          this.gradeCanvasSwaps.delete(canvas);
+        } else if ((!sharpOnly || sharp) && (!unregisteredOnly || !sharp?.entry)) {
+          bytes += this.gradeCanvasSwapCost(swap.width, swap.height, swap.format);
+        }
+      }
+      return bytes;
+    }
+
+    cachedGrainCanvasBytes() {
+      return this.gradeCanvasSwapBytes({ sharpOnly: true });
+    }
+
     /**
      * Keep the denoised tiles inside a quarter of what the budget has free
      * once everything that is not a tile cache is counted. The detail and mask
      * caches see these bytes as resident, so the three cannot overcommit.
      */
-    cachedGrainCanvasBytes() {
-      let bytes = 0;
-      for (const entry of this.gpuAllocator?.entries.values() || []) {
-        if (entry.kind === "grain-preview-layer") bytes += entry.bytes;
-      }
-      return bytes;
-    }
-
     denoiseTileBudget() {
       const snapshot = this.resourceMemorySnapshot();
       const categories = snapshot.resident?.categories || {};
@@ -3012,19 +3052,25 @@
       return Math.max(0, Math.max(64 * 1024 * 1024, Math.floor(free * 0.25)) - canvasBytes);
     }
 
-    trimDenoiseTiles(pinned = [], pendingBytes = 0) {
+    canRetainDenoiseTile(byteSize) {
+      return this.trimDenoiseTiles([], byteSize) + byteSize
+        <= Math.max(0, this.denoiseTileBudget() - this.fineGrainReducedBytes());
+    }
+
+    trimDenoiseTiles(preferred = [], pendingBytes = 0) {
       let bytes = [...this.denoiseTiles.values()].reduce((sum, entry) => sum + entry.byteSize, 0);
-      if (!bytes) return 0;
-      const protectedKeys = new Set(pinned);
-      if (!pendingBytes) for (const key of this.presentedDenoiseTileKeys || []) protectedKeys.add(key);
+      // Do not remove inputs from an encoder that may still be building its
+      // batch. A new tile can use scratch instead of entering the cache.
+      if (!bytes || (pendingBytes && this.resourceRenderCount)) return bytes;
       const budget = Math.max(0, this.denoiseTileBudget() - this.fineGrainReducedBytes());
-      for (const [key, entry] of [...this.denoiseTiles]) {
+      const recent = new Set([...preferred, ...(this.presentedDenoiseTileKeys || [])]);
+      const victims = [...this.denoiseTiles].sort(([a], [b]) => Number(recent.has(a)) - Number(recent.has(b)));
+      for (const [key, entry] of victims) {
         if (bytes + pendingBytes <= budget) break;
-        if (protectedKeys.has(key) || (pendingBytes && this.resourceRenderCount)) continue;
-        this.denoiseTiles.delete(key);
-        this.destroyAfterActiveRenders(() => entry.texture.destroy());
+        // The on-screen picture is already composited. Its input tiles get
+        // first claim on retention, not an exemption from the allowance.
+        this.evictGpuCacheEntry("denoise-tile", key);
         bytes -= entry.byteSize;
-        this.denoiseTileCounters.evictions += 1;
       }
       return bytes;
     }
@@ -4261,12 +4307,9 @@
       const viewport = viewportRequest.fit ? null : viewportRequest.visible;
       const foregroundRegion = viewport ? viewportRequest.roi : null;
       const pictureRegion = options.boundedPresentation ? viewportRequest.roi : null;
-      // The retained target holds the accepted frame between generations, so a
-      // viewport pass can load it and process only its foreground tiles.
-      const presentationTarget = measureOnly
-        ? null
-        : this.ensurePresentationTarget(pictureRegion?.width || proxy.width,
-          pictureRegion?.height || proxy.height, surface.format, pictureRegion);
+      const pictureWidth = pictureRegion?.width || proxy.width;
+      const pictureHeight = pictureRegion?.height || proxy.height;
+      const spatialGrid = spatialGridScale(proxy.width, proxy.height);
       // Pad the request by a fraction of itself before selecting foreground
       // tiles. Without the padding a small pan exposes the previous pass's
       // boundary as a seam inside the viewport, because the newly visible strip
@@ -4278,9 +4321,9 @@
       // request: a whole-frame catch-up retains too, it just has no region to
       // answer from the pan cache. The signature string must be the one this
       // pass stored, never the global helper of the same name.
-      const retainedFrame = this.retainedTiledFrame(
-        options.sessionId, lane, options.geometrySignature || "{}", surface.format,
-      );
+      const retainedFrame = (measureOnly
+        || this.presentationTargetMatches(this.presentationTarget, pictureWidth, pictureHeight, surface.format, pictureRegion))
+        && this.retainedTiledFrame(options.sessionId, lane, options.geometrySignature || "{}", surface.format);
       // Display-scale pan cache. A viewport pass over a
       // retained frame is split into the tiles that still owe the current
       // generation and the tiles the cache already holds at this display
@@ -4352,11 +4395,37 @@
         }
         if (options.isCurrent?.() === false) return { rendered: false, refusals: ["superseded during Grain warmup"] };
       }
+      // Grain warmup can await backend work. Check its resulting memory
+      // footprint before either presentation or graph allocation.
+      if (options.gradeMemory && !measureOnly) {
+        const fits = await this.admitGradeMemory("tiled-preview", () => {
+          const existing = this.presentationTarget;
+          const targetGrowth = this.presentationTargetMatches(existing, pictureWidth, pictureHeight, surface.format, pictureRegion)
+            ? 0 : pictureWidth * pictureHeight * (surface.format === "rgba16float" ? 8 : 4);
+          const graph = this.tileGraph;
+          const graphGrowth = this.tileGraphMatches(graph, workWidth, workHeight, surface.format, proxy.pixelFormat,
+            spatialActive, denoiseActive, spatialGrid) ? 0
+              : this.tileGraphBytes(workWidth, workHeight, proxy.pixelFormat, spatialActive, denoiseActive, spatialGrid);
+          // A batch can hold up to four packed Grain tiles even with no free
+          // tile-cache space. The existing graph has its own one-tile resolve.
+          const grainScratch = adaptiveDenoise && denoiseSelector.cache.grain && !options.fineGrainReduced
+            ? workWidth * workHeight * 16 * 4 : 0;
+          return targetGrowth + graphGrowth + grainScratch
+            + this.gradeCanvasSwapGrowth(canvas, pictureWidth, pictureHeight, surface.format);
+        }, options.isCurrent, options.action);
+        if (options.isCurrent?.() === false) return { rendered: false, refusals: ["superseded-before-presentation"] };
+        if (!fits) return { rendered: false, appMemoryRefused: true };
+      }
+      // The retained target holds the accepted frame between generations, so a
+      // viewport pass can load it and process only its foreground tiles.
+      const presentationTarget = measureOnly
+        ? null
+        : this.ensurePresentationTarget(pictureWidth, pictureHeight, surface.format, pictureRegion);
       let cancelled = false;
       let lensTileFrameKey = null;
       const graph = this.ensureTileGraph(
         workWidth, workHeight, surface.format, proxy.pixelFormat, spatialActive, denoiseActive,
-        spatialGridScale(proxy.width, proxy.height), Boolean(options.analysisPatch),
+        spatialGrid, Boolean(options.analysisPatch),
       );
       if (!graph) return { rendered: false, refusals: ["tile graph allocation failed"] };
 
@@ -4753,14 +4822,15 @@
           denoiseParamBuffers.push(params);
           encoder.copyTextureToTexture({ texture: graph.denoiseResolvedTexture, origin }, { texture: graph.sourceTexture, origin }, extent);
         };
-        if (kept) denoiseTilesUsed.push(key);
+        if (kept?.transient) cleanGrainTransientTextures.push(kept.texture);
+        else if (kept) denoiseTilesUsed.push(key);
         if (kept?.hit) {
           denoiseTileHits += 1;
           if (cacheGrainEndpoints) return blend();
           encoder.copyTextureToTexture({ texture: kept.texture, origin }, { texture: graph.sourceTexture, origin }, extent);
           return;
         }
-        if (kept) {
+        if (kept && !kept.transient) {
           denoiseTilesCreated.push(key);
           denoiseTilesUnsubmitted.push(key);
         }
@@ -5254,6 +5324,7 @@
       if (floatPeak) encoder.copyBufferToBuffer(floatPeakResult,0,floatPeakRead,0,4);
       submissions += 1;
       this.device.queue.submit([encoder.finish()]);
+      if (presentationTarget && options.gradeMemory) this.noteGradeCanvasSwap(canvas, surface.format);
       if (presentationTarget) options.onFrameSubmitted?.(canvas.hdrFrameRegion, surface.hdr);
       denoiseTilesUnsubmitted.length = 0;
       this.recordSubmission(lane, options, 0);
@@ -5491,6 +5562,8 @@
       const backgroundUnderlayer = Boolean(sourceOptions?.backgroundUnderlayer);
       const backgroundSignal = backgroundUnderlayer ? sourceOptions.signal : null;
       const refuse = (reason) => this.refuseRender(reason, backgroundUnderlayer);
+      const gradeMemory = this.observeGradeMemory && !sourceOptions?.delivery && !sourceOptions?.measureOnly
+        && !sourceOptions?.scopeAnalysis && !sourceOptions?.frameAnchor && !sourceOptions?.gradeLibraryPicture;
       if (!this.available || !sessionId) return refuse("unavailable-or-no-session");
       if (lane === "sdr" && adjustments.sdr.linked_to_hdr) {
         localAdjustments = localAdjustments.map(local => ({ ...local, sdr_grade: local.hdr_grade }));
@@ -5503,6 +5576,8 @@
       const renderStartedAt = performance.now();
       this.activeRenderCount += 1;
       let proxyPin = null;
+      let replacementProxyPin = null;
+      const canvasPin = this.gpuAllocator?.pin(canvas.hdrGrainLayer?.entry);
       let draftPresentation = null;
       let cleanGrainBlend = null;
       let draftReturned = false;
@@ -5514,6 +5589,8 @@
       const resourceGeneration = this.resourceGeneration;
       const serial = (this.renderSerials.get(canvas) || 0) + 1;
       this.renderSerials.set(canvas, serial);
+      const currentRender = () => resourceGeneration === this.resourceGeneration && serial === this.renderSerials.get(canvas)
+        && sourceOptions?.isCurrent?.() !== false;
       // Physical paper/scan variants must arrive before this recipe is drawn.
       const filmRecipe = adjustments[lane === "sdr" && adjustments.sdr.linked_to_hdr ? "hdr" : lane]?.film_look || {};
       await this.waitForUnderlayerPreparation(window.HDRFilmStocks?.request(filmRecipe.film_stock || "none", filmRecipe), backgroundSignal);
@@ -5542,15 +5619,23 @@
       // transfer, without compiling a native whole-image measurement mask.
       const coarseFetchSignal = (sourceOptions?.cancelCoarseFetches || backgroundUnderlayer) && sourceOptions.signal
         ? AbortSignal.any([sourceOptions.signal, this.sourceAbortSignal()]) : undefined;
-      this.prefetchZoomMasks(canvas, sessionId, activeLocals, editRevision, geometrySignature, sourceOptions, serial, longEdge, coarseFetchSignal);
       // A Match candidate grades the scene picture as SDR whatever the SDR
       // lane's own source is, so it names the lane its source comes from.
       const sourceLane = sourceOptions?.sourceLane || lane;
       const requireRegion = region?.requireRegion || (sourceOptions?.nativeGeometryViewport && (Boolean(region)
         || !this.wholeSourceResident(sessionId, sourceLane, longEdge, geometrySignature, sourceIdentity)));
       if (requireRegion && !region) return refuse("required-source-region-unavailable");
+      const gateSource = (requestedRegion) => this.admitGradeMemory("source-proxy",
+        () => this.gradeSourceGrowth(sessionId, sourceLane, longEdge, geometrySignature, sourceIdentity,
+          requestedRegion, sourceOptions?.frameSize, sourceSize), currentRender, sourceOptions?.action);
+      if (gradeMemory) {
+        const fits = await gateSource(region);
+        if (!currentRender()) return refuse("superseded-before-proxy");
+        if (!fits) return refuse("app-memory-ceiling");
+      }
+      this.prefetchZoomMasks(canvas, sessionId, activeLocals, editRevision, geometrySignature, sourceOptions, serial, longEdge, coarseFetchSignal);
       const sourceStartedAt = performance.now();
-      let proxy = await this.loadProxy(
+      const loadSource = (region, requireRegion = false) => this.loadProxy(
         sessionId,
         sourceLane,
         longEdge,
@@ -5571,6 +5656,15 @@
             && this.denoiseSourceSelector.controls.method === "clean_grain",
         },
       );
+      // The transport can fall through from a regional miss to a whole
+      // upload. Do not fund that bigger allocation with the region estimate.
+      let proxy = await loadSource(region, requireRegion || Boolean(gradeMemory && region));
+      if (!proxy && gradeMemory && region && !requireRegion && currentRender()) {
+        const fits = await gateSource(null);
+        if (!currentRender()) return refuse("superseded-before-proxy");
+        if (!fits) return refuse("app-memory-ceiling");
+        proxy = await loadSource(null);
+      }
       const proxyReadyAt = performance.now();
       if (sourceOptions?.action && sourceOptions.fineGrainGrade) {
         globalThis.HDRDiagnostics?.event?.("denoise", "grain_source_ready", {
@@ -5591,7 +5685,7 @@
 
       // A lane switch can change swap-chain format. Probe on a one-pixel
       // canvas while the mounted whole-photo layer still shows the old frame.
-      const surfaceCanvas = sourceOptions?.deferSurface ? this.surfaceProbeCanvas() : canvas;
+      const surfaceCanvas = gradeMemory || sourceOptions?.deferSurface ? this.surfaceProbeCanvas() : canvas;
       const surfaceContext = surfaceCanvas === canvas ? context : surfaceCanvas.getContext("webgpu");
       const wantsHdr = lane === "hdr" && !sourceOptions?.forceSdrSurface;
       let surface = this.configureSurface(surfaceCanvas, surfaceContext, wantsHdr);
@@ -5654,29 +5748,37 @@
       // Direct for a viewport request, Direct executes every active node over
       // the whole frame, so it needs the whole-frame source: load it here.
       if (proxy.region && plan.decision.mode !== "tiled") {
-        const whole = await this.loadProxy(
-          sessionId,
-          lane,
-          longEdge,
-          geometrySignature,
-          editRevision,
-          sourceIdentity,
-          {
-            isCurrent: () => resourceGeneration === this.resourceGeneration
-              && serial === this.renderSerials.get(canvas)
-              && sourceOptions?.isCurrent?.() !== false,
-            signal: coarseFetchSignal,
-          },
-        );
+        if (gradeMemory) {
+          const fits = await gateSource(null);
+          if (!currentRender()) return refuse("superseded-before-proxy");
+          if (!fits) return refuse("app-memory-ceiling");
+        }
+        const whole = await loadSource(null);
         if (whole) {
           proxy = whole;
+          replacementProxyPin = this.gpuAllocator?.pin(whole.allocatorEntry);
           sourceProxy = sourceOptions?.originalSource ? proxy : this.selectedDenoiseSource(proxy);
         }
       }
       // Direct grades one whole-frame texture, so adaptive Denoise fills its
       // reconstruction here, the first time this frame is drawn that way.
-      const currentRender = () => resourceGeneration === this.resourceGeneration && serial === this.renderSerials.get(canvas)
-        && sourceOptions?.isCurrent?.() !== false;
+      if (gradeMemory && plan.decision.mode !== "tiled") {
+        const fits = await this.admitGradeMemory("direct-preview", () => {
+          const resident = retainedIntermediate?.width === proxy.width && retainedIntermediate?.height === proxy.height
+            ? retainedIntermediate : null;
+          const { width, height } = proxy;
+          const pixels = width * height;
+          const spatialGrid = spatialGridScale(width, height);
+          const spatialBytes = Math.ceil(width / spatialGrid) * Math.ceil(height / spatialGrid) * 8;
+          return this.gradeCanvasSwapGrowth(canvas, width, height, surface.format)
+            + (resident ? 0 : pixels * 8 * 4)
+            + ((detailActive || localDetailActive) && !resident?.detailATexture ? pixels * 8 * 2 : 0)
+            + (spatialActive && !resident?.spatialATexture ? spatialBytes * 2 : 0)
+            + (lensGlowCache && !resident?.lensGlowTexture ? spatialBytes : 0);
+        }, currentRender, sourceOptions?.action);
+        if (!currentRender()) return refuse("superseded-before-intermediate");
+        if (!fits) return refuse("app-memory-ceiling");
+      }
       const reduceGrain = !microQuick && !sourceOptions?.fineGrainUnderlayer && !sourceOptions?.originalSource
         && !sourceOptions?.delivery && !sourceOptions?.frameAnchor && !sourceOptions?.measureOnly;
       const reducedGrain = reduceGrain
@@ -5843,6 +5945,7 @@
           fineGrainReduced,
           microQuick,
           quickCpuGrain,
+          gradeMemory,
           signal: sourceOptions?.signal,
           action: sourceOptions?.action,
           originalSource: sourceOptions?.originalSource,
@@ -5884,6 +5987,7 @@
             && sourceOptions?.isCurrent?.() !== false,
         });
         if (!tiled?.rendered) {
+          if (tiled?.appMemoryRefused) return refuse("app-memory-ceiling");
           return refuse(`tiled-encode-failed:${(tiled?.refusals || []).join(",")}`);
         }
         // The resolution this generation was processed at, which is not the
@@ -6270,6 +6374,7 @@
       }
       if (lensGlowKey) intermediate.lensGlowKey = lensGlowKey;
       sourceOptions?.onPresented?.(context.getCurrentTexture());
+      if (gradeMemory && !draftPresentation) this.noteGradeCanvasSwap(canvas, surface.format);
       if (!sourceOptions?.measureOnly) sourceOptions?.onFrameSubmitted?.(null, presentationSurface.hdr);
       if (hslSelection) {
         hslEngine.commit(hslSelection.token);
@@ -6376,6 +6481,8 @@
         if (!draftReturned) draftPresentation?.destroy();
         if (cleanGrainBlend) this.destroyAfterActiveRenders(() => cleanGrainBlend.texture.destroy());
         if (proxyPin) this.gpuAllocator.unpin(proxyPin);
+        this.gpuAllocator?.unpin(replacementProxyPin);
+        this.gpuAllocator?.unpin(canvasPin);
         const underlayer = backgroundUnderlayer ? this.geometryUnderlayerRender : null;
         if (underlayer?.intermediate) {
           this.destroyIntermediate(underlayer.intermediate);
@@ -6857,15 +6964,80 @@
       }
     }
 
+    gradeSourceGrowth(sessionId, lane, longEdge, geometry, identity, region, exactSize, sourceSize) {
+      if (!region && this.wholeSourceResident(sessionId, lane, longEdge, geometry, identity)) return 0;
+      if (region && [...this.proxies.values()].some(proxy => {
+        const held = proxy.region;
+        return held && ((proxy.regionTransport && !proxy.identity?.includes(":analysis:"))
+          || (held.x === region.x && held.y === region.y && held.width === region.width && held.height === region.height))
+          && proxy.sessionId === sessionId && proxy.lane === lane && proxy.longEdge === longEdge
+          && proxy.geometrySignature === geometry && proxy.sourceIdentity === identity
+          && held.x % (region.alignment || 1) === 0 && held.y % (region.alignment || 1) === 0
+          && held.x <= region.x && held.y <= region.y
+          && held.x + held.width >= region.x + region.width && held.y + held.height >= region.y + region.height;
+      })) return 0;
+      const edge = Math.max(256, longEdge);
+      const size = region || exactSize || (geometry === "{}" ? sourceSize : null);
+      const scale = region || exactSize ? 1 : Math.min(1, edge / Math.max(size?.width || edge, size?.height || edge));
+      // Half is preferred but the source can require full float. Transport
+      // buffers can overlap the GPU copy; four bounded upload slots already
+      // exist and no image-sized staging allocation is assumed.
+      const width = Math.ceil((size?.width || edge) * scale);
+      const height = Math.ceil((size?.height || edge) * scale);
+      const texture = width * height * 16;
+      const staging = Math.ceil(width * 16 / 256) * 256 * height;
+      return texture + Math.min(staging, this.maxSourceChunkBytes * 4);
+    }
+
+    async admitGradeMemory(stage, requestedBytes, isCurrent = () => true, action = null) {
+      const sample = this.grainMemorySample;
+      if (!(sample?.unifiedMemory ?? this.unifiedGrainMemory)) return true;
+      if (!isCurrent()) return false;
+      if (!sample || performance.now() - sample.receivedAt >= 5000) await this.refreshGrainMemorySample();
+      if (!isCurrent()) return false;
+      let snapshot = this.grainMemorySnapshot(requestedBytes());
+      const fitsSample = ({ requested_bytes, app_headroom_bytes, app_ram_bytes, app_budget_bytes }) =>
+        requested_bytes <= (app_headroom_bytes ?? Infinity) && !(app_ram_bytes > app_budget_bytes);
+      if (fitsSample(snapshot)) return true;
+      // This generation has not encoded its graph. With no other encoder or
+      // scope active, it can reclaim unused inputs and parked (never active)
+      // canvases. Release only destruction work added by this reclaim.
+      const canReclaim = this.resourceRenderCount === 1 && !this.activeScopeCount;
+      const previous = this.deferredDestroy.length;
+      if (canReclaim) this.reclaimGrainResources(snapshot, action, true, true);
+      const retired = canReclaim ? this.deferredDestroy.splice(previous) : [];
+      try {
+        await this.waitForSubmittedWork();
+      } finally {
+        retired.forEach(destroy => destroy());
+      }
+      // Even an empty reclaim may coincide with backend work finishing.
+      // Get a new OS census before a final refusal, not the cached high mark.
+      await this.refreshGrainMemorySample();
+      if (!isCurrent()) return false;
+      snapshot = this.grainMemorySnapshot(requestedBytes());
+      const fits = fitsSample(snapshot);
+      this.recordStage("grade-memory-admission", { stage, fits, ...snapshot });
+      if (!fits) {
+        globalThis.HDRDiagnostics?.event?.("grade", "preview_memory_refused", {
+          route: "refused", reason: "app_memory_ceiling", stage, ...snapshot,
+        }, action);
+      }
+      return fits;
+    }
+
     grainMemorySnapshot(requestedBytes = null) {
       const { totalBytes, categories } = this.resourceMemorySnapshot().resident;
-      const allocatorBytes = this.gpuAllocator?.usedBytes() || 0;
+      // Parked Grain layers already have a cache entry. Active canvases do
+      // not, so include just those on the allocator side of the same ledger.
+      const allocatorBytes = (this.gpuAllocator?.usedBytes() || 0)
+        + this.gradeCanvasSwapBytes({ unregisteredOnly: true });
       const sample = this.grainMemorySample;
       // On Apple Silicon the process footprint already includes graphics
       // memory. Charge GPU growth after the census without adding it twice.
       // For the PC test profile the discrete GPU is outside the RAM census,
       // so charge the full ledger rather than only growth after the sample.
-      const sampledGpu = sample?.measurement === "proportional-resident" ? 0 : sample?.gpuBytes;
+      const sampledGpu = sample?.measurement === "proportional-resident" ? 0 : (sample?.gpuBytes || 0);
       const unified = sample?.unifiedMemory ?? this.unifiedGrainMemory;
       const currentSample = sample && performance.now() - sample.receivedAt < 5000;
       const appHeadroom = !unified ? null : currentSample ? Math.max(0, sample.ceilingBytes - sample.totalBytes
@@ -6943,7 +7115,7 @@
       return current() && this.startGrainRetry(key, context);
     }
 
-    reclaimGrainResources(before, context, reservation = false) {
+    reclaimGrainResources(before, context, reservation = false, previewPreflight = false) {
       const busy = this.resourceRenderCount || this.activeScopeCount;
       // Source proxies and active mask tiles are pinned. Other entries can
       // still be held by a render or a scope outside the ledger.
@@ -6961,7 +7133,8 @@
       const presentation = this.presentationTarget;
       const evictedByKind = {};
       const requested = before.requested_bytes;
-      if (requested != null && HDRGrainRoute.headroom(before) >= requested) return false;
+      const appAlreadyOver = previewPreflight && before.app_ram_bytes > before.app_budget_bytes;
+      if (!appAlreadyOver && requested != null && HDRGrainRoute.headroom(before) >= requested) return false;
       const protectActive = requested == null
         && before.pressure_level !== "critical" && this.grainReclaimPressure !== "critical";
       const activeGrainSelector = selector?.selected === "resolved" && selector.cache?.grain?.gpu ? selector : null;
@@ -6982,19 +7155,19 @@
       if (requested != null) entries.push(...presentedMasks);
       for (const entry of entries) {
         if (entry.pins || !entry.evict || !reclaimable.has(entry.kind)
-            || (busy && entry.kind !== "source-proxy" && entry.kind !== "mask-tile")) continue;
+            || (busy && !previewPreflight && entry.kind !== "source-proxy" && entry.kind !== "mask-tile")) continue;
         if (entry.kind === "source-proxy") {
           const proxy = proxies.get(entry.key);
           if (this.proxyInflight.size || !proxy || proxy === selector?.original || (proxy.lane === visible?.lane
               && proxy.longEdge === visible.longEdge && proxy.geometrySignature === visible.geometrySignature)) continue;
         }
-        if (busy) this.evictGpuCacheEntry(entry.kind, entry.key, true);
+        if (busy && !previewPreflight) this.evictGpuCacheEntry(entry.kind, entry.key, true);
         else entry.evict();
         allocator.unregister(entry);
         count++;
         released += entry.bytes;
         evictedByKind[entry.kind] = (evictedByKind[entry.kind] || 0) + entry.bytes;
-        if (requested != null && HDRGrainRoute.headroom(this.grainMemorySnapshot()) >= requested) break;
+        if (!appAlreadyOver && requested != null && HDRGrainRoute.headroom(this.grainMemorySnapshot()) >= requested) break;
       }
       this.grainEvent?.("grain_eviction", count ? "gpu" : "refused",
         count ? "rebuildable_cache_released" : "no_reclaimable_resources", context, {
@@ -8941,10 +9114,14 @@
      * frame to the canvas. It is tiled-only, sized to the processed output, and
      * freed with the session.
      */
+    presentationTargetMatches(target, width, height, format, region) {
+      return target && target.width === width && target.height === height && target.format === format
+        && target.region?.x === region?.x && target.region?.y === region?.y;
+    }
+
     ensurePresentationTarget(width, height, format, region) {
       const existing = this.presentationTarget;
-      if (existing && existing.width === width && existing.height === height && existing.format === format
-        && existing.region?.x === region?.x && existing.region?.y === region?.y) {
+      if (this.presentationTargetMatches(existing, width, height, format, region)) {
         return existing;
       }
       if (existing) {

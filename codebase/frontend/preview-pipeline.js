@@ -428,12 +428,26 @@ async function renderPreviewForLane(
   if (await syncGlobalEditState() === false || state.session?.session_id !== sessionId
     || workGeneration !== state.gradeWorkGeneration) return false;
   if (geometryDraftActive()) return false;
+  const memoryFallback = displayWhenReady && state.lastGpuDraftRefusal?.lane === lane
+    && state.lastGpuDraftRefusal.reason === "app-memory-ceiling";
+  if (memoryFallback) {
+    // The rejected size can be native even when only a screen-sized picture
+    // is visible. Do not replace a refused GPU allocation with a native CPU
+    // allocation; keep the old picture until this smaller one is decoded.
+    longEdge = Math.min(longEdge, denoiseUnderlayerEdge());
+    const { isCurrent } = options;
+    const { acceptedPresentation, zoomMode, zoomPercent } = state;
+    options = { ...options, denoiseFallback: true, memoryFallback: true,
+      memoryFallbackCurrent: () => state.acceptedPresentation === acceptedPresentation && state.currentView === lane
+        && state.zoomMode === zoomMode && state.zoomPercent === zoomPercent && isCurrent?.() !== false,
+    };
+  }
   const raw = options.raw ?? !state.gpuPreview?.available;
   const viewport = displayWhenReady && lane === state.currentView && !state.comparePeekActive
     && cpuMicroPreviewSelected(lane, options.denoiseFallback)
     ? cpuMicroViewport(lane) : null;
   const key = JSON.stringify([sessionId, state.editRevision, state.previewGeneration[lane],
-    geometrySignature(), longEdge, displayWhenReady, raw, Boolean(options.denoiseFallback), localsBypassed(),
+    geometrySignature(), longEdge, displayWhenReady, raw, Boolean(options.denoiseFallback), memoryFallback, localsBypassed(),
     state.localPreviewDirty && !localsBypassed() ? localAdjustments() : null, viewport]);
   const inflight = state.cpuPreviewInflight ||= new Map();
   const previous = inflight.get(lane);
@@ -486,7 +500,8 @@ async function renderPreviewForLaneInner(
   lane,
   displayWhenReady,
   longEdge = 1600,
-  { showProgress = true, progressSteps = [12, 76, 92], raw = !state.gpuPreview?.available, denoiseFallback = false, action = null } = {},
+  { showProgress = true, progressSteps = [12, 76, 92], raw = !state.gpuPreview?.available,
+    denoiseFallback = false, memoryFallback = false, memoryFallbackCurrent = null, action = null } = {},
 ) {
   // Perspective owns its transient preview until Apply/Cancel. Revision-based
   // renders still contain the committed geometry, even when the controls reset.
@@ -494,7 +509,8 @@ async function renderPreviewForLaneInner(
   const sessionId = state.session.session_id;
   const workGeneration = state.gradeWorkGeneration;
   if (await syncGlobalEditState() === false) return false;
-  if (workGeneration !== state.gradeWorkGeneration || geometryDraftActive() || state.session?.session_id !== sessionId) return false;
+  if (workGeneration !== state.gradeWorkGeneration || geometryDraftActive()
+    || state.session?.session_id !== sessionId || memoryFallbackCurrent?.() === false) return false;
   if (raw) return renderRawPreviewForLane(lane, displayWhenReady, longEdge, { showProgress, action });
   const cached = state.previewCache[lane];
   const generation = state.previewGeneration[lane];
@@ -540,7 +556,7 @@ async function renderPreviewForLaneInner(
   if (!response || response.aborted) return;
   const requestIsCurrent = () => controller === state.previewControllers[lane]
     && !geometryDraftActive()
-    && state.session?.session_id === sessionId
+    && state.session?.session_id === sessionId && memoryFallbackCurrent?.() !== false
     && generation === state.previewGeneration[lane]
     && microKey === microGrainPreviewKey(lane)
     && signature === geometrySignature();
@@ -564,7 +580,7 @@ async function renderPreviewForLaneInner(
       // A CPU preview failure moves the
       // viewer to Unavailable and keeps the last valid presentation. Clearing
       // the image here destroyed a good frame because a later one failed.
-      if (state.acceptedPresentation?.lane === lane) markPreviewUnavailable(detail);
+      if (memoryFallback || state.acceptedPresentation?.lane === lane) markPreviewUnavailable(detail);
       else {
         clearPreviewImage();
         clearPreviewOverlay();
@@ -578,6 +594,8 @@ async function renderPreviewForLaneInner(
   const reducedEdge = Number(response.headers.get("X-Preview-Reduced-Edge")) || null;
   const grainRoute = backendGrainFrame(lane, reducedEdge);
   const processedEdge = reducedEdge || longEdge;
+  const memoryNotice = memoryFallback && processedEdge < refinementProxyLongEdge()
+    ? "The app was short of shared memory, so this preview is reduced. Export is full size." : "";
   let width = Number(response.headers.get("X-Image-Width"));
   let height = Number(response.headers.get("X-Image-Height"));
   const scopePeakHeader = response.headers.get("X-Scope-Peak");
@@ -599,7 +617,7 @@ async function renderPreviewForLaneInner(
   }
   const previous = state.previewCache[lane];
   if (previous?.url) URL.revokeObjectURL(previous.url);
-  state.previewCache[lane] = { url, generation, longEdge: Math.max(width, height) || longEdge, requestedLongEdge: longEdge, reducedEdge, grainRoute, width, height, microKey, geometrySignature: signature, scopePeak: Number.isFinite(responseScopePeak) ? responseScopePeak : null };
+  state.previewCache[lane] = { url, generation, longEdge: Math.max(width, height) || longEdge, requestedLongEdge: longEdge, reducedEdge, memoryNotice, grainRoute, width, height, microKey, geometrySignature: signature, scopePeak: Number.isFinite(responseScopePeak) ? responseScopePeak : null };
   if (displayWhenReady && state.currentView === lane && !state.comparePeekActive) {
     if (showProgress) setPreviewMessage("Presenting preview...", progressSteps[2]);
     const keptGpuSurface = !denoiseFallback && !reducedEdge && shouldKeepHdrGpuSurface(lane)
@@ -610,8 +628,13 @@ async function renderPreviewForLaneInner(
       setGpuSurfaceHdr(lane, false);
       state.previewInfoByLane[lane] = previewInfo;
       if (!await applyPreviewUrl(url, requestIsCurrent)) return false;
+      if (memoryFallback) {
+        els.previewCanvas.hdrWholeFrame = null;
+        els.previewCanvas.width = 1;
+        els.previewCanvas.height = 1;
+      }
       state.previewInfo = previewInfo;
-      acceptPresentation(lane, processedEdge >= refinementProxyLongEdge() ? "refinement" : "settled", width, height, previewInfo.transport, denoiseFallback || !gpuPreviewEligible(lane) ? "CPU/backend" : "", null, generation, null, processedEdge, responseScopePeak, false, false, describeReducedDenoisePreview(reducedEdge), grainRoute);
+      acceptPresentation(lane, processedEdge >= refinementProxyLongEdge() ? "refinement" : "settled", width, height, previewInfo.transport, denoiseFallback || !gpuPreviewEligible(lane) ? "CPU/backend" : "", null, generation, null, processedEdge, responseScopePeak, false, false, memoryNotice || describeReducedDenoisePreview(reducedEdge), grainRoute);
       els.scopeKindLabel.textContent = lane.toUpperCase();
       renderReadouts();
     }
@@ -1057,6 +1080,9 @@ function clearDenoiseDetail() {
 
 function releaseCleanGrainLayer(layer) {
   layer.renderer.gpuAllocator?.unregister(layer.entry);
+  layer.entry = null;
+  layer.renderer.gradeCanvasSwaps.delete(layer.element);
+  layer.element.hdrGrainLayer = null;
   layer.element.remove();
   layer.element.width = 1;
   layer.element.height = 1;
@@ -1074,17 +1100,18 @@ function cacheCleanGrainLayer(base, layer, key) {
     releaseCleanGrainLayer(layer);
     base.hdrSharpLayers = base.hdrSharpLayers?.filter(item => item !== layer);
   };
-  // Charge the cached canvas's backing images to the same allowance as
-  // prepared Grain pixels. The active canvas stays mounted under pressure.
-  const bytes = layer.element.width * layer.element.height * 8 * 3;
+  // The swap is already resident. Register its existing charge as an
+  // evictable cache entry, rather than charging it a second time on parking.
+  const swap = renderer.gradeCanvasSwaps.get(layer.element);
   const snapshot = renderer.grainMemorySnapshot();
   const spare = renderer.denoiseTileBudget() - renderer.fineGrainReducedBytes()
     - (snapshot.resident_by_kind?.denoiseTileBytes || 0);
-  if (layer.key !== key || snapshot.pressure_level === "critical" || !renderer.gpuAllocator
-      || bytes > spare || bytes > HDRGrainRoute.headroom(snapshot)) {
+  if (!swap || layer.key !== key || snapshot.pressure_level === "critical" || !renderer.gpuAllocator
+      || spare < 0 || HDRGrainRoute.headroom(snapshot) <= 0) {
     evict();
     return;
   }
+  const bytes = renderer.gradeCanvasSwapCost(swap.width, swap.height, swap.format);
   layer.entry = renderer.gpuAllocator.register({ kind: "grain-preview-layer", bytes, evict });
   layer.element.classList.remove("primary");
 }
@@ -1427,7 +1454,10 @@ async function renderGpuDraftForView(lane, request) {
     ? canvas.hdrSharpLayers.find(layer => layer !== activeSharp) : activeSharp) || {
     renderer: state.gpuPreview, element: Object.assign(document.createElement("canvas"), { className: "grain-preview-layer" }),
   } : null;
-  sharpLayer?.element.setAttribute("aria-hidden", "true");
+  if (sharpLayer) {
+    sharpLayer.element.hdrGrainLayer = sharpLayer;
+    sharpLayer.element.setAttribute("aria-hidden", "true");
+  }
   const repairSourceGeneration = state.repairSourceGeneration || 0;
   const adjustmentsSnapshot = JSON.parse(JSON.stringify(state.adjustments));
   const localSnapshot = localsBypassed()
@@ -1574,6 +1604,14 @@ async function renderGpuDraftForView(lane, request) {
         || reason === "intermediate-allocation-failed")) throw new Error(reason);
       if (viewportMoved && sourceOptions.isCurrent()
         && !state.renderCoordinator?.notePan(lane)) scheduleZoomRefinement({ continuous: true });
+      if (reason === "app-memory-ceiling" && request.reason === "zoom-scale" && sourceOptions.isCurrent()) {
+        // Zoom has no settle fallback of its own. Keep the mounted canvas
+        // while the bounded CPU picture for this zoom is prepared.
+        refuse(reason);
+        return await renderPreviewForLane(lane, true, longEdge, {
+          showProgress: false, action: request.action, isCurrent: sourceOptions.isCurrent,
+        });
+      }
       return refuse(reason || "renderer-returned-nothing");
     }
     if (!sourceOptions.isCurrent()) return refuse("superseded-during-render");
@@ -2096,7 +2134,7 @@ async function showCachedPreview(lane, { skipGpu = false } = {}) {
   else if (cached.url) {
     if (!await applyPreviewUrl(cached.url, isCurrent)) return false;
     const cachedProcessedEdge = cached.reducedEdge || cached.requestedLongEdge || cached.longEdge;
-    acceptPresentation(lane, cachedProcessedEdge >= refinementProxyLongEdge() ? "refinement" : "settled", cached.width, cached.height, state.previewInfoByLane[lane].transport, "CPU/backend", null, cached.generation, null, cachedProcessedEdge, cached.scopePeak, false, false, describeReducedDenoisePreview(cached.reducedEdge), cached.grainRoute);
+    acceptPresentation(lane, cachedProcessedEdge >= refinementProxyLongEdge() ? "refinement" : "settled", cached.width, cached.height, state.previewInfoByLane[lane].transport, "CPU/backend", null, cached.generation, null, cachedProcessedEdge, cached.scopePeak, false, false, cached.memoryNotice || describeReducedDenoisePreview(cached.reducedEdge), cached.grainRoute);
   }
   state.previewInfo = state.previewInfoByLane[lane];
   renderReadouts();

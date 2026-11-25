@@ -8,6 +8,18 @@
   scopes UI; backend `render_cache.py`, `cpu_strips.py`, `preview.py`,
   `scopes.py`, `overlay.py`, `peak_*.py`.
 
+## November 25: shared-memory admission in Grade
+
+On unified memory, Grade checks for room before loading a source and
+before allocating a render graph or swapping the presentation surface.
+It reclaims unused inputs, drains submitted work and asks for a fresh
+memory sample before refusing. A refusal does not clear the current
+picture, and a settled edit or zoom can use a screen-sized CPU replacement.
+Sharp and soft canvas backing images count once each while both are
+live. Keeping the inputs for an already presented Denoise tile does not
+allow the tile cache to grow beyond its existing share. See the
+[memory policy](memory-and-caches.md#november-25-shared-memory-admission-for-grade-preview).
+
 ## November 21: correlated Grade Grain decisions
 
 The desktop log includes the GPU configuration and the reason and memory

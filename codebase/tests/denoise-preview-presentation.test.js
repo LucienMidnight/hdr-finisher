@@ -18,6 +18,7 @@ test("panning back reveals a covering Clean Grain picture immediately and skips 
     available: true, gpuAllocator: { register: () => ({}), unregister() {} },
     grainMemorySnapshot: () => ({ budget_bytes: 20e6, resident_bytes: 0, allocator_bytes: 0 }),
     denoiseTileBudget: () => 10e6, fineGrainReducedBytes: () => 0,
+    gradeCanvasSwaps: new Map(), gradeCanvasSwapCost: (width, height) => width * height * 24,
   };
   const versions = { hdr: 1 };
   const base = {};
@@ -36,6 +37,7 @@ test("panning back reveals a covering Clean Grain picture immediately and skips 
   const key = context.cleanGrainLayerIdentity("hdr");
   const first = { key, element: element(), renderer, region: accepted, entry: {} };
   const second = { key, element: element(), renderer, region: other };
+  for (const layer of [first, second]) renderer.gradeCanvasSwaps.set(layer.element, layer.element);
   Object.assign(base, { hdrSharpLayers: [first, second], hdrSharpDetail: second, hdrFrameRegion: other });
   assert.equal(context.showCachedCleanGrainViewport("hdr"), true);
   assert.equal(base.hdrSharpDetail, first);
@@ -723,4 +725,45 @@ test("a temporary Micro Grain failure retries the exact Fit frame without drawin
   vm.runInContext(frontendSource("preview-pipeline.js"), context);
   assert.equal(await context.renderGpuDraftInner("hdr", { longEdge: 1600 }), true);
   assert.deepEqual(draws, [true, false, false]);
+});
+
+test("memory-refused native preview prepares a screen-sized CPU replacement without clearing the frame", async () => {
+  const canvas = { width: 9504, height: 6336 };
+  const els = { previewCanvas: canvas, scopeKindLabel: {} };
+  const state = { session: { session_id: "photo" }, currentView: "hdr", gpuPreview: { available: true },
+    lastGpuDraftRefusal: { lane: "hdr", reason: "app-memory-ceiling" },
+    previewCache: {}, previewGeneration: { hdr: 1 }, previewControllers: {}, previewInfoByLane: {} };
+  const decoded = Promise.withResolvers();
+  const presenting = Promise.withResolvers();
+  let request;
+  let accepted;
+  const ctx = vm.createContext({ state, els, AbortController, URL,
+    CPU_PREVIEW_MAX_LONG_EDGE: 16384, denoiseUnderlayerEdge: () => 1920,
+    geometryDraftActive: () => false, geometrySignature: () => "{}",
+    syncGlobalEditState: async () => true, cpuMicroPreviewSelected: () => false,
+    localsBypassed: () => false, previewExecutionForTier: () => "strips",
+    cpuPreviewReason: () => state.lastGpuDraftRefusal.reason, mediaQueryMatch: () => true,
+    fetch: async (_, options) => {
+      request = JSON.parse(options.body);
+      return new Response(new Blob(["pixels"]), { headers: { "X-Image-Width": 1920, "X-Image-Height": 1280 } });
+    },
+    previewInfoFromResponse: () => ({ transport: "PNG" }),
+    shouldKeepHdrGpuSurface: () => { throw Error("the fallback tried to re-render on the GPU"); },
+    applyPreviewUrl: async () => { presenting.resolve(); return decoded.promise; },
+    gpuPreviewEligible: () => true, setGpuSurfaceHdr() {}, refinementProxyLongEdge: () => 9504,
+    renderCompareStatus() {}, renderReadouts() {}, acceptPresentation: (...args) => { accepted = args; },
+  });
+  vm.runInContext(declarations("renderPreviewForLane", "renderPreviewForLaneInner", "describeReducedDenoisePreview",
+    "microGrainPreviewRequest", "microGrainPreviewKey", "grainCpuPreviewHeaders", "backendGrainFrame"), ctx);
+  const pending = ctx.renderPreviewForLane("hdr", true, 9504, { showProgress: false });
+  await presenting.promise;
+  assert.equal(request.long_edge, 1920);
+  assert.deepEqual([canvas.width, canvas.height], [9504, 6336]);
+  assert.equal(accepted, undefined);
+  decoded.resolve(true);
+  assert.equal(await pending, true);
+  assert.deepEqual([canvas.width, canvas.height], [1, 1]);
+  assert.equal(accepted[9], 1920);
+  assert.ok(accepted[13]);
+  URL.revokeObjectURL(state.previewCache.hdr.url);
 });
