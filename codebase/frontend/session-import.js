@@ -429,12 +429,11 @@ function renderRawImportControls(session) {
     visible && session?.metadata?.extra?.raw_pixel_cleanup?.supported === true,
     "Pixel cleanup is available only for supported Bayer RAW sensors, not X-Trans, linear DNG or finished images.");
   if (els.rawRemoveHotPixels) {
-    els.rawRemoveHotPixels.checked = state.editDocument?.source?.raw_import_settings?.pixel_cleanup?.remove_hot_pixels === true;
+    els.rawRemoveHotPixels.checked = state.editDocument?.source?.raw_import_settings?.pixel_cleanup?.remove_hot_pixels !== false;
     const cleanup = state.editDocument?.source?.raw_import_settings?.pixel_cleanup;
-    if (els.rawEvenOutSpecks) els.rawEvenOutSpecks.checked = cleanup?.even_out_specks === true;
+    if (els.rawEvenOutSpecks) els.rawEvenOutSpecks.checked = cleanup?.even_out_specks !== false;
     if (els.rawSpeckThreshold) els.rawSpeckThreshold.value = String(cleanup?.speck_threshold ?? 2.5);
     renderRawSpeckControls();
-    els.rawPixelCleanupGroup?.classList.toggle("modified", els.rawRemoveHotPixels.checked || cleanup?.even_out_specks === true || (cleanup?.speck_threshold ?? 2.5) !== 2.5);
   }
   if (!visible) {
     state.rawSettingsOpen = false;

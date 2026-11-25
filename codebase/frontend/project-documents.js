@@ -361,7 +361,8 @@ async function activateDesktopSession(session, projectPath, openGeneration = nul
   const zoom = redevelopment ? retainedRedevelopmentZoom(session) : null;
   retireActiveSession(session.session_id, { preservePicture: redevelopment });
   gradeOpening.reset(openingJobId);
-  if (!stayOnTab) collapseGradeModules();
+  // Re-developing the open photo keeps its panels open (Steve, November 25).
+  if (!stayOnTab && !redevelopment) collapseGradeModules();
   state.session = session;
   state.renderCoordinator?.noteSource(session.session_id);
   state.importInProgress = false;

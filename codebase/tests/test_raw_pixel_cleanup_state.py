@@ -9,6 +9,9 @@ import pytest
 from hdr_finisher.models import EditCommand, EditDocument, RawImportSettings
 from test_library_grades import setup
 
+# Both options start on (Steve, November 25). These tests start from off.
+CLEANUP_OFF = {'remove_hot_pixels': False, 'even_out_specks': False}
+
 
 @pytest.mark.parametrize('field', ['remove_hot_pixels', 'even_out_specks'])
 def test_fit_replaces_only_enabled_cached_bayer_developments(setup, monkeypatch, field):
@@ -22,6 +25,8 @@ def test_fit_replaces_only_enabled_cached_bayer_developments(setup, monkeypatch,
 
     session.source.filename = "sensor.ARW"
     session.metadata["raw_pixel_cleanup"] = {"supported": True}
+    for name, value in CLEANUP_OFF.items():
+        setattr(session.raw_import_settings.pixel_cleanup, name, value)
     setattr(session.raw_import_settings.pixel_cleanup, field, True)
     enabled = identities()
     with monkeypatch.context() as previous:
@@ -42,7 +47,7 @@ def test_fit_replaces_only_enabled_cached_bayer_developments(setup, monkeypatch,
     assert_kept()
 
 
-@pytest.mark.parametrize('field,value', [('remove_hot_pixels', True), ('even_out_specks', True), ('speck_threshold', 3.1)])
+@pytest.mark.parametrize('field,value', [('remove_hot_pixels', False), ('even_out_specks', False), ('speck_threshold', 3.1)])
 def test_saved_recipe_copy_selection_and_development_identity(tmp_path, field, value):
     from hdr_finisher.library_live import quality
     from hdr_finisher.library_paste import LibraryPaste
@@ -106,11 +111,11 @@ def test_cleanup_redevelopment_can_undo_redo_pixels_and_saved_setting(tmp_path, 
     source = tmp_path / 'sensor.png'
     Image.new('RGB', (32, 24), (80, 120, 160)).save(source)
     store = SessionStore()
-    initial = store.create_session(source)
+    initial = store.create_session(source, raw_import_settings=RawImportSettings(pixel_cleanup=CLEANUP_OFF))
     current = store.get(initial.session_id)
     original_pixels = current.image.copy()
     original_identity = _source_mip_identity(current)
-    enabled = RawImportSettings(pixel_cleanup={field: True})
+    enabled = RawImportSettings(pixel_cleanup={**CLEANUP_OFF, field: True})
     actual_load = module.load_image
     calls = []
 
@@ -145,8 +150,8 @@ def test_failed_raw_undo_keeps_pixels_recipe_and_history(tmp_path, monkeypatch, 
     source = tmp_path / 'sensor.png'
     Image.new('RGB', (16, 16), (80, 120, 160)).save(source)
     store = SessionStore()
-    initial = store.create_session(source)
-    developed = store.prepare_session(source, raw_import_settings=RawImportSettings(pixel_cleanup={field: True}))
+    initial = store.create_session(source, raw_import_settings=RawImportSettings(pixel_cleanup=CLEANUP_OFF))
+    developed = store.prepare_session(source, raw_import_settings=RawImportSettings(pixel_cleanup={**CLEANUP_OFF, field: True}))
     store.redevelop_session(initial.session_id, developed)
     session = store.get(initial.session_id)
     previous = session.edit_document().model_dump_json()

@@ -8161,6 +8161,10 @@ input[type="range"]:focus-visible::-webkit-slider-thumb,
   gap: 4px;
 }
 
+.raw-pixel-cleanup {
+  margin-bottom: 12px;
+}
+
 .checkbox-row > input[type="checkbox"],
 .film-module-toggle > input[type="checkbox"],
 .proof-enable-row > input[type="checkbox"],

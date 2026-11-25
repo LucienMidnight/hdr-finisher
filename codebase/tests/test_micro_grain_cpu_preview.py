@@ -419,7 +419,8 @@ def test_lens_toggle_reuses_only_matching_bayer_preparation(micro_frame, changed
         frame.raw_import_settings = off.model_copy(update={"lens": lens}, deep=True)
         frame.metadata["lens_correction"]["applied"] = True
         if changed == "cleanup":
-            frame.raw_import_settings.pixel_cleanup.remove_hot_pixels = True
+            cleanup = frame.raw_import_settings.pixel_cleanup
+            cleanup.remove_hot_pixels = not cleanup.remove_hot_pixels
         elif changed == "highlights":
             frame.raw_import_settings.highlight_reconstruction.clipping_threshold = 0.95
         elif changed == "file":

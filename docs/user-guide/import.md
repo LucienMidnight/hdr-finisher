@@ -73,27 +73,29 @@ The source is then normalized into the internal working representation when the 
 
 ## Pixel cleanup (Bayer RAW only)
 
-In the source/RAW controls, open **Pixel cleanup** and turn on **Remove hot
-pixels** only if you can see isolated stuck bright sensor pixels. It starts
-off and has no strength slider.
+Open **Raw development**. Its first two checkboxes clean the sensor data, and
+both start on for new photos. Photos graded before November 25, 2026 keep the
+settings they were saved with.
 
-The second checkbox, **Even out harsh specks (Experimental)**, also starts off.
-It gently pulls unusual bright or dark sensor readings toward the local noise
-range before development. With it checked, **Threshold** runs from ×2 to ×4,
+**Remove hot pixels** fixes isolated stuck bright sensor pixels. It has no
+strength slider. Turn it off for night skies, where it can occasionally remove
+a real star.
+
+**Even out harsh specks** gently pulls unusual bright or dark sensor readings toward the local noise
+range before development. With it checked, **Speck threshold** runs from ×2 to ×4,
 starting at ×2.5; lower values are stronger. The slider applies when released.
 Small stars and thin lettering may soften, and colourful blobs can remain.
-Check important details at 100%. It is an optional aid, not a Denoise replacement.
-**Reset** turns both options off and restores Threshold to ×2.5.
+Check important details at 100%. It is an aid, not a Denoise replacement.
 
 The filter works before the RAW is demosaiced or highlights are reconstructed.
 It protects small lights that show up across red, green and blue sensor
 readings, and clipped areas. It can still occasionally
 remove a real tiny light, such as a star or a glint. Check those details at
-100% and leave it off when it is not needed. It does not fix cold/dead pixels
+100% and turn it off when it is not wanted. It does not fix cold/dead pixels
 or use a camera defect map. X-Trans, linear DNG and finished images show the
-section disabled with a short explanation.
+checkboxes disabled with a short explanation.
 
-Changing either option or releasing Threshold re-develops the RAW, so allow
+Changing either option or releasing Speck threshold re-develops the RAW, so allow
 the photo to refresh. The settings are saved with this photo and apply to Library, Grade, Proof and exported files,
 including batch export. **Undo** and **Redo** restore the previous/next setting
 and re-develop the source. Selective grade copy/paste includes it under **RAW

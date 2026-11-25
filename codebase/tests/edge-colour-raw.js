@@ -106,8 +106,6 @@ assert.equal(photos.length,2,'Both requested clipped-highlight photos must be av
    await page.evaluate(()=>activateWorkflowTab('grade'));
    if(await page.locator('#raw-settings-toggle').getAttribute('aria-expanded')!=='true')
     await page.locator('#raw-settings-toggle').click();
-   if(await page.locator('#raw-pixel-cleanup-group .group-toggle').getAttribute('aria-expanded')!=='true')
-    await page.locator('#raw-pixel-cleanup-group .group-toggle').click();
    assert.equal(await page.locator('#raw-speck-threshold').isVisible(),true);
    const inputOnly=await page.evaluate(()=>{
     window.__speckFetch=window.fetch;window.__speckRequests=0;
@@ -119,12 +117,12 @@ assert.equal(photos.length,2,'Both requested clipped-highlight photos must be av
    await page.locator('#raw-speck-threshold').dispatchEvent('change');
    await page.waitForFunction(()=>state.editDocument?.source.raw_import_settings.pixel_cleanup.speck_threshold===3 && !els.applyRawSettings.disabled,null,{timeout:180000});
    assert.equal(await page.evaluate(()=>__speckRequests),1);
-   await page.locator('#raw-pixel-cleanup-reset').click();
-   await page.waitForFunction(()=>!state.editDocument?.source.raw_import_settings.pixel_cleanup.even_out_specks && !state.editDocument?.source.raw_import_settings.pixel_cleanup.remove_hot_pixels && state.editDocument?.source.raw_import_settings.pixel_cleanup.speck_threshold===2.5 && !els.applyRawSettings.disabled,null,{timeout:180000});
-   assert.equal(await page.locator('#raw-even-out-specks').isChecked(),false);
+   // Pixel cleanup lives in Raw development without its own Reset (Steve, November 25).
+   await page.locator('#raw-even-out-specks').uncheck();
+   await page.waitForFunction(()=>!state.editDocument?.source.raw_import_settings.pixel_cleanup.even_out_specks && !els.applyRawSettings.disabled,null,{timeout:180000});
    assert.equal(await page.locator('#raw-speck-threshold').isVisible(),false);
    await page.evaluate(()=>{window.fetch=__speckFetch;delete window.__speckFetch;delete window.__speckRequests;});
-   console.log('Pixel cleanup UI: input-only changes, one redevelopment on release and Reset passed.');
+   console.log('Pixel cleanup UI: input-only changes, one redevelopment on release and switching specks off passed.');
   }
   console.log('Results: '+folder);
  }finally{reusePhoto.cleanup();await page.request.post(new URL('/api/delivery/preferences',process.env.HDR_FINISHER_URL).href,{data:{force_cpu:false}}).catch(()=>{});await browser.close();}

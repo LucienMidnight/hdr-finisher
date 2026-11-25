@@ -1040,8 +1040,10 @@ class RawHighlightReconstructionSettings(BaseModel):
 class RawPixelCleanupSettings(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    remove_hot_pixels: bool = False
-    even_out_specks: bool = False
+    # Steve, November 25: both on by default for new photos; grades that saved
+    # them off keep them off.
+    remove_hot_pixels: bool = True
+    even_out_specks: bool = True
     speck_threshold: float = Field(default=2.5, ge=2.0, le=4.0, allow_inf_nan=False)
 
 
@@ -1068,6 +1070,20 @@ class SourceReference(BaseModel):
     byte_size: int | None = Field(default=None, ge=0)
     raw_import_settings: RawImportSettings = Field(default_factory=RawImportSettings)
     luminance: SourceLuminanceDescriptor
+
+    @model_validator(mode="before")
+    @classmethod
+    def keep_saved_pixel_cleanup_off(cls, value: Any) -> Any:
+        # Pixel cleanup defaults on for new photos (Steve, November 25). A grade
+        # saved before an option existed never chose it, so it stays off.
+        if not isinstance(value, dict) or not isinstance(value.get("raw_import_settings"), dict):
+            return value
+        raw = dict(value["raw_import_settings"])
+        cleanup = raw.get("pixel_cleanup")
+        cleanup = dict(cleanup) if isinstance(cleanup, dict) else {}
+        for field in ("remove_hot_pixels", "even_out_specks"):
+            cleanup.setdefault(field, False)
+        return {**value, "raw_import_settings": {**raw, "pixel_cleanup": cleanup}}
 
 
 class RepairRecord(BaseModel):

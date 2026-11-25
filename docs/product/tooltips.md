@@ -213,13 +213,13 @@ Clipped lane, scope, preview and filename labels use their visible text; dynamic
 | Edit the HDR version, shown on HDR screens. | Edit the HDR version, shown on HDR screens. | fixed | codebase/frontend/index.html::#hdr-controls-tooltip · [source](../../codebase/frontend/index.html#L970) |
 | Edit the SDR version, shown on screens without HDR. | Edit the SDR version, shown on screens without HDR. | fixed | codebase/frontend/index.html::#sdr-controls-tooltip · [source](../../codebase/frontend/index.html#L974) |
 
-### grade / raw-pixel-cleanup
+### grade / raw development · pixel cleanup
 
 | Control / visible name | Text | Flags | ID and source |
 | --- | --- | --- | --- |
-| Remove hot pixels | Fixes single stuck bright pixels from the sensor. Leave off unless you see them: it can occasionally remove a real tiny light, such as a star or a glint. | fixed | codebase/frontend/index.html:660 · [source](../../codebase/frontend/index.html#L660) |
-| Even out harsh specks (Experimental) | Experimental: pulls unusual sensor readings toward the local noise range before development. Small stars and thin lettering may soften; colourful blobs can remain. | fixed | codebase/frontend/index.html:661 · [source](../../codebase/frontend/index.html#L661) |
-| Threshold | Smooth readings beyond this multiple of the local noise range. Lower values are stronger. Applies when you release the slider. | fixed | codebase/frontend/index.html::for=raw-speck-threshold · [source](../../codebase/frontend/index.html#L663) |
+| Remove hot pixels | Fixes single stuck bright pixels from the sensor. It can occasionally remove a real tiny light, such as a star or a glint, so turn it off for night skies. | fixed | codebase/frontend/index.html:630 · [source](../../codebase/frontend/index.html#L630) |
+| Even out harsh specks | Pulls unusual sensor readings toward the local noise range before development. Small stars and thin lettering may soften; colourful blobs can remain. | fixed | codebase/frontend/index.html:631 · [source](../../codebase/frontend/index.html#L631) |
+| Speck threshold | Smooth readings beyond this multiple of the local noise range. Lower values are stronger. Applies when you release the slider. | fixed | codebase/frontend/index.html::for=raw-speck-threshold · [source](../../codebase/frontend/index.html#L633) |
 
 ### grade / raw-highlights
 

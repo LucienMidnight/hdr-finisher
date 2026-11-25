@@ -85,7 +85,7 @@ def test_new_option_off_is_bit_identical_to_previous_hot_path(monkeypatch, hot_e
         hot.apply(previous, settings)
     monkeypatch.setattr(hot, 'configuration', lambda *a, **k: settings if hot_enabled else pytest.fail('Off estimated noise'))
     monkeypatch.setattr(specks, 'apply', lambda *a, **k: pytest.fail('Off ran clamp'))
-    for payload in ({'remove_hot_pixels': hot_enabled}, {'remove_hot_pixels': hot_enabled, 'even_out_specks': False, 'speck_threshold': 4}):
+    for payload in ({'remove_hot_pixels': hot_enabled, 'even_out_specks': False}, {'remove_hot_pixels': hot_enabled, 'even_out_specks': False, 'speck_threshold': 4}):
         actual = sensor.copy()
         hot.apply_raw(SimpleNamespace(raw_image_visible=actual), metadata(), RawImportSettings(pixel_cleanup=payload))
         np.testing.assert_array_equal(actual, previous)
@@ -112,12 +112,23 @@ def test_invalid_metadata_and_cancelled_clamp():
         specks.apply(np.full((32, 32), 1000, np.uint16), config(), cancelled=lambda: True)
 
 
-def test_saved_fields_default_off_and_threshold_validation():
+def test_new_photos_default_on_saved_grades_keep_missing_fields_off_and_threshold_validation():
     import json
     from pydantic import ValidationError
-    old = RawImportSettings.model_validate({'pixel_cleanup': {'remove_hot_pixels': True}})
-    assert old.pixel_cleanup.remove_hot_pixels and not old.pixel_cleanup.even_out_specks
-    assert old.pixel_cleanup.speck_threshold == 2.5
+    from hdr_finisher.models import SourceReference
+    # Steve, November 25: both options start on for new photos.
+    fresh = RawImportSettings()
+    assert fresh.pixel_cleanup.remove_hot_pixels and fresh.pixel_cleanup.even_out_specks
+    luminance = {'luminance_semantics': 'scene_relative', 'transfer_function': 'linear'}
+    # A grade saved before an option existed never chose it, so it stays off.
+    for saved, hot in (({'pixel_cleanup': {'remove_hot_pixels': True}}, True), ({'lens': {'mode': 'off'}}, False)):
+        old = SourceReference.model_validate({'filename': 'a.ARW', 'luminance': luminance, 'raw_import_settings': saved})
+        assert old.raw_import_settings.pixel_cleanup.remove_hot_pixels is hot
+        assert not old.raw_import_settings.pixel_cleanup.even_out_specks
+        assert old.raw_import_settings.pixel_cleanup.speck_threshold == 2.5
+    current = SourceReference.model_validate({'filename': 'a.ARW', 'luminance': luminance,
+                                              'raw_import_settings': fresh.model_dump(mode='json')})
+    assert current.raw_import_settings == fresh
     for threshold in (2, 2.5, 4):
         settings = RawImportSettings(pixel_cleanup={'even_out_specks': True, 'speck_threshold': threshold})
         saved = RawImportSettings.model_validate(json.loads(settings.model_dump_json()))

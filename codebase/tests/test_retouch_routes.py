@@ -232,7 +232,8 @@ def test_library_batches_share_validated_saved_recipes(tmp_path, monkeypatch, vi
             elif change == 'order':
                 current_grade['repairs'].reverse()
             elif change == 'source-settings':
-                current_grade['source']['raw_import_settings']['pixel_cleanup']['remove_hot_pixels'] = True
+                cleanup = current_grade['source']['raw_import_settings']['pixel_cleanup']
+                cleanup['remove_hot_pixels'] = not cleanup['remove_hot_pixels']
             elif change == 'fingerprint':
                 current_grade['source']['fingerprint_sha256'] = 'a' * 64
             if change == 'unreadable':

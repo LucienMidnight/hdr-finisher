@@ -96,7 +96,7 @@ def test_off_is_bit_identical_without_noise_estimation(monkeypatch):
     sensor = np.random.default_rng(8).integers(0, 16000, (48, 50), dtype=np.uint16)
     before = sensor.copy()
     monkeypatch.setattr(cleanup, 'configuration', lambda *args, **kwargs: pytest.fail('Off estimated noise'))
-    diagnostic = cleanup.apply_raw(SimpleNamespace(raw_image_visible=sensor), metadata(), RawImportSettings())
+    diagnostic = cleanup.apply_raw(SimpleNamespace(raw_image_visible=sensor), metadata(), RawImportSettings(pixel_cleanup={'remove_hot_pixels': False, 'even_out_specks': False}))
     assert diagnostic['enabled'] is False
     np.testing.assert_array_equal(sensor, before)
 
@@ -125,7 +125,7 @@ def test_decode_cleans_before_highlight_evidence_and_demosaic(tmp_path, monkeypa
     monkeypatch.setattr(raw_import, '_apply_raw_highlight_reconstruction', highlights)
     monkeypatch.setattr(raw_import, '_develop_libraw_camera_rgb', develop)
     result = raw_import._execute_raw_decode(tmp_path / 'sensor.ARW',
-        RawImportSettings(pixel_cleanup={'remove_hot_pixels': enabled}),
+        RawImportSettings(pixel_cleanup={'remove_hot_pixels': enabled, 'even_out_specks': False}),
         SimpleNamespace(exif={}), SimpleNamespace(rawpy=rawpy, opcode_plan=None), progress=None, cancelled=None)
     expected = 1120 if enabled else 7000
     assert observed == [('highlights', expected), ('demosaic', expected)]

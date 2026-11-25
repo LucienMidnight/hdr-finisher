@@ -234,7 +234,7 @@ def test_shared_batch_source_refuses_mismatch_and_decodes_normally(tmp_path, mon
     path = Path(photo["source_path"])
     options = {}
     if mismatch == "raw":
-        options["raw_import_settings"] = RawImportSettings(pixel_cleanup={"remove_hot_pixels": True})
+        options["raw_import_settings"] = RawImportSettings(pixel_cleanup={"remove_hot_pixels": False})
     if mismatch == "override":
         options["interpretation_override"] = SourceInterpretationOverride(color_space="sRGB")
     if mismatch in {"white", "decode_white"}:

@@ -1033,7 +1033,6 @@ const els = {
   applyRawSettings: document.getElementById("apply-raw-settings"),
   rawHighlightGroup: document.getElementById("raw-highlight-group"),
   rawPixelCleanupGroup: document.getElementById("raw-pixel-cleanup-group"),
-  rawPixelCleanupReset: document.getElementById("raw-pixel-cleanup-reset"),
   rawRemoveHotPixels: document.getElementById("raw-remove-hot-pixels"),
   rawEvenOutSpecks: document.getElementById("raw-even-out-specks"),
   rawSpeckThreshold: document.getElementById("raw-speck-threshold"),

@@ -67,7 +67,8 @@ def test_bayer_fit_invalidates_affected_finished_pictures(tmp_path, monkeypatch,
     from hdr_finisher.models import EditDocument
 
     photo, marks, thumbnails, _ = setup_cache(tmp_path, "photo.ARW")
-    raw = dict(filename=photo.name, luminance=dict(luminance_semantics="scene_relative", transfer_function="linear"))
+    raw = dict(filename=photo.name, luminance=dict(luminance_semantics="scene_relative", transfer_function="linear"),
+               raw_import_settings=dict(pixel_cleanup=dict(remove_hot_pixels=False, even_out_specks=False)))
     document = EditDocument(hdr_reference_white_nits=203, source=raw)
     if effect == "micro_grain":
         document.denoise.hdr.enabled = True

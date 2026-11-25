@@ -12,18 +12,17 @@ The sliders intentionally cover the useful everyday range. Some slider ranges be
 
 ## RAW Pixel cleanup
 
-The source/RAW controls include a collapsed **Pixel cleanup** section. Both
-checkboxes start off. **Remove hot pixels** fixes isolated stuck bright sensor
+**Raw development** starts with two pixel cleanup checkboxes, both on for new
+photos (Steve, November 25, 2026). **Remove hot pixels** fixes isolated stuck bright sensor
 pixels before demosaic, with no strength slider, cold/dead-pixel mode or defect
 maps. It can sometimes remove a tiny star or glint.
 
-**Even out harsh specks (Experimental)** softly reduces unusual bright and dark
-sensor readings. Its **Threshold** slider runs ×2–×4 (default ×2.5); lower values
+**Even out harsh specks** softly reduces unusual bright and dark
+sensor readings. Its **Speck threshold** slider runs ×2–×4 (default ×2.5); lower values
 are stronger, and changes apply on release. Small stars and thin lettering may
-soften; colourful blobs can remain. Inspect details before keeping it on.
-**Reset** turns both off and restores ×2.5. Changing or undoing these settings
+soften; colourful blobs can remain. Changing or undoing these settings
 re-develops the RAW; saved settings apply to both renditions and delivery.
-Only supported Bayer RAWs enable this section.
+Only supported Bayer RAWs enable these checkboxes.
 See [Import](import.md#pixel-cleanup-bayer-raw-only).
 
 ## Checking Blacks and Whites clipping

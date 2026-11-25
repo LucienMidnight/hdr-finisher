@@ -1,3 +1,16 @@
+### November 25, 2026: Pixel cleanup on by default, inside Raw development (Steve)
+
+**Steve, November 25:** both Pixel cleanup options start on for new photos and
+live at the top of **Raw development**, not in their own module. **Even out
+harsh specks** drops the Experimental label; the Threshold slider is now
+**Speck threshold** and still appears only when that box is checked. The
+module's Reset is gone. Grades saved before an option existed keep it off
+(a saved grade missing either field reads it as off), so their look does not
+change. Re-developing the open photo now keeps its panels open. Measured cost
+on this MacBook: both options add about 0.3–0.5 s per RAW development
+(42 MP Sony 3.0 → 3.3 s; 20 MP Olympus 1.5 → 1.9 s; 18 MP Canon 1.7 → 2.1 s).
+Library and Grade cache keys for unedited RAWs change once with the new default.
+
 ### November 17, 2026: optional harsh-speck control (Steve approved)
 
 Pixel cleanup now also contains **Even out harsh specks (Experimental)**,

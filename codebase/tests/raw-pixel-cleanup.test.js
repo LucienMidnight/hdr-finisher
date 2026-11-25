@@ -46,7 +46,6 @@ test('Pixel cleanup is enabled only for supported Bayer RAW and restores saved s
   assert.equal(els.rawSpeckThreshold.value, '3.2');
   assert.equal(els.rawSpeckThresholdValue.textContent, '×3.2');
   assert.equal(els.rawSpeckThresholdRow.hidden, false);
-  assert.equal(els.rawPixelCleanupGroup.classList.contains('modified'), true);
   assert.equal(els.rawHighlightMethod.value, 'edge_colour_v1');
   assert.equal(els.rawEdgeColourExpand.value, '1.5');
   for (const session of [null, {raw: false, source: {suffix: '.png'}, metadata: {}}, {raw: true, source: {suffix: '.raf'},
@@ -79,15 +78,20 @@ test('RAW payload carries the checkbox without changing other development contro
 });
 
 
-test('Missing saved speck fields mean off and the threshold round trips', () => {
+test('Missing saved cleanup fields mean on and the threshold round trips', () => {
   const fixture = context();
   const {els, state} = fixture;
   state.editDocument.source.raw_import_settings.pixel_cleanup = {};
   fixture.renderRawImportControls({raw: true, session_id: 'bayer', source: {suffix: '.arw'},
     metadata: {extra: {raw_pixel_cleanup: {supported: true}}}});
-  assert.equal(els.rawEvenOutSpecks.checked, false);
-  assert.equal(els.rawSpeckThresholdRow.hidden, true);
+  // Steve, November 25: both cleanup options are on by default.
+  assert.equal(els.rawRemoveHotPixels.checked, true);
+  assert.equal(els.rawEvenOutSpecks.checked, true);
+  assert.equal(els.rawSpeckThresholdRow.hidden, false);
   assert.equal(els.rawSpeckThreshold.value, '2.5');
+  els.rawEvenOutSpecks.checked = false;
+  fixture.renderRawSpeckControls();
+  assert.equal(els.rawSpeckThresholdRow.hidden, true);
   els.rawEvenOutSpecks.checked = true;
   els.rawSpeckThreshold.value = '4';
   fixture.renderRawSpeckControls();
