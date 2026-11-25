@@ -687,6 +687,23 @@ failed smoke check, not an action-latency baseline. No timing budget changed.
 | Pin folder / Unpin folder, through list feedback | <1 s | Pin 0.015 s; Unpin 0.076 s | November 15, Windows PC, 2560x1440, isolated Electron folder-controls check under shared GPU lock; this commit, parent `6b92f6da`. Disposable one-photo folder, startup/background work enabled. Pin starts at API request, ends at next folder-list animation frame using returned pins; Unpin starts before confirmation click, ends after list removal and status. Steve's running app untouched. |
 | Pin / Unpin / unpin impact, request response with upkeep blocked | <1 s | 0.037 / 0.003 / 0.123 s | November 15, Windows PC, same revision; FastAPI TestClient, synthetic 140,000-file SQLite Library, background worker held at upkeep gate, no picture decode. Confirms requests do not wait for reconciliation; not a large-Library on-screen measurement. Earlier diagnosed real-app Pin wait was about 68 s while full reconciliation ran inside the request. |
 
+## November 25: overnight focused release check on the minimum Mac
+
+MacBook Neo A18 Pro, 8 GB, 1408x794 points, unpackaged Electron under the
+shared GPU lock, nothing else running. Release check at `0f64b37f`
+(`output/release-checks/2026-11-25T15-01-15-425Z-aba82431f3ce8c9999c5`),
+re-checks at `321dac3c`. Observations from the drivers' own logs.
+
+| Action | Target | Mac result | Conditions / evidence |
+| --- | --- | --- | --- |
+| Remove a Retouch spot, action to accepted picture | <= 1 second | Failed: 100% 0.89–1.22 s, Fit 0.97–2.42 s (three runs); best run 100% 0.89–0.90 s, Fit 1.22–1.24 s | `retouch-latency.js`, release run and runner re-check at `321dac3c`. Still over target at Fit. |
+| DSC00264.ARW (42 MP Sony) Grade first frame, CPU / GPU | ~10 s whole wait (Steve) | 15.6 / 13.4 s | `edge-colour-raw.js`, one observation each; Library scene 4.7 s. Over Steve's 10-second wish. |
+| IMG_3129.CR2 Grade first frame, CPU / GPU | ~10 s | 6.7 / 4.4 s | Same driver; Library scene 3.2 s. |
+| DNG on the CPU route, first to finished | — | DJI_0071-2 59.1 s (decode 56.5 s); Leica X2 48.8 s (decode 15.4 s) | `library-dng-warp.js` CPU comparison. GPU route for the same files: 4.7 s and 2.0 s. Only reached when the GPU route falls back. |
+| Ultra HDR JPEG export, GPU / CPU | — | 12.0–36.4 / 15.6–45.2 s | `hsl-selection-delivery.js`, eight exports. |
+| Library RAW development (grid / native 100%) | — | cold 1.36–1.72 s, reuse 4.5–7.5 ms, native 2.53–2.85 s | `library-gpu-raw-single.js` at `65da0dd0` (Lensfun row fix adds about 9 ms to preparation). Per-RAW app time 0.61–0.91 s in `library-gpu-raw.js`. |
+| Library export of 42 MP RAW at the 4 GB default | — | CPU strips (GPU working set 4.03 GB + 1.3 GB start > 4.00 GB ceiling); attempt under ~44 s including launch | `library-export-live-tiles.js`; deliberate since `005c3610`. Native exports above about 27 MP use CPU strips at the default. Awaiting Steve's decision. |
+
 ## November 14: focused 0.9.3 release on the minimum Mac
 
 | Action | Existing guard | Mac result | Conditions / evidence |

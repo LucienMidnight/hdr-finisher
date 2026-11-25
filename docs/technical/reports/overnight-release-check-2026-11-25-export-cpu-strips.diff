@@ -1,0 +1,29 @@
+--- a/codebase/tests/library-export-live-tiles.js
++++ b/codebase/tests/library-export-live-tiles.js
+@@ -1,7 +1,11 @@
+ const reusePhoto=require('./helpers/reuse-test-photo.cjs');
+-/* Same three photos, same GPU export settings, Export page open versus closed. */
++/* Same three photos, same export settings, Export page open versus closed.
++   Native exports use the GPU when its whole working set fits the app memory
++   setting; otherwise the November 16 bounded CPU strips (memory-and-caches.md).
++   Any other CPU fallback still fails. */
+ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
+ const {chromium}=require('playwright');
++const BOUNDED_CPU='Native GPU delivery working set does not fit the existing app memory ceiling; using bounded CPU strips.';
+ const root=path.resolve(__dirname,'..'),folder=path.join(root,'output/library-export-live-tiles',String(Date.now()));fs.mkdirSync(folder,{recursive:true});
+ const photos=['DSC00264','DSC04375','DSC06615'].map(n=>{const p=path.join(folder,n+'.ARW');return reusePhoto(reusePhoto.source(n+'.ARW'),p);});
+ // Exports land beside the reused photos. Delete this run's exports and export
+@@ -45,10 +49,11 @@
+   const seconds=(Date.now()-started)/1000,job=await page.evaluate(()=>batchExport.activity());
+   for(const result of job.results||[])if(result.output_path)exported.add(result.output_path);
+   assert.equal(job.state,'finished',JSON.stringify(job));assert.equal(job.results.length,1);
+-  assert.equal(job.results[0].renderer,'gpu',JSON.stringify(job.results));assert.ok(['exported','renamed'].includes(job.results[0].outcome),JSON.stringify(job.results));
++  const route=job.results[0];
++  assert.ok(route.renderer==='gpu'||(route.renderer==='cpu'&&route.fallback_reason===BOUNDED_CPU),JSON.stringify(job.results));assert.ok(['exported','renamed'].includes(job.results[0].outcome),JSON.stringify(job.results));
+   const after=await page.locator('#library-frame').evaluate(e=>e.contentWindow.__tileDraws);
+   assert.equal(after,before,'Progress never redraws a completed tile');
+-  measurements.push({photo:path.basename(photo),page:label,seconds});console.log(JSON.stringify(measurements.at(-1)));
++  measurements.push({photo:path.basename(photo),page:label,seconds,renderer:route.renderer});console.log(JSON.stringify(measurements.at(-1)));
+  }
+  await run(photos[0],false,'warmup');
+  for(const photo of photos)await run(photo,false,'closed');

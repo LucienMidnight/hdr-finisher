@@ -375,8 +375,9 @@ same-Mac v0.9.2 comparisons and exact errors: `docs/known-limitations.md`,
 “Focused 0.9.3 release check on the minimum Mac”. Do not loosen guards.
 
 3. Confirm Retouch bounded/whole-photo input equality and removal under one
-   second; adaptive Denoise readback; generated-SDR peak reduction; and the
-   extreme HDR Film case. Each reproduces on v0.9.2 on this Mac.
+   second; generated-SDR peak reduction; and the extreme HDR Film case. Each
+   reproduces on v0.9.2 on this Mac. (Adaptive Denoise readback was a test
+   transport bug, fixed November 25; it now passes on the Mac.)
 4. Confirm zoomed Denoise, Film/Lens 4K-to-Full, repeated GPU delivery and live
    Export tiles on the PC. On the Mac these were fixed by `703e7e58` and pass.
 5. Confirm Grade Escape with Metadata open, Library Stage A real-format drawing,
@@ -500,6 +501,10 @@ module PRD for the area you touch, then `docs/technical/code-map.md`.
   module PRDs win.
 
 ### Technical (how it works)
+
+- `docs/technical/reports/overnight-release-check-2026-11-25.md`: Mac
+  release check of Nov 25 (97/117), every failure's cause and fix, Steve's
+  open decision on CPU-strip exports (with its ready `.diff`), timings.
 
 - `docs/technical/reports/encoding-fidelity-fixes-2026-11-16.md`:
   finished-renderer test split, shared-picker regression, stage attribution and
