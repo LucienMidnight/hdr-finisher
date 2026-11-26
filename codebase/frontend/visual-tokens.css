@@ -5,7 +5,7 @@
 /* Approved v1 palette, geometry and materials. */
 @font-face { font-family: "IBM Plex Mono"; src: url("./assets/fonts/ibm-plex-mono/IBMPlexMono-Regular.ttf"); font-weight: 400; font-style: normal; font-display: swap; }
 @font-face { font-family: "IBM Plex Mono"; src: url("./assets/fonts/ibm-plex-mono/IBMPlexMono-Medium.ttf"); font-weight: 500; font-style: normal; font-display: swap; }
-/* HDR Finisher — generated from tokens.json */
+/* Runtime tokens; the v1 reference palette is historical design material. */
 :root, [data-theme="modern-dark"] {
   --viewer: #080808;
   --app: #0c0c0c;
@@ -35,23 +35,21 @@
   --accent-preset-blue-gray: #566481;
   --accent-preset-coating-blue: #38a3dc;
   --ready: #8cbf9a;
-  --headroom: #ffb020;
+
   --attention: #f0c53a;
   --blocking: #d4796b;
-  --clip: var(--blocking);
+
   --success: #62b78f;
   --star: #e8e8e8;
   --label-red: #e5484d;
   --label-orange: #f2994a;
   --label-green: #3fb96b;
   --label-blue: #4d9cff;
-  --hf-chassis: var(--viewer);
+
   --hf-panel: var(--panel);
-  --hf-raised: var(--raised);
+
   --hf-channel: var(--deep);
-  --hf-ink-1: var(--text);
-  --hf-ink-2: var(--muted);
-  --hf-accent: var(--accent);
+
   --panel-border-external: var(--border);
   --panel-border-internal: var(--hairline);
   --group-divider: var(--panel-border-internal);
@@ -71,7 +69,7 @@
   --curve-blue: #7db8ff;
   --curve-neutral: #ece9df;
   --curve-endpoint: #7f7a6f;
-  --curve-selected: #efbb55;
+  --graph-selected: #efbb55;
   --curve-selected-ring: #edf0f1;
   --curve-grid: #ffffff14;
   --curve-identity: #ece9df2e;
@@ -84,24 +82,17 @@
   --exposure-band-white: #fae02e;
   --exposure-band-highlight: #ff7a1f;
   --exposure-band-peak: #ff1f1f;
-  --equalizer-selected: #efbb55;
   --equalizer-grid: #ffffff14;
   --equalizer-grid-strong: #ece9df42;
   --equalizer-zero: var(--equalizer-grid-strong);
-  --equalizer-pq: #d9b672a6;
+
   --equalizer-axis: #9fbcca;
   --equalizer-curve: #edf0f1;
   --equalizer-node: #ece9df;
   --equalizer-disabled: #7f878d;
   --equalizer-influence-wash: #ff7a1f1f;
   --graph-home-cue-color: #edf0f1;
-  --depth-channel: inset 0 2.5px 3px rgba(0, 0, 0, 0.98), inset 0 -1.5px 0 rgba(255, 255, 255, 0.11);
-  --depth-raised: inset 0 1px 0 rgba(255, 255, 255, 0.07), 0 6px 16px -6px rgba(0, 0, 0, 0.9);
-  --instrument-slider-channel-shadow: inset 0 2.5px 3px rgba(0, 0, 0, 0.98), inset 0 -1.5px 0 rgba(255, 255, 255, 0.11), 0 1px 0 rgba(255, 255, 255, 0.025);
-  --instrument-slider-thumb-shadow: 0 2px 5px rgba(0, 0, 0, 0.6), inset 0 -1px 1px rgba(0, 0, 0, 0.12);
-  --instrument-slider-thumb-focus-shadow: 0 0 0 2px rgba(235, 238, 237, 0.2), 0 0 8px rgba(235, 238, 237, 0.3), 0 1px 2px rgba(0, 0, 0, 0.92);
-  --segment-selected-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 2px 5px rgba(0, 0, 0, 0.5);
-  --panel-collapse-button-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.09), 0 2px 5px rgba(0, 0, 0, 0.38);
+
   --plate-lift: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 1px 0 rgba(255, 255, 255, 0.035), 0 2px 3px rgba(0, 0, 0, 0.5);
   --plate-press: inset 0 1px 3px rgba(0, 0, 0, 0.75), inset 0 0 0 1px rgba(0, 0, 0, 0.25), 0 1px 0 rgba(255, 255, 255, 0.04);
   --switch-track-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.85), 0 1px 0 rgba(255, 255, 255, 0.05);
@@ -132,15 +123,13 @@
   --accent-bed: var(--plate-down);
   --on-accent: #120c08;
   --attention: #735600;
-  --clip: var(--blocking);
+
   --star: #1c1c1c;
-  --hf-chassis: var(--viewer);
+
   --hf-panel: var(--panel);
-  --hf-raised: var(--raised);
+
   --hf-channel: var(--deep);
-  --hf-ink-1: var(--text);
-  --hf-ink-2: var(--muted);
-  --hf-accent: var(--accent);
+
   --panel-border-external: var(--border);
   --panel-border-internal: var(--hairline);
   --group-divider: var(--panel-border-internal);
@@ -169,12 +158,7 @@
   --equalizer-node: #2c2c2c;
   --equalizer-disabled: #9aa0a4;
   --graph-home-cue-color: #2c2c2c;
-  --depth-channel: inset 0 2px 3px rgba(0, 0, 0, 0.1), inset 0 -1px 0 rgba(255, 255, 255, 0.6);
-  --depth-raised: inset 0 1px 0 rgba(255, 255, 255, 0.9), 0 4px 10px -4px rgba(0, 0, 0, 0.18);
-  --instrument-slider-channel-shadow: inset 0 2px 3px rgba(0, 0, 0, 0.16), inset 0 -1px 0 rgba(0, 0, 0, 0.08), 0 1px 0 rgba(0, 0, 0, 0.04);
-  --instrument-slider-thumb-shadow: 0 2px 4px rgba(0, 0, 0, 0.28), inset 0 -1px 1px rgba(0, 0, 0, 0.1);
-  --segment-selected-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9), 0 1px 3px rgba(0, 0, 0, 0.15);
-  --panel-collapse-button-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8), 0 1px 3px rgba(0, 0, 0, 0.12);
+
   --plate-lift: inset 0 1px 0 #ffffff, 0 1px 2px rgba(0, 0, 0, 0.14);
   --plate-press: inset 0 1px 3px rgba(0, 0, 0, 0.18), 0 1px 0 #ffffff;
   --switch-track-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.2), 0 1px 0 #ffffff;
@@ -200,26 +184,20 @@
   --accent-low: color-mix(in srgb, var(--accent) 82%, black);
   --accent-bed: var(--plate-down);
   --on-accent: #120c08;
-  --clip: var(--blocking);
+
   --star: #f2f2f2;
-  --hf-chassis: var(--viewer);
+
   --hf-panel: var(--panel);
-  --hf-raised: var(--raised);
+
   --hf-channel: var(--deep);
-  --hf-ink-1: var(--text);
-  --hf-ink-2: var(--muted);
-  --hf-accent: var(--accent);
+
   --panel-border-external: var(--border);
   --panel-border-internal: var(--hairline);
   --group-divider: var(--panel-border-internal);
   --bypass-icon-visible: var(--accent);
   --bypass-icon-hidden: var(--quiet);
   --frame-color: var(--viewer);
-  --depth-channel: inset 0 2.5px 3px rgba(0, 0, 0, 0.55), inset 0 -1.5px 0 rgba(255, 255, 255, 0.08);
-  --depth-raised: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 6px 16px -6px rgba(0, 0, 0, 0.7);
-  --instrument-slider-channel-shadow: inset 0 2.5px 3px rgba(0, 0, 0, 0.55), inset 0 -1.5px 0 rgba(255, 255, 255, 0.1), 0 1px 0 rgba(255, 255, 255, 0.04);
-  --segment-selected-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 2px 5px rgba(0, 0, 0, 0.4);
-  --panel-collapse-button-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 2px 5px rgba(0, 0, 0, 0.35);
+
   --plate-lift: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 1px 0 rgba(255, 255, 255, 0.04), 0 2px 3px rgba(0, 0, 0, 0.4);
   --plate-press: inset 0 1px 3px rgba(0, 0, 0, 0.55), 0 1px 0 rgba(255, 255, 255, 0.05);
   --switch-track-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.6), 0 1px 0 rgba(255, 255, 255, 0.05);
@@ -233,12 +211,12 @@
   --window-chrome-h: 30px;
   --panel-header-h: 40px;
   --panel-control-h: 30px; /* buttons in a panel header: 5px above and below */
-  --workflow-plate-h: 34px; /* Library/Grade/Proof/Export plate: 5px above and below in the top bar */
+
   --divider-below: inset 0 -1px 0 var(--hairline); /* a bar's bottom divider that takes no height */
   --status-bar-h: 28px;
   --tab-row-h: 34px;
   --library-row-h: 24px;
-  --disclosure-h: 34px;
+
   --control-row-h: 34px;
   --control-group-header-h: 34px;
   --instrument-control-row-min-h: 53px;
@@ -270,7 +248,7 @@
   --disabled-opacity: 0.42;
   --curve-band-opacity: 0.1;
   --graph-home-cue-opacity: 0.62;
-  --rejected-photo-opacity: 0.34;
+
   --font-title: "Bebas Neue", "Segoe UI", sans-serif;
   --font-body: Afacad, "Segoe UI Variable Text", "Segoe UI", sans-serif;
   --font-mono: "IBM Plex Mono", "Cascadia Mono", Consolas, monospace;
@@ -321,8 +299,6 @@
   --knob-lift: inset 0 1px 0 rgba(255, 255, 255, 0.14), 0 1px 3px rgba(0, 0, 0, 0.5);
 }
 
-
-
 :root {
   /* Type scale. Every font size in the app uses one of these. Nothing is
      drawn below --font-size-min. A theme or a user preference can override
@@ -358,19 +334,7 @@
   --group-title-font-family: var(--font-body); --group-title-font-size: var(--font-size-lg);
   --group-title-font-weight: var(--font-weight-medium); --group-title-letter-spacing: var(--tracking-none);
   --group-title-text-transform: none;
-  --instrument-slider-channel-background: var(--rail-face);
-  --instrument-slider-channel-shadow: var(--rail-shadow);
-  --instrument-slider-thumb-background: var(--thumb-face);
-  --instrument-slider-thumb-background-active: var(--thumb-face);
-  --instrument-slider-thumb-shadow: var(--thumb-shadow);
-  --instrument-slider-thumb-focus-shadow: var(--thumb-shadow);
-  --instrument-slider-thumb-hover-w: var(--instrument-slider-thumb-w);
-  --segment-channel-background: var(--rail-face);
-  --segment-selected-background: var(--plate-down); --segment-selected-shadow: var(--plate-press);
-  --panel-collapse-button-background: var(--plate-up); --panel-collapse-button-shadow: var(--plate-lift);
-  --panel-collapse-button-icon-size: var(--chevron-size);
-  --group-chevron-size: var(--chevron-size); --group-chevron-width: var(--chevron-size);
-  --group-chevron-gap: var(--group-disclosure-gap); --group-chevron-color: var(--muted);
+
 }
 
 :root {
@@ -379,4 +343,91 @@
   --list-row-h: 34px;
   --scrollbar-w: 10px;
   --graph-limit-line: var(--attention);
+}
+
+:root {
+  /* Exact-value extraction: fixed spectra and shared spacing, invariant in every theme. */
+
+  --wheel-hue-spectrum: conic-gradient(from 300deg, #ff2929, #ffe600, #30ed40, #19e6ff, #3545ff, #eb26ff, #ff2929);
+  --wheel-segment-spectrum: repeating-conic-gradient(from 300deg, #15171b99 0deg 1deg, transparent 1deg 45deg),
+    radial-gradient(circle, #95999f 0%, #95999faa 24%, #95999f00 100%),
+    conic-gradient(from 300deg, #ff2929 0deg 45deg, #ffb923 45deg 90deg, #a5f02b 90deg 135deg, #28ed88 135deg 180deg, #19e6ff 180deg 225deg, #3545ff 225deg 270deg, #932bff 270deg 315deg, #eb26aa 315deg 360deg);
+  --wheel-legacy-rim: conic-gradient(
+    from 90deg,
+    #ee6f72 0deg,
+    #e9c968 60deg,
+    #80d582 120deg,
+    #68d1c8 180deg,
+    #748fe4 240deg,
+    #cf7bd7 300deg,
+    #ee6f72 360deg
+  );
+  --wheel-legacy-bed: radial-gradient(
+      circle at center,
+      #aeb2b1 0%,
+      #aeb2b1 7%,
+      rgb(174 178 177 / 96%) 15%,
+      rgb(174 178 177 / 82%) 30%,
+      rgb(174 178 177 / 60%) 48%,
+      rgb(174 178 177 / 34%) 68%,
+      rgb(174 178 177 / 8%) 92%,
+      transparent 100%
+    ),
+    conic-gradient(
+      from 90deg,
+      #ee777a 0deg,
+      #ead17a 60deg,
+      #8bd98c 120deg,
+      #78d4cd 180deg,
+      #829bea 240deg,
+      #d58add 300deg,
+      #ee777a 360deg
+    );
+  --rail-red-hue: linear-gradient(90deg, #b84f9a, #b85660, #c1a052);
+  --rail-red-purity: linear-gradient(90deg, #718080, #a24f51, #e63946);
+  --rail-green-hue: linear-gradient(90deg, #c1a052, #4b9a67, #4ba9a5);
+  --rail-green-purity: linear-gradient(90deg, #718080, #4b8c62, #27bd64);
+  --rail-blue-hue: linear-gradient(90deg, #4ba9a5, #5368b5, #b84f9a);
+  --rail-blue-purity: linear-gradient(90deg, #718080, #5368b5, #3459ed);
+  --rail-tint-hue: linear-gradient(90deg, #53a7b1, #5368b5, #b84f9a, #e05273, #d3ad5b, #54a579, #53a7b1);
+  --rail-tint-purity: linear-gradient(90deg, #718080, #c86d97);
+  --wheel-rim-spectrum: conic-gradient(from 300deg, #ee6f72, #e9c968, #80d582, #68d1c8, #748fe4, #cf7bd7, #ee6f72);
+
+  --space-4: 4px;
+  --space-10: 10px;
+  --space-8: 8px;
+  --space-5: 5px;
+  --space-6: 6px;
+  --space-16: 16px;
+  --space-12: 12px;
+  --space-2: 2px;
+  --space-3: 3px;
+  --space-18: 18px;
+  --space-14: 14px;
+  --space-24: 24px;
+  --space-1: 1px;
+  --space-20: 20px;
+  --space-30: 30px;
+  --space-28: 28px;
+  --space-40: 40px;
+}
+
+:root {
+  --rail-kelvin-spectrum: linear-gradient(90deg, #526fbd 0%, #8db5df 27%, #e8edf0 50%, #efc781 73%, #cf7133 100%);
+  --rail-tint-spectrum: linear-gradient(90deg, #b45aa8, #e4e4e4, #5aa76a);
+  --rail-tint-spectrum-legacy: linear-gradient(90deg, #c56398 0%, #91a39a 50%, #3f8f62 100%);
+  --wheel-puck-outline: 0 0 0 1px var(--panel);
+  --rail-neutral: #718080;
+  --hsl-fallback-spectrum: conic-gradient(red,yellow,lime,cyan,blue,magenta,red);
+  --retouch-source: #66e0ff;
+  --retouch-destination: #ffb347;
+  --retouch-brush: #ffffff;
+  --retouch-outline-shadow: rgba(0,0,0,.55);
+  --retouch-link: rgba(255,255,255,.85);
+  --retouch-label-shadow: rgba(0,0,0,.75);
+  --retouch-stroke: #ff405e99;
+  --mask-erase: #000;
+  --repair-fallback-background: #332819;
+  --repair-fallback-text: #fff;
+  --splash-log-mask: linear-gradient(180deg, transparent 0, #000 16px);
 }

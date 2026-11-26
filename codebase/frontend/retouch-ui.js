@@ -15,7 +15,11 @@ const retouchMethods = {
   "donor-detail": { label: "Donor texture", help: "Prototype · replaces fine texture from nearby clean patches. Use for covered surfaces; repeating patterns may not align." },
 };
 
-const retouchColors = { source: "#66e0ff", destination: "#ffb347", brush: "#ffffff" };
+const retouchColors = {
+  get source() { return uiToken("--retouch-source"); },
+  get destination() { return uiToken("--retouch-destination"); },
+  get brush() { return uiToken("--retouch-brush"); },
+};
 const retouchBrushFields = ["size", "hardness", "method", "feather", "texture", "opacity"];
 const RETOUCH_DRAG_THRESHOLD = 4;
 let retouchDefaults = null;
@@ -393,10 +397,10 @@ function drawRetouchShape(context, frame, points, radius, color, lineWidth = 1.5
     }
   };
   const half = lineWidth / 2;
-  paint(half + 1, "rgba(0,0,0,.55)");
+  paint(half + 1, uiToken("--retouch-outline-shadow"));
   paint(half, color);
-  paint(-half, "rgba(0,0,0,.55)");
-  paint(-half - 1, "#000", "destination-out");
+  paint(-half, uiToken("--retouch-outline-shadow"));
+  paint(-half - 1, uiToken("--mask-erase"), "destination-out");
   layer.globalCompositeOperation = "source-over";
   context.save();
   context.setTransform(1, 0, 0, 1, 0, 0);
@@ -414,7 +418,7 @@ function drawRetouchLink(context, frame, from, to, radius) {
   const ux = (b.x - a.x) / length, uy = (b.y - a.y) / length;
   context.save();
   context.lineCap = "round";
-  for (const [style, width] of [["rgba(0,0,0,.55)", 3], ["rgba(255,255,255,.85)", 1]]) {
+  for (const [style, width] of [[uiToken("--retouch-outline-shadow"), 3], [uiToken("--retouch-link"), 1]]) {
     context.strokeStyle = style;
     context.lineWidth = width;
     context.beginPath();
@@ -442,7 +446,7 @@ function drawRetouchLabel(context, frame, point, radius, text, color, below) {
   context.textBaseline = below ? "top" : "bottom";
   context.lineJoin = "round";
   context.lineWidth = 3;
-  context.strokeStyle = "rgba(0,0,0,.75)";
+  context.strokeStyle = uiToken("--retouch-label-shadow");
   context.strokeText(text, s.x, y);
   context.fillStyle = color;
   context.fillText(text, s.x, y);
@@ -508,7 +512,7 @@ function renderRetouchOverlay(canvas) {
   if (!Number.isFinite(radius) || !state.session) return;
   if (retouchUI.points) {
     const diameter = radius * 2 * frame.scale;
-    line(retouchUI.points, "#ff405e99", Math.max(2, diameter));
+    line(retouchUI.points, uiToken("--retouch-stroke"), Math.max(2, diameter));
   }
   const cursor = retouchUI.cursor;
   // A held modifier or a hovered circle replaces the brush ring.

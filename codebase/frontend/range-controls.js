@@ -465,7 +465,7 @@ function syncTintPurityVisuals() {
     const control = document.querySelector(`[data-path="${lane}.tint_purity"]`);
     const track = control?.closest(".range-shell")?.querySelector(".slider-track");
     if (!track) continue;
-    track.style.background = `linear-gradient(90deg, #718080, ${darktableTintHueColor(state.adjustments[lane].tint_hue)})`;
+    track.style.background = `linear-gradient(90deg, ${uiToken("--rail-neutral")}, ${darktableTintHueColor(state.adjustments[lane].tint_hue)})`;
   }
 }
 

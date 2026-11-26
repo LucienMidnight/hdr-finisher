@@ -1,20 +1,20 @@
-.hsl-channels { display:flex; justify-content:space-between; gap:4px; margin:10px 0; }
+.hsl-channels { display:flex; justify-content:space-between; gap:var(--space-4); margin:var(--space-10) 0; }
 .hsl-channel { width:24px; height:24px; min-width:0; padding:0; border-radius:50%; position:relative; border:2px solid var(--border); }
 .hsl-channel[aria-pressed="true"] { outline:2px solid var(--text); outline-offset:2px; }
 .hsl-channel.modified::after { content:""; width:5px; height:5px; border-radius:50%; background:var(--text); position:absolute; bottom:-6px; left:8px; }
-.hsl-customs,.hsl-picker,.hsl-title { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin:8px 0; }
+.hsl-customs,.hsl-picker,.hsl-title { display:flex; flex-wrap:wrap; align-items:center; gap:var(--space-8); margin:var(--space-8) 0; }
 .hsl-title strong { flex:1; }
 .hsl-title span,.hsl-notice { font-size:var(--font-size-min); color:var(--muted); }
 .hsl-wheel { width:100%; max-width:320px; display:block; margin:0 auto; color:var(--text); touch-action:none; }
 .hsl-wheel [data-hsl-handle] { cursor:grab; }
 .hsl-wheel [data-hsl-handle]:focus { outline:none; filter:drop-shadow(0 0 3px var(--accent)); }
 .hsl-picker [aria-pressed="true"],.hsl-customs [aria-pressed="true"] { color:var(--accent-strong); }
-.hsl-notice { min-height:2em; margin:8px 0; }
-#hsl-local-panel { padding:8px 0; }
+.hsl-notice { min-height:2em; margin:var(--space-8) 0; }
+#hsl-local-panel { padding:var(--space-8) 0; }
 
 .hsl-channels .hsl-channel { flex: 0 0 24px; width: 24px; height: 24px; min-height: 24px; max-height: 24px; aspect-ratio: 1; box-sizing: border-box; padding: 0; }
-.hsl-picker { gap: 4px; }
-.hsl-picker button, .hsl-selection-toggle { min-height: 30px; padding: 5px 8px; border: 1px solid var(--border); border-radius: var(--radius-1); }
+.hsl-picker { gap: var(--space-4); }
+.hsl-picker button, .hsl-selection-toggle { min-height: 30px; padding: var(--space-5) var(--space-8); border: 1px solid var(--border); border-radius: var(--radius-1); }
 .hsl-picker [aria-pressed="true"], .hsl-selection-toggle[aria-pressed="true"] { color: var(--text); border-color: var(--accent-strong); background: var(--accent-bed); box-shadow: var(--plate-press); }
 .hsl-wheel { aspect-ratio: 1; height: auto; }
 .hsl-wheel .hsl-polar-caption { font-size: var(--font-size-min); }

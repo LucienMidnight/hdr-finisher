@@ -165,7 +165,7 @@ function hslSync(ui){
   for(const ch of channels){
     const button=document.createElement('button');button.type='button';button.className='hsl-channel text-button';
     button.setAttribute('aria-label',global?`${ch.name} channel`:`${ch.name} quick start`);
-    const band=e.BANDS.find(b=>b.id===ch.id);button.style.background=band?.hex||'conic-gradient(red,yellow,lime,cyan,blue,magenta,red)';
+    const band=e.BANDS.find(b=>b.id===ch.id);button.style.background=band?.hex||'var(--hsl-fallback-spectrum)';
     button.setAttribute('aria-pressed',String(global&&c.id===ch.id));
     if(global&&!valuesEqual(ch.recipe,defaults.find(d=>d.id===ch.id)?.recipe))button.classList.add('modified');
     button.title=ch.name;

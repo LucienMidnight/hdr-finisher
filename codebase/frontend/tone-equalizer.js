@@ -350,7 +350,7 @@ function drawToneEqualizerEditor(lane = state.currentView) {
       ? uiNumberToken("--equalizer-selected-radius", 5.5)
       : uiNumberToken("--equalizer-node-radius", 4);
     ctx.fillStyle = selected
-      ? uiToken("--equalizer-selected")
+      ? uiToken("--graph-selected")
       : enabled
         ? uiToken("--equalizer-node")
         : uiToken("--equalizer-disabled");

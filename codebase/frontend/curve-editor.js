@@ -221,7 +221,7 @@ function drawCurveEditor() {
     ctx.fillStyle = currentCurveLane() === "hdr"
       ? curveExposureColorAt(xValue)
       : selected
-        ? uiToken("--curve-selected")
+        ? uiToken("--graph-selected")
         : index === 0 || index === curve.length - 1
           ? uiToken("--curve-endpoint")
           : uiToken("--curve-neutral");
