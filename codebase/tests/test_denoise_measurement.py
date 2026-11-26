@@ -242,3 +242,60 @@ def test_replaced_grain_fit_never_starts_tile_work(context, monkeypatch):
     response = client.post("/api/session/test-photo/denoise-grain/hdr?long_edge=640",
                            json={"method": "clean_grain", "clean_splotches": False, "clean_fringes": False, "grain_evenness": 1})
     assert response.status_code == 409
+
+def test_native_exr_measurement_preserves_source_precision_and_window(context, tmp_path, monkeypatch):
+    import Imath
+    import OpenEXR
+
+    from hdr_finisher import library_live
+    from hdr_finisher.loader import load_image
+
+    client, frame = context
+    width, height = 96, 64
+    path = tmp_path / "signed-layer.exr"
+    names = ("Combined.R", "Combined.G", "Combined.B")
+    header = OpenEXR.Header(width, height)
+    header["channels"] = {name: Imath.Channel(Imath.PixelType(Imath.PixelType.FLOAT)) for name in names}
+    header["dataWindow"] = Imath.Box2i(Imath.V2i(-10, 3), Imath.V2i(width - 11, height + 2))
+    header["colorInteropID"] = b"lin_rec2020_scene"
+    samples = np.random.default_rng(19).uniform(-.5, 2., (height, width, 3)).astype(np.float32)
+    output = OpenEXR.OutputFile(str(path), header)
+    try:
+        output.writePixels({name: samples[..., channel].tobytes() for channel, name in enumerate(names)})
+    finally:
+        output.close()
+
+    edge = 640
+    document = {"hdr_reference_white_nits": 100,
+                "interpretation_override": {"linear_reference": "diffuse_white_1_0"}}
+    quality = library_live.quality(document)
+    meta = {"key": library_live.picture_key(path, edge, quality), "edge": edge,
+            "path": str(path), "quality": quality, "width": width, "height": height,
+            "source_width": width, "source_height": height, "has_reference": False,
+            "adjustments": frame.adjustments.model_dump(mode="json")}
+    live = library_live.LivePictures(tmp_path, None)
+    scene = live.describe(path, meta, document=document)
+    identity = scene["key"]
+    url = f"/api/session/{identity}/denoise-measurement/hdr?long_edge=640"
+    expected, *_ = load_image(path, overrides=document["interpretation_override"],
+                              hdr_reference_white_nits=100, analyze_hdr=False)
+
+    # Old cached noise evidence from the half-float scene must not be reused.
+    precision_meta = library_live.metadata(identity)
+    with monkeypatch.context() as old:
+        old.setattr(library_live, "metadata", lambda _: {
+            k: v for k, v in precision_meta.items() if k != "native_exr_interpretation"})
+        key = client.get(url).headers["X-Denoise-Measurement-Key"]
+        assert save(client, url, {"key": key, "source_width": width, "source_height": height,
+                                 "width": width, "height": height, "windows": [{}]}).status_code == 200
+    assert client.get(url).status_code == 204
+    response = client.get(url + "&source=true")
+    assert response.status_code == 200, response.text[:300] if response.status_code != 200 else ""
+    length = struct.unpack("<I", response.content[:4])[0]
+    pixels = np.frombuffer(response.content[4 + length:], dtype="<f4").reshape(height, width, 4)[..., :3]
+    np.testing.assert_array_equal(pixels, expected)
+    assert not np.array_equal(pixels, expected.astype(np.float16).astype(np.float32))
+
+    h, w, read = library_live.native_exr_denoise_windows(precision_meta)
+    assert (h, w) == (height, width)
+    np.testing.assert_array_equal(read(11, 13, 42, 37), expected[11:42, 13:37])

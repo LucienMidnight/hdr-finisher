@@ -1650,8 +1650,17 @@ def adaptive_denoise_model(
         def measure_library():
             from .cpu_budget import logical_cpus
             from .library_diagnostics import log
-            from .library_live import session as library_session
+            from .library_live import native_exr_denoise_windows, session as library_session
             started = time.perf_counter()
+            authored = (kind == PreviewKind.SDR and metadata.get("has_reference", False)
+                        and metadata["adjustments"].get("sdr", {}).get("use_authored_base", True))
+            if ("native_exr_interpretation" in metadata and not authored
+                    and long_edge >= max(metadata["scene_width"], metadata["scene_height"])):
+                windows = native_exr_denoise_windows(metadata)
+                model = denoise_adaptive.estimate_adaptive_model_from_windows(*windows, workers=logical_cpus())
+                log("picture_denoise_model", path=metadata.get("path"), route="library-native-exr-float32",
+                    edge=long_edge, workers=logical_cpus(), duration_ms=(time.perf_counter()-started)*1000)
+                return model.as_dict()
             frame = library_session(session_id)
             if frame is None:
                 raise HTTPException(404, "Stored Library scene is unavailable.")

@@ -87,6 +87,8 @@ def _context(store, session_id, kind, long_edge, edit_revision, geometry_signatu
         authored = kind == PreviewKind.SDR and meta.get("has_reference", False) and meta["adjustments"].get("sdr", {}).get("use_authored_base", True)
         native = long_edge >= max(meta["scene_width"], meta["scene_height"]) and not authored
         source = {"scene": meta["source_key"]}
+        if native and "native_exr_interpretation" in meta:
+            source["measurement_pixels"] = "native-exr-float32-v1"
         path = meta.get("path")
         usage = "Library"
     else:
@@ -384,7 +386,7 @@ def create_router(store):
                        current, action):
         from .denoise_adaptive import AdaptiveControls, AdaptiveNoiseModel
         from .denoise_grain import GrainPreparation, fit_grain
-        from .library_live import session as library_session
+        from .library_live import native_exr_denoise_windows, session as library_session
 
         started = perf_counter()
         _, frame, meta, _ = _context(store, session_id, kind, long_edge, edit_revision, geometry_signature)
@@ -444,10 +446,11 @@ def create_router(store):
                 height, width, read = windows
             if cached_model is None:
                 from .denoise_adaptive import estimate_adaptive_model_from_windows
+                model_windows = native_exr_denoise_windows(meta) if meta is not None and not authored_sdr else None
                 model = cache.cpu_denoise_model(
                     epoch=epoch, authored=authored_sdr, geometry=geometry, size=(height, width),
                     processing_size=("native", native_edge),
-                    measure=lambda: estimate_adaptive_model_from_windows(height, width, read),
+                    measure=lambda: estimate_adaptive_model_from_windows(*(model_windows or (height, width, read))),
                     usage=fields["usage"], log_fields=fields,
                 )
             else:
@@ -554,18 +557,23 @@ def create_router(store):
         if not source:
             return Response(status_code=204,headers={"X-Denoise-Measurement-Key":key})
         native = None
+        precision_windows = None
         if frame is None:
             authored = kind == PreviewKind.SDR and meta.get("has_reference", False) and meta["adjustments"].get("sdr", {}).get("use_authored_base", True)
             if not authored and long_edge >= max(meta["scene_width"],meta["scene_height"]):
-                from .library_live import native_denoise_pixels
-                native = (native_denoise_pixels(session_id), 0)
+                from .library_live import native_denoise_pixels, native_exr_denoise_windows
+                precision_windows = native_exr_denoise_windows(meta)
+                if precision_windows is None:
+                    native = (native_denoise_pixels(session_id), 0)
             else:
                 from .library_live import session
                 frame = session(session_id)
         if frame is not None:
             request = (kind, long_edge, frame.adjustments)
             native = frame.render_cache.native_denoise_source(*request)
-        if native is not None:
+        if precision_windows is not None:
+            height, width, read = precision_windows
+        elif native is not None:
             image = native[0]
             height, width = image.shape[:2]
             read = lambda y0,x0,y1,x1: image[y0:y1,x0:x1,:3]

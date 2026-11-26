@@ -9769,3 +9769,14 @@ three-target transaction, saved grades, live redraw and Undo. The first
 post-fix attempt observed stale scene metadata (0.25 instead of 0.75), so
 qualification remains explicitly flaky rather than a clean pass. v0.9.2
 passes this driver with the same portable Mac harness.
+
+## November 26: full-precision EXR Denoise measurement
+
+An unreduced EXR without active repairs now measures Denoise from float32
+source windows before the Library stores the drawing scene in half precision.
+Half-float rounding changed the noise estimate enough to produce a visible
+Clean Grain difference on the two signed EXR fixtures. The Library reuses
+Grade's source interpretation and reference-white handling for the samples.
+Reduced and repaired scenes keep their existing measurement inputs. Drawing
+storage, delivery and colour limits stay unchanged. The old half-float noise
+measurement is not reused for the float32 route.

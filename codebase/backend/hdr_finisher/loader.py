@@ -79,9 +79,12 @@ def load_image(
     hdr_reference_white_nits: int = 203,
     library_edge: int | None = None,
     analyze_hdr: bool = True,
+    exr_window: tuple[int, int, int, int] | None = None,
 ) -> tuple[np.ndarray, SourceImageDescriptor, dict[str, Any], Any, np.ndarray | None]:
     from .file_gate import decode_suffix
     suffix = decode_suffix(path)  # by contents when they differ from the extension
+    if exr_window is not None and (suffix != ".exr" or analyze_hdr):
+        raise ValueError("EXR sample windows require source-only EXR loading.")
     total_started = perf_counter()
     decode_started = perf_counter()
     try:
@@ -118,7 +121,8 @@ def load_image(
         elif suffix == ".exr":
             if progress:
                 progress("decoding_exr", "Decoding full-resolution OpenEXR")
-            image, metadata = _load_exr(path, cancelled=cancelled)
+            image, metadata = _load_exr(path, cancelled=cancelled) if exr_window is None else _load_exr(
+                path, cancelled=cancelled, window=exr_window)
         elif suffix in {".hdr", ".pfm"}:
             if progress:
                 progress("decoding_hdr", "Decoding full-resolution floating-point image")
@@ -523,7 +527,8 @@ EXR_BAND_ROWS = 256
 
 
 def _load_exr(
-    path: Path, *, cancelled: Callable[[], bool] | None = None, combined_channels: bool = False
+    path: Path, *, cancelled: Callable[[], bool] | None = None, combined_channels: bool = False,
+    window: tuple[int, int, int, int] | None = None,
 ) -> tuple[np.ndarray, dict[str, Any]]:
     try:
         import OpenEXR
@@ -539,30 +544,34 @@ def _load_exr(
         height = dw.max.y - dw.min.y + 1
         float_type = Imath.PixelType(Imath.PixelType.FLOAT)
         channel_names = _select_exr_rgb_channels(header.get("channels", {}).keys())
-        image = empty_source_array((height, width, 3))
+        left, first_row, right, last_row = window or (0, 0, width, height)
+        if not (0 <= left < right <= width and 0 <= first_row < last_row <= height):
+            raise LoaderError("EXR sample window is outside its data window.")
+        image = empty_source_array((last_row - first_row, right - left, 3))
         read_timings = None
         if combined_channels:
             read_ms = interleave_ms = 0.0
-            for top in range(0, height, EXR_BAND_ROWS):
+            for top in range(first_row, last_row, EXR_BAND_ROWS):
                 _raise_if_cancelled(cancelled)
-                bottom = min(height, top + EXR_BAND_ROWS)
+                bottom = min(last_row, top + EXR_BAND_ROWS)
                 started = perf_counter()
                 channels = file.channels(list(channel_names), float_type, dw.min.y + top, dw.min.y + bottom - 1)
                 read_ms += (perf_counter() - started) * 1000
                 started = perf_counter()
                 for index, channel in enumerate(channels):
-                    image[top:bottom, :, index] = np.frombuffer(channel, dtype=np.float32).reshape(bottom - top, width)
+                    image[top-first_row:bottom-first_row, :, index] = (
+                        np.frombuffer(channel, dtype=np.float32).reshape(bottom - top, width)[:, left:right])
                 del channels, channel
                 interleave_ms += (perf_counter() - started) * 1000
             read_timings = {"channels": read_ms, "interleave": interleave_ms}
         else:
-            for top in range(0, height, EXR_BAND_ROWS):
+            for top in range(first_row, last_row, EXR_BAND_ROWS):
                 _raise_if_cancelled(cancelled)
-                bottom = min(height, top + EXR_BAND_ROWS)
+                bottom = min(last_row, top + EXR_BAND_ROWS)
                 for index, name in enumerate(channel_names):
                     channel = np.frombuffer(file.channel(name, float_type, dw.min.y + top, dw.min.y + bottom - 1),
                                             dtype=np.float32)
-                    image[top:bottom, :, index] = channel.reshape(bottom - top, width)
+                    image[top-first_row:bottom-first_row, :, index] = channel.reshape(bottom - top, width)[:, left:right]
                     del channel
     finally:
         close = getattr(file, "close", None)

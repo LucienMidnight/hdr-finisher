@@ -392,8 +392,16 @@ class LivePictures:
         result["scene_width"], result["scene_height"] = metadata["width"], metadata["height"]
         result["width"], result["height"] = geometry_output_dimensions(metadata["width"], metadata["height"], adjustments.shared.geometry)
         result["source_width"], result["source_height"] = geometry_output_dimensions(metadata["source_width"], metadata["source_height"], adjustments.shared.geometry)
+        internal = deepcopy(result)
+        if (Path(path).suffix.lower() == ".exr"
+                and (metadata["width"], metadata["height"]) == (metadata["source_width"], metadata["source_height"])):
+            from .file_gate import decode_suffix
+
+            inputs = recipe(document, validated=True)
+            if decode_suffix(path) == ".exr" and not any(repair.get("enabled", True) for repair in inputs["repairs"]):
+                internal["native_exr_interpretation"] = inputs["interpretation_override"]
         with _registry_lock:
-            _registry[identity] = (self, deepcopy(result))
+            _registry[identity] = (self, internal)
             _registry.move_to_end(identity)
             while len(_registry) > 512:
                 _registry.popitem(last=False)
@@ -506,6 +514,47 @@ def metadata(identity):
     with _registry_lock:
         entry = _registry.get(identity)
         return deepcopy(entry[1]) if entry else None
+
+
+def native_exr_denoise_windows(meta):
+    """Measure an unreduced, unrepaired EXR before the scene's half-float storage."""
+    interpretation = meta.get("native_exr_interpretation")
+    if interpretation is None:
+        return None
+    from fastapi import HTTPException
+
+    from .library_rgb import assumed_interpretation
+    from .loader import LoaderError, load_image
+
+    path = Path(meta["path"])
+    expected = meta["source_key"]
+    qualities = equivalent_qualities(meta["quality"])
+
+    def check_source():
+        try:
+            matches = any(picture_key(path, meta["edge"], quality) == expected for quality in qualities)
+        except OSError as exc:
+            raise HTTPException(409, "The EXR source is no longer available.") from exc
+        if not matches:
+            raise HTTPException(409, "The EXR source changed before Denoise measurement.")
+
+    check_source()
+    interpretation = dict(interpretation)
+    assumed = assumed_interpretation(path, interpretation)
+    if assumed:
+        interpretation.update(color_space=assumed["color_space"],
+            transfer_function=interpretation.get("transfer_function") or assumed["transfer_function"])
+
+    def read(top, left, bottom, right):
+        try:
+            pixels, *_ = load_image(path, overrides=interpretation, hdr_reference_white_nits=meta["white"],
+                                    analyze_hdr=False, exr_window=(left, top, right, bottom))
+        except LoaderError as exc:
+            raise HTTPException(422, str(exc)) from exc
+        check_source()
+        return pixels
+
+    return meta["scene_height"], meta["scene_width"], read
 
 
 def native_denoise_pixels(identity):
