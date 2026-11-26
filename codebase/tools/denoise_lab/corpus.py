@@ -11,9 +11,6 @@ then degraded three ways, matching what the app actually receives:
                per-channel Poisson-Gaussian noise pushed through a colour
                matrix, which is what makes chroma blotches, plus the mild
                spatial correlation demosaicing leaves.
-``render``     Monte Carlo render noise: relative (variance proportional to
-               signal squared), heavy-tailed, with occasional fireflies.
-
 Noise strength is set relative to each crop's own median luminance so that
 exposure differences between sources do not change how hard a case is.
 """
@@ -41,7 +38,6 @@ CROPS = (
     ("landscape-upper", "A7R00619.exr", 0, 200, 5120, 8),
     ("landscape-right", "A7R00619.exr", 0, 2800, 5120, 8),
     ("landscape-left", "A7R00619.exr", 180, 0, 5120, 8),
-    ("blender-render", None, 14, 14, 512, 1),
 )
 
 
@@ -58,7 +54,6 @@ NOISE_CASES = (
     NoiseCase("processed-mild", "processed", 0.06),
     NoiseCase("processed-strong", "processed", 0.15),
     NoiseCase("raw-high-iso", "raw", 0.12),
-    NoiseCase("render", "render", 0.12),
 )
 
 
@@ -78,8 +73,6 @@ def clean_references() -> dict[str, np.ndarray]:
     result: dict[str, np.ndarray] = {}
     sources: dict[str, np.ndarray] = {}
     for name, filename, y0, x0, size, factor in CROPS:
-        if filename is None:
-            raise FileNotFoundError('Steve to supply: a noise-free linear EXR render, at least 540 x 540, in HDR Test Images; denoise render-reference coverage is unavailable.')
         path = CACHE / f"clean-{name}.npy"
         if not path.exists():
             if filename not in sources:
@@ -130,14 +123,6 @@ def add_noise(clean: np.ndarray, case: NoiseCase, seed: int) -> np.ndarray:
         noise = rng.standard_normal(x.shape).astype(np.float32) * np.sqrt(a * camera + b)
         noise = _blur3(noise, 0.18)  # demosaic correlation
         return ((camera + noise) @ matrix.T).astype(np.float32)
-    if case.kind == "render":
-        relative = rng.standard_normal(x.shape[:2]).astype(np.float32)
-        heavy = np.exp(case.relative_sigma * 1.1 * relative) - 1.0
-        per_channel = rng.standard_normal(x.shape).astype(np.float32) * case.relative_sigma * 0.35
-        noisy = x * (1.0 + heavy[..., None] + per_channel)
-        fireflies = rng.random(x.shape[:2]) < 0.0004
-        noisy[fireflies] += median * rng.uniform(20.0, 200.0, size=(int(fireflies.sum()), 1)).astype(np.float32)
-        return np.maximum(noisy, 0.0).astype(np.float32)
     raise ValueError(case.kind)
 
 
@@ -146,8 +131,4 @@ def cases():
     references = clean_references()
     for reference_index, (name, clean) in enumerate(references.items()):
         for case_index, case in enumerate(NOISE_CASES):
-            if case.kind == "render" and not name.startswith("blender"):
-                continue
-            if name.startswith("blender") and case.kind != "render":
-                continue
             yield name, case, clean, add_noise(clean, case, seed=1000 * reference_index + case_index)

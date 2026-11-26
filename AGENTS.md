@@ -389,11 +389,11 @@ same-Mac v0.9.2 comparisons and exact errors: `docs/known-limitations.md`,
    native RAW Single, temporary recovery, live native detail and
    precision-source preparation. Same-Mac tag comparisons
    reproduce these failures; see the separate DNG comparison qualification.
-6. Supply a noise-free linear EXR render >=540x540 for Denoise; provide usable
-   source linkage for protected DSC00950.hdrfinisher without overwriting it.
-   Proof/Grade and preview/export comparison are blocked by its saved Windows
-   source URI. DSC07060.ARW.hdrf remains a separately known missing private
-   fixture, not the fixture selected by these two drivers.
+6. November 26 PC follow-up: the noise-free EXR requirement and lab case are
+   retired at Steve's request. DSC00950 review drivers explicitly relink their
+   disposable session to the curated RAW (matching source hash), without
+   rewriting the protected project. DSC07060.ARW.hdrf remains a separate
+   missing private fixture, not the source selected by these two drivers.
 7. Confirm ISO AVIF disk-plane reference lookup, Grade DNG's standalone browser
    launch and JPEG XL colour metadata helper on PC. Mac ISO fails its reference
    `.npz` lookup on both versions; Grade DNG requires absent Microsoft Edge;

@@ -15,7 +15,7 @@ const project = process.env.HDR_FINISHER_TEST_PROJECT || "C:\\Users\\Steve\\Desk
   const browserUrl = process.env.HDR_FINISHER_URL;
   const app = browserUrl ? null : await electron.launch({
       executablePath: require("electron"),
-      args: [project],
+      args: [path.resolve(__dirname, "..") ],
       env: { ...process.env, HDR_FINISHER_USER_DATA_DIR: userData },
     });
   const browser = browserUrl ? await chromium.launch({
@@ -24,17 +24,19 @@ const project = process.env.HDR_FINISHER_TEST_PROJECT || "C:\\Users\\Steve\\Desk
   }) : null;
   const page = browserUrl ? await browser.newPage({ viewport: { width: 1680, height: 1000 } }) : await app.firstWindow();
   try {
-    if (browserUrl) {
-      await page.goto(browserUrl, { waitUntil: "networkidle" });
-      await page.evaluate(async (projectPath) => {
-        const response = await fetch("/api/project/open", {
-          method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: projectPath }),
-        });
-        const payload = await response.json();
-        if (!response.ok) throw new Error(JSON.stringify(payload));
-        await activateDesktopSession(payload.session, projectPath);
-      }, project);
-    }
+    if (browserUrl) await page.goto(browserUrl, { waitUntil: "networkidle" });
+    else await require('../../tests/electron-initial-load.js').waitForInitialLoad(app, page);
+    const source = path.basename(project) === 'DSC00950.hdrfinisher'
+      ? require('../../tests/helpers/reuse-test-photo.cjs').source('DSC00950.ARW') : null;
+    await page.evaluate(async ({project, source}) => {
+      const selected = await desktop.grantProjectPath(project, 'project-open');
+      const relink = source ? await desktop.grantSourcePath(source) : null;
+      const {response, payload} = await projectIo.openDesktopProject(fetch, {
+        projectGrant:selected.grant, sourceGrant:relink?.grant,
+      });
+      if (!response.ok) throw Error(JSON.stringify(payload));
+      await activateDesktopSession(payload.session, project);
+    }, {project, source});
     await page.waitForFunction(() => typeof state !== "undefined" && state.session?.session_id && state.acceptedPresentation, null, { timeout: 180000 });
     const gradeNotice = await leaveSavedGradeAsIs(page);
     await page.evaluate(() => applyPreviewResolution("1024"));

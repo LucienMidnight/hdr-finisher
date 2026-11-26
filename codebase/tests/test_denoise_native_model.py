@@ -155,8 +155,14 @@ def test_fixed_calibration_matches_the_seeded_white_noise_measurement():
     limits = [float(np.quantile(np.concatenate(values), da.TAIL_QUIET_QUANTILE)) for values in coarse]
     tails = da._energy_tails(noise, windows, model, limits)[0]
     fixed_limits, fixed_tails = da._tail_reference()
-    np.testing.assert_array_equal(limits, fixed_limits)
-    np.testing.assert_array_equal(tails, fixed_tails)
+    # Recomputing a statistical calibration is not an exact float contract.
+    # Float32 RGB dot products use different SIMD/FMA accumulation on ARM/x86.
+    # On PC, explicit scalar float32 dots versus NumPy matmul move these
+    # quantiles by up to 1.14e-5 relative (2.65e-5 absolute); the reported Mac
+    # difference is only ~6e-7. Allow 2e-5 relative for this recomputation only.
+    # The next test still pins browser/CPU shipping constants bit-for-bit.
+    np.testing.assert_allclose(limits, fixed_limits, rtol=2e-5, atol=0)
+    np.testing.assert_allclose(tails, fixed_tails, rtol=2e-5, atol=0)
 
 
 def test_browser_measurement_uses_the_same_calibration_constants():

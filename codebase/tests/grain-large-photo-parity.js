@@ -8,7 +8,8 @@ const { chromium } = require("playwright");
 const { pythonExecutable } = require("../tools/lib/platform.cjs");
 
 const ROOT = path.resolve(__dirname, "..");
-const PHOTO = path.join(ROOT, "output/test-photos/DSC00636.ARW");
+const reusePhoto = require("./helpers/reuse-test-photo.cjs");
+const PHOTO = reusePhoto("DSC00636.ARW", path.join(ROOT, "output/grain-large-photo-parity/DSC00636.ARW"));
 const methods = ["clean_grain_off", "clean_grain"];
 const lanes = ["hdr", "sdr"];
 const views = ["Fit", "110%"];

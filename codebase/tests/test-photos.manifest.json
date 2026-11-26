@@ -53,6 +53,11 @@
       "sha256": "fb77ead9db1b550df33a1d28ae5b90ebb9be91a473e84d80d40cfffada8bb6f3"
     },
     {
+      "name": "DSC00636.ARW",
+      "bytes": 56238080,
+      "sha256": "3ad41be5de8eafddf22dd9a93067bd742ac0cbc0e55f6cb7d5a9cbcdf36abc48"
+    },
+    {
       "name": "DSC00786.ARW",
       "bytes": 43014656,
       "sha256": "6b9781a0fa86cb8df93980f5b61f0bd6f86d185053ec731f67278fe5dd83f068"

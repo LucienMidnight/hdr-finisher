@@ -6,7 +6,7 @@ module.exports = async function(page) {
   const saved=[];
   // Keep preset persistence in memory so this driver cannot write Steve's preset folder.
   window.HDRApplicationShell={...shell,listGradingPresets:async()=>saved,saveGradingPreset:async p=>saved.push(structuredClone(p))};
-  const group=document.querySelector('[data-group="film-look"]');
+  let group=document.querySelector('[data-group="film-look"]');
   const applyLook=async id=>{
    state.groupPresetContext=groupPresetContextForElement(group);
    const preset=builtInGroupPresets(state.groupPresetContext).find(p=>p.id===`built-in:${id}`);
@@ -14,9 +14,12 @@ module.exports = async function(page) {
    check(preset,`missing Look ${id}`); await applyGroupPreset(preset); await syncGlobalEditState();
   };
   const checkPanel = () => {
+   group=document.querySelector('[data-group="film-look"]');
    for (const section of group.querySelectorAll('[data-film-section]')) {
     const keys=[...new Set([...section.querySelectorAll('[data-path]')].map(c=>c.dataset.path.split('.').at(-1)))];
-    const count=keys.filter(key=>state.adjustments[state.currentView].film_look.stock_overrides.includes(key)).length;
+    const camera=['grain_film_format','grain_capture_geometry','grain_custom_width_mm','grain_custom_height_mm','stock_exposure','lens_filter','lens_strength','lens_size'];
+    const owned=section.dataset.filmSection==='camera' ? camera : section.dataset.filmSection==='negative' ? HDRFilmCharacter.tracked.filter(key=>![...camera,...FILM_PRINT_KEYS,'lab_levels','scan_sharpening','push_pull','look_strength'].includes(key)) : keys;
+    const count=owned.filter(key=>state.adjustments[state.currentView].film_look.stock_overrides.includes(key)).length;
     // tooltips.js moves title into data-native-tooltip (the text the hover tooltip shows).
     const mod=section.querySelector('.film-stage-mod'), shown=mod.getAttribute('title') ?? mod.dataset.nativeTooltip ?? '';
     check(shown===(count ? `${count} modified controls` : ''),`stage Mod count disagrees with deliberate controls: ${section.dataset.filmSection} shows "${shown}", expected ${count}`);
@@ -25,9 +28,19 @@ module.exports = async function(page) {
   };
   try {
    if(group.classList.contains('collapsed'))group.querySelector(':scope > .control-group-header .group-toggle').click();
-   await activateDesktopSession(state.session, state.projectPath, null, {stayOnTab:true});
+   // The preceding character check has advanced the backend revision. The
+   // session payload kept by the renderer still contains its opening revision.
+   // Fetch current state before simulating a reload, or the next save gets 409
+   // and overwrites the optimistic stage change with the previous document.
+   await syncGlobalEditState();await state.editCommandQueue;
+   const refreshed=await fetch(`/api/session/${state.session.session_id}`);
+   check(refreshed.ok,'could not refresh session for reload');
+   const fresh=(await refreshed.json()).session;
+   await activateDesktopSession(fresh, state.projectPath, null, {stayOnTab:true});
+   group=document.querySelector('[data-group="film-look"]');
    check(!group.classList.contains('collapsed'), 'background reload closed module');
-   await activateDesktopSession(state.session, state.projectPath);
+   await activateDesktopSession(fresh, state.projectPath);
+   group=document.querySelector('[data-group="film-look"]');
    check([...document.querySelectorAll('.control-group')].every(item => item.classList.contains('collapsed')), 'new photo left modules open');
    if(group.classList.contains('collapsed'))group.querySelector(':scope > .control-group-header .group-toggle').click();
    const probe=document.createElement('div');probe.style.background='var(--panel)';document.body.append(probe);
@@ -59,7 +72,7 @@ module.exports = async function(page) {
       const button=stage==='Development'
        ? document.querySelector(`[data-film-push="${entries[i][1].push_pull}"]`)
        : document.querySelector(`[data-film-stage="${stage}"][data-film-recipe="${i}"]`);
-      check(button,`missing ${stage} shortcut ${i}`);button.click();await syncGlobalEditState();
+      check(button,`missing ${stage} shortcut ${i}`);button.click();await syncGlobalEditState();await state.editCommandQueue;
       checkPanel();
       const f=state.adjustments[lane].film_look;
       for(const [key,value] of Object.entries(entries[i][1])) {

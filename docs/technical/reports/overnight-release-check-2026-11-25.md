@@ -185,3 +185,59 @@ Checks: delivery acknowledgement/pressure Node checks 16 pass; Python broker
 2560x1440. Logs: codebase/output/overnight-repeat.log,
 overnight-repeat-fixed.log and overnight-broker-tests.log. Steve's already-open
 Electron app was left running; only launcher-owned test apps were stopped.
+
+Other PC follow-ups:
+
+- Menu shortcuts: fixed the test's paste-dialog race. Re-select the photo and
+  let Escape's close event finish before starting the next paste. Awaiting the
+  paste command itself would wait for the dialog being tested. A three-minute
+  driver deadline now bounds startup, actions and teardown; the native launcher
+  stops only that test's process tree. Native menu check passes at 2560x1440.
+- Film: the combined character/presets/panel check passes. The presets test
+  reactivated the opening session payload after the character check advanced
+  its backend revision; its next save got 409 and replaced the optimistic stage
+  settings. It now fetches a current session before reload, and the character
+  check restores the backend grade and lane before returning. Stage counts use
+  semantic ownership, including common Camera controls. The isolated presets
+  check also passes. The focused Neutral maximum paper-gain check reproduces
+  the exact accepted PC signature (mean 3.2009965277764834, p99.9 250).
+  The real runner matcher recognizes it as KNOWN, and still rejects an added
+  unexpected error. No known-failure signature, shader or image limit changed;
+  no full Film matrix or full release pass is claimed. Release runner tests:
+  27 pass. Logs: overnight-film-current-revision.log,
+  overnight-presets-isolated.log, overnight-film-known-signature.log.
+- Noise-free EXR: requirement and lab blender-render/render-noise case retired,
+  as Steve requested. Photographic lab cases remain. Test-photo documentation,
+  Denoise module and active limitations no longer request that file.
+- Sony 50 MP: DSC00636.ARW registered by size and SHA-256 in the curated
+  manifest, so setup finds it. Large-photo Grain uses the normal reusable-photo
+  helper. LibRaw confirms 8672 x 5784 sensor / 8660 x 5784 active pixels; the
+  driver's existing active-size assertion stays unchanged. All manifest files
+  match; corpus verification exits nonzero only for nine existing extra files
+  (listed in overnight-photo-check.log). No private RAW was committed. Copy
+  DSC00636.ARW to the Mac's HDR Test Images separately. The full large-photo
+  Grain matrix was not run in this follow-up.
+- DSC00950: its curated RAW hash matches the protected project's fingerprint.
+  The two review drivers now supply that RAW as an explicit source grant when
+  opening a disposable session; the backend still verifies identity. Neither
+  protected project nor RAW was changed. No file is needed from Steve. Full
+  Proof/Grade and preview/export diagnostic runs were not repeated here.
+- Denoise calibration: PC native and NumPy-fallback recomputations match the
+  pinned constants exactly. An explicit scalar float32 dot-product experiment
+  changes quantiles by up to 2.65e-5 absolute / 1.14e-5 relative, without changing
+  the algorithm, supporting accumulation rounding rather than a Denoise model
+  regression. The reported Mac 6e-7 miss is smaller. The recomputation test now
+  permits 2e-5 relative (0.002%); shipping constants, exact browser/CPU constant
+  equality and all pixel limits remain unchanged. All 16 native-model tests
+  pass. Mac revalidation remains necessary.
+
+Final fast checks: Node 1444 pass, 1 skipped, 1 pre-existing tooltip-catalogue
+sync failure (also present before edits; no pending tooltip text regenerated).
+Python full suite: 4874 pass, 56 skipped, 88 fail (overnight-pytest.log).
+Failures outside these changes include Denoise research/helper FileNotFoundError,
+Windows text encoding and cross-volume path errors; these were not repaired or
+waived. This is not a green release qualification.
+Focused Python broker/native-model checks: 38 + 16 pass. No push, main merge,
+installer build or full release sweep was performed.
+
+Scratch output finished at 46.6 GB, below the 100 GB limit.

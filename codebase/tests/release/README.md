@@ -20,11 +20,13 @@ No push, tag, packaging or installer command is performed.
 
 ## Photo inputs
 
-Setup and `python tools/check-test-photos.py` verify the shared 50-file
+Setup and `python tools/check-test-photos.py` verify the shared curated
 `<photosRoot>/HDR Test Images` corpus against `tests/test-photos.manifest.json`.
 Use the machine's venv Python. Paths are resolved by `tests/helpers/photos-root.cjs`.
 Protected projects retain their hashes; the curated DSC00950 project still names
 its old Play_Raw source internally and must not be edited by a test.
+Review drivers explicitly relink the disposable session to the curated
+DSC00950.ARW; the backend verifies its saved source hash.
 PC-only personal-folder/giant-file drivers print a plain skip on Mac.
 The frozen v1 Library fixture remains the default until the Library speed
 comparison finishes; v2 is available explicitly. See `docs/technical/test-photos.md`.

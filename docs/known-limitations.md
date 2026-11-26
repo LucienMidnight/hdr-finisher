@@ -86,14 +86,15 @@ with the previous detail-admission block. No full Single pass is claimed.
 
 Other incomplete checks, not new app fixes in this group:
 
-- `gpu-denoise-measurement.js`: full corpus still needs the documented noise-free
-  linear EXR >=540x540. Its explicit `--synthetic-only` mode passes the three
-  generated cases and does not claim corpus or 42 MP timing coverage.
+- `gpu-denoise-measurement.js`: Steve retired the noise-free render-reference
+  requirement and render-only lab case on November 26. Photographic cases no
+  longer stop for that file. This does not claim a new full-corpus GPU pass.
 - `denoise-adaptive-parity.js`: documented GPU result readback failure.
 - Zoomed Denoise and RAW Single: see corrected follow-up above; neither is
   retrospectively classified as a documented November 14 failure.
 - `preview-export-compare`: documented `source_relink_required` for protected
-  DSC00950; the project remains untouched.
+  DSC00950; November 26 drivers now relink their disposable session to the
+  matching curated RAW, leaving the protected project untouched.
 - Live Export tiles: the pre-signed export-admission regression above remains.
 - Follow-up plain-Electron Library smoke: attempted under the lock at the same
   window size; hard timeout in `observe` (130-second deadline, 188.6 seconds
@@ -287,8 +288,8 @@ names except for desktop drivers. Every still-failing selected driver is listed.
 
 | Driver | Category and evidence | Action / remaining qualification |
 | --- | --- | --- |
-| `desktop/tests/proof-grade-diagnostic.js` | c — `source_relink_required` for protected DSC00950 project | Its saved source is `D:\Photos\Play_Raw\Fantastic light over village - AdamFromCanada\DSC00950.ARW`; project unchanged. A valid source grant/relinked disposable copy is needed. |
-| `gpu-denoise-measurement.js` | c — missing noise-free linear EXR render >=540x540 in HDR Test Images | Cleanup now closes Electron on fixture failure; two prompt errors replace the old 15-minute hang. Steve must supply the render. |
+| `desktop/tests/proof-grade-diagnostic.js` | c — `source_relink_required` for protected DSC00950 project | Its saved source is `D:\Photos\Play_Raw\Fantastic light over village - AdamFromCanada\DSC00950.ARW`; project unchanged. November 26: review drivers now grant the matching curated RAW to the disposable session. |
+| `gpu-denoise-measurement.js` | c — missing noise-free linear EXR render >=540x540 in HDR Test Images | Cleanup now closes Electron on fixture failure; two prompt errors replace the old 15-minute hang. Superseded November 26: Steve retired this requirement and lab case. |
 | `denoise-adaptive-parity.js` | b — `The GPU result could not be read back` on both versions | Replaced oversized JSON transport with identical float bytes; no accuracy pass is claimed. |
 | `denoise-zoomed-region.js` | a — tag passes; current fails both fresh comparison attempts, needs 3.41 GiB host work, only 1.20 GiB safely available | Current native Mac memory detection differs from the tag; headroom is a confound, not evidence of a leak. Full reference remains unavailable; no safe small fix or limit change made. |
 | `film-stock-parity.js` | b — same extreme HDR Neutral maximum-paper-gain numerical failure on tag | Full current matrix still fails. Preset disclosure harness repaired; complete character/presets/panel follow-up now passes separately. |
