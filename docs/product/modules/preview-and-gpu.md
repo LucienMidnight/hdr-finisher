@@ -8,6 +8,13 @@
   scopes UI; backend `render_cache.py`, `cpu_strips.py`, `preview.py`,
   `scopes.py`, `overlay.py`, `peak_*.py`.
 
+## November 26: scope encoding failure cleanup
+
+Scope encoding now releases its busy pool slot and active-scope count when
+buffer writes or command setup throw before readback begins. The readback and
+encoding failure paths share the same cleanup. A forced device-error regression
+checks recovery without changing the scope shader or successful analysis.
+
 ## November 26: mask batch failure cleanup
 
 A failed mask batch aborts sibling requests and waits for all workers to unwind

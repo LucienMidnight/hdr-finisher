@@ -105,3 +105,28 @@ test("a hand-off readback releases its GPU copy instead of retaining another sco
   assert.equal(result.body.byteLength,256);assert.equal(destroyed,3);
   assert.equal(renderer.scopeResources.size,0);assert.equal(renderer.activeScopeCount,0);
 });
+
+
+test("scope encoding failure releases the busy resource before readback starts", async () => {
+  const vm = require("node:vm");
+  const { frontendSource } = require("./frontend-source.js");
+  const context = vm.createContext({ window: { HDRScopeReadback }, performance,
+    GPUShaderStage: { COMPUTE: 1 } });
+  for (const name of ["webgpu-shaders.js", "webgpu-preview.js"]) {
+    vm.runInContext(frontendSource(name), context);
+  }
+  const renderer = new context.window.HDRWebGPUPreview(null);
+  renderer.available = true;
+  const canvas = {};
+  renderer.scopeSources.set(canvas, { params: [] });
+  const resource = { readBuffer: { mapState: "unmapped" }, busy: false };
+  renderer.acquireScopeResource = () => resource;
+  let flushed = 0;
+  renderer.flushDeferredDestroy = () => { flushed++; };
+  const failure = new Error("device unavailable");
+  renderer.device = { queue: { writeBuffer() { throw failure; } } };
+  await assert.rejects(renderer.analyzeScope(canvas), error => error === failure);
+  assert.equal(resource.busy, false);
+  assert.equal(renderer.activeScopeCount, 0);
+  assert.equal(flushed, 1);
+});

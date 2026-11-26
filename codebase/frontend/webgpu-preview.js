@@ -8956,49 +8956,54 @@
       const startedAt = performance.now();
       resource.busy = true;
       this.activeScopeCount += 1;
-      const params = new Float32Array(source.params);
-      params[GPU_PARAMS.SCOPE_WIDTH] = width;
-      params[GPU_PARAMS.SCOPE_HEIGHT] = height;
-      this.device.queue.writeBuffer(resource.paramBuffer, 0, params);
-      const bindGroup = this.device.createBindGroup({
-        layout: this.bindGroupLayout,
-        entries: [
-          { binding: 0, resource: source.filmTexture.createView() },
-          { binding: 1, resource: { buffer: resource.paramBuffer } },
-          { binding: 2, resource: { buffer: this.curveBuffer } },
-          { binding: 3, resource: source.spatialTexture.createView() },
-          { binding: 4, resource: this.spatialSampler },
-          { binding: 5, resource: source.spatialTexture.createView() },
-          { binding: 6, resource: this.filmStockBinding() },
-          { binding: 7, resource: this.hslSelectionPlaceholderView },
-        ],
-      });
-      const encoder = this.device.createCommandEncoder();
-      const pass = encoder.beginRenderPass({
-        colorAttachments: [{
-          view: resource.texture.createView(),
-          clearValue: { r: 0, g: 0, b: 0, a: 1 },
-          loadOp: "clear",
-          storeOp: "store",
-        }],
-      });
-      pass.setPipeline(tier === "interactive" ? this.scopePipeline
-        : tier === "picture" ? this.outputPicturePipeline : this.settledScopePipeline);
-      pass.setBindGroup(0, bindGroup);
-      pass.draw(3);
-      pass.end();
-      encoder.copyTextureToBuffer(
-        { texture: resource.texture },
-        { buffer: resource.readBuffer, bytesPerRow: resource.bytesPerRow, rowsPerImage: height },
-        { width, height },
-      );
-      const encodedAt = performance.now();
-      this.device.queue.submit([encoder.finish()]);
-      const submittedAt = performance.now();
-      return scopeReadback().readAnalysis(this, {
-        canvas, source, resource, width, height, generation, tier,
-        startedAt, encodedAt, submittedAt, halfToFloat, raw, snapshot, transient,
-      });
+      try {
+        const params = new Float32Array(source.params);
+        params[GPU_PARAMS.SCOPE_WIDTH] = width;
+        params[GPU_PARAMS.SCOPE_HEIGHT] = height;
+        this.device.queue.writeBuffer(resource.paramBuffer, 0, params);
+        const bindGroup = this.device.createBindGroup({
+          layout: this.bindGroupLayout,
+          entries: [
+            { binding: 0, resource: source.filmTexture.createView() },
+            { binding: 1, resource: { buffer: resource.paramBuffer } },
+            { binding: 2, resource: { buffer: this.curveBuffer } },
+            { binding: 3, resource: source.spatialTexture.createView() },
+            { binding: 4, resource: this.spatialSampler },
+            { binding: 5, resource: source.spatialTexture.createView() },
+            { binding: 6, resource: this.filmStockBinding() },
+            { binding: 7, resource: this.hslSelectionPlaceholderView },
+          ],
+        });
+        const encoder = this.device.createCommandEncoder();
+        const pass = encoder.beginRenderPass({
+          colorAttachments: [{
+            view: resource.texture.createView(),
+            clearValue: { r: 0, g: 0, b: 0, a: 1 },
+            loadOp: "clear",
+            storeOp: "store",
+          }],
+        });
+        pass.setPipeline(tier === "interactive" ? this.scopePipeline
+          : tier === "picture" ? this.outputPicturePipeline : this.settledScopePipeline);
+        pass.setBindGroup(0, bindGroup);
+        pass.draw(3);
+        pass.end();
+        encoder.copyTextureToBuffer(
+          { texture: resource.texture },
+          { buffer: resource.readBuffer, bytesPerRow: resource.bytesPerRow, rowsPerImage: height },
+          { width, height },
+        );
+        const encodedAt = performance.now();
+        this.device.queue.submit([encoder.finish()]);
+        const submittedAt = performance.now();
+        return scopeReadback().readAnalysis(this, {
+          canvas, source, resource, width, height, generation, tier,
+          startedAt, encodedAt, submittedAt, halfToFloat, raw, snapshot, transient,
+        });
+      } catch (error) {
+        scopeReadback().releaseAnalysis(this, resource, width, height, transient);
+        throw error;
+      }
     }
 
     acquireScopeResource(width, height) {
