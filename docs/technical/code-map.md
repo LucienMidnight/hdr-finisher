@@ -296,6 +296,7 @@ by the move. `bindEvents` and `markRefining` remain whole in their files.
 | `highlight-controls.js` | Highlight compression panels | `normalizeHighlightCompressionControls`, `renderHighlightCompressionControls` |
 | `group-presets.js` | Saved presets per control group | `groupPresetPaths`, `initializeGroupPresetControls` |
 | `curve-editor.js` | Curves | `bindCurveEditor`, `drawCurveEditor`, `normalizeCurvePoints` |
+| `gpu-delivery-curves.js` | Shared Grade, Library and delivery curve sampling | `sampleCurvePoints`, `monotoneCurveValues` |
 | `tone-equalizer.js` | Tone equalizer | `bindToneEqualizerEditor`, `drawToneEqualizerEditor` |
 | `denoise-ui.js` | Denoise panel | `loadDenoiseDocument`, `renderDenoiseControls`, `runLiveDenoise` |
 | `color-wheels.js` | Colour wheels and vignette centre | `bindColorWheels`, `bindVignetteCenter` |
