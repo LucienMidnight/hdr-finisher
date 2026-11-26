@@ -746,6 +746,28 @@ comparisons against GPU passed at the existing limits. The 59 synthetic
 GPU cases passed with worst absolute error 0.00000510, plus the existing
 cancellation, budget and allocation-failure checks.
 
+## November 26: Library DNG Activity during development
+
+MacBook Neo, A18 Pro, 8 GB, 1408×794 points. Two full
+`library-dng-warp.js` runs in disposable unpackaged Electron profiles under
+the shared GPU lock, on the commit containing this note. These are driver
+observations, including any waits, not a new app speed comparison or limit.
+
+| DNG | Browse to both grid tiles (CPU / GPU, s) | Explicit 640 px request (CPU / GPU, s) |
+| --- | --- | --- |
+| DJI_0071-2 | 16.23–16.46 / 4.89–4.95 | 0.041–0.046 / 0.018–0.024 |
+| DxO optical correction only | 0.220–0.248 / 0.194–0.195 | 10.55–13.15 / 3.93–11.46 |
+| Leica X2 | 4.14–4.33 / 1.88 | 0.033–0.039 / 0.020–0.021 |
+
+The November 25 release run at `0f64b37f` already showed the DxO separation:
+the grid filled in 0.216–0.266 s, but the CPU decode took 8.37 s and GPU input
+preparation took 2.55 s. In the November 26 failing run the DxO CPU grid
+filled in 0.190 s and its decode took 5.77 s. The corrected driver observed
+zero DxO source-running samples at grid fill and 176–992 named samples
+during the explicit 640 and 2560 px requests in each route/run. The photo
+was named while the matching source actually ran in all six route cases
+per run. No app behavior or output tolerance changed.
+
 ## November 26: Grade Retouch spot removal
 
 MacBook Neo A18 Pro, 8 GB, 1408x794 points, unpackaged Electron under the

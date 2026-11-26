@@ -61,14 +61,26 @@ for(const sample of samples)for(let repeat=0;repeat<repeats;repeat++)for(const m
  for(const run of runs){
   console.log('Starting',run.mode,run.repeat);
   await page.request.post(new URL('/api/delivery/preferences',process.env.HDR_FINISHER_URL).href,{data:{force_cpu:run.mode==='cpu'}});
-  const result=await page.locator('#library-frame').evaluate(async(element,run)=>{
+  const result=await page.locator('#library-frame').evaluate(async(element,{run,photo})=>{
    const w=element.contentWindow;if(run.mode==='cpu')w.localStorage.setItem('library-gpu-raw','off');else w.localStorage.removeItem('library-gpu-raw');
    const fetch=w.fetch.bind(w),seen=[],leases=[];w.fetch=async(...args)=>{const response=await fetch(...args);if(String(args[0]).includes('/raw-budget/')&&args[1]?.method==='POST'){const value=await response.clone().json();if(!leases.some(lease=>lease.requested===JSON.parse(args[1].body).bytes))leases.push({requested:JSON.parse(args[1].body).bytes,...value});}if(String(args[0]).includes('/live-scene')&&response.status===204)seen.push(response.headers.get('X-Library-Fallback'));return response;};
-   const begun=performance.now();await w.HDRLibrary.browse(run.dir);
-   let first=null,finished=null,activity=false,ticks=0,panelNamed=false;
-   const activityButton=w.document.querySelector("#index-status");if(w.document.querySelector("#library-activity").hidden)activityButton.click();
-   const interval=setInterval(()=>{ticks++;if(w.document.querySelector("#library-activity").textContent.includes(run.sample))panelNamed=true;const jobs=w.HDRLibraryScenes.snapshot();if(Object.values(jobs).some(q=>q.jobs.some(j=>j.path.endsWith(run.sample))))activity=true;},25);
+   let first=null,finished=null,meta,large,developMs;
+   const activity=w.document.querySelector('#library-activity');
+   if(activity.hidden)w.document.querySelector('#index-status').click();
+   const normalized=p=>p.replaceAll('\\','/');
+   const sourcePath=normalized(photo);
+   const ticks={grid:0,develop:0},named={grid:0,develop:0};
+   let phase='grid';
+   // An unedited DNG with a usable camera picture can fill the grid without
+   // developing. Watch the same photo from folder open through explicit Develop.
+   const interval=w.setInterval(()=>{
+    if(!w.HDRLibraryScenes.snapshot().sources.jobs.some(j=>normalized(j.path)===sourcePath&&j.state==='running'))return;
+    ticks[phase]++;
+    if(!activity.hidden&&[...activity.querySelectorAll('p')].some(line=>line.textContent.includes(run.sample)))named[phase]++;
+   },25);
+   const begun=performance.now();
    try{
+    await w.HDRLibrary.browse(run.dir);
     while(performance.now()-begun<240000){
      const canvases=[...w.document.querySelectorAll('#grid-space .library-cell canvas[data-picture-key]')].filter(c=>!c.hidden);
      const pictures=[...w.document.querySelectorAll('#grid-space .library-cell img')].filter(i=>!i.hidden&&i.src);
@@ -76,19 +88,27 @@ for(const sample of samples)for(let repeat=0;repeat<repeats;repeat++)for(const m
      if(canvases.length===2){finished=performance.now()-begun;break;}
      await new Promise(r=>setTimeout(r,25));
     }
-   }finally{clearInterval(interval);w.fetch=fetch;}
-   if(finished===null)throw Error('Mixed folder did not finish: '+seen.join(';')+' cells='+JSON.stringify([...w.document.querySelectorAll('#grid-space .library-cell')].map(c=>({text:c.textContent.trim().slice(0,80),canvases:[...c.querySelectorAll('canvas')].map(k=>({hidden:k.hidden,key:k.dataset.pictureKey||'',rendition:k.dataset.rendition||''})),classes:c.className})))+' status='+w.document.querySelector('#library-status')?.textContent+' activity='+w.document.querySelector('#library-activity')?.textContent.slice(0,300));
-   const photo=run.dir+'/'+run.sample;// Unedited photos develop only on the explicit command (November 3).
-   const meta=await w.HDRLibraryScenes.load(photo,640,undefined,10,null,{develop:true});const large=await w.HDRLibraryScenes.load(photo,2560,undefined,10,null,{develop:true});
-   if(meta.renderer!==(run.mode==='baseline'?'cpu':run.mode))throw Error('Wrong DNG route: '+JSON.stringify({renderer:meta.renderer,seen}));
-   if(!activity||!panelNamed||ticks<3)throw Error('No responsive named Activity while source ran');
+    if(finished===null)throw Error('Mixed folder did not finish: '+seen.join(';')+' cells='+JSON.stringify([...w.document.querySelectorAll('#grid-space .library-cell')].map(c=>({text:c.textContent.trim().slice(0,80),canvases:[...c.querySelectorAll('canvas')].map(k=>({hidden:k.hidden,key:k.dataset.pictureKey||'',rendition:k.dataset.rendition||''})),classes:c.className})))+' status='+w.document.querySelector('#library-status')?.textContent+' activity='+activity.textContent.slice(0,300));
+    phase='develop';
+    const requested=performance.now();
+    meta=await w.HDRLibraryScenes.load(photo,640,undefined,10,null,{develop:true});
+    developMs=performance.now()-requested;
+    if(meta.renderer!==(run.mode==='baseline'?'cpu':run.mode))throw Error('Wrong DNG route: '+JSON.stringify({renderer:meta.renderer,seen}));
+    large=await w.HDRLibraryScenes.load(photo,2560,undefined,10,null,{develop:true});
+   }finally{w.clearInterval(interval);w.fetch=fetch;}
+   // Cache checks, drawing and a finished photo's held Activity line do not
+   // count on their own. The Library must paint the name and keep ticking
+   // while the matching source job is running.
+   if(Math.max(named.grid,named.develop)<3){
+    throw Error('No responsive named Activity while DNG source ran: '+JSON.stringify({sample:run.sample,ticks,named}));
+   }
    const gpu=await w.HDRLibraryPictures.initialize(),render=gpu.renderTo,lanes={};let captured;
    gpu.renderTo=async function(canvas,...args){const value=await render.call(this,canvas,...args);captured=await this.analyzeScope(canvas,{width:args[9].width,height:args[9].height,tier:'picture',raw:true});return value;};
    try{for(const lane of ['hdr','sdr']){const canvas=w.document.createElement('canvas');w.document.body.append(canvas);await w.HDRLibraryPictures.show(meta,canvas,new w.AbortController().signal,()=>true,lane==='hdr');const bytes=new Uint8Array(captured.halves.buffer);let binary='';for(let i=0;i<bytes.length;i+=16384)binary+=String.fromCharCode(...bytes.subarray(i,i+16384));lanes[lane]=w.btoa(binary);canvas.remove();}}
    finally{gpu.renderTo=render;}
-   return {photo,meta,large,lanes,leases,firstMs:first,finishedMs:finished,activity,panelNamed,ticks};
-  },run);
-  rows.push({...run,...result});fs.writeFileSync(path.join(folder,'results.json'),JSON.stringify({rows}));console.log(JSON.stringify({...run,firstMs:result.firstMs,finishedMs:result.finishedMs,stages:result.meta.source_timings_ms}));
+   return {photo,meta,large,lanes,leases,firstMs:first,finishedMs:finished,developMs,ticks,named};
+  },{run,photo:path.join(run.dir,run.sample)});
+  rows.push({...run,...result});fs.writeFileSync(path.join(folder,'results.json'),JSON.stringify({rows}));console.log(JSON.stringify({...run,firstMs:result.firstMs,finishedMs:result.finishedMs,developMs:result.developMs,ticks:result.ticks,named:result.named,stages:result.meta.source_timings_ms}));
  }
  const file=path.join(folder,'results.json');fs.writeFileSync(file,JSON.stringify({rows}));
  console.log('Evidence:',file);
