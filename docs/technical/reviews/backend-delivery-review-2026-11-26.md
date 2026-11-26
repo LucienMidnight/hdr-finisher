@@ -40,6 +40,8 @@ assignment), plus replaced inaccurate comments.
 - GPS regression: **2 failed before**; Library metadata and watermark selection:
   **18 passed**.
 - Desktop security and export lifecycle: **12 passed**.
+- Strengthened Windows publication test creates the rival file after the final
+  permission check: export lifecycle **7 passed**.
 - Malformed JPEG XL marker regression: **5 failed before**; JPEG XL marker/helper
   fallback and preset-write selection after fixes: **20 passed**.
 - Existing batch preset checks: **2 passed**, 29 deselected.
