@@ -735,6 +735,20 @@ input[type="text"] {
   color: var(--text);
 }
 
+.toolbar-preview-resolution {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 26px;
+  padding: 3px 7px;
+  color: var(--body);
+  cursor: pointer;
+  font-family: var(--font-body);
+  font-size: var(--font-size-min);
+  white-space: nowrap;
+}
+
 .tool-button.scope-region-toggle {
   display: grid;
   flex: 0 0 30px;
@@ -772,6 +786,53 @@ input[type="text"] {
 .scope-region-toggle.active .scope-region-icon-node {
   fill: var(--graph-selected);
   stroke: var(--accent);
+}
+
+.toolbar-preview-resolution select {
+  width: 62px;
+  min-width: 62px;
+  height: 24px;
+  margin: 0;
+  padding: 2px 20px 2px 6px;
+  border: 1px solid var(--hairline);
+  background-color: var(--input);
+  color: var(--body);
+  cursor: pointer;
+  font: var(--font-weight-medium) var(--font-size-min)/var(--line-height-none) var(--font-body);
+}
+
+.toolbar-preview-resolution::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  z-index: 50;
+  top: calc(100% + 7px);
+  right: 0;
+  width: 230px;
+  padding: 8px 9px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--tooltip);
+  box-shadow: var(--plate-lift);
+  color: var(--body);
+  font-family: var(--font-body);
+  font-size: var(--font-size-min);
+  font-weight: var(--font-weight-regular);
+  line-height: var(--line-height-normal);
+  letter-spacing: var(--tracking-none);
+  overflow-wrap: anywhere;
+  opacity: 0;
+  pointer-events: none;
+  text-align: left;
+  text-transform: none;
+  white-space: normal;
+  transform: translateY(-2px);
+  transition: opacity 120ms ease, transform 120ms ease;
+}
+
+.toolbar-preview-resolution:hover::after,
+.toolbar-preview-resolution:focus-within::after {
+  opacity: 1;
+  transform: translateY(0);
 }
 
 .overlay-popover {
@@ -5212,6 +5273,17 @@ input[type="range"]::-webkit-slider-thumb {
 }
 
 /* Linear Grade / Proof / Export workflow -------------------------------- */
+.product-mark {
+  box-sizing: border-box;
+  width: 31px;
+  height: 26px;
+  border: 0;
+  border-radius: 0;
+  background: var(--text);
+  -webkit-mask: url("assets/brand/hdr-finisher-icon-simple.svg") center / auto 164% no-repeat;
+  mask: url("assets/brand/hdr-finisher-icon-simple.svg") center / auto 164% no-repeat;
+}
+
 .workflow-tabs {
   display: grid;
   grid-template-columns: repeat(3, minmax(76px, 1fr));

@@ -246,7 +246,12 @@ def test_tint_controls_follow_darktable_hue_mapping() -> None:
     css = "\n".join((FRONTEND / name).read_text(encoding="utf-8") for name in ("styles.css", "visual-tokens.css", "visual-controls.css"))
     javascript = frontend_scripts()
 
-    assert ".primary-tint-hue .slider-track { background: linear-gradient(90deg, #53a7b1, #5368b5, #b84f9a, #e05273, #d3ad5b, #54a579, #53a7b1); }" in css
+    # Follow the canonical token while keeping every original gradient stop pinned.
+    import re
+    assert ".primary-tint-hue .slider-track { background: var(--rail-tint-hue); }" in css
+    token_values = re.findall(r"--rail-tint-hue:\s*([^;]+);", css)
+    assert token_values
+    assert set(token_values) == {"linear-gradient(90deg, #53a7b1, #5368b5, #b84f9a, #e05273, #d3ad5b, #54a579, #53a7b1)"}
     assert "const DARKTABLE_TINT_HUE_STOPS" in javascript
     assert "function syncTintPurityVisuals()" in javascript
     assert "darktableTintHueColor(state.adjustments[lane].tint_hue)" in javascript
