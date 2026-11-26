@@ -32,6 +32,7 @@ from .capabilities import probe_capabilities
 from .config import APP_NAME, APP_VERSION, DEFAULT_HOST, DEFAULT_PORT, DOCS_DIR, EXPORTS_DIR, FRONTEND_DIR, SAMPLES_DIR
 from .desktop_security import DesktopPathGrants, secret_matches
 from .exporters import ExportOverwriteRequired, build_export_backends, denoise_settings_for_export
+from .export_presets import SUFFIXES as _EXPORT_SUFFIXES
 from .film_stock import available_film_stocks, film_stock_path, read_film_stock_payload, controlled_stock_payload
 from .folder_picker import pick_directory
 from .loader import LoaderError
@@ -146,14 +147,6 @@ app = FastAPI(title=APP_NAME, version=APP_VERSION, lifespan=library_lifecycle)
 desktop_authoring_secret = os.environ.get("HDR_FINISHER_DESKTOP_SECRET")
 desktop_control_secret = os.environ.get("HDR_FINISHER_DESKTOP_CONTROL_SECRET")
 desktop_path_grants = DesktopPathGrants()
-_EXPORT_SUFFIXES = {
-    "avif_gain_map": ".avif",
-    "jpeg_ultrahdr": ".jpg",
-    "jpegxl_hdr": ".jxl",
-    "sdr_jpeg": ".jpg",
-    "sdr_png": ".png",
-    "sdr_jpegxl": ".jxl",
-}
 # One row strip of the streaming proxy route. Matches the frontend staging
 # ring's chunk budget (16 MiB) so the client copies each strip without
 # re-splitting it while the next strip is still being encoded.
