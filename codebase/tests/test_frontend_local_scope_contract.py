@@ -283,7 +283,7 @@ def test_scope_region_is_an_optional_remappable_post_geometry_scope_tool() -> No
     assert html.count('data-scope-region-handle=') == 5
     assert 'id="scope-region-badge"' in html
     assert "var(--curve-selected-ring)" in css
-    assert "var(--curve-selected)" in css
+    assert "var(--graph-selected)" in css
     assert "var(--accent)" in css
 
 

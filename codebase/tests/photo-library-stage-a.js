@@ -81,7 +81,7 @@ fs.writeFileSync(path.join(folder, "ignored.hdrf"), "sidecar stays untouched");
     await library.waitForFunction(() => !document.getElementById("folder-picker").open);
     const icon = await library.evaluate(() => {
       const button = document.querySelector(".expand-folder"), style = getComputedStyle(button, "::before");
-      return { width: style.width, token: getComputedStyle(button).getPropertyValue("--panel-collapse-button-icon-size").trim(), colour: style.backgroundColor, foreground: getComputedStyle(button).color };
+      return { width: style.width, token: getComputedStyle(button).getPropertyValue("--chevron-size").trim(), colour: style.backgroundColor, foreground: getComputedStyle(button).color };
     });
     assert.equal(icon.width, icon.token); assert.equal(icon.colour, icon.foreground); assert.notEqual(icon.colour, "rgb(0, 0, 0)");
     await library.waitForSelector("#grid-space canvas[data-picture-key]", { timeout: 60000 });
