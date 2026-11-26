@@ -95,7 +95,7 @@ from .overlay import encode_processed_overlay_bytes
 from .preview import encode_processed_preview_bytes, encode_processed_rgba8
 from .cpu_strips import StripExecutionRefused
 from .render_cache import StaleRender, TileUnavailableError, downsample_target_dimensions, encode_rgba_proxy, encode_rgba_proxy_rows, rgba_proxy_pixel_format
-from .finishing import geometry_output_dimensions, perspective_guide_transform, solve_perspective_guides
+from .finishing import coordinate_map_needs_full_frame, geometry_output_dimensions, perspective_guide_transform, solve_perspective_guides
 from .display_probe import probe_displays
 from .proofing import ProofArtifactStore
 from .projects import ProjectError, ProjectSourceRelinkRequired, open_project, save_project
@@ -2175,8 +2175,12 @@ def geometry_map(session_id: str, request: GeometryMapRequest) -> GeometryMapRes
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except RevisionConflictError as exc:
         raise _revision_conflict(exc) from exc
-    _guard_preview_resources(session, request.long_edge)
     adjustments = request.adjustments or session.adjustments
+    # Bounded zoom needs these dimensions before it can request a tile. Ordinary
+    # maps sample a few coordinates, not the full image. Only the exceptional
+    # roll path that allocates full-frame ramps needs the full-preview guard.
+    if coordinate_map_needs_full_frame(adjustments.shared.geometry):
+        _guard_preview_resources(session, request.long_edge)
     output_to_source, source_to_output, width, height = session.render_cache.geometry_map(
         adjustments,
         request.long_edge,

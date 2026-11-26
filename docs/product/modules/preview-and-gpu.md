@@ -312,6 +312,16 @@ the CPU preview. If that preview also fails, the viewer shows Unavailable
 with the reason and keeps any last valid picture. An obsolete request still
 yields to the newer preview without showing an error.
 
+**Native zoom after a straighten (November 26, 2026).** Grade needs the
+geometry map's dimensions before it can fetch tiles. Ordinary maps sample at
+most 49 coordinates, but the full-preview memory check could refuse them and
+send the viewer down a whole-frame path it also could not afford. The check
+now applies only to exact quarter turns made by combining the roll controls,
+which allocate full-frame coordinate ramps. Image memory limits and rendered
+pixels are unchanged. The overnight timeouts had no trace, but both live Mac
+reproductions now finish with tiles. The driver reports the unmet condition
+after a two-minute wait and has a six-minute attempt cap of its own.
+
 ## 5. Open work, in order
 
 1. **Completed; stale entry reconciled November 13:** export, Proof and

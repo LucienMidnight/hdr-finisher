@@ -687,6 +687,22 @@ failed smoke check, not an action-latency baseline. No timing budget changed.
 | Pin folder / Unpin folder, through list feedback | <1 s | Pin 0.015 s; Unpin 0.076 s | November 15, Windows PC, 2560x1440, isolated Electron folder-controls check under shared GPU lock; this commit, parent `6b92f6da`. Disposable one-photo folder, startup/background work enabled. Pin starts at API request, ends at next folder-list animation frame using returned pins; Unpin starts before confirmation click, ends after list removal and status. Steve's running app untouched. |
 | Pin / Unpin / unpin impact, request response with upkeep blocked | <1 s | 0.037 / 0.003 / 0.123 s | November 15, Windows PC, same revision; FastAPI TestClient, synthetic 140,000-file SQLite Library, background worker held at upkeep gate, no picture decode. Confirms requests do not wait for reconciliation; not a large-Library on-screen measurement. Earlier diagnosed real-app Pin wait was about 68 s while full reconciliation ran inside the request. |
 
+## November 26: zoomed Denoise after a straighten
+
+MacBook Neo, A18 Pro, 8 GB, 1408x794-point lock setting. Unpackaged Electron
+under the shared GPU lock on the November 26 geometry-map fix. Times include
+launch and shutdown. These are driver checks, not Grade response benchmarks.
+
+| Check | Result | Conditions |
+| --- | --- | --- |
+| Normal zoomed Denoise | 4/5 passed in 23.26–33.66 s | One run stopped in 19.35 s because the deliberately requested whole-frame parity reference was refused at 0.00 GiB of safe headroom, before the straighten. |
+| Zoom after straighten, with memory contention | Passed in 36.88 s | 900 MiB competing allocation. The 7968px map returned 200 while a full preview required 3.41 GiB and only 3.12 GiB was safely available. |
+| Zoom after straighten, display asleep | Passed in 29.63 s | Display asleep before launch and at exit. The map returned 200 with 2.64 GiB safely available versus 3.41 GiB required by a full preview. The full source stream still refused with 507, and the tiled picture succeeded. |
+
+All passes kept bypass exact and the visible patch matched the whole-frame
+reference exactly. A forced settle timeout named the blocked zoom refinement
+timer and exited without waiting for the release runner.
+
 ## November 25: overnight focused release check on the minimum Mac
 
 MacBook Neo A18 Pro, 8 GB, 1408x794 points, unpackaged Electron under the

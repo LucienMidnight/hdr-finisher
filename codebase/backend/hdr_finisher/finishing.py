@@ -438,6 +438,12 @@ def geometry_coordinate_map(
     return output_to_source, source_to_output, output_width, output_height
 
 
+def coordinate_map_needs_full_frame(geometry: GeometryAdjustments) -> bool:
+    """A blended roll of exactly a quarter turn still uses full coordinate ramps."""
+    total_roll = geometry.straighten_angle + geometry.perspective_rotate
+    return geometry_resample_stage(geometry) == "roll" and total_roll % 90.0 == 0.0
+
+
 def _coordinate_ramp_samples(
     width: int, height: int, geometry: GeometryAdjustments, xs: np.ndarray, ys: np.ndarray
 ) -> np.ndarray:
@@ -450,8 +456,7 @@ def _coordinate_ramp_samples(
     """
     ramp_x = (np.arange(width, dtype=np.float32) + np.float32(0.5)) / max(width, 1)
     ramp_y = (np.arange(height, dtype=np.float32) + np.float32(0.5)) / max(height, 1)
-    total_roll = geometry.straighten_angle + geometry.perspective_rotate
-    if geometry_resample_stage(geometry) == "roll" and total_roll % 90.0 == 0.0:
+    if coordinate_map_needs_full_frame(geometry):
         # A roll of a whole quarter turn has no window form: each pixel would
         # rotate the whole frame. Rotate it once instead.
         ramps = np.stack(

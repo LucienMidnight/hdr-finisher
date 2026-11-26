@@ -25,6 +25,12 @@ const HEIGHT = 5320;
 // Denoising the fixture moves well over this share of a noisy view; a bypass
 // that does nothing moves none of it.
 const MIN_DIFFERING_FRACTION = 0.005;
+// Allow a cold upload and slower fallback, with room to report and stop
+// before the release runner's 15-minute process deadline.
+// Don't make the wait itself depend on the animation frames it is observing.
+const WAIT_OPTIONS = { polling: 100, timeout: 120_000 };
+const ATTEMPT_MS = 360_000;
+const DIAGNOSTIC_MS = 5_000;
 
 function argument(name, fallback = null) {
   const index = process.argv.indexOf(name);
@@ -35,82 +41,87 @@ function assert(condition, message) {
   if (!condition) throw new Error(message);
 }
 
+function previewSettled(diagnostics) {
+  const lane = state.currentView;
+  const viewer = viewerState();
+  const coordinator = state.renderCoordinator?.state(lane);
+  const accepted = state.acceptedPresentation;
+  const runtime = state.denoiseRuntime?.[lane];
+  const required = requiredProcessingLongEdge();
+  const unmet = [];
+  if (viewer.status !== "ready") unmet.push("viewer Ready");
+  if (state.gpuDraftInFlight) unmet.push("GPU draft complete");
+  if (state.zoomRefinementTimer) unmet.push("zoom refinement timer clear");
+  if (coordinator?.panTimerPending || coordinator?.inFlight || coordinator?.pending) unmet.push("render coordinator idle");
+  if (accepted?.processedLongEdge !== required) unmet.push("accepted picture at required size");
+  if (!["ready", "error", "off"].includes(runtime?.status)) unmet.push("Denoise settled");
+  if (!diagnostics) return viewer.status === "unavailable" || unmet.length === 0;
+
+  const scheduler = state.previewScheduler;
+  return {
+    unmet,
+    sessionReady: Boolean(state.session?.session_id),
+    viewer,
+    gpuAvailable: state.gpuPreview?.available,
+    gpuDraftInFlightTier: state.gpuDraftInFlightTier,
+    zoom: { mode: state.zoomMode, percent: state.zoomPercent },
+    required,
+    accepted: accepted && {
+      generation: accepted.generation, processedLongEdge: accepted.processedLongEdge,
+      execution: accepted.execution, coarse: accepted.coarse,
+    },
+    coordinator: coordinator && {
+      inFlight: coordinator.inFlight, pending: coordinator.pending,
+      panTimerPending: coordinator.panTimerPending, lastRefusal: coordinator.lastRefusal,
+    },
+    denoise: runtime && { status: runtime.status, error: runtime.error },
+    scheduler: scheduler && {
+      frame: scheduler.frame !== null, frameInFlight: scheduler.frameInFlight, framePending: scheduler.framePending,
+    },
+    watchdog: window.HDRFinisherPerformance?.previewWatchdog?.(),
+    gpuFailures: state.gpuFailurePolicy?.snapshot?.().records?.slice(-5),
+    visibility: document.visibilityState,
+  };
+}
+
 (async () => {
   const url = argument("--url", process.env.HDR_FINISHER_URL || "http://127.0.0.1:8765");
-  const source = ensureLargeNoisySource(WIDTH, HEIGHT);
-  const browser = await chromium.launch({
-    headless: true,
-    channel: argument("--channel", "msedge"),
-    args: ["--enable-unsafe-webgpu", "--enable-features=Vulkan,UseSkiaRenderer"],
-  });
-  const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+  let browser;
+  let page;
+  let phase = "generate or locate fixture";
   const pageErrors = [];
-  page.on("pageerror", (error) => pageErrors.push(error.message));
-
-  // Report only. The waits below use the release runner's own 900 s attempt
-  // deadline, so a wait that never ends is killed before it can say anything.
-  // Every minute, print the step and each settle condition; a page that does
-  // not answer at all is reported as such.
-  let phase = "open";
+  const failedResponses = [];
   const startedAt = Date.now();
-  let reportPending = null;
-  const report = () => page.evaluate(() => {
-    const lane = state.currentView;
-    const coordinator = state.renderCoordinator?.state(lane);
-    const accepted = state.acceptedPresentation;
-    const scheduler = state.previewScheduler;
-    const runtime = state.denoiseRuntime?.[lane];
-    return {
-      viewer: viewerState(),
-      gpuAvailable: state.gpuPreview?.available,
-      gpuDraftInFlight: Boolean(state.gpuDraftInFlight),
-      gpuDraftInFlightTier: state.gpuDraftInFlightTier,
-      zoomRefinementTimer: Boolean(state.zoomRefinementTimer),
-      zoom: { mode: state.zoomMode, percent: state.zoomPercent },
-      required: requiredProcessingLongEdge(),
-      previewGeneration: state.previewGeneration?.[lane],
-      accepted: accepted && {
-        lane: accepted.lane, generation: accepted.generation, exact: accepted.exact,
-        processedLongEdge: accepted.processedLongEdge, execution: accepted.execution, coarse: accepted.coarse,
-      },
-      coordinator: coordinator && {
-        inFlight: coordinator.inFlight, pending: coordinator.pending,
-        panTimerPending: coordinator.panTimerPending, catchUpTimerPending: coordinator.catchUpTimerPending,
-        lastRefusal: coordinator.lastRefusal, generations: coordinator.generations,
-      },
-      coordinatorCounts: state.renderCoordinator && {
-        submits: state.renderCoordinator.metrics.submits,
-        dispatched: state.renderCoordinator.metrics.dispatched,
-        cancelled: state.renderCoordinator.metrics.cancelled,
-      },
-      denoise: runtime && {
-        status: runtime.status, error: runtime.error, dirty: runtime.dirty,
-        analysisInFlight: Boolean(runtime.analysisInFlight),
-      },
-      scheduler: scheduler && {
-        frame: scheduler.frame !== null, frameInFlight: scheduler.frameInFlight,
-        framePending: scheduler.framePending, interacting: scheduler.interacting, current: Boolean(scheduler.current),
-      },
-      watchdog: window.HDRFinisherPerformance?.previewWatchdog?.(),
-      lastGpuDraftRefusal: state.lastGpuDraftRefusal,
-      gpuDraftRefusals: state.gpuDraftRefusals,
-      gpuFailures: state.gpuFailurePolicy?.snapshot?.().records?.slice(-5),
-      highlightFailures: state.gpuPreview?.highlightMeasurementFailures?.slice(-3),
-      visibility: document.visibilityState,
-    };
-  });
-  const heartbeat = setInterval(() => {
-    const seconds = Math.round((Date.now() - startedAt) / 1000);
-    if (reportPending) {
-      console.log(`[diagnostic +${seconds}s] ${phase}: the page has not answered since +${reportPending}s (renderer busy or frozen).`);
-      return;
+  const diagnose = async (write) => {
+    const prefix = `[diagnostic +${Math.round((Date.now() - startedAt) / 1000)}s] ${phase}`;
+    if (failedResponses.length) write(`${prefix} recent failed requests: ${JSON.stringify(failedResponses)}`);
+    if (pageErrors.length) write(`${prefix} recent page errors: ${JSON.stringify(pageErrors.slice(-5))}`);
+    if (!page) return;
+    let timer;
+    try {
+      const value = await Promise.race([
+        page.evaluate(previewSettled, true),
+        new Promise((_, reject) => {
+          timer = setTimeout(() => reject(new Error("renderer did not answer in 5 s")), DIAGNOSTIC_MS);
+        }),
+      ]);
+      write(`${prefix}: ${JSON.stringify(value)}`);
+    } catch (error) {
+      write(`${prefix}: ${error.message}`);
+    } finally {
+      clearTimeout(timer);
     }
-    reportPending = seconds;
-    report().then(
-      (value) => console.log(`[diagnostic +${seconds}s] ${phase}: ${JSON.stringify(value)}`),
-      (error) => console.log(`[diagnostic +${seconds}s] ${phase}: report failed: ${error.message}`),
-    ).finally(() => { reportPending = null; });
-  }, 60000);
+  };
+  console.log(`[denoise zoom] starting fixture and app (attempt limit ${ATTEMPT_MS / 1000} s)`);
+  const heartbeat = setInterval(() => void diagnose(console.log), 60_000);
+  // Some calls (notably an evaluation waiting on the GPU) have no
+  // Playwright deadline. Keep this timer in Node, outside the renderer.
+  const deadline = setTimeout(() => {
+    process.exitCode = 1;
+    clearInterval(heartbeat);
+    console.error(`[denoise zoom] attempt timed out after ${ATTEMPT_MS / 1000} s during ${phase}`);
+    void diagnose(console.error).finally(() => process.exit(1));
+  }, ATTEMPT_MS);
   // A viewer that reports Unavailable stays so until new input. Fail with its
   // reason instead of waiting the whole deadline out for Ready.
   const assertNotUnavailable = async () => {
@@ -119,27 +130,42 @@ function assert(condition, message) {
   };
 
   try {
+    const source = ensureLargeNoisySource(WIDTH, HEIGHT);
+    phase = "open app";
+    browser = await chromium.launch({
+      headless: true,
+      channel: argument("--channel", "msedge"),
+      args: ["--enable-unsafe-webgpu", "--enable-features=Vulkan,UseSkiaRenderer"],
+    });
+    page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+    page.on("pageerror", (error) => pageErrors.push(error.message));
+    page.on("response", (response) => {
+      if (response.ok()) return;
+      const url = new URL(response.url());
+      const endpoint = url.pathname.match(/^\/api\/session\/[^/]+\/(.+)$/)?.[1];
+      if (!endpoint) return;
+      failedResponses.push({
+        endpoint, method: response.request().method(), status: response.status(),
+        edge: url.searchParams.get("long_edge"), revision: url.searchParams.get("edit_revision"),
+      });
+      if (failedResponses.length > 12) failedResponses.shift();
+    });
     await page.goto(url, { waitUntil: "networkidle" });
+    phase = "upload source";
     await page.setInputFiles("#file-input", source);
-    await page.waitForFunction(() => state.session?.session_id, null, { timeout: 900000 });
-    await page.waitForFunction(() => state.gpuPreview?.available === true, null, { timeout: 120000 });
+    phase = "wait for session";
+    await page.waitForFunction(() => state.session?.session_id, null, WAIT_OPTIONS);
+    phase = "wait for WebGPU";
+    await page.waitForFunction(() => state.gpuPreview?.available === true, null, WAIT_OPTIONS);
     phase = "first picture";
-    await page.waitForFunction(() => ["ready", "unavailable"].includes(viewerState().status), null, { timeout: 900000 });
+    await page.waitForFunction(() => ["ready", "unavailable"].includes(viewerState().status), null, WAIT_OPTIONS);
     await assertNotUnavailable();
 
     const settle = async () => {
       const step = phase;
       phase = `${step} / settle`;
       await page.waitForTimeout(100);
-      await page.waitForFunction(() => {
-        if (viewerState().status === "unavailable") return true;
-        const coordinator = state.renderCoordinator?.state(state.currentView);
-        const accepted = state.acceptedPresentation;
-        return viewerState().status === "ready" && !state.gpuDraftInFlight
-          && !state.zoomRefinementTimer && !coordinator?.panTimerPending && !coordinator?.inFlight && !coordinator?.pending
-          && accepted?.processedLongEdge === requiredProcessingLongEdge()
-          && ["ready", "error", "off"].includes(state.denoiseRuntime[state.currentView].status);
-      }, null, { timeout: 900000 });
+      await page.waitForFunction(previewSettled, false, WAIT_OPTIONS);
       await assertNotUnavailable();
       phase = `${step} / GPU queue`;
       await page.evaluate(async () => state.gpuPreview.waitForSubmittedWork());
@@ -206,6 +232,7 @@ function assert(condition, message) {
       await settle();
     };
 
+    phase = "Denoise on at Fit";
     await page.evaluate(() => {
       const group = document.querySelector(".denoise-group .group-toggle");
       if (group.getAttribute("aria-expanded") !== "true") group.click();
@@ -216,7 +243,6 @@ function assert(condition, message) {
     });
     // Denoise goes on at Fit, as it does in use, so the zoom is what has to
     // bring it to the screen at full size.
-    phase = "Denoise on at Fit";
     await toggle();
     assert(await page.evaluate(() => state.denoiseRuntime[state.currentView].status) === "ready",
       "Denoise did not become ready at Fit.");
@@ -311,9 +337,18 @@ function assert(condition, message) {
     assert(!pageErrors.length, "Page errors: " + pageErrors.join("; "));
     console.log(`Denoise zoomed in: region only, ${(effect.fraction * 100).toFixed(1)}% of the view denoised, `
       + `bypass exact, region equals whole frame to ${parity.max} level(s), region again after a straighten.`);
+  } catch (error) {
+    process.exitCode = 1;
+    console.error(`[denoise zoom] failed during ${phase}:`, error);
+    await diagnose(console.error);
   } finally {
     clearInterval(heartbeat);
-    await browser.close();
+    phase = "close app";
+    try {
+      await browser?.close();
+    } finally {
+      clearTimeout(deadline);
+    }
   }
 })().catch((error) => {
   console.error(error);

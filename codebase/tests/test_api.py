@@ -997,6 +997,39 @@ def test_geometry_map_returns_bidirectional_source_anchored_editor_coordinates()
     )
 
 
+def test_geometry_map_allows_bounded_straighten_without_full_preview_memory(monkeypatch) -> None:
+    # Exceed the full-preview guard's baseline without needing a large fixture.
+    source = BytesIO()
+    Image.new("RGB", (7968, 512)).save(source, format="PNG")
+    upload = client.post("/api/session", files={"file": ("geometry-map.png", source.getvalue(), "image/png")})
+    assert upload.status_code == 200
+    session = upload.json()["session"]
+    adjustments = session["adjustments"]
+    geom = adjustments["shared"]["geometry"]
+    geom["straighten_angle"] = 2.0
+    endpoint = f'/api/session/{session["session_id"]}/geometry-map'
+    request = {"adjustments": adjustments, "edit_revision": 0, "long_edge": 7968}
+    monkeypatch.setattr(
+        "hdr_finisher.main.detect_memory_resources",
+        lambda: ResourceSnapshot(8 * GIB, 2 * GIB, "test"),
+    )
+    # No earlier request has populated the map cache for this geometry.
+    bounded = client.post(endpoint, json=request)
+    assert bounded.status_code == 200
+    payload = bounded.json()
+    assert 0 < payload["output_width"] == payload["full_output_width"] < 7968
+    assert 0 < payload["output_height"] == payload["full_output_height"] < 512
+    assert payload["output_to_source"][3] != pytest.approx(0.0)
+
+    # Two maximum rolls combine into a quarter turn, the special case that
+    # really does allocate an image-sized coordinate ramp and stays guarded.
+    geom["straighten_angle"] = geom["perspective_rotate"] = 45.0
+    whole_frame = client.post(endpoint, json=request)
+    assert whole_frame.status_code == 507
+    assert "host working memory" in whole_frame.json()["detail"]
+    assert client.post(endpoint, json={**request, "long_edge": 16385}).status_code == 422
+
+
 def test_perspective_solve_accepts_guides_without_committing_session_state() -> None:
     upload = client.post("/api/session", files={"file": ("perspective.png", make_png_bytes(), "image/png")})
     assert upload.status_code == 200
