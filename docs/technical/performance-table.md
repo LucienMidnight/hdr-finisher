@@ -1,3 +1,9 @@
+## November 26 - Library/shell review visibility-limited check
+
+| Action | Result | Conditions and evidence |
+| --- | --- | --- |
+| Plain-app Library viewport check | Invalid: renderer hidden/occluded, incomplete viewport coverage; timer probe 1161 ms against 250 ms limit. No qualified screen timing or before/after claim. | Windows PC, 2560x1440, shared GPU lock, 90-second default scenario, `f52c06cb` shared checkout including Library cancellation/refresh fixes and desktop close-save fix. Steve's app stayed open. `codebase/output/quick-library-check/library-shell-review/report.json`. Repeat only with the test window visible. |
+
 ## November 26 - Test infrastructure (PC review)
 
 Test-only changes on `integrate/pc-tests-review-2026-11-26`; app behavior and

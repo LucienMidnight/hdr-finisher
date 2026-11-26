@@ -12,6 +12,17 @@ specific file, rule or message.
   how-to-use guide is available in the [Library manual](../user-guide/library.md).
   Product intent lives in the [Photo Library PRD](../product/modules/photo-library.md).
 
+### November 26 review validation limit
+
+The targeted Library, desktop and project-transition checks passed (98 distinct
+Node tests, including the new cancellation, refresh-retry and close-save cases).
+The one plain-Electron quick Library check at 2560x1440 was invalidated by a
+hidden/occluded renderer; viewport coverage was incomplete and the timer probe
+reported a 1161 ms stall. This run does not qualify visible drawing or establish
+a change-related timing regression. Repeat with the test window visible before
+claiming real-app acceptance. Report:
+`codebase/output/quick-library-check/library-shell-review/report.json`.
+
 ### Thumbnail cancellation (November 26, 2026)
 
 Stored-thumbnail reads recheck cancellation before each 32-photo request and
