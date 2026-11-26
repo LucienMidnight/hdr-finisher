@@ -5392,7 +5392,8 @@
           longEdge: proxy.longEdge,
           format: surface.format,
           // A retained pass that wants a region source needs this pass's
-          // working space to derive the same parameters before its fetch.
+          // source identity and working space to plan a fetch after the proxy is retired.
+          sourceIdentity: proxy.sourceIdentity,
           workingSpace: proxy.workingSpace,
           applicationGeneration: Number(options.applicationGeneration ?? 0),
           gradeTileParams,
@@ -6409,6 +6410,7 @@
         height: proxy.height,
         execution: "direct",
         longEdge: proxy.longEdge,
+        sourceIdentity: proxy.sourceIdentity,
         workingSpace: proxy.workingSpace,
         format: presentationSurface.format,
         applicationGeneration: Number(sourceOptions?.applicationGeneration ?? 0),

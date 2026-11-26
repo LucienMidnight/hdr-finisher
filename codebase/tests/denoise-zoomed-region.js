@@ -1,4 +1,4 @@
-// Denoise zoomed in: only what is on screen is loaded and reconstructed.
+// Simple Denoise zoomed in: only what is on screen is loaded and reconstructed.
 //
 //   node tests/run-in-electron.js tests/denoise-zoomed-region.js
 //
@@ -210,14 +210,14 @@ function previewSettled(diagnostics) {
     }, [left, right]);
     await page.evaluate(() => window.HDRFinisherPerformance.enableGpuInstrumentation(true));
     const stageCount = () => page.evaluate(() => window.HDRFinisherPerformance.gpuSnapshot().stages?.length || 0);
-    // `since` is a stage count: the tiled passes after it that reconstructed
-    // Denoise, in order. The first is the one that put Denoise on screen; a
-    // later whole-frame catch-up fills in the rest of the picture and may load
-    // the frame for that, as it does with Denoise off.
+    // Count the tiled passes that reconstructed Denoise at the requested
+    // size, not the reduced whole-photo underlayer. The first puts sharp
+    // Denoise on screen, before any offscreen catch-up.
     const sources = (since = 0) => page.evaluate((from) => {
       const denoise = state.gpuPreview.diagnosticsSnapshot().denoise;
       const passes = (window.HDRFinisherPerformance.gpuSnapshot().stages || []).slice(from)
-        .filter((stage) => stage.stage === "tiled-render" && stage.denoiseTileResolves > 0);
+        .filter((stage) => stage.stage === "tiled-render" && stage.denoiseTileResolves > 0
+          && stage.longEdge === requiredProcessingLongEdge());
       return {
         execution: state.acceptedPresentation?.execution,
         selected: denoise.selectedSource,
@@ -233,8 +233,10 @@ function previewSettled(diagnostics) {
       await settle();
     };
 
-    phase = "Denoise on at Fit";
-    await page.evaluate(() => {
+    phase = "Simple Denoise on at Fit";
+    await page.evaluate(async () => {
+      // Keep testing Simple's wavelet tiles now that Clean Grain is the default.
+      await commitDenoiseControl("method", "standard");
       const group = document.querySelector(".denoise-group .group-toggle");
       if (group.getAttribute("aria-expanded") !== "true") group.click();
       const amount = document.querySelector("#denoise-amount");
@@ -298,21 +300,29 @@ function previewSettled(diagnostics) {
     assert(restored.max === 0, `Turning Denoise back on did not restore the picture: max delta ${restored.max}.`);
     assert(!(await sources()).wholeFrame, "The whole frame was loaded before the reference pass asked for it.");
 
-    // The reference: the same view with the whole frame's source loaded.
+    // The reference: request the same displayed viewport, but have this
+    // one draw plan and admit a full source instead of fetching a region.
     phase = "whole-frame reference";
+    mark = await stageCount();
     await page.evaluate(async () => {
       const lane = state.currentView;
-      await state.gpuPreview.loadProxy(
-        state.session.session_id, lane, refinementProxyLongEdge(),
-        JSON.stringify(state.adjustments.shared.geometry || {}), state.editRevision,
-        "source", {},
-      );
-      invalidatePreview(lane, { markDirty: false });
-      debouncePreview(lane);
+      const longEdge = requiredProcessingLongEdge();
+      const renderer = state.gpuPreview;
+      // The reference must reconstruct its own tiles from the full source.
+      renderer.dropDenoiseTiles();
+      renderer.roiRegionFor = () => null;
+      try {
+        invalidatePreview(lane, { markDirty: false });
+        await renderGpuDraft(lane, { longEdge, preservePicture: true });
+      } finally {
+        delete renderer.roiRegionFor;
+      }
     });
     await settle();
-    now = await sources();
-    assert(now.wholeFrame, "The reference pass did not have the whole frame loaded.");
+    now = await sources(mark);
+    assert(now.wholeFrame && now.firstDenoisePass && now.firstDenoisePass.route !== "region"
+      && !now.firstDenoisePass.catchUp,
+      `The reference did not draw Denoise from the whole frame: ${JSON.stringify(now)}`);
     const parity = await difference(denoised, await capture());
     assert(parity.max <= 1,
       `Denoise from a region differs from the whole frame: max delta ${parity.max}, ${(parity.fraction * 100).toFixed(3)}%.`);
