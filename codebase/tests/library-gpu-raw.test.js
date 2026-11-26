@@ -143,6 +143,7 @@ test('42 MP signed Bayer development and Library drawing fit the shared 2 GiB GP
   assert.ok(bytes>=pixels*44 && bytes<=sourceRoom);
  }
  assert.ok(HDRLibraryGpuRaw.rawBudget({...meta,repairs:[{}]},[100000])>native);
+ assert.equal(HDRLibraryGpuRaw.rawBudget({...edgeColour,rgb:true}),pixels*48+64*1024*1024);
 });
 
 test('DNG footprints enclose independent per-channel maps across off-centre and non-monotone warps',()=>{

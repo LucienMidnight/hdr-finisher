@@ -1681,7 +1681,8 @@
     // separate stage, so it does not inherit the extra signed green scratch.
     const highlight=meta.raw_import_settings?.highlight_reconstruction;
     const edgeColour=highlight?.enabled && highlight.method === "edge_colour_v1";
-    const complex=meta.repairs?.length || meta.dng_linear || (meta.rgb && edges.includes(100000));
+    const complex=meta.repairs?.length || meta.dng_linear ||
+      (meta.rgb && (highlight?.method === "edge_colour_v1" || edges.includes(100000)));
     const perPixel=complex ? 48 : edgeColour ? 44 : 32;
     let estimate=meta.width*meta.height*perPixel+64*1024*1024;
     if(meta.rgb){
