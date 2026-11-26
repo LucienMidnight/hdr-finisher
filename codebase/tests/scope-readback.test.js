@@ -130,3 +130,29 @@ test("scope encoding failure releases the busy resource before readback starts",
   assert.equal(renderer.activeScopeCount, 0);
   assert.equal(flushed, 1);
 });
+
+
+test("a partially allocated scope resource is released when its final buffer fails", () => {
+  const vm = require("node:vm");
+  const { frontendSource } = require("./frontend-source.js");
+  const context = vm.createContext({ window: {}, GPUShaderStage: { COMPUTE: 1 },
+    GPUTextureUsage: { RENDER_ATTACHMENT: 1, COPY_SRC: 2 },
+    GPUBufferUsage: { COPY_DST: 1, MAP_READ: 2, STORAGE: 4 } });
+  for (const name of ["webgpu-shaders.js", "webgpu-preview.js"]) vm.runInContext(frontendSource(name), context);
+  const renderer = new context.window.HDRWebGPUPreview(null);
+  const created = [];
+  const make = () => {
+    const value = { destroyed: false, destroy() { this.destroyed = true; } };
+    created.push(value);
+    return value;
+  };
+  const failure = new Error("buffer allocation failed");
+  renderer.device = { createTexture: make, createBuffer() {
+    if (created.length === 2) throw failure;
+    return make();
+  } };
+  assert.throws(() => renderer.acquireScopeResource(64, 32), error => error === failure);
+  assert.equal(created.length, 2);
+  assert.ok(created.every(value => value.destroyed));
+  assert.equal(renderer.scopeResources.size, 0);
+});

@@ -9014,20 +9014,28 @@
         busy: false,
         bytesPerRow,
         byteSize: width * height * 8 + bytesPerRow * height + PARAM_COUNT * 4,
-        texture: this.device.createTexture({
+      };
+      try {
+        resource.texture = this.device.createTexture({
           size: { width, height },
           format: "rgba16float",
           usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC,
-        }),
-        readBuffer: this.device.createBuffer({
+        });
+        resource.readBuffer = this.device.createBuffer({
           size: bytesPerRow * height,
           usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
-        }),
-        paramBuffer: this.device.createBuffer({
+        });
+        resource.paramBuffer = this.device.createBuffer({
           size: PARAM_COUNT * 4,
           usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
-        }),
-      };
+        });
+      } catch (error) {
+        resource.texture?.destroy();
+        resource.readBuffer?.destroy();
+        resource.paramBuffer?.destroy();
+        if (!pool.length) this.scopeResources.delete(key);
+        throw error;
+      }
       pool.push(resource);
       this.recordAllocation("scope", width * height * 8 + bytesPerRow * height + PARAM_COUNT * 4, { width, height });
       return resource;

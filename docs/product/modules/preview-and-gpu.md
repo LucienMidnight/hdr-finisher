@@ -8,6 +8,13 @@
   scopes UI; backend `render_cache.py`, `cpu_strips.py`, `preview.py`,
   `scopes.py`, `overlay.py`, `peak_*.py`.
 
+## November 26: partial GPU allocation cleanup
+
+HSL scratch growth and scope-resource creation now destroy any resources
+already created if a later allocation throws. A failed scope allocation also
+removes its empty pool. Forced mid-allocation regressions check both paths;
+working-set sizes, successful allocation order and shaders are unchanged.
+
 ## November 26: Tone diagnostic device recovery
 
 Tone clipping diagnostics discard the old engine when the Grade renderer's

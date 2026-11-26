@@ -231,17 +231,27 @@ fn feathered(xy: vec2i, axis: vec2i) -> vec4f {
       // textures, so they are retired, not destroyed, until dropRetired().
       this.retired.push(...Object.values(this.textures)); this.textures = {}; this.capacity = null; this.invalidate();
       const usage = GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.COPY_SRC | GPUTextureUsage.COPY_DST;
-      const make = (label, w, h, extra = 0, depth = 1) => this.device.createTexture({ label, size: [w, h, depth], format: "rgba32float", usage: usage | extra });
-      this.textures = {
-        fields: make("HSL selection fields", next.width, next.height, GPUTextureUsage.RENDER_ATTACHMENT),
-        guide: make("HSL selection guide", next.width, next.height),
-        a: make("HSL selection coefficient a", next.width, next.height),
-        b: make("HSL selection coefficient b", next.width, next.height),
-        output: make("HSL selection", next.width, next.height, 0, next.layers),
-        coarse: make("HSL coarse chroma", next.cw, next.ch),
-        scratch: make("HSL coarse scratch", next.cw, next.ch),
-        qualified: make("HSL qualified coarse", next.cw, next.ch),
+      const created = [];
+      const make = (label, w, h, extra = 0, depth = 1) => {
+        const texture = this.device.createTexture({ label, size: [w, h, depth], format: "rgba32float", usage: usage | extra });
+        created.push(texture);
+        return texture;
       };
+      try {
+        this.textures = {
+          fields: make("HSL selection fields", next.width, next.height, GPUTextureUsage.RENDER_ATTACHMENT),
+          guide: make("HSL selection guide", next.width, next.height),
+          a: make("HSL selection coefficient a", next.width, next.height),
+          b: make("HSL selection coefficient b", next.width, next.height),
+          output: make("HSL selection", next.width, next.height, 0, next.layers),
+          coarse: make("HSL coarse chroma", next.cw, next.ch),
+          scratch: make("HSL coarse scratch", next.cw, next.ch),
+          qualified: make("HSL qualified coarse", next.cw, next.ch),
+        };
+      } catch (error) {
+        for (const texture of created) texture.destroy();
+        throw error;
+      }
       this.capacity = next; this.preparedKey = null; this.selectedKey = null;
       this.onAllocate?.(next.width * next.height * (64 + 16 * next.layers) + next.cw * next.ch * 48, next);
     }
