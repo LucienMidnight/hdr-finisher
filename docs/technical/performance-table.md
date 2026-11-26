@@ -1,10 +1,10 @@
-## November 26 - Batch progress result lookup
-
 ## November 26: HSL resource-retirement correctness diagnostic (PC)
 
 | Action | Observed | Conditions |
 | --- | --- | --- |
 | Shared HSL oracle range edit / edge edit | 3.7 / 3.6 ms | Windows PC, 2560x1440, isolated Electron profile, exclusive GPU lock; `dd9b8269` + `57439f70`. Single correctness run, not a user-action timing or before/after speed comparison. Existing driver timing guard unchanged. All 35 CPU/GPU cases and zero-seam/reuse checks pass after immediate post-submit buffer retirement. Evidence: `codebase/output/hsl-selection-engine/result.json`. |
+
+## November 26 - Batch progress result lookup
 
 | Action | Before | After | Conditions |
 | --- | --- | --- | --- |
