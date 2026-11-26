@@ -30,7 +30,7 @@ const settled=()=>state.acceptedPresentation?.exact&&state.acceptedPresentation.
   const deliver=async(tag)=>{
    // Use the Export workflow's normal hand-off. Grade may still be preparing
    // Denoise after a settled first picture and correctly preempts delivery.
-   await page.evaluate(()=>activateWorkflowTab('export'));
+   await page.locator('[data-workflow-tab="export"]').click();
    const dir=path.join(root,tag);fs.mkdirSync(dir);const timings={};
    for(const forced of [false,true]){
     await api('/api/delivery/preferences',{force_cpu:forced});const file=path.join(dir,forced?'cpu.jpg':'gpu.jpg');

@@ -1,3 +1,11 @@
+## November 26 — Grade-to-Export GPU handoff
+
+Opening Export already cancels Grade's pending preview and Denoise work.
+The Grade preview recovery timer now stays idle in Export rather than restarting
+a stale Grade render and interrupting GPU delivery. Returning to Grade restores
+normal preview recovery and its foreground GPU priority. The Global HSL and
+local hue-mask delivery checks use the actual Export tab and both pass twice.
+
 ## November 23 — Faster CPU Clean Grain AVIF export, real progress, quiet trims
 
 Steve's November 22 Windows batch export (one Canon CR3 cropped to

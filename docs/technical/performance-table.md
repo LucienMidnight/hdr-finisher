@@ -8089,3 +8089,19 @@ took 3.10 s.
 | Inpaint | 0.71–1.19 s | 2.33–3.10 s |
 | Clone | 0.51–0.74 s | 2.11–2.20 s |
 | Heal | 0.51–0.63 s | 2.11–2.30 s |
+
+## November 26: GPU delivery after clicking Export in Grade
+
+MacBook Neo, A18 Pro, 8 GB, 1408×794, shared GPU lock. Two fresh-profile runs
+per HSL variant with the Grade preview recovery timer kept idle in Export.
+Times are export request to result, excluding Proof and comparison. These
+are verification runs, not a speed comparison.
+
+| Balanced Rock edit | GPU export | Forced-CPU export | HDR ΔE ITP mean / p99 |
+| --- | ---: | ---: | ---: |
+| Neutral | 6.94–7.71 s | 9.05–9.58 s | 0.0237 / 0.0523 |
+| Global HSL | 14.10–14.39 s | 42.91–43.11 s | 0.0267 / 0.0761 |
+| Local hue mask | 15.48–15.62 s | 28.06–28.98 s | 0.0358 / 0.1479 |
+
+All four runs pass the existing HDR and SDR renderer agreement, encoded HDR
+ceiling and byte-identical full-size Proof checks.

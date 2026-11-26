@@ -153,7 +153,9 @@ function initializePreviewPreferences() {
 function installPreviewWatchdog() {
   stopPreviewWatchdog();
   state.previewWatchdogTimer = window.setInterval(() => {
-    if (!state.session || !state.previewScheduler) return;
+    // Entering Export suspends Grade instruments. A stale Grade picture is
+    // not a lost wake-up here, and restarting it can preempt GPU delivery.
+    if (state.activeWorkflow === "export" || !state.session || !state.previewScheduler) return;
     const viewer = viewerState();
     if (["ready", "reduced", "unavailable"].includes(viewer.status)) {
       state.previewWatchdogRearms = 0;
