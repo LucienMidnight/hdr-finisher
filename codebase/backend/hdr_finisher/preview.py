@@ -63,6 +63,20 @@ def encode_processed_preview_bytes(
     return _encode_png_sdr(processed), "image/png"
 
 
+RGBA8_PREVIEW_BAND_ROWS = 64
+
+
+def encode_processed_rgba8_banded(processed: np.ndarray, kind: PreviewKind) -> bytes:
+    """Pack the same display pixels without whole-frame conversion scratch."""
+    height, width = processed.shape[:2]
+    stride = width * 4
+    output = bytearray(height * stride)
+    for top in range(0, height, RGBA8_PREVIEW_BAND_ROWS):
+        bottom = min(height, top + RGBA8_PREVIEW_BAND_ROWS)
+        output[top * stride:bottom * stride] = encode_processed_rgba8(processed[top:bottom], kind)
+    return bytes(output)
+
+
 def encode_processed_rgba8(processed: np.ndarray, kind: PreviewKind) -> bytes:
     """Return display-ready RGBA8 for the persistent no-WebGPU canvas path."""
     display = _hdr_to_sdr_display(processed) if kind == PreviewKind.HDR else np.clip(processed, 0.0, 1.0)

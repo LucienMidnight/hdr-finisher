@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 
+import pytest
 from conftest import make_png_bytes
 from fastapi.testclient import TestClient
 
@@ -99,3 +100,52 @@ def test_the_default_route_is_unchanged() -> None:
     from hdr_finisher.models import PreviewRequest
 
     assert PreviewRequest().execution == "whole"
+
+@pytest.mark.parametrize("execution", ("whole", "strips"))
+def test_native_raw_preview_uses_exact_strips_when_only_strips_fit(monkeypatch, execution):
+    from io import BytesIO
+
+    from PIL import Image
+
+    from hdr_finisher import main, resource_preflight as preflight
+
+    image = Image.linear_gradient("L").resize((1600, 1050)).convert("RGB")
+    buffer = BytesIO()
+    image.save(buffer, format="PNG")
+    upload = client.post(
+        "/api/session", files={"file": ("native-strips.png", buffer.getvalue(), "image/png")}
+    )
+    assert upload.status_code == 200
+    session = upload.json()["session"]
+    url = f"/api/session/{session['session_id']}/preview-raw/hdr"
+    request = {"adjustments": session["adjustments"], "long_edge": 1600}
+    mib = 1024**2
+    monkeypatch.setattr(main, "FULL_PREVIEW_BASELINE_DIMENSION", 1024)
+    monkeypatch.setattr(preflight, "FULL_PREVIEW_BASELINE_DIMENSION", 1024)
+
+    whole = client.post(url, json=request)
+    assert whole.status_code == 200
+    frame = store.get(session["session_id"])
+    frame.render_cache.clear_adjusted()
+
+    request["execution"] = execution
+    monkeypatch.setattr(main, "detect_memory_resources", lambda:
+        preflight.ResourceSnapshot(8 * preflight.GIB, 2 * preflight.GIB + 365 * mib, "test"))
+    bounded = client.post(url, json=request)
+    assert bounded.status_code == 200, bounded.text[:300]
+    assert bounded.headers["x-image-width"] == "1600"
+    assert bounded.content == whole.content
+    assert json.loads(bounded.headers["x-strip-execution"])["strip_count"] > 1
+
+    # A graph with spatial Film effects can't take the bounded route.
+    request["adjustments"]["hdr"]["film_look_section_enabled"] = True
+    request["adjustments"]["hdr"]["film_look"]["halation_amount"] = 50.0
+    assert client.post(url, json=request).status_code == 507
+
+    # Whole and striped routes must both refuse when even the bounded
+    # output plus its scratch won't fit the same guard.
+    request["adjustments"] = session["adjustments"]
+    request["adjustments"]["hdr"]["film_look_section_enabled"] = False
+    monkeypatch.setattr(main, "detect_memory_resources", lambda:
+        preflight.ResourceSnapshot(8 * preflight.GIB, 2 * preflight.GIB + 300 * mib, "test"))
+    assert client.post(url, json=request).status_code == 507

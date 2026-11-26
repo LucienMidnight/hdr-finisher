@@ -8065,3 +8065,18 @@ checks overlapping the first run. No new speed comparison is inferred.
 | --- | ---: | ---: | --- |
 | Balanced Rock, neutral | 8.84–12.44 s | 9.93–13.71 s | Renderer agreement, HDR ceiling and byte-identical Proof pass both runs |
 | Balanced Rock, Global HSL | 14.60–21.05 s | 45.67–62.59 s | Same checks pass. HDR ΔE ITP mean/p99 0.0267/0.0761 vs neutral 0.0237/0.0523 |
+
+## November 26: native CPU Retouch preview after repair edits
+
+MacBook Neo, A18 Pro, 8 GB, 1408×794, shared GPU lock. Two fresh-profile
+runs on the generated 24 MP photo in `retouch-cpu-fallback.js`. Values are
+click to visible Raw RGBA8 for the four warm samples per row. The backend
+recorded 19 native strip requests per run and no preview memory refusals.
+The 3 s native target is informational in this driver. One inpaint sample
+took 3.10 s.
+
+| Repair | Fit | Native |
+| --- | ---: | ---: |
+| Inpaint | 0.71–1.19 s | 2.33–3.10 s |
+| Clone | 0.51–0.74 s | 2.11–2.20 s |
+| Heal | 0.51–0.63 s | 2.11–2.30 s |

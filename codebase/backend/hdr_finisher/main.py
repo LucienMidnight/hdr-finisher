@@ -92,8 +92,11 @@ from .models import (
 from .instrument_work import InstrumentWork
 
 from .overlay import encode_processed_overlay_bytes
-from .preview import encode_processed_preview_bytes, encode_processed_rgba8
-from .cpu_strips import StripExecutionRefused
+from .preview import (
+    RGBA8_PREVIEW_BAND_ROWS, encode_processed_preview_bytes, encode_processed_rgba8,
+    encode_processed_rgba8_banded,
+)
+from .cpu_strips import DEFAULT_STRIP_BUDGET_BYTES, StripExecutionRefused, strip_execution_refusals
 from .render_cache import StaleRender, TileUnavailableError, downsample_target_dimensions, encode_rgba_proxy, encode_rgba_proxy_rows, rgba_proxy_pixel_format
 from .render_cache import MicroScopeSourceUnavailable
 from .finishing import geometry_is_identity, geometry_output_dimensions, perspective_guide_transform, solve_perspective_guides
@@ -103,6 +106,7 @@ from .projects import ProjectError, ProjectSourceRelinkRequired, open_project, s
 from .resource_preflight import (
     FULL_PREVIEW_BASELINE_DIMENSION,
     detect_memory_resources,
+    estimate_native_raw_strip_preview_resources,
     estimate_native_source_stream_resources,
     estimate_preview_resources,
 )
@@ -963,7 +967,9 @@ def open_project_file(request: ProjectOpenRequest) -> SessionSummary:
     return SessionSummary(session=session.to_payload())
 
 
-def _render_selected_execution(session, request, kind, adjustments, preview_long_edge, is_current, *, navigation=False):
+def _render_selected_execution(
+    session, request, kind, adjustments, preview_long_edge, is_current, *, navigation=False, require_strips=False,
+):
     """Render one preview frame through the route the request asked for.
 
     ``execution="strips"`` selects the bounded CPU path. A request it cannot
@@ -986,6 +992,10 @@ def _render_selected_execution(session, request, kind, adjustments, preview_long
     settings = session.denoise.hdr if kind == PreviewKind.HDR else session.denoise.sdr
     if settings.enabled and settings.controls.method == "micro_grain":
         denoise = None
+    if require_strips and (denoise is not None or micro is not None):
+        # Denoise may have been enabled after the memory preflight. Do not
+        # silently start a whole-frame render with the smaller strip estimate.
+        raise StaleRender("Denoise changed after bounded preview admission.")
     if request.execution == "strips" and denoise is None and micro is None:
         processed, report = session.render_cache.adjusted_frame_in_strips(
             adjustments,
@@ -1043,6 +1053,36 @@ def _cpu_preview_edge(session, kind, request, requested_edge):
         if request.execution == "strips" or not _preview_resource_payload(session, requested_edge)["allowed"]:
             return FULL_PREVIEW_BASELINE_DIMENSION
     return requested_edge
+
+
+def _admit_native_raw_preview(session, kind, request, adjustments, edge):
+    """A native CPU canvas can still fit after a whole-frame request is refused."""
+    width, height = session.image.shape[1], session.image.shape[0]
+    if not (
+        edge == max(width, height) > FULL_PREVIEW_BASELINE_DIMENSION
+        and geometry_is_identity(adjustments.shared.geometry)
+        and denoise_settings_for_export(session, kind) is None
+    ):
+        return None
+    resources = detect_memory_resources()
+    whole = estimate_preview_resources(width=width, height=height, max_dimension=edge, resources=resources)
+    if whole.allowed:
+        return "whole"
+    # Native Auto can already request strips after the first preview. Its
+    # explicit strip request should not be charged the whole-frame estimate.
+    locals_ = request.local_adjustments if request.local_adjustments is not None else session.local_adjustments
+    if strip_execution_refusals(
+        adjustments, kind, local_adjustments=adjustments.enabled_locals(locals_) if request.include_locals else [],
+        source_width=width, source_height=height, long_edge=edge,
+    ):
+        return None
+    bounded = estimate_native_raw_strip_preview_resources(
+        width=width, height=height, max_dimension=edge, resources=resources,
+        strip_budget=DEFAULT_STRIP_BUDGET_BYTES, band_rows=RGBA8_PREVIEW_BAND_ROWS,
+        mapped_input_bytes=sum(pixels.nbytes for pixels in (session.image, session.sdr_reference_image)
+                               if isinstance(pixels, np.memmap)),
+    )
+    return "strips" if bounded.allowed else None
 
 
 def _strip_execution_conflict(exc: StripExecutionRefused) -> JSONResponse:
@@ -1214,7 +1254,12 @@ def preview_raw(session_id: str, kind: PreviewKind, request: PreviewRequest) -> 
         return region if region is not None else Response(status_code=204)
 
     preview_long_edge = _cpu_preview_edge(session, kind, request, requested_edge)
-    _guard_preview_resources(session, preview_long_edge)
+    execution = _admit_native_raw_preview(session, kind, request, adjustments, preview_long_edge)
+    use_bounded = execution == "strips"
+    if use_bounded:
+        request = request.model_copy(update={"execution": "strips"})
+    elif execution is None:
+        _guard_preview_resources(session, preview_long_edge)
     _log_cpu_preview(session, kind, preview_long_edge, request, requested_edge)
     token = store.next_preview_token(session_id, kind)
     try:
@@ -1225,8 +1270,10 @@ def preview_raw(session_id: str, kind: PreviewKind, request: PreviewRequest) -> 
             adjustments,
             preview_long_edge,
             lambda: session.preview_tokens[kind] == token,
+            require_strips=use_bounded,
         )
-        body = encode_processed_rgba8(processed, kind)
+        encode = encode_processed_rgba8_banded if use_bounded else encode_processed_rgba8
+        body = encode(processed, kind)
     except StripExecutionRefused as exc:
         return _strip_execution_conflict(exc)
     except StaleRender:

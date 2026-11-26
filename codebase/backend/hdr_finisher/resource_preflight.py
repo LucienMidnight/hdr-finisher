@@ -250,6 +250,19 @@ def estimate_native_source_stream_resources(
     )
 
 
+def estimate_native_raw_strip_preview_resources(
+    *, width: int, height: int, max_dimension: int, resources: ResourceSnapshot,
+    strip_budget: int, band_rows: int, mapped_input_bytes: int,
+) -> PreviewResourceEstimate:
+    """Charge mapped input reads, float output, both RGBA8 buffers and scratch."""
+    return _estimate_preview_resources(
+        width=width, height=height, max_dimension=max_dimension, resources=resources,
+        bytes_per_pixel=12 + 2 * 4,
+        transport_bytes=(mapped_input_bytes + strip_budget
+                         + width * min(height, band_rows) * FULL_PREVIEW_BYTES_PER_PIXEL),
+    )
+
+
 def _estimate_preview_resources(
     *,
     width: int,

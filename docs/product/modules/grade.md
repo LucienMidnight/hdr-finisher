@@ -1,3 +1,14 @@
+## November 26: native CPU Retouch preview under memory pressure
+
+The repair edit was already saved when the Mac refused the next 24 MP
+preview. It was charging the whole-frame render cost even when the viewer
+requested strips. When the full-frame render does not fit, an untransformed
+native picture with a supported grade can now use the existing strip
+renderer, including when the viewer requests it directly. It packs the
+same RGBA pixels in bands and keeps the same host reserve when checking
+inputs, output and scratch. Unsupported grades or a second memory
+refusal still retain the last good picture.
+
 ## November 26: deleting a Retouch spot in Grade
 
 Removing a saved spot restores original native pixels and composites any
