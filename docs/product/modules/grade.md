@@ -1,3 +1,10 @@
+## November 26: repair name edits under memory pressure
+
+Renaming a saved repair, including undo and redo of its name, reuses the
+published native pixels before checking memory for a new frame. Pixel-changing
+repair edits still pass the existing memory admission check. Regression tests
+cover all three name-edit operations with no memory available above the reserve.
+
 ## November 26: native CPU Retouch preview under memory pressure
 
 The repair edit was already saved when the Mac refused the next 24 MP
