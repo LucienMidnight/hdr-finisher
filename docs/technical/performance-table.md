@@ -751,25 +751,29 @@ cancellation, budget and allocation-failure checks.
 MacBook Neo A18 Pro, 8 GB, 1408x794 points, unpackaged Electron under the
 shared GPU lock. Warm 6000x4000 synthetic photo with twelve saved Inpaint
 spots (one 12 px dust repair, eleven 100 px Donor Texture spots). Times
-are from clicking Remove to the new exact picture. The matched baseline
-substitutes the pre-fix Retouch source, cache and transport implementations
-in the same checkout. Before and after use the same fixture,
-prepared at Fit in one setup transaction without artificial full reloads.
+are from clicking Remove to the accepted picture.
 
-| Action | Target | Before | After this change |
+| Action | Target | Before, instrumented | After this change |
 | --- | --- | --- | --- |
-| Delete a saved Inpaint spot at 100% | ≤ 1 s | 0.668–0.966 s | 0.201–0.511 s |
-| Delete a saved Inpaint spot at Fit | ≤ 1 s | 0.872–0.897 s | 0.192–0.489 s |
+| Delete a saved Inpaint spot at 100% | ≤ 1 s | 0.832–0.975 s | 0.201–0.511 s |
+| Delete a saved Inpaint spot at Fit | ≤ 1 s | 0.920–1.419 s | 0.192–0.489 s |
 
-One matched baseline and two final runs, three removals per view per run.
-The old setup's locked trace captured 0.832–0.975 s at 100% and
-0.920–1.419 s at Fit. It showed zero solves on deletion, 27–119 ms for the
-native snapshot copy/composite, 450–815 ms to install it, and a fresh
-8.6 MiB Fit texture upload. The new Fit path transfers 24.5–25 KiB of
-changed Fit pixels per removal, in addition to the existing native patch.
-The earlier partial fix without retained Fit textures still hit 1.106 s
-once. The latest runs kept every deletion under budget. No timing, pixel
-or memory guard was loosened. Evidence: `output/retouch-nov26-isolated*/result.json`.
+Three removals per view in the pre-fix trace and in each of two final runs.
+The old driver also ran a separate retry experiment during setup. The final
+driver prepares the same spots in a single transaction at Fit and times only
+deletion, requiring the new exact picture. A repeat using the old code and the
+final protocol completed the first two 100% removals (0.628 and 0.746 s),
+then timed out before reaching Fit.
+
+The pre-fix trace showed zero solves on deletion, 27–119 ms for the native
+snapshot copy/composite, 450–815 ms to install it, and a fresh 8.6 MiB Fit
+texture upload. The new Fit path transfers 24.5–25 KiB of changed Fit pixels per
+removal, in addition to the existing native patch. The earlier partial fix
+without retained Fit textures still hit 1.106 s once. The final runs kept all
+twelve deletions under budget. No timing, pixel or memory guard was loosened.
+Evidence: `output/retouch-nov26-original/trace-summary.json`,
+`output/retouch-nov26-isolated/result.json` and
+`output/retouch-nov26-isolated-repeat/result.json`.
 
 ## November 25: overnight focused release check on the minimum Mac
 
