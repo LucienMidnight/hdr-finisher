@@ -8,6 +8,14 @@
   scopes UI; backend `render_cache.py`, `cpu_strips.py`, `preview.py`,
   `scopes.py`, `overlay.py`, `peak_*.py`.
 
+## November 26: Tone diagnostic device recovery
+
+Tone clipping diagnostics discard the old engine when the Grade renderer's
+WebGPU device changes. A failure on the old device no longer suppresses
+preparation on its replacement. Pointer/animation-loop regression coverage
+checks the replacement while keeping the same photo, lane and control.
+The diagnostic shader and finished image are unchanged.
+
 ## November 26: unused helpers and stale planning comments
 
 Removed the uncalled in-flight-promise accessor and HSL byte-summing method

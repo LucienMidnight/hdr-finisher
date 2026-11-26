@@ -5,6 +5,7 @@
   let clipping = false;
   let frame = 0;
   let engine = null;
+  let device = null;
   let failed = false;
   let identity = "";
   let serial = null;
@@ -83,7 +84,13 @@
 
   function warm(selected) {
     const renderer = state.gpuPreview;
-    if (!renderer?.available || failed) return;
+    if (!renderer?.available) return;
+    if (device !== renderer.device) {
+      releaseGpu();
+      device = renderer.device;
+      failed = false;
+    }
+    if (failed) return;
     const nextIdentity = JSON.stringify([state.session.session_id, selected.lane, geometrySignature(), selected.localId, selected.zone]);
     if (nextIdentity !== identity) { releaseGpu(); identity = nextIdentity; }
     if (!engine) {
