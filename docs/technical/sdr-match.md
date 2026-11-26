@@ -1,6 +1,36 @@
 # HDR-to-SDR Match
 
-## November 16: Steve approved safe linking and target-relative ordering
+## November 26: editable materialization for new Match actions
+
+New whole-photo Match actions use the independent materialization fitter and
+commit its normal SDR controls. The live HDR prefix could differ from the
+stored SDR recipe, so disabling a link on the first creative edit exposed a
+different picture. New results are one-shot independent grades; subsequent
+HDR edits require another Match. Re-match replaces manual SDR tweaks, with
+the existing local/authored override confirmations and atomic Undo retained.
+
+Saved linked grades still use the existing linked CPU/GPU renderers unchanged.
+Automatic re-fitting after HDR edits is deferred: it would run the iterative
+fit after each settled HDR change and needs latency and cancellation design.
+
+The fitter now adds two bounded coordinate-search passes over Exposure,
+Contrast, Midtones, Highlights, Whites, shoulder Start and highlight
+desaturation. Its loss includes the bright population separately, rather
+than ignoring highlights outside the body mask. Already-satisfied body gates
+cannot regress. Luma curves remain neutral, preserving Exposure headroom.
+GPU candidates are still CPU-certified before refinement; unsafe proposals
+still discard the whole attempt and run the CPU fallback.
+
+Focused comparison: `hdr_match_scene.tiff`, HDR Exposure +0.2, Contrast +0.12,
+203-nit reference, no locals or Film Look. Against the previous linked render,
+mean / p95 / p99.9 Delta E 2000 changed from 0.318 / 1.416 / 9.076 before
+refinement to 0.109 / 0.401 / 3.650 after refinement. Tiny-fixture fit time
+changed from 0.065 s to 0.254 s. These are diagnostic samples, not general
+parity or speed guarantees; extreme highlights can still differ visibly.
+The calibrated materialization test retains its existing median-luma cap of
+0.012 and now passes. No match acceptance or perceptual limits were relaxed.
+
+## November 16 (historical): Steve approved safe linking and target-relative ordering
 
 Whole-photo Match first tries the common HDR creative scene and a late SDR
 output tail. Only a fit passing all safeguards becomes linked; otherwise the

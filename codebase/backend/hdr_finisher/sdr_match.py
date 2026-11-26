@@ -212,6 +212,53 @@ def _refine_image_exposure(
     sdr.exposure = best_exposure
 
 
+def _refine_editable_tones(source, adjustments, locals_, scale, target, body, candidate, quality):
+    """Bounded coordinate search of visible controls, including the bright end.
+
+    Body-only percentile scoring misses small bright populations. Give those
+    pixels their own loss while preserving every already-satisfied body gate.
+    No output curve is baked into the image; the luma curve remains editable.
+    """
+    sdr = adjustments.sdr
+    target_lab = linear_srgb_to_oklab(np.clip(target, 0, 1))
+    bright = ~body
+    def loss(pixels, q):
+        errors = np.linalg.norm(linear_srgb_to_oklab(np.clip(pixels, 0, 1)) - target_lab, axis=-1)
+        highlight_loss = float(np.mean(errors[bright])) if np.any(bright) else 0.
+        return (q.p95_luma_error + q.p95_oklab_error + q.median_luma_error
+                + 10 * max(0., q.median_luma_error - .01) + highlight_loss)
+    best = loss(candidate, quality)
+    axes = [('exposure', .1, -8., 8.), ('contrast', .05, -2., 2.),
+            ('midtones', 10., -100., 100.), ('highlights', 10., -100., 100.),
+            ('whites', 10., -100., 100.),
+            ('highlight_compression_start_percent', 10., 1., 99.),
+            ('highlight_desaturation', 10., 0., 100.)]
+    for step_scale in (1., .5):
+        improved = False
+        for name, step, lower, upper in axes:
+            original = getattr(sdr, name)
+            chosen = original
+            for sign in (-1., 1.):
+                value = float(np.clip(original + sign * step * step_scale, lower, upper))
+                if value == original:
+                    continue
+                setattr(sdr, name, value)
+                trial = _render_candidate(source, adjustments, locals_, scale)
+                q = _quality_metrics(target, trial, body)
+                score = loss(trial, q)
+                if (score + 1e-6 < best and np.isfinite(trial).all()
+                    and q.median_luma_error <= max(.01, quality.median_luma_error)
+                    and q.median_oklab_error <= max(.015, quality.median_oklab_error)
+                    and q.p95_luma_error <= max(.03, quality.p95_luma_error)
+                    and q.p95_oklab_error <= max(.04, quality.p95_oklab_error)):
+                    chosen, candidate, quality, best = value, trial, q, score
+                    improved = True
+            setattr(sdr, name, chosen)
+        if not improved:
+            break
+    return candidate, quality
+
+
 def _refine_image_highlights(
     source: np.ndarray,
     adjustments: AdjustmentState,
@@ -307,8 +354,6 @@ def materialize_sdr_match(
     settled_hdr: np.ndarray | None = None,
     timing: dict[str, object] | None = None,
     candidate_bridge: RemoteCandidateBridge | None = None,
-    linked_source: np.ndarray | None = None,
-    linked_refusal_reason: str | None = None,
 ) -> MaterializedSDRMatch:
     """Fit a temporary HDR target into normal, editable SDR controls.
 
@@ -340,19 +385,11 @@ def materialize_sdr_match(
             raise SDRMatchMaterializationError("SDR Match requires the app-wide 100/203-nit reference convention.")
         if settled_hdr is not None and not np.isfinite(settled_hdr).all():
             raise SDRMatchMaterializationError("The HDR analysis produced invalid values.")
-        from .sdr_link import try_linked_match
-        linked, link_reason = (None, linked_refusal_reason) if linked_refusal_reason else try_linked_match(
-            source if linked_source is None else linked_source, adjustments, local_adjustments,
-            settled_hdr if linked_source is None else None,
-            reference_white_nits=reference_white_nits, source_pixel_scale=source_pixel_scale,
-        )
+        # A new Match commits the recipe the SDR controls actually edit.
+        # Linked rendering reads HDR instead; disabling that link on a slider
+        # change would expose a different, previously hidden SDR recipe.
         if timing is not None:
-            timing["linked"] = linked is not None
-            timing["link_fallback_reason"] = link_reason
-        if linked is not None:
-            if candidate_bridge is not None:
-                candidate_bridge.close()
-            return linked
+            timing["linked"] = False
         if settled_hdr is None:
             target_started = perf_counter()
             settled_hdr = render_match_target(
@@ -363,17 +400,11 @@ def materialize_sdr_match(
                 timing["settled_hdr_ms"] = round((perf_counter() - target_started) * 1000.0, 3)
         if not np.isfinite(settled_hdr).all():
             raise SDRMatchMaterializationError("The HDR analysis produced invalid values.")
-        def independent():
-            from dataclasses import replace
-            try:
-                return replace(run(), link_fallback_reason=link_reason)
-            except SDRMatchMaterializationError as exc:
-                raise SDRMatchMaterializationError(f"This photo couldn’t be linked because {link_reason}. {exc}") from exc
         if candidate_bridge is None:
-            return independent()
+            return run()
         remote_token = _MATCH_REMOTE.set(candidate_bridge)
         try:
-            result = independent()
+            result = run()
             if timing is not None:
                 timing["candidate_renderer"] = "gpu"
             return result
@@ -394,7 +425,7 @@ def materialize_sdr_match(
             candidate_bridge.close()
         if timing is not None:
             timing["candidate_renderer"] = "cpu"
-        return independent()
+        return run()
     finally:
         if timing is not None:
             timing["materialize_total_ms"] = round((perf_counter() - materialize_started) * 1000.0, 3)
@@ -600,6 +631,24 @@ def _materialize_sdr_match_impl(
                         break
         if timing is not None:
             timing["gpu_explored_quality"] = explored.model_dump(mode="json")
+            timing["cpu_certified_quality"] = quality.model_dump(mode="json")
+
+    # Refine actual CPU-certified pixels. An unsafe GPU proposal must still
+    # trigger the existing whole-fit CPU fallback, rather than hiding a bad
+    # candidate renderer behind a second fit.
+    if (_MATCH_REMOTE.get() is None or (
+            quality.p95_luma_error <= MATCH_REVIEW_P95_LUMA_LIMIT
+            and quality.p95_oklab_error <= .05)):
+        token = _MATCH_REMOTE.set(None)
+        try:
+            with _match_stage("editable_tone_refinement"):
+                candidate, quality = _refine_editable_tones(
+                    source, result_adjustments, result_locals, source_pixel_scale,
+                    target, body, candidate, quality,
+                )
+        finally:
+            _MATCH_REMOTE.reset(token)
+        if _MATCH_REMOTE.get() is not None and timing is not None and timing.get("cpu_certified_quality"):
             timing["cpu_certified_quality"] = quality.model_dump(mode="json")
 
     # A final-output HDR shoulder can leave a slightly broader luma residual

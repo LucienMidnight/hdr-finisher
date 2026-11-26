@@ -1,28 +1,18 @@
 # Author the SDR Fallback
 
-## Match and link to HDR
+## Match HDR into editable SDR controls
 
-Press **Match SDR** to try a live link. When the result is safe, **Linked to
-HDR** appears in the SDR panel. SDR uses HDR's tone, colour, local adjustments
-and Film Look, then gently fits the bright end into SDR. Later HDR edits update
-SDR immediately. HDR itself stays unchanged.
+Press **Match SDR** to fit the current HDR appearance into the SDR controls.
+The result is an independent, editable grade: changing one slider keeps all
+other matched values. Later HDR edits do not update this grade automatically;
+press Match again to replace the SDR grade, including manual tweaks, with a
+fresh fit. Undo restores the previous grade.
 
-Use **SDR output exposure** (stops) and **Highlight Compression** to adjust the
-linked SDR output. Press **Unlink**, or edit SDR's own Tone, Film Look or other
-creative controls, to return to an independent SDR grade. An actual SDR local
-grade edit also unlinks. **Undo** restores the link and the previous settings
-in one step. **Match SDR** tries to link again.
+Whole Match still asks before replacing edited SDR locals or an imported
+authored SDR base. Cancel keeps them. A fit can need review or be refused.
 
-Some photos cannot keep the shared look safely. Match then fits SDR
-independently and shows one short reason it could not link. The independent
-fit can still need review or be refused, just as before. A refused or no-change
-local Match leaves the link intact. Whole Match asks before replacing authored
-SDR locals or an imported authored SDR base; Cancel keeps them.
-
-Saved grades keep their current look until you run Match again. The detailed
-SDR Tone/colour/Film controls below describe independent grading; using them
-while linked returns the photo to that independent grade.
-
+Previously saved **Linked to HDR** grades retain their existing live rendering
+when reopened. Match again to replace that link with an editable SDR fit.
 
 ## Match one local adjustment
 

@@ -270,7 +270,7 @@ function renderLaneChrome() {
       : match?.materialized_status === "needs_review"
       ? "Independent SDR · Match needs review"
       : match?.materialized_status === "matched"
-        ? "Independent SDR · Match SDR to try linking again."
+        ? "Independent SDR · Matched values are editable. Match again after HDR edits."
         : "";
   }
   renderLinkedSdrState();
