@@ -4,7 +4,7 @@
   const { ask, make } = HDRLibraryDialogs;
   const labels = ["red", "orange", "green", "blue"];
   function create(options) {
-    let dialog = null, tags = [], chosen = new Set(), anchor = -1, sort = "count", busy = false;
+    let dialog = null, tags = [], chosen = new Set(), anchor = null, sort = "count", busy = false;
     const element = {};
     const shown = () => {
       const needle = element.search.value.trim().toLocaleLowerCase();
@@ -20,9 +20,10 @@
         row.setAttribute("aria-selected", String(chosen.has(item.tag)));
         row.append(make("span", "library-tag-name", item.tag), make("span", "library-tag-count", item.count.toLocaleString()));
         row.addEventListener("click", event => {
-          if (event.shiftKey && anchor >= 0) { if (!event.ctrlKey) chosen.clear(); for (let i = Math.min(anchor, index); i <= Math.max(anchor, index); i++) chosen.add(list[i].tag); }
-          else if (event.ctrlKey || event.metaKey) { chosen.has(item.tag) ? chosen.delete(item.tag) : chosen.add(item.tag); anchor = index; }
-          else { chosen = new Set([item.tag]); anchor = index; }
+          const start = list.findIndex(value => value.tag === anchor);
+          if (event.shiftKey && start >= 0) { if (!event.ctrlKey && !event.metaKey) chosen.clear(); for (let i = Math.min(start, index); i <= Math.max(start, index); i++) chosen.add(list[i].tag); }
+          else if (event.ctrlKey || event.metaKey) { chosen.has(item.tag) ? chosen.delete(item.tag) : chosen.add(item.tag); anchor = item.tag; }
+          else { chosen = new Set([item.tag]); anchor = item.tag; }
           render();
         });
         row.addEventListener("dblclick", () => { chosen = new Set([item.tag]); show(); });
@@ -120,7 +121,7 @@
     }
     async function open() {
       if (!dialog) build();
-      chosen.clear(); anchor = -1; element.search.value = "";
+      chosen.clear(); anchor = null; element.search.value = "";
       const names = options.labelNames();
       for (const label of labels) element[`label-${label}`].value = names[label] || "";
       note(options.indexing() ? "Indexing is still running, so more may turn up." : "");
