@@ -306,6 +306,12 @@ applied at the first failure: the CPU preview is slow and refuses some graphs
 (local adjustments, spatial film), so one failure does not switch a whole
 photo to it. Initialization failure still disables the GPU everywhere.
 
+**Whole-frame source memory refusal (November 26, 2026).** If the backend
+cannot prepare the GPU source within available working memory, Grade tries
+the CPU preview. If that preview also fails, the viewer shows Unavailable
+with the reason and keeps any last valid picture. An obsolete request still
+yields to the newer preview without showing an error.
+
 ## 5. Open work, in order
 
 1. **Completed; stale entry reconciled November 13:** export, Proof and

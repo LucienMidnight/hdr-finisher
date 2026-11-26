@@ -25,6 +25,7 @@
     superseded: { recoverable: true, retry: false, disables: false },
     transport: { recoverable: true, retry: true, disables: false },
     allocation: { recoverable: true, retry: true, disables: false },
+    "source-memory": { recoverable: true, retry: false, disables: false },
     limits: { recoverable: true, retry: false, disables: false },
     unsupported: { recoverable: true, retry: false, disables: false },
     validation: { recoverable: true, retry: false, disables: "repeated" },
@@ -41,12 +42,17 @@
     const name = String(error?.name || "");
     const message = detailOf(error);
     const lower = message.toLowerCase();
+    const memoryRefused = error?.status === 507;
     let kind = "unknown";
     if (context.superseded || error?.superseded || name === "AbortError"
-      || /superseded|aborted|cancelled|canceled|deferred/.test(lower)) {
+      || (!memoryRefused && /superseded|aborted|cancelled|canceled|deferred/.test(lower))) {
       kind = "superseded";
     } else if (context.init) {
       kind = "init";
+    } else if (memoryRefused) {
+      // The host refused the source. A 507 does not identify any contention
+      // that is about to clear, so use the CPU fallback without another try.
+      kind = "source-memory";
     } else if (context.deviceLost || /device lost|device_lost/.test(lower)) {
       kind = "device-lost";
     } else if (context.validation || /validation|not contained in the render area|invalid value|invalid usage/i.test(message)) {

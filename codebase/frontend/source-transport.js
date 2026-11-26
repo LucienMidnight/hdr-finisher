@@ -12,6 +12,16 @@
     return error;
   }
 
+  async function sourceResponseError(response, fallback = "WebGPU proxy could not be loaded") {
+    const payload = await response.json().catch(() => null);
+    const detail = typeof payload?.detail === "string" ? payload.detail : payload?.detail?.message;
+    const error = response.status === 409
+      ? supersededError(detail || "WebGPU geometry proxy is waiting for the committed edit")
+      : new Error(detail || (response.status === 507 ? "Not enough memory to load the WebGPU source" : fallback));
+    error.status = response.status;
+    return error;
+  }
+
   /**
    * Read one response chunk while continuing to check whether its render is
    * still current. Cancelling a superseded pending reader releases the browser
@@ -125,18 +135,8 @@
     try {
       if (!response.ok) {
         if (response.status === 409 || response.status === 507) {
-          const payload = await response.json().catch(() => null);
-          const error = new Error(
-            (typeof payload?.detail === "string" ? payload.detail : payload?.detail?.message)
-              || (response.status === 409
-                ? "WebGPU geometry proxy is waiting for the committed edit"
-                : "WebGPU proxy could not be loaded"),
-          );
-          error.recoverable = true;
-          error.previewCapacity = response.status === 507;
-          error.status = response.status;
           complete = true;
-          throw error;
+          throw await sourceResponseError(response);
         }
         await response.arrayBuffer().catch(() => null);
         complete = true;
@@ -154,9 +154,7 @@
         return null;
       }
       if (acceptedGeometry !== geometrySignature) {
-        const error = new Error("Stale WebGPU geometry proxy rejected");
-        error.recoverable = true;
-        throw error;
+        throw supersededError("Stale WebGPU geometry proxy rejected");
       }
       assertCurrent("Source stream was superseded before upload");
       const bytesPerPixel = pixelFormat === "rgba16float" ? 8 : 16;
@@ -324,9 +322,7 @@
     assertCurrent("Source tile probe was superseded");
     if (!(width > 0 && height > 0)) return null;
     if (acceptedGeometry !== geometrySignature) {
-      const error = new Error("Stale WebGPU geometry tile rejected");
-      error.recoverable = true;
-      throw error;
+      throw supersededError("Stale WebGPU geometry tile rejected");
     }
 
     const bytesPerPixel = pixelFormat === "rgba16float" ? 8 : 16;
@@ -357,11 +353,7 @@
         assertCurrent("Source tile stream was superseded");
         const response = await fetch(query({ x: 0, y: top, width, height: rows, epoch: sourceEpoch }), { signal });
         if (!response.ok) {
-          const payload = await response.json().catch(() => null);
-          const error = new Error(payload?.detail || "A source tile could not be loaded");
-          error.recoverable = response.status === 409;
-          error.status = response.status;
-          throw error;
+          throw await sourceResponseError(response, "A source tile could not be loaded");
         }
         const bytesPerRow = Number(response.headers.get("X-Bytes-Per-Row"));
         const data = await response.arrayBuffer();
@@ -487,9 +479,7 @@
     assertCurrent("ROI source region probe was superseded");
     if (!(outputWidth > 0 && outputHeight > 0)) return null;
     if (acceptedGeometry !== geometrySignature) {
-      const error = new Error("Stale WebGPU geometry region rejected");
-      error.recoverable = true;
-      throw error;
+      throw supersededError("Stale WebGPU geometry region rejected");
     }
     const delivered = {
       x: Math.max(0, Math.min(region.x, outputWidth)),
@@ -551,11 +541,7 @@
             x: delivered.x, y: delivered.y + top, width: delivered.width, height: rows,
           }, sourceEpoch), { signal });
           if (!response.ok) {
-            const payload = await response.json().catch(() => null);
-            const error = new Error(payload?.detail || "A source region could not be loaded");
-            error.recoverable = response.status === 409;
-            error.status = response.status;
-            throw error;
+            throw await sourceResponseError(response, "A source region could not be loaded");
           }
           const chunk = {
             x: Number(response.headers.get("X-Tile-X")),
@@ -652,17 +638,7 @@
       { signal },
     );
     if (!response.ok) {
-      const payload = await response.json().catch(() => null);
-      const error = new Error(
-        (typeof payload?.detail === "string" ? payload.detail : payload?.detail?.message)
-          || (response.status === 409
-            ? "WebGPU geometry proxy is waiting for the committed edit"
-            : "WebGPU proxy could not be loaded"),
-      );
-      error.recoverable = response.status === 409 || response.status === 507;
-      error.previewCapacity = response.status === 507;
-      error.status = response.status;
-      throw error;
+      throw await sourceResponseError(response);
     }
     const width = Number(response.headers.get("X-Image-Width"));
     const height = Number(response.headers.get("X-Image-Height"));
@@ -672,9 +648,7 @@
     const acceptedGeometry = response.headers.get("X-Geometry-Signature") || "{}";
     const data = await response.arrayBuffer();
     if (acceptedGeometry !== geometrySignature) {
-      const error = new Error("Stale WebGPU geometry proxy rejected");
-      error.recoverable = true;
-      throw error;
+      throw supersededError("Stale WebGPU geometry proxy rejected");
     }
     if (isCurrent && isCurrent() === false) throw supersededError("Source proxy was superseded");
     const texture = renderer.device.createTexture({

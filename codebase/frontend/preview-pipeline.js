@@ -289,6 +289,25 @@ async function renderPreviewForLaneInner(
   state.previewControllers[lane]?.abort();
   const controller = new AbortController();
   state.previewControllers[lane] = controller;
+  const fallbackReason = cpuPreviewReason(lane);
+  const sourceMemoryFallback = fallbackReason.startsWith("gpu-failed:source-memory");
+  const requestIsCurrent = () => controller === state.previewControllers[lane]
+    && !geometryDraftActive()
+    && state.session?.session_id === sessionId
+    && generation === state.previewGeneration[lane]
+    && signature === geometrySignature();
+  const canReportFailure = () => displayWhenReady && lane === state.currentView
+    && !state.comparePeekActive && requestIsCurrent();
+  const reportFailure = (detail, unavailable = sourceMemoryFallback) => {
+    if (!canReportFailure()) return;
+    setPreviewError(detail);
+    if (unavailable || state.acceptedPresentation?.lane === lane) markPreviewUnavailable(detail);
+    else {
+      clearPreviewImage();
+      clearPreviewOverlay();
+    }
+  };
+  const memoryFallbackDetail = "Not enough memory to load the source, and the CPU preview could not be shown.";
   if (displayWhenReady && showProgress) setPreviewMessage(`Rendering ${lane.toUpperCase()} preview...`, progressSteps[0]);
 
   const response = await fetch(`/api/session/${state.session.session_id}/preview/${lane}`, {
@@ -302,7 +321,7 @@ async function renderPreviewForLaneInner(
         : null,
       // The backend renders CPU previews up to 16384 px. For larger pictures
       // (line scans, panoramas) show that size scaled up rather than nothing.
-      cpu_fallback_reason: cpuPreviewReason(lane),
+      cpu_fallback_reason: fallbackReason,
       long_edge: Math.min(longEdge, CPU_PREVIEW_MAX_LONG_EDGE),
       execution: previewExecutionForTier(),
       hdr_display: mediaQueryMatch("(dynamic-range: high)"),
@@ -313,38 +332,28 @@ async function renderPreviewForLaneInner(
     console.error(error);
     return null;
   });
-  if (!response || response.aborted) return;
-  const requestIsCurrent = () => controller === state.previewControllers[lane]
-    && !geometryDraftActive()
-    && state.session?.session_id === sessionId
-    && generation === state.previewGeneration[lane]
-    && signature === geometrySignature();
+  if (!response || response.aborted) {
+    if (!response && sourceMemoryFallback) reportFailure(memoryFallbackDetail);
+    return false;
+  }
   if (response.status === 409) {
     const payload = await safeJson(response);
-    if (payload?.code === "strip_execution_refused" && displayWhenReady && requestIsCurrent()) {
+    if (payload?.code === "strip_execution_refused" && canReportFailure()) {
       const reasons = Array.isArray(payload.refusals) && payload.refusals.length
         ? ` ${payload.refusals.join(", ")}.`
         : "";
       markPreviewUnavailable(`${payload.detail || "Bounded Full preview is unavailable for this graph."}${reasons}`);
-    } else if (displayWhenReady && showProgress && requestIsCurrent()) {
+    } else if (showProgress && canReportFailure()) {
       setPreviewMessage("A newer adjustment replaced this render.", progressSteps[0]);
     }
     return false;
   }
   if (!response.ok) {
     const payload = await safeJson(response);
-    if (displayWhenReady && requestIsCurrent()) {
-      const detail = payload?.detail || "Preview failed to render.";
-      setPreviewError(detail);
-      // A CPU preview failure moves the
-      // viewer to Unavailable and keeps the last valid presentation. Clearing
-      // the image here destroyed a good frame because a later one failed.
-      if (state.acceptedPresentation?.lane === lane) markPreviewUnavailable(detail);
-      else {
-        clearPreviewImage();
-        clearPreviewOverlay();
-      }
-    }
+    const memoryRefused = response.status === 507;
+    const detail = payload?.detail || (memoryRefused ? "Not enough memory to render this preview."
+      : sourceMemoryFallback ? memoryFallbackDetail : "Preview failed to render.");
+    reportFailure(detail, memoryRefused || sourceMemoryFallback);
     return false;
   }
 
@@ -354,7 +363,12 @@ async function renderPreviewForLaneInner(
   let height = Number(response.headers.get("X-Image-Height"));
   const scopePeakHeader = response.headers.get("X-Scope-Peak");
   const responseScopePeak = scopePeakHeader === null ? null : Number(scopePeakHeader);
-  const blob = await response.blob();
+  const blob = await response.blob().catch(error => {
+    if (!sourceMemoryFallback) throw error;
+    reportFailure(memoryFallbackDetail);
+    return null;
+  });
+  if (!blob) return false;
   if (!requestIsCurrent()) return false;
   const url = URL.createObjectURL(blob);
   if (!(width > 0 && height > 0)) {
@@ -364,7 +378,8 @@ async function renderPreviewForLaneInner(
       height = decoded.naturalHeight;
     } catch (error) {
       URL.revokeObjectURL(url);
-      if (requestIsCurrent()) setPreviewError(error.message);
+      if (sourceMemoryFallback) reportFailure(memoryFallbackDetail);
+      else if (requestIsCurrent()) setPreviewError(error.message);
       return false;
     }
     if (!requestIsCurrent()) { URL.revokeObjectURL(url); return false; }
@@ -374,16 +389,26 @@ async function renderPreviewForLaneInner(
   state.previewCache[lane] = { url, generation, longEdge: Math.max(width, height) || longEdge, requestedLongEdge: longEdge, width, height, geometrySignature: signature, scopePeak: Number.isFinite(responseScopePeak) ? responseScopePeak : null };
   if (displayWhenReady && state.currentView === lane && !state.comparePeekActive) {
     if (showProgress) setPreviewMessage("Presenting preview...", progressSteps[2]);
-    const keptGpuSurface = shouldKeepHdrGpuSurface(lane)
+    // Once the source is refused for memory, present the CPU frame without
+    // requesting the same GPU source again.
+    const keptGpuSurface = !sourceMemoryFallback && shouldKeepHdrGpuSurface(lane)
       && await renderGpuDraft(lane)
       && state.gpuSurfaceHdr;
     if (!requestIsCurrent()) return false;
     if (!keptGpuSurface) {
+      if (!await applyPreviewUrl(url, requestIsCurrent)) {
+        if (sourceMemoryFallback && requestIsCurrent()) {
+          delete state.previewCache[lane];
+          URL.revokeObjectURL(url);
+          reportFailure(memoryFallbackDetail);
+        }
+        return false;
+      }
       setGpuSurfaceHdr(lane, false);
       state.previewInfoByLane[lane] = previewInfo;
-      if (!await applyPreviewUrl(url, requestIsCurrent)) return false;
       state.previewInfo = previewInfo;
-      acceptPresentation(lane, longEdge >= refinementProxyLongEdge() ? "refinement" : "settled", width, height, previewInfo.transport, gpuPreviewEligible(lane) ? "" : "CPU/backend", null, generation, null, longEdge, responseScopePeak);
+      const presentationFallback = sourceMemoryFallback || !gpuPreviewEligible(lane) ? "CPU/backend" : "";
+      acceptPresentation(lane, longEdge >= refinementProxyLongEdge() ? "refinement" : "settled", width, height, previewInfo.transport, presentationFallback, null, generation, null, longEdge, responseScopePeak);
       els.scopeKindLabel.textContent = lane.toUpperCase();
       renderReadouts();
     }
@@ -811,15 +836,15 @@ async function renderGpuDraftInner(
       });
       return true;
   } catch (error) {
-    const verdict = state.gpuFailurePolicy
-      ? state.gpuFailurePolicy.record(error, { superseded: Boolean(error?.recoverable), work: state.session?.session_id ?? null })
-      : {
-        kind: error?.recoverable ? "superseded" : "transport",
-        recoverable: true,
-        retryable: false,
-        disabled: false,
-        detail: error?.message || "WebGPU draft failed",
-      };
+    // A recoverable failure can still need a fallback. Only obsolete work
+    // stands down for a newer preview.
+    const failureContext = { superseded: !sourceOptions.isCurrent(), work: sessionId };
+    const verdict = state.gpuFailurePolicy?.record(error, failureContext) || {
+      kind: failureContext.superseded || error?.superseded || error?.name === "AbortError" ? "superseded" : "transport",
+      recoverable: true,
+      detail: error?.message || "WebGPU draft failed",
+      ...window.HDRRenderFailure?.classify(error, failureContext),
+    };
     if (verdict.kind === "superseded") {
       console.debug("WebGPU authoring render deferred until geometry commit.", error);
       // Say so. A silent false leaves the previous refusal standing, and the
