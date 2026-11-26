@@ -8,6 +8,13 @@
   scopes UI; backend `render_cache.py`, `cpu_strips.py`, `preview.py`,
   `scopes.py`, `overlay.py`, `peak_*.py`.
 
+## November 26: presentation setup recovery
+
+A throwing staleness check or canvas-resize callback releases the canvas gate
+before propagating its error. Later pictures can acquire the same gate rather
+than waiting forever. Callback-failure regression tests cover both boundaries;
+successful serialization and stale-frame refusal are unchanged.
+
 ## November 26: scope encoding failure cleanup
 
 Scope encoding now releases its busy pool slot and active-scope count when

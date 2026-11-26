@@ -71,3 +71,23 @@ test("release is idempotent and the gate is reusable afterwards", async () => {
   assert.equal(canvas.width, 8);
   second.release();
 });
+
+
+for (const callback of ["current", "resize"]) {
+  test(`a throwing ${callback} callback cannot strand the canvas gate`, async () => {
+    const gate = new HDRPresentationGate();
+    const canvas = {};
+    const failure = new Error("presentation setup failed");
+    const fail = () => { throw failure; };
+    await assert.rejects(gate.acquire(canvas, callback === "current" ? fail : () => true,
+      callback === "resize" ? fail : () => {}), error => error === failure);
+    let acquired = false;
+    const next = gate.acquire(canvas, () => true, () => {}).then(held => {
+      acquired = true;
+      held.release();
+    });
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(acquired, true, "the next picture must still be able to present");
+    await next;
+  });
+}
