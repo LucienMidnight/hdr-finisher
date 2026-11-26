@@ -31,6 +31,28 @@ Concurrent load varied (setup 1.57 s versus 5.87 s); these are observations,
 not an app/GPU performance claim. Evidence: `codebase/output/test-infra-fifo-tests.txt`
 and `codebase/output/test-infra-fifo-tests-after.txt`. No real GPU was used.
 
+## November 26 - Python review timing and profile cleanup
+
+One serial full run with `--durations=50` during concurrent edits: 1,391.36 s,
+4,934 passed / 30 failed / 56 skipped. The lead reviewer's clean pre-review
+baseline was 1,203 s, 4,962 passed / 56 skipped; this run is not an after-speed
+comparison. Failures were in memory polling (1), HSL paste (1), Library paste
+(22) and RAW cleanup state (6), forwarded to their reviewers.
+The slowest calls were real batch/two-version encoding (37.54 s), the 5,000-file
+cache accounting test (28.28 s), full-size Proof identity AVIF/JPEG/JXL
+(23.79/22.79/14.31 s), and the 10,000-failure Library flood test (16.21 s).
+Those input sizes and all real codec cases remain: reducing them would remove
+the behavior or scale being tested. Capability discovery is already cached.
+The lock-fixture polling improvement is measured separately above; the final
+full-suite time remains for the lead reviewer after all concurrent work ends.
+Evidence: `codebase/output/test-infra-durations-baseline.txt`.
+
+That full run also exposed a Windows teardown error: a process-cached SQLite
+ledger held the disposable profile open. Pytest now closes handles belonging
+only to its own temporary profile before deleting it. A child-pytest regression
+checks successful exit and actual directory removal (passed in the focused
+run; `codebase/output/test-infra-profile-cleanup.txt`). Production is unchanged.
+
 ## November 26 - Test infrastructure (PC review)
 
 Test-only changes on `integrate/pc-tests-review-2026-11-26`; app behavior and

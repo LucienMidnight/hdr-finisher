@@ -14,6 +14,15 @@ os.environ["LOCALAPPDATA"] = str(Path(_TEST_STATE.name) / "local")
 os.environ["HDR_FINISHER_SOURCE_CACHE_DIR"] = str(Path(_TEST_STATE.name) / "source-mips")
 
 def pytest_unconfigure(config):
+    # SQLite ledgers are process-cached. Close only this disposable profile's
+    # handles before Windows tries to remove the files they keep open.
+    library_cache = sys.modules.get("hdr_finisher.library_cache")
+    if library_cache is not None:
+        with library_cache._LOCK:
+            for root, db in list(library_cache._LEDGERS.items()):
+                if Path(root).resolve().is_relative_to(Path(_TEST_STATE.name).resolve()):
+                    db.close()
+                    del library_cache._LEDGERS[root]
     for key, value in _TEST_ENV.items():
         if value is None:
             os.environ.pop(key, None)
