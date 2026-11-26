@@ -14,8 +14,10 @@ window.HDRGpuDeliveryFinishing = class {
       usage:GPUTextureUsage.TEXTURE_BINDING|GPUTextureUsage.STORAGE_BINDING|GPUTextureUsage.COPY_SRC|GPUTextureUsage.COPY_DST|GPUTextureUsage.RENDER_ATTACHMENT});
     this.owned.add(value); return value;
   }
+  // Own buffers as well as textures: setup can fail before a local finally.
+  own(value) { this.owned.add(value); return value; }
   release(value) { if(this.owned.delete(value)) value.destroy(); }
-  destroy() { for(const value of this.owned) value.destroy(); this.owned.clear(); this.ranges?.destroy(); }
+  destroy() { for(const value of this.owned) value.destroy(); this.owned.clear(); }
   async initialize() {
     const code=`
 @group(0) @binding(0) var src:texture_2d<f32>;
@@ -76,11 +78,11 @@ fn lanczos(v:f32)->f32 { if(abs(v)>=3.){return 0.;} return sinc(v)*sinc(v/3.); }
     const info=await module.getCompilationInfo(); const errors=info.messages.filter(v=>v.type==="error");
     if(errors.length) throw Error(errors.map(v=>v.message).join("; "));
     this.pipeline=await this.device.createComputePipelineAsync({layout:"auto",compute:{module,entryPoint:"main"}});
-    this.ranges=this.device.createBuffer({size:24,usage:GPUBufferUsage.STORAGE|GPUBufferUsage.COPY_DST});
+    this.ranges=this.own(this.device.createBuffer({size:24,usage:GPUBufferUsage.STORAGE|GPUBufferUsage.COPY_DST}));
     this.device.queue.writeBuffer(this.ranges,0,new Uint32Array([0xffffffff,0xffffffff,0xffffffff,0,0,0]));
   }
   async run(mode,src,dst,{axis=0,radius=0,hdr=false,amounts=[0,0],allowance=.12,fine=src,medium=src,residual=src}={}) {
-    const buffer=this.device.createBuffer({size:48,usage:GPUBufferUsage.STORAGE|GPUBufferUsage.COPY_DST});
+    const buffer=this.own(this.device.createBuffer({size:48,usage:GPUBufferUsage.STORAGE|GPUBufferUsage.COPY_DST}));
     try {
       const rows=this.strip(dst.width);
       for(let row=0;row<dst.height;row+=rows){
@@ -95,7 +97,7 @@ fn lanczos(v:f32)->f32 { if(abs(v)>=3.){return 0.;} return sinc(v)*sinc(v/3.); }
         pass.setPipeline(this.pipeline);pass.setBindGroup(0,group);pass.dispatchWorkgroups(Math.ceil(dst.width/8),Math.ceil(Math.min(rows,dst.height-row)/8));pass.end();
         this.device.queue.submit([encoder.finish()]);await this.gpu.waitForSubmittedWork();
       }
-    } finally {buffer.destroy();}
+    } finally {this.release(buffer);}
   }
   async blur(src,radius){
     const a=this.texture(src.width,src.height),b=this.texture(src.width,src.height);
@@ -137,7 +139,7 @@ fn lanczos(v:f32)->f32 { if(abs(v)>=3.){return 0.;} return sinc(v)*sinc(v/3.); }
         job.adjustments[lane].highlight_compression_peak_measurement,`${job.id}:${lane}:delivery`);
     }
     const finished=this.texture(width,height);
-    const buffer=gpu.createStorageBuffer(params);this.device.queue.writeBuffer(buffer,0,params);
+    const buffer=this.own(gpu.createStorageBuffer(params));this.device.queue.writeBuffer(buffer,0,params);
     const pipeline=await this.device.createRenderPipelineAsync({layout:gpu.pipelineLayout,
       vertex:{module:gpu.module,entryPoint:"vertexMain"},fragment:{module:gpu.module,entryPoint:"outputPictureFragmentMain",targets:[{format:"rgba32float"}]},primitive:{topology:"triangle-list"}});
     const dummy=this.texture(1,1,"rgba16float");
@@ -148,7 +150,7 @@ fn lanczos(v:f32)->f32 { if(abs(v)>=3.){return 0.;} return sinc(v)*sinc(v/3.); }
         const pass=encoder.beginRenderPass({colorAttachments:[{view:finished.createView(),loadOp:row?"load":"clear",storeOp:"store"}]});
         pass.setScissorRect(0,row,width,Math.min(rows,height-row));pass.setPipeline(pipeline);pass.setBindGroup(0,bind);pass.draw(3);pass.end();
         this.device.queue.submit([encoder.finish()]);await gpu.waitForSubmittedWork();}
-    }finally{buffer.destroy();this.release(image);this.release(dummy);}
+    }finally{this.release(buffer);this.release(image);this.release(dummy);}
     return job.framing ? await this.compose(finished,job.framing,lane) : finished;
   }
   async compose(photo,layout,lane){
@@ -168,7 +170,7 @@ fn lanczos(v:f32)->f32 { if(abs(v)>=3.){return 0.;} return sinc(v)*sinc(v/3.); }
     const module=this.device.createShaderModule({code});
     const pipeline=await this.device.createComputePipelineAsync({layout:"auto",compute:{module,entryPoint:"main"}});
     const colors=layout.colors[lane],values=new Float32Array([layout.frame+layout.border,layout.border,0,0,...colors[0],0,...colors[1],0]);
-    const buffer=this.device.createBuffer({size:values.byteLength,usage:GPUBufferUsage.STORAGE|GPUBufferUsage.COPY_DST});
+    const buffer=this.own(this.device.createBuffer({size:values.byteLength,usage:GPUBufferUsage.STORAGE|GPUBufferUsage.COPY_DST}));
     const canvas=this.texture(layout.width,layout.height);
     this.device.queue.writeBuffer(buffer,0,values);
     const bind=this.device.createBindGroup({layout:pipeline.getBindGroupLayout(0),entries:[
@@ -181,7 +183,7 @@ fn lanczos(v:f32)->f32 { if(abs(v)>=3.){return 0.;} return sinc(v)*sinc(v/3.); }
         pass.setPipeline(pipeline);pass.setBindGroup(0,bind);pass.dispatchWorkgroups(Math.ceil(layout.width/8),Math.ceil(Math.min(rows,layout.height-row)/8));pass.end();
         this.device.queue.submit([encoder.finish()]);await this.gpu.waitForSubmittedWork();
       }
-    }finally{buffer.destroy();this.release(photo);}
+    }finally{this.release(buffer);this.release(photo);}
     return canvas;
   }
   async finishRows(capture,job,lane,sendRows){
@@ -213,8 +215,8 @@ fn lanczos(v:f32)->f32 { if(abs(v)>=3.){return 0.;} return sinc(v)*sinc(v/3.); }
     const pipeline=await device.createRenderPipelineAsync({layout:gpu.pipelineLayout,vertex:{module,entryPoint:"vertexMain"},
       fragment:{module,entryPoint:"deliveryStrip",targets:[{format:"rgba32float"}]},primitive:{topology:"triangle-list"}});
     const strip=this.texture(width,rows),dummy=this.texture(1,1,"rgba16float");
-    const buffer=gpu.createStorageBuffer(params);
-    const readback=device.createBuffer({size:stride*rows,usage:GPUBufferUsage.COPY_DST|GPUBufferUsage.MAP_READ});
+    const buffer=this.own(gpu.createStorageBuffer(params));
+    const readback=this.own(device.createBuffer({size:stride*rows,usage:GPUBufferUsage.COPY_DST|GPUBufferUsage.MAP_READ}));
     const output=new Float32Array(width*rows*4);
     const bind=gpu.bindGraphResources(capture.createView(),dummy.createView(),{buffer},dummy.createView());
     try{
@@ -235,7 +237,7 @@ fn lanczos(v:f32)->f32 { if(abs(v)>=3.){return 0.;} return sinc(v)*sinc(v/3.); }
         await sendRows(row,count,output.subarray(0,width*count*4));
       }
     }finally{
-      buffer.destroy();readback.destroy();
+      this.release(buffer);this.release(readback);
       for(const texture of [strip,dummy,capture])this.release(texture);
     }
   }
@@ -243,13 +245,13 @@ fn lanczos(v:f32)->f32 { if(abs(v)>=3.){return 0.;} return sinc(v)*sinc(v/3.); }
     const width=texture.width,height=texture.height,stride=Math.ceil(width*16/256)*256;
     const rows=Math.max(1,Math.min(sendRows?32:128,Math.floor(this.device.limits.maxBufferSize/stride)));
     const output=new Float32Array(width*(sendRows?rows:height)*4);
-    const buffer=this.device.createBuffer({size:stride*rows,usage:GPUBufferUsage.COPY_DST|GPUBufferUsage.MAP_READ});
+    const buffer=this.own(this.device.createBuffer({size:stride*rows,usage:GPUBufferUsage.COPY_DST|GPUBufferUsage.MAP_READ}));
     try{for(let row=0;row<height;row+=rows){await this.permit();const count=Math.min(rows,height-row),encoder=this.device.createCommandEncoder();
       encoder.copyTextureToBuffer({texture,origin:[0,row]},{buffer,bytesPerRow:stride},[width,count]);this.device.queue.submit([encoder.finish()]);
       await buffer.mapAsync(GPUMapMode.READ);const mapped=new Float32Array(buffer.getMappedRange());
       for(let y=0;y<count;y++)output.set(mapped.subarray(y*stride/4,y*stride/4+width*4),((sendRows?0:row)+y)*width*4);
       buffer.unmap();
       if(sendRows)await sendRows(row,count,output.subarray(0,width*count*4));}
-    }finally{buffer.destroy();this.release(texture);}return output;
+    }finally{this.release(buffer);this.release(texture);}return output;
   }
 };

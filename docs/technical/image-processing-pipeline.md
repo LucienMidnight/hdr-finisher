@@ -361,6 +361,8 @@ The global shaders mirror the CPU branch order and parameter meanings. Some unsu
 
 RGBA16F transport is preferred when the proxy is finite and representable; RGBA32F is the fallback. Rows are packed to WebGPU's alignment requirements. Proxy textures are retained at no more than two levels per lane and concurrent fetches are deduplicated.
 
+GPU delivery finishing owns each texture and buffer immediately after allocation. Local cleanup releases completed scratch; job cleanup releases anything left by allocation, pipeline compilation, binding, cancellation or encoder-handoff failure. Readback strips use 256-byte-aligned rows and remove padding before handing float samples to the encoder. Shaders, admission budgets and finishing order are unchanged by this ownership rule.
+
 HDR canvas presentation uses extended-range Display P3 under Chromium's 203-nit convention. SDR canvas presentation uses sRGB. This is display behavior, not delivery encoding or the colorimetric authority for export.
 
 ## 7. Render cache and invalidation
