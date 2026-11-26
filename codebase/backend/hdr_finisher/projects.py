@@ -79,6 +79,7 @@ def save_project(session: LoadedSession, path: Path, source_path: Path | None = 
             temporary_path.unlink(missing_ok=True)
     session.dirty = False
     session.grade_project_fingerprint = _sha256_file(destination)
+    session.grade_project_path = destination
     return ProjectResponse(path=str(destination), revision=session.edit_revision, document=document)
 
 
