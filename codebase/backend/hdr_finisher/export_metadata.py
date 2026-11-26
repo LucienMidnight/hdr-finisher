@@ -41,13 +41,17 @@ class ExifTool:
         self.process = subprocess.Popen(command() + ["-stay_open", "True", "-@", "-"],
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
             env={**os.environ, "PERL_BADLANG": "0"}, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
-        threading.Thread(target=self._read, daemon=True).start()
+        self.reader = threading.Thread(target=self._read, daemon=True, name="export-metadata-reader")
+        self.reader.start()
         atexit.register(self.close)
 
     def _read(self):
-        for line in self.process.stdout:
-            self.lines.put(line)
-        self.lines.put(None)
+        try:
+            with self.process.stdout:
+                for line in self.process.stdout:
+                    self.lines.put(line)
+        finally:
+            self.lines.put(None)
 
     def execute(self, *arguments):
         if any("\n" in str(arg) or "\r" in str(arg) for arg in arguments):
@@ -81,6 +85,14 @@ class ExifTool:
         if self.process.poll() is None:
             self.process.kill()
             self.process.wait()
+        # The exit callback otherwise keeps every replaced helper and its pipe
+        # handles alive until application exit. Let the reader close its own pipe.
+        try:
+            self.process.stdin.close()
+        except OSError:
+            pass  # A crashed child may have closed its end before buffered flush.
+        self.reader.join(timeout=2)
+        atexit.unregister(self.close)
 
 
 _helper = None
@@ -89,6 +101,8 @@ def helper():
     global _helper
     with _helper_lock:
         if _helper is None or _helper.process.poll() is not None:
+            if _helper is not None:
+                _helper.close()
             _helper = ExifTool()
         return _helper
 
