@@ -14,6 +14,17 @@ the dated results below remain the record, not a promise those files ship.
 | --- | --- | --- |
 | Plain-app Library viewport check | Invalid: renderer hidden/occluded, incomplete viewport coverage; timer probe 1161 ms against 250 ms limit. No qualified screen timing or before/after claim. | Windows PC, 2560x1440, shared GPU lock, 90-second default scenario, `f52c06cb` shared checkout including Library cancellation/refresh fixes and desktop close-save fix. Steve's app stayed open. `codebase/output/quick-library-check/library-shell-review/report.json`. Repeat only with the test window visible. |
 
+## November 26 - FIFO GPU-lock fixture timing
+
+The shared wrapper now admits new waiters in registration order. Disposable
+subprocess/temporary-lock tests use 50 ms polling; production retains its
+5-second wait interval. All 9 applicable tooling tests pass (2 platform skips).
+With the same new FIFO coverage, reducing test-only polling took the group
+from 27.23 s to 16.60 s and the three-waiter FIFO case from 17.40 s to 6.38 s.
+Concurrent load varied (setup 1.57 s versus 5.87 s); these are observations,
+not an app/GPU performance claim. Evidence: `codebase/output/test-infra-fifo-tests.txt`
+and `codebase/output/test-infra-fifo-tests-after.txt`. No real GPU was used.
+
 ## November 26 - Test infrastructure (PC review)
 
 Test-only changes on `integrate/pc-tests-review-2026-11-26`; app behavior and

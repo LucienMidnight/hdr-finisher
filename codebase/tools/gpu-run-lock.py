@@ -4,6 +4,7 @@ python tools/gpu-run-lock.py --label who-what [--minutes 20] -- command args...
 Standard library only. A timeout returns 124; interruption returns 130.
 """
 import argparse
+from contextlib import contextmanager
 import json
 import os
 from pathlib import Path
@@ -17,6 +18,7 @@ from datetime import datetime, timezone
 from lib.machine_settings import settings
 
 STALE_SECONDS = 60 * 60
+POLL_SECONDS = 5
 
 
 def pid_alive(pid):
@@ -85,27 +87,77 @@ def recover_stale(lock):
         guard.close()
 
 
+@contextmanager
+def queue_guard(folder):
+    """OS-owned registration mutex: a killed waiter cannot strand the queue."""
+    with (folder / 'gpu-run.queue.guard').open('a+b') as guard:
+        if os.fstat(guard.fileno()).st_size == 0:
+            guard.write(b'0')
+            guard.flush()
+        while True:
+            try:
+                if os.name == 'nt':
+                    import msvcrt
+                    guard.seek(0)
+                    msvcrt.locking(guard.fileno(), msvcrt.LK_NBLCK, 1)
+                else:
+                    import fcntl
+                    fcntl.flock(guard.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except OSError:
+                time.sleep(.05)
+        yield
+
+
+def enqueue(folder):
+    queue = folder / 'gpu-run.queue'
+    queue.mkdir(exist_ok=True)
+    with queue_guard(folder):
+        tickets = sorted(queue.glob('*.ticket'))
+        number = int(tickets[-1].name.split('-')[0]) + 1 if tickets else 0
+        ticket = queue / f'{number:020d}-{os.getpid()}.ticket'
+        ticket.touch(exist_ok=False)
+    return ticket
+
+
+def queue_turn(folder, ticket):
+    with queue_guard(folder):
+        for head in sorted(ticket.parent.glob('*.ticket')):
+            if head == ticket:
+                return True
+            pid = int(head.stem.split('-')[1])
+            if pid_alive(pid):
+                return False
+            # Interrupted/killed waiters must not starve the next live ticket.
+            head.unlink(missing_ok=True)
+    return False
+
+
 def acquire(folder, owner):
     folder.mkdir(parents=True, exist_ok=True)
     lock = folder / 'gpu-run.lock'
-    waited = 0
-    while True:
-        if not old_lock_held(folder):
-            try:
-                lock.mkdir()
+    ticket = enqueue(folder)
+    try:
+        waited = 0
+        while True:
+            if queue_turn(folder, ticket) and not old_lock_held(folder):
                 try:
-                    (lock / 'owner.txt').write_text(owner, encoding='utf-8')
-                except BaseException:
-                    lock.rmdir()
-                    raise
-                return lock
-            except FileExistsError:
-                if recover_stale(lock):
-                    continue
-        if waited % 120 == 0:
-            print(f'[gpu-run-lock] waiting for {lock}', flush=True)
-        time.sleep(5)
-        waited += 5
+                    lock.mkdir()
+                    try:
+                        (lock / 'owner.txt').write_text(owner, encoding='utf-8')
+                    except BaseException:
+                        lock.rmdir()
+                        raise
+                    return lock
+                except FileExistsError:
+                    if recover_stale(lock):
+                        continue
+            if waited % 120 == 0:
+                print(f'[gpu-run-lock] waiting for {lock}', flush=True)
+            time.sleep(POLL_SECONDS)
+            waited += POLL_SECONDS
+    finally:
+        ticket.unlink(missing_ok=True)
 
 
 def process_rows():

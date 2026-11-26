@@ -134,6 +134,12 @@ owners may be recovered after 60 minutes; a live owner is never broken merely
 because it is old. The owner heartbeat also prevents the old wrapper from
 aging out a live in-repo holder. Timeouts/interruption stop the entire owned process tree;
 failed shutdown retains the lock. Do not remove another agent's live lock.
+New wrapper invocations register FIFO tickets under `gpu-run.queue/`, so a
+newly submitted check cannot jump ahead of an earlier live waiter. Interrupted
+waiters remove their tickets; a dead waiter is skipped automatically. Legacy
+wrappers and invocations already running before this update still interoperate
+through the same lock, but do not participate in FIFO ordering. Let those
+finish; do not restart or remove their live locks.
 
 Fast checks do not need the GPU lock:
 
