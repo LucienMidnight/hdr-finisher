@@ -888,7 +888,7 @@
   grid.addEventListener("pointerdown", () => { restoreReviewGrid = null; });
   grid.addEventListener("keydown", () => { restoreReviewGrid = null; });
   let gridRequests = 0, gridSettleTimer;
-  let lastGridTop = 0, gridWidth = 0, gridHeight = 0;
+  let gridWidth = 0, gridHeight = 0;
   let reviewGrid = null, restoreReviewGrid = null;
   function paintGrid(reveal = false) {
     const count = state.photos.length ? String(state.photos.length) : ""; if ($("place-count").textContent !== count) $("place-count").textContent = count;
@@ -921,13 +921,8 @@
     gridRequests += reconcile(state.cells, layout.first, layout.last, space, (element, index) => {
       element.style.cssText = `left:${3 + (index % layout.columns) * layout.cellWidth}px;top:${layout.top(index)}px;width:${layout.cellWidth - 3}px;height:${layout.rowHeight - 3}px`;
     });
-    const screen = Math.max(layout.columns, layout.last - layout.first);
-    const forward = grid.scrollTop >= lastGridTop; lastGridTop = grid.scrollTop;
-    const first = forward ? layout.last : Math.max(0, layout.first - screen);
-    const last = forward ? Math.min(state.photos.length, layout.last + screen) : layout.first;
     paintMemoryNeeds();
   }
-  let lastFilmLeft = 0;
   let FILM_PITCH = 119; // filmstrip tile width plus the 3px gap
   function paintFilm() {
     if (!state.active || state.view !== "single" || state.review) { clearCells(state.filmCells); return; }
@@ -935,7 +930,6 @@
     const first = Math.max(0, Math.floor((film.scrollLeft - 3) / FILM_PITCH));
     const last = Math.min(state.photos.length, Math.ceil((film.scrollLeft + film.clientWidth) / FILM_PITCH));
     reconcile(state.filmCells, first, last, $("film-space"), (element, index) => { element.style.left = `${3 + index * FILM_PITCH}px`; });
-    const forward = film.scrollLeft >= lastFilmLeft; lastFilmLeft = film.scrollLeft;
   }
   function updateDetails() {
     if (window.HDRLibraryCommands) commandState();

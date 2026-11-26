@@ -31,7 +31,7 @@ test('fullscreen adds the shown photo when Ctrl-click had deselected it',()=>{
 // Exercise the actual grid drawing with layout math, rather than pinning source wording.
 function gridHarness(count, index, width=900, height=400) {
  const source=fs.readFileSync(require.resolve('../frontend/photo-library'),'utf8');
- const fn=source.slice(source.indexOf('  let gridRequests ='),source.indexOf('  let lastFilmLeft ='));
+ const fn=source.slice(source.indexOf('  let gridRequests ='),source.indexOf('  let FILM_PITCH ='));
  const state={active:true,view:'grid',photos:Array.from({length:count},(_,i)=>({path:String(i)})),pins:[],index,size:190,cells:new Map()};
  const grid={clientWidth:width,clientHeight:height,scrollTop:0}, space={style:{}};
  const context={selected:()=>state.photos[state.index],state,grid,space,HDRLibraryLayout:require('../frontend/library-layout'),$:()=>({}),reconcile:()=>0,paintMemoryNeeds(){}};
