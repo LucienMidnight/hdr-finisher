@@ -3,7 +3,6 @@ window.HDRRetouchGPU=(()=>{
  const cache=new WeakMap();
  function source(m){
   const a=k=>`${m.input[k]}u`,s=k=>`${m.scratch[k]}u`,f=v=>`${Number(v).toExponential(9)}`;
-  const remap=(m.reference_windows||[]).map(r=>`if(i>=${r.offset}u&&i<${r.offset+r.width*r.height*3}u){let pixel=(i-${r.offset}u)/3u;let full=${m.reference_offset}u+((${r.top}u+pixel/${r.width}u)*${m.reference_width}u+${r.left}u+pixel%${r.width}u)*3u;return vec3f(input[full],input[full+1u],input[full+2u]);}`).join('');
   const common=`
 struct Params {v:vec4u};
 @group(0) @binding(0) var<storage,read> input:array<f32>;
@@ -11,7 +10,7 @@ struct Params {v:vec4u};
 @group(0) @binding(2) var<storage,read_write> output:array<f32>;
 @group(0) @binding(3) var<uniform> param:Params;
 const W:i32=${m.w}i; const H:i32=${m.h}i;
-fn rgb(i:u32)->vec3f{${remap}return vec3f(input[i],input[i+1u],input[i+2u]);}
+fn rgb(i:u32)->vec3f{return vec3f(input[i],input[i+1u],input[i+2u]);}
 fn load3(i:u32)->vec3f{return vec3f(scratch[i],scratch[i+1u],scratch[i+2u]);}
 fn put(i:u32,v:vec3f){scratch[i]=v.x;scratch[i+1u]=v.y;scratch[i+2u]=v.z;}
 fn emit(i:u32,v:vec3f){output[i]=v.x;output[i+1u]=v.y;output[i+2u]=v.z;}

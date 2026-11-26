@@ -1,3 +1,14 @@
+## November 26: exact Retouch GPU input comparison
+
+The GPU kernel driver now independently builds one packet through the production
+bounded reader and one directly from the frozen whole photo. It checks exact
+metadata and packet bytes, then compares the resulting pixels and donor centres
+bit for bit using the same production shader. The old test injected a
+whole-photo addressing branch into one shader, causing Metal to round 11 Donor
+Texture channels and 193 native Original Texture channels differently despite
+identical source bytes and donor centres. All seven cases pass twice on the
+minimum Mac. The production repair computation and comparison limit did not change.
+
 ## November 16: safe linked SDR built and scoped qualification
 
 Whole-photo Match now tries the trial's body/colour-best output tail, then

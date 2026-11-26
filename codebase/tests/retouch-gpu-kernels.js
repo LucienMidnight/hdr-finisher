@@ -13,14 +13,21 @@ const {execFileSync}=require('node:child_process');
   await page.evaluate(async()=>{window.__retouchGpu=new HDRWebGPUPreview(document.createElement('canvas'));if(!await __retouchGpu.initialize())throw Error('GPU unavailable');});
   const results=[];
   for(const c of JSON.parse(fs.readFileSync(input,'utf8'))){
+   // There must be no difference in the actual packet (including search and
+   // donor data), and both runs must execute the same production shaders.
+   assert.deepEqual(c.meta,c.reference,`Bounded packet metadata differs in ${c.name}`);
+   assert.ok(c.body===c.whole,`Bounded packet bytes differ in ${c.name}`);
    const result=await page.evaluate(async c=>{
     const decode=s=>Uint8Array.from(atob(s),ch=>ch.charCodeAt(0)).buffer;
     const started=performance.now();const output=await HDRRetouchGPU.run(__retouchGpu.device,c.meta,decode(c.body),async()=>{},512*1024*1024);
     const replay=await HDRRetouchGPU.run(__retouchGpu.device,c.meta,decode(c.body),async()=>{},512*1024*1024);
     const whole=await HDRRetouchGPU.run(__retouchGpu.device,c.reference,decode(c.whole),async()=>{},512*1024*1024);
-    const identical=(left,right)=>new Uint8Array(left).every((v,i)=>v===new Uint8Array(right)[i]);
-    if(!identical(output.pixels,replay.pixels))throw Error('GPU replay changed pixels');
-    if(!identical(output.pixels,whole.pixels))throw Error('Bounded job differs from whole-photo GPU input');
+    const identical=(left,right)=>{
+     const a=new Uint8Array(left),b=new Uint8Array(right);
+     return a.length===b.length&&a.every((v,i)=>v===b[i]);
+    };
+    if(!identical(output.pixels,replay.pixels))throw Error(`${c.name}: GPU replay changed pixels`);
+    if(!identical(output.pixels,whole.pixels))throw Error(`${c.name}: Bounded job differs from whole-photo GPU input`);
     const values=new Float32Array(output.pixels),expected=new Float32Array(decode(c.cpu));
     let mean=0,max=0;for(let i=0;i<expected.length;i++){if(!Number.isFinite(values[i]))throw Error('Non-finite output');const d=Math.abs(values[i]-expected[i]);mean+=d;max=Math.max(max,d);}
     let differingDonors=0;for(let i=0;i<c.donors.length;i++)if(values[expected.length+i*2]!==c.donors[i][0]||values[expected.length+i*2+1]!==c.donors[i][1])differingDonors++;

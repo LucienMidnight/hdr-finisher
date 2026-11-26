@@ -173,7 +173,6 @@ names except for desktop drivers. Every still-failing selected driver is listed.
 
 | Driver | Category and evidence | Action / remaining qualification |
 | --- | --- | --- |
-| `retouch-gpu-kernels.js` | b — same `Bounded job differs from whole-photo GPU input` on tag and current | Kept exact equality; PC confirmation required. |
 | `performance/retouch-latency.js` | b — both exceed the 1-second spot-removal guard on this Mac; fresh current Fit 1.513–1.773 s | Recorded in performance table; no budget change. |
 | `desktop/tests/proof-grade-diagnostic.js` | c — `source_relink_required` for protected DSC00950 project | Its saved source is `D:\Photos\Play_Raw\Fantastic light over village - AdamFromCanada\DSC00950.ARW`; project unchanged. A valid source grant/relinked disposable copy is needed. |
 | `gpu-denoise-measurement.js` | c — missing noise-free linear EXR render >=540x540 in HDR Test Images | Cleanup now closes Electron on fixture failure; two prompt errors replace the old 15-minute hang. Steve must supply the render. |
@@ -232,9 +231,9 @@ holds the CPU for that save. See the November 26 performance-table entry.
 
 **Release recommendation: block 0.9.3 qualification.** In particular, exact Full
 Denoise and Film/Lens completion regress against the same-Mac tag, and required
-GPU delivery repeatability/live-tile routes are not qualified. Retouch exact
-input equality and supported-Mac reliability remain real failures even where
-pre-existing. Missing protected-project/denoise reference coverage also prevents
+GPU delivery repeatability/live-tile routes are not qualified. Retouch spot
+removal is still over its one-second guard on this Mac. Missing
+protected-project/denoise reference coverage also prevents
 claiming the required real-project accuracy checks passed. PC confirmation is
 listed in AGENTS.md; a PC pass alone does not qualify the minimum Mac. The
 coordinator must also obtain the required all-platform packaged workflow pass
