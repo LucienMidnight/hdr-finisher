@@ -696,12 +696,29 @@ launch and shutdown. These are driver checks, not Grade response benchmarks.
 | Check | Result | Conditions |
 | --- | --- | --- |
 | Normal zoomed Denoise | 4/5 passed in 23.26–33.66 s | One run stopped in 19.35 s because the deliberately requested whole-frame parity reference was refused at 0.00 GiB of safe headroom, before the straighten. |
+| Whole-frame reference admission recheck | 5/5 passed in 21.42-25.02 s | Unchanged driver and limits, with a temporary admission trace. Normal macOS pressure, 0.64-2.80 GiB safely available across 7968px native-stream requests; 288 MiB required. Every reference matched the region to zero levels. |
 | Zoom after straighten, with memory contention | Passed in 36.88 s | 900 MiB competing allocation. The 7968px map returned 200 while a full preview required 3.41 GiB and only 3.12 GiB was safely available. |
 | Zoom after straighten, display asleep | Passed in 29.63 s | Display asleep before launch and at exit. The map returned 200 with 2.64 GiB safely available versus 3.41 GiB required by a full preview. The full source stream still refused with 507, and the tiled picture succeeded. |
 
 All passes kept bypass exact and the visible patch matched the whole-frame
 reference exactly. A forced settle timeout named the blocked zoom refinement
 timer and exited without waiting for the release runner.
+
+Earlier failures occurred at the forced whole-frame reference, not the
+region render. At three refusals macOS reported warning pressure and the
+Mach reader measured 0.98-1.29 GiB available. Adjacent `vm_stat` samples
+independently gave 0.76-1.21 GiB. This leaves zero above the unchanged 2 GiB
+reserve. The native stream borrows the resident pixels and charges only the
+existing fixed overhead and two encoding strip copies. The check does not
+subtract app reservations or charge the resident image again. No memory
+accounting or limit changed.
+
+Proposed driver change if the reference keeps flaking: capture the regional
+result and finish its bypass and straighten checks in the first Electron
+session. Replay the same source, grade and viewport in a fresh session for
+the whole-frame reference, before warming the region caches. Keep the
+same-size capture and one-level comparison, and still prove that the tiled
+pass never fetched the whole source.
 
 ## November 26: CPU DNG correction on the minimum Mac
 
