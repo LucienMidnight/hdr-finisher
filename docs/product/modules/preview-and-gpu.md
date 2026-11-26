@@ -2,11 +2,24 @@
 
 - **Owner:** Steve
 - **Master PRD:** [PRD](../PRD.md)
-- **Last status check:** October 18, 2026, against the code.
+- **Last status check:** November 26, 2026, resource ownership and route contracts; numerical qualifications retain their dates.
 - **Code:** frontend `webgpu-preview.js`, `webgpu-shaders.js`, `gpu-*.js`
   (including `gpu-param-layout.js`, `graph-scale.js`), `gpu-render-plan.js`,
   scopes UI; backend `render_cache.py`, `cpu_strips.py`, `preview.py`,
   `scopes.py`, `overlay.py`, `peak_*.py`.
+
+## November 26: frontend review validation
+
+588 targeted Node checks pass across 56 GPU, scheduling, controls, mask,
+geometry, Denoise, Film and scope test files. The PC shared HSL GPU/CPU oracle
+passes all 35 whole/tile/reduced-scale cases, zero tile seams, Global/Local
+equality, preparation reuse and invalidation, with no WebGPU validation errors.
+The oracle now retires buffers immediately after submission and removes its
+disposable profile. It ran through the native Electron wrapper and shared lock
+at 2560x1440; Steve's running app stayed open. No shader arithmetic, tolerance,
+budget or successful image result was changed. No end-to-end speedup is claimed.
+The full suites and protected Vignette, Match SDR and delivery-finishing work
+remain owned by their other reviewers.
 
 ## November 26: partial GPU allocation cleanup
 
