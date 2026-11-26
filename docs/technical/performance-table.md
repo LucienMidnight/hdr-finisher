@@ -4355,6 +4355,30 @@ during a grant was 1.402 GB. Both runs passed all three DNGs on both routes,
 all 59 synthetic geometry cases, and the existing finished-pixel and border
 checks. No tolerance, admission limit or output changed.
 
+## November 26: Library signed Bayer detail and Edge colour admission
+
+MacBook Neo, A18 Pro, 8 GB, 1408×794 points, unpackaged Electron under the
+shared GPU lock. Default 4.0 GB app ceiling, 2 GiB shared GPU budget and
+93.3 MB reserved for drawing.
+
+| 42.56 MP Bayer source | GPU reservation before | Corrected GPU reservation |
+| --- | ---: | ---: |
+| Ordinary native detail | 2.110 GB | 1.429 GB |
+| Edge colour without saved repairs | 2.110 GB | 1.940 GB |
+
+At merged `74286a54`, the old estimate plus draw room exceeded the shared
+GPU cap by 55.8 MB before any other GPU work. The whole-app estimate was
+2.405 GB including the CPU decode. Stage C, GPU RAW Single and Live Native
+timed out at their 90, 120 and 180-second waits respectively. Temporary
+Recovery reached its 300-second runner deadline before the forced invalid
+pixels could exercise the CPU fallback.
+
+Denoise alone at `3067a98e` reproduced the Stage C and Live Native
+timeouts. Temporary Recovery had the same ungranted GPU reservation after
+60.3 s and was stopped once diagnosed. GPU RAW Single on that branch
+stopped earlier, at a separate native crop parity assertion before Single
+zoom. The merged reference run passed those pixel comparisons.
+
 ## November 26: Grade Retouch spot removal
 
 MacBook Neo A18 Pro, 8 GB, 1408x794 points, unpackaged Electron under the

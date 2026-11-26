@@ -130,6 +130,21 @@ test('linear DNG reservation covers RGB conversion on the 8 GB Mac without Bayer
  assert.ok(HDRLibraryGpuRaw.rawBudget(meta,[100000])>bytes);
 });
 
+test('42 MP signed Bayer development and Library drawing fit the shared 2 GiB GPU budget',()=>{
+ const width=5320,height=8000,pixels=width*height;
+ const meta={width,height};
+ const drawRoom=640*640*64+64*1024*1024;
+ const sourceRoom=2*1024**3-drawRoom;
+ const native=HDRLibraryGpuRaw.rawBudget(meta,[100000]);
+ assert.ok(native>=pixels*28 && native<=sourceRoom);
+ const edgeColour={...meta,raw_import_settings:{highlight_reconstruction:{enabled:true,method:'edge_colour_v1'}}};
+ for(const sizes of [[640,2560],[100000]]){
+  const bytes=HDRLibraryGpuRaw.rawBudget(edgeColour,sizes);
+  assert.ok(bytes>=pixels*44 && bytes<=sourceRoom);
+ }
+ assert.ok(HDRLibraryGpuRaw.rawBudget({...meta,repairs:[{}]},[100000])>native);
+});
+
 test('DNG footprints enclose independent per-channel maps across off-centre and non-monotone warps',()=>{
  const {dngFootprint}=HDRLibraryGpuRaw.shared;
  const warp={width:8000,height:6000,center:[2700,3800],radius:6600,

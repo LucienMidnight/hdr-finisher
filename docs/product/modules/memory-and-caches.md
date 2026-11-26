@@ -1,3 +1,14 @@
+### November 26: Library signed Bayer GPU admission
+
+The Library reserves the largest stage, not the sum of scratch from stages
+that run at different times. Plain signed Bayer development uses 32 bytes per
+photosite even at 100%. The native reduction peaks at 28 bytes per photosite,
+like the signed demosaic combine, before fixed overhead. Edge colour keeps its
+44-byte rate because both green candidate buffers are gone before it runs.
+Saved repairs and the existing complex RGB routes keep their estimates.
+The GPU draw reservation, shared GPU budget, app ceiling and OS reserve are
+unchanged.
+
 ### November 17: signed RAW scratch accounting; no allowance changes
 
 Signed Bayer AHD uses eight bytes per green-candidate pixel rather than four.

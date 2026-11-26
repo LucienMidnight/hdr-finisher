@@ -1674,12 +1674,15 @@
     if(meta.dng_warp)return dngBudget(meta,edges);
     if(meta.dng_linear?.width && !edges.includes(100000) && !meta.repairs?.length && !meta.colour?.authored_sdr)
       return linearDngBudget(meta,edges);
-    // Signed green candidates take eight bytes/photosite rather than four.
-    // Account for the extra scratch within the unchanged scheduler budgets.
-    // RGB holds its input and three planes. Keep additional headroom for
-    // samples, reductions and readback; complex graphs retain their estimate.
-    const complex=meta.repairs?.length || meta.dng_linear || meta.raw_import_settings?.highlight_reconstruction?.method === "edge_colour_v1" || edges.includes(100000);
-    const perPixel=complex ? 48 : 32;
+    // Signed Bayer combine holds 28 bytes/photosite. Both green candidates
+    // are freed before Edge colour, lens remap and reduction. Plain native
+    // reduction also peaks at 28: the three input and three output planes
+    // plus one horizontal pass. Edge colour's existing 44-byte peak is a
+    // separate stage, so it does not inherit the extra signed green scratch.
+    const highlight=meta.raw_import_settings?.highlight_reconstruction;
+    const edgeColour=highlight?.enabled && highlight.method === "edge_colour_v1";
+    const complex=meta.repairs?.length || meta.dng_linear || (meta.rgb && edges.includes(100000));
+    const perPixel=complex ? 48 : edgeColour ? 44 : 32;
     let estimate=meta.width*meta.height*perPixel+64*1024*1024;
     if(meta.rgb){
       const lanes=meta.colour?.authored_sdr || meta.sdr_reference ? 6 : 3;
