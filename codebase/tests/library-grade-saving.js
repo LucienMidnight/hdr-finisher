@@ -29,6 +29,10 @@ const read = photo => JSON.parse(fs.readFileSync(photo + ".hdrf", "utf8"));
     }, exposure);
     const answer = text => page.locator("#app-dialog[open] button").filter({ hasText: text }).click();
     const autosave = page.locator(".top-actions #grade-autosave");
+    const metadata = page.locator("#source-rail-expand");
+    const revealMetadata = async () => {
+      if (await metadata.getAttribute("aria-expanded") === "false") await metadata.click();
+    };
     assert.ok(await autosave.isVisible(), "Mockup autosave button stays in the desktop header before a photo is opened");
     assert.equal(await autosave.textContent(), "Autosave on");
     await open(photos[0]);
@@ -47,7 +51,7 @@ const read = photo => JSON.parse(fs.readFileSync(photo + ".hdrf", "utf8"));
     assert.ok(await autosave.isVisible(), "Autosave stays reachable while browsing the Library");
     assert.equal(await page.locator("#app-dialog[open]").count(), 0, "Browsing never asks");
     await page.evaluate(() => activateWorkflowTab("grade"));
-    if(await page.locator("#source-rail-expand").getAttribute("aria-expanded")==="false")await page.locator("#source-rail-expand").click();
+    await revealMetadata();
     await page.locator("#grade-save-now").click();
     await page.waitForFunction(() => document.getElementById("grade-save-state").textContent === "No unsaved changes");
     const saved = read(photos[0]).grade;
@@ -59,14 +63,17 @@ const read = photo => JSON.parse(fs.readFileSync(photo + ".hdrf", "utf8"));
     console.log("PASS: sidecar save and reopen, both grades and crop, autosave off, save state, and browsing.");
 
     await edit(1);
+    await revealMetadata();
     const transition = open(photos[1]);
     await page.locator("#app-dialog[open]").waitFor();
     assert.equal(await page.locator("#app-dialog-title").textContent(), "Unsaved changes");
     assert.equal(await page.locator("#app-dialog-message").textContent(), "Save changes to first.png before opening next.png?");
+    assert.equal(await metadata.getAttribute("aria-expanded"), "true", "Metadata is open behind the prompt");
     await page.keyboard.press("Escape");
     await page.waitForFunction(() => !document.getElementById("app-dialog").open, null, {timeout:10000})
       .catch(() => {throw Error("Escape did not close the unsaved-changes dialog while Metadata was open");});
     await transition;
+    assert.equal(await metadata.getAttribute("aria-expanded"), "true", "Escape only closes the dialog");
     assert.equal(await page.evaluate(() => state.session.source.filename), "first.png");
     await open(photos[0]); // Same photo does not ask.
     assert.equal(await page.locator("#app-dialog[open]").count(), 0);
@@ -74,7 +81,7 @@ const read = photo => JSON.parse(fs.readFileSync(photo + ".hdrf", "utf8"));
     assert.equal(await autosave.getAttribute("aria-pressed"), "true");
     await page.waitForFunction(() => document.getElementById("grade-save-state").textContent === "All changes saved");
     assert.equal(read(photos[0]).grade.global_adjustments.hdr.exposure, 1);
-    console.log("PASS: exact prompt, Escape cancels, same-photo opening, and turning autosave on saves at once.");
+    console.log("PASS: exact prompt, Escape cancels without closing Metadata, same-photo opening, and turning autosave on saves at once.");
 
     await autosave.click();
     await edit(1.5);
@@ -83,7 +90,7 @@ const read = photo => JSON.parse(fs.readFileSync(photo + ".hdrf", "utf8"));
     fs.writeFileSync(photos[0] + ".hdrf", JSON.stringify(outside));
     await page.waitForTimeout(1100);
     assert.equal(await page.locator("#app-dialog[open]").count(), 0, "Outside marks are not grade conflicts");
-    if(await page.locator("#source-rail-expand").getAttribute("aria-expanded")==="false")await page.locator("#source-rail-expand").click();
+    await revealMetadata();
     await page.locator("#grade-save-now").click();
     await page.waitForFunction(() => document.getElementById("grade-save-state").textContent === "No unsaved changes");
     assert.equal(read(photos[0]).marks.rating, 5); assert.equal(read(photos[0]).future, "keep");
@@ -104,6 +111,8 @@ const read = photo => JSON.parse(fs.readFileSync(photo + ".hdrf", "utf8"));
     await answer("Cancel");
     await page.waitForTimeout(200);
     assert.equal(await page.evaluate(() => state.adjustments.hdr.exposure), 2, "Unresolved conflict repeats on actual main-window close");
+    // These later pointer clicks can dismiss the compact rail. Open it to reach Resolve.
+    await revealMetadata();
     await page.locator("#grade-resolve-conflict").click();
     await page.locator("#app-dialog[open]").waitFor(); await answer("Keep my grade");
     await page.waitForFunction(() => document.getElementById("grade-save-state").textContent === "No unsaved changes");

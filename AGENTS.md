@@ -380,9 +380,9 @@ same-Mac v0.9.2 comparisons and exact errors: `docs/known-limitations.md`,
    transport bug, fixed November 25; it now passes on the Mac.)
 4. Confirm zoomed Denoise, Film/Lens 4K-to-Full, repeated GPU delivery and live
    Export tiles on the PC. On the Mac these were fixed by `703e7e58` and pass.
-5. Confirm Grade Escape with Metadata open, Library Stage A real-format drawing,
-   Stage C filter-clear drawing, native RAW Single, temporary recovery, live
-   native detail and precision-source preparation. Same-Mac tag comparisons
+5. Confirm Library Stage A real-format drawing, Stage C filter-clear drawing,
+   native RAW Single, temporary recovery, live native detail and
+   precision-source preparation. Same-Mac tag comparisons
    reproduce these failures; see the separate DNG comparison qualification.
 6. Supply a noise-free linear EXR render >=540x540 for Denoise; provide usable
    source linkage for protected DSC00950.hdrfinisher without overwriting it.

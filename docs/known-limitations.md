@@ -181,7 +181,6 @@ names except for desktop drivers. Every still-failing selected driver is listed.
 | `denoise-zoomed-region.js` | a — tag passes; current fails both fresh comparison attempts, needs 3.41 GiB host work, only 1.20 GiB safely available | Current native Mac memory detection differs from the tag; headroom is a confound, not evidence of a leak. Full reference remains unavailable; no safe small fix or limit change made. |
 | `film-stock-parity.js` | b — same extreme HDR Neutral maximum-paper-gain numerical failure on tag | Full current matrix still fails. Preset disclosure harness repaired; complete character/presets/panel follow-up now passes separately. |
 | `gpu-highlight-compression-parity.js` | b — same generated-SDR linear-sRGB peak-reduction divergence on tag | No numerical guard changed. Separate encoded HDR ceiling/Proof matrix passes. |
-| `library-grade-saving.js` | b — both versions leave the unsaved-changes dialog open after Escape while Metadata is open | Save/reopen phase passes. Bounded assertion exposes the old Escape conflict instead of hanging. |
 | `performance/preview-export-compare.js` | c — same protected-project source linkage unavailable | Helper now reports the missing source promptly; no native relink dialog wait, project rewrite or pixel waiver. |
 | `performance/tier-film-consistency.js` | a — tag completes in 55.9 s; current reaches the 15-minute deadline twice with Full requested and accepted 4096 | New comparative completion failure; cause unresolved. No Full pixel comparison obtained and no scheduler/shader workaround added. |
 | `photo-library-stage-a.js` | b — both reach the same 60-second real-format drawing timeout at line 170 | Portable status-bar and Command-key setup repaired; synthetic stages pass. RAW/DNG/HEIC stage remains unqualified. |
@@ -196,6 +195,10 @@ names except for desktop drivers. Every still-failing selected driver is listed.
 | `library-dng-warp.js` | b/c — tag also cannot prepare the same DxO DNG (`System memory could not be measured`); current reaches the unchanged grant refusal. Tag full-matrix comparison was capped in its first CPU case; restricted DxO GPU comparison establishes unavailability, not an identical budget failure | Current passes 59 geometry probes and DJI CPU/GPU, then DxO GPU preparation refuses ~3.1 GB against the default ~2.5 GB grant. Budget unchanged. |
 | `library-precision-source.js` | b — tag and current refuse ~3.0 GB against the default ~2.5 GB grant | No budget increase; full precision source preparation remains unqualified. |
 | `jxl-source-colour.js` | c — missing native oracle metadata, `KeyError: data_color_encoding` | JPEG XL sample exists; structured native oracle remains Windows-only until Phase 2. |
+
+November 26 follow-up: `library-grade-saving.js` previously reproduced the
+Escape conflict on both versions. The app now cancels the unsaved-changes dialog
+without closing Metadata underneath. The full driver passed twice on the Mac.
 
 Flaky results (d), retained explicitly:
 

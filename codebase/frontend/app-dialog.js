@@ -20,6 +20,16 @@
 (function () {
   const DIALOG_ID = "app-dialog";
 
+  // Give the focused dialog's Escape to the browser's native cancel action.
+  // Stop it before page shortcuts and panels can react or prevent that action.
+  window.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape") return;
+    const dialog = document.getElementById(DIALOG_ID);
+    if (dialog?.open && event.composedPath().includes(dialog)) {
+      event.stopImmediatePropagation();
+    }
+  }, true);
+
   let queue = Promise.resolve();
   // Which presentation currently owns the element.
   let sequence = 0;
