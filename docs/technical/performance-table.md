@@ -8052,3 +8052,16 @@ native scene pixels per photo. ORF finished mean and p99.9 were
 mask was used only for scene-linear figures. The review shows both saved
 grades with Denoise bypassed to isolate Retouch. Its HDR AVIFs and SDR PNGs
 are in `codebase/output/review/retouch-cpu-heal/`.
+
+## November 26: HSL delivery after leaving Grade
+
+MacBook Neo, A18 Pro, 8 GB, 1408×794, shared GPU lock. Two runs of
+`hsl-selection-delivery.js` on the shared checkout based on `74286a54`.
+The driver now leaves Grade before delivery, as the app does. These are
+export-request-to-result times, excluding Proof and comparison, with fast
+checks overlapping the first run. No new speed comparison is inferred.
+
+| Photo and edit | GPU export | Forced-CPU export | Existing checks |
+| --- | ---: | ---: | --- |
+| Balanced Rock, neutral | 8.84–12.44 s | 9.93–13.71 s | Renderer agreement, HDR ceiling and byte-identical Proof pass both runs |
+| Balanced Rock, Global HSL | 14.60–21.05 s | 45.67–62.59 s | Same checks pass. HDR ΔE ITP mean/p99 0.0267/0.0761 vs neutral 0.0237/0.0523 |

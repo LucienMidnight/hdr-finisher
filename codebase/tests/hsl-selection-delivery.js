@@ -27,7 +27,11 @@ const settled=()=>state.acceptedPresentation?.exact&&state.acceptedPresentation.
   await page.waitForFunction(settled,null,{timeout:300000});
   // The RAW route's GPU/CPU gap exists with HSL neutral on this photo, so HSL is
   // judged by what it adds: active agreement within neutral + (0.15 mean, 0.5 p99).
-  const deliver=async(tag)=>{const dir=path.join(root,tag);fs.mkdirSync(dir);const timings={};
+  const deliver=async(tag)=>{
+   // Use the Export workflow's normal hand-off. Grade may still be preparing
+   // Denoise after a settled first picture and correctly preempts delivery.
+   await page.evaluate(()=>activateWorkflowTab('export'));
+   const dir=path.join(root,tag);fs.mkdirSync(dir);const timings={};
    for(const forced of [false,true]){
     await api('/api/delivery/preferences',{force_cpu:forced});const file=path.join(dir,forced?'cpu.jpg':'gpu.jpg');
     await global.HDRFinisherElectronTestHarness.selectExportPath(file);
@@ -47,6 +51,7 @@ const settled=()=>state.acceptedPresentation?.exact&&state.acceptedPresentation.
    console.log(tag,JSON.stringify({...result,...timings}));
    /* Both read-only helper calls enforce the shared encoding allowance. */return result;};
   const configure=active=>page.evaluate(async ({local,active})=>{
+   activateWorkflowTab('grade');
    for(const lane of ['hdr','sdr']){const b=state.adjustments[lane];b.highlight_section_enabled=true;b.highlight_compression_mode='peak_fit';
     if(lane==='hdr'){b.highlight_compression_target_nits=1000;b.highlight_compression_start_nits=400;}
     if(!local){const r=b.hsl.channels.find(c=>c.id==='yellow').recipe;r.ranges[0].width=15;r.ranges[0].feather=21;r.luminance=active?.8:0;r.uniformity=0;r.opacity=1;r.edge=3;r.edge_feather=6;r.edge_detail=75;b.hsl_section_enabled=true;}}
