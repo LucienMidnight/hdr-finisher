@@ -22,10 +22,15 @@ const c = require('./performance/heavy-project-review-common');
     await page.waitForFunction(() => state.overlayPresented && els.previewOverlay.naturalWidth > 0);
     console.log("Overlay presented");
     assert.equal(await page.locator('#preview-overlay').isVisible(), true);
-    // Let the app's own preview and live-overlay work finish first, so none
-    // of it is already on its way to the overlay lane when the burst starts.
-    await page.evaluate(() => { state.previewScheduler.cancel(); clearTimeout(state.refreshTimer); });
-    await page.waitForFunction(() => !state.gpuDraftInFlight && !state.liveOverlay?.running);
+    // Let the app present the edited preview before cancelling residual work.
+    // Cancelling while the viewer is still Updating lets the watchdog rearm
+    // the settle, which can supersede the explicit post-burst overlay request.
+    await page.waitForFunction(() => {
+      const scheduler = state.previewScheduler;
+      return viewerState().status === 'ready' && scheduler.frame == null
+        && !scheduler.frameInFlight && scheduler.settleTimer == null && !scheduler.settleInFlight
+        && !state.gpuDraftInFlight && !state.liveOverlay?.running;
+    });
     // Different edges prevent the requests from sharing one cached frame flight.
     // The backend keeps the newest request to ARRIVE, not the newest sent: the
     // browser opens about 6 connections per host, so the last few requests
@@ -59,9 +64,21 @@ const c = require('./performance/heavy-project-review-common');
       assert(burst.lastIndexOf(200) >= burst.length - 6, `Newest overlay request was dropped: ${burst}`);
     }
     // What the user sees: after a burst, the overlay is current again.
-    await page.evaluate(async () => { await syncGlobalEditState(); await refreshOverlay(960); });
-    await page.waitForFunction(() => state.overlayPresented?.revision === state.editRevision
-      && state.overlayPresented?.longEdge === 960 && els.previewOverlay.naturalWidth > 0);
+    const previousOverlayUrl = await page.evaluate(async () => {
+      await syncGlobalEditState();
+      const before = els.previewOverlay.dataset.objectUrl;
+      await refreshOverlay(960);
+      return before;
+    });
+    await page.waitForFunction(previousUrl => {
+      const overlay = state.overlayPresented;
+      const image = els.previewOverlay;
+      return overlay?.lane === state.currentView && overlay.revision === state.editRevision
+        && overlay.generation === state.previewGeneration[state.currentView] && !overlay.interim
+        && overlay.longEdge === 960 && image.naturalWidth > 0
+        && image.dataset.objectUrl && image.dataset.objectUrl !== previousUrl;
+    }, previousOverlayUrl);
+    assert.equal(await page.locator('#preview-overlay').isVisible(), true);
     await page.evaluate(() => activateWorkflowTab('import'));
     await page.frameLocator('#library-frame').locator('#popout-library').click();
     await page.evaluate(() => activateWorkflowTab('grade'));
