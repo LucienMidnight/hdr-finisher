@@ -1113,7 +1113,8 @@ function restoredBounds(role) {
 function saveWindowBounds(record) {
   const window = record.window;
   if (window.isDestroyed() || window.isMinimized()) return;
-  fs.writeFileSync(windowStatePath(record.role), JSON.stringify(window.getNormalBounds()));
+  try { fs.writeFileSync(windowStatePath(record.role), JSON.stringify(window.getNormalBounds())); }
+  catch (error) { console.warn(`Could not save window bounds: ${error.message}`); }
 }
 
 async function createWindow(role = "main") {
@@ -1329,7 +1330,7 @@ async function beginShutdown() {
   // the backend, clear Proof scratch and let the app quit.
   try {
     for (const record of [...windows.values()]) {
-      try { saveWindowBounds(record); } catch (error) { console.warn(`Could not save window bounds: ${error.message}`); }
+      saveWindowBounds(record);
       if (!record.window.isDestroyed()) record.window.destroy();
     }
     if (backend) {
