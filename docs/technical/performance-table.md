@@ -7292,6 +7292,12 @@ not a speed comparison. Report: `codebase/output/quick-library-check/grid-rails/
 | Return from Grade ? edited thumbnail (Steve's 8807 log review) | No blank tiles | 48.5 ms (one observation) | Nov 8, running app; saved Portra 400 on PA168807.ORF; thumbnail loaded and shown on return, PA168806.ORF stayed ungraded. Diagnostic, no performance comparison |
 | Library Stage A cold-folder diagnostic | No speed qualification | 41.579 s (one observation, not a range) | November 7, 2026; 4b8a549a + driver repair; 2560x1440, D:/Photos/HDR Test Images, concurrent CPU suite; first metadata 40.503 s, first pixel request 40.396 s; peak three probes | Diagnostic only |
 
+## November 26: Library Stage A asset-policy recheck
+
+| Action | Target | Result | Conditions |
+| --- | --- | --- | --- |
+| Open the cold HDR Test Images folder to its first picture | Diagnostic only, no speed qualification | First metadata 385–395 ms, first pixel request 392–402 ms, first completed picture 815–816 ms. Peak two concurrent picture requests. | MacBook Neo, A18 Pro, 8 GB, 1408x794, two locked Electron Stage A passes on `3cd32a5e` plus the asset-policy test fix. No before/after speed comparison. |
+
 ### November 8, 2026 ? focused release-check repair
 
 Measured on main `50822a19` plus this grouped repair, serial shared-lock Electron,
