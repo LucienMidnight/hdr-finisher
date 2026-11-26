@@ -1,3 +1,30 @@
+### November 26, 2026: Library frontend review
+
+Reviewed grid/virtual scrolling, thumbnail/live-tile ownership and cache plumbing,
+folder streaming and big-folder hydration, selection/keyboard and tag ranges,
+original-file commands, paste-grade preparation, batch-export UI/progress and
+metadata Details. GPU RAW/RGB transport and CPU fallback still have active
+callers; no shader, cache allowance, output recipe or delivery math changed.
+
+Fixed cross-folder paint-timer cancellation and detail requests inheriting a
+previous folder's abort. Tag Shift-selection now follows tag identity through
+sorting/filtering, and Meta+Shift preserves additions. Incomplete GPS metadata
+cannot crash Details. Preview completion keeps its real success/failure when
+refreshing disk-usage information fails. A late batch-selection response cannot
+replace newer photos, selection or an explicitly chosen export destination.
+
+Removed unused scroll look-ahead calculations, batch initialization/view flags,
+an unreachable filter-state branch, a redundant stopwatch assignment and an
+unused ready-window query. Batch progress groups results once per refresh;
+controlled JavaScript timings are in the performance table. All desktop check
+scripts retain test/tool callers and were kept.
+
+Validation: 414 grouped targeted Node tests passed, followed by the additional
+batch-selection race regression and 30 relevant rechecks after final cleanup.
+Six desktop-security Python tests and the focused desktop preview contract
+passed. No extra GPU run was queued; the parent review owns the final visible
+Library check. The earlier occluded run remains an invalid visibility check.
+
 ### November 24, 2026: Saved Retouch replay
 
 The Library keeps GPU source development and draws as before. It gathers

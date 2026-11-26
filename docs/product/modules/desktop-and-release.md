@@ -1,3 +1,16 @@
+### November 26, 2026: window-state write failures
+
+Saving window bounds is best effort for close, Windows session end and app
+shutdown. A full disk or unwritable preferences folder logs the failure and
+cannot interrupt the close/save decision flow. The duplicate shutdown-only
+exception wrapper is removed. A targeted regression checks failed persistence
+and retention of the previous bounds for minimized/destroyed windows.
+
+The review also traced main/preload IPC, menus/shortcuts, dialogs, window
+ownership, startup/backend readiness, shutdown/process cleanup and packaging
+references. Active diagnostics and test shell helpers were retained. New native
+window/GPU checks and package builds are left to the parent review.
+
 ### November 26, 2026: retired native-browser bridge
 
 Removed the unused native project Open/Save and export-directory IPC handlers,
