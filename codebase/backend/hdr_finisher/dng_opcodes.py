@@ -143,6 +143,8 @@ def parse_gain_map(parameters: bytes) -> GainMapParameters:
         raise DngOpcodeError("GainMap AreaSpec has invalid planes or pitch")
     if points_v < 1 or points_h < 1 or map_planes < 1:
         raise DngOpcodeError("GainMap dimensions and plane count must be positive")
+    if not np.isfinite([spacing_v, spacing_h, origin_v, origin_h]).all():
+        raise DngOpcodeError("GainMap spacing and origin must be finite")
     if spacing_v <= 0.0 or spacing_h <= 0.0:
         raise DngOpcodeError("GainMap spacing must be positive")
     count = points_v * points_h * map_planes
