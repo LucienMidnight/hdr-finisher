@@ -1,3 +1,9 @@
+## November 26 - Batch progress result lookup
+
+| Action | Before | After | Conditions |
+| --- | --- | --- | --- |
+| Batch grid progress refresh JavaScript (DOM stand-ins, not compositor time) | 63.45-72.42 ms; median 66.90 ms | 4.11-8.84 ms; median 5.60 ms | Windows PC, Node 24, actual `renderGrid` extracted into the `batch-grid.test.js` harness; 2,000 photos / 4,000 results, rows retained, one warm-up per arm and nine alternating pairs. Before: `a5e46ad3`; after: same base with one result-grouping pass per refresh. 5% noise allowance. Badge precedence, active progress, selected state and row identity unchanged. No claim about end-to-end screen time. |
+
 Local evidence links under `codebase/output/` refer to ignored measurement
 artifacts. They may be absent on another device or after scratch cleanup;
 the dated results below remain the record, not a promise those files ship.

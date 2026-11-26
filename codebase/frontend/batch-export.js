@@ -131,6 +131,12 @@
     const grid=$("batch-grid");if(!grid)return;
     // Keep decoded images and keyboard focus in place while progress is polled.
     const old=new Map([...grid.children].map(e=>[e.dataset.path,e]));
+    const byPhoto=new Map();
+    for(const result of model.job?.results||[]){
+      let group=byPhoto.get(result.photo);
+      if(!group)byPhoto.set(result.photo,group=[]);
+      group.push(result);
+    }
     const tiles=model.photos.map((p,index)=>{
       let row=old.get(p.path);
       if(!row){
@@ -144,7 +150,7 @@
       const caption=row.lastChild;caption.replaceChildren(node("strong",p.name+(p.copy_name?` · ${p.copy_name}`:"")),node("small",`${fileCount(p)} ${fileCount(p)===1?"file":"files"}`));
       for(const flag of [p.unsaved?"Unsaved changes in Grade · last saved grade used":"",hdrSkipped(p)?"SDR only · HDR version skipped":"",largeAvifRisk(p)?"Native AVIF above 50 MP may swap or fail under 16 GB RAM · resize or use HDR JPEG XL":""])if(flag)caption.append(node("span",flag,"batch-flag"));
       picture.querySelectorAll(".batch-badge,progress").forEach(e=>e.remove());
-      const results=model.job?.results.filter(r=>r.photo===p.path)||[],active=model.job?.active_photo===p.path&&!terminal(model.job);
+      const results=byPhoto.get(p.path)||[],active=model.job?.active_photo===p.path&&!terminal(model.job);
       const skipped=results.filter(r=>r.outcome==="skipped").length,failed=results.some(r=>r.outcome==="failed");
       const label=failed?"Failed":active?(model.job.stage||"Exporting…"):skipped?`${skipped} skipped`:results.length?"Done":"";
       if(label)picture.append(node("span",label,"batch-badge"));
