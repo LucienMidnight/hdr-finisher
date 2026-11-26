@@ -70,6 +70,61 @@ and `codebase/output/stacked-raw-*.log`. No push, release or installer build.
 Further approximation or a grain-cache budget change needs Steve's decision;
 Steve should try the app after restarting before more responsiveness work.
 
+## November 25: shared-memory admission in Grade
+
+On unified memory, Grade checks for room before loading a source and
+before allocating a render graph or swapping the presentation surface.
+It reclaims unused inputs, drains submitted work and asks for a fresh
+memory sample before refusing. A refusal does not clear the current
+picture, and a settled edit or zoom can use a screen-sized CPU replacement.
+Sharp and soft canvas backing images count once each while both are
+live. Keeping the inputs for an already presented Denoise tile does not
+allow the tile cache to grow beyond its existing share. See the
+[memory policy](memory-and-caches.md#november-25-shared-memory-admission-for-grade-preview).
+
+## November 21: correlated Grade Grain decisions
+
+The desktop log includes the GPU configuration and the reason and memory
+snapshot for Grade Grain refusals and retries. Grade cancels replaced work
+without holding a failure against the source. Temporary failures can retry
+once after recovery, including after device rebuild. Sticky source failures
+go to the existing fallback. The timeline links preparation and the accepted
+route to the originating Grade action.
+[Diagnostic log and reason codes](../../technical/logging.md)
+## November 21: unified memory and narrower Grain calibration scratch
+
+Grade Grain checks whole-app headroom on Apple Silicon in addition to the
+existing graphics budget. Background pressure queues reclaim until renders
+and scopes finish. A live reservation can release an unused source proxy
+while its own source and the visible picture stay resident.
+
+Grain calibration stores its single-channel variance in `r32float` when the
+device can compile that storage pipeline. It keeps float32 values and the
+same arithmetic, saving 12 bytes per calibration scratch pixel. Resolve
+scratch that is reused for multi-channel work retains its existing formats.
+
+## November 21: bounded native work for Grade Grain
+
+Fine and Clean Grain use a single haloed calibration rectangle at a time.
+The 512-pixel row cores split at the existing 512-pixel tile boundaries.
+The planner uses the device texture limit, storage binding limit and
+readback-buffer limit and reduces the partial sums in their original order.
+Fit processes output row and column bands when the full-width native strip
+is too wide for the working texture or a single source-tile request. Its
+Lanczos and local range windows remain anchored to the full image. Only the
+reduced Fit picture stays on the GPU for later presentation.
+
+Each upload keeps the existing two-slot Grade strip ring. Individual
+source-tile requests fit the endpoint's rectangle limits and the device's
+staging capacity. Native Clean Grain tiles include the original wavelet and
+Small or Large colour margins. Micro Grain checks its Bayer endpoint, padded
+storage, dispatch and texture limits before sharing bands. The existing
+resident-source delivery size gate still applies. The
+[Windows PC measurements](../../technical/performance-table.md#november-21--large-photo-grain-in-grade)
+record route and memory at 2 GiB. The merged GPU and logging paths also
+passed with Clean Small at Fit and 110%, and with Bayer Micro Grain at 110%.
+Finished HDR/SDR comparison and the large Micro Fit check are pending.
+
 ## November 15: CPU preview diagnostics and grain cancellation
 
 Grade CPU preview requests now write `grade_preview_cpu` to the existing backend
@@ -334,6 +389,13 @@ after a two-minute wait and has a six-minute attempt cap of its own.
 5. The "Later" performance rows, when Steve asks.
 6. Narrow Grade's out-of-memory/timeout retry classification to established
    external contention; Library's P1-C recovery bound does not change it.
+7. **Completed November 25:** Navigate and scopes recover after a
+   refused zoom or auxiliary GPU request without waiting for native
+   resolution. The scope peak remains labelled as a preview or estimate.
+   CPU Micro Grain instruments retry when a matching whole-picture source
+   arrives; a viewport tile alone cannot supply it. The CPU Micro Grain
+   viewport now grades Scan Sharpening's three-pixel reach around the
+   visible region and trims it, so its edges match the whole frame.
 
 ## 6. Detail and history
 

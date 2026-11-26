@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 from collections import OrderedDict
+from concurrent.futures import Future, wait
+from contextlib import ExitStack
+from contextvars import Context
 from dataclasses import InitVar, dataclass, field
 import hashlib
 import json
@@ -9,7 +12,8 @@ import os
 from pathlib import Path
 import shutil
 import struct
-from threading import Event, RLock, get_ident
+from tempfile import TemporaryDirectory
+from threading import Condition, Event, Lock, RLock, get_ident
 import time
 from typing import Any, Callable
 import zlib
@@ -20,12 +24,14 @@ import numpy as np
 from .adjustments import apply_adjustments
 from .color_context import DEFAULT_HDR_REFERENCE_WHITE_NITS, RenderColorContext
 from .config import APP_DATA_DIR
+from .delivery_frames import DeliveryFrame
 from .cpu_strips import (
     DEFAULT_STRIP_BUDGET_BYTES,
     StripCancelled,
     StripExecutionRefused,
     StripReport,
     render_in_strips,
+    scan_sharpening_halo,
     strip_execution_refusals,
 )
 from .finishing import (
@@ -40,6 +46,7 @@ from .local_adjustments import (
     ACESCG_LUMA,
     compile_geometry_fixed_mask,
     compile_geometry_fixed_mask_region,
+    compile_geometry_fixed_mask_to_frame,
     mask_influence_opacity,
     sample_luminance_evs,
     spatial_mask_signature,
@@ -51,7 +58,7 @@ from .mask_work import (
     phase as mask_phase,
     shared_work as mask_shared_work,
 )
-from .models import AdjustmentState, GeometryAdjustments, LocalAdjustment, MaskExpression, MaskPoint, PreviewKind
+from .models import AdjustmentState, FilmLookAdjustments, GeometryAdjustments, LocalAdjustment, MaskExpression, MaskPoint, PreviewKind
 from .preview import ResizeCancelled, downsample_image
 from .preview_geometry import limit_geometry_overshoot
 
@@ -61,6 +68,10 @@ logger = logging.getLogger(__name__)
 
 class StaleRender(RuntimeError):
     """Raised before expensive work when a newer render superseded this one."""
+
+
+class MicroScopeSourceUnavailable(RuntimeError):
+    """Raised when a scope cannot reuse a matching whole-picture Micro source."""
 
 
 def adjustment_signature(adjustments: AdjustmentState) -> str:
@@ -109,7 +120,7 @@ def _clamp_output_rect(rect: tuple[int, int, int, int], width: int, height: int)
     return left, top, right, bottom
 
 
-SOURCE_MIP_FORMAT_VERSION = 2
+SOURCE_MIP_FORMAT_VERSION = 3
 SOURCE_MIP_MAGIC = b"HDRMIP01"
 _SOURCE_MIP_HEADER = struct.Struct("<8sIIIIIIQI")
 _SOURCE_MIP_DTYPE_FLOAT32 = 1
@@ -232,6 +243,16 @@ class SourceMipStore:
             "singleflight_waits": 0,
         }
 
+    def peek_level(self, identity: SourceMipIdentity, edge: int) -> np.ndarray | None:
+        with self._lock:
+            return self._memory.get((identity.digest(), edge))
+
+    def has_disk_level(self, identity: SourceMipIdentity, edge: int) -> bool:
+        try:
+            return self.disk_budget_bytes > 0 and self._level_path(identity, edge).is_file()
+        except OSError:
+            return False
+
     def level(
         self,
         identity: SourceMipIdentity,
@@ -241,6 +262,8 @@ class SourceMipStore:
         is_current: Callable[[], bool] | None = None,
         progress: Callable[[int, int], None] | None = None,
         persist: bool = True,
+        bounded: bool = False,
+        cached_only: bool = False,
     ) -> tuple[np.ndarray, str]:
         """Return the level for ``long_edge`` and how it was answered.
 
@@ -278,7 +301,7 @@ class SourceMipStore:
         try:
             if persist:
                 self._ensure_cleaned()
-            array, state = self._load_or_build(identity, edge, image, is_current, progress, persist)
+            array, state = self._load_or_build(identity, edge, image, is_current, progress, persist, bounded, cached_only)
             with self._lock:
                 if is_current is not None and not is_current():
                     raise StaleRender("A newer source replaced this mip request.")
@@ -454,6 +477,8 @@ class SourceMipStore:
         is_current: Callable[[], bool] | None,
         progress: Callable[[int, int], None] | None,
         persist: bool,
+        bounded: bool,
+        cached_only: bool,
     ) -> tuple[np.ndarray, str]:
         if self.disk_budget_bytes > 0:
             loaded = self._read_disk_level(identity, edge)
@@ -464,6 +489,8 @@ class SourceMipStore:
                     self._counters["disk_hits"] += 1
                     self._counters["bytes_read"] += int(loaded.nbytes)
                 return loaded, "disk"
+        if cached_only:
+            raise StaleRender("The reserved source mip is no longer available.")
         if is_current is not None and not is_current():
             raise StaleRender("A newer source replaced this mip build.")
         started = time.perf_counter()
@@ -477,7 +504,8 @@ class SourceMipStore:
                 progress(completed, total)
         try:
             array = np.ascontiguousarray(
-                downsample_image(image, edge, is_current=is_current, progress=report), dtype=np.float32,
+                downsample_image(image, edge, is_current=is_current, progress=report, bounded=bounded),
+                dtype=np.float32,
             )
         except ResizeCancelled as exc:
             raise StaleRender("A newer source replaced this mip build.") from exc
@@ -521,16 +549,18 @@ class SourceMipStore:
 
     def _read_disk_level(self, identity: SourceMipIdentity, edge: int) -> np.ndarray | None:
         path = self._level_path(identity, edge)
+        expected_width, expected_height = downsample_target_dimensions(identity.width, identity.height, edge)
+        header_size = _SOURCE_MIP_HEADER.size
+        expected_bytes = header_size + expected_width * expected_height * 12
         try:
-            data = path.read_bytes()
+            with path.open("rb") as stream:
+                data = stream.read(expected_bytes + 1)
         except FileNotFoundError:
             return None
         except OSError as exc:
             self._record_filesystem_failure("read", path, exc)
             return None
-        expected_width, expected_height = downsample_target_dimensions(identity.width, identity.height, edge)
-        header_size = _SOURCE_MIP_HEADER.size
-        if len(data) < header_size:
+        if len(data) != expected_bytes:
             self._discard_corrupt(path)
             return None
         magic, version, width, height, channels, dtype, _reserved, data_bytes, crc = _SOURCE_MIP_HEADER.unpack_from(data, 0)
@@ -542,7 +572,7 @@ class SourceMipStore:
             and width == expected_width
             and height == expected_height
             and data_bytes == len(data) - header_size
-            and (zlib.crc32(data[header_size:]) & 0xFFFFFFFF) == crc
+            and (zlib.crc32(memoryview(data)[header_size:]) & 0xFFFFFFFF) == crc
         )
         if not valid:
             self._discard_corrupt(path)
@@ -798,6 +828,9 @@ class SessionRenderCache:
     _singleflight_waits: int = field(default=0, init=False, repr=False)
     _stale_cancellations: int = field(default=0, init=False, repr=False)
     _source_epoch: int = field(default=0, init=False, repr=False)
+    _denoise_source_key: object = field(default_factory=object, init=False, repr=False)
+    grain_preparation_lock: Lock = field(default_factory=Lock, init=False, repr=False)
+    _grain_preparations: dict[PreviewKind, Any] = field(default_factory=dict, init=False, repr=False)
     # The last answer each source edge received, for the transport headers:
     # ``native`` (the decoded frame itself), ``memory``/``disk`` (warm mip),
     # ``built`` (cold mip build) or ``session`` (no persistent store).
@@ -807,11 +840,19 @@ class SessionRenderCache:
     eager_peak_candidates: InitVar[bool] = True
 
     def __post_init__(self, eager_peak_candidates: bool) -> None:
+        self._micro_prepared = {}
+        self._micro_previews = {}
+        self._micro_tiles = None
+        self._micro_flights = {}
+        self._micro_condition = Condition(self._lock)
+        self._micro_render_lock = Lock()
+        self._micro_closed = False
+        self._micro_source_epoch = 0
         self._hue_stages: OrderedDict = OrderedDict()
         self._hsl_inputs: OrderedDict = OrderedDict()
         self._ram_lru = OrderedDict()
         self._ram_key = 'grade-session-' + str(id(self))
-        app_memory.register(self._ram_key, 'working', self.trim_memory)
+        app_memory.register(self._ram_key, 'working', self.trim_memory, trim_moderate=self.trim_moderate_memory)
         self._peak_candidates = {}
         if eager_peak_candidates:
             self._build_peak_candidates()
@@ -838,12 +879,471 @@ class SessionRenderCache:
         result.update(working_space="linear-srgb" if authored else "acescg", source_epoch=self._source_epoch)
         return result
 
+    def grain_preparation_for(self, kind: PreviewKind):
+        with self._lock:
+            return self._grain_preparations.get(kind)
+
+    def cpu_denoise_model(self, *, epoch, authored, geometry, size, processing_size, measure, usage, log_fields=None):
+        from .denoise_measurement import VERSION, measured_model
+        from .library_diagnostics import log
+
+        with self._lock:
+            if self._source_epoch != epoch:
+                raise StaleRender("The Denoise measurement source changed.")
+            identity = self.sdr_identity if authored else self.source_identity
+            key = ("cpu-preview", VERSION, self._denoise_source_key, identity, epoch,
+                   authored, geometry.model_dump_json(), size, processing_size)
+
+        def observe(reason):
+            fields = {"usage": usage, **(log_fields or {})}
+            log("denoise_cpu_model_cache", **fields, area="denoise", route="cpu", reason=reason,
+                width=size[1], height=size[0])
+
+        # The fit belongs to the source and can outlive the initiating edit.
+        model = measured_model(key, lambda: Context().run(measure), observe=observe)
+        if self.source_epoch != epoch:
+            raise StaleRender("The Denoise measurement source changed.")
+        return model
+
+    def _micro_preview_key(self, frame, controls, edge, epoch):
+        from .denoise_micro_grain import preparation_key
+
+        lens_applied = bool(frame.metadata.get("lens_correction", {}).get("applied"))
+        exif = frame.metadata.get("raw_exif", {})
+        lens_key = (lens_applied, frame.raw_import_settings.lens.model_dump_json(),
+                    *(exif.get(name) for name in ("focal_length_mm", "aperture",
+                      "focus_distance_m", "camera_maker", "camera_model", "lens_maker", "lens_model", "lens_name")))
+        return (epoch, preparation_key(frame), lens_key, controls, edge)
+
+    def cached_micro_preview_source(self, frame, controls, edge):
+        from .denoise_micro_grain import MicroGrainControls, MicroSourceUnavailable, unavailable_reason
+
+        with self._lock:
+            if self._micro_closed or unavailable_reason(frame, check_source=False):
+                raise MicroScopeSourceUnavailable()
+            try:
+                key = self._micro_preview_key(frame, MicroGrainControls.from_settings(controls), edge, self._micro_source_epoch)
+            except MicroSourceUnavailable as exc:
+                raise MicroScopeSourceUnavailable() from exc
+            matching = [candidate for candidate in self._micro_previews if candidate[:-1] == key[:-1]]
+            if not matching:
+                raise MicroScopeSourceUnavailable()
+            selected = min(matching, key=lambda candidate: (candidate[-1] < edge, abs(candidate[-1] - edge)))
+            # Histogram and Navigate can read a different size from the one
+            # on screen. Keep foreground use as the eviction priority.
+            return self._micro_previews[selected], selected
+
+    def micro_preview_source(self, frame, controls, edge, is_current, *, foreground=True):
+        from .denoise_micro_grain import MicroSourceUnavailable, unavailable_reason
+        from .diagnostics import log
+        from .grain_work import current_check
+
+        parent_current = current_check()
+        epoch = self._micro_source_epoch
+
+        def caller_current():
+            return (not self._micro_closed and self._micro_source_epoch == epoch
+                    and (is_current is None or is_current())
+                    and (parent_current is None or parent_current()))
+
+        if not caller_current():
+            raise StaleRender("The CPU Micro Grain preview was replaced.")
+        def ordinary_source():
+            if not caller_current():
+                raise StaleRender("The CPU Micro Grain preview was replaced.")
+            try:
+                return downsample_image(frame.image, edge, is_current=caller_current), None
+            except ResizeCancelled as error:
+                raise StaleRender("The CPU Micro Grain preview was replaced.") from error
+
+        if unavailable_reason(frame, check_source=False):
+            return ordinary_source()
+
+        try:
+            key = self._micro_preview_key(frame, controls, edge, epoch)
+        except MicroSourceUnavailable:
+            return ordinary_source()
+        _, source_key, _, _, _ = key
+        path = source_key[0]
+        photo = {"id": str(path), "name": path.name}
+
+        while True:
+            started = time.perf_counter()
+            with self._micro_condition:
+                if not caller_current():
+                    raise StaleRender("The CPU Micro Grain preview was replaced.")
+                cached = self._micro_previews.get(key)
+                if cached is not None:
+                    if foreground:
+                        if source_key in self._micro_prepared:
+                            self._touch_ram_locked("_micro_prepared", source_key)
+                        self._touch_ram_locked("_micro_previews", key)
+                    log("denoise", "micro_cpu_source", photo=photo, route="cpu",
+                        reason="micro_source_cache_hit", edge_px=edge,
+                        duration_ms=round((time.perf_counter() - started) * 1000, 2))
+                    return cached, key
+
+                flight = self._micro_flights.get(key)
+                owner = flight is None
+                if owner:
+                    flight = self._micro_flights[key] = (Future(), set())
+                future, callers = flight
+                callers.add(caller_current)
+                self._micro_condition.notify_all()
+
+            cancelled = False
+
+            def needed():
+                nonlocal cancelled
+                with self._micro_condition:
+                    if cancelled:
+                        return False
+                    # An abort can retire the owner before its replacement
+                    # reaches this worker. Allow one bounded handoff window.
+                    def resolved():
+                        return self._micro_source_epoch != epoch or self._micro_closed or any(
+                            check() for check in callers
+                        )
+                    has_caller_or_invalidated = self._micro_condition.wait_for(resolved, timeout=0.15)
+                    cancelled = not has_caller_or_invalidated or self._micro_source_epoch != epoch or self._micro_closed
+                    return not cancelled
+
+            reason = "micro_source_cache_miss" if owner else "micro_source_in_flight"
+            outcome = "failed"
+            cache_details = {}
+            try:
+                if owner:
+                    try:
+                        reduced = self._build_micro_preview(frame, controls, edge, epoch, source_key, needed, cache_details)
+                        # The census can still include the native render and
+                        # resize scratch, even with Lens Correction off.
+                        readings = app_memory.refresh_after_scratch(reduced.nbytes)
+                        if readings is not None:
+                            cache_details.update(before_refresh_bytes=readings[0], after_refresh_bytes=readings[1])
+                        with self._lock:
+                            if self._micro_source_epoch != epoch or self._micro_closed:
+                                raise StaleRender("The CPU Micro Grain source changed.")
+                            if reduced.nbytes <= app_memory.limit("working") and self._store_derived_locked(
+                                "_micro_previews", key, reduced, protect_micro=not foreground,
+                            ):
+                                self._touch_ram_locked("_micro_previews", key)
+                                if not foreground:
+                                    self._ram_lru.move_to_end(("_micro_previews", key), last=False)
+                                self._rebalance_locked()
+                            cache_details["preview_kept"] = key in self._micro_previews
+                            self._micro_flights.pop(key)
+                            future.set_result(reduced)
+                    except BaseException as error:
+                        failure = error
+                        if cancelled and isinstance(error, Exception) and not isinstance(error, StaleRender):
+                            failure = StaleRender("The CPU Micro Grain preview was replaced.")
+                            failure.__cause__ = error
+                        with self._lock:
+                            self._micro_flights.pop(key)
+                            future.set_exception(failure)
+                        raise failure
+                else:
+                    while not wait((future,), timeout=0.05).done:
+                        if not caller_current():
+                            raise StaleRender("The CPU Micro Grain preview was replaced.")
+                result = future.result()
+                outcome = "completed"
+                if not caller_current():
+                    raise StaleRender("The CPU Micro Grain preview was replaced.")
+                if foreground and not owner:
+                    # A viewer may have joined a comparison that started this work.
+                    with self._lock:
+                        if self._micro_previews.get(key) is result:
+                            self._touch_ram_locked("_micro_previews", key)
+                return result, key
+            except MicroSourceUnavailable:
+                # The owner has removed the flight and woken its waiters.
+                # Do not cache the ordinary image under a Micro source key.
+                return ordinary_source()
+            except StaleRender:
+                if outcome != "completed":
+                    outcome = "cancelled"
+                # A replacement arriving after shared work observed that
+                # nobody needed it can take over once the owner exits.
+                if owner or not caller_current():
+                    raise
+            finally:
+                with self._lock:
+                    callers.discard(caller_current)
+                log("denoise", "micro_cpu_source", photo=photo, route="cpu", reason=reason,
+                    edge_px=edge, outcome=outcome, duration_ms=round((time.perf_counter() - started) * 1000, 2),
+                    **cache_details)
+
+    def _build_micro_preview(self, frame, controls, edge, epoch, source_key, needed, timings):
+        from .denoise_micro_grain import render_prepared_source
+        from .grain_work import render_work
+
+        def cancelled():
+            return not needed()
+
+        # Different edges share preparation. Serialize full-size scratch.
+        while not self._micro_render_lock.acquire(timeout=0.05):
+            if cancelled():
+                raise StaleRender("The CPU Micro Grain preview was replaced.")
+        try:
+            with render_work(needed, shared=True), ExitStack() as scratch:
+                started = time.perf_counter()
+                source = self._micro_source(frame, epoch, source_key, cancelled)
+                timings["micro_prepare_ms"] = round((time.perf_counter() - started) * 1000, 2)
+                tiles = self._micro_tiles
+                render = None
+                if tiles is not None and tiles.source() is source and tiles.controls == controls:
+                    height, width = source.shape
+                    render = lambda stop: tiles.read(source, (0, 0, width, height), cancelled=stop, consume=True)
+                allocate_lens_output = None
+                if frame.metadata.get("lens_correction", {}).get("applied") and max(frame.image.shape[:2]) > edge:
+                    def allocate_lens_output(shape):
+                        # The desktop's per-launch scratch root is swept after a crash.
+                        directory = scratch.enter_context(TemporaryDirectory(
+                            prefix="micro-lens-", dir=os.environ.get("HDR_FINISHER_PROOF_ROOT") or None,
+                            ignore_cleanup_errors=True,
+                        ))
+                        return scratch.enter_context(DeliveryFrame(Path(directory) / "remapped.rgb", shape).map("w+"))
+                result = render_prepared_source(
+                    frame, source, controls, cancelled=cancelled, render=render,
+                    allocate_lens_output=allocate_lens_output, timings=timings,
+                )
+                started = time.perf_counter()
+                reduced = downsample_image(result, edge, is_current=needed, bounded=allocate_lens_output is not None)
+                timings["micro_resize_ms"] = round((time.perf_counter() - started) * 1000, 2)
+                if reduced is result and isinstance(result, np.memmap):
+                    # The source and displayed image can have different sizes.
+                    # The preview cache must never keep a job's map.
+                    reduced = np.array(result)
+                del result
+
+            reduced.setflags(write=False)
+            return reduced
+        finally:
+            self._micro_render_lock.release()
+
+    def _micro_source(self, frame, epoch, source_key, cancelled):
+        from .denoise_micro_grain import MicroGrainSource, MicroSourceUnavailable, take_recent_preparation
+
+        with self._lock:
+            source = self._micro_prepared.get(source_key)
+            if source is not None:
+                self._touch_ram_locked("_micro_prepared", source_key)
+        if source is None:
+            if frame.metadata.get("lens_correction", {}).get("applied"):
+                source = take_recent_preparation(source_key)
+            if source is None:
+                try:
+                    source = MicroGrainSource(source_key[0], frame.raw_import_settings, cancelled=cancelled)
+                except OSError as error:
+                    raise MicroSourceUnavailable("The Micro Grain RAW source could not be read.") from error
+            if cancelled():
+                raise StaleRender("The CPU Micro Grain preview was replaced.")
+            with self._lock:
+                if self._micro_source_epoch != epoch or self._micro_closed:
+                    raise StaleRender("The CPU Micro Grain source changed.")
+                if source.prepared_nbytes <= app_memory.limit("working"):
+                    self._micro_prepared.clear()
+                    self._micro_prepared[source_key] = source
+                    self._touch_ram_locked("_micro_prepared", source_key)
+                    self._rebalance_locked()
+        return source
+
+    def micro_preview_region(self, frame, controls, adjustments, kind, viewport, local_adjustments, is_current):
+        from .adjustments import FrameWindow, apply_fixed_source_adjustments
+        from .denoise_micro_grain import (
+            MicroPreviewTiles, MicroRegionRefused, MicroSourceUnavailable, _lens_region, _vignette_region,
+            preparation_key, unavailable_reason,
+        )
+        from .diagnostics import log
+        from .finishing import _crop_bounds
+        from .grain_work import current_check
+        from .lens_correction import remap_region
+        from .raw_import import _raise_if_cancelled
+
+        geometry = adjustments.shared.geometry
+        if unavailable_reason(frame, check_source=False):
+            raise MicroRegionRefused("micro_unsupported_source")
+        if geometry_resample_stage(geometry) != "index":
+            raise MicroRegionRefused("micro_resampled_geometry")
+        if strip_execution_refusals(adjustments, kind, local_adjustments=local_adjustments):
+            raise MicroRegionRefused("micro_spatial_grade")
+        if (adjustments.hdr if kind == PreviewKind.HDR else adjustments.sdr).highlight_section_enabled:
+            # Global peak measurement and the HDR ceiling's frame-wide branch
+            # cannot be reproduced from a visible subset.
+            raise MicroRegionRefused("micro_whole_frame_highlight")
+        if kind == PreviewKind.SDR and frame.sdr_reference_image is not None and adjustments.sdr.use_authored_base:
+            raise MicroRegionRefused("micro_authored_sdr")
+
+        image_height, image_width = frame.image.shape[:2]
+        oriented_width, oriented_height = ((image_height, image_width) if geometry.rotation in (90, 270)
+                                           else (image_width, image_height))
+        left, top, right, bottom = _crop_bounds(oriented_width, oriented_height, geometry)
+        width, height = right - left, bottom - top
+        # Align to pixel boundaries after mapping from the displayed fraction.
+        # Eight pixels of view padding avoid a refresh on tiny scrolls.
+        x = max(0, int(np.floor(viewport.x * width)) - 8)
+        y = max(0, int(np.floor(viewport.y * height)) - 8)
+        end_x = min(width, int(np.ceil((viewport.x + viewport.width) * width)) + 8)
+        end_y = min(height, int(np.ceil((viewport.y + viewport.height) * height)) + 8)
+        if (end_x - x) * (end_y - y) >= width * height:
+            raise MicroRegionRefused("micro_whole_frame_viewport")
+        # Scan Sharpening reads up to three neighbouring pixels. Grade a band
+        # that wide around the region, then trim it, so the edges match the
+        # whole-frame result.
+        branch = (adjustments.hdr if kind == PreviewKind.HDR or adjustments.sdr.linked_to_hdr
+                  else adjustments.sdr)
+        halo = scan_sharpening_halo(branch, 1.0)
+        out_x, out_y, out_end_x, out_end_y = x, y, end_x, end_y
+        x, y = max(0, x - halo), max(0, y - halo)
+        end_x, end_y = min(width, end_x + halo), min(height, end_y + halo)
+
+        l, t, r, b = x + left, y + top, end_x + left, end_y + top
+        if geometry.flip_horizontal:
+            l, r = oriented_width - r, oriented_width - l
+        if geometry.flip_vertical:
+            t, b = oriented_height - b, oriented_height - t
+        rect = {
+            0: (l, t, r, b),
+            90: (t, image_height - r, b, image_height - l),
+            180: (image_width - r, image_height - b, image_width - l, image_height - t),
+            270: (image_width - b, l, image_width - t, r),
+        }[geometry.rotation]
+
+        try:
+            source_key = preparation_key(frame)
+        except MicroSourceUnavailable as error:
+            raise MicroRegionRefused("micro_source_unavailable") from error
+        path = source_key[0]
+        epoch = self._micro_source_epoch
+        parent = current_check()
+        started = time.perf_counter()
+
+        def cancelled():
+            return (self._micro_closed or self._micro_source_epoch != epoch
+                    or not is_current() or (parent is not None and not parent()))
+
+        while not self._micro_render_lock.acquire(timeout=0.05):
+            if cancelled():
+                raise StaleRender("The CPU Micro Grain preview was replaced.")
+        try:
+            if cancelled():
+                raise StaleRender("The CPU Micro Grain preview was replaced.")
+            source = self._micro_source(frame, epoch, source_key, cancelled)
+            if source.shape != (image_height, image_width):
+                raise MicroRegionRefused("micro_resized_source")
+            bounds, coordinates, vignette, coordinate_bytes = _lens_region(frame, source.shape, rect)
+            with self._lock:
+                if cancelled():
+                    raise StaleRender("The CPU Micro Grain preview was replaced.")
+                tiles = self._micro_tiles
+                if tiles is None or tiles.source() is not source or tiles.controls != controls:
+                    if tiles is not None:
+                        tiles.close()
+                    tiles = self._micro_tiles = MicroPreviewTiles(source, controls)
+            pixels = tiles.read(source, bounds, cancelled=cancelled)
+            if vignette is not None:
+                _vignette_region(vignette, source.shape, bounds, pixels)
+            if coordinates is not None:
+                pixels = remap_region(
+                    pixels, coordinates, frame_shape=source.shape, origin=bounds[:2],
+                    check=lambda: _raise_if_cancelled(cancelled),
+                )
+            del coordinates
+            pixels *= source.gain
+        except (InterruptedError, RuntimeError, ValueError) as error:
+            if cancelled():
+                raise StaleRender("The CPU Micro Grain preview was replaced.") from error
+            if isinstance(error, MicroSourceUnavailable):
+                raise MicroRegionRefused("micro_source_unavailable") from error
+            raise
+        finally:
+            self._micro_render_lock.release()
+        fixed = np.ascontiguousarray(_oriented_view(pixels, geometry))
+        result = apply_fixed_source_adjustments(
+            fixed, adjustments, kind, color_context=self.color_context,
+            frame_window=FrameWindow(left=x, top=y, width=width, height=height),
+        )
+        if halo:
+            result = np.ascontiguousarray(result[out_y - y:out_end_y - y, out_x - x:out_end_x - x])
+            x, y, end_x, end_y = out_x, out_y, out_end_x, out_end_y
+        if cancelled():
+            raise StaleRender("The CPU Micro Grain preview was replaced.")
+        tiles.start_fill(source)
+        log("denoise", "micro_cpu_region", photo={"id": str(path), "name": path.name}, route="cpu",
+            reason="micro_visible_region", width_px=end_x - x, height_px=end_y - y,
+            coordinate_bytes=coordinate_bytes, vignette_scratch_bytes=image_width * image_height * 12 if vignette else 0,
+            duration_ms=round((time.perf_counter() - started) * 1000, 2))
+        return result, (x, y, width, height)
+
+    def close_micro_preview(self):
+        with self._micro_condition:
+            self._micro_closed = True
+            self._clear_micro_preview_locked()
+            self._rebalance_locked()
+
+    def release_development_cache(self) -> None:
+        """Discard work derived from the old RAW while keeping its decoded source."""
+        with self._lock:
+            self._source_epoch += 1
+            self._cancel_inflight_locked()
+            self._clear_micro_preview_locked()
+            self.discard_grain_preparation()
+            self._rebalance_locked(0)
+            if self.mip_store is not None:
+                for identity in (self.source_identity, self.sdr_identity):
+                    if identity is not None:
+                        self.mip_store.discard_memory(identity)
+
+    def _clear_micro_preview_locked(self):
+        self._micro_source_epoch += 1
+        if self._micro_tiles is not None:
+            self._micro_tiles.close()
+            self._micro_tiles = None
+        self._micro_prepared.clear()
+        self._micro_previews.clear()
+        self._micro_condition.notify_all()
+
+    def matching_grain_preparation(self, signature: tuple):
+        with self._lock:
+            return next((item for item in self._grain_preparations.values() if item.signature == signature), None)
+
+    def retain_grain_preparation(self, kind: PreviewKind, preparation, epoch: int) -> bool:
+        with self._lock:
+            if self._source_epoch != epoch:
+                return False
+            previous = self._grain_preparations.get(kind)
+            self._grain_preparations[kind] = preparation
+            if (previous is not None and previous is not preparation
+                    and not any(item is previous for item in self._grain_preparations.values())):
+                previous.close()
+            return True
+
+    def discard_grain_preparation(self, kind: PreviewKind | None = None, *, expected=None):
+        # Do not wait for an unfinished fit. It detects the new source epoch
+        # or session before publishing and disposes of its own scratch.
+        with self._lock:
+            if kind is None:
+                removed = {id(item): item for item in self._grain_preparations.values()}
+                self._grain_preparations.clear()
+            else:
+                preparation = self._grain_preparations.get(kind)
+                if preparation is None or (expected is not None and preparation is not expected):
+                    return
+                self._grain_preparations.pop(kind)
+                if any(item is preparation for item in self._grain_preparations.values()):
+                    return
+                removed = {id(preparation): preparation}
+            for preparation in removed.values():
+                preparation.close()
+
     def set_color_context(self, context: RenderColorContext) -> None:
         with self._lock:
             if context == self.color_context:
                 return
             self.color_context = context
             self._source_epoch += 1
+            self.discard_grain_preparation()
             self._frames.clear()
             self._frame_scope_peaks.clear()
             self._scopes.clear()
@@ -879,6 +1379,8 @@ class SessionRenderCache:
             self.source_identity = identity
             self.sdr_identity = sdr_identity
             self._source_epoch += 1
+            self._clear_micro_preview_locked()
+            self.discard_grain_preparation()
             self._source_proxies.clear()
             if not same_sdr:
                 self._sdr_proxies.clear()
@@ -996,6 +1498,7 @@ class SessionRenderCache:
         long_edge: int,
         adjustments: AdjustmentState,
         is_current: Callable[[], bool] | None = None,
+        *, native: bool = False,
     ) -> tuple[int, int, Callable[[int, int, int, int], np.ndarray]] | None:
         """The size of ``geometry_source_proxy``'s frame and a reader of
         rectangles of it, without building the frame.
@@ -1007,7 +1510,7 @@ class SessionRenderCache:
         """
         edge = max(256, int(long_edge))
         geometry = adjustments.shared.geometry
-        source, sdr_reference = self._proxies(edge, is_current=is_current)
+        source, sdr_reference = (self.image, self.sdr_reference_image) if native else self._proxies(edge, is_current=is_current)
         use_authored_sdr = (
             kind == PreviewKind.SDR
             and sdr_reference is not None
@@ -1018,11 +1521,11 @@ class SessionRenderCache:
         with self._lock:
             source_epoch = self._source_epoch
         output_width, output_height = geometry_output_dimensions(base.shape[1], base.shape[0], geometry)
-        if max(output_width, output_height) > edge:
+        if not native and max(output_width, output_height) > edge:
             return None
 
-        native = self.sdr_reference_image if use_authored_sdr else self.image
-        reduced = edge < max(native.shape[:2])
+        original = self.sdr_reference_image if use_authored_sdr else self.image
+        reduced = not native and edge < max(original.shape[:2])
 
         def read(y0: int, x0: int, y1: int, x1: int) -> np.ndarray:
             window = apply_geometry_region(
@@ -1285,12 +1788,64 @@ class SessionRenderCache:
         return downsample_image(
             compile_geometry_fixed_mask(source, local_adjustment.mask, adjustments.shared.geometry), edge)
 
+    def local_mask_region_plan(self, adjustments, expression, long_edge, rect, *, bounded_fallback=False):
+        from .local_adjustments import MASK_REGION_CHUNK_PIXELS, has_hue_mask, hue_region_margin, mask_region_margin
+
+        long_edge = max(256, int(long_edge))
+        source_height, source_width = self.image.shape[:2]
+        width, height = downsample_target_dimensions(source_width, source_height, long_edge)
+        size = geometry_output_dimensions(width, height, adjustments.shared.geometry)
+        if max(size) > long_edge:
+            return None
+        left, top, right, bottom = rect
+        area = max(0, min(size[0], right) - left) * max(0, min(size[1], bottom) - top)
+        if not area:
+            return size, "empty", 0, 0, None, None, 0
+        scale = min(1.0, long_edge / max(source_width, source_height))
+        resident_mip = disk_mip = None
+        mip_scratch = 0
+        if scale < 1:
+            with mask_cache_lock(self._lock):
+                if self.mip_store is None or self.source_identity is None:
+                    resident_mip = self._source_proxies.get(long_edge)
+                else:
+                    resident_mip = self.mip_store.peek_level(self.source_identity, long_edge)
+                    if resident_mip is None and self.mip_store.has_disk_level(self.source_identity, long_edge):
+                        disk_mip = (self.mip_store, self.source_identity)
+            if disk_mip is not None:
+                mip_scratch = width * height * 12 + _SOURCE_MIP_HEADER.size + 1
+            elif resident_mip is None:
+                mip_scratch = source_width * source_height * 12 + width * height * 24
+        if has_hue_mask(expression):
+            method = "hue"
+            margin = hue_region_margin(expression, adjustments, scale, max(size))
+            if margin is None:
+                return None
+        else:
+            method = "spatial"
+            index_geometry = geometry_resample_stage(adjustments.shared.geometry) == "index"
+            margin = mask_region_margin(expression, max(width, height)) if index_geometry else None
+            if margin is None:
+                if not bounded_fallback and not (index_geometry and (scale == 1 or resident_mip is not None or disk_mip is not None)):
+                    return None
+                return size, "strips", 0, 0, resident_mip, disk_mip, area * 24 + width * 256 * 64 + mip_scratch
+        block = max(256, int(MASK_REGION_CHUNK_PIXELS**.5) - 2 * margin)
+        working_width = min(max(width, height), min(block, right - left) + 2 * margin + 32)
+        working_height = min(max(width, height), min(block, bottom - top) + 2 * margin + 32)
+        def node_count(node):
+            return 1 + sum(node_count(child) for child in node.children)
+        scratch = working_width * working_height * (
+            (128 if method == "hue" else 56) + (0 if method == "hue" and expression.operator == "leaf" else 8 * node_count(expression))
+        )
+        return size, method, margin, block, resident_mip, disk_mip, area + scratch + mip_scratch
+
     def compiled_local_mask_region(
         self,
         adjustments: AdjustmentState,
         local_adjustment: LocalAdjustment,
         long_edge: int,
         rect: tuple[int, int, int, int],
+        *, bounded_fallback: bool = False, plan=None,
     ) -> tuple[np.ndarray, tuple[int, int]] | None:
         """The spatial mask for one output rectangle, or ``None`` when it needs the whole image.
 
@@ -1299,17 +1854,51 @@ class SessionRenderCache:
         on screen. Nothing is cached here: the renderer keeps the tiles it was
         sent, and a whole-image compile of the same mask is never started.
         """
+        from .local_adjustments import compile_hue_mask_region
+
         edge = max(256, int(long_edge))
+        expression = local_adjustment.mask
+        plan = plan or self.local_mask_region_plan(adjustments, expression, edge, rect, bounded_fallback=bounded_fallback)
+        if plan is None:
+            return None
+        size, method, margin, block, resident_mip, disk_mip, _ = plan
+        left, top, right, bottom = rect
+        if method == "empty":
+            return np.empty((0, 0), dtype=np.uint8), size
+        right, bottom = min(right, size[0]), min(bottom, size[1])
         with mask_cache_lock(self._lock):
             with mask_phase("source"):
-                source, _sdr_reference = self._proxies_locked(edge)
-        from .local_adjustments import has_hue_mask
-        if has_hue_mask(local_adjustment.mask):
-            return None
+                if resident_mip is not None:
+                    source = resident_mip
+                elif disk_mip is not None:
+                    store, identity = disk_mip
+                    source, state = store.level(identity, edge, self.image, persist=False, cached_only=True)
+                    self._source_level_states[edge] = state
+                else:
+                    source = self._source_level_locked(edge, PreviewKind.HDR, persist=False)
+                scale = min(1.0, edge / max(self.image.shape[:2]))
+                context = self.color_context
         with mask_phase("compute"):
-            return compile_geometry_fixed_mask_region(
-                source, local_adjustment.mask, adjustments.shared.geometry, rect, spatial_only=True,
-            )
+            geometry = adjustments.shared.geometry
+            if method == "strips":
+                with TemporaryDirectory(prefix="viewport-mask-", dir=os.environ.get("HDR_FINISHER_PROOF_ROOT") or None) as directory:
+                    mask = compile_geometry_fixed_mask_to_frame(
+                        source, expression, geometry, Path(directory) / "mask.u8",
+                        spatial_only=True, viewport=(left, top, right, bottom),
+                    )
+                return mask, size
+            mask = np.empty((bottom - top, right - left), dtype=np.uint8)
+            for row in range(top, bottom, block):
+                for column in range(left, right, block):
+                    mask_checkpoint()
+                    end_x, end_y = min(right, column + block), min(bottom, row + block)
+                    window = (column, row, end_x, end_y)
+                    if method == "hue":
+                        pixels = compile_hue_mask_region(source, expression, adjustments, context, scale, size, window, margin)
+                    else:
+                        pixels, _ = compile_geometry_fixed_mask_region(source, expression, geometry, window, spatial_only=True)
+                    mask[row - top:end_y - top, column - left:end_x - left] = pixels
+            return mask, size
 
     def compiled_mask_draft(
         self,
@@ -1401,11 +1990,25 @@ class SessionRenderCache:
         is_current: Callable[[], bool] | None = None,
         local_adjustments: list[LocalAdjustment] | None = None,
         _record_diagnostics: bool = True,
+        *, denoise_controls=None, micro_preview=None, scope_source=False, cached_micro=None, prioritize_micro=True,
     ) -> np.ndarray:
         edge = max(256, int(long_edge))
         with self._lock:
             source_epoch = self._source_epoch
         signature = adjustment_signature(adjustments) + local_adjustment_signature(local_adjustments) + repr(self.color_context.cache_key)
+        if denoise_controls is not None:
+            signature += denoise_controls.model_dump_json()
+        if micro_preview is not None:
+            from .denoise_micro_grain import MicroGrainControls
+
+            frame, controls = micro_preview
+            source, micro_key = self.micro_preview_source(
+                frame, MicroGrainControls.from_settings(controls), edge, is_current, foreground=prioritize_micro,
+            )
+            signature += repr(("micro", micro_key))
+        elif cached_micro is not None:
+            source, micro_key = cached_micro
+            signature += repr(("micro", micro_key))
         key = (source_epoch, kind.value, edge, signature)
         flight_key = ("frame", *key)
         cached, flight = self._acquire_frame_flight(
@@ -1415,27 +2018,81 @@ class SessionRenderCache:
             return cached
         assert flight is not None
         try:
-            with self._lock:
-                source, sdr_reference = self._proxies_locked(edge)
+            if cached_micro is not None:
+                try:
+                    source = downsample_image(source, edge, is_current=is_current, bounded=True)
+                except ResizeCancelled as exc:
+                    raise StaleRender("A newer scope request replaced this one.") from exc
+            if scope_source and cached_micro is None:
+                source, sdr_reference = self._scope_proxies(edge, source_epoch, is_current)
+            else:
+                with self._lock:
+                    if micro_preview is None and cached_micro is None:
+                        source, sdr_reference = self._proxies_locked(edge)
+                    elif kind == PreviewKind.SDR and self.sdr_reference_image is not None and adjustments.sdr.use_authored_base:
+                        sdr_reference = self._source_level_locked(edge, PreviewKind.SDR)
+                    else:
+                        sdr_reference = None
             compiled_masks = self._compiled_masks(
                 source,
                 adjustments,
                 local_adjustments,
                 edge,
                 source_epoch=source_epoch,
+                scope_source=scope_source,
             )
             from .grain_work import render_work
+            source_filter = None
+            if denoise_controls is not None:
+                from .denoise_adaptive import AdaptiveControls, estimate_adaptive_model, resolve_adaptive
+
+                def source_filter(pixels, authored):
+                    model = self.cpu_denoise_model(
+                        epoch=source_epoch, authored=authored, geometry=adjustments.shared.geometry,
+                        size=pixels.shape[:2], processing_size=edge,
+                        measure=lambda: estimate_adaptive_model(pixels), usage="CPU preview",
+                    )
+                    if is_current is not None and not is_current():
+                        raise StaleRender("A newer adjustment replaced this render.")
+                    return resolve_adaptive(pixels, model, AdaptiveControls(**denoise_controls.model_dump()))
+
+            scale = min(1.0, edge / max(self.image.shape[:2]))
             with render_work(is_current):
-                processed = apply_adjustments(
-                    source,
-                    adjustments,
-                    kind,
-                    sdr_reference_image=sdr_reference,
-                    local_adjustments=local_adjustments,
-                    compiled_local_masks=compiled_masks,
-                    color_context=self.color_context,
-                    source_pixel_scale=min(1.0, edge / max(self.image.shape[:2])),
-                )
+                # Reuse the reduced Micro source, but keep SDR finishing
+                # intermediates in strips when the grade supports exact strips.
+                if ((micro_preview is not None or cached_micro is not None) and kind == PreviewKind.SDR
+                        and sdr_reference is None and not adjustments.sdr.linked_to_hdr
+                        and (not adjustments.sdr.film_look_section_enabled or adjustments.sdr.film_look == FilmLookAdjustments())
+                        and (not adjustments.sdr.vignette_section_enabled or adjustments.sdr.vignette.amount == 0)
+                        and not adjustments.sdr.black_and_white_section_enabled
+                        and geometry_resample_stage(adjustments.shared.geometry) == "index"
+                        and not strip_execution_refusals(
+                            adjustments, kind, local_adjustments=local_adjustments,
+                            denoise_active=source_filter is not None, source_width=source.shape[1],
+                            source_height=source.shape[0], long_edge=edge,
+                        )):
+                    try:
+                        processed, _ = render_in_strips(
+                            source, adjustments, kind, sdr_reference_image=sdr_reference,
+                            color_context=self.color_context, source_pixel_scale=scale,
+                            long_edge=edge, is_current=is_current,
+                        )
+                    except StripCancelled as exc:
+                        with self._lock:
+                            self._stale_cancellations += 1
+                        raise StaleRender("A newer adjustment replaced this render.") from exc
+                else:
+                    processed = apply_adjustments(
+                        source,
+                        adjustments,
+                        kind,
+                        sdr_reference_image=sdr_reference,
+                        local_adjustments=local_adjustments,
+                        compiled_local_masks=compiled_masks,
+                        color_context=self.color_context,
+                        source_pixel_scale=scale,
+                        source_filter=source_filter,
+                    )
             processed = downsample_image(processed, edge)
             if is_current is not None and not is_current():
                 with self._lock:
@@ -1443,9 +2100,13 @@ class SessionRenderCache:
                 raise StaleRender("A newer adjustment replaced this render.")
             processed.setflags(write=False)
             with self._lock:
-                self._frames[key] = processed
-                self._touch_ram_locked('_frames', key)
-                self._evict_locked()
+                if self._source_epoch != source_epoch:
+                    raise StaleRender("The preview source changed.")
+                if self._store_derived_locked('_frames', key, processed, protect_micro=(
+                    scope_source or (micro_preview is not None and micro_key in self._micro_previews)
+                )):
+                    self._touch_ram_locked('_frames', key)
+                    self._evict_locked()
         finally:
             with self._lock:
                 # Invalidation may have removed this flight and a newer caller
@@ -1569,18 +2230,26 @@ class SessionRenderCache:
         local_adjustments: list[LocalAdjustment] | None = None,
         channel_names: tuple[str, ...] | None = None,
         scope_region: tuple[float, float, float, float] | None = None,
+        *, micro_preview=None,
     ) -> Any:
         """Return a cached, single-flight scope payload for the adjusted proxy."""
         edge = max(256, int(long_edge))
         with self._lock:
             source_epoch = self._source_epoch
+            cached_micro = self.cached_micro_preview_source(*micro_preview, edge) if micro_preview is not None else None
         signature = adjustment_signature(adjustments) + local_adjustment_signature(local_adjustments) + repr(self.color_context.cache_key)
+        if cached_micro is not None:
+            source, micro_key = cached_micro
+            edge = min(edge, micro_key[-1])
+            signature += repr(("micro", micro_key))
         requested_channels = tuple(channel_names or ("R", "G", "B", "Y"))
         region_key = tuple(round(float(value), 6) for value in scope_region) if scope_region is not None else None
         key = (source_epoch, kind.value, edge, signature, mode, int(bins), int(columns), int(max_nits), requested_channels, region_key)
         flight_key = ("scope", *key)
         while True:
             with self._lock:
+                if self._source_epoch != source_epoch or (cached_micro is not None and self._micro_source_epoch != micro_key[0]):
+                    raise StaleRender("The scope source changed.")
                 cached = self._scopes.get(key)
                 if cached is not None:
                     self._hits += 1
@@ -1610,6 +2279,8 @@ class SessionRenderCache:
                 is_current=is_current,
                 local_adjustments=local_adjustments,
                 _record_diagnostics=False,
+                scope_source=True,
+                cached_micro=cached_micro,
             )
             if is_current is not None and not is_current():
                 with self._lock:
@@ -1626,17 +2297,21 @@ class SessionRenderCache:
                 color_context=self.color_context,
                 channel_names=requested_channels,
             )
+            if cached_micro is not None:
+                result.micro_source_long_edge = min(edge, max(source.shape[:2]))
             if is_current is not None and not is_current():
                 with self._lock:
                     self._stale_cancellations += 1
                 raise StaleRender("A newer scope request replaced this one.")
             with self._lock:
-                self._scopes[key] = result.model_copy(deep=True)
-                while len(self._scopes) > 12:
-                    self._scopes.popitem(last=False)
-                    self._evictions += 1
-                self._touch_ram_locked('_scopes', key)
-                self._rebalance_locked()
+                if self._source_epoch != source_epoch or (cached_micro is not None and self._micro_source_epoch != micro_key[0]):
+                    raise StaleRender("The scope source changed.")
+                if self._store_derived_locked('_scopes', key, result.model_copy(deep=True), protect_micro=True):
+                    while len(self._scopes) > 12:
+                        self._scopes.popitem(last=False)
+                        self._evictions += 1
+                    self._touch_ram_locked('_scopes', key)
+                    self._rebalance_locked()
         finally:
             with self._lock:
                 if self._inflight.get(flight_key) is flight:
@@ -1651,6 +2326,10 @@ class SessionRenderCache:
             frame_bytes = sum(int(frame.nbytes) for frame in self._frames.values())
             scope_bytes = sum(len(scope.model_dump_json().encode("utf-8")) for scope in self._scopes.values())
             mask_bytes = sum(int(mask.nbytes) for mask in self._masks.values())
+            micro_bytes = sum(source.prepared_nbytes for source in self._micro_prepared.values()) + sum(
+                image.nbytes for image in self._micro_previews.values()
+                if image is not self.image
+            )
             source_mip = self.mip_store.diagnostics() if self.mip_store is not None else None
             source_identity = self.source_identity.digest() if self.source_identity is not None else None
             return {
@@ -1661,8 +2340,10 @@ class SessionRenderCache:
                 "local_mask_bytes": mask_bytes,
                 "local_mask_entries": len(self._masks),
                 "local_mask_budget_bytes": self._mask_budget_locked(),
-                "managed_bytes": source_bytes + proxy_bytes + frame_bytes + scope_bytes + mask_bytes,
-                "entries": len(self._source_proxies) + len(self._frames) + len(self._scopes) + len(self._masks),
+                "micro_source_bytes": micro_bytes,
+                "managed_bytes": source_bytes + proxy_bytes + frame_bytes + scope_bytes + mask_bytes + micro_bytes,
+                "entries": (len(self._source_proxies) + len(self._frames) + len(self._scopes) + len(self._masks)
+                            + len(self._micro_prepared) + len(self._micro_previews)),
                 "hits": self._hits,
                 "misses": self._misses,
                 "evictions": self._evictions,
@@ -1681,19 +2362,57 @@ class SessionRenderCache:
     def _proxies_locked(self, edge: int, *, is_current: Callable[[], bool] | None = None, persist_mips: bool = True) -> tuple[np.ndarray, np.ndarray | None]:
         source = self._source_level_locked(edge, PreviewKind.HDR, is_current=is_current, persist=persist_mips)
         reference = None if self.sdr_reference_image is None else self._source_level_locked(edge, PreviewKind.SDR, is_current=is_current, persist=persist_mips)
+        self._remember_proxies_locked(edge, source, reference)
+        return source, reference
+
+    def _scope_proxies(
+        self, edge: int, epoch: int, is_current: Callable[[], bool] | None,
+    ) -> tuple[np.ndarray, np.ndarray | None]:
+        def current() -> bool:
+            return epoch == self._source_epoch and (is_current is None or is_current())
+
+        with self._lock:
+            if not current():
+                raise StaleRender("The scope source changed.")
+            inputs = (
+                (self.image, self.source_identity, self._source_proxies.get(edge)),
+                (self.sdr_reference_image, self.sdr_identity, self._sdr_proxies.get(edge)),
+            )
+        levels = []
+        states = []
+        for image, identity, cached in inputs:
+            if image is None or cached is not None:
+                levels.append(cached)
+                continue
+            level, state = self._build_source_level(edge, image, identity, current, True, bounded=True)
+            levels.append(level)
+            states.append(state)
+        source, reference = levels
+        with self._lock:
+            if not current():
+                raise StaleRender("The scope source changed.")
+            if states:
+                self._source_level_states[edge] = states[-1]
+            self._remember_proxies_locked(edge, source, reference, scope_source=True)
+        return source, reference
+
+    def _remember_proxies_locked(self, edge: int, source: np.ndarray, reference: np.ndarray | None, *, scope_source=False) -> None:
         # The mip store owns persistent levels. Keeping another reference here
         # would keep its evicted payload alive outside its reported bytes.
         for name, identity, value in (('_source_proxies', self.source_identity, source), ('_sdr_proxies', self.sdr_identity, reference)):
             cache = getattr(self, name)
             if self.mip_store is None or identity is None:
-                cache[edge] = value
+                if not self._store_derived_locked(name, edge, value, protect_micro=scope_source):
+                    continue
                 cache.move_to_end(edge)
                 self._touch_ram_locked(name, edge)
             while len(cache) > self.max_proxy_levels:
                 cache.popitem(last=False)
                 self._evictions += 1
-        self._rebalance_locked()
-        return source, reference
+        # A scope store either claimed its bytes or was refused. Rebalancing
+        # here could still evict Micro work for bytes the scope did not keep.
+        if not scope_source:
+            self._rebalance_locked()
 
     def _source_level_locked(self, edge: int, kind: PreviewKind, *, is_current: Callable[[], bool] | None = None, persist: bool = True) -> np.ndarray:
         """Return one source level, through the persistent mip store when present.
@@ -1707,9 +2426,7 @@ class SessionRenderCache:
         """
         image = self.image if kind == PreviewKind.HDR else self.sdr_reference_image
         identity = self.source_identity if kind == PreviewKind.HDR else self.sdr_identity
-        if identity is not None and self.mip_store is not None and image is not None:
-            level, state = self.mip_store.level(identity, edge, image, is_current=is_current, persist=persist)
-        else:
+        if identity is None or self.mip_store is None:
             session_proxies = self._source_proxies if kind == PreviewKind.HDR else self._sdr_proxies
             cached = session_proxies.get(edge)
             if cached is not None:
@@ -1717,15 +2434,27 @@ class SessionRenderCache:
                     edge, "native" if edge >= max(image.shape[:2]) else "session"
                 )
                 return cached
+        source, state = self._build_source_level(edge, image, identity, is_current, persist)
+        self._source_level_states[edge] = state
+        return source
+
+    def _build_source_level(
+        self, edge: int, image: np.ndarray, identity: SourceMipIdentity | None,
+        is_current: Callable[[], bool] | None, persist: bool, *, bounded: bool = False,
+    ) -> tuple[np.ndarray, str]:
+        if identity is not None and self.mip_store is not None:
+            level, state = self.mip_store.level(
+                identity, edge, image, is_current=is_current, persist=persist, bounded=bounded,
+            )
+        else:
             try:
-                level = downsample_image(image, edge, is_current=is_current)
+                level = downsample_image(image, edge, is_current=is_current, bounded=bounded)
             except ResizeCancelled as exc:
                 raise StaleRender("A newer source replaced this proxy build.") from exc
             state = "native" if edge >= max(image.shape[:2]) else "session"
         source = np.ascontiguousarray(level, dtype=np.float32)
         source.setflags(write=False)
-        self._source_level_states[edge] = state
-        return source
+        return source, state
 
     def source_level_state(self, long_edge: int) -> str | None:
         """How the last request for this edge was answered (telemetry)."""
@@ -1746,6 +2475,7 @@ class SessionRenderCache:
         edge: int,
         *,
         source_epoch: int,
+        scope_source=False,
     ) -> dict[str, np.ndarray] | None:
         from .local_adjustments import has_hue_mask
         active = [item for item in (local_adjustments or []) if item.enabled and item.opacity > 0.0]
@@ -1822,10 +2552,10 @@ class SessionRenderCache:
                         if source_epoch == self._source_epoch:
                             existing = self._masks.get(key)
                             if existing is None:
-                                self._masks[key] = mask
-                                self._touch_ram_locked('_masks', key)
                                 self._misses += 1
-                                self._evict_masks_locked(self._mask_budget_locked())
+                                if self._store_derived_locked('_masks', key, mask, protect_micro=scope_source):
+                                    self._touch_ram_locked('_masks', key)
+                                    self._evict_masks_locked(self._mask_budget_locked())
                             else:
                                 mask = existing
                     mask_checkpoint()
@@ -1858,6 +2588,21 @@ class SessionRenderCache:
         self._ram_lru[(name, key)] = None
         self._ram_lru.move_to_end((name, key))
 
+    def _store_derived_locked(self, name, key, value, *, protect_micro):
+        cache = getattr(self, name)
+        if not protect_micro or not (self._micro_prepared or self._micro_previews):
+            cache[key] = value
+            return True
+        had_entry, previous = key in cache, cache.get(key)
+        cache[key] = value
+        if app_memory.claim(self._ram_key, 'working', self._retained_bytes_locked()):
+            return True
+        if had_entry:
+            cache[key] = previous
+        else:
+            cache.pop(key)
+        return False
+
     def _retained_bytes_locked(self):
         from dataclasses import fields, is_dataclass
         seen = set()
@@ -1879,24 +2624,41 @@ class SessionRenderCache:
         # The active decoded source belongs to the current document, not a
         # reconstructible cache. Views into it allocate no additional payload.
         count(self.image); count(self.sdr_reference_image)
-        return sum(count(getattr(self, name)) for name in self._ram_collections())
+        return (sum(count(getattr(self, name)) for name in self._ram_collections())
+                + sum(source.prepared_nbytes for source in self._micro_prepared.values()))
 
     @staticmethod
     def _ram_collections():
         return ('_source_proxies', '_sdr_proxies', '_frames', '_scopes',
-                '_masks', '_geometry_maps', '_hue_stages', '_hsl_inputs', '_peak_candidates', '_source_ranges')
+                '_masks', '_geometry_maps', '_hue_stages', '_hsl_inputs', '_peak_candidates', '_source_ranges',
+                '_micro_prepared', '_micro_previews')
 
-    def _rebalance_locked(self, target=None):
+    def _rebalance_locked(self, target=None, *, preserve_micro=False):
         live = {(name, key) for name in self._ram_collections() for key in getattr(self, name)}
         for old in list(self._ram_lru):
             if old not in live: del self._ram_lru[old]
         for name in self._ram_collections():
             for key in getattr(self, name):
                 if (name, key) not in self._ram_lru: self._touch_ram_locked(name, key)
+        micro_caches = ('_micro_prepared', '_micro_previews')
+        protected = set()
+        if preserve_micro:
+            # Keep the most recently used preparation and preview on periodic
+            # pressure trims. Reservations and critical pressure may still free them.
+            for name in micro_caches:
+                entry = next((entry for entry in reversed(self._ram_lru) if entry[0] == name), None)
+                if entry is not None:
+                    protected.add(entry)
+        # Preserve LRU order within each group. A newly built Micro result is
+        # last to go, even when masks or adjusted frames were used more recently.
+        eviction_order = sorted(self._ram_lru, key=lambda entry: entry[0] in micro_caches)
         size = self._retained_bytes_locked()
-        while self._ram_lru and ((target is not None and size > target) or
-                not app_memory.claim(self._ram_key, 'working', size)):
-            (name, key), _ = self._ram_lru.popitem(last=False)
+        for name, key in eviction_order:
+            if (target is None or size <= target) and app_memory.claim(self._ram_key, 'working', size):
+                return
+            if (name, key) in protected:
+                continue
+            del self._ram_lru[(name, key)]
             getattr(self, name).pop(key, None)
             if name == '_frames': self._frame_scope_peaks.pop(key, None)
             self._evictions += 1
@@ -1905,6 +2667,9 @@ class SessionRenderCache:
 
     def trim_memory(self, target):
         with self._lock: self._rebalance_locked(target)
+
+    def trim_moderate_memory(self, target):
+        with self._lock: self._rebalance_locked(target, preserve_micro=True)
 
     def _evict_locked(self) -> None:
         while len(self._frames) > self.max_frames:

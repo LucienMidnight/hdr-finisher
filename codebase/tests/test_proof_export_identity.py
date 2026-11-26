@@ -34,7 +34,9 @@ from hdr_finisher.models import (
     MaskExpression,
     MaskLeaf,
     MaskPoint,
+    OutputFinishingSettings,
     PathNode,
+    PreviewKind,
     ProofArtifactRequest,
 )
 from hdr_finisher.proofing import ProofArtifactStore
@@ -225,6 +227,53 @@ def test_full_size_proof_is_the_export_byte_for_byte(backends, tmp_path: Path, f
         store.clear()
 
 
+@pytest.mark.parametrize("format_name", ["jpegxl_hdr", "sdr_jpegxl", "jpeg_ultrahdr"])
+def test_filed_delivery_matches_in_memory_denoise_and_encoding(backends, tmp_path, format_name):
+    from hdr_finisher import exporters
+    from hdr_finisher.models import DenoiseDocumentSettings, PreviewKind
+
+    capabilities, by_format = backends
+    capability, suffix = FORMATS.get(format_name, ("jpegxl_export", ".jxl"))
+    if capabilities[capability].status != CapabilityStatus.AVAILABLE:
+        pytest.skip(capabilities[capability].detail)
+    pixels = np.random.default_rng(22).uniform(.02, .55, (96, 141, 3)).astype(np.float32)
+    session = _session(pixels)
+    session.local_adjustments = []
+    session.denoise = DenoiseDocumentSettings()
+    for lane in (session.denoise.hdr, session.denoise.sdr):
+        lane.enabled = True
+        lane.controls.method = "clean_grain"
+        lane.controls.splotch_size = "small"
+    settings = ExportSettings(format=format_name, quality=87, dithering="off",
+                              output_path=str(tmp_path / f"export{suffix}"))
+    state = exporters._finishing_adjustments_for_export(session)
+    reference = tmp_path / f"reference{suffix}"
+    if format_name == "jpeg_ultrahdr":
+        prepared = exporters._jpeg_denoise_source(session, state)
+        hdr, sdr = (exporters._render_export_branch(session, settings, kind, state, denoise_source=prepared)
+                    for kind in (PreviewKind.HDR, PreviewKind.SDR))
+        exporters.write_jpeg_gainmap_renditions(reference, hdr, sdr, settings)
+    elif format_name == "jpegxl_hdr":
+        hdr = exporters._render_export_branch(session, settings, PreviewKind.HDR, state)
+        reference.write_bytes(exporters.encode_hdr_jpegxl(hdr, settings.quality, settings.jpegxl_precision))
+    else:
+        sdr = exporters._render_export_branch(session, settings, PreviewKind.SDR, state)
+        reference.write_bytes(exporters.encode_sdr_jpegxl(sdr, settings.quality, dithering=settings.dithering))
+    response = by_format[format_name].export(session, settings)
+    assert response.accepted, response.message
+    assert Path(response.output_path).read_bytes() == reference.read_bytes()
+    if format_name == "sdr_jpegxl":
+        return
+    store = ProofArtifactStore()
+    try:
+        proof = store.create(session, ProofArtifactRequest(
+            adjustments=state, format=format_name, quality=settings.quality, full_size=True, dithering="off",
+        ), by_format[format_name])
+        assert proof.sha256 == _sha(reference)
+    finally:
+        store.clear()
+
+
 def test_reduced_proof_of_a_small_frame_reports_full_size() -> None:
     """A frame no larger than the reduced edge is not downscaled, so not labelled reduced."""
 
@@ -298,6 +347,66 @@ def test_film_density_grain_proof_is_export_byte_for_byte(backends, tmp_path, st
         store.clear()
 
 
+@pytest.mark.parametrize("resize", [False, True])
+def test_scan_sharpening_finished_pixels_and_full_proof_match_export(backends, tmp_path, resize):
+    from hdr_finisher.adjustments import (
+        apply_adjustments, apply_hdr_output_highlight_compression, apply_sdr_output_highlight_compression,
+    )
+    from hdr_finisher.exporters import _finishing_adjustments_for_export, _render_delivery_files, _render_export_branch
+    from hdr_finisher.finishing import apply_output_finishing
+    from test_cpu_strips import assert_strips_match
+
+    # 912-pixel rows split this frame at the normal delivery budget. The
+    # slanted step crosses those strip edges even when the output is resized.
+    width, height = 912, 720
+    y, x = np.ogrid[:height, :width]
+    edge = (y > 55 + x * .64).astype(np.float32)
+    image = .03 + edge[..., None] * np.array([.3, .6, .4], dtype=np.float32)
+    session = _session(image)
+    session.local_adjustments = []
+    for branch in (session.adjustments.hdr, session.adjustments.sdr):
+        branch.film_look_section_enabled = True
+        branch.film_look.scan_sharpening = 100
+    finishing = OutputFinishingSettings(resize_mode="long_edge", long_edge=599) if resize else OutputFinishingSettings()
+    format_name = "jpeg_ultrahdr"
+    settings = ExportSettings(format=format_name, output_path=str(tmp_path / "scan.jpg"),
+                              overwrite=True, output_finishing=finishing)
+    state = _finishing_adjustments_for_export(session)
+    kinds = (PreviewKind.HDR, PreviewKind.SDR)
+    for kind, frame, limit in zip(kinds, _render_delivery_files(session, settings, state, tmp_path), (
+            apply_hdr_output_highlight_compression, apply_sdr_output_highlight_compression)):
+        whole = apply_adjustments(image, state, kind, color_context=session.color_context,
+                                  include_output_highlight_compression=False)
+        expected = limit(apply_output_finishing(whole, finishing, kind), state,
+                         **({"color_context": session.color_context} if kind == PreviewKind.HDR else {}))
+        with frame.map("r") as pixels:
+            assert_strips_match(pixels, expected)
+        frame.path.unlink()
+        if not resize:
+            # Native Proof's JPEG decoder fallback can render without a
+            # staged delivery job or output path. It must still use strips.
+            assert_strips_match(_render_export_branch(session, settings, kind, state), expected)
+            assert settings._last_cpu_strips
+
+    capabilities, export_backends = backends
+    if capabilities["ultrahdr_encoder"].status != CapabilityStatus.AVAILABLE:
+        pytest.skip("Finished pixels passed but the Ultra HDR encoder is unavailable")
+    backend = export_backends[format_name]
+    exported = backend.export(session, settings)
+    assert exported.accepted and exported.renderer == "cpu", exported.message
+    store = ProofArtifactStore()
+    try:
+        proof = store.create(session, ProofArtifactRequest(
+            adjustments=session.adjustments, format=format_name, quality=settings.quality,
+            full_size=True, output_finishing=finishing,
+        ), backend)
+        assert proof.full_size
+        assert (proof.width, proof.height) == (expected.shape[1], expected.shape[0])
+        assert proof.sha256 == _sha(Path(exported.output_path))
+    finally:
+        store.clear()
+
+
 @pytest.mark.parametrize("stock,paper", [("kodak_portra_800","kodak_2383"),
     ("fujifilm_velvia_100","default"), ("none","default")])
 def test_physical_film_controls_proof_is_export(backends, tmp_path, stock, paper):
@@ -322,5 +431,139 @@ def test_physical_film_controls_proof_is_export(backends, tmp_path, stock, paper
             format="jpeg_ultrahdr", quality=ExportSettings().quality, full_size=True), backend)
         assert (proof.width,proof.height) == (128,96)
         assert proof.sha256 == _sha(Path(result.output_path))
+    finally:
+        store.clear()
+
+
+
+@pytest.mark.parametrize("format_name,source_mode,export_calls,proof_calls", [
+    ("avif_gain_map", "matched", 1, 1),
+    ("avif_gain_map", "different_controls", 2, 2),
+    ("avif_gain_map", "authored_sdr", 2, 2),
+    ("jpegxl_hdr", "matched", 1, 1),
+])
+def test_delivery_shares_grain_only_for_matched_inputs(
+    backends, tmp_path, monkeypatch, format_name, source_mode, export_calls, proof_calls,
+):
+    from contextlib import nullcontext
+
+    from hdr_finisher import denoise_grain, denoise_measurement, exporters, proofing
+    from hdr_finisher.models import DenoiseDocumentSettings, PreviewKind
+
+    capabilities, backends_by_format = backends
+    capability, suffix = FORMATS[format_name]
+    if capabilities[capability].status != CapabilityStatus.AVAILABLE:
+        pytest.skip(f"{capability} unavailable")
+
+    rng = np.random.default_rng(20261121)
+    session = _session(rng.uniform(.01, .6, (96, 128, 3)).astype(np.float32))
+    session.local_adjustments = []
+    session.denoise = DenoiseDocumentSettings()
+    for lane in (session.denoise.hdr, session.denoise.sdr):
+        lane.enabled = True
+        lane.controls.method = "clean_grain"
+        lane.controls.splotch_size = "small"
+    session.adjustments.shared.geometry.rotation = 90
+    if source_mode == "different_controls":
+        session.denoise.sdr.controls.amount *= .5
+    if source_mode == "authored_sdr":
+        session.sdr_reference_image = session.image * .5
+        session.adjustments.sdr.use_authored_base = True
+        session.render_cache = SessionRenderCache(session.image, session.sdr_reference_image)
+
+    calls = 0
+    resolve_grain = denoise_grain.resolve_grain
+
+    def count_resolution(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        return resolve_grain(*args, **kwargs)
+
+    monkeypatch.setattr(denoise_grain, "resolve_grain", count_resolution)
+    measured_model = denoise_measurement.measured_model
+    monkeypatch.setattr(denoise_measurement, "measured_model", lambda key, measure, **_: measured_model(key, measure))
+    backend = backends_by_format[format_name]
+
+    def run(name):
+        nonlocal calls
+        settings = ExportSettings(format=format_name, output_path=str(tmp_path / f"{name}{suffix}"))
+        calls = 0
+        export = backend.export(session, settings)
+        assert export.accepted, export.message
+        export_count = calls
+        calls = 0
+        store = ProofArtifactStore()
+        try:
+            proof = store.create(session, ProofArtifactRequest(
+                adjustments=session.adjustments, format=format_name, quality=settings.quality, full_size=True,
+            ), backend)
+            artifact = store.artifact(proof.artifact_id)
+            outputs = (_sha(Path(export.output_path)), proof.sha256,
+                       _sha(artifact.hdr_authored.path), _sha(artifact.sdr_authored.path))
+            proof_count = calls
+            adjustments = exporters._finishing_adjustments_for_export(session)
+            with exporters.share_delivery_grain(session, adjustments, spans_encoding=True):
+                hdr = exporters._render_export_branch(session, settings, PreviewKind.HDR, adjustments)
+                sdr = exporters._render_export_branch(session, settings, PreviewKind.SDR, adjustments)
+            assert artifact.hdr_authored.path.read_bytes() == hdr.tobytes()
+            assert artifact.sdr_authored.path.read_bytes() == proofing._sdr_matrix_band(sdr).tobytes()
+            return outputs, (export_count, proof_count)
+        finally:
+            store.clear()
+
+    shared_outputs, counts = run("shared")
+    assert counts == (export_calls, proof_calls)
+    monkeypatch.setattr(exporters, "share_delivery_grain", lambda *_, **__: nullcontext())
+    monkeypatch.setattr(proofing, "share_delivery_grain", lambda *_, **__: nullcontext())
+    separate_outputs, separate_counts = run("separate")
+    assert separate_counts == ((2, 2) if format_name == "avif_gain_map" else (1, 2))
+    assert shared_outputs == separate_outputs
+    assert shared_outputs[0] == shared_outputs[1]
+
+
+@pytest.mark.parametrize("full_size", [False, True])
+def test_avif_proof_uses_one_gpu_delivery_pair(backends, monkeypatch, tmp_path, full_size):
+    from hdr_finisher import gpu_delivery, proofing
+
+    capabilities, export_backends = backends
+    if capabilities[FORMATS["avif_gain_map"][0]].status != CapabilityStatus.AVAILABLE:
+        pytest.skip("AVIF Gain Map encoder unavailable")
+    session = _session(np.full((180, 300, 3), .18, np.float32))
+    session.local_adjustments = []
+    monkeypatch.setenv("HDR_FINISHER_PROOF_ROOT", str(tmp_path))
+    renders = 0
+
+    def render_pair(frame, settings, adjustments):
+        nonlocal renders
+        owner = frame.delivery_owner
+        cache = getattr(owner, "_delivery_cache", None)
+        if cache is None:
+            renders += 1
+            pair = {"hdr": np.full_like(frame.image, .72), "sdr": np.full_like(frame.image, .42)}
+            cache = ("current-grade", pair, {"renderer": "gpu", "fallback_reason": None})
+            owner._delivery_cache = cache
+        frame._delivery_cache = cache
+        frame._delivery_record = cache[2]
+        return cache[1]
+
+    monkeypatch.setattr(gpu_delivery, "render_pair", render_pair)
+    store = ProofArtifactStore()
+    try:
+        proof = store.create(session, ProofArtifactRequest(adjustments=session.adjustments,
+            format="avif_gain_map", long_edge=256, full_size=full_size), export_backends["avif_gain_map"])
+        assert proof.full_size is full_size
+        assert proof.renderer == "gpu"
+        assert renders == 1
+        artifact = store.artifact(proof.artifact_id)
+        shape = (proof.height, proof.width, 3)
+        hdr = np.full(shape, .72, np.float32)
+        sdr = proofing._sdr_matrix_band(np.full(shape, .42, np.float32))
+        if full_size:
+            assert session._delivery_cache is None
+            assert artifact.hdr_authored.path.read_bytes() == hdr.tobytes()
+            assert artifact.sdr_authored.path.read_bytes() == sdr.tobytes()
+        else:
+            np.testing.assert_array_equal(artifact.hdr_authored, hdr)
+            np.testing.assert_array_equal(artifact.sdr_authored, sdr)
     finally:
         store.clear()

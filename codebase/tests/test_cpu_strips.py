@@ -33,6 +33,7 @@ from hdr_finisher.cpu_strips import (  # noqa: E402
     strip_execution_refusals,
 )
 from hdr_finisher.finishing import geometry_resample_stage  # noqa: E402
+from hdr_finisher.hsl import HSLRange, HSLRecipe  # noqa: E402
 from hdr_finisher.models import (  # noqa: E402
     AdjustmentState,
     CropRectangle,
@@ -54,6 +55,25 @@ def assert_strips_match(actual, desired):
         np.testing.assert_allclose(actual, desired, rtol=2e-6, atol=1e-6)
     else:
         np.testing.assert_array_equal(actual, desired)
+
+
+def test_linked_sdr_frame_uses_unclamped_hdr_scene(tmp_path):
+    from hdr_finisher.cpu_strips import linked_sdr_to_frame, render_staged_grade
+    from hdr_finisher.delivery_frames import DeliveryFrame
+
+    pixels = np.random.default_rng(731).uniform(-1, 4, (97, 151, 3)).astype(np.float32)
+    state = AdjustmentState()
+    state.sdr.linked_to_hdr = True
+    state.sdr.output_exposure = .37
+    reference = apply_adjustments(pixels, state, PreviewKind.SDR, include_output_highlight_compression=False)
+    source = DeliveryFrame.spill(tmp_path / "source.rgb", pixels)
+    hdr = render_staged_grade(source, None, state, PreviewKind.HDR, tmp_path, rows=19, apply_output_clamp=False)
+    with hdr.map("r") as scene:
+        assert np.any(scene < 0)
+    output = linked_sdr_to_frame(hdr, DeliveryFrame(tmp_path / "sdr.rgb", hdr.shape), state, rows=23)
+    with output.map("r") as actual:
+        np.testing.assert_array_equal(actual, reference)
+
 
 # The windowed projective resample perturbs float32 in its last bits, which
 # `test_geometry_region.py` measures at 6e-08 absolute. That difference is in
@@ -148,6 +168,67 @@ def test_strip_render_equals_whole_frame(kind, geometry_name, budget):
 
 
 @pytest.mark.parametrize("kind", [PreviewKind.HDR, PreviewKind.SDR])
+@pytest.mark.parametrize("scale", [1.0, 0.4])
+def test_scan_sharpening_strips_match_whole_frame(kind, scale):
+    image = _source(height=173, width=79)
+    state = AdjustmentState()
+    branch = getattr(state, kind.value)
+    branch.film_look_section_enabled = True
+    branch.film_look.look_strength = 65
+    budget = 384 * 1024
+
+    neutral, neutral_report = render_in_strips(image, state, kind, source_pixel_scale=scale, budget_bytes=budget)
+    assert_strips_match(neutral, apply_adjustments(image, state, kind, source_pixel_scale=scale))
+    branch.film_look_section_enabled = False
+    disabled, disabled_report = render_in_strips(image, state, kind, source_pixel_scale=scale, budget_bytes=budget)
+    np.testing.assert_array_equal(neutral, disabled)
+    assert neutral_report.plan == disabled_report.plan
+
+    branch.film_look_section_enabled = True
+    branch.film_look.scan_sharpening = 100
+    expected = apply_adjustments(image, state, kind, source_pixel_scale=scale)
+    actual, report = render_in_strips(image, state, kind, source_pixel_scale=scale, budget_bytes=budget)
+
+    assert report.plan.strip_count > 2
+    assert report.plan.planned_transient_bytes <= budget
+    assert not np.allclose(expected, neutral)
+    assert_strips_match(actual, expected)
+
+
+@pytest.mark.parametrize("lane", ["hdr", "sdr", "authored", "linked"])
+@pytest.mark.parametrize("stage", ["bw", "hsl", "combined", "combined_with_scan"])
+def test_spatial_grade_matches_whole_frame_exactly(lane, stage):
+    rng = np.random.default_rng(174)
+    image = rng.random((213, 257, 3), dtype=np.float32) * np.float32(.65)
+    reference = rng.random(image.shape, dtype=np.float32) if lane == "authored" else None
+    state = AdjustmentState()
+    state.sdr.use_authored_base = lane == "authored"
+    state.sdr.linked_to_hdr = lane == "linked"
+    kind = PreviewKind.HDR if lane == "hdr" else PreviewKind.SDR
+    branch = state.hdr if lane in {"hdr", "linked"} else state.sdr
+    state.shared.geometry = GeometryAdjustments(
+        flip_horizontal=True, flip_vertical=True,
+        crop=CropRectangle(x=.07, y=.14, width=.87, height=.79),
+    )
+    if stage in {"bw", "combined", "combined_with_scan"}:
+        branch.black_and_white_section_enabled = True
+        branch.black_and_white.reds = 55
+        branch.black_and_white.blues = -47
+    if stage in {"hsl", "combined", "combined_with_scan"}:
+        branch.hsl_section_enabled = True
+        for channel, center, edge, detail in zip(branch.hsl.channels, (25, 151, 238), (7, -8, 4), (0, 50, 100)):
+            channel.recipe = HSLRecipe(ranges=[HSLRange(center=center, width=70, feather=39)],
+                hue=19, saturation=27, luminance=.42, edge=edge, edge_feather=12, edge_detail=detail)
+    if stage == "combined_with_scan":
+        branch.film_look_section_enabled = True
+        branch.film_look.scan_sharpening = 100
+    expected = apply_adjustments(image, state, kind, sdr_reference_image=reference)
+    actual, report = render_in_strips(image, state, kind, sdr_reference_image=reference, budget_bytes=384 * 1024)
+    assert report.strips_rendered > 2
+    np.testing.assert_array_equal(actual, expected)
+
+
+@pytest.mark.parametrize("kind", [PreviewKind.HDR, PreviewKind.SDR])
 def test_strip_report_carries_the_exact_peak_of_the_pixels_it_presented(kind):
     """The CPU Full scope must not fall back to a downsampled proxy peak."""
     state = _graded_state()
@@ -163,7 +244,7 @@ def test_strip_report_carries_the_exact_peak_of_the_pixels_it_presented(kind):
 @pytest.mark.parametrize("kind", [PreviewKind.HDR, PreviewKind.SDR])
 @pytest.mark.parametrize("mode", ["peak_fit", "soft_ceiling", "clip", "fixed_cap"])
 @pytest.mark.parametrize("measurement", ["maximum", "robust", "manual"])
-@pytest.mark.parametrize("color_handling", ["smooth_rolloff", "path_to_white", "luminance"])
+@pytest.mark.parametrize("color_handling", ["smooth_rolloff", "path_to_white", "agx_attenuate", "luminance"])
 def test_every_highlight_configuration_is_exact(kind, mode, measurement, color_handling):
     """The highlight stages are the only whole-frame reductions in this graph.
 
@@ -181,9 +262,11 @@ def test_every_highlight_configuration_is_exact(kind, mode, measurement, color_h
     image = _source(height=37, width=29, seed=5)
 
     reference = apply_adjustments(image, state, kind)
-    strips, report = render_in_strips(image, state, kind, budget_bytes=4096)
+    strips, report = render_in_strips(
+        image, state, kind, budget_bytes=32 * 1024, parallel_sdr_output=kind == PreviewKind.SDR,
+    )
 
-    assert report.plan.strip_count > 1, "the corpus must actually be divided"
+    assert 1 < report.plan.strip_rows < len(image), "exercise multi-row strips"
     np.testing.assert_array_equal(
         strips, reference, err_msg=f"{kind}/{mode}/{measurement}/{color_handling}"
     )
@@ -227,7 +310,8 @@ def test_authored_sdr_base_is_exact():
 
     reference = apply_adjustments(image, state, PreviewKind.SDR, sdr_reference_image=reference_image)
     strips, report = render_in_strips(
-        image, state, PreviewKind.SDR, sdr_reference_image=reference_image, budget_bytes=4096
+        image, state, PreviewKind.SDR, sdr_reference_image=reference_image,
+        budget_bytes=128 * 1024, parallel_sdr_output=True,
     )
 
     assert report.plan.strip_count > 1
@@ -305,7 +389,8 @@ def _local(identifier: str = "a") -> LocalAdjustment:
         (lambda s: setattr(s.hdr.film_look, "halation_amount", 50.0), "spatial film effects"),
         (lambda s: setattr(s.hdr.film_look, "film_resolution", 80.0), "spatial film effects"),
         (lambda s: setattr(s.hdr.detail, "sharpen_amount", 40.0), "detail"),
-        (lambda s: setattr(s.shared.geometry, "straighten_angle", 4.0), "roll geometry"),
+        (lambda s: setattr(s.shared, "geometry", GeometryAdjustments(straighten_angle=6.3)), "roll geometry"),
+        (lambda s: setattr(s.shared, "geometry", GeometryAdjustments(straighten_angle=45, perspective_rotate=45)), "roll geometry"),
     ],
 )
 def test_refusals_name_the_node(configure, expected):
@@ -415,6 +500,26 @@ def test_cancellation_abandons_at_most_one_strip_of_work():
         seen = len(rendered)
     assert seen == 4, "the check runs once per strip and stops on the first false"
     assert seen < plan.strip_count
+
+
+@pytest.mark.parametrize(("kind", "highlights", "passes"), [
+    (PreviewKind.SDR, False, 3),
+    (PreviewKind.SDR, True, 3),
+    (PreviewKind.HDR, False, 2),
+    (PreviewKind.HDR, True, 4),
+])
+def test_strip_progress_counts_each_visited_band(monkeypatch, kind, highlights, passes):
+    from hdr_finisher import export_timing
+
+    state = AdjustmentState()
+    state.hdr.highlight_section_enabled = highlights
+    state.sdr.highlight_section_enabled = highlights
+    image = np.full((96, 128, 3), .18, dtype=np.float32)
+    calls = []
+    monkeypatch.setattr(export_timing, "tick", lambda done, total: calls.append((done, total)))
+    _, report = render_in_strips(image, state, kind, budget_bytes=32 * 1024)
+    total = passes * len(report.plan.strips)
+    assert calls == [(done, total) for done in range(1, total + 1)]
 
 
 def test_plan_divides_the_frame_without_gaps_or_overlap():

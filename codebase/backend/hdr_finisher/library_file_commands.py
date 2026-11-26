@@ -1,16 +1,19 @@
 """Recorded, forward-only original moves. Records survive a disposable DB."""
 from copy import deepcopy
+from collections import defaultdict, deque
+import errno
 import json
 import os
 import sys
 from pathlib import Path
 import shutil
 from threading import Event, RLock, Thread, get_ident
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
+from contextvars import ContextVar
 from uuid import uuid4
 from fastapi import HTTPException
 from pydantic import BaseModel, ConfigDict
-from .library_file_io import digest, signature, same, rename, durable, occupied, relocated, stable_ids, check_streams
+from .library_file_io import digest, signature, optional_signature, same, rename, durable, occupied, relocated, stable_ids, check_streams, hash_timings
 from .library_file_state import snapshot, retarget, pictures, document_paths, mapped
 from .library_folder_commands import folder_name
 from .library_diagnostics import log, timed_lock
@@ -21,6 +24,17 @@ import time
 OPEN_MESSAGE = 'Open another photo before changing this one. Nothing was changed for it.'
 FILE_COMMANDS_SUPPORTED = os.name == 'nt' or sys.platform == 'darwin'
 PLATFORM_MESSAGE = 'Renaming, moving and deleting photos from the Library is available on Windows and macOS only in this version. Nothing was changed.'
+_activity = ContextVar('library_file_command_activity', default=None)
+
+
+class WaitingForSettings(ValueError):
+    pass
+
+
+def transient(error):
+    return (isinstance(error, WaitingForSettings)
+            or isinstance(error, OSError) and (error.errno in {errno.EBUSY, errno.EAGAIN, errno.ETIMEDOUT}
+                or getattr(error, 'winerror', None) in {32, 33}))
 
 
 class FileRequest(BaseModel):
@@ -32,6 +46,7 @@ class FileRequest(BaseModel):
     choices: dict[str,str] = {}
     token: str = ''
     confirmation: str = ''
+    request_id: str = ''
 
 
 def file_event(stage):
@@ -40,19 +55,25 @@ def file_event(stage):
         def call(self, *args, **kwargs):
             started = time.perf_counter()
             request = args[0] if args else None
-            operation = getattr(request, 'action', None)
-            token = request if isinstance(request, str) else None
+            record = request if isinstance(request,dict) else self.plans.get(request,{}) if isinstance(request,str) else {}
+            operation = getattr(request, 'action', None) or record.get('action')
+            token = request if isinstance(request, str) else record.get('id')
+            request_id = getattr(request,'request_id','') or kwargs.get('request_id') or token
+            count = len(getattr(request,'paths',record.get('items',())))
             log('file_command_' + stage + '_started', operation=operation, token=token,
-                count=len(getattr(request, 'paths', ())))
+                count=count)
             try:
-                result = function(self, *args, **kwargs)
+                with self.activity(request_id,operation,stage,count) as timings:
+                    result = function(self, *args, **kwargs)
             except Exception as error:
                 log('file_command_' + stage + '_failed', operation=operation, token=token,
-                    reason=str(error), duration_ms=(time.perf_counter()-started)*1000)
+                    reason=str(error), duration_ms=(time.perf_counter()-started)*1000,
+                    phases_ms={key:round(ms,2) for key,ms in timings.items()})
                 raise
             log('file_command_' + stage + '_finished', operation=operation,
                 token=result.get('token', token), count=result.get('count'),
-                warnings=result.get('warnings', []), duration_ms=(time.perf_counter()-started)*1000)
+                warnings=result.get('warnings', []), duration_ms=(time.perf_counter()-started)*1000,
+                phases_ms={key:round(ms,2) for key,ms in timings.items()})
             return result
         return call
     return decorate
@@ -63,14 +84,64 @@ class FileCommands:
         self.marks,self.browser,self.index,self.worker,self.store=marks,browser,index,worker,store
         self.root=Path(browser.root)/'library-file-commands'; self.root.mkdir(parents=True,exist_ok=True)
         self._lane=RLock(); self._stop=Event(); self._thread=None
-        self._fences={}
-        self.epoch=0; self.retired=set(); self.plans={}; self.jobs={}; self.events=[];self.changes=[];self.removed_copies=[]
+        self._fences={}; self._state=RLock(); self._record_lock=RLock()
+        self._inflight=set(); self._invalidated=set(); self._active={}
+        self.epoch=0; self.retired=set(); self.plans={}
+        self._revision=0; self._changes=deque(maxlen=32)
         self.hook=lambda stage,item: None
         self.cross_drive=lambda a,b: Path(a).stat().st_dev != Path(b).parent.stat().st_dev
         from . import library_recycle
         self.recycle=library_recycle.recycle;self.recycle_find=library_recycle.find
         marks.file_commands=self
         self.records={p.stem:json.loads(p.read_text(encoding='utf-8')) for p in self.root.glob('*.json')}
+
+    @contextmanager
+    def activity(self,request_id,operation,step,total):
+        timings=defaultdict(float)
+        key=object()
+        progress={'request_id':request_id,'action':operation,'step':step,'phase':'waiting_lane','done':0,'total':total}
+        with self._state: self._active[key]=progress
+        token=_activity.set((progress,timings))
+        hashing=hash_timings.set(timings)
+        try: yield timings
+        finally:
+            hash_timings.reset(hashing);_activity.reset(token)
+            with self._state: self._active.pop(key)
+
+    def progress(self):
+        with self._state:
+            return [dict(progress) for progress in self._active.values()]
+
+    def progress_counts(self,done,total):
+        if active:=_activity.get():
+            with self._state: active[0].update(done=done,total=total)
+
+    @contextmanager
+    def phase(self,name,*,display=True):
+        active=_activity.get()
+        if active is None:
+            yield
+            return
+        progress,timings=active
+        with self._state:
+            previous=progress['phase']
+            if display: progress['phase']=name
+        started=time.perf_counter()
+        try: yield
+        finally:
+            timings[name]+=(time.perf_counter()-started)*1000
+            if display:
+                with self._state: progress['phase']=previous
+
+    @contextmanager
+    def lane(self):
+        started=time.perf_counter()
+        with timed_lock(self._lane,"file_command_lane"):
+            active=_activity.get()
+            if active:
+                with self._state: active[0]['phase']='checking_files'
+                active[1]['waiting_lane']+=(time.perf_counter()-started)*1000
+            yield
 
     def blocked(self,path):
         path=str(self.marks.source_path(path))
@@ -81,10 +152,15 @@ class FileCommands:
 
     @contextmanager
     def fence(self,paths):
-        paths=tuple(str(Path(str(path).split('|copy|',1)[0]).resolve()) for path in paths if path)
+        resolved=[]
+        for path in paths:
+            if not path or path in ('Recycle Bin','Trash','Gone for good'): continue
+            try: resolved.append(str(Path(str(path).split('|copy|',1)[0]).resolve()))
+            except (OSError,RuntimeError,ValueError): continue  # Plan validates invalid paths individually.
         token=object()
-        with self.marks.writer._lane, self.marks._lock:
-            self._fences[token]=(get_ident(),paths)
+        with self.phase('waiting_writer'):
+            with self.marks.writer._lane, self.marks._lock:
+                self._fences[token]=(get_ident(),tuple(resolved))
         try:
             yield
         finally:
@@ -104,13 +180,16 @@ class FileCommands:
         return source is not None and (os.path.normcase(str(source))==os.path.normcase(str(path)) or folder and str(source).casefold().startswith((str(path)+os.sep).casefold()))
 
     def save(self,record):
-        durable(self.root/(record['id']+'.json'),record)
-        self.records[record['id']]=record
+        with self._record_lock, self.phase('durable_checkpoints'):
+            durable(self.root/(record['id']+'.json'),record)
+            self.records[record['id']]=record
 
     def notify(self,message):
         self.marks.writer.notify(message);log('file_command_notice',message=message)
 
-    def invalidate(self):
+    def invalidate(self,record):
+        if record['id'] in self._invalidated: return
+        self._invalidated.add(record['id'])
         self.epoch+=1
         if self.worker is not None:
             with self.worker._lock: jobs=list(self.worker._requests)
@@ -124,10 +203,10 @@ class FileCommands:
         if request.action in {'delete','delete_rejected'}:
             # Hashes and Windows Recycle Bin probing can block for seconds.
             # The delete planner captures its settings snapshot in a short scope.
-            with timed_lock(self._lane, "file_command_lane"), self.fence(request.paths):
+            with self.lane(), self.fence(request.paths):
                 from .library_file_delete import plan
                 return plan(self,request)
-        with timed_lock(self._lane, "file_command_lane"), self.fence(request.paths):
+        with self.lane(), self.fence(request.paths):
             if request.action in {'folder_rename','folder_move'}:
                 from .library_file_folders import plan
                 return plan(self,request)
@@ -195,8 +274,8 @@ class FileCommands:
             return {'token':token,'count':len(items),'warnings':warnings,'clashes':[], 'destination':str(destination or '')}
 
     @file_event("confirmation")
-    def execute(self,token,confirmation=''):
-        with timed_lock(self._lane, "file_command_lane"), self.fence(self.planned_paths(token)):
+    def execute(self,token,confirmation='',*,request_id=''):
+        with self.lane(), self.fence(self.planned_paths(token)):
             record=self.plans.get(token)
             if record is None: raise ValueError('The command preview expired. Open it again; nothing was changed.')
             if record['action'] in {'delete','delete_rejected'}:
@@ -207,28 +286,40 @@ class FileCommands:
                 if self.marks.copies.document(path)!=document: raise ValueError('A selected virtual copy changed. Preview again; nothing was deleted.')
             self.plans.pop(token)
             # Revalidate the whole selection before recording or touching originals.
-            for item in record['items']:
-                if item.get('folder'):
-                    from .library_file_folders import validate
-                    validate(self,item);continue
-                if self.protected(item['old']): raise ValueError(OPEN_MESSAGE)
-                if not same(item['old'],item['stamp'],item['checksum']): raise ValueError('A photo changed; preview the command again. Nothing was changed.')
-                old=Path(item['old']);side=self.marks._sidecar(old)
-                if (signature(side) if side.exists() else None)!=item['side_stamp'] or side.exists() and digest(side)!=item['side_hash']:
-                    raise ValueError('Settings changed; preview the command again. Nothing was changed.')
-                # New pending settings supersede a preview, never silently lose a mark.
-                if snapshot(self.marks,item['old'])!=item['rows']: raise ValueError('Marks or grades changed; preview the command again. Nothing was changed.')
+            with self.phase('verify_files'):
+                for item in record['items']:
+                    if item.get('folder'):
+                        from .library_file_folders import validate
+                        validate(self,item);continue
+                    if self.protected(item['old']): raise ValueError(OPEN_MESSAGE)
+                    if not same(item['old'],item['stamp'],item['checksum']): raise ValueError('A photo changed; preview the command again. Nothing was changed.')
+                    old=Path(item['old']);side=self.marks._sidecar(old)
+                    if optional_signature(side)!=item['side_stamp'] or item['side_stamp'] is not None and digest(side)!=item['side_hash']:
+                        raise ValueError('Settings changed; preview the command again. Nothing was changed.')
+                    # New pending settings supersede a preview, never silently lose a mark.
+                    with self.phase('conflicts_and_marks',display=False):
+                        if snapshot(self.marks,item['old'])!=item['rows']: raise ValueError('Marks or grades changed; preview the command again. Nothing was changed.')
             if not record['items']:
-                result=self.result(record)
                 if record.get('copy_paths'):
-                    copies=self.marks.copies.remove_many(record['copy_paths']);result.update(copies,files_changed=True,copies_count=copies['count'],count=0)
-                    self.changes=[];self.removed_copies=copies['removed_copies'];self.epoch+=1
-                return result
-            self.save(record);self.invalidate();self.hook('record',record['items'][0])
-        if any(i['cross'] for i in record['items']):
-            Thread(target=self.run,args=(record,),name='hdr-library-file-move',daemon=True).start()
-            return self.result(record,queued=True)
-        return self.run(record)
+                    copies=self.marks.copies.remove_many(record['copy_paths'])
+                    record['copies_removed']=copies['removed_copies']
+                    record['warnings']+=copies['warnings']
+                    if copies['removed_copies']:
+                        self.invalidate(record)
+                        self._invalidated.discard(token)
+                        self.publish([],copies['removed_copies'])
+                return self.result(record)
+            if not self.claim(record): raise ValueError('This file command is already running.')
+            handed_off=False
+            try:
+                self.save(record);self.invalidate(record);self.hook('record',record['items'][0])
+                if any(i['cross'] for i in record['items']):
+                    Thread(target=self.run,args=(record,),kwargs={'claimed':True},name='hdr-library-file-move',daemon=True).start()
+                    handed_off=True
+                    return self.result(record,queued=True)
+                return self._run(record,fenced=True,revalidated=True)
+            finally:
+                if not handed_off: self.release(record)
 
     def checkpoint(self,record,item,stage):
         item['phase']=stage;self.save(record);self.hook(stage,item)
@@ -342,6 +433,16 @@ class FileCommands:
                 remove_owned(old,item['side_stamp'],item['side_hash'])
         self.checkpoint(record,item,'settings')
 
+    def change_feed(self):
+        with self._state:
+            recent=list(self._changes)
+            return {'revision':self._revision,'recent_changes':recent}
+
+    def publish(self,changes,copies):
+        with self._state:
+            self._revision+=1
+            self._changes.append({'revision':self._revision,'changes':changes,'removed_copies':list(copies)})
+
     def result(self,record,**extra):
         done=[i for i in record['items'] if (i.get('done') or i.get('photo_gone')) and not i.get('cancelled')]
         return {'photos':[],'warnings':record['warnings']+([record['copy_error']] if record.get('copy_error') else [])+[i['error'] for i in record['items'] if i.get('error')],
@@ -349,58 +450,89 @@ class FileCommands:
                 'settings_pending':sum(bool(i.get('photo_gone') and not i.get('done')) for i in record['items']),
                 'copies_count':len(record.get('copies_removed',[])),
                 'removed_copies':record.get('copies_removed',[]),
-                'changes':[{'old':i['old'],'new':i.get('new','')} for i in done],**extra}
+                'changes':[{'old':i['old'],'new':i.get('new','')} for i in done],**self.change_feed(),**extra}
 
-    def run(self,record,recovery=False):
+    def claim(self,record,*,retry=False):
+        with self._state:
+            key=record['id']
+            if key in self._inflight or retry and not self.retryable(record): return False
+            self._inflight.add(key)
+            return True
+
+    def release(self,record):
+        with self._state: self._inflight.remove(record['id'])
+
+    @file_event("run")
+    def run(self,record,recovery=False,*,claimed=False,retry=False):
+        if not claimed and not self.claim(record,retry=retry): return self.result(record,queued=True)
+        with self.lane():
+            try:
+                # Another owner may have finished this snapshot before we got
+                # here. Never re-create a completed command from stale input.
+                if self.records.get(record['id']) is not record: return self.result(record)
+                return self._run(record,recovery,retry=retry)
+            finally: self.release(record)
+
+    def _run(self,record,recovery=False,*,fenced=False,revalidated=False,retry=False):
         # Reserve before writer/marks locks; activation checks under the same lock.
         # No session lock is held during file IO or cache scans.
-        with self._lane:
-            paths={os.path.normcase(p) for i in record['items'] for p in [i['old'],i.get('new','')] + [c[k] for c in i.get('children',[]) for k in ('old','new')]}
+        self.invalidate(record)
+        paths={os.path.normcase(p) for i in record['items'] for p in [i['old'],i.get('new','')] + [c[k] for c in i.get('children',[]) for k in ('old','new')]}
+        if self.store is not None:
+            with self.store._lock:
+                self.store.file_command_sources=getattr(self.store,'file_command_sources',set()) | paths
+        try: return self._run_reserved(record,recovery,fenced=fenced,revalidated=revalidated,retry=retry)
+        finally:
             if self.store is not None:
-                with self.store._lock:
-                    self.store.file_command_sources=getattr(self.store,'file_command_sources',set()) | paths
-            try: return self._run_reserved(record,recovery)
-            finally:
-                if self.store is not None:
-                    with self.store._lock: self.store.file_command_sources.difference_update(paths)
+                with self.store._lock: self.store.file_command_sources.difference_update(paths)
 
-    def _run_reserved(self,record,recovery=False):
+    def _run_reserved(self,record,recovery=False,*,fenced=False,revalidated=False,retry=False):
         from .library_cache import LibraryCache
         paths=[path for item in record['items'] for path in (item['old'],item.get('new','')) if path and path not in ('Recycle Bin','Trash','Gone for good')]
-        with self.fence(paths + record.get('copy_paths',[])), LibraryCache(self.browser.root).mutation(paths,self.root/(record['id']+'.json')):
+        fence=nullcontext() if fenced else self.fence(paths + record.get('copy_paths',[]))
+        with fence, LibraryCache(self.browser.root).mutation(paths,self.root/(record['id']+'.json')):
             if record.get('copy_paths'): record.setdefault('copies_done',False)
+            done=sum(bool(i.get('done')) for i in record['items'])
+            self.progress_counts(done,len(record['items']))
             for item in record['items']:
                 if item.get('done'): continue
+                if retry and item.get('error') and not item.get('retryable'): continue
                 if self._stop.is_set() or record.get('paused'): break
                 if record.get('cancelled') and not item.get('phase'):
                     item['done']=True;item['cancelled']=True;self.save(record);continue
                 try:
                     if item.get('delete'):
                         from .library_file_delete import run
-                        run(self,record,item,recovery)
+                        run(self,record,item,recovery,revalidated=revalidated)
                     elif item.get('folder'):
                         from .library_file_folders import run
                         run(self,record,item)
                     else: self.move_item(record,item)
-                    item.pop('error',None);item['done']=True;self.save(record);self.hook('cleared_item',item)
+                    item.pop('error',None);item.pop('retryable',None);item['done']=True;self.save(record);self.hook('cleared_item',item)
                 except (OSError,ValueError) as e:
                     item['error']=f"{item['old']} → {item.get('new','')}: {e}"
-                    self.save(record);log('file_command_attention',old=item['old'],new=item.get('new',''),reason=str(e),action='both locations retained; retry forward')
+                    item['retryable']=transient(e) and (not item.get('delete_started') or bool(item.get('photo_gone')))
+                    self.save(record);log('file_command_attention',old=item['old'],new=item.get('new',''),reason=str(e),action='both locations retained; retry forward',retryable=item['retryable'])
+                done+=1
+                self.progress_counts(done,len(record['items']))
             changes=[{'old':i['old'],'new':i.get('new','')} for i in record['items']
                      if (i.get('done') or i.get('photo_gone')) and not i.get('cancelled')]
-            if not record.get('paused') and not self._stop.is_set() and (not record.get('cancelled') or record.get('copies_started')):
+            if (not record.get('paused') and not self._stop.is_set() and (not record.get('cancelled') or record.get('copies_started'))
+                    and (not retry or not record.get('copy_error') or record.get('copy_retryable'))):
                 self.remove_record_copies(record)
             elif record.get('cancelled') and not record.get('copies_started'):
                 record['copies_done']=True
             copies=record.get('copies_removed',[])
-            if changes != record.get('published_changes',[]) or copies != record.get('published_copies',[]):
+            new_changes=[change for change in changes if change not in record.get('published_changes',[])]
+            new_copies=[copy for copy in copies if copy not in record.get('published_copies',[])]
+            if new_changes or new_copies:
                 record['published_changes']=changes;record['published_copies']=list(copies);self.save(record)
-                self.changes=changes;self.removed_copies=list(copies);self.epoch+=1
             if all(i.get('done') for i in record['items']) and record.get('copies_done',True):
                 self.hook('before_clear',record['items'][0])
-                (self.root/(record['id']+'.json')).unlink(missing_ok=True);self.records.pop(record['id'],None)
+                with self._record_lock:
+                    (self.root/(record['id']+'.json')).unlink(missing_ok=True);self.records.pop(record['id'],None)
+                self._invalidated.discard(record['id'])
                 completed=[i for i in record['items'] if not i.get('cancelled')]
-                self.epoch+=1
                 if completed and not recovery and record['action'] in {'delete','delete_rejected'} and all(i['new']=='Trash' for i in completed):
                     from .library_file_delete import restore
                     with self.marks._lock:
@@ -432,6 +564,7 @@ class FileCommands:
                     folders=[p for i in completed if i.get('folder') for p in (i['old'], i['new']) if p and p != 'Trash'],
                     paths=[p for i in completed if not i.get('folder') for p in (i['old'], i['new']) if p and p != 'Trash'] + record.get('copy_paths', []))
                 log('file_command_complete',operation=record['action'],count=len(completed),recovery=recovery)
+            if new_changes or new_copies: self.publish(new_changes,new_copies)
             return self.result(record)
 
     def remove_record_copies(self,record):
@@ -472,22 +605,25 @@ class FileCommands:
             sources={p.split('|copy|',1)[0] for p in record['copy_paths'] if p not in record.get('copies_skipped',[])}
             for source in sources:
                 writer=self.marks.writer
-                if writer._paused or writer._busy(): raise ValueError('Copy removal is waiting for the settings writer.')
+                if writer._paused or writer._busy(): raise WaitingForSettings('Copy removal is waiting for the settings writer.')
                 with writer._lane:
                     writer._attempt(source)
                 if writer._snapshot(source) is not None:
-                    raise ValueError('Copy removal is waiting for durable settings.')
+                    raise WaitingForSettings('Copy removal is waiting for durable settings.')
                 doc=self.marks._document(Path(source)) or {}
                 ids={i['photo_id'] for i in doc.get('virtual_copies',[])}
                 if any(p.split('|copy|',1)[1] in ids for p in record['copy_paths'] if p.split('|copy|',1)[0]==source and p not in record.get('copies_skipped',[])):
-                    raise ValueError('Copy removal is waiting for durable settings.')
+                    raise WaitingForSettings('Copy removal is waiting for durable settings.')
             for path in record['copy_paths']:
                 if path in record.get('copies_skipped',[]) or path in record.get('copies_removed',[]): continue
                 record.setdefault('copies_removed',[]).append(path)
                 self.save(record);self.hook('copy_removed',{'old':path})
             record.pop('copy_error',None)
+            record.pop('copy_retryable',None)
             record['copies_done']=True
-        except (OSError,ValueError) as error: record['copy_error']=str(error)
+        except (OSError,ValueError) as error:
+            record['copy_error']=str(error)
+            record['copy_retryable']=transient(error)
         self.save(record)
 
     def locations(self,item):
@@ -506,25 +642,49 @@ class FileCommands:
 
     def status(self):
         records=list(self.records.values())
-        return {'revision':self.epoch,'changes':self.changes,'removed_copies':self.removed_copies,'jobs':[{'id':r['id'],'action':r['action'],'done':sum(bool(i.get('done')) for i in r['items']),'total':len(r['items']),'paused':r.get('paused',False)} for r in records],
+        feed=self.change_feed()
+        latest=feed['recent_changes'][-1] if feed['recent_changes'] else {'changes':[],'removed_copies':[]}
+        return {**feed,'changes':latest['changes'],'removed_copies':latest['removed_copies'],'active':self.progress(),
+                'jobs':[{'id':r['id'],'action':r['action'],'done':sum(bool(i.get('done')) for i in r['items']),'total':len(r['items']),'paused':r.get('paused',False)} for r in records],
                 'attention':[{'id':r['id'],'old':i['old'],'new':i.get('new',''),'message':i['error'],'locations':self.locations(i)} for r in records for i in r['items'] if i.get('error')]+[{'id':r['id'],'old':'Separate virtual copies','new':'','message':r['copy_error'],'locations':r.get('copy_paths',[])} for r in records if r.get('copy_error')]}
+
+    def retryable(self,record):
+        return not record.get('paused') and (
+            any(not i.get('done') and (not i.get('error') or i.get('retryable')) for i in record['items'])
+            or bool(record.get('copy_paths') and not record.get('copies_done')
+                    and (not record.get('copy_error') or record.get('copy_retryable')))
+            or all(i.get('done') for i in record['items']) and record.get('copies_done',True))
+
+    def retry_pending(self):
+        for record in list(self.records.values()):
+            with self._state:
+                eligible=record['id'] not in self._inflight and self.retryable(record)
+            if eligible and self._lane.acquire(blocking=False):
+                try: self.run(record,True,retry=True)
+                finally: self._lane.release()
 
     def start(self):
         # Read and finish records before the settings writer/indexer is started.
-        for r in list(self.records.values()): self.run(r,True)
+        self.retry_pending()
         def retry():
             while not self._stop.wait(15):
-                for r in list(self.records.values()): self.run(r,True)
+                self.retry_pending()
         self._thread=Thread(target=retry,name='hdr-library-file-recovery',daemon=True);self._thread.start()
 
     def control(self,id,action):
-        record=self.records.get(id)
-        if record is None: return self.status()
-        if action=='cancel': record['cancelled']=True;record['paused']=False
-        elif action in {'pause','resume'}: record['paused']=action=='pause'
-        else: raise ValueError('That file-job command is not available.')
-        self.save(record)
-        if action!='pause': Thread(target=self.run,args=(record,),name='hdr-library-file-resume',daemon=True).start()
+        with self._record_lock:
+            record=self.records.get(id)
+            if record is None: return self.status()
+            if action=='cancel': record['cancelled']=True;record['paused']=False
+            elif action in {'pause','resume'}: record['paused']=action=='pause'
+            else: raise ValueError('That file-job command is not available.')
+            self.save(record)
+        if action!='pause':
+            def resume():
+                # Let a running owner see the control request or finish first.
+                # Try again is explicit consent, unlike an automatic retry.
+                with self._lane: self.run(record)
+            Thread(target=resume,name='hdr-library-file-resume',daemon=True).start()
         return self.status()
 
 
@@ -536,11 +696,13 @@ def add_file_routes(router,marks,browser,index,worker,store):
         # file command waiting for the writer must leave health/log/pixel
         # requests their request threads, and never block the event loop.
         try:
-            return await asyncio.to_thread(service.execute, request.token, request.confirmation) if request.token else await asyncio.to_thread(service.plan, request)
+            return await asyncio.to_thread(service.execute,request.token,request.confirmation,request_id=request.request_id) if request.token else await asyncio.to_thread(service.plan, request)
         except (OSError,ValueError) as e: raise HTTPException(400,str(e)) from e
     class Job(BaseModel):
         id:str
         action:str
     @router.post('/file-jobs')
     def control(request:Job): return service.control(request.id,request.action)
+    @router.get('/file-jobs')
+    async def progress(): return {'active':service.progress()}
     return service

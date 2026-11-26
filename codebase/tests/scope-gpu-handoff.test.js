@@ -1,19 +1,22 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const vm = require('node:vm');
-const { declaration } = require('./frontend-source.js');
+const { declaration, declarations } = require('./frontend-source.js');
 
 test('first GPU picture defers CPU scopes, while an accepted CPU picture retains fallback', async () => {
   let cpu = 0;
   const state = { session: { session_id: 'photo' }, currentView: 'hdr', activeWorkflow: 'grade',
-    scopeGeneration: 0, scopeMode: 'histogram', acceptedPresentation: null };
+    scopeGeneration: 0, scopeMode: 'histogram', acceptedPresentation: null, previewGeneration: { hdr: 1 } };
   const ctx = vm.createContext({ state, document: { hidden: false },
     window: { HDRWholeImagePreviewPipe: { edgeFor: (_, edge) => edge } },
     els: { previewCanvas: { style: { display: 'none' } } },
-    geometryDraftActive: () => false, localsBypassed: () => false, activeScopeRegion: () => null,
+    geometryDraftActive: () => false, scopePresentationMatches: () => true, scopeWaitingForWholePicture: () => false, localsBypassed: () => false, activeScopeRegion: () => null,
     gpuScopeEligible: () => false, gpuPreviewEligible: () => true, markScopeUpdating() {},
     enqueueScopeRequest: request => { cpu++; request.resolve(true); },
+    geometrySignature: () => '{}', gradeSourceIdentity: () => 'source', microGrainPreviewKey: () => null,
+    cancelGpuScopeRequests() {}, cpuMicroPreviewSelected: () => false, microGrainPreviewRequest: () => null,
   });
+  vm.runInContext(declarations('scopePresentationIdentity', 'scopePresentationMatches'), ctx);
   vm.runInContext(declaration('refreshScopes'), ctx);
   assert.equal(await ctx.refreshScopes(), false);
   assert.equal(cpu, 0);
@@ -48,12 +51,13 @@ test('an older GPU request cannot cancel newer CPU scope fallback', async () => 
 test('cancelled CPU work cannot mark a replacement GPU scope fresh', async () => {
   let cleared = false;
   const state = { activeWorkflow: 'grade', session: { session_id: 'photo' }, currentView: 'hdr',
-    gpuScopeRequestInFlight: { generation: 2 } };
+    scopeGeneration: 1, scopeMode: 'histogram', gpuScopeRequestInFlight: { generation: 2 } };
   const ctx = vm.createContext({ state, AbortController, document: { hidden: false },
     markScopeUpdating() {}, els: { scopeFreshness: { classList: { remove() { cleared = true; } } } },
+    geometryDraftActive: () => false, scopePresentationMatches: () => true, scopeWaitingForWholePicture: () => false,
     fetch: (_, { signal }) => new Promise((_, reject) => signal.addEventListener('abort', () => reject(Object.assign(new Error(), { name: 'AbortError' })))),
   });
-  vm.runInContext(declaration('runScopeRequest'), ctx);
+  vm.runInContext(declarations('restoreScopeFreshnessIfIdle', 'runScopeRequest'), ctx);
   let resolved;
   const work = ctx.runScopeRequest({ sessionId: 'photo', lane: 'hdr', mode: 'histogram',
     generation: 1, resolution: { bins: 256, columns: 256 }, resolve: value => { resolved = value; } });

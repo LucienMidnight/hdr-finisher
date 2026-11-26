@@ -11,7 +11,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const vm = require("node:vm");
 const { test } = require("node:test");
-const { frontendSource } = require("./frontend-source.js");
+const { declarations, frontendSource } = require("./frontend-source.js");
 
 const source = frontendSource("webgpu-preview.js");
 const transportSource = fs.readFileSync(
@@ -29,13 +29,76 @@ const gpuAllocatorSource = fs.readFileSync(
   "utf8",
 );
 
-function loadPreview(fetchImpl) {
+test("in-place repair refresh retains native textures with their new source epoch", async () => {
+  let transport;
+  const geometry = { crop: { x: 0, y: 0, width: 1, height: 1 } };
+  const geometrySignature = JSON.stringify(geometry);
+  const requests = [];
+  const uploads = [];
+  const texture = {};
+  const proxy = { texture, geometrySignature, sourceEpoch: 3, pixelFormat: "rgba16float",
+    sessionId: "session", lane: "hdr", sourceIdentity: "source", width: 16, height: 12, longEdge: 16 };
+  const alias = { ...proxy };
+  const Preview = loadPreview(async (url) => {
+    const params = new URLSearchParams(url.split("?")[1]);
+    requests.push(params.get("source_epoch"));
+    const headers = new Map([
+      ["X-Edit-Revision", "8"], ["X-Geometry-Signature", geometrySignature],
+      ["X-Pixel-Format", "rgba16float"], ["X-Source-Epoch", "4"],
+      ["X-Tile-X", params.get("x")], ["X-Tile-Y", params.get("y")],
+      ["X-Tile-Width", "4"], ["X-Tile-Height", "4"], ["X-Output-Width", "16"],
+      ["X-Output-Height", "12"], ["X-Bytes-Per-Row", "32"],
+    ]);
+    return { ok: true, headers, arrayBuffer: async () => new ArrayBuffer(128) };
+  }, { setup: ({ window }) => { transport = window.HDRSourceTransport; } });
+  const renderer = new Preview(null);
+  renderer.device = { queue: { writeTexture: (...args) => uploads.push(args) } };
+  renderer.proxies.set("native", proxy);
+  renderer.proxies.set("alias", alias);
+  const refreshed = await transport.refreshRepairs(renderer, { sessionId: "session", editRevision: 8,
+    sourceEpoch: 4, sourceSize: [16, 12], geometry, isCurrent: () => true,
+    records: [[0, 0, 4, 4], [4, 4, 8, 8]].map(search_rect => ({ enabled: true, recipe: { search_rect } })),
+  });
+  assert.equal(refreshed, true);
+  assert.deepEqual(requests, ["4", "4"]);
+  assert.equal(uploads.length, 2);
+  for (const key of ["native", "alias"]) {
+    assert.equal(renderer.proxies.get(key).texture, texture);
+    assert.equal(renderer.proxies.get(key).sourceEpoch, 4);
+  }
+});
+
+test("a repair outside every cached viewport updates the epoch without fetching pixels", async () => {
+  let transport;
+  let fetches = 0;
+  const Preview = loadPreview(async () => { fetches++; throw new Error("unexpected pixel fetch"); }, {
+    setup: ({ window }) => { transport = window.HDRSourceTransport; },
+  });
+  const geometry = { crop: { x: 0, y: 0, width: 1, height: 1 } };
+  const texture = {};
+  const renderer = new Preview(null);
+  renderer.proxies.set("viewport", { texture, geometrySignature: JSON.stringify(geometry), sourceEpoch: 3,
+    pixelFormat: "rgba16float", sessionId: "session", lane: "hdr", sourceIdentity: "source",
+    width: 3200, height: 2400, longEdge: 3200, regionTransport: true, region: { x: 0, y: 0, width: 800, height: 500 } });
+  assert.equal(await transport.refreshRepairs(renderer, { sessionId: "session", editRevision: 8,
+    sourceEpoch: 5, sourceSize: [3200, 2400], geometry, isCurrent: () => true,
+    records: [{ enabled: true, recipe: { search_rect: [1600, 1000, 1650, 1050] } }],
+  }), true);
+  assert.equal(fetches, 0);
+  assert.equal(renderer.proxies.get("viewport").texture, texture);
+  assert.equal(renderer.proxies.get("viewport").sourceEpoch, 5);
+});
+
+function loadPreview(fetchImpl, { now = () => Date.now(), setup = null } = {}) {
   const context = vm.createContext({
     window: {},
-    performance: { now: () => Date.now() },
+    performance: { now },
     console,
     fetch: fetchImpl,
     AbortController,
+    AbortSignal,
+    DOMException,
+    URLSearchParams,
     // The streaming transport races a pending read against a currency tick so a
     // superseded stream cancels its reader; the sandbox supplies the timers
     // that race needs.
@@ -43,6 +106,7 @@ function loadPreview(fetchImpl) {
     clearInterval,
     setTimeout,
     clearTimeout,
+    GPUShaderStage: { COMPUTE: 1 },
     GPUTextureUsage: {
       COPY_SRC: 1, COPY_DST: 2, TEXTURE_BINDING: 4, STORAGE_BINDING: 8, RENDER_ATTACHMENT: 16,
     },
@@ -56,8 +120,178 @@ function loadPreview(fetchImpl) {
   vm.runInContext(transportSource, context);
   vm.runInContext(shaderSource, context);
   vm.runInContext(source, context);
+  setup?.(context);
   return context.window.HDRWebGPUPreview;
 }
+
+test("a cancellable scope source flight does not own the foreground fetch", async () => {
+  const requests = [];
+  const scope = new AbortController();
+  const Preview = loadPreview(async (_url, { signal }) => {
+    requests.push(signal);
+    if (signal === scope.signal) return new Promise((_resolve, reject) => {
+      signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+    });
+    return { ok: false, status: 418, json: async () => ({ detail: "Foreground reached backend" }) };
+  });
+  const renderer = new Preview(null);
+  const load = (options) => renderer.loadProxy("photo", "hdr", 960, "{}", 7, "source", options);
+  const obsolete = assert.rejects(load({ scopeRequest: true, signal: scope.signal }), { name: "AbortError" });
+  const foreground = assert.rejects(load({}), { status: 418 });
+  scope.abort();
+  await Promise.all([obsolete, foreground]);
+  assert.equal(requests.length, 2);
+  assert.equal(requests[1].aborted, false);
+});
+
+test("whole-source 507 backs off without blocking a first region or caching a 409", async () => {
+  let status = 507;
+  let time = 1;
+  const requests = [];
+  const Preview = loadPreview(async (url) => {
+    requests.push(url);
+    return { ok: false, status, json: async () => ({ detail: "Not enough memory" }) };
+  }, { now: () => time });
+  const preview = new Preview(null);
+  const load = (options) => preview.loadProxy("session", "hdr", 7968, "{}", 3, "source", options);
+  for (let attempt = 0; attempt < 80; attempt++) {
+    await assert.rejects(load(), { status: 507, recoverable: false });
+  }
+  assert.equal(requests.length, 1);
+  assert.match(requests[0], /\/proxy-stream\/hdr/);
+
+  const region = { x: 512, y: 1024, width: 512, height: 512 };
+  await assert.rejects(load({ region }), { status: 507, recoverable: false });
+  await assert.rejects(load({ region }), { status: 507, recoverable: false });
+  assert.equal(requests.length, 2);
+  assert.match(requests[1], /\/source-tile\/hdr/);
+
+  status = 409;
+  time += 10000;
+  await assert.rejects(load(), { status: 409, recoverable: true });
+  await assert.rejects(load(), { status: 409, recoverable: true });
+  assert.equal(requests.length, 4);
+});
+
+test("optional source regions return null on 507 while newer edits and resets get a fresh attempt", async () => {
+  let requests = 0;
+  let now = 10;
+  let transport;
+  const Preview = loadPreview(async (url) => {
+    requests += 1;
+    assert.match(url, /\/source-tile\/hdr/);
+    return { ok: false, status: 507, json: async () => ({ detail: "Capacity" }) };
+  }, { now: () => now, setup: ({ window }) => { transport = window.HDRSourceTransport; } });
+  const preview = new Preview(null);
+  const region = { x: 512, y: 512, width: 512, height: 512 };
+  const load = (revision, regionOnly) => preview.loadProxy("session", "hdr", 7968, "{}", revision, "source",
+    { region, regionOnly, requireRegion: true });
+  const [required, optional] = await Promise.allSettled([load(4, false), load(4, true)]);
+  assert.equal(required.reason.status, 507);
+  assert.deepEqual(optional, { status: "fulfilled", value: null });
+  const initialRequests = requests;
+  await assert.rejects(load(4, false), { status: 507, retryAfter: 4010 });
+  assert.equal(requests, initialRequests);
+  await assert.rejects(load(5, false), { status: 507 });
+  assert.equal(requests, initialRequests + 1);
+  transport.clearCapacityRefusals(preview);
+  await assert.rejects(load(5, false), { status: 507 });
+  assert.equal(requests, initialRequests + 2);
+  now = 4011;
+  await assert.rejects(load(5, false), { status: 507 });
+  assert.equal(requests, initialRequests + 3);
+});
+
+test('Grain skips uploads and further reads when a region becomes obsolete during readback', async () => {
+  let current = true;
+  let reads = 0, uploads = 0, destroyed = 0;
+  const Renderer = loadPreview(async () => {
+    reads++;
+    return { ok: true, arrayBuffer: async () => {
+      current = false;
+      return new ArrayBuffer(1024 * 1024 * 16);
+    } };
+  });
+  const renderer = Object.create(Renderer.prototype);
+  Object.assign(renderer, { denoiseTiles: new Map(), trimDenoiseTiles: () => 0,
+    denoiseTileBudget: () => 0, device: { createTexture: () => ({ destroy: () => destroyed++ }),
+      queue: { writeTexture: () => uploads++ } } });
+  const region = { x: 0, y: 0, width: 2048, height: 1024 };
+  await assert.rejects(renderer.preparedGrainTile({ token: 'draw', url: '/grain' }, region, region,
+    () => current), { name: 'AbortError' });
+  assert.deepEqual({ reads, uploads, destroyed }, { reads: 1, uploads: 0, destroyed: 1 });
+});
+
+test('Wide panorama Grain at Fit requests a measurement the API can serve', async () => {
+  let measurementEdge;
+  const Renderer = loadPreview(async () => ({ ok: true, json: async () => ({ fit: null, token: null }) }));
+  const renderer = Object.create(Renderer.prototype);
+  Object.assign(renderer, { available: true, sessionId: 'photo', denoiseSelectorGeneration: 0,
+    denoiseCounters: { analysisCalls: 0, cacheBuilds: 0 }, recordStage() {},
+    denoiseTiles: new Map(), proxies: new Map(), destroyDenoiseSelector() {},
+    ensureGrainPipelines: async () => {}, warmDenoiseModel() {}, ensureAdaptiveDenoisePipelines: async () => {},
+    createAdaptiveDenoiseScratch: () => ({ byteSize: 0, textureCount: 0 }),
+    async fetchDenoiseModel(url) {
+      measurementEdge = Number(new URL(url, 'http://local').searchParams.get('long_edge'));
+      if (measurementEdge > 16384) throw Error('Measurement request failed (422)');
+      return { a: .01, b: 0, c: 0, band_sigmas: Array.from({ length: 3 }, () => [1, 1, 1, 1, 1]) };
+    },
+  });
+  assert.equal(await renderer.analyzeDenoiseProxy('photo', 'hdr', {}, 1600, 0, 'source',
+    { method: 'clean_grain', cleanSplotches: false, cleanFringes: false, grainEvenness: 1 }, 0, 18001), true);
+  assert.equal(measurementEdge, 1600);
+});
+
+test("Clean Grain blends prepared CPU pixels and falls back when a preparation control changes", async () => {
+  const Renderer = loadPreview();
+  const renderer = Object.create(Renderer.prototype);
+  const controls = {
+    amount: 0.75, luminance: 0.5, colorNoise: 0.75, detailRecovery: 0.5,
+    finestNoise: 0.5, fineNoise: 0.5, mediumNoise: 0.5, coarseNoise: 0.5,
+    method: "clean_grain", grainEvenness: 1, splotchSize: "small",
+  };
+  const grain = { token: "prepared", controls: { ...controls, microLuminance: 0.5, microColor: 0.5, microDetail: 0.5 } };
+  const selector = { cache: { grain } };
+  const routes = [];
+  Object.assign(renderer, {
+    denoiseSourceSelector: selector, denoiseCounters: { resolveDispatches: 0, resolveTiles: 0 },
+    ensureAdaptiveDenoisePipelines: async () => {}, preparedGrainTile: async () => ({}),
+    encodePreparedDenoise: (...args) => { routes.push(["prepared", args.at(-1)]); return { dispatches: 1, tiles: 1 }; },
+    encodeAdaptiveDenoise: () => { routes.push(["wavelet"]); return { dispatches: 1, tiles: 1 }; },
+  });
+  const draw = sizes => renderer.resolveAdaptiveDenoise(selector, [0.75, 0.5, 0.75, 0.5], sizes, 1, 0,
+    null, {}, {}, { width: 96, height: 64 });
+  await draw({ ...controls, colorSplotches: 0.3 });
+  await draw({ ...controls, splotchSize: "large", colorSplotches: 0.3 });
+  assert.deepEqual(routes, [["prepared", 0.3], ["wavelet"]]);
+});
+
+test("adaptive Denoise shares device compilation and an old device cannot publish", async () => {
+  const Renderer = loadPreview();
+  const renderer = Object.create(Renderer.prototype);
+  let finish;
+  const held = new Promise(resolve => { finish = resolve; });
+  const device = info => ({
+    modules: 0, dummies: 0,
+    createShaderModule() { this.modules++; return { getCompilationInfo: () => info }; },
+    createBindGroupLayout: () => ({}), createPipelineLayout: () => ({}),
+    createComputePipelineAsync: async () => ({}),
+    createTexture() { this.dummies++; return {}; },
+  });
+  const oldDevice = renderer.device = device(held);
+  const warm = renderer.ensureAdaptiveDenoisePipelines();
+  const draw = renderer.ensureAdaptiveDenoisePipelines();
+  const aborted = Promise.all([assert.rejects(warm, { name: "AbortError" }), assert.rejects(draw, { name: "AbortError" })]);
+  assert.equal(oldDevice.modules, 1);
+  renderer.device = device({ messages: [] });
+  renderer.adaptiveDenoiseCompilation = null;
+  const fresh = await renderer.ensureAdaptiveDenoisePipelines();
+  finish({ messages: [] });
+  await aborted;
+  assert.equal(renderer.adaptiveDenoisePipelines, fresh);
+  assert.equal(oldDevice.dummies, 0);
+  assert.equal(renderer.device.dummies, 3);
+});
 
 function alignRow(bytes) {
   return Math.ceil(bytes / 256) * 256;
@@ -116,6 +350,7 @@ function createBackend({
         ["X-Working-Space", "acescg"],
         ["X-Pixel-Format", "rgba16float"],
         ["X-Geometry-Signature", geometrySignature],
+        ["X-Source-Epoch", String(epoch)],
       ]);
       return {
         ok: true,
@@ -170,6 +405,7 @@ function createBackend({
       ["X-Working-Space", "acescg"],
       ["X-Pixel-Format", "rgba16float"],
       ["X-Geometry-Signature", geometrySignature],
+      ["X-Source-Epoch", String(epoch)],
     ]);
     return {
       ok: true,
@@ -216,6 +452,7 @@ function createDevice() {
         return {
           copyBufferToTexture(source, destination, size) {
             writes.push({
+              originX: destination.origin?.x ?? 0,
               originY: destination.origin?.y ?? 0,
               bytes: source.buffer.__data.byteLength,
               rows: size.height,
@@ -312,6 +549,7 @@ test("the streaming route reads one response through the same bounded ring", asy
 
   const proxy = await preview.loadProxy("session", "hdr", 8192, "{}", 0, "source");
   assert.ok(proxy);
+  assert.equal(proxy.sourceEpoch, 3);
   const metrics = preview.sourceTransportMetrics;
   assert.equal(metrics.route, "streamed");
   assert.equal(metrics.endpoint, "proxy-stream");
@@ -352,7 +590,7 @@ test("the streaming route reads one response through the same bounded ring", asy
 test("single mode reads the prebuilt whole-frame response the same way", async () => {
   const width = 512;
   const height = 900;
-  const backend = createBackend({ width, height });
+  const backend = createBackend({ width, height, epoch: 0 });
   const Preview = loadPreview(backend.fetchImpl);
   const preview = new Preview(null);
   const harness = createDevice();
@@ -363,11 +601,74 @@ test("single mode reads the prebuilt whole-frame response the same way", async (
 
   const proxy = await preview.loadProxy("session", "hdr", 8192, "{}", 0, "source");
   assert.ok(proxy);
+  assert.equal(proxy.sourceEpoch, 0);
   assert.equal(preview.sourceTransportMetrics.route, "streamed");
   assert.equal(preview.sourceTransportMetrics.endpoint, "proxy");
   assert.ok(backend.requests[0].includes("/proxy/"));
   assert.equal(backend.requests.some((url) => url.includes("/source-tile/")), false);
   assert.equal(preview.sourceTransportMetrics.transferredBytes, alignRow(width * 8) * height);
+});
+
+test("a directly uploaded whole-frame proxy retains the source epoch", async () => {
+  const backend = createBackend({ width: 256, height: 80, epoch: 9 });
+  const Preview = loadPreview(backend.fetchImpl);
+  const renderer = new Preview(null);
+  renderer.device = createDevice().device;
+  const proxy = await renderer.loadProxy("session", "hdr", 256, "{}", 0, "source");
+  assert.equal(renderer.sourceTransportMetrics.route, "whole-frame");
+  assert.equal(proxy.sourceEpoch, 9);
+});
+
+function hueMaskRenderer() {
+  let params;
+  const Preview = loadPreview(null, { setup: context => {
+    vm.runInContext(frontendSource("hsl-selection-gpu.js"), context);
+    const { count, indices } = context.window.HDRGpuParamLayout;
+    params = new Float32Array(count);
+    params[indices.SOURCE_PIXEL_SCALE] = 1;
+    params[indices.BLACK_AND_WHITE_ENABLED] = 1;
+    params[indices.BLACK_AND_WHITE_ENABLED + 1] = 0.3;
+  } });
+  const local = { id: "hue", mask: { operator: "leaf", leaf: { type: "hue_range", hue_center: 90 } } };
+  return { renderer: new Preview(null), params, local };
+}
+
+test("a viewport Hue mask snaps its crop outward and retains the non-grid frame edges", async () => {
+  const { renderer, params, local } = hueMaskRenderer();
+  const viewport = { x: 253, y: 241, width: 417, height: 319 };
+  const tile = { key: "viewport", haloRect: viewport };
+  const proxy = { width: 5202, height: 3463 };
+  const regions = [];
+  renderer.loadGpuHueLeaf = async (...args) => { regions.push({ ...args.at(-1) }); return {}; };
+  const load = () => renderer.loadLocalMaskTiles("photo", { local, localIndex: 0, tiles: [tile] },
+    5202, 0, "{}", () => true, null, proxy, null, { params });
+  assert.equal((await load()).entries.size, 1);
+  assert.deepEqual(regions[0], { x: 172, y: 160, width: 580, height: 480 });
+  Object.assign(viewport, { x: 4831, y: 3197, width: 371, height: 266 });
+  await load();
+  assert.deepEqual(regions[1], { x: 4748, y: 3116, width: 454, height: 347 });
+});
+
+test("a tall Hue mask reads the Black & White guide neighbourhood on both sides of a seam", async () => {
+  const { renderer, params, local } = hueMaskRenderer();
+  const pass = Object.fromEntries(["setViewport", "setScissorRect", "setPipeline", "setBindGroup", "draw", "end"]
+    .map(name => [name, () => {}]));
+  const engine = Object.fromEntries(["ensure", "commit", "dropRetired", "release"].map(name => [name, () => {}]));
+  const copies = [];
+  const texture = { format: "rgba16float", createView() {}, destroy() {} };
+  Object.assign(renderer, {
+    hslSelectionTemplate: { fork: () => engine },
+    device: { createTexture: () => texture, queue: { submit() {}, writeBuffer() {} }, createCommandEncoder: () => ({
+      copyTextureToTexture: (from, _to, size) => copies.push([from.origin.y, size.height]),
+      beginRenderPass: () => pass, finish() {},
+    }) },
+    createMaskTexture: () => texture, createStorageBuffer: () => ({ destroy() {} }),
+    hueContextIdentity: () => "hue", pipelineFor: () => ({}), bindGraphResources() {},
+    encodeHslSelection: () => ({}), retainLocalMask() {},
+  });
+  const proxy = { width: 4096, height: 2800, texture };
+  await renderer.loadGpuHueLeaf("photo", local.mask, { proxy, params }, 4096);
+  assert.deepEqual(copies, [[0, 1064], [984, 1104], [2008, 792]]);
 });
 
 test("a streamed response that ends early is recoverable and publishes nothing", async () => {
@@ -700,13 +1001,13 @@ test("a changed halo reuses a containing source region without fetching", async 
 });
 
 /** A region backend that answers after a delay and counts overlapping requests. */
-function createRegionBackend({ width, height, failAt = null, delayMs = 5 }) {
+function createRegionBackend({ width, height, geometry = "{}", failAt = null, delayMs = 5 }) {
   const state = { requests: [], active: 0, peakActive: 0 };
-  const fetchImpl = async (url) => {
+  const fetchImpl = async (url, options) => {
     const parsed = new URL(url, "http://localhost");
     const rect = Object.fromEntries(["x", "y", "width", "height"].map((name) => [name, Number(parsed.searchParams.get(name))]));
     const probe = rect.width === 1 && rect.height === 1;
-    state.requests.push({ ...rect, probe, epoch: parsed.searchParams.get("source_epoch") });
+    state.requests.push({ ...rect, probe, epoch: parsed.searchParams.get("source_epoch"), headers: options.headers });
     if (!probe) {
       state.active += 1;
       state.peakActive = Math.max(state.peakActive, state.active);
@@ -722,13 +1023,181 @@ function createRegionBackend({ width, height, failAt = null, delayMs = 5 }) {
       ["X-Tile-X", String(rect.x)], ["X-Tile-Y", String(rect.y)],
       ["X-Tile-Width", String(rect.width)], ["X-Tile-Height", String(rect.height)],
       ["X-Pixel-Format", "rgba16float"], ["X-Working-Space", "acescg"],
-      ["X-Geometry-Signature", "{}"], ["X-Source-Epoch", "7"], ["X-Bytes-Per-Row", String(bytesPerRow)],
+      ["X-Geometry-Signature", geometry], ["X-Source-Epoch", "7"], ["X-Bytes-Per-Row", String(bytesPerRow)],
     ]);
     return { ok: true, status: 200, headers: { get: (name) => headers.get(name) ?? null },
       arrayBuffer: async () => new ArrayBuffer(bytesPerRow * rect.height) };
   };
   return { fetchImpl, state };
 }
+
+test("the first viewport after a geometry edit uses the mapped frame and requests source tiles", async () => {
+  const sourceSize = { width: 7968, height: 5320 };
+  const frameSize = { width: 7771, height: 5021 };
+  const geometry = { straighten_angle: 2.4 };
+  const signature = JSON.stringify(geometry);
+  const backend = createRegionBackend({ ...frameSize, geometry: signature });
+  const state = { session: { session_id: "session", source: sourceSize }, editRevision: 3,
+    adjustments: { shared: { geometry } } };
+  let resolveViewport;
+  let mapCalls = 0;
+  const Preview = loadPreview(async (url, options) => {
+    if (url.endsWith("/geometry-map")) {
+      mapCalls++;
+      assert.equal(JSON.parse(options.body).edit_revision, 3);
+      assert.equal(JSON.parse(options.body).long_edge, 7968);
+      return { ok: true, json: async () => ({ output_width: frameSize.width, output_height: frameSize.height }) };
+    }
+    assert.match(url, /\/source-tile\/hdr/);
+    return backend.fetchImpl(url, options);
+  }, { setup: (context) => {
+    Object.assign(context, {
+      state, geometryMath: require("../frontend/geometry-math.js").HDRGeometryMath,
+      geometryCoordinateMapCache: new Map(), geometryCoordinateMapRequests: new Map(), geometryFullOutputFrames: new Map(),
+      applyZoomGeometry() {}, queueLocalMaskOverlayRender() {},
+      visibleOutputRect: (width, height) => ({ x: width - 700, y: height - 540, width: 700, height: 540 }),
+    });
+    vm.runInContext(frontendSource("geometry-tools.js"), context);
+    vm.runInContext(frontendSource("viewport-request.js"), context);
+    vm.runInContext(declarations("gpuFrameSizeAt", "resolveGpuViewport"), context);
+    resolveViewport = context.resolveGpuViewport;
+  } });
+  const preview = new Preview(null);
+  preview.device = createDevice().device;
+  preview.lastPresentedFrame = { sessionId: "session", lane: "hdr", ...sourceSize, workingSpace: "acescg" };
+  preview.configureSurface = () => ({ format: "rgba16float" });
+  preview.roiSourceHalo = () => 3;
+  const options = await resolveViewport(7968, null, { remeasure: true, isCurrent: () => true });
+  assert.equal(mapCalls, 1);
+  assert.deepEqual({ ...options.frameSize }, frameSize);
+  const region = preview.roiRegionFor({}, {}, "session", "hdr", state.adjustments, sourceSize, 203,
+    { ...options, nativeGeometryViewport: true }, [], 7968);
+  const proxy = await preview.loadProxy("session", "hdr", 7968, signature, 3, "source", { region });
+  assert.equal(proxy.regionTransport, true);
+  assert.equal(proxy.width, frameSize.width);
+  assert.equal(proxy.height, frameSize.height);
+  assert.equal(proxy.region.x + proxy.region.width, frameSize.width);
+  assert.equal(proxy.region.y + proxy.region.height, frameSize.height);
+  assert.ok(proxy.region.width * proxy.region.height < frameSize.width * frameSize.height / 10);
+});
+
+test("a fully visible crop fetches native tiles on the first frame in a different lane", async () => {
+  const frameSize = { width: 160, height: 128 };
+  const sourceSize = { width: 7968, height: 5320 };
+  const geometry = { crop: { x: .45, y: .45, width: .02, height: .024 } };
+  const signature = JSON.stringify(geometry);
+  const backend = createRegionBackend({ ...frameSize, geometry: signature });
+  const Preview = loadPreview((url, options) => {
+    assert.match(url, /\/source-tile\/sdr/);
+    return backend.fetchImpl(url, options);
+  }, { setup: context => vm.runInContext(frontendSource("viewport-request.js"), context) });
+  const preview = new Preview(null);
+  preview.device = createDevice().device;
+  preview.lastPresentedFrame = { sessionId: "session", lane: "hdr", ...sourceSize, workingSpace: "acescg" };
+  preview.configureSurface = () => ({ format: "rgba16float" });
+  preview.roiSourceHalo = () => 3;
+  const options = { frameSize, viewport: { x: 0, y: 0, ...frameSize }, nativeGeometryViewport: true, identity: "generated-sdr" };
+  const region = preview.roiRegionFor({}, {}, "session", "sdr", { shared: { geometry } }, sourceSize, 203, options, [], 7968);
+  assert.deepEqual({ ...region }, options.viewport);
+  const proxy = await preview.loadProxy("session", "sdr", 7968, signature, 3, "generated-sdr", { region, requireRegion: true });
+  assert.equal(proxy.regionTransport, true);
+  assert.equal(proxy.longEdge, 7968);
+  assert.deepEqual({ ...proxy.region }, options.viewport);
+});
+
+test("native geometry keeps the viewport when local luminance needs a different mask route", () => {
+  const Preview = loadPreview(() => assert.fail("Planning must not request a source"),
+    { setup: context => vm.runInContext(frontendSource("viewport-request.js"), context) });
+  const preview = new Preview(null);
+  preview.configureSurface = () => ({ format: "rgba16float" });
+  preview.roiSourceHalo = () => 3;
+  preview.sourceSpaceMask = () => null;
+  const geometry = { straighten_angle: 1.3 };
+  const sourceSize = { width: 7968, height: 5320 };
+  const frameSize = { width: 7400, height: 5000 };
+  const luminance = feather => ({ operator: "leaf", leaf: { type: "luminance_range", mask_feather: feather } });
+  const regionFor = activeLocals => preview.roiRegionFor({}, {}, "session", "hdr", { shared: { geometry } },
+    sourceSize, 203, { frameSize, viewport: { x: 2000, y: 1500, width: 1000, height: 600 }, nativeGeometryViewport: true },
+    activeLocals, 7968);
+  const unsupported = regionFor([{ mask: { operator: "union", children: [luminance(0),
+    { operator: "leaf", leaf: { type: "brush", mask_feather: .05 } }] } }]);
+  const alignment = regionFor([{ mask: luminance(.05) }, { mask: luminance(.0496) }]);
+  assert.ok(unsupported?.width < frameSize.width);
+  assert.ok(alignment?.width < frameSize.width);
+  assert.equal(alignment.backendLumaMasks, true);
+});
+
+function hueViewportPreview(fetchImpl) {
+  const Preview = loadPreview(fetchImpl, { setup: (context) => {
+    vm.runInContext(frontendSource("viewport-request.js"), context);
+    vm.runInContext(frontendSource("hsl-selection-gpu.js"), context);
+    context.window.HDRHslSelectionGpu = context.HDRHslSelectionGpu;
+  } });
+  const preview = new Preview(null);
+  preview.configureSurface = () => ({ format: "rgba16float" });
+  preview.executionOverrideFor = () => "tiled";
+  preview.roiSourceHalo = () => 0;
+  preview.retainedTiledFrame = () => true;
+  return preview;
+}
+
+const hueLeaf = { operator: "leaf", leaf: { type: "hue_range", hue_center: 90 } };
+
+test("both SDR pictures keep compound Hue on the GPU at Fit and native zoom", async () => {
+  const sourceSize = { width: 7968, height: 5320 };
+  const gradient = { operator: "leaf", leaf: { type: "linear_gradient", start: { x: 0, y: 0 }, end: { x: 1, y: 1 },
+    gradient_midpoint_1: .3, gradient_midpoint_2: .7 } };
+  const luma = { operator: "leaf", leaf: { type: "luminance_range", mask_feather: 0 } };
+  const featheredLuma = { operator: "leaf", leaf: { ...luma.leaf, mask_feather: .004 } };
+  const featheredBrush = { operator: "leaf", leaf: { type: "brush", mask_feather: .05 } };
+  for (const [sourceIdentity, workingSpace] of [["source", "acescg"], ["generated-sdr", "acescg"], ["authored-sdr", "linear-srgb"]]) {
+    const preview = hueViewportPreview(async () => assert.fail("unexpected mask request"));
+    const full = { ...sourceSize, longEdge: sourceSize.width, lane: "sdr", sourceIdentity, workingSpace };
+    preview.lastPresentedFrame = full;
+    const gpuCalls = [];
+    preview.loadGpuMaskGraph = async (...args) => { gpuCalls.push(args[8]); return { kind: "gpu-graph" }; };
+    preview.loadCpuMaskTiles = async () => { throw Object.assign(new Error("whole CPU mask exceeds budget"), { status: 507 }); };
+    for (const [leaf, regional] of [[gradient, true], [luma, sourceIdentity === "source"],
+      [featheredLuma, false], [featheredBrush, false]]) {
+      const local = { mask: { operator: "intersect", children: [hueLeaf, leaf] } };
+      const tile = { key: "tile" };
+      const options = { identity: sourceIdentity, viewport: { x: 792, y: 648, width: 1691, height: 895 } };
+      const region = preview.roiRegionFor({}, {}, "session", "sdr", {}, sourceSize, 203, options, [local], sourceSize.width);
+      assert.equal(Boolean(region), regional, `${sourceIdentity} / ${leaf.leaf.type} / ${leaf.leaf.mask_feather ?? 0}`);
+      const zoom = region ? { ...full, region } : full;
+      for (const proxy of [full, zoom]) {
+        const result = await preview.loadLocalMaskTiles("session", { local, localIndex: 0, tiles: [tile] },
+          sourceSize.width, 1, "{}", () => true, undefined, proxy, null, { lane: "sdr", proxy });
+        assert.equal(result.entries.get(tile.key).kind, "gpu-graph");
+        assert.equal(gpuCalls.at(-1), proxy);
+      }
+    }
+  }
+});
+
+test("a near-full Hue source accepts whole-frame fallback when geometry tiles cannot downsample", async () => {
+  const sourceSize = { width: 7968, height: 5320 };
+  for (const geometry of [{ straighten_angle: 2 }, { perspective_vertical: 12 }]) {
+    let probes = 0;
+    const preview = hueViewportPreview(async (url) => {
+      assert.match(url, /\/source-tile\/sdr/);
+      probes++;
+      return { ok: false, status: 409, arrayBuffer: async () => new ArrayBuffer(0) };
+    });
+    preview.lastPresentedFrame = { ...sourceSize, longEdge: sourceSize.width, workingSpace: "acescg" };
+    const full = { ...sourceSize, region: null };
+    preview.loadProxyStreaming = async () => full;
+    preview.loadProxyStreamed = async () => full;
+    const options = { viewport: { x: 0, y: 0, width: 7400, height: 5100 } };
+    const region = preview.roiRegionFor({}, {}, "session", "sdr", { shared: { geometry } }, sourceSize, 203,
+      options, [{ mask: hueLeaf }], sourceSize.width);
+    assert.ok(region.width * region.height >= sourceSize.width * sourceSize.height * .9);
+    const proxy = await preview.loadProxy("session", "sdr", sourceSize.width, JSON.stringify(geometry), 1, "source",
+      { region, requireRegion: region.requireRegion });
+    assert.equal(proxy, full);
+    assert.equal(probes, 1);
+  }
+});
 
 test("a region-only refusal does not start a whole-source fallback", async () => {
   const Preview = loadPreview(async()=>{throw new Error('unexpected whole-source request');});
@@ -740,6 +1209,143 @@ test("a region-only refusal does not start a whole-source fallback", async () =>
   const result=await preview.loadProxy('session','hdr',7968,'{}',0,'source',
     {region:{x:0,y:0,width:128,height:128},regionOnly:true});
   assert.equal(result,null);assert.equal(calls,1);assert.equal(preview.proxyInflight.size,0);
+});
+
+test("a native geometry render without required source bounds is refused, not superseded", async () => {
+  const Preview = loadPreview(async () => assert.fail("No whole-source request should be made"));
+  const canvas = { getContext: () => ({}) };
+  const preview = new Preview(canvas);
+  preview.available = true;
+  preview.sessionId = "session";
+  preview.roiRegionFor = () => null;
+  preview.prefetchZoomMasks = () => {};
+  assert.equal(await preview.renderTo(canvas, "session", "hdr", {}, null, 7968, [], 0, null,
+    203, null, { nativeGeometryViewport: true }), false);
+  assert.equal(preview.lastRenderRefusal.reason, "required-source-region-unavailable");
+});
+
+for (const route of ["foreground", "scope", "navigation"]) {
+  test(`${route} render cancels an active underlayer and never waits for its unfinished preparation`, async () => {
+    const canvas = { getContext: () => ({}) };
+    const neverPrepare = new Promise(() => {});
+    const controller = new AbortController();
+    const seen = [];
+    let preview;
+    const Preview = loadPreview(async () => assert.fail("Unexpected source request"), { setup: context => {
+      context.window.HDRFilmStocks = { request(stock) {
+        seen.push([stock, preview.activeRenderCount]);
+        return stock === "waiting" ? neverPrepare : undefined;
+      } };
+      context.document = { createElement: () => canvas };
+    } });
+    preview = new Preview(canvas);
+    preview.available = true;
+    preview.sessionId = "session";
+    preview.roiRegionFor = () => null;
+    preview.prefetchZoomMasks = () => {};
+    const options = { nativeGeometryViewport: true, isCurrent: () => true };
+    const background = preview.render("session", "hdr", { hdr: { film_look: { film_stock: "waiting" } } }, null,
+      1600, [], 0, null, 203, null, { ...options, backgroundUnderlayer: true,
+        cancelUnderlayer: () => controller.abort(), signal: controller.signal });
+    const rejected = assert.rejects(background, { name: "AbortError" });
+    assert.equal(preview.activeRenderCount, 1);
+    const competing = route === "scope" ? preview.renderScopeProxy("session", "hdr", {}, null, 1600, [], 0, 203, null, options)
+      : route === "navigation" ? preview.renderNavigationProxy("session", "hdr", {}, null, [], 0, 203, null, options)
+        : preview.render("session", "hdr", {}, null, 1600, [], 0, null, 203, null, options);
+    assert.equal(await competing, route === "foreground" ? false : null);
+    assert.deepEqual(seen, [["waiting", 1], ["none", 1]]);
+    await rejected;
+    assert.equal(preview.activeRenderCount, 0);
+    const foregroundRefusal = preview.lastRenderRefusal;
+    await preview.render("", "hdr", {}, null, 1600, [], 0, null, 203, null, { backgroundUnderlayer: true });
+    assert.equal(preview.lastRenderRefusal, foregroundRefusal);
+  });
+}
+
+test("underlayer Direct scratch is not retained, and replacing shared scratch defers disposal", () => {
+  const Preview = loadPreview(async () => assert.fail("Unexpected source request"));
+  const canvas = {};
+  const preview = new Preview(canvas);
+  preview.device = createDevice().device;
+  const retained = preview.ensureIntermediate(canvas, 1800, 1200);
+  preview.activeRenderCount = 1;
+  const scratch = preview.ensureIntermediate(canvas, 1600, 900, true, true, true, false);
+  assert.equal(preview.intermediates.get(canvas), retained);
+  preview.destroyIntermediate(scratch);
+  assert.equal(scratch.finishTexture.__entry.destroyed, true);
+  const replacement = preview.ensureIntermediate(canvas, 1900, 1200);
+  assert.equal(preview.intermediates.get(canvas), replacement);
+  assert.equal(retained.finishTexture.__entry.destroyed, false);
+  preview.finishActiveRender();
+  assert.equal(retained.finishTexture.__entry.destroyed, true);
+});
+
+test("a live underlayer reports resident scratch without requesting export preemption", async () => {
+  const heartbeats = [];
+  const Preview = loadPreview(async (url, options) => {
+    assert.equal(url, "/api/delivery/gpu/activity");
+    heartbeats.push(JSON.parse(options.body));
+    return { ok: true, json: async () => ({}) };
+  });
+  const canvas = {};
+  const preview = new Preview(canvas);
+  preview.deliveryClientId = "grade";
+  const { device, textures } = createDevice();
+  preview.device = device;
+  preview.activeRenderCount = 1;
+  await preview.reportDeliveryActivity();
+  preview.geometryUnderlayerRender = {};
+  const scratch = preview.ensureIntermediate(canvas, 1600, 900, true, true, true, false);
+  await preview.reportDeliveryActivity();
+  preview.destroyIntermediate(scratch);
+  preview.geometryUnderlayerRender = null;
+  preview.finishActiveRender();
+  await preview.reportDeliveryActivity();
+  const scratchBytes = textures.reduce((sum, entry) => sum + entry.width * entry.height * 8, 0);
+  assert.ok(scratchBytes > 0);
+  assert.deepEqual(heartbeats.map(beat => beat.active), [true, false, false]);
+  assert.deepEqual(heartbeats.map(beat => beat.bytes - heartbeats[0].bytes), [0, scratchBytes, 0]);
+});
+
+test("fill scratch allocation failure releases partial textures and preserves foreground backoff", () => {
+  const Preview = loadPreview(async () => assert.fail("Unexpected source request"));
+  const preview = new Preview({});
+  const { device, textures } = createDevice();
+  preview.device = device;
+  const createTexture = device.createTexture;
+  device.createTexture = descriptor => {
+    if (textures.at(-1)?.destroyed !== false) return createTexture(descriptor);
+    throw Error("Injected allocation failure");
+  };
+  const backoff = preview.recordAllocationFailure("foreground", Error("previous failure"));
+  preview.geometryUnderlayerRender = {};
+  assert.equal(preview.ensureIntermediate({}, 1600, 900, false, false, false, false), null);
+  assert.equal(preview.allocationBackoff, backoff);
+  assert.equal(preview.geometryUnderlayerRender.intermediate, undefined);
+  assert.equal(textures.length, 1);
+  assert.equal(textures[0].destroyed, true);
+  preview.geometryUnderlayerRender = null;
+  assert.equal(preview.ensureIntermediate({}, 1600, 900, false, false), null);
+  assert.match(preview.allocationBackoff.reason, /grading-film: Injected allocation failure/);
+});
+
+test("aborted underlayer refuses Denoise's looser source current check and does not upload late bytes", async () => {
+  const controller = new AbortController();
+  const data = new ArrayBuffer(64);
+  const Preview = loadPreview(async () => ({ ok: true, headers: new Headers({ "X-Geometry-Signature": "{}" }),
+    arrayBuffer: async () => { controller.abort(); return data; } }));
+  const canvas = {};
+  const preview = new Preview(canvas);
+  preview.renderSerials.set(canvas, 3);
+  const sourceOptions = { backgroundUnderlayer: true, signal: controller.signal,
+    isCurrent: () => true, isSourceCurrent: () => true };
+  assert.equal(preview.sourceLoadIsCurrent(canvas, 3, preview.resourceGeneration, sourceOptions), true);
+  const harness = createDevice();
+  preview.device = harness.device;
+  await assert.rejects(preview.loadProxy("photo", "hdr", 256, "{}", 0, "source", sourceOptions), /superseded/);
+  assert.equal(preview.sourceLoadIsCurrent(canvas, 3, preview.resourceGeneration, sourceOptions), false);
+  assert.equal(harness.writes.length, 0);
+  assert.equal(preview.proxies.size, 0);
 });
 
 function regionPreview(backend, chunkRows, regionWidth) {
@@ -791,4 +1397,124 @@ test("a failed region chunk stops every lane before the partial texture is relea
   assert.equal(harness.textures[0].destroyed, true);
   // Lanes stop asking once one has failed: the tail of the region is never requested.
   assert.ok(backend.state.requests.filter((request) => !request.probe).length < 10);
+});
+
+
+test("a wide source region covers every output column within the wire and buffer limits", async () => {
+  const backend = createRegionBackend({ width: 9504, height: 6336 });
+  const region = { x: 177, y: 11, width: 9000, height: 100 };
+  const { preview, harness } = regionPreview(backend, 100, region.width);
+  const maxBufferSize = 512 * 1024;
+  harness.device.limits.maxBufferSize = maxBufferSize;
+  const headers = new Headers({ "X-HDR-Finisher-Action": "wide-photo" });
+  await preview.loadProxyRegion("session", "hdr", 9504, "{}", 0, "source", "wide", region, { headers });
+  assert.ok(backend.state.requests.every(request => request.headers?.get("X-HDR-Finisher-Action") === "wide-photo"));
+  const requested = backend.state.requests.filter(request => !request.probe);
+  assert.ok(requested.some(request => request.x > region.x));
+  assert.ok(requested.every(request => request.width <= 8192 && request.epoch === "7"));
+  assert.ok(harness.buffers.every(buffer => buffer.size <= maxBufferSize));
+  const coverage = new Uint8Array(region.width * region.height);
+  for (const { originX, originY, width, rows } of harness.writes) {
+    for (let y = originY; y < originY + rows; y++) {
+      for (let x = originX; x < originX + width; x++) coverage[y * region.width + x]++;
+    }
+  }
+  assert.ok(coverage.every(count => count === 1));
+});
+
+test("Fine Grain calibration matches the whole-width fit when GPU readback forces chunks", async () => {
+  const Renderer = loadPreview(async () => { throw new Error("Unexpected network request"); });
+  const width = 1457, height = 579;
+  async function fit(maxStorageBufferBindingSize) {
+    const renderer = Object.create(Renderer.prototype);
+    const targets = [];
+    const buffers = [];
+    const pixel = (x, y) => ((31 * x + 117 * y) % 257) / 256;
+    Object.assign(renderer, {
+      device: {
+        limits: { maxTextureDimension2D: 4096, maxBufferSize: 8 * 1024 * 1024, maxStorageBufferBindingSize },
+        pushErrorScope() {},
+        async popErrorScope() { return null; },
+        createBuffer({ size, usage }) {
+          const data = new Float32Array(size / 4);
+          const buffer = { data, usage, maps: 0, async mapAsync() { this.maps++; },
+            getMappedRange: () => data.buffer, destroy() { this.destroyed = true; } };
+          buffers.push(buffer);
+          return buffer;
+        },
+        createCommandEncoder: () => ({
+          copyBufferToBuffer(source, sourceOffset, target, targetOffset, size) {
+            target.data.set(source.data.subarray(sourceOffset / 4, (sourceOffset + size) / 4), targetOffset / 4);
+          },
+          finish() {},
+        }),
+        queue: { submit() {} },
+      },
+      ensureGrainFitPipeline: async () => ({}),
+      createAdaptiveDenoiseScratch: () => ({ textures: {} }),
+      reserveFineGrain() {},
+      recordStage() {},
+      loadProxyRegion: async (session, lane, native, geometry, revision, identity, key, requested, { stripUpload }) => {
+        const region = { ...requested, width: Math.min(requested.width, width - requested.x),
+          height: Math.min(requested.height, height - requested.y) };
+        assert.ok(region.width <= stripUpload.maxWidth && region.height <= stripUpload.maxRows);
+        return { region, width, height };
+      },
+      encodeAdaptiveDenoise(encoder, selector, weights, sizes, target, candidate, destination, source, reduction) {
+        const { margin, stride, partials } = reduction;
+        const { region } = source;
+        targets.push(target);
+        assert.equal(region.x, Math.max(0, target.x - margin));
+        assert.equal(region.y, Math.max(0, target.y - margin));
+        assert.equal(region.x + region.width, Math.min(width, target.x + target.width + margin));
+        assert.equal(region.y + region.height, Math.min(height, target.y + target.height + margin));
+        for (let band = 0; band < 2; band++) {
+          let block = 0;
+          for (let tile = target.x; tile < target.x + target.width; tile += 512) {
+            const endX = Math.min(tile + 512, target.x + target.width);
+            for (let y = target.y; y < target.y + target.height; y += 32) {
+              for (let x = tile; x < endX; x += 32) {
+                // Emulate the shader's additive statistics for one core block
+                // using a local sample from the overlap where available.
+                const left = Math.max(region.x, x - margin);
+                const value = .25 + pixel(x, y) + pixel(left, y);
+                const area = Math.min(32, endX - x) * Math.min(32, target.y + target.height - y);
+                partials.data.set([value * area, value * area * .9, value * area * .2, value * area * .05],
+                  (band * stride + block++) * 4);
+              }
+            }
+          }
+          assert.equal(block, stride);
+        }
+        return { paramBuffer: { destroy() {} } };
+      },
+    });
+    const result = await renderer.measureFineGrain("photo", "hdr", width, "{}", 1, "source", {}, {}, null, () => true);
+    assert.ok(buffers.every(buffer => buffer.destroyed));
+    const [storage, readback] = buffers;
+    assert.ok(storage.data.byteLength <= maxStorageBufferBindingSize);
+    assert.ok(readback.data.byteLength <= renderer.device.limits.maxBufferSize);
+    assert.equal(readback.maps, 1);
+    return { result, targets };
+  }
+
+  const unchunked = await fit(64 * 1024);
+  const chunked = await fit(8 * 1024);
+  assert.deepEqual(unchunked.targets.map(target => target.width), [width, width]);
+  assert.equal(chunked.targets.length, 6);
+  assert.deepEqual(chunked.targets.map(target => target.x), [0, 512, 1024, 0, 512, 1024]);
+  assert.deepEqual(chunked.result, unchunked.result);
+});
+
+
+test("Micro Grain's Bayer work limit follows the padded region and device storage limit", () => {
+  const context = vm.createContext({ window: {} });
+  vm.runInContext(frontendSource("micro-grain-gpu.js"), context);
+  const { regionLimit } = context.window.HDRMicroGrainGpu;
+  const device = { limits: { maxTextureDimension2D: 8192, maxComputeWorkgroupsPerDimension: 65535,
+    maxBufferSize: 16 * 1024 * 1024, maxStorageBufferBindingSize: 4 * 1024 * 1024 } };
+  assert.equal(regionLimit(device, { width: 768, height: 720 }), null);
+  assert.equal(regionLimit(device, { width: 1536, height: 720 }).reason, "source_too_large");
+  assert.equal(regionLimit(device, { width: 2048, height: 2049 }).reason, "source_too_large");
+  assert.equal(regionLimit(device, { width: 8193, height: 128 }).reason, "source_too_large");
 });

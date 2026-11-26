@@ -33,4 +33,48 @@ function pressureGate(cooldownMs = COOLDOWN_MS) {
     return level;
   };
 }
-module.exports = {notifyChromiumPressure, withDeadline, pressureGate, COOLDOWN_MS};
+// A cache trim (with its renderer collections) that frees nothing is not
+// repeated. After a trim, an unchanged sample puts the guard to sleep.
+// Trimming stays quiet until pressure clears, caches or Grade grow again,
+// the operating system's pressure changes, or the level rises.
+// An export worker above the target otherwise re-fired the whole
+// round every cool-down for minutes. Grade's Grain reclaim passes through:
+// the renderer skips it itself when the last one released nothing.
+function cacheBytes(value) {
+  return Object.values(value?.caches || {}).reduce((sum, share) => sum + (Number(share?.bytes) || 0), 0);
+}
+function emptyTrimGuard() {
+  let round = null, quiet = null;
+  return function decide(value, trimLevel, grainReclaim) {
+    const caches = cacheBytes(value), grade = Number(value?.gradeBytes) || 0;
+    const system = value?.pressure || 'none';
+    // The app's budget level excludes Grade; Grade's level counts everything.
+    // A budget level flapping around the target is not a rise while Grade's
+    // level has already been at least as high.
+    const rank = Math.max(RANK[value?.level] ?? 0, RANK[value?.gradePressure] ?? 0);
+    if (rank === 0) {
+      round = quiet = null;
+    }
+    let resumed = null;
+    if (quiet) {
+      if (caches > quiet.caches) resumed = 'cache_growth';
+      else if (grade > quiet.grade) resumed = 'grade_growth';
+      else if (system !== quiet.system) resumed = 'system_pressure_changed';
+      else if (rank > quiet.rank) resumed = 'pressure_rose';
+      if (!resumed) return {trimLevel: null, grainReclaim, quiet: true};
+      quiet = null; round = null;
+    }
+    if (!trimLevel) return {trimLevel, grainReclaim, quiet: false, resumed};
+    if (round && caches === round.caches && grade === round.grade && rank <= round.rank && system === round.system) {
+      quiet = {caches, grade, system, rank: round.rank};
+      return {trimLevel: null, grainReclaim, quiet: true, entered: true};
+    }
+    round = {caches, grade, system, rank};
+    return {trimLevel, grainReclaim, quiet: false, resumed};
+  };
+}
+// Over the app's own target with no OS shortage is budget pressure.
+function trimReason(value) {
+  return (value?.pressure || 'none') === 'none' ? 'budget_pressure' : 'system_memory_pressure';
+}
+module.exports = {notifyChromiumPressure, withDeadline, pressureGate, emptyTrimGuard, trimReason, cacheBytes, COOLDOWN_MS};

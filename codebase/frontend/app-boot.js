@@ -45,7 +45,14 @@ async function boot() {
 async function initializeGpuPreview() {
   if (!window.HDRWebGPUPreview) return;
   state.gpuFailurePolicy = window.HDRRenderFailurePolicy ? new window.HDRRenderFailurePolicy() : null;
-  state.gpuPreview = new window.HDRWebGPUPreview(els.previewCanvas);
+  const renderer = state.gpuPreview = new window.HDRWebGPUPreview(els.previewCanvas);
+  renderer.observeGradeMemory = true;
+  renderer.unifiedGrainMemory = state.desktopEnvironment?.unifiedMemory;
+  window.addEventListener("message", event => {
+    if (event.origin === location.origin && event.data?.type === "hdr-memory-pressure") {
+      renderer.acceptGrainMemorySample(event.data.value);
+    }
+  });
   state.gpuPreview.featherReferenceScale = maskFeatherReferenceScale;
   state.gpuPreview.acknowledgedMaskSignature = acknowledgedMaskSignature;
   // Preferences can load before or after the renderer exists, so apply the
@@ -56,6 +63,7 @@ async function initializeGpuPreview() {
   const videoMemory = await desktop?.videoMemory?.().catch(() => null);
   state.gpuPreview.setDetectedVideoMemory(videoMemory?.detected ? videoMemory : null);
   await state.gpuPreview.initialize();
+  warmGradeDenoisePipelines();
   renderGpuMemoryAutoLabel();
   if (!state.gpuPreview.available && state.gpuFailurePolicy) {
     // Initialization failure is the one permanent failure in Section 5.8.
@@ -71,9 +79,11 @@ async function initializeGpuPreview() {
  */
 async function rebuildGpuPreview(reason = "") {
   if (!state.gpuPreview) return false;
+  const action = globalThis.HDRDiagnostics?.start("gpu", "rebuild_device", gradeDiagnosticPhoto());
   try {
     const rebuilt = await state.gpuPreview.rebuild();
     if (!rebuilt) {
+      action?.finish("error", { level: "error", route: "refused", reason: "gpu_rebuild_failed" });
       state.gpuFailurePolicy?.record(
         new Error(state.gpuPreview.detail || reason || "WebGPU device rebuild failed"),
         { init: true },
@@ -81,16 +91,33 @@ async function rebuildGpuPreview(reason = "") {
       markPreviewUnavailable(`WebGPU device rebuild failed: ${state.gpuPreview.detail || reason}`);
       return false;
     }
+    warmGradeDenoisePipelines();
     state.gpuRebuildAttempts = 0;
     state.displayInfo.gpu = state.gpuPreview.detail;
     renderReadouts();
+    action?.finish("success", { route: "gpu", reason: "device_rebuilt" });
     if (state.session) await settlePreview(state.currentView);
     return true;
   } catch (error) {
+    action?.finish("error", { level: "error", route: "refused", reason: "gpu_rebuild_failed" });
     state.gpuFailurePolicy?.record(error, { init: true });
     markPreviewUnavailable(`WebGPU device rebuild failed: ${error?.message || error}`);
     return false;
   }
+}
+
+function warmGradeDenoisePipelines() {
+  const renderer = state.gpuPreview;
+  if (!renderer?.available) return;
+  const device = renderer.device;
+  window.requestIdleCallback(() => {
+    if (renderer.device !== device || !renderer.available || renderer.deviceLost) return;
+    // Foreground Grade uses the same in-flight compilations if it needs them
+    // before idle warm-up finishes.
+    void renderer.ensureCleanGrainPipelines().catch(() => {});
+    void renderer.ensureGrainFitPipeline().catch(() => {});
+    void renderer.ensureFineGrainResizePipelines(true).catch(() => {});
+  });
 }
 
 function initializeLocalOverlayColor() {
@@ -128,16 +155,21 @@ function installPreviewWatchdog() {
   state.previewWatchdogTimer = window.setInterval(() => {
     if (!state.session || !state.previewScheduler) return;
     const viewer = viewerState();
-    if (viewer.status === "ready" || viewer.status === "unavailable") {
+    if (["ready", "reduced", "unavailable"].includes(viewer.status)) {
       state.previewWatchdogRearms = 0;
       return;
     }
-    if (state.previewScheduler.interacting || state.gpuDraftInFlight) return;
+    const scheduler = state.previewScheduler;
     // Submission retires the draft before its device fence retires the paced
     // scheduler frame. That is busy work, not a lost wake-up: rearming it can
     // alternate draft/exact renders for the same input for many seconds.
-    if (state.previewScheduler.frameInFlight || state.previewScheduler.framePending
-      || state.previewScheduler.frame != null) return;
+    if (scheduler.interacting || scheduler.frameInFlight || scheduler.framePending
+      || scheduler.frame != null || scheduler.settleTimer != null
+      || scheduler.settleInFlight || scheduler.scopeInFlight || state.gpuDraftInFlight
+      || state.gpuScopeRequestInFlight || state.scopeRequestInFlight
+      || state.zoomRefinementTimer || state.zoomRefinementInFlight) return;
+    const denoise = state.denoiseRuntime?.[state.currentView];
+    if (denoise?.analysisInFlight || denoise?.preparationAfterCommit) return;
     const cpuFlight = state.cpuPreviewInflight?.get(state.currentView);
     if (cpuFlight?.sessionId === state.session.session_id
       && cpuFlight.generation === state.previewGeneration[state.currentView]) return;
@@ -146,6 +178,7 @@ function installPreviewWatchdog() {
     if (laneState?.inFlight || laneState?.pending) return;
     if (state.previewWatchdogRearms >= PREVIEW_WATCHDOG_MAX_REARMS) return;
     state.previewWatchdogRearms += 1;
+    if (state.zoomScopeTimer) clearZoomScopeRefresh();
     state.previewScheduler.schedule(state.currentView, state.previewGeneration[state.currentView]);
   }, PREVIEW_WATCHDOG_INTERVAL_MS);
 }
@@ -172,11 +205,10 @@ function initializePreviewScheduler() {
           coarse: true, scale: 0.5 };
       }
       if (decision.coarse) decision.edge = responseCoarseLongEdge(refinementProxyLongEdge());
-      // The renderer refuses a whole-frame tiled drag frame, but only after
-      // the source and parameters are prepared. Refuse it here, before that
-      // work; the settled pass draws the edit. A magnified view is a bounded
-      // region pass and goes through.
-      if (tiled && !decision.coarse && state.zoomMode !== "custom") {
+      // Let the settled pass draw exact tiles once the edit has synced.
+      // During a gesture, a magnified view can still draw a bounded region
+      // live. A whole-frame exact tiled drag would be refused by the renderer.
+      if (tiled && !decision.coarse && (!gesture || state.zoomMode !== "custom")) {
         const reason = "pre-dispatch-tiled";
         state.lastGpuDraftRefusal = { reason, lane: task.lane, tier: "interactive", at: performance.now() };
         const key = `interactive:${reason}`;
@@ -227,11 +259,22 @@ function initializePreviewScheduler() {
       // runs beside them rather than inside this callback so an overlay render
       // never delays or inflates the scope pass.
       if (task.lane === state.currentView) requestLiveOverlay(task.tier);
+      // Tiled previews get a whole-picture scope proxy at settle. An
+      // interactive request before the frame arrives would also ask for a
+      // settled proxy on presentation, racing the scheduler's settled scope.
+      if (task.tier === "interactive" && interactiveDraftGuaranteedTiled(task.lane)) return false;
       return refreshScopes(scopeLongEdge(task.tier), {
         tier: task.tier,
         generation: task.scopeGeneration,
         lane: task.lane,
       });
+    },
+    onRelease: ({ lane }) => {
+      const coordinator = state.renderCoordinator;
+      if (coordinator?.inFlight(lane)?.request.reason === "drag-coarse") {
+        coordinator.cancelInFlight(lane, "drag-released");
+      }
+      coordinator?.dropPending(lane, "drag-released", "drag-coarse");
     },
     onSettle: (task) => settlePreview(task.lane, task),
     onRefine: (task) => refinePreview(task.lane, task),
@@ -269,11 +312,15 @@ function initializePreviewScheduler() {
       // when that costs the backend nothing. With a hard-edged mask in play it
       // would compile that mask for the whole image, which is the stall this
       // route exists to remove; the pan pass draws what the view reaches.
-      canCatchUp: (lane, longEdge) => state.roiPreviewMode === "refinement" || Boolean(
-        state.session && state.gpuPreview?.catchUpNeedsNoBackendMasks?.(
-          state.session.session_id, lane, longEdge, geometrySignature(),
-          localsBypassed() ? [] : localAdjustments(),
-        ),
+      // Native Denoise can reconstruct or read the next visible region as
+      // the view reaches it. Avoid a whole native source and follow-up draw.
+      canCatchUp: (lane, longEdge) => !nativeDenoiseViewport(lane) && !nativeGeometryViewportActive(lane) && (
+        state.roiPreviewMode === "refinement" || Boolean(
+          state.session && state.gpuPreview?.catchUpNeedsNoBackendMasks?.(
+            state.session.session_id, lane, longEdge, geometrySignature(),
+            localsBypassed() ? [] : localAdjustments(),
+          ),
+        )
       ),
       // The frame is not completed, but its source can still be held on the
       // device so the pans that follow fetch nothing.
@@ -385,7 +432,7 @@ function initializePreviewScheduler() {
       refusal: state.lastGpuDraftRefusal,
     }),
     panRefinement: () => requestRoiPanRefinement(),
-    visibleOutputRect: () => visibleOutputRect(els.previewCanvas.width, els.previewCanvas.height),
+    visibleOutputRect: visiblePreviewCanvasRect,
     // Diagnostic view of the immutable viewport contract. The renderer builds
     // its own frame-anchored request from the actual proxy and composed halo;
     // this app-level version uses the selected tier and is for inspection.
@@ -625,6 +672,15 @@ function bindEvents() {
     lensSearchTimer = window.setTimeout(loadLensProfiles, 250);
   });
   els.applyRawSettings?.addEventListener("click", applyRawImportSettings);
+  els.rawRemoveHotPixels?.addEventListener("change", applyRawImportSettings);
+  els.rawEvenOutSpecks?.addEventListener("change", async () => {
+    renderRawSpeckControls();
+    await applyRawImportSettings();
+  });
+  els.rawSpeckThreshold?.addEventListener("input", renderRawSpeckControls);
+  els.rawSpeckThreshold?.addEventListener("change", () => {
+    if (els.rawEvenOutSpecks?.checked) return applyRawImportSettings();
+  });
   els.rawHighlightBypass?.addEventListener("click", async () => {
     const enabled = els.rawHighlightBypass.getAttribute("aria-pressed") !== "true";
     renderRawHighlightState({ enabled });
@@ -802,6 +858,12 @@ function bindEvents() {
   document.getElementById("hdr-compression-use-display")?.addEventListener("click", useHighlightDisplayPeak);
   els.denoiseBypass?.addEventListener("click", () => setDenoiseEnabled(!state.denoise[state.currentView].enabled));
   els.denoiseShowNoise?.addEventListener("click", toggleDenoiseNoiseView);
+  for (const event of ["input", "change"]) {
+    els.denoiseMethod?.addEventListener(event, () => commitDenoiseControl("method", els.denoiseMethod.value));
+  }
+  els.denoiseCleanFringes?.addEventListener("change", () => commitDenoiseControl("clean_fringes", els.denoiseCleanFringes.checked));
+  els.denoiseProtectEdges?.addEventListener("change", () => commitDenoiseControl("protect_color_edges", els.denoiseProtectEdges.checked));
+  els.denoiseSplotchSize?.addEventListener("change", () => commitDenoiseControl("splotch_size", els.denoiseSplotchSize.value));
   const denoiseSliders = [
     [els.denoiseAmount, "amount"],
     [els.denoiseLuminance, "luminance"],
@@ -811,6 +873,9 @@ function bindEvents() {
     [els.denoiseFine, "fine_noise"],
     [els.denoiseMedium, "medium_noise"],
     [els.denoiseCoarse, "coarse_noise"],
+    [els.denoiseEvenness, "grain_evenness"],
+    [els.denoiseSplotches, "color_splotches"],
+    ...els.denoiseMicroSliders,
   ];
   for (const [control, key] of denoiseSliders) {
     // Capture phase: the instrument slider's own pointerdown moves the value
@@ -826,11 +891,12 @@ function bindEvents() {
           state.denoiseWholeFrameStale = null;
           void denoiseInputQueue().submit({ ...stale, wholeFrame: true });
         }
-        if (eventName === "change") void persistDenoiseSettings();
+        if (eventName === "change") void commitDenoiseControl(key);
       });
     }
   }
-  els.denoiseRecalculate?.addEventListener("click", () => recalculateDenoise());
+  els.denoiseRecalculate?.addEventListener("click", () => recalculateDenoise(state.currentView, { force: true }));
+  els.denoiseRouteAction?.addEventListener("click", runDenoiseRouteAction);
   // PRD 6.3 progressive disclosure. Purely a matter of what is on screen:
   // the controls keep their values and keep applying while the panel is shut,
   // because `renderDenoiseControls` writes to them either way.
@@ -984,11 +1050,10 @@ function bindEvents() {
     // The pan itself is compositor-only; this updates the coordinator's
     // viewport model and schedules the deferred follow-up that refines a newly
     // exposed strip.
-    state.renderCoordinator?.noteViewport(
-      state.currentView,
-      visibleOutputRect(els.previewCanvas.width, els.previewCanvas.height),
-    );
-    noteViewerPan();
+    const edge = requiredProcessingLongEdge();
+    const frame = gpuFrameSizeAt(edge) || approximateGpuFrameSizeAt(edge);
+    state.renderCoordinator?.noteViewport(state.currentView, visibleOutputRect(frame.width, frame.height));
+    if (!resumeOffscreenGeometryPreview(state.currentView)) noteViewerPan();
   }, { passive: true });
   // Press and drag pans continuously; keyboard activation centres the view.
   const panFromNavigation = (x, y) => {
@@ -1123,6 +1188,7 @@ function bindEvents() {
   els.exportResizeMode?.addEventListener("change", () => {
     markExportPresetCustom();
     renderOutputFinishingControls();
+    renderFormatCards();
   });
   [els.exportLongEdge, els.exportWidth, els.exportHeight].forEach((control) => control?.addEventListener("change", markExportPresetCustom));
   els.exportPreventEnlargement?.addEventListener("change", markExportPresetCustom);
@@ -1150,6 +1216,9 @@ function bindEvents() {
     wakePendingHighlightAnchor(lane);
   });
   window.addEventListener("hdrfinisher:webgpulost", (event) => {
+    globalThis.HDRDiagnostics?.event("gpu", "device_lost", {
+      level: "warn", route: "refused", reason: "device_lost", photo: gradeDiagnosticPhoto(),
+    });
     const message = event.detail?.message || "WebGPU device lost";
     const verdict = state.gpuFailurePolicy?.record(new Error(message), { deviceLost: true });
     state.displayInfo.gpu = verdict?.recoverable === false

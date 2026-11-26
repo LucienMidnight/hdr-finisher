@@ -29,7 +29,7 @@ from hdr_finisher.loader import load_image
 from hdr_finisher.media_browser import MediaBrowserError, MediaBrowserInterpretationRequired, MediaBrowserStore, _apply_libraw_orientation
 from hdr_finisher.models import AdjustmentState, CapabilityInfo, CapabilityStatus, EditCommand, EditDocument, ExportSettings, RawImportSettings, SourceInterpretationOverride, SourceReference
 from hdr_finisher.models import LensCorrectionSettings
-from hdr_finisher.raw_import import RawImportError, _remap_bilinear_strips, apply_lens_correction, decode_raw, list_lens_profiles
+from hdr_finisher.raw_import import RawImportError, apply_lens_correction, decode_raw, list_lens_profiles
 from hdr_finisher.sessions import SessionStore
 
 
@@ -298,14 +298,6 @@ def test_source_reference_serializes_manual_lens_selection() -> None:
     assert source.raw_import_settings.lens.focal_length_mm == 35
 
 
-def test_bounded_bilinear_remapper_preserves_identity() -> None:
-    image = np.arange(5 * 7 * 3, dtype=np.float32).reshape(5, 7, 3)
-    y, x = np.mgrid[:5, :7]
-    coordinates = np.stack([x, y], axis=-1).astype(np.float32)
-    remapped = _remap_bilinear_strips(image, coordinates, chromatic=False, rows=2)
-    assert np.array_equal(remapped, image)
-
-
 def test_raw_decoder_returns_canonical_acescg_without_second_loader_transform(
     tmp_path: Path, monkeypatch
 ) -> None:
@@ -316,7 +308,8 @@ def test_raw_decoder_returns_canonical_acescg_without_second_loader_transform(
 
     class FakeRaw:
         raw_pattern = np.array([[0, 1], [1, 2]], dtype=np.uint8)
-        raw_image_visible = np.zeros((4, 6), dtype=np.uint16)
+        raw_colors_visible = np.tile(raw_pattern, (2, 3))
+        raw_image_visible = np.tile(np.asarray([[8192, 4096], [4096, 0]], dtype=np.uint16), (2, 3))
         num_colors = 3
         color_desc = b"RGBG"
         black_level_per_channel = [0, 0, 0, 0]
@@ -328,7 +321,7 @@ def test_raw_decoder_returns_canonical_acescg_without_second_loader_transform(
             [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0], [0.0, 0.0, 0.0]],
             dtype=np.float32,
         )
-        sizes = SimpleNamespace(width=6, height=4, raw_width=6, raw_height=4)
+        sizes = SimpleNamespace(width=6, height=4, raw_width=6, raw_height=4, flip=0)
         lens = SimpleNamespace(make="SIGMA", model="35mm F2 DG DN | C")
         other = SimpleNamespace(focal_length=35.0, aperture=4.0, iso_speed=800.0, shutter_speed=0.004)
 
@@ -373,28 +366,11 @@ def test_raw_decoder_returns_canonical_acescg_without_second_loader_transform(
     assert metadata["lens"] == "35mm F2 DG DN | C"
     assert metadata["iso"] == "640"
     assert metadata["shutter_speed"] == 0.004
-    assert postprocess_calls["highlight_mode"] == "Clip"
-    assert postprocess_calls["no_auto_scale"] is True
-    assert postprocess_calls["output_color"] == "raw"
-    assert metadata["raw_development"]["pipeline"] == "camera_linear_float_bridge_opposed_v2"
+    assert not postprocess_calls
+    assert metadata["raw_development"]["pipeline"] == "camera_linear_signed_ahd_opposed_v3"
     assert metadata["raw_development"]["libraw_highlight_mode_requested"] == "clip"
     assert metadata["raw_development"]["libraw_highlight_processing"] == "bypassed_by_no_auto_scale"
     assert np.all(np.isfinite(image))
-
-
-def test_bounded_bilinear_remapper_honors_import_cancellation() -> None:
-    image = np.zeros((8, 8, 3), dtype=np.float32)
-    y, x = np.mgrid[:8, :8]
-    coordinates = np.stack([x, y], axis=-1).astype(np.float32)
-
-    with pytest.raises(RawImportError, match="Import cancelled"):
-        _remap_bilinear_strips(
-            image,
-            coordinates,
-            chromatic=False,
-            rows=2,
-            cancelled=lambda: True,
-        )
 
 
 def test_manual_lensfun_profile_is_named_and_applied() -> None:
@@ -415,6 +391,27 @@ def test_manual_lensfun_profile_is_named_and_applied() -> None:
     assert corrected.shape == image.shape
     assert metadata["applied"] is True
     assert metadata["profile"]["id"] == profile.id
+
+
+def test_sony_sigma_without_vignetting_calibration_keeps_signed_pixels(monkeypatch):
+    from hdr_finisher import raw_import
+
+    def unexpected_vignette(*args, **kwargs):
+        pytest.fail("The Sigma profile has no vignetting calibration")
+
+    monkeypatch.setattr(raw_import, "_apply_signed_vignetting", unexpected_vignette)
+    settings = LensCorrectionSettings(
+        mode="auto", focal_length_mm=65, aperture=2,
+        distortion=False, chromatic_aberration=False, vignetting=True,
+    )
+    image = np.array([[[-0.0, -0.5, 1.25], [0.0, 0.5, -1.25]]], dtype=np.float32)
+    corrected, metadata = apply_lens_correction(
+        image, settings, camera_maker="Sony", camera_model="ILCE-7RM3",
+        lens_maker="Sigma", lens_name="65mm F2",
+    )
+    assert metadata["applied"]
+    assert metadata["profile"]["vignetting"] is False
+    assert corrected.tobytes() == image.tobytes()
 
 
 def test_lens_profile_catalog_has_unique_resolvable_camera_mount_ids() -> None:
@@ -776,16 +773,24 @@ def test_raw_redevelopment_preserves_edit_document_and_session_identity(tmp_path
 
 def test_import_job_redevelopment_preserves_project_reference_white(tmp_path: Path, monkeypatch) -> None:
     source = tmp_path / "source.png"
-    Image.new("RGB", (32, 16), (80, 120, 160)).save(source)
+    Image.new("RGB", (512, 256), (80, 120, 160)).save(source)
     sessions = SessionStore()
     initial = sessions.create_session(source, hdr_reference_white_nits=100)
+    current = sessions.get(initial.session_id)
+    from hdr_finisher.models import PreviewKind
+    original_image = current.image
+    current.render_cache.adjusted_frame(current.adjustments, PreviewKind.HDR, 256)
+    assert current.render_cache.diagnostics()["frame_bytes"] > 0
     browser = MediaBrowserStore(tmp_path / "app-data")
     manager = ImportJobManager(sessions, browser, workers=1)
     original_prepare = sessions.prepare_session
     observed_reference: list[int] = []
+    observed_cache_bytes: list[int] = []
 
     def tracked_prepare(path, *args, **kwargs):
         observed_reference.append(kwargs.get("hdr_reference_white_nits"))
+        assert current.image is original_image
+        observed_cache_bytes.append(current.render_cache.diagnostics()["frame_bytes"])
         return original_prepare(path, *args, **kwargs)
 
     monkeypatch.setattr(sessions, "prepare_session", tracked_prepare)
@@ -797,6 +802,7 @@ def test_import_job_redevelopment_preserves_project_reference_white(tmp_path: Pa
 
         assert job.state == "ready", job.error
         assert observed_reference == [100]
+        assert observed_cache_bytes == [0]
         assert sessions.get(initial.session_id).hdr_reference_white_nits == 100
     finally:
         manager.close()
@@ -852,41 +858,6 @@ def test_replace_document_rejects_interpretation_without_reloading_pixels(tmp_pa
 
     with pytest.raises(ValueError, match="interpretation endpoint"):
         sessions.replace_edit_document(payload.session_id, document, expected_revision=0)
-
-
-@pytest.mark.parametrize("chromatic", [False, True])
-def test_remap_waves_keep_original_bilinear_pixels(chromatic, monkeypatch):
-    from hdr_finisher import app_memory
-    rng = np.random.default_rng(31)
-    image = rng.random((19, 23, 3), dtype=np.float32)
-    shape = (19, 23, 3, 2) if chromatic else (19, 23, 2)
-    coordinates = rng.uniform(-2, 25, shape).astype(np.float32)
-    original = _remap_bilinear_strips(image, coordinates, chromatic=chromatic, rows=3)
-    monkeypatch.setattr(app_memory, "WORKING", 23 * 3 * 128)
-    bounded = _remap_bilinear_strips(image, coordinates, chromatic=chromatic, rows=3)
-    np.testing.assert_array_equal(bounded, original)
-
-
-def test_owned_lens_input_avoids_copy_and_preserves_result(monkeypatch):
-    from hdr_finisher import raw_import
-    profile = next(item for item in list_lens_profiles(limit=2000) if item.distortion)
-    image = np.linspace(0.0, 2.0, 48 * 64 * 3, dtype=np.float32).reshape(48, 64, 3)
-    saved = image.copy()
-    settings = LensCorrectionSettings(mode="manual", profile_id=profile.id,
-        focal_length_mm=5.0, aperture=4.0, distortion=True,
-        chromatic_aberration=profile.chromatic_aberration, vignetting=True)
-    remap = raw_import._remap_bilinear_strips
-    shared = []
-    def observe(source, *args, **kwargs):
-        shared.append(np.shares_memory(source, image))
-        return remap(source, *args, **kwargs)
-    monkeypatch.setattr(raw_import, "_remap_bilinear_strips", observe)
-    expected, metadata = apply_lens_correction(image, settings)
-    np.testing.assert_array_equal(image, saved)
-    actual, owned_metadata = apply_lens_correction(image, settings, consume_input=True)
-    assert shared == [False, True]
-    np.testing.assert_array_equal(actual, expected)
-    assert owned_metadata == metadata
 
 
 @pytest.mark.skipif(__import__("hdr_finisher.binaries", fromlist=["resolve_binary"]).resolve_binary("hdrf-jxl-info") is None,

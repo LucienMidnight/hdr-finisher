@@ -39,7 +39,12 @@ window.HDRLibraryRGB = (() => {
 
   // Decoded RGB shares full-source measurement and linear reduction with RAW.
   // Decoder orientation and ICC policy is carried explicitly in the contract.
-  const RGB = COMMON + TURN + FINISHING + INPUT + /* wgsl */ `
+  const RGB_FINISHING = FINISHING.replace('var aces = value;', `var aces = value;
+    if(p.misc.y>0.0){
+      let lo=min(aces.x,min(aces.y,aces.z));let hi=max(aces.x,max(aces.y,aces.z));
+      if(lo<0.0){aces=select(vec3<f32>(0.0),hi*(aces-lo)/(hi-lo),hi>0.0);}
+    }`);
+  const RGB = COMMON + TURN + RGB_FINISHING + INPUT + /* wgsl */ `
   @compute @workgroup_size(16,16)
   fn main(@builtin(global_invocation_id) g0:vec3<u32>, @builtin(local_invocation_index) li:u32) {
     let g=g0+vec3<u32>(0u,p.dispatch.y,0u);
@@ -102,9 +107,6 @@ window.HDRLibraryRGB = (() => {
     .replace('if (t.x % st == 0 && t.y % st == 0)', 'if ((t.x+i32(p.dispatch.y)) % st == 0 && (t.y+i32(p.dispatch.x)) % st == 0)')
     .replace('f32(i%p.dims.x),f32(i/p.dims.x)', 'f32(i%p.dims.x)+d.ax.w,f32(i/p.dims.x)+d.ay.w')
     .replace('rgbInput[(y*d.size.x+x)*3u+channel]', 'rgbInput[((y-d.size.w)*u32(p.lensc.x)+(x-d.size.z))*3u+channel]');
-  // Grade owns its import gamut mapping and calibration after this handoff.
-  const DNG_TILE_GRADE=DNG_TILE_RGB.replace(
-    'if (lo < 0.0)', 'if (false && lo < 0.0)');
   const DNG_GAIN=COMMON+`
     struct DNG { coeff:array<vec4<f32>,6>, center:vec4<f32>, ax:vec4<f32>, ay:vec4<f32>, size:vec4<u32> };
     @group(0) @binding(1) var<storage,read_write> camera:array<f32>;
@@ -201,7 +203,7 @@ window.HDRLibraryRGB = (() => {
     for(const [stage,ms] of Object.entries(reference.timings))result.timings['reference_'+stage]=ms;
     return result;
   }
-  const PACK = `@group(0) @binding(0) var<storage,read> r:array<f32>;
+  const PACK_SIGNED = `@group(0) @binding(0) var<storage,read> r:array<f32>;
     @group(0) @binding(1) var<storage,read> g:array<f32>;
     @group(0) @binding(2) var<storage,read> b:array<f32>;
     @group(0) @binding(3) var out:texture_storage_2d<rgba16float,write>;
@@ -209,22 +211,24 @@ window.HDRLibraryRGB = (() => {
       let size=textureDimensions(out);if(any(p.xy>=size)){return;}let i=p.y*size.x+p.x;
       // Storage texture conversion may truncate. Round explicitly to IEEE half,
       // ties to even, matching NumPy's persisted float16 scene exactly.
-      let v=clamp(vec3f(r[i],g[i],b[i]),vec3f(0),vec3f(65504));
+      let signed=vec3f(r[i],g[i],b[i]);let v=abs(signed);
       let bits=bitcast<vec3u>(v);
       let normal=bitcast<vec3f>((bits+vec3u(4095u)+((bits>>vec3u(13u))&vec3u(1u)))&vec3u(4294959104u));
       let units=v*16777216.0;let base=floor(units);let fraction=units-base;
       let increment=select(vec3f(0),vec3f(1),fraction>vec3f(0.5))
         +select(vec3f(0),vec3f(1),fraction==vec3f(0.5))*vec3f(vec3u(base)&vec3u(1u));
       let subnormal=(base+increment)/16777216.0;
-      textureStore(out,vec2i(p.xy),vec4f(select(subnormal,normal,v>=vec3f(0.00006103515625)),1));
+      textureStore(out,vec2i(p.xy),vec4f(sign(signed)*select(subnormal,normal,v>=vec3f(0.00006103515625)),1));
     }`;
+  const PACK = PACK_SIGNED.replace('let signed=vec3f(r[i],g[i],b[i]);',
+    'let signed=clamp(vec3f(r[i],g[i],b[i]),vec3f(0),vec3f(65504));');
   async function warmup(beforeNext = async () => {}, shared = null) {
     shared ||= await gpu();
     await HDRLibraryGpuRaw.shared.preparePipelines(shared,beforeNext,['REDUCE']);
     const device=shared.baseDevice || shared.device;
     let cache=compiled.get(device);
     if(!cache){cache={REDUCE:shared.pipelines.REDUCE};compiled.set(device,cache);}
-    for(const [name,code] of Object.entries({RGB,RGB_SDR,REFERENCE,DNG_RGB,DNG_GAIN,DNG_TILE_RGB,DNG_TILE_GRADE,DNG_TILE_GAIN,DNG_LINEAR,PACK})) {
+    for(const [name,code] of Object.entries({RGB,RGB_SDR,REFERENCE,DNG_RGB,DNG_GAIN,DNG_TILE_RGB,DNG_TILE_GAIN,DNG_LINEAR,PACK,PACK_SIGNED})) {
       await beforeNext();
       if(!cache[name])cache[name]=device.createComputePipelineAsync({layout:"auto",compute:{module:device.createShaderModule({code}),entryPoint:"main"}})
         .catch(error=>{delete cache[name];throw error;});
@@ -245,18 +249,23 @@ window.HDRLibraryRGB = (() => {
     // once here instead of transporting six float32 planes through renderer,
     // Electron network and backend copies before doing the same conversion.
     const sampleBytes = direct && typeof Float16Array !== 'undefined' ? 2 : 4;
+    const signedSource = !!(meta.dng_warp || meta.dng_linear);
     const handoffPlane = buffer => {
-      if (sampleBytes !== 2) return buffer;
+      if (sampleBytes !== 2 && !signedSource) return buffer;
       // Clamp finite values to [0, 65504] in place, keep NaN/±Infinity, then
       // let the native constructor round. A per-value callback in
       // Float16Array.from cost about 1.4 s for one 2560-edge picture.
       const values = new Float32Array(buffer);
       for (let i = 0; i < values.length; i++) {
         const value = values[i];
+        if (signedSource) {
+          if (!Number.isFinite(value) || Math.abs(value) > 65504) throw Error('Signed DNG source exceeds finite half-float transport.');
+          continue;
+        }
         if (value <= 0) { if (value !== -Infinity) values[i] = 0; }
         else if (value > 65504 && value !== Infinity) values[i] = 65504;
       }
-      return new Float16Array(values).buffer;
+      return sampleBytes === 2 ? new Float16Array(values).buffer : buffer;
     };
     const owned = new Set(), kept = []; let liveBytes = 0, peakBytes = 0;
     const own = buffer => { if(liveBytes+buffer.size>memoryBudget){buffer.destroy();throw Error("RGB preparation exceeds the reserved memory budget.");} owned.add(buffer); liveBytes += buffer.size; peakBytes = Math.max(peakBytes, liveBytes); return buffer; };
@@ -283,7 +292,7 @@ window.HDRLibraryRGB = (() => {
       meta.acescg_to_bt2020.forEach((row, k) => setF(16 + k, row));
       // lensc.xy belongs to DNG tile dimensions; z is the RGB-only clamp flag.
       setF(20, [0, 0, meta.colour.clip_working_negative ? 1 : 0, .18 / meta.colour.reference_white_nits]);
-      setF(19, [(meta.colour.authored_sdr ? .18 : 1) * (meta.colour.scale || 1), 0, 0, 0]);
+      setF(19, [(meta.colour.authored_sdr ? .18 : 1) * (meta.colour.scale || 1), signedSource ? 0 : 1, 0, 0]);
       const uniform = device.createBuffer({ size: params.byteLength, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
       own(uniform);
       device.queue.writeBuffer(uniform, 0, params);
@@ -350,12 +359,13 @@ window.HDRLibraryRGB = (() => {
       if(meta.colour.authored_sdr) await run("RGB_SDR",[uniform,mosaicBuf,null,null,...planes.slice(3),peaks],wgX,wgY);
       await device.queue.onSubmittedWorkDone(); release(mosaicBuf);
       await stage(meta.dng_warp?"warp_colour_measure":"colour_measure");
-      window.HDRLibraryScenes?.stage(meta.path,"Reducing Library pictures on GPU");
       if(meta.repairs?.length&&!meta.reference_only){
-        const repaired=await root.HDRLibraryRetouch({device,meta,planes:planes.slice(0,3),make,release,read,
-          budget:()=>memoryBudget-liveBytes,permit:beforeSubmit|| (async()=>{}),signal,peaks,samples});
+        window.HDRLibraryScenes?.stage(meta.path,"Replaying saved repairs");
+        const repaired=await root.HDRLibraryRetouch({device,repairDevice:shared.baseDevice||device,meta,planes:planes.slice(0,3),make,release,read,
+          budget:()=>memoryBudget-liveBytes,permit:beforeSubmit|| (async()=>{}),signal,peaks,samples,timings});
         planes.slice(0,3).forEach(release);planes.splice(0,3,...repaired);await stage("retouch");
       }
+      window.HDRLibraryScenes?.stage(meta.path,"Reducing Library pictures on GPU");
       const reduced = {};
       for (const edge of edges) {
         const lastEdge = edge === edges.at(-1);
@@ -402,7 +412,7 @@ window.HDRLibraryRGB = (() => {
           const texture=device.createTexture({size:[rw,rh],format:"rgba16float",
             usage:GPUTextureUsage.STORAGE_BINDING|GPUTextureUsage.TEXTURE_BINDING|GPUTextureUsage.COPY_SRC});
           textures.add(texture);liveBytes+=bytes;peakBytes=Math.max(peakBytes,liveBytes);
-          const pipe=pipelines.PACK,group=device.createBindGroup({layout:pipe.getBindGroupLayout(0),entries:[
+          const pipe=signedSource?pipelines.PACK_SIGNED:pipelines.PACK,group=device.createBindGroup({layout:pipe.getBindGroupLayout(0),entries:[
             ...retained.slice(c,c+3).map((buffer,binding)=>({binding,resource:{buffer}})),{binding:3,resource:texture.createView()}]});
           const enc=device.createCommandEncoder(),pass=enc.beginComputePass();pass.setPipeline(pipe);pass.setBindGroup(0,group);
           pass.dispatchWorkgroups(Math.ceil(rw/16),Math.ceil(rh/16));pass.end();device.queue.submit([enc.finish()]);
@@ -501,7 +511,7 @@ window.HDRLibraryRGB = (() => {
         await permit();
         if(gains)await timed("gain_map",async()=>dispatch("DNG_TILE_GAIN",[uniform,input,dng,gains],box.width,box.height));
         await permit();
-        await timed("warp_colour_measure",async()=>dispatch(meta.preserve_signed?"DNG_TILE_GRADE":"DNG_TILE_RGB",[uniform,input,dng,null,...out,pk,sample],tw,th));
+        await timed("warp_colour_measure",async()=>dispatch("DNG_TILE_RGB",[uniform,input,dng,null,...out,pk,sample],tw,th));
         await permit();
         await timed("readback",async()=>{
           // One staging buffer and one mapAsync per tile. Five separate

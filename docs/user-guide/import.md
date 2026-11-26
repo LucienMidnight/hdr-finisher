@@ -71,6 +71,36 @@ The application also calculates:
 
 The source is then normalized into the internal working representation when the interpretation is sufficiently known.
 
+## Pixel cleanup (Bayer RAW only)
+
+Open **Raw development**. Its first two checkboxes clean the sensor data, and
+both start on for new photos. Photos graded before November 25, 2026 keep the
+settings they were saved with.
+
+**Remove hot pixels** fixes isolated stuck bright sensor pixels. It has no
+strength slider. Turn it off for night skies, where it can occasionally remove
+a real star.
+
+**Even out harsh specks** gently pulls unusual bright or dark sensor readings toward the local noise
+range before development. With it checked, **Speck threshold** runs from ×2 to ×4,
+starting at ×2.5; lower values are stronger. The slider applies when released.
+Small stars and thin lettering may soften, and colourful blobs can remain.
+Check important details at 100%. It is an aid, not a Denoise replacement.
+
+The filter works before the RAW is demosaiced or highlights are reconstructed.
+It protects small lights that show up across red, green and blue sensor
+readings, and clipped areas. It can still occasionally
+remove a real tiny light, such as a star or a glint. Check those details at
+100% and turn it off when it is not wanted. It does not fix cold/dead pixels
+or use a camera defect map. X-Trans, linear DNG and finished images show the
+checkboxes disabled with a short explanation.
+
+Changing either option or releasing Speck threshold re-develops the RAW, so allow
+the photo to refresh. The settings are saved with this photo and apply to Library, Grade, Proof and exported files,
+including batch export. **Undo** and **Redo** restore the previous/next setting
+and re-develop the source. Selective grade copy/paste includes it under **RAW
+development**; saved recipes that contain RAW settings keep it too.
+
 ## Classifications
 
 | State | Meaning | Action |
@@ -149,5 +179,19 @@ Changing interpretation reloads the source and rebuilds the session; it is not a
 - Layered/multichannel EXRs where the intended beauty RGB is ambiguous
 - Lossy DWAA/DWAB compression for a finishing master
 - ICC profile assignment instead of conversion in the source editor
-- Negative scene values: the current normalization sanitizes/clips them rather than preserving them as a signed working range
+- Negative scene values in non-RAW files: their existing decoder/normalization policy still applies; signed RAW development is not a blanket change to every format
 - Sources above 10,000 nits: the PQ delivery path has a 10,000-nit ceiling
+
+### RAW shadows and existing edits
+
+Bayer RAW development retains noisy readings below the camera's black level
+through Denoise and ordinary editing. They are processing data, not negative
+light on screen: the final displayed/exported picture still has a black floor.
+Use **Blacks** toward negative values to crush the deepest shadows deliberately,
+or lift Blacks/Tone to taste. Exposure alone does not recreate the former clipped
+development. This does not promise to remove coloured specks or high-ISO noise.
+
+Reopening an existing RAW grade can make deep shadows darker or change their
+colour/noise even though its saved sliders are unchanged. Old clipped previews
+are regenerated. X-Trans demosaicing remains on the older unsigned decoder;
+signed development and its end-to-end delivery checks are not yet release-qualified.

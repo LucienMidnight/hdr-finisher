@@ -27,8 +27,8 @@ _registry = OrderedDict()
 _registry_lock = RLock()
 
 
-def recipe(document):
-    if document is not None:
+def recipe(document, *, validated=False):
+    if document is not None and not validated:
         from .models import EditDocument
         document = validate_saved(EditDocument, document).model_dump(mode="json")
     document = document or {}
@@ -40,9 +40,59 @@ def recipe(document):
     }
 
 
-def _quality(inputs):
-    from .loader import SOURCE_DECODER_VERSION, SOURCE_COLOR_TRANSFORM_VERSION
-    identity = {"recipe": inputs, "decoder": SOURCE_DECODER_VERSION,
+def document_payload(saved):
+    if saved is None:
+        return None
+    from .saved_grades import notice, whole_grade_fallback
+    result = saved.model_dump(mode="json")
+    if whole_grade_fallback(notice(saved)):
+        result.pop("global_adjustments", None)
+    return result
+
+
+def _saved_setting(document, *fields):
+    for field in fields:
+        if not isinstance(document, dict):
+            return None
+        document = document.get(field)
+    return document
+
+
+def uses_raw_pixel_cleanup(document):
+    from .raw_import import RAW_EXTENSIONS
+
+    # Stored Library scenes must be addressable with the source drive offline.
+    filename = _saved_setting(document, "source", "filename")
+    if not isinstance(filename, str) or Path(filename).suffix.lower() not in RAW_EXTENSIONS:
+        return False
+    cleanup = _saved_setting(document, "source", "raw_import_settings", "pixel_cleanup")
+    return isinstance(cleanup, dict) and bool(cleanup.get("remove_hot_pixels") or cleanup.get("even_out_specks"))
+
+
+def finished_micro_grain_suffix(path, document, lane):
+    """A finished Library picture can contain the exact Micro Grain frame from Grade."""
+    from .loader import BAYER_NOISE_FIT_CACHE_SUFFIX
+    from .raw_import import RAW_EXTENSIONS
+
+    suffix = Path(path).suffix.lower()
+    if suffix == ".dng" or suffix not in RAW_EXTENSIONS:
+        return ""
+    controls = _saved_setting(document, "denoise", lane, "controls")
+    if (not _saved_setting(document, "denoise", lane, "enabled")
+            or not isinstance(controls, dict) or controls.get("method") != "micro_grain"
+            or not (controls.get("micro_luminance", .5) or controls.get("micro_color", .5))
+            or _saved_setting(document, "repairs")):
+        return ""
+    highlights = _saved_setting(document, "source", "raw_import_settings", "highlight_reconstruction")
+    if isinstance(highlights, dict) and highlights.get("enabled", True) and highlights.get("method") == "edge_colour_v1":
+        return ""
+    return BAYER_NOISE_FIT_CACHE_SUFFIX
+
+
+def _quality(inputs, *, bayer_cleanup=False):
+    from .loader import SOURCE_COLOR_TRANSFORM_VERSION, source_decoder_version
+    specks_enabled = inputs["raw_import_settings"].get("pixel_cleanup", {}).get("even_out_specks", False)
+    identity = {"recipe": inputs, "decoder": source_decoder_version(specks_enabled, bayer_cleanup=bayer_cleanup),
                 "colour": SOURCE_COLOR_TRANSFORM_VERSION, "rgb_adapter": "library-rgb-reduced-v5"}
     return "live-scene-v2:" + sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()
 
@@ -55,8 +105,9 @@ def equivalent_qualities(value):
         return _quality_aliases.get(value, (value,))
 
 
-def quality(document):
-    inputs = recipe(document)
+def quality(document, *, inputs=None):
+    inputs = recipe(document) if inputs is None else inputs
+    bayer_cleanup = uses_raw_pixel_cleanup(document)
     canonical = deepcopy(inputs)
     highlights = canonical["raw_import_settings"]["highlight_reconstruction"]
     # Opposed colour never reads this Edge colour-only control. Use the
@@ -70,15 +121,15 @@ def quality(document):
         canonical["raw_import_settings"]["lens"] = {"mode": "off"}
     # Record labels and disabled strokes never alter the reconstructed source.
     canonical["repairs"] = [{"recipe": r["recipe"]} for r in inputs["repairs"] if r["enabled"]]
-    value = _quality(canonical)
-    variants = [value, _quality(inputs)]
+    value = _quality(canonical, bayer_cleanup=bayer_cleanup)
+    variants = [value, _quality(inputs, bayer_cleanup=bayer_cleanup)]
     # Exact historical encodings of the SAME developed pixels, never a broad
     # cache search or fallback to a different recipe/decoder/file version.
     old = deepcopy(inputs)
     h = old["raw_import_settings"]["highlight_reconstruction"]
     if h["method"] != "edge_colour_v1" or h["edge_colour_expand_percent"] == 0.5:
         h.pop("edge_colour_expand_percent", None)
-        variants.append(_quality(old))
+        variants.append(_quality(old, bayer_cleanup=bayer_cleanup))
     with _registry_lock:
         previous = _quality_aliases.pop(value, ())
         _quality_aliases[value] = tuple(dict.fromkeys((*variants, *previous)))[:16]
@@ -148,9 +199,12 @@ def _develop_cpu(root, path, document, edge, cancelled=None, cache=None, progres
                     if cancelled is not None and cancelled():
                         raise CancelledError("Library repair cancelled")
                 try:
-                    pixels = recover_repairs(saved, source, checkpoint)
-                    source.repairs = saved.repairs
-                    install_repaired_source(source, pixels, _source_mip_identity(source))
+                    if progress and any(record.enabled for record in saved.repairs):
+                        progress("retouch_replay", "Replaying saved repairs")
+                    with source_work(priority=15, cancelled=cancelled, cpu_only=True):
+                        pixels = recover_repairs(saved, source, checkpoint)
+                        source.repairs = saved.repairs
+                        install_repaired_source(source, pixels, _source_mip_identity(source))
                 finally:
                     if source.retouch_worker is not None:
                         source.retouch_worker.close()
@@ -289,7 +343,7 @@ class LivePictures:
         self._held_timer = None
         self._held_token = None
 
-    def document(self, path):
+    def document(self, path, *, validated=False):
         raw = self.documents.request(path)["grade"] if self.documents else None
         if raw is None:
             return None
@@ -298,10 +352,9 @@ class LivePictures:
         saved = validate_saved(EditDocument, raw)
         errors = getattr(self.marks, "picture_errors", None)
         if errors: errors.observe_grade(path, notice(saved))
-        result = saved.model_dump(mode="json")
-        from .saved_grades import whole_grade_fallback
-        if whole_grade_fallback(notice(saved)): result.pop("global_adjustments", None)
-        return result
+        if validated:
+            return saved
+        return document_payload(saved)
 
     def describe(self, path, metadata, *, document=_UNSET, source_identity=None):
         document = (self.document(path) if document is _UNSET else document) or {}
@@ -483,7 +536,7 @@ def fallback_picture(root, path, document, edge, cancelled=None, progress=None):
     from .library_pictures import check_cancelled
     from .library_thumbnail_codec import encode
     from .adjustments import apply_adjustments, apply_hdr_output_highlight_compression, apply_sdr_output_highlight_compression
-    from .exporters import _denoised_export_source
+    from .exporters import delivery_denoise_inputs
     from .models import PreviewKind
     cache = LibraryPictureCache(root)
     metadata = develop_cpu(root, path, document, edge, cancelled, progress=progress)
@@ -492,14 +545,25 @@ def fallback_picture(root, path, document, edge, cancelled=None, progress=None):
     service.cache = cache
     service.document = lambda _: document
     frame = service.frame(service.describe(path, metadata))
-    adjustments = frame.adjustments.model_copy(deep=True)
-    adjustments.hdr.highlight_compression_target_nits = 1000
+    adjustments = frame.adjustments
+    for lane, settings in ((PreviewKind.HDR, frame.denoise.hdr), (PreviewKind.SDR, frame.denoise.sdr)):
+        if (lane == PreviewKind.SDR and frame.sdr_reference_image is not None
+                and adjustments.sdr.use_authored_base and not adjustments.sdr.linked_to_hdr):
+            continue
+        controls = settings.controls
+        if settings.enabled and controls.method == "micro_grain":
+            settings.controls = controls.model_copy(update={
+                "method": "standard", "amount": .75, "luminance": .4 * controls.micro_luminance,
+                "color_noise": .8 * controls.micro_color, "detail_recovery": controls.micro_detail,
+            })
     def render(kind):
         check_cancelled(cancelled)
-        image = apply_adjustments(_denoised_export_source(frame, kind), adjustments, kind,
-            sdr_reference_image=frame.sdr_reference_image, include_grain=True,
+        source, reference, source_filter = delivery_denoise_inputs(frame, kind, adjustments)
+        image = apply_adjustments(source, adjustments, kind,
+            sdr_reference_image=reference, include_grain=True,
             include_output_highlight_compression=False,
-            local_adjustments=adjustments.enabled_locals(frame.local_adjustments), color_context=frame.color_context)
+            local_adjustments=adjustments.enabled_locals(frame.local_adjustments), color_context=frame.color_context,
+            source_filter=source_filter)
         check_cancelled(cancelled)
         return (apply_hdr_output_highlight_compression(image, adjustments, color_context=frame.color_context)
             if kind == PreviewKind.HDR else apply_sdr_output_highlight_compression(image, adjustments))

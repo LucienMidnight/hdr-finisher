@@ -928,24 +928,34 @@ class LocalAdjustment(BaseModel):
 
 
 class DenoiseLiveControls(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="ignore")
 
-    amount: float = Field(default=0.5, ge=0.0, le=1.0)
+    amount: float = Field(default=0.75, ge=0.0, le=1.0)
     luminance: float = Field(default=0.5, ge=0.0, le=1.0)
-    color_noise: float = Field(default=0.5, ge=0.0, le=1.0)
-    detail_recovery: float = Field(default=0.0, ge=0.0, le=1.0)
+    color_noise: float = Field(default=0.75, ge=0.0, le=1.0)
+    detail_recovery: float = Field(default=0.5, ge=0.0, le=1.0)
     # Adaptive only: strength by noise size, 0.5 being the measured amount.
     # Finest covers ~1-2 px, fine ~2-4 px, medium ~8 px, coarse ~16-32 px.
     finest_noise: float = Field(default=0.5, ge=0.0, le=1.0)
     fine_noise: float = Field(default=0.5, ge=0.0, le=1.0)
     medium_noise: float = Field(default=0.5, ge=0.0, le=1.0)
     coarse_noise: float = Field(default=0.5, ge=0.0, le=1.0)
+    method: Literal["standard", "clean_grain", "micro_grain"] = "standard"
+    micro_luminance: float = Field(default=0.5, ge=0.0, le=1.0)
+    micro_color: float = Field(default=0.5, ge=0.0, le=1.0)
+    micro_detail: float = Field(default=0.5, ge=0.0, le=1.0)
+    grain_evenness: float = Field(default=1.0, ge=0.0, le=1.0)
+    clean_splotches: bool = True
+    clean_fringes: bool = True
+    protect_color_edges: bool = False
+    color_splotches: float = Field(default=1.0, ge=0.0, le=1.0)
+    splotch_size: Literal["small", "large"] = "small"
 
 
 class DenoiseAnalysisSettings(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    # The one method; it measures the noise itself.
+    # All methods share the same noise measurement.
     algorithm_version: Literal["adaptive-atrous-v1"] = "adaptive-atrous-v1"
 
 
@@ -956,13 +966,17 @@ class DenoiseLaneSettings(BaseModel):
     controls: DenoiseLiveControls = Field(default_factory=DenoiseLiveControls)
     analysis: DenoiseAnalysisSettings = Field(default_factory=DenoiseAnalysisSettings)
 
+    @classmethod
+    def new_lane(cls) -> DenoiseLaneSettings:
+        return cls(controls=DenoiseLiveControls(method="clean_grain"))
+
 
 class DenoiseDocumentSettings(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     schema_version: Literal[1] = 1
-    hdr: DenoiseLaneSettings = Field(default_factory=DenoiseLaneSettings)
-    sdr: DenoiseLaneSettings = Field(default_factory=DenoiseLaneSettings)
+    hdr: DenoiseLaneSettings = Field(default_factory=DenoiseLaneSettings.new_lane)
+    sdr: DenoiseLaneSettings = Field(default_factory=DenoiseLaneSettings.new_lane)
 
 
 class SDRMatchQualityMetrics(BaseModel):
@@ -1023,6 +1037,16 @@ class RawHighlightReconstructionSettings(BaseModel):
     edge_colour_expand_percent: float = Field(default=0.5, ge=0.0, le=3.0, allow_inf_nan=False)
 
 
+class RawPixelCleanupSettings(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    # Steve, November 25: both on by default for new photos; grades that saved
+    # them off keep them off.
+    remove_hot_pixels: bool = True
+    even_out_specks: bool = True
+    speck_threshold: float = Field(default=2.5, ge=2.0, le=4.0, allow_inf_nan=False)
+
+
 class RawImportSettings(BaseModel):
     """Small, deterministic RAW-development surface stored with the project."""
 
@@ -1030,6 +1054,7 @@ class RawImportSettings(BaseModel):
 
     white_balance: Literal["as_shot"] = "as_shot"
     demosaic: Literal["ahd"] = "ahd"
+    pixel_cleanup: RawPixelCleanupSettings = Field(default_factory=RawPixelCleanupSettings)
     highlight_reconstruction: RawHighlightReconstructionSettings = Field(
         default_factory=RawHighlightReconstructionSettings
     )
@@ -1045,6 +1070,20 @@ class SourceReference(BaseModel):
     byte_size: int | None = Field(default=None, ge=0)
     raw_import_settings: RawImportSettings = Field(default_factory=RawImportSettings)
     luminance: SourceLuminanceDescriptor
+
+    @model_validator(mode="before")
+    @classmethod
+    def keep_saved_pixel_cleanup_off(cls, value: Any) -> Any:
+        # Pixel cleanup defaults on for new photos (Steve, November 25). A grade
+        # saved before an option existed never chose it, so it stays off.
+        if not isinstance(value, dict) or not isinstance(value.get("raw_import_settings"), dict):
+            return value
+        raw = dict(value["raw_import_settings"])
+        cleanup = raw.get("pixel_cleanup")
+        cleanup = dict(cleanup) if isinstance(cleanup, dict) else {}
+        for field in ("remove_hot_pixels", "even_out_specks"):
+            cleanup.setdefault(field, False)
+        return {**value, "raw_import_settings": {**raw, "pixel_cleanup": cleanup}}
 
 
 class RepairRecord(BaseModel):
@@ -1110,6 +1149,7 @@ class EditCommand(BaseModel):
     expected_revision: int = Field(ge=0)
     command_type: Literal[
         "replace_document",
+        "set_raw_import_settings",
         "set_hdr_reference_white",
         "set_global_adjustments",
         "set_denoise_settings",
@@ -1147,6 +1187,7 @@ class SdrMatchActionRequest(BaseModel):
 class EditStateResponse(BaseModel):
     repair_rendering: list[dict] = Field(default_factory=list)
     revision: int = Field(ge=0)
+    source_epoch: int = Field(ge=0)
     document: EditDocument
     dirty: bool = False
     can_undo: bool = False
@@ -1186,7 +1227,7 @@ class SourceInterpretationOverride(BaseModel):
 
 
 class ScopeRegion(BaseModel):
-    """Normalized post-geometry rectangle used only for scope analysis."""
+    """Normalized post-geometry rectangle."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -1213,6 +1254,10 @@ class PreviewRequest(BaseModel):
     long_edge: int | None = Field(default=None, ge=256, le=16384)
     hdr_display: bool = True
     include_locals: bool = True
+    micro_grain_controls: DenoiseLiveControls | None = None
+    micro_grain_original: bool = False
+    micro_grain_viewport: ScopeRegion | None = None
+    background_preview: bool = False
     local_adjustments: list[LocalAdjustment] | None = None
     scope_region: ScopeRegion | None = None
     # Engineering-only. "whole" is the shipped route; "strips" asks for the
@@ -1280,6 +1325,7 @@ class LocalMaskTileBatchRequest(BaseModel):
     long_edge: int = Field(default=1600, ge=256, le=16384)
     edit_revision: int | None = Field(default=None, ge=0)
     geometry_signature: str | None = None
+    bounded_geometry: bool = False
 
     @model_validator(mode="after")
     def validate_batch_bytes(self) -> "LocalMaskTileBatchRequest":
@@ -1392,6 +1438,7 @@ class ScopeResponse(BaseModel):
     generation: int | None = None
     normalization_peak: int = 1
     peak_value: float = 0.0
+    micro_source_long_edge: int | None = None
     clipped: bool = False
     x_axis: str = "normalized"
     bin_edges: list[float] = Field(default_factory=list)

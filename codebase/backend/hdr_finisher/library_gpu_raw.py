@@ -60,9 +60,11 @@ def frame_chunks(header: dict, *payload):
             yield view[offset:offset + 1024 * 1024]
 
 
-async def receive_frame(request):
+async def receive_frame(request, *, max_bytes=None):
     """Fill one body, rather than retaining chunks plus Starlette's joined copy."""
     length = int(request.headers.get("content-length", 0))
+    if max_bytes is not None and not 4 <= length <= max_bytes:
+        raise ValueError("The developed picture exceeds its bounded upload size.")
     if not length:
         return unframe(await request.body())
     from starlette.concurrency import run_in_threadpool
@@ -168,18 +170,24 @@ def sensor(path: Path, settings: RawImportSettings | None = None) -> tuple[dict,
             raise NotEligible("X-Trans sensors keep the CPU route")
         # LibRaw frees its own buffer when the file closes.
         mosaic = np.array(raw.raw_image_visible, dtype="<u2", order="C", copy=True)
+        from .raw_pixel_cleanup import configuration
+        cleanup = configuration(mosaic, metadata) if settings.pixel_cleanup.remove_hot_pixels and not settings.pixel_cleanup.even_out_specks else None
+        # Reuse the CPU sensor step for this optional clamp. Both routes consume
+        # identical encoded sensor samples, before Opposed/Edge evidence and AHD.
+        # The hot-only GPU route stays unchanged; never run it a second time.
+        cleanup_applied = settings.pixel_cleanup.even_out_specks
+        if cleanup_applied:
+            from .raw_pixel_cleanup import apply_raw
+            from types import SimpleNamespace
+            apply_raw(SimpleNamespace(raw_image_visible=mosaic), metadata, settings)
+            cleanup = None
         colors = np.asarray(raw.raw_colors_visible[:2, :2], dtype=np.int64)
-        cam_rgb = np.asarray(raw.rgb_xyz_matrix, dtype=np.float64)[:3] @ XYZ_RGB
+        xyz_cam = raw_import._ahd_lab_matrix(raw)
         flip = int(raw.sizes.flip)
     timings["mosaic_copy_metadata"] = (time.perf_counter()-mark)*1000
     # LibRaw cam_xyz_coeff: rows normalized to sum 1, then inverted (3 colours).
-    cam_rgb /= cam_rgb.sum(axis=1, keepdims=True)
     # LibRaw stores rgb_cam as float before accumulating each Lab matrix term.
     # Keep those rounding points: AHD's integer homogeneity votes depend on them.
-    rgb_cam = np.linalg.inv(cam_rgb).astype(np.float32)
-    xyz_cam = np.zeros((3, 3), dtype=np.float32)
-    for k in range(3):
-        xyz_cam += (XYZ_RGB[:, k, None] * rgb_cam[k] / D65_WHITE[:, None]).astype(np.float32)
     height, width = mosaic.shape
     out_h, out_w = (width, height) if flip in (5, 6) else (height, width)
     dr = fuji_dynamic_range(path)
@@ -187,6 +195,8 @@ def sensor(path: Path, settings: RawImportSettings | None = None) -> tuple[dict,
     header = {
         "path": str(path), "identity": identity, "width": width, "height": height, "flip": flip,
         "raw_import_settings": settings.model_dump(mode="json"),
+        "pixel_cleanup": cleanup,
+        "pixel_cleanup_applied": cleanup_applied,
         "cfa_raw": colors.reshape(-1).tolist(),
         "cfa_rgb": [int(metadata.raw_channel_to_rgb[c]) for c in colors.reshape(-1)],
         "raw_black": metadata.raw_black_level.tolist(), "raw_white": metadata.raw_white_level.tolist(),

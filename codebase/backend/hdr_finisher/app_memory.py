@@ -1,17 +1,20 @@
 """Single RAM budget owner. Disk and dedicated GPU memory are separate.
 
-Windows charged RAM is proportional resident memory (QueryWorkingSet).
-Shared pages are divided by their OS share count, never added as full copies.
+Windows charges private commit for each process in the app tree.
 """
 import ctypes
 import errno
 from ctypes import wintypes
 import os
+import platform
 import sys
 from threading import RLock, Lock
 import time
 import weakref
 import tracemalloc
+
+from .diagnostics import log as diagnostic
+from .resource_preflight import windows_memory_status
 
 # Opt-in for the one-off diagnostic only: tracing allocations has overhead.
 if os.environ.get("HDR_FINISHER_TRACE_ALLOCATIONS") == "1":
@@ -38,15 +41,28 @@ _sample = (0, None)
 _sample_lock = Lock()
 _remote_claim = None
 grade_bytes_provider = lambda: 0
+NEO_RAM = 8 * 1024**3
+LARGE_GRADE_BYTES = 384_000_000
+GRADE_TRIMMED_SHARES = frozenset(("thumbnails", "sharp", "camera", "raw"))
+
+
+def unified_memory():
+    return (os.environ.get("HDR_FINISHER_MEMORY_PROFILE") == "unified-8gb"
+            or (sys.platform == "darwin" and platform.machine() == "arm64"))
+
+
+def grade_cache_trim_active(grade_bytes):
+    return unified_memory() and machine_memory() <= NEO_RAM and grade_bytes >= LARGE_GRADE_BYTES
 
 
 def machine_memory():
+    if os.environ.get("HDR_FINISHER_MEMORY_PROFILE") == "unified-8gb":
+        return NEO_RAM
     if os.name == 'nt':
-        class Memory(ctypes.Structure):
-            _fields_ = [('length',ctypes.c_uint32),('load',ctypes.c_uint32)] + [
-                (key,ctypes.c_uint64) for key in ('total','available','page','free_page','virtual','free_virtual','extended')]
-        value=Memory(); value.length=ctypes.sizeof(value)
-        if ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(value)): return value.total
+        try:
+            return windows_memory_status().ullTotalPhys
+        except OSError:
+            pass
     if sys.platform=='darwin':
         value=ctypes.c_uint64();size=ctypes.c_size_t(ctypes.sizeof(value))
         libc=ctypes.CDLL('/usr/lib/libSystem.B.dylib')
@@ -57,21 +73,21 @@ def machine_memory():
 
 def memory_options(ram=None):
     ram = ram or machine_memory()
-    maximum = max(4_000_000_000, ram-max(2_000_000_000, ram//10))
-    # Steve, 2026-11-16: 4 GB minimum/default on every platform, including
-    # the minimum supported 8 GB machine. The supported-machine user
-    # maximum and the independent physical-memory reserve are unchanged.
-    return dict(minimumBytes=4_000_000_000, maximumBytes=maximum,
-        defaultBytes=min(4_000_000_000, maximum), ramBytes=ram)
+    minimum = 4_000_000_000
+    if os.name == "nt" and os.environ.get("HDR_FINISHER_MEMORY_PROFILE") != "unified-8gb":
+        minimum = 6_000_000_000
+    maximum = max(minimum, ram-max(2_000_000_000, ram//10))
+    return dict(minimumBytes=minimum, maximumBytes=maximum,
+        defaultBytes=minimum, ramBytes=ram)
 
 
 def budgets(ram=None, chosen=None):
     options=memory_options(ram)
     ceiling=options['defaultBytes'] if chosen is None else max(options['minimumBytes'],min(options['maximumBytes'],int(chosen)))
-    # Starting memory and working room stay fixed. The fixed thumbnail pool
-    # stays fixed too; only the other cache shares shrink on smaller machines.
-    scale=max(0,(ceiling-STARTING-WORKING-SHARES['thumbnails']) /
-              (4_000_000_000-STARTING-WORKING-SHARES['thumbnails']))
+    # Keep the original cache growth per extra byte above the platform default.
+    # The thumbnail pool and working room are fixed.
+    reference_pool = 4_000_000_000-STARTING-WORKING-SHARES['thumbnails']
+    scale = (reference_pool + ceiling - options['defaultBytes']) / reference_pool
     return ceiling,{key:int(value*(scale if key not in ('thumbnails','working') else 1))
                     for key,value in SHARES.items()}
 
@@ -88,12 +104,43 @@ def configure(chosen=None):
     return dict(memory_options(), ceilingBytes=ceiling, targetBytes=TARGET)
 
 
-def limit(share): return LIMITS[share]
+def limit(share):
+    cap = LIMITS[share]
+    if share in GRADE_TRIMMED_SHARES and grade_cache_trim_active(grade_bytes_provider()):
+        return cap // 2
+    return cap
 
 
-def register(key, share, trim=None):
+def trim_library_shares(caps=None):
+    remaining = dict(caps) if caps is not None else {share: LIMITS[share] // 2 for share in GRADE_TRIMMED_SHARES}
     with _lock:
-        _caches[key] = dict(share=share,bytes=0,trim=(weakref.WeakMethod(trim) if getattr(trim,'__self__',None) is not None else lambda:trim) if trim else None)
+        callbacks = []
+        # The worker and backend enforce their local owners. Aggregate claims
+        # keep both processes under the same limits as new entries arrive.
+        for key, entry in _caches.items():
+            share = entry['share']
+            if share not in remaining or (caps is None and key.startswith('helper-')):
+                continue
+            target = min(remaining[share], entry['bytes'])
+            remaining[share] -= target
+            if entry.get('trim') and target < entry['bytes']:
+                callbacks.append((entry['trim'](), target))
+    for callback, target in callbacks:
+        if callback:
+            callback(target)
+    return remaining
+
+
+def register(key, share, trim=None, *, trim_moderate=None):
+    def reference(callback):
+        if callback is None:
+            return None
+        if getattr(callback, '__self__', None) is not None:
+            return weakref.WeakMethod(callback)
+        return lambda: callback
+
+    with _lock:
+        _caches[key] = dict(share=share, bytes=0, trim=reference(trim), trim_moderate=reference(trim_moderate))
 
 
 def claim(key, share, size):
@@ -137,8 +184,8 @@ def cache_snapshot():
     with _lock:
         dead=[key for key,v in _caches.items() if v.get('trim') and v['trim']() is None]
         for key in dead: forget(key)
-        return {share:dict(bytes=sum(v['bytes'] for v in _caches.values() if v['share']==share),limitBytes=cap)
-                for share,cap in LIMITS.items()}
+        return {share:dict(bytes=sum(v['bytes'] for v in _caches.values() if v['share']==share),limitBytes=limit(share))
+                for share in LIMITS}
 
 
 def reclaim(level='moderate', needed=None):
@@ -156,12 +203,17 @@ def reclaim(level='moderate', needed=None):
         callback(max(0, before-remaining))
         with _lock: after = _caches.get(key, {}).get('bytes', 0)
         remaining -= max(0, before-after)
-    return max(0, int(needed)-remaining)
+    freed = max(0, int(needed)-remaining)
+    if freed:
+        diagnostic("memory", "cache_trimmed", route="cpu", reason="memory_reclaim",
+                   requested_bytes=int(needed), freed_bytes=freed, pressure_level=level)
+    return freed
 
 
 def reclaim_all(level='moderate'):
     with _lock:
-        callbacks=[(v['trim'](),0 if level in ('critical','shortage') else v['bytes']//2)
+        callbacks=[((v.get('trim_moderate') or v['trim'])() if level == 'moderate' else v['trim'](),
+                    0 if level in ('critical','shortage') else v['bytes']//2)
                    for v in _caches.values() if v.get('trim') and
                    (level != 'shortage' or v['share'] in ('raw','handoff','working'))]
     for callback,target in callbacks:
@@ -210,29 +262,19 @@ def system_pressure():
         kernel.QueryMemoryResourceNotification.argtypes=[wintypes.HANDLE,ctypes.POINTER(wintypes.BOOL)]
         if _pressure_handle is None: _pressure_handle=kernel.CreateMemoryResourceNotification(0)
         low=wintypes.BOOL()
-        if _pressure_handle and kernel.QueryMemoryResourceNotification(_pressure_handle,ctypes.byref(low)) and low.value:
-            class Memory(ctypes.Structure):
-                _fields_=[('length',ctypes.c_uint32),('load',ctypes.c_uint32)]+[(k,ctypes.c_uint64) for k in ('total','available','page','free_page','virtual','free_virtual','extended')]
-            value=Memory();value.length=ctypes.sizeof(value);kernel.GlobalMemoryStatusEx(ctypes.byref(value))
-            return 'critical' if value.available<max(256_000_000,value.total//50) else 'moderate'
+        physical_low = (_pressure_handle
+                        and kernel.QueryMemoryResourceNotification(_pressure_handle,ctypes.byref(low))
+                        and low.value)
+        try:
+            memory = windows_memory_status()
+        except OSError:
+            return 'moderate' if physical_low else 'none'
+        available = memory.available_bytes
+        if available < max(256_000_000, memory.ullTotalPhys//50):
+            return 'critical'
+        if physical_low or available < max(2_000_000_000, memory.ullTotalPhys//10):
+            return 'moderate'
     return 'none'
-
-
-def proportional_resident(handle, working, psapi):
-    import numpy as np
-    # QueryWorkingSet may grow during the query; retry with the returned size.
-    count=max(4096,int(working//4096*1.25)+1024)
-    for attempt in range(4):
-        buffer=(ctypes.c_size_t*(count+1))()
-        psapi.QueryWorkingSet.argtypes=[wintypes.HANDLE,ctypes.c_void_p,wintypes.DWORD]
-        if psapi.QueryWorkingSet(handle,buffer,ctypes.sizeof(buffer)):
-            flags=np.ctypeslib.as_array(buffer)[1:int(buffer[0])+1]
-            shares=(flags>>5)&7
-            divisor=np.where((flags&256)!=0,np.maximum(shares,1),1)
-            return int(np.sum(4096/divisor))
-        count=max(count*2,int(buffer[0])+1024)
-    # Never silently certify an unreadable process with a zero charge.
-    raise OSError('QueryWorkingSet failed; memory gate unavailable')
 
 
 def linux_pss(pid, fallback):
@@ -338,16 +380,15 @@ def process_tree(root):
                     if kernel.GetExitCodeProcess(handle,ctypes.byref(status)) and status.value != 259: continue
                     raise ctypes.WinError(error)
                 working = memory.working
-                try:charged = proportional_resident(handle, working, psapi)
-                except OSError:
-                    status=wintypes.DWORD()
-                    kernel.GetExitCodeProcess.argtypes=[wintypes.HANDLE,ctypes.POINTER(wintypes.DWORD)]
-                    if kernel.GetExitCodeProcess(handle,ctypes.byref(status)) and status.value!=259:continue
-                    raise
             finally: kernel.CloseHandle(handle)
-        result.append({'pid':pid,'parentPid':rows.get(pid,(0,0))[0],'name':names.get(pid,''),'workingSetBytes':working,
-                       'chargedBytes':charged if os.name == 'nt' else linux_pss(pid, working),
-                       'privateBytes':memory.private if os.name == 'nt' else None})
+        row = {'pid':pid,'parentPid':rows.get(pid,(0,0))[0],'name':names.get(pid,''),
+               'workingSetBytes':working}
+        if os.name == 'nt':
+            row.update(chargedBytes=memory.private, privateBytes=memory.private,
+                       peakPrivateBytes=memory.pagefile_peak)
+        else:
+            row.update(chargedBytes=linux_pss(pid, working), privateBytes=None)
+        result.append(row)
     return result
 
 
@@ -365,11 +406,9 @@ def snapshot(refresh=False, cached_only=False):
                 with _lock: cached = _sample
                 if refresh or time.monotonic()-cached[0]>.45 or cached[1] is None:
                     rows=process_tree(int(os.environ.get('HDR_FINISHER_DESKTOP_PID',os.getppid())))
-                    with _lock: _sample=(time.monotonic(),rows)
-                else: rows=cached[1]
+                    with _lock: cached = _sample = (time.monotonic(), rows)
             finally: _sample_lock.release()
-        else: rows=cached[1]
-    else: rows=cached[1]
+    sample_time, rows = cached
     total=sum(row.get('chargedBytes',row['workingSetBytes']) for row in rows)
     with _lock:
         for key,(_,expires) in list(_reservations.items()):
@@ -382,11 +421,28 @@ def snapshot(refresh=False, cached_only=False):
     level=pressure_level(safety_total,pressure)
     # A refused admission ("waiting") is reported for logs only. It is never
     # pressure: only measured memory and the operating system are.
+    measurement = 'private-commit' if os.name == 'nt' else 'proportional-resident'
     return dict(backendPid=os.getpid(), backendHeap=backend_heap(), totalBytes=total,workingSetBytes=sum(r['workingSetBytes'] for r in rows),
-                measurement='physical-footprint' if sys.platform=='darwin' else 'proportional-resident',processes=rows,ceilingBytes=CEILING,
+                measurement='physical-footprint' if sys.platform=='darwin' else measurement,processes=rows,ceilingBytes=CEILING,
                 targetBytes=TARGET,reservedBytes=reserved,caches=cache_snapshot(),
                 pressure=pressure,level=level,waiting=waiting,budgetPressure=safety_total>TARGET,gradeBytes=grade_bytes,
-                reclaim=level!='none')
+                sampleId=sample_time, gradePressure=pressure_level(total,pressure), unifiedMemory=unified_memory(),
+                gradeCacheTrim=grade_cache_trim_active(grade_bytes), reclaim=level!='none')
+
+
+def refresh_after_scratch(additional_bytes):
+    """Refresh an existing census if its reading could reject cache growth."""
+    with _lock:
+        rows = _sample[1]
+        if not rows:
+            return None
+        total = sum(row.get("chargedBytes", row["workingSetBytes"]) for row in rows)
+        if total + additional_bytes <= TARGET:
+            return None
+    try:
+        return total, snapshot(refresh=True)["totalBytes"]
+    except OSError:
+        return None  # Keep the last successful census.
 
 
 def pressure_level(total,system='none'):
@@ -415,6 +471,9 @@ def admit(key,size,release=False):
     # Retained Grade levels need eviction only when total RAM is needed.
     # Ordinary admission and lease renewal must not destroy another owner.
     if value['totalBytes']+reserved+size>CEILING and value['caches']['working']['bytes']:
+        diagnostic("memory", "cache_trim_requested", route="cpu", reason="app_memory_ceiling",
+                   requested_bytes=size, budget_bytes=CEILING, app_ram_bytes=value['totalBytes'],
+                   reserved_bytes=reserved, resident_bytes=value['caches']['working']['bytes'])
         with _lock: callbacks=[v['trim']() for v in _caches.values() if v['share']=='working' and v.get('trim')]
         for callback in callbacks:
             if callback: callback(0)
@@ -426,4 +485,8 @@ def admit(key,size,release=False):
         granted=value['totalBytes']+reserved+size<=CEILING
         if granted: _reservations[key]=(size,time.monotonic()+30)
         else: _waiting_until=time.monotonic()+2
+    if not granted:
+        diagnostic("memory", "admission_refused", level="warn", route="refused", reason="app_memory_ceiling",
+                   requested_bytes=size, budget_bytes=CEILING, app_ram_bytes=value['totalBytes'],
+                   reserved_bytes=reserved, pressure_level=value['pressure'])
     return dict(value,granted=granted)

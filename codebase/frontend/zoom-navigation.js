@@ -8,15 +8,39 @@ function setZoomMode(mode) {
     return;
   }
   const changed = state.zoomMode !== "fit";
+  if (changed) cancelGeometryUnderlayer();
   state.zoomMode = "fit";
-  els.dropzone.scrollLeft = 0;
-  els.dropzone.scrollTop = 0;
+  const cpuRegion = Boolean(els.previewCanvas.hdrCpuMicroRegion);
+  const hdrMicro = Boolean(els.previewCanvas.hdrCpuMicroUrls);
+  if (cpuRegion) {
+    const detail = hdrMicro ? els.previewMicroHdrDetail : els.previewMicroDetail;
+    detail.hidden = true;
+  }
+  if (!holdingNativeDenoisePictureForFit()) {
+    els.dropzone.scrollLeft = 0;
+    els.dropzone.scrollTop = 0;
+  }
   applyZoomGeometry();
-  scheduleNavigationThumbnail();
   if (changed) scheduleZoomRefinement();
+  if (cpuRegion) {
+    const base = hdrMicro ? els.previewMicroHdrUnderlayer : els.previewMicroUnderlayer;
+    acceptPresentation(state.currentView, "settled", base.naturalWidth || base.width, base.naturalHeight || base.height,
+      state.previewInfo.transport, "CPU/backend",
+      null, state.previewGeneration[state.currentView], null, 960, null, false, true);
+  }
+  scheduleNavigationThumbnail();
 }
 
-const navigationThumbnail = { timer: 0, controller: null, key: "", url: "", inflightKey: "" };
+function holdingNativeDenoisePictureForFit() {
+  const region = els.previewCanvas.hdrFrameRegion;
+  const completeGeometry = region?.nativeGeometryViewport && region.x === 0 && region.y === 0
+    && region.width === region.frameWidth && region.height === region.frameHeight;
+  return state.zoomMode === "fit" && els.previewCanvas.style.display !== "none"
+    && Boolean(region) && !completeGeometry && !els.previewCanvas.hdrCpuMicroRegion
+    && els.chromeProofImage?.style.display === "none";
+}
+
+const navigationThumbnail = { timer: 0, controller: null, key: "", url: "", inflightKey: "", waitingForMicro: null };
 
 function clearNavigationThumbnail() {
   window.clearTimeout(navigationThumbnail.timer);
@@ -24,6 +48,7 @@ function clearNavigationThumbnail() {
   navigationThumbnail.controller?.abort();
   navigationThumbnail.controller = null;
   navigationThumbnail.key = "";
+  navigationThumbnail.waitingForMicro = null;
   if (navigationThumbnail.url) URL.revokeObjectURL(navigationThumbnail.url);
   navigationThumbnail.url = "";
   els.navigationThumbImage.removeAttribute("src");
@@ -78,8 +103,8 @@ function updateNavigationViewport() {
   els.navigationThumb.classList.toggle("hidden", !visible);
   if (!visible) return;
   const preview = activePreviewElement();
-  const frameWidth = preview instanceof HTMLCanvasElement ? preview.width : preview.naturalWidth;
-  const frameHeight = preview instanceof HTMLCanvasElement ? preview.height : preview.naturalHeight;
+  const { width: frameWidth, height: frameHeight } = preview === els.previewCanvas.parentElement
+    ? previewCanvasFrameSize() : { width: preview.naturalWidth || preview.width, height: preview.naturalHeight || preview.height };
   if (!(frameWidth > 0 && frameHeight > 0)) return;
   // Start at bottom-right; a dragged window stays inside the picture area,
   // clear of scroll bars, as the viewer or overview changes size.
@@ -108,78 +133,121 @@ function updateNavigationViewport() {
 function scheduleNavigationThumbnail() {
   updateNavigationViewport();
   window.clearTimeout(navigationThumbnail.timer);
+  navigationThumbnail.timer = 0;
   if (!navigationWindowWanted()) return;
   navigationThumbnail.timer = window.setTimeout(() => { void refreshNavigationThumbnail(); }, 300);
 }
 
-function navigationThumbnailWorkReady() {
+function navigationThumbnailWorkPending() {
   const lane = state.currentView;
-  const accepted = state.acceptedPresentation;
-  return !state.importInProgress && !state.zoomRefinementTimer
-    && !state.gpuDraftInFlight && !state.previewScheduler?.interacting
-    && !state.gpuScopeRequestInFlight && !state.scopeRequestInFlight
-    && !(state.gpuPreview?.activeRenderCount > 0)
-    && !(state.gpuPreview?.activeScopeCount > 0)
-    && accepted?.lane === lane && accepted.exact
-    && accepted.generation === state.previewGeneration[lane]
-    && accepted.geometrySignature === geometrySignature()
-    && accepted.processedLongEdge >= requiredProcessingLongEdge();
+  const work = state.renderCoordinator?.state(lane);
+  return Boolean(state.importInProgress || state.zoomRefinementTimer || state.zoomRefinementInFlight
+    || state.zoomScopeTimer || state.gpuDraftInFlight || state.previewScheduler?.interacting
+    || state.cpuPreviewInflight?.has(lane) || work?.inFlight || work?.pending || work?.panTimerPending
+    || state.gpuScopeRequestInFlight || state.scopeRequestInFlight
+    || state.gpuPreview?.activeRenderCount > 0 || state.gpuPreview?.activeScopeCount > 0);
 }
 
-async function refreshNavigationThumbnail() {
+function navigationThumbnailWorkReady() {
+  const accepted = state.acceptedPresentation;
+  return !navigationThumbnailWorkPending()
+    && scopePresentationMatches(accepted, state.currentView) && accepted.processedLongEdge > 0;
+}
+
+async function refreshNavigationThumbnail(retry = true) {
+  navigationThumbnail.timer = 0;
   if (!navigationWindowWanted()) return;
-  // Overview work starts only after the requested picture and scopes settle.
-  // The GPU route grades a separate 512-edge canvas; CPU mode keeps its small
-  // fallback here, outside foreground refinement.
-  if (!navigationThumbnailWorkReady()) {
-    navigationThumbnail.timer = window.setTimeout(() => { void refreshNavigationThumbnail(); }, 300);
+  if (navigationThumbnailWorkPending()) {
+    navigationThumbnail.timer = window.setTimeout(() => { void refreshNavigationThumbnail(retry); }, 300);
     return;
   }
+  // The overview grades its own whole-picture proxy. Once active work settles,
+  // it can follow the current picture even if the requested zoom was refused.
+  // No current picture means wait for a presentation, not another poll.
+  if (!navigationThumbnailWorkReady()) return;
   const sessionId = state.session.session_id;
   const lane = state.currentView;
   if (await syncGlobalEditState() === false || state.session?.session_id !== sessionId) return;
   if (!navigationThumbnailWorkReady()) {
-    navigationThumbnail.timer = window.setTimeout(() => { void refreshNavigationThumbnail(); }, 300);
+    if (navigationThumbnailWorkPending() && !navigationThumbnail.timer) {
+      navigationThumbnail.timer = window.setTimeout(() => { void refreshNavigationThumbnail(retry); }, 300);
+    }
     return;
   }
   const request = window.HDRWholeImagePreviewPipe.request("navigation", state.session.source.width,
     { sessionId, lane, editRevision: state.editRevision, generation: state.previewGeneration[lane],
       geometrySignature: geometrySignature(), includeLocals: !localsBypassed() });
-  const key = JSON.stringify(request);
+  const presentation = scopePresentationIdentity(lane);
+  const accepted = state.acceptedPresentation;
+  const key = JSON.stringify([request, presentation]);
+  const waiting = navigationThumbnail.waitingForMicro;
+  if (waiting?.key === key && (waiting.accepted === accepted || !wholeScopePresentation(accepted))) return;
   if (navigationThumbnail.key === key && navigationThumbnail.url) return;
   if (navigationThumbnail.inflightKey === key && navigationThumbnail.controller) return;
   navigationThumbnail.controller?.abort();
   const controller = new AbortController();
   navigationThumbnail.controller = controller;
   navigationThumbnail.inflightKey = key;
-  const isCurrent = () => controller === navigationThumbnail.controller
+  const isCurrent = () => !controller.signal.aborted && controller === navigationThumbnail.controller
+    && scopePresentationMatches(presentation, lane) && scopePresentationMatches(state.acceptedPresentation, lane)
     && state.session?.session_id === sessionId && state.currentView === lane
     && state.editRevision === request.editRevision && !state.globalEditDirty
     && state.previewGeneration[lane] === request.generation
     && geometrySignature() === request.geometrySignature
     && navigationWindowWanted()
     && request.includeLocals === !localsBypassed()
-    && !state.previewScheduler?.interacting && !state.gpuDraftInFlight;
+    && !state.previewScheduler?.interacting && !state.gpuDraftInFlight
+    && !state.zoomRefinementTimer && !state.zoomRefinementInFlight;
+  const reschedule = () => {
+    if (retry && isCurrent() && !navigationThumbnail.timer) {
+      navigationThumbnail.timer = window.setTimeout(() => { void refreshNavigationThumbnail(false); }, 300);
+    }
+  };
   try {
     let blob;
     if (gpuPreviewEligible(lane) && state.activeWorkflow !== "proof") {
-      blob = await state.gpuPreview.renderNavigationProxy(sessionId, lane, state.adjustments, sampleCurvePoints,
-        request.includeLocals ? localAdjustments() : [], request.editRevision, projectReferenceWhiteNits(),
-        { width: state.session.source.width, height: state.session.source.height },
-        { applicationGeneration: request.generation, isCurrent });
-    } else {
+      const renderer = state.gpuPreview;
+      const previousRefusal = renderer.lastRenderRefusal;
+      try {
+        blob = await renderer.renderNavigationProxy(sessionId, lane, state.adjustments, sampleCurvePoints,
+          request.includeLocals ? localAdjustments() : [], request.editRevision, projectReferenceWhiteNits(),
+          { width: state.session.source.width, height: state.session.source.height },
+          { applicationGeneration: request.generation, isCurrent, signal: controller.signal });
+      } catch (error) {
+        if (auxiliaryGpuCancelled(error)) { reschedule(); return; }
+      }
+      if (!blob && auxiliaryGpuRefusalCancelled(renderer, previousRefusal)) {
+        reschedule();
+        return;
+      }
+    }
+    if (!isCurrent()) return;
+    if (!blob) {
       const response = await fetch(`/api/session/${sessionId}/preview/${lane}?purpose=navigation`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ edit_revision: request.editRevision, include_locals: !localsBypassed(),
+        body: JSON.stringify({ edit_revision: request.editRevision, include_locals: request.includeLocals,
           cpu_fallback_reason: `navigation-thumbnail: ${cpuPreviewReason(lane)}`.slice(0, 1024),
-          long_edge: request.longEdge, execution: "whole", hdr_display: false }),
+          long_edge: request.longEdge, execution: "whole", hdr_display: false, ...microGrainPreviewRequest(lane) }),
         signal: controller.signal,
       });
-      if (!response.ok) return;
+      if (!response.ok) {
+        const conflict = response.status === 409 ? await safeJson(response) : null;
+        if (!isCurrent()) return;
+        if (conflict?.detail?.code === "micro_navigation_source_unavailable") {
+          navigationThumbnail.waitingForMicro = { key, accepted };
+          if (state.acceptedPresentation !== accepted && wholeScopePresentation(state.acceptedPresentation)) {
+            reschedule();
+          }
+        } else {
+          reschedule();
+        }
+        return;
+      }
       blob = await response.blob();
     }
     if (!blob || !isCurrent()) return;
+    navigationThumbnail.waitingForMicro = null;
     const url = URL.createObjectURL(blob);
     const previous = navigationThumbnail.url;
     navigationThumbnail.url = url;
@@ -190,7 +258,10 @@ async function refreshNavigationThumbnail() {
     els.navigationThumbImage.src = url;
     if (previous) URL.revokeObjectURL(previous);
   } catch (error) {
-    if (error.name !== "AbortError") console.warn("Navigation thumbnail unavailable", error);
+    if (!auxiliaryGpuCancelled(error) && isCurrent()) {
+      console.warn("Navigation thumbnail unavailable", error);
+      reschedule();
+    }
   } finally {
     if (navigationThumbnail.controller === controller) {
       navigationThumbnail.controller = null;
@@ -199,8 +270,66 @@ async function refreshNavigationThumbnail() {
   }
 }
 
+function scheduleZoomScopeRefresh({ sessionId, lane, generation, signature, target }) {
+  // Keep the last scope visible while foreground work settles at this zoom.
+  if (state.gpuScopeRequestInFlight || state.pendingGpuScopeRequest) cancelGpuScopeRequests();
+  state.zoomScopeTimer = window.setTimeout(() => {
+    const scopeOwed = scopePresentationMatches(state.scopeAwaitingPresentation, lane);
+    if (state.session?.session_id !== sessionId || state.currentView !== lane
+      || state.previewGeneration[lane] !== generation || state.importInProgress
+      || ["import", "export"].includes(state.activeWorkflow) || document.hidden
+      || state.previewScheduler?.current) {
+      clearZoomScopeRefresh();
+      return;
+    }
+    if (geometryDraftActive()) {
+      if (scopeOwed) {
+        restoreScopeFreshnessIfIdle();
+        scheduleZoomScopeRefresh({ sessionId, lane, generation, signature, target });
+      } else clearZoomScopeRefresh();
+      return;
+    }
+    if (geometrySignature() !== signature || requiredProcessingLongEdge() !== target) {
+      clearZoomScopeRefresh();
+      return;
+    }
+
+    const work = state.renderCoordinator?.state(lane);
+    if (state.comparePeekActive || state.zoomRefinementTimer || state.zoomRefinementInFlight
+      || state.gpuDraftInFlight || state.previewScheduler?.interacting
+      || state.gpuPreview?.activeRenderCount > 0 || state.cpuPreviewInflight?.has(lane)
+      || work?.inFlight || work?.pending || work?.panTimerPending) {
+      scheduleZoomScopeRefresh({ sessionId, lane, generation, signature, target });
+      return;
+    }
+    const accepted = state.acceptedPresentation;
+    const currentPicture = scopePresentationMatches(accepted, lane);
+    const exact = currentPicture && accepted.exact && accepted.processedLongEdge === target;
+    const lowerPicture = currentPicture && accepted.processedLongEdge > 0
+      && accepted.processedLongEdge < target;
+    const recoveringScope = currentPicture && scopeWaitingForWholePicture(lane);
+    if ((scopePresentationMatches(state.scopeUnavailable, lane) && !recoveringScope)
+      || (!exact && !lowerPicture && !scopeOwed && !recoveringScope)) {
+      clearZoomScopeRefresh();
+      return;
+    }
+
+    state.zoomScopeTimer = 0;
+    void Promise.resolve().then(() => refreshScopes(scopeLongEdge("settled"), { tier: "settled", lane }))
+      .catch((error) => console.error("Zoom scope refresh failed", error))
+      .finally(restoreScopeFreshnessIfIdle);
+  }, 200);
+}
+
 function scheduleZoomRefinement({ continuous = false } = {}) {
-  if (!state.session || !gpuPreviewEligible(state.currentView)) return;
+  clearZoomScopeRefresh();
+  if (!state.session || (!gpuPreviewEligible(state.currentView) && !cpuMicroPreviewSelected(state.currentView))) return;
+  const lane = state.currentView;
+  const sessionId = state.session.session_id;
+  if ([state.scopeRequestInFlight, state.pendingScopeRequest, state.gpuScopeRequestInFlight, state.pendingGpuScopeRequest]
+    .some((request) => request?.lane === lane && request.sessionId === sessionId)) {
+    state.scopeAwaitingPresentation = scopePresentationIdentity(lane);
+  }
   window.clearTimeout(state.zoomRefinementTimer);
   // A pending adjustment settle from the previous scale can otherwise race
   // this zoom and start a whole-frame CPU fallback at the new edge.
@@ -214,45 +343,70 @@ function scheduleZoomRefinement({ continuous = false } = {}) {
   // Zoom changes the requested processing scale without changing the edit
   // generation. Recompute the visible status before the replacement starts.
   renderViewerStatus();
+  scheduleZoomScopeRefresh({
+    sessionId, lane, generation: state.previewGeneration[lane],
+    signature: geometrySignature(), target: requiredProcessingLongEdge(),
+  });
   // Single navigation actions need no gesture debounce. Retain it for wheel
   // and slider input so a gesture replaces pending work instead of flooding it.
   state.zoomRefinementTimer = window.setTimeout(async () => {
     state.zoomRefinementTimer = 0;
-    if (!state.session || !gpuPreviewEligible(state.currentView)) return;
+    if (!state.session || (!gpuPreviewEligible(state.currentView) && !cpuMicroPreviewSelected(state.currentView))) return;
     const target = requiredProcessingLongEdge();
     const lane = state.currentView;
     const sessionId = state.session.session_id;
-    if (state.acceptedPresentation?.processedLongEdge !== target) {
-      const decision = interactiveScaleDecision(lane);
-      if (decision.coarse && decision.edge < target) {
-        // Zoom can require the tiled renderer even for its reduced pass.
-        // Interactive tier explicitly refuses tiles; refinement tier accepts
-        // them while the coarse flag keeps the presentation truthful.
-        await renderGpuDraft(lane, { tier: "refinement", longEdge: responseCoarseLongEdge(target),
-          coarse: true, reason: "zoom-current-coarse" });
-      }
-      // A failed, cancelled, or superseded coarse pass never cancels the exact
-      // obligation. A newer zoom owns its own request and wins at presentation.
-      if (state.session?.session_id !== sessionId || state.currentView !== lane
-        || requiredProcessingLongEdge() !== target) return;
-      if (state.acceptedPresentation?.processedLongEdge !== target
-        || !state.acceptedPresentation.exact) {
-        await renderGpuDraft(lane, { tier: "refinement", longEdge: target, reason: "zoom-scale" });
-      }
-    } else {
-      noteViewerPan();
-    }
-    // Zoom cancels the adjustment scheduler, including its scope obligation.
-    // Restore scopes only after the replacement frame is exact and current;
-    // a superseded zoom must not analyze the next zoom's old canvas.
-    const accepted = state.acceptedPresentation;
-    if (state.session?.session_id === sessionId && state.currentView === lane
-      && requiredProcessingLongEdge() === target && accepted?.lane === lane
-      && accepted.generation === state.previewGeneration[lane]
-      && accepted.exact && accepted.processedLongEdge === target) {
-      await refreshScopes(scopeLongEdge("settled"), { tier: "settled", lane });
+    const action = globalThis.HDRDiagnostics?.start("grade", "zoom", gradeDiagnosticPhoto(), {
+      lane, requested_edge_px: target,
+    });
+    const flight = {};
+    state.zoomRefinementInFlight = flight;
+    try {
+      const rendered = await refineZoomView(action, target, lane, sessionId);
+      const current = state.session?.session_id === sessionId && state.currentView === lane
+        && requiredProcessingLongEdge() === target;
+      if (!current) action?.finish("cancelled", { route: "refused", reason: "superseded" });
+      else if (rendered === false) action?.finish("refused", { route: "refused", reason: "zoom_render_refused" });
+      else action?.finish("success");
+    } catch (error) {
+      action?.finish("error", { level: "error", route: "refused", reason: "zoom_render_failed" });
+      throw error;
+    } finally {
+      if (state.zoomRefinementInFlight === flight) state.zoomRefinementInFlight = null;
     }
   }, continuous ? 80 : 0);
+}
+
+async function refineZoomView(action, target, lane, sessionId) {
+  if (cpuMicroPreviewSelected(lane)) {
+    return renderPreviewForLane(lane, true, target, { denoiseFallback: true, showProgress: false, action });
+  }
+  const exactAtTarget = () => {
+    const frame = state.acceptedPresentation;
+    return frame?.lane === lane && frame.exact && frame.processedLongEdge === target
+      && frame.generation === state.previewGeneration[lane] && frame.geometrySignature === geometrySignature()
+      && !holdingNativeDenoisePictureForFit();
+  };
+  let rendered = true;
+  if (!exactAtTarget()) {
+    const decision = interactiveScaleDecision(lane);
+    if (decision.coarse && decision.edge < target && !state.denoise[lane]?.enabled) {
+      // Zoom can require the tiled renderer even for its reduced pass.
+      // Interactive tier explicitly refuses tiles; refinement tier accepts
+      // them while the coarse flag keeps the presentation truthful.
+      await renderGpuDraft(lane, { tier: "refinement", longEdge: responseCoarseLongEdge(target),
+        coarse: true, reason: "zoom-current-coarse", action });
+    }
+    // A failed, cancelled, or superseded coarse pass never cancels the exact
+    // obligation. A newer zoom owns its own request and wins at presentation.
+    if (state.session?.session_id !== sessionId || state.currentView !== lane
+      || requiredProcessingLongEdge() !== target) return;
+    if (!exactAtTarget()) {
+      rendered = await renderGpuDraft(lane, { tier: "refinement", longEdge: target, reason: "zoom-scale", action });
+    }
+  } else {
+    noteViewerPan();
+  }
+  return rendered;
 }
 
 function shouldKeepHdrGpuSurface(lane) {
@@ -264,6 +418,7 @@ function shouldKeepHdrGpuSurface(lane) {
 function setCustomZoom(percent, anchor = null, { continuous = false } = {}) {
   const nextPercent = clamp(Number(percent) || 100, MIN_ZOOM_PERCENT, MAX_ZOOM_PERCENT);
   const changed = state.zoomMode !== "custom" || Math.abs(state.zoomPercent - nextPercent) > 0.001;
+  if (changed) cancelGeometryUnderlayer();
   const preview = anchor?.previewElement || activePreviewElement();
   const imageVisible = previewIsVisible();
   const oldRect = imageVisible ? preview.getBoundingClientRect() : null;
@@ -274,6 +429,7 @@ function setCustomZoom(percent, anchor = null, { continuous = false } = {}) {
 
   state.zoomMode = "custom";
   state.zoomPercent = nextPercent;
+  restoreCleanGrainLayer(state.currentView);
   applyZoomGeometry();
 
   if (oldRect) {
@@ -287,6 +443,7 @@ function setCustomZoom(percent, anchor = null, { continuous = false } = {}) {
 }
 
 function applyZoomGeometry() {
+  if (holdingNativeDenoisePictureForFit() && !els.previewCanvas.hdrWholeFrame?.cleanGrain) return;
   const preview = activePreviewElement();
   const visible = previewIsVisible();
   els.dropzone.classList.toggle("zoom-custom", state.zoomMode === "custom");
@@ -305,8 +462,9 @@ function applyZoomGeometry() {
   // Geometry can change the rendered frame's dimensions. Size the viewer from
   // the current bitmap, not the original source, or a crop is stretched back
   // into the source aspect ratio after it is applied.
-  const renderedWidth = preview instanceof HTMLCanvasElement ? preview.width : preview.naturalWidth;
-  const renderedHeight = preview instanceof HTMLCanvasElement ? preview.height : preview.naturalHeight;
+  const canvasActive = preview === els.previewCanvas || preview === els.previewCanvas.parentElement;
+  const { width: renderedWidth, height: renderedHeight } = canvasActive
+    ? previewCanvasFrameSize() : { width: preview.naturalWidth, height: preview.naturalHeight };
   const renderedFrameWidth = Math.max(1, renderedWidth || state.session.source.width);
   const renderedFrameHeight = Math.max(1, renderedHeight || state.session.source.height);
   const renderedAspect = renderedFrameWidth / renderedFrameHeight;
@@ -317,10 +475,12 @@ function applyZoomGeometry() {
   const interactiveRotationSwapsAxes = interactiveQuarterTurns % 2 === 1;
   const sessionId = state.session?.session_id || null;
   const geometrySignature = JSON.stringify(state.adjustments?.shared?.geometry || {});
-  const previewFrameReady = preview instanceof HTMLCanvasElement
+  const retainedFrame = state.zoomReferenceFrame?.sessionId === sessionId
+    && state.zoomReferenceFrame.geometrySignature !== geometrySignature ? state.zoomReferenceFrame : null;
+  const previewFrameReady = canvasActive
     ? Boolean(state.gpuPreparedLane[state.currentView])
     : Boolean(preview.complete && preview.naturalWidth > 0);
-  if (previewFrameReady && !interactiveRotationSwapsAxes && (
+  if (previewFrameReady && !retainedFrame && !interactiveRotationSwapsAxes && (
     !state.zoomReferenceFrame
     || state.zoomReferenceFrame.sessionId !== sessionId
     || state.zoomReferenceFrame.geometrySignature !== geometrySignature
@@ -363,7 +523,11 @@ function applyZoomGeometry() {
   const draftScale = Math.min(1, perspectiveDraftLongEdge() / Math.max(state.session.source.width, state.session.source.height));
   const sourceFrame = draftFrame
     ? { width: draftFrame.width / draftScale, height: draftFrame.height / draftScale }
-    : sourcePixelFrameDimensions(state.rotateDraftGeometry || state.adjustments?.shared?.geometry);
+    : retainedFrame ? retainedFrame.sourceFrame
+      : sourcePixelFrameDimensions(state.rotateDraftGeometry || state.adjustments?.shared?.geometry);
+  if (!draftFrame && !retainedFrame && !state.rotateDraftGeometry && state.zoomReferenceFrame?.sessionId === sessionId) {
+    state.zoomReferenceFrame.sourceFrame = sourceFrame;
+  }
   const sourceWidth = sourceFrame?.width
     || (referenceAspect >= 1 ? referenceLongEdge : referenceLongEdge * referenceAspect);
   const sourceHeight = sourceFrame?.height
@@ -401,8 +565,35 @@ function applyZoomGeometry() {
   els.previewStage.style.height = `${Math.max(frameHeight, stageContentHeight)}px`;
   els.previewImage.style.width = `${displayWidth}px`;
   els.previewImage.style.height = `${displayHeight}px`;
-  els.previewCanvas.style.width = `${displayWidth}px`;
-  els.previewCanvas.style.height = `${displayHeight}px`;
+  const pictureCanvas = els.previewCanvas;
+  const pictureFrame = pictureCanvas.parentElement;
+  const region = pictureCanvas.hdrFrameRegion;
+  pictureFrame.toggleAttribute("data-region", Boolean(region));
+  pictureFrame.toggleAttribute("data-grain-region", Boolean(region && pictureCanvas.hdrSharpDetail));
+  if (region) {
+    pictureFrame.style.width = `${displayWidth}px`;
+    pictureFrame.style.height = `${displayHeight}px`;
+    const detail = pictureCanvas.hdrCpuMicroRegion
+      ? (pictureCanvas.hdrCpuMicroUrls ? els.previewMicroHdrDetail : els.previewMicroDetail)
+      : pictureCanvas.hdrSharpDetail?.element || els.previewDenoiseDetail;
+    const place = (element, bounds) => {
+      element.style.left = `${100 * bounds.x / bounds.frameWidth}%`;
+      element.style.top = `${100 * bounds.y / bounds.frameHeight}%`;
+      element.style.width = `${100 * bounds.width / bounds.frameWidth}%`;
+      element.style.height = `${100 * bounds.height / bounds.frameHeight}%`;
+    };
+    place(detail, region);
+    for (const layer of pictureCanvas.hdrSharpLayers || []) {
+      if (layer.element === detail) continue;
+      layer.element.hidden = layer.key !== cleanGrainLayerIdentity(state.currentView);
+      if (!layer.element.hidden) place(layer.element, layer.region);
+    }
+    pictureCanvas.style.width = "100%";
+    pictureCanvas.style.height = "100%";
+  } else {
+    pictureCanvas.style.width = `${displayWidth}px`;
+    pictureCanvas.style.height = `${displayHeight}px`;
+  }
   els.comparisonImage.style.width = `${displayWidth}px`;
   els.comparisonImage.style.height = `${displayHeight}px`;
   els.comparisonCanvas.style.width = `${displayWidth}px`;
@@ -419,9 +610,10 @@ function applyZoomGeometry() {
   // a flat square, the way an inspection zoom should; at and below 100% the
   // compositor keeps its smooth filtering so Fit does not alias.
   const magnified = percent > 100.5;
-  for (const element of [els.previewCanvas, els.comparisonCanvas, els.previewImage, els.comparisonImage]) {
+  for (const element of [els.previewCanvas, els.previewDenoiseDetail, els.previewMicroDetail, els.previewMicroHdrDetail, els.comparisonCanvas, els.previewImage, els.comparisonImage]) {
     element.classList.toggle("pixel-magnified", magnified);
   }
+  for (const layer of pictureCanvas.hdrSharpLayers || []) layer.element.classList.toggle("pixel-magnified", magnified);
   state.zoomPercent = percent;
   updateZoomReadout();
   syncOverlayPlacement();

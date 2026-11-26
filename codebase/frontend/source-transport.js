@@ -4,6 +4,43 @@
   // Four bounded chunks overlap response reads with GPU copies without
   // rebuilding an image-sized staging allocation in the browser.
   const UPLOAD_RING_SIZE = 4;
+  // The backend caps each /source-tile request axis, independently of the
+  // texture or frame dimensions that the client can hold.
+  const SOURCE_TILE_REQUEST_EDGE = 8192;
+  const capacityRefusalsByRenderer = new WeakMap();
+  const SOURCE_CAPACITY_BACKOFF_MS = 4000;
+
+  async function withCapacityBackoff(refusals, key, load) {
+    const refusal = refusals.get(key);
+    if (refusal?.retryAfter > performance.now()) throw refusal.error;
+    refusals.delete(key);
+    try {
+      return await load();
+    } catch (error) {
+      if (error?.status === 507) {
+        error.retryAfter = performance.now() + SOURCE_CAPACITY_BACKOFF_MS;
+        refusals.set(key, { error, retryAfter: error.retryAfter });
+        if (refusals.size > 32) refusals.delete(refusals.keys().next().value);
+      }
+      throw error;
+    }
+  }
+
+  function clearCapacityRefusals(renderer) {
+    if (renderer) capacityRefusalsByRenderer.delete(renderer);
+  }
+
+  function withRendererCapacityBackoff(renderer, key, load) {
+    let refusals = capacityRefusalsByRenderer.get(renderer);
+    if (!refusals) capacityRefusalsByRenderer.set(renderer, refusals = new Map());
+    return withCapacityBackoff(refusals, key, load);
+  }
+
+  function responseSourceEpoch(response) {
+    const value = response.headers.get("X-Source-Epoch");
+    const epoch = Number(value);
+    return value != null && value !== "" && Number.isSafeInteger(epoch) && epoch >= 0 ? epoch : undefined;
+  }
 
   function supersededError(message) {
     const error = new Error(message || "Source preparation was superseded");
@@ -19,6 +56,7 @@
       ? supersededError(detail || "WebGPU geometry proxy is waiting for the committed edit")
       : new Error(detail || (response.status === 507 ? "Not enough memory to load the WebGPU source" : fallback));
     error.status = response.status;
+    if (response.status !== 409) error.recoverable = false;
     return error;
   }
 
@@ -62,9 +100,9 @@
 
   /** Copy one row chunk through a reusable mapped staging-buffer slot. */
   async function copyChunkStaged(renderer, ring, retired, slot, data, {
-    bytesPerRow, rows, width, texture, origin,
+    bytesPerRow, rows, width, texture, origin, stagingCapacity = 0,
   }) {
-    const capacity = Math.max(1, bytesPerRow * rows);
+    const capacity = Math.max(stagingCapacity, bytesPerRow * rows);
     let staging = ring[slot];
     if (!staging || staging.size < capacity) {
       if (staging) retired.push(staging);
@@ -238,6 +276,7 @@
         pixelFormat,
         geometrySignature,
         sourceIdentity,
+        sourceEpoch: responseSourceEpoch(response),
         identity: key,
         byteSize,
         streamed: true,
@@ -309,6 +348,7 @@
 
     const probe = await fetch(query({ x: 0, y: 0, width: 1, height: 1 }), { signal });
     if (!probe.ok) {
+      if (probe.status === 507) throw await sourceResponseError(probe, "A source tile could not be loaded");
       await probe.arrayBuffer().catch(() => null);
       return null;
     }
@@ -352,9 +392,7 @@
         const rows = Math.min(rowsPerChunk, height - top);
         assertCurrent("Source tile stream was superseded");
         const response = await fetch(query({ x: 0, y: top, width, height: rows, epoch: sourceEpoch }), { signal });
-        if (!response.ok) {
-          throw await sourceResponseError(response, "A source tile could not be loaded");
-        }
+        if (!response.ok) throw await sourceResponseError(response, "A source tile could not be loaded");
         const bytesPerRow = Number(response.headers.get("X-Bytes-Per-Row"));
         const data = await response.arrayBuffer();
         if (firstTileMs === null) firstTileMs = performance.now() - startedAt;
@@ -385,6 +423,7 @@
       pixelFormat,
       geometrySignature,
       sourceIdentity,
+      sourceEpoch,
       identity: key,
       byteSize,
       streamed: true,
@@ -464,23 +503,35 @@
       + `&x=${rect.x}&y=${rect.y}&width=${rect.width}&height=${rect.height}&halo=0`
       + (epoch === undefined ? "" : `&source_epoch=${epoch}`);
 
-    const probe = await fetch(query({ x: region.x, y: region.y, width: 1, height: 1 }), { signal });
-    if (!probe.ok) {
+    const strip = options.stripUpload;
+    let metadata = strip?.metadata;
+    if (!metadata) {
+      const probe = await fetch(query({ x: region.x, y: region.y, width: 1, height: 1 }), { signal, headers: options.headers });
+      if (!probe.ok) {
+        if (probe.status === 507) throw await sourceResponseError(probe, "A source region could not be loaded");
+        await probe.arrayBuffer().catch(() => null);
+        if (strip && probe.status === 409) throw new DOMException("Grain strip source was replaced.", "AbortError");
+        return null;
+      }
+      metadata = {
+        outputWidth: Number(probe.headers.get("X-Output-Width")),
+        outputHeight: Number(probe.headers.get("X-Output-Height")),
+        pixelFormat: probe.headers.get("X-Pixel-Format") || "rgba16float",
+        workingSpace: probe.headers.get("X-Working-Space") || "acescg",
+        acceptedGeometry: probe.headers.get("X-Geometry-Signature") || "{}",
+        sourceEpoch: Number(probe.headers.get("X-Source-Epoch")),
+      };
       await probe.arrayBuffer().catch(() => null);
-      return null;
+      if (strip) strip.metadata = metadata;
     }
-    const outputWidth = Number(probe.headers.get("X-Output-Width"));
-    const outputHeight = Number(probe.headers.get("X-Output-Height"));
-    const pixelFormat = probe.headers.get("X-Pixel-Format") || "rgba16float";
-    const workingSpace = probe.headers.get("X-Working-Space") || "acescg";
-    const acceptedGeometry = probe.headers.get("X-Geometry-Signature") || "{}";
-    const sourceEpoch = Number(probe.headers.get("X-Source-Epoch"));
-    await probe.arrayBuffer().catch(() => null);
+    const { outputWidth, outputHeight, pixelFormat, workingSpace, acceptedGeometry, sourceEpoch } = metadata;
     assertCurrent("ROI source region probe was superseded");
     if (!(outputWidth > 0 && outputHeight > 0)) return null;
+    if (strip && pixelFormat !== "rgba16float") throw new Error("Grain strips require 16-bit source textures");
     if (acceptedGeometry !== geometrySignature) {
       throw supersededError("Stale WebGPU geometry region rejected");
     }
+    if (options.probeOnly) return { width: outputWidth, height: outputHeight };
     const delivered = {
       x: Math.max(0, Math.min(region.x, outputWidth)),
       y: Math.max(0, Math.min(region.y, outputHeight)),
@@ -490,22 +541,77 @@
     delivered.width = Math.max(0, Math.min(region.x + region.width, outputWidth) - delivered.x);
     delivered.height = Math.max(0, Math.min(region.y + region.height, outputHeight) - delivered.y);
     if (!(delivered.width > 0 && delivered.height > 0)) return null;
-    if (delivered.width * delivered.height >= outputWidth * outputHeight * 0.9) return null;
+    if (!options.transient && !options.requireRegion
+      && delivered.width * delivered.height >= outputWidth * outputHeight * 0.9) return null;
 
     // The whole frame held for panning (`holdSourceForPanning`) is these same
     // pixels: the region is then copied on the device and nothing is fetched.
     const held = renderer.proxies.get(panStoreKey(sessionId, lane, longEdge, geometrySignature, sourceIdentity));
     const store = held && held.pixelFormat === pixelFormat
       && held.width === outputWidth && held.height === outputHeight ? held : null;
+    let overlap = null;
+    let missing = delivered;
+    if (!store && options.reuseRegionOverlap && !options.transient && Number.isFinite(sourceEpoch)) {
+      const end = delivered.x + delivered.width;
+      for (const previous of renderer.proxies.values()) {
+        const old = previous.region;
+        if (!old || !previous.regionTransport || previous.sessionId !== sessionId || previous.lane !== lane
+          || previous.longEdge !== longEdge || previous.geometrySignature !== geometrySignature
+          || previous.sourceIdentity !== sourceIdentity || previous.sourceEpoch !== sourceEpoch
+          || previous.pixelFormat !== pixelFormat || previous.workingSpace !== workingSpace
+          || previous.width !== outputWidth || previous.height !== outputHeight
+          || old.y > delivered.y || old.y + old.height < delivered.y + delivered.height) continue;
+        const left = Math.max(old.x, delivered.x);
+        const right = Math.min(old.x + old.width, end);
+        if (left >= right || (left > delivered.x && right < end) || right - left <= (overlap?.width ?? 0)) continue;
+        overlap = { previous, x: left, width: right - left };
+        missing = { ...delivered, x: left > delivered.x ? delivered.x : right, width: delivered.width - overlap.width };
+      }
+    }
 
     const bytesPerPixel = pixelFormat === "rgba16float" ? 8 : 16;
-    let texture;
+    const limits = renderer.device.limits;
+    const textureWidth = strip ? Math.min(strip.maxWidth, outputWidth) : delivered.width;
+    const textureHeight = strip ? Math.min(strip.maxRows, outputHeight) : delivered.height;
+    const refuseRegion = (message, details) => {
+      const reason = "source_too_large";
+      if (!strip) {
+        globalThis.HDRDiagnostics?.event?.("gpu", "source_region_refused", {
+          route: "refused", reason, action: options.headers?.get?.("X-HDR-Finisher-Action"), ...details,
+        });
+      }
+      return Object.assign(new Error(message), { grainReason: reason, grainDetails: details });
+    };
+    const maxTextureDimension = limits?.maxTextureDimension2D ?? Infinity;
+    if (textureWidth > maxTextureDimension || textureHeight > maxTextureDimension
+        || delivered.width > textureWidth || delivered.height > textureHeight) {
+      throw refuseRegion("The source region exceeds its WebGPU texture size.", {
+        width_px: delivered.width, height_px: delivered.height, max_texture_dimension_px: maxTextureDimension,
+      });
+    }
+
+    const chunkBytes = Math.min(strip?.chunkBytes ?? renderer.maxSourceChunkBytes, limits?.maxBufferSize ?? Infinity);
+    const maxChunkWidth = Math.min(SOURCE_TILE_REQUEST_EDGE, Math.floor(chunkBytes / 256) * 256 / bytesPerPixel);
+    if (missing.width && maxChunkWidth < 1 && !store) {
+      throw refuseRegion("A source region row cannot fit in the staging buffer.", {
+        requested_bytes: 256, max_buffer_bytes: limits?.maxBufferSize,
+      });
+    }
+    const chunkWidth = Math.min(missing.width || 1, maxChunkWidth || 1);
+    const rowBytes = chunkWidth * bytesPerPixel;
+    const rowsPerChunk = Math.max(1, Math.min(delivered.height, SOURCE_TILE_REQUEST_EDGE,
+      Math.floor(chunkBytes / (Math.ceil(rowBytes / 256) * 256))));
+    const rowChunks = Math.ceil(delivered.height / rowsPerChunk);
+    const chunkTotal = rowChunks * Math.ceil(missing.width / chunkWidth);
+    let texture = strip?.texture;
     try {
-      texture = renderer.device.createTexture({
-        size: { width: delivered.width, height: delivered.height },
+      texture ||= renderer.device.createTexture({
+        label: strip ? "grain-source-strip" : undefined,
+        size: { width: textureWidth, height: textureHeight },
         format: pixelFormat,
         usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.COPY_SRC,
       });
+      if (strip) strip.texture = texture;
     } catch (error) {
       renderer.recordAllocationFailure("source-proxy", error, {
         width: delivered.width, height: delivered.height,
@@ -513,13 +619,9 @@
       throw error;
     }
 
-    const rowBytes = Math.max(1, delivered.width * bytesPerPixel);
-    const rowsPerChunk = Math.max(1, Math.min(delivered.height,
-      Math.floor(renderer.maxSourceChunkBytes / rowBytes)));
-    const chunkTotal = Math.ceil(delivered.height / rowsPerChunk);
-    const ringSize = Math.max(1, Math.min(UPLOAD_RING_SIZE, chunkTotal));
-    const stagingRing = [];
-    const retiredStaging = [];
+    const ringSize = Math.max(1, Math.min(strip?.slots ?? UPLOAD_RING_SIZE, chunkTotal));
+    const stagingRing = strip?.ring ?? [];
+    const retiredStaging = strip?.retired ?? [];
     let transferredBytes = 0;
     let chunkCount = 0;
     let firstTileMs = null;
@@ -529,20 +631,21 @@
       // staging slot fetches them side by side: a slot's next write still
       // waits only for its own earlier copy, and at most `ringSize` chunk
       // responses exist at once, never the whole region.
-      let nextTop = 0;
+      let nextChunk = 0;
       let failure = null;
       const lane = async (slot) => {
-        while (!failure && nextTop < delivered.height) {
-          const top = nextTop;
-          const rows = Math.min(rowsPerChunk, delivered.height - top);
-          nextTop += rows;
+        while (!failure && nextChunk < chunkTotal) {
+          const index = nextChunk++;
+          const top = (index % rowChunks) * rowsPerChunk;
+          const left = Math.floor(index / rowChunks) * chunkWidth;
+          const rect = {
+            x: missing.x + left, y: missing.y + top,
+            width: Math.min(chunkWidth, missing.width - left),
+            height: Math.min(rowsPerChunk, delivered.height - top),
+          };
           assertCurrent("ROI source region stream was superseded");
-          const response = await fetch(query({
-            x: delivered.x, y: delivered.y + top, width: delivered.width, height: rows,
-          }, sourceEpoch), { signal });
-          if (!response.ok) {
-            throw await sourceResponseError(response, "A source region could not be loaded");
-          }
+          const response = await fetch(query(rect, sourceEpoch), { signal, headers: options.headers });
+          if (!response.ok) throw await sourceResponseError(response, "A source region could not be loaded");
           const chunk = {
             x: Number(response.headers.get("X-Tile-X")),
             y: Number(response.headers.get("X-Tile-Y")),
@@ -550,19 +653,26 @@
             height: Number(response.headers.get("X-Tile-Height")),
           };
           const bytesPerRow = Number(response.headers.get("X-Bytes-Per-Row"));
+          if ((strip && response.headers.get("X-Pixel-Format") !== pixelFormat)
+              || bytesPerRow !== Math.ceil(rect.width * bytesPerPixel / 256) * 256) {
+            throw new Error("A source region chunk changed its upload format.");
+          }
+          if (bytesPerRow * rect.height > chunkBytes) {
+            throw refuseRegion("A source region chunk exceeded the staging buffer size.", {
+              requested_bytes: bytesPerRow * rect.height, max_buffer_bytes: chunkBytes,
+            });
+          }
           const data = await response.arrayBuffer();
           if (failure) return;
-          if (!(chunk.width > 0 && chunk.height > 0)) throw new Error("A source region chunk arrived empty");
-          if (chunk.x < delivered.x || chunk.y < delivered.y
-            || chunk.x + chunk.width > delivered.x + delivered.width
-            || chunk.y + chunk.height > delivered.y + delivered.height) {
-            throw new Error("A source region chunk arrived outside its region");
+          if (chunk.x !== rect.x || chunk.y !== rect.y || chunk.width !== rect.width
+              || chunk.height !== rect.height || data.byteLength !== bytesPerRow * rect.height) {
+            throw new Error("A source region chunk did not cover its requested rectangle.");
           }
           if (firstTileMs === null) firstTileMs = performance.now() - startedAt;
           transferredBytes += data.byteLength;
           chunkCount += 1;
           await copyChunkStaged(renderer, stagingRing, retiredStaging, slot, data, {
-            bytesPerRow, rows: chunk.height, width: chunk.width, texture,
+            bytesPerRow, rows: chunk.height, width: chunk.width, texture, stagingCapacity: strip?.chunkBytes,
             origin: { x: chunk.x - delivered.x, y: chunk.y - delivered.y },
           });
           assertCurrent("ROI source region stream was superseded");
@@ -576,18 +686,27 @@
           { width: delivered.width, height: delivered.height },
         );
         renderer.device.queue.submit([encoder.finish()]);
+      } else if (overlap) {
+        const { previous, x, width } = overlap;
+        const encoder = renderer.device.createCommandEncoder();
+        encoder.copyTextureToTexture(
+          { texture: previous.texture, origin: { x: x - previous.region.x, y: delivered.y - previous.region.y } },
+          { texture, origin: { x: x - delivered.x, y: 0 } },
+          { width, height: delivered.height },
+        );
+        renderer.device.queue.submit([encoder.finish()]);
       }
       // Every lane stops before the partial texture is released: a copy into
       // a destroyed texture must not be left in flight.
-      await Promise.all(Array.from({ length: store ? 0 : ringSize }, (_, slot) => lane(slot).catch((error) => {
+      await Promise.all(Array.from({ length: store || !missing.width ? 0 : ringSize }, (_, slot) => lane(slot).catch((error) => {
         failure ||= error;
       })));
       if (failure) throw failure;
     } catch (error) {
-      renderer.destroyAfterActiveRenders(() => texture.destroy());
+      if (!strip) renderer.destroyAfterActiveRenders(() => texture.destroy());
       throw error;
     } finally {
-      await releaseStaging(renderer, stagingRing, retiredStaging);
+      if (!strip) await releaseStaging(renderer, stagingRing, retiredStaging);
     }
 
     const byteSize = delivered.width * delivered.height * bytesPerPixel;
@@ -595,9 +714,10 @@
       texture, width: outputWidth, height: outputHeight, region: { ...delivered },
       textureWidth: delivered.width, textureHeight: delivered.height,
       sessionId, lane, longEdge, workingSpace, pixelFormat, geometrySignature,
-      sourceIdentity, identity: key, byteSize, streamed: true, regionTransport: true,
+      sourceIdentity, sourceEpoch, identity: key, byteSize, streamed: true, regionTransport: true,
       bindGroups: new Map(),
     };
+    if (options.transient) return proxy;
     renderer.proxies.set(key, proxy);
     renderer.sourceTransportMetrics = {
       route: "region", width: outputWidth, height: outputHeight, region: { ...delivered },
@@ -610,7 +730,7 @@
     });
     renderer.recordStage("proxy-request", {
       lane, longEdge, cacheHit: false, route: "region", chunkCount, region: { ...delivered },
-      fromPanStore: Boolean(store),
+      fromPanStore: Boolean(store), reusedSourcePixels: (overlap?.width || 0) * delivered.height,
       durationMs: renderer.sourceTransportMetrics.totalMs,
       timeToFirstTileMs: firstTileMs, bytes: transferredBytes,
     });
@@ -637,9 +757,8 @@
         + (sourceIdentity === "perspective-draft" ? "&perspective_draft_base=true" : ""),
       { signal },
     );
-    if (!response.ok) {
-      throw await sourceResponseError(response);
-    }
+    if (!response.ok) throw await sourceResponseError(response, response.status === 409
+      ? "WebGPU geometry proxy is waiting for the committed edit" : "WebGPU proxy could not be loaded");
     const width = Number(response.headers.get("X-Image-Width"));
     const height = Number(response.headers.get("X-Image-Height"));
     const bytesPerRow = Number(response.headers.get("X-Bytes-Per-Row"));
@@ -650,7 +769,7 @@
     if (acceptedGeometry !== geometrySignature) {
       throw supersededError("Stale WebGPU geometry proxy rejected");
     }
-    if (isCurrent && isCurrent() === false) throw supersededError("Source proxy was superseded");
+    if (signal?.aborted || (isCurrent && isCurrent() === false)) throw supersededError("Source proxy was superseded");
     const texture = renderer.device.createTexture({
       size: { width, height },
       format: pixelFormat,
@@ -674,6 +793,7 @@
       pixelFormat,
       geometrySignature,
       sourceIdentity,
+      sourceEpoch: responseSourceEpoch(response),
       identity: key,
       byteSize,
       bindGroups: new Map(),
@@ -719,7 +839,8 @@
     const regionKey = region
       ? `:region:${region.x},${region.y},${region.width},${region.height}`
       : "";
-    const key = `${sessionId}:${lane}:${longEdge}:${geometrySignature}:${sourceIdentity}${regionKey}`;
+    const frameKey = `${sessionId}:${lane}:${longEdge}:${geometrySignature}:${sourceIdentity}`;
+    const key = `${frameKey}${regionKey}`;
     if (renderer.proxies.has(key)) {
       renderer.recordStage("proxy-request", { lane, longEdge, cacheHit: true });
       return renderer.proxies.get(key);
@@ -746,55 +867,62 @@
         return renderer.proxies.get(resident.identity);
       }
     }
-    if (renderer.proxyInflight.has(key)) return renderer.proxyInflight.get(key);
+    const requestKey = options.backgroundUnderlayer || options.scopeRequest ? Symbol(key)
+      : `${key}:${editRevision}:${Boolean(options.regionOnly)}:${Boolean(options.requireRegion)}`;
+    if (renderer.proxyInflight.has(requestKey)) return renderer.proxyInflight.get(requestKey);
     const signal = options.signal || renderer.sourceAbortSignal();
     const isCurrent = typeof options.isCurrent === "function" ? options.isCurrent : null;
+    let refusals = options.backgroundUnderlayer ? new Map() : capacityRefusalsByRenderer.get(renderer);
+    if (!refusals) capacityRefusalsByRenderer.set(renderer, refusals = new Map());
     const pending = (async () => {
       const startedAt = performance.now();
       if (region) {
-        const regional = await renderer.loadProxyRegion(
-          sessionId, lane, longEdge, geometrySignature, editRevision, sourceIdentity, key, region,
-          { signal, isCurrent },
-        );
-        if (regional) return regional;
-        // Scene-qualified masks on an authored SDR region may request a
-        // separate HDR region. A refused region must retain the mask fallback,
-        // never initiate a native whole-source preparation from that request.
-        if (options.regionOnly) return null;
-      }
-      if (longEdge * longEdge * 8 > renderer.maxSourceChunkBytes) {
-        if (sourceIdentity === "perspective-draft" || renderer.sourceTransportMode !== "strips") {
-          const streaming = await renderer.loadProxyStreaming(
-            sessionId, lane, longEdge, geometrySignature, editRevision, sourceIdentity, key,
-            {
-              signal,
-              isCurrent,
-              endpoint: renderer.sourceTransportMode === "single" ? "single" : "stream",
-            },
-          );
-          if (streaming) return streaming;
+        try {
+          const regional = await withCapacityBackoff(refusals, `${key}:${editRevision}`, () => renderer.loadProxyRegion(
+            sessionId, lane, longEdge, geometrySignature, editRevision, sourceIdentity, key, region,
+            { signal, isCurrent, requireRegion: options.requireRegion, reuseRegionOverlap: options.reuseRegionOverlap },
+          ));
+          if (regional) return regional;
+        } catch (error) {
+          if (!options.regionOnly || error?.status !== 507) throw error;
         }
-        if (sourceIdentity === "perspective-draft") throw new Error("Perspective draft source transfer unavailable");
-        const streamed = await renderer.loadProxyStreamed(
-          sessionId, lane, longEdge, geometrySignature, editRevision, sourceIdentity, key,
-          { signal, isCurrent },
-        );
-        if (streamed) return streamed;
       }
-      return loadWholeFrame(renderer, {
-        sessionId,
-        lane,
-        longEdge,
-        geometrySignature,
-        editRevision,
-        sourceIdentity,
-        key,
-        signal,
-        isCurrent,
-        startedAt,
+      if (options.regionOnly || options.requireRegion) return null;
+      return withCapacityBackoff(refusals, `${frameKey}:${editRevision}`, async () => {
+        if (longEdge * longEdge * 8 > renderer.maxSourceChunkBytes) {
+          if (sourceIdentity === "perspective-draft" || renderer.sourceTransportMode !== "strips") {
+            const streaming = await renderer.loadProxyStreaming(
+              sessionId, lane, longEdge, geometrySignature, editRevision, sourceIdentity, key,
+              {
+                signal,
+                isCurrent,
+                endpoint: renderer.sourceTransportMode === "single" ? "single" : "stream",
+              },
+            );
+            if (streaming) return streaming;
+          }
+          if (sourceIdentity === "perspective-draft") throw new Error("Perspective draft source transfer unavailable");
+          const streamed = await renderer.loadProxyStreamed(
+            sessionId, lane, longEdge, geometrySignature, editRevision, sourceIdentity, key,
+            { signal, isCurrent },
+          );
+          if (streamed) return streamed;
+        }
+        return loadWholeFrame(renderer, {
+          sessionId,
+          lane,
+          longEdge,
+          geometrySignature,
+          editRevision,
+          sourceIdentity,
+          key,
+          signal,
+          isCurrent,
+          startedAt,
+        });
       });
     })();
-    renderer.proxyInflight.set(key, pending);
+    renderer.proxyInflight.set(requestKey, pending);
     let progressTimer = null;
     let finished = false;
     if (typeof options.onProgress === "function") {
@@ -822,7 +950,7 @@
       finished = true;
       if (progressTimer !== null) clearTimeout(progressTimer);
       options.onProgress?.({ state: "done", long_edge: longEdge });
-      renderer.proxyInflight.delete(key);
+      if (renderer.proxyInflight.get(requestKey) === pending) renderer.proxyInflight.delete(requestKey);
     }
   }
 
@@ -830,7 +958,7 @@
    * The backend supplies the same filtered pixels as a whole-source reload.
    * Derived render caches are reset, and a refusal uses the ordinary loader.
    */
-  async function refreshRepairs(renderer, {sessionId, editRevision, sourceSize, geometry, records, fitSource, isCurrent}) {
+  async function refreshRepairs(renderer, {sessionId, editRevision, sourceEpoch, sourceSize, geometry, records, fitSource, isCurrent}) {
     const [width, height] = sourceSize;
     const crop = geometry.crop;
     const untransformed = !geometry.rotation && !geometry.flip_horizontal && !geometry.flip_vertical
@@ -843,7 +971,8 @@
       const visibleFit = fitSource && !proxy.region && proxy.longEdge < Math.max(width, height)
         && proxy.longEdge === fitSource.processedLongEdge && proxy.lane === fitSource.lane
         && proxy.geometrySignature === fitSource.geometrySignature;
-      if (proxy.sessionId === sessionId && (!proxy.region || proxy.regionTransport) && proxy.sourceIdentity === "source"
+      if (proxy.sessionId === sessionId && (!proxy.region || proxy.regionTransport)
+          && ["source", "generated-sdr", "authored-sdr"].includes(proxy.sourceIdentity)
           && (native || visibleFit) && ["rgba16float", "rgba32float"].includes(proxy.pixelFormat)) {
         retained.set(key, proxy);
         renderer.proxies.delete(key);
@@ -867,9 +996,9 @@
     const refreshed = new Set();
     let transferredBytes = 0, fitTextures = 0;
     try {
+      if (!Number.isInteger(sourceEpoch)) throw new Error("Repair source epoch is unavailable");
       for (const proxy of retained.values()) {
         if (refreshed.has(proxy.texture)) continue;
-        let epoch;
         const region = proxy.region || {x:0, y:0, width:proxy.width, height:proxy.height};
         const reduced = proxy.width !== width || proxy.height !== height;
         const sx = width / proxy.width, sy = height / proxy.height;
@@ -888,21 +1017,21 @@
           const query = new URLSearchParams({long_edge: proxy.longEdge, format: proxy.pixelFormat === "rgba16float" ? "rgba16f" : "rgba32f",
             edit_revision: editRevision, geometry_signature: proxy.geometrySignature,
             x: left, y: top, width: right-left, height: bottom-top, halo: 0});
-          if (epoch !== undefined) query.set("source_epoch", epoch);
+          query.set("source_epoch", sourceEpoch);
           const response = await fetch(`/api/session/${sessionId}/source-tile/${proxy.lane}?${query}`, {signal});
           if (!response.ok) throw new Error("Repair texture refresh refused");
           const data = await response.arrayBuffer();
           const headers = response.headers;
-          if (!current() || headers.get("X-Geometry-Signature") !== proxy.geometrySignature
+          if (!current() || responseSourceEpoch(response) !== sourceEpoch
+              || headers.get("X-Geometry-Signature") !== proxy.geometrySignature
               || Number(headers.get("X-Edit-Revision")) !== editRevision
               || headers.get("X-Pixel-Format") !== proxy.pixelFormat
-              || headers.get("X-Working-Space") !== proxy.workingSpace
+              || (proxy.workingSpace && headers.get("X-Working-Space") !== proxy.workingSpace)
               || Number(headers.get("X-Tile-X")) !== left || Number(headers.get("X-Tile-Y")) !== top
               || Number(headers.get("X-Tile-Width")) !== right-left || Number(headers.get("X-Tile-Height")) !== bottom-top
               || Number(headers.get("X-Output-Width")) !== proxy.width || Number(headers.get("X-Output-Height")) !== proxy.height) {
             throw supersededError("Repair texture refresh superseded");
           }
-          epoch = headers.get("X-Source-Epoch");
           const bytesPerRow = Number(headers.get("X-Bytes-Per-Row"));
           if (data.byteLength !== bytesPerRow * (bottom-top)) throw new Error("Incomplete repair texture data");
           renderer.device.queue.writeTexture({texture: proxy.texture, origin: {x:left-region.x, y:top-region.y}}, data,
@@ -919,6 +1048,7 @@
       for (const [key, proxy] of retained) {
         // A foreground request may already have loaded the new source.
         if (renderer.proxies.has(key)) continue;
+        proxy.sourceEpoch = sourceEpoch;
         renderer.proxies.set(key, proxy);
       }
       renderer.recordStage("repair-source-refresh", {bytes: transferredBytes, textures: refreshed.size, fitTextures});
@@ -935,11 +1065,17 @@
     }
   }
 
+
   const HDRSourceTransport = Object.freeze({
     refreshRepairs,
     UPLOAD_RING_SIZE,
     supersededError,
+    sourceResponseError,
+    withCapacityBackoff,
+    withRendererCapacityBackoff,
+    clearCapacityRefusals,
     readChunk,
+    SOURCE_TILE_REQUEST_EDGE,
     copyChunkStaged,
     releaseStaging,
     setMode,

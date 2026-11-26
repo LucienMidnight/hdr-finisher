@@ -88,6 +88,35 @@ test("display resolutions share one canonical highlight-anchor key", () => {
   );
 });
 
+test("a Grain underlayer rebuild reuses the native highlight anchor for the same preparation", async () => {
+  const preview = new Preview(null);
+  const native = { ...original, sessionId: "s", geometrySignature: "{}", sourceIdentity: "source" };
+  const soft = { ...native, identity: "s:hdr:1600:{}:source", longEdge: 1600 };
+  const grain = { token: "fine-preparation" };
+  const selector = preview.denoiseSourceSelector = {
+    identity: native.identity, selected: "resolved", resolvedVersion: 1,
+    controls: { method: "clean_grain", cleanSplotches: false, cleanFringes: false, colorSplotches: 1 },
+    cache: { grain, preparedFrame: JSON.stringify(["s", "hdr", "{}", "source"]) },
+  };
+  const params = peakFitParams();
+  const anchor = preview.highlightAnchorRequest("hdr", ADJUSTMENTS, native, params);
+  preview.peakReductionCache.set(anchor.key, 4.83);
+
+  assert.ok(preview.retargetPreparedDenoise("s", "hdr", 1600, "{}", "source"));
+  selector.resolvedVersion++;
+  const underlayerAnchor = preview.highlightAnchorRequest("hdr", ADJUSTMENTS, soft, params);
+  assert.equal(underlayerAnchor.key, anchor.key);
+  assert.equal(await preview.resolveHighlightAnchor(underlayerAnchor, soft, params), 4.83);
+
+  assert.ok(preview.retargetPreparedDenoise("s", "hdr", 7968, "{}", "source"));
+  assert.equal(preview.highlightAnchorRequest("hdr", ADJUSTMENTS, native, params).key, anchor.key);
+  selector.controls.colorSplotches = 0.5;
+  assert.notEqual(preview.highlightAnchorRequest("hdr", ADJUSTMENTS, native, params).key, anchor.key);
+  selector.controls.colorSplotches = 1;
+  grain.token = "new-preparation";
+  assert.notEqual(preview.highlightAnchorRequest("hdr", ADJUSTMENTS, native, params).key, anchor.key);
+});
+
 test("a display proxy uses its estimate and requests one native reduction", async () => {
   dispatched.length = 0;
   const { preview, calls } = previewWithReductions([4.83]);

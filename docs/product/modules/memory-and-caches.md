@@ -1,16 +1,171 @@
+### November 17: signed RAW scratch accounting; no allowance changes
+
+Signed Bayer AHD uses eight bytes per green-candidate pixel rather than four.
+The two directions occupy separate four-byte-per-pixel buffers, retaining the
+existing per-buffer source-size ceiling rather than doubling one binding.
+GPU development estimates account for that actual allocation: 32 ordinary /
+48 complex bytes per pixel instead of 28/44, within the existing reservations.
+Storage-binding/device limits are checked before allocating. The CPU helper uses
+256-row strips/eight-row context; quick half-size development stores only the
+decimated result, not a second full-resolution float picture. Observed CFA tiles
+are copied without retaining a full raw-colour map through metadata.
+
+The older quick CPU-to-GPU camera transport uses float32 rather than uint16;
+per-lane admission counts 128 MiB rather than 64 MiB for that real doubled
+transport cost, without increasing the transport allowance or lane maximum.
+Signed half handoffs reject nonfinite/absolute overflow above 65,504; no silent
+shadow clamp, extra cache or larger budget. Real-device peak/residency checks
+remain required before release; these are accounting changes, not a memory pass.
+
 ### November 15: W2 P2 format-first publication within the same upload slot
 
-## November 16: Steve's 4 GB minimum and default on every platform
+## November 22: Windows private commit and 6 GB default
 
-**Steve's decision, November 16, 2026:** 4 GB app memory is the minimum, on
-every platform (macOS, Windows, Linux). The 8 GB MacBook Neo is the minimum
-spec, so 8 GB machines explicitly use a 4,000,000,000-byte minimum and default.
-Windows uses the same rule despite its different memory architecture, because
-2.5 GB is not enough. Defaults on 16/32/64 GB machines remain 4 GB. The
-user-adjustable maximum stays RAM − max(2 GB, RAM/10), approximately 6.59 GB
-on this 8 GiB Mac. The existing 2 GB physical free-memory reserve gate is
-unchanged. Saved preferences below 4 GB are raised by the normal clamp; no
-migration or compatibility layer is added. Existing custom settings >=4 GB stay.
+Steve set the Windows minimum specification to 16 GB RAM. The whole-app
+default and lowest setting are a fixed 6,000,000,000 bytes on Windows,
+including on machines with more than 16 GB. The user can raise the setting
+up to physical RAM minus the larger of 2 GB or 10%. The 6 GB default has the
+same cache shares as the 4 GB default. Only additional bytes selected in
+Settings scale the variable shares. The 4 GB settings and existing cache
+formula still apply on macOS, Linux and with the Windows `unified-8gb` profile.
+
+Windows sums the live process tree's private commit (`PrivateUsage` from
+`GetProcessMemoryInfo`), the same counter Chromium uses for its private
+memory footprint. The old `QueryWorkingSet` reported a `ShareCount` of seven
+on this PC even for a 200 MB mapping used by a single process. Dividing by
+seven charged about 30 MB. A resident-only meter also drops when Windows
+trims or compresses pages. Charging all resident shared pages in full
+(the other option considered) would count the same mappings in several app
+processes. Working sets and each process's lifetime peak private commit
+remain visible in diagnostics. Admission and reclaim use current commit.
+[Chromium memory footprint](https://chromium.googlesource.com/chromium/src/+/HEAD/third_party/blink/renderer/controller/memory_usage_monitor_win.cc)
+| [Microsoft process counters](https://learn.microsoft.com/en-us/windows/win32/api/psapi/ns-psapi-process_memory_counters_ex)
+
+**Task Manager note for future agents.** On the Details tab, sum **Commit
+size** across the app's processes to compare with the app meter. It often
+reads higher than the default **Memory** column (private working set).
+Summing **Working set** double-counts shared DLLs across the six Electron
+processes. [Microsoft counter mapping](https://learn.microsoft.com/en-us/windows/win32/memory/memory-performance-information)
+
+Windows pressure and resource preflight take the smaller of available
+physical RAM and remaining commit headroom from `GlobalMemoryStatusEx`.
+The existing reserves still apply. The Library reserve is the larger of
+2 GB or 10% of physical RAM. DNG and full-preview preflight reserve the
+larger of 2 GiB or 15%. Windows' low-physical-memory notification can also
+trigger pressure. [Microsoft memory status](https://learn.microsoft.com/en-us/windows/win32/api/sysinfoapi/ns-sysinfoapi-memorystatusex)
+
+The PC's cold-idle whole-app private commit was 1.714 GB, sampled five times
+15 to 19 seconds after the app window was ready, with no photo open.
+Cache scaling uses the existing growth rate above the platform default,
+so it needs no fixed Windows idle estimate. [Windows measurements](../../technical/performance-table.md#november-22-2026--windows-private-commit)
+
+## November 22: delivery frame files
+
+AVIF delivery writes full frames to job-owned files after checking free disk
+space. It closes maps when the writing stage finishes and streams encoder
+inputs in row bands. Only files carry the finished frames across native
+helpers. The Library disk cache retains its own allowance. Grade keeps its
+source under the existing app memory census.
+
+Full-size non-JPEG Proof takes the finished frames from export before the
+ceiling check can change HDR pixels. It reads the retained endpoints in bands
+and keeps two pairs on disk. Each full-size AVIF tile uses a temporary Y4M
+between tone-mapping and encoding, so the helpers run one after the other.
+The desktop clears Proof scratch after the backend exits. Windows shutdown
+stops the backend and its encoder processes before removing scratch. Startup
+also removes abandoned scratch once its owners have exited and the directory
+has aged past the cleanup grace period.
+[MacBook Neo measurements](../../technical/performance-table.md#november-22-2026--macbook-neo-proof-memory)
+
+## November 22: lens-corrected Micro Grain previews
+
+For reduced CPU Micro previews, Lensfun writes its remapped frame to a
+job-owned file in the desktop's per-launch scratch folder, which is swept
+after a crash. Grade closes and removes the file before caching the reduced
+picture, and refreshes the process census if the previous reading could
+deny that cache entry.
+
+## November 22: Grade scopes, RAW re-development and zoom
+
+A cold scope source is resized one colour channel at a time in bands, outside
+the session render lock. It keeps the same Lanczos samples and local range
+limits. Preview requests can access their caches while the scope source is
+being prepared.
+
+If the working cache refuses a scope proxy, mask, frame or result, Grade serves the scope without retaining that entry rather than evicting reusable CPU Micro Grain data; explicit memory-pressure trims are unchanged.
+
+Grade converts HDR and SDR previews for encoding in row bands. The HDR
+preview's temporary encoder input goes in the desktop's swept scratch
+folder. Under the existing memory admission rule, a finished Micro preview
+can be served without retaining it if keeping it would displace the reusable
+reduced source. Generated CPU Micro SDR previews with supported grades
+also finish in strips.
+
+RAW re-development drops the previous source's GPU working resources and
+rebuildable backend caches before decoding. The mounted canvas retains the
+last picture. The backend keeps the decoded source so the current edit can
+continue if re-development fails or is cancelled.
+
+When magnified Micro Grain uses native GPU processing, the existing viewport
+presentation also applies below 100% zoom. The window shows native tiles over
+the Fit-size picture, without allocating a photo-size HDR presentation surface.
+Grade automatically preloads only reduced-size GPU proxies for inactive lanes
+that can use them; explicit comparison is unchanged.
+A docked Library that is hidden during zoomed CPU Micro keeps the previous
+thumbnail on hand and finishes the saved-grade redraw when Library is opened.
+[MacBook Neo measurements](../../technical/performance-table.md#november-22-2026--macbook-neo-grade-memory)
+
+## November 21: Grade shares memory on Apple Silicon
+
+GPU Grain admission uses the lesser of the existing graphics headroom
+and the whole-app headroom. The Mac process footprint includes Grade's
+retained source and resident GPU memory. GPU ledger growth since that
+sample and outstanding backend reservations also count. The Windows test
+profile `HDR_FINISHER_MEMORY_PROFILE=unified-8gb` uses the same admission
+rule and adds its discrete GPU ledger to the host census.
+
+Clean and Micro prepare requested CPU tiles even under pressure. Background
+fill starts only while the whole app is below the pressure target and has
+room after existing reservations. Clean checks again before starting each
+background tile.
+
+**R2-2, approved November 21.** On an 8 GiB unified-memory machine, while
+Grade owns at least 384,000,000 bytes of retained source images, use half of
+the configured Library thumbnail, sharp, camera and RAW cache shares. Return
+to the usual limits when that Grade session closes or its retained source
+drops below the trigger. Active hand-offs and working room keep their
+existing shares.
+
+| Library cache | Usual at 4 GB | With a large Grade photo |
+| --- | ---: | ---: |
+| Finished thumbnails | 536,870,912 bytes | 268,435,456 bytes |
+| Sharp pictures | 512,000,000 bytes | 256,000,000 bytes |
+| Camera previews | 64,000,000 bytes | 32,000,000 bytes |
+| RAW read-ahead | 768,000,000 bytes | 384,000,000 bytes |
+
+The 4 GB ceiling and 2 GB system reserve still apply. MacBook Neo
+confirmation is tracked in the sprint brief.
+
+## November 21: reclaim before refusing Grade Grain
+
+When a Grain reservation would exceed the existing 90% graphics limit,
+Grade can release an unused source proxy during a reservation. Other
+rebuildable entries wait for active owners to finish. A moderate or critical
+Grade pressure message schedules that reclaim at the next idle point. Grade
+keeps the visible picture, presentation target and selector source. The
+decision records the requested bytes, effective budget, both GPU ledgers
+and the sampled app RAM and free system memory. The configured allowances
+and the greater-of-resident-and-allocator calculation still apply.
+[Diagnostic log and reason codes](../../technical/logging.md)
+
+## November 16: Steve's 4 GB minimum and default on macOS and Linux
+
+**Steve's decision, November 16, 2026:** macOS and Linux use a
+4,000,000,000-byte minimum and default, including the 8 GB MacBook Neo.
+The user-adjustable maximum is RAM minus the larger of 2 GB or 10%,
+approximately 6.59 GB on this 8 GiB Mac. The 2 GB physical free-memory
+reserve still applies. Saved preferences below the minimum are raised by
+the normal clamp. Windows follows the November 22 decision above.
 
 The existing `budgets()` formula restores the ordinary 4 GB cache shares on
 8 GB machines; no share formula or GPU budget changes:
@@ -95,6 +250,12 @@ full decoded RGB/nits frame. The test-only perceptual check also streams decoded
 pixels and retains only the exact upper 0.1% tail; every pixel is checked.
 Full Proof converts its uniquely owned CPU SDR endpoint in bands in place;
 GPU cached lanes are never modified. No new pixel cache or disk spool is added.
+Full-size Proof builds one target at a time and reconstructs AVIF and JPEG XL
+targets in row bands using whole-photo gain extrema. When libavif can tone-map
+the AVIF artifact directly, Proof uses the reconstructed bands only for statistics.
+AVIF Gain Map export and Proof prepare both Y4M inputs in row bands. The
+ceiling check uses a single AV1 worker for file inspection and reads the HDR
+samples from temporary storage in bands, keeping only the peak and correction grid.
 Native CPU worker peaks for high fidelity are about 0.432 GB HDR / 0.382 GB
 SDR at 10.7 MP, 1.247 / 1.221 GB at 29.8 MP, and 1.725 GB HDR / 2.040 GB
 SDR at 42.2 MP (the last SDR figure includes its Q95 comparison). The previous
@@ -309,15 +470,26 @@ same retained-byte accounting, LRU and pressure trimming as the other Grade
 arrays, inside the unchanged 600 MB cap, not beside it. Source replacement
 clears both entries. No new allowance or whole-app ceiling is introduced.
 
-### November 14: P1-B direct-preview summed lens glow
+### November 24: Exact Mist glow in Direct and Tiled Grade
 
 An active direct-preview lens may retain one summed-glow `rgba16float` texture
-per existing canvas intermediate, at the existing spatial grid resolution.
-Its bytes are charged to direct resident admission, the render plan and GPU
-diagnostics; resize/reset destroys it alongside the other intermediates. Only
-Strength-only edits can reuse it. Delivery/measurement and tiled rendering do
-not use this cache. The existing whole-app, Grade array and GPU budgets stay
-unchanged; if the extra resource does not fit, normal planning/fallback applies.
+per existing canvas intermediate at the spatial grid resolution. Its bytes
+are charged to direct resident admission, the render plan and GPU diagnostics.
+Resize and reset release it alongside the other intermediates.
+
+Direct and Tiled Grade reuse the exact summed glow when the source pixels,
+pre-Mist grade and masks, and lens kernel agree. The input key includes the
+Denoise reconstruction or the cached reduced Clean Grain base and its blend
+strength. Mist strength, Film Grain, halation amount, and stock happen after
+the glow is calculated and do not invalidate it by themselves.
+
+Tiled Grade retains only the current glow's halo rectangles. It checks the
+existing GPU budget and contingency margin before allocating each tile,
+including other tiles and working memory added so far. The shared allocator
+can evict entries. A new glow recipe replaces the old set; Mist or Film Look
+off, a lane without Mist, a Direct presentation (such as Fit), or disabling
+the cache releases it. Outstanding GPU work may delay texture destruction
+until it finishes. Measurements and delivery neither use nor clear the set.
 
 ### November 13: 8 GB Mac native preflight and failed-photo admission
 
@@ -546,6 +718,41 @@ Both real RAW decoded-image SHA-256 hashes are identical before/after;
 isolated backend working-set peak falls to 2.316 GB (diagnostic, not app
 acceptance). Small tests cover both coordinate layouts, multiple waves,
 input ownership and exact output equality.
+
+November 21 update: R2-6 retains Lensfun's original row positions while
+generating coordinates in 128-row full-width bands for full-frame CPU
+correction. The Canon and Sony coordinate buffers fell from 432.5 and
+1,017.4 MB to 16.0 and 24.5 MB, plus a four-column probe under 0.6 MB.
+The MacBook Neo backend peak fell by 462 MB and 1,058 MB, with identical
+corrected and finished pixels. The app uses the whole map, and logs
+`lens_coordinate_strips_unavailable`, if the native library is missing, its
+three-row self-check fails, or a strip fails mid-image. Windows confirmation
+is open.
+[Mac measurements](../../technical/performance-table.md#november-21--byte-exact-lensfun-strips-on-macbook-neo)
+
+The app now charges the last GPU Micro source's sensor, profile and Bayer
+tiles to the existing working share. Reclaim drops that cached source so
+later requests can rebuild it. If a pending GPU region finishes after this
+source has been handed to the CPU cache, the region can finish but does not
+retain new Bayer tiles.
+
+November 22 update: full-frame Lensfun correction uses 64 coordinate rows per
+CPU worker. At Sony size on the MacBook Neo, six TCA strips use 73.4 MB plus
+3.5 MB for the row seeds and coordinate check. The workers use the existing
+working allowance. An interrupted coordinate strip can be retried with one
+worker and a 16-row buffer. The full-frame output can still use the Micro
+preview's scratch file.
+[Mac measurements](../../technical/performance-table.md#november-22-2026--native-lensfun-correction)
+
+MG-2 keeps Lensfun's full row width and zero origin, then copies out only
+the visible rectangle and releases the unused rows. Peak coordinate
+allocation includes the prefix and the copied window: 647 MB for the Sony
+centre at 110%, and 1,059 MB at its lower-right corner. A matched vignetting
+profile can also need a full-size float32 RGB scratch plane because
+lensfunpy's image API fixes the original dimensions and pitch. This is
+509 MB at Sony size. The measured Sigma profile uses distortion and TCA,
+so its run skipped that plane. Finished Bayer tiles are charged to the existing
+working share and are consumed as Fit assembles the whole photo.
 
 For the four hand-off timings, propose 5% against the previous whole waits
 (ordinary shared-machine variation); the existing 500 ms goal remains. Paired
@@ -1169,8 +1376,8 @@ app behaves when the machine runs short.
 
 | Decision | Date |
 | --- | --- |
-| **Whole-app RAM minimum and default: 4 GB on macOS, Windows and Linux, explicitly including the minimum 8 GB machine.** 4 GB means 4,000,000,000 bytes, counting Electron main, renderers, GPU-process host RAM, the Python backend and its helpers. Dedicated VRAM is not counted. | Steve, 2026-11-16 (replaces October 29 default) |
-| **User memory setting, like DaVinci Resolve.** Settings will let the user choose how much memory the app may use: from 4 GB up to the computer's RAM minus the system reserve (the larger of 2 GB or 10%). The ceiling, target, scaled shares, admission and the very-large-picture check all follow it. The default and minimum are 4 GB (Steve, 2026-11-16); lower saved settings clamp to 4 GB. Built live and persistent in phase 3c; evidence and limitations in the scheduler design, section 7.8. | Steve, 2026-10-31 |
+| **Whole-app RAM minimum and default.** 6 GB on Windows (16 GB RAM minimum). 4 GB on macOS and Linux, including the 8 GB MacBook Neo, and in the Windows `unified-8gb` profile. The process tree includes Electron main, renderers, GPU-process host memory, the Python backend and helpers. Dedicated VRAM has its own budget. | Steve, 2026-11-16 and 2026-11-22 |
+| **User memory setting, like DaVinci Resolve.** Settings ranges from the platform minimum to physical RAM minus the larger of 2 GB or 10%. The ceiling, target, scaled shares, admission and very-large-picture check follow it. Lower saved settings clamp to the platform minimum. Built live and persistent in phase 3c. | Steve, 2026-10-31 |
 | **Budget split** as in section 4. Approved as a trial; adjust from measurements. | Steve, 2026-10-29 |
 | **Respond to system memory pressure** by trimming caches early (principle 6). | Steve, 2026-10-29 |
 | Older pictures may be discarded and redrawn; visible and nearby pictures keep priority. | Steve, 2026-10-29 |
@@ -1183,13 +1390,12 @@ app behaves when the machine runs short.
 
 ## 4. RAM budget
 
-Shares of the 4 GB total. On a smaller total, the cache shares (marked
-"scales") shrink in proportion. The starting memory and the working room do
-not shrink.
+Both platform defaults use the shares below. The cache shares marked
+"scales" grow when the user raises the ceiling above the platform default.
 
-| Part | Process | Share of 4 GB | Scales | Implementation |
+| Part | Process | Default share | Scales | Implementation |
 | --- | --- | --- | --- | --- |
-| App starting memory | all | about 1.3 GB, measured | no | Observed process charge, never claimed as cache bytes. |
+| App starting memory | all | measured at runtime | no | The Windows PC cold-idle charge was 1.714 GB. Startup allocations count toward the app total. |
 | Finished thumbnails | renderer / GPU host | fixed 512 MiB (existing fixed pool) | no | Pool plus visible/nearby canvas estimates report to `thumbnails`; oldest detached cells go first. |
 | Sharp selected/nearby pictures | renderer / GPU host | 512,000,000 bytes | yes | Ready surfaces and direct scenes share one byte cap; older finished surfaces/scenes are evicted. |
 | Camera previews | backend / helper | 64,000,000 bytes | yes | Aggregate preview LRU claims `camera`. |
@@ -1197,19 +1403,15 @@ not shrink.
 | Picture hand-off | backend / helper | 256,000,000 bytes | yes | RAW outputs and transient picture bodies share `handoff`; delivered bodies are released. |
 | Grade source mips / session frames, masks, hue stages / retained native source | backend / helper | inside working room | — | A 600,000,000-byte aggregate retention cap replaces the separate 256 MiB mip, 192 MiB frame and 96/160 MiB mask limits. Unique array backing is counted once within a session; persistent mips have one retaining owner. Oversized levels are served without being cached. |
 | Working room | all | at least 600,000,000 bytes kept free | no | Minimum free room protected from retained caches, not a maximum for jobs. Concurrent temporary reservations may use all remaining room below the whole-app ceiling. |
-| **Total** | | **ceiling 4,000,000,000 bytes** | | Actual process charge is the final gate; shares are approximate and cannot override it. |
+| **Total** | | **6 GB Windows, 4 GB macOS and Linux** | | Actual process charge is the final gate; shares are approximate and cannot override it. |
 
 The fixed thumbnail decision preserves the existing 512 MiB implementation.
-All other cache shares scale by `(ceiling − 1.3 GB − 600 MB − 512 MiB) /
-(4 GB − 1.3 GB − 600 MB − 512 MiB)`. Starting memory, working room and the
-fixed thumbnail pool stay unchanged. No share or ceiling was enlarged.
+The variable cache shares scale by `1 + (ceiling - platform default) /
+(4 GB - 1.3 GB - 600 MB - 512 MiB)`. This keeps both the default shares and
+the original number of cache bytes gained per extra byte of ceiling.
 `app_memory.py` is the backend owner. Helper cache growth is admitted over
 IPC by that owner; renderer caches use its returned share limits and report
 actual retained bytes every 500 ms. Disk and dedicated VRAM remain separate.
-
-With the 2.5 GB minimum, an 8 GB machine has about 0.6 GB left for the cache
-shares after starting memory and working room. That machine redraws more
-often; nothing stops working.
 
 ## 5. Disk allowances
 
@@ -1229,6 +1431,21 @@ Background preparation stops when its allowance is full; cleanup never evicts
 protected previews. See [photo-library](photo-library.md) for what each cache
 holds and [technical/photo-library.md](../../technical/photo-library.md)
 section 9 for file layout.
+
+Grade's temporary native Fine Grain and Clean Grain result uses the existing
+full-size scene allowance. If it is short, Grade removes the oldest
+disposable full-size previews until the reservation fits. It keeps protected
+pictures, the selected photo's detail scene and all active scratch files.
+Grade reports whether the drive or the allowance is short of room. The ledger
+reserves the file's full logical size before allocation and releases it with
+the photo or when preparation is replaced. Startup releases abandoned
+reservations. The 42.39 MP Sony uses
+678,236,160 bytes on disk at 16 bytes per pixel. Reads and writes use bounded
+tiles and the original stays resident. The 600 MB Grade retention cap and
+all disk settings retain their prior values. A Sony 100%-to-Fit draw still
+sampled 4.55 GB for the whole app, so this change remains unqualified
+against the 4 GB ceiling. See the
+[performance table](../../technical/performance-table.md).
 
 ## 6. GPU memory (VRAM)
 
@@ -1255,17 +1472,10 @@ Budget implementation is in progress on `library-big-folder`. The five-minute
 manual checkpoint below restores retention under the ceiling. The lock criterion
 and broader CPU qualification remain open; full ten-minute/driver validation is deferred.
 
-**Windows gate:** sum proportional resident bytes for Electron main and its
-complete descendant process tree (renderers, GPU host, backend and helpers).
-For every resident page from `QueryWorkingSet`, charge a private page once;
-charge a shared page as page size divided by its OS ShareCount. This avoids
-adding Chromium mappings and backend/helper shared sections as full copies
-in each process. This is proportional attribution, not private commit bytes
-and not the sum of working sets. Pages shared with other applications are
-attributed proportionally too. Windows saturates ShareCount at seven, so
-heavily shared pages can be overcharged; this is conservative. Dedicated VRAM
-is absent from this measurement. Ordinary working sets are retained only as
-diagnostics. See Microsoft's [working-set flags](https://learn.microsoft.com/en-us/windows/win32/api/psapi/ns-psapi-psapi_working_set_block).
+**Windows gate since November 22:** sum the current private commit of
+Electron main and its descendants. Older results below measured proportional
+resident pages, which can undercount singly mapped pages and fall after
+a working-set trim. [Current Windows policy](#november-22-windows-private-commit-and-6-gb-default)
 
 The independent Python observer samples approximately every 500 ms, outside
 the app's process tree, even when renderer/backend requests stall. It records
@@ -1282,7 +1492,7 @@ On macOS the implemented sampler uses the kernel's `proc_pid_rusage` physical
 footprint charge, with resident bytes alongside it, and libdispatch memory
 pressure events. This platform path has not been validated on this Windows
 machine. See Apple's [rusage structure](https://github.com/apple/darwin-xnu/blob/main/bsd/sys/resource.h).
-Windows pressure uses memory resource notifications. Moderate pressure trims
+Windows pressure uses commit-aware headroom and memory resource notifications. Moderate pressure trims
 oldest reconstructible entries toward half; critical pressure drops them.
 
 **Electron main investigation:** the earlier 1.040 GB resident sample had only
@@ -1693,7 +1903,33 @@ Evidence under `codebase/output/badminton/`: `scroll.json`, `cell-timings.csv`
 profile/cache scratch is removed after measurement; evidence is retained.
 Output started and ended at 2.1 GB, below the 100 GB limit.
 
+### November 25: shared-memory admission for Grade preview
+
+The November 24 MacBook Neo session at `65046433` reached 6.03 GB and
+started a tiled preview at 5.70 GB. Grade now checks shared app headroom
+before uploading a source and before replacing a tiled target, tile graph
+or Direct graph. If headroom is short, it reclaims unused resources,
+drains submitted work and refreshes the process census before refusing.
+The last picture remains visible while the screen-sized CPU replacement
+is prepared.
+
+The ledger includes the whole-picture and sharp Clean Grain swaps even
+while both are live. The retained tile target is a separate texture.
+On Apple Silicon only growth after the last process census is added,
+since the census already includes graphics memory. Presented Denoise
+tiles have retention priority only within the existing allowance.
+No app ceiling, GPU budget, cache share or tile dimensions changed.
+
 ## 8. Open work
+
+- **Grade Grain reclaim at the same byte count.** An empty reclaim can stay
+  suppressed after a source proxy becomes evictable without increasing held
+  bytes. Revisit the renderer guard with a test that makes a still-resident
+  proxy reclaimable, then verifies the next request evicts it.
+- **WDDM shared GPU memory on Windows laptops.** Integrated graphics textures in shared RAM sit outside private commit and are covered by system headroom today. Future accounting needs to avoid counting Chromium staging buffers twice.
+- **Windows Job Object.** `PeakJobMemoryUsed` would catch encoder spikes shorter than the 0.5 s poll and job membership would cover orphaned grandchildren. Chromium's nested sandbox jobs need care.
+- **Pagefile-backed shared memory.** `DeliveryMemory` and `library_raw` shared sections sit outside private commit. Admission reservations and commit headroom cover them today.
+- **OpenBLAS reservation.** The library commits about 373 MB that it leaves untouched. Reduce it only if a benchmark shows no slowdown.
 
 - Bound and qualify the remaining no-GPU CPU recipes listed above; only the ordinary ARW path has the measured 600 MB result.
 

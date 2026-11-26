@@ -19,7 +19,7 @@ function fixture() {
     sourceAbortSignal(){return new AbortController().signal;},
     destroyAfterActiveRenders(fn){fn();},recordStage(){},
   };
-  const options = {sessionId:'photo', editRevision:3, sourceSize:[8,6],
+  const options = {sessionId:'photo', editRevision:3, sourceEpoch:4, sourceSize:[8,6],
     geometry:{crop:{x:0,y:0,width:1,height:1}},
     records:[{enabled:true,recipe:{search_rect:[2,1,5,4]}}], isCurrent:()=>true};
   const respond = (url) => {

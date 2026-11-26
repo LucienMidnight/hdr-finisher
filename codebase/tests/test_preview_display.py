@@ -9,7 +9,8 @@ from pydantic import ValidationError
 
 from hdr_finisher.color import acescg_to_linear_srgb
 from hdr_finisher.models import AdjustmentState, PreviewKind, PreviewRequest, ScopeRegion
-from hdr_finisher.preview import encode_processed_preview_bytes
+from hdr_finisher.preview import _encode_hdr_avif, encode_processed_preview_bytes
+from hdr_finisher.binaries import resolve_binary
 
 
 def test_preview_request_defaults_to_hdr_transport_for_existing_clients() -> None:
@@ -69,3 +70,24 @@ def test_sdr_display_fallback_is_finite_for_extended_hdr_values() -> None:
     assert media_type == "image/png"
     assert np.all(np.isfinite(decoded))
     assert np.all(np.diff(decoded[0, :, 0].astype(np.int16)) >= 0)
+
+
+def test_banded_hdr_preview_matches_whole_frame_avif() -> None:
+    if resolve_binary("avifenc") is None:
+        pytest.skip("AVIF preview encoder unavailable")
+    image = np.random.default_rng(33).uniform(-0.1, 8.0, (267, 89, 3)).astype(np.float32)
+    avif, _ = encode_processed_preview_bytes(image, PreviewKind.HDR, reference_white_nits=100)
+    assert avif == _encode_hdr_avif(image, 100)
+
+
+@pytest.mark.parametrize("kind", [PreviewKind.HDR, PreviewKind.SDR])
+def test_banded_png_preview_matches_whole_frame_pixels(kind) -> None:
+    image = np.random.default_rng(35).uniform(-0.1, 2.0, (273, 91, 3)).astype(np.float32)
+    body, _ = encode_processed_preview_bytes(image, kind, hdr_display=False)
+    if kind == PreviewKind.HDR:
+        display = np.clip(acescg_to_linear_srgb(image), 0.0, None)
+        image = display / (1.0 + display)
+    encoded = np.where(image <= 0.0031308, image * 12.92,
+                       1.055 * np.power(np.clip(image, 0, 1), 1 / 2.4) - 0.055)
+    expected = (np.clip(encoded, 0, 1) * 255.0).astype(np.uint8)
+    np.testing.assert_array_equal(np.asarray(Image.open(BytesIO(body))), expected)

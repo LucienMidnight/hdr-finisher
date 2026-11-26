@@ -11,17 +11,18 @@ function gpuPreviewEligible(lane = state.currentView) {
 function previewNeedsRefinement() {
   const accepted = state.acceptedPresentation;
   return !selectedTierReady()
+    || (state.zoomMode === "fit" && holdingNativeDenoisePictureForFit())
     || accepted?.generation !== state.previewGeneration[state.currentView]
     || accepted?.geometrySignature !== geometrySignature()
     || accepted?.processedLongEdge !== requiredProcessingLongEdge();
 }
 
 /**
- * @typedef {"ready"|"updating"|"preparing"|"unavailable"} ViewerStatus
+ * @typedef {"ready"|"updating"|"preparing"|"reduced"|"unavailable"} ViewerStatus
  */
 
 /**
- * The four viewer states are derived, never stored. A stored status drifts out
+ * Viewer states are derived, never stored. A stored status drifts out
  * of agreement with the image on screen; a derived one is always a statement
  * about the presentation the viewer can actually see.
  *
@@ -38,6 +39,7 @@ function deriveViewerState({
   lane,
   geometrySignature: currentGeometrySignature,
   requiredProcessingEdge = null,
+  presentationCoversView = true,
   unavailableReason = "",
 } = {}) {
   const tier = requestedTier === "display" ? "display"
@@ -45,6 +47,10 @@ function deriveViewerState({
   const laneMatches = Boolean(accepted) && accepted.lane === lane;
   const presentedTier = laneMatches ? (accepted.tier || null) : null;
   if (unavailableReason) return { status: "unavailable", tier, presentedTier, detail: unavailableReason };
+  if (laneMatches && accepted.generation === currentGeneration && accepted.requestedTier === tier
+      && accepted.geometrySignature === currentGeometrySignature && accepted.reducedNotice) {
+    return { status: "reduced", tier, presentedTier, detail: accepted.reducedNotice };
+  }
   // The selected tier owns the viewer only once it has produced an exact
   // result of its own. Anything else is still a placeholder, however good it
   // looks, and must be labeled as one.
@@ -52,8 +58,8 @@ function deriveViewerState({
   if (!selectedTierAccepted) return { status: "preparing", tier, presentedTier, detail: "",
     coarse: Boolean(laneMatches && accepted.coarse && accepted.generation === currentGeneration) };
   const geometryCurrent = accepted.geometrySignature === currentGeometrySignature;
-  const scaleCurrent = requiredProcessingEdge == null
-    || accepted.processedLongEdge === requiredProcessingEdge;
+  const scaleCurrent = presentationCoversView && (requiredProcessingEdge == null
+    || accepted.processedLongEdge === requiredProcessingEdge);
   const current = accepted.generation === currentGeneration && geometryCurrent && scaleCurrent;
   // A geometry change is the slow one -- it invalidates the source proxy, so
   // the whole frame is fetched and re-rolled rather than re-graded. Saying so
@@ -64,13 +70,30 @@ function deriveViewerState({
 }
 
 function viewerState(lane = state.currentView) {
+  const edge = requiredProcessingLongEdge();
+  const requestedTier = state.previewResolutionOverride === false ? "display" : normalizedPreviewResolution();
+  const accepted = state.acceptedPresentation;
+  const currentGeneration = state.previewGeneration[lane];
+  const signature = geometrySignature();
+  const coversFit = state.zoomMode !== "fit" || !holdingNativeDenoisePictureForFit();
+  if (state.previewUnavailableReason && coversFit && lane === state.currentView) {
+    const region = els.previewCanvas.style.display !== "none" && els.previewCanvas.hdrFrameRegion;
+    if (accepted?.exact && accepted.lane === lane && accepted.requestedTier === requestedTier
+      && accepted.generation === currentGeneration && accepted.geometrySignature === signature
+      && accepted.processedLongEdge === edge
+      && (!region || window.HDRViewportRequest.covers(region,
+        visibleOutputRect(region.frameWidth, region.frameHeight, { includeWhole: true, element: activePreviewElement() })))) {
+      state.previewUnavailableReason = "";
+    }
+  }
   return deriveViewerState({
-    requestedTier: state.previewResolutionOverride === false ? "display" : normalizedPreviewResolution(),
-    accepted: state.acceptedPresentation,
-    currentGeneration: state.previewGeneration[lane],
+    requestedTier,
+    accepted,
+    currentGeneration,
     lane,
-    geometrySignature: geometrySignature(),
-    requiredProcessingEdge: requiredProcessingLongEdge(),
+    geometrySignature: signature,
+    requiredProcessingEdge: edge,
+    presentationCoversView: coversFit,
     unavailableReason: state.previewUnavailableReason || "",
   });
 }
@@ -80,6 +103,7 @@ function viewerStatusLabel(viewer = viewerState()) {
   if (viewer.status === "unavailable") {
     return `${tierLabel} unavailable${viewer.detail ? ` — ${viewer.detail}` : ""}`;
   }
+  if (viewer.status === "reduced") return viewer.detail;
   if (viewer.status === "preparing") {
     if (viewer.coarse) return `Coarse — refining to ${tierLabel}`;
     const showing = viewer.presentedTier
@@ -107,7 +131,7 @@ function renderViewerStatus() {
   state.viewerTierStatusEntry = viewer.status === "ready" && !state.perspectiveMode
     && !(state.perspectiveApplyOperation && state.perspectivePhase === "applying") ? null : {
     nodeId: "viewer-tier-status",
-    severity: viewer.status === "unavailable" ? "error" : "progress",
+    severity: viewer.status === "unavailable" ? "error" : viewer.status === "reduced" ? "info" : "progress",
     message: label,
   };
   syncViewerStatusEntry();
@@ -147,8 +171,7 @@ function applyPreviewResolution(value, { schedule = true } = {}) {
   // preview. Proxy levels are keyed by long edge and trimmed by the renderer's
   // own LRU, so the outgoing tier is retired only when the budget requires it.
   if (state.denoise?.[state.currentView]?.enabled) {
-    state.denoiseRuntime[state.currentView].status = "dirty";
-    state.denoiseRuntime[state.currentView].dirty = true;
+    invalidateDenoisePreparation(state.currentView, { dirty: true });
     if (schedule) window.setTimeout(() => recalculateDenoise(), 300);
   }
   if (state.session) {
@@ -160,7 +183,7 @@ function applyPreviewResolution(value, { schedule = true } = {}) {
   renderViewerStatus();
 }
 
-function acceptPresentation(lane, schedulerTier, width, height, transport, fallbackReason = "", sourceSerial = null, generation = state.previewGeneration[lane], execution = null, processedLongEdge = null, scopePeak = null, coarse = false, approximate = false) {
+function acceptPresentation(lane, schedulerTier, width, height, transport, fallbackReason = "", sourceSerial = null, generation = state.previewGeneration[lane], execution = null, processedLongEdge = null, scopePeak = null, coarse = false, approximate = false, reducedNotice = "", grainRoute = null) {
   const longEdge = Math.max(Number(width) || 0, Number(height) || 0);
   const requestedTier = state.previewResolutionOverride === false ? "display" : normalizedPreviewResolution();
   // Exactness is a fact about the resolution this frame was processed at, not
@@ -187,9 +210,8 @@ function acceptPresentation(lane, schedulerTier, width, height, transport, fallb
   // are the ones every zoom level reuses (see maskOverviewLongEdge).
   if (state.zoomMode === "fit" && exact) state.fitProcessingLongEdge = processedEdge;
   state.acceptedPresentation = {
-    lane,
+    ...scopePresentationIdentity(lane),
     generation,
-    geometrySignature: geometrySignature(),
     requestedTier,
     tier: exact ? (requestedTier === "display" ? "display"
       : processedEdge === previewTargetLongEdge(requestedTier) ? requestedTier : "native-region") : null,
@@ -206,6 +228,8 @@ function acceptPresentation(lane, schedulerTier, width, height, transport, fallb
     sourceSerial,
     scopePeak: Number.isFinite(scopePeak) ? scopePeak : null,
     fallbackReason,
+    reducedNotice,
+    grainRoute,
   };
   if (transport !== "WebGPU" && lane === state.currentView && longEdge > 0) {
     const sessionId=state.session?.session_id;
@@ -220,29 +244,9 @@ function acceptPresentation(lane, schedulerTier, width, height, transport, fallb
     const native = Math.max(state.session?.source?.width || 0, state.session?.source?.height || 0);
     void state.gpuPreview?.warmDenoiseModel?.(state.session.session_id, "hdr", native);
   }
-  if (exact) state.previewUnavailableReason = "";
+  if (exact || reducedNotice) state.previewUnavailableReason = "";
   if (lane === state.currentView && width && height) {
-    if (state.geometryTransformHandoffSignature === geometrySignature()) {
-      state.geometryTransformHandoffSignature = null;
-      clearRotateDraftTransformProperties();
-      clearInteractiveStraightenPreview();
-    }
-    const sessionId = state.session?.session_id || null;
-    state.zoomReferenceFrame = {
-      sessionId,
-      geometrySignature: geometrySignature(),
-      // Proxy resolution can change between interactive, settled, and refined
-      // presentations. Preserve the session's display scale while accepting
-      // the authoritative aspect ratio of the newly presented geometry.
-      longEdge: state.zoomReferenceFrame?.sessionId === sessionId
-        ? state.zoomReferenceFrame.longEdge
-        : longEdge,
-      aspect: Number(width) / Number(height),
-    };
-    state.geometryPresentationPending = false;
-    applyZoomGeometry();
-    if (state.adjustments.shared.geometry.perspective_horizontal
-      || state.adjustments.shared.geometry.perspective_vertical) void ensureGeometryCoordinateMap();
+    acceptPreviewGeometry(width, height, longEdge);
   }
   renderCurrentPreviewSize();
   renderReadouts();
@@ -254,6 +258,31 @@ function acceptPresentation(lane, schedulerTier, width, height, transport, fallb
   // candidate, catch-up freshness) read one source of truth.
   state.renderCoordinator?.noteAccepted(state.acceptedPresentation);
   refreshScopesAfterPresentation(lane);
+  if (lane === state.currentView) renderDenoiseRoute();
+}
+
+function acceptPreviewGeometry(width, height, longEdge) {
+  if (state.geometryTransformHandoffSignature === geometrySignature()) {
+    state.geometryTransformHandoffSignature = null;
+    clearRotateDraftTransformProperties();
+    clearInteractiveStraightenPreview();
+  }
+  const sessionId = state.session?.session_id || null;
+  state.zoomReferenceFrame = {
+    sessionId,
+    geometrySignature: geometrySignature(),
+    // Proxy resolution can change between interactive, settled, and refined
+    // presentations. Preserve the session's display scale while accepting
+    // the authoritative aspect ratio of the newly presented geometry.
+    longEdge: state.zoomReferenceFrame?.sessionId === sessionId
+      ? state.zoomReferenceFrame.longEdge
+      : longEdge,
+    aspect: Number(width) / Number(height),
+  };
+  state.geometryPresentationPending = false;
+  applyZoomGeometry();
+  if (state.adjustments.shared.geometry.perspective_horizontal
+    || state.adjustments.shared.geometry.perspective_vertical) void ensureGeometryCoordinateMap();
 }
 
 // Response details arrive as text, {message}, or FastAPI's list of
@@ -279,16 +308,20 @@ function markPreviewUnavailable(reason) {
   // accepted authoritative frame. If this tier is truthfully unavailable,
   // that frame will never arrive. End the handoff here so the retained last
   // frame remains usable and the user can select another tier or keep editing.
-  if (state.geometryTransformHandoffSignature === geometrySignature()) {
-    state.geometryTransformHandoffSignature = null;
-    state.geometryPresentationPending = false;
-    clearRotateDraftTransformProperties();
-    clearInteractiveStraightenPreview();
-    applyZoomGeometry();
-  }
+  finishFailedGeometryHandoff();
   renderCurrentPreviewSize();
   renderReadouts();
   renderViewerStatus();
+}
+
+function finishFailedGeometryHandoff() {
+  if (!state.geometryPresentationPending && state.geometryTransformHandoffSignature !== geometrySignature()) return;
+  state.geometryTransformHandoffSignature = null;
+  state.geometryPresentationPending = false;
+  if (geometryDraftActive()) return;
+  clearRotateDraftTransformProperties();
+  clearInteractiveStraightenPreview();
+  applyZoomGeometry();
 }
 
 function markRefining() {

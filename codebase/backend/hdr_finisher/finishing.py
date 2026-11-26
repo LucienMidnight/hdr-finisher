@@ -1,13 +1,17 @@
 from __future__ import annotations
 
+from .export_timing import timed as _timed_stage
 import math
 from functools import lru_cache
+from collections import deque
 
 import numpy as np
 
 from .models import GeometryAdjustments, OutputFinishingSettings, PerspectiveGuideLine, PreviewKind
+from .pixel_rows import render_rows, row_slices
 
 
+@_timed_stage("geometry")
 def apply_geometry(image: np.ndarray, geometry: GeometryAdjustments, *, screen: bool = False) -> np.ndarray:
     """Apply the one shared, destructive geometry stage without inventing pixels."""
     crop = geometry.crop
@@ -56,6 +60,44 @@ def apply_geometry(image: np.ndarray, geometry: GeometryAdjustments, *, screen: 
     return np.ascontiguousarray(result[top:bottom, left:right], dtype=np.float32)
 
 
+def geometry_is_identity(geometry: GeometryAdjustments) -> bool:
+    """Whether ``apply_geometry`` returns its input unchanged."""
+    crop = geometry.crop
+    return (geometry.rotation == 0 and not geometry.flip_horizontal and not geometry.flip_vertical
+            and geometry.straighten_angle + geometry.perspective_rotate == 0.0
+            and geometry.perspective_horizontal == 0.0 and geometry.perspective_vertical == 0.0
+            and crop.x == 0.0 and crop.y == 0.0 and crop.width == 1.0 and crop.height == 1.0)
+
+
+@_timed_stage("geometry")
+def apply_geometry_to_frame(source, geometry: GeometryAdjustments, path):
+    from contextlib import nullcontext
+    from .delivery_frames import DeliveryFrame
+    from .export_timing import tick
+
+    source_map = source.map("r") if isinstance(source, DeliveryFrame) else nullcontext(source)
+    with source_map as pixels:
+        width, height = geometry_output_dimensions(pixels.shape[1], pixels.shape[0], geometry)
+        frame = DeliveryFrame(path, (height, width, pixels.shape[2]))
+        if geometry_resample_stage(geometry) == "index":
+            oriented = _oriented_view(pixels, geometry)
+            left, top, right, bottom = _crop_bounds(oriented.shape[1], oriented.shape[0], geometry)
+
+            def bands():
+                for rows in row_slices(height):
+                    end = rows.stop or height
+                    yield oriented[top + (rows.start or 0):top + end, left:right]
+                    tick(end, height)
+
+            frame.write(bands())
+        else:
+            with frame.map("w+") as output:
+                for channel in range(pixels.shape[2]):
+                    output[..., channel:channel + 1] = apply_geometry(pixels[..., channel:channel + 1], geometry)
+                    tick(channel + 1, pixels.shape[2])
+    return frame
+
+
 def _oriented_view(image: np.ndarray, geometry: GeometryAdjustments) -> np.ndarray:
     """Return the quarter-turn and flip stage as a view, allocating nothing.
 
@@ -81,6 +123,18 @@ def _crop_bounds(width: int, height: int, geometry: GeometryAdjustments) -> tupl
     right = int(np.clip(round((crop.x + crop.width) * width), left + 1, width))
     bottom = int(np.clip(round((crop.y + crop.height) * height), top + 1, height))
     return left, top, right, bottom
+
+
+def _quarter_roll_view(oriented: np.ndarray, angle: float) -> np.ndarray:
+    height, width = oriented.shape[:2]
+    rotated = np.rot90(oriented, k=int(angle / 90) % 4)
+    rotated_height, rotated_width = rotated.shape[:2]
+    safe_width, safe_height = _largest_rotated_rectangle(width, height, math.radians(abs(angle)))
+    safe_width = max(1, min(math.floor(safe_width) - 4, rotated_width))
+    safe_height = max(1, min(math.floor(safe_height) - 4, rotated_height))
+    left = (rotated_width - safe_width) // 2
+    top = (rotated_height - safe_height) // 2
+    return rotated[top:top + safe_height, left:left + safe_width]
 
 
 def geometry_resample_stage(geometry: GeometryAdjustments) -> str:
@@ -137,9 +191,7 @@ def apply_geometry_region(
         height, width = oriented.shape[:2]
         roll = _roll_stage(width, height, total_roll)
         if roll is None:
-            # A roll of exactly a quarter turn takes Pillow's transpose path,
-            # which has no window form. It is not reachable from one control.
-            rotated = _rotate_to_valid_pixels(np.ascontiguousarray(oriented, dtype=np.float32), total_roll)
+            rotated = _quarter_roll_view(oriented, total_roll)
             left, top, right, bottom = _crop_bounds(rotated.shape[1], rotated.shape[0], geometry)
             window = _clamp_rect(rect, right - left, bottom - top)
             return np.ascontiguousarray(
@@ -151,8 +203,9 @@ def apply_geometry_region(
         window = _clamp_rect(rect, right - left, bottom - top)
         offset_x = safe_left + left + window[0]
         offset_y = safe_top + top + window[1]
-        a, b, c, d, e, f = matrix
-        coefficients = (a, b, a * offset_x + b * offset_y + c, d, e, d * offset_x + e * offset_y + f, 0.0, 0.0)
+        xx, xy, cx, yx, yy, cy = matrix
+        coefficients = (xx, xy, xx * offset_x + xy * offset_y + cx,
+                        yx, yy, yx * offset_x + yy * offset_y + cy, 0.0, 0.0)
         return _resample_window(
             oriented,
             coefficients,
@@ -185,10 +238,14 @@ def _channel_ranges(
     cached = cache.get(key) if cacheable else None
     if cached is not None and cached[0] is image:
         return cached[1]
-    ranges = tuple(
-        (float(np.min(image[..., index])), float(np.max(image[..., index])))
-        for index in range(image.shape[2])
-    )
+    lows = np.full(image.shape[2], np.inf)
+    highs = np.full(image.shape[2], -np.inf)
+    for top in range(0, len(image), 256):
+        band = image[top:top + 256]
+        for index in range(image.shape[2]):
+            lows[index] = np.minimum(lows[index], np.min(band[..., index]))
+            highs[index] = np.maximum(highs[index], np.max(band[..., index]))
+    ranges = tuple((float(low), float(high)) for low, high in zip(lows, highs))
     if cacheable:
         cache.clear()
         cache[key] = (image, ranges)
@@ -438,12 +495,6 @@ def geometry_coordinate_map(
     return output_to_source, source_to_output, output_width, output_height
 
 
-def coordinate_map_needs_full_frame(geometry: GeometryAdjustments) -> bool:
-    """A blended roll of exactly a quarter turn still uses full coordinate ramps."""
-    total_roll = geometry.straighten_angle + geometry.perspective_rotate
-    return geometry_resample_stage(geometry) == "roll" and total_roll % 90.0 == 0.0
-
-
 def _coordinate_ramp_samples(
     width: int, height: int, geometry: GeometryAdjustments, xs: np.ndarray, ys: np.ndarray
 ) -> np.ndarray:
@@ -456,13 +507,15 @@ def _coordinate_ramp_samples(
     """
     ramp_x = (np.arange(width, dtype=np.float32) + np.float32(0.5)) / max(width, 1)
     ramp_y = (np.arange(height, dtype=np.float32) + np.float32(0.5)) / max(height, 1)
-    if coordinate_map_needs_full_frame(geometry):
-        # A roll of a whole quarter turn has no window form: each pixel would
-        # rotate the whole frame. Rotate it once instead.
-        ramps = np.stack(
-            (np.broadcast_to(ramp_x, (height, width)), np.broadcast_to(ramp_y[:, None], (height, width))), axis=-1
-        )
-        return apply_geometry(ramps, geometry)[ys, xs, :].astype(np.float64)
+    total_roll = geometry.straighten_angle + geometry.perspective_rotate
+    if geometry_resample_stage(geometry) == "roll" and total_roll % 90.0 == 0.0:
+        def sample(ramp: np.ndarray) -> np.ndarray:
+            oriented = _oriented_view(np.broadcast_to(ramp, (height, width)), geometry)
+            rotated = _quarter_roll_view(oriented, total_roll)
+            left, top, _, _ = _crop_bounds(rotated.shape[1], rotated.shape[0], geometry)
+            return rotated[ys + top, xs + left]
+
+        return np.column_stack((sample(ramp_x), sample(ramp_y[:, None]))).astype(np.float64)
     samples = np.empty((xs.size, 2), dtype=np.float64)
     for channel, (values, shape) in enumerate(((ramp_x, (1, width, 1)), (ramp_y, (height, 1, 1)))):
         ramp = np.broadcast_to(values.reshape(shape), (height, width, 1))
@@ -859,6 +912,7 @@ def resolve_output_dimensions(
     return max(1, int(round(width * scale))), max(1, int(round(height * scale)))
 
 
+@_timed_stage("output_finishing")
 def apply_output_finishing(
     image: np.ndarray, settings: OutputFinishingSettings, kind: PreviewKind,
     *, target_size: tuple[int, int] | None = None,
@@ -871,56 +925,172 @@ def apply_output_finishing(
     if settings.sharpening != "off":
         result = _edge_aware_multiscale_sharpen(result, settings.sharpening, kind)
     # The caller's final HDR limiter / SDR gamut mapper owns the ceiling.
-    return np.nan_to_num(np.maximum(result, 0.0), nan=0.0, posinf=0.0, neginf=0.0).astype(np.float32)
+    return render_rows(result, lambda part, _: np.nan_to_num(part, nan=0.0, posinf=0.0, neginf=0.0)
+                       .astype(np.float32, copy=False))
 
 
 def _resize_lanczos(image: np.ndarray, width: int, height: int) -> np.ndarray:
+    result = np.empty((height, width, image.shape[2]), dtype=np.float32)
+    for index in range(image.shape[2]):
+        _resize_lanczos_channel(image[..., index], width, height, out=result[..., index])
+    return result
+
+
+def _resize_lanczos_channel(source, width, height, *, out=None):
     try:
         from PIL import Image
     except ImportError as exc:  # pragma: no cover
         raise RuntimeError("Pillow is required for export resizing") from exc
-    channels: list[np.ndarray] = []
-    for index in range(image.shape[2]):
-        source = image[..., index].astype(np.float32, copy=False)
-        resized = Image.fromarray(source).resize((width, height), Image.Resampling.LANCZOS)
-        channel = np.asarray(resized, dtype=np.float32)
-        channels.append(np.clip(channel, float(np.min(source)), float(np.max(source))))
-    return np.stack(channels, axis=-1).astype(np.float32)
+    source = source.astype(np.float32, copy=False)
+    resized = Image.fromarray(source).resize((width, height), Image.Resampling.LANCZOS)
+    return np.clip(np.asarray(resized, dtype=np.float32), float(np.min(source)), float(np.max(source)), out=out)
 
 
 def _edge_aware_multiscale_sharpen(image: np.ndarray, strength: str, kind: PreviewKind) -> np.ndarray:
     if float(np.max(image) - np.min(image)) <= 1e-7:
         return image
+    output = np.empty(image.shape, dtype=np.float32)
+    changed = False
+    for rows, pixels, active in _multiscale_sharpen_bands(image, strength, kind):
+        output[rows] = pixels
+        changed |= active
+    return output if changed else image
+
+
+def _multiscale_sharpen_bands(image, strength, kind):
     amounts = {
         "subtle": (0.22, 0.08),
         "standard": (0.38, 0.14),
         "strong": (0.58, 0.22),
     }
     fine_amount, medium_amount = amounts[strength]
-    source_luma = _luminance(image, kind)
-    if kind == PreviewKind.HDR:
-        signal = np.log2(np.maximum(source_luma, 1e-7) / np.float32(0.18))
+    if image.flags.c_contiguous:
+        luma = (_luminance(image[rows], kind) for rows in row_slices(len(image)))
     else:
-        signal = _srgb_encode(np.maximum(source_luma, 0.0))
+        luma_plane = _luminance(image, kind)
+        luma = (luma_plane[rows] for rows in row_slices(len(image)))
+    source_luma, signal_luma = _fork_bands(luma, 2)
+    signal, next_signal, blur_source, fine_source = _fork_bands((_sharpen_signal(part, kind) for part in signal_luma), 4)
+    fine_base, medium_input, medium_source = _fork_bands(_sharpen_box_bands(blur_source, 1), 3)
+    fine, residual_source = _fork_bands((source - base for source, base in zip(fine_source, fine_base)), 2)
+    medium_base, next_medium = _fork_bands(_sharpen_box_bands(medium_source, 2), 2)
+    next(next_medium, None)
+    next(next_signal, None)
+    residual = _sharpen_box_bands((np.abs(part) for part in residual_source), 1)
+    top = 0
+    previous = None
+    for luma_part, signal_part, fine_part, medium_in, medium_out, residual_part in zip(
+        source_luma, signal, fine, medium_input, medium_base, residual,
+    ):
+        following_medium = next(next_medium, None)
+        following_signal = next(next_signal, None)
+        bottom = top + len(signal_part)
+        detail, active = _sharpen_detail(signal_part, fine_part, medium_in, medium_out, residual_part,
+            fine_amount, medium_amount, medium_out[-1:] if following_medium is None else following_medium[:1])
+        extent = np.concatenate((signal_part[:1] if previous is None else previous, signal_part,
+                                 signal_part[-1:] if following_signal is None else following_signal[:1]))
+        local_min, local_max = _local_extrema(extent)
+        rows = slice(top, bottom)
+        yield rows, _finish_sharpen_rows(image[rows], luma_part, signal_part, detail,
+                                         kind, strength, local_min[1:-1], local_max[1:-1]), active
+        previous = signal_part[-1:].copy()
+        top = bottom
 
-    fine_base = _box_blur(signal, 1)
-    medium_base = _box_blur(fine_base, 2)
-    fine = signal - fine_base
+
+@_timed_stage("output_finishing")
+def finish_delivery_frame(source, settings, kind, directory, target_size):
+    """Run the same finishing kernels with file-backed intermediate frames."""
+    from contextlib import ExitStack
+    from .delivery_frames import DeliveryFrame
+    from .export_timing import tick
+
+    width, height = target_size
+    resize = source.shape[:2] != (height, width)
+    sharpen = settings.sharpening != "off"
+    passes = (4 if resize else 0) + (2 if sharpen else 0) + 1
+    done = 0
+    if resize:
+        result = DeliveryFrame(directory / "resized.rgb", (height, width, 3))
+        planes = []
+        with source.map("r") as pixels:
+            for channel in range(3):
+                plane = DeliveryFrame(directory / f"resized-{channel}.f32", (height, width))
+                plane.check_space()
+                _resize_lanczos_channel(pixels[..., channel], width, height).tofile(plane.path)
+                planes.append(plane)
+                done += 1
+                tick(done, passes)
+
+        def interleave():
+            with ExitStack() as maps:
+                channels = [maps.enter_context(plane.map("r")) for plane in planes]
+                for rows in row_slices(height):
+                    yield np.stack([channel[rows] for channel in channels], axis=-1)
+                    tick(done * height + rows.stop, passes * height)
+
+        result.write(interleave())
+        for plane in planes:
+            plane.path.unlink()
+        source.path.unlink()
+        source = result
+        done += 1
+
+    if sharpen:
+        low, high = np.float32(np.inf), np.float32(-np.inf)
+        with source.map("r") as pixels:
+            for rows in row_slices(height):
+                low = np.minimum(low, np.min(pixels[rows]))
+                high = np.maximum(high, np.max(pixels[rows]))
+                tick(done * height + rows.stop, passes * height)
+            done += 1
+            if not float(high - low) <= 1e-7:
+                changed = False
+
+                def sharpened():
+                    nonlocal changed
+                    for rows, band, active in _multiscale_sharpen_bands(pixels, settings.sharpening, kind):
+                        changed |= active
+                        yield band
+                        tick(done * height + rows.stop, passes * height)
+
+                result = DeliveryFrame(directory / "sharpened.rgb", source.shape)
+                result.write(sharpened())
+            else:
+                result, changed = source, False
+        if changed:
+            source.path.unlink()
+            source = result
+        elif result is not source:
+            result.path.unlink()
+        done += 1
+
+    with source.map("r+") as pixels:
+        for rows in row_slices(height):
+            np.nan_to_num(pixels[rows], copy=False, nan=0.0, posinf=0.0, neginf=0.0)
+            tick(done * height + rows.stop, passes * height)
+    return source
+
+
+def _sharpen_signal(source_luma, kind):
+    if kind == PreviewKind.HDR:
+        return np.log2(np.maximum(source_luma, 1e-7) / np.float32(0.18))
+    return _srgb_encode(np.maximum(source_luma, 0.0))
+
+
+def _sharpen_detail(signal, fine, fine_base, medium_base, residual, fine_amount, medium_amount, middle_next):
     medium = fine_base - medium_base
-
     gradient_x = np.abs(np.diff(medium_base, axis=1, append=medium_base[:, -1:]))
-    gradient_y = np.abs(np.diff(medium_base, axis=0, append=medium_base[-1:, :]))
+    gradient_y = np.abs(np.diff(medium_base, axis=0, append=middle_next))
     structure = np.sqrt(gradient_x * gradient_x + gradient_y * gradient_y)
-    residual = _box_blur(np.abs(fine), 1)
     # Coherent structure wins over stochastic residuals, while ordinary texture
     # retains a conservative floor. Flat fields remain exactly unchanged.
     mask = np.clip(0.18 + 2.8 * structure / (structure + residual + 1e-6), 0.0, 1.0)
     mask = np.where((np.abs(fine) + np.abs(medium)) > 1e-7, mask, 0.0).astype(np.float32)
     detail = mask * (np.float32(fine_amount) * fine + np.float32(medium_amount) * medium)
-    if not np.any(np.abs(detail) > 1e-7):
-        return image
+    return detail, bool(np.any(np.abs(detail) > 1e-7))
 
-    local_min, local_max = _local_extrema(signal)
+
+def _finish_sharpen_rows(image, source_luma, signal, detail, kind, strength, local_min, local_max):
     allowance = np.float32(0.12 if strength != "strong" else 0.18) * (local_max - local_min)
     sharpened = np.clip(signal + detail, local_min - allowance, local_max + allowance)
     if kind == PreviewKind.HDR:
@@ -932,7 +1102,7 @@ def _edge_aware_multiscale_sharpen(image: np.ndarray, strength: str, kind: Previ
     # when other pixels do have detail (same per-pixel rule as GPU finishing).
     np.divide(target_luma, source_luma, out=gain,
               where=(source_luma > 1e-7) & (np.abs(sharpened - signal) > 1e-7))
-    return (image.astype(np.float32, copy=False) * gain[..., None]).astype(np.float32)
+    return image.astype(np.float32, copy=False) * gain[..., None]
 
 
 def _luminance(image: np.ndarray, kind: PreviewKind) -> np.ndarray:
@@ -940,25 +1110,49 @@ def _luminance(image: np.ndarray, kind: PreviewKind) -> np.ndarray:
     return np.einsum("...c,c->...", image[..., :3], weights, optimize=True).astype(np.float32)
 
 
-def _box_blur(image: np.ndarray, radius: int) -> np.ndarray:
-    result = image.astype(np.float32, copy=False)
-    for axis in (0, 1):
-        padded = np.pad(result, [(radius, radius), (radius, radius)], mode="edge") if axis == 0 else None
-        if axis == 0:
-            padded = padded[:, radius:-radius] if radius else padded
-        else:
-            padded = np.pad(result, [(0, 0), (radius, radius)], mode="edge")
-        cumulative = np.cumsum(padded, axis=axis, dtype=np.float32)
-        zero_shape = list(cumulative.shape)
-        zero_shape[axis] = 1
-        cumulative = np.concatenate([np.zeros(zero_shape, dtype=np.float32), cumulative], axis=axis)
-        high = [slice(None), slice(None)]
-        low = [slice(None), slice(None)]
-        width = radius * 2 + 1
-        high[axis] = slice(width, None)
-        low[axis] = slice(None, -width)
-        result = (cumulative[tuple(high)] - cumulative[tuple(low)]) / np.float32(width)
-    return result.astype(np.float32)
+def _fork_bands(source, count):
+    """Share streaming inputs, releasing each band once every consumer reads it."""
+    waiting = tuple(deque() for _ in range(count))
+
+    def consume(own):
+        while True:
+            if own:
+                yield own.popleft()
+            else:
+                band = next(source, None)
+                if band is None:
+                    return
+                for other in waiting:
+                    if other is not own:
+                        other.append(band)
+                yield band
+
+    return tuple(consume(queue) for queue in waiting)
+
+
+def _sharpen_box_bands(bands, radius):
+    """Keep the original float32 vertical prefix, including at strip seams."""
+    current = next(bands)
+    history = np.zeros((radius + 1, current.shape[1]), dtype=np.float32)
+    history[1:] = current[:1]
+    np.cumsum(history, axis=0, out=history)
+    width = 2 * radius + 1
+    while current is not None:
+        following = next(bands, None)
+        ahead = current[:0] if following is None else following[:radius]
+        if len(ahead) < radius:
+            edge = current[-1:] if following is None else following[-1:]
+            ahead = np.concatenate((ahead, np.repeat(edge, radius - len(ahead), axis=0)))
+        prefix = np.concatenate((history, current, ahead))
+        np.cumsum(prefix[radius:], axis=0, out=prefix[radius:])
+        history = prefix[len(current):len(current) + radius + 1].copy()
+        vertical = (prefix[width:] - prefix[:-width]) / np.float32(width)
+        padded = np.pad(vertical, ((0, 0), (radius, radius)), mode="edge")
+        horizontal = np.empty((len(vertical), padded.shape[1] + 1), dtype=np.float32)
+        horizontal[:, 0] = 0
+        np.cumsum(padded, axis=1, out=horizontal[:, 1:])
+        yield (horizontal[:, width:] - horizontal[:, :-width]) / np.float32(width)
+        current = following
 
 
 def _local_extrema(signal: np.ndarray) -> tuple[np.ndarray, np.ndarray]:

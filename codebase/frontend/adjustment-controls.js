@@ -249,13 +249,8 @@ function resetControlGroup(group) {
   if (group === "denoise") {
     const lane = state.currentView;
     const defaults = defaultDenoiseDocument()[lane];
-    state.denoise[lane].controls = JSON.parse(JSON.stringify(defaults.controls));
-    const runtime = state.denoiseRuntime[lane];
-    runtime.dirty = true;
-    runtime.status = state.denoise[lane].enabled ? "dirty" : "off";
-    runtime.showOriginal = !state.denoise[lane].enabled;
-    renderDenoiseControls();
-    void persistDenoiseSettings();
+    state.denoise[lane].controls = defaults.controls;
+    void commitDenoiseControl("method");
     return;
   }
   const paths = controlGroups[group] || [];
@@ -298,6 +293,7 @@ function resetControlGroup(group) {
     // popup until the window lost and regained focus.
     if (state.cropMode) closeCropMode(false);
     if (state.rotateDraftGeometry) closeRotateMode(false);
+    state.geometryPresentationPending = true;
   }
   paths.forEach((path) => setValueByPath(state.adjustments, path, getValueByPath(defaults, path)));
   const sectionPath = sectionPathForGroup[group];

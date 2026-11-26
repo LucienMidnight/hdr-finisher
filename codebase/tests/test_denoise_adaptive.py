@@ -2,10 +2,33 @@
 
 from __future__ import annotations
 
+from itertools import product
+
 import numpy as np
 import pytest
 
 from hdr_finisher import denoise_adaptive as da
+
+
+def test_native_separable_filters_match_numpy_bytes(monkeypatch) -> None:
+    native = da.denoise_filters.library()
+    if native is None:
+        pytest.skip("Native Denoise filters have not been built")
+    rng = np.random.default_rng(101)
+    rgb = rng.standard_normal((83, 207, 3)).astype(np.float32)
+    rgb[0, 0] = (0.0, -0.0, 1e-39)
+    values = (rgb, rgb[..., 0], rgb[:, ::2], rgb[:1, :5], rgb[:16, :33, 0])
+    for source in values:
+        def results():
+            yield da._box(source, da.WIENER_RADIUS).tobytes()
+            for edges in product((False, True), repeat=4):
+                for level in range(da.LEVELS):
+                    yield da._atrous(source, level, da._Edges(*edges, *source.shape[:2])).tobytes()
+
+        actual = tuple(results())
+        with monkeypatch.context() as fallback:
+            fallback.setattr(da.denoise_filters, "library", lambda: None)
+            assert tuple(results()) == actual
 
 
 def _scene(height: int = 300, width: int = 700, seed: int = 3) -> tuple[np.ndarray, np.ndarray]:
@@ -43,12 +66,13 @@ def test_alpha_passes_through() -> None:
     np.testing.assert_array_equal(out[..., 3], rgba[..., 3])
 
 
-def test_defaults_are_the_measured_result() -> None:
+def test_approved_defaults_and_measured_control_mapping() -> None:
     controls = da.AdaptiveControls()
-    assert controls.strengths() == (1.0, 1.0)
+    assert controls.strengths() == (1.5, 2.25)
     assert controls.fine_band_multiplier() == 1.0
     assert controls.fine_band_floor() == 0.0
-    assert da.AdaptiveControls(amount=1.0).strengths() == (2.0, 2.0)
+    assert da.AdaptiveControls(amount=1.0).strengths() == (2.0, 3.0)
+    assert da.AdaptiveControls(amount=0.5, color_noise=0.5).strengths() == (1.0, 1.0)
     assert da.AdaptiveControls(detail_recovery=1.0).fine_band_floor() == pytest.approx(0.3)
     assert da.AdaptiveControls(detail_recovery=0.0).fine_band_multiplier() == pytest.approx(1.5)
 

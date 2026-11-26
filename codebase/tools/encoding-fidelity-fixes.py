@@ -90,7 +90,7 @@ def jpeg_write(path, hdr, sdr, quality, fit=False, smoothing="guided"):
     settings = ExportSettings(format="jpeg_ultrahdr", quality=quality, jpeg_chroma_subsampling="444",
                               jpeg_gain_map_quality=quality, jpeg_gain_map_scale="full", dithering="off")
     with jpeg_options(fit, smoothing):
-        exporters._write_jpeg_gainmap_once(path, hdr, sdr, settings)
+        exporters.write_jpeg_gainmap_renditions(path, hdr, sdr, settings)
 
 
 def avif_write(path, hdr, sdr, binary, *, quality=95, scale="half", chroma="420", depth=10,

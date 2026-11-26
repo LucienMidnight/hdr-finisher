@@ -12,17 +12,23 @@ image to pass would visibly change the grade.
 """
 from __future__ import annotations
 
+from .export_timing import timed as _timed_stage
+from dataclasses import dataclass
+from contextlib import ExitStack, closing, nullcontext
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import Callable, TypeVar
 
 import numpy as np
 
 from .color import acescg_to_linear_bt2020
 from .color_context import scene_linear_to_nits
+from .delivery_frames import DeliveryFrame
 
 T = TypeVar("T")
 
 BLOCK = 16
+BAND_ROWS = 128
 # Codecs only partly follow a lowered input, so each round undershoots its aim.
 # Squaring the overshoot ratio and small growing margins usually finish in
 # one correction while landing close under the ceiling.
@@ -57,8 +63,7 @@ def channel_nits(image: np.ndarray, reference_white_nits: float = 203) -> np.nda
 def decoded_channel_nits(path: Path, format_name: str) -> np.ndarray:
     """Decode a delivery the way the import decoders do (0.18 == 203 nits)."""
     if format_name == "jpeg_ultrahdr":
-        from .gainmap_decoders import decode_ultrahdr_jpeg
-        image, _, _ = decode_ultrahdr_jpeg(path)
+        return _ultrahdr_channel_nits(path)
     elif format_name == "avif_gain_map":
         from .gainmap_decoders import decode_avif
         image, _, _ = decode_avif(path)
@@ -72,18 +77,108 @@ def decoded_channel_nits(path: Path, format_name: str) -> np.ndarray:
     return channel_nits(image, 203)
 
 
-def _correction(ratio: np.ndarray, margin: float) -> np.ndarray:
-    """A smooth multiplier that brings every over-ceiling pixel under it.
+@dataclass(frozen=True)
+class _DecodedCeiling:
+    shape: tuple[int, int]
+    peak: float
+    block_maxima: np.ndarray
 
-    Block maxima are widened by one block, so bilinear upsampling at any
-    overshooting pixel interpolates only values at least as large as its own
-    ratio. That guarantees coverage while fading gently to 1 elsewhere.
-    """
-    height, width = ratio.shape
-    blocks_y, blocks_x = -(-height // BLOCK), -(-width // BLOCK)
+
+@_timed_stage("ceiling_verify")
+def decoded_avif_ceiling(path: Path, ceiling_nits: float) -> _DecodedCeiling:
+    """Check every HDR pixel, keeping only the exact peak and correction grid."""
+    from .gainmap_decoders import avif_delivery_hdr_bands
+
+    ceiling = min(float(ceiling_nits), CODEC_LIMIT_NITS)
+    with avif_delivery_hdr_bands(path, BAND_ROWS) as (shape, bands):
+        height, width = shape
+        grid = np.ones((-(-height // BLOCK), -(-width // BLOCK)), dtype=np.float32)
+        peak = -np.inf
+        for index, hdr in enumerate(bands):
+            if not hdr.size or not np.isfinite(hdr).all():
+                raise CeilingError("The HDR file decoded to empty or non-finite pixels.")
+            nits = channel_nits(hdr, 203)
+            if not np.isfinite(nits).all():
+                raise CeilingError("The HDR file decoded to empty or non-finite pixels.")
+            band_peak = float(nits.max())
+            peak = max(peak, band_peak)
+            if band_peak > ceiling:
+                _fill_block_maxima(grid, index * BAND_ROWS, nits, ceiling)
+    return _DecodedCeiling(shape, peak, grid)
+
+
+def decoded_ultrahdr_ceiling(path: Path, ceiling_nits: float) -> _DecodedCeiling | np.ndarray:
+    """Keep only the full decoded peak and the data used by local correction."""
+    return _ultrahdr_channel_nits(path, min(float(ceiling_nits), CODEC_LIMIT_NITS))
+
+
+def _fill_block_maxima(grid: np.ndarray, top: int, nits: np.ndarray, ceiling: float) -> None:
+    height, width = nits.shape
+    blocks_y, blocks_x = -(-height // BLOCK), grid.shape[1]
     padded = np.ones((blocks_y * BLOCK, blocks_x * BLOCK), dtype=np.float32)
-    padded[:height, :width] = np.maximum(ratio, 1.0)
-    grid = padded.reshape(blocks_y, BLOCK, blocks_x, BLOCK).max(axis=(1, 3))
+    padded[:height, :width] = np.maximum(nits / np.float32(ceiling), 1.0)
+    grid[top // BLOCK:top // BLOCK + blocks_y] = padded.reshape(
+        blocks_y, BLOCK, blocks_x, BLOCK).max(axis=(1, 3))
+
+
+def _ultrahdr_channel_nits(path: Path, ceiling: float | None = None) -> _DecodedCeiling | np.ndarray:
+    """Check the same decoded HDR samples without materializing either RGB rendition."""
+    from PIL import Image
+    from .color import linear_bt2020_to_acescg, linear_srgb_to_acescg
+    from .gainmap_decoders import _apply_exif_orientation, inspect_jpeg_gain_map, reconstructed_ultrahdr_rgba
+
+    gain = inspect_jpeg_gain_map(path)
+    transform = linear_srgb_to_acescg if gain.use_base_color_space else linear_bt2020_to_acescg
+    with Image.open(path) as primary:
+        width, height = primary.size
+        orientation = int(primary.getexif().get(274, 1))
+    # The block coordinates need to follow EXIF orientation. Retain the
+    # per-pixel route for orientations other than the delivery default.
+    compact = ceiling is not None and orientation == 1
+    if compact:
+        grid = np.ones((-(-height // BLOCK), -(-width // BLOCK)), dtype=np.float32)
+        peak = -np.inf
+    else:
+        nits = np.empty((height, width), dtype=np.float32)
+    with reconstructed_ultrahdr_rgba(path, width, height) as raw:
+        for top in range(0, height, BAND_ROWS):
+            rows = min(BAND_ROWS, height - top)
+            rgba = np.fromfile(raw, dtype="<f2", count=rows * width * 4).reshape(rows, width, 4)
+            hdr = rgba[..., :3].astype(np.float32)
+            hdr *= np.float32(0.18)
+            hdr = np.maximum(transform(hdr), np.float32(0))
+            if not np.isfinite(hdr).all():
+                raise CeilingError("The HDR file decoded to non-finite pixels.")
+            if not compact:
+                nits[top:top + rows] = channel_nits(hdr, 203)
+                continue
+            rgb = acescg_to_linear_bt2020(hdr)
+            brightest = np.maximum(rgb[..., 0], rgb[..., 1])
+            np.maximum(brightest, rgb[..., 2], out=brightest)
+            band_nits = scene_linear_to_nits(brightest, 203)
+            if not np.isfinite(band_nits).all():
+                raise CeilingError("The HDR file decoded to empty or non-finite pixels.")
+            band_peak = float(np.max(band_nits))
+            peak = max(peak, band_peak)
+            if band_peak > ceiling:
+                _fill_block_maxima(grid, top, band_nits, ceiling)
+    if compact:
+        return _DecodedCeiling((height, width), peak, grid)
+    return _apply_exif_orientation(nits[..., None], orientation)[..., 0]
+
+
+def _correct_bands(
+    current: np.ndarray | DeliveryFrame, decoded: _DecodedCeiling | np.ndarray, ceiling: float, margin: float,
+) -> None:
+    """Apply the same widened block grid using global interpolation coordinates."""
+    height, width = decoded.shape
+    blocks_y, blocks_x = -(-height // BLOCK), -(-width // BLOCK)
+    if isinstance(decoded, _DecodedCeiling):
+        grid = decoded.block_maxima
+    else:
+        grid = np.empty((blocks_y, blocks_x), dtype=np.float32)
+        for top in range(0, height, BAND_ROWS):
+            _fill_block_maxima(grid, top, decoded[top:top + BAND_ROWS], ceiling)
     widened = np.pad(grid, 1, constant_values=1.0)
     grid = np.max([widened[dy:dy + blocks_y, dx:dx + blocks_x] for dy in range(3) for dx in range(3)], axis=0)
 
@@ -94,30 +189,64 @@ def _correction(ratio: np.ndarray, margin: float) -> np.ndarray:
 
     y0, y1, wy = axis_weights(height, blocks_y)
     x0, x1, wx = axis_weights(width, blocks_x)
-    rows = grid[y0] * (1 - wy)[:, None] + grid[y1] * wy[:, None]
-    spread = rows[:, x0] * (1 - wx)[None, :] + rows[:, x1] * wx[None, :]
-    return np.where(spread > 1.0, 1.0 / (spread ** STRENGTH * (1.0 + margin)), 1.0).astype(np.float32)
+    on_disk = isinstance(current, DeliveryFrame)
+    with current.path.open("r+b") if on_disk else nullcontext() as file:
+        if on_disk:
+            buffer = np.empty((min(BAND_ROWS, height), *current.shape[1:]), dtype=current.dtype)
+        for top in range(0, height, BAND_ROWS):
+            band = slice(top, top + BAND_ROWS)
+            if np.all(grid[y0[band]] == 1.0) and np.all(grid[y1[band]] == 1.0):
+                continue
+            rows = grid[y0[band]] * (1 - wy[band, None]) + grid[y1[band]] * wy[band, None]
+            spread = rows[:, x0] * (1 - wx)[None, :] + rows[:, x1] * wx[None, :]
+            correction = np.where(spread > 1.0, 1.0 / (spread ** STRENGTH * (1.0 + margin)), 1.0).astype(np.float32)
+            if on_disk:
+                pixels = buffer[:len(correction)]
+                position = top * buffer[0].nbytes
+                file.seek(position)
+                if file.readinto(memoryview(pixels).cast("B")) != pixels.nbytes:
+                    raise OSError("Incomplete delivery frame.")
+            else:
+                pixels = current[band]
+            rgb = pixels[..., :3]
+            np.multiply(rgb, correction[..., None], out=rgb, where=correction[..., None] != 1.0)
+            if on_disk:
+                file.seek(position)
+                file.write(memoryview(pixels).cast("B"))
 
 
 def encode_within_ceiling(
-    hdr_image: np.ndarray,
+    hdr_image: np.ndarray | DeliveryFrame,
     reference_white_nits: float,
-    encode: Callable[[np.ndarray], T],
-    decode: Callable[[T], np.ndarray],
+    encode: Callable[[np.ndarray | DeliveryFrame], T],
+    decode: Callable[[T], _DecodedCeiling | np.ndarray],
     ceiling_nits: float | None = None,
     notes: list[str] | None = None,
     *,
     encoding_allowance: float = 0.0,
+    correct_in_place: bool = False,
 ) -> T:
     """Encode, check every decoded pixel, and correct only where it overshot.
 
     ``encode`` turns a finished HDR image into a delivery; ``decode`` returns
-    that delivery's per-pixel brightest channel in nits at the same size.
+    the brightest decoded channel in nits at the same size, either a per-pixel
+    plane or a validated peak and correction grid.
     Without ``ceiling_nits`` the delivery is encoded once and not checked.
     Initial encodes within ``encoding_allowance`` are unchanged. Corrections
     aim at the target itself; only the final round may use the allowance.
     An over-allowance or invalid delivery is never returned as successful.
+    Only a caller that owns a private writable render may opt into correction
+    in place, and its encoder must return a separate delivery.
     """
+    with ExitStack() as scratch:
+        return _encode_within_ceiling(hdr_image, encode, decode, ceiling_nits, notes,
+                                      encoding_allowance, correct_in_place, scratch)
+
+
+def _encode_within_ceiling(hdr_image, encode, decode, ceiling_nits, notes,
+                           encoding_allowance, correct_in_place, scratch):
+    from .delivery import log_delivery
+
     current = hdr_image
     delivery = encode(current)
     if ceiling_nits is None:
@@ -129,18 +258,34 @@ def encode_within_ceiling(
         decoded = decode(delivery)
         if decoded.shape != current.shape[:2]:
             raise CeilingError("The decoded HDR file does not match the exported size.")
-        if not decoded.size or not np.all(np.isfinite(decoded)):
-            raise CeilingError("The HDR file decoded to empty or non-finite pixels.")
-        peak = float(np.max(decoded))
+        if isinstance(decoded, _DecodedCeiling):
+            peak = decoded.peak
+        else:
+            if not decoded.size or not np.all(np.isfinite(decoded)):
+                raise CeilingError("The HDR file decoded to empty or non-finite pixels.")
+            peak = float(np.max(decoded))
         allowed = ceiling * (1.0 + encoding_allowance)
         if peak <= ceiling or (attempt in (0, len(MARGINS)) and peak <= allowed):
             return delivery
         if attempt == len(MARGINS):
+            log_delivery("ceiling_refused", level="error", route="refused",
+                       reason="encoded_peak_exceeded", retry_count=attempt,
+                       peak_nits=peak, target_nits=ceiling, allowed_nits=allowed)
             raise CeilingError(
                 f"HDR peak remains {peak:.3f} nits, above the {ceiling:g}-nit target after local correction; "
                 "no file was delivered."
             )
-        ratio = decoded / np.float32(ceiling)
-        current = current.copy()
-        current[..., :3] *= _correction(ratio, MARGINS[attempt])[..., None]
+        log_delivery("ceiling_retry", level="warn", route="cpu", reason="encoded_peak_exceeded",
+                   retry_count=attempt + 1, peak_nits=peak, target_nits=ceiling, allowed_nits=allowed)
+        if isinstance(hdr_image, DeliveryFrame):
+            if current is hdr_image:
+                directory = scratch.enter_context(TemporaryDirectory(
+                    prefix="ceiling-", dir=hdr_image.path.parent, ignore_cleanup_errors=True))
+                current = DeliveryFrame(Path(directory) / "hdr.rgb", hdr_image.shape, hdr_image.dtype)
+                with closing(hdr_image.bands(BAND_ROWS)) as bands:
+                    current.write(bands)
+        elif not correct_in_place:
+            current = current.copy()
+        _correct_bands(current, decoded, ceiling, MARGINS[attempt])
+        del decoded
         delivery = encode(current)

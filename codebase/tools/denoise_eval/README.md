@@ -1,0 +1,1000 @@
+# Offline CPU Denoise evaluation
+
+Research tooling only: no app changes, Electron, GPU, automatic downloads, or source writes.
+Run setup first, then from `codebase` (Windows: `.venv/Scripts/python.exe`):
+
+```sh
+.venv/bin/python -m tools.denoise_eval.run --adapters off,denoise_v2 --set quick
+.venv/bin/python -m tools.denoise_eval.run --adapters off,denoise_v2 --set full
+.venv/bin/python -m tools.denoise_eval.run --adapters off,denoise_v2_custom --controls '{"amount":0.7,"detail_recovery":0.3}' --set quick
+```
+
+`--banding .001` adds row/column offsets (normalised sensor sigma). No new
+packages are needed beyond setup. A cross-worktree `denoise-eval-cpu.lock`
+beside the main checkout records its PID; verify that PID has exited before
+removing a stale lock. It coordinates this harness, not unrelated tools.
+One process, one native thread, bounded crops; CLI fails on adapter errors,
+peak process RSS >2.5 GB, or review >20 MB. Quality failures are reported, so
+an inadequate baseline remains measurable. Quick budget: 120 s including
+inventory. Timing noise allowance: ±10%, no whole-app speed claim.
+
+Outputs: `output/denoise-v1/results-{quick,full}.json`, and the latest run's
+`review/index.html`, `review/results.json`, 256 px PNGs. Only this harness's
+files in that fixed review folder are overwritten. No RAW copies or full-size
+intermediates. Infinite PSNR is JSON `null`; other nulls mean unavailable or
+undefined, never a pass. All measurements, controls, crop coordinates, mask
+recipe, ISO, noise fits, clipping fractions and RNG seeds are recorded.
+
+The QUAL-1 crop review (`tools.denoise_eval.quality_review`) compares
+`HDR_FINISHER_QUAL_COLOUR_LEVELS`, `HDR_FINISHER_QUAL_MICRO_GUARD` and
+`HDR_FINISHER_QUAL_RAW_LEVELS` against the current defaults. The baseline
+and all three comparisons use the weighted Bayer noise estimate.
+
+## Steve's fixed-area baseline marking page
+
+After setup, run from `codebase`:
+
+```sh
+PYTHONPATH=backend HDR_CPU_THREADS=1 OPENBLAS_NUM_THREADS=1 VECLIB_MAXIMUM_THREADS=1 \
+.venv/bin/python tools/gpu-run-lock.py --label denoise-baseline-marking --minutes 70 -- \
+  .venv/bin/python -m tools.denoise_eval.marking_page
+```
+
+On Windows, use `.venv/Scripts/python.exe` and set the same environment
+variables in PowerShell. Open `output/denoise-v1/marking/index.html` in a browser.
+The generator uses Steve's frozen sensor coordinates and hash-verified originals.
+It runs production signed AHD, as-shot colour and Opposed highlight recovery
+with lens corrections off to keep the sensor coordinates aligned. Denoise
+measures the full developed photo separately with cleanup off and on.
+
+All three views share a display lift based on the noisy shadow areas and a
+highlight roll-off. The grey strips show any part of a chosen area outside
+the visible sensor. At 1×, one image pixel occupies one browser CSS pixel.
+Zoom and pan are linked across the three pictures. Export saves both points
+and quick answers to `steve-marks.json`. Import merges points and applies
+the answers in the imported file. The adjacent manifest records the source
+hashes, sensor areas, settings and lifts.
+
+## Steve’s marked colour speck trials
+
+Run these from `codebase` after setup. On Windows use
+`.venv/Scripts/python.exe` and set the environment variables in PowerShell.
+Run `tools/output_size.py` before and after. The shared lock gives each heavy
+command its own turn.
+
+```sh
+export PYTHONPATH=backend HDR_CPU_THREADS=3 OPENBLAS_NUM_THREADS=1 VECLIB_MAXIMUM_THREADS=1
+.venv/bin/python tools/gpu-run-lock.py --label denoise-colour-attribution --minutes 25 -- \
+  .venv/bin/python -m tools.denoise_eval.colour_speck_marks
+.venv/bin/python tools/gpu-run-lock.py --label denoise-colour-review --minutes 25 -- \
+  .venv/bin/python -m tools.denoise_eval.colour_speck_trials
+.venv/bin/python tools/gpu-run-lock.py --label denoise-colour-native --minutes 20 -- \
+  .venv/bin/python -m tools.denoise_eval.colour_speck_trials \
+  --timing output/denoise-v1/colour-speck-timing.json
+```
+
+The attribution command uses the frozen marks to define the fixed positions,
+direction and grain rings for signed RAW/Denoise comparisons. The review command
+checks those baseline readings against full-frame CPU Denoise. It renders A at
+both placements and B from the same tamed, signed development and whole-photo
+model, verifies held linear luminance and records area and mark measurements.
+It measures the named colour edges and details from the native 4:4:4 review
+pictures. To repeat just that step, run `-m tools.denoise_eval.colour_speck_features`
+with the same Python. Native timings start after RAW development and
+model fitting and use the same CPU tile pool for the baseline and candidates.
+
+Open `output/denoise-v1/colour-trials/index.html` for the local comparison.
+Choose A’s placement in the toolbar. Select a mark to zoom all four pictures
+to the same 6× spot. The marks switch hides the original overlay. Candidate
+answers are stored separately for each placement and can be exported as JSON.
+The adjacent files contain the per-mark and per-feature measurements. The
+review is capped at 20 MB and lives under ignored output.
+[Reported findings](../../../docs/technical/research/denoise-v1-2026-11-16/colour-speck-trials.md)
+
+## Canon speck strength ladders
+
+This CPU research page compares even keep, stronger Fine/Medium Denoise, pit
+fill at two placements, and deliberate whole-image smoothing on `IMG_0790.CR2`.
+The six fixed areas and 38 original marks come from Steve's November 18
+files. Noisy is signed development with Even out off. The baseline is signed
+development with Even out ×2.5 and shipping Denoise. The original photo is read
+from the approved corpus and checked against its SHA-256 in the manifest.
+
+From `codebase` on macOS, after repository setup, supply the directory with the
+existing pinned Bayer weights. Install optional `onnxruntime==1.32.0` in the
+research venv for the AI reference. Omit `--model-root` to generate the page
+without AI. On Windows, use the venv's `Scripts/python.exe` and set the same
+environment variables in the shell.
+
+```sh
+.venv/bin/python tools/output_size.py
+HDR_CPU_THREADS=1 OPENBLAS_NUM_THREADS=1 VECLIB_MAXIMUM_THREADS=1 OMP_NUM_THREADS=1 \
+PYTHONPATH=backend .venv/bin/python tools/gpu-run-lock.py --label canon-speck-ladder -- \
+  .venv/bin/python -m tools.denoise_eval.candidates.guard \
+  --receipt output/denoise-v1/canon-ladder/guard.json --seconds 5400 --bytes 2800000000 -- \
+  .venv/bin/python -m tools.denoise_eval.canon_ladder \
+  --model-root "/path/to/rawdenoise-nind"
+.venv/bin/python tools/output_size.py
+```
+
+Open `output/denoise-v1/canon-ladder/index.html` locally. Every method keeps the
+same Noisy, Baseline and AI columns. Choose a mark for a lossless 6× comparison,
+or select Fit crop to see the full areas. Export the original marks and the first
+step judged clean with its detail-cost answer as JSON. The page itself measures
+no image scores. `metrics.json` holds the 38 site readings, per-step counts,
+native CPU clocks and AI evidence. The two native sweeps use opposite order and
+the same developed frame and noise model. The AI process has a separate
+180-second, 2.5 GB guard and uses the earlier Opposed color highlight protection.
+The output is local, with a 20 MB cap applied before publication to the review
+folder. [Results](../../../docs/technical/research/denoise-v1-2026-11-16/canon-speck-ladder.md)
+
+## Even keep brightness and targeted specks
+
+Round 4 uses the same signed development, sensor clamp, shipping CPU Denoise,
+whole-photo noise model, exposure lifts and frozen crop files as the Canon
+ladder and colour trials. The Canon page adds the protected RawNIND Bayer
+reference, four brightness averaging distances with the prior energy match,
+two local-only controls, three colour methods and two dark-clump methods at
+two strengths. The 54-area page shows Today, Even keep brightness, and both
+extra passes with the selected settings. The static rows use native-size
+4:4:4 JPEG crops and pre-rendered lossless 6× close-ups. The score receipts use
+pixels before JPEG encoding.
+
+Run from `codebase` after setup, with the existing pinned
+`model_bayer.onnx` and optional `onnxruntime==1.32.0` in the venv. On Windows
+use `.venv/Scripts/python.exe` and set the same variables in PowerShell.
+
+```sh
+.venv/bin/python tools/output_size.py
+export PYTHONPATH=backend HDR_CPU_THREADS=3 OPENBLAS_NUM_THREADS=1 VECLIB_MAXIMUM_THREADS=1 OMP_NUM_THREADS=1
+.venv/bin/python tools/gpu-run-lock.py --label denoise-round4 --minutes 30 -- \
+  .venv/bin/python -m tools.denoise_eval.even_keep_round4 all \
+  --model-root "/path/to/rawdenoise-nind"
+.venv/bin/python tools/output_size.py
+```
+
+Open `output/denoise-v1/round4/index.html`. Use the individual `canon`,
+`corpus` or `timing` phase to replace that part of the output. `canon.json`
+holds all 38 readings, both grain references, channel checks and the 18 px
+comparison with the prior ladder. `corpus.json` holds the crop and named
+feature checks, including the contribution of each extra pass. `timing.json` holds three alternating native CPU runs at
+each resolution and the cost of each pass with the input and model held
+in common. The review and receipts are capped together at 25 MB.
+[Results](../../../docs/technical/research/denoise-v1-2026-11-16/even-keep-round4.md)
+
+## Round 5 relative colour and patch repair
+
+Run from `codebase` after setup. The review has six Canon fire-dancer areas
+and five Sony boy-portrait areas with matching row numbers. Use the Round 4
+output folder to reuse its Canon AI pictures and scores. The Sony AI reference
+uses the existing pinned `model_bayer.onnx` and optional
+`onnxruntime==1.32.0`. Either reference can be omitted.
+
+```sh
+.venv/bin/python tools/output_size.py
+OPENBLAS_NUM_THREADS=1 VECLIB_MAXIMUM_THREADS=1 \
+.venv/bin/python tools/gpu-run-lock.py --label denoise-round5 -- \
+  .venv/bin/python -m tools.denoise_eval.speck_round5 all \
+  --round4 "/path/to/codebase/output/denoise-v1/round4" \
+  --model-root "/path/to/rawdenoise-nind"
+.venv/bin/python tools/output_size.py
+```
+
+On Windows use `.venv/Scripts/python.exe` and set the thread variables in
+PowerShell. Open `output/denoise-v1/round5/index.html`. Review runs replace
+the images in that folder. `canon.json` and `portrait.json` record the 38 and
+25 fixed-mark scores and possible new spots. `timing.json` records the three
+CPU runs at each native size, using these same two photos. Use `review` or
+`timing` to run either part individually.
+`--colour` and `--patch` choose the pair in the final tile. The candidates
+are standalone CPU research filters.
+[Results](../../../docs/technical/research/denoise-v1-2026-11-16/round5-relative-colour-and-patch.md)
+
+## Inputs
+
+### Early outlier taming (November 17, research only)
+
+`candidates/early_outlier.py` soft-clamps signed same-CFA samples or signed
+camera RGB after AHD, **before** shipping-default Denoise with the existing
+`dark_noise` calibration repair. It never replaces a sample with its median.
+Factories compare local support on/off, RAW versus RGB, a stronger RAW trial,
+4-sigma RAW clusters limited to one/two same-colour samples, and combined
+RAW/RGB clamping. No production module imports these adapters.
+
+From `codebase`, use a frozen prior harness receipt containing `inventory`:
+
+```sh
+PYTHONPATH=backend .venv/bin/python tools/gpu-run-lock.py --label early-outlier-quick -- \
+  .venv/bin/python -m tools.denoise_eval.candidates.guard \
+  --receipt output/denoise-v1/early-outlier/quick-guard.json --seconds 1400 -- \
+  .venv/bin/python -m tools.denoise_eval.candidates.early_outlier_measure \
+  --inventory <frozen-results.json> --phase quick
+```
+
+Phases: `quick`, `full`, `heldout`, `seen`, `decision`, `gallery`, `stars`,
+`clean-safety`, `native --photo IMG_0790.CR2` (also
+`2025_0730_1331_3.arw`), and `review`. `gallery` additionally requires
+`--gallery <original-speck-gallery-directory>`, with its original `cases*.json`
+files; coordinates and the original 6× zoom spots are fixed, not reselected.
+Gallery manifests copy every coordinate and source path plus coordinate-file
+hashes. Prepared public pairs/models use the documented read-only shared
+stores; install optional CPU `onnxruntime==1.32.0`. `--no-ai` explicitly omits
+the RawNIND comparator. There are no downloads in the measurement runner.
+
+Every quality phase re-develops both noisy and clean Bayer with signed AHD,
+keeps frozen noise seeds/masks and records the exact controls/source hashes.
+The gallery additionally reproduces the coordinator's 5×5 same-CFA-MAD
+sensor-origin diagnostic independently; it does not read the temporary
+coordinator receipt. The 547-speck flat-window subset excludes the three
+detail-bearing rows `IMG_0790-2`, `MuseeL-Saint-Pierre-C500D_ISO3200-2`,
+`Blombukett_ISO6400-2`; all 14 rows remain visible and measured.
+
+`stars` uses noiseless/noisy Gaussian optical profiles, FWHM 1.88/2.83/4.24
+sensor pixels, twelve amplitude/subpixel-phase combinations per width, not
+isolated artificial delta spikes and not real astronomical captures.
+`clean-safety` measures all nine full-size clean targets, including binned
+low-ISO photographic inputs, and every integer exposure from −6 to +6.
+Its 1000-nit display cap is **not** production HDR/highlight qualification.
+Native runs stream complete real frames and include signed development,
+calibration and reconstruction, not a measured live UI wait.
+
+Output is overwritten in `output/denoise-v1/early-outlier/`: compact
+`index.html`, full-column `ablations.html`, 288px decision/gallery PNGs,
+48px nearest-neighbour 6× zooms, star adversaries and JSON receipts. No
+dataset, RAW, model, generated image or review output belongs in Git.
+Focused tests: `tests/test_denoise_early_outlier.py`. Method, failures,
+controls and unmeasured CPU/GPU integration gates are in
+`docs/technical/research/denoise-v1-2026-11-16/early-outlier-taming.md`.
+
+`candidates.early_uniformity_measure` uses the same command/options for the
+threshold-only 2/2.5/3/4σ sweep (strength .75, envelope 1.5σ, max area 5,
+support on) and less-luma/more-colour Denoise (.75/.25/1/.5, sizes .5).
+Its `grain_only` control isolates the Denoise setting change without clamping.
+Additional `gaussian` and `grain` phases measure actual Gaussian touch rates
+and fixed-support grain level/evenness with clean comparisons. Output is
+overwritten in `early-outlier/threshold-grain/`; its review includes identical
+6× gallery spots, the same decision rows and held-out paired grain crops.
+The research runner configures the existing bounded harness rather than
+copying the RAW development/evaluation code. Run each phase under the lock.
+
+`candidates.early_outlier_gpu_measure --phase fixtures` prepares generated
+four-CFA and four fixed real-window clamp-kernel inputs. Under the same lock,
+`node tests/run-in-electron.js tools/denoise_eval/candidates/early_outlier_gpu.cjs
+output/denoise-v1/early-outlier/gpu-input.json
+output/denoise-v1/early-outlier/gpu-output.json` performs one WebGPU attempt.
+Then `early_outlier_gpu_measure --phase compare` (also with `--inventory`)
+checks common CPU signed-AHD/Denoise finished SDR/HDR agreement at −6/0/+6
+stops, mean <1 / p99 <3. Remove the two bulky transport JSONs afterwards;
+retain `gpu-compare.json` and logs. This is not production RAW/highlight
+pipeline qualification, GPU native timing or evidence for a new GPU route.
+
+### Green/magenta colour cleanup (November 17 research)
+
+`candidates.chroma_cleanup` is own GPL-3 research code, not app integration.
+All variants use signed research AHD, approved 2.5σ RAW taming (envelope1.5,
+strength.75, area≤5, support on), repaired calibration and shipping Denoise
+controls. Factories: `green`, `median1`, `median3`, `median1_y`,
+`gm{2,3,4}_a{1,9,25}`, `green_gm`, `gm_ob`.
+The wider `wide_pre{2,3}` / `wide_post{2,3}` variants use full 9×9
+statistics and area25 or `_a81`; `wide_unguarded` is a .75-strength
+post-Denoise green–magenta median without detection/protection, a detail-risk
+control. Post wide variants estimate noise from local residual MAD. The independent median trial
+holds camera G, which is **not** ACEScg luminance; `_y` explicitly projects
+back to unchanged Y. Targeted GM keeps Y and R−B. No upstream source is ported.
+
+Run every heavy phase serially through the shared machine lock and existing
+2.5 GB tree guard, from `codebase`, with the venv Python and `PYTHONPATH=backend`:
+
+```sh
+PYTHONPATH=backend .venv/bin/python tools/gpu-run-lock.py --label chroma-gallery -- \
+  .venv/bin/python -m tools.denoise_eval.candidates.guard \
+  --receipt output/denoise-v1/chroma-cleanup/gallery-guard.json --seconds 1500 -- \
+  .venv/bin/python -m tools.denoise_eval.candidates.chroma_measure \
+  --inventory <frozen-signed-full-results.json> --phase gallery \
+  --gallery <original-speck-gallery-directory>
+```
+
+Other phases: `quick`, `full`, `heldout`, `seen`, `clean`, `diagnostic`,
+`native --photo IMG_0790.CR2` (also `2025_0730_1331_3.arw`), `review`.
+Public RAW/pair stores are read-only local links, never downloaded by the runner.
+`clean` adds noiseless coloured lights/text/weave/petals and first eligible
+texture reference from Pen-pile, Vaxt and Blombukett, retaining its public valid
+mask; ISO-scaled clean noise fits are provisional, not camera calibration.
+The first Vaxt texture crop is bark/fungi, not leaves. After `clean`, run
+`python -m tools.denoise_eval.candidates.chroma_foliage --inventory <receipt>`
+under the same lock/guard to append the already-frozen `heldout-foliage`
+green-leaf reference (pair `TEST_Vaxt-i-trad-0aa84691-3`). It selects by subject,
+not candidate scores, and records separate source provenance.
+
+The extra `post*_a*` placement ablation retains 10% propagated sensor sigma;
+`local*_a*` instead uses the final residual's local MAD with a 1e−7 numerical
+linear floor (scaled with exposure). Both operate **after** Denoise. Run
+`gallery-post` (local-MAD) or `gallery-wide` (wider scale) after `gallery`
+to append only those columns when extending a receipt, retaining the
+pre-stage receipt provenance. `diagnostic` freezes taming's Denoise model on
+three fixed gallery windows to isolate the median/calibration interaction.
+These post-hoc diagnostics are explicitly separate from requested pre-Denoise
+candidates. Current source `gallery` includes all sweeps in one fresh run.
+
+All fourteen original windows and 48px/6× spots remain fixed, including Canon
+(4064,2164) and (600,1500). Output overwrites
+`output/denoise-v1/chroma-cleanup/`; review is `review/index.html`, ≤20 MB.
+The GM-specific finished-SDR local-contrast mask uses
+`abs(G−(R+B)/2 residual)>.08` and `>.75*abs(R−B residual)` against 5×5
+medians; area1–25, six-pixel border, separate signs and pixel/p99.9 counts.
+It is a contrast proxy and can count real detail. Existing fixed +4-stop
+shadow tails remain separate. Native jobs consume every pixel in bounded
+windows, retain JSON only and remove arrays; times include research overhead,
+not live UI waits. No GPU route, memory budget or quality limit changes.
+See `chroma-cleanup.md` for failures, recommendation and integration gaps.
+
+### AI plus highlight reconstruction (November 17 research)
+
+`candidates/ai_highlights.py` combines the original-sensor Bayer RawNIND result
+with actual signed AHD Opposed/Edge reconstruction. The original unity-WB AHD
+camera mean anchors the model before any repair. A sensor near-clip map plus
+measured reconstruction support protects the normal result; 32/128px feathers
+are research alternatives, not approved product controls. No editor imports it.
+
+From `codebase`, after setup and local installation of pinned ORT 1.32.0 and
+the hash-verified existing Bayer weights:
+
+```sh
+PYTHONPATH=backend .venv/bin/python tools/gpu-run-lock.py --label ai-highlights -- \
+  .venv/bin/python -m tools.denoise_eval.candidates.guard \
+  --receipt output/denoise-v1/ai-highlights/native-guard.json --seconds 1800 -- \
+  .venv/bin/python -m tools.denoise_eval.candidates.ai_highlights_measure \
+  --phase real --photo IMG_0790.CR2
+```
+
+Other phases: `survey`, `synthetic`, `review`. Real sources are restricted to
+`IMG_0790.CR2`, `IMG_3129.CR2`, `IMG_0114.CR2` and `2025_0730_1331_3.arw` in
+the approved photo folder. Real phases infer whole native frames, not crop-local
+global gain. Temporary disk arrays are removed on ordinary completion/failure;
+SIGTERM unwinds their cleanup too; a forced kill still needs caller cleanup. The review
+retains only content-deduplicated 384px crops, at 1:1 and −3 EV, plus small JSON.
+Metrics distinguish true synthetic residuals from texture/noise proxies on
+real photos. RGB Edge-only uses the full original clip map and omits sensor Opposed;
+it is not a faithful replacement for the normal Edge recipe. See
+`docs/technical/research/denoise-v1-2026-11-16/ai-highlights.md` for results and
+the signed-shadow, gain, memory, GPU and delivery qualifications.
+
+### Signed demosaic/noise separation (November 17 research)
+
+`candidates/demosaic_noise.py` implements signed bilinear interpolation, an
+independently written directional linear-MMSE-style trial, light signed
+variance-stabilised same-CFA Wiener smoothing before AHD, and their combination.
+`lmmse` is a research label, **not the upstream RawTherapee LMMSE algorithm**.
+All eight factories keep shipping Denoise controls; `_fix` adds the existing
+`dark_noise` informative-calibration repair. No production imports or weights
+are added. Missing four-plane noise metadata refuses smoothing, not a guessed
+profile. RawNIND remains the separate existing Bayer-only comparator.
+
+From `codebase`, supply a frozen prior receipt containing `inventory`:
+
+```sh
+PYTHONPATH=backend .venv/bin/python tools/gpu-run-lock.py --label demosaic-quick -- \
+  .venv/bin/python -m tools.denoise_eval.candidates.guard \
+  --receipt output/denoise-v1/demosaic-noise/quick-guard.json --seconds 1200 -- \
+  .venv/bin/python -m tools.denoise_eval.candidates.demosaic_measure \
+  --inventory <frozen-results.json> --phase quick
+```
+
+Phases: `quick`, `decision`, `review`, `heldout`, `clean`, `clean-crops`, `full`, `seen`, `safety`,
+`native --photo IMG_0790.CR2` (also `2025_0730_1331_3.arw`), and `probe`.
+All run serially through the lock and guard. Reuse the documented dataset/model
+stores through local links; no automatic downloads or photo copies. Optional
+`--no-rawnind` explicitly omits that comparator. Signed noisy **and clean**
+Bayer use the preceding signed adapter; masks and public capture gains stay
+fixed. Synthetic signed noise is regenerated and re-clipping must reproduce
+the original frozen mosaic exactly. The signed-primary `decision` phase
+overwrites twelve 288px rows in `output/denoise-v1/demosaic-noise/decision/`
+(13 MB maximum). Registered `demosaic_*` columns also work with the general
+`decision_crops` command, whose original Off/current columns remain clipped;
+do not mistake that mixed page for the signed-primary comparison.
+`review` rebuilds only the retained signed-primary page, losslessly sharing
+byte-identical PNGs within a row to keep the existing 13 MB budget. Its manifest
+maps each displayed column to its retained image. `clean-crops` writes four
+separate no-noise subjects for inspecting demosaic artifacts without Denoise.
+
+`clean` separately scores clean demosaic against signed AHD and the analytic
+chart (camera-gamut clipping retained). `safety` lifts exposure **after sensor
+development**, before Denoise, through ±6 stops; it does not qualify unclipped
+RAW highlights, production delivery or GPU parity. `probe` saves Canon
+pre-Denoise crops on the identical signed-AHD shadow support. Native phases
+stream the entire photo with even CFA origins, 32px development context and
+66px Denoise context; retain small crops/JSON only. Clocks include bounded
+research reconstruction, not a live cache or screen wait. Findings and
+unmeasured integration requirements: `docs/technical/research/denoise-v1-2026-11-16/demosaic-noise.md`.
+
+### Faithful upstream LMMSE (November 17 research)
+
+`candidates.lmmse_demosaic:factory` builds the pinned, verbatim RawTherapee
+LMMSE source through a small native shim. Primary configuration: upstream gamma
+2.4/slope 17 and two median passes (`iterations=3`), signed-range gates removed,
+linear negative gamma toe, analytic above-white extension, calibration repair
+and unchanged shipping Denoise controls. `:linear` is upstream iterations=0;
+`:ahd`/`:off` use the installed production signed AHD core through the common
+normalized sensor research bridge. Exact upstream attribution, signed changes,
+host/scalar qualifications and license are in `vendor/rawtherapee/NOTICE`.
+
+From `codebase`, run serially under the existing shared lock and 2.5 GB guard:
+
+```sh
+PYTHONPATH=backend .venv/bin/python tools/gpu-run-lock.py --label lmmse-quick -- \
+  .venv/bin/python -m tools.denoise_eval.candidates.guard \
+  --receipt output/denoise-v1/lmmse-demosaic/quick-guard.json --seconds 1200 -- \
+  .venv/bin/python -m tools.denoise_eval.candidates.lmmse_measure \
+  --inventory <frozen-results.json> --phase quick
+```
+
+Phases: `quick`, `clean`, `decision`, `heldout`, `full`, `seen`, `safety`,
+`sensitivity` (after `decision`; explicitly post-hoc iterations=0 diagnostic),
+`native --photo IMG_0790.CR2` (also `2025_0730_1331_3.arw`) and `review`.
+Outputs overwrite `output/denoise-v1/lmmse-demosaic/`; public pair/model stores
+must already be linked in their usual locations. No photographs/datasets enter
+Git. The 12-row signed decision review keeps the 13 MB budget. `clean` separately
+saves pristine-chart and low-noise RAW/pair crops without added noise/Denoise,
+and evaluates with/without default Denoise. Exact strip equality is tested.
+All fixed shadow supports retain the earlier research signed-AHD reference,
+while picture scores and Off use the shipping signed AHD core. This isolates
+the changed implementation without moving the dark-pit measurement support.
+Requires `clang++` on PATH; setup supplies/reuses the signed AHD helper. CPU-only:
+the production CPU finished-renderer cap is checked in `safety`; GPU parity,
+encoded delivery and full camera import integration remain untested.
+
+### Dark-noise calibration and strength (signed-primary research)
+
+`candidates/dark_noise.py:factory` jointly repairs censored brightness fits
+and clipped-flat block calibration, keeping shipping controls/reconstruction.
+`:calibration_only`, `:perband`, `:independent`, `:detail_zero` and `:strong`
+are explicit ablations; `:signed` wraps signed Bayer development for decision
+columns. No app import or shipping-default change. This helps the flame
+calibration failure but **does not solve signed dark-shadow pits**.
+
+From `codebase`, with an existing frozen receipt containing `inventory`:
+
+```sh
+PYTHONPATH=backend .venv/bin/python tools/gpu-run-lock.py --label dark-noise-quick -- \
+  .venv/bin/python -m tools.denoise_eval.candidates.guard \
+  --receipt output/denoise-v1/dark-noise/quick-guard.json --seconds 600 -- \
+  .venv/bin/python -m tools.denoise_eval.candidates.dark_noise_measure \
+  --inventory <frozen-results.json> --phase quick --signed --rawnind
+```
+
+Phases: `quick`, `full`, `heldout`, `seen`, `probe`, `native`, `native-probe`,
+`decision`, `review`. Omit `--signed` for secondary clipped quality/native
+runs. `probe` always compares both, with/without import gamut projection.
+`native --photo IMG_0790.CR2` (or `2025_0730_1331_3.arw`) streams the complete
+frame; `native-probe` reads its saved model receipts. `decision` overwrites
+small fixed crops and its manifest, including RawNIND Bayer alone; `review`
+only rebuilds the HTML table from those crops. `--rawnind` adds the existing
+checkpoint to quality phases and requires the documented ONNX setup. Signed
+quality re-develops both noisy and clean Bayer, retaining the frozen masks.
+Use `datasets.summarize` on the public-pair receipts for equal-scene scores.
+All output stays in `output/denoise-v1/dark-noise/`, never in Git.
+
+### Signed shadows (research only)
+
+`candidates/signed_shadows.py:alone` and `:with_denoise` keep below-black
+samples through unpacked signed AHD, continuing Lab's linear toe below zero.
+The latter runs shipping Denoise unchanged. `signed_ahd.c` builds offline with
+Clang into ignored output on macOS/Linux/Windows; strips bound scratch space.
+The existing upper transport limit stays unchanged. A clipped-control mode
+checks the interpolation against the existing LibRaw harness. Pedestal AHD
+is a separate diagnostic, not assumed translation-invariant.
+
+Run `python -m tools.denoise_eval.candidates.signed_measure <phase>
+--baseline-root <original-speck-cleanup-folder>` through the shared machine
+lock and research guard. Phases: `quick`, `heldout`, `full`, `seen`, `safety`,
+`native --photo IMG_0790.CR2` (or the approved 42 MP Sony), and
+`decision --decision-source <existing-decision-folder>`. The latter copies
+only existing small review files, then overwrites the signed columns locally.
+Frozen baseline scores retain a receipt hash; signed synthetic readouts are
+reconstructed from the identical seed and checked against the original
+clipped input. Public Bayer bundles already retain signed readouts. No
+production code, GPU implementation, input cache or camera profile is changed.
+
+### Pixel cleanup: independently mapped sensor defects (research only)
+
+`candidates/pixel_cleanup.py:alone` and `:with_denoise` repair only
+`metadata.pixel_cleanup_defects`, a list of visible unrotated sensor
+`{y, x, evidence}` records. Bayer normalisation is `(DN-black)/(white-black)`
+before WB. Keep green phases separate, and supply even `tile_origin=[y,x]`
+for windows. No map means exactly unchanged sensor samples; the second
+adapter then runs shipping `.75/.5/.75/.5` Denoise. Single-frame
+`candidate_samples` output is diagnostic, **never** a runtime defect map.
+`confirm_calibration` requires five or more independent dark/flat captures,
+unique acquisition IDs, matching camera/regime/geometry, and a valid
+four-position Poisson–Gaussian profile. The caller must verify calibration
+provenance/uniformity; a label alone is not a shipping trust policy.
+
+From `codebase`, with the existing unchanged baseline receipts available:
+
+```sh
+.venv/bin/python tools/gpu-run-lock.py --label pixel-cleanup-quick -- .venv/bin/python -m tools.denoise_eval.candidates.guard --receipt output/denoise-v1/raw-pixel-cleanup/quick-guard.json -- .venv/bin/python -m tools.denoise_eval.candidates.pixel_cleanup_measure quick --baseline-root output/denoise-v1/speck-cleanup
+```
+
+Use `heldout`, `full`, `seen`, `injected`, `audit`, `traces`, or
+`native --photo IMG_0790.CR2` / `native --photo 2025_0730_1331_3.arw` in the
+same locked/guarded command. `traces` requires the preceding `audit` output.
+The baseline root's phase receipts must be the original speck trial
+`quick/results-quick.json`, `full/results-full.json`, and
+`heldout|seen/results-pairs.json`. Existing scores are retained with their
+source hashes; new adapters and exact identity controls are freshly run.
+No model/download or photo copying is performed. Native timing grid maps
+are probes only, not real detected defects. Regenerate decision columns
+with the locked/guarded `tools.denoise_eval.decision_crops --inventory
+output/denoise-v1/raw-pixel-cleanup/full.json` command. Outputs are overwritten
+in place, not multiplied per run. See the RAW Pixel cleanup research report
+for interpretation and the absence of real calibration ground truth.
+
+### Corpus and baseline generation
+
+The approved manifest and `tools.lib.test_photos.photo_root()` resolve
+`<photosRoot>/HDR Test Images`, including machine/env overrides. Inventory all
+18 RAWs with the app's bundled ExifTool helper and rawpy; read originals only.
+Missing photos/profiles fail visibly. No search in personal folders.
+
+* Quick: seven 192 px charts × ISO 1600/6400/25600 + two 512 px real crops.
+  Full: charts at 512 px, two low-ISO binned RAW scenes × three ISOs, eight
+  640 px real crops. Camera-linear bridge support is required; unsupported
+  camera matrices, linear DNG and X-Trans are named in the inventory.
+* Charts: 5° slanted edge (.9 px optical blur), Siemens star, fine text,
+  colour patches, gradient, sparse stars, fabric. Convert through the camera
+  response, re-mosaic, develop; truth is **AHD-developed clean mosaic**, not
+  the mathematical chart. Select the best worst-channel R² among high-ISO
+  (≥1600) fits, preferring positive shot/read terms; ISO breaks ties.
+* Low-ISO truth: lowest ISO supported Bayer files (filename breaks ties),
+  central crop; average 2×2 **same-CFA** samples (4×4 sensor footprint), then
+  remosaic at half dimensions. Noise sigma halves; some source noise remains.
+* Noise fit: nine deterministic raw windows, four Bayer positions including
+  independent greens. Plane-detrend 16×16 sub-channel blocks; per signal bin
+  retain quieter spatial correlations, use lower-quartile residual variance;
+  nonnegative fit `variance = a*signal+b`. R², signal range and sample counts
+  are recorded. Accessible optical-black samples are diagnostics, not trusted
+  dark frames. Texture/in-camera processing can bias these provisional fits.
+* Simulated ISO: highest-ISO fit of the same camera model; a scales with ISO,
+  b with ISO². Record extrapolation; dual-gain changes are unknown. Add seeded
+  Poisson shot/Gaussian read noise, optional banding. Both Bayer and RGB see
+  the same 0–1 clipped, 16-bit quantised synthetic sensor readout; record the
+  clipped fraction. This is not laboratory calibration of ISO 25600.
+* Frozen research-control development: small in-memory DNG, `unsigned_ahd_control` (LibRaw
+  AHD, unity WB, linear uint16, no auto scaling/brightness), then app
+  `_camera_rgb_to_acescg_float32` with original camera matrix/as-shot WB.
+  Geometry, lens correction, highlight reconstruction and artistic grade are
+  consistently excluded. The control deliberately retains the pre-signed research
+  baseline; it is not a production compatibility decoder. Production Bayer now
+  uses `signed_raw.py`; signed-shadow candidates still label their separate input.
+* Real: highest ISO supported Bayer file + darkest remaining file (fraction
+  of nine median windows <.025; ISO/name break ties). Distinct flat/shadow/
+  texture/edge crops from a 3×3 grid, scored with smoothed Laplacian/Sobel.
+  Quick uses first file's flat and second file's shadow. Lift median ACEScg
+  toward .18, bounded 0–6 stops; exact lift/coordinates are recorded.
+* Optional approved aligned pairs: `--pairs /local/folder`, with `pairs.json`:
+  `[{"name":"scene","noisy":"noisy.npy","clean":"clean.npy","metadata":{"iso":6400}}]`.
+  Finite floating ACEScg RGB(A), matching shapes, 32–1024 px. No alignment,
+  download or dataset approval is performed by the hook.
+
+### Public RAW pairs (Q2 approved November 16, 2026)
+
+`datasets/rawnind-manifest.json` pins a bounded subset, exact file hashes,
+capture metadata, per-scene CC0 permission and the authors' documented held-out
+split. The RawNIND dataset-wide CC-BY-SA label is **not** sufficient on its own:
+its `permissions.txt` includes research-only artwork, which this subset excludes.
+Training scenes are marked **seen by RawNIND**. These are experimental inputs,
+not additions to the frozen photographic test corpus, app assets or shipped data.
+
+`datasets/summarize.py RESULTS --output SUMMARY` computes equal scene-weighted
+ISO-band and held-out/seen summaries: crop mean within capture, capture mean
+within scene/band, then scene mean. Every metric includes its available scene,
+capture and crop counts; means of colour p99s are not pooled pixel percentiles.
+
+Run the opt-in downloader explicitly with isolated Python; it verifies every
+size/SHA-256 and refuses to overwrite differing files. It never executes an
+archive, shell command or downloaded script. On Windows use the venv Python
+under `Scripts`; all paths below otherwise work unchanged.
+
+```sh
+.venv/bin/python tools/gpu-run-lock.py --label denoise-dataset-download -- .venv/bin/python -I tools/denoise_eval/datasets/download.py
+.venv/bin/python tools/gpu-run-lock.py --label denoise-dataset-prepare -- .venv/bin/python tools/denoise_eval/candidates/guard.py --receipt output/denoise-v1/datasets/prepare-guard.json --seconds 900 --bytes 2300000000 -- .venv/bin/python -I tools/denoise_eval/datasets/prepare.py
+.venv/bin/python tools/gpu-run-lock.py --label denoise-dataset-baseline -- .venv/bin/python tools/denoise_eval/candidates/guard.py --receipt output/denoise-v1/public-pairs/baseline-guard.json --seconds 1200 --bytes 2300000000 -- .venv/bin/python -I tools/denoise_eval/datasets/evaluate.py --set pairs --pairs output/denoise-v1/datasets/rawnind/pairs --output-dir output/denoise-v1/public-pairs --review-size 128 --adapters off,denoise_v2,tools.denoise_eval.candidates.denoise_v2_tuned:factory,tools.denoise_eval.candidates.denoise_v2_tuned:sharp
+.venv/bin/python -I tools/denoise_eval/datasets/summarize.py output/denoise-v1/public-pairs/results-pairs.json --output output/denoise-v1/public-pairs/summary.json
+```
+
+The evaluator entry point only establishes the trusted repository import path
+under `-I`, then calls the normal harness. `--set pairs` skips private-corpus
+inventory and synthetic/real single-image sets completely. No data or model
+download occurs in tests or in evaluation. It works with the same RGB/Bayer
+candidate factories used by other sets; raw candidates see the original noisy
+Bayer window and its camera bridge/noise estimate, never the clean reference.
+
+`python -I tools/denoise_eval/datasets/smoke.py --pairs PAIR_FOLDER --output RECEIPT`
+checks one 96px pair crop once with each available candidate. It skips absent
+RawNIND weights/GALOSH binaries without installing or building them. This is
+an interface/finite-output check only, not a candidate quality evaluation.
+
+Preparation reads one noisy/clean camera pair at a time and emits up to four
+deterministic 512px crops per accepted pair (flat/shadow/texture/edge from a
+3×3 grid). It estimates one sensor translation from independent green-plane
+anchors, resamples **clean only** within each CFA plane, fits one zero-offset
+global gain per RGB channel on unclipped raw samples, and holds that gain
+across all crops. Two greens share the green gain. Unstable/non-rigid pairs
+and locally inconsistent crops are rejected, with reasons in `preparation.json`.
+The recorded `POLICY` is set before measurement: 16px translation bound,
+1px anchor-consistency bound, ECC ≥.90, local structure correlation ≥.97,
+relative smoothed residual ≤.12, at least 20% usable crop. These screen
+registration/illumination failures, not denoiser quality; no output threshold
+is changed or tuned to win this comparison.
+
+Prepared NPZ bundles contain floating ACEScg and pre-WB Bayer noisy/clean
+windows plus Boolean valid/flat/texture/edge masks. Black/white clipping in
+either source (including gain-induced clipping) is excluded with a 40px
+filter-support halo. This deliberately loses near-black/highly saturated
+coverage; rejection is not a pass. All truth metrics use valid pixels only;
+SSIM and band filters use clean support. Pair edge sharpness is local gradient
+energy relative to clean, **not** slanted-edge MTF50 and not an MTF-budget pass.
+Low-ISO truth still contains sensor noise; clean-only interpolation can bias
+fine bands. See `public-pairs.md` for accepted coverage and stratified results.
+
+## Adapters
+
+`Sample` exposes `rgb`/`bayer`, plus `clean`/`clean_bayer` for synthetic truth;
+RGB pairs and real photos explicitly lack the truth/domain that is unavailable.
+
+`off`: untouched developed RGB. `denoise_v2`: app `AdaptiveControls()` defaults.
+`denoise_v2_custom`: `--controls` dictionary, exact Python field names.
+For another method, pass `importable.module:factory` returning this interface:
+
+```python
+class Candidate:
+    input_kind = 'rgb'  # or 'bayer' (normalised HxW sensor mosaic)
+    margin = 66        # even sensor-pixel halo required by the method
+    supports_alpha = True
+    supports_bypass = True
+    def description(self):
+        return {'algorithm': 'candidate-version', 'input_kind': self.input_kind}
+    def prepare(self, image, metadata):
+        return None  # optional full-input measured state, shared across tiles
+    def process(self, image, metadata, state, *, bypass=False):
+        return image.copy()  # full-size scene-linear ACEScg RGB(A)
+def factory():
+    return Candidate()
+```
+
+Metadata: `cfa` (2×2 RGB indices), original CFA, WB, camera matrix, black/white
+levels, ISO, per-position `{a,b}` synthetic noise parameters; real images carry
+native-ISO `noise_fit_positions`. `inputs.develop(mosaic, metadata)` supplies
+plain AHD for Bayer methods. Tiles receive `tile_origin`/`frame_shape`; the
+harness retains inner pixels. RGB adapters must preserve headroom/negatives
+and declared alpha/bypass behavior. Bayer on RGB pairs is explicitly skipped.
+Adapters must stay offline/CPU-only and must not start parallel heavy jobs.
+
+## Metric definitions (brief §3.2)
+
+Shared fixed transforms: SDR = app CAT02 ACEScg→sRGB, clip 0–1, sRGB OETF;
+HDR = app CAT02 ACEScg→BT.2020, 203-nit white, hard 1000-nit channel cap, PQ.
+These simple test transforms have no adaptive tone mapping. They never excuse
+scene-linear clamping by an adapter. Headline metrics average per-scene values.
+
+* PSNR: encoded RGB MSE, unit range. SSIM: Wang 11×11 Gaussian, sigma 1.5,
+  K1 .01/K2 .03; valid inner pixels, averaged over RGB. Both SDR and HDR.
+  Every truth-bearing adapter also reports `half_resolution`: non-overlapping
+  2×2 **scene-linear** area averages of output and truth, then the same SDR/PQ
+  PSNR and colour transforms. An odd trailing row/column is omitted. A masked
+  pair block is scored only when all four source pixels are valid;
+  excluded registration/clipping support cannot leak into half-scale scores.
+  This reduces fine demosaic disagreement; it does not make different demosaicers
+  equivalent, replace native-resolution scoring, or establish clean detail.
+* Colour: finished SDR CIEDE2000 (D65 Lab), mean/p99; HDR BT.2100-2 PQ ICtCp,
+  BT.2124 ΔE ITP = `720 sqrt(dI²+(.5*dCt)²+dCp²)`, mean/p99.
+* Flats: SDR Y (.2126/.7152/.0722), R−Y/B−Y chroma residual std vs truth;
+  without truth independently detrend a plane. Report std and output/noisy
+  ratios. Flat mask: bottom quartile of sigma-2 clean Laplacian magnitude
+  (noisy for real); texture: top 40%; exclude 12 px border. Slanted chart
+  uses its left-quarter flat. Masks are automatic, not hand-verified regions.
+* Texture: SDR luma DoG power at sigma .5–1 / 1–2 / 2–4 / 4–8, output/clean;
+  also residual-band/clean power. Finest output/clean ratio is the invented-
+  detail proxy; residual noise also raises it. Visually inspect stars/text/fabric.
+* MTF50: chart's known 5° angle, 4× ESF, derivative LSF, Hamming window,
+  derivative sinc correction, first 0.5 crossing up to Nyquist. Null if no
+  sub-Nyquist crossing. Report cycles/pixel and output/clean. Halo: extra ESF
+  overshoot/undershoot relative to clean, divided by clean edge height.
+* Bleed: mean/p99 SDR opponent-chroma error within 3 px of strong clean
+  chroma Sobel edges; no suitable edge → null. Method noise: correlation of
+  absolute removed SDR luma with sigma-2-smoothed input Sobel edges; identity
+  removal is defined as zero, not evidence of good denoising.
+* Tile/exposure probes: one ISO-6400 fabric crop per adapter/run, ≤256 px;
+  shared preparation, 128 px grid shifted by 64, declared halo; ΔE2000/ITP
+  mean/p99 and whole-frame comparison. Exposure: every integer stop −6…+6,
+  **re-prepare** scaled input, undo scaling before comparison. Bayer metadata
+  scales a×gain/b×gain². Full-photo and additional seam coverage come later.
+* Safety: finite output on every case; separate negative/above-white sentinel,
+  exact declared alpha/bypass, fixed display cap. Record constant RGB drift
+  separately. Production ceiling/encoder validation and CPU/GPU agreement are
+  explicitly outside this CPU harness. Current Denoise need not meet the
+  brief's proposed improvement targets; those limits remain Steve's decision.
+
+Tests: `.venv/bin/python -m pytest tests/test_denoise_eval.py -q`, also included
+in normal pytest. Known-answer PSNR/SSIM, Gaussian edge MTF, published ΔE2000,
+PQ, Bayer noise/binning, a/b recovery within 5%, halo/bleed, alpha/bypass and pairs.
+
+## Optional RawNIND prototype (not installed by setup)
+
+`candidates.rawnind` supplies `linear`, `linear_half`, `linear_three_quarters`,
+`bayer`, `bayer_half`, and `bayer_three_quarters` factories (strengths 1/.5/.75).
+Use the full module prefix `tools.denoise_eval.candidates.rawnind:<factory>`.
+Verified local weights live in `output/denoise-v1/candidates/rawnind/rawdenoise-nind/`;
+weights are never downloaded by these tools or committed. Research-only
+`onnxruntime==1.32.0` and `psutil==7.2.2` belong in this worktree's venv, not
+app requirements. Models are hash-checked before loading; CPU only by default,
+and Bayer rejects non-CPU providers. No app path or control changes.
+
+Run from `codebase`, one command at a time, through the shared machine lock:
+
+```sh
+.venv/bin/python tools/gpu-run-lock.py --label denoise-rawnind-quality -- .venv/bin/python -m tools.denoise_eval.candidates.measure_rawnind quality
+.venv/bin/python tools/gpu-run-lock.py --label denoise-rawnind-probes -- .venv/bin/python -m tools.denoise_eval.candidates.measure_rawnind probes
+.venv/bin/python tools/gpu-run-lock.py --label denoise-rawnind-full -- .venv/bin/python -m tools.denoise_eval.candidates.measure_rawnind full-frame --file IMG_0790.CR2 --kind linear
+.venv/bin/python -m tools.denoise_eval.candidates.measure_rawnind review
+```
+
+For Bayer full-frame research use `--kind bayer`. As in the pinned upstream
+demo, finite normalised sensor samples are clipped to [0,1] before inference;
+this does not clip developed scene-linear colour or exposure. Unsupported CFA
+still uses an explicit AHD fallback. All four
+ordinary Bayer orientations are canonicalised through phase-preserving plane
+gathering, with output cropped back to original sensor coordinates. No
+whole-frame `np.pad`, resampling, second WB, or AHD after the model. One global
+gain is anchored to the unity-WB AHD **camera-RGB mean**, not the four-plane
+sensor mean (which counts green twice and shifts exposure). This research
+anchor requires an additional AHD pass; former Bayer native timings do not
+qualify the revised adapter's speed. Linear's gain/colour path is unchanged.
+
+`quality --bayer-only` runs off, current Denoise and Bayer .5/.75/1;
+`probes --bayer-only` skips unchanged linear probes. `verify` loads the pinned
+`demo.py` saved read-only under `output/denoise-v1/verify/upstream/darktable-ai/`
+and compares its actual packing, inference, gain, matrix and TIFF save against
+AHD through the same path on clean mosaics and two low-ISO RAW crops. A separate
+even crop with red at (0,0) disambiguates the demo's non-RGGB packing from host
+phase alignment. It records host-tail agreement, eight real shadow-bias rows
+and post-development exposure −6…+6 separately from sensor saturation.
+
+The runner samples child RSS every 20 ms and terminates above 2.5 GB; full-frame
+float source/result files are temporary disk-backed arrays and removed after
+success/failure, including guard termination. It records standalone decode/prep,
+model-session, inference, stitch/colour and total times, **not action-to-screen**.
+There is no timing repeat or GPU gain claim; ±10% descriptive timing allowance
+is inherited from this harness. `probes` runs the Bayer model on nine clean
+mosaics and prepares genuinely shifted internal model grids. The normal harness
+grid probe only slices an already-prepared frame for these adapters; that zero
+difference is not independent evidence about inference seams.
+
+Outputs are isolated under `output/denoise-v1/rawnind/`. `quality` calls the
+unchanged full input/metric set with all eight variants; generic harness options
+`--output-dir` and `--review-size 128` keep its many-column review bounded.
+`review` appends native 256 px full-photo crops and clean-mosaic comparisons in
+the same page format, checking the complete folder against 20 MB. Optional
+model-dependent unit checks skip when weights/runtime are absent; synthetic
+phase-gather checks require no weights. See the Phase 2 report for
+quality failures and the learned-scale gain guard; no candidate is approved.
+
+## Classical Phase 2 prototypes (not app integration)
+
+`candidates/darktable_profiled.py` is the pinned GPL generalised-Anscombe RGB
+wavelet reference, after AHD and before camera→ACEScg. The harness's reversible
+colour bridge recovers WB-camera RGB; WB scales shot gain by g and read variance
+by g². Missing camera profiles use the existing measured-noise Denoise, not an
+unrelated camera. The sampled frame-global Bayes thresholds and uncorrected
+AHD correlations make this an adapted reference, not pixel-identical darktable.
+Active scales set the cumulative `2*(2**scales-1)` halo. `half`, `three_quarters`,
+and `factory` blend 50%, 75%, 100% of the native correction, respectively.
+
+`candidates/galosh.py` wraps the Apache-2.0 FP32 RAW reference. Build **offline**
+with `.venv/bin/python -m tools.denoise_eval.candidates.build_galosh`; clang and
+the checked-in source suffice. OpenMP is serial; two unused SSE helper bodies
+are omitted only from the build copy. No system package is installed. The native
+blind alpha/read-variance fit and dark-anchor IRLS run once per photo; calibrated
+mode averages the four CFA models. Every tile holds that fit and unity GAT sigma.
+Calibrated factories: `half`, `three_quarters`, `factory`; blind: `blind_half`,
+`blind_three_quarters`, `blind`. Their native luma/chroma controls are scaled
+together; the upstream positional strength alone is ignored. Halo 160 includes
+the coarsest chroma pyramid and development; origins align to eight sensor pixels.
+RAW bypass is exactly the same AHD development as Off, not a mosaic-shaped RGB
+return; RGB alpha/HDR sentinel is not applicable to this Bayer interface.
+
+`denoise_v2_tuned.py:factory` and `:sharp` use the committed per-ISO selections
+(nearest measured ISO for real photographs). `candidates/tune.py` evaluates the
+recorded full synthetic set and writes `classical-tuning.json`; tuning is
+in-sample and is not proof of generalisation. The sharp selection requires the
+slanted edge's MTF50 ratio ≥0.90. No truth is consulted at adapter runtime.
+
+Run heavy tools **under the shared lock**, for example:
+
+The thirteen-variant `candidates.measure` wrapper uses 128px comparison
+thumbnails (metrics keep their original resolution). Native full-frame
+review crops remain 256px. This is an opt-in wrapper, not a harness default.
+
+```sh
+.venv/bin/python tools/gpu-run-lock.py --label denoise-classical-quality --minutes 25 -- .venv/bin/python tools/denoise_eval/candidates/guard.py --receipt output/denoise-v1/quality-guard.json --seconds 1200 -- .venv/bin/python -m tools.denoise_eval.candidates.measure
+.venv/bin/python tools/gpu-run-lock.py --label denoise-classical-frame --minutes 25 -- .venv/bin/python tools/denoise_eval/candidates/guard.py --receipt output/denoise-v1/frame-guard.json --seconds 1200 -- .venv/bin/python -m tools.denoise_eval.candidates.full_frame --method darktable --photo IMG_0790.CR2
+```
+
+Use `--method galosh` or `--photo 2025_0730_1331_3.arw` for the other trials.
+After quality and native-frame runs, `python -m tools.denoise_eval.candidates.report`
+appends the strength curves and native crops to the same review page.
+On Windows use `.venv/Scripts/python.exe`; the builder selects `.exe` and
+the native math library automatically. A clang compiler is required; this
+trial validates the Mac build only, not a Windows or Linux binary.
+The guard samples total process-tree RSS every 0.2s and aborts above 2.5 GB;
+the full-frame clocks distinguish sensor prep, filtering and AHD/colour
+development. Its full-size intermediates are temporary and removed on failure.
+Measured times allow ±10% noise; compiled-C/WGSL figures in the report are
+explicit estimates, never benchmarks. No Electron/WebGPU is used or qualified.
+
+## Pilot-guided empirical Wiener trial
+
+`candidates.pilot_wiener:{self,tuned,bayer}_{both,luma}` are offline adapters.
+`both` attenuates only the AHD image's own five opponent/B3 detail bands using
+pilot energy and the existing measured adaptive noise model. `luma` uses that
+stage on luma and substitutes cached pilot chroma at normal strength; it is
+deliberately **not** covered by the own-coefficient no-invention guarantee.
+The tuned pilot uses the existing nearest-ISO PSNR controls, not clean truth.
+Bayer uses the separately verified full-strength RawNIND model/colour bridge.
+No production imports, model requirements, default or budget changes occur.
+
+Prepare builds coefficients/gains once. Resolve changes Amount, Luminance,
+Color Noise, Detail Recovery and four sizes by algebra on that evidence; zero
+strength and bypass are exact. `luma`'s direct chroma blend saturates at the
+pilot (normal strength); its upper Color Noise range cannot clean further.
+The numerical reconstruction/grid allowance is 2e-7 linear units, chosen for
+float32 accumulation order only; finished-pixel seam/exposure limits remain
+mean <1 / p99 <3, unchanged. Timing noise allowance stays ±10%.
+
+Small adapters refuse inputs above one million pixels rather than allocating
+a multi-GB cache. Use `candidates.pilot_wiener_measure native --photo
+IMG_0790.CR2 --pilot bayer` (or `tuned`/`self`, optional `--direct-chroma`) for
+the bounded native experiment. It develops AHD in haloed sensor tiles, holds
+one global model and pilot, spools 512px cache cores to temporary disk, resolves
+every pixel, retains four crops only, and removes all full-frame/cache scratch.
+`RawNIND.prepare(camera_anchor_mean=...)` optionally accepts the accumulated
+unity-WB AHD camera mean to avoid an extra full-frame development allocation;
+the default calculation is unchanged and equality is regression-tested.
+Native time includes disk I/O, not UI or an approved production cache design.
+
+Under `tools/gpu-run-lock.py` and `candidates/guard.py`, run
+`python -m tools.denoise_eval.candidates.pilot_wiener_measure controls` and
+`probes` for the three-value Amount/Color Noise sweeps and **independent**
+decomposition/network grid checks (not merely cached-frame slicing).
+`python -m tools.denoise_eval.candidates.pilot_wiener_report` rebuilds tables
+and the compact review from retained JSON/PNG evidence under
+`output/denoise-v1/pilot-wiener/`. The model/runtime remain venv/output-only.
+
+`tests/test_denoise_classical.py` checks finite output, bypass/alpha, native
+internal tile boundaries, CFA orientation, algebraic VST inversion (2e-6),
+and Monte Carlo inverse-of-mean bias within max(1%, 0.0002 sensor units) for
+four constant signals with 100,000 draws each. GALOSH checks skip if unbuilt.
+`source-provenance.json` records source hashes; the vendored LICENSE/NOTICE
+and repository GPL text preserve the licence obligations.
+
+## Residual speck / chroma cleanup trial (November 17)
+
+`candidates.speck_cleanup:{median,guarded,center_shadow,factory}` are own GPL-3 CPU research
+adapters, never imported by the app. `factory` is the conservative **shadow**
+variant. It caches the current adaptive bands/noise-energy ratios and two
+correction maps. `median` tests an unprotected 5×5 outlier clamp; `guarded`
+protects bright points/lines and uses joint luma/chroma range weights at 16px
+reach; `shadow` additionally gates by measured signal/noise and preserves
+ACEScg luminance during chroma repair. It reads the surrounding 5×5 median
+brightness; `center_shadow` retains the failed centre-brightness version,
+which mistakes dark printed strokes on bright material for shadows. Neither truth nor camera/ISO-specific
+choices enter the runtime. Existing controls resolve from fixed evidence;
+zero Amount, bypass and alpha remain exact. Correction strength saturates
+at the default; stronger sliders still increase the underlying adaptive stage.
+This limitation and the substantial reference-cache size require a shipping
+redesign and approval, not an implicit app-memory allowance.
+
+`shadow_tails_sdr_lift4` adds a descriptive tail metric: fixed total +4-stop SDR,
+flat pixels with original scene-linear Y ≤ min(.02, flat-median Y), eroded
+2px support, absolute luma residual p99.9 and pixels >.05, and connected islands
+of 1–25 pixels. Truth uses clean residual; no-truth uses 5×5 local-median
+contrast and **can count real detail**. Island count can decrease as bad pixels
+merge into larger blotches, so always read it alongside tail fraction/p99.9.
+No threshold here is an agreed quality tolerance. Existing contract limits
+and ±10% descriptive timing allowance remain unchanged.
+
+Run each separately under `tools/gpu-run-lock.py` and `candidates/guard.py`:
+
+```sh
+.venv/bin/python -m tools.denoise_eval.candidates.speck_measure quick
+.venv/bin/python -m tools.denoise_eval.candidates.speck_measure heldout
+.venv/bin/python -m tools.denoise_eval.candidates.speck_measure full
+.venv/bin/python -m tools.denoise_eval.candidates.speck_measure seen
+.venv/bin/python -m tools.denoise_eval.candidates.speck_measure controls
+.venv/bin/python -m tools.denoise_eval.candidates.speck_measure native --photo IMG_0790.CR2
+.venv/bin/python -m tools.denoise_eval.candidates.speck_measure native --photo 2025_0730_1331_3.arw
+```
+
+On Windows use the venv's `Scripts/python.exe`. Outputs go to the fixed
+`output/denoise-v1/speck-cleanup/` folder. Pair `--pair-split heldout|seen`
+is also available in the general runner. Native runs read actual 18/42 MP
+RAWs from the approved corpus, use bounded AHD windows and one global model,
+prepare/spool/resolve each 768px cache core, retain JSON only and remove all
+scratch on exit. Stage times include research overhead and are **not UI or
+GPU timings**. Independent haloed preparation is tested (86px margin), rather
+than treating cached-frame slicing as evidence of preparation-grid equality.
+`speck_report` aggregates the receipts (equal capture then scene weighting
+for public pairs). `decision_crops` adds `speck_cleanup.png` and a fixed +4-stop flame-edge row;
+its existing current/RawNIND/clean columns and fixed display rules are retained.
+
+## Noise-model trial (November 17)
+
+`candidates.noise_model_specks` is own GPL-3 CPU research, never imported by
+the app. `factory` drops uninformative zero-variance brightness bins and
+normalises the existing nonnegative quadratic fit before solving; existing
+band and clumping calibration is remeasured unchanged. `poisson_gaussian`
+also removes the quadratic term. These are brightness-shape repairs, not
+laboratory camera calibration. ISO plus black/white metadata does not establish
+conversion gain/read variance. RAW adapters (`raw`, `raw_corrected`) and their
+already-completed receipts are preserved for the separate RAW development agent;
+they are no longer decision-crop columns or part of this task's recommendation.
+
+Run each command serially through `tools/gpu-run-lock.py` and
+`candidates.guard` (2.5 GB tree RSS guard), using the venv Python:
+
+```sh
+.venv/bin/python -m tools.denoise_eval.candidates.noise_specks_measure audit
+.venv/bin/python -m tools.denoise_eval.candidates.noise_specks_measure quick
+.venv/bin/python -m tools.denoise_eval.candidates.noise_specks_measure heldout
+.venv/bin/python -m tools.denoise_eval.candidates.noise_specks_measure full
+.venv/bin/python -m tools.denoise_eval.candidates.noise_specks_measure seen
+.venv/bin/python -m tools.denoise_eval.candidates.noise_specks_measure native --photo IMG_0790.CR2 --method corrected
+.venv/bin/python -m tools.denoise_eval.candidates.noise_specks_report
+```
+
+For noise-model comparisons use `native --method current|corrected`; repeat for
+`2025_0730_1331_3.arw`. It processes every 18/42 MP pixel in bounded sensor/AHD
+tiles, and removes arrays instead of retaining full-frame scratch. Its clocks
+include RAW open, development, model measurement and adaptive filtering; model
+analysis overlaps the development/repair subclocks. It does **not** simulate a
+live-control cache, disk persistence, GPU or action-to-screen timing. Keep the
+existing ±10% descriptive allowance; no quality/timing limit changes.
+
+Outputs are fixed under `output/denoise-v1/noise-model-raw-specks/`.
+`decision_crops` adds corrected-model and two native-model columns.
+Run `audit` first: the last two deliberately reuse that same source's measured
+native-frame model (scaled for the fixed display lift), isolating the real
+global-fit defect from a crop-local estimate. Synthetic/public cases retain
+their crop-local baseline in those two columns; no native profile is borrowed.
+Historical RAW adapter diagnostics are not independent RAW+AHD tiling
+qualification. Bayer exposure probes keep the inherited clipped-DNG bridge
+and can fail; do not present them as HDR exposure qualification.
+
+### Single-photo hot pixels (November 17 research)
+
+`candidates.hot_pixel.alone` and `candidates.hot_pixel.with_denoise` are
+map-free, bright-only Bayer adapters, not shipping settings. They operate on
+signed normalised sensor samples before WB/AHD, using eight same-phase
+neighbours plus an immediate other-colour light veto and clipped-context
+guard. Cold discovery is refused. Noise metadata is the inherited provisional
+four-phase model, not camera calibration. Genuine undersampled point lights
+can still be removed: default-off is the research recommendation.
+
+`candidates.hot_pixel_measure` accepts `generated`, `quick`, `full`, `corpus`,
+`heldout`, `seen`, `native`, `gpu-fixtures`, `gpu-compare`, `point-decisions`;
+each requires `--inventory <prior-raw-pixel-cleanup/full.json>`. Native also
+takes `--photo IMG_0790.CR2` or `--photo 2025_0730_1331_3.arw`. Generated tests
+integrate Gaussian/Airy point PSFs over sensor apertures; public clean truth
+is scoring-only. All heavy commands use the shared GPU lock, venv Python,
+`PYTHONPATH=backend` and existing 2.5 GB `candidates.guard`, serially.
+
+Outputs overwrite `output/denoise-v1/hot-pixel/`. Run
+`python -m tools.denoise_eval.candidates.hot_pixel_report` to rebuild its small
+local four-column review from receipts. `decision_crops --columns
+off,denoise_v2_app,hot_pixel,hot_pixel_denoise --size 288` regenerates the
+existing decision page (also pass `--inventory <receipt.json>`) without
+requiring neural-model assets. Preserve the
+13 MB decision budget. `hot_pixel_gpu.cjs` runs through `run-in-electron.js`
+with generated `gpu-input.json` / `gpu-output.json`; compare and remove those
+bulk JSON files afterwards. Kernel parity uses common CPU downstream
+development and does not qualify production GPU RAW or highlight reconstruction.

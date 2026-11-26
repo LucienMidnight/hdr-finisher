@@ -1,16 +1,17 @@
 // Explicit test-profile mode of the plain Electron runner.
 const fs=require('node:fs'),path=require('node:path');
+const {defaultAppMemoryBytes}=require('./lib/application-preferences');
 async function run({frame,config,stage}){
  const {phase,edge,out,photos,resume}=config.pixelCapture;
  const report=resume?JSON.parse(fs.readFileSync(path.join(out,'report.json'),'utf8')):{phase,edge,view:edge===640?'grid':'single',rows:[]};
  const completed=new Set(report.rows.map(row=>row.name));
  const source=fs.readFileSync(path.join(__dirname,'../tools/library-pixel-scenario.js'),'utf8');
- await frame.executeJavaScript(`fetch('/api/library/memory-setting',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({bytes:4e9})}).then(()=>true)`);
+ await frame.executeJavaScript(`fetch('/api/library/memory-setting',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({bytes:null})}).then(()=>true)`);
  try{
   for(const {index,photo} of photos){
    if(completed.has(path.basename(photo)))continue;
    stage(path.basename(photo));
-   const row=await frame.executeJavaScript(`(${source})(${JSON.stringify({photo,edge})})`);
+   const row=await frame.executeJavaScript(`(${source})(${JSON.stringify({photo,edge,ceiling:defaultAppMemoryBytes()})})`);
    if(row.lanes)for(const [lane,length] of Object.entries(row.lanes)){
     const file=index+'-'+lane+'.f16',target=path.join(out,file);fs.writeFileSync(target,Buffer.alloc(0));
     for(let offset=0;offset<length;offset+=1024*1024){

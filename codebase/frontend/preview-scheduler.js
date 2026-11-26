@@ -26,11 +26,14 @@
       this.current = null;
       this.frame = null;
       this.frameInFlight = false;
+      this.frameDuringInteraction = false;
       this.framePending = false;
       this.scopeTimer = null;
       this.scopeInFlight = false;
       this.scopePending = null;
       this.settleTimer = null;
+      this.settleStarted = null;
+      this.settleTask = null;
       this.refinementTimer = null;
       this.idleHandle = null;
       this.idleKind = null;
@@ -55,7 +58,6 @@
 
     beginInteraction() {
       this.interacting = true;
-      this.settleAfterFrame = null;
       this.cancelIdleWork();
     }
 
@@ -71,14 +73,27 @@
      * that is still arriving; after a release it only delayed the settled
      * pass. That pass is unchanged: when the last drag frame is already exact
      * at the current generation, settlePreview accepts it as the settled
-     * frame and only the settled scopes run. A frame still on the GPU finishes
-     * first, and the ordinary debounce stays armed as the fallback in case
-     * that frame never completes.
+     * frame and only the settled scopes run. An in-flight exact frame can
+     * finish first. The app can cancel coarse work that cannot be shown.
      */
-    endInteraction() {
+    endInteraction({ localCommit = false } = {}) {
+      const wasInteracting = this.interacting;
       this.interacting = false;
+      this.framePending = false;
       if (!this.current) return;
-      if (this.frameInFlight || this.framePending || this.frame !== null) {
+      if (wasInteracting && this.frameInFlight) this.callbacks.onRelease?.(this.current);
+      if (localCommit) {
+        if (this.settleStarted === this.current) {
+          this.current = {
+            ...this.current,
+            imageGeneration: ++this.generations.image,
+            scopeGeneration: ++this.generations.scope,
+            refinementGeneration: ++this.generations.refinement,
+          };
+        }
+        this.current.localCommit = true;
+      } else if (this.settleStarted === this.current) return;
+      if (this.frameInFlight || this.frame !== null) {
         this.settleAfterFrame = this.current;
         this.armSettle(this.current);
         return;
@@ -97,6 +112,8 @@
         inputAt,
       };
       this.current = task;
+      this.settleAfterFrame = null;
+      this.settleStarted = null;
       this.metrics.inputCount += 1;
       this.cancelIdleWork();
       this.requestFrame(task);
@@ -147,6 +164,7 @@
 
     cancel() {
       this.current = null;
+      this.settleStarted = null;
       this.generations.image += 1;
       this.generations.scope += 1;
       this.generations.refinement += 1;
@@ -182,7 +200,7 @@
       this.frame = requestAnimationFrame(async (vsync) => {
         this.frame = null;
         const current = this.current;
-        if (!current) return;
+        if (!current || this.settleStarted === current) return;
         const now = Number.isFinite(vsync) ? vsync : performance.now();
         const minimumInterval = 1000 / Math.max(1, this.timings.maxInteractiveFps) - FRAME_PACING_TOLERANCE_MS;
         if (now - this.lastFrameStartedAt < minimumInterval) {
@@ -194,11 +212,13 @@
         const started = performance.now();
         this.recordMetric("queueDelayMs", started - current.inputAt);
         this.frameInFlight = true;
+        this.frameDuringInteraction = this.interacting;
         try {
           await this.measure("renderMs", () => this.callbacks.onFrame?.(current));
           this.metrics.frameCount += 1;
         } finally {
           this.frameInFlight = false;
+          this.frameDuringInteraction = false;
           const deferredScope = this.scopeAfterFrame;
           this.scopeAfterFrame = null;
           if (deferredScope && this.current === deferredScope) this.startInteractiveScope(deferredScope);
@@ -206,12 +226,12 @@
             this.framePending = false;
             if (this.current) this.requestFrame(this.current);
           }
-          // A release that arrived while this frame was on the GPU settles
-          // now, unless another frame for the same task is still to come.
-          const released = this.settleAfterFrame;
-          if (released && this.frame === null && !this.frameInFlight) {
+          // Release or a pause in input can owe a settle. Give the latest
+          // queued frame a chance to finish before spending work on it.
+          const deferredSettle = this.settleAfterFrame;
+          if (deferredSettle && this.frame === null) {
             this.settleAfterFrame = null;
-            if (released === this.current && !this.interacting) this.armSettle(released, 0);
+            if (deferredSettle === this.current) this.armSettle(deferredSettle, 0);
           }
         }
       });
@@ -238,16 +258,33 @@
       }, delay);
     }
 
+    get settleInFlight() {
+      return this.settleTask !== null && this.settleTask === this.current;
+    }
+
     armSettle(task, delay = this.timings.settleMs) {
       window.clearTimeout(this.settleTimer);
       this.settleTimer = window.setTimeout(async () => {
-        if (this.current !== task) return;
+        this.settleTimer = null;
+        if (this.current !== task || this.settleStarted === task) return;
+        if (this.frameInFlight && (this.frameDuringInteraction || this.settleAfterFrame === task)) {
+          this.settleAfterFrame = task;
+          return;
+        }
+        this.settleAfterFrame = null;
+        this.settleStarted = task;
+        this.settleTask = task;
         const started = performance.now();
-        await this.callbacks.onSettle?.({ ...task, tier: "settled" });
-        if (this.current !== task) return;
-        await this.runScope({ task, tier: "settled" });
-        this.recordMetric("settleMs", performance.now() - started);
-        this.armRefinement(task);
+        try {
+          await this.callbacks.onSettle?.({ ...task, tier: "settled", isCurrent: () => this.current === task });
+          if (this.current !== task) return;
+          await this.runScope({ task, tier: "settled" });
+          if (this.current !== task) return;
+          this.recordMetric("settleMs", performance.now() - started);
+          this.armRefinement(task);
+        } finally {
+          if (this.settleTask === task) this.settleTask = null;
+        }
       }, delay);
     }
 

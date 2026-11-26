@@ -143,8 +143,55 @@ function assert(condition, message) {
       `The tiled presentation attempted to analyze a missing GPU scope source: ${JSON.stringify(result)}`);
     assert(result.freshness === "Settled" && result.freshnessUpdating === false,
       `The CPU scope did not become truthfully fresh: ${JSON.stringify(result)}`);
+    // Refuse both auxiliary GPU operations during an actual zoom. The main
+    // viewer must remain exact while Navigate and scopes recover separately.
+    await page.evaluate(() => {
+      const renderer = state.gpuPreview;
+      const recovery = { navigationCalls: 0, scopeCalls: 0, scope: null, generation: state.scopeGeneration };
+      const renderNavigationProxy = renderer.renderNavigationProxy;
+      const analyzeScope = renderer.analyzeScope;
+      const onScope = ({ detail }) => {
+        if (detail.generation > recovery.generation && detail.tier === "settled" && detail.source === "cpu") {
+          recovery.scope = detail;
+          recovery.peakLabel = state.lastScope?.stats?.[0]?.label;
+        }
+      };
+      recovery.cleanup = () => {
+        renderer.renderNavigationProxy = renderNavigationProxy;
+        renderer.analyzeScope = analyzeScope;
+        window.removeEventListener("hdrfinisher:scope-presented", onScope);
+      };
+      window.zoomAuxiliaryRecovery = recovery;
+      renderer.renderNavigationProxy = async () => { recovery.navigationCalls++; return null; };
+      renderer.analyzeScope = async () => { recovery.scopeCalls++; return null; };
+      window.addEventListener("hdrfinisher:scope-presented", onScope);
+      state.navigationWindowMode = "auto";
+      clearNavigationThumbnail();
+      setCustomZoom(Math.max(100, state.fitZoomPercent * 1.5));
+    });
+    let zoomRecovery;
+    try {
+      await page.waitForFunction(() => {
+        const { navigationCalls, scopeCalls, scope } = window.zoomAuxiliaryRecovery;
+        const image = els.navigationThumbImage;
+        return navigationCalls && scopeCalls && scope
+          && state.acceptedPresentation?.exact
+          && state.acceptedPresentation.processedLongEdge === requiredProcessingLongEdge()
+          && !els.navigationThumb.classList.contains("hidden")
+          && image.complete && image.naturalWidth > 0 && image.style.visibility !== "hidden"
+          && !navigationThumbnail.timer && !navigationThumbnail.controller && !state.zoomScopeTimer;
+      }, null, { timeout: 30000 });
+      zoomRecovery = await page.evaluate(() => {
+        const { navigationCalls, scopeCalls, scope, peakLabel } = window.zoomAuxiliaryRecovery;
+        return { navigationCalls, scopeCalls, scope, peakLabel };
+      });
+      assert(["Peak (preview)", "Peak (estimate)"].includes(zoomRecovery.peakLabel),
+        `The fallback scope claimed a native peak: ${JSON.stringify(zoomRecovery)}`);
+    } finally {
+      await page.evaluate(() => window.zoomAuxiliaryRecovery.cleanup());
+    }
     assert(pageErrors.length === 0, `Browser errors: ${pageErrors.join(" | ")}`);
-    console.log(JSON.stringify(result, null, 2));
+    console.log(JSON.stringify({ ...result, zoomRecovery }, null, 2));
   } finally {
     await browser.close();
   }

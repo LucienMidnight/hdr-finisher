@@ -42,7 +42,7 @@ async function run({window,frame,config,stage}) {
   await main(`if(state.zoomMode!=='fit')setZoomMode('fit');true`);
   await main(`(()=>{const c=document.getElementById('settings-execution-override');c.value='tiled';c.dispatchEvent(new Event('change',{bubbles:true}));})()`);
   await main(`refreshPreview()`);
-  await wait(()=>main(`!state.gpuDraftInFlight&&!state.gpuScopeRequestInFlight&&state.gpuPreview.lastPresentedFrame?.execution==='tiled'&&state.gpuPreview.lastPresentedFrame.applicationGeneration===state.previewGeneration[state.currentView]`),label+' tiled settled');
+  await wait(()=>main(`!state.gpuDraftInFlight&&!state.zoomScopeTimer&&!state.gpuScopeRequestInFlight&&state.gpuPreview.lastPresentedFrame?.execution==='tiled'&&state.gpuPreview.lastPresentedFrame.applicationGeneration===state.previewGeneration[state.currentView]`),label+' tiled settled');
   const grade=await main(`({width:state.session.source.width,height:state.session.source.height,execution:state.gpuPreview.lastPresentedFrame.execution,zoom:state.zoomMode,snapshot:HDRGradeLibraryPictures.getSnapshot()})`);
   const count=await evaluate('handoffEvents.length');
   await main(`(()=>{const c=document.getElementById('${lane}-exposure');c.dispatchEvent(new PointerEvent('pointerdown',{bubbles:true,pointerId:991}));c.value=String(Number(c.value)+1);c.dispatchEvent(new Event('input',{bubbles:true}));c.dispatchEvent(new Event('change',{bubbles:true}));c.dispatchEvent(new PointerEvent('pointerup',{bubbles:true,pointerId:991}));})()`);

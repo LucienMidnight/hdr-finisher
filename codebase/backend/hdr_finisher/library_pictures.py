@@ -27,7 +27,7 @@ from .projects import validate_saved
 from .render_cache import encode_rgba_proxy_rows
 
 SIDECAR_SUFFIX = ".hdrf"
-PICTURE_VERSION = "library-scene-demand-v12"
+PICTURE_VERSION = "library-scene-signed-raw-v14"
 CACHE_LIMIT_BYTES = 2 * 1024**3
 _CACHE_LOCKS = [RLock() for _ in range(64)]
 _TRIM_LOCK = RLock()
@@ -304,6 +304,7 @@ class LibraryPictureCache:
             if default_document is not None and not defer_store:
                 self.keep_default_document(path, default_document, epoch=epoch)
             look_started = perf_counter()
+            signed_source = bool(metadata.get("raw_input"))
             starting_look = metadata.pop("starting_look", None)
             grade = validate_saved(AdjustmentState, starting_look) if starting_look else default_look(
                 pixels, reference, metadata.pop("raw_input", False), path.suffix.lower())
@@ -313,13 +314,16 @@ class LibraryPictureCache:
                 decode_ms=(perf_counter() - started) * 1000)
             log("picture_look_prepared", path=str(path), key=key, edge=edge, duration_ms=(perf_counter()-look_started)*1000)
             store_started = perf_counter()
-            def half(values):
+            def half(values, signed=False):
                 # Keep the saved values identical without a full float32 clip copy.
                 result = np.empty(values.shape, dtype=np.float16)
                 for row in range(0, values.shape[0], 128):
-                    result[row:row+128] = np.clip(values[row:row+128], 0, 65504).astype(np.float16)
+                    strip = values[row:row+128]
+                    if signed and (not np.isfinite(strip).all() or np.any(np.abs(strip) > 65504)):
+                        raise ValueError("Library signed source exceeds finite half-float transport")
+                    result[row:row+128] = (strip if signed else np.clip(strip, 0, 65504)).astype(np.float16)
                 return result
-            arrays = {"pixels": half(pixels),
+            arrays = {"pixels": half(pixels, signed_source),
                 "metadata": np.asarray(json.dumps(metadata))}
             if reference is not None:
                 arrays["reference"] = half(reference)
@@ -766,7 +770,7 @@ def _decode_picture(path, edge, quality):
             except raw_import._CameraLinearUnsupported as error:
                 problem("picture_camera_fallback", path, error, "existing sRGB quick decode used")
                 meta = None
-            transport = raw.postprocess(half_size=quality != "native", demosaic_algorithm=rawpy.DemosaicAlgorithm.LINEAR,
+            transport = raw_import._develop_libraw_camera_rgb(raw, rawpy, half_size=quality != "native") if meta else raw.postprocess(half_size=quality != "native", demosaic_algorithm=rawpy.DemosaicAlgorithm.LINEAR,
                 use_camera_wb=meta is None, use_auto_wb=False,
                 **({"user_wb": [1.] * 4, "no_auto_scale": True} if meta else {}),
                 no_auto_bright=True, output_color=rawpy.ColorSpace.raw if meta else rawpy.ColorSpace.sRGB,
@@ -777,7 +781,7 @@ def _decode_picture(path, edge, quality):
             if meta:
                 matrix = meta.camera_to_acescg * (meta.as_shot_wb * 65535 / (meta.white_level - meta.black_level))[None, :]
                 clipped = np.any(pixels >= (meta.white_level - meta.black_level) / 65535 * .999, axis=2)
-                pixels = map_negative_acescg(pixels @ matrix.T)
+                pixels = pixels @ matrix.T
             else:
                 clipped = np.any(pixels >= .999, axis=2)
                 pixels = normalize_to_acescg(pixels, "sRGB", "LINEAR")

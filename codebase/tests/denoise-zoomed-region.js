@@ -52,6 +52,7 @@ function previewSettled(diagnostics) {
   if (viewer.status !== "ready") unmet.push("viewer Ready");
   if (state.gpuDraftInFlight) unmet.push("GPU draft complete");
   if (state.zoomRefinementTimer) unmet.push("zoom refinement timer clear");
+  if (state.zoomScopeTimer) unmet.push("zoom scope timer clear");
   if (coordinator?.panTimerPending || coordinator?.inFlight || coordinator?.pending) unmet.push("render coordinator idle");
   if (accepted?.processedLongEdge !== required) unmet.push("accepted picture at required size");
   if (!["ready", "error", "off"].includes(runtime?.status)) unmet.push("Denoise settled");

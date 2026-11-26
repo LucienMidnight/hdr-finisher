@@ -159,3 +159,68 @@ test('picture wait includes browse/scroll time before the probe was queued',()=>
  assert.equal(rows[0].action_to_picture_s,1.9);assert.equal(rows[1].action_to_picture_s,.7);
  assert.equal(rows[1].request_to_picture_s,.5);
 });
+
+test('diagnostics retain renderer progress and native visibility without an unbounded console log',()=>{
+ const {EventEmitter}=require('node:events'),os=require('node:os');
+ const {observeDiagnostics}=require('../desktop/quick-library-test.cjs');
+ const profile=fs.mkdtempSync(path.join(os.tmpdir(),'hdr-finisher-test-diagnostic-'));
+ const webContents=new EventEmitter(),stages=[];
+ const window={webContents,isVisible:()=>true,isMinimized:()=>false,isFocused:()=>false,getBounds:()=>({width:1408,height:794})};
+ const observer=observeDiagnostics(window,profile,value=>stages.push(value),{cache:path.join(profile,'Cache')});
+ try {
+  webContents.emit('console-message',{},1,'QUICK_LIBRARY_STAGE:observe');
+  for(let index=0;index<25;index++)webContents.emit('console-message',{},1,'message '+index);
+  webContents.emit('console-message',{},1,'QUICK_LIBRARY_PROGRESS:'+JSON.stringify({frames:20,hidden:true,last_frame_ms:90000}));
+  const result=JSON.parse(fs.readFileSync(path.join(profile,'quick-diagnostic.json'),'utf8'));
+  assert.deepEqual(stages,['observe']);
+  assert.equal(result.visible,true);assert.equal(result.focused,false);
+  assert.equal(result.progress.hidden,true);assert.equal(result.progress.frames,20);
+  assert.equal(result.messages.length,20);assert.equal(result.messages[0],'message 6');
+  assert.equal(result.cache,path.join(profile,'Cache'));
+ } finally {observer.stop();fs.rmSync(profile,{recursive:true,force:true});}
+ assert.equal(webContents.listenerCount('console-message'),0);
+});
+
+function observation(initiallyHidden=false) {
+ const source=fs.readFileSync(path.join(__dirname,'../tools/quick-library-scenario.js'),'utf8');
+ const listeners=new Map(),frames=new Map(),intervals=new Set();
+ let nextFrame=0,clock=0;
+ const document={hidden:initiallyHidden,visibilityState:initiallyHidden?'hidden':'visible',
+  addEventListener:(name,callback)=>{if(!listeners.has(name))listeners.set(name,new Set());listeners.get(name).add(callback);},
+  removeEventListener:(name,callback)=>listeners.get(name)?.delete(callback),
+  querySelectorAll:()=>[],getElementById:name=>name==='library-grid'?{getBoundingClientRect:()=>({top:0,bottom:100})}:null};
+ const context={document,console:{log(){}},performance:{now:()=>clock,timeOrigin:0},
+  requestAnimationFrame:callback=>{frames.set(++nextFrame,callback);return nextFrame;},cancelAnimationFrame:handle=>frames.delete(handle),
+  setTimeout:callback=>{clock+=1000;queueMicrotask(callback);},setInterval:callback=>{intervals.add(callback);return callback;},clearInterval:callback=>intervals.delete(callback),
+  window:{HDRLibraryStopwatch(){},addEventListener(){},removeEventListener(){}},
+  HDRLibrary:{getSnapshot:()=>({total:1,paths:['/photo.jpg']}),browse:async()=>{}},
+  HDRLibraryScenes:{snapshot:()=>({})},HDRLibraryGrants:{snapshot:()=>({})},
+  fetch:async()=>({ok:true}),localStorage:{setItem(){}}};
+ const result=vm.runInNewContext(`(${source})({folder:'/photos',seconds:1})`,context);
+ return {result,frames,intervals,listeners,
+  draw(){const pending=[...frames.values()];frames.clear();for(const callback of pending)callback(clock);},
+  hide(){document.hidden=true;document.visibilityState='hidden';for(const callback of [...listeners.get('visibilitychange')||[]])callback();}};
+}
+
+test('visible observation still waits for an actual animation frame',async()=>{
+ const check=observation();let settled=false;check.result.then(()=>{settled=true;});
+ await new Promise(setImmediate);assert.equal(settled,false);
+ check.draw();const result=await check.result;
+ assert.equal(result.stage,'done');assert.equal(result.errors.length,0);assert.equal(result.probe.frames,1);
+ assert.equal(check.intervals.size,0);assert.equal(check.listeners.get('visibilitychange').size,0);
+});
+
+test('already hidden observation reports the cause instead of waiting forever for a frame',async()=>{
+ const check=observation(true),result=await check.result;
+ assert.equal(result.stage,'observe: final frame');assert.match(result.errors.join('\n'),/hidden or occluded/);
+ assert.equal(result.probe.hidden,true);assert.equal(check.intervals.size,0);
+ assert.equal(check.listeners.get('visibilitychange').size,0);
+});
+
+test('occlusion during a pending frame rejects and cancels only that frame',async()=>{
+ const check=observation();await new Promise(setImmediate);
+ assert.equal(check.frames.size,2);check.hide();const result=await check.result;
+ assert.match(result.errors.join('\n'),/became hidden or occluded/);
+ assert.equal(check.frames.size,1);assert.equal(result.probe.frames,0);
+ assert.equal(check.intervals.size,0);assert.equal(check.listeners.get('visibilitychange').size,0);
+});

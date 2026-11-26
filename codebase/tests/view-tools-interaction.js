@@ -30,7 +30,7 @@ function assert(condition, message) {
 }
 
 async function ready(page) {
-  await page.waitForFunction(() => viewerState().status === "ready" && !state.zoomRefinementTimer, null, { timeout: 120000 });
+  await page.waitForFunction(() => viewerState().status === "ready" && !state.zoomRefinementTimer && !state.zoomScopeTimer, null, { timeout: 120000 });
   await page.waitForTimeout(350);
 }
 

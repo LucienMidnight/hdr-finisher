@@ -18,7 +18,7 @@ function fixture(outcomes) {
     debouncePreview: lane => calls.scheduled.push(lane),
     geometrySignature: () => 'geometry',
   });
-  vm.runInContext(`${definition('transientGpuRefusal')}\n${definition('presentMatchedSdrPreview')}`, context);
+  vm.runInContext(`${definition('transientGpuRefusal')}\n${definition('previewSourceCapacityRefused')}\n${definition('presentMatchedSdrPreview')}`, context);
   return { calls, context, run: () => vm.runInContext('presentMatchedSdrPreview({ longEdge: 1606, tier: "refinement" })', context) };
 }
 test('Match retries a peak handoff on GPU without CPU fallback', async () => {
@@ -81,3 +81,65 @@ test('Match does not reuse an exact frame at the wrong processing edge', async (
   assert.equal(await f.run(), false);
   assert.equal(f.calls.gpu, 1);
 });
+
+test('Match does not retry on the main canvas after the view switches to HDR', async () => {
+  const { run, calls } = fixture([{ ok: false, reason: 'peak:newer-render-started', change: state => { state.currentView = 'hdr'; } }]);
+  assert.equal(await run(), true);
+  assert.equal(calls.gpu, 1);
+  assert.deepEqual(calls.cpu, []);
+  assert.deepEqual(calls.scheduled, []);
+});
+
+for (const [view, layout, expected] of [
+  ['hdr', 'single', ['warm:sdr']],
+  ['hdr', 'split-vertical', ['compare:sdr']],
+  ['hdr', 'side-horizontal', ['compare:sdr']],
+  ['sdr', 'single', ['main:sdr', 'scope:sdr']],
+  ['sdr', 'split-vertical', ['main:sdr', 'scope:sdr', 'compare:hdr']],
+  ['sdr', 'side-horizontal', ['main:sdr', 'scope:sdr', 'compare:hdr']],
+]) {
+  test(`Match updates only the intended surfaces in ${view.toUpperCase()} ${layout}`, async () => {
+    const calls = [];
+    const matched = { global_adjustments: { sdr: { output_exposure: -0.25 } } };
+    const accepted = { lane: view };
+    const state = {
+      session: { session_id: 'photo' }, currentView: view, compareLayout: layout,
+      acceptedPresentation: accepted, editDocument: {}, previewControllers: {}, previewCache: {}, gpuPreparedLane: {},
+    };
+    const context = vm.createContext({
+      state,
+      els: {},
+      console,
+      status: { post() {} },
+      syncGlobalEditState: async () => true,
+      fetch: async () => ({ ok: true, json: async () => ({ document: matched, revision: 2 }) }),
+      safeJson: response => response.json(),
+      setIndeterminatePreviewMessage() {},
+      hidePreviewMessage() {},
+      renderLaneChrome() {},
+      recordAcknowledgedLocals() {},
+      loadDenoiseDocument() {},
+      invalidatePreview() {},
+      renderLocalAdjustments() {},
+      syncDesktopDocumentState() {},
+      refinementProxyLongEdge: () => 1606,
+      settledProxyLongEdge: () => 960,
+      scopeLongEdge: () => 960,
+      presentMatchedSdrPreview: async () => {
+        calls.push('main:sdr');
+        state.acceptedPresentation = { lane: 'sdr' };
+        return false;
+      },
+      refreshScopes: async (_edge, { lane }) => calls.push(`scope:${lane}`),
+      prepareInactivePreview: () => calls.push('warm:sdr'),
+      renderComparisonPreview: async lane => {
+        assert.equal(state.adjustments, matched.global_adjustments);
+        calls.push(`compare:${lane}`);
+      },
+    });
+    vm.runInContext(definition('setSdrMatchWithDiagnostics'), context);
+    assert.equal(await context.setSdrMatchWithDiagnostics(), true);
+    assert.deepEqual(calls, expected);
+    if (view === 'hdr') assert.equal(state.acceptedPresentation, accepted);
+  });
+}

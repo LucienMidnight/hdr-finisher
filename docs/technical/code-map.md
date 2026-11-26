@@ -16,6 +16,45 @@ disposable renderer; small final crops check exact displayed-pixel regression.
 `preview-watchdog.test.js`, `scope-gpu-handoff.test.js` and the coordinator tests
 cover real-busy versus orphaned work, cancellation and preserved CPU fallback.
 
+## November 17: optional RAW Pixel cleanup
+
+`backend/hdr_finisher/raw_pixel_cleanup.py` owns the provisional per-phase noise
+fit, unchanged bright-only hot-pixel detection and cleanup ordering.
+`raw_speck_cleanup.py` owns the optional signed soft noise-envelope clamp,
+fixed absolute floor, component/similarity protection and bounded original-context
+strips. `raw_import.py` / `library_cpu_bands.py` run both before highlight
+evidence/AHD. `library_gpu_raw.py` runs the same CPU sensor step when speck
+cleanup is enabled, marking `pixel_cleanup_applied` to suppress a second hot
+filter; the hot-only path still passes its profile to GPU normalization in
+`frontend/library-gpu-raw.js`. No new shader, cache or budget.
+
+`session-import.js` / `app-boot.js` own the existing-token checkboxes, release-only
+threshold and re-development. `sessions.py` / `edit-commands.js` restore RAW
+source pixels on Undo/Redo. `RawImportSettings.pixel_cleanup` participates in
+saved recipes, development identities and selective paste. `test_raw_pixel_cleanup.py`,
+`test_raw_speck_cleanup.py`, `test_raw_pixel_cleanup_state.py` and
+`raw-pixel-cleanup.test.js` check sensor behavior, exact Off development,
+shared GPU sensor transport, state and saving. `raw-pixel-cleanup.js` /
+`helpers/raw_pixel_cleanup_fixture.py` cover GPU parity and byte-identical
+old/explicit-Off recipes. `raw-pixel-cleanup-delivery.js` reuses the real-RAW
+Edge colour/Library/Proof/export check, restored controls, no development on
+slider input, one on release and Reset. `tools/measure_raw_specks.py` measures
+native added development cost and absolute-floor comparisons read-only under
+the shared machine lock. Outcomes are in Import/RAW and the performance table.
+
+## November 17: signed Bayer RAW integration
+
+`backend/hdr_finisher/signed_ahd.c` implements bounded signed AHD;
+`signed_raw.py` loads its native library and owns strip/half-size/orientation
+handling. `tools/build_signed_ahd.py` builds it for setup and both PyInstaller
+specs; Flatpak compiles it in the SDK. No runtime compiler is required.
+`raw_import.py`, `library_cpu_bands.py` and the Library quick transport consume
+it. `frontend/library-gpu-raw.js` shares the signed Bayer/Lab/linear tail;
+`library-rgb-gpu.js` bypasses source projection only for DNG, not ordinary RGB.
+`test_signed_ahd.py`, `test_signed_raw_development.py`, `test_library_gpu_raw.py` and the focused
+`signed-raw-parity.js` / `helpers/signed_raw_fixture.py` cover signed behavior.
+X-Trans and the full GPU/delivery/package qualification remain open.
+
 ## November 16: safe linked SDR after Match
 
 `backend/hdr_finisher/sdr_link.py` selects the trial output tail and checks
@@ -176,7 +215,7 @@ Open the file named for the thing you are changing. Most files are focused.
 | Data shapes (every adjustment, mask and project field) | `models.py` |
 | Opening files | `loader.py`, `raw_import.py`, `linear_dng.py`, `dng_color.py`, `dng_opcodes.py`, `gainmap_decoders.py`, `jpegxl.py`, `avif_info.py`, `metadata.py`, `import_jobs.py`, `media_browser.py`, `resource_preflight.py` |
 | Colour | `color.py`, `color_context.py`, `sdr_gamut.py`, `analysis.py`, `source_luminance.py` |
-| Global adjustments (the exact reference) | `adjustments.py`, `detail.py`, `finishing.py` (geometry and output finishing), `film_grain.py`, `denoise_adaptive.py` |
+| Global adjustments (the exact reference) | `adjustments.py`, `detail.py`, `finishing.py` (geometry and output finishing), `film_grain.py`, `denoise_adaptive.py` (Standard), `denoise_grain.py` (experimental grain and cleanup) |
 | Local adjustments and masks | `local_adjustments.py`, `mask_softness.py`, `mask_work.py` |
 | SDR Match | `sdr_match.py`, `sdr_match_inputs.py`, `sdr_match_remote.py` |
 | CPU preview, caches | `render_cache.py`, `cpu_strips.py`, `preview.py` |
@@ -834,3 +873,21 @@ registered `jpegxl-high-fidelity.js --native-photo NAME` measures the complete
 Electron tree and full Proof identity. Both use approved originals without
 per-run photo copies. Limits and final scoped results live in Memory and
 caches, Export/Proof and the performance table.
+## November 16: offline RawNIND Denoise prototypes
+
+`codebase/tools/denoise_eval/candidates/rawnind.py` contains optional CPU ONNX
+linear/Bayer adapters, bounded phase-aware tile gathering, one global gain and
+strength blends. `measure_rawnind.py` wraps the existing harness and native-frame
+measurements with a 2.5 GB RSS guard, disposable disk-backed arrays and isolated
+review output. `codebase/tests/test_denoise_rawnind.py` checks results and CFA
+packing; model-dependent cases skip without local weights. These modules are
+research only and are not imported by the editor. Findings:
+[RawNIND prototype](research/denoise-v1-2026-11-16/rawnind-prototype.md).
+
+`ai_highlights.py` and `ai_highlights_measure.py` in the same research directory
+test original-sensor Bayer AI with signed AHD Opposed/Edge reconstruction,
+sensor/reconstruction-support region blending, native-frame cost, boundary
+metrics and small decision crops. `tests/test_ai_highlights_research.py`
+checks mask/blend results, Bayer phases and the unchanged original-sensor gain
+anchor. These are offline experiments, never production imports; findings:
+[AI highlights](research/denoise-v1-2026-11-16/ai-highlights.md).

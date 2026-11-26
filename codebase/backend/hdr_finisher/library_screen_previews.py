@@ -12,10 +12,11 @@ import numpy as np
 from .library_diagnostics import log
 from .library_documents import atomic_json
 from .library_copies import source
-from .library_live import quality
+from .library_live import finished_micro_grain_suffix, quality
 from .library_pictures import picture_key, PICTURE_VERSION
+from .sdr_gamut import SDR_GAMUT_CACHE_SUFFIX
 
-VERSION = 'stored-screen-preview-jxl-v6:' + PICTURE_VERSION
+VERSION = 'stored-screen-preview-jxl-v7:' + PICTURE_VERSION
 LIMIT_BYTES = 10 * 1024**3
 _lock = RLock()
 
@@ -54,18 +55,21 @@ class StoredScreenPreviews:
             stamp = [stat.st_size, stat.st_mtime_ns]
             source_key = picture_key(physical, 2560, quality(document))
         grade = sha256(json.dumps(document, sort_keys=True).encode()).hexdigest()
-        identity = dict(version=VERSION, path=str(path), lane=lane,
+        version = VERSION + (SDR_GAMUT_CACHE_SUFFIX if lane == "sdr" else ":saved-hdr-target")
+        version += finished_micro_grain_suffix(physical, document, lane)
+        identity = dict(version=version, path=str(path), lane=lane,
             display_width=display_width, display_height=display_height,
             source_key=source_key,
             stamp=stamp, grade_identity=grade, cache_epoch=self.cache.publication_epoch(physical))
         key = sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()
         slot = sha256(json.dumps([str(path), lane, display_width, display_height]).encode()).hexdigest()
-        # Live Library's HDR route currently uses the fixed 1000-nit target.
         hdr = document.get('global_adjustments', {}).get('hdr', {})
         from .models import AdjustmentState
-        enabled = hdr.get('highlight_section_enabled', AdjustmentState().hdr.highlight_section_enabled)
+        defaults = AdjustmentState().hdr
+        enabled = hdr.get('highlight_section_enabled', defaults.highlight_section_enabled)
+        target = hdr.get('highlight_compression_target_nits', defaults.highlight_compression_target_nits)
         return dict(identity, key=key, slot=slot, white=document.get('hdr_reference_white_nits', 203),
-                    cap_nits=1000 if enabled else None, quality=quality(document), framing=document.get('framing'))
+                    cap_nits=target if enabled else None, quality=quality(document), framing=document.get('framing'))
 
     def read(self, identity):
         started = perf_counter()

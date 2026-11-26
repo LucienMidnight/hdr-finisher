@@ -1,3 +1,34 @@
+### November 24, 2026: Saved Retouch replay
+
+The Library keeps GPU source development and draws as before. It gathers
+the original pixels for Heal and Clone in byte-bounded batches, sends each
+batch to the CPU, and applies the completed patches on the GPU in saved
+order before picture reduction. Inpaint still uses the GPU repair kernel
+when the source fits the GPU route. A CPU picture can start as soon as the
+GPU photo finishes reading and decoding its original. Indexing and
+background metadata still wait for foreground development. Overdue CPU
+repair replay cancels that photo's job in the helper. A hung native decoder
+still restarts the helper.
+
+November 25: rating, tag and album saves no longer interrupt a Library
+repair when the source settings and ordered enabled repairs are unchanged.
+This also applies to virtual copies. Outdated repair work is discarded
+without disabling GPU development. Genuine replay failures still fall back
+to the CPU after one GPU attempt.
+
+### November 17, 2026: plain-app check visibility diagnostics
+
+The Library quick check requires actual visible animation frames. macOS can
+mark its renderer hidden when another app is fullscreen on the active desktop,
+even when Electron reports the window visible and not minimized. Frame waits
+now reject hidden/occluded documents instead of waiting for the outer deadline;
+the existing 130-second deadline and all acceptance limits stay unchanged.
+Bounded renderer progress, native window state, cache location and backend
+address survive profile cleanup, including timeout failures. No drawing is
+simulated; the check does not disable background throttling or close other apps
+to obtain a pass.
+The Denoise v1 brief log records the investigation and validation limits.
+
 ### November 15, 2026: final-review ownership and publication repairs (P1–P3, L1)
 
 P3: a Grade opening is owned by its renderer's live, heartbeating connection
@@ -645,6 +676,12 @@ and validation results are in `docs/technical/test-photos.md`. Switching to v2
 needs a separate coordinated default change and new per-machine baselines.
 
 ## November 14: native macOS file commands
+
+November 25 follow-up. A multi-photo Delete preview reads each folder once.
+When there are no pending changes, the existing settings file goes to the
+system bin unchanged. The file command retains its recovery record and
+macOS Undo. A waiting Delete names the current step in the status bar, and
+the Library applies the result once without rebuilding the folder tree.
 
 Original photo rename and move, same-volume folder rename/move, and confirmed
 Delete/Delete all rejected now run on macOS as well as Windows. The Mac port

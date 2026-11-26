@@ -162,7 +162,7 @@ for(const photo of photos)fs.copyFileSync(path.join(root,'tests','fixtures','lib
     for(let n=4;n<=24;n++){const photo=path.join(folder,`photo-${String(n).padStart(2,'0')}.png`);fs.copyFileSync(photos[(n-1)%3],photo);visualPhotos.push(photo);}
     await page.evaluate(paths=>batchExport.open(paths),visualPhotos);
     await page.waitForFunction(()=>document.querySelectorAll('.batch-photo canvas').length===24&&[...document.querySelectorAll('.batch-photo')].filter(row=>{const r=row.getBoundingClientRect(),g=document.getElementById('batch-grid').getBoundingClientRect();return r.top<g.bottom&&r.bottom>g.top;}).every(row=>row.querySelector('canvas').dataset.liveTile));
-    let job={id:'visual-job' ,directory:'D:/Exports',state:'running',completed:1,total:48,active_photo:photos[0],photo_completed:1,photo_total:2,estimated_seconds:30,results:[{photo:photos[0],version:'SDR',outcome:'exported',output_path:'D:/Exports/first_SDR.jpg'}]};
+    let job={id:'visual-job' ,directory:'D:/Exports',state:'running',completed:1,total:48,active_photo:photos[0],photo_completed:1,photo_total:2,estimated_seconds:30,progress:.25,stage:'Rendering HDR',photo_progress:.6,results:[{photo:photos[0],version:'SDR',outcome:'exported',output_path:'D:/Exports/first_SDR.jpg'}]};
     await page.route('**/api/batch-export',route=>route.fulfill({json:job}));
     await page.route('**/api/batch-export/visual-job',route=>{
       if(route.request().method()==='POST')job={...job,state:JSON.parse(route.request().postData()).action==='pause'?'paused':'running'};
@@ -175,8 +175,11 @@ for(const photo of photos)fs.copyFileSync(path.join(root,'tests','fixtures','lib
     const size=process.env.HDR_POLISH_SMALL?'1440x900':'2560x1440';
     await page.screenshot({path:path.join(output,`not-started-${size}.png`)});
     await page.locator('#batch-run').click();
-    await page.waitForFunction(()=>document.querySelector('.batch-photo progress')?.value===1);
-    assert.equal(await page.locator('.batch-photo progress').getAttribute('max'),'2');
+    // The meters follow the export's live progress, with its stage and time left.
+    await page.waitForFunction(()=>document.querySelector('.batch-photo progress')?.value===60);
+    assert.equal(await page.locator('.batch-photo progress').getAttribute('max'),'100');
+    assert.equal(await page.locator('#batch-meter').evaluate(meter=>meter.value),25);
+    assert.equal(await page.locator('#batch-eta').textContent(),'Rendering HDR · about 30s left');
     await page.locator('#batch-pause').click();
     await page.waitForFunction(()=>document.getElementById('batch-pause').textContent==='Resume');
     await page.locator('#batch-pause').click();

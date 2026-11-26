@@ -13,7 +13,7 @@ function fixture() {
     syncGlobalEditState: async () => true,
     renderPreviewForLaneInner: () => new Promise((resolve, reject) => jobs.push({ resolve, reject })),
   });
-  vm.runInContext(declarations('renderPreviewForLane'), context);
+  vm.runInContext(declarations('renderPreviewForLane', 'cpuMicroPreviewSelected'), context);
   return { context, jobs, render: () => vm.runInContext('renderPreviewForLane("hdr", true, 1606)', context) };
 }
 const tick = () => new Promise(resolve => setImmediate(resolve));

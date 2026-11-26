@@ -21,6 +21,11 @@ if sys.stdout is None or sys.stderr is None:
 if __name__ == "__main__":
     multiprocessing.freeze_support()
 
+    # Micro Grain distributes tiles on the shared CPU pool. OpenCV's process
+    # setting must be configured before any requests or worker calls start.
+    import cv2
+    cv2.setNumThreads(1)
+
 ROOT = Path(__file__).resolve().parent
 BACKEND = ROOT / "backend"
 if str(BACKEND) not in sys.path:

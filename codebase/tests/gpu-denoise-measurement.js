@@ -9,7 +9,7 @@ const env={...process.env,PYTHONPATH:[path.resolve(__dirname,"../backend"),path.
   const browser=await chromium.launch(),page=await browser.newPage(),base=process.env.HDR_FINISHER_URL;
   const api=route=>new URL(route,base).href,rows=[];
   try{
-    execFileSync(python,[helper,"make",root],{env,stdio:"inherit"});
+    execFileSync(python,[helper,process.argv.includes("--synthetic-only")?"make-synthetic":"make",root],{env,stdio:"inherit"});
     await page.goto(base,{waitUntil:"networkidle"});
     await page.waitForFunction(()=>state.gpuPreview?.available,{timeout:120000});
     await page.evaluate(()=>{
@@ -41,7 +41,7 @@ const env={...process.env,PYTHONPATH:[path.resolve(__dirname,"../backend"),path.
     fs.writeFileSync(path.join(root,"models.json"),JSON.stringify(rows));
     if(rows.length)execFileSync(python,[helper,"compare",root],{env,stdio:"inherit"});
     console.log("Results",path.join(root,"result.json"));
-    if(!process.argv.includes("--case")&&!process.argv.includes("--library-only")){
+    if(!process.argv.includes("--case")&&!process.argv.includes("--library-only")&&!process.argv.includes("--synthetic-only")){
       const original=process.env.HDR_DENOISE_RAW||reusePhoto.source("DSC00264.ARW");
       const copy=reusePhoto(original,path.join(root,path.basename(original)));
       const grant=await page.evaluate(file=>window.hdrFinisherDesktop.grantSourcePath(file),copy);

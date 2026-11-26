@@ -62,7 +62,7 @@ def test_cpu_log_reason_photo_lane_size(monkeypatch):
     events = []
     monkeypatch.setattr(library_diagnostics, "_sink", events.append)
     session = SimpleNamespace(image=np.zeros((100, 200, 3)), source_path=Path("DSC07752.ARW"))
-    _log_cpu_preview(session, PreviewKind.SDR, 100, PreviewRequest(cpu_fallback_reason="budget-refused"))
+    _log_cpu_preview(session, PreviewKind.SDR, 100, PreviewRequest(cpu_fallback_reason="budget-refused"), 100)
     assert len(events) == 1
     event = events[0]
     assert (event["event"], event["reason"], event["lane"], event["width"], event["height"]) == ("grade_preview_cpu", "budget-refused", "sdr", 100, 50)
@@ -134,3 +134,158 @@ def test_cpu_pool_dispatches_visible_before_queued_scope():
     first.result(2); preview.result(2); scope.result(2)
     pool.pool.shutdown()
     assert order == ["preview", "scope"]
+
+
+def test_large_cpu_jobs_share_a_limit_without_blocking_unrelated_work():
+    from hdr_finisher.cpu_budget import CpuWorkLimit, PriorityCpuPool
+
+    pool = PriorityCpuPool(3)
+    limit = CpuWorkLimit(1)
+    started = threading.Event()
+    released = threading.Event()
+    order = []
+
+    def hold():
+        started.set()
+        assert released.wait(5)
+
+    try:
+        first = pool.submit(hold, background=True, work_limit=limit)
+        assert started.wait(5)
+        background = pool.submit(lambda: order.append("background"), background=True, work_limit=limit)
+        viewport = pool.submit(lambda: order.append("viewport"), work_limit=limit)
+        pool.submit(lambda: order.append("other")).result(5)
+        assert order == ["other"]
+        released.set()
+        first.result(5)
+        viewport.result(5)
+        background.result(5)
+        assert order == ["other", "viewport", "background"]
+    finally:
+        released.set()
+        pool.pool.shutdown()
+
+
+def test_export_grain_on_several_workers_matches_the_serial_render():
+    from hdr_finisher import cpu_budget
+    from hdr_finisher.adjustments import EXPORT_GRAIN_CHUNK_ROWS, grain_export_workers
+    from hdr_finisher.export_timing import export_clock
+    height, width = 1100, 40
+    if cpu_budget.logical_cpus() < 2:
+        pytest.skip("Multiple CPU workers are needed")
+    assert grain_export_workers(height, EXPORT_GRAIN_CHUNK_ROWS, width=width) > 1
+    image = np.random.default_rng(5).random((height, width, 3), dtype=np.float32) * 2
+    for lane in PreviewKind:
+        look = FilmLookAdjustments(grain_amount=70, grain_size=60, grain_chroma=40, grain_film_type="color_negative")
+        for delta in (False, True):
+            serial = _apply_density_grain(image, look, lane, 271828, np.float32(1), density_delta=delta)
+            with export_clock():
+                parallel = _apply_density_grain(image, look, lane, 271828, np.float32(1), density_delta=delta)
+            assert parallel.dtype == serial.dtype == np.float32
+            np.testing.assert_array_equal(parallel, serial, err_msg=f"{lane.value} delta={delta}")
+
+
+def test_film_grain_worker_count_budgets_a_100_mp_frame(monkeypatch):
+    from hdr_finisher import adjustments, cpu_budget
+
+    monkeypatch.setattr(cpu_budget, "logical_cpus", lambda: 16)
+    budget = adjustments.MAX_GRAIN_SCRATCH_BYTES
+    assert budget == 192 * 1024 ** 2
+    rows = adjustments.EXPORT_GRAIN_CHUNK_ROWS
+    width, height = 11648, 8736
+    scratch = width * rows * adjustments.GRAIN_SCRATCH_BYTES_PER_PIXEL
+    workers = adjustments.grain_export_workers(height, rows, width=width)
+    assert workers == 1
+    assert workers * scratch <= budget < (workers + 1) * scratch
+    assert adjustments.grain_export_workers(100, rows, width=width) == 1
+    assert adjustments.grain_export_workers(8000, rows, width=24000) == 1
+
+
+def test_export_grain_yields_to_grade_between_spans(monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+    from hdr_finisher import adjustments, cpu_budget
+
+    pool = cpu_budget.PriorityCpuPool(1)
+    monkeypatch.setattr(cpu_budget, "_cpu_pool", pool)
+    first_worker_span, release = threading.Event(), threading.Event()
+    rows = adjustments.EXPORT_GRAIN_CHUNK_ROWS
+    order = []
+
+    def render(top, bottom):
+        order.append(top)
+        if top == rows:
+            first_worker_span.set()
+            assert release.wait(5)
+        return np.zeros((bottom - top, 5, 3), dtype=np.float32)
+
+    try:
+        with ThreadPoolExecutor(max_workers=1) as export_thread:
+            export = export_thread.submit(adjustments._render_grain_chunks_in_parallel, render, rows * 4)
+            try:
+                assert first_worker_span.wait(5)
+                grade = pool.submit(lambda: order.append("grade"))
+            finally:
+                release.set()
+            grade.result(5)
+            assert export.result(5).shape == (rows * 4, 5, 3)
+        assert order == [0, rows, "grade", rows * 2, rows * 3]
+    finally:
+        pool.pool.shutdown()
+
+
+def test_export_grain_stops_submitting_spans_after_a_failure():
+    from hdr_finisher import adjustments
+
+    rows = adjustments.EXPORT_GRAIN_CHUNK_ROWS
+    visited = []
+
+    def render(top, bottom):
+        visited.append(top)
+        if top:
+            raise ValueError("bad grain span")
+        return np.zeros((bottom - top, 4, 3), dtype=np.float32)
+
+    with pytest.raises(ValueError, match="bad grain span"):
+        adjustments._render_grain_chunks_in_parallel(render, rows * 4)
+    assert visited == [0, rows]
+
+
+def test_wide_grain_allocation_stays_within_its_slots_and_yields_to_grade():
+    from hdr_finisher import grain_work
+    import time
+    active, most, lock = 0, 0, threading.Lock()
+    order = []
+
+    def wide(label):
+        nonlocal active, most
+        with grain_allocation(slots=3):
+            with lock:
+                active += 1
+                most = max(most, active)
+            time.sleep(.02)
+            order.append(label)
+            with lock:
+                active -= 1
+
+    def grade():
+        with grain_allocation():
+            order.append("grade")
+
+    deadline = time.monotonic() + 2
+    with grain_allocation():
+        waiting_grade = threading.Thread(target=grade)
+        waiting_grade.start()
+        while not grain_work._narrow_waiters and time.monotonic() < deadline:
+            time.sleep(.001)
+        exports = [threading.Thread(target=wide, args=(f"export{index}",)) for index in range(6)]
+        for worker in exports:
+            worker.start()
+        while grain_work._foreground_waiters < 7 and time.monotonic() < deadline:
+            time.sleep(.001)
+        assert not order
+    waiting_grade.join(2)
+    for worker in exports:
+        worker.join(2)
+    # The queued Grade chunk is served before any export chunk starts.
+    assert order[0] == "grade" and len(order) == 7
+    assert most <= 3 and grain_work._holders == 0

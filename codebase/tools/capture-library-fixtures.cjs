@@ -3,6 +3,7 @@
  * Each invocation needs a fresh test- profile. Sources are reusable fixture copies.
  */
 const fs=require('node:fs'),path=require('node:path'),{chromium}=require('playwright');
+const {defaultAppMemoryBytes}=require('../desktop/lib/application-preferences');
 const root=path.resolve(__dirname,'..'),arg=(k,d)=>process.argv.find(a=>a.startsWith('--'+k+'='))?.split('=')[1]??d;
 const phase=arg('phase','after'),edge=Number(arg('edge',640));
 if(!['before','after','retry-before','retry-after'].includes(phase)||![640,2560].includes(edge))throw Error('Invalid capture phase/edge');
@@ -17,15 +18,15 @@ const completed=new Set(report.rows.map(row=>row.name));
  const page=await browser.newPage();await page.goto(process.env.HDR_FINISHER_URL);
  await page.evaluate(()=>activateWorkflowTab('import'));
  const lib=page.frame({url:/\/library(?:\?|$)/});await lib.waitForFunction(()=>window.HDRLibraryPictures);
- await lib.evaluate(async()=>{await fetch('/api/library/memory-setting',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({bytes:4e9})});});
+ await lib.evaluate(async()=>{await fetch('/api/library/memory-setting',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({bytes:null})});});
  for(const [index,photo] of photos.entries()){
   if(completed.has(path.basename(photo))||only&&!only.split('|').includes(path.basename(photo)))continue;
   console.log('CAPTURE',phase,edge,index,path.basename(photo));
-  const row=await lib.evaluate(async({photo,edge})=>{
+  const row=await lib.evaluate(async({photo,edge,ceiling})=>{
    const w=window,controller=new AbortController(),timer=setTimeout(()=>controller.abort(),180000);
    const record={name:photo.replaceAll('\\','/').split('/').pop(),photo};
    let canvas,gpu,original,captured,refusal;
-   const watch=setInterval(()=>{const job=HDRLibraryGrants.snapshot().jobs.find(j=>j.path===photo&&j.reason==='needs more memory'&&j.estimate>4e9);if(job){refusal='Needs more memory: '+job.estimate;controller.abort();}},250);
+   const watch=setInterval(()=>{const job=HDRLibraryGrants.snapshot().jobs.find(j=>j.path===photo&&j.reason==='needs more memory'&&j.estimate>ceiling);if(job){refusal='Needs more memory: '+job.estimate;controller.abort();}},250);
    try{
     HDRLibraryScenes.viewport([photo],[]);
     const meta=await HDRLibraryScenes.load(photo,edge,controller.signal,0,false,null,{viewportDemand:true});
@@ -43,7 +44,7 @@ const completed=new Set(report.rows.map(row=>row.name));
    }catch(error){record.error=refusal||String(error.message||error);}
    finally{clearTimeout(timer);clearInterval(watch);HDRLibraryScenes.viewport([],[]);if(gpu&&original)gpu.renderTo=original;canvas?.remove();}
    return record;
-  },{photo,edge});
+  },{photo,edge,ceiling:defaultAppMemoryBytes()});
   if(row.lanes){for(const [lane,length] of Object.entries(row.lanes)){
    const file=index+'-'+lane+'.f16',target=path.join(out,file);fs.writeFileSync(target,Buffer.alloc(0));
    for(let offset=0;offset<length;offset+=1024*1024){

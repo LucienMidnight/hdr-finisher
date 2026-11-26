@@ -190,7 +190,10 @@ const instrument = () => {
           .filter(([id]) => !referenced.has(Number(id)))
           .map(([, entry]) => ({ bytes: entry.bytes, caller: entry.caller }))
           .sort((a, b) => b.bytes - a.bytes);
-        const logicalPeak = memory.peakLogicalBytes || 0;
+        const canvasSwapBytes = memory.resident?.categories?.canvasSwapBytes || 0;
+        // Canvas swap images are created by the browser, not by the wrapped
+        // GPUDevice. Report them but compare like with like at the same gate.
+        const logicalPeak = (memory.peakLogicalBytes || 0) - canvasSwapBytes;
         const stepPeak = ledger.peakBytes || 0;
         const live = ledger.liveBytes || 0;
         const allocatorUsed = memory.allocator?.usedBytes ?? 0;
@@ -198,6 +201,7 @@ const instrument = () => {
         return {
           step: stepName,
           logicalPeakBytes: logicalPeak,
+          canvasSwapBytes,
           stepPeakBytes: stepPeak,
           instrumentedLiveBytes: live,
           allocatorUsedBytes: allocatorUsed,

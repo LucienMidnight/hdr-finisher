@@ -23,10 +23,12 @@ function previewFixture(streaming, {
     previewResolutionOverride: false, previewScheduler: scheduler,
     cpuFallbacks: { settle: [] }, previewControllers: {}, previewCache: {},
     displayInfo: {}, previewInfoByLane: {}, gpuSurfaceHdrByLane: {}, gpuRenderRetries: 0, gpuDraftRefusals: {},
+    denoise: { hdr: { enabled: false, controls: {} }, sdr: { enabled: false, controls: {} } },
+    denoiseRuntime: { hdr: {}, sdr: {} },
   };
   const window = { setTimeout: (callback) => timers.push(callback), clearTimeout: noop };
   const context = vm.createContext({
-    state, window, performance, AbortController, URL, els: { scopeKindLabel: {} },
+    state, window, performance, AbortController, URL, els: { scopeKindLabel: {}, previewCanvas: { style: {} } },
     console: { debug: noop, warn: noop, error: noop },
     status: { get: () => statusEntry, post: (entry) => { statusEntry = entry; }, clear: noop },
     geometryDraftActive: () => false, geometrySignature: () => "{}",
@@ -42,6 +44,10 @@ function previewFixture(streaming, {
     applyZoomGeometry: noop, scheduleNavigationThumbnail: noop, finishPerspectivePresentation: noop,
     refreshScopesAfterPresentation: noop, renderCompareStatus: noop,
     safeJson: (response) => response.json(),
+    gradeGrainAction: () => null,
+    liveGradeGrainSelected: () => null,
+    nativeDenoiseViewport: () => null,
+    gradeSourceIdentity: () => null,
     async fetch(url, options) {
       requests.push({ url, options });
       return options?.method === "POST" ? cpuResponse() : sourceResponse();
@@ -70,100 +76,25 @@ function previewFixture(streaming, {
   return { state, context, requests, timers, getStatus: () => statusEntry, imageWasCleared: () => cleared };
 }
 
+// November 26 merge: the Denoise branch's capacity design owns a whole-frame
+// source memory refusal. The viewer reports it as Unavailable with the
+// backend's reason at once (never an endless "Preparing…"), keeps WebGPU
+// enabled and schedules its bounded capacity recovery.
 for (const streaming of [false, true]) {
-  test(`a 507 ${streaming ? "streamed" : "single-response"} proxy refusal uses CPU and reports a failed fallback`, async () => {
-    const { state, context, requests, timers, getStatus } = previewFixture(streaming);
+  test(`a 507 ${streaming ? "streamed" : "single-response"} proxy refusal reports Unavailable instead of preparing`, async () => {
+    const { state, context, requests, getStatus } = previewFixture(streaming);
     assert.equal(context.viewerState().status, "preparing");
     await context.settlePreview();
 
-    assert.equal(state.gpuFailurePolicy.snapshot().records[0].kind, "source-memory");
-    assert.equal(timers.length, 0, "no GPU retry for a host-memory refusal");
-    assert.equal(requests.length, 2, "one GPU attempt and one CPU fallback");
+    assert.equal(requests.length, 1, "one GPU source attempt");
     assert.match(requests[0].url, streaming ? /\/proxy-stream\/hdr/ : /\/proxy\/hdr/);
-    assert.match(requests[1].url, /\/preview\/hdr$/);
-    assert.match(JSON.parse(requests[1].options.body).cpu_fallback_reason, /memory/);
+    assert.equal(state.lastGpuDraftRefusal.reason, "preview-source-capacity");
     assert.equal(context.viewerState().status, "unavailable");
     assert.equal(getStatus().severity, "error");
     assert.ok(getStatus().message.includes(memoryDetail));
     assert.equal(state.gpuPreview.available, true, "a memory refusal does not disable WebGPU");
   });
 }
-
-test("a successful CPU fallback supplies the ready frame without going back to WebGPU", async () => {
-  const { state, context, requests, timers } = previewFixture(false, {
-    cpuResponse: () => new Response(new Uint8Array(1), {
-      headers: { "Content-Type": "image/avif", "X-Image-Width": edge, "X-Image-Height": 3300 },
-    }),
-  });
-  // Canvas and image decoding are outside this test. The real preview code
-  // still has to select this image and accept it as the current presentation.
-  let applied = false;
-  context.applyPreviewUrl = (url, isCurrent) => {
-    applied = url.startsWith("blob:") && isCurrent();
-    return applied;
-  };
-  await context.settlePreview();
-  assert.equal(applied, true);
-  assert.equal(context.viewerState().status, "ready");
-  assert.equal(state.acceptedPresentation.transport, "AVIF");
-  assert.equal(requests.length, 2);
-  assert.equal(timers.length, 0);
-  URL.revokeObjectURL(state.previewCache.hdr.url);
-});
-
-test("a CPU graph refusal explains why the source-memory fallback is unavailable", async () => {
-  const detail = "Bounded strip execution refused this graph.";
-  const { context, getStatus } = previewFixture(false, {
-    cpuResponse: () => new Response(JSON.stringify({
-      code: "strip_execution_refused", detail, refusals: ["local adjustments"],
-    }), { status: 409 }),
-  });
-  await context.settlePreview();
-  assert.equal(context.viewerState().status, "unavailable");
-  assert.equal(getStatus().severity, "error");
-  assert.ok(getStatus().message.includes(detail));
-  assert.ok(getStatus().message.includes("local adjustments"));
-});
-
-test("a failed CPU request after a memory refusal keeps the last accepted frame", async () => {
-  const { state, context, getStatus, imageWasCleared } = previewFixture(false, {
-    cpuResponse: () => { throw new TypeError("Failed to fetch"); },
-  });
-  const lastPicture = { lane: "hdr", generation: 0, transport: "WebGPU" };
-  state.acceptedPresentation = lastPicture;
-  await context.settlePreview();
-  assert.equal(context.viewerState().status, "unavailable");
-  assert.equal(getStatus().severity, "error");
-  assert.match(getStatus().message, /memory/i);
-  assert.equal(state.acceptedPresentation, lastPicture);
-  assert.equal(imageWasCleared(), false);
-});
-
-test("an unusable CPU fallback image is not cached or left preparing", async () => {
-  const { state, context, getStatus } = previewFixture(false, {
-    cpuResponse: () => new Response(new Uint8Array(1), {
-      headers: { "Content-Type": "image/avif", "X-Image-Width": edge, "X-Image-Height": 3300 },
-    }),
-  });
-  context.applyPreviewUrl = () => false;
-  await context.settlePreview();
-  assert.equal(state.previewCache.hdr, undefined);
-  assert.equal(context.viewerState().status, "unavailable");
-  assert.match(getStatus().message, /memory/i);
-});
-
-test("a CPU memory response for an old generation does not change viewer status", async () => {
-  let respond;
-  const { state, context, getStatus } = previewFixture(false, {
-    cpuResponse: () => new Promise((resolve) => { respond = resolve; }),
-  });
-  const pending = context.settlePreview();
-  await new Promise(setImmediate);
-  state.previewGeneration.hdr += 1;
-  respond(refusal(507, memoryDetail));
-  await pending;
-  assert.equal(getStatus(), undefined);
-});
 
 test("a source revision conflict still retries as stale work, with no CPU fallback", async () => {
   const { state, context, requests, timers, getStatus } = previewFixture(true, {
@@ -190,7 +121,7 @@ for (const status of [409, 507]) {
     respond(refusal(status, status === 507 ? memoryDetail : "The backend is waiting for the committed edit."));
     await pending;
 
-    assert.equal(state.gpuFailurePolicy.snapshot().records[0].kind, "superseded");
+    assert.equal(state.lastGpuDraftRefusal.reason, "superseded-during-render");
     assert.equal(requests.length, 1, "no CPU fallback for replaced work");
     assert.equal(timers.length, 0);
     assert.equal(getStatus(), undefined);

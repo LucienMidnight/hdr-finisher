@@ -18,6 +18,19 @@ all independent SDR pre-Film controls and locals. HDR's output stage is unchange
 Linked ordering alone measures inversions beyond those already in the Match
 target using the same eight bins and .005 allowance. [Current Match contract](sdr-match.md#current-recipe-and-output-contract).
 
+## November 19: signed channels at the SDR gamut boundary
+
+After the SDR shoulder, negative linear sRGB channels go to black before
+conversion to OKLab at any brightness. In affected pixels, a toe eases
+small positive channels into zero and joins the identity curve at the
+smaller of the negative excursion or 0.001 linear sRGB. Its width tends to
+zero at the nonnegative boundary. Legal colours bypass it, and excursions
+above SDR white still use the adaptive OKLab projection. A tie at the
+blue vertex uses the same cusp as nearby nonnegative colours so rounding
+cannot cause a jump between CPU and WebGPU. The same rule applies to
+generated, authored and Linked SDR. Signed editing stages and the HDR
+delivery ceiling remain intact.
+
 ## November 16 N2: global Tone and aligned wheel ranges
 
 Global Tone is now one frozen-guide operation: Blacks, Shadows, Midtones,
@@ -73,7 +86,7 @@ mapper. See the November 15 W3 record in [Grade](../product/modules/grade.md).
 ```text
 source file
   -> format-specific decode and source corrections
-  -> one normalized, non-negative float32 scene-linear ACEScg source
+  -> one normalized float32 scene-linear ACEScg source (signed for RAW)
      (+ an independent display-linear sRGB authored SDR source when supplied)
   -> session + bounded source-proxy/cache state
   -> geometry
@@ -97,7 +110,7 @@ The source, proxy, viewport, and output size are separate concepts. A proxy can 
 
 Future changes should preserve these unless a deliberate architecture migration replaces them with measured evidence and updated tests.
 
-1. **Normalize once.** The retained HDR working source is H×W×3, non-negative, scene-linear ACEScg/AP1 D60, `float32`. Do not repeatedly decode, develop RAW, convert color spaces, or copy the full source during ordinary grading.
+1. **Normalize once.** The retained HDR working source is H×W×3, scene-linear ACEScg/AP1 D60, `float32`. RAW sources retain signed samples, including noisy readings below sensor black. Do not repeatedly decode, develop RAW, convert color spaces, or copy the full source during ordinary grading.
 2. **Keep authored SDR independent.** A gain-map source may retain a separately decoded display-linear sRGB SDR base. It is not merely a fresh tone map of HDR and must survive project-reference-white changes.
 3. **Proxy before grade.** Interactive CPU work downsamples the source before expensive grading. Never place an unconditional full-resolution filter in the per-slider path.
 4. **Geometry precedes creative grading.** Masks are evaluated against a fixed, geometry-transformed source. A later grade must not move its own selection boundary.
@@ -146,12 +159,64 @@ The HDR source invariant is:
 | Type | contiguous `float32` |
 | Primaries/white | ACEScg/AP1, D60 |
 | Transfer | scene-linear |
-| Range | non-negative; HDR values may exceed 1.0 |
+| Range | signed for RAW; HDR values may exceed 1.0; non-RAW decoder contracts are unchanged |
 | Scene anchor | 0.18 equals project HDR Reference White, normally 203 nits or optionally 100 nits |
 
 PQ and HLG sources first become absolute luminance, then project-relative scene values, then ACEScg. This preserves absolute luminance when decoder and project reference whites differ. The generated SDR branch's creative `0.18 -> approximately 0.493` anchor is separate; it is not a physical 100-nit conversion.
 
-Sanitization maps NaN and negative infinity to zero, positive infinity to 65,504, and negative values to zero. The current application does not preserve signed scene-linear pixels.
+For supported Bayer RAWs, **Pixel cleanup → Remove hot pixels** is an optional
+per-photo source-development operation, off by default. The order is unpack →
+signed per-phase black/white normalization → cleanup → Opposed color highlight
+reconstruction → WB/AHD → camera/ACEScg → Edge colour → Denoise. It is not a
+post-demosaic RGB speck filter. X-Trans, linear DNG and non-RAW sources do not
+offer it.
+
+`raw_pixel_cleanup.py` owns the four per-CFA-phase single-frame noise fits and
+shared thresholds. Compare the center with all eight same-phase neighbors:
+excess >max(8σ, 0.02), with variance `a*max(center,0)+b+DN_step²/12`.
+An adjacent other-colour rise >max(2.5σ, 2 DN), relative to that site's
+same-phase median, preserves the candidate. Preserve 5×5 context ≥0.98 and
+the four-pixel border. Repair with the mean of the most consistent opposite
+pair, tie order horizontal, vertical, then diagonals; all decisions read the
+original mosaic. No camera defect maps, cold-pixel mode or adjustable strength.
+
+CPU sensor edits use 256-row normalized strips and preserved four-row original
+seam context, re-encoding only repaired sites into LibRaw's DN buffer. GPU
+normalization reads the immutable packed mosaic with the same profile/threshold
+uniform; no extra full-frame image is allocated. Both feed repaired samples to
+clipping evidence and signed AHD. Off skips profile estimation and selects the
+unchanged normalization shader. An unavailable noise fit is a no-op. The entire
+RAW recipe is saved and included in source/development identities; cleanup
+changes and their Undo/Redo re-develop the source rather than reusing old pixels.
+Finished CPU/GPU agreement remains mean <1, p99 <3 (SDR ΔE2000 / HDR ΔE ITP);
+the new parity driver awaits the combined real-GPU validation.
+
+RAW source conversion preserves finite negative channels instead of applying the
+import-time neutral-axis projection. Bayer black subtraction and AHD use signed
+sensor-DN intermediates; the upper DN transport limit remains 65,535. White
+levels, camera white balance, calibration and lens correction order are unchanged.
+X-Trans still uses its existing unsigned LibRaw demosaic and is an explicit open
+qualification/implementation gap, not a signed-Bayer fallback.
+
+Signed RGB reaches source analysis, adaptive Denoise model setup and filtering,
+HDR/generated-SDR exposure, local stacks, Detail, Film strength/structure mixing,
+vignette and delivery resampling/sharpening. Positive peak, variance and log-luma
+guides do not overwrite that source. Independently authored SDR retains its
+existing contract. Negative Blacks deliberately crushes to black; Film physical
+exposure/density inputs remain nonnegative. Final output-gamut mapping and codec
+input bounds still floor finished light. Every pre-encode HDR path must stay at
+or below the exact target; only encoded re-decode has the 1% rounding allowance.
+
+NaN/Inf, malformed dimensions and out-of-range half-float handoffs remain invalid.
+Finite negatives are not GPU errors. Signed half transport checks both absolute
+ends against 65,504 instead of silently clipping; ordinary RGB decoder/storage
+policies are not broadened by this change. Source, source-colour, developed scene,
+Denoise measurement and finished-picture identities invalidate clipped caches.
+Saved controls are kept, with no old-renderer/migration path.
+
+November 17 integration is not release-qualified: real-device RAW/Denoise/stage,
+Proof/export/encoder-ceiling comparisons and cross-platform packaging remain
+required. The full covering slow-test group exceeds the 30-minute approval gate.
 
 Large color transforms run in bounded row strips (currently 128 rows) and reuse `float32` buffers where practical. This is a memory rule: a vectorized expression that creates several full-resolution temporaries can be slower and dramatically more memory-hungry than a bounded transform.
 

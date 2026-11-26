@@ -3,6 +3,8 @@
 
   const GPU_PARAMS = ((typeof window !== "undefined" && window.HDRGpuParamLayout)
     || (typeof module !== "undefined" && module.exports && require("./gpu-param-layout.js").HDRGpuParamLayout)).indices;
+  const MASK_PARAMS = ((typeof window !== "undefined" && window.HDRGpuPassLayouts)
+    || (typeof module !== "undefined" && module.exports && require("./gpu-param-layout.js").HDRGpuPassLayouts)).indices;
 
 
   const LENS_FILTERS = ((typeof window !== "undefined" && window.HDRLensFilters)
@@ -125,14 +127,19 @@
 
   /**
    * Whether a local grade switches its Detail stage on. The encoder asks this
-   * to pick the ordered local chain, the metrics ask it to count band stacks
-   * and the halo asks it to decide whether to reserve one; one answer, so a
-   * local cannot be counted as active for the halo and inactive for the chain.
+   * to pick the ordered local chain and the halo asks it to decide whether to
+   * reserve one; one answer, so a local cannot be active for just one of them.
    */
   function localDetailActive(grade) {
     const detail = grade?.detail || {};
     return [detail.texture_amount, detail.clarity_amount, detail.sharpen_amount]
       .some((value) => Math.abs(Number(value) || 0) > 0.000001);
+  }
+
+  function localDetailReadsPackedBands(params) {
+    const threshold = Math.fround(0.000001);
+    return Math.abs(params[MASK_PARAMS.LOCAL.TEXTURE_AMOUNT]) > threshold
+      || params[MASK_PARAMS.LOCAL.SHARPEN_AMOUNT] > threshold;
   }
 
   /**
@@ -332,8 +339,8 @@
 
     // Full-resolution reads: halation's edge source from `filmPhysicalOffset`,
     // the image-structure blur from `outputRelativeOffset(0.06, 24)`, and the
-    // film-resolution blur from `filmPhysicalBlur(<= 0.12, 32)`. `blurAtRadius`
-    // spans a square of exactly +/- its radius on each axis.
+    // film-resolution blur from `filmPhysicalBlur(<= 0.12, 32)`. The separable
+    // passes reach exactly +/- their radius on each axis.
     const frameWidth = Math.max(1, finiteNumber(width, 1));
     const frameHeight = Math.max(1, finiteNumber(height, 1));
     const frameDiagonal = Math.hypot(frameWidth, frameHeight);
@@ -602,6 +609,7 @@
     processingScaleFor,
     graphActivity,
     localDetailActive,
+    localDetailReadsPackedBands,
     detailRadii,
     detailReach,
     sharpenBlurReach,

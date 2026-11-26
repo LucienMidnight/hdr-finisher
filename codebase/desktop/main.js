@@ -1,6 +1,7 @@
 const libraryAppStarted = Date.now();
 const { app, BrowserWindow, clipboard, crashReporter, dialog, ipcMain, Menu, screen, session, shell } = require("electron");
-const { spawn } = require("node:child_process");
+const { execFile, spawn } = require("node:child_process");
+const os = require("node:os");
 const crypto = require("node:crypto");
 const fs = require("node:fs");
 const path = require("node:path");
@@ -17,6 +18,7 @@ const {
   safeSuggestedName,
 } = require("./lib/validation");
 const { backendCommand: resolveBackendCommand } = require("./lib/runtime");
+const { createProofScratch, markProofBackend, clearProofScratch, sweepProofScratch, stopBackendProcess } = require("./lib/backend-process");
 const { distributionChannel, linuxSessionState, serializeDisplay, updatesManagedByStore } = require("./lib/display-state");
 const { cachedUpdateResult } = require("./lib/updates");
 const { DEFAULT_WINDOW_BOUNDS, clampWindowBounds } = require("./lib/window-bounds");
@@ -24,7 +26,7 @@ const { windowChromeOptions } = require("./lib/window-chrome");
 const { installProcessDiagnostics } = require("./lib/process-diagnostics");
 const { createRecentProjects } = require("./lib/recent-projects");
 const { detectVideoMemory } = require("./lib/video-memory");
-const { DEFAULT_APPLICATION_PREFERENCES, sanitizeApplicationPreferences } = require("./lib/application-preferences");
+const { DEFAULT_APPLICATION_PREFERENCES, defaultAppMemoryBytes, sanitizeApplicationPreferences } = require("./lib/application-preferences");
 
 const { leaveCurrentPhoto } = require(app.isPackaged ? "./shared/photo-transition" : "../frontend/photo-transition");
 const { createSplashWindow } = require("./lib/splash-window");
@@ -68,9 +70,11 @@ async function collectDeliveryMemory(level = 'moderate') {
     await require('./memory-pressure.cjs').notifyChromiumPressure(deliveryWindow.webContents, level);
 }
 let backend = null;
+let backendProcess = null;
 let mainWindow = null;
 let forceClose = false;
 let shuttingDown = false;
+let shutdownComplete = false;
 let quitRequested = false;
 let documentState = { path: "", dirty: false, displayName: "Untitled" };
 let renderingMode = "auto";
@@ -310,12 +314,35 @@ function getBackendLogWriter() {
   if (!backendLogWriter) {
     const logPath = path.join(app.getPath("userData"), "logs", "backend.log");
     const log = require("./lib/rotating-log").create(logPath, {backups:7}).stream;
-    backendLogWriter = {log, write:require("./lib/backend-log").create(log)};
+    const write = require("./lib/backend-log").create(log);
+    backendLogWriter = {log, write, events: require("./lib/event-log").create(write), logPath};
   }
   return backendLogWriter;
 }
 function libraryStage(event, fields = {}) {
   getBackendLogWriter().write(`[library] ${event} ${JSON.stringify({ time: Date.now() / 1000, ...fields })}`);
+}
+
+let lastDiagnosticMemory = null;
+function desktopEvent(area, event, fields = {}) {
+  getBackendLogWriter().events.ingest({ area, event, level: "info", ...fields }, "main", process.pid);
+}
+
+async function recordSessionHeader() {
+  const { logPath } = getBackendLogWriter();
+  const commit = app.isPackaged
+    ? await fs.promises.readFile(path.join(process.resourcesPath, "build-commit.txt"), "utf8").catch(() => null)
+    : await new Promise(resolve => {
+      const root = path.resolve(__dirname, "../..").replaceAll("\\", "/");
+      execFile("git", ["-c", `safe.directory=${root}`, "-C", root, "rev-parse", "HEAD"],
+        { windowsHide: true, timeout: 2000 }, (error, stdout) => resolve(error ? null : stdout));
+    });
+  desktopEvent("app", "session_started", {
+    version: app.getVersion(), commit: commit?.trim() || null, platform: process.platform,
+    arch: process.arch, system_ram_bytes: os.totalmem(), app_memory_setting_bytes: applicationPreferences.appMemoryBytes,
+    app_memory_ceiling_bytes: applicationPreferences.appMemoryBytes ?? defaultAppMemoryBytes(),
+    log_path: logPath,
+  });
 }
 
 async function startBackend() {
@@ -325,8 +352,11 @@ async function startBackend() {
   const logsDirectory = path.join(app.getPath("userData"), "logs");
   fs.mkdirSync(logsDirectory, { recursive: true });
   const logPath = path.join(logsDirectory, "backend.log");
-  const {log, write:writeBackendLog} = getBackendLogWriter();
-  const child = spawn(command.executable, command.args, {
+  const {log, write:writeBackendLog, events} = getBackendLogWriter();
+  sweepProofScratch(os.tmpdir());
+  const proofScratchRoot = createProofScratch(os.tmpdir());
+  const current = backendProcess = { authoringSecret, controlSecret, log, logPath, proofScratchRoot };
+  const child = current.child = spawn(command.executable, command.args, {
     cwd: command.cwd,
     env: {
       ...process.env,
@@ -338,16 +368,23 @@ async function startBackend() {
       HDR_FINISHER_DESKTOP_PID: String(process.pid),
       HDR_FINISHER_DESKTOP_CONTROL_SECRET: controlSecret,
       HDR_FINISHER_APP_DATA_DIR: app.getPath("userData"),
+      HDR_FINISHER_PROOF_ROOT: proofScratchRoot,
       PYTHONUNBUFFERED: "1",
     },
     windowsHide: true,
     stdio: ["ignore", "pipe", "pipe"],
   });
+  // The desktop can terminate the backend before Python's exit handlers run.
+  const clearExitedBackendScratch = () => {
+    if (backendProcess === current) clearProofScratch(proofScratchRoot);
+  };
+  child.once("exit", clearExitedBackendScratch);
+  child.once("error", clearExitedBackendScratch);
   const backendStarted = Date.now();
   libraryStage("backend_process_started", { pid: child.pid });
-  readline.createInterface({ input: child.stderr }).on("line", line => writeBackendLog(line));
+  readline.createInterface({ input: child.stderr }).on("line", line => events.backend(line, child.pid));
 
-  const ready = await new Promise((resolve, reject) => {
+  const readiness = new Promise((resolve, reject) => {
     const timeout = setTimeout(() => reject(new Error("The image-processing backend did not become ready in time.")), 30000);
     const lines = readline.createInterface({ input: child.stdout });
     lines.on("line", (line) => {
@@ -372,21 +409,27 @@ async function startBackend() {
     });
   });
 
+  try {
+    markProofBackend(proofScratchRoot, child.pid);
+  } catch (error) {
+    console.warn(`Could not record Proof scratch ownership: ${error.message}`);
+  }
+  const ready = await readiness;
   libraryStage("backend_ready", { duration_ms: Date.now() - backendStarted });
   if (ready.protocol_version !== 1 || ready.backend_version !== app.getVersion()) {
-    child.kill();
     throw new Error(`Desktop/backend version mismatch (${app.getVersion()} / ${ready.backend_version}).`);
   }
   const url = `http://127.0.0.1:${ready.port}`;
   const health = await fetch(`${url}/health`);
   const healthPayload = await health.json();
   if (!health.ok || healthPayload.status !== "ok") {
-    child.kill();
     throw new Error("The image-processing backend failed its health check.");
   }
-  backend = { authoringSecret, controlSecret, child, log, logPath, url };
+  if (shuttingDown) return;
+  current.url = url;
+  backend = current;
   child.once("exit", (code) => {
-    if (!shuttingDown && mainWindow && !mainWindow.isDestroyed()) {
+    if (backend === current && !shuttingDown && mainWindow && !mainWindow.isDestroyed()) {
       const dirty = documentState.dirty;
       dialog.showMessageBox(mainWindow, {
         type: "error",
@@ -409,24 +452,17 @@ async function startBackend() {
 }
 
 async function stopBackend() {
-  if (!backend) return;
-  const current = backend;
-  backend = null;
-  if (current.child.exitCode === null) {
-    current.child.kill();
-    await Promise.race([
-      new Promise((resolve) => current.child.once("exit", resolve)),
-      new Promise((resolve) => setTimeout(resolve, 3000)),
-    ]);
-    if (current.child.exitCode === null) {
-      if (process.platform === "win32") {
-        spawn("taskkill.exe", ["/PID", String(current.child.pid), "/T", "/F"], { windowsHide: true });
-      } else {
-        current.child.kill("SIGKILL");
-      }
-    }
+  if (!backendProcess) return;
+  const current = backendProcess;
+  backend = backendProcess = null;
+  try {
+    if (current.child) await stopBackendProcess(current.child);
+  } catch (error) {
+    console.warn(`Backend termination failed: ${error.message}`);
+  } finally {
+    clearProofScratch(current.proofScratchRoot);
+    current.log.end();
   }
-  current.log.end();
 }
 
 async function grantPath(filePath, intent) {
@@ -483,6 +519,8 @@ function desktopEnvironment(window = mainWindow) {
   return {
     apiVersion: 2,
     platform: process.platform,
+    unifiedMemory: process.env.HDR_FINISHER_MEMORY_PROFILE === "unified-8gb" ||
+      (process.platform === "darwin" && process.arch === "arm64"),
     electronVersion: process.versions.electron,
     appVersion: app.getVersion(),
     packaged: app.isPackaged,
@@ -516,6 +554,20 @@ function checkedLibraryState(snapshot) {
 }
 
 function registerIpc() {
+  ipcMain.on("desktop:diagnostic-event", (event, value) => {
+    if (!value || typeof value !== "object") return;
+    let role;
+    try {
+      role = deliveryWindow && !deliveryWindow.isDestroyed() && event.sender === deliveryWindow.webContents
+        && event.senderFrame === event.sender.mainFrame ? "delivery_worker" : `renderer_${validateSender(event).role}`;
+    } catch { return; }
+    if (Object.hasOwn(value, "requested_bytes")) {
+      value.app_ram_bytes = lastDiagnosticMemory?.totalBytes ?? null;
+      value.app_ram_sample_age_ms = lastDiagnosticMemory ? Date.now() - lastDiagnosticMemory.sampledAt : null;
+      value.system_free_bytes = os.freemem();
+    }
+    getBackendLogWriter().events.ingest(value, role, event.sender.getOSProcessId());
+  });
   const handle = (channel, callback) => ipcMain.handle(channel, async (event, ...args) => {
     const record = validateSender(event);
     if (record.role !== "main") throw new Error("This command requires the main window.");
@@ -1130,6 +1182,12 @@ async function createWindow(role = "main") {
   });
   libraryStage("window_created", { role });
   window.webContents.on("did-finish-load", () => libraryStage("page_loaded", { role }));
+  window.webContents.on("console-message", ({ level, message, sourceId, lineNumber }) => {
+    const severity = { 2: "warning", 3: "error" }[level] || level;
+    if (severity !== "warning" && severity !== "error") return;
+    libraryStage("renderer_console", { role, level: severity, message: String(message).slice(0, 2000),
+      source: sourceId?.split(/[?#]/, 1)[0], line: lineNumber });
+  });
   const record = { role, window, ready: false, displayTimer: null };
   windows.set(role, record);
   if (isMain) {
@@ -1142,7 +1200,10 @@ async function createWindow(role = "main") {
   window.webContents.on("will-navigate", (event, url) => {
     if (!backend || new URL(url).origin !== new URL(backend.url).origin) event.preventDefault();
   });
-  window.webContents.on("render-process-gone", () => { record.ready = false; });
+  window.webContents.on("render-process-gone", (_event, details) => {
+    record.ready = false;
+    desktopEvent("app", "renderer_exited", { level: "warn", role, exit_reason: details.reason, exit_code: details.exitCode });
+  });
   window.on("close", (event) => {
     saveWindowBounds(record);
     if (!isMain) {
@@ -1295,20 +1356,36 @@ async function requestClose() {
 async function beginShutdown() {
   if (shuttingDown) return;
   shuttingDown = true;
+  const action = crypto.randomUUID();
+  const started = performance.now();
+  desktopEvent("app", "action_started", { action, operation: "shutdown" });
   quitRequested = true;
   forceClose = true;
-  for (const record of [...windows.values()]) {
-    saveWindowBounds(record);
-    if (!record.window.isDestroyed()) record.window.destroy();
+  // before-quit waits for shutdownComplete, so a failed step must still stop
+  // the backend, clear Proof scratch and let the app quit.
+  try {
+    for (const record of [...windows.values()]) {
+      try { saveWindowBounds(record); } catch (error) { console.warn(`Could not save window bounds: ${error.message}`); }
+      if (!record.window.isDestroyed()) record.window.destroy();
+    }
+    if (backend) {
+      await fetch(`${backend.url}/api/batch-export/shutdown`, {method:"POST",
+        headers:{"X-HDR-Finisher-Token":backend.authoringSecret},signal:AbortSignal.timeout(7000)}).catch(()=>{});
+    }
+    clearTimeout(deliveryIdleTimer);
+    if (deliveryWindow && !deliveryWindow.isDestroyed()) deliveryWindow.destroy();
+    deliveryWindow = null;
+  } finally {
+    try {
+      await stopBackend();
+      desktopEvent("app", "action_finished", {
+        action, operation: "shutdown", outcome: "success", duration_ms: Math.round(performance.now() - started),
+      });
+    } finally {
+      shutdownComplete = true;
+      app.quit();
+    }
   }
-  if (backend) {
-    await fetch(`${backend.url}/api/batch-export/shutdown`, {method:"POST",
-      headers:{"X-HDR-Finisher-Token":backend.authoringSecret},signal:AbortSignal.timeout(7000)}).catch(()=>{});
-  }
-  clearTimeout(deliveryIdleTimer);
-  deliveryWindow?.destroy();deliveryWindow=null;
-  await stopBackend();
-  app.quit();
 }
 
 const gotLock = app.requestSingleInstanceLock();
@@ -1344,14 +1421,20 @@ if (!gotLock) {
     if (mainWindow && rendererReady) dispatchPendingOpenPaths();
   });
   app.on("before-quit", (event) => {
-    if (shuttingDown) return;
+    if (shutdownComplete) return;
     event.preventDefault();
+    if (shuttingDown) return;
     quitRequested = true;
     if (mainWindow && !mainWindow.isDestroyed()) requestClose();
     else beginShutdown();
   });
   app.on("window-all-closed", () => {
     if (process.platform !== "darwin") beginShutdown();
+  });
+  app.on("before-quit", () => backendLogWriter?.events.flush());
+  app.on("child-process-gone", (_event, details) => {
+    if (details.type === "GPU") desktopEvent("gpu", "gpu_process_exited",
+      { level: "warn", exit_reason: details.reason, exit_code: details.exitCode });
   });
   app.on("activate", () => {
     if (backend && !mainWindow) createWindow();
@@ -1363,6 +1446,9 @@ if (!gotLock) {
     if (process.platform === "darwin") app.dock?.setIcon(app.isPackaged
       ? path.join(process.resourcesPath, "icon.png") : path.join(__dirname, "assets", "icon.png"));
     loadApplicationPreferences();
+    void recordSessionHeader().catch(error => console.error("Could not log session header:", error.message));
+    const action = crypto.randomUUID();
+    desktopEvent("app", "action_started", { action, operation: "startup" });
     session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false));
     try {
       // Python imports and window construction are independent startup work.
@@ -1383,6 +1469,10 @@ if (!gotLock) {
       void backendStarting.then(() => splash?.step("Image engine ready", 0.5), () => {});
       await Promise.all([backendStarting, windowCreating]);
       libraryStage("desktop_startup_join", { duration_ms: Date.now() - shellStarted });
+      desktopEvent("app", "action_finished", {
+        action, operation: "startup", outcome: shuttingDown ? "cancelled" : "success",
+        duration_ms: Date.now() - libraryAppStarted,
+      });
       if (shuttingDown || !mainWindow || mainWindow.isDestroyed()) return;
       const activeBackend = backend;
       session.defaultSession.webRequest.onBeforeSendHeaders({ urls: [`${activeBackend.url}/*`, `${activeBackend.url.replace("http:","ws:")}/*`] }, (details, callback) => {
@@ -1398,6 +1488,8 @@ if (!gotLock) {
       let memorySampling = false, memoryLastLog = 0, memoryLastLevel = null;
       const memoryPressureRelay = require('./memory-pressure.cjs');
       const memoryTrimGate = memoryPressureRelay.pressureGate();
+      const gradeTrimGate = memoryPressureRelay.pressureGate();
+      const emptyTrimGuard = memoryPressureRelay.emptyTrimGuard();
       const memoryTimer = setInterval(async () => {
         if (memorySampling || shuttingDown) return;
         memorySampling = true;
@@ -1406,12 +1498,26 @@ if (!gotLock) {
             headers:{"X-HDR-Finisher-Token":activeBackend.authoringSecret}, signal:AbortSignal.timeout(2000)});
           if (!response.ok) throw Error(`Memory sampling failed (${response.status})`);
           const value = await memoryPressureRelay.withDeadline(response.json());
+          lastDiagnosticMemory = {totalBytes: value.totalBytes, sampledAt: Date.now()};
           // The backend's level comes from measurement and the OS only, never
           // from a refused admission. Trim once when it rises, then at most
           // once per cool-down while it lasts.
-          const trimLevel = memoryTrimGate(value.level || "none");
+          const decision = emptyTrimGuard(value, memoryTrimGate(value.level || "none"),
+            !!gradeTrimGate(value.gradePressure || "none"));
+          const trimLevel = decision.trimLevel;
           value.reclaim = !!trimLevel;
           value.reclaimLevel = trimLevel || "none";
+          value.grainReclaim = decision.grainReclaim;
+          const memoryFields = {app_ram_bytes: value.totalBytes, budget_bytes: value.ceilingBytes,
+            system_free_bytes: os.freemem(), reserved_bytes: value.reservedBytes,
+            cache_bytes: memoryPressureRelay.cacheBytes(value), grade_bytes: value.gradeBytes,
+            system_pressure: value.pressure || "none"};
+          if (decision.entered) desktopEvent("memory", "cache_trim_paused", {
+            route: "cpu", reason: "no_reclaimable_resources", pressure_level: value.level || "none", ...memoryFields});
+          if (decision.resumed) desktopEvent("memory", "cache_trim_resumed", {
+            route: "cpu", reason: decision.resumed, pressure_level: value.level || "none", ...memoryFields});
+          if (trimLevel) desktopEvent("memory", "cache_trim_requested", {
+            route: "cpu", reason: memoryPressureRelay.trimReason(value), pressure_level: trimLevel, ...memoryFields});
           if (trimLevel) libraryStage("memory_trim", {level:trimLevel, totalBytes:value.totalBytes,
             targetBytes:value.targetBytes, ceilingBytes:value.ceilingBytes, pressure:value.pressure, waiting:value.waiting});
           if (Date.now()-memoryLastLog > 60000 || value.level !== memoryLastLevel || trimLevel) {
@@ -1444,6 +1550,7 @@ if (!gotLock) {
             await memoryPressureRelay.withDeadline(reclaimed.arrayBuffer());
           }
         } catch (error) {
+          desktopEvent("memory", "memory_sample_failed", { level: "warn", route: "refused", reason: "memory_sample_failed" });
           libraryStage("memory_controller_error", {reason:error.message});
           console.error("Memory controller:",error.message);
         }
@@ -1498,7 +1605,13 @@ if (!gotLock) {
         await createWindow("library");
       }
     } catch (error) {
+      desktopEvent("app", "action_finished", {
+        level: "error", action, operation: "startup", outcome: "error", route: "refused", reason: "startup_failed",
+        duration_ms: Date.now() - libraryAppStarted,
+      });
       splash?.close();
+      await stopBackend();
+      if (shuttingDown) return;
       await dialog.showMessageBox({ type: "error", title: "HDR Finisher could not start", message: "HDR Finisher could not start its image-processing backend.", detail: error.message, buttons: ["Quit"] });
       beginShutdown();
     }

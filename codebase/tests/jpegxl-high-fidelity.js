@@ -6,6 +6,7 @@ const path = require('node:path');
 const { execFileSync, spawn } = require('node:child_process');
 const { chromium } = require('playwright');
 const { resolveInterpretation } = require('./helpers/resolve-interpretation.js');
+const { defaultAppMemoryBytes } = require('../desktop/lib/application-preferences');
 const python = require('../tools/lib/platform.cjs').pythonExecutable();
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'hdr-jxl-fidelity-'));
 const report = path.resolve('output/review/jpegxl-high-fidelity');
@@ -23,7 +24,7 @@ async function nativePhoto(page, post, root, name) {
   fs.linkSync(source, photo);
   const samples = [], errors = [], stages = [];
   const proven = new Map();
-  let phase = 'import', pending = '', outcomeError = null, ceiling = 4000000000;
+  let phase = 'import', pending = '', outcomeError = null, ceiling = defaultAppMemoryBytes();
   let summary;
   const sampler = spawn(python, [path.resolve('tools/measure-library-processes.py'), process.env.HDR_FINISHER_ELECTRON_MAIN_PID, '.2']);
   sampler.stderr.on('data', chunk => errors.push(String(chunk)));
@@ -39,8 +40,8 @@ async function nativePhoto(page, post, root, name) {
     await page.goto(process.env.HDR_FINISHER_URL);
     const memoryResponse = await page.request.get(new URL('/api/library/memory-setting', page.url()).href);
     const memorySetting = await memoryResponse.json();
-    assert.equal(memorySetting.minimumBytes, 4000000000);
-    assert.equal(memorySetting.defaultBytes, 4000000000);
+    assert.equal(memorySetting.minimumBytes, defaultAppMemoryBytes());
+    assert.equal(memorySetting.defaultBytes, defaultAppMemoryBytes());
     const memoryFlag = process.argv.indexOf('--memory-gb');
     if (memoryFlag >= 0) await post('/api/library/memory-setting', { bytes: Number(process.argv[memoryFlag + 1]) * 1e9 });
     const configured = await (await page.request.get(new URL('/api/library/memory-setting', page.url()).href)).json();

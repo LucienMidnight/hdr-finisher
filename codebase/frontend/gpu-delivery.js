@@ -31,13 +31,47 @@
       if(value.preempt)throw yielded(value.reason);
       if(value.ready){permitted=performance.now();return;}await pause(30);}
   }
+  async function finishStreamedLane(job,lane,capture,finishing){
+    let socket,packet,reply;
+    try{
+      await finishing.finishRows(capture,job,lane,async(row,rows,pixels)=>{
+        if(!socket){
+          const url=new URL(`/api/delivery/gpu/${job.id}/rows/${lane}`,location.href);
+          url.protocol=url.protocol==="https:"?"wss:":"ws:";
+          socket=new WebSocket(url);
+          await new Promise((resolve,reject)=>{
+            socket.onopen=resolve;
+            socket.onclose=()=>reject(Error("GPU encoder strip connection failed."));
+          });
+          socket.onmessage=()=>reply?.resolve();
+          socket.onclose=()=>reply?.reject(Error("GPU encoder strip handoff failed."));
+          packet=new Uint8Array(pixels.byteLength+4);
+        }
+        if(socket.readyState!==WebSocket.OPEN)throw Error("GPU encoder strip connection closed.");
+        new DataView(packet.buffer).setUint32(0,row,true);
+        packet.set(new Uint8Array(pixels.buffer,pixels.byteOffset,pixels.byteLength),4);
+        await new Promise((resolve,reject)=>{
+          reply={resolve,reject};
+          socket.send(packet.subarray(0,pixels.byteLength+4));
+        });
+        reply=null;
+      });
+    }finally{socket?.close();}
+  }
   // Finish this async frame before polling again: a suspended polling frame
   // otherwise keeps the completed photo in its parameters and registers.
   async function runJob(job){
     let finishing;
+    const diagnostics = globalThis.HDRDiagnostics;
+    const action = job.action ? { id: job.action } : null;
+    const started = performance.now();
+    const complete = payload => fetch(`/api/delivery/gpu/${job.id}/complete`, {
+      method: "POST", headers: diagnostics?.headers(action, { "Content-Type": "application/json" }) ?? { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
     try{
       identity=job.id;permitted=0;
-      const timings={},started=performance.now();let mark=started;
+      const timings={};let mark=started;
       const stamp=(name,lane)=>{const now=performance.now(),spent=now-mark;timings[name]=(timings[name]||0)+spent;
         if(lane)timings[`${lane}_${name}`]=spent;mark=now;};
       await initialize();
@@ -171,16 +205,19 @@
       // must not be refused for sharpening buffers it never allocates.
       const resizeBytes=(width!==job.output[0]||height!==job.output[1])
         ?16*(filmPixels+job.output[0]*height+outputPixels):0;
-      const reserve=Math.max(filmPixels*24,resizeBytes,
-        outputPixels*(job.finishing.sharpening==="off"?32:96))+(job.framing?outputPixels*16:0)+32*1024*1024;
+      const reserve=job.streamed ? filmPixels*8+width*32*16*2+32*1024*1024 :
+        Math.max(filmPixels*24,resizeBytes,
+          outputPixels*(job.finishing.sharpening==="off"?32:96))+(job.framing?outputPixels*16:0)+32*1024*1024;
       if(reserve>job.budget*.8)throw Error("GPU delivery finishing exceeds the available memory budget.");
       const lease=await fetch(`/api/delivery/gpu/${job.id}/reserve`,{method:"POST",
         headers:{"Content-Type":"application/json"},body:JSON.stringify({bytes:job.budget})});
+      if(lease.status===507)throw Error("GPU delivery working set does not fit the app memory ceiling.");
       if(!lease.ok)throw yielded("Grade needs the shared GPU memory budget.");
       const creativeBudget=job.budget-reserve;
       if(creativeBudget<256*1024*1024)throw Error("Insufficient memory for the delivery graph.");
       gpu.setMemoryBudget(creativeBudget/(1024**3));
-      finishing=new HDRGpuDeliveryFinishing(gpu,permit);await finishing.initialize();
+      finishing=new HDRGpuDeliveryFinishing(gpu,permit);
+      if(!job.streamed)await finishing.initialize();
       gpu.device.pushErrorScope("out-of-memory");gpu.device.pushErrorScope("validation");
       stamp("setup_ms");
       try{
@@ -188,36 +225,57 @@
         // pixels (render_cache.geometry_source_proxy), so the SDR lane reuses the
         // HDR upload instead of fetching ~0.9 s of identical pixels again. The
         // alias carries no bytes of its own so memory is not counted twice.
-        const sharedSource=!(job.authored_sdr&&job.adjustments.sdr?.use_authored_base);let hdrSource=null;
-        for(const lane of ["hdr","sdr"]){
+        const sharedSource=!(job.authored_sdr&&job.adjustments.sdr?.use_authored_base&&!job.adjustments.sdr?.linked_to_hdr);let hdrSource=null;
+        const edge=Math.max(256,width,height);
+        for(const lane of job.lanes||["hdr","sdr"]){
           await permit();
           const signature=JSON.stringify(job.adjustments.shared.geometry);
+          const sourceIdentity=lane==="sdr"&&!sharedSource?"authored-sdr":"source";
           if(lane==="sdr"&&sharedSource&&hdrSource&&gpu.proxies.get(hdrSource.identity)===hdrSource){
             const prefix=`${job.id}:hdr:`,identity=`${job.id}:sdr:`+hdrSource.identity.slice(prefix.length);
             if(hdrSource.identity.startsWith(prefix)&&!gpu.proxies.has(identity))
               gpu.proxies.set(identity,{...hdrSource,lane,identity,byteSize:0,bindGroups:new Map()});
           }
-          const proxy=await gpu.loadProxy(job.id,lane,Math.max(256,job.width,job.height),signature,0,"source");
+          const proxy=await gpu.loadProxy(job.id,lane,edge,signature,0,sourceIdentity);
           if(lane==="hdr")hdrSource=proxy;
           stamp("source_ms",lane);
-          const capture=finishing.texture(proxy.width,proxy.height,"rgba16float"),delivery={texture:capture};
           const denoise=job.denoise[lane];
-          if(denoise?.enabled){
-            if(!await gpu.analyzeDenoiseProxy(job.id,lane,job.adjustments,Math.max(256,job.width,job.height),0,"source",denoise.controls))
+          const controls=denoise?.controls;
+          if(denoise?.enabled&&controls.amount>0&&(controls.luminance>0||controls.color_noise>0)){
+            const grain=job.grain_reconstruction&&controls.method==="clean_grain";
+            if(!await gpu.analyzeDenoiseProxy(job.id,lane,job.adjustments,edge,0,sourceIdentity,controls,0,edge,
+              grain?{deliveryGrainSource:proxy,beforeDeliverySubmit:permit}:{}))
               throw Error("GPU Denoise analysis failed.");
           }
           else gpu.denoiseSourceSelector && (gpu.denoiseSourceSelector.selected="original");
           stamp("denoise_ms",lane);
-          const result=await gpu.renderTo(canvas,job.id,lane,job.adjustments,sampleCurvePoints,Math.max(256,job.width,job.height),job.locals,0,null,job.white,
-            {width:job.width,height:job.height},{delivery,beforeDeliverySubmit:permit,measureOnly:true});
+          const capture=finishing.texture(proxy.width,proxy.height,"rgba16float"),delivery={texture:capture};
+          const result=await gpu.renderTo(canvas,job.id,lane,job.adjustments,sampleCurvePoints,edge,job.locals,0,null,job.white,
+            {width:job.width,height:job.height},{identity:sourceIdentity,delivery,beforeDeliverySubmit:permit,measureOnly:true});
           if(!result?.rendered && result?.execution!=="direct")throw Error(`GPU delivery refused the grade: ${result?.reason||JSON.stringify(result?.refusals)}`);
           if(!delivery.params)throw Error("GPU delivery produced no finished image.");job.params=delivery.params;
           stamp("creative_ms",lane);
+          if(job.streamed){
+            gpu.resetSession(job.id);hdrSource=null;
+            await finishStreamedLane(job,lane,capture,finishing);
+            stamp("finish_readback_and_handoff_ms",lane);
+            continue;
+          }
+          const endpoint=`/api/delivery/gpu/${job.id}/pixels/${lane}`;
+          const sendRows=async(row,rows,pixels)=>{
+            const uploaded=await fetch(`${endpoint}?row=${row}&rows=${rows}`,{method:"POST",body:new Blob([pixels])});
+            if(!uploaded.ok)throw Error("GPU encoder strip handoff failed.");
+          };
           const texture=await finishing.finish(capture,job,lane);stamp("finishing_ms",lane);
+          if(job.grain_reconstruction){
+            await finishing.read(texture,sendRows);
+            stamp("readback_and_handoff_ms",lane);
+            continue;
+          }
           const pixels=await finishing.read(texture);stamp("readback_ms",lane);
           // A Blob body sends the same bytes but stays out of DevTools request events, which a
           // test connection copies in full and can overflow (release README, October 18).
-          const uploaded=await fetch(`/api/delivery/gpu/${job.id}/pixels/${lane}`,{method:"POST",body:new Blob([pixels])});
+          const uploaded=await fetch(endpoint,{method:"POST",body:new Blob([pixels])});
           if(!uploaded.ok)throw Error("GPU encoder handoff failed.");
           stamp("handoff_ms",lane);
         }
@@ -226,12 +284,19 @@
         if(validation||oom)throw Error((validation||oom).message);
       }
       finishing.destroy();finishing=null;gpu.resetSession(null);
-      await fetch(`/api/delivery/gpu/${job.id}/complete`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({timings_ms:timings,total_ms:performance.now()-started})});
+      await complete({timings_ms:timings,total_ms:performance.now()-started});
+      diagnostics?.event("gpu", "delivery_worker_finished", {
+        route: "gpu", reason: "gpu_delivery_succeeded", duration_ms: Math.round(performance.now() - started),
+      }, action);
     }catch(error){
       if(error.deliveryPreempted)console.info("GPU delivery yielded",error.message);
       else console.error("GPU delivery",error);
       finishing?.destroy();finishing=null;gpu?.resetSession(null);
-      if(job)await fetch(`/api/delivery/gpu/${job.id}/complete`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({error:error.message})}).catch(()=>{});
+      if (action) diagnostics?.event("gpu", "delivery_worker_failed", {
+        level: "warn", route: "refused", reason: error.deliveryPreempted ? "gpu_preempted" : "gpu_delivery_failed",
+        duration_ms: Math.round(performance.now() - started),
+      }, action);
+      await complete({error:error.message}).catch(()=>{});
       await pause(100);
     }finally{
       identity=null;finishing?.destroy();gpu?.resetSession(null);

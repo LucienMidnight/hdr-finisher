@@ -10,6 +10,21 @@ Units are optional. For example, `100`, `100 nit`, and `100 nits` all set a nit 
 
 The sliders intentionally cover the useful everyday range. Some slider ranges become narrower for sources classified as Medium or Narrow latitude, which makes fine adjustments easier. Direct entry provides controlled extra room without making the slider less precise.
 
+## RAW Pixel cleanup
+
+**Raw development** starts with two pixel cleanup checkboxes, both on for new
+photos (Steve, November 25, 2026). **Remove hot pixels** fixes isolated stuck bright sensor
+pixels before demosaic, with no strength slider, cold/dead-pixel mode or defect
+maps. It can sometimes remove a tiny star or glint.
+
+**Even out harsh specks** softly reduces unusual bright and dark
+sensor readings. Its **Speck threshold** slider runs ×2–×4 (default ×2.5); lower values
+are stronger, and changes apply on release. Small stars and thin lettering may
+soften; colourful blobs can remain. Changing or undoing these settings
+re-develops the RAW; saved settings apply to both renditions and delivery.
+Only supported Bayer RAWs enable these checkboxes.
+See [Import](import.md#pixel-cleanup-bayer-raw-only).
+
 ## Checking Blacks and Whites clipping
 
 Hold **Option** on Mac or **Alt** on Windows while dragging **Whites** or
@@ -67,6 +82,12 @@ follow Peak and Mode, with the same visibility rules as before.
 | Center | Moves a broad range relative to photographic mid-grey G. | log2(Y/G); G=.18×D, D=.18 HDR or 100/203 SDR. | -8 to +8 EV | **-12 to +12 EV** |
 | Width | Sets the full breadth of a zone. | Smooth bump; black/white gates remain active at any width. | 0.5 to 12 EV | **0.5 to 24 EV** |
 | Whites | Adjusts the top stop below target. | Frozen maximum delivery channel; −100 → .775P, +100 → 2P alone, before Film Look and final HC. | -100 to +100 | Same as slider |
+
+Bayer RAW keeps noisy readings below sensor black internally. Zero Blacks/Tone
+does not discard them before Denoise; negative **Blacks** deliberately crushes
+the affected shadows to black. Lift Blacks or adjust Tone to taste. The final
+picture still has a legal black floor. Older RAW edits may render differently
+with the same saved sliders; changing Exposure alone is not an exact restoration.
 
 Start and Target Peak are kept at least 1 nit apart. If a typed edit would cross them, HDR Finisher moves the other value just enough to retain a valid shoulder.
 

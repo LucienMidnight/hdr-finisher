@@ -1,4 +1,7 @@
 import os
+import subprocess
+import sys
+from types import SimpleNamespace
 import pytest
 
 @pytest.fixture(autouse=True)
@@ -17,10 +20,10 @@ def test_memory_includes_full_tree_and_reservations(monkeypatch):
     roots=[]
     def tree(root):
         roots.append(root)
-        return [{'pid':1,'workingSetBytes':1_000_000_000},{'pid':2,'workingSetBytes':1_000_000_000}]
+        return [{'pid':1,'workingSetBytes':1_000_000_000},{'pid':2,'workingSetBytes':app_memory.CEILING-3_000_000_000}]
     monkeypatch.setattr(app_memory,'process_tree',tree)
     monkeypatch.setattr(app_memory,'_reservations',{})
-    assert app_memory.snapshot()['totalBytes']==2_000_000_000
+    assert app_memory.snapshot()['totalBytes']==app_memory.CEILING-2_000_000_000
     assert roots==[123]
     assert app_memory.admit('a',700_000_000)['granted']
     assert app_memory.admit('b',700_000_000)['granted']
@@ -28,6 +31,46 @@ def test_memory_includes_full_tree_and_reservations(monkeypatch):
     app_memory.admit('a',0,True)
     assert app_memory.admit('b',700_000_000)['granted']
     app_memory.admit('b',0,True)
+
+
+def test_unified_profile_counts_grade_and_gates_background_fill(monkeypatch):
+    from hdr_finisher.grain_work import background_fill_allowed
+
+    monkeypatch.setenv("HDR_FINISHER_MEMORY_PROFILE", "unified-8gb")
+    monkeypatch.setattr(app_memory, "TARGET", app_memory.budgets()[0] - app_memory.WORKING)
+    total = 3_200_000_000
+    retained = 500_000_000
+    pressure = "none"
+    monkeypatch.setattr(app_memory, "process_tree", lambda root: [{"workingSetBytes": total}])
+    monkeypatch.setattr(app_memory, "system_pressure", lambda: pressure)
+    monkeypatch.setattr(app_memory, "grade_bytes_provider", lambda: retained)
+    assert app_memory.machine_memory() == 8 * 1024**3
+    assert app_memory.snapshot()["unifiedMemory"]
+    assert background_fill_allowed()
+    assert app_memory.admit("ongoing", 300_000_000)["granted"]
+    assert not background_fill_allowed()
+    app_memory.admit("ongoing", 0, release=True)
+    total = 3_600_000_000
+    value = app_memory.snapshot(refresh=True)
+    assert value["level"] == "none"
+    assert value["gradePressure"] == "moderate"
+    assert not background_fill_allowed()
+    limit = app_memory.LIMITS
+    for share in ("thumbnails", "sharp", "camera", "raw"):
+        assert value["caches"][share]["limitBytes"] == limit[share] // 2
+    targets = []
+    app_memory.register("raw-test", "raw", lambda value: targets.append(value))
+    app_memory.report("raw-test", "raw", limit["raw"])
+    app_memory.trim_library_shares()
+    assert targets == [limit["raw"] // 2]
+    retained = 0
+    value = app_memory.snapshot()
+    assert not value["gradeCacheTrim"]
+    assert value["caches"]["raw"]["limitBytes"] == limit["raw"]
+    total = 3_200_000_000
+    pressure = "critical"
+    app_memory.snapshot(refresh=True)
+    assert not background_fill_allowed()
 
 
 def test_slow_conflict_disk_read_does_not_own_marks_lock(tmp_path,monkeypatch):
@@ -78,7 +121,7 @@ def test_recovery_disk_publication_does_not_own_marks_lock(tmp_path,monkeypatch)
 
 
 def test_one_source_can_progress_above_parallel_admission_floor(monkeypatch):
-    monkeypatch.setattr(app_memory,'process_tree',lambda root:[{'pid':1,'workingSetBytes':2_900_000_000}])
+    monkeypatch.setattr(app_memory,'process_tree',lambda root:[{'pid':1,'workingSetBytes':app_memory.CEILING-1_100_000_000}])
     monkeypatch.setattr(app_memory,'_reservations',{})
     assert app_memory.admit('visible',700_000_000)['granted']
     assert not app_memory.admit('nearby',700_000_000)['granted']
@@ -103,7 +146,15 @@ def test_status_database_reads_do_not_own_marks_lock(tmp_path,monkeypatch):
         assert task.result()['waiting']==0
 
 
-def test_fixed_shares_and_small_machine_ceiling():
+@pytest.mark.parametrize("platform", ["darwin", "linux", "windows-unified"])
+def test_fixed_shares_and_small_machine_ceiling(monkeypatch, platform):
+    windows = platform == "windows-unified"
+    monkeypatch.setattr(app_memory, "os", SimpleNamespace(name="nt" if windows else "posix", environ=os.environ))
+    monkeypatch.setattr(app_memory, "sys", SimpleNamespace(platform="win32" if windows else platform))
+    if windows:
+        monkeypatch.setenv("HDR_FINISHER_MEMORY_PROFILE", "unified-8gb")
+    else:
+        monkeypatch.delenv("HDR_FINISHER_MEMORY_PROFILE", raising=False)
     ceiling,shares=app_memory.budgets(64*1024**3)
     assert ceiling==4_000_000_000
     assert shares['raw']==768_000_000
@@ -119,13 +170,99 @@ def test_fixed_shares_and_small_machine_ceiling():
     assert clamped == shares
     assert app_memory.memory_options(8*1024**3)['maximumBytes'] == 8*1024**3 - 2_000_000_000
     assert app_memory.memory_options(3*1024**3)['defaultBytes'] == 4_000_000_000
+    raised, raised_shares = app_memory.budgets(8*1024**3, chosen=6_000_000_000)
+    assert raised == 6_000_000_000
+    assert raised_shares == dict(thumbnails=512*1024**2, sharp=1_167_096_247,
+                                camera=145_887_030, raw=1_750_644_371,
+                                handoff=583_548_123, working=600_000_000)
     for gib in (8, 16, 32, 64):
         options = app_memory.memory_options(gib*1024**3)
         assert options['minimumBytes'] == options['defaultBytes'] == 4_000_000_000
         assert options['maximumBytes'] == gib*1024**3 - max(2_000_000_000, (gib*1024**3)//10)
 
 
-def test_shared_pages_charged_once_and_aggregate_cache_limit(monkeypatch):
+def test_windows_default_keeps_existing_cache_shares(monkeypatch):
+    monkeypatch.delenv("HDR_FINISHER_MEMORY_PROFILE", raising=False)
+    monkeypatch.setattr(app_memory, "os", SimpleNamespace(name="nt", environ=os.environ))
+    ram = 16 * 1024**3
+    options = app_memory.memory_options(ram)
+    assert options == dict(minimumBytes=6_000_000_000, defaultBytes=6_000_000_000,
+                          maximumBytes=ram-2_000_000_000, ramBytes=ram)
+    default, shares = app_memory.budgets(ram)
+    assert (default, shares) == (6_000_000_000, {
+        "thumbnails": 512 * 1024**2, "sharp": 512_000_000, "camera": 64_000_000,
+        "raw": 768_000_000, "handoff": 256_000_000, "working": 600_000_000,
+    })
+    assert app_memory.budgets(ram, chosen=4_000_000_000) == (default, shares)
+    raised, raised_shares = app_memory.budgets(ram, chosen=8_000_000_000)
+    assert raised == 8_000_000_000
+    assert raised_shares['thumbnails'] == shares['thumbnails']
+    assert raised_shares['raw'] > shares['raw']
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows private commit and EmptyWorkingSet")
+def test_windows_child_commit_survives_working_set_trim(monkeypatch):
+    size = 128 * 1024**2
+    child_script = """
+import ctypes, os, sys
+from ctypes import wintypes
+
+kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+kernel.GetCurrentProcess.restype = wintypes.HANDLE
+kernel.VirtualAlloc.argtypes = [ctypes.c_void_p, ctypes.c_size_t, wintypes.DWORD, wintypes.DWORD]
+kernel.VirtualAlloc.restype = ctypes.c_void_p
+trim = ctypes.WinDLL("psapi", use_last_error=True).EmptyWorkingSet
+trim.argtypes = [wintypes.HANDLE]
+process = kernel.GetCurrentProcess()
+size = int(sys.argv[1])
+
+print(os.getpid(), flush=True)
+input()
+memory = kernel.VirtualAlloc(None, size, 0x3000, 4)  # Reserve and commit private read/write pages.
+if not memory:
+    raise ctypes.WinError(ctypes.get_last_error())
+ctypes.memset(memory, 1, size)
+print("allocated", flush=True)
+input()
+if not trim(process):
+    raise ctypes.WinError(ctypes.get_last_error())
+print("trimmed", flush=True)
+sys.stdin.readline()
+"""
+    monkeypatch.setenv("HDR_FINISHER_DESKTOP_PID", str(os.getpid()))
+    with subprocess.Popen([sys.executable, "-u", "-c", child_script, str(size)],
+                          stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True) as child:
+        def sample():
+            value = app_memory.snapshot(refresh=True)
+            assert value["measurement"] == "private-commit"
+            assert value["totalBytes"] == sum(row["privateBytes"] for row in value["processes"])
+            return next(row for row in value["processes"] if row["pid"] == child_pid)
+        def advance():
+            child.stdin.write("\n")
+            child.stdin.flush()
+        try:
+            child_pid = int(child.stdout.readline())
+            before = sample()
+            advance()
+            assert child.stdout.readline().strip() == "allocated"
+            after = sample()
+            advance()
+            assert child.stdout.readline().strip() == "trimmed"
+            trimmed = sample()
+        finally:
+            child.stdin.close()
+            child.wait(timeout=10)
+        # Allow 1 MiB for interpreter/pipe allocations around the handshake.
+        assert after["chargedBytes"] - before["chargedBytes"] == pytest.approx(size, abs=1024**2)
+        assert trimmed["chargedBytes"] == pytest.approx(after["chargedBytes"], abs=1024**2)
+        assert trimmed["workingSetBytes"] < after["workingSetBytes"] - size//2
+        assert trimmed["peakPrivateBytes"] >= after["privateBytes"]
+        print(f"Child commit bytes: {before['chargedBytes']} before, "
+              f"{after['chargedBytes']} allocated, {trimmed['chargedBytes']} trimmed. "
+              f"Working set: {after['workingSetBytes']} to {trimmed['workingSetBytes']} bytes.")
+
+
+def test_snapshot_sums_process_charges_and_limits_aggregate_cache(monkeypatch):
     monkeypatch.setattr(app_memory,'process_tree',lambda root:[dict(pid=1,workingSetBytes=200,chargedBytes=150),dict(pid=2,workingSetBytes=200,chargedBytes=150)])
     assert app_memory.snapshot()['totalBytes']==300
     assert app_memory.claim('a','handoff',200_000_000)
@@ -280,6 +417,20 @@ def test_memory_endpoint_answers_during_coalesced_slow_reclaim(tmp_path, monkeyp
     asyncio.run(run())
 
 
+@pytest.mark.parametrize("has_headroom", [False, True])
+def test_refresh_after_scratch_rechecks_existing_admission(monkeypatch, has_headroom):
+    size = 1_000_000
+    before = app_memory.TARGET
+    after = before - 2 * size if has_headroom else before
+    monkeypatch.setattr(app_memory, "_sample", (0, [{"workingSetBytes": before}]))
+    monkeypatch.setattr(app_memory, "process_tree", lambda root: [{"workingSetBytes": after}])
+    assert not app_memory.claim("preview", "working", size)
+    assert app_memory.refresh_after_scratch(size) == (before, after)
+    assert app_memory.claim("preview", "working", size) is has_headroom
+    if has_headroom:
+        assert app_memory.refresh_after_scratch(size) is None
+
+
 def test_memory_reader_uses_completed_census_during_refresh(monkeypatch):
     from concurrent.futures import ThreadPoolExecutor
     from threading import Event
@@ -347,6 +498,7 @@ def test_memory_polls_never_wait_for_grade_lock(tmp_path, monkeypatch):
     from types import SimpleNamespace
     from fastapi import FastAPI
     from hdr_finisher.sessions import SessionStore
+    from hdr_finisher.render_cache import SessionRenderCache
     from hdr_finisher.library_api import create_library_router
     from hdr_finisher.library_worker import LibraryWorker
     from hdr_finisher.media_browser import MediaBrowserStore
@@ -354,6 +506,7 @@ def test_memory_polls_never_wait_for_grade_lock(tmp_path, monkeypatch):
     pixels = np.ones((4, 4, 3), dtype=np.float32)
     session = SimpleNamespace(image=pixels, retouch_original=pixels, sdr_reference_image=None,
                               source=SimpleNamespace(filename='test.raw'), to_payload=lambda: None,
+                              render_cache=SessionRenderCache(pixels, None),
                               owns_source_path=False, retouch_worker=None)
     store.activate_session(session)
     assert store._retained_session_bytes() == pixels.nbytes
@@ -396,7 +549,7 @@ def test_memory_endpoint_coalesces_a_stuck_sample(tmp_path, monkeypatch):
     def sample(**kwargs):
         calls.append(1)
         if len(calls)>1: entered.set(); assert release.wait(4)
-        return {'totalBytes': 100}
+        return {'totalBytes': 100, 'gradeCacheTrim': False}
     monkeypatch.setattr(app_memory, 'snapshot', sample)
     app = FastAPI(); app.include_router(create_library_router(LibraryWorker(tmp_path), MediaBrowserStore(tmp_path)))
     async def run():
@@ -444,7 +597,7 @@ def test_preview_acceptance_does_not_block_memory_poll(tmp_path, monkeypatch):
     entered, release = Event(), Event()
     def accept(self, result):
         entered.set(); assert release.wait(3)
-    monkeypatch.setattr(LivePictures, 'document', lambda *args: None)
+    monkeypatch.setattr(LivePictures, 'document', lambda *args, **kwargs: None)
     monkeypatch.setattr(LivePictures, 'describe', lambda *args: {'key': 'accepted'})
     monkeypatch.setattr(LibraryPictureCache, 'cached', lambda *args: {'key': 'cached'})
     monkeypatch.setattr(LibraryPictureCache, 'accept_transient', accept)

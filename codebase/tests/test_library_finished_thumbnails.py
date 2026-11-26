@@ -3,6 +3,7 @@ import os
 from hashlib import sha256
 from pathlib import Path
 from types import SimpleNamespace
+import pytest
 
 from hdr_finisher.library_finished_thumbnails import FinishedThumbnails
 from hdr_finisher.library_live import LivePictures, quality
@@ -11,13 +12,13 @@ from hdr_finisher.library_marks import LibraryMarks
 from hdr_finisher.models import AdjustmentState
 
 
-def setup_cache(tmp_path):
+def setup_cache(tmp_path, filename="photo.jpg"):
     root = tmp_path / "test-finished"
     root.mkdir()
     marks = LibraryMarks(root)
     db = marks._connect()
     db.execute("CREATE TABLE photo_grades(path TEXT PRIMARY KEY,state TEXT)")
-    source = tmp_path / "photo.jpg"
+    source = tmp_path / filename
     source.write_bytes(b"source")
     stat = source.stat()
     db.execute("INSERT INTO files VALUES (?,?,?,NULL)", (str(source),stat.st_size,stat.st_mtime_ns))
@@ -41,6 +42,61 @@ def test_exact_finished_bytes_survive_restart_and_offline_source(tmp_path, monke
     info, stored = restarted.read(str(source),"sdr","bgra8unorm")
     assert stored == body and info["key"] == meta["key"]
     assert restarted.read(str(source),"hdr","rgba16float") is None
+
+
+def test_hdr_surface_cannot_survive_a_source_decoder_change(tmp_path, monkeypatch):
+    from hdr_finisher import loader
+
+    source, _, cache, meta = setup_cache(tmp_path)
+    body = bytes(range(256)) * 2
+    assert cache.write(str(source), "hdr", "rgba16float", meta, body, 2, 2, 256)
+    assert cache.read(str(source), "hdr", "rgba16float")[1] == body
+    monkeypatch.setattr(loader, "source_decoder_version", lambda *_, **__: "different-source-decoder")
+    assert cache.read(str(source), "hdr", "rgba16float") is None
+
+
+@pytest.mark.parametrize(("effect", "changed_lanes"), [
+    ("remove_hot_pixels", {"hdr", "sdr"}),
+    ("even_out_specks", {"hdr", "sdr"}),
+    ("micro_grain", {"hdr"}),
+    ("off", set()),
+])
+def test_bayer_fit_invalidates_affected_finished_pictures(tmp_path, monkeypatch, effect, changed_lanes):
+    from hdr_finisher import loader
+    from hdr_finisher.library_screen_previews import StoredScreenPreviews
+    from hdr_finisher.models import EditDocument
+
+    photo, marks, thumbnails, _ = setup_cache(tmp_path, "photo.ARW")
+    raw = dict(filename=photo.name, luminance=dict(luminance_semantics="scene_relative", transfer_function="linear"),
+               raw_import_settings=dict(pixel_cleanup=dict(remove_hot_pixels=False, even_out_specks=False)))
+    document = EditDocument(hdr_reference_white_nits=203, source=raw)
+    if effect == "micro_grain":
+        document.denoise.hdr.enabled = True
+        document.denoise.hdr.controls.method = "micro_grain"
+    elif effect != "off":
+        setattr(document.source.raw_import_settings.pixel_cleanup, effect, True)
+    grade = document.model_dump(mode="json")
+    db = marks._connect()
+    db.execute("INSERT INTO photo_grades VALUES (?,?)", (str(photo), json.dumps(dict(indexed_grade=grade))))
+    db.commit()
+    db.close()
+    screens = StoredScreenPreviews(thumbnails.live.root, lambda _: grade)
+
+    def keys():
+        return {
+            lane: (thumbnails.current(photo, lane, "bgra8unorm")[0]["key"],
+                   screens.identity(photo, 2560, 2560, lane)["key"])
+            for lane in ("hdr", "sdr")
+        }
+
+    with monkeypatch.context() as previous:
+        previous.setattr(loader, "BAYER_NOISE_FIT_CACHE_SUFFIX", "")
+        old = keys()
+    current = keys()
+    for lane in current:
+        expected = lane in changed_lanes
+        assert tuple(before != after for before, after in zip(old[lane], current[lane], strict=True)) == (expected, expected)
+    assert keys() == current
 
 
 def test_known_source_and_pending_grade_changes_reject_old_surfaces(tmp_path):
@@ -121,12 +177,11 @@ def test_refresh_rejects_late_finished_upload_and_rediscovers_new_picture(tmp_pa
     assert cache.read(str(photo), 'sdr', 'bgra8unorm')[1] == body
 
 
-def test_pre_detail_fix_thumbnail_rebuilds_without_redeveloping_source(tmp_path, monkeypatch):
+def test_pre_shadow_fix_thumbnail_rebuilds_without_redeveloping_source(tmp_path, monkeypatch):
     from hdr_finisher import library_finished_thumbnails as module
-    from hdr_finisher.library_pictures import PICTURE_VERSION
     source, marks, cache, meta = setup_cache(tmp_path)
     with monkeypatch.context() as patch:
-        patch.setattr(module, 'VERSION', 'finished-thumbnail-v3:' + PICTURE_VERSION)
+        patch.setattr(module, 'SDR_GAMUT_CACHE_SUFFIX', '')
         assert cache.write(str(source), 'sdr', 'bgra8unorm', meta, bytes(512), 2, 2, 256)
     assert cache.read(str(source), 'sdr', 'bgra8unorm') is None
     # The same developed source description can publish the corrected finish.

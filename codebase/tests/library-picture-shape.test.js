@@ -26,3 +26,24 @@ for(const route of ['camera-raw-gpu','cached-picture']) test(`Library ${route} k
  await pictures.show({key:'stale',width:900,height:300},canvas,controller.signal,()=>false);
  assert.deepEqual([canvas.width,canvas.height],[400,600],'Stale picture does not resize');
 });
+
+test('Library sends the saved HDR target through its GPU graph', async()=>{
+ let presentedTarget;
+ class Base {
+  constructor(){this.surfaceKeys=new Map();this.prepareLibraryDraw=async()=>{};}
+  setDetectedVideoMemory(){}
+  async initialize(){this.deliveryActivityTimer=1;return true;}
+  async renderTo(canvas,key,lane,adjustments){assert.equal(lane,'hdr');presentedTarget=adjustments.hdr.highlight_compression_target_nits;return {rendered:true};}
+  async waitForSubmittedWork(){}
+ }
+ const context=vm.createContext({window:{}, document:{createElement:()=>({})}, navigator:{gpu:{}}, HDRWebGPUPreview:Base,
+  performance,structuredClone,sampleCurvePoints:()=>{},HDRLibraryStopwatch:()=>{},
+  HDRLibrarySceneScheduler:require('../frontend/library-scene-scheduler')});
+ vm.runInContext(fs.readFileSync(require('node:path').join(__dirname,'../frontend/library-gpu.js'),'utf8'),context);
+ const canvas={dataset:{}};
+ await context.window.HDRLibraryPictures.show({key:'cap',width:640,height:320,edge:640,route:'cached-picture',
+  adjustments:{hdr:{highlight_section_enabled:true,highlight_compression_target_nits:400}}},
+  canvas,new AbortController().signal,()=>true,true);
+ assert.equal(presentedTarget,400);
+ assert.equal(canvas.dataset.peakNits,'400');
+});

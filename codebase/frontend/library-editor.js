@@ -52,7 +52,10 @@
     else if (message.action === "export-selection") await window.batchExport?.open(message.paths || message.ids || [], { fromLibrary: true });
     else if (message.action === "add-export-selection") await window.batchExport?.add(message.paths || []);
   }
-  window.HDRLibraryHost = Object.freeze({ isDetached: () => detached, openDrop, preparePaste, dispatch });
+  window.HDRLibraryHost = Object.freeze({
+    isDetached: () => detached, openDrop, preparePaste, dispatch,
+    deferThumbnailDraw: () => state.zoomMode === "custom" && cpuMicroPreviewSelected(state.currentView),
+  });
   const away = document.createElement("div"); away.className = "library-away"; away.hidden = true;
   away.innerHTML = '<p>Library is open in its own window.</p><button class="button-secondary">Show Library</button>';
   frame.after(away); away.querySelector("button").addEventListener("click", () => desktop?.focusLibrary());

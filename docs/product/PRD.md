@@ -179,17 +179,18 @@ performance work optimises for this class of machine as well as the
 Windows PC. Development and testing happen on both machines, which hand
 work to each other through GitHub.
 
-**Minimum specification (Steve, November 16, 2026):**
+**Minimum specification (Steve, November 16 and 22, 2026):**
 
 - **macOS:** Apple silicon arm64 (MacBook Neo / A18 Pro class), 8 GB unified
   memory, WebGPU-capable Apple GPU using Metal; current MacBook macOS tested.
-- **Windows:** x64, Windows 11, 8 GB RAM, WebGPU-capable GPU using Direct3D 12
+- **Windows:** x64, Windows 11, 16 GB RAM, WebGPU-capable GPU using Direct3D 12
   with current drivers.
 - **Linux:** x86_64, 8 GB RAM, working hardware WebGPU; Kubuntu 26.04 LTS is
   the primary target.
 
-On every platform, app memory is at least 4 GB (also the default, including on
-8 GB machines), the window is at least 1100×720, and an HDR display is optional.
+The app memory default and minimum are 6 GB on Windows and 4 GB on macOS
+and Linux. All platforms require a window of at least 1100×720. An HDR
+display is optional.
 The user-facing copy is the [Minimum specification table](../getting-started/install-and-run.md#minimum-specification).
 Ceilings, maximum and physical reserve belong to [Memory and caches](modules/memory-and-caches.md).
 
@@ -199,6 +200,13 @@ stacks for bursts, face
 recognition, maps, cloud sync, phone companion, tethering, printing, web
 galleries, slideshows and video. Details are in each module's
 out-of-scope list.
+
+**Denoise quality trial for v1 (Steve, November 16, 2026).** Steve wants
+sensor noise removed without losing structure or sharpness, AI or not. A
+better Denoise (AI, classical or hybrid) may be tried for v1; it ships only
+if it clearly beats the current Denoise on the measured contract and Steve
+approves. Noise removal is restoration, not the excluded AI selection or
+generation. See the [Denoise v1 brief](../technical/briefs/denoise-v1-quality-trial-2026-11-16.md).
 
 **Deferred to v2 (Steve, October 21, 2026):** Library Looks, linked
 photos, portable projects, and an MCP server so an AI assistant can
@@ -390,6 +398,7 @@ Found during the November 8 release check. Each needs a brief before work starts
 | Black & White slider strength, fade points and presets | Test | Grade |
 | Exposure-warning wording, shadow warning threshold | Test | Photo Library |
 | Match entire HDR grade fault: photos and message | Report | Grade |
+| Micro Grain before v1: tune its quality (today it looks less good than Clean Grain, the default), and whether to move Micro Grain with lens correction to the GPU (about 1–2 weeks; today about 55 s on the MacBook Neo when both are on). Steve, Nov 22: after other testing, smaller bug fixes and feature tweaks | Decision | [Denoise](modules/denoise.md#7-open-work-and-next-steps) |
 
 ## 8. How the documents are kept
 

@@ -111,3 +111,31 @@ test("queued membership remains visible while the index is idle", () => {
   health.index.membership.state = "failed";
   assert.notEqual(summary(health), "Activity");
 });
+
+test("Activity shows export ETA in seconds below a minute and rounded minutes above it", async () => {
+  const { create } = require("../frontend/library-activity.js");
+  const oldWindow = global.window, oldDocument = global.document;
+  const node = () => ({
+    children: [], dataset: {},
+    append(...children) { this.children.push(...children); },
+    replaceChildren(...children) { this.children = children; },
+    setAttribute() {}, addEventListener() {}, contains() { return false; },
+  });
+  const text = item => [item.textContent, ...item.children.map(text)].join(" ");
+  const panel = node();
+  const version = { id: "batch", state: "running", completed: 0, total: 1, estimated_seconds: 10 };
+  try {
+    global.window = { addEventListener() {} };
+    global.document = { createElement: node, addEventListener() {} };
+    const activity = create({ button: node(), panel, api: async path =>
+      path.endsWith("health") ? rest() : { jobs: [version] } });
+    await activity.refresh();
+    assert.match(text(panel), /about 10s left/);
+    version.estimated_seconds = 75;
+    await activity.refresh();
+    assert.match(text(panel), /about 1 min left/);
+  } finally {
+    global.window = oldWindow;
+    global.document = oldDocument;
+  }
+});

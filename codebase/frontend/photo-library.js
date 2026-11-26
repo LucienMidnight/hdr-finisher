@@ -80,16 +80,19 @@
   let overlays = null;
   const logView = () => compare?.enabled() ? "compare" : state.review ? "fullscreen" : state.view;
   const pictureRequests = HDRLibraryRequestQueue.create();
-  async function api(route, body, signal) {
+  async function api(route, body, signal, action = null) {
     const measured = ["/api/library/picture", "/api/library/native", "/api/library/overlay-map"].includes(route);
     const trace = measured ? crypto.randomUUID() : null;
+    const context = action ?? (body?.path ? window.HDRLibraryFolderAction?.(body.path) : null);
+    const headers = { "Content-Type": "application/json", ...(trace ? { "X-Library-Request": trace } : {}) };
     for (;;) {
       const queued = performance.now();
       if (measured) HDRLibraryStopwatch("picture_requested", { picture_size:route === "/api/library/native" ? "detail preview" : body.edge <= 640 ? "thumbnail" : "screen preview",view:logView(),path: body.path, request: trace });
       const request = async () => {
         if (measured) HDRLibraryStopwatch("picture_dispatched", { picture_size:route === "/api/library/native" ? "detail preview" : body.edge <= 640 ? "thumbnail" : "screen preview",view:logView(),path: body.path, request: trace, queue_ms: performance.now() - queued });
         const response = await fetch(route, { signal, ...(body === undefined ? {} : {
-          method: "POST", headers: { "Content-Type": "application/json", ...(trace ? { "X-Library-Request": trace } : {}) }, body: JSON.stringify(body) }) });
+          method: "POST", headers: globalThis.HDRDiagnostics?.headers(context, headers) ?? headers,
+          body: JSON.stringify(body) }) });
         return { response, result: await response.json() };
       };
       const { response, result } = await ((route === "/api/library/picture" || route === "/api/library/native" || route === "/api/library/overlay-map")
@@ -155,23 +158,30 @@
     showTag: tag => browseCollection("tag", tag), indexing: () => state.indexing?.state === "indexing",
     labelNames: () => state.labelNames,
     setLabelNames: async names => { state.labelNames = (await api("/api/library/preferences", { label_names: names })).label_names; updateDetails(); paintGrid(); paintFilm(); } });
-  async function filesChanged(result) {
-    culling.setUndo(result.undo_available); $("library-undo").hidden = !result.undo_available;
-    for(const change of result.changes || []) {
-      if (["Recycle Bin", "Trash", "Gone for good"].includes(change.new)) continue;
+  const deleteTargets=new Set(["Recycle Bin", "Trash", "Gone for good"]);
+  const fileFeed=HDRLibraryFileCommands.createChangeFeed(async (entries,missed) => {
+    const changes=entries.flatMap(entry=>entry.changes);
+    for (const change of changes) {
+      if (deleteTargets.has(change.new)) continue;
       const remap = p => p === change.old || p.startsWith(change.old + "\\") || p.startsWith(change.old + "/") ? change.new + p.slice(change.old.length) : p;
       state.path = remap(state.path); if(state.lastFolder) state.lastFolder=remap(state.lastFolder);
     }
-    const deleted = new Set((result.changes || []).filter(change => ["Recycle Bin", "Trash", "Gone for good"].includes(change.new)).map(change => change.old));
-    for (const path of result.removed_copies || []) deleted.add(path);
+    if (missed || changes.some(change=>!deleteTargets.has(change.new))) {
+      await refreshPins().catch(error => status(error.message));
+      await reopen();
+      return;
+    }
+    const deleted = new Set(changes.map(change=>change.old));
+    for (const entry of entries) for (const path of entry.removed_copies) deleted.add(path);
     if (deleted.size) {
       // Keep the old visible order until applyQuery chooses a surviving neighbour.
       state.allPhotos = state.allPhotos.filter(photo => !deleted.has(photo.path) && !deleted.has(photo.source_path));
       applyQuery();
     }
-    await refreshPins().catch(error => status(error.message));
-    if (!deleted.size) await reopen();
-
+  });
+  async function filesChanged(result) {
+    culling.setUndo(result.undo_available); $("library-undo").hidden = !result.undo_available;
+    await fileFeed.receive(result);
   }
   const fileCommands = HDRLibraryFileCommands.create({api,status,pins:()=>state.pins,changed:filesChanged,removeCopies:removeCopy});
   const reopen = () => state.collection ? browseCollection(state.collection.kind, state.collection.name) : openPlace({ path: state.path, refresh: true });
@@ -185,7 +195,9 @@
   const pictureIdentity = photo => `${photo.path}|${photo.grade_identity || ""}|${photo.bytes}|${photo.mtime_ns}`;
   function pictureMode(img, hdr) {
     img.style.dynamicRangeLimit = hdr ? 'no-limit' : 'standard';
-    img.dataset.rendition = hdr ? 'hdr' : 'sdr'; img.dataset.peakNits = hdr ? '1000' : '203';
+    img.dataset.rendition = hdr ? 'hdr' : 'sdr';
+    if (!hdr) img.dataset.peakNits = '203';
+    else if (img.tagName === 'IMG') delete img.dataset.peakNits;
   }
   // One thumbnail scene size, scaled to fit any grid or filmstrip cell.
   const thumbnailEdge = () => 640;
@@ -456,7 +468,10 @@
   let restoring = 0;
   function setActive(active) {
     state.active = active;
-    if(active)for(const entry of gradeHandoffs.values())entry.returnedAt=Date.now();
+    if(active)for(const entry of gradeHandoffs.values()){
+      entry.returnedAt=Date.now();
+      entry.resumeThumbnailDraw?.();
+    }
     // Runs after this paint (queued work), on every return path.
     if (active) replaceDeferredGradeThumbnails();
     // Docking sends the saved place and then activates; the restore opens and
@@ -496,13 +511,14 @@
     $("library-diagnostic").textContent = message;
     HDRLibraryStopwatch("picture_diagnostic",{...window.HDRLibraryPictureLog?.(meta),path:photo.path,duration_ms:elapsed});
   }
-  async function loadAndShow(photo, edge, canvas, controller, isCurrent, priority = 10, prepared = null, trace = null) {
+  async function loadAndShow(photo, edge, canvas, controller, isCurrent, priority = 10, prepared = null, trace = null, priorFailure = null) {
     const started = performance.now();
     let fallback = null;
     const restore = edge > 640 ? borrowStandIn(photo,canvas.parentNode,controller,isCurrent,trace) : null;
     try {
       while (isCurrent() && !controller.signal.aborted) {
         try {
+          if (priorFailure) { const error = priorFailure; priorFailure = null; throw error; }
           const meta = await (prepared || HDRLibraryScenes.load(photo.path,edge,controller.signal,priority,trace));
           prepared = null;
           if (!isCurrent()) return;
@@ -522,7 +538,7 @@
           prepared = null;
           if (aborted(error) || !isCurrent()) return;
           if (error.libraryYield) { await sleep(50,controller.signal); continue; }
-          if (error.libraryError || (!error.gpuUnavailable && !HDRLibraryPictures.lost?.())) throw error;
+          if (!error.grainPreparationReplaced && (error.libraryError || (!error.gpuUnavailable && !HDRLibraryPictures.lost?.()))) throw error;
           if (!fallback) {
             const meta = await api("/api/library/fallback-picture",{path:photo.path,edge},controller.signal);
             if (!isCurrent()) return;
@@ -533,6 +549,14 @@
             canvas.after(fallback); canvas.style.visibility = "hidden";
             pictureMode(fallback,HDRLibraryQuery.displayHDR(photo,state.hdr));
           }
+          if (error.grainPreparationReplaced) {
+            const picture = fallback;
+            controller.signal.addEventListener("abort", () => { picture.remove(); canvas.style.visibility = ""; }, { once: true });
+            fallback = null;
+            status(`Showing a CPU preview · ${photo.name}`);
+            HDRLibraryTrace.present(trace,isCurrent,{route:"grain-cpu-fallback"});
+            return;
+          }
           await sleep(2000,controller.signal);
         }
       }
@@ -541,7 +565,15 @@
   async function drawPicture(meta, canvas, controller, isCurrent) {
     for (;;) {
       const epoch = state.displayEpoch;
-      await HDRLibraryPictures.show(meta, canvas, controller.signal, () => isCurrent() && epoch === state.displayEpoch, state.hdr);
+      try {
+        await HDRLibraryPictures.show(meta, canvas, controller.signal, () => isCurrent() && epoch === state.displayEpoch, state.hdr);
+      } catch (error) {
+        if (!aborted(error) && isCurrent()) globalThis.HDRDiagnostics?.event("library", "picture_draw_failed", {
+          level: "warn", route: "refused", reason: error.gpuUnavailable ? "gpu_unavailable" : "picture_draw_failed",
+          photo: meta.path ? { id: meta.path, name: meta.path.split(/[\\/]/).at(-1) } : null,
+        }, window.HDRLibraryFolderAction?.(meta.path));
+        throw error;
+      }
       if (!isCurrent() || controller.signal.aborted || epoch === state.displayEpoch) return;
     }
   }
@@ -714,7 +746,7 @@
           const badge=document.createElement("span");badge.className="library-colour-note";badge.style.color="var(--muted)";badge.style.borderColor="var(--border)";badge.textContent="Developed";badge.classList.add("is-developed");frame.append(badge);
           pictureErrors.paint(cell);
           HDRLibraryStopwatch("picture_shown",{reason:"HDR Finisher stored",path:photo.path,key:finished.key,route:finished.route,view:container===space?"grid":"filmstrip",duration_ms:cell.elapsed});
-          window.HDRLibraryFolderPresented?.({view:container===space?"grid":"filmstrip",path:photo.path});
+          window.HDRLibraryFolderPresented?.({view:container===space?"grid":"filmstrip",path:photo.path},{ route: finished.route, draw_route: "gpu" });
           overlays?.attach(photo,fallback,finished,cell.controller,current);
           return;
         }
@@ -762,24 +794,30 @@
             fallback.dataset.pictureKey=meta.key; fallback.dataset.picturePath=photo.path;
             refreshedShown(photo.path, container === space ? "grid" : "filmstrip");
             HDRLibraryStopwatch("picture_shown",{reason:meta.bitmap?meta.picture_source:meta.cache_hit?"HDR Finisher stored":"HDR Finisher fresh",...window.HDRLibraryPictureLog?.(meta),view:container === space ? "grid" : "filmstrip",path:photo.path,key:meta.key,duration_ms:cell.elapsed});
-            HDRLibraryTrace.present(trace,current,{picture_size:"thumbnail",route:meta.route});
+            HDRLibraryTrace.present(trace,current,{picture_size:"thumbnail",route:meta.route,draw_route:meta.bitmap ? "cpu" : "gpu"});
             overlays?.attach(photo,fallback,meta,cell.controller,current);
             return;
           } catch(error) {
             if (aborted(error) || !current()) return;
             if (error.libraryYield) { await sleep(50,cell.controller.signal); continue; }
-            if (error.libraryError || (!error.gpuUnavailable && !HDRLibraryPictures.lost?.())) throw error;
+            if (!error.grainPreparationReplaced && (error.libraryError || (!error.gpuUnavailable && !HDRLibraryPictures.lost?.()))) throw error;
             if (!cpuShown) {
-              const meta = await api("/api/library/fallback-picture",{path:photo.path,edge:cell.edge},cell.controller.signal);
+              const action = window.HDRLibraryFolderAction?.(photo.path);
+              globalThis.HDRDiagnostics?.event("library", "picture_draw_fallback", {
+                level: "warn", route: "cpu", reason: "gpu_draw_unavailable",
+                photo: { id: photo.path, name: photo.name }, requested_edge_px: cell.edge,
+              }, action);
+              const meta = await api("/api/library/fallback-picture",{path:photo.path,edge:cell.edge},cell.controller.signal,action);
               if (!current()) return;
               canvas.src=meta.url; await canvas.decode();
               if (!current()) return;
               canvas.hidden=false; canvas.style.visibility=""; fallback.hidden=true;
               canvas.dataset.preview="false"; canvas.dataset.cpuFallback="true";
               pictureMode(canvas,HDRLibraryQuery.displayHDR(photo,state.hdr)); element.classList.remove("loading"); frame.querySelector(".library-picture-status")?.remove();
-              window.HDRLibraryFolderPresented?.({view:container === space ? "grid" : "filmstrip",path:photo.path});
+              window.HDRLibraryFolderPresented?.({view:container === space ? "grid" : "filmstrip",path:photo.path},{route:meta.route,draw_route:"cpu"});
             cpuShown=true;
             }
+            if (error.grainPreparationReplaced) return;
             await sleep(2000,cell.controller.signal);
           }
         }
@@ -1348,8 +1386,8 @@
         overlays?.attach(photo,value.canvas,meta,controller,current);
       } catch (error) {
         if (!current()) return;
-        if (!aborted(error) && !error.libraryYield && HDRLibraryPictures.usable()) throw error;
-        meta = await loadAndShow(photo,2560,$("single-picture"),controller,current,0,null,trace);
+        if (!aborted(error) && !error.libraryYield && !error.grainPreparationReplaced && HDRLibraryPictures.usable()) throw error;
+        meta = await loadAndShow(photo,2560,$("single-picture"),controller,current,0,null,trace,error.grainPreparationReplaced ? error : null);
         if (meta) $("single-picture").dataset.readyIdentity = readyKey(photo);
       }
       if (!meta || !current()) return;
@@ -1573,20 +1611,26 @@
       HDRLibraryStopwatch("folder_open_joined", {path,request:state.folderOpen.request});
       return state.folderOpen.ready;
     }
+    const diagnostics = globalThis.HDRDiagnostics;
+    const action = diagnostics?.start("library", "open_place", null, { folder: path, place_kind: place.kind || "folder" });
     restoreSourceSort(place);
     if(state.folderOpen)HDRLibraryStopwatch("folder_open_cancelled",{path:state.path,request:state.folderOpen.request,reason:"opened another place"});
     state.scan?.abort(); state.single?.abort(); state.native?.abort(); clearPrefetch(); clearCells(state.cells); clearCells(state.filmCells);
     state.collection = place.kind ? { kind: place.kind, name: place.name } : null; state.smartFilters = null; albums.setActive(place.kind === "album" ? place.name : ""); smart.setActive(place.kind === "smart" ? place.name : "");
     if (path) state.lastFolder = path;  // Where a deleted album's view returns to.
-    const controller = new AbortController(); state.scan = controller; state.folderOpen = null; state.path = path; state.reading = true; state.scanError = ""; state.allPhotos = []; state.photos = []; state.index = -1; state.selection.clear(); state.anchor = -1; state.hiddenFiles = 0;
+    const controller = new AbortController();
+    controller.signal.addEventListener("abort", () => action?.finish("cancelled", {
+      route: "refused", reason: "superseded",
+    }), { once: true });
+    state.scan = controller; state.folderOpen = null; state.path = path; state.reading = true; state.scanError = ""; state.allPhotos = []; state.photos = []; state.index = -1; state.selection.clear(); state.anchor = -1; state.hiddenFiles = 0;
     setView("grid"); grid.scrollTop = 0;
     $("check-photos").disabled = !path;
     $("place-title").textContent = place.kind === "smart" ? smart.name(place.name) || "Smart album" : place.kind === "album" ? place.name : place.kind ? `Tag · ${place.name}` : path.split(/[\\/]/).filter(Boolean).at(-1) || path;
     $("place-title").title = place.kind === "smart" ? "Smart album · saved filter across the indexed library" : place.kind === "album" ? "Album. Photos stay where they are." : place.kind ? "Every connected photo that carries this tag" : path; status(place.kind ? "Reading…" : "Reading folder…");
     for (const element of $("folders").querySelectorAll(".library-folder-row")) element.classList.toggle("active", !place.kind && element.dataset.path === path);
     try {
-      if (!place.kind) { await openFolderStream(path, controller); return; }
-      const result = place.kind === "smart" ? await smart.open(place.name) : place.kind ? await api("/api/library/collection", { kind: place.kind, name: place.name }, controller.signal) : await api("/api/library/scan", { path }, controller.signal);
+      if (!place.kind) { await openFolderStream(path, controller, action); return; }
+      const result = place.kind === "smart" ? await smart.open(place.name) : place.kind ? await api("/api/library/collection", { kind: place.kind, name: place.name }, controller.signal, action) : await api("/api/library/scan", { path }, controller.signal);
       if (controller.signal.aborted) return;
       if (place.kind === "smart") { state.smartFilters = result.filters; state.smartIndexing = result.indexing; $("place-title").textContent = result.name; }
       HDRLibraryStopwatch("folder_listed", { path });
@@ -1608,16 +1652,23 @@
       if (notes.length) status(`${result.photos.length.toLocaleString()} photos · ${notes.join(" · ")}`);
       if (result.warnings?.length) status(result.warnings[0]);
       void readDates(controller, result.photos.filter(photo => !photo.indexed));
-    } catch (error) { if (!aborted(error) && state.scan === controller) { state.reading = false; state.scanError = error.message; status(error.message); paintGrid(); } }
+    } catch (error) {
+      if (!aborted(error) && state.scan === controller) {
+        action?.finish("error", { level: "error", route: "refused", reason: "place_open_failed" });
+        state.reading = false; state.scanError = error.message; status(error.message); paintGrid();
+      }
+    } finally {
+      if (place.kind && !controller.signal.aborted) action?.finish("success", { photo_count: state.allPhotos.length });
+    }
   }
   let folderPaintTimer;
-  async function openFolderStream(path, controller) {
+  async function openFolderStream(path, controller, action) {
     const started = performance.now(), rows = new Map(), copies = new Map();
-    const opening = {path, controller, started, request:null, presented:false};
+    const opening = {path, controller, started, request:null, presented:false, action};
     state.folderOpen = opening;
     HDRLibraryStopwatch("folder_open", {path});
     const response = await fetch("/api/library/folder-stream", {method:"POST",signal:controller.signal,
-      headers:{"Content-Type":"application/json"},body:JSON.stringify({path,sort:state.sort,descending:state.descending})});
+      headers:globalThis.HDRDiagnostics?.headers(action, {"Content-Type":"application/json"}) ?? {"Content-Type":"application/json"},body:JSON.stringify({path,sort:state.sort,descending:state.descending})});
     if (!response.ok) throw Error("The folder could not be opened.");
     const reader = response.body.getReader(), decoder = new TextDecoder();
     let readyResolve,readyReject;
@@ -1690,6 +1741,7 @@
               first=false;state.reading=false;
               HDRLibraryStopwatch("folder_first_rows",{path,request:event.request,duration_ms:performance.now()-started});
               paint();readyResolve();
+              action?.finish("success", { photo_count: rows.size });
               HDRLibraryStopwatch("folder_rows_usable",{path,request:event.request,count:rows.size,
                 duration_ms:performance.now()-started});
               await new Promise(resolve=>requestAnimationFrame(()=>setTimeout(resolve,0)));
@@ -1704,6 +1756,7 @@
           }
           if(event.kind === "checked") {
             state.reading=false;paint();
+            action?.finish("success", { photo_count: rows.size });
             HDRLibraryStopwatch("folder_complete",{path,request:event.request,duration_ms:performance.now()-started});
             if(event.unreadable_folders?.length)status("Some sub-folders could not be read; existing entries kept");
             else if(event.manual){
@@ -1716,19 +1769,37 @@
         if(offset<chunk.length)pending.push(chunk.slice(offset));
       }
     } catch(error) {
+      if (!aborted(error) && state.scan === controller) globalThis.HDRDiagnostics?.event("library", "folder_stream_failed", {
+        level: "error", route: "refused", reason: "folder_stream_failed",
+      }, action);
+      if (!aborted(error)) action?.finish("error", {
+        level: "error", route: "refused", reason: "folder_stream_failed",
+      });
       readyReject(error);
       if(!aborted(error) && state.scan===controller){state.reading=false;state.scanError=error.message;status(error.message);}
     } finally {
+      action?.finish("cancelled", { route: "refused", reason: "folder_stream_closed" });
       readyResolve();reader.releaseLock();clearTimeout(folderPaintTimer);
       HDRLibraryStopwatch("folder_stream_ended",{path,request:opening.request,reason:controller.signal.aborted?"opened another place":"connection ended"});
     }};
     void pump();
     return ready;
   }
+  window.HDRLibraryFolderAction = path => {
+    const opening = state.folderOpen;
+    if (!opening?.path || opening.controller.signal.aborted || typeof path !== "string") return null;
+    const root = opening.path.replaceAll("\\", "/").replace(/\/$/, "");
+    return path.replaceAll("\\", "/").startsWith(root + "/") ? opening.action : null;
+  };
   window.HDRLibraryFolderPresented = (trace,fields={}) => {
     const opening=state.folderOpen;
     if(!opening || opening.controller.signal.aborted || trace.view!=="grid")return;
     if(!opening.presented){opening.presented=true;
+      globalThis.HDRDiagnostics?.event("library", "first_picture_drawn", {
+        photo: trace.path ? { id: trace.path, name: trace.path.split(/[\\/]/).at(-1) } : null,
+        route: fields.draw_route,
+        reason: "first_picture_presented", picture_route: fields.route, duration_ms: Math.round(performance.now() - opening.started),
+      }, opening.action);
       window.HDRIdleWarmup?.gridShown();
       HDRLibraryStopwatch("folder_first_grid_picture",{path:opening.path,request:opening.request,duration_ms:performance.now()-opening.started});
     }
@@ -2167,11 +2238,10 @@
     const before = state.indexing?.passes; state.indexing = next;
     if (before !== next.passes) void albums.refresh().catch(error => status(error.message));
   }
-  let fileRevision = 0;
   const activity = HDRLibraryActivity.create({ button: $("index-status"), panel: $("library-activity"), api, status,
     acceptsPhoto: path=>state.photos.some(photo=>photo.path===path),
     onPictureError: record => pictureErrors.show(record),
-    onHealth: next => { pictureErrors.update(next.picture_errors || [], next.picture_errors_checked_at); if(next.file_commands && next.file_commands.revision !== fileRevision) {fileRevision=next.file_commands.revision;if(next.file_commands.changes.length || next.file_commands.removed_copies?.length)void filesChanged({...next.file_commands,undo_available:culling.undoAvailable()});} showIndexing(next.index); void refreshCheckedFolders(next.index.checks); } });
+    onHealth: next => { pictureErrors.update(next.picture_errors || [], next.picture_errors_checked_at); if(next.file_commands)void fileFeed.receive(next.file_commands).catch(error=>status(error.message)); showIndexing(next.index); void refreshCheckedFolders(next.index.checks); } });
   $("library-undo").addEventListener("click", () => { void culling.undo(); });
   let checkEvent = 0, refreshingCheck = false;
   const checkClient = crypto.randomUUID();
@@ -2358,6 +2428,22 @@
         entry.captured_lane=packet.lane;
         if((state.hdr?"hdr":"sdr")===packet.lane)await replaceGradeThumbnail(packet);
       } else if(packet.stage==="sources") {
+        // A zoomed CPU Micro edit and its next rendition share the same
+        // reduced source. Avoid drawing new tiles for a hidden Library while
+        // that working set is live. A visible Library can draw immediately.
+        if(!state.active&&!standalone&&parent.HDRLibraryHost?.deferThumbnailDraw?.()){
+          const signal=entry.controller.signal;
+          await new Promise(resolve=>{
+            const resume=()=>{
+              signal.removeEventListener("abort",resume);
+              entry.resumeThumbnailDraw=null;
+              resolve();
+            };
+            entry.resumeThumbnailDraw=resume;
+            signal.addEventListener("abort",resume,{once:true});
+          });
+        }
+        if(!current())return;
         const lane=state.hdr?"hdr":"sdr";
         // Only this edit's missing lanes are finished. This is explicit
         // hand-off work, never idle, neighbour or ahead development.

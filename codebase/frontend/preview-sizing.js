@@ -21,6 +21,9 @@ function previewTargetLongEdge(value = state.previewResolution) {
 }
 
 function requiredProcessingLongEdge() {
+  if (state.zoomMode === "custom" && cleanGrainZoomViewport(state.currentView)) {
+    return previewTargetLongEdge("full");
+  }
   if (state.previewResolutionOverride === false) {
     const nativeEdge = previewTargetLongEdge("full");
     const edge = state.zoomMode !== "custom" ? displayedLongEdge()
@@ -137,7 +140,33 @@ function cancelRoiPanRefinement() {
  * after a pan still converges the rest of the image.
  */
 function noteViewerPan() {
-  state.renderCoordinator?.notePan(state.currentView);
+  const lane = state.currentView;
+  if (state.gpuScopeRequestInFlight || state.pendingGpuScopeRequest) rescheduleGpuScopeAfterPan(lane);
+  const region = els.previewCanvas.hdrFrameRegion;
+  const accepted = state.acceptedPresentation;
+  if (cpuMicroPreviewSelected(lane) && cpuMicroViewport(lane)) {
+    cancelGeometryUnderlayer();
+    if (els.previewCanvas.hdrCpuMicroRegion !== cpuMicroViewportKey(lane)
+      || !window.HDRViewportRequest.covers(region, visibleOutputRect(region.frameWidth, region.frameHeight, { includeWhole: true }))) {
+      scheduleZoomRefinement({ continuous: true });
+    }
+    return;
+  }
+  const liveGpuGrain = liveGradeGrainSelected(lane);
+  if (state.zoomMode === "custom" && els.previewCanvas.hdrSharpDetail && liveGpuGrain
+    && showCachedCleanGrainViewport(lane)) {
+    state.renderCoordinator?.cancelPan(lane);
+    return;
+  }
+  if (region && accepted?.exact && accepted.lane === lane && accepted.generation === state.previewGeneration[lane]
+      && (liveGpuGrain || region.nativeGeometryViewport) && window.HDRViewportRequest.covers(region,
+        visibleOutputRect(region.frameWidth, region.frameHeight, { includeWhole: true }))) {
+    state.renderCoordinator?.cancelPan(lane);
+    return;
+  }
+  cancelGeometryUnderlayer();
+  const cleanGrain = state.denoise[lane]?.controls.method === "clean_grain";
+  state.renderCoordinator?.notePan(lane, liveGpuGrain ? (cleanGrain ? 33 : 70) : undefined);
 }
 
 async function requestRoiPanRefinement() {
@@ -164,7 +193,7 @@ async function runRoiParity(options = {}) {
   if (geometryDraftActive()) return { ok: false, reason: "geometry-draft-active" };
   if (!state.gpuPreview?.readPresentationRegion) return { ok: false, reason: "no-readback" };
   const longEdge = Number(options.longEdge) > 0 ? Number(options.longEdge) : refinementProxyLongEdge();
-  const visible = visibleOutputRect(els.previewCanvas.width, els.previewCanvas.height);
+  const visible = visiblePreviewCanvasRect();
   if (!visible) return { ok: false, reason: "fit-has-no-roi" };
   const capture = () => state.gpuPreview.readPresentationRegion(
     visible.width,
@@ -291,6 +320,10 @@ function dragLatencyPreference() {
 
 function interactiveScaleDecision(lane = state.currentView, { interacting = true } = {}) {
   const exactEdge = refinementProxyLongEdge();
+  const denoise = state.denoise[lane];
+  if (denoise?.enabled && denoise.controls.method !== "standard") {
+    return { edge: exactEdge, coarse: false, scale: 1 };
+  }
   const visibleEdge = Math.min(exactEdge, Math.max(1, displayedLongEdge()));
   return state.previewLatencyController?.choose({
     preference: dragLatencyPreference(),

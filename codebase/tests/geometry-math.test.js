@@ -92,3 +92,108 @@ test("the frame size at a processing edge is exact or unknown, never a scaled gu
   );
   assert.equal(HDRGeometryMath.frameSizeAtEdge(null, {}, 5634), null);
 });
+
+test("an old crop map cannot size a redeveloped RAW with new dimensions", async () => {
+  const fs = require("node:fs");
+  const vm = require("node:vm");
+  const geometry = { crop: { x: 0, y: 0, width: 0.5, height: 1 } };
+  const state = {
+    session: { session_id: "same", source: { width: 6000, height: 4000 } },
+    adjustments: { shared: { geometry } },
+  };
+  let serveSecondMap;
+  const secondResponse = new Promise(resolve => { serveSecondMap = resolve; });
+  let requests = 0;
+  const context = vm.createContext({
+    state, geometryMath: HDRGeometryMath, console,
+    window: require("../frontend/source-transport.js"),
+    geometryCoordinateMapCache: new Map(), geometryFullOutputFrames: new Map(), geometryCoordinateMapRequests: new Map(),
+    queueLocalMaskOverlayRender() {}, applyZoomGeometry() {},
+    fetch: async () => ++requests === 1
+      ? { ok: true, json: async () => ({ full_output_width: 3000, full_output_height: 4000 }) }
+      : secondResponse,
+  });
+  vm.runInContext(fs.readFileSync(require.resolve("../frontend/geometry-tools.js"), "utf8"), context);
+  await context.ensureGeometryCoordinateMap(1280);
+  assert.equal(context.sourcePixelFrameDimensions().width, 3000);
+
+  const stale = context.ensureGeometryCoordinateMap(1920);
+  state.session.source = { width: 2400, height: 1600 };
+  assert.deepEqual(context.sourcePixelFrameDimensions(), { width: 1200, height: 1600 });
+  serveSecondMap({ ok: true, json: async () => ({ full_output_width: 3000, full_output_height: 4000 }) });
+  assert.equal(await stale, null);
+  assert.deepEqual(context.sourcePixelFrameDimensions(), { width: 1200, height: 1600 });
+});
+
+test("a newer geometry-map request does not join a stale edit or keep session backoff", async () => {
+  const vm = require("node:vm");
+  const { frontendSource } = require("./frontend-source.js");
+  const state = { session: { session_id: "same", source: { width: 6000, height: 4000 } }, editRevision: 7,
+    adjustments: { shared: { geometry: { straighten_angle: 1.3 } } } };
+  const oldRequest = Promise.withResolvers();
+  const requests = [];
+  let capacityAvailable = true;
+  const context = vm.createContext({
+    state, geometryMath: HDRGeometryMath, performance, console, window: {},
+    geometryCoordinateMapCache: new Map(), geometryFullOutputFrames: new Map(), geometryCoordinateMapRequests: new Map(),
+    queueLocalMaskOverlayRender() {}, applyZoomGeometry() {},
+    fetch: async (_url, options) => {
+      const request = JSON.parse(options.body);
+      requests.push(request);
+      if (request.edit_revision === 7) return oldRequest.promise;
+      if (!capacityAvailable) return { ok: false, status: 507, json: async () => ({ detail: "Capacity" }) };
+      return { ok: true, json: async () => ({ output_width: request.long_edge - 3, output_height: 900 }) };
+    },
+  });
+  vm.runInContext(frontendSource("source-transport.js") + "\n" + frontendSource("geometry-tools.js"), context);
+  const old = context.ensureGeometryCoordinateMap(1920, { reportFailure: true });
+  state.editRevision = 8;
+  const newest = context.ensureGeometryCoordinateMap(1920, { reportFailure: true });
+  oldRequest.resolve({ ok: false, status: 409, json: async () => ({ detail: "Stale" }) });
+  await assert.rejects(old, { status: 409 });
+  assert.equal((await newest).outputWidth, 1917);
+  assert.deepEqual(requests.map(request => request.edit_revision), [7, 8]);
+
+  capacityAvailable = false;
+  await assert.rejects(context.ensureGeometryCoordinateMap(2560, { reportFailure: true }), { status: 507 });
+  capacityAvailable = true;
+  context.clearGeometryMapCapacityRefusals();
+  assert.equal((await context.ensureGeometryCoordinateMap(2560, { reportFailure: true })).outputWidth, 2557);
+});
+
+test("capacity recovery retries only the current picture after the backoff expires", async () => {
+  const vm = require("node:vm");
+  const { declarations } = require("./frontend-source.js");
+  const timers = new Map();
+  const state = { session: { session_id: "photo" }, currentView: "hdr", previewGeneration: { hdr: 3 },
+    editRevision: 5, zoomMode: "custom", zoomPercent: 100, previewUnavailableReason: "Capacity" };
+  const renders = [];
+  let nextTimer = 0, scopeRefreshes = 0;
+  const context = vm.createContext({ state, performance: { now: () => 3000 },
+    window: {
+      setTimeout: (callback, delay) => { timers.set(++nextTimer, { callback, delay }); return nextTimer; },
+      clearTimeout: id => timers.delete(id),
+    },
+    geometryDraftActive: () => false,
+    nativeGeometryViewportActive: () => false,
+    renderGpuDraft: async (...args) => { renders.push(args); return true; },
+    debounceOverlayAndScopes: () => { scopeRefreshes += 1; },
+  });
+  vm.runInContext("let previewCapacityRecovery = null;\n" +
+    declarations("clearPreviewCapacityRecovery", "schedulePreviewCapacityRecovery"), context);
+  const schedule = () => context.schedulePreviewCapacityRecovery({ retryAfter: 7000 }, "hdr", "photo", 3, "settled", 7968);
+  schedule();
+  schedule();
+  assert.equal(timers.size, 1);
+  assert.equal(timers.get(1).delay, 4000);
+  state.editRevision += 1;
+  await timers.get(1).callback();
+  assert.equal(renders.length, 0);
+  timers.delete(1);
+  schedule();
+  await timers.get(2).callback();
+  assert.equal(renders.length, 1);
+  assert.equal(renders[0][1].reason, "source-capacity-recovery");
+  assert.equal(renders[0][1].longEdge, 7968);
+  assert.equal(scopeRefreshes, 1);
+});

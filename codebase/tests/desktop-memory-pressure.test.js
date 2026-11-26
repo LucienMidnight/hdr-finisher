@@ -42,3 +42,77 @@ test('failed renderer collection surfaces to the caller',async()=>{
  await assert.rejects(notifyChromiumPressure(contents,'moderate',20),/timed out/);
  assert.equal(calls,1);
 });
+const {emptyTrimGuard,trimReason}=require('../desktop/memory-pressure.cjs');
+function exportRun(samples){
+  // 500 ms polls through the same two gates as the desktop's memory timer.
+  const trim=pressureGate(),grain=pressureGate(),guard=emptyTrimGuard(),rounds=[],events=[];
+  samples.forEach((value,index)=>{
+    const decision=guard(value,trim(value.level,index*500),!!grain(value.gradePressure,index*500));
+    if(decision.entered)events.push(['paused',index*500]);
+    if(decision.resumed)events.push([decision.resumed,index*500]);
+    if(decision.trimLevel)rounds.push(index*500);
+  });
+  return {rounds,events};
+}
+const sample=(extra={})=>({level:'moderate',gradePressure:'moderate',pressure:'none',gradeBytes:400e6,caches:{working:{bytes:0},raw:{bytes:0}},...extra});
+test('an export over the target with empty caches gets one trim round, then silence',()=>{
+  const {rounds,events}=exportRun(Array.from({length:360},()=>sample()));
+  assert.deepEqual(rounds,[0]);
+  assert.deepEqual(events,[['paused',COOLDOWN_MS]]);
+});
+test('rounds that free memory continue; growth or OS pressure wakes a quiet guard',()=>{
+  let caches=800e6;const samples=[];
+  for(let i=0;i<120;i++){if(i%20===0)caches/=2;samples.push(sample({caches:{working:{bytes:caches}}}));}
+  assert.equal(exportRun(samples).rounds.length,6);
+  const quiet=Array.from({length:60},()=>sample());
+  const grown=[...quiet,...Array.from({length:30},()=>sample({caches:{working:{bytes:50e6}}}))];
+  // Woken, it runs a round on the new caches (this sample never frees them, so it pauses again).
+  for(const [samples,reason] of [[grown,'cache_growth'],[[...quiet,...Array.from({length:30},()=>sample({pressure:'moderate'}))],'system_pressure_changed']]){
+    const run=exportRun(samples);
+    assert.deepEqual(run.events.slice(0,2).map(event=>event[0]),['paused',reason]);
+    assert.ok(run.rounds.some(time=>time>=run.events[1][1]));
+  }
+});
+test('a fresh pressure episode trims after pressure cleared and caches regrew',()=>{
+  const guard=emptyTrimGuard();
+  assert.equal(guard(sample(), 'moderate', true).trimLevel,'moderate');
+  assert.equal(guard(sample(), 'moderate', true).quiet,true);
+  const clear=sample({level:'none',gradePressure:'none'});
+  assert.equal(guard(clear,null,false).quiet,false);
+  const regrown={caches:{working:{bytes:50e6}}};
+  assert.equal(guard({...clear,...regrown},null,false).trimLevel,null);
+  assert.equal(guard(sample(regrown),'moderate',true).trimLevel,'moderate');
+});
+test('critical pressure trims even before an empty moderate round enters quiet',()=>{
+  const guard=emptyTrimGuard();
+  assert.equal(guard(sample(),'moderate',true).trimLevel,'moderate');
+  const critical=sample({level:'critical',gradePressure:'critical'});
+  assert.equal(guard(critical,'critical',true).trimLevel,'critical');
+  assert.equal(guard(critical,'critical',true).quiet,true);
+});
+test('cache growth or an OS pressure change between cooldowns permits a new trim',()=>{
+  const stable=Array.from({length:COOLDOWN_MS / 500},()=>sample());
+  for (const changed of [sample({caches:{working:{bytes:50e6}}}),sample({pressure:'moderate'})]) {
+    assert.deepEqual(exportRun([...stable,changed]),{rounds:[0,COOLDOWN_MS],events:[]});
+  }
+});
+test('a budget level flapping around the target with Grade open stays quiet',()=>{
+  // Recorded November 23 on the MacBook Neo: Profile A export with Grade open.
+  const samples=Array.from({length:300},(_,i)=>sample({level:Math.floor(i/7)%3?'none':'moderate'}));
+  const {rounds,events}=exportRun(samples);
+  assert.equal(rounds.length,1);
+  assert.deepEqual(events.map(event=>event[0]),['paused']);
+  const critical=[...samples,...Array.from({length:30},()=>sample({level:'critical'}))];
+  assert.ok(exportRun(critical).events.some(event=>event[0]==='pressure_rose'));
+});
+test('a Grade-only round does not silence a trim of caches that still hold pictures',()=>{
+  const full={caches:{working:{bytes:300e6}}};
+  const samples=[...Array.from({length:30},()=>sample({...full,level:'none'})),...Array.from({length:30},()=>sample({...full}))];
+  const trim=pressureGate(),grain=pressureGate(),guard=emptyTrimGuard();let trims=0;
+  samples.forEach((value,index)=>{if(guard(value,trim(value.level,index*500),!!grain(value.gradePressure,index*500)).trimLevel)trims++;});
+  assert.ok(trims>=1);
+});
+test('over the target with no OS shortage is logged as budget pressure',()=>{
+  assert.equal(trimReason({pressure:'none'}),'budget_pressure');
+  assert.equal(trimReason({pressure:'moderate'}),'system_memory_pressure');
+});

@@ -214,11 +214,11 @@ function assert(condition, message) {
     const after = await page.evaluate(() => {
       const preview = activePreviewElement();
       const rect = preview.getBoundingClientRect();
-      const width = preview instanceof HTMLCanvasElement ? preview.width : preview.naturalWidth;
-      const height = preview instanceof HTMLCanvasElement ? preview.height : preview.naturalHeight;
+      const frame = preview instanceof HTMLImageElement
+        ? { width: preview.naturalWidth, height: preview.naturalHeight } : previewCanvasFrameSize();
       return {
         displayedAspect: rect.width / rect.height,
-        bitmapAspect: width / height,
+        bitmapAspect: frame.width / frame.height,
         width: rect.width,
         height: rect.height,
         cssWidth: parseFloat(preview.style.width),
@@ -227,6 +227,8 @@ function assert(condition, message) {
         transform: preview.style.getPropertyValue("--interactive-rotate-angle"),
         acceptedGeometry: state.acceptedPresentation?.geometrySignature,
         currentGeometry: geometrySignature(),
+        unavailableReason: state.previewUnavailableReason,
+        refusal: state.lastGpuDraftRefusal,
       };
     });
     assert(Math.abs(after.displayedAspect - after.bitmapAspect) < 0.01, `Final crop preview aspect is incorrect: ${JSON.stringify(after)}`);
@@ -245,11 +247,11 @@ function assert(condition, message) {
     const afterGrade = await page.evaluate(() => {
       const preview = activePreviewElement();
       const rect = preview.getBoundingClientRect();
-      const width = preview instanceof HTMLCanvasElement ? preview.width : preview.naturalWidth;
-      const height = preview instanceof HTMLCanvasElement ? preview.height : preview.naturalHeight;
+      const frame = preview instanceof HTMLImageElement
+        ? { width: preview.naturalWidth, height: preview.naturalHeight } : previewCanvasFrameSize();
       return {
         rotation: state.adjustments.shared.geometry.rotation,
-        bitmapAspect: width / height,
+        bitmapAspect: frame.width / frame.height,
         displayedAspect: rect.width / rect.height,
         acceptedGeometry: state.acceptedPresentation?.geometrySignature,
         currentGeometry: geometrySignature(),

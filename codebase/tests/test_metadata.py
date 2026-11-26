@@ -243,3 +243,15 @@ def test_auto_lensfun_match_passes_exact_camera_and_lens_identity() -> None:
         ("camera", "NIKON CORPORATION", "NIKON Z 8"),
         ("lens", camera, "Nikon", "NIKKOR Z 24-70mm f/2.8 S"),
     ]
+
+
+@pytest.mark.parametrize("supported,enabled", [(True, False), (True, True), (False, False)])
+def test_pixel_cleanup_control_flags_survive_session_metadata_serialization(supported, enabled):
+    from hdr_finisher.models import MetadataPayload
+
+    diagnostic = {"supported": supported, "enabled": enabled, "repaired": 3}
+    metadata = extract_metadata(Path("camera.arw"), {"raw_pixel_cleanup": diagnostic})
+    received = MetadataPayload.model_validate_json(metadata.model_dump_json())
+    assert received.extra["raw_pixel_cleanup"] == diagnostic
+    assert received.extra["raw_pixel_cleanup"]["supported"] is supported
+    assert received.extra["raw_pixel_cleanup"]["enabled"] is enabled

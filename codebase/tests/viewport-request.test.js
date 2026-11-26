@@ -37,6 +37,20 @@ test("a magnified viewport is padded by the minimum ROI fraction and clamped", (
   assert.equal(request.telemetry.haloAmplification, 1);
 });
 
+test("a completed patch is presentable only while it covers the latest view", () => {
+  const patch = HDRViewportRequest.build({
+    output: { width: 5202, height: 3464 },
+    visible: { x: 1000, y: 800, width: 1200, height: 1000 },
+    minimumRoiFraction: .15,
+  }).roi;
+  const viewport = { x: 1000, y: 800, width: 1200, height: 1000 };
+  assert.equal(HDRViewportRequest.covers(patch, viewport), true);
+  assert.equal(HDRViewportRequest.covers(patch, { ...viewport, x: 1100 }), true);
+  assert.equal(HDRViewportRequest.covers(patch, { ...viewport, x: 2500 }), false);
+  assert.equal(HDRViewportRequest.covers(patch, { ...viewport, y: 2000 }), false);
+  assert.equal(HDRViewportRequest.covers(patch, null), false);
+});
+
 test("padding clamps to the output instead of leaving it", () => {
   const request = HDRViewportRequest.build({
     output: { width: 1000, height: 1000 },

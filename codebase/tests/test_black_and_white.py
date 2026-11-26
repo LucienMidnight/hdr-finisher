@@ -266,13 +266,3 @@ def test_a_colour_edge_only_blurs_the_slider_within_its_neighbourhood() -> None:
     # per-pixel result; only the four pixels either side can blend.
     np.testing.assert_allclose(out[:16], plain[:16], rtol=1e-5)
     np.testing.assert_allclose(out[24:], plain[24:], rtol=1e-5)
-
-
-def test_strip_rendering_refuses_black_and_white_sliders_and_accepts_the_plain_conversion() -> None:
-    from hdr_finisher.cpu_strips import strip_execution_refusals
-
-    state = AdjustmentState()
-    state.hdr.black_and_white_section_enabled = True
-    assert "black & white colour response" not in strip_execution_refusals(state, PreviewKind.HDR)
-    state.hdr.black_and_white = BlackAndWhiteAdjustments(oranges=50)
-    assert "black & white colour response" in strip_execution_refusals(state, PreviewKind.HDR)

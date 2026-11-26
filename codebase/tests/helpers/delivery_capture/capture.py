@@ -20,11 +20,15 @@ def install():
     render = exporters._render_export_branch
     execute = exporters._execute_export
 
-    def capture_branch(session, settings, kind, adjustments):
-        pixels = render(session, settings, kind, adjustments)
+    def capture_branch(session, settings, kind, adjustments, **kwargs):
+        from contextlib import nullcontext
+        from hdr_finisher.delivery_frames import DeliveryFrame
+
+        pixels = render(session, settings, kind, adjustments, **kwargs)
         folder = current.get()
         if folder is not None:
-            np.save(folder / f"{kind.value}.npy", pixels, allow_pickle=False)
+            with pixels.map("r") if isinstance(pixels, DeliveryFrame) else nullcontext(pixels) as data:
+                np.save(folder / f"{kind.value}.npy", data, allow_pickle=False)
             (folder / "metadata.json").write_text(json.dumps({
                 "jpegxl_high_fidelity": settings.jpegxl_high_fidelity,
                 "reference_white_nits": getattr(session, "hdr_reference_white_nits", 203),

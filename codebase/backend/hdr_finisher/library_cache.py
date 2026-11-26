@@ -1,12 +1,15 @@
 """Separate Library disk allowances in one managed folder. Only marked, app-owned cache directories are cleared."""
+import errno
 import json
 import os
 from pathlib import Path
 from threading import RLock
 import sqlite3
+import shutil
 from tempfile import NamedTemporaryFile
 import time
 from zipfile import BadZipFile
+import contextlib
 from contextlib import contextmanager
 
 DIRECTORIES = ('library-pictures', 'library-full-pictures', 'library-raw-thumbnails', 'library-thumbnails')
@@ -15,6 +18,10 @@ LIMITS = (1, 2, 5, 10, 20)
 _LOCK = RLock()
 _LEDGERS = {}
 MARKER = '.hdr-finisher-cache'
+
+
+class GrainScratchSpaceError(OSError):
+    pass
 
 
 class LibraryCache:
@@ -106,6 +113,7 @@ class LibraryCache:
                 CREATE TABLE IF NOT EXISTS refresh_files(path TEXT PRIMARY KEY, source TEXT, kind TEXT, protected INTEGER);
                 CREATE INDEX IF NOT EXISTS refresh_source ON refresh_files(source);
                 CREATE TABLE IF NOT EXISTS pending_deletes(path TEXT PRIMARY KEY, size INTEGER, stamp INTEGER);
+                CREATE TABLE IF NOT EXISTS grade_scratch(path TEXT PRIMARY KEY, size INTEGER, pid INTEGER);
             """)
             _LEDGERS[key] = db
             try:
@@ -468,8 +476,162 @@ class LibraryCache:
                 db.execute('DELETE FROM sources WHERE path=?', (str(file),))
                 db.execute('DELETE FROM source_generations WHERE path=?', (str(file),))
 
+    def remove_abandoned_grade_scratch(self):
+        """Recover app-owned scratch in current and former cache locations."""
+        from .launcher import _parent_is_alive
+        preferences = self.preferences()
+        for root in (preferences["location"], *preferences["old_locations"]):
+            cache_root = Path(root)
+            directory = cache_root / "library-full-pictures"
+            ledger = cache_root / ".library-cache-size.sqlite3"
+            if (cache_root.is_symlink() or directory.is_symlink() or
+                    getattr(directory, "is_junction", lambda: False)() or not (cache_root / MARKER).is_file()
+                    or not ledger.is_file()):
+                continue
+            with _LOCK, contextlib.closing(sqlite3.connect(ledger, timeout=30)) as db, db:
+                db.execute("BEGIN IMMEDIATE")
+                tracked = db.execute("SELECT 1 FROM sqlite_master WHERE name='grade_scratch'").fetchone()
+                for file in directory.glob("grade-grain-*.tmp"):
+                    pid, _, token = file.stem.removeprefix("grade-grain-").partition("-")
+                    if pid.isdecimal() and len(token) == 32 and not _parent_is_alive(int(pid)):
+                        file.unlink(missing_ok=True)
+                        if tracked:
+                            db.execute("DELETE FROM grade_scratch WHERE path=?", (str(file),))
+                if tracked:
+                    # A forced shutdown can occur after unlink and before the
+                    # reservation is released, so also reclaim lost entries.
+                    for filename, pid in db.execute("SELECT path, pid FROM grade_scratch").fetchall():
+                        if Path(filename).parent == directory and not _parent_is_alive(pid):
+                            db.execute("DELETE FROM grade_scratch WHERE path=?", (filename,))
+
+    def _evict_for_grain(self, db, directory, selected_source, needed):
+        # Publication and this scan share one SQLite write transaction. Keep
+        # companions together, including any companion of a protected picture.
+        rows = db.execute(
+            "SELECT files.path, files.size, sources.source, refresh_files.source, refresh_files.protected "
+            "FROM files LEFT JOIN ages USING(path) LEFT JOIN sources USING(path) "
+            "LEFT JOIN refresh_files USING(path) WHERE category='full_size' "
+            "ORDER BY COALESCE(ages.stamp,0), files.path"
+        ).fetchall()
+        families = {}
+        kept = set()
+        for filename, size, source, refresh_source, protected in rows:
+            file = Path(filename)
+            if file.parent != directory:
+                continue
+            families.setdefault(file.stem, []).append((file, size))
+            if (protected or (selected_source and selected_source in (source, refresh_source))
+                    or file.name.startswith("kept-") or file.suffix == ".tmp" or file.is_symlink()):
+                kept.add(file.stem)
+        for stem, family in families.items():
+            if stem in kept:
+                continue
+            for file, size in family:
+                try:
+                    file.unlink(missing_ok=True)
+                except PermissionError:
+                    # A reader that holds the file open may still need it.
+                    continue
+                self._record(db, file)
+                db.execute("DELETE FROM refresh_files WHERE path=?", (str(file),))
+                db.execute("DELETE FROM pending_deletes WHERE path=?", (str(file),))
+                needed -= size
+            if needed <= 0:
+                break
+
+    def open_grade_scratch(self, size, *, grain_source=None, preallocate=True):
+        """Reserve the full logical byte size before writing any Grade samples."""
+        from uuid import uuid4
+        from .library_diagnostics import log
+
+        grain = grain_source is not None
+        selected = os.path.normcase(str(Path(grain_source).resolve())) if grain_source else None
+        with _LOCK:
+            db = self._ledger()
+            directory = self.directory("library-full-pictures")
+            directory.mkdir(parents=True, exist_ok=True)
+            preferences = self.preferences()
+            limit = preferences["full_size_limit_gb"] * 1024**3
+            file = directory / f"grade-grain-{os.getpid()}-{uuid4().hex}.tmp"
+            handle = None
+            failure = None
+            drive_message = "The cache drive is too full for Grain Denoise."
+            allowance_message = "The full-size preview cache allowance has too little room for Grain Denoise."
+            reason = "enough space"
+            try:
+                with db:
+                    db.execute("BEGIN IMMEDIATE")
+                    before = limit - self._used(db)["full_size"]
+                    # Append-only Grain scratch is charged in full even
+                    # while its physical file still holds only the viewport.
+                    pending_bytes = 0
+                    for reserved_path, reserved_bytes in db.execute("SELECT path, size FROM grade_scratch"):
+                        try:
+                            written_bytes = Path(reserved_path).stat().st_size
+                        except OSError:
+                            written_bytes = 0
+                        pending_bytes += max(0, reserved_bytes - written_bytes)
+                    physical_free = shutil.disk_usage(directory).free
+                    drive_free = max(0, physical_free - pending_bytes)
+                    evicted = 0
+                    try:
+                        if grain:
+                            if size > drive_free:
+                                reason = "drive space"
+                                raise GrainScratchSpaceError(drive_message)
+                            if before < size <= limit:
+                                try:
+                                    self._evict_for_grain(db, directory, selected, size - before)
+                                finally:
+                                    evicted = limit - self._used(db)["full_size"] - before
+                            if size > before + evicted:
+                                reason = "full-size allowance"
+                                raise GrainScratchSpaceError(allowance_message)
+                        elif size > min(before, drive_free):
+                            room = min(before, drive_free)
+                            raise OSError(f"Full-size disk cache has {max(0, room):,} bytes free. "
+                                          f"Grain Denoise needs {size:,} bytes.")
+                        db.execute("INSERT INTO grade_scratch VALUES (?, ?, ?)", (str(file), size, os.getpid()))
+                        handle = file.open("x+b", buffering=0)
+                        if preallocate:
+                            handle.truncate(size)
+                    except OSError as error:
+                        # Already-unlinked previews must also leave the ledger
+                        # when opening or allocating scratch fails.
+                        db.execute("DELETE FROM grade_scratch WHERE path=?", (str(file),))
+                        if not isinstance(error, GrainScratchSpaceError):
+                            reason = "drive space" if error.errno == errno.ENOSPC else "cache I/O error"
+                            if grain and reason == "drive space":
+                                error = GrainScratchSpaceError(drive_message)
+                        failure = error
+                if grain:
+                    log("denoise_grain_scratch", path=str(grain_source), needed_bytes=size,
+                        allowance_room_before_bytes=before,
+                        allowance_room_after_bytes=before + evicted - (size if failure is None else 0),
+                        evicted_bytes=evicted, drive_free_bytes=physical_free, pending_bytes=pending_bytes,
+                        drive_available_bytes=drive_free,
+                        outcome="reserved" if failure is None else "refused", reason=reason)
+                if failure is not None:
+                    raise failure
+            except BaseException:
+                if handle is not None:
+                    handle.close()
+                    file.unlink(missing_ok=True)
+                raise
+
+        def close():
+            with _LOCK, db:
+                db.execute("BEGIN IMMEDIATE")
+                handle.close()
+                file.unlink(missing_ok=True)
+                db.execute("DELETE FROM grade_scratch WHERE path=?", (str(file),))
+
+        return handle, close
+
     def _used(self, db):
-        return {**{name: 0 for name in ALLOWANCES}, **dict(db.execute('SELECT category, size FROM totals'))}
+        used = {**{name: 0 for name in ALLOWANCES}, **dict(db.execute('SELECT category, size FROM totals'))}
+        used["full_size"] += db.execute("SELECT COALESCE(SUM(size),0) FROM grade_scratch").fetchone()[0]
+        return used
 
     def usage(self):
         with _LOCK:

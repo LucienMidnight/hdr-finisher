@@ -3,11 +3,20 @@ const fs=require('node:fs'),path=require('node:path'),{chromium}=require('playwr
 const c=require('./heavy-project-review-common'),args=process.argv.slice(2),opt=(k,d)=>args.includes(k)?args[args.indexOf(k)+1]:d;
 (async()=>{
  const browser=await chromium.launch();try{
-  const page=await browser.newPage();await c.open(page,path.resolve(opt('--project','')),false);
-  await page.evaluate(async()=>{
+  const page=await browser.newPage();
+  if(args.includes('--input')){
+   await page.goto(process.env.HDR_FINISHER_URL || 'http://127.0.0.1:8799');
+   await page.waitForFunction(()=>state.gpuPreview?.available);
+   await page.setInputFiles('#file-input',path.resolve(opt('--input','')));
+   await page.waitForFunction(()=>state.session&&viewerState().status==='ready');
+   await page.evaluate(()=>activateWorkflowTab('grade'));
+   await c.stable(page);
+  }else await c.open(page,path.resolve(opt('--project','')),false);
+  await page.evaluate(async filmStructure=>{
    for(const [key,value] of Object.entries({texture_amount:0,clarity_amount:0,sharpen_amount:200,sharpen_radius_px:3,sharpen_threshold:0}))commitAdjustmentValue('hdr.detail.'+key,value,{manual:true});
+   if(filmStructure)for(const [key,value] of Object.entries({'detail.softness':80,'detail.microcontrast':-50,'film_look.film_resolution':0,'film_look.grain_film_format':'super8'}))commitAdjustmentValue('hdr.'+key,value,{manual:true});
    await settlePreview('hdr',{});setCustomZoom(100);
-  });
+  },args.includes('--film-structure'));
   await page.waitForFunction(()=>!state.zoomRefinementTimer&&!state.renderCoordinator.state('hdr').panTimerPending);
   await c.stable(page);
   const results=await page.evaluate(async ({x,y})=>{

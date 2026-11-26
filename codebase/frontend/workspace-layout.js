@@ -323,7 +323,20 @@ function activateWorkflowTab(workflow, { focus = false, batch = false } = {}) {
   if (next !== "grade" && state.rotateDraftGeometry) closeRotateMode(false);
   if (next !== "grade" && state.cropMode) closeCropMode(true);
   if (next !== "grade") hideLocalMaskOverlayForGradePreview();
+  const previous = state.activeWorkflow;
+  if (previous === "grade" && next !== "grade") {
+    for (const lane of ["hdr", "sdr"]) {
+      const runtime = state.denoiseRuntime[lane];
+      if (state.denoise[lane].enabled || runtime.analysisInFlight) {
+        invalidateDenoisePreparation(lane);
+        state.renderCoordinator?.cancelLane(lane, "left-grade-during-denoise", { detach: true });
+      }
+    }
+  }
   state.activeWorkflow = next;
+  if (next === "grade" && previous !== "grade" && state.session && state.denoise[state.currentView].enabled) {
+    debouncePreview(state.currentView);
+  }
   document.body.dataset.workflow = next;
   els.workflowTabs.forEach((button) => {
     const active = button.dataset.workflowTab === next;

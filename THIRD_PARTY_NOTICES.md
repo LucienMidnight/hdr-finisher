@@ -1,5 +1,25 @@
 # Third-party notices
 
+The non-shipping classical Denoise research adapter in
+`codebase/tools/denoise_eval/candidates/darktable_profiled.py` ports core maths
+from darktable `src/iop/denoiseprofile.c` and `src/common/eaw.c`, revision
+`b407398a1b9d03d552f59d7227bd3eff66045495`. Copyright (C) 2012–2026 and
+2017–2024 darktable developers, respectively; GPL-3.0-or-later. It retains
+the GPL notice and uses this repository's GPL text. No camera-profile database
+or darktable runtime is bundled. The reference changes are documented in its
+module header and in the classical prototype report.
+
+`codebase/tools/denoise_eval/candidates/vendor/galosh/` retains the unchanged
+FP32 C reference and header from luxgrain/GALOSH, revision
+`11de0593cc8091933ad76d1d6d873f7dee537f15`, Copyright 2026 luxgrain, under
+Apache-2.0, with its complete `LICENSE` and `NOTICE`. The opt-in offline build
+uses a local serial OpenMP shim, omits two unused SSE helper definitions and
+injects one photo-global dark anchor into the disposable build copy; originals
+are unchanged. No model weights, third-party binary or system package is
+included. The upstream provisional-patent disclosure and Apache contributor
+patent-grant scope are recorded in the research report; no general patent
+clearance is claimed.
+
 The photo-framing geometry reference and measured conformance cases are from
 Pedro C. Silva's [BorderMuse](https://github.com/pedrocsilva/bordermuse),
 Copyright (c) 2026 Pedro C. Silva, under the MIT License. The dependency-free
@@ -215,3 +235,14 @@ use MIT; Highway uses Apache-2.0; skcms uses BSD-style terms. Complete upstream
 notices are in codebase/bin/licenses/LICENSE.libjxl, LICENSE.brotli,
 LICENSE.highway and LICENSE.skcms. Source and reproducible build instructions
 are in codebase/tools/jpegxl-info. These notices accompany packaged copies.
+
+RawTherapee LMMSE research: the unmodified `rtengine/lmmse_demosaic.cc` from
+RawTherapee commit `64c2d90a3248c7ad41842d9162368858b61aac6a` is retained in
+`codebase/tools/denoise_eval/candidates/vendor/rawtherapee/`, under GPL-3.0-or-later
+(repository-root `LICENSE`). Copyright (c) 2004-2019 Gabor Horvath; RawTherapee
+adaptation by Jacques Desmis (2013), speed/memory refinements by Ingo Weyrich
+(2015), following Zhang and Wu's 2005 LMMSE demosaicing paper. The research-only
+shim adapts the same commit's `rtengine/color.h`, `rtengine/color.cc` and
+`rtengine/LUT.h` gamma/lookup definitions; signed-domain changes and exact file
+hash are documented in that folder's `NOTICE`. No production import, binary,
+dataset, model weight or photograph is added by this experiment.

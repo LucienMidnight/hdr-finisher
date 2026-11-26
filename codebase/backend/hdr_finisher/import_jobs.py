@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
+from contextvars import copy_context
 from dataclasses import dataclass, field
 from pathlib import Path
 from threading import Event, RLock
@@ -128,7 +129,7 @@ class ImportJobManager:
             self._prune()
         from .library_scheduler import scheduler
         grant = scheduler.ask('grade-import-'+job.job_id, 'backend', str(path), 'grade-import', 0, 'Grade')
-        future = self._executor.submit(self._run, job, grant)
+        future = self._executor.submit(copy_context().run, self._run, job, grant)
         future.add_done_callback(lambda _: self._import_finished(job))
         return job
 
@@ -227,6 +228,8 @@ class ImportJobManager:
                 current_session = self.sessions.get(job.replace_session_id)
                 interpretation_override = current_session.interpretation_override.model_copy(deep=True)
                 prepare_options["hdr_reference_white_nits"] = current_session.hdr_reference_white_nits
+                current_session.render_cache.release_development_cache()
+                del current_session
             with self.browser.decode_slot():
                 session = self.sessions.prepare_session(
                     job.path,

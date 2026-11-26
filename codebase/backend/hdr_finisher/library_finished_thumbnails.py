@@ -12,7 +12,9 @@ import sqlite3
 from .library_cache import LibraryCache
 from .library_copies import source
 from .library_documents import identity as grade_identity
+from .library_live import finished_micro_grain_suffix, quality, uses_raw_pixel_cleanup
 from .library_pictures import PICTURE_VERSION
+from .sdr_gamut import SDR_GAMUT_CACHE_SUFFIX
 
 VERSION = "finished-thumbnail-v7:" + PICTURE_VERSION
 
@@ -39,15 +41,19 @@ class FinishedThumbnails:
         finally:
             db.close()
         result = {}
+        version = VERSION + (SDR_GAMUT_CACHE_SUFFIX if lane == "sdr" else "")
         for path in paths:
-            row = files.get(source(path))
+            physical_path = source(path)
+            row = files.get(physical_path)
             if row is None:
                 continue
             state = json.loads(states[path]) if path in states else {}
             grade = state.get("desired") if state.get("pending") else state.get("indexed_grade", state.get("baseline"))
-            value = dict(version=VERSION, path=path, lane=lane, format=format,
+            value = dict(version=version + finished_micro_grain_suffix(physical_path, grade, lane), path=path, lane=lane, format=format,
                          bytes=row[0], mtime_ns=row[1], grade=grade_identity(grade),
-                         cache_epoch=self.cache.publication_epoch(source(path)))
+                         cache_epoch=self.cache.publication_epoch(physical_path))
+            if lane == "hdr" or uses_raw_pixel_cleanup(grade):
+                value["source_quality"] = quality(grade)
             key = sha256(json.dumps(value, sort_keys=True).encode()).hexdigest()
             result[path] = dict(value, key=key), grade
         return result
@@ -91,7 +97,6 @@ class FinishedThumbnails:
         verified = validation is not None and validation.get("identity") == token and validation.get("meta") is meta
         if not verified:
             # Publication must match the source and finishing grade that was drawn.
-            from .library_live import quality
             from .library_grades import grade_key
             physical = source(value["path"])
             source_key = sha256(f"{PICTURE_VERSION}:{physical}:{value['mtime_ns']}:{value['bytes']}:640:{quality(document)}".encode()).hexdigest()

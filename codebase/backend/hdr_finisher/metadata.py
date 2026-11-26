@@ -11,6 +11,7 @@ def extract_metadata(path: Path, raw_metadata: dict[str, Any] | None = None) -> 
     raw_metadata = raw_metadata or {}
     raw_exif_value = raw_metadata.get("raw_exif")
     raw_exif = raw_exif_value if isinstance(raw_exif_value, dict) else {}
+    development = raw_metadata.get("raw_development") or {}
     transfer_function = detect_transfer_function(raw_metadata, path.suffix.lower())
     bit_depth = str(raw_metadata.get("bit_depth") or raw_metadata.get("BitsPerSample") or "unknown")
     color_space = str(raw_metadata.get("color_space") or raw_metadata.get("ColorSpace") or raw_metadata.get("icc_profile_name") or "unknown")
@@ -51,7 +52,11 @@ def extract_metadata(path: Path, raw_metadata: dict[str, Any] | None = None) -> 
         bit_depth=bit_depth,
         color_space=color_space,
         transfer_function=transfer_function,
-        extra={key: str(value) for key, value in raw_metadata.items() if key not in {"icc_profile"}},
+        # Pixel-cleanup controls consume typed eligibility and enabled flags.
+        extra={**{key: value if key == "raw_pixel_cleanup" else str(value)
+                  for key, value in raw_metadata.items() if key != "icc_profile"},
+               "micro_grain_bayer": bool(isinstance(development, dict) and development.get("signed_sensor_samples")
+                                         and not raw_metadata.get("dng_input"))},
     )
 
 

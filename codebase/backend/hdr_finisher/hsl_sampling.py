@@ -4,6 +4,7 @@ The CPU picker uses a bounded proxy. Capturing stops the render at the exact
 stage input, before downstream curves, film, output mapping or encoding.
 """
 from contextvars import ContextVar
+from contextlib import contextmanager
 import math
 from time import perf_counter
 from pydantic import BaseModel, ConfigDict, Field
@@ -12,6 +13,16 @@ from .models import AdjustmentState, LocalAdjustment, MaskPoint, PreviewKind
 from .hsl import HSLRecipe, sample_neighborhood, selection
 
 _target = ContextVar("hsl_sample_target", default=None)
+_observer = ContextVar("hsl_stage_observer", default=None)
+
+
+@contextmanager
+def observe_stage_input(observer):
+    token = _observer.set(observer)
+    try:
+        yield
+    finally:
+        _observer.reset(token)
 
 
 class HSLSelectionRect(BaseModel):
@@ -65,6 +76,9 @@ def capturing(local_id=None):
 
 
 def tap(pixels, kind, local_id=None):
+    observer = _observer.get()
+    if observer is not None and local_id is None:
+        observer(pixels)
     if capturing(local_id):
         raise _Captured(pixels, kind)
 

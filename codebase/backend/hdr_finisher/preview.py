@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from io import BytesIO
+import os
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import subprocess
@@ -16,6 +17,7 @@ from .color import acescg_to_linear_bt2020, acescg_to_linear_srgb
 from .color_context import DEFAULT_HDR_REFERENCE_WHITE_NITS, scene_linear_to_nits
 from .config import MAX_PREVIEW_LONG_EDGE, PREVIEW_IMAGE_FORMAT
 from .models import AdjustmentState, PreviewKind
+from .y4m import write_y4m_bands
 
 
 class ResizeCancelled(RuntimeError):
@@ -56,8 +58,8 @@ def encode_processed_preview_bytes(
 ) -> tuple[bytes, str]:
     if kind == PreviewKind.HDR:
         if not hdr_display:
-            return _encode_png_sdr(_hdr_to_sdr_display(processed)), "image/png"
-        return _encode_hdr_avif(processed, reference_white_nits), "image/avif"
+            return _encode_png_sdr(processed, tonemap_hdr=True), "image/png"
+        return _encode_hdr_avif(processed, reference_white_nits, banded=True), "image/avif"
     return _encode_png_sdr(processed), "image/png"
 
 
@@ -139,6 +141,7 @@ def downsample_image(
     *,
     is_current: Callable[[], bool] | None = None,
     progress: Callable[[int, int], None] | None = None,
+    bounded: bool = False,
 ) -> np.ndarray:
     height, width = image.shape[:2]
     long_edge = max(height, width)
@@ -152,7 +155,7 @@ def downsample_image(
     except ImportError as exc:
         raise RuntimeError("Pillow is required for filtered preview resizing.") from exc
 
-    source = image.astype(np.float32, copy=False)
+    source = image if bounded else image.astype(np.float32, copy=False)
     channels = source[..., None] if source.ndim == 2 else source
     channel_count = channels.shape[2]
 
@@ -160,18 +163,39 @@ def downsample_image(
         if is_current is not None and not is_current():
             raise ResizeCancelled("A newer source replaced this resize.")
         channel = channels[..., channel_index]
-        resized = np.asarray(
-            Image.fromarray(channel).resize((target_w, target_h), Image.Resampling.LANCZOS),
-            dtype=np.float32,
-        )
+        if bounded:
+            # Pillow's float Lanczos is separable, horizontal first. Give it
+            # the same filter coordinates and float32 intermediate in strips
+            # so it never has to pack a whole strided source channel.
+            if width != target_w:
+                horizontal = np.empty((height, target_w), dtype=np.float32)
+                for top in range(0, height, 128):
+                    band = channel[top:top + 128].astype(np.float32, copy=False)
+                    horizontal[top:top + len(band)] = np.asarray(
+                        Image.fromarray(band).resize((target_w, len(band)), Image.Resampling.LANCZOS)
+                    )
+                channel_for_y = horizontal
+            else:
+                channel_for_y = channel
+            resized = np.empty((target_h, target_w), dtype=np.float32)
+            for left in range(0, target_w, 128):
+                band = channel_for_y[:, left:left + 128].astype(np.float32, copy=False)
+                resized[:, left:left + band.shape[1]] = np.asarray(
+                    Image.fromarray(band).resize((band.shape[1], target_h), Image.Resampling.LANCZOS)
+                )
+        else:
+            resized = np.asarray(
+                Image.fromarray(channel).resize((target_w, target_h), Image.Resampling.LANCZOS),
+                dtype=np.float32,
+            )
         # Filtering must not invent light the source does not hold nearby.
         # Lanczos overshoots beside a clipped highlight; a whole-image limit
         # leaves that overshoot in place and it shows as coloured specks.
-        low, high = _local_range(channel, target_w, target_h)
+        low, high = _local_range(channel.astype(np.float32, copy=False), target_w, target_h)
         return np.clip(resized, low, high)
 
     resized_channels: list[np.ndarray] = []
-    if channel_count > 1 and channels.shape[0] * channels.shape[1] >= PARALLEL_CHANNEL_MIN_PIXELS:
+    if not bounded and channel_count > 1 and channels.shape[0] * channels.shape[1] >= PARALLEL_CHANNEL_MIN_PIXELS:
         # Progress is reported from this thread as each future completes, so a
         # callback never runs on a worker and the count stays monotonic.
         with ThreadPoolExecutor(
@@ -202,18 +226,23 @@ def downsample_image(
     return result
 
 
-def _encode_png_sdr(image: np.ndarray) -> bytes:
+def _encode_png_sdr(image: np.ndarray, *, tonemap_hdr: bool = False) -> bytes:
     try:
         from PIL import Image
     except ImportError as exc:
         raise RuntimeError("Pillow is required for preview rendering.") from exc
 
-    encoded = np.where(
-        image <= 0.0031308,
-        image * 12.92,
-        1.055 * np.power(np.clip(image, 0.0, 1.0), 1.0 / 2.4) - 0.055,
-    )
-    image_8bit = (np.clip(encoded, 0.0, 1.0) * 255.0).astype(np.uint8)
+    image_8bit = np.empty(image.shape, dtype=np.uint8)
+    for top in range(0, len(image), 128):
+        band = image[top:top + 128]
+        if tonemap_hdr:
+            band = _hdr_to_sdr_display(band)
+        encoded = np.where(
+            band <= 0.0031308,
+            band * 12.92,
+            1.055 * np.power(np.clip(band, 0.0, 1.0), 1.0 / 2.4) - 0.055,
+        )
+        image_8bit[top:top + len(band)] = (np.clip(encoded, 0.0, 1.0) * 255.0).astype(np.uint8)
     buffer = BytesIO()
     Image.fromarray(image_8bit).save(buffer, format=PREVIEW_IMAGE_FORMAT)
     return buffer.getvalue()
@@ -223,57 +252,60 @@ def _encode_hdr_avif(
     image: np.ndarray,
     reference_white_nits: int = DEFAULT_HDR_REFERENCE_WHITE_NITS,
     quality: int = 82,
+    *, banded: bool = False,
 ) -> bytes:
-    avifenc = resolve_binary("avifenc")
-    if avifenc is None:
-        raise RuntimeError("avifenc is required for HDR AVIF preview rendering.")
-
+    scratch_root = (os.environ.get("HDR_FINISHER_PROOF_ROOT") or None) if banded else None
     try:
-        with TemporaryDirectory(prefix="hdr_finisher_preview_") as temp_dir_name:
+        with TemporaryDirectory(
+            prefix="hdr_finisher_preview_",
+            dir=scratch_root,
+            ignore_cleanup_errors=banded,
+        ) as temp_dir_name:
             temp_dir = Path(temp_dir_name)
             y4m_path = temp_dir / "preview_hdr.y4m"
-            avif_path = temp_dir / "preview_hdr.avif"
-            _write_hdr_y4m(y4m_path, image, reference_white_nits)
-            result = subprocess.run(
-                [
-                    str(avifenc),
-                    "--cicp",
-                    "9/16/9",
-                    "-d",
-                    "10",
-                    "-y",
-                    "444",
-                    "-s",
-                    "6",
-                    "-q",
-                    str(int(quality)),
-                    str(y4m_path),
-                    str(avif_path),
-                ],
-                capture_output=True,
-                text=True,
-                check=False,
-                **hidden_window_options(),
-            )
-            if result.returncode != 0:
-                detail = result.stderr.strip() or result.stdout.strip() or "avifenc failed to encode preview."
-                raise RuntimeError(detail)
-            return avif_path.read_bytes()
+            if banded:
+                rows = (image[top:top + 128] for top in range(0, len(image), 128))
+                _write_hdr_y4m_bands(y4m_path, *image.shape[:2], rows, reference_white_nits)
+            else:
+                _write_hdr_y4m(y4m_path, image, reference_white_nits)
+            return _encode_hdr_avif_y4m(y4m_path, temp_dir / "preview_hdr.avif", quality)
     except OSError as exc:
         raise RuntimeError("Failed to encode HDR AVIF preview.") from exc
 
 
-def _write_hdr_y4m(path: Path, image: np.ndarray, reference_white_nits: int = DEFAULT_HDR_REFERENCE_WHITE_NITS) -> None:
-    yuv10 = _linear_to_bt2020_pq_yuv10(image, reference_white_nits)
-    height, width = yuv10.shape[:2]
-    header = f"YUV4MPEG2 W{width} H{height} F1:1 Ip A1:1 C444p10 XYSCSS=444P10\n".encode("ascii")
-    frame_header = b"FRAME\n"
+def _encode_hdr_avif_y4m(y4m_path: Path, avif_path: Path, quality: int) -> bytes:
+    avifenc = resolve_binary("avifenc")
+    if avifenc is None:
+        raise RuntimeError("avifenc is required for HDR AVIF preview rendering.")
+    result = subprocess.run(
+        [
+            str(avifenc),
+            "--cicp", "9/16/9",
+            "-d", "10",
+            "-y", "444",
+            "-s", "6",
+            "-q", str(int(quality)),
+            str(y4m_path),
+            str(avif_path),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+        **hidden_window_options(),
+    )
+    if result.returncode != 0:
+        detail = result.stderr.strip() or result.stdout.strip() or "avifenc failed to encode preview."
+        raise RuntimeError(detail)
+    return avif_path.read_bytes()
 
-    with path.open("wb") as handle:
-        handle.write(header)
-        handle.write(frame_header)
-        for plane_index in range(3):
-            handle.write(yuv10[..., plane_index].astype("<u2", copy=False).tobytes())
+
+def _write_hdr_y4m(path: Path, image: np.ndarray, reference_white_nits: int = DEFAULT_HDR_REFERENCE_WHITE_NITS) -> None:
+    _write_hdr_y4m_bands(path, *image.shape[:2], (image,), reference_white_nits)
+
+
+def _write_hdr_y4m_bands(path, height, width, bands, reference_white_nits):
+    yuv_bands = (_linear_to_bt2020_pq_yuv10(band, reference_white_nits) for band in bands)
+    write_y4m_bands(path, height, width, yuv_bands, bit_depth=10, chroma_subsampling="444")
 
 
 def _linear_to_bt2020_pq_yuv10(image: np.ndarray, reference_white_nits: int = DEFAULT_HDR_REFERENCE_WHITE_NITS) -> np.ndarray:

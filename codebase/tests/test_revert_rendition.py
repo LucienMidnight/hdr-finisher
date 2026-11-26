@@ -81,7 +81,7 @@ def test_revert_restores_one_rendition_and_leaves_the_rest(tmp_path: Path, lane:
     reverted = _revert(store, session_id, lane).document
 
     assert getattr(reverted.global_adjustments, lane) == getattr(starting, lane)
-    assert getattr(reverted.denoise, lane) == DenoiseLaneSettings()
+    assert getattr(reverted.denoise, lane) == DenoiseLaneSettings.new_lane()
     assert getattr(reverted.local_adjustments[0], f"{lane}_grade") == LocalGrade()
 
     assert getattr(reverted.global_adjustments, other) == getattr(edited.global_adjustments, other)

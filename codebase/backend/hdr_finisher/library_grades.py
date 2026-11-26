@@ -71,6 +71,10 @@ class LibraryGrades:
         rows = self.marks._query("SELECT state FROM photo_grades WHERE path=?", (str(path),))
         return json.loads(rows[0][0]) if rows else {}
 
+    def indexed_grade(self, path):
+        state = self._get(path)
+        return state.get("desired") if state.get("pending") else state.get("indexed_grade", state.get("baseline"))
+
     def _put(self, path, state):
         db = self.marks._connect()
         try:

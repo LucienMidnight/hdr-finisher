@@ -4,14 +4,15 @@ from types import SimpleNamespace
 import time
 import numpy as np
 import pytest
-from fastapi import FastAPI
+from fastapi import FastAPI, WebSocketDisconnect
 from fastapi.testclient import TestClient
-from hdr_finisher import gpu_delivery, delivery
+from hdr_finisher import app_memory, gpu_delivery, delivery
 from hdr_finisher.models import AdjustmentState, DenoiseDocumentSettings, ExportSettings
 
 
 @pytest.mark.parametrize("worker_ready_at_first_request", [True, False])
-def test_paired_handoff_reuses_compatible_versions_and_proof_owner(tmp_path, monkeypatch, worker_ready_at_first_request):
+@pytest.mark.parametrize("grain", [False, True])
+def test_paired_handoff_reuses_compatible_versions_and_proof_owner(tmp_path, monkeypatch, worker_ready_at_first_request, grain):
     monkeypatch.setattr(delivery, "PREFERENCES_PATH", tmp_path / "policy.json")
     monkeypatch.delenv(delivery.FORCE_CPU_ENV, raising=False)
     monkeypatch.setattr(gpu_delivery, "_clients", {})
@@ -19,6 +20,11 @@ def test_paired_handoff_reuses_compatible_versions_and_proof_owner(tmp_path, mon
     app = FastAPI(); app.include_router(gpu_delivery.create_gpu_delivery_router())
     frame = SimpleNamespace(image=np.full((4,6,3), .18, dtype=np.float32), local_adjustments=[],
         adjustments=AdjustmentState(), denoise=DenoiseDocumentSettings())
+    if grain:
+        frame.denoise.hdr.enabled = True
+        frame.denoise.hdr.controls.method = "clean_grain"
+        monkeypatch.setenv(gpu_delivery.GRAIN_TRIAL_ENV, "1")
+        monkeypatch.setattr(app_memory, "snapshot", lambda: {"totalBytes": 0, "reservedBytes": 0})
     settings=ExportSettings()
     with TestClient(app) as client, ThreadPoolExecutor(max_workers=1) as worker:
         if not worker_ready_at_first_request:
@@ -34,7 +40,14 @@ def test_paired_handoff_reuses_compatible_versions_and_proof_owner(tmp_path, mon
             time.sleep(.01)
         for lane, value in (("hdr", .18), ("sdr", .3)):
             pixels=np.full((4,6,4), value, dtype="<f4").tobytes()
-            assert client.post(f"/api/delivery/gpu/{job['id']}/pixels/{lane}", content=pixels).status_code==204
+            endpoint = f"/api/delivery/gpu/{job['id']}/pixels/{lane}"
+            if grain:
+                assert client.post(endpoint, content=pixels).status_code == 400
+                assert client.post(f"{endpoint}?row=2&rows=2", content=pixels[192:]).status_code == 400
+                assert client.post(f"{endpoint}?row=0&rows=2", content=pixels[:192]).status_code == 204
+                assert client.post(f"{endpoint}?row=2&rows=2", content=pixels[192:]).status_code == 204
+            else:
+                assert client.post(endpoint, content=pixels).status_code == 204
         assert client.post(f"/api/delivery/gpu/{job['id']}/complete", json={}).status_code==200
         pair=pending.result(timeout=5)
         np.testing.assert_allclose(pair["hdr"], .18)
@@ -183,6 +196,94 @@ def _broker(tmp_path, monkeypatch):
 def _frame(priority=20):
     return SimpleNamespace(image=np.full((4,6,3), .18, dtype=np.float32), local_adjustments=[],
         adjustments=AdjustmentState(), denoise=DenoiseDocumentSettings(), delivery_priority=priority)
+
+
+@pytest.mark.parametrize("format,method,size,amount,dimensions,expected", [
+    ("sdr_jpeg", "clean_grain", "large", .75, (3464, 5202), True),
+    ("sdr_jpeg", "clean_grain", "large", .75, (3465, 5202), False),
+    ("sdr_jpeg", "clean_grain", "large", 0, (3464, 5202), False),
+    ("sdr_jpeg", "clean_grain", "small", .75, (3464, 5202), False),
+    ("sdr_jpeg", "clean_grain", "small", .75, (3464, 5202), False),
+    ("sdr_jpeg", "micro_grain", "large", .75, (3464, 5202), False),
+    ("jpeg_ultrahdr", "clean_grain", "large", .75, (3464, 5202), False),
+])
+def test_streamed_delivery_default_selection(monkeypatch, format, method, size, amount, dimensions, expected):
+    monkeypatch.delenv(gpu_delivery.STREAMED_TRIAL_ENV, raising=False)
+    frame = _frame()
+    frame.image = np.broadcast_to(np.float32(.18), (*dimensions, 3))
+    frame.denoise = DenoiseDocumentSettings(sdr={"enabled": True,
+        "controls": {"method": method, "splotch_size": size, "amount": amount}})
+    settings = ExportSettings(format=format)
+    assert gpu_delivery.streamed_delivery_enabled(frame, settings, frame.adjustments) is expected
+
+
+@pytest.mark.parametrize("same_process", [True, False])
+@pytest.mark.parametrize("format,lanes", [("jpeg_ultrahdr", ("hdr", "sdr")), ("sdr_jpeg", ("sdr",))])
+def test_streamed_delivery_returns_encoder_rgb_without_shared_arrays(tmp_path, monkeypatch, same_process, format, lanes):
+    from hdr_finisher import config
+    from hdr_finisher.hdr_ceiling import channel_nits, delivery_ceiling_nits
+
+    app = _broker(tmp_path, monkeypatch)
+    monkeypatch.setattr(config, "APP_DATA_DIR", tmp_path)
+    if format == "jpeg_ultrahdr":
+        monkeypatch.setenv(gpu_delivery.STREAMED_TRIAL_ENV, "1")
+    else:
+        monkeypatch.delenv(gpu_delivery.STREAMED_TRIAL_ENV, raising=False)
+    monkeypatch.setenv("HDR_FINISHER_DESKTOP_SECRET", "delivery-test-secret")
+    if not same_process:
+        monkeypatch.setattr(gpu_delivery, "_router_pid", None)
+    monkeypatch.setattr(app_memory, "snapshot", lambda: {"totalBytes": 0, "reservedBytes": 0})
+    monkeypatch.setattr(gpu_delivery.DeliveryMemory, "allocate", lambda *args: pytest.fail("Allocated shared pixels"))
+    frame = _frame()
+    if format == "sdr_jpeg":
+        frame.denoise = DenoiseDocumentSettings(sdr={"enabled": True,
+            "controls": {"method": "clean_grain", "splotch_size": "large"}})
+    input_pixels = np.arange(96, dtype="<f4").reshape(4, 6, 4) / 100
+    hdr_pixels = input_pixels.copy()
+    hdr_pixels[0, 0, :3] = 12
+    with TestClient(app) as client, ThreadPoolExecutor(max_workers=1) as worker:
+        client.get("/api/delivery/gpu/permit")
+        pending = worker.submit(gpu_delivery.render_pair, frame, ExportSettings(format=format), frame.adjustments)
+        deadline = time.monotonic() + 5
+        while (job := client.get("/api/delivery/gpu/next").json()) is None:
+            assert time.monotonic() < deadline and not pending.done()
+            time.sleep(.01)
+        assert job["lanes"] == list(lanes)
+        assert {"file_sources", "memory"}.isdisjoint(job)
+        assert (gpu_delivery.session(job["id"]).image is frame.image) == same_process
+        np.testing.assert_array_equal(gpu_delivery.session(job["id"]).image, frame.image)
+        for lane in lanes:
+            path = f"/api/delivery/gpu/{job['id']}/rows/{lane}"
+            headers = {"x-hdr-finisher-token": "delivery-test-secret"}
+            with pytest.raises(WebSocketDisconnect), client.websocket_connect(path):
+                pytest.fail("Accepted an unauthenticated stream")
+            with pytest.raises(WebSocketDisconnect), client.websocket_connect(path,
+                    headers={**headers, "origin": "http://outside.invalid"}):
+                pytest.fail("Accepted a cross-origin stream")
+            pixels = hdr_pixels if lane == "hdr" else input_pixels
+            bad_strip = pixels[:2].copy()
+            bad_strip[0, 0, 1] = np.nan
+            for row, strip in ((2, pixels[2:]), (0, bad_strip)):
+                with client.websocket_connect(path, headers=headers) as socket:
+                    socket.send_bytes(row.to_bytes(4, "little") + strip.tobytes())
+                    assert socket.receive() == {"type": "websocket.close", "code": 1008, "reason": ""}
+            with client.websocket_connect(path, headers=headers) as socket:
+                for row in (0, 2):
+                    socket.send_bytes(row.to_bytes(4, "little") + pixels[row:row + 2].tobytes())
+                    assert socket.receive_text() == ""
+        client.post(f"/api/delivery/gpu/{job['id']}/complete", json={})
+        pair = pending.result(timeout=5)
+        assert set(pair) == set(lanes)
+        for lane in lanes:
+            assert isinstance(pair[lane], np.memmap)
+            assert not pair[lane].flags.writeable
+            if lane == "hdr":
+                peak = float(channel_nits(pair[lane]).max())
+                ceiling = delivery_ceiling_nits(frame.adjustments)
+                assert ceiling - .01 < peak <= ceiling
+                np.testing.assert_array_equal(pair[lane].reshape(-1, 3)[1:], input_pixels[..., :3].reshape(-1, 3)[1:])
+            else:
+                np.testing.assert_array_equal(pair[lane], input_pixels[..., :3])
 
 
 def test_raw_reservation_yields_without_releasing_live_memory(tmp_path, monkeypatch):
@@ -488,3 +589,62 @@ def test_selected_scene_transfers_atomic_gpu_ownership_and_yields(tmp_path, monk
         client.delete(url)
         activity=client.post('/api/delivery/gpu/activity',json={"bytes":100,"budget":1000}).json()
         assert activity["reserved"] == 0
+
+
+def test_deleted_spool_is_recreated_and_gpu_delivery_stays_available(monkeypatch):
+    # Steve, Nov 23: an agent run's temp cleanup deleted the spool while the
+    # app was open; every renderer poll then raised and exports fell to the CPU.
+    import os, shutil
+    from pathlib import Path
+    monkeypatch.setenv(gpu_delivery.ROOT_ENV, "")
+    app = FastAPI(); app.include_router(gpu_delivery.create_gpu_delivery_router())
+    root = Path(os.environ[gpu_delivery.ROOT_ENV])
+    with TestClient(app) as client:
+        shutil.rmtree(root)
+        assert client.get("/api/delivery/gpu/permit").status_code == 200
+        assert (root / "heartbeat").exists()
+        shutil.rmtree(root)
+        assert client.get("/api/delivery/gpu/next").status_code == 200
+        assert (root / "heartbeat").exists()
+
+
+def test_spool_deleted_mid_delivery_ends_the_wait_and_retries_gpu_next_time(tmp_path, monkeypatch):
+    # Review, Nov 23: once the renderer recreates the heartbeat, a worker whose
+    # job folder vanished must not wait forever, nor cache the CPU fallback.
+    import os, shutil, threading
+    from pathlib import Path
+    monkeypatch.setattr(delivery, "PREFERENCES_PATH", tmp_path / "policy.json")
+    monkeypatch.delenv(delivery.FORCE_CPU_ENV, raising=False)
+    monkeypatch.setenv(gpu_delivery.ROOT_ENV, "")
+    app = FastAPI(); app.include_router(gpu_delivery.create_gpu_delivery_router())
+    root = Path(os.environ[gpu_delivery.ROOT_ENV])
+    frame = SimpleNamespace(image=np.full((4, 6, 3), .18, dtype=np.float32),
+        local_adjustments=[], adjustments=AdjustmentState(), denoise=DenoiseDocumentSettings())
+    with TestClient(app) as client:
+        client.get("/api/delivery/gpu/permit")
+        stop = threading.Event()
+        def renderer():
+            while not stop.is_set():
+                client.get("/api/delivery/gpu/permit"); time.sleep(.02)
+        def delete_once_submitted():
+            while not stop.is_set():
+                if any(root.glob("delivery-*/request.json")):
+                    shutil.rmtree(root)
+                    return
+                stop.wait(.005)
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            pool.submit(renderer); pool.submit(delete_once_submitted)
+            started = time.monotonic()
+            try:
+                assert gpu_delivery.render_pair(frame, ExportSettings(), frame.adjustments) is None
+            finally:
+                stop.set()
+        assert time.monotonic() - started < 5
+        assert frame._delivery_record["renderer"] == "cpu"
+        assert frame._delivery_cache is None
+        # The worker can notice the missing folder before the renderer's next
+        # poll, so make that poll explicitly instead of racing the thread.
+        client.get("/api/delivery/gpu/permit")
+        assert (root / "heartbeat").exists()
+        if os.name != "nt":  # Windows ignores POSIX mode bits.
+            assert oct(root.stat().st_mode & 0o777) == "0o700"

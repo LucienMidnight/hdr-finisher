@@ -211,6 +211,8 @@ def packet(recipe, base, checkpoint=lambda:None):
 
 
 def solve(recipe, base, checkpoint=lambda:None, *, priority=0):
+    if recipe.mode != 'inpaint':
+        raise ValueError('Only Inpaint uses the GPU delivery queue.')
     from . import gpu_delivery as delivery
     from .delivery import preferences
     from .delivery_memory import DeliveryMemory
@@ -219,7 +221,7 @@ def solve(recipe, base, checkpoint=lambda:None, *, priority=0):
     root=Path(os.environ[delivery.ROOT_ENV]) if os.environ.get(delivery.ROOT_ENV) else None
     if root is None or not (root/'heartbeat').exists() or time.time()-(root/'heartbeat').stat().st_mtime>5:
         raise RuntimeError('The GPU delivery renderer is unavailable.')
-    (meta,values),targets=packet(recipe,base,checkpoint)
+    (meta,values),targets=inpaint_packet(recipe,base,checkpoint)
     directory=None
     with DeliveryMemory() as memory:
         try:
@@ -284,6 +286,12 @@ class BoundedSource:
 
     def __getitem__(self, key):
         ys,xs=key
+        if not isinstance(ys, slice):
+            # The transfer reference samples bilinear taps with broadcast
+            # indices in full-image coordinates, including the clamped edge.
+            t,b=int(ys.min()),int(ys.max())+1
+            l,r=int(xs.min()),int(xs.max())+1
+            return self[t:b,l:r][ys-t,xs-l]
         for (l,t,r,b),pixels in self.regions:
             if l<=xs.start and xs.stop<=r and t<=ys.start and ys.stop<=b:
                 return pixels[ys.start-t:ys.stop-t,xs.start-l:xs.stop-l]

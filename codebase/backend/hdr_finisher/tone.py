@@ -3,6 +3,7 @@ from functools import lru_cache
 import numpy as np
 
 from .color import acescg_to_linear_bt2020
+from .pixel_rows import render_rows
 
 
 ZONES = ("shadows", "midtones", "highlights")
@@ -107,6 +108,10 @@ def apply_tone(image, branch, hdr: bool, reference_white_nits=203.0, target_peak
     grey = reference_grey(hdr)
     peak = float(target_peak_nits if target_peak_nits is not None else getattr(branch, "highlight_compression_target_nits", 1000)) * 0.18 / reference_white_nits if hdr else 1.0
     weights = np.array([0.2722287, 0.6740818, 0.0536895] if hdr else [0.2126, 0.7152, 0.0722], np.float32)
+    return render_rows(image, lambda part, _: _apply_tone_rows(part, branch, hdr, amounts, grey, peak, weights))
+
+
+def _apply_tone_rows(image, branch, hdr, amounts, grey, peak, weights):
     luminance = np.maximum(np.sum(image * weights, axis=-1), 0)
     delivery = acescg_to_linear_bt2020(image) if hdr else image
     brightest = np.maximum(np.max(delivery, axis=-1), 0)

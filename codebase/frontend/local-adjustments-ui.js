@@ -1028,6 +1028,7 @@ async function commitSelectedLocal({ refreshPreview = true, maskContent = false 
   if (!local) return false;
   const creating = unusedLocal(local);
   if (creating && !maskContent) return false;
+  const needsSettledPreview = !refreshPreview && state.localPreviewDirty;
   const sessionId = state.session?.session_id;
   if (creating) {
     state.localUnusedAdjustment = null;
@@ -1046,6 +1047,7 @@ async function commitSelectedLocal({ refreshPreview = true, maskContent = false 
       if (!state.localUnusedAdjustment && state.selectedLocalId === local.id && state.gradeMode === "local") state.localUnusedAdjustment = local;
     }
     if (committed) {
+      state.localMaskCommitSettlePending ||= needsSettledPreview;
       window.clearTimeout(state.localMaskDraftTimer);
       state.localMaskDraftTimer = 0;
       // Let an in-flight draft finish quietly. The generation bump below makes
@@ -1059,18 +1061,21 @@ async function commitSelectedLocal({ refreshPreview = true, maskContent = false 
     }
   } finally {
     state.localMaskCommitDepth = Math.max(0, state.localMaskCommitDepth - 1);
-    if (state.localMaskCommitDepth === 0 && state.localMaskCommitRefreshPending && !state.localPointerGesture) {
+    if (state.localMaskCommitDepth === 0 && !state.localPointerGesture) {
+      const refreshPending = state.localMaskCommitRefreshPending;
+      const settlePending = state.localMaskCommitSettlePending;
       state.localMaskCommitRefreshPending = false;
-      invalidatePreview("hdr", { local: true });
-      invalidatePreview("sdr", { local: true });
-      debouncePreview(state.currentView);
-    } else if (committed && !refreshPreview && state.localMaskCommitDepth === 0 && !state.localPointerGesture) {
-      // `input` already invalidated and scheduled the visual update, so these
-      // controls intentionally avoid a duplicate generation on `change`.
-      // Re-arm that generation after persistence completes, though: Full
-      // tiled interaction skips its draft by design and needs a guaranteed
-      // post-commit settled pass.
-      state.previewScheduler?.endInteraction();
+      state.localMaskCommitSettlePending = false;
+      if (refreshPending) {
+        invalidatePreview("hdr", { local: true });
+        invalidatePreview("sdr", { local: true });
+        debouncePreview(state.currentView);
+      } else if (settlePending) {
+        // Re-arm that generation after persistence completes, though: Full
+        // tiled interaction skips its draft by design and needs a guaranteed
+        // post-commit settled pass.
+        state.previewScheduler?.endInteraction({ localCommit: true });
+      }
     }
     queueLocalMaskOverlayRender();
   }

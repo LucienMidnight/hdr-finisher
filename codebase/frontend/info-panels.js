@@ -130,13 +130,15 @@ function technicalSummaryEntries() {
   const accepted = state.acceptedPresentation;
   const lane = state.currentView === "sdr" ? "SDR" : "HDR";
   const zoom = state.zoomMode === "fit" ? "Fit" : `${Math.round(state.zoomPercent)}%`;
-  const status = viewer.status === "ready" ? "Ready"
-    : viewer.status === "unavailable" ? `Unavailable${viewer.detail ? ` — ${viewer.detail}` : ""}`
-      : viewer.coarse ? "Coarse — sharpening"
-        : viewer.status === "updating" ? "Updating" : "Preparing";
+  const status = viewer.status === "reduced" ? "Reduced CPU preview"
+    : viewer.status === "ready" ? "Ready"
+      : viewer.status === "unavailable" ? `Unavailable${viewer.detail ? ` — ${viewer.detail}` : ""}`
+        : viewer.coarse ? "Coarse — sharpening"
+          : viewer.status === "updating" ? "Updating" : "Preparing";
   const detail = !state.session || !accepted ? "Waiting"
-    : accepted.exact ? "Full detail"
-      : accepted.coarse ? "Softer while dragging" : "Placeholder";
+    : viewer.status === "reduced" ? `${accepted.processedLongEdge.toLocaleString()} px`
+      : accepted.exact ? "Full detail"
+        : accepted.coarse ? "Softer while dragging" : "Placeholder";
   const setting = state.fasterDragging ? " · faster dragging on" : "";
   const execution = previewExecutionMode();
   const route = execution === "direct-cpu" ? "On the processor (CPU)" : execution === "tiled-gpu" ? "In tiles" : "Whole image";

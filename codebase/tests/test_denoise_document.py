@@ -3,24 +3,58 @@ from __future__ import annotations
 import pytest
 
 from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
 from PIL import Image
 
-from hdr_finisher.models import DenoiseDocumentSettings, DenoiseLiveControls, EditCommand
+from hdr_finisher.models import DenoiseDocumentSettings, DenoiseLiveControls, EditCommand, EditDocument
 from hdr_finisher.projects import open_project, save_project
 from hdr_finisher.sessions import SessionStore
 
 
-def test_denoise_settings_are_versioned_undoable_and_project_persistent(tmp_path: Path) -> None:
+@pytest.mark.parametrize("signed,dng,shape,method,reason", [
+    (True, False, (20, 24, 3), "opposed_color_v1", None),
+    (False, False, (20, 24, 3), "opposed_color_v1", "Bayer RAW"),
+    (True, True, (20, 24, 3), "opposed_color_v1", "Bayer RAW"),
+    (True, False, (21, 24, 3), "opposed_color_v1", "complete Bayer cells"),
+    (True, False, (20, 24, 3), "edge_colour_v1", "Edge Colour"),
+])
+def test_micro_grain_requires_supported_sensor_source(tmp_path, signed, dng, shape, method, reason):
+    from hdr_finisher.denoise_micro_grain import unavailable_reason
+    from hdr_finisher.models import RawImportSettings
+
+    source = tmp_path / "synthetic.ARW"
+    source.touch()
+    frame = SimpleNamespace(image=np.zeros(shape, dtype=np.float32), source_path=source,
+                            metadata={"raw_development": {"signed_sensor_samples": signed}, "dng_input": dng},
+                            raw_import_settings=RawImportSettings(highlight_reconstruction={"enabled": True, "method": method}))
+    actual = unavailable_reason(frame)
+    if reason is None:
+        assert actual is None
+    else:
+        assert reason in actual
+
+
+@pytest.mark.parametrize("amount,color,detail", [(0.73, 0.61, 0.63), (0.5, 0.5, 0.0)])
+def test_denoise_settings_are_versioned_undoable_and_project_persistent(
+    tmp_path: Path, amount: float, color: float, detail: float,
+) -> None:
     source = tmp_path / "denoise-source.png"
     Image.fromarray(np.full((16, 24, 3), 96, dtype=np.uint8)).save(source)
     store = SessionStore()
     payload = store.create_session(source, owns_source_path=False)
     settings = DenoiseDocumentSettings()
     settings.hdr.enabled = True
-    settings.hdr.controls.amount = 0.73
-    settings.hdr.controls.detail_recovery = 0.63
+    settings.hdr.controls.amount = amount
+    settings.hdr.controls.color_noise = color
+    settings.hdr.controls.detail_recovery = detail
+    settings.hdr.controls.method = "clean_grain"
+    settings.hdr.controls.clean_splotches = amount <= .5
+    settings.hdr.controls.clean_fringes = amount <= .5
+    settings.hdr.controls.grain_evenness = .77
+    settings.hdr.controls.color_splotches = .39
+    settings.hdr.controls.splotch_size = "small"
 
     changed = store.apply_edit_commands(
         payload.session_id,
@@ -32,8 +66,9 @@ def test_denoise_settings_are_versioned_undoable_and_project_persistent(tmp_path
     )
     assert changed.document.denoise.schema_version == 1
     assert changed.document.denoise.hdr.enabled is True
-    assert changed.document.denoise.hdr.controls.amount == 0.73
-    assert changed.document.denoise.hdr.controls.detail_recovery == 0.63
+    assert changed.document.denoise.hdr.controls.amount == amount
+    assert changed.document.denoise.hdr.controls.color_noise == color
+    assert changed.document.denoise.hdr.controls.detail_recovery == detail
 
     undone = store.apply_edit_commands(
         payload.session_id,
@@ -52,14 +87,92 @@ def test_denoise_settings_are_versioned_undoable_and_project_persistent(tmp_path
     reopened = open_project(store, project_path)
     assert reopened.denoise.schema_version == 1
     assert reopened.denoise.hdr.enabled is True
-    assert reopened.denoise.hdr.controls.amount == 0.73
-    assert reopened.denoise.hdr.controls.detail_recovery == 0.63
+    assert reopened.denoise.hdr.controls.amount == amount
+    assert reopened.denoise.hdr.controls.color_noise == color
+    assert reopened.denoise.hdr.controls.detail_recovery == detail
+    assert reopened.denoise.hdr.controls == settings.hdr.controls
 
 
-def test_new_denoise_settings_default_detail_recovery_to_zero() -> None:
+def test_new_denoise_settings_use_approved_d1_defaults() -> None:
+    from dataclasses import asdict
+    from hdr_finisher.denoise_adaptive import AdaptiveControls
+    from tools.denoise_eval.candidates.denoise_v2_appdefault import AppDefault
+
+    expected = dict(amount=0.75, luminance=0.5, color_noise=0.75,
+                    detail_recovery=0.5, finest_noise=0.5, fine_noise=0.5,
+                    medium_noise=0.5, coarse_noise=0.5, method="standard",
+                    grain_evenness=1, clean_splotches=True, clean_fringes=True, protect_color_edges=False, color_splotches=1, splotch_size="small")
+    expected |= dict(micro_luminance=0.5, micro_color=0.5, micro_detail=0.5)
+    assert DenoiseLiveControls().model_dump() == expected
+    assert asdict(AdaptiveControls()) == expected
+    assert asdict(AppDefault().controls) == expected
     settings = DenoiseDocumentSettings()
-    assert settings.hdr.controls.detail_recovery == 0.0
-    assert settings.sdr.controls.detail_recovery == 0.0
+    for lane in (settings.hdr, settings.sdr):
+        assert not lane.enabled
+        assert lane.controls.model_dump() == {**expected, "method": "clean_grain"}
+
+
+def test_methodless_saved_grade_uses_simple_instead_of_the_new_lane_default(tmp_path: Path) -> None:
+    from hdr_finisher.exporters import denoise_settings_for_export
+    from hdr_finisher.models import PreviewKind
+
+    source = tmp_path / "methodless.png"
+    Image.fromarray(np.full((16, 24, 3), 96, dtype=np.uint8)).save(source)
+    store = SessionStore()
+    payload = store.create_session(source, owns_source_path=False)
+    session = store.get(payload.session_id)
+    assert session.denoise.hdr.controls.method == session.denoise.sdr.controls.method == "clean_grain"
+    data = session.edit_document().model_dump(mode="json")
+    data["denoise"] = {"hdr": {"enabled": True, "controls": {"amount": 0.65}}, "sdr": {"enabled": True}}
+    saved = EditDocument.model_validate(data)
+    for lane in (PreviewKind.HDR, PreviewKind.SDR):
+        assert denoise_settings_for_export(saved, lane).controls.method == "standard"
+    assert saved.denoise.hdr.controls.amount == 0.65
+    assert EditDocument.model_validate_json(saved.model_dump_json()).denoise == saved.denoise
+
+
+def test_micro_grain_controls_round_trip_without_reusing_standard_values() -> None:
+    from hdr_finisher.denoise_micro_grain import MicroGrainControls
+
+    settings = DenoiseDocumentSettings(hdr={"enabled": True, "controls": {
+        "method": "micro_grain", "micro_luminance": 0.2, "micro_color": 0.9, "micro_detail": 0.7,
+    }})
+    restored = DenoiseDocumentSettings.model_validate_json(settings.model_dump_json())
+    assert restored == settings
+    assert MicroGrainControls.from_settings(restored.hdr.controls) == MicroGrainControls(0.2, 0.9, 0.7)
+    assert restored.hdr.controls.color_noise == restored.sdr.controls.color_noise == 0.75
+
+
+def test_micro_grain_retains_three_bayer_bands_and_evicts_by_bytes(monkeypatch) -> None:
+    from collections import OrderedDict
+    from threading import RLock
+
+    from hdr_finisher import denoise_micro_grain as micro
+
+    sensor = np.random.default_rng(21).integers(100, 400, (800, 280), dtype=np.uint16)
+    phases = np.ones(4, dtype=np.float32)
+    profile = micro.BayerProfile(phases * 64, phases * 1024, phases * .01, phases * .01,
+                                 np.eye(4, dtype=np.float32), np.eye(4, dtype=np.float32),
+                                 np.array(((0, 1), (1, 2))), np.eye(3), np.ones(3), np.ones(3), np.eye(3))
+    source = SimpleNamespace(sensor=sensor, profile=profile, flip=0, tiles=OrderedDict(), tiles_lock=RLock(),
+                             _claim_recent_source_tiles=lambda *args, **kwargs: True)
+    controls = micro.MicroGrainControls(0, 0, .5)
+    changed = micro.MicroGrainControls(.61, .78, .7)
+    rects = [(106, row, 174, row + 32) for row in (130, 290, 450, 610)]
+    get = lambda rect, settings, retain: micro.MicroGrainSource.bayer_region(source, rect, settings, retain=retain)
+    bound = 3 * micro.BayerTile.retained_nbytes(252, 216)
+    monkeypatch.setattr(micro, "VIEWPORT_BAYER_CACHE_BYTES", bound)
+    cold = [get(rect, controls, True)[0] for rect in rects[:3]]
+    for rect, cached in zip(rects[:3], cold):
+        tile, outer, demosaic, _ = get(rect, changed, True)
+        uncached = get(rect, changed, False)[0]
+        central = micro._inset(demosaic, outer, step=2)
+        assert cached is tile
+        assert cached.nbytes == micro.BayerTile.retained_nbytes(252, 216)
+        np.testing.assert_array_equal(tile.apply(changed, central), uncached.apply(changed, central))
+    get(rects[3], changed, True)
+    assert len(source.tiles) == 3
+    assert next(iter(source.tiles.values())) is cold[1]
 
 
 def test_a_live_edit_refuses_the_removed_wavelet_fields() -> None:

@@ -172,7 +172,9 @@ class HDRLibraryGPU extends HDRWebGPUPreview {
         enumerable:true,get:()=>{
           if(!token.pipeline){
             if(token.pending)throw Error('Library pipeline must finish preparation before drawing.');
-            token.pipeline=this.device.createRenderPipeline(token.descriptor);HDRLibraryStopwatch("picture_pipeline_demand",{name,format,path:this.libraryMeta?.path});
+            token.pipeline=token.descriptor.compute
+              ? this.device.createComputePipeline(token.descriptor) : this.device.createRenderPipeline(token.descriptor);
+            HDRLibraryStopwatch("picture_pipeline_demand",{name,format,path:this.libraryMeta?.path});
           }
           return token.pipeline;
         }
@@ -204,9 +206,15 @@ class HDRLibraryGPU extends HDRWebGPUPreview {
       if(this.pipelines.get(format)!==pipelines)return;
       const token=tokens[name];
       if (!token || token.pipeline) continue;
-      if(!token.pending){const started=performance.now();token.pending=this.device.createRenderPipelineAsync(token.descriptor).then(pipeline=>{
-        HDRLibraryStopwatch('picture_pipeline_prepared',{name,format,duration_ms:performance.now()-started});return token.pipeline ||= pipeline;
-      }).catch(error=>{token.pending=null;throw error;});}
+      if(!token.pending){
+        const started=performance.now();
+        const descriptor=token.descriptor;
+        const compilation=descriptor.compute
+          ? this.device.createComputePipelineAsync(descriptor) : this.device.createRenderPipelineAsync(descriptor);
+        token.pending=compilation.then(pipeline=>{
+          HDRLibraryStopwatch('picture_pipeline_prepared',{name,format,duration_ms:performance.now()-started});return token.pipeline ||= pipeline;
+        }).catch(error=>{token.pending=null;throw error;});
+      }
       await token.pending;
     }
   }
@@ -433,21 +441,21 @@ const HDRLibraryPictureFactory = (quick = false) => {
         if (signal.aborted || !isCurrent()) return;
       }
       const adjustments = structuredClone(meta.adjustments);
-      adjustments.hdr.highlight_compression_target_nits = 1000;
       const started = performance.now();
       const native = meta.edge === 100000 && gpu.liveMode;
       const leasing = performance.now();
       const lease = meta.route === "library-live" ? await HDRLibraryScenes.lease(meta, signal, native) : null;
       window.HDRLibraryTrace?.mark(meta.trace,"picture_lease_wait",leasing,{...window.HDRLibraryPictureLog?.(meta),key:meta.key});
       if (lease) { clearInterval(gpu.deliveryActivityTimer); gpu.deliveryActivityTimer = null; }
-      let result, refusal, thumbnailSave;
-      if (!quick && meta.edge === 2560) await prepareScreen(hdr);
+      let result, refusal, thumbnailSave, grain;
       const rendering = performance.now();
       gpu.libraryFetchMs = 0; gpu.libraryUploadMs = 0;
       const previousBudget = gpu.deliveryBudgetBytes;
       try {
+      if (!quick && meta.edge === 2560) await prepareScreen(hdr);
       if (gpu.liveMode && gpu.sessionId !== meta.key) gpu.resetSession(meta.key);
       const lane = hdr ? "hdr" : "sdr", denoise = meta.denoise?.[lane];
+      const identity = lane === "sdr" && adjustments.sdr?.use_authored_base && meta.has_reference ? "authored-sdr" : "source";
       if (native) {
         gpu.deliveryBudgetBytes = Math.min(gpu.memoryBudgetBytes(),lease.bytes);
         gpu.gpuAllocator?.setBudget(gpu.memoryBudgetBytes());
@@ -457,14 +465,19 @@ const HDRLibraryPictureFactory = (quick = false) => {
           {width:meta.width,height:meta.height},{isCurrent,beforeDeliverySubmit:lease.check});
       }
       const edge = native ? Math.max(meta.scene_width,meta.scene_height,meta.width,meta.height) : Math.max(256,meta.edge);
-      if (denoise?.enabled) {
+      if (denoise?.enabled && !(denoise.controls.method === "micro_grain" && identity === "authored-sdr")) {
         const analysis = performance.now();
-        if (!await gpu.analyzeDenoiseProxy(meta.key,lane,adjustments,edge,0,"source",denoise.controls)) throw Error("Library Denoise analysis failed.");
+        if (!await gpu.analyzeDenoiseProxy(meta.key,lane,adjustments,edge,0,identity,denoise.controls,0,null,
+          {signal,isCurrent,libraryApproximation: true,onGrain:value=>{grain=value;}})) {
+          if (!isCurrent()) return;
+          throw Error("Library Denoise analysis failed.");
+        }
         window.HDRLibraryTrace?.mark(meta.trace,"picture_denoise_analysis",analysis,{...window.HDRLibraryPictureLog?.(meta),key:meta.key});
       } else if (gpu.denoiseSourceSelector) gpu.denoiseSourceSelector.selected = "original";
       result = await gpu.renderTo(canvas, meta.key, lane, adjustments,
         sampleCurvePoints, edge, meta.locals || [], 0, null, meta.white,
         { width: meta.width, height: meta.height }, { scopeAnalysis: !native, isCurrent,
+          identity,
           ...(native ? {viewport:meta.viewport,frameSize:{width:meta.width,height:meta.height}} : {}),
           onPresented:texture=>{thumbnailSave=window.HDRLibraryFinishedThumbnails?.capture(gpu,meta,texture,hdr,isCurrent);},
           ...(lease ? {beforeDeliverySubmit:lease.check} : {}) });
@@ -490,6 +503,11 @@ const HDRLibraryPictureFactory = (quick = false) => {
         duration_ms:performance.now()-rendering-gpu.libraryFetchMs-gpu.libraryUploadMs});
       refusal = gpu.lastRenderRefusal?.reason;
       } finally {
+        if (grain?.token) {
+          grain.stale = true;
+          gpu.dropDenoiseTiles([...gpu.denoiseTiles].filter(([, tile]) => tile.grainToken === grain.token).map(([key]) => key));
+          await fetch(`${grain.url}/${grain.token}`, {method:"DELETE"}).catch(()=>{});
+        }
         if (native) { gpu.deliveryBudgetBytes = previousBudget; gpu.gpuAllocator?.setBudget(gpu.memoryBudgetBytes()); }
         if (lease) { if (native) gpu.resetSession(null); await lease.release(); }
       }
@@ -504,7 +522,7 @@ const HDRLibraryPictureFactory = (quick = false) => {
       }else route?.remove();
       canvas.dataset.rendition = hdr ? "hdr" : "sdr";
       canvas.dataset.surface = gpu.surfaceKeys.get(canvas);
-      canvas.dataset.peakNits = hdr ? "1000" : "203";
+      canvas.dataset.peakNits = hdr ? String(adjustments.hdr.highlight_compression_target_nits ?? 1000) : "203";
       // Fullscreen saves after publishing both draws; grid saves
       // after its thumbnail. The request owns no GPU reservation while saving.
       if (meta.route === "library-live" && !meta.fullscreen)

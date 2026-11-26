@@ -139,7 +139,9 @@ test('Library compiles only demanded passes and uses the unchanged Grade descrip
  const context={HDRLibraryStopwatch(){},window:{HDRWebGPUShaders:require('../frontend/webgpu-shaders.js').HDRWebGPUShaders},performance,CLARITY_MAP_FORMAT:'rgba16float'};
  vm.runInNewContext('class Grade {'+base+'};class Library extends Grade {'+methods+'};this.Grade=Grade;this.Library=Library;',context);
  const created=[],gpu=new context.Library();gpu.pipelines=new Map();gpu.module={shader:'unchanged'};gpu.pipelineLayout={layout:'unchanged'};
- gpu.device={createRenderPipeline:d=>{created.push(d);return {descriptor:d};},createRenderPipelineAsync:async d=>{created.push(d);return {descriptor:d};}};
+ const compile=kind=>descriptor=>{assert.ok(descriptor[kind]);created.push(descriptor);return {descriptor};};
+ gpu.device={createRenderPipeline:compile('fragment'),createRenderPipelineAsync:async descriptor=>compile('fragment')(descriptor),
+  createComputePipeline:compile('compute')};
  const staged=gpu.pipelineFor('bgra8unorm');assert.equal(created.length,0,'Unused passes never compile');
  const gradeGpu=new context.Grade();gradeGpu.pipelines=new Map();gradeGpu.module=gpu.module;gradeGpu.pipelineLayout=gpu.pipelineLayout;
  const expected=gradeGpu.pipelineFor('bgra8unorm',d=>d);

@@ -9,7 +9,8 @@ const {hashProjects,checkProjects}=require('../tests/release/runner.cjs');
 const root=path.resolve(__dirname,'..'),jpeg=process.argv.includes('--jpeg'),probe=process.argv.includes('--probe'),aceh=process.argv.includes('--aceh'),phase0=process.argv.includes('--phase0');
 const scrollDiagnose=process.argv.includes('--scroll-diagnose'),hdrTest=process.argv.includes('--hdr-test');
 if(process.platform!=='win32'&&!hdrTest){console.log('Skipped: PC-only folder-scale / legacy very-large-file measurement; use --hdr-test for the shared curated folder.');process.exit(0);}
-const memoryLimit=Number(process.argv.find(x=>x.startsWith('--memory-gb='))?.split('=')[1]||4)*1e9;
+const {defaultAppMemoryBytes}=require('../desktop/lib/application-preferences');
+const memoryLimit=Number(process.argv.find(x=>x.startsWith('--memory-gb='))?.split('=')[1]||defaultAppMemoryBytes()/1e9)*1e9;
 const singleFile=process.argv.find(x=>x.startsWith('--single-file='))?.slice(14);
 const allFolder=process.argv.find(x=>x.startsWith('--all-folder='))?.slice(13);
 const outputName=process.argv.includes('--output-name')?process.argv[process.argv.indexOf('--output-name')+1]:null;
@@ -186,7 +187,7 @@ const before=hashProjects(require('../tests/release/drivers.json').protectedProj
   }
   if(process.argv.includes('--settings-exercise')){
    report.settingChanges=[];
-   for(const bytes of [8_000_000_000,4_000_000_000]){
+   for(const bytes of [8_000_000_000,defaultAppMemoryBytes()]){
     const start=Date.now();await page.evaluate(()=>HDRApplicationShell.openSettings('performance'));
     await page.locator('#settings-app-memory').fill(String(bytes/1e9));await page.locator('#settings-app-memory').dispatchEvent('change');
     for(let i=0;i<40;i++){if((await api('memory-setting')).ceilingBytes===bytes)break;await sleep(50);}

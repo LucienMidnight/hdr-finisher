@@ -45,6 +45,8 @@ def setting_label(path):
 
 
 SETTING_LABELS = {
+    'pixel_cleanup':'Pixel cleanup', 'remove_hot_pixels':'Remove hot pixels',
+    'even_out_specks':'Even out harsh specks', 'speck_threshold':'Speck threshold',
     'enabled':'Enabled', 'tone_section_enabled':'Tone enabled',
     'highlight_section_enabled':'Highlight compression enabled',
     'tone_equalizer_section_enabled':'Exposure bands enabled',
@@ -111,6 +113,11 @@ SETTING_LABELS = {
     'local_adjustments':'Local adjustments and masks', 'local_adjustments_enabled':'Local adjustments enabled',
     'luminance':'Luminance noise', 'color_noise':'Colour noise', 'detail_recovery':'Detail recovery',
     'finest_noise':'Finest noise', 'fine_noise':'Fine noise', 'medium_noise':'Medium noise', 'coarse_noise':'Coarse noise',
+    'grain_evenness':'Grain Evenness', 'clean_splotches':'Clean color splotches', 'clean_fringes':'Clean edge fringes',
+    'protect_color_edges':'Protect color edges',
+    'color_splotches':'Color Splotches',
+    'splotch_size':'Splotch Size',
+    'micro_luminance':'Luminance', 'micro_color':'Color', 'micro_detail':'Detail',
 }
 
 

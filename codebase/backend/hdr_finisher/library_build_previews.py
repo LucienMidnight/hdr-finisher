@@ -60,18 +60,18 @@ def build_cpu(root,path,document,width,height,cancelled):
     from .library_live import LivePictures,develop_cpu
     from .models import PreviewKind
     from .adjustments import apply_adjustments,apply_hdr_output_highlight_compression,apply_sdr_output_highlight_compression
-    from .exporters import _denoised_export_source
+    from .exporters import delivery_denoise_inputs
     service=LivePictures(root,None);service.document=lambda _:document
     scene=develop_cpu(root,path,document,2560,cancelled)
     service.cache.accept_transient(scene)
     frame=service.frame(service.describe(path,scene))
-    adjustments=frame.adjustments.model_copy(deep=True)
-    adjustments.hdr.highlight_compression_target_nits=1000
+    adjustments=frame.adjustments
     cache=StoredScreenPreviews(root,lambda _:document)
     for kind in (PreviewKind.HDR,PreviewKind.SDR):
         if cancelled(): return dict(saved=False)
-        pixels=apply_adjustments(_denoised_export_source(frame,kind),adjustments,kind,sdr_reference_image=frame.sdr_reference_image,
-            include_grain=True,include_output_highlight_compression=False,local_adjustments=adjustments.enabled_locals(frame.local_adjustments),color_context=frame.color_context)
+        source,reference,source_filter=delivery_denoise_inputs(frame,kind,adjustments)
+        pixels=apply_adjustments(source,adjustments,kind,sdr_reference_image=reference,
+            include_grain=True,include_output_highlight_compression=False,local_adjustments=adjustments.enabled_locals(frame.local_adjustments),color_context=frame.color_context,source_filter=source_filter)
         pixels=(apply_hdr_output_highlight_compression(pixels,adjustments,color_context=frame.color_context) if kind==PreviewKind.HDR else apply_sdr_output_highlight_compression(pixels,adjustments))
         h,w=pixels.shape[:2];stride=((w*8+255)//256)*256
         packed=np.zeros((h,stride//2),dtype='<f2');rgba=packed[:,:w*4].reshape(h,w,4);rgba[:,:,:3]=pixels;rgba[:,:,3]=1

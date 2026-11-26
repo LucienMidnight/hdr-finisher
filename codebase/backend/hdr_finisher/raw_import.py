@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from .cpu_budget import CpuExecutor
 from dataclasses import dataclass
 from functools import lru_cache
 import hashlib
@@ -12,7 +11,9 @@ import numpy as np
 from .import_bands import parallel_import_enabled, run_bands
 
 from .color import aces2065_to_acescg, transform_float32_bounded
+from .delivery_frames import empty_source_array, source_float32
 from .dng_color import D60_XYZ, XYZ_D60_TO_ACESCG, chromatic_adaptation_matrix
+from .lens_correction import correct_frame, native_lens_database
 from .models import LensCorrectionSettings, RawImportSettings
 
 if TYPE_CHECKING:
@@ -37,7 +38,7 @@ VERIFIED_LIBRAW_IGNORES_OPCODE_LIST3 = {(0, 22, 1)}
 LIBRAW_MATRIX_REFERENCE_WHITE_D65 = np.asarray(
     [0.95047, 1.0, 1.08883], dtype=np.float64
 )
-CAMERA_LINEAR_PIPELINE = "camera_linear_float_bridge_opposed_v2"
+CAMERA_LINEAR_PIPELINE = "camera_linear_signed_ahd_opposed_v3"
 LEGACY_RAW_PIPELINE = "legacy_libraw_aces_fallback_v1"
 OPPOSED_COLOR_METHOD = "opposed_color_v1"
 # Prototype: opposed colour, then edge-colour recolouring of clipped areas.
@@ -58,9 +59,9 @@ class _CameraLinearUnsupported(ValueError):
 class CameraLinearMetadata:
     """Validated metadata needed after LibRaw's camera-RGB transport.
 
-    The black values are retained as provenance. LibRaw has already subtracted
-    them before the no_auto_scale gate, so normalization divides by the usable
-    white-minus-black range and deliberately does not subtract them again.
+    Development subtracts black before camera-RGB transport (signed native AHD
+    for Bayer, LibRaw for X-Trans). Normalization divides by the usable
+    white-minus-black range and deliberately does not subtract black again.
     """
 
     black_level: np.ndarray
@@ -123,6 +124,7 @@ class _RawDecodeResult:
     legacy_fallback_reason: str | None = None
     bridge_transport_diagnostics: dict[str, list[int]] | None = None
     highlight_reconstruction_diagnostics: dict[str, Any] | None = None
+    pixel_cleanup_diagnostics: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True)
@@ -141,6 +143,26 @@ def decode_raw(
     cancelled: Callable[[], bool] | None = None,
     dng_inspection: LinearDngInspection | None = None,
 ) -> tuple[np.ndarray, dict[str, Any]]:
+    from .diagnostics import log as diagnostic
+    from time import perf_counter
+
+    started = perf_counter()
+    photo = {"id": str(path), "name": path.name}
+    try:
+        image, metadata = _decode_raw(path, settings, progress=progress, cancelled=cancelled, dng_inspection=dng_inspection)
+    except Exception as error:
+        is_cancelled = cancelled is not None and cancelled()
+        diagnostic("raw", "development_finished", photo=photo, route="refused",
+                   reason="raw_development_cancelled" if is_cancelled else "raw_development_failed",
+                   level="info" if is_cancelled else "error", error_type=type(error).__name__,
+                   duration_ms=round((perf_counter() - started) * 1000))
+        raise
+    diagnostic("raw", "development_finished", photo=photo, route="cpu", reason="raw_developed",
+               width_px=image.shape[1], height_px=image.shape[0], duration_ms=round((perf_counter() - started) * 1000))
+    return image, metadata
+
+
+def _decode_raw(path, settings, *, progress, cancelled, dng_inspection):
     inspection = _inspect_raw(path, dng_inspection=dng_inspection, progress=progress, cancelled=cancelled)
     plan = _build_raw_decode_plan(settings, inspection)
     decoded = _execute_raw_decode(path, settings, inspection, plan, progress=progress, cancelled=cancelled)
@@ -200,15 +222,20 @@ def _execute_raw_decode(
     progress: Callable[[str, str], None] | None,
     cancelled: Callable[[], bool] | None,
 ) -> _RawDecodeResult:
+    from .raw_pixel_cleanup import apply_raw, source_stamp
+
     rawpy = plan.rawpy
     exif = inspection.exif
     bridge_metadata: CameraLinearMetadata | None = None
     legacy_fallback_reason: str | None = None
     bridge_transport_diagnostics: dict[str, list[int]] | None = None
     highlight_reconstruction_diagnostics: dict[str, Any] | None = None
+    pixel_cleanup_diagnostics: dict[str, Any] | None = None
     try:
         if progress:
             progress("developing_raw", "Developing RAW with AHD demosaic")
+        pixel = settings.pixel_cleanup
+        cleanup_stamp = source_stamp(path) if pixel.remove_hot_pixels or pixel.even_out_specks else None
         with rawpy.imread(str(path)) as raw:
             exif = _merge_missing_metadata(exif, _read_libraw_metadata(raw))
             raw_pattern = getattr(raw, "raw_pattern", None)
@@ -223,30 +250,35 @@ def _execute_raw_decode(
                         "This mosaiced Experimental DNG requires mandatory OpcodeList3 corrections, "
                         f"but bundled LibRaw {'.'.join(map(str, version))} has not been audited for exactly-once behavior."
                     )
-                developed = raw.postprocess(
-                    demosaic_algorithm=rawpy.DemosaicAlgorithm.AHD,
-                    use_camera_wb=False,
-                    user_wb=[1.0, 1.0, 1.0, 1.0],
-                    user_flip=0,
-                    no_auto_bright=True,
-                    output_color=rawpy.ColorSpace.raw,
-                    gamma=(1.0, 1.0),
-                    output_bps=16,
-                    highlight_mode=rawpy.HighlightMode.Clip,
-                )
+                from .signed_raw import demosaic
+                # DNGs may provide LibRaw's prepared camera-to-RGB coefficients
+                # without an ordinary camera XYZ table. Use that same AHD colour
+                # basis; DNG metadata still owns the later output conversion.
+                rgb_cam = np.asarray(raw.color_matrix, dtype=np.float32)[:, :3]
+                camera = _camera_linear_metadata_from_libraw(raw, camera_rgb_matrix=rgb_cam)
+                if camera.raw_pattern.shape != (2, 2):
+                    raise RawImportError("Mandatory DNG opcode signed development requires a Bayer sensor.")
+                pattern = camera.raw_pattern
+                pixel_cleanup_diagnostics = apply_raw(raw, camera, settings, cancelled=cancelled,
+                    source_path=path, original_stamp=cleanup_stamp)
+                developed = demosaic(raw.raw_image_visible, camera.raw_channel_to_rgb[pattern],
+                    camera.raw_black_level[pattern], _ahd_lab_matrix(raw, camera_rgb_matrix=rgb_cam), cancelled=cancelled)
+                developed *= (65535.0 / (camera.white_level - camera.black_level)).astype(np.float32)
             else:
                 try:
                     bridge_metadata = _camera_linear_metadata_from_libraw(raw)
                 except _CameraLinearUnsupported as exc:
                     legacy_fallback_reason = str(exc)
                 if bridge_metadata is not None:
+                    pixel_cleanup_diagnostics = apply_raw(raw, bridge_metadata, settings, cancelled=cancelled,
+                        source_path=path, original_stamp=cleanup_stamp)
                     highlight_reconstruction_diagnostics = _apply_raw_highlight_reconstruction(
                         raw,
                         bridge_metadata,
                         settings,
                         cancelled=cancelled,
                     )
-                    developed = _develop_libraw_camera_rgb(raw, rawpy)
+                    developed = _develop_libraw_camera_rgb(raw, rawpy, cancelled=cancelled)
                     bridge_transport_diagnostics = _transport_diagnostics(
                         developed, cancelled=cancelled
                     )
@@ -275,6 +307,7 @@ def _execute_raw_decode(
         legacy_fallback_reason=legacy_fallback_reason,
         bridge_transport_diagnostics=bridge_transport_diagnostics,
         highlight_reconstruction_diagnostics=highlight_reconstruction_diagnostics,
+        pixel_cleanup_diagnostics=pixel_cleanup_diagnostics,
     )
 
 
@@ -299,7 +332,7 @@ def _apply_raw_corrections(
         dng_inspection = inspection.dng_inspection
         if dng_inspection is None:
             raise RawImportError("Mandatory DNG operation plan is missing its inspection metadata.")
-        camera_linear = np.asarray(decoded.developed).astype(np.float32)
+        camera_linear = np.asarray(decoded.developed, dtype=np.float32)
         camera_linear *= np.float32(1.0 / 65535.0)
         decoded.developed = np.empty((0,), dtype=np.uint16)
         if progress:
@@ -349,8 +382,7 @@ def _apply_raw_corrections(
         # Measured before conversion, which happens in place: the brightest
         # camera channel against the opposed-colour clipping level.
         clip_ratio = (
-            np.max(camera_linear, axis=-1)
-            / np.float32(highlights.clipping_threshold * OPPOSED_COLOR_THRESHOLD_SAFETY)
+            _edge_clip_ratio(camera_linear, highlights.clipping_threshold, cancelled)
             if edge_colour
             else None
         )
@@ -389,7 +421,7 @@ def _apply_raw_corrections(
             if decoded.highlight_reconstruction_diagnostics is not None:
                 decoded.highlight_reconstruction_diagnostics["edge_colour"] = edge_diagnostics
     else:
-        aces2065 = np.asarray(decoded.developed).astype(np.float32)
+        aces2065 = source_float32(np.asarray(decoded.developed))
         aces2065 *= np.float32(1.0 / 65535.0)
         decoded.developed = np.empty((0,), dtype=np.uint16)
     lens_metadata: dict[str, Any] = {}
@@ -415,6 +447,10 @@ def _apply_raw_corrections(
         if progress:
             progress("lens_correction", "Applying selected Lensfun corrections")
         lens_input = aces2065 if not plan.opcode_plan and decoded.bridge_metadata is None else image
+        from .diagnostics import log as diagnostic
+        from time import perf_counter
+
+        lens_started = perf_counter()
         lens_output, lens_metadata = apply_lens_correction(
             lens_input,
             lens_settings,
@@ -425,7 +461,11 @@ def _apply_raw_corrections(
             cancelled=cancelled,
             consume_input=True,
             progress=progress,
+            allocate_output=empty_source_array,
         )
+        diagnostic("raw", "development_lens", photo={"id": str(path), "name": path.name},
+                   route="cpu", applied=lens_metadata.get("applied", False),
+                   duration_ms=round((perf_counter() - lens_started) * 1000, 2))
         if not plan.opcode_plan and decoded.bridge_metadata is None:
             aces2065 = lens_output
         else:
@@ -457,7 +497,7 @@ def _build_raw_provenance(
     libraw_version_value = getattr(rawpy, "libraw_version", ())
     libraw_version = ".".join(map(str, libraw_version_value)) if libraw_version_value else "unknown"
     if plan.opcode_plan:
-        bit_depth = "16-bit LibRaw linear development"
+        bit_depth = "signed float32 camera-RGB development"
         raw_development: dict[str, Any] = {
             "white_balance": settings.white_balance,
             "demosaic": settings.demosaic,
@@ -466,7 +506,7 @@ def _build_raw_provenance(
             "output_space": "ACES2065-1",
         }
     elif decoded.bridge_metadata is not None:
-        bit_depth = "16-bit LibRaw camera-RGB transport; float32 color development"
+        bit_depth = "signed float32 camera-RGB development" if decoded.bridge_metadata.raw_pattern.shape == (2, 2) else "16-bit LibRaw X-Trans development"
         raw_development = _bridge_provenance(
             decoded.bridge_metadata,
             rawpy_version=rawpy_version,
@@ -496,6 +536,7 @@ def _build_raw_provenance(
         "dng_input": path.suffix.lower() == ".dng",
         "raw_convenience_beta": True,
         "raw_mosaiced": decoded.is_mosaiced,
+        "raw_pixel_cleanup": decoded.pixel_cleanup_diagnostics or {"supported": False, "enabled": settings.pixel_cleanup.remove_hot_pixels},
         "raw_development": raw_development,
         "camera_white_balance": decoded.camera_white_balance,
         "daylight_white_balance": decoded.daylight_white_balance,
@@ -541,9 +582,35 @@ def _build_raw_provenance(
     return metadata
 
 
-def _develop_libraw_camera_rgb(raw: Any, rawpy: Any) -> np.ndarray:
-    """Use uint16 only to carry black-subtracted, unity-WB camera RGB."""
+def _ahd_lab_matrix(raw: Any, *, camera_rgb_matrix: np.ndarray | None = None) -> np.ndarray:
+    from .library_gpu_raw import XYZ_RGB, D65_WHITE
+
+    if camera_rgb_matrix is None:
+        camera = np.asarray(raw.rgb_xyz_matrix, dtype=np.float64)[:3] @ XYZ_RGB
+        camera /= camera.sum(axis=1, keepdims=True)
+        inverse = np.linalg.inv(camera).astype(np.float32)
+    else:
+        _validate_camera_matrix(camera_rgb_matrix, "LibRaw DNG camera-to-RGB matrix")
+        inverse = np.asarray(camera_rgb_matrix, dtype=np.float32)
+    matrix = np.zeros((3, 3), dtype=np.float32)
+    for channel in range(3):
+        matrix += (XYZ_RGB[:, channel, None] * inverse[channel] / D65_WHITE[:, None]).astype(np.float32)
+    return matrix
+
+
+def _develop_libraw_camera_rgb(raw: Any, rawpy: Any, *, half_size=False, cancelled=None) -> np.ndarray:
+    from .signed_raw import demosaic, orient
+
+    metadata = _camera_linear_metadata_from_libraw(raw)
+    if metadata.raw_pattern.shape == (2, 2):
+        pattern = metadata.raw_pattern
+        developed = demosaic(
+            raw.raw_image_visible, metadata.raw_channel_to_rgb[pattern],
+            metadata.raw_black_level[pattern], _ahd_lab_matrix(raw), half_size=half_size, cancelled=cancelled,
+        )
+        return orient(developed, int(raw.sizes.flip))
     return raw.postprocess(
+        half_size=half_size,
         demosaic_algorithm=rawpy.DemosaicAlgorithm.AHD,
         use_camera_wb=False,
         use_auto_wb=False,
@@ -557,7 +624,7 @@ def _develop_libraw_camera_rgb(raw: Any, rawpy: Any) -> np.ndarray:
     )
 
 
-def _camera_linear_metadata_from_libraw(raw: Any) -> CameraLinearMetadata:
+def _camera_linear_metadata_from_libraw(raw: Any, *, camera_rgb_matrix: np.ndarray | None = None) -> CameraLinearMetadata:
     """Capability-gate an ordinary Bayer/X-Trans RAW using metadata only.
 
     rawpy exposes ``rgb_xyz_matrix`` as LibRaw's ``cam_xyz[4][3]``. Despite
@@ -566,7 +633,9 @@ def _camera_linear_metadata_from_libraw(raw: Any) -> CameraLinearMetadata:
     linear-sRGB -> XYZ(D65) matrix, normalizes each row against D65, then
     pseudoinverts it to obtain camera -> output RGB. Repeating those exact
     orientation/reference-white steps here produces a camera -> XYZ(D65)
-    matrix suitable for our own float32 development.
+    matrix suitable for our own float32 development. Mandatory-opcode DNG may
+    instead supply LibRaw's prepared camera-to-RGB matrix; DNG metadata still
+    owns the later colour conversion.
     """
     pattern_value = getattr(raw, "raw_pattern", None)
     if pattern_value is None:
@@ -581,6 +650,10 @@ def _camera_linear_metadata_from_libraw(raw: Any) -> CameraLinearMetadata:
         )
     if not np.issubdtype(pattern.dtype, np.integer):
         raise _CameraLinearUnsupported("CFA channel indices are not integral")
+    observed = np.asarray(raw.raw_colors_visible)[:pattern.shape[0], :pattern.shape[1]].copy()
+    if observed.shape != pattern.shape or not np.issubdtype(observed.dtype, np.integer):
+        raise _CameraLinearUnsupported("Invalid visible CFA topology")
+    pattern = observed
 
     try:
         color_description = bytes(getattr(raw, "color_desc", None)).decode("ascii").rstrip("\x00")
@@ -634,38 +707,43 @@ def _camera_linear_metadata_from_libraw(raw: Any) -> CameraLinearMetadata:
         raise _CameraLinearUnsupported("as-shot white balance has no positive green reference")
     wb = wb / green
 
-    try:
-        raw_matrix = np.asarray(getattr(raw, "rgb_xyz_matrix", None), dtype=np.float64)
-    except (TypeError, ValueError, OverflowError):
-        raise _CameraLinearUnsupported("missing or invalid LibRaw camera matrix") from None
-    if raw_matrix.shape != (4, 3) or not np.all(np.isfinite(raw_matrix)):
-        raise _CameraLinearUnsupported("LibRaw camera matrix must be finite with shape 4x3")
-    xyz_to_camera = np.empty((3, 3), dtype=np.float64)
-    for output_index, color in enumerate("RGB"):
-        rows = [
-            raw_matrix[index]
-            for index, item in enumerate(color_description[:4])
-            if item == color and np.linalg.norm(raw_matrix[index]) > 1e-12
-        ]
-        if not rows:
-            raise _CameraLinearUnsupported(f"LibRaw camera matrix has no {color} row")
-        if len(rows) > 1 and any(
-            not np.allclose(rows[0], row, rtol=1e-3, atol=1e-6) for row in rows[1:]
-        ):
-            raise _CameraLinearUnsupported(
-                f"LibRaw camera matrix has materially different {color} channel rows"
-            )
-        xyz_to_camera[output_index] = np.mean(rows, axis=0)
-    _validate_camera_matrix(xyz_to_camera, "LibRaw XYZ-to-camera matrix")
-    d65_response = xyz_to_camera @ LIBRAW_MATRIX_REFERENCE_WHITE_D65
-    if not np.all(np.isfinite(d65_response)) or np.any(d65_response <= 1e-12):
-        raise _CameraLinearUnsupported("LibRaw camera matrix has an invalid D65 response")
-    normalized_xyz_to_camera = xyz_to_camera / d65_response[:, None]
-    _validate_camera_matrix(normalized_xyz_to_camera, "D65-normalized XYZ-to-camera matrix")
-    try:
-        camera_to_xyz_d65 = np.linalg.inv(normalized_xyz_to_camera)
-    except np.linalg.LinAlgError:
-        raise _CameraLinearUnsupported("D65-normalized XYZ-to-camera matrix is singular") from None
+    if camera_rgb_matrix is not None:
+        from .library_gpu_raw import XYZ_RGB
+        _validate_camera_matrix(camera_rgb_matrix, "LibRaw DNG camera-to-RGB matrix")
+        camera_to_xyz_d65 = XYZ_RGB @ np.asarray(camera_rgb_matrix, dtype=np.float64)
+    else:
+        try:
+            raw_matrix = np.asarray(getattr(raw, "rgb_xyz_matrix", None), dtype=np.float64)
+        except (TypeError, ValueError, OverflowError):
+            raise _CameraLinearUnsupported("missing or invalid LibRaw camera matrix") from None
+        if raw_matrix.shape != (4, 3) or not np.all(np.isfinite(raw_matrix)):
+            raise _CameraLinearUnsupported("LibRaw camera matrix must be finite with shape 4x3")
+        xyz_to_camera = np.empty((3, 3), dtype=np.float64)
+        for output_index, color in enumerate("RGB"):
+            rows = [
+                raw_matrix[index]
+                for index, item in enumerate(color_description[:4])
+                if item == color and np.linalg.norm(raw_matrix[index]) > 1e-12
+            ]
+            if not rows:
+                raise _CameraLinearUnsupported(f"LibRaw camera matrix has no {color} row")
+            if len(rows) > 1 and any(
+                not np.allclose(rows[0], row, rtol=1e-3, atol=1e-6) for row in rows[1:]
+            ):
+                raise _CameraLinearUnsupported(
+                    f"LibRaw camera matrix has materially different {color} channel rows"
+                )
+            xyz_to_camera[output_index] = np.mean(rows, axis=0)
+        _validate_camera_matrix(xyz_to_camera, "LibRaw XYZ-to-camera matrix")
+        d65_response = xyz_to_camera @ LIBRAW_MATRIX_REFERENCE_WHITE_D65
+        if not np.all(np.isfinite(d65_response)) or np.any(d65_response <= 1e-12):
+            raise _CameraLinearUnsupported("LibRaw camera matrix has an invalid D65 response")
+        normalized_xyz_to_camera = xyz_to_camera / d65_response[:, None]
+        _validate_camera_matrix(normalized_xyz_to_camera, "D65-normalized XYZ-to-camera matrix")
+        try:
+            camera_to_xyz_d65 = np.linalg.inv(normalized_xyz_to_camera)
+        except np.linalg.LinAlgError:
+            raise _CameraLinearUnsupported("D65-normalized XYZ-to-camera matrix is singular") from None
     d65_to_d60 = chromatic_adaptation_matrix(LIBRAW_MATRIX_REFERENCE_WHITE_D65, D60_XYZ)
     camera_to_acescg = XYZ_D60_TO_ACESCG @ d65_to_d60 @ camera_to_xyz_d65
     _validate_camera_matrix(camera_to_acescg, "camera-to-ACEScg matrix")
@@ -844,7 +922,6 @@ def _normalize_raw_mosaic_float32(
             source = mosaic[row_offset::pattern_height, column_offset::pattern_width]
             destination = output[row_offset::pattern_height, column_offset::pattern_width]
             np.subtract(source, black, out=destination, casting="unsafe")
-            np.maximum(destination, np.float32(0.0), out=destination)
             destination *= np.float32(1.0) / usable_range
     return output
 
@@ -1001,20 +1078,30 @@ def _normalize_camera_rgb_float32(
     cancelled: Callable[[], bool] | None = None,
 ) -> np.ndarray:
     source = np.asarray(transport)
-    if source.dtype != np.uint16 or source.ndim != 3 or source.shape[2] != 3:
-        raise RawImportError("LibRaw camera-RGB transport must be a uint16 H×W×3 image.")
-    parallel = parallel_import_enabled()
-    output = np.empty(source.shape, dtype=np.float32) if parallel else source.astype(np.float32)
+    if source.dtype not in (np.dtype(np.uint16), np.dtype(np.float32)) or source.ndim != 3 or source.shape[2] != 3:
+        raise RawImportError("Camera-RGB transport must be a signed float32 H×W×3 image.")
+    output = source if source.dtype == np.float32 and source.flags.writeable else source_float32(source)
     inverse_range = (1.0 / (metadata.white_level - metadata.black_level)).astype(np.float32)
     def band(start):
         _raise_if_cancelled(cancelled)
-        # Same uint16 -> float32 cast and multiply, in disjoint destinations.
-        if parallel:
-            output[start:start + rows] = source[start:start + rows]
         output[start:start + rows] *= inverse_range
     for _ in run_bands(band, range(0, output.shape[0], rows)):
         pass
     return output
+
+
+def _edge_clip_ratio(camera_rgb, clipping_threshold, cancelled):
+    """Form the brightest pre-white-balance channel's ratio in one output plane."""
+    ratio = np.empty(camera_rgb.shape[:2], dtype=np.float32)
+    level = np.float32(clipping_threshold * OPPOSED_COLOR_THRESHOLD_SAFETY)
+    for start in range(0, camera_rgb.shape[0], 128):
+        _raise_if_cancelled(cancelled)
+        pixels = camera_rgb[start:start + 128]
+        part = ratio[start:start + 128]
+        np.maximum(pixels[..., 0], pixels[..., 1], out=part)
+        np.maximum(part, pixels[..., 2], out=part)
+        part /= level
+    return ratio
 
 
 def _camera_rgb_to_acescg_float32(
@@ -1132,7 +1219,7 @@ def _transport_diagnostics(
     source = np.asarray(transport)
     if source.ndim != 3 or source.shape[2] != 3:
         return {}
-    maximum = np.zeros(3, dtype=np.uint16)
+    maximum = np.full(3, -np.inf, dtype=np.float32)
     ceiling_count = np.zeros(3, dtype=np.int64)
     def band(start):
         _raise_if_cancelled(cancelled)
@@ -1155,14 +1242,16 @@ def _bridge_provenance(
     transport_diagnostics: dict[str, list[int]],
     highlight_reconstruction: dict[str, Any],
 ) -> dict[str, Any]:
+    signed = metadata.raw_pattern.shape == (2, 2)
     return {
         "pipeline": CAMERA_LINEAR_PIPELINE,
+        "signed_sensor_samples": signed,
         "decoder": "LibRaw",
         "rawpy_version": rawpy_version,
         "libraw_version": libraw_version,
         "demosaic": "AHD",
         "libraw_output_space": "camera RGB",
-        "libraw_output_bps": 16,
+        "libraw_output_bps": None if signed else 16,
         "libraw_auto_scale": False,
         "white_balance_stage": "float32_after_libraw",
         "color_transform_stage": "float32_after_libraw",
@@ -1170,7 +1259,7 @@ def _bridge_provenance(
         "libraw_highlight_processing": "bypassed_by_no_auto_scale",
         "highlight_reconstruction": highlight_reconstruction,
         "normalization_basis": metadata.normalization_basis,
-        "black_subtraction_stage": "LibRaw_before_no_auto_scale",
+        "black_subtraction_stage": "signed_float_before_ahd" if signed else "LibRaw_before_no_auto_scale",
         "black_subtracted_exactly_once": True,
         "black_level_per_output_channel": metadata.black_level.tolist(),
         "camera_white_level_per_output_channel": metadata.white_level.tolist(),
@@ -1243,16 +1332,57 @@ def apply_lens_correction(
     cancelled: Callable[[], bool] | None = None,
     consume_input: bool = False,
     progress: Callable[[str, str], None] | None = None,
+    allocate_output: Callable[[tuple[int, ...]], np.ndarray] | None = None,
 ) -> tuple[np.ndarray, dict[str, Any]]:
-    # Measurement only: progress records the existing boundaries, with exactly
-    # the same full-resolution Lensfun operations and remapping below.
     _raise_if_cancelled(cancelled)
     if progress: progress("lens_profile", "Selecting Lensfun profile")
+    try:
+        modifier, metadata = _lens_modifier(
+            image.shape[:2], settings, camera_maker=camera_maker, camera_model=camera_model,
+            lens_maker=lens_maker, lens_name=lens_name, progress=progress,
+        )
+        if modifier is None:
+            return image, metadata
+        # RAW development owns this buffer exclusively; vignette it before
+        # remapping instead of retaining an untouched third full-size plane.
+        if progress: progress("lens_vignette", "Applying Lensfun vignetting")
+        if image.ndim != 3 or image.shape[2] != 3 or not all(image.shape[:2]):
+            raise ValueError("Lensfun needs a nonempty RGB frame")
+        corrected = np.require(image, dtype=np.float32, requirements=("C", "A"))
+        if not consume_input or not corrected.flags.writeable:
+            corrected = corrected.copy()
+        if metadata["vignetting"] and metadata["profile"]["vignetting"]:
+            _apply_signed_vignetting(modifier, corrected, cancelled=cancelled)
+        _raise_if_cancelled(cancelled)
+        if progress: progress("lens_coordinates", "Calculating exact Lensfun coordinates")
+        chromatic = settings.chromatic_aberration
+        if chromatic or settings.distortion:
+            import lensfunpy
+            def start_remap():
+                if progress:
+                    progress("lens_remap", "Remapping Lensfun pixels")
+
+            corrected = correct_frame(
+                corrected, modifier, chromatic=chromatic, flags=_lens_flags(settings, lensfunpy),
+                target_geometry=lensfunpy.LensType.RECTILINEAR.value,
+                check=lambda: _raise_if_cancelled(cancelled), allocate_output=allocate_output,
+                start_remap=start_remap,
+            )
+    except RawImportError:
+        raise
+    except Exception as exc:
+        raise RawImportError(f"Lensfun could not apply the selected profile: {exc}") from exc
+    if progress: progress("lens_complete", "Lensfun corrections complete")
+    return corrected, metadata
+
+
+def _lens_modifier(shape, settings, *, camera_maker, camera_model, lens_maker, lens_name, progress=None):
+    height, width = shape
     try:
         import lensfunpy
     except ImportError as exc:
         if settings.mode == "auto":
-            return image, {
+            return None, {
                 "mode": "auto",
                 "applied": False,
                 "reason": "Lensfun is unavailable; RAW development continued without lens correction.",
@@ -1262,7 +1392,7 @@ def apply_lens_correction(
     database = _lens_database()
     if database is None:
         if settings.mode == "auto":
-            return image, {
+            return None, {
                 "mode": "auto",
                 "applied": False,
                 "reason": "Lensfun's database is unavailable; RAW development continued without lens correction.",
@@ -1274,7 +1404,7 @@ def apply_lens_correction(
         and settings.database_version
         and settings.database_version != database_identity
     ):
-        return image, {
+        return None, {
             "mode": "off",
             "requested_mode": "manual",
             "applied": False,
@@ -1291,8 +1421,8 @@ def apply_lens_correction(
     )
     if profile is None:
         if settings.mode == "auto":
-            return image, {"mode": "auto", "applied": False, "reason": "No unique Lensfun profile match."}
-        return image, {
+            return None, {"mode": "auto", "applied": False, "reason": "No unique Lensfun profile match."}
+        return None, {
             "mode": "off",
             "requested_mode": "manual",
             "applied": False,
@@ -1308,49 +1438,13 @@ def apply_lens_correction(
     aperture = settings.aperture or 0.0
     distance = settings.focus_distance_m or 1000.0
     crop = float(getattr(camera, "crop_factor", 1.0) or 1.0)
-    height, width = image.shape[:2]
-    try:
-        if progress: progress("lens_setup", "Preparing Lensfun modifier")
-        modifier = lensfunpy.Modifier(lens, crop, width, height)
-        flags = lensfunpy.ModifyFlags.SCALE
-        if settings.distortion:
-            flags |= lensfunpy.ModifyFlags.DISTORTION
-        if settings.chromatic_aberration:
-            flags |= lensfunpy.ModifyFlags.TCA
-        if settings.vignetting:
-            flags |= lensfunpy.ModifyFlags.VIGNETTING
-        modifier.initialize(
-            float(focal), float(aperture), float(distance), scale=0.0, pixel_format=np.float32, flags=flags
-        )
-        # RAW development owns this buffer exclusively; vignette it before
-        # remapping instead of retaining an untouched third full-size plane.
-        if progress: progress("lens_vignette", "Applying Lensfun vignetting")
-        corrected = np.ascontiguousarray(image, dtype=np.float32)
-        if not consume_input or not corrected.flags.writeable:
-            corrected = corrected.copy()
-        if settings.vignetting and aperture > 0:
-            modifier.apply_color_modification(corrected)
-        _raise_if_cancelled(cancelled)
-        if progress: progress("lens_coordinates", "Calculating exact Lensfun coordinates")
-        coordinates = None
-        if settings.chromatic_aberration:
-            coordinates = modifier.apply_subpixel_geometry_distortion()
-        elif settings.distortion:
-            coordinates = modifier.apply_geometry_distortion()
-        if progress: progress("lens_remap", "Remapping Lensfun pixels")
-        if coordinates is not None:
-            corrected = _remap_bilinear_strips(
-                corrected,
-                np.asarray(coordinates),
-                chromatic=settings.chromatic_aberration,
-                cancelled=cancelled,
-            )
-    except RawImportError:
-        raise
-    except Exception as exc:
-        raise RawImportError(f"Lensfun could not apply the selected profile: {exc}") from exc
-    if progress: progress("lens_complete", "Lensfun corrections complete")
-    return corrected, {
+    if progress: progress("lens_setup", "Preparing Lensfun modifier")
+    modifier = lensfunpy.Modifier(lens, crop, width, height)
+    modifier.initialize(
+        float(focal), float(aperture), float(distance), scale=0.0, pixel_format=np.float32,
+        flags=_lens_flags(settings, lensfunpy),
+    )
+    return modifier, {
         "mode": settings.mode,
         "applied": True,
         "profile": record.as_dict(),
@@ -1362,6 +1456,17 @@ def apply_lens_correction(
         "focus_distance_m": float(distance),
         "database_version": database_identity,
     }
+
+
+def _lens_flags(settings, lensfunpy):
+    flags = lensfunpy.ModifyFlags.SCALE
+    if settings.distortion:
+        flags |= lensfunpy.ModifyFlags.DISTORTION
+    if settings.chromatic_aberration:
+        flags |= lensfunpy.ModifyFlags.TCA
+    if settings.vignetting:
+        flags |= lensfunpy.ModifyFlags.VIGNETTING
+    return flags
 
 
 def _resolve_lens_profile(
@@ -1421,53 +1526,21 @@ def _resolve_lens_profile(
 
 
 
-def _remap_bilinear_strips(
-    image: np.ndarray,
-    coordinates: np.ndarray,
-    *,
-    chromatic: bool,
-    rows: int = 32,
-    cancelled: Callable[[], bool] | None = None,
-) -> np.ndarray:
-    height, width, channels = image.shape
-    output = np.empty_like(image)
-
-    def remap_strip(start: int) -> None:
+def _apply_signed_vignetting(modifier, image, *, cancelled=None):
+    signs = []
+    for start in range(0, len(image), 256):
         _raise_if_cancelled(cancelled)
-        end = min(height, start + rows)
-        for channel in range(channels):
-            if chromatic and coordinates.ndim == 4:
-                xy = coordinates[start:end, :, min(channel, coordinates.shape[2] - 1), :]
-            else:
-                xy = coordinates[start:end, :, :]
-            x = np.clip(xy[..., 0], 0.0, width - 1.0)
-            y = np.clip(xy[..., 1], 0.0, height - 1.0)
-            x0 = np.floor(x).astype(np.int32)
-            y0 = np.floor(y).astype(np.int32)
-            x1 = np.minimum(x0 + 1, width - 1)
-            y1 = np.minimum(y0 + 1, height - 1)
-            wx = x - x0
-            wy = y - y0
-            top = image[y0, x0, channel] * (1.0 - wx) + image[y0, x1, channel] * wx
-            bottom = image[y1, x0, channel] * (1.0 - wx) + image[y1, x1, channel] * wx
-            output[start:end, :, channel] = top * (1.0 - wy) + bottom * wy
-
-    # Strips write separate rows and NumPy releases the interpreter lock for
-    # this work, so a 42 MP frame remaps about three times faster on a pool.
-    # Small bands keep all CPUs busy without large simultaneous gathers.
-    from .app_memory import WORKING
-    from .cpu_budget import logical_cpus
-    # The gathers promote weights to float64. Include the live indices,
-    # weights and expression temporaries (128 bytes/pixel conservatively)
-    # within the existing working allowance rather than multiplying them
-    # by every CPU. Keep the original coordinates and arithmetic unchanged.
-    concurrent = min(logical_cpus(), max(1, WORKING // (width * rows * 128)))
-    starts = range(0, height, rows)
-    with CpuExecutor() as pool:
-        for offset in range(0, len(starts), concurrent):
-            for _ in pool.map(remap_strip, starts[offset:offset + concurrent]):
-                pass
-    return output
+        strip = image[start:start + 256]
+        signs.append(np.packbits(np.signbit(strip), axis=None))
+    try:
+        np.abs(image, out=image)
+        modifier.apply_color_modification(image)
+    finally:
+        for start, packed in zip(range(0, len(image), 256), signs):
+            strip = image[start:start + 256]
+            negative = np.unpackbits(packed, count=strip.size).reshape(strip.shape).astype(bool)
+            np.negative(strip, out=strip, where=negative)
+    _raise_if_cancelled(cancelled)
 
 
 def _raise_if_cancelled(cancelled: Callable[[], bool] | None) -> None:
@@ -1650,9 +1723,7 @@ def _positive_float(value: Any) -> float | None:
 @lru_cache(maxsize=1)
 def _lens_database() -> Any | None:
     try:
-        import lensfunpy
-
-        return lensfunpy.Database()
+        return native_lens_database()
     except (ImportError, OSError, RuntimeError):
         return None
 

@@ -94,7 +94,7 @@ def test_full_size_model_is_the_export_model() -> None:
 def test_overlapping_model_requests_measure_once() -> None:
     from concurrent.futures import ThreadPoolExecutor, wait
     from threading import Barrier, Event
-    from hdr_finisher.main import _cached_denoise_model
+    from hdr_finisher.denoise_measurement import proxy_model
 
     start = Barrier(8)
     measuring = Event()
@@ -110,7 +110,7 @@ def test_overlapping_model_requests_measure_once() -> None:
 
     def request():
         start.wait(timeout=5)
-        return _cached_denoise_model(key, measure)
+        return proxy_model(key, measure)
 
     with ThreadPoolExecutor(max_workers=8) as pool:
         requests = [pool.submit(request) for _ in range(8)]
@@ -121,52 +121,55 @@ def test_overlapping_model_requests_measure_once() -> None:
         finally:
             release.set()
         assert all(item.result(timeout=5) == {"a": 1.0} for item in requests)
-    assert _cached_denoise_model(key, measure) == {"a": 1.0}
+    assert proxy_model(key, measure) == {"a": 1.0}
     assert len(calls) == 1
 
 
 def test_model_failure_can_retry_and_source_epochs_are_independent() -> None:
-    from hdr_finisher.main import _cached_denoise_model
+    from hdr_finisher.denoise_measurement import proxy_model
 
     key = ("retry-test", "native", 1)
     def fail():
         raise ValueError("measurement failed")
 
     with pytest.raises(ValueError, match="measurement failed"):
-        _cached_denoise_model(key, fail)
-    assert _cached_denoise_model(key, lambda: {"a": 1}) == {"a": 1}
-    assert _cached_denoise_model(("retry-test", "native", 2), lambda: {"a": 2}) == {"a": 2}
+        proxy_model(key, fail)
+    assert proxy_model(key, lambda: {"a": 1}) == {"a": 1}
+    assert proxy_model(("retry-test", "native", 2), lambda: {"a": 2}) == {"a": 2}
 
 
-def test_concurrent_sizes_wait_for_complete_tail_calibration(monkeypatch) -> None:
-    from concurrent.futures import ThreadPoolExecutor
-    from threading import Event
+def test_fixed_calibration_matches_the_seeded_white_noise_measurement():
+    noise = np.random.default_rng(11).standard_normal((2048, 2048)).astype(np.float32)
+    stds = da._block_stds(noise)
+    flat = stds <= np.quantile(stds, da.FLAT_BLOCK_QUANTILE)
+    quantile = da.CALIBRATION_RULES["band_quantile"]
+    assert da._quantile_calibration(quantile) == 1.0 / float(np.quantile(stds[flat], quantile))
 
-    measuring = Event()
-    release = Event()
-    calls = []
-    monkeypatch.setattr(da, "_TAIL_REFERENCE", {})
-    monkeypatch.setattr(da, "_measure_model", lambda noise: (None, []))
-    monkeypatch.setattr(da, "_window_energies", lambda *args: [([np.ones(1)] * 6, None)])
+    noise = np.random.default_rng(3).standard_normal((1024, 1024, 3)).astype(np.float32)
+    noise = noise * np.float32(.01) + np.float32(.5)
+    model, windows = da._measure_model(noise)
+    coarse = [[] for _ in range(6)]
+    for energies, _ in da._window_energies(noise, windows, model):
+        for samples, energy in zip(coarse, energies):
+            samples.append(energy.ravel())
+    limits = [float(np.quantile(np.concatenate(values), da.TAIL_QUIET_QUANTILE)) for values in coarse]
+    tails = da._energy_tails(noise, windows, model, limits)[0]
+    fixed_limits, fixed_tails = da._tail_reference()
+    np.testing.assert_array_equal(limits, fixed_limits)
+    np.testing.assert_array_equal(tails, fixed_tails)
 
-    def tails(*args):
-        calls.append(1)
-        measuring.set()
-        assert release.wait(5)
-        return [[1.0] * 6], None
 
-    monkeypatch.setattr(da, "_energy_tails", tails)
-    with ThreadPoolExecutor(max_workers=2) as pool:
-        first = pool.submit(da._tail_reference)
-        assert measuring.wait(5)
-        second = pool.submit(da._tail_reference)
-        try:
-            from concurrent.futures import wait
-            assert not wait([second], timeout=0.1).done
-        finally:
-            release.set()
-        assert first.result(timeout=5) == second.result(timeout=5)
-    assert len(calls) == 1
+def test_browser_measurement_uses_the_same_calibration_constants():
+    import json
+    from pathlib import Path
+    import re
+
+    browser = (Path(__file__).resolve().parents[1] / "frontend/denoise-measurement.js").read_text(encoding="utf-8")
+    factors = re.findall(r"rules\.band_quantile\)\*([\d.]+)", browser)
+    assert [float(factor) for factor in factors] == [da.BAND_QUANTILE_CALIBRATION] * 2
+    limits, tails = da._tail_reference()
+    np.testing.assert_array_equal(json.loads(re.search(r"const limits=(\[.*?\]);", browser)[1]), limits)
+    np.testing.assert_array_equal(json.loads(re.search(r"const references=(\[.*?\]);", browser)[1]), tails)
 
 
 def test_intermediate_models_are_per_geometry_size_and_source(monkeypatch) -> None:
@@ -219,7 +222,8 @@ def test_library_model_reuse_skips_loading_across_finishing_grades_but_keeps_pix
         return {"source_key": "other-scene" if identity == "live-other-source" else "reuse-scene",
                 "adjustments": adjustments.model_dump(mode="json")}
     monkeypatch.setattr(library_live, "metadata", metadata)
-    monkeypatch.setattr(main, "_DENOISE_MODEL_CACHE", {})
+    from hdr_finisher import denoise_measurement
+    monkeypatch.setattr(denoise_measurement, "_models", denoise_measurement.OrderedDict())
     loads = []
     frame = SimpleNamespace(adjustments=adjustments, render_cache=SessionRenderCache(_noisy_source(80, 80), None))
     def session(identity):
@@ -270,7 +274,8 @@ def test_sdr_proxy_noise_model_changes_with_authored_base(monkeypatch):
     state = AdjustmentState()
     session = SimpleNamespace(edit_revision=0, adjustments=state, render_cache=cache)
     monkeypatch.setattr(main.store, "get", lambda _id: session)
-    monkeypatch.setattr(main, "_DENOISE_MODEL_CACHE", {})
+    from hdr_finisher import denoise_measurement
+    monkeypatch.setattr(denoise_measurement, "_models", denoise_measurement.OrderedDict())
 
     def request(cached=True):
         return main._adaptive_denoise_model("authored-base-test", PreviewKind.SDR, 256, None, None, cached=cached)

@@ -436,6 +436,3548 @@ would change draft pixels and needs his approval. The grain-off measurements
 bound potential benefit but do not predict a particular new method. Keep
 settled preview/export agreement and current budgets; no such change is built.
 
+## November 25, 2026 — Grade shared-memory admission and Scan Sharpening strips
+
+Grade shared-memory admission (`3757b324`), MacBook Neo, 42 MP Sony, Clean
+Grain Small at 110%: first sharp picture 4.01 s, wide pan 0.78 s, sampled
+app peak 2.485 GB against the 4 GB ceiling. Partial replay only: neither
+Electron replay completed (one expected Standard when the app defaulted to
+Clean Grain; the other stopped on a separate 640 px Library preparation), so
+the full replay peak is unverified.
+
+Scan Sharpening strip halo (`101d532d`), MacBook Neo, 1600 px DSC00264
+ceiling fixture: single export requests across three codecs took
+1.94–7.63 s on the GPU and 1.98–12.39 s on the CPU. Ceiling and full-size
+Proof identity passed. A 42.4 MP RAW exported to CPU JPEG Ultra HDR at
+native size and 4000 px with export and Proof byte-identical, peaking at
+3.16 GB across backend and encoder helpers (4 GB limit). No speed
+comparison.
+
+## November 24, 2026 — Clean Grain zoom and Fit on the Windows PC
+
+DSC09738.ARW, HDR saved grade, Clean Grain Small, both colour passes on,
+display-selected resolution, 2560×1440 Electron under the shared GPU lock.
+The baseline used the `b3cd5f21` frontend on the same PC. The updated runs
+used `perf/clean-grain-zoom`. These are short action-to-settled-view
+samples. Treat differences within 10% as timing
+variation because source reads and GPU scheduling vary between runs.
+
+| Action | Before | After |
+| --- | ---: | ---: |
+| Open the saved grade at Fit | 23.76 s | 23.20–23.74 s on focused colour runs, 30.01 s while fast checks ran |
+| Re-enable a warm Fit result | 64 ms | 65–72 ms |
+| Fit to 60.6%, exact view | 6.21 s | 2.74–2.75 s |
+| 60.6% to 100% | 3.48 s | Already sharp inside the previous native region. 0.74–0.80 s including capture and idle wait |
+| First pan to an uncovered region at 100% | 1.13 s | 1.46–1.50 s |
+| Pan back into a held region | 1.01 s | 4–6 ms through the input handler, without another draw |
+| Return to Fit | 2.46 s | 0.13 s |
+
+The earlier Fit calibration in the PC logs was 2.4–3.3 s. A cold spot check
+of the new calibration took 1.98 s over 22 chunks, with 1.92 s cumulative
+fetch and upload and 78 ms waiting on GPU validation and final readback.
+These stages overlap. At zero evenness, the app skipped the fit. Raising
+evenness ran it again or reused the matching fit. The first pan into
+uncovered territory needs another draw, so it remains slower in this sample.
+
+## November 24, 2026 — Sony Micro Grain Exposure after a memory trim
+
+MacBook Neo (A18 Pro, 8 GB), unpackaged Electron at 1408 × 794 points under
+the shared GPU lock. One warm Exposure edit per cell on Sony
+`_DSC7970.ARW` in HDR Grade. The second edit followed a requested moderate
+CPU and GPU cache trim in the same short session. Times are from committing
+Exposure to the first exact picture. The check used a 20% band for
+single-run timing noise.
+
+| Lens and zoom | Warm | After trim | Route |
+| --- | ---: | ---: | --- |
+| Off, Fit | 0.090 s | 0.079 s | GPU Direct |
+| Off, 31% | 0.716 s | 0.705 s | GPU Tiled |
+| Auto, Fit | 0.277 s | 0.216 s | CPU cache hit for both edits |
+| Auto, 31% | 0.817 s | 25.403 s | CPU cache hit, then a 24.628 s Micro rebuild |
+
+The cold Fit enable with Lens Off produced two HDR GPU presentations. Warm
+Lens Off Exposure edits produced one or two. Lens Auto used the CPU because
+the active lens profile is unsupported by GPU Micro Grain.
+
+The Auto 31% timing exposed a remaining priority error in the checked build.
+The histogram used a smaller cached source after the visible preview
+finished, so periodic cleanup kept that smaller result in place of the
+31% source. The follow-up regression test reproduces that sequence and
+passes once foreground reads alone set eviction priority. The timing above
+predates that follow-up and covers a short session with a requested trim.
+
+### November 24 re-check after the histogram and comparison cache fixes
+
+MacBook Neo (A18 Pro, 8 GB), unpackaged Electron at 1408 × 794 points under
+the shared GPU lock, on the cache follow-up based on `3d90d674`. Sony
+`_DSC7970.ARW` in HDR Grade with Micro Grain. Each value is one Exposure
+commit to the first exact picture after that edit. Each lens setting used
+its own app session, with a warm edit followed by an edit after a requested
+moderate CPU and GPU trim. Processing edges were 1285 px at Fit and 2817 px
+at 31%. The comparison uses the same 20% single-run timing band.
+
+| Lens and zoom | Warm | After trim | Route |
+| --- | ---: | ---: | --- |
+| Off, Fit | 0.071 s | 0.097 s | GPU Direct |
+| Off, 31% | 0.381 s | 0.085 s | GPU Tiled |
+| Auto, Fit | 0.226 s | 0.206 s | CPU cache hit for both edits |
+| Auto, 31% | 0.684 s | 0.862 s | CPU cache hit for both edits |
+
+At Auto 31%, the post-trim edit fell from 25.403 s to 0.862 s. The backend
+logged a 0.02 ms lookup of the 2817 px Micro source for that edit.
+
+## November 24, 2026 — Grade local masks at 100%
+
+MacBook Neo (A18 Pro, 8 GB), Electron at 1408 × 794 points and 2× under
+the shared GPU lock. One run per case, Lens Auto, HDR Grade. Times are to
+the first exact current picture and fresh settled Histogram. Memory is a
+one-second process-tree physical-footprint sample in decimal GB, not a
+hardware peak. The test-only EXIF pause shim let Grade start on a host with
+exhausted POSIX semaphores; production memory and processing limits did not change.
+
+| 100% action | Exact picture / Histogram before → after | Sampled peak app memory before → after |
+| --- | --- | ---: |
+| Sony `_DSC7970.ARW`, 12 locals, enable | Neither by 60.7 s → 16.68 / 18.49 s | 9.11 → 5.41 GB |
+| Canon `IMG_3129.CR2`, 12 locals, enable | 17.34 / 19.11 s → 7.84 / 10.08 s | 7.06 → 5.97 GB |
+| Canon `IMG_0790.CR2`, 12 locals, edit/release | 10.8–17.6 s picture → 7.55 / 10.39 s | — → 5.77 GB |
+| Sony `_DSC7970.ARW`, Hue, enable | — → 0.80 / 1.94 s | — → 1.53 GB |
+| Canon `IMG_3129.CR2`, Hue, enable | 1.32 / 2.04 s on fresh launch → 1.07 / 1.84 s | 1.91 → 2.26 GB |
+
+Sony Overlap went from 55 mask-batch and 47 source-stream memory refusals to
+zero. Wide Luma feathering still needs the entire 323 MiB source on that
+viewport: it arrives via bounded tile requests once, rather than repeated
+whole-frame streams. The Hue-only picture source is 41.6 MiB on both photos
+(Canon was 138.3 MiB). A previous pressured Canon Hue run recorded 61 source
+refusals. There were no 507s in the after sweep, including at Fit and 31%.
+Cold Overlap at Fit took 0.26–0.34 s picture / 0.64–2.85 s Histogram; at 31%
+it still took 10.36–14.76 s picture / 11.39–15.26 s Histogram. Cold Hue at
+Fit and 31% stayed under 0.38 s picture / 0.58 s Histogram.
+
+The Canon native Overlap enable went from 216 logical mask tiles and 12 batch
+requests to 144 tiles and 3 requests. Identical local mask definitions share
+one result. Bounded batches send one region when the overlapping tile halos
+fit, and can reuse it for contained requests with the same mask, source and
+geometry. The first version still fetched three batches on a same-viewport
+rerender. The review fixes retain the presented tiles under opportunistic
+memory reclaim, carry the source epoch through every upload route, and keep
+background Histogram masks from cancelling foreground masks.
+
+| 12 locals at 100%, reviewed build | Enable picture | Exposure edit picture | Pan to exact viewport |
+| --- | ---: | ---: | ---: |
+| Sony `_DSC7970.ARW` | 17.87 s | 15.48 s | 15.26 s |
+| Canon `IMG_3129.CR2` | 8.96 s | 8.14 s | 7.43 s |
+
+Both Exposure edits reused 54 of 54 CPU-backed tile placements and sent no
+mask POSTs. Each pan reused 30 of 54 and sent three successful batches for
+newly visible tiles. These single-run timings overlapped the fast test suites;
+the counters exclude separate GPU-only masks. The Sony did not get well under
+the original 16.7 s cold reference: 14.78 s of its Exposure render was in the
+tiled picture stage despite zero CPU mask misses.
+Three Local Clarity layers at 2.75% radius still make every tile pay a 626 px
+detail halo on the Canon and 994 px on the Sony. The Canon still processes
+about 55 million pixels for an 18 MP frame. Separating those local map
+pre-passes, as for Global Clarity, requires preserving the input from preceding
+locals.
+
+The earlier nine-patch Overlap check changed the source route, not the mask
+route. The new check compared every RGBA sample in the 2054 × 858 far-corner
+viewport on `IMG_0790.CR2` (5202 × 3464), including tile joins, the right and
+bottom edges, and a sharp path at high coordinates. Four shared mask regions
+matched 72 legacy whole-image mask tile responses with zero differing samples
+out of 7,049,328. The old endpoint refused with 507 on this host; only the
+reference run bypassed its admission gate and serialized the GETs. Mask
+arithmetic was unchanged. GPU Luma stayed on the same route on both sides.
+At the opposite corner, the Hue and Local Clarity viewport with Black & White
+matched both the five-band whole-source and single-band references with the
+four-pixel guide active. The far-corner Hue and Local Clarity crop also matched
+the whole Hue mask on the same full source, with no differing samples in either
+viewport. The right edge is off the four-pixel grid; the bottom edge is on it.
+The automated crop test also checks an off-grid bottom edge. These are preview
+checks, not whole-image export parity.
+
+With the unused Local Clarity passes pruned, both v4 Sony runs at 100% kept
+the same reuse as v3: Exposure reused all 54 placements with no mask requests
+(7.51–7.91 s picture vs 8.09 s); pan reused 30 of 54 with three requests
+(7.68–8.41 s vs 8.24 s). Panning stopped an intentionally held CPU Histogram
+fallback in 2–14 ms and the replacement reached Settled. Clean Grain with
+12 locals stayed on GPU and delivered the picture in 22.95–23.87 s.
+
+Masks v6 reuses one offscreen render target for robust Highlight Anchor
+measurements. On the same MacBook Neo at 100%, Gradient + Hue, Hue intersected
+with unfeathered Luma, and Hue combined with an unfeathered Brush stayed in
+the viewport on both Sony and Canon. All six 2054 × 858 viewports matched the
+whole-frame GPU route exactly, including the frame edges and tile joins
+(42,295,968 RGBA samples; no differences). These are preview checks. Compound
+Hue with feathered Luma keeps the whole-source route: the bounded GPU result
+did not match it on the 42 MP Sony.
+
+Sony showed the picture in 0.61–0.77 s, compared with 4.59–4.85 s when the
+whole frame was forced; Canon took 0.68–0.87 s versus 2.16–2.34 s. Sony
+Clean Grain with Gradient + Hue settled at 100% in 9.18 s picture / 10.04 s
+Histogram, with no HTTP 507s; v5 timed out after two memory refusals.
+
+[Compound Hue viewport comparison](../../codebase/output/grade-sweep/batch6-masks-v6-parity.json) ·
+[Sony Clean Grain reproduction](../../codebase/output/grade-sweep/batch6-masks-v6-grain.json)
+
+[Sony baseline](../../codebase/output/grade-sweep/sony-overlap-alone.json) ·
+[Canon baseline](../../codebase/output/grade-sweep/canon3129-native-fill.json) ·
+[After sweep](../../codebase/output/grade-sweep/batch6-masks-exact.json) ·
+[Reviewed reuse](../../codebase/output/grade-sweep/batch6-masks-v2-reuse-fixed.json) ·
+[Full-viewport legacy comparison](../../codebase/output/grade-sweep/batch6-masks-v2-parity.json) ·
+[Hue crop and band comparisons](../../codebase/output/grade-sweep/batch6-masks-v2-hue-edges.json)
+
+## November 24, 2026 — Skip unused packed bands for Local Clarity
+
+MacBook Neo (A18 Pro, 8 GB), Electron at 1408 × 794 points and 2×, HDR Grade,
+Lens Auto, shared GPU lock. One before/after sample per action. At 100%, the
+12-local stack has three Clarity layers at +45 and 2.75% radius, with no local
+Texture or Sharpen. Times are seconds to the exact picture / fresh Histogram;
+panning keeps the same Histogram, so no fresh Histogram is expected.
+
+| Action | Sony `_DSC7970.ARW` (42 MP) | Canon `IMG_3129.CR2` (18 MP) |
+| --- | ---: | ---: |
+| Enable 12 locals at 100% | 17.09 / 19.99 → 9.66 / 13.61 | 8.42 / 10.65 → 6.10 / 7.79 |
+| Exposure 0 → +0.55 at 100% | 15.51 / 18.59 → 8.67 / 12.08 | 7.57 / 10.09 → 5.31 / 7.14 |
+| Pan to exact viewport at 100% | 15.14 → 9.62 | 7.06 → 4.84 |
+| Enable a single Clarity local at 100% | 3.12 / 5.89 → 1.30 / 2.06 | 1.98 / 2.68 → 1.17 / 1.83 |
+| Exposure edit at Fit, same stack | 0.287 / 2.50 → 0.284 / 2.35 | 0.279 / 3.06 → 0.304 / 2.00 |
+
+The 18 foreground tiles for Exposure skipped 108 packed Texture/Sharpen draws
+and 54 tile-cache copies on each RAW. The tiled picture stage fell from 14.81
+to 8.01 s on Sony and 7.26 to 5.06 s on Canon; neither the tile apron nor the
+Clarity algorithm changed. All six visible RGBA16F buffers matched byte for
+byte (centered and lower-right at 100%, entire Fit frame, each RAW), with
+identical measured peaks on both 100% Exposure edits. Sony's three tested
+actions reached the sub-10-second picture target, so suffix cropping and
+shared native Clarity maps were not implemented. The Histogram still takes
+12.08 s on Sony after the Exposure edit.
+
+GPU timestamps from five foreground Exposure batches, in seconds, before →
+after. Metal overlaps passes, so each row assigns the gap between consecutive
+pass completions; these are not isolated shader times. The matched run with
+and without pruning used the same app build and produced the same viewport bytes.
+
+| GPU pass | Sony | Canon |
+| --- | ---: | ---: |
+| Ordinary local | 0.565 → 0.534 | 0.269 → 0.245 |
+| Detail candidate | 0.147 → 0.148 | 0.070 → 0.067 |
+| Packed horizontal | 3.474 → 0 | 0.995 → 0 |
+| Packed vertical | 3.049 → 0 | 0.879 → 0 |
+| Clarity reduce | 0.104 → 0.087 | 0.052 → 0.044 |
+| Clarity level | 0.050 → 0.046 | 0.013 → 0.011 |
+| Clarity horizontal blur | 0.005 → 0.004 | 0.004 → 0.004 |
+| Clarity vertical blur | 0.005 → 0.004 | 0.005 → 0.004 |
+| Detail composite | 0.936 → 0.853 | 0.444 → 0.395 |
+| Final mask mix | 0.098 → 0.092 | 0.040 → 0.038 |
+| Foreground batches, all passes | 8.84 → 2.16 | 2.96 → 0.99 |
+
+The [apron analysis](../../codebase/output/local-clarity-apron/report.md) found
+112.50 MP of padded tile area on Sony and 56.01 MP on Canon, against unions of
+17.83 and 12.06 MP. Shared ordered maps could reduce repeated work across those
+tiles, but this area comparison does not predict time savings or guarantee
+matching pixels.
+
+[Before](../../codebase/output/grade-sweep/batch8-before.json) ·
+[After](../../codebase/output/grade-sweep/batch8-after.json) ·
+[Unmodified GPU baseline](../../codebase/output/grade-sweep/batch8-before-profile.json) ·
+[Paired GPU timestamps](../../codebase/output/grade-sweep/batch8-profile-pair.json)
+
+## November 24, 2026 — Film Resolution and Detail blur
+
+MacBook Neo (A18 Pro, 8 GB), Electron at 1408 × 794 points and 2× under
+the shared GPU lock. One warm HDR Grade edit per case, from the edit to
+the first exact picture. Fit used Direct; 31% and 100% used Tiled.
+Image Softness was 80 and Microcontrast −50 in both recipes; Film Resolution
+was 0 on Super 8 and 10 on 35 mm. Times are milliseconds, before → after.
+
+| RAW / gate | Fit | 31% | 100% |
+| --- | ---: | ---: | ---: |
+| `IMG_3129.CR2` (18 MP) / Super 8 | 339 → 252 | 487 → 236 | 1,290 → 350 |
+| `_DSC7970.ARW` (42 MP) / Super 8 | 406 → 276 | 1,013 → 300 | 1,467 → 330 |
+| `IMG_3129.CR2` / 35 mm | 217 → 249 | 251 → 235 | 305 → 231 |
+| `_DSC7970.ARW` / 35 mm | 349 → 311 | 304 → 279 | 452 → 273 |
+
+Super 8 at 100% saved 0.94–1.14 s. Small timing shifts are not conclusive:
+neutral controls moved by −46 to +45 ms. The GPU filters across rows and
+then columns, sharing full-precision sums without another picture-sized
+texture. The blur radius and tile borders are unchanged.
+
+For a separate whole-picture Canon comparison at 1201 px with a custom
+1 mm gate, Direct and Tiled finished pixels matched exactly. Against the
+old shader, each preview route moved by p99.9 ΔE 0.015 SDR / 0.051 HDR.
+GPU delivery, resized and sharpened to 900 × 600 before encoding, moved by
+0.010 SDR / 0.030 HDR. All were below the 0.5 review threshold.
+
+On a synthetic image with the same 1 mm gate, finished GPU and CPU delivery
+matched within the existing caps (mean / p99.9: SDR 0.010 / 0.046; HDR
+0.045 / 0.161). Proof matched the exported Ultra HDR JPEG byte for byte on
+both renderers, and its decoded peak was under 1,000 nits. The enforced
+preview-versus-export check also passed on a separate 675 × 450 synthetic
+fixture with the same recipe: HDR p99 luminance difference was 0.241%, and
+every SDR pixel was within one 8-bit level.
+
+[Before timings](../../codebase/output/separable-detail/before.json) ·
+[After timings](../../codebase/output/separable-detail/after.json) ·
+[Finished-pixel comparison](../../codebase/output/separable-detail/parity.json) ·
+[Export checks](../../codebase/output/separable-detail/export-proof.json) ·
+[Preview versus export](../../codebase/output/separable-detail/preview-export.json)
+
+## November 24, 2026 — Grade Micro Grain Histogram at zoom
+
+MacBook Neo (A18 Pro, 8 GB), Electron at 1408 × 794 points and 2× under
+the shared GPU lock. HDR Grade on the 42 MP Sony `_DSC7970.ARW`, Lens Auto
+applied, Micro Grain luminance at 55%. Each row measures one Exposure commit
+to its exact picture and to the Histogram outcome, from `787754f2` plus the
+working fixes. The probe primes the whole-picture cache through a preview
+request; forced evictions are test controls, not automatic app actions.
+
+| Zoom and cache state | Exact picture | Histogram outcome |
+| --- | ---: | --- |
+| 100%, no whole-picture Micro source | 0.914 s | Unavailable at 0.912 s |
+| 100%, whole-picture source warmed, first edit at zoom | 3.173 s | Fresh at 3.246 s |
+| 100%, whole-picture and viewport caches warm | 0.912 s | Fresh at 1.001 s |
+| 31%, whole-picture source warm | 0.816 s | Fresh at 1.533 s |
+| 31%, source evicted before edit | 25.059 s | Fresh at 25.263 s |
+| 31%, source evicted between picture and Histogram | 0.811 s | Unavailable at 0.816 s |
+
+Fresh results use a 960 px whole-picture Micro preview, not the zoomed patch.
+At 31%, a cold picture itself rebuilt the whole-picture source; the Histogram
+reused it. When the source is missing at request time, the Histogram clears,
+offers Fit view, and does not start a rebuild. Picture timings include two
+paint callbacks; the status can change just before that measurement ends.
+
+The previous Grade sweep used drag/release, so picture times are not a matched
+speed comparison: 100% pictures took 0.695–0.844 s but the Histogram was still
+Updating at 70 s with no scope request; at 31%, pictures took 0.759–0.804 s and
+the old undenoised Histogram appeared idle after 1.98–2.02 s.
+
+[Sweep baseline](../../codebase/output/grade-sweep/sony-micro-fill.json) ·
+[Sony cache-case trace](../../codebase/output/overnight/micro-scope-app.json)
+
+The follow-up on the same Sony and window size checked Micro slider changes,
+Fit recovery, and Denoise toggles, including with GPU Preview disabled.
+Times are from the action to the picture and to the Histogram outcome.
+
+| Action | Exact picture | Histogram outcome |
+| --- | ---: | --- |
+| 100%, Exposure, cold whole-picture source | 1.166 s | Unavailable at 1.161 s |
+| 100%, Exposure, warm whole-picture source | 3.724 s | Settled at 3.839 s |
+| 100%, new Micro strength | 4.112 s | Unavailable at 4.239 s |
+| Return to Fit after Unavailable | 26.884 s | Settled at 27.150 s |
+| Fit, new Micro strength | 25.884 s | Settled at 26.162 s |
+| Fit, Denoise off / back on | 0.027 / 28.837 s | Settled at 0.480 / 29.080 s |
+| Fit, switch to CPU-only preview | 0.269 s | Settled at 0.368 s |
+| Fit, CPU-only Denoise off / back on | 0.297 / 0.378 s | Settled at 0.751 / 0.484 s |
+
+Cold Fit runs spent 25–29 s preparing the picture; the Histogram then reused
+its whole-picture Micro source. The Fit strength edit changed the bins, and
+warm Micro bins matched across the CPU-only switch and off/on round trip.
+The ineligible Edge Colour case passed the API pixel-histogram comparison.
+After reopening in GPU mode, a Histogram refresh settled in 33 ms. These
+are single-run observations, not speed comparisons.
+
+[Sony review follow-up trace](../../codebase/output/overnight/micro-scope-app-v2.json)
+
+## November 24, 2026 — Exact Mist glow reuse
+
+MacBook Neo (A18 Pro, 8 GB), Electron at 1408 × 794 points and 2× under
+the shared GPU lock. Warm IMG_3129.CR2 in HDR Grade at 31% zoom,
+1841 × 1229 pixels and twelve 512 px tiles. The reconstructed recipe used
+Vision3 250D and 2383, grain 23.616, halation 3.571 at radius 0.347,
+and Black Pro-Mist 1/8 at size 1. Timing starts at the control input and
+ends at the first exact presentation for that edit. The exploratory timing
+tolerance is 20% for window and app activity.
+
+| Action | Before (`787754f2`) | With exact glow reuse |
+| --- | ---: | ---: |
+| Grain amount edit, median of three | 3.19 s | 1.13 s |
+| Mist strength edit, median of three | 3.18 s | 1.14 s |
+| First Film Look on | 3.17 s | 3.17 s |
+
+[Before](../../codebase/output/mist-speed/render-path-baseline.json)
+· [After](../../codebase/output/mist-speed/render-path-mist-final.json)
+· [Parity and memory check](../../codebase/output/mist-speed/final-tiled-parity.log)
+
+Final runs ranged from 1.13–1.16 s for Grain and 1.13–1.25 s for Mist
+strength. In a separate six-tile parity check at 1520 px, turning Mist off
+released 22.6 MiB of tracked GPU glow textures in each lane (HDR and SDR).
+Cached and uncached Grain, Mist strength, halation, and stock edits matched
+exactly on both render routes; the HDR check kept Standard Denoise on.
+
+Only exact glow reuse remains. The half- and quarter-resolution trial was
+removed: strong Pro-Mist and CineBloom showed ringing and tile joins, the
+trial still needed the tile halo, and it disabled exact glow reuse. Delivery
+and CPU preview are unchanged. The rejected trial's [comparison crops and
+measurements](../../codebase/output/mist-speed/) are retained as evidence.
+
+## November 24, 2026 — Grade Edge colour with no clipped seeds
+
+MacBook Neo (A18 Pro, 8 GB), Electron at 1408 × 794 points and 2× under the
+shared GPU lock. One matched enable per photo and build, HDR Grade at 31% zoom,
+Lens Auto, clipping threshold 0.98, Expand 0.5%, fresh app profile for each run.
+Baseline `787754f2`; after is the same HEAD with the uncommitted Edge colour
+change. Peak app memory is the one-second process-tree physical-footprint
+sample, not logical GPU memory. The clipped control allows up to 10% regression
+in timing or sampled peak memory to account for run-to-run variation.
+
+| RAW | Picture before → after | Settled Histogram before → after | Peak app memory before → after | Edge colour stage before → after |
+| --- | ---: | ---: | ---: | ---: |
+| `_DSC7970.ARW` (42 MP, no seeds) | 12.11 → 5.50 s | 13.02 → 6.19 s | 6.55 → 1.81 GB | 5.11 s → 29 ms |
+| `IMG_0790.CR2` (18 MP, 3.04% seeds) | 5.58 → 5.29 s | 6.01 → 5.89 s | 4.29 → 3.76 GB | 2.43 → 2.64 s |
+
+The Sony skipped the Edge colour GPU handoff and kept the original developed
+pixels. Its full RAW development fell from 9.27 to 3.48 s. The Canon still
+ran Edge colour on the GPU with the same seed fraction and clip luminance. The
+earlier full Grade sweep's Sony result (19.04 s picture, 20.69 s Histogram)
+came from a longer session and is not the matched baseline.
+
+[Before trace](../../codebase/output/grade-sweep/edge-before.json) ·
+[After trace](../../codebase/output/grade-sweep/edge-after.json)
+
+## November 24, 2026 — Grade geometry at 100% on 42 MP Sony
+
+MacBook Neo (A18 Pro, 8 GB), Electron at 1408 × 794 points and 2× under
+the shared GPU lock. `_DSC7970.ARW`, 7968 × 5320 source pixels, Lens Auto,
+HDR Grade. The picture clock requires an exact frame for the current edit;
+it does not count the previous picture moving. Peak app memory is the
+one-second process-tree physical-footprint sample in decimal GB. These
+are single-run comparisons with a 15% exploratory timing band, not a
+matched benchmark for effects other than geometry.
+
+| Action at 100% | Exact picture / fresh Histogram before → after | HTTP 507s before → after | Sampled peak app memory before → after |
+| --- | --- | ---: | ---: |
+| Crop enable | Neither by 22 s → 1.61 / 1.79 s | 166 → 0 | 2.86 → 1.88 GB |
+| Rotate enable | Neither by 22 s → 1.87 / 4.09 s | 164 → 0 | 3.53 → 3.33 GB |
+| Rotate edit/release, warm-1 | Neither by 25 s → 1.57 / 4.12 s | 166 → 0 | 2.08 → 3.27 GB |
+| Perspective enable | Neither by 22 s → 2.25 / 4.59 s | 160 → 0 | Not sampled → 2.14 GB |
+
+Rotate's pan after the warm edit went from timing out at 25 s with no
+accepted frame to presenting the same, now-current edit in 0.69 s. A pan
+does not request another Histogram. The first native pixels for all three
+tools came from source tiles, not a native whole-image stream; no processing
+tier was reduced. Fit and 31% all reached exact pictures and fresh scopes.
+At Fit, Perspective's picture took 0.86 → 1.00 s (just outside the 15% band);
+the Histogram was within the band (2.89 → 3.21 s).
+
+With the backend's test memory snapshot reporting 3.25 GiB safely available
+(below the old 3.41 GiB estimate), all three 100% enables again accepted the
+current generation with zero 507s: Crop 0.88 / 1.11 s, Rotate 2.50 / 4.64 s,
+Perspective 1.50 / 3.81 s. Sampled peak across geometry actions in that run
+was 2.31 GB. No production memory limit changed.
+
+[Sweep baseline](../../codebase/output/grade-sweep/sony.json) ·
+[Rotate baseline](../../codebase/output/grade-sweep/sony-rotate-fill.json) ·
+[Fit, 31% and 100%](../../codebase/output/grade-sweep/sony-geometry-bounded.json) ·
+[Constrained admission](../../codebase/output/grade-sweep/sony-geometry-headroom.json)
+
+**Review follow-up:** The first frame now replaces the old picture before
+measuring the post-edit viewport. A repeat cold sweep gave exact picture /
+fresh Histogram of Crop 1.20 / 1.45 s, Rotate 2.42 / 5.28 s, and Perspective
+3.69 / 6.86 s, with zero 507s. Crop was faster than the first fix, while
+Rotate and Perspective were slower in this single repeat.
+
+In a separate combined-edit run on the same Sony at 100%, exact picture times
+(Denoise off / Clean Grain on) were Rotate 4.35 / 11.21 s, large Crop
+2.38 / 8.03 s, Perspective 3.16 / 7.44 s, and a fully visible small Crop
+0.53 / 0.71 s. Opposite-edge pans settled in 0.61 / 0.79 s. Both lane
+round trips, the luminance local, 31%, and small-crop Fit passed with no
+natural 507s. An injected 507 during an SDR lane switch recovered in 4.32 s
+without a whole-frame CPU retry. These timings are not a matched benchmark.
+
+[Repeat cold sweep](../../codebase/output/grade-sweep/sony-geometry-round2.json) ·
+[Combined-edit trace and screenshots](../../codebase/output/overnight/geometry-review/)
+
+**Patch-first follow-up (`787754f2` plus working-tree changes):** The current
+sharp tiles now replace the old geometry before the viewer changes size.
+A fully visible crop does not need a background image. On an edge pan that
+needs one, sharp tiles draw first; the optional softer background then uses the
+standard 1600 px source level instead of building a custom level. The first
+far pan can briefly show a blank area while the new tiles arrive; it does not
+show any of the old geometry at the new position.
+
+| Exact picture at 100% | Round 1, Denoise off | Round 2, off / Clean Grain | Patch-first, off / Clean Grain |
+| --- | ---: | ---: | ---: |
+| Rotate | 1.87 s | 4.35 / 11.21 s | 0.74 / 7.52 s |
+| Large Crop | 1.61 s | 2.38 / 8.03 s | 0.67 / 6.32 s |
+| Perspective | 2.25 s | 3.16 / 7.44 s | 0.64 / 6.16 s |
+| Small Crop | — | 0.53 / 0.71 s | 0.28 / 0.50 s |
+
+The first far pan with Denoise off presented sharp tiles in 0.70 s. The
+opposite-edge Clean Grain pan submitted sharp tiles in 0.93 s; no fresh grain
+calibration was recorded for that pan. Both HDR/SDR round trips passed, as did
+a Rotate while viewing SDR. The 31% step took 1.12 s, and explicit Full at Fit
+took 0.12 s on the small crop, using native tiles rather than a full-image
+source stream. There were no natural 507s. Two injected 507 responses during
+a Denoise-off toggle recovered in 4.21 s with no whole-image CPU retry.
+
+These are single runs, not a matched benchmark; for example, a heavily loaded
+run showed 3.16 s for Rotate with Denoise off. This check does not establish a
+new memory peak or scope timing. Clean Grain calibration accounted for
+6.36 of the 7.52 s Rotate (18 native chunks). A crop changes the samples and
+their boundary neighbours; a warp changes both the noise and its correlation
+between pixels. Unwarped or visible-only calibration could save time but would
+generally produce different pixels, so the fit stays keyed to the geometry.
+
+[Patch-first trace and screenshots](../../codebase/output/overnight/geometry-review-r3-confirmed/) ·
+[Immediate edge pan](../../codebase/output/overnight/geometry-review-r3-confirmed/04-off-pan-far-in-flight.png)
+
+**Round 4 (MacBook Neo, not timed):** At 100% with non-neutral geometry, the
+sharp patch now draws first after geometry changes, grade edits, lane changes,
+and pans. When only part of the photo is visible, a separate 1600 px background
+render starts after the patch is shown. It does not hold up foreground renders
+or scopes, and new interaction cancels it. An immediate far pan can still show
+a blank area if that background is not ready; it must not reuse old geometry.
+Electron launched, but its Python backend could not start because macOS had
+exhausted POSIX semaphores (`Errno 28` with 137 GiB free). No Round 4 timings or
+screenshots were captured; the numbers and images above are from Round 3.
+
+**Round 5 (November 24, 2026):** The sharp patch still draws first. The
+1600 px whole-picture fill now waits until the renderer is idle and does not
+share GPU working buffers with foreground pictures, scopes or the navigator.
+New work cancels it rather than waiting for it to finish. Panning inside the
+sharp patch keeps the fill. An immediate far pan can briefly expose blank
+space instead of showing the old geometry.
+
+Real Electron at 100% on the 42 MP Sony `_DSC7970.ARW` with Lens Auto,
+same MacBook Neo, 1408 × 794 window and shared GPU lock. Because the host
+was out of POSIX semaphores, a test-only shim replaced the Library EXIF
+pause event. Times from input to first exact HDR picture, in seconds:
+
+| Action | R3 Denoise off | R5 Denoise off | R3 Clean Grain | R5 Clean Grain |
+| --- | ---: | ---: | ---: | ---: |
+| Rotate | 0.74 | 1.38 | 7.52 | 11.60 |
+| Large crop | 0.67 | 0.96 | 6.32 | 7.69 |
+| Perspective | 0.64 | 0.64 | 6.16 | 9.02 |
+
+These are individual runs on different worktree snapshots, not a controlled
+benchmark. Round 5 was slower in five of six samples. The exact picture after
+an immediate far pan or a double pan took 1.55–1.63 s from the last movement.
+The later fill arrived 5.36–6.71 s from the first movement with Denoise off.
+
+Histogram bins, peak, normalization and clipping matched with the fill on
+and off in HDR (with and without Clean Grain) and SDR (with Clean Grain).
+An injected Reset memory refusal kept the previous picture and cleared the
+temporary Straighten transform; the automatic retry drew exact at 100%
+after 4.00 s. Fit and 31% worked. A separate retry at 99% reached the backend
+but hit the host limit for that full-frame route (3.41 GiB needed, 2.96 GiB
+available); the viewer was not stuck waiting for geometry.
+
+[Round 5 report and screenshots](../../codebase/output/overnight/geometry-review-r5/report.md) ·
+[Main trace](../../codebase/output/overnight/geometry-review-r5/results.json) ·
+[Histogram A/B](../../codebase/output/overnight/geometry-review-r5/scope-confirm/results.json) ·
+[Reset retry](../../codebase/output/overnight/geometry-review-r5/reset-confirm/results.json)
+
+**Round 6 (November 24, 2026):** With Lens Auto and 1.3° Rotate, 75%, 90%,
+and 99% all select the Sony's 7968 px processing step. From Fit, all six
+checks (Denoise off and Clean Grain) painted the current visible area at
+native resolution with no HTTP 507s. The existing actual-size small-crop
+path still paints the sharp picture first. The 65% lower processing step
+is unchanged; an exploratory run there still hit a whole-proxy memory refusal.
+
+A settled scope change cancelled a live fill before waiting for its GPU
+resources. In a test that held the fill just before painting, the cancellation
+took about 0.1 ms and the new scope appeared in about 58 ms. The fill reported
+51.7 MB of temporary GPU textures without asking the export worker to yield.
+
+The Sony's full-source export used the CPU even at idle because of its
+3.41 GiB memory estimate. A matched pair of GPU exports from a 3000 px JPEG
+gave 3.44 s at idle and 3.69 s with the fill held live; the GPU portion was
+2.10 s and 2.07 s, respectively. Neither export was asked to yield. This
+checks scheduling, not throughput. During a separate export, foreground
+Rotate and pan did take priority and the export finished on the CPU.
+
+One cold/warm check per action using the repeated Round 5 timing setup:
+
+| Edit | Off, cold / warm | Clean Grain, cold / warm |
+| --- | ---: | ---: |
+| Rotate | 0.63 / 0.59 s | 8.90 / 0.73 s |
+| Large Crop | 0.30 / 0.29 s | 2.85 / 0.23 s |
+| Perspective | 0.59 / 0.57 s | 8.42 / 0.64 s |
+
+No slowdown stood out against the repeated Round 5 measurements; one pair
+per action cannot establish a speed change. The first Clean Grain fit still
+dominates cold Rotate and Perspective.
+
+[Round 6 app trace](../../codebase/output/overnight/geometry-review-r6/results.json) ·
+[Round 6 export trace](../../codebase/output/overnight/geometry-review-r6/export/results.json) ·
+[Round 6 timing runs](../../codebase/output/overnight/geometry-timing-r6/) ·
+[Round 5 repeated timings](../../codebase/output/overnight/geometry-timing-r5/report.md)
+
+## November 23, 2026 — Grade Film Look edits and exact grain at zoom
+
+MacBook Neo (A18 Pro, 8 GB), real Electron at 1408 × 794 points and 2×,
+under the shared GPU lock. Warm IMG_3129.CR2 at 31% zoom, 1841 × 1229
+processing pixels, HDR Grade. The recipe was reconstructed with Vision3,
+2383, grain 23.6, halation 3.6 and Black Pro-Mist 1/8. The baseline is
+`e0acf2a9`. The intermediate column has the discrete-edit and scope fix.
+The final column includes slider scheduling and exact grain pruning. The
+exploratory timing tolerance is 20% due to window and app activity.
+Click timings end at the first exact presentation for the current edit.
+Release timings start at pointerup.
+
+| Action | Baseline | Discrete-edit fix | Final |
+| --- | ---: | ---: | ---: |
+| Film Look on, zoomed | 6.31 s | 3.28 s | 3.17 s across two warm toggles |
+| Tone eye, zoomed | 6.41 s | 3.35 s | 3.18 s |
+| Halation input, zoomed | 6.30 s | 3.35 s | 3.21 s |
+| Film Look on with grain disabled, zoomed | 4.27 s | 2.26 s | 2.24 s with the matched recipe |
+| Film Look off, zoomed | 46–49 ms | 163–174 ms | 156–169 ms |
+| Film Look on at Fit, feedback then exact | 24 / 141 ms | 23 / 143 ms | 13 / 132 ms |
+| Grain drag release at the value already rendering | — | 6.17 s, five foreground attempts and two complete tile passes | 2.88 s, one foreground attempt and one complete tile pass |
+| Grain drag release at a new value | — | 6.10 s, five foreground attempts and two complete tile passes | 5.91 s, two foreground attempts and two complete tile passes |
+
+The settled zoomed edits produced one foreground tile pass and one settled
+scope request. The whole-frame follow-up reused all 12 tiles. The intermediate
+slider run provides the matched release-to-Ready comparison and retains the
+old slider behavior. One final Film Look toggle was interrupted by an Electron
+display-state update. Its 6.19 s trace was repeated twice once the display
+had settled.
+[Intermediate trace](../../codebase/output/film-look-grade-diagnostic/render-path-part1-scope.json)
+[Final trace](../../codebase/output/film-look-grade-diagnostic/render-path-final.json)
+[Warm repeats](../../codebase/output/film-look-grade-diagnostic/render-path-final-warm.json)
+[Matched grain-disabled run](../../codebase/output/film-look-grade-diagnostic/render-path-final-warm-grainless.json)
+
+The follow-up check on the same Mac and recipe repeated Film Look on at
+3.17 s and the same-value grain release at 2.88 s. With Faster dragging
+enabled, continuous slider input presented two softer frames (at 0.92 s
+and 1.56 s), cancelled the pending coarse work on release and showed the
+exact frame 3.24 s after release.
+[Follow-up trace](../../codebase/output/film-look-grade-diagnostic/render-path-final-warm-review.json)
+
+After the brush and release fixes, the same Mac, photo, zoom and Film Look
+recipe showed the Film Look On picture in 3.31 s (within the 20% tolerance).
+With a painted brush adjustment selected, three `]` presses saved the larger
+brush without a GPU draw or scope refresh. Changing adjustment opacity to 60%
+showed one exact zoomed picture in 3.29 s and one settled scope at 3.83 s.
+The later whole-frame catch-up took 16 ms from draw to presentation.
+[Brush and release trace](../../codebase/output/film-look-grade-diagnostic/brush-release-electron.json)
+
+The 512 px tiles used a 104 px halo and processed 4.05 million pixels for a
+2.26 million-pixel picture. Warm full-look timing was 3.11–3.18 s. Turning
+off grain took 2.20 s. Turning off mist took 0.66–0.68 s and reduced the halo
+to 12 px. Turning off halation took 3.10 s with mist still on. Halation with
+stock and both mist and grain off took 30 ms versus 28 ms for stock alone and
+23 ms with stock bypassed. Each tile with mist runs one extract and 27
+horizontal/vertical blur pairs before applying diffusion. The CPU encoded
+the 12 tiles in about 3–7 ms. The 32 KiB peak readback spent roughly 3.1 s
+waiting for the queued graph to complete. Per-pass timestamp intervals
+overlapped or included queued work on this GPU, so feature costs come from
+matched wall-clock probes. The GPU processing scale was 0.353 in this
+fixture, so exact grain drew nine spatial samples over three colour layers
+for every pixel.
+
+Pruning impossible grain candidates in the Grade tile shader kept all
+18,100,712 bytes and the measured peak identical in the production
+before/after compare. Repeated isolated renders used the exact same grain
+samples. Full look render time fell from a 3.18 s median to 2.96 s. With
+mist off it fell from 663 to 553 ms. The production pair measured 3.14 to
+3.10 s. In two additional byte-exact pairs, a silver grain map at 1000 px
+and a 1841 px single-sample native-scale simulation exercised the same
+pruning. Native-scale colour grain with scan sharpening took 92 to 62 ms
+in that probe. Tile-size probes at 256, 768 and 1024 px took 5.54, 2.60 and
+2.36 s. The latter two matched pixels and peak on this photo with tile
+scratch of 69 and 109 MB versus 37 MB at 512 px. The shipping tile size
+remains 512 px.
+[Stage and tile probe](../../codebase/output/film-look-grade-diagnostic/grain-profile.json)
+[Matched pixel and timing comparison](../../codebase/output/film-look-grade-diagnostic/grain-profile-compare.json)
+
+The Python grain profile used a deterministic 256 × 256 RGB patch on the
+same Mac. CPU native uses one sample and took 48 ms. Most profiled time was
+in the band splat (31 ms of 47 ms). CPU proxy scale 0.31 used 16 samples and
+took 3.59 s, mostly in cell construction and allocation, hashing and band
+splats. CPU export uses the native one-sample kernel.
+[CPU grain profile](../../codebase/output/film-look-grade-diagnostic/cpu-grain-profile.json)
+
+## November 23, 2026 — Grade Film Look warm zoom
+
+MacBook Neo (A18 Pro, 8 GB, Electron 1408 × 794 at 2×), uncommitted change
+on `a6c626c6`. On IMG_3129.CR2 with the saved Copy 1 Film Look and grain,
+three warm zooms at the same processing size (1841 px) completed in
+1.1–2.7 ms from input to the zoom handler returning. The same-machine
+baseline took 494–505 ms. The histogram starts after 200 ms of quiet and
+waits for foreground rendering. It appeared 0.72–3.99 s after the single
+zooms and 0.91 s after the last of five rapid steps, with one pass for the
+sequence. The settled values matched a separate refresh. An Exposure edit
+immediately after zoom produced an updated histogram.
+[Timing evidence](../../codebase/output/film-look-grade-diagnostic/zoom-quiet-timing.json)
+After the review fixes, a rerun (direct GPU route, so not like-for-like with
+the tiled run above) measured 2.6–7.2 ms per warm zoom and one histogram
+refresh 259 ms after the last of five rapid steps.
+[Final timing evidence](../../codebase/output/film-look-grade-diagnostic/zoom-quiet-review-timing.json)
+
+## November 23, 2026 — MacBook Neo Grade-open sharing & native encoder probe (Steps 5–6)
+
+MacBook Neo (A18 Pro, 8 GB), macOS 27, real unpackaged Electron app
+(`1408 × 794`) under the shared GPU lock. Step 5 keeps large (`>= 256 MiB`)
+Grade source frames in read-only scratch files and shares Grade's original
+decoded pixels and authored SDR reference with the batch worker by hardlink (or
+spill copy) when the source file and decode recipe match (ignoring Auto Lensfun
+resolved profile/database labels). Continuous 1 Hz whole-app physical-footprint
+sampling across every run (resilient to transient macOS exiting-child `EPERM`
+races). Decimal GB.
+
+| Source and profile (same photo open in Grade) | Format | Wall time | Whole-app peak | Peak process split | Shared source / outcome |
+| --- | --- | ---: | ---: | --- | --- |
+| 42 MP Sony A (1920 px + frame, `export-speed-app.js`) | `avif_gain_map` | 135.33 s (was 137.3 s) | **1.655 GB** (was 5.04 GB, -3.39 GB) | Electron 0.77 + worker 0.73 + backend 0.15 GB | File-backed Grade; 0 trims, 0 Grain reclaims; golden SHA-256 exact (`ff3961ee9b4e…`); `maxGapS` 0.27 s |
+| 42 MP Sony A-native (34 MP cropped) | `avif_gain_map` | 163.60 s | **3.190 GB** | `avifgainmaputil` 1.81 + Electron 0.98 + worker 0.23 + backend 0.17 GB | `sharedSource: true`; exact SHA-256 (`2ad132186e81…`); `maxGapS` 0.28 s |
+| 42 MP Sony Max (34 MP, **all stages on**) | `avif_gain_map` | 345.95 s | **3.951 GB** (was 9.963 GB fail headless) | `avifgainmaputil` 2.10 + Electron 1.45 + worker 0.23 + backend 0.18 GB | `sharedSource: true`; exact SHA-256 (`9be69993101b…`); `maxGapS` 0.26 s |
+| 61 MP synthetic EXR A-native | `jpegxl_hdr` | 159.37 s | **3.527 GB** | backend 2.36 + Electron 1.03 + worker 0.14 GB | `sharedSource: true`; `maxGapS` 0.26 s |
+| 100 MP synthetic EXR A-native | `jpegxl_hdr` | 348.42 s | 4.910 GB (3.587 GB headless) | backend 2.55 + worker 1.42 + Electron 0.94 GB | `sharedSource: true`; `maxGapS` 0.29 s (batch worker 1.43 GB; Grade interactive 100 MP preview/mask caches held 2.55–2.90 GB in backend) |
+| 100 MP synthetic EXR A-native | `sdr_jpeg` | 299.08 s | 5.269 GB (3.577 GB headless) | backend 2.95 + worker 1.42 + Electron 0.90 GB | `sharedSource: true`; `maxGapS` 0.38 s (same Grade 100 MP backend retention; direct EXR `share_grade_source` unit check exact SHA-256) |
+
+**Step 6 — Native encoder memory probe (no code or output-byte changes):**
+Bundled `avifgainmaputil 1.4.1 (libaom 3.13.2)`, `avifdec` and `avifenc` measured
+directly on 42 MP, 61 MP and 100 MP Y4M pairs (decimal GB):
+
+| Resolution | `avifgainmaputil combine` single → `--grid` | `avifdec` single → `--grid` | `avifgainmaputil tonemap` single → `--grid` | Notes |
+| --- | ---: | ---: | ---: | --- |
+| 42 MP (`7968 × 5320`) | 2.472 → 2.490 GB (`4×2`) | 3.223 → 0.574 GB | 2.234 → 1.670 GB | Fits under 4 GB with app + Grade |
+| 61 MP (`9600 × 6354`) | 3.449 → 3.437 GB (`4×4`) | 4.617 → 0.509 GB | 3.187 → 2.321 GB | Encoder alone 3.45 GB (~4.3–4.5 GB with Electron + Grade); `avifenc -j 1/2/all` flat at 1.31–1.33 GB (`-j 1` 13.47 s vs `-j all` 4.47 s, changes bytes) |
+| 100 MP (`12000 × 8334`) | **5.539 → 5.626 GB** (`4×4`) | 7.542 → 0.827 GB | 5.226 → 3.802 GB | Exceeds 4 GB on encoder alone; `ultrahdr_app` also enforces an upstream `8192 × 8192` hard cap |
+
+`avifgainmaputil` has no `--jobs` flag and holds both full Y4M frames plus gain-map
+buffers in RAM before grid tiling, so no byte-identical CLI flag reduces `combine`
+peak memory. Bringing 61–100 MP native AVIF under 4 GB requires either warning/guiding
+8 GB machines toward HDR JPEG XL (already 3.53 GB at 61 MP with Grade open, 3.59 GB
+at 100 MP headless) or a Steve-approved custom tiled-grid libavif encoder (changes
+AVIF bytes).
+
+## November 23, 2026 — MacBook Neo staged strip pipeline (Step 4)
+
+MacBook Neo (A18 Pro, 8 GB), macOS 27, headless one-worker CPU batch and real
+Electron app (`1408 × 794`) under the shared GPU lock. Step 4 on `c080f8f5`
+moves channel-by-channel geometry, disk-backed spatial masks, Detail (Texture,
+Clarity, Sharpen), Local Adjustments, Lens Filter, Film Resolution, Halation,
+fused Film Grain + Stock, Scan Sharpening, Look Strength, Image Structure, and
+Vignette onto a 2-file ping-pong disk-backed strip pipeline, and reuses the
+pre-compression HDR frame for `linked_to_hdr` SDR. Decimal GB.
+
+| Source and profile | Format | Step 0 → Step 4 wall time | Step 0 → Step 4 peak | Result / SHA-256 |
+| --- | --- | ---: | ---: | --- |
+| 42 MP Sony A (1920 px + frame, headless) | `avif_gain_map` | 105.71 → 101.90 s | 6.423 → **2.091 GB** (-4.33 GB) | Golden SHA-256 exact (`ff3961ee9b4e…`) |
+| 42 MP Sony A (**real app, Grade open**) | `avif_gain_map` | 137.3 → 166.1 s | 5.04 → **2.432 GB** (-2.61 GB) | Golden SHA-256 exact; 0 trims, 0 Grain reclaims; worker 0.62 GB |
+| 42 MP Sony A-native (34 MP cropped) | `avif_gain_map` | 117.51 → 121.81 s | 6.783 → **2.703 GB** (-4.08 GB) | Exact SHA-256 (`2ad132186e81…`); worker 0.65 + encoder 1.98 GB |
+| 42 MP Sony Max (34 MP, **all stages on**) | `avif_gain_map` | 245.11 s (fail) → 253.68 s | 9.963 → **3.273 GB** (-6.69 GB) | Exact SHA-256 (`9be69993101b…`); worker 0.81 + encoder 2.39 GB |
+| 42 MP Sony B (native) | `avif_gain_map` | 28.61 → 30.87 s | 3.662 → **3.187 GB** (-0.48 GB) | Golden SHA-256 exact (`ccfeedf49d0e…`) |
+| 61 MP synthetic EXR A-native | `jpegxl_hdr` | — → 122.92 s | — → **2.578 GB** | Exported natively (`56e1385cd4b8…`) |
+| 100 MP synthetic EXR A-native | `sdr_jpeg` | — → 171.68 s | — → **3.577 GB** | Exported natively (`16ec18613dac…`; peak in `geometry`) |
+| 100 MP synthetic EXR A-native | `jpegxl_hdr` | — → 209.93 s | — → **3.587 GB** | Exported natively (`424f840e375b…`; peak in `geometry`) |
+
+## November 23, 2026 — MacBook Neo bounded B&W, HSL and output finishing (Step 3)
+
+MacBook Neo (A18 Pro, 8 GB), macOS 27, headless one-worker CPU batch under the
+shared lock. Step 3 on `95c10725` extends bounded strips to guided Black &
+White, Global HSL (`shared_selection` with frame-aligned halo), whole-channel
+Lanczos resize, haloed output multiscale sharpening, highlight compression,
+streaming photo framing, and in-place watermark patching. Shifted `roll`
+windows and Pillow banded `box=` Lanczos both altered pixel bits, so roll stays
+whole-frame until Step 4's shared channel-by-channel geometry stage and resize
+uses whole-channel Pillow. Decimal GB.
+
+| Source and profile | Format | Wall time | Peak footprint | Result |
+| --- | --- | ---: | ---: | --- |
+| 42 MP Sony A (1920 px + frame) | `avif_gain_map` | 97.22 s | — | Golden SHA-256 unchanged (`ff3961ee9b4e…`) |
+| 42 MP Sony B (native) | `avif_gain_map` | 31 s | — | Golden SHA-256 unchanged (`ccfeedf49d0e…`) |
+| 100 MP EXR + Clean Grain + B&W + Global HSL + Sharpen + Frame + Watermark | `sdr_jpeg` | 234.02 s | **2.525 GB** | Exported natively (render 1.75 GB; `develop_raw` 2.52 GB) |
+| 100 MP EXR + Clean Grain + B&W + Global HSL + Sharpen + Frame + Watermark | `jpegxl_hdr` | 274.72 s | **2.719 GB** | Exported natively (render < 1.7 GB; encode 2.72 GB) |
+
+## November 23, 2026 — MacBook Neo file-backed export memory (Step 2)
+
+MacBook Neo (A18 Pro, 8 GB), macOS 27, headless one-worker CPU batch under the
+shared lock. Step 2 on `420d212b`; same sources, grades and presets as Steps
+0–1. Figures are decimal GB. After an initial test with `MallocLargeCache=0`
+and per-row unbuffered tile writes regressed wall time by 30–45% (Profile A
+123.33 s), Step 2 keeps the normal macOS allocator, uses writable scratch
+mappings closed before readback, writes large (>= 256 MiB) EXR/TIFF/RAW loads
+directly into file-backed storage, routes HDR/SDR JXL and Ultra HDR through
+file-backed delivery, and releases batch sources before the final encode.
+
+| Source and format | Step 0 → Step 2 wall time | Step 0 → Step 2 peak | Result |
+| --- | ---: | ---: | --- |
+| 42 MP Sony A, AVIF (1920 px + frame) | 105.71 → 96.80 s (-8.4%) | 6.423 → 3.804 GB (-2.62 GB) | Golden SHA-256 unchanged (`ff3961ee9b4e…`) |
+| 42 MP Sony B, AVIF (native) | 28.61 → 31.94 s | 3.662 → 3.170 GB (-0.49 GB) | Golden SHA-256 unchanged (`ccfeedf49d0e…`); worker during encode 1.16 → 0.65 GB |
+| 42 MP Sony B, Ultra HDR JPEG | 19.95 → 22.38 s | 3.986 → 2.943 GB (-1.04 GB) | Same SHA-256 (`6837353d3464…`); worker during encode 2.02 → 0.98 GB |
+| 42 MP Sony B, HDR JPEG XL | 28.79 → 32.02 s | 4.157 → 1.758 GB (-2.40 GB) | Same SHA-256 (`c8f0b6a1e578…`); now uses bounded strips |
+| 42 MP Sony B, SDR JPEG | 14.44 → 16.47 s | 2.534 → 1.711 GB (-0.82 GB) | Same SHA-256 (`25dfd32eba69…`) |
+| 100 MP synthetic EXR B, HDR JPEG XL | 74.42 → 76.00 s (+2.1%) | 6.951 → 2.521 GB (-4.43 GB) | Same SHA-256 (`15d617854a59…`) |
+| 100 MP synthetic EXR B, SDR JPEG | 44.34 → 50.03 s | 4.725 → 2.528 GB (-2.20 GB) | Same SHA-256 (`cd4f347d406f…`); denoise 4.66 → 1.71 GB |
+| 192 MP TIFF B, SDR JPEG | 89.77 s (failed) → 95.66 s (exported) | 7.434 → 4.089 GB (-3.35 GB) | Exported and passed Pillow verify (`7e2eaad36b47…`) |
+
+The Mac probe confirmed that file-backed `mmap("w+")` charges only ~0.2 MB to
+macOS `phys_footprint`, while macOS `DefaultMallocZone` retains freed large
+heap allocations and ignores `malloc_zone_pressure_relief`. Bypassing the heap
+for large decoded sources avoids polluting that cache without paying the
+~30–38% page-fault penalty of `MallocLargeCache=0`. Evidence: `step2b-*-run.json`
+under `codebase/output/export-memory-2026-11-23/`.
+
+In Electron on the same Mac, the saved `DSC04375` 4000 px Ultra HDR export,
+full-size Proof and decode took 15.11 s on GPU and 18.60 s on forced CPU.
+Proof matched its export byte for byte on each route; both decoded to 1008.58
+nits against the 1000-nit target (within the 1% encoded allowance). Evidence:
+`codebase/output/gpu-delivery-ceiling/1795399332012/result.json`.
+
+## November 23, 2026 — MacBook Neo whole-frame export memory (Step 1)
+
+MacBook Neo (A18 Pro, 8 GB), macOS 27, headless one-worker batch under the
+shared lock; Sony 42 MP `_DSC7970.ARW`, AVIF gain map, same grades and presets
+as Step 0. Step 1 is the working tree on `bcd6c16a`. Decimal GB.
+
+| Profile | Wall time, Step 0 → Step 1 | Process tree peak | Worker peak | Worker during `encode/encode` | SHA-256 |
+| --- | ---: | ---: | ---: | ---: | --- |
+| A — 34 MP cropped, 1920 px + frame | 105.71 → 89.35 s (-15.5%) | 6.423 → 4.390 GB (4.167 GB at 2 workers) | 6.356 → 4.323 GB | 4.763 → 2.591–2.668 GB | unchanged (`ff3961ee9b4e…`) |
+| B — native size, bounded strips | 28.61 → 29.10 s | 3.662 → 3.689 GB | 2.301 → 2.425 GB | 1.163 → 1.166 GB | unchanged (`ccfeedf49d0e…`) |
+| Max — 34 MP, all creative + finishing stages | 245.11 s (failed) → 193.65 s (exported) | 9.963 → 5.592 GB (-4.37 GB) | 9.896 → 5.526 GB | — → 4.191 GB (+2.40 GB encoder) | exported (`9be69993101b…`) |
+
+After shrinking Film Grain's row band dynamically to keep all six CPU cores
+active inside the 192 MiB scratch cap, Profile A dropped from 105.71 s to
+89.35 s (fused Film Grain + Stock 52.5 s across both lanes vs 53.9 s separate
+before Step 0; Tone & Colour 12.5 → 5.1 s; Vignette 1.9 → 0.54 s) while
+keeping the golden SHA-256 identical. Profile Max dropped 4.37 GB (removing
+the float64 Global HSL spike) and now completes framing and AVIF encoding.
+The remaining Profile A / Max whole-frame buffers (Geometry, Masks, Detail,
+Halation, Framing) and worker encode-time retention are addressed in Steps 2–4.
+
+## November 23, 2026 — MacBook Neo export memory baselines (Step 0)
+
+MacBook Neo (A18 Pro, six cores, 8 GB), macOS 27, AC power, `feat/denoise-v1`
+after the Step 0 review fixes and single-worker `< 16 GB` batch default.
+Headless batch export through `tools/export_speed_profile.py` under the shared
+GPU lock, with 4 Hz process-tree sampling and per-stage peak attribution
+(decimal GB; no Electron window).
+
+* **2-photo batch (42 MP Sony `_DSC7970.ARW`, Profile B native AVIF)**:
+  `parallel=2` (old `< 16 GB` default) 47.26 s, **6.482 GB** peak (two
+  `avifgainmaputil` helpers overlapping at 4.79 GB); `parallel=1` (new default)
+  57.59 s, **3.687 GB** peak, identical SHA-256 `ccfeedf49d0e...`.
+
+| Source & profile | Format | Wall time | Peak footprint | Dominant stage & process split | Outcome / SHA-256 |
+| --- | --- | ---: | ---: | --- | --- |
+| Sony 42 MP, Profile A (1920 px + frame) | `avif_gain_map` | 105.71 s | 6.423 GB | `sdr/tone_colour` (worker 6.36 GB; `avifgainmaputil` 0.16 GB) | exported, `ff3961ee9b4e...` (golden) |
+| Sony 42 MP, Profile A-native (34 MP cropped) | `avif_gain_map` | 117.51 s | 6.783 GB | `sdr/tone_colour` (worker 6.72 GB; `avifgainmaputil` 1.98 GB) | exported, `2ad132186e81...` |
+| Sony 42 MP, Profile Max (34 MP, all stages on) | `avif_gain_map` | 245.11 s | 9.963 GB | `sdr/tone_colour` (worker 9.90 GB, float64 Global HSL) | failed at framing (out of available RAM) |
+| Sony 42 MP, Profile B (bounded strips) | `avif_gain_map` | 28.61 s | 3.662 GB | `encode/encode` (worker 1.16 + `avifgainmaputil` 2.46 GB) | exported, `ccfeedf49d0e...` (golden) |
+| Sony 42 MP, Profile B | `jpeg_ultrahdr` | 19.95 s | 3.986 GB | `encode/encode` (worker 2.02 + `ultrahdr_app` 1.93 GB) | exported, `6837353d3464...` |
+| Sony 42 MP, Profile B | `jpegxl_hdr` | 28.79 s | 4.157 GB | `encode/encode` (worker 4.09 GB; whole-frame path) | exported, `c8f0b6a1e578...` |
+| Sony 42 MP, Profile B | `sdr_jpeg` | 14.44 s | 2.534 GB | `sdr/denoise` (worker 2.47 GB) | exported, `25dfd32eba69...` |
+| Synthetic 61 MP EXR (`9600×6354`), Profile B | `avif_gain_map` | 49.34 s | 5.094 GB | `encode/encode` (worker 1.34 + `avifgainmaputil` 3.70 GB) | exported, `304f938e8cd4...` |
+| Synthetic 61 MP EXR, Profile B | `jpeg_ultrahdr` | 29.61 s | 3.273 GB | `encode/encode` (worker 2.54 + `ultrahdr_app` 0.67 GB) | failed (`ultrahdr_app` hard cap `8192×8192`) |
+| Synthetic 61 MP EXR, Profile B | `jpegxl_hdr` | 40.53 s | 4.877 GB | `encode/encode` (worker 4.81 GB; whole-frame path) | exported, `361791288a0a...` |
+| Synthetic 61 MP EXR, Profile B | `sdr_jpeg` | 25.51 s | 3.248 GB | `sdr/denoise` (worker 3.18 GB) | exported, `7c493e8c4001...` |
+| Synthetic 100 MP EXR (`12000×8334`), Profile B | `avif_gain_map` | 91.85 s | 7.247 GB | `encode/encode` (worker 1.91 + `avifgainmaputil` 5.84 GB) | exported, `8828ab35874b...` |
+| Synthetic 100 MP EXR, Profile B | `jpeg_ultrahdr` | 58.46 s | 4.551 GB | `hdr/denoise` (worker 4.49 GB) | failed (`ultrahdr_app` hard cap `8192×8192`) |
+| Synthetic 100 MP EXR, Profile B | `jpegxl_hdr` | 74.42 s | 6.951 GB | `hdr/output_finishing` (worker 6.88 GB; whole-frame path) | exported, `15d617854a59...` |
+| Synthetic 100 MP EXR, Profile B | `sdr_jpeg` | 44.34 s | 4.725 GB | `sdr/denoise` (worker 4.66 GB; `develop_raw` 3.26 GB) | exported, `cd4f347d406f...` |
+| Real 192 MP `pano_192mp.tif` (`16000×12000`), Profile B | `sdr_jpeg` | 89.77 s | 7.434 GB | worker render + Pillow validation | failed (`MAX_IMAGE_PIXELS` bomb guard during JPEG verify) |
+
+## November 22, 2026 — MacBook Neo CPU AVIF export with Clean Grain
+
+MacBook Neo (A18 Pro, six cores, 8 GB), macOS 27, AC power, `feat/denoise-v1`
+from `a654d7f9`. Headless batch export through `BatchExports` and its isolated
+worker, the same code the app runs, timed by `tools/export_speed_profile.py`
+under the shared GPU lock. A disposable copy of the 42 MP Sony `_DSC7970.ARW`.
+Peak is the sampled Apple physical footprint of the export process tree
+(driver, worker and encoder; no Electron window), in decimal GB.
+
+* **Profile A**: the Santorini recipe from
+  `codebase/tests/fixtures/export-speed/` unchanged (its crop gives
+  7206 × 4706 on this photo), `play_raw` preset: AVIF gain map, 1920 px long
+  edge, frame. Whole-frame CPU path.
+* **Profile B**: the photo's own grade with Clean Grain Small in HDR and SDR,
+  native-size AVIF gain map, no frame. Bounded strip path.
+
+| Profile | Build | Wall time | Peak footprint | AVIF SHA-256 |
+| --- | --- | ---: | ---: | --- |
+| A | Baseline `a654d7f9`, three runs | 147.9–156.5 s | 6.12–6.51 GB | `ff3961ee9b4eaccd969ee9844459961474e866a32b6bf8e5be5e0159e67a04a9` |
+| A | After `928e7414`, three runs | 99.6–106.3 s | 5.90–6.15 GB | same |
+| B | Baseline `a654d7f9`, three runs | 29.8–34.0 s | 3.80–3.81 GB | `ccfeedf49d0e88dd81ad286fd53e2e89a57e2d1e388ff50bb835318002dc5c05` |
+| B | After `8b300c10`, three runs | 26.7–28.5 s | 3.67–3.70 GB | same |
+
+Profile A's peak is the worker alone (6.44 GB at about 90 s, the start of the
+SDR rendition), so this export already exceeded the 4 GB whole-app ceiling
+before any change, and still does (open in the Export and Proof PRD).
+Every change kept both files byte-identical. A first Y4M version that
+converted six bands ahead raised Profile B's peak to 4.00–4.05 GB and was
+replaced by splitting each band's rows.
+
+Stage time from the `export_timing` records, seconds, HDR + SDR (after:
+mean of the three runs):
+
+| Stage | Profile A before | Profile A after | Profile B before | Profile B after |
+| --- | ---: | ---: | ---: | ---: |
+| Film Grain | 31.5 + 32.2 = 63.7 | 15.6 + 15.7 = 31.3 | — | — |
+| Film stock | 11.7 + 11.5 = 23.2 | 11.6 + 11.0 = 22.6 | — | — |
+| Tone and colour | 6.0 + 7.2 = 13.2 | 5.4 + 7.0 = 12.5 | 0.2 + 0.3 | 0.2 + 0.3 |
+| Brush mask | 5.3 + 5.5 = 10.8 | 4.8 (once) | — | — |
+| Detail | 4.1 + 5.0 = 9.1 | 3.2 + 3.2 = 6.4 | — | — |
+| Geometry | 3.1 + 4.9 = 8.0 | 3.0 (once) | 0 | 0 |
+| Halation | 3.2 + 3.8 = 7.0 | 1.9 + 1.9 = 3.8 | — | — |
+| Clean Grain (model and Grain) | 5.9 (shared) | 5.7 (shared) | 7.8 (shared) | 6.4 (shared) |
+| Local stack | 1.8 + 2.2 = 4.0 | 1.6 + 1.7 = 3.3 | — | — |
+| Vignette | 1.0 + 1.5 = 2.5 | 1.0 + 0.9 = 1.9 | — | — |
+| Strip render | — | — | 0.7 + 2.5 = 3.3 | 0.6 + 2.2 = 2.8 |
+| RAW development | 3.8 | 4.0 | 4.5 | 3.8 |
+| Output finishing, compression, framing | 1.4 | 1.4 | 0 | 0 |
+| Y4M preparation | 0.3 | 0.2 | 4.2 | 2.0 |
+| Encoder | 1.2 | 1.1 | 12.1 | 11.1 |
+| Validate and metadata | 0.1 | 0.1 | 0.7 | 0.6 |
+| Unattributed | 0.1 (0.09%) | 0.1 (0.09–0.12%) | 0.3 (0.99%) | 0.04–0.14 (0.16–0.51%) |
+
+Film stock and Clean Grain already ran on the CPU pool; tone and colour is a
+dozen separate steps, none above 5% of the wait. Steps 4a–4d were Film Grain
+on up to six workers in 32-row chunks, the SDR geometry pass and brush mask
+done once, no halation map unless shown, and exact parallel box blurs and
+Y4M band conversion.
+
+Progress (headless batch, 0.1 s polling of the queue): never backwards in
+any run. Profile A longest pause 1.08 s in both runs after the overrun fix
+(`d5492b37`; up to 2.12 s before it), 5% at 2.1 s (2% of the wait);
+Profile B longest pause 1.1–1.3 s, 5% at 2.0–2.1 s (7–8% of the wait).
+
+**Real app, Profile A with the same photo open in Grade**
+(`tests/performance/export-speed-app.js`, unpackaged Electron at
+1408 × 794, `02add6cf`): 137.3 s from Export to finished (131.9–137.3 s over
+three runs), whole-app peak 5.04 GB (4.97–5.17 GB, sampled once a second),
+AVIF SHA-256 equal to the headless file. The Export page and status bar never
+went back, longest pause 0.31 s (the page polls every 0.5 s), 5% at 2.8 s
+(2% of the wait). Memory: cache trims with 40 MB, 12 MB and 0 MB of
+rebuildable cache, then `cache_trim_paused` and silence through the end of
+the export and one more cool-down (`budget_pressure`, OS pressure none);
+Grade's Grain reclaim twice, then none. Before the guard's second revision
+the same run logged 3 trims and 5–6 Grain reclaims spread over the export.
+
+## November 22, 2026 — Windows private commit
+
+Windows PC, Ryzen 5 7600 and GeForce RTX 4070 Ti, unpackaged Electron at
+2560 × 1440 under the shared GPU lock. Fixed 6 GB whole-app default
+with the private-commit implementation in `2887a469`.
+Delivery used the same 42 MP Sony `_DSC7970.ARW`, Clean Grain Small,
+Lensfun off, CPU delivery, Q90 AVIF Gain Map and peak guarantee as the
+previous Windows run. Memory peaks below are sampled private commit in
+decimal GB.
+
+| Action | To result | Whole-app private commit | Memory outcome |
+| --- | ---: | ---: | --- |
+| Cold launch, no photo open | 5 samples at 15–19 s after the window was ready | 1.714 GB idle | No Grade source or active reservations |
+| Full-size AVIF export | 56.81 s | 5.388 GB peak | 0.612 GB below the limit |
+| Full-size AVIF Proof | 101.91 s | 5.194 GB peak | 0.806 GB below the limit |
+| 90-second Library viewport | 1.20 s to first picture, 60.7 s to the 30th | 5.558 GB in-app peak, 5.391 GB independent peak, 2.512 GB at end | All 30 eligible photos pictured |
+
+The delivery rerun kept the export's native CPU noise measurement for Proof
+by holding back the renderer's native GPU measurement publication in the
+test. The first unpinned run reproduced the existing R2-7 race: the export
+matched, then Proof picked up the GPU measurement that finished during
+export and its bytes differed. With the same measurement, export, Proof and
+both Proof tiles matched the previous hashes, with tile peaks of 329.3 HDR
+and 162.2 SDR nits and 0% clipping. The export and Proof SHA-256 was
+`2183cf282d1079f58e1da00b2f4f36a58b1505022888d2c79da167a3e0e941c1`.
+Neither delivery action logged a memory refusal, a trim or a ceiling retry.
+
+Library had one moderate cache trim when the in-app sample crossed the
+5.4 GB cache target. The 6.83 GB estimate for the line-scan DNG correctly
+hit the admission limit. There were no spurious refusals or trim loops.
+The app and independent sampler have different sampling clocks.
+
+A real child process committed 128 MiB and touched every page. Allowing
+1 MiB for the interpreter and pipe handshake, its charge rose by 128.25 MiB
+(6,500,352 to 140,980,224 bytes). `EmptyWorkingSet` reduced the working
+set from 147,492,864 to 1,208,320 bytes, with the charge still at
+140,980,224 bytes. Mocked headroom tests covered each limiting source and
+the 16 GiB budget tests confirmed that default cache shares stayed flat.
+[Windows memory policy](../product/modules/memory-and-caches.md#november-22-windows-private-commit-and-6-gb-default)
+
+## November 22, 2026 — Windows PC Grade Micro Grain with Lensfun
+
+Windows PC with a Ryzen 5 7600 and GeForce RTX 4070 Ti, unpackaged Electron
+at 2560 × 1440 under the shared GPU lock. Sony `_DSC7970.ARW` (42 MP),
+signed AHD, speck cleanup ×2.5, GPU Auto, generated SDR and the default 4 GB
+app limit. One `--micro-lens-memory` replay at `4ee831eb` and one at
+`3cc51a90`. Peaks are independently sampled proportional resident memory
+in decimal GB. Short actions can use the preceding sample.
+
+| Action | Seconds before → after | Whole app GB before → after | Backend GB before → after | GPU helper GB before → after |
+| --- | ---: | ---: | ---: | ---: |
+| Open at Fit | 18.011 → 19.085 | 2.428 → 2.477 | 1.538 → 1.617 | 0.471 → 0.452 |
+| Micro Grain at Fit, lens off | 19.453 → 20.012 | 2.099 → 2.099 | 0.920 → 0.941 | 0.597 → 0.617 |
+| Zoom to 78%, lens off | 5.808 → 6.027 | 2.819 → 2.827 | 1.555 → 1.546 | 0.588 → 0.593 |
+| Lensfun Auto at 78% | 46.296 → 41.282 | 3.155 → 3.397 | 2.053 → 2.262 | 0.570 → 0.580 |
+| Exposure +0.25 EV | 2.035 → 2.014 | 2.618 → 2.495 | 1.056 → 1.077 | 0.568 → 0.563 |
+| HDR to generated SDR | 2.546 → 2.484 | 2.435 → 2.445 | 1.227 → 1.252 | 0.564 → 0.555 |
+| Generated SDR to HDR | 0.064 → 0.064 | 2.350 → 2.445 | 1.131 → 1.252 | 0.563 → 0.548 |
+| Return to Fit | 0.012 → 0.081 | 2.350 → 2.415 | 1.131 → 1.157 | 0.563 → 0.547 |
+| Return to 78% | 0.078 → 0.012 | 2.350 → 2.415 | 1.131 → 1.157 | 0.563 → 0.547 |
+
+Both Lensfun runs kept zoom and pan. The current run built only the 4096 px
+Micro preview for the lens change and reused the GPU's matching Bayer
+preparation in 13 ms. The two lens stages together fell from 6.169 to
+0.580 s. Exposure and generated SDR reused the 4096 px source. All four
+reduced HDR and generated SDR SHA-256 comparisons matched. Micro scratch
+closed in the targeted success and cancellation tests for both coordinate
+layouts. The highest sampled current summed Windows working set was
+3.953 GB during the full replay.
+
+At 78%, with Micro using the native 7968 px processing step, the
+3473 × 1877 finished HDR viewport matched the same region of the
+7968 × 5320 whole-photo GPU surface byte for byte. An 800 px horizontal
+scroll produced a new sharp region covering the view. The RAW reload
+tests also passed pan clamping when the frame became smaller.
+
+## November 22, 2026 — Windows PC native Lensfun
+
+Windows PC, Ryzen 5 7600 (6 cores, 12 threads). Three alternating pairs
+of fresh RAW development processes per photo at `4ee831eb` and `3cc51a90`,
+using signed AHD and speck cleanup ×2.5. Canon used the manual EF-S
+18–135 mm IS profile because Auto found no unique match. Sony used the
+automatic Sigma 65 mm F2 profile. Peak is the backend lifetime working
+set read immediately after lens correction, before finishing SDR.
+
+| RAW | Lens seconds before, median (range) | Lens seconds after, median (range) | Peak MB before, median (range) | Peak MB after, median (range) |
+| --- | ---: | ---: | ---: | ---: |
+| Canon `IMG_0790.CR2`, 5202 × 3464 | 1.289 (1.279–1.324) | 0.145 (0.145–0.148) | 588.5 (587.9–589.2) | 590.9 (585.7–591.2) |
+| Sony `_DSC7970.ARW`, 7968 × 5320 | 2.694 (2.666–2.743) | 0.254 (0.254–0.255) | 1204.1 (1203.2–1204.5) | 1220.8 (1216.9–1230.5) |
+
+All six runs per photo matched on corrected float32 pixels, SDR float32
+pixels and finished 8-bit SDR. The 21 targeted Lensfun tests passed,
+including exact comparisons against whole-frame correction for both
+coordinate layouts and RAW profile selection. No strip warnings appeared
+during normal development. Setup built `lens_correction.dll`. The PyInstaller
+backend also loaded the bundled DLL and applied Lensfun Auto to the Sony.
+
+## November 22, 2026 — Windows PC AVIF delivery memory
+
+Windows PC with a Ryzen 5 7600 and GeForce RTX 4070 Ti, unpackaged
+Electron at 2560 × 1440 under the shared GPU lock. Full-size
+`_DSC7970.ARW` (7968 × 5320), Clean Grain Small, Lensfun off, CPU delivery,
+Q90 AVIF Gain Map and peak guarantee on. One run on `1d0b6720` before
+file-backed delivery and one on `3cc51a90`. The control used the full-size
+CPU noise measurement saved by the current export. Both Proof runs reused
+that exact measurement.
+
+| Action | To result before → after | App meter GB before → after | Summed working sets GB before → after |
+| --- | ---: | ---: | ---: |
+| Full-size AVIF export | 52.65 → 57.87 s | 4.615 → **3.568** | 5.375 → **4.099** |
+| Full-size AVIF Proof | 106.50 → 101.79 s | 4.582 → **3.483** | 5.904 → **4.029** |
+
+This run used proportional resident Windows pages for its then-current 4 GB budget. Both
+actions stayed below that limit. Summing the ordinary Windows process working
+sets counts shared pages in each process that maps them and exceeded 4 GB
+by 99 MB for export and 29 MB for Proof.
+
+The delivered AVIF and full-size Proof artifact shared the same SHA-256 in
+both revisions (`2183cf282d1079f58e1da00b2f4f36a58b1505022888d2c79da167a3e0e941c1`).
+Both Proof tile files and all reported tile statistics matched. HDR and SDR
+tile peaks were 329.3 and 162.2 nits, respectively, with 0% clipped for each.
+The logs recorded zero ceiling retries. Targeted tests exercised ceiling
+retry isolation, banded AVIF tile parity and endpoint eviction. Electron
+removed the Proof scratch root on normal quit. After the forced quit of the
+full Proof run, a relaunch swept the abandoned artifact, tiles and endpoints
+once the test root was aged past the five-minute grace period.
+
+## November 22, 2026 — Weighted Bayer fit checks
+
+MacBook Neo, A18 Pro and 8 GB, unpackaged Electron at 1408 × 794 under the
+shared GPU lock. These are individual qualification runs with the weighted
+fit from R2-4 at `b5b2ac1c`.
+
+| Action | DSC00264.ARW | IMG_3129.CR2 | Conditions |
+| --- | ---: | ---: | --- |
+| RAW open to first Grade picture, CPU / GPU | 22.80 / 21.48 s | 9.70 / 7.83 s | Both RAW cleanups on, Edge Colour highlights |
+| Library GPU development | 10.72 s | 5.57 s | Saved Grade settings, 2560 px Library scene |
+| GPU JPEG Ultra HDR export | 4.94 s | 1.64 s | 1024 px delivery, encoded Proof matched export byte for byte |
+
+Canon `IMG_0790.CR2` full-size CPU Micro Grain JPEG Ultra HDR export took
+29.03 s with harsh-speck cleanup on and Lensfun off, after GPU Grade
+captures at 110%. The quick Library viewport check showed the first picture
+at 0.30 s and all nine visible pictures by 30 s.
+[QUAL-1 colour comparisons](briefs/sprint-denoise-gpu-logging-2026-11-21.md#qual-1--exposure-independent-quality-fixes-output-changes)
+
+## November 22, 2026 — MacBook Neo Micro Grain with lens memory
+
+MacBook Neo, A18 Pro and 8 GB unified memory, unpackaged Electron at
+1408 × 794 under the GPU lock. Sony `_DSC7970.ARW`, 42 MP, signed AHD,
+speck cleanup ×2.5, GPU Auto, generated SDR and the 4 GB app ceiling.
+Baseline `a2aca788` already has exact Lensfun coordinate strips. The after
+run uses the scratch change in `13f9d673`. One run per version. Time is to
+the accepted Grade picture and peaks are sampled
+physical footprint in decimal GB. The Lensfun Auto action includes RAW
+re-development and restoring 78% zoom after Grade opens the new source
+at Fit.
+
+| Action | Seconds before → after | Whole-app GB before → after | Backend GB before → after | Reduced Micro cache before → after |
+| --- | ---: | ---: | ---: | --- |
+| Open at Fit | 9.75 → 10.76 | 2.156 → 2.133 | 1.555 → 1.516 | — |
+| Enable Micro at Fit, lens off | 18.09 → 19.42 | 2.160 → 2.224 | 1.112 → 1.073 | — |
+| Zoom to 78%, lens off | 5.05 → 5.16 | 4.084 → 4.110 | 1.461 → 1.463 | — |
+| Enable Lensfun Auto and return to 78% | 59.31 → 61.99 | 4.044 → 4.050 | 2.068 → 2.144 | Dropped → kept |
+| Exposure +0.25 EV | 37.05 → 38.96 | 3.947 → 4.452 | 2.187 → 2.112 | Kept after rebuilding both times |
+| HDR → generated SDR | 2.42 → 2.32 | 3.580 → 3.468 | 1.746 → 1.631 | Reused both times |
+| Generated SDR → HDR | 0.10 → 0.11 | 3.036 → 2.992 | 1.160 → 1.216 | Kept both times |
+| Return to Fit | 0.01 → 0.01 | 3.036 → 2.898 | 1.160 → 1.019 | Kept both times |
+| Return to 78% | 0.01 → 0.01 | 3.036 → 2.898 | 1.160 → 1.019 | Kept both times |
+
+Very short actions can use the immediately preceding census sample. The first
+4096 px Micro preparation, isolated from RAW re-development, peaked at
+3.854 → 3.452 GB whole-app. The new Exposure run still rebuilt the preview
+after a whole-app pressure spike and cache trim. The Lensfun Auto action
+peaked during RAW re-development, before that Micro preparation.
+The Chromium GPU helper peaked at 1.845 GB during the lens-off zoom and
+1.759 GB during Lensfun Auto in the after run. The reduced HDR and generated
+SDR preview files matched SHA-256 in both runs.
+
+[Before](../../codebase/output/micro-lens-mem/before.jsonl) ·
+[After](../../codebase/output/micro-lens-mem/after.jsonl) ·
+[Run details](../../codebase/output/micro-lens-mem/result.txt)
+
+## November 22, 2026 — MacBook Neo Grade memory
+
+MacBook Neo, A18 Pro with 8 GB unified memory, unpackaged Electron at
+1408 × 794. Each replay used the shared GPU lock and the default 4 GB app
+ceiling. Sony `_DSC7970.ARW` is a 42 MP signed AHD source with speck cleanup
+×2.5. The before measurement is the stored Micro lens replay. The after
+measurement is the review-fix retry at `44b50d60`. Peak columns are the
+independently sampled physical footprint in decimal GB. The three peak
+columns can refer to different samples during the same action.
+
+| Action | Seconds before → after | Whole app GB before → after | Backend GB before → after | GPU helper GB before → after |
+| --- | ---: | ---: | ---: | ---: |
+| Open at Fit | 10.76 → 9.78 | 2.133 → 1.819 | 1.516 → 1.229 | 0.485 → 0.485 |
+| Enable Micro at Fit, lens off | 19.42 → 17.16 | 2.224 → 2.207 | 1.073 → 1.047 | 0.675 → 0.684 |
+| Zoom to 78%, lens off | 5.16 → 4.59 | 4.110 → 3.270 | 1.463 → 1.590 | 1.845 → 0.902 |
+| Enable Lensfun Auto and return to 78% | 61.99 → 74.26 | 4.050 → 3.258 | 2.144 → 1.960 | 1.759 → 0.705 |
+| Exposure +0.25 EV | 38.96 → 2.11 | 4.452 → 3.562 | 2.112 → 1.411 | 1.694 → 0.973 |
+| HDR → generated SDR | 2.32 → 2.34 | 3.468 → 3.218 | 1.631 → 1.360 | 0.949 → 1.041 |
+| Generated SDR → HDR | 0.11 → 0.10 | 2.992 → 3.218 | 1.216 → 1.360 | 0.892 → 0.993 |
+| Return to Fit | 0.01 → 0.07 | 2.898 → 3.108 | 1.019 → 1.146 | 0.892 → 0.993 |
+| Return to 78% | 0.01 → 0.01 | 2.898 → 3.233 | 1.019 → 1.139 | 0.892 → 1.089 |
+
+All nine actions stayed below 4 GB. The automatic SDR upload is absent in
+both review-fix runs; on retry, the SDR switch dropped from the pre-fix
+3.740 GB whole-app / 1.461 GB GPU helper to 3.218 / 1.041 GB and reused the
+4096 px Micro source. The first run took 34.96 s on an intermittent CPU cache
+miss also seen before the fixes. All four preview SHA-256 hashes matched in
+both runs. Lensfun zoom handling is unchanged. The shortest actions can
+include the preceding census sample.
+
+The isolated lens-off GPU helper snapshot rose from 0.517 GB at Fit to
+1.755 GB at 78%. IOSurface rose from 92 to 764 MB and unmapped graphics
+from 289 to 715 MB. The app reported a 7968 × 5320 canvas and a 339 MB
+retained target at 78%. At the settled capture, source proxies were 74 MB
+and all Grade allocations reported by the app were 562 MB. The OS
+categories include backing outside the app's allocation counters.
+A paired GPU capture held the same 2631 × 1097 finished pixels in the
+339 MB whole-photo surface and the new 43 MB viewport surface. The
+captured pixels matched byte for byte, and panning filled the new view.
+The picture also matched in a screen crop sampled before and during
+RAW re-development. The preset ROI pan-cache driver hit the same
+retained-frame assertion on the baseline and this branch.
+
+[Before replay](../../codebase/output/micro-lens-mem/after.jsonl) ·
+[Pre-fix replay](../../codebase/output/grade-mem/after.jsonl) ·
+[After-fix retry](../../codebase/output/grade-mem/after-fixes.jsonl) ·
+[After-fix first run](../../codebase/output/grade-mem/after-fixes-first.jsonl) ·
+[Run details](../../codebase/output/grade-mem/result.txt)
+
+Scope-eviction follow-up (this commit, same MacBook Neo, photo and locked window): HDR → generated SDR reused the 4096 px Micro source in 2.622 s (3.366 GB whole app / 1.430 GB backend / 1.113 GB GPU helper), versus the earlier 34.960 s cache miss and 2.336 s cache hit. All nine action peaks stayed below 4 GB (max 3.557 GB), and all four SHA-256 hashes matched. [Replay and per-action peaks](../../codebase/output/grade-mem/scope-evict.jsonl)
+
+## November 22, 2026 — Native Lensfun correction
+
+MacBook Neo, A18 Pro and 8 GB unified memory. The isolated check ran three
+alternating pairs of fresh development processes per RAW, using the previous
+strip path at `4ee831eb` and the native path at `95cbb930`. The peak is
+the backend's lifetime physical footprint at the end of correction, before
+SDR finishing, in decimal MB.
+
+| RAW and profile | Lens seconds before, median (range) | Lens seconds after, median (range) | Peak MB before, median (range) | Peak MB after, median (range) |
+| --- | ---: | ---: | ---: | ---: |
+| Canon `IMG_0790.CR2`, 5202 × 3464, EF-S 18–135 mm IS | 0.857 (0.817–0.873) | 0.127 (0.125–0.130) | 892.2 (883.9–896.1) | 853.4 (853.2–853.5) |
+| Sony `_DSC7970.ARW`, 7968 × 5320, Sigma 65 mm F2 | 1.930 (1.923–1.959) | 0.262 (0.256–0.263) | 1,771.0 (1,767.0–1,773.3) | 1,705.6 (1,705.5–1,705.7) |
+
+The corrected float32 image and the float and 8-bit sRGB SDR finish
+matched on both RAWs. The six Sony TCA workers use at most 73.4 MB for
+coordinate strips, plus 3.5 MB for the reference prefix and row seeds.
+The Canon uses 50.2 MB in total at its width. The output image and
+calibrated signed vignetting scratch are separate and do not overlap the
+coordinate generation on the same photo.
+
+The Grade replay used unpackaged Electron at 1408 × 794 under the GPU lock
+with Sony `_DSC7970.ARW`, signed AHD, speck cleanup ×2.5, GPU Auto and
+the 4 GB ceiling. The comparison is the kept-zoom run from the
+[preceding check](#november-22-2026--lens-correction-speed) against one
+replay at `c779c36c`. The three peaks are sampled independently in decimal GB.
+
+| Action | Seconds before → after | Whole app GB before → after | Backend GB before → after | GPU helper GB before → after |
+| --- | ---: | ---: | ---: | ---: |
+| Open at Fit | 9.925 → 9.759 | 1.933 → 2.090 | 1.322 → 1.466 | 0.365 → 0.492 |
+| Micro Grain at Fit, lens off | 20.556 → 18.456 | 2.224 → 2.243 | 1.112 → 1.151 | 0.669 → 0.712 |
+| Zoom to 78%, lens off | 7.711 → 4.923 | 2.698 → 3.620 | 0.997 → 1.915 | 0.895 → 0.927 |
+| Lensfun Auto at 78% | **55.381 → 40.307** | 3.221 → 3.354 | 1.985 → 1.996 | 0.580 → 0.608 |
+| Exposure +0.25 EV | 2.181 → 2.172 | 3.136 → 3.118 | 1.043 → 1.063 | 0.876 → 0.873 |
+| HDR to generated SDR | 2.518 → 2.502 | 3.108 → 3.104 | 1.211 → 1.203 | 1.045 → 1.049 |
+| Generated SDR to HDR | 0.112 → 0.131 | 3.108 → 3.066 | 1.211 → 1.122 | 1.013 → 1.012 |
+| Return to Fit | 0.008 → 0.007 | 3.056 → 3.183 | 1.126 → 1.132 | 1.013 → 1.073 |
+| Return to 78% | 0.087 → 0.084 | 3.164 → 3.183 | 1.237 → 1.132 | 1.088 → 1.073 |
+
+| Lensfun Auto stage | Before, s | After, s |
+| --- | ---: | ---: |
+| RAW read, decode and development before Lensfun | 17.867 | 10.534 |
+| Lensfun on developed RAW | 3.394 | 0.618 |
+| Bayer read, cleanup, reconstruction and noise fit | 0.014 (reused) | 0.012 (reused) |
+| Micro Grain full-resolution render | 25.115 | 23.296 |
+| Lensfun on the Micro Grain RGB | 3.425 | 0.361 |
+| Micro source gain and scratch flush | 0.301 | 0.296 |
+| Resize to preview size | 2.012 | 1.978 |
+| Preview encode | 1.623 | 1.730 |
+| Request handoff, Grade finishing and frontend wait | 1.620 | 1.482 |
+
+The two lens stages saved 5.84 seconds in this replay. The non-lens
+RAW development stage varied between runs. The full-resolution Micro
+render is still the largest part of the wait. Exposure and generated SDR
+reused the 4096 px source, and all four preview hashes matched the Grade
+memory baseline. The highest sampled action was 3.620 GB during the
+lens-off zoom. The memory sampler dropped one reading when a short-lived
+`ps` process exited. Each action had a peak sample or used the immediately
+preceding sample for the shortest actions.
+
+The paired Library RAW driver passed. Canon and Sony GPU thumbnails
+appeared in 0.712 and 0.864 seconds. The Sony CPU reference with Lensfun
+took 5.14 seconds, versus 6.81 seconds previously. Its Lensfun stage took
+0.417 seconds. Both cameras had the same reported perceptual differences
+as the previous run. Canon Micro Grain Grade at 110% versus CPU delivery
+passed with Lensfun off. HDR ΔE ITP mean 0.150 and p99 2.277, SDR ΔE 2000
+mean 0.174 and p99 0.519, delivery peak 1000 nits. Full-size JPEG Ultra HDR
+delivery took 30.55 seconds.
+
+[Paired RAW measurements](../../codebase/output/native-lens/real-photo.jsonl)
+· [Grade replay](../../codebase/output/native-lens/after.jsonl)
+· [Backend stages](../../codebase/output/native-lens/after-backend.log)
+
+## November 22, 2026 — Lens correction speed
+
+MacBook Neo, A18 Pro with 8 GB unified memory, unpackaged Electron at
+1408 × 794, Sony `_DSC7970.ARW` (42 MP), signed AHD, speck cleanup ×2.5,
+Micro Grain on GPU Auto and the default 4 GB ceiling. Locked timing from
+the action to the accepted Grade picture. The instrumented baseline uses
+`39e66bf1`; the kept-zoom run uses the Bayer reuse in `4a3e1d4d`. The
+three physical-footprint peaks are sampled independently in decimal GB.
+
+| Action | Seconds before → after | Whole app GB before → after | Backend GB before → after | GPU helper GB before → after |
+| --- | ---: | ---: | ---: | ---: |
+| Open at Fit | 9.758 → 9.925 | 2.235 → 1.933 | 1.634 → 1.322 | 0.291 → 0.365 |
+| Micro Grain at Fit, lens off | 18.575 → 20.556 | 2.221 → 2.224 | 1.100 → 1.112 | 0.683 → 0.669 |
+| Zoom to 78%, lens off | 4.942 → 7.711 | 3.426 → 2.698 | 1.740 → 0.997 | 0.903 → 0.895 |
+| Lensfun Auto at 78% | **81.141 → 55.381** | 3.578 → 3.221 | 2.119 → 1.985 | 0.710 → 0.580 |
+| Exposure +0.25 EV | 2.412 → 2.181 | 3.584 → 3.136 | 1.405 → 1.043 | 0.953 → 0.876 |
+| HDR to generated SDR | 2.515 → 2.518 | 3.309 → 3.108 | 1.439 → 1.211 | 1.038 → 1.045 |
+| Generated SDR to HDR | 0.109 → 0.112 | 3.212 → 3.108 | 1.220 → 1.211 | 0.993 → 1.013 |
+| Return to Fit | 0.086 → 0.008 | 3.212 → 3.056 | 1.220 → 1.126 | 0.993 → 1.013 |
+| Return to 78% | 0.007 → 0.087 | 3.347 → 3.164 | 1.237 → 1.136 | 1.072 → 1.088 |
+
+| Lensfun Auto stage | Before, s | After, s |
+| --- | ---: | ---: |
+| RAW read, decode and development before Lensfun | 8.774 | 17.867 |
+| Lensfun on developed RAW | 3.127 | 3.394 |
+| Bayer read, cleanup, reconstruction and noise fit | 6.577 | 0.014 (reused) |
+| Micro Grain full-resolution render | 47.512 | 25.115 |
+| Lensfun on the Micro Grain RGB | 6.845 | 3.425 |
+| Micro source gain and scratch flush | 0.606 | 0.301 |
+| Resize to preview size | 3.302 | 2.012 |
+| Preview encode | 1.894 | 1.623 |
+| Request handoff, Grade finishing and frontend wait | 2.478 | 1.620 |
+
+The original flow completed a 1600 px Fit build, then returned to 78% and
+built the requested 4096 px preview. The Fit build used 34.416 seconds in
+the Micro source stage. It was where the 6.577-second sensor preparation
+ran, so the second request could already reuse it. The two requests each
+rendered the native image and remapped different copies of the same Micro
+result. The kept-zoom run issued only the 4096 px request and reused the
+GPU's matching Bayer preparation. The two remaining Lensfun passes correct
+different images, the default developed RAW and the reconstructed Micro
+RGB. Final encode to renderer completion took about 13 ms before and
+25 ms after (the before value uses the zoom-completion event).
+
+The old `scope-evict` replay finished in 54.019 seconds when it cancelled
+1285 and 1600 px work. The new replay removes the extra request in either
+case. A second observation with overlapping focused Python tests reached
+53.289 seconds at 78% (11.748 seconds in RAW development, including 3.015
+seconds in Lensfun). Use the unshared run above for the other action
+timings. The 21.261-second RAW development and 7.711-second lens-off zoom
+were slower in that run. The cause is unconfirmed. Both versions use the
+same RAW decode and lens-off GPU zoom paths.
+
+All actions stayed under 4 GB. All four reduced-preview SHA-256 hashes
+matched the Grade memory baseline, including the generated SDR view.
+Exposure and generated SDR reused the reduced source. Canon Micro
+Grade at 110% versus CPU delivery passed (HDR ΔE ITP mean 0.150 / p99 2.282,
+SDR ΔE 2000 mean 0.174 / p99 0.519; delivery peaked at 1000 nits). Canon CPU
+JPEG Ultra HDR delivery took 30.44 seconds. The Library RAW check passed
+on Canon and Sony, with Lensfun applied on the Sony. The GPU-backed
+thumbnail took 0.72 / 0.84 seconds respectively, compared with 2.17 / 6.81
+seconds for the CPU reference development in that driver.
+
+[Profile summary](../../codebase/output/lens-speed/result.txt) ·
+[Baseline](../../codebase/output/lens-speed/before.jsonl) ·
+[Kept zoom](../../codebase/output/lens-speed/after.jsonl) ·
+[Canon parity](../../codebase/output/lens-speed/parity.log) ·
+[Library RAW](../../codebase/output/lens-speed/library-gpu-raw.log)
+
+## November 22, 2026 — MacBook Neo Proof memory
+
+MacBook Neo, A18 Pro, 8 GB, unpackaged Electron at 1408 × 794 under the shared
+GPU lock. The same 42 MP Sony `_DSC7970.ARW` Clean Small test ran Q90 full-size
+CPU delivery with Lensfun off, export first and Proof second. The baseline
+is the November 21 MEM-1 run at `113a1c92`. The follow-up adds banded Proof
+reconstruction on `a4debeb4`. Peaks are sampled macOS physical footprint.
+
+| Action | To result before → after | Whole-app peak (B) before → after | Backend peak (B) before → after |
+| --- | ---: | ---: | ---: |
+| AVIF Gain Map export | 72.82 → 72.52 s | 6,688,700,888 → 6,940,474,176 | 5,842,867,576 → 6,066,001,536 |
+| AVIF Gain Map Proof | 124.44 → 120.73 s | 11,014,604,392 → 6,746,209,040 | 10,193,674,712 → 5,948,184,072 |
+
+Proof's whole-app peak fell 39%. The AVIF artifact and export SHA-256 matched
+each other and the baseline. Both tile IDs and statistics also matched.
+Synthetic AVIF and JPEG XL tile checks matched the whole-frame tile bytes,
+unrounded peak nits and clipped percentage.
+
+The new Proof peak is in the Python backend during full-frame HDR PQ/Y4M
+preparation for the AVIF artifact, before the combine helper starts. The
+backend accounts for 5.948 GB of the 6.746 GB peak. Later, the ceiling
+check sampled `avifdec` at 4.039 GB within a 6.487 GB whole-app sample.
+Once the artifact was ready, the largest logged tile sample was 5.044 GB,
+including one `avifgainmaputil` at 2.585 GB and Python at 1.646 GB.
+Meeting the 4 GB ceiling will require bounded AVIF preparation and ceiling
+decoding, plus reducing the overlap between the retained Proof endpoints
+and the tile helper's memory. [Driver log](../../codebase/output/proof-mem/avif-proof.jsonl) · [Run details](../../codebase/output/proof-mem/result.txt)
+
+### Banded AVIF encoder inputs and ceiling check
+
+Same MacBook Neo and 42 MP Sony delivery settings. The earlier Proof memory
+run predates Steve's weighted Bayer fit, which the driver uses for RAW cleanup.
+A second locked run with the delivery code from `0b9c6877` isolates the memory
+change on the current fit. Each row is one run, with macOS physical footprint
+sampled across the whole app.
+
+| Action and revision | To result | Whole-app peak (B) | Backend peak (B) |
+| --- | ---: | ---: | ---: |
+| Export, earlier Proof memory run | 72.52 s | 6,940,474,176 | 6,066,001,536 |
+| Export, same-revision control | 67.43 s | 7,025,867,752 | 6,178,952,904 |
+| Export, banded preparation and ceiling check | 59.24 s | **5,541,590,864** | **4,682,568,264** |
+| Proof, earlier Proof memory run | 120.73 s | 6,746,209,040 | 5,948,184,072 |
+| Proof, same-revision control | 116.34 s | 6,949,927,888 | 6,150,116,992 |
+| Proof, banded preparation and ceiling check | 105.50 s | **5,355,190,528** | **3,905,065,400** |
+
+Export's whole-app and backend peaks both occurred during CPU rendition
+rendering. Proof's whole-app peak occurred during tile tone-mapping, with
+`avifgainmaputil` at 2.902 GB and Python at 1.650 GB. Its largest Python
+sample occurred earlier while rendering the authored Proof endpoints.
+The largest logged sample during the new ceiling check was 4.279 GB for
+export and 4.232 GB for Proof, with `avifgainmaputil` reconstructing HDR.
+In the same-revision control, `avifdec` alone reached 4.039 GB in a 6.480 GB
+Proof ceiling-check sample.
+
+The banded run and same-revision control produced identical export, artifact
+and tile bytes, tile measurements and zero ceiling retries. They share a new
+hash after the Bayer fit change. Both whole-app peaks remain above 4 GB.
+Further reductions need less CPU render scratch and less overlap between the
+retained Proof endpoints and the native tile helper.
+[Driver log](../../codebase/output/proof-mem-2/avif-proof.jsonl) ·
+[Run details](../../codebase/output/proof-mem-2/result.txt)
+
+### File-backed frames and split Proof tile encoding
+
+Same 42 MP Sony, full-size CPU Q90 AVIF Gain Map, Clean Small, Lensfun off
+and peak guarantee on. The MacBook Neo used the 4 GB setting and a disposable
+profile seeded with the CPU noise measurement from the whole-frame control.
+
+| Action | To result before → after | Whole-app peak (B) before → after | Backend peak (B) before → after | Peak scratch with profile (B) |
+| --- | ---: | ---: | ---: | ---: |
+| AVIF Gain Map export | 59.24 → 55.10 s | 5,541,590,864 → **3,594,121,984** | 4,682,568,264 → 1,181,517,840 | 1,529,548,800 |
+| Full-size AVIF Proof | 105.50 → 95.58 s | 5,355,190,528 → **3,564,122,976** | 3,905,065,400 → 1,170,639,416 | 1,564,164,096 |
+
+The native helper led both whole-app peaks. It used 2.106 GB during export’s
+ceiling reconstruction and 2.102 GB while tone-mapping the first Proof tile
+to Y4M. The Python backend used 0.658 GB and 0.673 GB at those samples. Its
+separate peaks were early in rendition preparation. Scratch peaks include
+the disposable profile. Earlier runs did not sample scratch disk use.
+
+Export and the Proof artifact matched SHA-256
+`ff42ef7d45b291da5251ca354b7908845cb37ea68318d18a205c054a6a4bc431`.
+Both Proof tiles, the retained endpoints and the displayed statistics
+matched. The encoder accepted the first attempt in both actions.
+[Driver log](../../codebase/output/proof-mem-3/avif-proof.jsonl) ·
+[Run details](../../codebase/output/proof-mem-3/result.txt)
+
+### November 22 — PROOF-MEM-3 review check
+
+MacBook Neo, review fixes through `bd29d74f`. The locked Electron run used
+the same Sony RAW, Clean Small, seeded CPU noise measurement, Q90 gain map,
+1408 × 794 window and 4 GB app limit.
+
+| Action | To result | Whole-app peak (B) |
+| --- | ---: | ---: |
+| AVIF Gain Map export | 58.82 s | 3,635,475,296 |
+| Full-size AVIF Proof | 98.23 s | 3,764,139,112 |
+
+Export, the Proof artifact, both tiles and both retained endpoints matched
+the earlier hashes. The tile statistics also matched and neither action
+retried its encode. The native tone-map helper accounted for 197 MB of the
+200 MB increase in the sampled Proof peak. The temporary driver's teardown
+failed after both results had been recorded. The production sweep removed
+the abandoned test root when aged. [Driver log](../../codebase/output/proof-mem-3b/avif-proof.jsonl)
+
+## November 21 — Byte-exact Lensfun strips on MacBook Neo
+
+MacBook Neo, A18 Pro and 8 GB unified memory. Isolated CPU RAW development
+with Lensfun 0.3.4 via lensfunpy 1.18.0 and the `2ac61a8f` whole-frame
+path as reference. Three fresh processes for each method and photo.
+The kernel's peak physical footprint is read at the end
+of lens correction, before finishing. Both methods use the same float32
+RAW input, profile and bilinear remap. Values are decimal MB.
+
+| RAW | Whole-frame coordinates, median (range) | Exact strips, median (range) | Median peak RAM saved |
+| --- | ---: | ---: | ---: |
+| Canon `IMG_0790.CR2`, 5202 × 3464, manual EF-S 18–135 mm IS | 1,349.3 (1,348.9–1,353.6) | 887.5 (887.3–888.8) | 461.8 MB |
+| Sony `_DSC7970.ARW`, 7968 × 5320, Auto Sigma 65 mm F2 | 2,826.1 (2,824.1–2,838.7) | 1,768.3 (1,764.3–1,768.4) | 1,057.9 MB |
+
+Both RAWs matched every coordinate in both layouts, the corrected float32
+image, the finished float SDR image and its 8-bit sRGB encoding. These
+peaks cover the backend process through lens correction. Windows
+confirmation is open.
+[R2-6](briefs/sprint-denoise-gpu-logging-2026-11-21.md#mem-1--one-memory-budget-on-the-macbook-neo-overnight)
+· [Mac measurements and hashes](../../codebase/output/r2-6-lens/)
+
+## November 21, 2026 — MacBook Neo MEM-1
+
+MacBook Neo, A18 Pro and 8 GB unified memory, app `0.9.3` at `113a1c92`.
+Unpackaged Electron at 1408 × 794 points under the shared GPU lock, disposable
+profiles, default 4,000,000,000-byte app ceiling and the unmodified 7968 × 5320
+Sony `_DSC7970.ARW` with harsh-speck cleanup ×2.5. GPU Auto selected 2 GiB
+except in the Custom run. Grade times end at the accepted sharp frame, or
+the accepted reduced frame for lens-on Micro. Slider times start at release.
+Memory is sampled macOS physical footprint, in decimal GB unless given in bytes.
+The frame time and peak sample can fall at different points within an action.
+A dash means the action finished between memory samples. [Run logs](../../codebase/output/mem-1-mac/)
+
+### Grade
+
+| Method and action | To picture | Accepted Grain route | Peak app RAM |
+| --- | ---: | --- | ---: |
+| Clean Small, Auto, enable at HDR Fit | 8.94–9.08 s | GPU, exact 1285 px | 2.34–2.37 GB |
+| Clean Small, Auto, zoom to 110% | 0.71–0.73 s | GPU, exact native region | 2.09–2.10 GB |
+| Clean Small, Auto, pan at 110% | 0.68–0.69 s | GPU, exact native region | 2.68–3.16 GB |
+| Clean Small, Auto, release Grain Evenness | 1.18 s | GPU, exact native region | 2.40 GB |
+| Clean Small, Custom 0.25 GiB, enable at HDR Fit | 18.75 s | CPU preparation, WebGPU draw, exact 1285 px | 2.00 GB |
+| Clean Small, Custom 0.25 GiB, zoom to 110% | 0.51 s | CPU preparation, WebGPU draw, exact native region | 1.73 GB |
+| Clean Small, Custom 0.25 GiB, pan at 110% | 1.02 s | CPU preparation, WebGPU draw, exact native region | 2.92 GB |
+| Clean Small, Custom 0.25 GiB, release Grain Evenness | 2.42 s | CPU preparation, WebGPU draw, exact native region | 2.00 GB |
+| Micro, Auto, lens off, cold enable at HDR Fit | 20.90 s | GPU, exact 1285 px | 2.19 GB |
+| Micro, Auto, lens off, zoom to 110% | 1.78 s | GPU, exact native region | 2.55 GB |
+| Micro, Auto, lens off, pan to second region | 1.63 s | GPU, exact native region | 3.06 GB |
+| Micro, Auto, lens off, release Luminance | 1.38 s | GPU, exact native region | 2.90 GB |
+| Micro, Auto, lens off, release Color | 0.81 s | GPU, exact native region | 2.83 GB |
+| Micro, Auto, lens off, release Detail | 0.78 s | GPU, exact native region | 2.71 GB |
+| Micro, Auto, lens off, return to Fit | 15.49 s | GPU, exact 1285 px | 2.64 GB |
+| Micro, Auto, lens off, Fit HDR → generated SDR | 0.054 s | GPU, exact 1285 px, reused Fit | — |
+| Micro, Auto, lens off, Fit generated SDR → HDR | 0.045 s | GPU, exact 1285 px, reused Fit | — |
+| Micro, Auto, Lensfun Auto, enable at 78% | 46.95 s | CPU, reduced 4096 px | **5.465 GB** |
+| Micro, Auto, Lensfun Auto, Exposure +0.25 EV at 78% | 46.99 s | CPU, reduced 4096 px, fresh preparation | **4.794 GB** |
+| Micro, Auto, Lensfun Auto, HDR → generated SDR at 78% | 45.90 s | CPU, reduced 4096 px, fresh preparation | **4.455 GB** |
+| Micro, Auto, Lensfun Auto, generated SDR → HDR at 78% | 0.034 s | CPU, reduced 4096 px, returned to prepared picture | 2.72 GB |
+| Micro, Auto, Lensfun Auto, return to Fit | 0.010 s | CPU, existing reduced 4096 px picture | — |
+| Micro, Auto, Lensfun Auto, return to 78% | 0.010 s | CPU, existing reduced 4096 px picture | — |
+
+At 110%, Micro held the same crop through all three sliders. At 78% it held
+the crop through Exposure and both lane changes and returned to the same
+position after Fit. No blocks or colour bands were visible in the sampled
+GPU pan, GPU SDR Fit, or lens-on HDR and SDR views. The CPU run described
+the 4096 px picture as limited and said export was full size. The backend
+logged 44.58 s of initial preparation, 44.72 s of fresh preparation on the
+Exposure action, and 43.58 s on the first SDR switch. The largest process
+at the initial 78% peak was Python, 2,710,195,296 bytes, followed by the
+Chromium GPU helper at 2,228,798,976 bytes. The retained source and
+original shared 508,677,120 bytes, and the reported working cache was empty
+at that sample. The same sample has 2,201,518,176 backend bytes beyond the
+retained source.
+
+An allocation replay of the first lens-on action found **1,017,354,240 B**
+in full-frame Lensfun coordinates, **508,677,120 B** each in its input
+and output, **508,677,120 B** in the retained Grade source, and
+**84,779,520 B** in the prepared Bayer sensor. The trace did not identify
+a separate Bayer tile cache allocation. At the sample's 2,741,521,672 B
+backend footprint, those named arrays leave **113,356,552 B** unassigned.
+The GPU helper reached **2,561,476,120 B** at the replay's
+**5,843,088,176 B** whole-app peak. Its internal allocations were beyond
+the scope of the backend trace.
+[Micro lens allocation trace](../../codebase/output/mem-1-mac/micro-lens-allocation.jsonl)
+
+On cold GPU Micro Fit, the source preparation request lasted 7.73 s and
+the exact reduction stage lasted 12.96 s. The 66 Bayer region responses
+occupied 11.25 s of wall time across this action and transferred 228.2 MB.
+The final submission reached the presentation callback in 6.7 ms. The
+first 110% pan took 1.63 s, including nine Bayer responses spanning 0.75 s
+and 15.6 MB of data. The measured region work totalled 0.79 s, includes
+fetches, and overlaps the measured proxy work. Submission to presentation
+took 8.1 ms. The app timings cannot split GPU upload, demosaic, Grain
+resolve and reduction into separate hardware times. The Metal trace was
+unavailable. [Micro Grade log](../../codebase/output/mem-1-mac/grade-micro-off-1.jsonl)
+
+### Native AVIF Gain Map export and Proof
+
+Clean Small on both generated renditions, Lensfun off, Q90, original
+size, no metadata, peak guarantee on and CPU delivery selected as in the
+checklist. Proof followed export in the same profile with a 1000-nit target.
+Both completed and the encoded Proof and export hashes matched.
+The separate Windows PC observation was about 6.2 GB for the standalone
+backend working set. Mac physical footprint is a different measure and
+includes memory charged to the process after macOS compresses it.
+[Mac driver results](../../codebase/output/mem-1-mac/avif-proof.jsonl)
+
+| Action and accepted route | To result | Whole-app peak | Backend peak | Largest process and stage at both peaks |
+| --- | ---: | ---: | ---: | --- |
+| Full-size AVIF Gain Map export, CPU | 72.82 s | **6,688,700,888 B** | **5,842,867,576 B** | Python backend, HDR Y4M preparation before the combine helper |
+| Full-size AVIF Gain Map Proof, CPU | 124.44 s | **11,014,604,392 B** | **10,193,674,712 B** | Python backend, full-size Proof reconstruction after the encoded artifact was ready |
+
+At each peak Grade retained **508,677,120 B**. The source and Retouch
+original shared those bytes and the Library cache census reported 0 B.
+Each finished float32 RGB rendition is **508,677,120 B**. The one shared
+Grain result has the same byte size during render. It is released before
+the export writes Y4M and Proof's file-backed copy is unmapped before AVIF
+encoding and final reconstruction. Proof retains two endpoint planes of
+**508,677,120 B** each, the authored HDR and the SDR converted to the
+matrix working space. The SDR conversion runs in bands and precedes the
+final Proof peak. The two Proof reconstruction requests can overlap.
+
+After deducting the source and two known full-frame planes, the baseline
+backend samples leave **4,316,836,216 B** in export and **8,667,643,352 B**
+in Proof without individual allocation attribution. The process census
+assigns the remaining **845,833,312 B** and **820,929,680 B**, respectively,
+to the other app processes in those samples.
+
+The allocation replay put **6,121,287,044 B** of live traced allocations
+at the sampled **5,833,348,568 B** export backend footprint. Its stack
+was converting the finished HDR rendition to BT.2020 PQ for Y4M.
+A nearby allocation snapshot includes the retained source and both finished
+renditions at **508,677,120 B** each, a full-frame BT.2020 intermediate
+of the same size, and four PQ transfer arrays totalling **2,034,708,480 B**.
+
+During Proof reconstruction, both target requests were in the gain-map
+formula simultaneously. One stack sample identifies **5,086,771,200 B**
+in ten distinct named arrays. Two are the shared endpoints. Each request
+holds its own clipped endpoints, log-gain and normalized gain planes.
+A nearby allocation snapshot attributes **9,156,188,160 B** to
+reconstruction temporaries from gain and RGB math and array clipping,
+in addition to **1,526,031,360 B** for the retained source and endpoints.
+At the replay's **10,804,945,872 B** backend footprint peak, the live
+allocation census read **10,445,206,055 B**. Traced allocation sizes and
+charged footprint measure different things. The original peaks above use
+the uninstrumented run. [Backend allocation trace](../../codebase/output/mem-1-mac/avif-proof-allocation.jsonl)
+
+The AVIF combine helper was recorded at **1,968,604,960 B** during export
+and **1,928,627,976 B** during Proof. Export's `avifdec` reached
+**3,948,924,096 B** in a separate peak-check sample. During Proof tile
+encoding, one `avifgainmaputil` process was sampled at **2,779,089,392 B**
+and an earlier sample had two helpers at **2,028,717,904 B** and
+**1,531,905,488 B** concurrently. The largest whole-app samples in the table
+had no AVIF helper. [Delivery log](../../codebase/output/mem-1-mac/avif-proof-backend.log)
+
+## November 21 — Windows PC Denoise follow-up (INT-2)
+
+Unpackaged Electron at 2560 × 1440 under the shared GPU lock. Sony
+`_DSC7970.ARW` (7968 × 5320), harsh-speck cleanup ×2.5, fresh app per
+condition. Tests used the existing 10% timing allowance and required peak
+RAM not to rise. RAM is sampled across the whole app in decimal GB.
+
+| Grade action at `0e1563d4` | OpenCV one thread | OpenCV default (12) | Conditions |
+| --- | ---: | ---: | --- |
+| CPU Micro Grain, first sharp at 110% | 11.13 s / 2.12 GB | 9.92 s / 2.20 GB | Lensfun Auto, verified CPU region and exact native presentation |
+| CPU Micro Grain, settled Fit | 31.24 s / 3.61 GB | 27.28 s / 3.74 GB | From the first 110% frame to exact 1610 px Fit |
+| Forced-CPU Clean Small, first sharp at 110% | 4.13–4.14 s | 4.15–4.16 s | Lens off, Evenness 0.65, native model warmed in Grade |
+| Forced-CPU Clean Small, peak and all native tiles | 2.12–2.34 GB / 11.89–12.20 s | 2.37–2.47 GB / 11.77–12.05 s | Two fresh apps per setting in one-thread, default, default, one-thread order |
+
+Both Clean Small settings used five workers, with 29 foreground and 218
+background tiles in every run. Tile completion time was similar. The earlier
+one-thread RAM increase at `35a6b9ce` did not repeat at the integrated tip.
+Per-process samples showed transient peaks in Python and Chromium at
+different times, leaving the cause of the earlier increase unresolved.
+The default was faster for Micro Grain but raised its RAM at both views.
+The shipping setting stays at one thread.
+
+For AVIF Gain Map delivery, both revisions exported the same Sony Clean Small
+grade at native size, Q90, dithering off, with CPU delivery forced. Each run
+used a fresh profile. The cold session never opened Grade. The warm session
+waited for its finished Grade preview and native GPU noise measurement.
+
+| CPU AVIF export | Cold | After Grade |
+| --- | ---: | ---: |
+| Round-one base `deb2fc6f` | 80.79 s | 79.50 s |
+| Integrated tip `0e1563d4` | 64.89 s | 64.04 s |
+
+Both revisions produced cold SHA-256
+`42b82f61a4c7f818b339cd3026937683b846641fc5d4a304dbb5b2f050351fdb`
+and warm SHA-256
+`845c9495f9a6146ee857872072287379df8179d18e925d3d1bf724ba5ec3adbb`.
+Across all decoded pixels, the cold-to-warm difference was HDR ΔE ITP
+0.669 mean / 2.075 p99 and SDR ΔE 2000 0.136 mean / 0.663 p99.
+Cold delivery measured the native source on the CPU. Warm delivery reused
+the GPU noise model under the same native cache key, a behavior already
+present in round one. Export behavior remains open for Steve's decision.
+
+## November 21 — Windows PC Denoise triage (INT-2)
+
+Unpackaged Electron at 2560 × 1440, Sony `_DSC7970.ARW` (7968 × 5320),
+lens off and harsh-speck cleanup ×2.5. Each sample used a fresh app under
+the GPU lock. RAM is sampled whole-app use in decimal GB. The existing 10%
+timing allowance applies.
+
+| Action | First sharp at 110% | All 247 native tiles | Peak RAM | Revision or condition |
+| --- | ---: | ---: | ---: | --- |
+| Forced CPU Clean Small | 4.01 s | 14.73 s | 2.21 GB | Round one, `411f0cc6`. INT-2a had sampled 2.38 GB here. |
+| Forced CPU Clean Small | 4.02 → 3.81 s | 14.76 → 12.29 s | 2.42 → 2.19 GB | Immediately before and after CG-2, `386c05d0` → `ad5e7554`. |
+| Forced CPU Clean Small | 3.76 → 3.68 → 3.59 s | 12.36 → 12.27 → 12.25 s | 2.42 → 2.47 → 2.42 GB | After MG-1 (`665c06b5`), pre-MEM-1 (`35a6b9ce`), and integrated triage (`6bb48eee`). |
+| Forced CPU Clean Small | 3.53–3.55 → 3.54–3.59 s | 12.08–12.10 → 12.15–12.22 s | 2.05–2.15 → 2.38–2.65 GB | Same `35a6b9ce` code, alternated OpenCV default (12 threads) and MG-1's one-thread setting across four fresh apps. |
+
+The same-revision comparison isolates MG-1's startup OpenCV setting as a
+contributor to the peak increase first seen in INT-2a (2.38 → 2.61 GB).
+The largest resident process varied between runs. Changing OpenCV's
+process-wide setting during a request is unsafe, and reverting it at
+startup would also change threading for Micro Grain's tile workers. The
+startup setting remains as shipped.
+
+For MEM-1, SHA-256 matched on the finished GPU Clean Small HDR and SDR
+Grade frames at Fit and 110%. The comparison used `35a6b9ce`, the first
+parent of the MEM-1 merge, and the integrated `6bb48eee`.
+
+With matching GPU Grade warm-up, full-size CPU AVIF Gain Map export was
+62.03 → 67.71 s (peak whole app 7.15 → 7.21 GB) from `35a6b9ce` to
+`6bb48eee`. Export SHA-256 matched: `25eb92e41746dcb64694de5291384026ca447fa0548440da223f96ffa9d2a2d2`.
+Proof produced the same file hash on both revisions. The exploratory
+pre-MEM-1 cold export differed from its Proof before the Grade warm-up was
+matched. Proof took 103.82 s after the warm-up on `6bb48eee`; the cold
+pre-MEM-1 observation was 108.94 s, with different starting caches.
+
+## November 21 — Windows PC interim Denoise integration (INT-2a)
+
+Unpackaged Electron at 2560 × 1440, Sony `_DSC7970.ARW` (7968 × 5320)
+from the shared staged copy, harsh-speck cleanup ×2.5, one observation per
+condition under the same GPU lock. Times start at the user action. RAM is
+sampled whole-app use in decimal GB. Use the existing 10% timing allowance
+for shared-machine variation.
+
+| Action | Comparison | Conditions |
+| --- | --- | --- |
+| Lens-corrected CPU Micro Grain, first sharp at 110% | 10.07 s, 2.11 GB | `35a6b9ce`, Lensfun Auto, native AVIF viewport. Earlier MG-2 RGBA8 sample was 10.38 s, 2.05 GB. |
+| Lens-corrected CPU Micro Grain, settled Fit | 29.30 s, 3.43 GB | `35a6b9ce`, straight from the initial 110% picture, exact 1610 px AVIF. Earlier MG-2 sample after panning was 27.30 s, 3.43 GB. |
+| Forced CPU Clean Small, first sharp at 110% | 3.48 → 3.50 s | Same `35a6b9ce` code, OpenCV default (12 threads) → shipping one thread. Lens off, CPU preparation and WebGPU presentation. A temporary launch hook restored the OpenCV default at the startup call, then was removed. |
+| Forced CPU original-size Q90 SDR JPEG export with Clean Small | 19.13 → 18.01 s | Same OpenCV pair. Timed from Export to the completed file and status. JPEG bytes were identical. |
+| Forced CPU Clean Small, first sharp / all native tiles / peak RAM | 3.85 → 3.50 s / 14.01 → 11.84 s / 2.38 → 2.61 GB | `411f0cc6` → `35a6b9ce`, isolated apps in the same locked run, lens off. Current tip also measured 2.48 GB with OpenCV at its default. The revision comparison includes the other round-two changes. |
+
+## November 21 ? Windows PC CPU Micro Grain visible area
+
+Windows PC, Ryzen 5 7600, unpackaged Electron at 2560 ? 1440, Sony
+`_DSC7970.ARW` (7968 ? 5320), HDR Grade, Lensfun Auto applied and harsh-speck
+cleanup ?2.5. MG-2 uses the region renderer in `2fbd9672`, based on `52c94217`. Use the existing 10% timing
+allowance for shared-machine variation. RAM is sampled whole-app use in
+decimal GB. The locked runs used RGBA8 for native detail. Separate targeted
+checks cover the final HDR AVIF response, whose viewer latency remains open.
+
+| Action | Earlier observation | MG-2 verification | Conditions |
+| --- | ---: | ---: | --- |
+| First CPU Micro Grain picture | 58.04 s / 3.07 GB | 10.38 s / 2.05 GB | Earlier MG-1 was a reduced 4096 px picture at 78% with the withdrawn Lensfun strip trial. MG-2 is sharp native detail at 110%. |
+| Pan to the far corner | No native detail | 3.81 s / 1.95 GB | At 110%, outside the initial tile region. The first MG-2 run sampled 2.68 GB during the pan. |
+| Fit immediately after panning | ? | 0.012 s | Approximate 960 px underlayer at Fit layout. |
+| Settled CPU Micro Grain Fit | 29.93 s / 4.10 GB | 27.30 s / 3.43 GB | 1610 px. The final Fit follow-up releases cached tiles as their pixels are copied into the whole frame. |
+
+Both native Sony regions (centre and lower right, about 43 MB of float32
+pixels together) matched independent whole-frame CPU development and Grade
+byte for byte. Canon Lensfun coverage used signed inputs with distortion,
+TCA, vignette and indexed crop/rotation. The cold Sony first picture is
+still about ten seconds. MacBook Neo memory has yet to be measured.
+## November 21 — AVIF Gain Map and full-size Proof Grain sharing
+
+Windows PC, standalone production CPU export and Proof on Sony
+`_DSC7970.ARW` at 7968 × 5320, with Clean Grain Small in both renditions.
+Default encoding settings and developed RAW, from invocation to encoded
+result or ready Proof artifact. One sample per action and revision.
+Before was `52c94217`. After was DLV-1 on `sprint/delivery-grain-share`.
+The initial five-minute GPU lock expired during the last arm, so only the
+after Proof sample was completed in a second locked run. Export before
+included a cold noise-model measurement of about one second. The other
+arms reused that model. Peak RAM is the standalone backend working set
+sampled every 20 ms, with a 5% allowance for sampling variation.
+
+| Action | Wait before → after | Peak RAM before → after | Grain renders |
+| --- | ---: | ---: | ---: |
+| AVIF Gain Map export | 54.51 → 44.88 s | 6.211 → 6.206 GB | 2 → 1 |
+| Full-size AVIF Proof | 94.56 → 60.08 s | 6.212 → 6.205 GB | 4 → 1 |
+
+All four encoded files had SHA-256
+`dc36fa40678dfe5070ad831d3d4e99b0c1894a6677cd544ea282db124634ef8c`.
+Both rendered Proof endpoints matched their own before hashes as well.
+The one shared RGB Grain frame is 508,677,120 bytes at this resolution.
+The native AVIF path already exceeded the 4 GB app ceiling in this CPU test.
+
+## November 21 — Windows PC GPU Grain Fit scheduling trial
+
+Windows PC, unpackaged Electron at 2560 × 1440 and a 2 GiB graphics
+setting. Sony `_DSC7970.ARW` (7968 × 5320), HDR Grade, lens correction
+off, harsh-speck cleanup ×2.5. One locked Electron run on base
+`411f0cc6`, first with the original renderer and then with the trial
+renderer. The second arm reused the backend process. In particular,
+the full cold Clean and Micro enable waits include startup and source
+preparation, and their differences cannot be attributed to the shaders
+or queue changes alone.
+
+| Action | Original renderer | Trial renderer | Timed stage |
+| --- | ---: | ---: | --- |
+| Micro Color at 110% (62%, 43%, 71%) | 1.94 / 1.68 / 1.65 s | 1.61 / 1.81 / 1.73 s | The three settled waits showed no consistent gain. |
+| Micro enable to exact Fit | 24.15 s | 12.67 s | Exact native reduction 15.02 → 12.47 s. |
+| Cold Clean Small enable to exact Fit | 8.79 s | 4.18 s | Native fit 1.79 → 1.86 s, native reduction 2.49 → 2.18 s. |
+
+The GPU produced matching full-frame SHA-256 hashes in all five pairs.
+The two Fit captures were 1610 × 1075 and included all four photo edges
+after the native strip reduction. The three native captures were 2462 ×
+1333 and included partial tiles. All five pairs stayed on the GPU. The run
+used wall-clock stage timing. It did not collect per-pass GPU timestamps.
+
+`bef10902` keeps the Fit scheduling change: two cores sharing one Bayer
+band submit together, and at most two Fit reduction rectangles are queued.
+Clean did not use the experimental halo trim, so its reduction stage
+isolates the scheduling change. The Micro trial also trimmed late colour
+work. That trim did not consistently improve the slider and was dropped.
+The timing of Micro Fit with the final scheduling-only patch still needs an
+isolated pair. AHD resource pooling, calibration fetch overlap and
+measurement-submit batching remain open without measured user-visible gains.
+On the MacBook Neo, profile the AHD, wavelet and colour passes separately,
+and check Fit queue overlap and peak app memory on both the Canon and Sony.
+
+## November 21 — Adaptive Denoise parity check
+
+Unpackaged Electron on the Windows PC at 2560 × 1440, with a 1500 × 1000
+synthetic noisy TIFF. The driver selects Standard explicitly and uses CPU
+preparation with WebGPU reconstruction for Fine and Clean Grain. These
+single observations include diagnostic readback.
+
+| Action | Pre-sprint `f424bbdd` | Sprint `629d8898` with updated driver |
+| --- | ---: | ---: |
+| Fine Grain preparation and readback | 1.33 s | 1.28 s |
+| Clean Grain preparation and readback | 1.20 s | 1.28 s |
+| Clean Grain live blend and readback | 0.68 s | 0.67 s |
+
+## November 21 — Grade Grain forced-budget recovery replay
+
+Windows PC, RTX 4070 Ti, unpackaged Electron at 2560 × 1440, working changes
+based on `0ab656bb`. Clean Grain Small at Fit on the approved 7968 × 5320
+`_DSC7970.ARW`, lens off and harsh-speck cleanup ×2.5. This single
+forced-budget replay verifies routing and gives no same-condition speed comparison.
+
+| Action | Total wait | Conditions |
+| --- | ---: | --- |
+| Enable under forced Grain budget | 23.11 s to return with CPU Grain ready | 128 MiB test budget. The backend spent 16.65 s preparing Grain. |
+| Restore Auto and retry | 5.81 s to accepted GPU picture | Same action ID, prior noise measurement reused. The entire two-phase action took 28.92 s. |
+
+## November 21 — Windows PC CPU Grain sprint
+
+Windows PC, isolated Electron at 2560 × 1440, Sony `_DSC7970.ARW`
+(7968 × 5320), Clean Grain Small, lens correction off and harsh speck
+cleanup at ×2.5. Grain preparation was forced to the CPU with normal GPU
+presentation. The baseline `f424bbdd` and the first implementation ran in
+one GPU-lock session. Rounds two and three each used one more locked session
+under the same conditions, building on `dbe4a215` and `68944ed0` respectively.
+
+| Action | Baseline | First implementation | Round two | Round three | Conditions |
+| --- | ---: | ---: | ---: | ---: | --- |
+| Enable at 110% to the first sharp picture | 21.94 s | 17.34 s | 4.74 s | 4.25 s | Windows PC, cold Grade preparation, HDR |
+| Release Grain Evenness at 110% to the matching sharp picture | 19.62 s | 15.80 s | 3.11 s | 2.63 s | Windows PC, HDR, whole-photo grain fit reused |
+| Whole-photo preparation, enable / release | 17.28 / 15.63 s | 17.49 / 15.83 s | 15.07 / 13.30 s | 15.69 / 13.98 s | Windows PC, from preparation start to all native tiles ready |
+| Sampled peak whole-app RAM, enable / release | 2.21 / 2.39 GB | 2.34 / 2.57 GB | 2.54 / 2.74 GB | 2.33 / 2.24 GB | Windows PC, through native fill, decimal GB |
+| Backend RAM at the whole-app peak, enable / release | — / 1.22 GB | — | 1.23 / 1.41 GB | 0.96 / 0.85 GB | Windows PC, charged bytes at each action's whole-app peak |
+
+Round two met the quarter-wait target of 5.49 s. Whole-photo preparation
+improved by 13% on enable and 15% on release. On enable the cached noise-model
+request took 7 ms, grain fit 1.16 s, scratch setup 4 ms and the visible-tile
+batch 1.49 s. The renderer
+loaded reduced and native source proxies, then drew 12 GPU tiles for the
+visible picture. The quick underlayer issued no prepared Fit read.
+The native queue logged 29 foreground and 218 background CPU tiles across
+the enable. Summed worker times were about 74 s each for wavelet and colour,
+and 0.69 s for writes. The 2.74 GB release peak included 1.41 GB charged to
+the backend and 1.08 GB across the two largest Electron processes.
+
+Round three capped simultaneous native Grain workspaces across Grade and
+Library at five on the 12-logical-CPU PC. The isolated Sony backend peaked
+at 0.92 GB working set, down from 1.31 GB with round two's twelve workers.
+Both returned to about 0.61 GB at fill completion. The same source, scratch
+reservation and cache produced byte-identical native pixels and sampled Fit
+reads on both Sony and Canon. The locked run met the first-picture and RAM
+targets. The 30% whole-photo speed target remains open.
+
+The Windows PC offline comparison against `f424bbdd` matched the bytes of
+the entire native image and sampled Fit reads for Sony `_DSC7970.ARW` and
+Canon `IMG_0790.CR2`. On the Sony, the contiguous layout reduced summed
+worker time writing scratch from 12.45 s to about 0.70 s. Round two matched
+the bytes again after switching to append-on-write scratch, batching scratch
+reads and reusing wavelet and colour arrays. The 768-pixel trial with six
+workers finished the Sony in 10.73 s and peaked at 1.53 GB in the offline
+backend. The same trial series measured 1.33 GB for the baseline backend.
+Twelve workers with 768-pixel tiles raised that peak to 2.32 GB for 10.64 s.
+The app keeps the existing 512-pixel tile size.
+## November 21 — Windows PC native Clean Grain colour
+
+One locked run on the CG-2 build in unpackaged Electron at 2560 × 1440.
+Sony `_DSC7970.ARW` (7968 × 5320), Clean Grain Small, lens correction off,
+harsh speck cleanup ×2.5 and a cached noise model. Grain ran on the CPU
+with GPU presentation. The CPU-1 values are its round-three enable sample.
+
+| Action | CPU-1 | CG-2 |
+| --- | ---: | ---: |
+| Enable at 110% to the first sharp picture | 4.25 s | 4.19 s |
+| Whole-photo preparation through all native tiles | 15.69 s | 14.16 s |
+| Sampled peak whole-app RAM through native fill | 2.33 GB | 2.42 GB |
+
+Whole-photo preparation was 18% faster than the original 17.28 s enable
+baseline. The 30% target remains open, and the sampled RAM rose by 0.09 GB
+against CPU-1. All 859 native Canon and Sony tiles matched the bytes of the
+original preparation across both splotch sizes. An earlier Sony corner probe
+showed two differing float32 values before packing. The original OpenCV
+magnitude stage reproduced that variation when compared with itself, and
+the complete repeat matched even before packing.
+
+## November 21 — Large-photo Grain in Grade
+
+Windows PC, unpackaged Electron at 2560 × 1440, 2 GiB graphics setting,
+device texture edge 16,384, HDR Grade and lens correction off. Measured
+once on the GPU-1 implementation based on `f424bbdd`, from action start
+through the settled picture. Fine Fit includes the first calibration.
+Clean Small Fit reused the calibration. The 110% rows are warm zoom
+transitions using a 2462 × 1332 native viewport. App peak is sampled
+whole-app memory. GPU peak is the larger of the renderer's logical estimate
+and the recorded resident-plus-reservation total, in bytes.
+
+| Input | Method | View | GPU wait (s) | Fit / reduction reservations (B) | GPU peak (B) | App peak (B) |
+| --- | --- | --- | ---: | --- | ---: | ---: |
+| DSC00636.ARW, 8660 × 5784 | Fine | Fit | 15.28 | 85,599,904 / 108,601,968 | 232,531,688 | 1,969,376,105 |
+| DSC00636.ARW | Fine | 110% | 1.80 | Reused | 284,674,512 | 2,117,039,245 |
+| DSC00636.ARW | Clean Small | Fit | 6.12 | Reused / 158,722,864 | 389,847,792 | 3,179,560,955 |
+| DSC00636.ARW | Clean Small | 110% | 1.30 | Reused | 406,139,312 | 2,202,131,890 |
+| Synthetic linear TIFF, 9504 × 6336 | Fine | Fit | 7.94 | 85,599,904 / 106,361,336 | 231,337,560 | 2,722,068,767 |
+| Synthetic linear TIFF | Fine | 110% | 2.02 | Reused | 323,593,752 | 3,219,134,752 |
+| Synthetic linear TIFF | Clean Small | Fit | 6.14 | Reused / 156,157,368 | 406,279,304 | 3,646,434,739 |
+| Synthetic linear TIFF | Clean Small | 110% | 1.32 | Reused | 483,514,248 | 2,529,585,441 |
+
+The prior calibration refused both sizes at either zoom before reserving
+GPU Grain memory. CPU fallback wait and memory were not measured in this
+run. In a separate locked Windows PC merge check at the same graphics setting,
+the Sony stayed on the GPU in Clean Small at Fit and 110%, and in Bayer Micro
+Grain at 110%. The correlated log recorded 85,599,904 B for calibration,
+158,722,864 B for Clean Fit reduction and 77,083,920 B per admitted Micro
+Bayer region. Finished-pixel CPU agreement and the large Bayer Micro Fit
+check remain open.
+
+## November 21 — CPU Micro Grain tile workers
+
+Windows PC, Ryzen 5 7600, unpackaged Electron at 2560 × 1440 under the shared
+GPU lock. Sony `_DSC7970.ARW` (7968 × 5320), Lensfun Auto, harsh-speck
+cleanup ×2.5, 78% zoom. The GPU refused Micro Grain with lens correction on.
+Use the existing 10% timing allowance for these single observations and
+for the separate CPU export comparison. Grade RAM is the sampled whole-app
+peak in decimal GB.
+
+| Action | Before | With tile workers and trial lens strips | Conditions |
+| --- | ---: | ---: | --- |
+| First CPU Micro Grain picture | 84.07 s | 58.04 s | Windows PC, HDR, reduced 4096 px picture. Before is the TRI-1 Full-tier measurement. |
+| Peak app RAM during first picture | 3.58 GB | 3.07 GB | Windows PC, same Grade observations. |
+
+The replay on `411f0cc6` logged 82.88 s for the CPU preview request and showed
+the reduced picture. The driver initially waited for a full-resolution picture
+and skipped baseline export. It accepted the reduced picture on the changed
+run. The five-minute lock expired while the app was exporting. The Lensfun
+strip trial later failed byte parity and was withdrawn. The 58.04 s and
+3.07 GB observations include the trial and need a repeat on the final code.
+
+A separate paired Windows PC run called the production CPU exporter directly,
+after opening the same RAW. Original-size Q90 Ultra HDR JPEG, both renditions
+on Micro Grain, the HDR peak guarantee enabled and metadata off. Export time
+was 100.46 s on `411f0cc6` and 59.71 s on `2309417c`. The encoder wrote the
+same SHA-256 on both: `8d5256cf05dacbc6c540e4075e22c5b832714eaaaa438993be4d61802a858706`.
+Lens-corrected RAW development and native Micro Grain output also matched
+byte for byte on Canon `IMG_0790.CR2` (manual EF-S 18–135 profile) and the
+Sony (Auto). The paired JPEG exports used the Sony.
+
+## November 21 — CPU Micro Grain source reuse
+
+Windows PC, Ryzen 5 7600, unpackaged Electron at 2560 × 1440 under the shared
+GPU lock. Sony `_DSC7970.ARW` (7968 × 5320), Lensfun Auto applied, speck cleanup
+at ×2.5, 78% zoom, Full tier. The GPU refused Micro Grain because lens
+correction was on, so Grade presented the 4096 px CPU picture. Timing starts
+at the action and ends after the updated picture appears. Repeated timings
+use a 10% noise allowance. Peak app RAM is sampled across the app's processes
+against the existing 4 GB Denoise ceiling. Fast tests were running during
+parts of the measurements.
+
+| Action | Before (`deb2fc6f`) | With source reuse | Peak app RAM before / after | Conditions |
+| --- | ---: | ---: | ---: | --- |
+| First Micro Grain picture | 83.79 s | 84.07 s | 3.63 / 3.58 GB | Windows PC, cold CPU Micro preparation at 78%, HDR. |
+| Exposure +0.25 | 81.17 s | 2.04 s | 3.71 / 2.57 GB | Windows PC, same HDR view and Micro controls. |
+| Switch to generated SDR | 79.25 s | 2.42 s | 3.86 / 2.33 GB | Windows PC, same zoom and Micro controls, no inactive-lane prefetch. |
+
+The new run computed the Micro source once (81.92 s); the two later actions
+each logged a source cache hit. The first lens-corrected preview still needs
+a cold check on the MacBook Neo.
+
+## November 21 — Denoise CPU fallback waits
+
+MacBook Neo, A18 Pro and 8 GB, working changes based on `ed7e4a83`.
+The 7968 × 5320 Sony `_DSC7970.ARW` used Clean Grain Small and harsh speck
+cleanup at ×2.5. Allow 10% variation when comparing repeated runs under the
+same conditions. These measurements describe the remaining work.
+
+| Action | Total wait | Denoise work | Conditions |
+| --- | ---: | ---: | --- |
+| Enable at 110% with cold CPU preparation, HDR and generated SDR | 20.54 / 20.62 s | 17.54 / 17.53 s to prepare the whole photo | Isolated Electron at 1408 × 794, forced CPU Grain preparation with normal GPU presentation. From enable to the matching exact picture. |
+| Release Grain Evenness at 110% | 18.08 s | 15.11 s to build new prepared pixels | Same Electron check, HDR. The brightness-grain fit was reused. |
+| Enable at Fit with CPU preparation already available, HDR and generated SDR | 2.58 / 2.41 s | Existing preparation read at Fit size | Same Electron check, matching exact picture. |
+| CPU preview after two Exposure edits, 1600 px | 1.50 / 0.72 s | 0.66 / 0.29 s to measure noise again | Isolated backend only, lens off. First request included the cold source resize. Repeating the same Exposure took 0.16 s with no measurement. |
+| CPU preview after two Exposure edits, 4096 px | 4.86 / 3.85 s | 0.57 / 0.58 s to measure noise again | Same backend check. Repeating the same Exposure took 0.96 s with no measurement. |
+
+The CPU preview timings include response encoding. Browser display is outside
+that measurement. Whole-photo CPU preparation and CPU preview noise
+measurement still use their existing algorithms.
+
+The 90-second Library smoke drew all nine visible photos, first in 0.4 s.
+The test app peaked at 2.87 GB. The system reserve check failed when available
+memory fell to 1.25 GB against the 2 GB floor. Steve's Electron window was
+open throughout. [Library run](../../codebase/output/quick-library-check/denoise-fixes/report.json)
+
+## November 20 — Streamed GPU JPEG export trial
+
+MacBook Neo, 8 GB; original size, Q90, 1,000-nit Ultra HDR target, and the
+faster November 20 CPU route. Timing is Export click to saved file and success
+status. Peaks are sampled whole-app physical footprint in decimal GB. The
+asterisk marks the final uncompressed strip connection; other readings are
+from the first streamed implementation and its rechecks. A pressure stop
+is not a completed export.
+
+| RAW and Denoise | Format | CPU (s) | GPU (s) | GPU peak (GB) |
+| --- | --- | ---: | ---: | ---: |
+| Canon, off | Ultra HDR | 20.04 | 17.75 | 3.012 |
+| Canon, Fine Grain | Ultra HDR | 21.33 | 24.48 | 2.951 |
+| Canon, Clean Grain Small | Ultra HDR | 28.57 | 20.52 | 3.122 |
+| Canon, Clean Grain Large | Ultra HDR | 33.68 | 24.73 | 3.117 |
+| Canon, off | SDR JPEG | 3.85 | 2.64 | 1.967 |
+| Canon, Fine Grain | SDR JPEG | 6.27 | 16.61–38.22 | 2.74 or less |
+| Canon, Clean Grain Small | SDR JPEG | 9.26 | 4.94–39.28 | 2.71 or less |
+| Canon, Clean Grain Large | SDR JPEG | 13.45 | 4.89* (5.05–5.44 earlier) | 1.986* |
+| Sony, off | Ultra HDR | Pressure stop | Pressure stop* | No completed peak (last sample: 2.941*) |
+| Sony, Fine Grain | Ultra HDR | 25.38 | 26.49* | 3.771* |
+| Sony, Clean Grain Small | Ultra HDR | 32.60 | 31.19* | 3.761* |
+| Sony, off | SDR JPEG | 6.45 | 5.41 | 3.024 |
+| Sony, Fine Grain | SDR JPEG | 11.64 | 8.42 | 3.023 |
+| Sony, Clean Grain Small | SDR JPEG | 19.84 | 10.20–12.64 | 2.986 |
+
+Before this work, Canon Fine Grain/Small Clean Grain GPU Ultra HDR peaked at
+3.54/3.70 GB; Canon Large stopped. Sony was refused before upload at a **5.332 GB
+estimate**, not a measured peak. Only the Canon-size Clean Grain Large SDR
+case qualified for the new default: 60–64% shorter wait and passing colour
+checks. [Memory, parity and default decision](briefs/gpu-export-memory-2026-11-20.md)
+
+## November 20 — Micro Grain in Grade and delivery
+
+MacBook Neo, A18 Pro, 8 GB, macOS 27.0.1. Unpackaged Electron, 1408 × 794 window, lens correction off, signed AHD, harsh-speck cleanup ×2.5. One action-to-presented-picture observation per cell. The Canon Grade measurements are from the same session; the Sony run stopped on system memory pressure after Micro Grain, before the other methods. Peak is sampled whole-app physical footprint, in decimal GB.
+
+| RAW / method | Enable at 110% (s) | Slider at 110% (s) | 800 px pan (s) | Fit quick / exact (s) | Grade peak (GB) |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Canon IMG_0790.CR2 / Standard | 0.60 | 0.46 | 0.45 | — / 0.11 | 2.55 |
+| Canon / Clean Grain, Small | 1.58 | 0.05 | 0.27 | — / 2.52 | 2.20 |
+| Canon / Micro Grain | 5.52 | 1.26 | 0.82 | 0.08 / 6.07 | 2.09 |
+| Sony _DSC7970.ARW / Micro Grain | 7.27 | 1.24 | 1.20 | 0.10 / 16.00 | 2.81 |
+
+The dash means no separate quick presentation was observed. The single slider action changed Standard Luminance or Clean/Micro Color from its current value to 62%. Micro Grain keeps the previous picture until the new viewport is ready. Grouping adjacent Bayer tiles shortened the Canon slider wait from 1.76 s to 1.26 s, still above the isolated 0.25–0.30 s feasibility estimate.
+
+Original-size Ultra HDR JPEG delivery, Q90 and a 1,000-nit target. The three Sony export observations are from the same session and use the CPU. Canon Micro Grain delivery ran separately before the Grade Bayer band change, which does not affect delivery.
+
+| RAW / method | Export wait / peak | Full-size Proof wait / peak |
+| --- | ---: | ---: |
+| Canon / Micro Grain | 31.50 s / 2.68 GB | 46.11 s / 2.62 GB |
+| Sony / Standard | 22.72 s / 3.47 GB | — |
+| Sony / Clean Grain, Small | 29.24 s / 3.46 GB | — |
+| Sony / Micro Grain | 67.10 s / 3.49 GB | 95.57 s / 3.48 GB |
+
+Micro Grain Proof and export JPEGs are byte-identical on each RAW. [Design and validation](briefs/denoise-micro-grain-app-2026-11-20.md)
+
+## November 20 — Denoise from the Library with real clicks
+
+MacBook Neo, A18 Pro, 8 GB, 1408 × 794. Normal `npm start` Electron with an isolated profile; Canon `IMG_0790.CR2` copied from HDR Test Images into scratch. Clicks use the real switch and menu. Times are milliseconds from the trusted click/selection to the matching exact WebGPU picture, not to the end of saving or Library thumbnail work. One sample per entry. Each step checked the visible centre pixels, the menu on successive frames, the acknowledged edit, and the sidecar on disk. The photo started without a grade, then reopened into a new session with its saved enabled Standard grade; it reopened again with enabled Micro. No source originals were modified.
+
+| Denoise method | Fit Off / warm On | 110% Off / warm On |
+| --- | ---: | ---: |
+| Standard | 36 / 31 | 131 / 484 |
+| Fine Grain | 22 / 34 | 212 / 333 |
+| Clean Grain | 24 / 32 | 111 / 332 |
+| Micro Grain | 162 / 31 | 136 / 99 |
+
+| From ↔ to, enabled | Fit forward / back | 110% forward / back |
+| --- | ---: | ---: |
+| Standard ↔ Fine | 46 / 88 | 614 / 598 |
+| Standard ↔ Clean | 47 / 100 | 919 / 577 |
+| Standard ↔ Micro | 49 / 81 | 849 / 580 |
+| Fine ↔ Clean | 45 / 47 | 990 / 499 |
+| Fine ↔ Micro | 46 / 47 | 835 / 449 |
+| Clean ↔ Micro | 48 / 50 | 850 / 598 |
+
+Fresh Standard On: 314 ms. First selection at Fit: Fine 3.00 s, Clean 2.82 s, Micro 7.98 s. First Micro selection at 110%: 1.57 s. Rapid Micro → Clean settled on Clean in 47 ms at Fit and 877 ms at 110%. Before the fix, the pointer could not make the second pick while the menu disabled itself, and at 110% the screenshot still showed the preceding method even when Micro's exact GPU frame was ready. After the fix, the pixels changed on all toggles and method pairs, and every pick kept its label through settlement. The measured app footprint peaked at 2.60 GB; exact native detail still needs more work than a cached Fit switch.
+
+Steve's November 20 Desktop session (started 19:01:50 local) saved `358187…` = Clean Off, `7ec8fc…` = Clean On, `99be63…` = Micro On, `eb04d4…` = Micro Off. The independent SDR grade stayed Fine On. Neither these identities nor the click tests showed a stale Standard save or undo. The source hand-off rejected his current grade because the Desktop photo had a saved grade in the Library database but no indexed file row. Current grades now qualify independently of that file row; genuinely stale hand-offs are still refused. This changes background Library work, not which method Grade loads. At 110% the Library can still finish its own whole-photo redraw because Grade only has a visible region.
+
+The 1.61 s CPU event in Steve's session was Bayer noise measurement, not CPU rendering of the Grade picture. His session logged 83 Micro region requests, 478 HDR source-tile requests and a 1.93 GB sample. The Micro region requests feed Bayer data to WebGPU; the HDR tile requests deliver developed source pixels. In the click run, first Fit Micro used 28 distinct Bayer requests; prepared Fit Micro switches needed none. At 110%, the measured Micro pair switches used 12–19 distinct Bayer regions, and other native switches commonly requested 36 distinct HDR tiles. The counts are not 36 retries of one tile, but returning to methods at 110% can still transfer source tiles again. The test passed 62 measured transitions. The separate plain Electron Library quick check pictured the scratch Canon. Receipts: `codebase/output/denoise-clicks-{rapid-before,trace,final,final-backend}.log`.
+
+## November 20 — Denoise transitions and Micro Grain throughput
+
+MacBook Neo, A18 Pro, 8 GB, 1408 × 794. Normal `npm start` Electron with an isolated profile. Canon `IMG_0790.CR2`, 110%, signed AHD, lens off and speck cleanup ×2.5. Times are seconds to a matching exact Grade presentation, not completion of background scopes. A dash means no new picture during the observation. The transition comparison is pre-Micro `12a945bf`, `ccad5c92` before the fixes, and the transition fix with the initial speed patch, from `normal-prebuild-retry.log`, `normal-before.log` and `normal-canon-final.log`. Repeated observations are shown as ranges; cold numbers include initial preparation.
+
+| Method | Pre-Micro off / warm on | Off, before → after | Warm on, before → after |
+| --- | ---: | ---: | ---: |
+| Standard | 0.07 (another redraw at 1.41) / 0.45 | 0.09 (another redraw at 1.52) → 0.16 | 0.49 → 0.47 |
+| Fine Grain | no redraw / 0.27 | — → 0.11 | 0.33 → 0.29 |
+| Clean Grain | no redraw / 0.33 | — → 0.11 (another redraw at 0.25) | 0.37 → 0.33 |
+| Micro Grain | unavailable | 0.14 → 0.11 | 0.06 → 0.06 |
+
+| From → to, while enabled | Pre-Micro | Before | After transition fix |
+| --- | ---: | ---: | ---: |
+| Standard → Fine | 0.51 warm / 1.37 cold | 0.57 warm / 1.47 cold | 0.58–0.61 warm |
+| Fine → Standard | 0.44 | 0.50 | 0.51 |
+| Standard → Clean | 0.74 | 0.77 | 0.78 |
+| Clean → Standard | 0.45 | 0.50 | 0.49 |
+| Standard → Micro | unavailable | 5.47 cold | 5.58 cold |
+| Micro → Standard | unavailable | 0.50 | 0.55 |
+| Fine → Clean | 0.33–0.72 | 0.34–0.78 | 0.38–0.79 |
+| Clean → Fine | 0.29 | 0.30–0.34 | 0.33 |
+| Fine → Micro | unavailable | 1.36–1.37 | 1.33 |
+| Micro → Fine | unavailable | 0.32–0.36 | 0.31 |
+| Clean → Micro | unavailable | 1.34–1.37 | 1.33–1.35 |
+| Micro → Clean | unavailable | 0.35–0.37 | 0.49 |
+
+Cold Standard enable was 1.11 → 1.17 s. A same-turn Micro bypass-to-Clean selection then drew Clean at Fit in 0.06 s. The 12 settled directions all landed on the selected menu and source. No settled menu rollback or silent CPU fallback was observed in either matrix. The method race reproduced in a regression test and in the normal pre-Micro app: with a 0.25 s save delay, bypassing Clean then immediately enabling and selecting Fine left the menu and saved edit on Fine, but the Grade source on Clean/original, with no exact replacement in 40 s.
+
+| Micro Grain wait | Earlier integrated | Normal-app before | Normal-app optimized |
+| --- | ---: | ---: | ---: |
+| Canon Color at 110% (62%, 74%) | 1.26 | 1.35 / 1.55 | 0.80 / 0.70 |
+| Canon 800 px pan at 110% | 0.82 | 0.95 | 0.97 |
+| Canon quick / exact Fit | 0.08 / 6.07 | 0.10 / 6.82 | 0.11 / 4.45 |
+| Sony Color at 110% (62%, 74%) | 1.24 | — | 0.75 / 0.72 |
+| Sony 800 px pan at 110% | 1.20 | — | 1.31 |
+| Sony quick / exact Fit | 0.10 / 16.00 | — | 0.11 / 12.07 |
+
+| Canon Color profile at 110%, seconds | Before | Optimized |
+| --- | ---: | ---: |
+| Action to exact presentation, with profiling | 1.28–1.29 | 0.67–0.68 |
+| Three Bayer requests to headers (CPU correction plus request wait) | 0.81–0.82 | 0.17–0.18 |
+| Bayer response bodies | 0.021–0.022 | 0.022–0.023 |
+| AHD GPU pass intervals | 0.033–0.037 | 0.027 |
+| Late wavelet and repair GPU pass intervals | 0.495–0.497 | 0.476–0.480 |
+| Tiled Grade and other GPU pass intervals | 0.397–0.408 | 0.353–0.355 |
+| Small readbacks, wall time per map | 0.015–0.023 | 0.016–0.020; late map 0.432–0.438 |
+
+GPU rows combine overlapping Metal timestamp intervals within each category for work submitted before the exact presentation. The categories overlap one another and cannot be added or subtracted from elapsed time to estimate CPU idle, and the Grade group includes other renderer work. The three Bayer headers cost 0.86–1.06 s before and 0.17–0.24 s warm in separate runs. There is no full-pixel readback in the normal presentation; the small readback can wait behind queued GPU work, so the late map is not a transfer cost. For comparison, isolated 512-pixel tile probes measured AHD at 0.007–0.009 s and the late wavelet and repair at 0.255–0.260 s. The 0.30 s slider target and faster pans remain open. Receipts: `codebase/output/micro-grain-app/normal-{profile-before,canon-throughput,sony-throughput,profile-timing-after,profile-parity-before,profile-parity-after}.log`.
+
+| Fresh profile with finished-pixel capture | Before | Optimized |
+| --- | ---: | ---: |
+| Canon Color at 110% (62%, 74%) | 1.20 / 1.23 | 1.26 / 0.70 |
+| Canon quick / rebuilt exact Fit | 0.09 / 5.86 | 0.09 / 4.45 |
+| Sony Color at 110% (62%, 74%) | 1.40 / 1.25 | 0.99 / 0.79 |
+| Sony quick / rebuilt exact Fit | 0.09 / 15.90 | 0.12 / 12.86 |
+
+At 74% Color, all eight finished-pixel pairs matched byte for byte: Canon and Sony, HDR and SDR, at 110% and exact Fit. The reduced-source cache was dropped before Fit, and the HDR timings include a confirmed native reduction. The 110% captures were 2542 × 1068; Fit was 1294 × 862 on Canon and 1291 × 862 on Sony. This checks Grade parity, not a new encoded export ceiling measurement. Native delivery and its highlight limiter were not changed. The Canon throughput runs sampled up to 2.37 GB of total app memory; the logged samples are not a continuous peak measurement. Receipts: `codebase/output/micro-grain-app/cold-{IMG_0790.CR2,_DSC7970.ARW}-{before,after}.log`.
+
+## November 20 — Integrated byte-identical CPU JPEG export changes
+
+MacBook Neo, A18 Pro, six cores, 8 GB, macOS 27.0.1 on AC. Unpackaged
+Electron at 1408 × 794. Before `12a945bf`, after `d3836494`. Both used
+the same Denoise code, CPU delivery, original dimensions, 0 EV, signed AHD,
+speck cleanup 2.5 and lens correction off. SDR used Q90. Ultra HDR used
+Q90, a full Q90 gain map, 4:2:0, automatic dither, a 1,000-nit target and
+matching generated SDR. Metadata and sharpening were off.
+
+One observation per completed case after Grade settled. Time starts with the
+Export click and ends when the saved file and success status are available.
+Whole-app peaks are sampled physical footprints in decimal GB. Interrupted
+rows show the last observed maximum through the stop. Each run used the shared
+GPU lock and stopped on system pressure, swap growth or the 4 GB app limit.
+
+| RAW and Denoise | Format | Before (s) | After (s) | Peak before → after (GB) | Byte comparison |
+| --- | --- | ---: | ---: | ---: | --- |
+| Canon, Denoise off | Ultra HDR | 30.65 | 20.55 | 2.62 → 2.50 | Identical |
+| Canon, Denoise off | SDR | 8.12 | 3.47 | 2.35 → 1.46 | Identical |
+| Canon, Fine Grain | Ultra HDR | 33.40 | 23.56 | 2.30 → 2.26 | Identical |
+| Canon, Fine Grain | SDR | 4 GB stop | 6.21 | 4.18 → 1.64 | No completed pair |
+| Canon, Clean Grain Small | Ultra HDR | 44.48 | 30.67 | 2.40 → 2.24 | Identical |
+| Canon, Clean Grain Small | SDR | 4 GB stop | 9.37 | 4.00 → 1.65 | No completed pair |
+| Canon, Clean Grain Large | Ultra HDR | 48.03 | 32.70 | 2.40 → 2.39 | Identical |
+| Canon, Clean Grain Large | SDR | Pressure stop | 14.05 | 3.58 → 1.65 | No completed pair |
+| Sony, Denoise off | Ultra HDR | Pressure stop | Pressure stop | 2.63 → 2.65 | No completed pair |
+| Sony, Denoise off | SDR | 16.81 | 6.05 | 3.40 → 2.12 | Identical |
+| Sony, Fine Grain | Ultra HDR | 33.32 | 26.73 | 3.34 → 3.38 | Identical |
+| Sony, Fine Grain | SDR | Pressure stop | 11.92 | 2.12 → 2.14 | No completed pair |
+| Sony, Clean Grain Small | Ultra HDR | 41.15 | 35.50 | 3.34 → 2.86 | Identical |
+| Sony, Clean Grain Small | SDR | Pressure stop | 21.35 | 3.92 → 2.37 | No completed pair |
+
+Canon is `IMG_0790.CR2` at 5202 × 3464 and Sony is `_DSC7970.ARW` at
+7968 × 5320. The six completed Ultra HDR pairs and both Denoise-off SDR
+pairs matched byte for byte. The five traced Ultra HDR pairs had identical
+decoded peak sequences and retry counts. The highest sampled peak for a
+completed after run was 3.382 GB.
+
+Canon Clean Grain Large saved 15.33 s (32%) and landed at 32.70 s, ahead of
+the plan's 39–41 s forecast from its earlier 46.9 s wait. Sony Clean Grain
+Small saved 5.65 s (14%) and landed at 35.50 s against the same forecast
+from its earlier 43.3 s wait.
+
+All five bounded stand-alone SDR Denoise runs completed at 1.64–2.37 GB.
+The legacy runs stopped before publication, leaving native byte parity open
+for those five cases. Sony Denoise-off Ultra HDR stopped on system pressure
+on both versions. The matching cases above use full-size exports from the
+two actual app versions.
+
+[Implementation and measured stages](briefs/export-speed-plan-2026-11-20.md#integrated-result) ·
+[Local timings, peaks and JPEG hashes](../../codebase/output/export-speed-app-2026-11-20/receipt.json)
+
+## November 20 — CPU export speed prototypes
+
+MacBook Neo, Apple A18 Pro, six cores, 8 GB, macOS 27.0.1, AC power.
+App checkout `a217b2db`, shared GPU lock and macOS pressure/swap watcher.
+Native signed AHD RAWs with speck cleanup 2.5 and lens off. HDR JPEG Ultra
+HDR Q90, full-size map Q90, 4:2:0, auto dither, 1,000-nit Highlights and
+generated SDR. No sharpening or metadata. The timings below are backend
+stages with the RAW already open, except the two earlier app waits used
+for the forecast. Peak figures are sampled process-tree physical footprint.
+
+| Photo and action | Current | Prototype | Conditions and result |
+| --- | ---: | ---: | --- |
+| Canon `IMG_0790.CR2`, 5202 × 3464, Clean Grain Large, native HDR JPEG codec | 16.07–18.61 s | 12.00–12.13 s | Reused SDR inputs across retries, exact filter and compact decoded check. 4 passes in both, finished 1,000.00 nits, final decoded 999.00 nits, same JPEG bytes as app. Sampled 1.88 GB current and 1.65–1.74 GB exact bundle. |
+| Sony `_DSC7970.ARW`, 7968 × 5320, Clean Grain Small, native HDR JPEG filter/repack and ceiling decode | 5.60 s | 3.41 s | Exact filter and compact check from the same native unfiltered encode. One pass, same JPEG bytes as app. Finished peak 388.65 nits, decoded 397.76 nits. Separate preparation with finished peak scan 5.30 s, unchanged native helper 1.26 s and 1.92 GB. First helper run stopped on OS pressure. |
+| Canon native SDR finishing within Ultra HDR | 4.83 s | 2.12 s | Same denoised input, shared CPU pool, identical finished float bytes. HDR strip baseline 2.50 s. |
+| Sony native SDR finishing within Ultra HDR | 3.80 s | 3.30 s | Same denoised input, shared CPU pool, identical finished float bytes. More aggressive two-worker test reached 2.41 s, while threading the HDR strips moved 2.97 → 3.38 s. |
+| Canon native stand-alone SDR JPEG, Denoise off | 5.70 s | — | Completed current CPU export, Q90, 1.82 GB. Two attempts with native Fine Grain stopped on memory pressure and swap growth. |
+| Canon native stand-alone SDR JPEG, Fine Grain Small | Pressure stops | 7.95 s | Bounded strip rendering and quantization, Q90. Completed prototype at 1.24 GB. |
+| Canon 2601 × 1732 stand-alone SDR JPEG, Fine Grain Small | 3.61 s / 1.94 GB | 2.80 s / 0.67 GB | Same half-width and half-height input passed to both backends. Exact JPEG bytes. |
+| Canon HDR, stronger local ceiling correction | 12.00 s exact bundle, 4 passes | 9.47 s, 3 passes | Rejected. Decoded 994.44 nits, SDR exact, HDR ΔE ITP mean 0.321 and P99.9 10.754. |
+| Canon HDR, smoothing removed | 16.07–18.61 s, 4 passes | 9.93 s, 3 passes | Rejected. Initial peak rose from 1,224.88 to 1,561.60 nits. Final 993.67 nits. SDR exact, HDR ΔE ITP mean 11.26 and P99.9 48.97. File grew 12.05 → 22.25 MB. |
+| Sony HDR, smoothing removed, filter/repack | 3.61 s | 0.62 s | Rejected. First decoded peak stayed 397.76 nits. SDR exact, HDR ΔE ITP mean 0.505 and P99.9 3.187. |
+| Projected full Canon / Sony HDR export with exact changes | 46.91 / 43.33 s earlier real-app waits | About 39–41 s each | Forecast from same-Mac stage savings. Integrated app results are above. |
+
+[Recommendations and evidence](briefs/export-speed-plan-2026-11-20.md)
+
+## November 20 — Micro Grain Grade feasibility
+
+MacBook Neo, A18 Pro, 8 GB unified memory, macOS 27.0.1, AC power.
+Branch checkout at `e30b7c0d`. Electron 1408 × 794 under the shared
+GPU lock, with the full suites idle. Canon `IMG_0790.CR2` and Sony
+`_DSC7970.ARW`, Bayer highlights reconstructed, harsh-speck cleanup ×2.5,
+lens correction off. Probe times use a native core of about 2430 × 1024
+plus the round 3 haloes. Each GPU run fences submitted work. The figures
+exclude UI and are warm medians unless a range is shown.
+
+| Stage or action | Canon | Sony | Conditions |
+| --- | ---: | ---: | --- |
+| Signed AHD, CPU | 120 ms | 182 ms | Already prepared Bayer input. |
+| Signed AHD, WebGPU | 8.9 ms | 7.1 ms | Resident input, four passes with shared Lab votes, about 116 MB logical allocation. |
+| Round 3 late passes, 512 px tiles | 260 ms | 256 ms | Resident demosaiced viewport, default Color, about 144 MB logical allocation. |
+| Round 3 late passes, 1280 px tiles | 202 ms | 203 ms | Same viewport and default Color, about 364 MB logical allocation. |
+| Round 3 late passes, 1024 px tiles, Color 0% | 120 ms | 117 ms | No Small repair, about 274 MB logical allocation. |
+| Round 3 late passes, simulated Fit | 1.78 s | 4.42 s | Repeated 512-pixel-tiled viewport over the approximate frame area. Bayer, transfer, reduction and Grade are additional. |
+| Round 3 complete CPU viewport update | 0.94–1.22 s | 1.04–1.27 s | Three Luminance edits, one CPU thread, includes exact demosaic and filtering after 123 / 105 ms initial Bayer setup. |
+
+The two isolated GPU stages passed finished HDR ΔE ITP and SDR ΔE 2000
+at +3 EV. The higher mean / p99 for the late comparisons was 0.038 /
+0.084 HDR and 0.010 / 0.028 SDR. The fixed comparison finish kept HDR
+at or below 1000 nits. The allocations above are GPU resources in the
+probe. The 4 GB whole-app gate for Micro Grain remains unverified.
+
+The exact viewport probe was above the 150 ms warm first-picture
+target before upstream Bayer work and the Grade draw. A live blend of
+closely spaced exact samples also missed the colour gates. This stopped
+the app integration. [Design and quality results](briefs/denoise-micro-grain-app-2026-11-20.md)
+
+Both attempts to time Standard and Clean Grain in the same Grade session
+were stopped by macOS memory pressure during app startup. In the earlier
+MacBook Neo Grade trial, Clean Grain colour drags at 110% settled in
+123–137 ms. Those are historical app waits and the values above cover
+only the isolated GPU or CPU work.
+
+## November 20 — Denoise export and full-size Proof attribution
+
+MacBook Neo, A18 Pro, 6 cores, 8 GB unified memory, macOS 27.0.1, AC
+power. Unpackaged Electron at 1408 × 794 under the shared GPU lock.
+App code from `35b28d99`, measured in the `2aafece6` to `e8226aea`
+checkout. Default delivery selection unless marked trial. Original
+dimensions, JPEG Ultra HDR Q90, full gain map, 1,000-nit Highlights and
+Proof target, generated SDR with the same Grain controls, metadata and
+sharpening off. Native Bayer RAW with harsh-speck cleanup at 2.5 and lens
+correction off. Durations start at the UI action except where indicated.
+Memory is sampled whole-app physical footprint in decimal GB.
+
+| Photo and action | Wait (s) | Peak (GB) | Conditions and result |
+| --- | ---: | ---: | --- |
+| Canon opening RAW to a sharp Grade view | 4.41–5.55 | 1.22 highest sampled | Fresh profiles. About 1.7 s harsh-speck cleanup and 0.7 s signed AHD. Outside delivery wait. |
+| Sony opening RAW to a sharp Grade view | 9.17–10.30 | 1.32 sampled in trial open | Fresh profiles. Trial RAW development 7.79 s including 4.24 s cleanup and 2.58 s AHD. Outside delivery wait. |
+| Canon Fine Grain, full-size Proof, automatic CPU, 0 EV | 46.65–47.49 | 2.41 across warm-up and two repeats | Warm-up 45.01 s. Three JPEG encode/check passes per action. Three matching Proof JPEG hashes. |
+| Canon Fine Grain, full-size Proof, automatic CPU, +0.015 EV | 52.00 | 2.52 | Separate fresh artifact in continuous attempt, four JPEG codec passes. |
+| Canon Clean Grain Small, full-size Proof, automatic CPU, 0 EV | 51.45–54.34 | 2.48 | Two observations, four JPEG codec passes per action and identical Proof JPEG bytes. Spread just above 5%. |
+| Sony Clean Grain Small, trial HDR export, CPU fallback | Stopped after 25.6 from admission | 2.14 before stop | GPU refused before upload. Noise model 1.98 s, fit 0.96 s, remaining Grain 15.16 s and HDR strip render 6.17 s. System memory pressure stopped the SDR pass. |
+| Sony Fine and Clean Small, full-size Proof, automatic CPU | Stops during first build | — | Three startup attempts stopped on macOS system pressure, once with observed swap growth. Earlier completed Sony runs are below. |
+| Canon Fine Grain, full-size Proof memory review, automatic CPU | 610.01 monitoring, 47.49 first sharp | 1.958 | One fresh build and six HDR/SDR/delivered view changes. Highest after the first minute 1.529 GB, final 1.328 GB. Normal OS pressure and no swap growth throughout. |
+| Canon Fine and Clean Small, successive full-size Proof builds, automatic CPU | Stopped at about 3 min 20 s and 7 min in separate runs | 2.52 maximum on completed actions | Three and two builds completed, respectively. OS pressure stopped the next build in each. The 10-minute review above uses a single build. |
+| Canon Clean Grain Large, HDR export, automatic CPU | 46.91 | 2.402 | Four JPEG codec passes. CPU Grain plus whole-photo fit 8.17 s, native noise model 1.43 s. |
+| Canon Clean Grain Large, full-size Proof after export, automatic CPU | 59.95 | 2.378 | Four new JPEG codec passes. Identical bytes to export. |
+| Canon Clean Grain Large, HDR export, GPU trial | Two pressure stops | — | First stopped during GPU work, after one temporary yield to Grade. Retry also stopped before a finished result. |
+| Canon Clean Grain Large, HDR export, automatic CPU repeat | OS pressure stop | — | OS pressure stopped the second attempt. One completed run is listed above. |
+| Canon Fine and Clean Small, HDR export, GPU trial repeats | OS pressure stops | — | No new completed file. Earlier trial rows below include successful GPU exports and Proofs. |
+| Canon Fine Grain, stand-alone SDR JPEG export, automatic CPU | OS pressure stop | — | Swap grew during the attempt. No completed file. |
+| Sony Clean Grain, CPU backend-only RAW open | 7.41 | 1.28 process tree | Diagnostic without Electron. OS pressure stopped before export finished. |
+
+[Detailed breakdown, method and evidence](briefs/denoise-export-proof-breakdown-2026-11-20.md)
+
+## November 20 — Fine and Clean Grain GPU delivery trial
+
+Export and full-size Proof can share the graphics-card reconstruction used
+in Grade. The admitted trial skips CPU Grain preparation and its disk
+scratch. It passes the finished HDR and SDR pixels to the encoder in
+32-row strips. If the job cannot use the GPU, both outputs use the CPU.
+The trial stays off by default: no measured case qualified on both the
+whole wait and the 4 GB memory cap. Standard and Fine Grain with zero Grain
+Evenness keep their existing delivery selection.
+
+MacBook Neo, A18 Pro, 8 GB unified memory, macOS 27.0.1, AC power.
+Unpackaged Electron at 1408 × 794 under the shared GPU lock, with the
+fast suites idle. Native JPEG Ultra HDR at quality 90, 1,000-nit Proof,
+HDR Highlight enabled, original dimensions, no metadata. Each entry is
+one action-to-result wait / sampled whole-app physical footprint. Proof
+was requested immediately after export, not measured from a cold start.
+
+| Photo and method | CPU export (s / GB) | Trial export (s / GB) | CPU full Proof (s / GB) | Trial full Proof (s / GB) |
+| --- | ---: | ---: | ---: | ---: |
+| Canon `IMG_0790.CR2`, Fine | 42.282 / 2.226 | 33.797 / 3.542 GPU | 52.453 / 1.914 | 39.895 / 3.062 GPU |
+| Canon, Clean | 47.313 / 2.396 | 27.156 / 3.702 GPU | 57.764 / 1.922 | 34.047 / 3.393 GPU |
+| Sony `_DSC7970.ARW`, Fine | 34.627 / 3.365 | 51.729 / 3.387 CPU fallback | 66.496 / 3.338 | 76.940 / 3.389 CPU fallback |
+| Sony, Clean | 43.329 / 3.360 | 64.429 / 3.355 CPU fallback | 72.844 / 3.319 | 87.213 / 3.392 CPU fallback |
+
+The Sony was refused before the GPU allocated its full-size working set.
+Those trial numbers show the CPU fallback stayed under the cap. The separate
+Grade preview could still start work in those earlier Sony trial sessions,
+so their times do not measure a GPU speedup or a fallback penalty. The
+isolated Canon pairs shortened export / Proof waits by 20% / 24% (Fine)
+and 43% / 41% (Clean); neither cut the wait approximately in half. The
+Canon's successful GPU turns took 5.173 s and 6.542 s, including about
+1.45 s each for readback and handoff, with no CPU Grain scratch. Fine
+yielded once to the shared GPU budget before completing. Focus next on
+full-image finishing, codec work and Proof display rather than just the
+Grain computation. The earlier Clean Grain baselines used different Grade
+or run conditions and are not the denominators for these speedups.
+
+On the delivery calibration fixture, Fine Grain and both Clean Grain
+sizes passed finished GPU-versus-CPU colour checks. Worst mean / p99:
+0.025 / 0.0563 ΔE ITP in HDR, below 1 / 3, and 0.0104 / 0.0332
+ΔE 2000 in SDR. Both routes stayed at or below 1,000 nits before encoding.
+The separate saved-RAW JPEG check reached 1,008.578 nits after encoding;
+the JPEG Ultra HDR, AVIF and JPEG XL ceiling checks peaked at 1,009.607 nits
+across both renderers, below the 1,010-nit allowance. Full-size Proof and
+export matched byte for byte within each tested renderer. Those byte checks
+do not compare the GPU's encoded bytes to the CPU's.
+
+Delivery smoke, Proof size, both fast suites and the quick Library check
+passed. The protected-project Proof identity driver could not open its
+Windows source path on this Mac; the fixture was not modified and all
+three protected SHA-256 hashes passed. Native Canon and Sony checks verify
+Proof/export identity independently. Receipts:
+`codebase/output/denoise-grain-delivery/`.
+
+## November 20 — Clean Grain Large pan and Grade rollout
+
+MacBook Neo, A18 Pro, 8 GB unified memory, macOS 27.0.1, AC power.
+Unpackaged Electron at 1408 × 794 under the shared GPU lock, with the
+fast suites idle. Canon `IMG_0790.CR2` and Sony `_DSC7970.ARW`; signed RAW
+development, harsh-speck cleanup ×2.5, both routes set to Large. Times
+are action-to-finished-picture; memory is the whole app's sampled
+physical footprint in decimal GB. Each row is one observation per route.
+
+| HDR wait or peak | Canon CPU → GPU | Sony CPU → GPU |
+| --- | ---: | ---: |
+| First sharp at 110% (s) | 12.509 → 2.049 | 35.989 → 3.698 |
+| Fit (s) | 12.101 → 3.815 | 30.068 → 8.900 |
+| Evenness drag (s) | 11.511 → 1.534 | 29.773 → 1.547 |
+| Small pan (s) | 0.200 → 0.033 | 0.418 → 0.028 |
+| Wide pan, with capture (s / GB) | 0.459 / 1.863 → 0.315 / 2.059 | 0.464 / 2.175 → 0.470 / 2.504 |
+| Wide pan, independent repeat without capture (s / GB) | — | 1.278 / 2.207 → 0.831 / 3.287 |
+| Peak across paired Grade checks (GB) | 2.751 → 2.501 | 4.231 → 3.034 |
+
+The original failing Sony result was 0.573 s on GPU versus 0.459 s on
+CPU. Large was running colour passes over halo pixels it did not need,
+and the pan fetched and uploaded pixels the graphics card already held.
+The current code keeps the same reach, filters only the pixels subsequent
+passes read, and fetches just the missing strip when a horizontal pan can
+reuse a source region from the same revision. The Sony transfer fell from
+48.92 MB to 22.36 MB. The captured pair was within 1.4% and the repeat was
+35% faster; the no-capture repeat spent more time drawing the underlying
+picture on both routes. Clean Grain is now enabled in Grade alongside Fine.
+With the GPU setting left at its default, wide pans took 0.339 s on
+Canon and 0.438 s on Sony. The highest sampled waits were 2.457 GB and
+2.976 GB, respectively. On Canon, Show original and bypass both restored
+the exact finished pixels of the undenoised picture, even after GPU Grain
+had been cached.
+
+Across finished Grade pixels and tile joins, the worst mean / p99 was
+0.012 / 0.143 ΔE ITP in HDR and 0.116 / 0.625 ΔE 2000 in SDR. Both
+GPU pan overlaps and the injected Canon SDR CPU fallback matched their
+reference pixels exactly. At +3 EV, the four Clean Large HDR ceiling
+captures (Fit and 110% on both photos) had zero pixels above 600 nits;
+the highest was 599.99994 nits. Receipts:
+`codebase/output/denoise-grain-delivery/`.
+
+## November 20 — Fine Grain enabled in Grade
+
+MacBook Neo with A18 Pro, 8 GB unified memory and macOS 27.0.1 on AC.
+Unpackaged Electron at 1408 × 794 points under the shared GPU lock.
+Canon `IMG_0790.CR2` and Sony `_DSC7970.ARW`, signed RAW development,
+lens correction off and harsh-speck cleanup at ×2.5. The CPU figures are
+the same-machine baseline in `b675f81a`. The GPU figures come from a fresh
+default-on run after the memory incident, with the fast suites idle.
+Times run from the action to the finished picture. Peak memory is sampled
+for the whole app, in decimal GB.
+
+| Wait or peak | Canon CPU → default GPU | Sony CPU → default GPU |
+| --- | ---: | ---: |
+| HDR first sharp at 110% (s) | 5.564 → 1.612 | 13.307 → 4.411 |
+| HDR Fit (s) | 4.594 → 2.214 | 9.483 → 4.593 |
+| HDR Evenness drag settled (s) | 5.303 → 0.128 | 11.495 → 0.133 |
+| HDR small pan (s) | 0.203 → 0.030 | 0.407 → 0.026 |
+| HDR wide pan (s) | 0.439 → 0.350 | 0.642 → 0.526 |
+| Generated SDR at 110% (s) | 2.434 → 0.314 | 4.182 → 0.348 |
+| Generated SDR Fit (s) | 1.083 → 0.110 | 2.181 → 0.106 |
+| Peak whole app (GB) | 2.807 → 1.964 | 4.356 → 3.015 |
+
+Fine Grain is on by default in Grade when selected and enabled. The
+original picture stays bounded at native zoom, with the Grain preparation
+and final colour processing skipped when bypassed. The Canon Show original
+and bypass captures matched the undenoised Grade pixels byte for byte.
+One injected Canon failure called the CPU preparation once and showed the
+CPU picture in 4.654 seconds. The repeated quick Library check showed all
+9 viewport pictures, with a first picture in 0.4 seconds and a 2.781 GB
+whole-app peak. The pre-repeat Library run and incomplete Fine Grain
+runs were discarded as rollout evidence.
+
+The paired finished-colour results from `b675f81a` still apply to the
+same Fine Grain reconstruction. The worst mean / p99 was 0.059 / 0.187
+ΔE ITP in HDR and 0.121 / 0.766 ΔE 2000 in SDR. The default-on ceiling
+recheck found zero finished pixels above 600 nits on both photos, at Fit
+and 110%. The exact counts are in the Clean Grain trial section below.
+
+## November 20 — Clean Grain GPU trial in Grade
+
+MacBook Neo with A18 Pro, 8 GB unified memory and macOS 27.0.1 on AC.
+Unpackaged Electron at 1408 × 794 points under the shared GPU lock, with
+the fast suites idle. Canon `IMG_0790.CR2` and Sony `_DSC7970.ARW`, signed
+RAW development, lens correction off and harsh-speck cleanup ×2.5. Each
+figure is one action-to-picture observation. Both routes capture finished
+pixels. The physical footprint includes Electron, the GPU process, Python
+and helpers, and the preceding 500 ms of each timed wait. The Fine-to-Clean
+switch uses a fresh Evenness value at 92% on both routes so there is no
+matching Clean tile. Small and wide pans move 180 and 550 screen pixels.
+
+| Wait or peak | Small Canon CPU → GPU | Small Sony CPU → GPU | Large Canon CPU → GPU | Large Sony CPU → GPU |
+| --- | ---: | ---: | ---: | ---: |
+| HDR first sharp at 110% (s) | 8.620 → 1.880 | 23.045 → 3.480 | 12.929 → 2.169 | 30.082 → 3.733 |
+| HDR Fit (s) | 7.985 → 3.013 | 18.702 → 7.510 | 12.077 → 4.017 | 32.059 → 9.983 |
+| HDR Evenness drag settled (s) | 8.231 → 1.419 | 18.787 → 1.349 | 11.794 → 1.819 | 28.651 → 1.825 |
+| HDR small pan (s) | 0.200 → 0.024 | 0.427 → 0.036 | 0.204 → 0.027 | 0.391 → 0.028 |
+| HDR wide pan (s) | 0.459 → 0.375 | 0.479 → 0.494 | 0.452 → 0.455 | 0.459 → 0.573 |
+| Color Splotches drag at 110% (s) | 2.872 → 0.137 | 5.544 → 0.127 | 2.916 → 0.123 | 5.466 → 0.134 |
+| Color Splotches drag at Fit (s) | 0.120 → 0.116 | 0.130 → 0.118 | 0.146 → 0.112 | 0.164 → 0.116 |
+| Splotch Size change at 110% (s) | 11.357 → 0.881 | 27.904 → 1.192 | 7.381 → 0.749 | 17.059 → 0.865 |
+| Fine Grain to Clean Grain at 110% (s) | 3.933 → 0.881 | 7.651 → 0.883 | 6.399 → 1.065 | 15.818 → 1.084 |
+| Generated SDR at 110% (s) | 8.666 → 0.569 | 20.704 → 0.634 | 12.752 → 0.589 | 30.611 → 0.820 |
+| Generated SDR Fit (s) | 1.116 → 0.127 | 2.035 → 0.105 | 0.991 → 0.120 | 2.269 → 0.109 |
+| Peak whole app (GB) | 2.606 → 2.553 | 4.259 → 2.938 | 2.693 → 2.539 | 4.782 → 3.002 |
+
+**Off by default.** The Sony Large wide pan took 25% longer than the CPU.
+That misses the agreed 5% timing band. The GPU finished the two first
+sharp pictures 78–88% sooner across the two sizes and stayed under 4 GB.
+The largest GPU peak in the separate +3 EV ceiling checks was 3.244 GB
+(Sony Large Fit).
+
+Both reaches reuse the Fine Grain whole-photo fit. The GPU computes
+visible padded tiles at native zoom and filters bounded strips at Fit.
+Fit reduces the base picture and signed colour delta separately, so
+the viewer can blend the delta live at any strength. The GPU checks
+recorded no CPU Grain preparation requests on a successful draw.
+Small and Large share the same measurement, and generated SDR reuses
+matching results from HDR. In the focused Canon Fit size check,
+Small to Large showed the first update in 0.170 s and settled in 4.160 s.
+The whole-photo fit was reused throughout that change.
+
+All 16 Clean Grain finished-picture comparisons passed. The worst mean /
+p99 was 0.012 / 0.143 ΔE ITP in HDR and 0.116 / 0.624 ΔE 2000 in SDR,
+against limits of <1 / <3. Samples around tile and strip joins also
+passed (worst p99 0.136 HDR and 0.630 SDR). The overlapping HDR pan pixels
+were identical on both photos with each reach. An injected Canon fault
+made one GPU attempt and one CPU preparation for each reach. Both
+fallback pictures were byte-identical to their normal CPU SDR Fit capture.
+
+The HDR ceiling checks ran at +3 EV with a 600-nit target. For each of
+Fine Grain, Clean Grain Small and Clean Grain Large, **0 of 7,609,384**
+finished HDR pixels exceeded 600 nits on Canon and Sony at Fit and 110%.
+The highest was 599.999939 nits in every capture, measured before the
+display transform or encoding.
+
+The full suites ran separately under the lock. JavaScript passed 1,126
+with one skipped. Python passed 4,316 with 150 skipped and one unexpected
+pass. The repeated Library and Fine Grain results and the paired Clean
+Grain runs replace the measurements taken during the memory incident.
+
+Reproduce from `codebase` with `--phase2=cpu` and `--phase2=gpu` and the
+same capture folder for both runs. Use `--clean-grade=small` or
+`--clean-grade=large`, and use `--ceiling-only` with the GPU route for
+the exact HDR check. [Latency driver](../../codebase/tests/performance/denoise-grain-latency.js) ·
+[Finished-pixel comparator](../../codebase/tests/helpers/denoise_grade_comparison.py)
+
+## November 20 — Fine Grain GPU reuse in Grade
+
+MacBook Neo, A18 Pro, 8 GB, macOS 27.0.1, on AC. Unpackaged Electron at
+1408×794 under the shared GPU lock, using `IMG_0790.CR2` (Canon) and
+`_DSC7970.ARW` (Sony). The same Grade settings ran with the CPU and GPU
+Fine Grain routes. Each timing is one real-app observation including the
+finished-pixel capture; pan waits end when the visible area is fully sharp.
+The pans move 180 and 550 screen pixels respectively. Memory is the sampled
+whole-app physical footprint, in decimal GB, including the preceding 500 ms
+and the settle after the picture. The HDR capability override is test-only.
+
+| Wait or peak | Canon CPU → GPU | Sony CPU → GPU |
+| --- | ---: | ---: |
+| HDR first sharp at 110% (s) | 5.564 → 2.127 | 13.307 → 5.444 |
+| HDR Fit (s) | 4.594 → 2.706 | 9.483 → 6.412 |
+| HDR Evenness drag, settled (s) | 5.303 → 0.133 | 11.495 → 0.136 |
+| HDR small pan (s) | 0.203 → 0.016 | 0.407 → 0.033 |
+| HDR wide pan (s) | 0.439 → 0.395 | 0.642 → 0.490 |
+| Generated SDR at 110% (s) | 2.434 → 0.735 | 4.182 → 0.866 |
+| Generated SDR Fit (s) | 1.083 → 0.113 | 2.181 → 0.128 |
+| Peak whole app (GB) | 2.807 → 2.086 | 4.356 → 2.568 |
+
+The whole-photo measurement survived zoom, Fit, a matching HDR/SDR switch
+and Evenness changes. HDR Fit still filters and reduces the native photo on
+its first visit; generated SDR at the same settings reuses that reduced
+picture. The SDR rows are warm from HDR, not the cold SDR 110% comparison
+in Phase 1. First Evenness feedback took 121 ms Canon and 71 ms Sony in the
+final run (77/129 ms in the preceding bounded run). Small pans stayed
+inside the existing sharp patch. Wide pans retained the whole-photo picture
+while filling the newly visible area. In the first bounded run the Canon
+wide pan was 0.460 s; with the trial's wait after scrolling shortened from
+140 to 70 ms, the final run beat CPU on both photos.
+
+Phase 1 reached 4.74 GB on Sony; its repeat reached 4.216 GB. The first
+strip-bounded run still hit 4.216 GB during calibration: about 1.914 GB in
+the GPU helper, 1.520 GB in the Python backend and 0.496 GB in the main
+renderer, with 0.286 GB in other processes. The full-size source and render
+targets from the bypassed zoom view could overlap calibration. The
+trial now keeps that view bounded and retires unused targets before
+measurement. Sony calibration reserves 103.43 MB: 37.10 MB for the source
+strip, 32.52 MB for scratch, 33.55 MB for upload staging and responses,
+and 0.25 MB for statistics and readback. HDR Fit reserves 155.78 MB for its
+source, filtered strip, resize scratch, output and uploads. These logical
+reservations do not include the driver or backend footprint. Both photos
+passed 4 GB on both bounded passes (highest: Canon 2.167 GB, Sony 2.598 GB).
+In the final Sony pass the largest sample was during first measurement,
+including 1.184 GB in Python, 0.563 GB in the GPU helper and 0.536 GB in
+the main renderer.
+
+All eight finished-picture comparisons passed (worst HDR mean/p99:
+0.059/0.187 ΔE ITP; SDR: 0.121/0.766 ΔE 2000). The shared areas of both
+pans were pixel-identical on each photo. At +3 EV, the first exact check
+found a float rounding overshoot of 600.000061 nits. A trial-only rounding
+guard corrected it: **0 of 7,609,384 finished HDR pixels** exceeded 600 nits
+across Fit and the sharp 110% patch on both photos; the maximum was
+599.999939 nits in all four captures, measured before display or encoding.
+An injected Canon GPU failure used one CPU preparation and showed its
+picture in 6.471 s. Proof and export did not change.
+
+**Off by default.** The final GPU run beat the paired CPU run on each timed
+wait, but the first sharp HDR picture was slower than the previous GPU
+trial (1.78/4.56 s in Phase 1 vs 2.127/5.444 s). Keep the bounded route
+available for development without trading away that first-picture gain.
+Next: Clean Grain in Grade.
+
+Reproduce from `codebase` with the commands below, replacing `ROUTE` with
+`cpu` and `gpu` for the first command. Fast checks: 1,125 JavaScript passed
+(one skipped); 4,316 Python passed (150 skipped, one unexpected pass); quick
+Library check passed.
+
+```sh
+HDR_FINISHER_ELECTRON_WINDOW_SIZE=1408x794 .venv/bin/python tools/gpu-run-lock.py --label fine-grain-ROUTE --minutes 10 -- node tests/run-in-electron.js tests/performance/denoise-grain-latency.js --phase2=ROUTE
+.venv/bin/python tests/helpers/denoise_grade_comparison.py output/denoise-grain-phase2
+HDR_FINISHER_ELECTRON_WINDOW_SIZE=1408x794 .venv/bin/python tools/gpu-run-lock.py --label fine-grain-ceiling --minutes 10 -- node tests/run-in-electron.js tests/performance/denoise-grain-latency.js --phase2=gpu --ceiling-only
+.venv/bin/python tests/helpers/denoise_grade_comparison.py output/denoise-grain-phase2 --ceiling
+```
+
+## November 20 — Phase 1 Fine Grain on the GPU in Grade
+
+MacBook Neo, A18 Pro, 8 GB, macOS 27.0.1 on AC. Unpackaged Electron at
+1408×794 under the shared GPU lock. Canon `IMG_0790.CR2` (fire-dancer) and
+Sony `_DSC7970.ARW` (portrait), with the same Grade controls on both routes.
+These are single real-app observations, including finished-pixel capture,
+not isolated filter timings. The HDR display capability override is test-only.
+Memory is the sampled whole-app physical footprint, in decimal GB, including
+the GPU process and backend. The sample window includes the preceding 500 ms.
+
+| Photo | Lane | First sharp 110%, CPU → GPU (s) | Settled Fit, CPU → GPU (s) | Evenness drag settled (first GPU response), CPU → GPU (s) | Pan, CPU → GPU (s) | Peak whole app, CPU → GPU (GB) |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| Canon | HDR | 5.61 → 1.78 | 4.41 → 3.01 | 4.81 → 0.130 (0.079) | 0.207 → 0.601 | 2.62 → 2.57 |
+| Sony | HDR | 12.50 → 4.56 | 13.94 → 7.02 | 12.02 → 0.132 (0.066) | 0.412 → 0.684 | 3.91 → **4.74** |
+| Canon | SDR | 6.08 → 2.05 | 0.95 with CPU reuse → 3.14 without GPU reuse | — | — | 2.47 → 2.43 |
+| Sony | SDR | 12.44 → 3.51 | 1.99 with CPU reuse → 7.04 without GPU reuse | — | — | 2.74 → 3.04 |
+
+The measured CPU waits replace the design's 8.32 s / 15.87 s estimates
+for this comparison. HDR 110% was 68% faster for Canon and 64% for Sony.
+HDR Fit was 32% faster for Canon and about 50% for Sony. SDR Fit is not a
+cold-to-cold comparison: the CPU already had matching preparation from
+110%; the GPU still had to filter at native resolution and reduce. Both
+HDR pans regressed. A separate repeated Sony HDR 110% run also exceeded
+4 GB (4.72 GB). **The trial remains disabled by default.**
+
+| Photo | Lane and metric | Fit mean / p99 | 110% mean / p99 |
+| --- | --- | ---: | ---: |
+| Canon | HDR, ΔE ITP | 0.041 / 0.171 | 0.049 / 0.187 |
+| Sony | HDR, ΔE ITP | 0.055 / 0.161 | 0.059 / 0.185 |
+| Canon | SDR, ΔE 2000 | 0.008 / 0.370 | 0.121 / 0.624 |
+| Sony | SDR, ΔE 2000 | 0.031 / 0.766 | 0.029 / 0.687 |
+
+All eight finished-pixel comparisons met mean <1 and p99 <3. The shared
+area before and after each HDR pan was pixel-identical, and the sharp
+area covered the viewport. This checks for seams across tiles in those
+views, not every pan direction or an independent visual sign-off. The
+existing HDR limiter was unchanged; the exact pre-encode ceiling was not
+independently qualified. Successful GPU draws used no CPU Fine Grain
+preparation. An injected GPU failure at Canon SDR Fit made one attempt,
+then one successful CPU Grain preparation and presented the CPU picture
+in 4.42 s.
+
+Reproduce from `codebase`: run the
+[real-app driver](../../codebase/tests/performance/denoise-grain-latency.js)
+once per route by substituting `cpu` and `gpu` for `ROUTE`, then compare
+the captures. The GPU driver records both photos before returning failure
+when it observes a memory overage.
+
+```sh
+HDR_FINISHER_ELECTRON_WINDOW_SIZE=1408x794 .venv/bin/python tools/gpu-run-lock.py --label fine-grain-ROUTE --minutes 10 -- node tests/run-in-electron.js tests/performance/denoise-grain-latency.js --phase1=ROUTE
+.venv/bin/python tests/helpers/denoise_grade_comparison.py output/denoise-grain-phase1
+```
+
+## November 20 — Native JPEG Ultra HDR Proof on the 8 GB MacBook Neo
+
+Baseline `8632bfa2` versus the bounded JPEG Proof change. MacBook Neo A18 Pro
+(6 cores, 8 GB unified memory), macOS 27.0.1, AC power, 1408 × 794 Electron
+window, fresh profiles and the shared GPU lock. Full-size Q90 JPEG Ultra HDR
+with Denoise enabled for both renditions. CPU delivery was selected to use the
+same renderer and metadata was disabled for the source-file comparison. Each
+pair uses the same developed RAW, grade and measured Denoise model. Sony and
+Canon Standard had the 1,000-nit HDR limit enabled. Canon Fine Grain and
+Clean Grain used the RAW's default Highlights setting and the optional JPEG
+codec-limit check. All Proof views used the 1,000-nit display target.
+
+| Photo | Method | Proof peak before → after (GB) | Build Proof to painted picture (s) | Separate export before → after (s / GB) |
+| --- | --- | ---: | ---: | ---: |
+| Canon IMG_0790.CR2 | Standard | 5.84 → 2.57 | 92.57 → 73.08 | 51.28 / 2.69 → 50.33 / 2.55 |
+| Canon IMG_0790.CR2 | Fine Grain | 5.92 → 2.28 | 59.53 → 31.70 | 31.94 / 2.30 → 24.28 / 2.08 |
+| Canon IMG_0790.CR2 | Clean Grain | 6.19 → 2.11 | 62.33 → 37.14 | 31.55 / 2.23 → 32.33 / 2.09 |
+| Sony _DSC7970.ARW | Standard | 13.53 → 3.53 | 105.18 → 68.36 | 40.06 / 3.55 → 35.04 / 3.53 |
+| Sony _DSC7970.ARW | Fine Grain | 13.36 → 3.46 | 149.05 → 111.87 | 59.68 / 3.49 → 71.18 / 3.42 |
+| Sony _DSC7970.ARW | Clean Grain | 12.50 → 3.45 | 129.57 → 73.29 | 67.16 / 3.42 → 61.31 / 3.42 |
+
+One sample per cell, with the separate export before the Proof click. The app
+memory reading sums the Apple physical footprint of the Electron process tree,
+including codec helpers. The time includes encoding, reconstruction, decoding
+and presentation. Input and finished-pixel hashing added about 1–2 seconds to
+the measured delivery work in both builds. The Sony Fine Grain export varied
+with the time spent in native Denoise preparation (9.72 → 28.08 s). These
+single export samples give no export speed estimate.
+
+The export JPEG, Proof JPEG and both AVIF comparison images have identical
+SHA-256 hashes before and after in every row. The Canon Standard finished
+render reached 1,000 nits exactly. Its decoded retries matched at 1196.294,
+1065.454, 1002.068 and 999.965 nits, with only the final file delivered. The
+existing 4 GB cap and finished and encoded peak rules apply throughout.
+Evidence is in `codebase/output/full-proof-memory/comparison.json`.
+
+## November 20 — Byte-identical CPU speedups for Denoise Grain
+
+| Action | Canon IMG_0790.CR2 | Sony _DSC7970.ARW | Conditions |
+| --- | ---: | ---: | --- |
+| First Fine Grain switch at 110%, estimated whole wait | 11.52 → 8.32 s (28% less wait) | 25.69 → 15.87 s (38% less wait) | MacBook Neo, A18 Pro / 6 cores / 8 GB, macOS 27.0.1, plugged in. CPU fit plus preparation and scratch writes: 5.53 → 2.33 s Canon, 15.24 → 5.42 s Sony, medians of three alternating A/B runs per RAW against `c96d6e7e`. Same verified RAW per photo, already developed, same model and controls, six tile workers, OpenCV configured for six threads, OMP/BLAS limited to one. Shared machine, 1-minute load 1.66–6.61; allow 5% timing noise. |
+
+The estimate subtracts the measured CPU time saved from the November 19
+110% action-to-picture readings, holding the rest of the wait fixed. It is
+not a new whole-app median. The Clean Grain CPU export-source step went from
+6.46 to 2.96 s (Canon) and 17.30 to 7.54 s (Sony); this excludes rendering
+and encoding the export.
+
+The locked Electron spot check (1408 × 794, one run on the shared checkout)
+reached the exact Fine Grain picture in 4.42 s Canon / 9.65 s Sony. Clean
+Grain reused Fine Grain RGB, with no wavelet work, at 3.92 / 7.12 s. These
+are unpaired observations with other edits in the checkout; they do not
+replace the estimates or establish a Clean Grain switch speedup. Fine Grain
+peaked at 2.13 / 2.56 GB; the Sony Standard enable sampled 4.17 GB, above
+the unchanged 4 GB gate. The separate locked CPU/GPU JPEG Ultra HDR
+delivery and full-size Proof identity smoke passed for all three methods.
+
+Both approved RAWs had identical stored fit bytes, packed Fine and Clean
+preview hashes (whole frame, native region, reduced image), and full-resolution
+Clean CPU export-source hashes at each step. Large-splotch direct Clean
+preparation also matched before and after. All five existing Grain tests
+passed on both versions with identical captured outputs. The one-channel
+matrix shortcut was excluded because it changed Sony's stored fit.
+[Local A/B receipts and exact-check scripts](../../codebase/output/denoise-exact-speed-2026-11-20).
+
+## November 20 — Grade Grain reuse between HDR and SDR
+
+MacBook Neo A18 Pro, 8 GB, 1408 × 794 points. Separate Electron profiles
+under the shared GPU lock. Canon IMG_0790.CR2 at Fit. Same Fine Grain
+preparation controls on both renditions, with SDR generated from the same
+source. Each wait ends at the exact WebGPU picture. These are single runs.
+
+| Grade action | Before | After | Result |
+| --- | ---: | ---: | --- |
+| Enable Fine Grain in SDR after HDR is ready | 0.92 s | 0.91 s | Both reuse the existing preparation. |
+| Switch to SDR after Recalculate in HDR | 13.34 s | 0.33 s | SDR reuses the refreshed result. Previously it spent 12.07 s preparing the same source again. |
+| Maximum sampled whole-app memory across the sequence | 1.63 GB | 1.55 GB | Both below the 4 GB ceiling. |
+
+Before is the `3411e81e` app. After is the implementation in this commit.
+Different preparation settings and an authored SDR base each need their
+own preparation. The locked Denoise delivery smoke returned the same
+perceptual metrics before and after.
+
+## November 20 — Canon zoom, Library and Match on the minimum Mac
+
+MacBook Neo A18 Pro, 8 GB, 1408 × 794 points and the shared GPU lock.
+Canon IMG_0790.CR2 unless named otherwise. These are observations from
+the November 20 checks on the `3411e81e` app with the driver fixes, plus
+the confirmed Match case after the Grade reuse change. PC timings have
+their own baseline.
+
+| Action | Mac time | Conditions |
+| --- | ---: | --- |
+| Canon SDR at Fit, with Denoise off / Standard / Fine / Clean | 0.06 / 0.25 / 13.04 / 5.22 s | First settled view for each state, starting with an already open RAW. Fine-to-Clean uses the existing preparation. |
+| Canon SDR Fit → 100%, off / Standard / Fine / Clean | 2.34 / 2.89 / 3.13 / 1.31 s | Maximum whole-app footprint 2.03 GB across the SDR check, below the 4 GB ceiling. |
+| Canon HDR Fit → 100%, Standard / Fine / Clean | 0.51 / 0.80 / 0.62 s | Exact viewport presentation, after Fit has prepared the method. All pan stops and the cropped and rotated SDR run passed. |
+| 640-pixel HDR Library Grain, Fine / Clean | 0.48 / 0.35 s to error | Live draw never received the completed correction region. Existing CPU fallback graph took 3.36 / 2.82 s including decode and missed the colour gate. |
+| 640-pixel HDR Library trials, Fine / Clean | 0.59 / 0.73 s for warm Grade result; 0.67 / 0.55 s at 1280; 4.41 / 7.17 s exact | CPU probes start with a decoded RAW. Warm Grade reading also excludes the original preparation. Only the exact export route agrees with export. No Library rendering change shipped. |
+| Match to the exact SDR picture | Canon linked 4.09 s; hibiscus independent 3.71 s; separately edited Canon independent 5.47 s | Photographs already open, one run each. The 5.47 s case uses the Canon at +1 EV with a 120/450-nit HDR compression range. |
+| Match refusal, Canon +1 EV and 120/300 nits | 9.27 s | Prior SDR grade preserved. P95 colour 0.077 against the 0.050 safety limit. |
+
+[November 20 Mac report](briefs/denoise-mac-open-items-2026-11-20.md)
+
+## November 19 ? Windows Automatic Match certification
+
+Windows PC, separate Electron profiles at 2560?1440 under the shared GPU lock.
+Median of three trials on each side, from button click to the exact SDR picture
+on screen. Import was complete before timing. The update changes the tests only.
+
+| Photo | Before ? after | Route and exact P95 OKLab |
+| --- | ---: | --- |
+| IMG_0790.CR2, HDR exposure +0.2 EV | 3.16 ? 3.41 s | Linked SDR, 0.00170 |
+| DSC04375.ARW, HDR exposure +2 EV | 4.09 ? 4.24 s | Independent fit, 12 GPU candidates, 0.00618 |
+
+Both routes passed their existing checks in every timed run and stayed within
+the existing 10% Grade timing tolerance. The independent fit never fell back.
+The baseline is `0ce4eaec`. Evidence in `codebase/output`:
+`sdr-match-baseline.log`, `sdr-match-parity.log` and `sdr-match-final-timing.log`.
+The Canon's independent route remains unqualified. A separate +1 EV HDR
+grade with 120/300-nit highlight compression was refused after CPU fitting
+gave 0.061 exact P95 OKLab against the 0.050 gate.
+
+In the calibrated TIFF diagnostic, linking was bypassed to match the Python
+bridge fixture. All 25 real GPU candidates were compared to their exact CPU
+renders. For CPU-black pixels, the GPU's worst per-candidate 99th percentile
+was zero. Worst per-candidate P95 GPU-to-CPU OKLab was 0.00053. Exact Match
+certification was 0.02561 OKLab against 0.050, with median luma error 0.01614
+(the CPU-only fixture fit measures 0.01593). The mock's artificial 0.002
+black lift instead gave 0.05454 exact OKLab and correctly triggered fallback.
+
+## November 19 — Denoise zoom and JPEG Ultra HDR on the minimum Mac
+
+MacBook Neo, A18 Pro, 8 GB, Electron at 1408×794 under the shared GPU lock.
+Same approved RAWs, Grade defaults and RAW cleanup as the baseline below.
+The figures are single elapsed observations. Memory is the maximum sampled
+whole-app physical footprint in decimal GB. The sample window includes the
+preceding 500 ms. Compare timing movements against the existing 5% band.
+
+| Photo | Method | 110% wait before → after (s) | 110% memory before → after (GB) | 110% → Fit (s) | Fit → 100% (s) | 100% → 110% (s) | Warm zoom peak (GB) |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Canon | Standard | 1.54 → 0.41 | 2.43 → 2.10 | 0.26 | 0.40 | 0.37 | 1.87 |
+| Canon | Fine Grain | 14.40 → 11.52 | 2.73 → 2.01 | 1.25 | 0.68 | 0.25 | 1.78 |
+| Canon | Clean Grain | 13.54 → 2.63 | 2.68 → 1.81 | 0.97 | 0.60 | 0.21 | 1.79 |
+| Sony | Standard | 2.85 → 0.46 | 4.45 → 3.78 | 0.28 | 0.42 | 0.35 | 3.78 |
+| Sony | Fine Grain | 34.06 → 25.69 | 4.69 → 2.28 | 2.21 | 0.63 | 0.21 | 2.14 |
+| Sony | Clean Grain | 32.96 → 5.05 | 4.52 → 2.14 | 1.87 | 0.56 | 0.24 | 2.14 |
+
+On both photos, the final native drawing surfaced the visible region at each
+zoom and passed the viewer coverage check. The display buffer at 110% was
+about 2430 × 1015, about 20 MB per HDR surface. The 42 MP full drawing buffer
+would use 339 MB per HDR surface. Standard's shorter last-picture wait
+includes the removal of a whole-image catch-up render after the viewport was
+already drawn. Cold Fine Grain timing varies with preparation and I/O.
+
+The Clean Grain switch reused the whole-photo fit and native Fine Grain RGB
+and ran zero wavelet tiles. It was faster than the projected 6–8 s Canon
+and 13–17 s Sony.
+
+The intermediate two-photo run repeated cold Fit and 100%, one Detail
+Recovery drag and 100% → Fit and back for each method. Its native surface was
+still full size. These are timing observations from that intermediate build.
+
+| Photo | Method | Fit first (s) | 100% first (s) | Detail Recovery drag (s) | 100% → Fit (s) |
+| --- | --- | ---: | ---: | ---: | ---: |
+| Canon | Standard | 0.31 | 0.26 | 0.12 | 0.10 |
+| Canon | Fine Grain | 12.37 | 13.45 | 0.17 | 0.85 |
+| Canon | Clean Grain | 16.24 | 16.43 | 0.12 | 0.98 |
+| Sony | Standard | 1.16 | 0.40 | 0.12 | 0.24 |
+| Sony | Fine Grain | 31.78 | 34.72 | 0.20 | 1.89 |
+| Sony | Clean Grain | 40.54 | 41.81 | 0.16 | 1.86 |
+
+### JPEG Ultra HDR delivery
+
+Full-size quality 90 exports with Denoise enabled for both renditions.
+Reduced Proof uses a 1200 px artifact at a 1000-nit display target. Time and
+whole-app peak appear together below. A dash marks a missing baseline.
+
+| Photo | Method | Export before (s / GB) | Export after (s / GB) | Reduced Proof before → after (s) | Reduced Proof after (GB) |
+| --- | --- | ---: | ---: | ---: | ---: |
+| Canon | Standard | 20.45 / 4.76 | 12.57 / 4.23 | 5.73 → 2.72 | 3.25 |
+| Canon | Fine Grain | — | 27.76 / 3.14 | — → 3.10 | 2.88 |
+| Canon | Clean Grain | — | 34.10 / 3.50 | — → 2.89 | 2.98 |
+| Sony | Standard | 69.32 / 6.82 | 38.67 / 3.75 | 3.83 → 2.60 | 3.77 |
+| Sony | Fine Grain | 90.22 / 6.57 | 45.56 / 5.91 | 3.75 → 4.67 | 4.77 |
+| Sony | Clean Grain | 111.39 / 6.63 | 52.84 / 5.96 | 3.85 → 3.48 | 4.39 |
+
+Canon Standard ran on the GPU before the last change to account for overlapping
+readback and upload arrays in admission. The final Canon Standard delivery
+route still needs a measured check. Canon Fine and Clean used file-backed CPU
+strips. Sony Standard reduced Proof was measured in the earlier bounded-zoom
+run. The last Sony run reached **119.12 s / 13.50 GB** for Standard full-size
+Proof. The spike came from decoded Proof reconstruction after encoding. The
+subsequent Sony Fine and Clean export and reduced Proof peaks include memory
+left by full-size Proof. The earlier Sony measurements also exceeded 4 GB for
+those modes, before the file-backed export destination was built. The final
+fresh-profile memory qualification for those combinations remains open.
+
+[Real-app timing driver](../../codebase/tests/performance/denoise-grain-latency.js)
+
+## November 19 — Windows Grade Grain preparation race
+
+The live log from `4479f494` shows two Fine Grain preparations for the same
+Canon 5202 × 3464 HDR source. They took 18.12 s and 15.69 s. The first draw
+measured noise at the 1611 px Fit size and the backend fitted the native
+source separately. Publishing the native noise measurement led to a second
+preparation and expired the token the viewer was still using. Scratch
+reservation succeeded both times. These are observations from Steve's
+Windows session at 2560 × 1440.
+
+The fix was checked on the same Canon RAW in HDR on Windows, Electron at
+2560 × 1440 under the shared GPU lock. The disposable grade used default
+Grade settings and Even out harsh specks at ×2.5. These are single
+input-to-picture observations.
+
+| Action | Wait |
+| --- | ---: |
+| Enable Fine Grain at Fit | 17.57 s |
+| Fine Grain Fit → 100% | 1.80 s |
+| Fine → Clean Grain at 100% | 4.20 s |
+| Clean Grain 100% → Fit | 1.09 s |
+
+The Clean switch reused the Fine Grain RGB. The pan and Navigate checks kept
+the whole picture mounted, including 112 Fine and 124 Clean frames that
+needed the softer layer. Across 3,400 samples there were no blank viewers or
+error statuses.
+
+## November 19 — Windows Grade Denoise picture stability
+
+Windows PC, Electron at 2560 × 1440 under the shared GPU lock, Canon
+`IMG_0790.CR2` in Grade HDR with Highlight Compression Peak Fit (Maximum)
+and Even out harsh specks at ×2.5. Baseline: `91406215`. The holds ran for
+31 seconds at each zoom. The baseline samples started five seconds after
+the first exact picture. The fixed samples also waited for initial highlight
+and scope work to finish. Soft swaps after one +0.25 EV exposure change
+were counted over the next ten seconds at 100%.
+
+| Method | Fit requests before → after (source / Grain / proxy) | 100% requests before → after (source / Grain / proxy) | Soft swaps while still at 100% | Soft swaps after exposure change |
+| --- | --- | --- | ---: | ---: |
+| Standard | 35 / 0 / 0 → 0 / 0 / 0 | 0 / 0 / 0 → 0 / 0 / 0 | 0 → 0 | 3 → 0 |
+| Fine Grain | 0 / 0 / 0 → 0 / 0 / 0 | 662 / 329 / 19 → 0 / 0 / 0 | 9 → 0 | 4 → 0 |
+| Clean Grain | 0 / 0 / 0 → 0 / 0 / 0 | 892 / 471 / 27 → 0 / 0 / 0 | 14 → 0 | 4 → 0 |
+
+The app requested zero new Grain preparations during the holds in both
+builds. The fixed run had no 507 responses and peaked at 1.96 GB whole-app
+memory. Scroll and Navigate tests kept the whole photo visible in 1,315
+sampled pan frames and reached sharp coverage at each stop. The soft layer
+covered newly exposed areas in 100 Standard, 148 Fine and 145 Clean frames.
+
+Single waits with the fix were 0.52 s to enable Standard at Fit and 14.14 s
+to switch from Standard to Fine at 100%. Fine to Clean at 100% took 4.04 s
+and finished without an error. Fit to 100% took 0.67 s for Standard, 1.73 s
+for Fine and 1.76 s for Clean. Fine and Clean returned from 100% to Fit in
+1.19 s and 1.13 s.
+
+## November 19 — Denoise after the railing-light fix
+
+MacBook Neo, A18 Pro, 8 GB, Electron at 1408×794 under the shared GPU lock.
+The decoded-pixel baseline is commit `5d04daa0`. The runs add timing diagnostics
+around the existing rendering paths. The input RAWs are the 18.02 MP Canon
+`IMG_0790.CR2`, 42.39 MP Sony `_DSC7970.ARW` and 42.39 MP atrium
+`DSC01212.ARW`, with lens correction Off and Even out harsh specks at ×2.5.
+Fit drew 1288×858 on the Canon and 1285×858 on the Sony. The marked portrait
+`DSC05622.ARW` is part of the image reference.
+
+Each value is one observation. Times are seconds from the action to the last
+accepted picture, or to completion shown in Export. Export uses full-size
+quality 90 JPEG Ultra HDR, with the method applied to both renditions. Proof
+builds and visibly presents a reduced 1200 px JPEG Ultra HDR at a 1000-nit
+display target. Memory is the app's sampled physical footprint in decimal GB,
+with the usual 500 ms census. A sub-sample peak can be higher.
+
+| Photo | Method | Fit first | 100% first | 110% enable / switch | Recalculate at Fit | 100% → Fit | Fit → 100% | Pan at 100% | Full export | Reduced Proof | Peak GB |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Atrium | Standard | — | — | 2.77 | — | — | — | — | — | — | 4.11 |
+| Atrium | Fine Grain | — | — | 32.85 | — | — | — | — | — | — | 4.31 |
+| Atrium | Clean Grain | — | — | 32.72 | — | — | — | — | — | — | 4.23 |
+| Canon | Standard | 0.28 | 1.55 | 1.54 | 0.08 | 0.10 | 1.05 | 0.91 | 20.45 | 5.73 | 4.76 |
+| Canon | Fine Grain | 11.22 | 13.81 | 14.40 | 12.99 | 1.16 | 0.50 | 0.41 | — | — | 2.73 |
+| Canon | Clean Grain | — | — | 13.54 | — | — | — | — | — | — | 2.68 |
+| Sony | Standard | 0.36 | 2.67 | 2.85 | 0.09 | 0.10 | 1.87 | 0.89 | 69.32 | 3.83 | 6.82 |
+| Sony | Fine Grain | 31.13 | 31.49 | 34.06 | 30.97 | 3.19 | 0.64 | 1.00 | 90.22 | 3.75 | 6.57 |
+| Sony | Clean Grain | 38.76 | 38.88 | 32.96 | 38.02 | 2.64 | 0.16 | 0.58 | 111.39 | 3.85 | 6.63 |
+
+### First preparation breakdown
+
+Model requests are time spent in network requests for the noise model. Setup
+includes the noise model and, for experimental methods, native backend setup.
+Grain fit and filter plus writes are elapsed backend stages inside setup. The
+four worker values are cumulative time across parallel tiles and overlap.
+File-write time measures submitting bytes to the scratch file. Region reads
+cover the request intervals without double-counting overlapping requests.
+Upload is time spent submitting texture writes. Tile rendering can include
+some of those reads and uploads. Paint delay is the time after the final
+submit to the observed frame.
+
+| Photo | Method | First action | Rendering route | Whole wait | Model requests | Setup | Grain fit | Filter + writes | Worker wavelet / colour / pack / write | Region reads | Upload | GPU resolve | Render / submit | Paint delay |
+| --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Atrium | Standard | 110% | Tiled (streamed) | 2.77 | 0.12 | 0.13 | — | — | — | — | — | — | 1.662 | 0.017 |
+| Atrium | Fine Grain | 110% | Tiled (streamed) | 32.85 | 0.01 | 31.94 | 8.28 | 23.60 | 117.57 / 0.00 / 0.94 / 15.17 | 0.94 | 0.047 | — | 0.841 | 0.013 |
+| Atrium | Clean Grain | 110% | Tiled (streamed) | 32.72 | 0.61 | 31.84 | 0.00 | 31.17 | 114.41 / 34.77 / 1.37 / 20.28 | 1.36 | 0.042 | — | 0.816 | 0.005 |
+| Canon | Standard | Fit | direct | 0.28 | 0.09 | 0.18 | — | — | — | — | — | 0.05 | 0.000 | 0.008 |
+| Canon | Standard | 100% | Tiled (streamed) | 1.55 | 0.00 | 0.00 | — | — | — | — | — | — | 0.568 | 0.016 |
+| Canon | Standard | 110% | Tiled (streamed) | 1.54 | 0.00 | 0.01 | — | — | — | — | — | — | 0.546 | 0.030 |
+| Canon | Fine Grain | Fit | direct | 11.22 | 0.00 | 10.35 | 2.22 | 8.12 | 39.95 / 0.00 / 0.29 / 5.18 | 0.80 | 0.007 | 0.82 | 0.000 | 0.026 |
+| Canon | Fine Grain | 100% | Tiled (region) | 13.81 | 0.00 | 13.04 | 3.10 | 9.93 | 43.10 / 0.00 / 0.34 / 6.84 | 0.48 | 0.042 | — | 0.524 | 0.013 |
+| Canon | Fine Grain | 110% | Tiled (streamed) | 14.40 | 0.01 | 13.84 | 3.96 | 9.87 | 47.82 / 0.00 / 0.38 / 6.17 | 0.40 | 0.040 | — | 0.486 | 0.025 |
+| Canon | Clean Grain | 110% | Tiled (streamed) | 13.54 | 0.00 | 12.99 | 0.00 | 12.98 | 48.69 / 14.89 / 0.61 / 7.46 | 0.40 | 0.038 | — | 0.490 | 0.027 |
+| Sony | Standard | Fit | direct | 0.36 | 0.16 | 0.27 | — | — | — | — | — | 0.06 | 0.000 | 0.003 |
+| Sony | Standard | 100% | Tiled (streamed) | 2.67 | 0.01 | 0.01 | — | — | — | — | — | — | 1.664 | 0.019 |
+| Sony | Standard | 110% | Tiled (streamed) | 2.85 | 0.12 | 0.13 | — | — | — | — | — | — | 1.722 | 0.010 |
+| Sony | Fine Grain | Fit | direct | 31.13 | 0.00 | 29.09 | 6.71 | 22.37 | 107.14 / 0.00 / 0.89 / 16.50 | 1.96 | 0.010 | 1.98 | 0.000 | 0.025 |
+| Sony | Fine Grain | 100% | Tiled (region) | 31.49 | 0.01 | 30.41 | 7.72 | 22.67 | 111.97 / 0.00 / 0.83 / 14.03 | 0.47 | 0.046 | — | 0.741 | 0.023 |
+| Sony | Fine Grain | 110% | Tiled (streamed) | 34.06 | 0.02 | 33.30 | 8.03 | 25.23 | 120.41 / 0.00 / 0.99 / 19.47 | 0.50 | 0.045 | — | 0.689 | 0.008 |
+| Sony | Clean Grain | Fit | direct | 38.76 | 0.00 | 35.82 | 6.96 | 28.85 | 109.02 / 35.87 / 1.33 / 19.16 | 2.44 | 0.423 | 2.88 | 0.000 | 0.015 |
+| Sony | Clean Grain | 100% | Tiled (region) | 38.88 | 0.00 | 37.65 | 7.60 | 30.04 | 117.14 / 36.33 / 1.39 / 17.61 | 0.53 | 0.044 | — | 0.850 | 0.025 |
+| Sony | Clean Grain | 110% | Tiled (streamed) | 32.96 | 0.09 | 32.06 | 0.00 | 31.97 | 119.45 / 36.55 / 1.42 / 18.99 | 0.63 | 0.042 | — | 0.843 | 0.008 |
+
+### Each slider at Fit
+
+The three input samples span about 80 ms. Standard and Color Splotches are
+timed through release. The common sliders in Fine Grain and Clean Grain show
+their last live feedback while held. Grain Evenness draws its first changed
+picture after release. Recalculate above shows a complete experimental rebuild
+with the selected method.
+
+| Slider at Fit | Canon Standard | Canon Fine | Canon Clean | Sony Standard | Sony Fine | Sony Clean |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Amount | 0.13 | 0.19 | — | 0.17 | 0.24 | 0.13 |
+| Detail Recovery | 0.12 | 0.15 | — | 0.17 | 0.14 | 0.15 |
+| Luminance | 0.23 | 0.15 | — | 0.15 | 0.15 | 0.14 |
+| Color Noise | 0.20 | 0.14 | — | 0.12 | 0.14 | 0.19 |
+| Finest | 0.18 | 0.14 | — | 0.13 | 0.15 | 0.14 |
+| Fine | 0.12 | 0.13 | — | 0.22 | 0.14 | 0.13 |
+| Medium | 0.17 | 0.13 | — | 0.17 | 0.14 | 0.15 |
+| Coarse | 0.25 | 0.14 | — | 0.12 | 0.18 | 0.14 |
+| Grain Evenness | — | 12.59 | — | — | 26.78 | 33.16 |
+| Color Splotches | — | — | — | — | — | 0.15 |
+
+### Memory at 110%, zoom-out and export
+
+The gate is 4.00 GB. The 4.55 GB Sony Clean Grain zoom-out from the earlier
+native-preparation run remains a failure. The fresh measurements below include
+the earlier Denoise action in the 500 ms sampling window at very short actions.
+
+| Measured memory | Standard | Fine Grain | Clean Grain |
+| --- | ---: | ---: | ---: |
+| Canon 110% | 2.43 | 2.73 | 2.68 |
+| Sony 110% | 4.45 | 4.69 | 4.52 |
+| Atrium 110% | 4.11 | 4.31 | 4.23 |
+| Canon 100% → Fit | 2.66 | 2.67 | — |
+| Sony 100% → Fit | 4.38 | 4.87 | 4.34 |
+| Canon full export | 4.76 | — | — |
+| Sony full export | 6.82 | 6.57 | 6.63 |
+
+At 110% each action started one client preparation, with zero cancellations,
+stale preparations or restarts in the trace. Standard showed Preparing then
+Ready. Both method switches showed Recalculating then Ready, with the previous
+picture available while work ran. Fine Grain and Clean Grain each issued one
+successful native preparation request. Clean Grain reused the whole-photo
+grain fit from Fine Grain.
+
+Both 100% and 110% requested the native processing edge. The 110% sequence
+used tiled streaming from Standard through both switches. The fresh 100%
+experimental activations used tiled visible-region transport. Fit used the
+direct renderer with downsampled reads from the same type of native
+preparation. The sequence and the percentage both differ between the
+samples. On the Sony, Fine Grain spent 33.25 of 34.06 s inside setup at 110%,
+and the last tiled render used 0.69 s. A repeated preparation did not account
+for the long wait in the observed run.
+
+All three Sony full exports completed on CPU after GPU memory admission.
+They reached 6.57–6.82 GB. The Sony Fine Grain zoom-out reached 4.87 GB,
+and the Sony Clean Grain zoom-out reached 4.34 GB on this run. Both cross
+the 4 GB gate. Canon Standard export completed on GPU and reached 4.76 GB.
+
+The timed extension stopped at the agreed cutoff. Open cases are Canon
+Fine Grain full export and Proof, and Canon Clean Grain at Fit and 100%,
+including Recalculate, zoom, pan, slider drags, full export and Proof.
+The atrium was timed at 110%. The portrait was used for image comparison.
+
+[Timing driver](../../codebase/tests/performance/denoise-grain-latency.js) ·
+[Reference review](../../codebase/output/review/denoise-speed-baseline/index.html) ·
+[Local timing receipts](../../codebase/output/denoise-validation)
+
+## November 19 — Experimental Denoise in the app
+
+MacBook Neo, A18 Pro, 8 GB, Electron at 1408×794, shared GPU lock. Native
+18.02 MP Canon IMG_0790.CR2 and 42.39 MP Sony _DSC7970.ARW, with Even out
+harsh specks at ×2.5. Fit used 1288×858 and 1285×858, respectively. Preparation
+runs from the control action to the exact picture at the requested zoom.
+The first preview can be a different picture that appears while work runs.
+These are single action-to-screen measurements, with the photo already open.
+
+### Original build (ea6aaaef)
+
+The earlier 1.68 s Clean Grain preparation readings were measured at Fit.
+The updated driver reproduced Steve's 30-second wait at 100%.
+
+| Action | 18 MP Canon | 42 MP Sony |
+| --- | ---: | ---: |
+| Fine Grain, first preparation at Fit | 1.17 s | 0.46 s |
+| Fine Grain, first preparation at 100% | 3.83 s | 9.95 s |
+| Fine Grain, Recalculate at Fit | 0.46 s | 0.29 s |
+| Fine Grain, 100% to Fit | 0.28 s | 0.44 s |
+| Fine Grain, Fit to 100% | 3.92 s | 9.77 s |
+| Clean Grain, first preparation at Fit | 2.03 s | 2.41 s |
+| Clean Grain, first preparation at 100% | 33.86 s | 74.83 s |
+| Clean Grain, Recalculate at Fit | 1.70 s | 1.63 s |
+| Clean Grain, 100% to Fit | 35.99 s | 100.10 s |
+| Clean Grain, Fit to 100% | 31.43 s | 82.16 s |
+
+At 100%, backend Clean Grain preparation took 32.32 s of the Canon's
+33.86 s and 72.91 s of the Sony's 74.83 s. On the Canon, the 18 correction
+requests transferred 72 MiB and took 0.92 s in total. The zoom-out runs
+each rebuilt the Fit result, repeated native preparation, and then rebuilt
+Fit again. The sampled pans reused their preparation. The Sony pan drew
+in 0.53 s. One Canon pan stalled for 88.78 s during reported system memory
+pressure, with two correction reads totaling 0.12 s and no preparation.
+
+The earlier drag and native export trials used this build. The drag clock
+ran to the next accepted frame. Native JPEG Ultra HDR export used the GPU,
+quality 90, with the 1000-nit target.
+
+| Action | 18 MP Canon | 42 MP Sony |
+| --- | ---: | ---: |
+| Fine Grain, Amount drag | 98–102 ms | 98–348 ms |
+| Clean Grain, Color Splotches drag | 100–117 ms | 100–115 ms |
+| Clean Grain, Dark Specks drag | 100–110 ms | 97–102 ms |
+| Fine Grain, native export | 16.56 s | 45.21 s |
+| Clean Grain, native export | 43.18 s | 124.81 s |
+
+### Native grain preparation
+
+Same MacBook Neo, RAWs, settings, window and lock. These action-to-screen
+samples cover the disk-backed implementation in this branch. Canon samples
+precede the visible-region-only follow-up. Sony Clean Grain's 100% and
+navigation samples use the follow-up. The Sony Fine Grain run precedes it.
+The cases that moved by more than 10% are shown with the zoom and pan waits.
+
+| Action | 18 MP Canon | 42 MP Sony |
+| --- | ---: | ---: |
+| Fine Grain, first preparation at Fit | 13.25 s | 26.70 s |
+| Fine Grain, first preparation at 100% | 14.27 s | 38.19 s |
+| Fine Grain, Recalculate at Fit | 12.32 s | 27.90 s |
+| Fine Grain, 100% to Fit | 0.92 s | 2.02 s |
+| Fine Grain, Fit to 100% | 1.07 s | 5.15 s |
+| Fine Grain, pan at 100% | 0.90 s | 0.90 s |
+| Clean Grain, first preparation at Fit | 15.50 s | 35.61 s |
+| Clean Grain, first preparation at 100% | 18.22 s | 31.86 s |
+| Clean Grain, Recalculate at Fit | 15.57 s | 33.30 s |
+| Clean Grain, 100% to Fit | 1.24 s | 2.79 s |
+| Clean Grain, Fit to 100% | 1.04 s | 0.13 s |
+| Clean Grain, pan at 100% | 0.90 s | 0.45 s |
+
+Every sampled experimental pan and zoom reused the same native result.
+A Fit photo fills the viewer and does not take a pan. Canon Clean Grain
+at Fit spent 3.00 s fitting the grain and 11.53 s filtering and writing
+the temporary result. At 100% those stages took 3.07 s and 12.47 s.
+The shortest candidate for further CPU savings is to render each wavelet
+tile once and reuse its neighbouring finished pixels for the colour pass,
+cutting repeated work in tile overlaps. This is a proposed optimization.
+
+The Sony result occupies 678,236,160 bytes on disk. Its native source is
+508,677,120 bytes. In the visible-region follow-up, the whole-app physical
+footprint still reached 4,547,194,712 bytes during 100%-to-Fit. The disk
+allowance passed. The 4 GB whole-app memory limit remains a failing gate.
+Native RAW export timings for this revision are unmeasured.
+
+[Timing driver](../../codebase/tests/performance/denoise-grain-latency.js)
+
+## November 18 — Relative colour and patch repair (Denoise research)
+
+MacBook Neo, A18 Pro, 8 GB, research code `c2364570`. Native 18.02 MP Canon
+IMG_0790.CR2 and 42.39 MP Sony _DSC7970.ARW. Three full-frame CPU runs per
+photo through the shared lock with the app CPU pool and one thread per
+OpenCV/BLAS operation. Seconds are medians and observed ranges. Signed RAW
+development and the noise model are ready before these clocks start.
+Even keep includes its whole-photo grain fit. Added times after Even keep
+include reading and writing the complete result. The order of those passes
+reverses on the middle run.
+
+| Action | Canon 18.02 MP | Sony 42.39 MP | Conditions |
+| --- | ---: | ---: | --- |
+| Today, full CPU Denoise resolve | 3.29 (2.85–3.66) | 9.11 (7.54–9.12) | MacBook Neo, shipping Denoise, tamed RAW ready |
+| Even keep brightness 18 px | 6.13 (4.90–6.46) | 14.43 (13.49–15.04) | MacBook Neo, grain fit + resolve |
+| Green/magenta channel balance (strong) | +0.82 (0.77–0.89) | +2.06 (2.01–2.16) | MacBook Neo, after Even keep |
+| Relative colour cleanup (gentle) | +0.57 (0.48–0.59) | +1.34 (1.30–1.38) | MacBook Neo, after Even keep |
+| Relative colour cleanup (strong) | +0.59 (0.47–0.65) | +1.32 (1.32–1.45) | MacBook Neo, after Even keep |
+| Relative colour cleanup (large splotches) | +1.07 (0.89–1.20) | +2.50 (2.47–2.54) | MacBook Neo, after Even keep |
+| Nearby patch healing | +3.19 (2.20–3.21) | +5.83 (5.78–5.98) | MacBook Neo, after Even keep |
+| Whole-area patch averaging | +6.68 (5.65–8.17) | +15.97 (15.26–16.04) | MacBook Neo, after Even keep |
+| Large-splotch colour cleanup + nearby healing | +3.63 (3.12–3.93) | +8.32 (8.23–9.42) | MacBook Neo, both passes after Even keep |
+| Even keep 18 px + large-splotch colour cleanup + nearby healing | 9.76 (8.01–10.39) | 22.75 (21.72–24.47) | MacBook Neo, sum per run, tamed RAW and model ready |
+| AI Denoise reference | 11.16 | 29.88 | MacBook Neo, one guarded Bayer AI render each, including RAW preparation and highlight blending, Canon reused from round 4 and Sony disk-backed |
+
+Noisy is the developed source with Denoise off. This is an offline study and
+the clocks exclude app interaction, display conversion and writing review
+images. [Round 5 results](research/denoise-v1-2026-11-16/round5-relative-colour-and-patch.md)
+
+## November 18 — Even keep brightness and targeted specks (research)
+
+MacBook Neo, A18 Pro, 8 GB, base `f2e57fef` with the research tools in this
+commit. Three paired native runs with the shared CPU pool and the shared lock.
+The same signed, tamed frame and Denoise noise model are already available at
+each size. Canon IMG_0790.CR2 and Sony DSC04375.ARW. Numbers are medians with
+observed ranges in seconds. Small differences inside the timing spread describe
+the sample. These are CPU resolve and post-pass times.
+
+| Action | 18.02 MP | 42.39 MP | Conditions |
+| --- | ---: | ---: | --- |
+| Today, full CPU resolve | 3.59 (2.97–3.86) | 9.46 (8.30–9.52) | MacBook Neo, production baseline |
+| Even keep 18 px, local average only | +0.09 (0.04–0.32) | +0.08 (0.06–0.95) | MacBook Neo, paired against Today |
+| Even keep 18 px, local grain-weighted | +0.16 (0.02–0.58) | +0.60 (0.51–1.37) | MacBook Neo, paired against Today |
+| Even keep 18 px, grain-matched, including fit | +2.92 (2.69–3.55) | +6.31 (6.16–7.33) | MacBook Neo, paired against Today |
+| Grain fit only | 2.57 (2.30–2.62) | 6.08 (6.02–6.08) | MacBook Neo, per-photo grain adjustment |
+| Hue unify, strong | +3.66 (3.34–3.68) | +8.75 (8.71–8.83) | MacBook Neo, direct extra pass |
+| Green/magenta cleanup, strong | +0.88 (0.81–0.95) | +2.14 (2.11–2.47) | MacBook Neo, direct extra pass |
+| Green/magenta channel balance, strong | +0.88 (0.80–0.98) | +2.16 (2.13–2.40) | MacBook Neo, direct extra pass |
+| Dark clump breakup, strong | +0.43 (0.41–0.45) | +1.29 (0.98–1.30) | MacBook Neo, direct extra pass |
+| Dark clump breakup, Medium only, strong | +0.62 (0.55–0.62) | +1.48 (1.45–1.50) | MacBook Neo, direct extra pass |
+| Grain-matched 18 px + strong channel balance + strong clump breakup | +4.13 (4.02–4.96) | +9.78 (9.54–10.74) | MacBook Neo, summed incremental costs against Today |
+
+[Round 4 results](research/denoise-v1-2026-11-16/even-keep-round4.md)
+
+## November 18 — Canon speck strength ladders (research)
+
+MacBook Neo, A18 Pro, 8 GB. Two opposite-order single-worker CPU sweeps under
+the shared lock on the same 18.02 MP `IMG_0790.CR2` frame, started from
+`a20dd944` with the research scripts in this commit. The observed baseline
+spread exceeds the earlier ±10% descriptive allowance. Ranges describe these
+runs. The timings measure native filtering with the developed frame and model
+already available, except for AI’s separate original-RAW route.
+
+| Action | Observed seconds | Conditions |
+| --- | ---: | --- |
+| Signed AHD with Even out ×2.5, and shared noise measurement | 3.23 and 1.65 | One preparation before both sweeps |
+| Shipping Denoise | 4.86–5.80 | Native baseline resolve |
+| Even keep, energy-matched / band removal | 13.30–19.78 / 3.74–4.30 | Energy-matched timing includes 9.66–10.40 s of whole-frame calibration |
+| Stronger Denoise | 3.92–5.84 | Fine and Medium resolve, all tested targets and strengths |
+| Fill pits inside / after Denoise | 6.47–8.22 / 7.14–8.58 | Native resolve plus fill. Brightness-only post-pass takes 2.26–2.55 s |
+| Whole-image smoothing | 4.90–6.00 | Shipping resolve plus smoothing. Combined 8-pixel step adds 0.14 s |
+| RawNIND Bayer with protected Opposed reconstruction | 14.40 | One cold original-RAW run. Model stage 9.69 s, child sampled peak 1.53 GB |
+
+[Canon speck strength ladders](research/denoise-v1-2026-11-16/canon-speck-ladder.md)
+
+## November 18 — Marked colour speck trials (research)
+
+Paired native CPU resolve timings use the existing ±10% descriptive allowance
+because timings vary between runs on the same machine. The trial goal is about
+1 second added at 18 MP. The scope starts with the developed image and a shared
+noise model and ends at the reconstructed colour-only result. App slider latency
+is a separate gate.
+
+| Action | 18.02 MP, seconds | 42.39 MP, seconds | Conditions |
+| --- | ---: | ---: | --- |
+| Today + Even out source, Denoise resolve | 3.51 (3.05–3.62) | 8.66 (8.59–8.96) | November 18, MacBook Neo A18 Pro/8 GB, `f0bb2405` with research scripts in this commit. IMG_0790.CR2 and DSC04375.ARW, same tamed source and noise model, shared CPU pool, three alternated runs under the shared lock. |
+| A, wide colour after Denoise | +1.16 (+1.06–1.29) | +3.05 (+2.34–3.33) | Same Mac, median and range of paired differences against today. |
+| A, wide colour before Denoise | +4.86 (+4.79–5.37) | +12.21 (+11.40–12.68) | Same Mac and pairing. Includes the second resolve needed to hold baseline luminance. |
+| B, brightness-guided colour inside Denoise | +0.58 (+0.23–0.85) | +0.67 (+0.36–0.68) | Same Mac and pairing. One wavelet solve. |
+
+[Trial and review](research/denoise-v1-2026-11-16/colour-speck-trials.md)
+
+## November 18 — Denoise keep-factor diagnostic
+
+| Action | Observed wall time | Conditions |
+| --- | ---: | --- |
+| Produce the six-photo same-site attribution receipt | 18.83 s | MacBook Neo, A18 Pro, 8 GB, `c91546bc`, shared lock, single-worker CPU, one complete receipt run. Native-size noise sample windows plus 512 px test crops, seven whole-photo noise fits, exact CPU reconstruction check. Research command to JSON only. Peak process-tree RSS 0.814 GB. [Receipt](research/denoise-v1-2026-11-16/keep-survivors-receipt.json). |
+
+## November 17: optional harsh-speck sensor clamp (minimum Mac)
+
+MacBook Neo / A18 Pro / 8 GB, shared GPU lock, window setting 1408×794,
+OpenMP3/BLAS1, approved originals read-only. Implementation based on `b1d0e63e`,
+recorded in this implementation commit. Three observations per setting,
+alternating Off/On/On/Off/Off/On on the same unpacked source; the ±10%
+descriptive allowance was proposed in the trial log before measurement.
+No existing tolerance, limit or budget changes. Hot pixels off, speck threshold
+2.5, included absolute floor .005. Source open/unpack, EXIF, lens, WB/matrix,
+Denoise, UI and delivery are excluded: this is sensor cleanup + Opposed + signed
+AHD to camera RGB, not action-to-screen latency or a claimed speedup.
+
+| Action, same Mac | Off → On (median; observed range) | Added development / cleanup step |
+| --- | --- | --- |
+| 18.02 MP Canon IMG_0790.CR2 | .929 s (.913–.935) →2.134 s (2.103–2.196) | +1.205 s; cleanup 1.213 s (1.191–1.254), including noise fit |
+| 42.39 MP Sony DSC04375.ARW | 2.485 s (2.472–2.636) →5.238 s (5.235–5.248) | +2.753 s; cleanup 2.751 s (2.699–2.771), including noise fit |
+
+Off invokes neither noise fitting nor clamping (exact sample and developed-pixel
+result tests); only the pre-existing development work remains. All timing
+spreads are inside the declared allowance. Receipt:
+`codebase/output/raw-speck-cleanup/measurement.json`; reusable read-only tool
+`codebase/tools/measure_raw_specks.py` also records the no-floor/.001/.002/.005
+comparison. .005 reduces clean changed readings by 95.2% and total correction
+by 81.3%; noisy changed readings and total correction are exactly unchanged.
+
+Focused real-app timings for this control (`bb8c9b1e` plus qualification drivers
+in this commit; same Mac/date/window, disposable profiles, existing 4GB setting,
+serial shared lock):
+
+| Action | Observed range | Conditions |
+| --- | --- | --- |
+| Two-photo Edge Grade import →first picture, both cleanup options enabled | CPU 10.491–25.811 s; GPU 7.866–23.915 s | DSC00264.ARW and IMG_3129.CR2; complete request/display path, threshold2.5; Library saved-GPU scene 5.965–11.539 s |
+| Same two-photo Edge check, both options off | CPU 8.004–19.544 s; GPU 5.487–18.066 s | Separate regression invocation, same sources; Library 3.607–6.246 s. These are validation observations, not alternating whole-wait performance pairs or a new budget |
+| Five-photo default Library GPU RAW thumbnail request | .678–1.023 s, GPU development .158–.475 s | Existing five-source corpus, Off; CPU comparison development 2.66–9.88 s; different routes, no speedup claim |
+| Plain 90-second Library viewport check | First picture .6 s; total runner 93.93 s; 9/9 visited photos pass | Frozen library-mixed-v1, visible plain Electron, both cleanup options off; unvisited photos are outside this default check |
+| Ten-step plain-Electron Single check | Open .382 s; steps .099–10.518 s (median1.597); sequence32.826 s, total runner94.20 s; pass | Same frozen fixture, visible window, default cold/source routes; descriptive validation timings, no new responsiveness gate |
+
+
+Receipts: `codebase/output/raw-speck-cleanup/{gpu-delivery,edge-colour-raw,library-gpu-raw}.log`
+and `codebase/output/edge-colour-raw/1794927668959/comparison.json` (enabled),
+plus `codebase/output/quick-library-check/speck-{plain,single}/report.json`.
+
+Fast qualification on this same Mac: Node 15.56 s (1,108 pass / one skip),
+Python 319.30 s (4,236 pass / 155 skips / one xpass), focused sensor/state 2.44 s
+(53 pass). These are validation durations, not application-response timings.
+
+## November 17: green–magenta colour cleanup (research only)
+
+MacBook Neo / Apple A18 Pro / 8 GB / one CPU-native thread, November 17, 2026;
+adapter `cc48b535`, exact source/inventory hashes in each receipt. Shared machine
+lock, no overlapping heavy job, unchanged 2.5 GB research tree-RSS guard.
+Complete RAW open/normalization/signed research AHD, global corrected model,
+default Denoise and colour cleanup; every native pixel consumed. 768px cores,
+64px sensor-development and 66px Denoise context; larger context than earlier
+32px readers. Single observations, inherited ±10% descriptive allowance.
+**These are CPU research-pipeline costs, not action-to-screen or GPU timings.**
+No app code/default/budget changes and no shipping recommendation.
+
+| Same-Mac action | Canon 18.02 MP, s | Sony 42.39 MP, s |
+| --- | ---: | ---: |
+| Signed current Denoise, no taming | 9.56 | 19.11 |
+| Approved 2.5σ taming | 12.01 | 25.37 |
+| Taming + green balancing | 12.06 | 25.48 |
+| Taming + camera-G median1 | 14.03 | 27.15 |
+| Taming + camera-G median3 | 13.57 | 28.40 |
+| Taming + median1 preserving Y | 12.99 | 27.65 |
+| Taming + targeted GM2/area25 | 16.21 | 33.38 |
+| Taming + green + targeted GM | 15.41 | 33.13 |
+| Taming + GM + orange–blue | 18.73 | 40.20 |
+| Taming + local-MAD post5×5 | 13.77 | 30.67 |
+| Taming + guarded pre9×9 | 89.80 | 193.82 |
+| Taming + guarded post9×9 | 47.71 | 115.04 |
+| Taming + unguarded post9×9 | 25.01 | 61.39 |
+
+Retained measurement guards total 37.8 minutes excluding lock waits, withdrawn
+preliminaries and standard suites; maximum sampled tree RSS 2.244 GB. Strong
+post9×9 adds 13.0/36.0 seconds over taming and suppresses 61% of counted GM
+islands, but removes about 59% of real simulated-star GM signal. Protected
+pre9×9 has little extra cleanup for its much larger cost. No new GPU route or
+speed claim is justified; an accepted operation would need bounded CPU work
+and the existing GPU route, with end-to-end qualification.
+
+Evidence: `codebase/output/denoise-v1/chroma-cleanup/` native/phase JSON and
+logs; [research result](research/denoise-v1-2026-11-16/chroma-cleanup.md).
+
+Standard validation, same Mac: Node TAP body **14.88 s** (1,107 pass / one
+skip), Python pytest body **260.40 s** (4,227 pass / 155 skips / one xpass).
+Python guard including startup/shutdown 262.16s / 2.124 GB.
+Corrected normal-system-temp invocations; the initial output-tree/temp-name
+fixtures produced false failures, with no test/app changes. Standard Library
+90-second observation takes **93.86s** including launch/shutdown,
+no picture errors, 9/33 pictured in viewport scope, five valid stored pictures;
+first-picture observation .4s, longest gap 7s. This is not a full-collection or
+new responsiveness pass. The initial attempt mistakenly used the research
+2.5 GB CPU supervisor and stopped after 16.56s; standard app limits are unchanged.
+No broad GPU sweep, installer or push. Final output **13.3 GB**; review 16.215 MB.
+
+
+## November 17: signed RAW validation follow-up (minimum Mac)
+
+MacBook Neo / A18 Pro / 8 GB, November 17, unpackaged 1408x794, baseline
+`7e444686`, current signed build `c3b7a3ed` plus the signed-vignetting correction
+in this record's commit. Shared GPU lock, one app check at a time, no heavy
+concurrent workload. These are observed validation durations, not a speed
+claim, changed budget or new performance gate. All picture gates stay fixed.
+
+| Action, same Mac | Observed duration / outcome | Conditions |
+| --- | --- | --- |
+| Five-photo Library GPU RAW qualification | 31.7 s final driver; all five pass | Includes CPU finished-picture oracle. A7 whole thumbnail request .872 s, GPU step .430 s; separate Grade CPU decode 7.89 s. Different paths, not a whole-user-wait comparison or speedup claim |
+| RAW Single comparisons | 141–151 s including launch/oracle/shutdown; 14/18 pass on both builds | Four older failures exposed before later UI/detail waits; no completed Single/native UI timing |
+| Zoomed Denoise | Initial refusal 23.8 s; quiet HEAD stopped at 103.6 s, baseline at 242.5 s | Both reach Full reference and the same straighten stall; stopped waits are not completion timings |
+| Live Export tile check | 43.6–49.6 s to required-GPU assertion failure | CPU export completes on both builds; 5.332 GB fixed charge exceeds 4 GB, so no seven-export timing comparison |
+| Plain-Electron 90-second Library check | Hard timeout in observe; 188.6 s including shutdown | 130-second deadline; no pictured-coverage or responsiveness pass claimed |
+
+Retained real-app invocation windows total **23m22s**, conservatively including
+launcher/shutdown and the earlier selector attempt; CPU isolation trials bring
+slow validation to **about 26 minutes**. Ledger/logs:
+`codebase/output/denoise-v1-followup/check-times.json`. This does not include
+setup, code inspection/editing or final fast suites. No timings are compared
+with PC baselines. The existing 5% live-tile allowance remains unchanged and
+was not reached in these failing runs.
+Final fast suites on the same Mac: Node **12.28 s**, 1,103 pass / one skip;
+Python **263.53 s**, 4,215 pass / 155 skips / one xpass, existing deprecation
+warning only. These are test durations, not application-response measurements.
+
+## November 17: production Pixel cleanup CPU step
+
+MacBook Neo / A18 Pro / 8 GB, November 17, 2026, sensor implementation
+`63196460`. Shared machine lock, NumPy/BLAS one thread, one observation per source;
+inherited ±10% descriptive allowance. Production `configuration` plus `apply`,
+using the approved original RAWs after unpack, signed per-phase normalization,
+256-row repair strips and no saved camera profile. No full-size photo copies or
+retained timing scratch. Off skips both operations. These are **step costs**,
+not action-to-screen waits, speed improvements or GPU timings; source
+open/unpack, AHD, highlight reconstruction, rendering and delivery are excluded.
+
+| Action, same Mac | Noise estimate + filter = total added CPU step | Conditions |
+| --- | --- | --- |
+| Canon 18.02 MP, cleanup on | .110 + .209 = .319 s | IMG_0790.CR2, visible 5202×3464; three candidates repaired |
+| Sony 42.39 MP, cleanup on | .112 + .483 = .595 s | 2025_0730_1331_3.arw, visible 7968×5320; no candidates repaired |
+
+Integration fast-check clocks on the same Mac: complete Node suite 14.79 s
+(1,103 passed / one skipped), complete Python suite 270.46 s (4,125 passed /
+155 skipped / one xpassed). These are validation durations, not app waits.
+Final focused filter/state checks take 1.08/1.49 s (20/4 passed) after the added
+fixture cases and mechanical test-file split, on the same Mac.
+
+## November 17: signed Bayer production-helper development cost
+
+MacBook Neo / A18 Pro / 8 GB, signed Bayer integration, same source and machine
+for both routes. Shared machine lock; LibRaw OpenMP team 3, BLAS 1, serial
+Grade row bands, signed native AHD one C thread/256-row strips. One observation
+per condition, inherited ±10% descriptive timing allowance (not a correctness
+gate or speed claim). Source open/unpack, demosaic/orientation and existing
+normalise/WB/ACEScg tail are included. EXIF, highlight reconstruction, lens,
+Denoise, rendering and action-to-screen waits are excluded.
+
+| Action, same Mac | Unsigned control → signed production helper | Conditions |
+| --- | --- | --- |
+| Canon 18.02 MP development | .895 → 1.054 s; added .158 s | IMG_0790.CR2; AHD .417 → .607 s; finite output, unchanged maximum 3.05624 |
+| Sony 42.39 MP development | 2.129 → 2.495 s; added .366 s | 2025_0730_1331_3.arw; AHD 1.225 → 1.879 s; finite output, unchanged maximum 2.91165 |
+
+The added whole development subclock is about 17–18%; faster float transport
+normalisation partly offsets the extra signed AHD work. This is an explained
+correctness cost, not an unexplained timing drift. No GPU cost, memory pass,
+parallel Library throughput or complete user-wait result is inferred. Production
+code and conditions are pinned by this entry's signed RAW integration commit;
+the unsigned comparison is the explicitly frozen research control, not a shipping
+compatibility path. No extra timing scratch is retained.
+
+## November 17: single-photo hot pixel filter (research only)
+
+Research implementation `227dcaf6` / `b486999d`; no production integration.
+MacBook Neo A18 Pro / 8 GB, CPU one thread, shared machine lock and unchanged
+2.5 GB process-tree guard. Native RAW → normalisation → optional hot filter →
+bounded AHD/global adaptive model/shipping-default Denoise; no UI, geometry,
+lens or Opposed color. One observation per condition, inherited ±10%
+descriptive allowance. Whole-pipeline differences are noise, not speedups.
+
+| Research action, same Mac | Result | Conditions / evidence |
+| --- | --- | --- |
+| 18.02 MP Canon: filter disabled → enabled | Whole wait 8.361 → 8.144 s; added filter .190 s; process peak .720 → .811 GB | `output/denoise-v1/hot-pixel/native-IMG_0790.json`; 768px cores, 86px Denoise + 16px AHD halos, no RGB frame cache |
+| 42.39 MP Sony: filter disabled → enabled | Whole wait 17.045 → 16.933 s; added filter .471 s; process peak .892 → 1.098 GB | `native-2025_0730_1331_3.json`; identical native protocol |
+| Quick / full / supplementary point decisions | 7.831 / 62.489 / 5.844 s; peak process .549 / .753 / .554 GB | `quick.json`, `full.json`, `point-decisions.json`; fresh four-method runs, not app wait |
+| Frozen optics / corpus / public splits | Optics 29.450 s; corpus guard 15.040 s; held-out 43.357 s / seen 75.251 s | 3,456 point trials; 18 RAW entries / 15 supported; 19 held-out / 33 seen crops; descriptive harness throughput, not app wait |
+| Added-step GPU parity and expanded optics group | Guard 46.490 s / 1.538 GB tree RSS | `gpu-optics-guard.json`; 35 kernel cases pass, common CPU downstream; no native GPU speed claim |
+| Required fast checks | Node 12.912 s; Python 266.69 s | 1,091 passed / one skipped; 3,999 passed / 155 skipped / one xpassed; no failures; `node.log`, `python.log` |
+
+Decision and limitations: `research/denoise-v1-2026-11-16/raw-pixel-cleanup.md`,
+“Single-photo hot pixel filter (November 17)”. Earlier map-backed timings
+below describe a different historical algorithm and are not comparisons.
+
+## November 17: signed RAW shadows (research only)
+
+MacBook Neo / A18 Pro / 8 GB, one CPU/native thread, signed AHD prototype
+`e44d75b3`; extra RawNIND decision baseline `0fcca1b1`. Shared machine lock,
+unchanged 2.5 GB sampled process-tree guard. Single runs, existing ±10%
+descriptive allowance; **no action-to-screen performance claim**. Native
+development sums include shared unpack, AHD and normalise/ACEScg subclocks,
+not Denoise, highlights, lens, final rendering or all harness overhead.
+Current rawpy also orients; signed native strips stay sensor-oriented.
+
+| Research action, same Mac | Time / sampled peak tree RSS | Conditions |
+| --- | --- | --- |
+| Canon 18.02 MP current / signed development | .840 / 1.088 s; .819 GB combined command | IMG_0790.CR2, ISO3200. Added .248 s. AHD .537 / .651 s; tail .288 / .393 s; signed sensor subtract .029 s. |
+| Sony 42.39 MP current / signed development | 1.976 / 2.518 s; 1.332 GB combined command | 2025_0730_1331_3.arw, ISO4000. Added .542 s. AHD 1.299 / 1.539 s; tail .661 / .919 s; signed sensor subtract .044 s. |
+| Quick / full quality | 14.04 / 80.34 s; .634 / .754 GB guard peaks | 23 / 35 cases; signed and clipped-control fresh, frozen Off/current/RawNIND scores reused with hashes; no errors. |
+| Public held-out / seen quality | 47.60 / 93.84 s; .583 / .579 GB | 19 / 33 crops, four / seven scenes, reported separately; equal-scene weighting. |
+| Final decision crops / neutral and exposure safety | 31.03 / 4.14 s guarded commands; 1.092 / .468 GB | Twelve decision rows, seven new columns plus fresh RawNIND baseline. Four neutral levels × eight seeds; 12 CPU-compression ±6 EV cases. |
+| Required Node / final ORT-enabled Python checks | 12.04 / 254.20 s | Node 1091 passed, one skipped; Python 4010 passed, 150 skipped, one xpassed. Final Python guard 255.73 s / 2.005 GB; no failures. |
+
+Signed development improves synthetic/neutral bias, not the real Canon speck
+problem; native costs are **development-only**, not whole-app changes. No
+GPU port, budget change or shipping integration. Full audit, limitations and
+receipt links: [signed-shadows.md](research/denoise-v1-2026-11-16/signed-shadows.md).
+Initial Python without ORT was 275.88 s (4005 passed / 155 skipped / one
+xpassed), not a controlled regression comparison. Optional ORT 1.32.0 was
+installed from the local package cache, enabling five additional tests.
+
+## November 17: RAW Pixel cleanup (research only)
+
+MacBook Neo / A18 Pro / 8 GB, one CPU thread, prototype `78f93157`.
+Shared machine lock, unchanged 2.5 GB process-tree guard, single runs with
+±10% descriptive allowance. No app integration or whole-screen speed claim.
+The sparse-map probe is a hypothetical timing grid, not detected real faults;
+its values are discarded. Native whole waits include normalisation, global
+adaptive-model analysis, AHD and shipping `.75/.5/.75/.5` Denoise, plus the
+separately timed empty/sparse-map probes. No full-frame float cache or spool.
+
+| Research action, same Mac | Whole wait / peak process RSS | Pixel cleanup split / conditions |
+| --- | --- | --- |
+| 18.02 MP native RAW → AHD → Denoise | 7.186 s / .675 GB | Empty map .0054 s; sparse map .0207 s (260 coordinates), accumulated over all reads. IMG_0790.CR2; 768px cores, 86px Denoise + 16px AHD context. |
+| 42.39 MP native RAW → AHD → Denoise | 16.026 s / .718 GB | Empty map .0138 s; sparse map .0752 s (651 coordinates). 2025_0730_1331_3.arw; same bounded native sweep. |
+| Optional native per-CFA diagnostic scan, 18.02 / 42.39 MP | 2.237 / 4.537 s to sensor-audit result | Scan subclock 1.925 / 4.349 s; not required for map repair. Process peak .326 GB on Sony, then .364 GB after Canon in the same process (cumulative). 256-row strips with conservative border gaps. |
+| Quick / full quality | 5.171 / 41.498 s; .546 / .749 GB process RSS | 23 / 35 cases; two fresh adapters plus exact current-pixel control. Unchanged Off/current/RawNIND quality scores reused with hashes. |
+| Public held-out / seen quality | 24.396 / 45.732 s; .577 / .578 GB process RSS | 19 / 33 paired cases, kept separate; same fresh/reused policy. |
+| Known-defect positive controls / decision crops | 4.524 / 33.938 s guarded command wall | .444 / 1.108 GB tree RSS; seven generated charts / twelve native 288px decision rows. |
+| Required fast checks | Node 11.86 s; Python 265.20 s | Node 1091 passed, one skipped. Python 3980 passed, 150 skipped, one xpassed; guard succeeded. |
+
+Map repair is cheap, but no independent calibration is supplied for the real
+photos, so all no-map pixels stay exactly Off/current Denoise. No demonstrated
+Canon-speck quality gain or new GPU route is claimed. Algorithm, clipping and
+CPU/GPU placement qualifications: [raw-pixel-cleanup.md](research/denoise-v1-2026-11-16/raw-pixel-cleanup.md).
+Receipts: `codebase/output/denoise-v1/raw-pixel-cleanup/`; decision PNGs are
+regenerated in place, 11.69 MB. Original photographs are neither copied nor
+modified by these runs.
+
+## November 17: residual speck/chroma cleanup (research only)
+
+MacBook Neo / A18 Pro / 8 GB, one CPU thread, prototype `994152ca` /
+`f8f6e22b`, final surrounding-brightness variant. Shared lock, unchanged 2.5 GB
+process-tree guard, ±10% descriptive timing allowance. CPU standalone waits
+end at resolved linear pixels, not presentation; no controlled speedup or
+shipping GPU claim. App Denoise and memory allowances stay unchanged.
+
+| Research action | Whole wait / peak OS RSS | Relevant split | Conditions |
+| --- | --- | --- | --- |
+| 18.02 MP residual cleanup, cold native | 25.51 s / 1.174 GB | cleanup 14.15 s; bands 4.03 s; default resolve 1.13 s; cached resolve 1.14 s | Mac; IMG_0790.CR2; bounded 768px cores, 86px halo, original RAW read only. AHD/cache disk I/O included. |
+| 42.39 MP residual cleanup, cold native | 59.68 s / 1.221 GB | cleanup 34.94 s; bands 9.88 s; default resolve 2.85 s; cached resolve 2.75 s | Mac; 2025_0730_1331_3.arw; bounded 768px cores, 86px halo, original RAW read only. AHD/cache disk I/O included. |
+| quick research set | 38.43 s / 1.111 GB tree RSS | Not a product wait | Mac; seven adapters for quality sets, twelve rows/seven method columns for decision; no adapter errors. |
+| heldout research set | 91.14 s / 0.993 GB tree RSS | Not a product wait | Mac; seven adapters for quality sets, twelve rows/seven method columns for decision; no adapter errors. |
+| full research set | 166.23 s / 1.259 GB tree RSS | Not a product wait | Mac; seven adapters for quality sets, twelve rows/seven method columns for decision; no adapter errors. |
+| seen research set | 162.52 s / 1.050 GB tree RSS | Not a product wait | Mac; seven adapters for quality sets, twelve rows/seven method columns for decision; no adapter errors. |
+| decision research set | 30.20 s / 1.103 GB tree RSS | Not a product wait | Mac; seven adapters for quality sets, twelve rows/seven method columns for decision; no adapter errors. |
+| Cached 512² control resolve | median 13.82 ms; p95 15.02 ms; max 16.04 ms | zero Amount 0.12 ms | Mac; eight live controls × 0/.5/1; no analysis repeated. Full controls command 2.58 s / .630 GB tree RSS. |
+
+Same-kernel shipping estimate from measured cleanup/default subclocks: added
+CPU preparation 14–16 s at 18 MP / 35–38 s at 42 MP (roughly 19–22 s at
+24 MP), excluding source loading, existing wavelet work and presentation.
+Quality does not justify this cost or a GPU port. Report and receipts:
+[speck-cleanup.md](research/denoise-v1-2026-11-16/speck-cleanup.md),
+`codebase/output/denoise-v1/speck-cleanup/`.
+
+Final fast checks on Mac, `7690bb0e`: Node 11.94 s (1091 passed, one skipped);
+Python 246.77 s / 1.935 GB guarded tree RSS (3958 passed, 150 skipped, one
+xpassed). Focused 23 checks pass in 2.04 s after the live colour projection
+fix; the full Python suite was then rerun. Logs are in the same output folder.
+
+## November 16: pilot-guided empirical Wiener (research only)
+
+MacBook Neo / Apple A18 Pro / 8 GB, one CPU thread, tooling `e35fc744`,
+adapters `e8335fd9`, masked public-pair merge `1951c081`; ORT 1.32.0 only
+in the worktree venv. Shared machine lock and unchanged 2.5 GB process-tree
+RSS guard. Single-run measurements; descriptive ±10% allowance, no regression
+comparison. Native whole waits end at resolved ACEScg, **not on screen**.
+Temporary full-frame/cache disk I/O is included and scratch is removed.
+No Electron, GPU, production cache/budget change or shipping speedup claim.
+
+| Research action | Whole wait / peak RSS | Pilot / bands+gains / resolve | Conditions / evidence |
+| --- | --- | --- | --- |
+| Canon 18.02 MP, tuned-both | 22.36 s / 0.943 GB | 5.05 / 10.56 / 2.82 s | Mac; IMG_0790.CR2, ISO3200, read-only approved corpus. Decode+AHD 1.97 s, noise fit 1.77 s. |
+| Canon 18.02 MP, Bayer-both | 22.27 s / 1.380 GB | 7.44 / 9.22 / 2.32 s | Same Mac/photo, later run after public-pair ranking; not a controlled speed comparison. Decode+AHD 1.62 s, fit 1.46 s. |
+| Canon 18.02 MP, Bayer-luma | 29.57 s / 1.380 GB | 9.92 / 11.72 / 3.93 s | Same Mac/photo; corrected full-strength neural pilot, precomputed unity-WB AHD exposure anchor. |
+| Sony 42.39 MP, tuned-both | 54.60 s / 1.536 GB | 12.31 / 28.86 / 7.40 s | Mac; 2025_0730_1331_3.arw, ISO4000, read-only corpus. Decode+AHD 3.97 s, noise fit 1.85 s. |
+| Sony 42.39 MP, Bayer-both | 57.27 s / 1.871 GB | 18.28 / 26.86 / 6.62 s | Same Mac/photo, later single run; 77 neural tiles. Decode+AHD 3.71 s, fit 1.62 s. |
+| Sony 42.39 MP, Bayer-luma | 66.13 s / 1.658 GB | 21.71 / 29.08 / 9.34 s | Same Mac/photo; native sensor orientation, 77 neural tiles. |
+| Full quality set, 11 adapters | 299.34 s / 1.609 GB | Not a UI action | Mac; 27 synthetic + eight real cases, full/half scores, zero adapter errors. |
+| Public pairs, 11 adapters | 402.03 s / 1.228 GB | Not a UI action | Mac; reused verified CC0 subset, 52 crops / 11 scenes / four cameras. Four held-out and seven seen-by-RawNIND scenes reported separately, full/half valid-mask scores, zero errors. |
+| Live controls, cached 512² | 15.38–63.15 ms, median 28.06 ms, p95 37.41 ms; bypass 0.08–0.42 ms | No pilot/decomposition | Mac; six variants × three ISOs × Amount/Color Noise 0/.5/1 on two scenes. Entire sweep 129.47 s / 1.200 GB guarded. |
+| Independent grids / detail review | 37.76 / 26.86 s | Not a UI action | Mac; worst sampled peaks 1.151 / 1.234 GB. |
+| Final merged fast checks | Python 275.96 s / 2.124 GB; Node 21.27 s | Not product performance | Mac; Python 3944 passed, 151 skipped, 1 xpassed; Node 1091 passed, 1 skipped. No failures. |
+
+Evidence: `codebase/output/denoise-v1/pilot-wiener/` JSON/guard receipts and
+`review/index.html`; scope, half-scale fairness, control/quality failures and
+explicitly **estimated** GPU traffic costs are in
+[pilot-wiener.md](research/denoise-v1-2026-11-16/pilot-wiener.md).
+The FP32 native cache used 3.24/7.63 GB of temporary disk, not retained RAM.
+No variant satisfies the complete quality contract; shipping Denoise is unchanged.
+
+## November 16: RawNIND Bayer verification (research only)
+
+MacBook Neo / Apple A18 Pro / 8 GB; tooling `6fe14d32`, verified Bayer
+sensor-domain/gain correction, ORT 1.32.0 CPUExecutionProvider, one native
+thread, shared machine lock and 2.5 GB sampled process-RSS abort guard.
+Standalone research-tool durations, **not action-to-screen waits**. No GPU,
+timing repeat, native-photo benchmark or speedup claim. The existing ±10%
+descriptive timing allowance is unchanged; five-adapter and eight-adapter
+quality durations are not comparable performance baselines.
+
+| Research action | Duration / sampled peak process RSS | Conditions / evidence |
+| --- | --- | --- |
+| Corrected full quality set | 103.0 s / 1.377 GB | 27 synthetic + eight real crops; off/current/Bayer .5/.75/1; zero adapter errors. `output/denoise-v1/rawnind/results-full.json`, quality guard. |
+| Pinned reference and bias probe | 54.8 s / 1.406 GB | Nine clean scenes, two unbinned low-ISO crops, canonical/literal demo colour paths and actual TIFF readback, eight real shadow-bias cases, developed exposure −6…+6. `output/denoise-v1/verify/reference.json`, verify guard. |
+| Final Python fast suite | 265.3 s / 2.062 GB | 3,917 passed, 147 skipped, one xpassed; system TEMP under the research guard, optional local verified models present. `output/denoise-v1/verify/python-tests.log`. |
+| Final Node fast suite | 15.3 s | 1,091 passed, one skipped, zero failures. `output/denoise-v1/verify/node-tests.log`. |
+
+Earlier Bayer native timings below are retained history, **not timings of the
+corrected adapter**: it now needs an extra AHD pass to anchor exposure in
+camera RGB and uses upstream [0,1] sensor clipping. A new native speed/memory
+qualification has not been run. The unchanged linear rows remain historical
+measurements of that variant. Full quality, provenance and limits are in
+[Verification, November 16](research/denoise-v1-2026-11-16/rawnind-prototype.md#verification-november-16).
+
+## November 16: public noisy/clean RAW pairs (research only)
+
+MacBook Neo / Apple A18 Pro / 8 GB; base `045f5442`, pair tooling `20f2224a`,
+one native CPU thread, serial shared machine lock, no Electron/GPU. One
+descriptive run per action; ±10% timing noise allowance, no accepted budget
+changed. These end at research arrays/results, **not** a picture on screen.
+
+| Action | Measured time | Peak RSS | Conditions / evidence |
+| --- | ---: | ---: | --- |
+| Verify/register/brightness-match public RAW pairs | 39.44 s (40.18 s guarded wall) | 0.367 GB | 43 verified RAWs, 31 candidate pairs; 52 retained 512px crops / 11 scenes / four cameras. Rejections are preserved, not retried with looser screens. |
+| Off/default/tuned-PSNR/tuned-sharp pair baselines | 119.11 s (120.05 s guarded wall) | 0.588 GB | 208 crop-method evaluations; masked SDR/HDR metrics, small review, zero adapter errors; ISO 1600/3200/6400 only. |
+| Darktable-profiled pair interface smoke | 0.036 s adapter / 1.29 s guarded wall | 0.117 GB | Exactly one 96px crop, finite output, no fallback; no quality score. RawNIND model and GALOSH binary absent, skipped. |
+| Python fast suite with pair tooling | 280.73 s (282.99 s guarded wall) | 2.062 GB | 3928 passed / 149 skipped / one xpassed; no failures, no guard abort. |
+
+Peak is the larger available OS/process-tree measurement; watchdog threshold
+2.3 GB leaves room below the 2.5 GB research cap. The downloaded RAWs total
+1.170 GB; download plus prepared bundles 1.540 GB; review/contact sheet
+9.975 MB. Evidence: `codebase/output/denoise-v1/datasets/prepare-guard.json`,
+`public-pairs/{results-pairs,summary,baseline-guard,interface,interface-guard}.json`,
+and `public-pairs-pytest-guard.json` under the same `denoise-v1` folder.
+See [public-pairs.md](research/denoise-v1-2026-11-16/public-pairs.md) for licence,
+held-out contamination, exclusions, quality tables and limits. No shipping
+performance/quality pass or full-frame cost extrapolation is claimed.
+
+## November 16: RawNIND full-frame CPU prototype (research only)
+
+MacBook Neo / Apple A18 Pro / 8 GB; ONNX Runtime 1.32.0 CPUExecutionProvider,
+tooling `7bce787f`, one thread, fixed 512 input tiles, mirror edges, frame-global gain, native
+WB/camera colour tail. One run per row, under the shared machine lock, 2.5 GB
+process-RSS abort guard; no Electron/GPU or app integration. These waits end at
+a prepared ACEScg array, not a picture on screen. Source/result arrays are
+temporary disk-backed files. No timing regression or accelerator-gain claim;
+the harness's proposed ±10% descriptive allowance is unchanged.
+
+| Measured native action | Decode/prep / session / inference / stitch-colour s | Total wait / peak process RSS | Conditions / evidence |
+| --- | --- | --- | --- |
+| 18.02 MP Canon / RawNIND linear | 1.033 / 0.060 / 27.596 / 1.297 | 30.010 s / 1.371 GB | IMG_0790.CR2, ISO 3200, 140 retained-core tiles; app-native AHD normalisation. |
+| 18.02 MP Canon / RawNIND Bayer | 0.366 / 0.068 / 6.986 / 0.432 | 7.858 s / 1.064 GB | Same sensor, 35 tiles, phase-correct RGGB packing; explicit unclipped experimental extrapolation. |
+| 42.39 MP Sony / RawNIND linear | 2.133 / 0.155 / 59.628 / 2.863 | 64.842 s / 2.243 GB | 2025_0730_1331_3.arw, ISO 4000, 294 retained-core tiles, app-native AHD normalisation and portrait orientation. |
+| 42.39 MP Sony / RawNIND Bayer | 0.235 / 0.047 / 15.828 / 0.975 | 17.101 s / 1.519 GB | Same sensor, 77 tiles; explicit unclipped experimental extrapolation outside [0,1], not default fallback or qualified quality. |
+
+Native pixel-proportional 24 MP totals are **estimates**, 36.71–39.97 s linear /
+9.68–10.47 s Bayer, not measured actions or preparation-budget passes. Whole-app
+peak/settled memory, display, GPU/ANE, export reuse and 61 MP are unmeasured.
+Quality rejects both variants and all measured strengths; no shipping change.
+Evidence: `codebase/output/denoise-v1/rawnind/full-*.json`, guard receipts,
+`results-full.json`, `probes.json` and `review/index.html`; contracts and
+coverage limits are in [the prototype report](research/denoise-v1-2026-11-16/rawnind-prototype.md).
+
+## November 16: classical Denoise CPU prototypes (minimum Mac, research only)
+
+MacBook Neo / A18 Pro / 8 GB; one native CPU thread, shared cross-worktree
+run lock, no Electron/GPU. Measurement base `01992e9c`, prototype code
+`f032d924` (later build-only clock/Windows conventions do not alter filtering). Descriptive one-run
+timings with ±10% noise allowance; no accepted speed budget changed.
+These include all-corpus calibration and crop writing, not screen presentation
+or a packaged/whole-app memory measurement. The stages exclude that overhead.
+
+| Action | Prep / filter / develop | Research wall | Peak RSS | Conditions / evidence |
+| --- | --- | --- | --- | --- |
+| NumPy profiled wavelets, IMG_0790.CR2, 18.02 MP | 2.28 / 132.46 / 2.01 s | 143.47 s | 1.787 GB | Native sensor, ISO 3200; 1024px core +254 halo, bounded mapped scratch. |
+| NumPy profiled wavelets, 2025_0730_1331_3.arw, 42.39 MP | 2.18 / 314.93 / 4.91 s | 328.85 s | 1.638 GB | Native sensor, ISO 4000; same reference. |
+| Serial FP32 C GALOSH calibrated, IMG_0790.CR2, 18.02 MP | .49 / 30.52 / 1.68 s | 39.42 s | .995 GB | Native sensor, ISO 3200; 768px core +160 halo, global fit/anchor. |
+| Serial FP32 C GALOSH calibrated, 2025_0730_1331_3.arw, 42.39 MP | .51 / 65.21 / 3.95 s | 76.16 s | 1.244 GB | Native sensor, ISO 4000; same reference. |
+| Current Denoise tuning | — | 119.91 s | 1.070 GB | 81 settings ×27 full-set synthetic scenes, in-sample PSNR and MTF-constrained choices. |
+| Full thirteen-variant quality comparison | — | 665.97 s | 1.150 GB | 27 synthetic +8 real crops, all §3.2 harness metrics; zero adapter errors, 17.31 MB review including native crops. |
+
+Peak is the greater of OS parent high-water and 0.2s sampled process-tree RSS;
+all runs stay below the 2.5 GB research cap. Full quality-run totals and
+conditional native-C cost estimates are in
+[classical-prototypes.md](research/denoise-v1-2026-11-16/classical-prototypes.md).
+Evidence: `codebase/output/denoise-v1/full-*.json`, matching guard receipts,
+`classical-tuning.json` and `review/index.html`. No C wavelet or WGSL speed
+estimate is a measured pass; no current-app speed-up is claimed.
+
+## November 16: Denoise candidate CPU load smoke (research only)
+
+MacBook Neo / A18 Pro / 8 GB, ORT 1.32.0 CPUExecutionProvider, one thread,
+batch one, CPU arena/memory pattern disabled; one synthetic 512-square tensor
+per model, sequential cold invocation. Other-worker CPU activity possible.
+These are descriptive load checks, not production action-to-picture waits or
+an accepted speed comparison; no performance tolerance is changed.
+
+| Candidate / action | Measured time | Conditions / evidence |
+| --- | ---: | --- |
+| RawNIND linear: session / one 512×512 RGB tile | 0.033 / 0.358 s | 576 MB OS peak RSS, finite output; same ONNX hash as November 13 B1. |
+| RawNIND Bayer: session / one 512×512 packed tile → 1024×1024 RGB | 0.026 / 0.328 s | 606 MB OS peak RSS, finite output; no RAW decode, demosaic/color tail or presentation included. |
+
+Evidence: `codebase/output/denoise-v1/candidates/{cpu-smoke.json,smoke_cpu.py}`.
+Source, model hashes, licence checks, uncertain 24/61 MP extrapolations and
+adapter instructions: [candidate survey](research/denoise-v1-2026-11-16/candidates.md).
+No GPU/Electron run. Commit containing this note; no shipping code changed.
+
+## November 16: offline Denoise quality harness (minimum Mac)
+
+MacBook Neo / A18 Pro / 8 GB; CPU only, one native thread, no Electron/GPU.
+Harness `da0d5ace`; app reference `0ba5593f` (exact app base is recorded in
+`docs/technical/research/denoise-v1-2026-11-16/harness-baseline.md`). Timings
+cover corpus ISO inventory and calibration, crop development, both off/current
+Denoise adapters, every metric/probe and review writing. Proposed timing noise
+band ±10%; these shared-machine full runs vary beyond it (38.6–48.5 s), so this
+is a descriptive range, not an app speed or regression claim. No budget changed.
+
+| Action | Observed wait | Conditions / retained evidence |
+| --- | --- | --- |
+| Quick quality set | 11.4–13.9 s; latest 13.9 s, peak process RSS 0.82 GB | 21 generated cases + two real 512 px crops; <120 s budget. `codebase/output/denoise-v1/results-quick.json`. |
+| Full quality set | 38.6–48.5 s; latest 38.6 s, peak process RSS 1.14 GB | 27 synthetic cases (including two binned low-ISO photos) + eight real 640 px crops. Latest review 15.2 MB; `results-full.json` and `review/index.html` beside the quick JSON. Both sets below the 2.5 GB process limit. |
+
+Quality conclusions and provisional sensor-fit limits are in the harness baseline.
+No GPU, production export/Proof or whole-photo preparation speed was measured.
+
 ## November 16: DSC01287 saved-grade lag investigation (minimum Mac)
 
 MacBook Neo / A18 Pro / 8 GB, actual 1408×794 / DPR 2, default 4 GB,
@@ -4168,6 +7710,39 @@ cache-file index is proposed, requiring publication/eviction/recovery tests;
 not attempted as a same-day design change. Under-one-second screen completion
 on Steve's cache remains unqualified. No tolerance or budget changed.
 
+### November 25: Library Delete, two originals on the MacBook Neo
+
+| Backend action | Before | After |
+| --- | ---: | ---: |
+| Delete two originals without sidecars, preview + confirm | 140–148 ms | 114–121 ms |
+| Delete two originals with unchanged sidecars, preview + confirm | 151–153 ms | 123–138 ms |
+
+MacBook Neo, local APFS, seven warm trials per case with two disposable 32 MiB
+files in the same folder. Compared with `9ed134f2`. The system Trash call was
+substituted with a local no-replace move into a disposable folder. The native
+bookmark and content checks still ran. These times exclude the confirmation
+dialog, UI repaint and background membership upkeep. A 10% difference is
+treated as timing noise on this short test because filesystem flushes vary.
+The separate native Electron check passed actual Trash and Undo. Steve's
+large Library and click-to-screen time were not measured.
+
+| Phase median, ms | No sidecars before → after | Unchanged sidecars before → after |
+| --- | ---: | ---: |
+| Preview | 30.86 → 30.10 | 35.95 → 36.25 |
+| Confirm to backend result | 110.57 → 86.40 | 116.10 → 87.27 |
+| Uncontended command lane and writer wait | <0.01 → <0.01 | <0.01 → <0.01 |
+| Conflict scan / marks read | 0.15 / 2.54 → 0.04 / 1.96 | 0.16 / 8.05 → 0.05 / 7.55 |
+| SHA-256 across phases | 126.98 → 102.78 | 127.86 → 102.62 |
+| Prepare settings | 0.70 → 0.50 | 4.28 → 0.52 |
+| Durable command checkpoints | 4.03 → 3.90 | 6.92 → 5.17 |
+| Recovery bookmark / substitute Trash move | 0.92 / 0.20 → 0.89 / 0.19 | 1.57 / 0.37 → 1.53 / 0.36 |
+| Receipt verification | 24.94 → 25.24 | 25.20 → 25.27 |
+| Index updates / picture cleanup | 0.16 / 0.44 → 0.15 / 0.45 | 0.15 / 0.46 → 0.14 / 0.46 |
+
+Phase timings overlap. Receipt verification includes its SHA-256 and settings
+preparation includes its own checkpoints. The hashing reduction is one
+full read per original on a fresh command with stable file identities.
+
 Local evidence: codebase/output/w3-audit/timings-before.json,
 timings-after.json and measurement harness/logs in the same folder.
 
@@ -4269,3 +7844,159 @@ new test timeout. The existing 120 s grid checks are unchanged.
 | GPU made available again to all four live tiles | Not reached by the old driver | 2.11 s, or 3.30–4.20 s total from loss through restored live drawing |
 | Prepared scene reuse (per photo) | — | 23–33 ms |
 | Open Single / step to the next photo (2560 edge) | — | 0.27–0.66 s / 0.29–0.44 s |
+
+### Noise-model research — November 17, 2026
+
+Research revision `8b818d38`, not a shipping speed change. Every measurement
+uses the MacBook Neo A18 Pro / 8 GB, CPU one native thread, shared GPU lock
+and unchanged 2.5 GB research process-tree guard. Native clocks cover RAW
+open through all resolved pixels in bounded AHD/filter tiles; they exclude
+UI, live-control cache and disk persistence. Model-analysis subclocks overlap
+AHD and must not be summed. One observation per condition; existing ±10%
+descriptive allowance, no cross-machine comparison or speedup claim.
+
+| Action / input | Current → corrected | Conditions / evidence |
+| --- | --- | --- |
+| Native 18.02 MP Canon RAW to Denoise result | 6.878 → 7.564 s; model analysis 1.737 → 2.002 s; filtering 3.496 → 3.770 s; peak RSS .662 → .666 GB | Neo A18 Pro / 8 GB / CPU one thread; `output/denoise-v1/noise-model-raw-specks/native-{current,corrected}-IMG_0790.json` |
+| Native 42.39 MP Sony RAW to Denoise result | 15.266 → 15.819 s; model analysis 1.994 → 2.022 s; filtering 9.434 → 9.877 s; peak RSS .715 → .714 GB | Neo A18 Pro / 8 GB / CPU one thread; same folder, `native-{current,corrected}-2025_0730_1331_3.json` |
+| Corpus audit / synthetic quick / synthetic full | Guard walls 45.125 / 37.553 / 165.868 s; full peak tree RSS 1.569 GB | Neo A18 Pro / 8 GB / CPU one thread; `audit-guard.json`, `quick-guard.json`, `full-guard.json`; all adapters including historical RAW handoff |
+| Public held-out / seen matrices | Guard walls 94.621 / 165.609 s; peak tree RSS 1.135 / 1.102 GB | Neo A18 Pro / 8 GB / CPU one thread; `heldout-guard.json`, `seen-guard.json`; separate groups, not speed benchmarks |
+| Historical RAW-stage prototype, stopped for separate agent | Canon total 8.249 s / repair .434 s; Sony total 17.028 s / repair .961 s; clean probes 51.105 s guard wall | Neo A18 Pro / 8 GB / CPU one thread; `native-raw-*.json`, `clean-guard.json`; completed before scope change, no further RAW work or shipping recommendation |
+| Final model-only decision crops | 36.238 s guard wall; 1.117 GB peak tree RSS; 8.916 MB retained | Neo A18 Pro / 8 GB / CPU one thread; `decision-model-only-guard.json`, `output/denoise-v1/decision/manifest.json`; 12 fixed 256-pixel rows, historical RAW columns removed |
+
+The stable fit does not clean the lifted Canon shadows and is not proposed for
+shipping. Quality findings, final crop evidence and integration limits:
+`research/denoise-v1-2026-11-16/noise-model-and-raw-specks.md`.
+
+### November 21 — Lensfun coordinate-strip trial
+
+| Action | Observation | Conditions / evidence |
+| --- | --- | --- |
+| Lens coordinate and remap peak, Canon 18 MP | 1,098 → 585 MB process working set | Windows PC, `35a6b9ce`, `IMG_0790.CR2`, manual EF-S 18–135 mm IS, full-height versus 128-row coordinate requests in fresh processes |
+| Lens coordinate and remap peak, Sony 42 MP | 2,323 → 1,198 MB process working set | Windows PC, `35a6b9ce`, `_DSC7970.ARW`, Lensfun Auto, same trial |
+
+Both cameras changed finished SDR pixels. The [MEM-1 trial](briefs/sprint-denoise-gpu-logging-2026-11-21.md#mem-1--one-memory-budget-on-the-macbook-neo-overnight)
+records the perceptual comparison. The coordinate strips stay out of the app.
+
+### Library check environment investigation — November 17, 2026
+
+| Action | Observation | Conditions / evidence |
+| --- | --- | --- |
+| Plain Library observation at `2db4de36` | Outer 130 s deadline; diagnostic reproduction reaches the final animation-frame wait, but its last frame is over 110 s old | MacBook Neo A18 Pro / 8 GB / 1408×794, shared GPU lock, fresh isolated profiles, frozen v1. Safari fullscreen on the active desktop; Library document hidden after 20 frames, native window visible/non-minimized but unfocused. This is an invalid drawing measurement, not a Library speed regression or speed comparison. `output/quick-library-check/observe-diagnostic-progress/{report.json,quick-diagnostic.json,backend.log}`. |
+| Final plain / Single checks at `f65abf62` | Harness exits with explicit hidden/occluded-window failures in 95.746 / 6.979 s, not timeouts; plain scenario 90.895 s, Single stops at step 1 | Same Neo / 8 GB / 1408×794, shared lock, fresh isolated profiles, frozen v1, fast suites finished before app runs. Not valid performance baselines or passing checks. Plain additionally fails the existing system reserve and settled-memory guards (peak 3.546 GB); attribution not investigated. `output/quick-library-check/observe-final-{plain,single}/report.json` and `quick-diagnostic.json`. |
+
+## November 24, 2026 — Grade RAW pixel cleanup
+
+MacBook Neo (A18 Pro, 8 GB). Each RAW control change reopens the source and
+develops the whole sensor, even at Fit. In the baseline with cleanup off,
+Sony `_DSC7970.ARW` (42 MP) spent 3.41 s in demosaic, 0.23 s in highlight
+reconstruction and 0.48 s in Lensfun (6.43 s total RAW development); Canon
+`IMG_3129.CR2` (18 MP) spent 1.66 s, 0.40 s and under 0.01 s respectively
+(3.30 s total, no matching automatic lens correction).
+
+In the separate cold sensor-only runs, ×2.5 Harsh Specks cleanup (including
+noise estimation) went from 5.19 to 2.73 s on Sony and 2.83 to 1.26 s on
+Canon. Hot Pixels alone took about 0.9–1.0 s on Sony and went from 0.97 to
+0.63 s on Canon; Sony had no hot repairs and Canon had 13. With both on, a
+previously unseen ×2.9 still runs the speck scan; the backend sample went
+from 6.39 to 2.56 s of cleanup on Sony and 3.10 to 0.87 s on Canon. The
+before software checked all 24 neighbours across each whole plane. It now
+checks them only at candidate sites, after the same component and level
+rules. Hot-pixel candidate vetting and repair are batched, with the same
+directional ties. Both still read unchanged strip context.
+
+When a downstream lens edit or toggle back to the same settings needs a new
+development, it reuses the noise fit and the exact changed sensor samples,
+not a copy of the sensor or an RGB frame. The cache is limited to 24 MiB and
+16 entries per process and uses the source file identity and Bayer metadata.
+On the matching ×2.5 lens and toggle-back rows, cleanup dropped to 11 ms on
+Sony and about 1 ms on Canon; demosaic still ran. A Grade exposure edit does
+not reopen or reclean the RAW at all.
+
+All 30 whole-sensor and 22 fully developed image comparisons against the
+previous code matched SHA-256 byte for byte, with identical cleanup counts.
+This includes Hot Pixels alone, Harsh Specks alone, both together at ×2.5
+and ×2.9, and both together at ×2 and ×4; the sensor comparison covered all
+four thresholds for each speck mode. Fujifilm `DSCF6495.RAF` is X-Trans 6×6;
+the Bayer cleanup remained unsupported and left its sensor and developed
+pixels unchanged. The new cache test passes with this patch and fails on
+the previous code, which reruns all three cleanup operations on an identical
+sensor during a lens edit and an off/on toggle.
+
+**Time to the exact picture in Grade, in seconds (before → after).**
+Electron used the app's staged RAW replacement path under the GPU lock.
+All 76 timed actions per version presented the final generation at the
+requested zoom without a cutoff. Canon 100% uses the completed baseline
+rerun. These are one-sample waits under different shared machine loads:
+even the cleanup-off control moved, so the whole wait difference is not
+all due to this change. In particular, Sony Hot Pixels alone did not show a
+reliable enable improvement. Exposure edits were 0.05–0.23 s across both
+runs and made no RAW-import requests.
+
+| RAW | Zoom | Cleanup | Enable ×2.5 | New ×2.9 | Back to ×2.5 | Lens off | Toggle off | Toggle on |
+| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Sony | Fit | Hot | 6.45 → 7.28 | — | — | 6.14 → 5.45 | 5.16 → 5.41 | 5.81 → 5.10 |
+| Sony | Fit | Specks | 14.11 → 7.98 | 12.63 → 7.72 | 12.47 → 5.25 | 12.65 → 5.11 | 6.33 → 4.79 | 13.24 → 4.73 |
+| Sony | Fit | Both | 13.45 → 8.25 | 13.39 → 7.47 | 13.06 → 4.99 | 15.02 → 5.17 | 6.33 → 5.07 | 12.98 → 5.00 |
+| Sony | 100% | Hot | 7.55 → 6.00 | — | — | 7.39 → 5.16 | 6.27 → 5.01 | 10.00 → 5.18 |
+| Sony | 100% | Specks | 14.80 → 7.46 | 15.59 → 7.50 | 20.38 → 5.81 | 18.10 → 4.96 | 9.48 → 11.71 | 17.19 → 8.61 |
+| Sony | 100% | Both | 20.14 → 8.59 | 23.91 → 7.74 | 24.41 → 5.50 | 22.06 → 5.20 | 15.85 → 5.20 | 20.40 → 5.20 |
+| Canon | Fit | Hot | 6.32 → 2.90 | — | — | 6.00 → 2.62 | 4.39 → 2.61 | 5.41 → 2.46 |
+| Canon | Fit | Specks | 9.60 → 3.43 | 8.42 → 3.40 | 7.70 → 2.44 | 8.96 → 2.62 | 4.04 → 2.43 | 7.98 → 2.49 |
+| Canon | Fit | Both | 8.84 → 3.65 | 8.27 → 3.38 | 7.89 → 2.41 | 7.68 → 2.65 | 3.50 → 2.42 | 6.59 → 2.41 |
+| Canon | 100% | Hot | 3.32 → 3.08 | — | — | 3.32 → 2.83 | 2.79 → 2.85 | 3.12 → 2.61 |
+| Canon | 100% | Specks | 4.84 → 3.80 | 4.87 → 3.61 | 4.65 → 2.63 | 4.81 → 2.82 | 2.63 → 2.65 | 4.65 → 2.87 |
+| Canon | 100% | Both | 5.10 → 4.08 | 5.36 → 3.59 | 5.16 → 2.58 | 5.35 → 2.80 | 2.65 → 2.59 | 4.94 → 2.60 |
+
+[Grade baseline](../../codebase/output/grade-sweep/batch7-pixel-before.jsonl) ·
+[Canon 100% baseline rerun](../../codebase/output/grade-sweep/batch7-pixel-before-canon100.jsonl) ·
+[Grade after](../../codebase/output/grade-sweep/batch7-pixel-after.jsonl)
+
+Faster options that would change what the app shows, not implemented:
+
+- A reduced first picture at Fit could hide some of Sony's 3–5 s full
+  demosaic wait. It would not speed up the final exact picture or help at
+  100%.
+- A simpler speck model could save part of the remaining 1–3 s cold scan
+  on these files. It could also change which stars, fine texture and bright
+  edges are protected. An exact alternative for repeats would be to reuse a
+  developed result, subject to the app's existing memory limit.
+
+[Sensor byte hashes before](../../codebase/output/overnight/batch7-sensor-before.jsonl) ·
+[after](../../codebase/output/overnight/batch7-sensor-after.jsonl) ·
+[Developed hashes and stages before](../../codebase/output/overnight/batch7-stages-before.jsonl) ·
+[after](../../codebase/output/overnight/batch7-stages-after.jsonl) ·
+[Developed endpoint hashes before](../../codebase/output/overnight/batch7-develop-ends-before.jsonl) ·
+[after](../../codebase/output/overnight/batch7-develop-ends-after.jsonl)
+## November 24, 2026 — Saved Retouch replay on the Windows PC
+
+Cold Library grid before from the owning app log on `b3cd5f21`. After uses
+disposable copies of the same two photos and sidecars, requested together
+at 640 px in locked, unpackaged Electron at 2560 × 1440. The harness measures
+from request through draw and two animation frames. The older operation was
+real navigation with other Library activity, so the whole waits are indicative.
+The comparison uses 5% as the timing noise band for repeated conditions.
+
+| Photo | Retouch before | Retouch after | Whole wait before / after |
+| --- | ---: | ---: | ---: |
+| P7080774.ORF, 84 Heal repairs, GPU-developed source | 28.422 s | 0.747 s in Library | 38.32 / 11.72 s |
+| IMG_0432.CR2, four Heal repairs, CPU-developed source | 3.6–3.9 s | 0.125–0.134 s in a standalone run of the same replay function | 52.11 / 11.49 s |
+
+The ORF used one batch. Gather and readback took 21 ms, recipe read,
+validation and planning took 68 ms, the backend batch took 642 ms wall
+time with a 181 ms slowest solve, and upload and scatter took 8.5 ms.
+The browser request took 673 ms including the backend batch. The CR2
+CPU replay took 9–10 ms to copy the source, 116–124 ms to solve and
+0.25–0.27 ms to composite. Its slowest solve took 115–124 ms. The
+single-core reference solve alone measured 296–329 ms on the ORF
+and 179–182 ms on the CR2, before replay, transport and copying.
+
+Inside the saved repair masks, mean and maximum absolute scene-linear RGB
+differences against the old GPU kernels were 2.11e-9 and 2.38e-7 for the
+ORF, and 1.53e-9 and 1.49e-8 for the CR2. Both comparisons used the same
+native scene pixels per photo. ORF finished mean and p99.9 were
+0.00000936 and 0.000188 ΔE ITP for HDR, and 0.00000347 and 0.0000930
+ΔE 2000 for SDR. The CR2 straightens before finishing, so the raw repair
+mask was used only for scene-linear figures. The review shows both saved
+grades with Denoise bypassed to isolate Retouch. Its HDR AVIFs and SDR PNGs
+are in `codebase/output/review/retouch-cpu-heal/`.

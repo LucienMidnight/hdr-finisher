@@ -1,21 +1,17 @@
 function loadDenoiseDocument(document) {
   const fallback = defaultDenoiseDocument();
-  const source = document?.denoise || fallback;
-  const next = {
-    schema_version: 1,
-    hdr: {
-      ...fallback.hdr,
-      ...(source.hdr || {}),
-      controls: { ...fallback.hdr.controls, ...(source.hdr?.controls || {}) },
-      analysis: { ...fallback.hdr.analysis, ...(source.hdr?.analysis || {}) },
-    },
-    sdr: {
-      ...fallback.sdr,
-      ...(source.sdr || {}),
-      controls: { ...fallback.sdr.controls, ...(source.sdr?.controls || {}) },
-      analysis: { ...fallback.sdr.analysis, ...(source.sdr?.analysis || {}) },
-    },
+  const loadLane = (lane) => {
+    const saved = document?.denoise?.[lane];
+    const defaults = fallback[lane];
+    if (!saved) return defaults;
+    return {
+      ...defaults, ...saved,
+      // Method-less grades used the adaptive wavelet method when saved.
+      controls: { ...defaults.controls, method: "standard", ...saved.controls },
+      analysis: { ...defaults.analysis, ...saved.analysis },
+    };
   };
+  const next = { schema_version: 1, hdr: loadLane("hdr"), sdr: loadLane("sdr") };
   const sessionId = state.session?.session_id || null;
   const sameSession = state.denoiseDocumentSessionId === sessionId;
   const unchanged = JSON.stringify(next) === JSON.stringify(state.denoise);
@@ -26,15 +22,111 @@ function loadDenoiseDocument(document) {
     return;
   }
   for (const lane of ["hdr", "sdr"]) {
+    const previous = state.denoiseRuntime[lane];
+    previous?.analysisController?.abort();
     state.denoiseRuntime[lane] = {
       status: state.denoise[lane].enabled ? "dirty" : "off",
       dirty: Boolean(state.denoise[lane].enabled),
       generation: (state.denoiseRuntime[lane]?.generation || 0) + 1,
       showOriginal: false,
+      microBackup: sameSession && next[lane].controls.method === "micro_grain" ? previous?.microBackup : null,
       error: "",
     };
   }
   renderDenoiseControls();
+}
+
+function microGrainUnavailable(lane) {
+  const metadata = state.session?.metadata?.extra;
+  if (!metadata?.micro_grain_bayer) return "Micro Grain needs an ordinary Bayer RAW.";
+  const source = state.session.source;
+  if (source?.width % 2 || source?.height % 2) return "Micro Grain needs complete Bayer cells at the sensor edges.";
+  const highlights = state.editDocument?.source?.raw_import_settings?.highlight_reconstruction;
+  if (highlights?.enabled && highlights.method === "edge_colour_v1") return "Micro Grain is not available with Edge Colour highlight reconstruction.";
+  if (gradeSourceIdentity(lane) === "authored-sdr") return "Micro Grain needs sensor data, not an authored SDR image.";
+  if (state.editDocument?.repairs?.length) return "Micro Grain is not available with retouch repairs.";
+  return "";
+}
+
+function microGrainControlsMatch(lane, controls) {
+  const live = state.denoise[lane].controls;
+  return live.method === "micro_grain" && live.micro_luminance === controls.microLuminance
+    && live.micro_color === controls.microColor && live.micro_detail === controls.microDetail;
+}
+
+function useMicroGrainCpu(lane, error, action) {
+  const runtime = state.denoiseRuntime[lane];
+  if (!runtime.microBackup) console.warn("Micro Grain GPU unavailable; using the CPU.", error);
+  runtime.microBackup = HDRGrainRoute.microFallback(runtime.microBackup, error, action);
+  Object.assign(runtime, { status: "ready", dirty: false, error: "" });
+  if (lane === state.currentView) renderDenoiseControls();
+}
+
+function currentGrainFrame(lane) {
+  const frame = state.acceptedPresentation;
+  const route = frame?.grainRoute;
+  return route && frame.lane === lane && frame.geometrySignature === geometrySignature()
+    && route.sessionId === state.session?.session_id && route.method === state.denoise[lane].controls.method
+    ? route : null;
+}
+
+function renderDenoiseRoute() {
+  if (!els.denoiseStatus || !els.denoiseRouteAction) return false;
+  const lane = state.currentView;
+  const settings = state.denoise[lane];
+  const runtime = state.denoiseRuntime[lane];
+  const frame = currentGrainFrame(lane);
+  const failure = frame?.key && state.gpuPreview?.grainFailures?.get(frame.key);
+  const route = HDRGrainRoute.describe({
+    method: settings.controls.method, enabled: settings.enabled, original: runtime.showOriginal,
+    unavailable: settings.controls.method === "micro_grain" && microGrainUnavailable(lane),
+    error: runtime.error, frame, cpuBusy: [...(runtime.grainCpuWork || [])].some(work => work.slow && work.method === settings.controls.method),
+    canRetry: failure && state.gpuPreview.grainFailures.canOfferRetry(failure),
+    retryNote: frame?.retryNote,
+  });
+  els.denoiseRouteAction.hidden = !route?.action;
+  if (!route) return false;
+  els.denoiseStatus.hidden = !route.message;
+  if (els.denoiseRouteAction.textContent !== (route.action || "")) els.denoiseRouteAction.textContent = route.action || "";
+  if (els.denoiseStatus.textContent !== route.message) els.denoiseStatus.textContent = route.message;
+  return true;
+}
+
+async function runDenoiseRouteAction() {
+  const lane = state.currentView;
+  const frame = currentGrainFrame(lane);
+  if (!frame || els.denoiseRouteAction.hidden || state.denoiseRuntime[lane].showOriginal || !state.denoise[lane].enabled) return;
+  if (els.denoiseRouteAction.textContent === "Switch to Clean Grain") {
+    await commitDenoiseControl("method", "clean_grain");
+    return;
+  }
+  if (!frame.key || !state.gpuPreview?.grainFailureCanRun(frame.key)) {
+    frame.retryNote = "The GPU is still busy or unavailable.";
+    renderDenoiseRoute();
+    return;
+  }
+  frame.retryNote = "";
+  state.denoiseRuntime[lane].dirty = true;
+  await recalculateDenoise(lane, { operation: "retry_grain_gpu" });
+}
+
+async function trackGrainCpuWork(lane, method, run) {
+  const runtime = state.denoiseRuntime?.[lane];
+  if (!runtime || method === "standard") return run();
+  const work = { method, slow: false };
+  const pending = runtime.grainCpuWork ||= new Set();
+  pending.add(work);
+  const update = () => {
+    if (lane === state.currentView && runtime === state.denoiseRuntime[lane]) renderDenoiseRoute();
+  };
+  const timer = window.setTimeout(() => { work.slow = true; update(); }, 2000);
+  try {
+    return await run();
+  } finally {
+    window.clearTimeout(timer);
+    pending.delete(work);
+    if (work.slow) update();
+  }
 }
 
 function renderDenoiseControls() {
@@ -46,6 +138,33 @@ function renderDenoiseControls() {
   const group = els.denoiseBypass.closest(".control-group");
   const defaults = defaultDenoiseDocument()[lane];
   const modified = !valuesEqual(settings.controls, defaults.controls);
+  const experimental = settings.controls.method !== "standard";
+  const micro = settings.controls.method === "micro_grain";
+  const unavailable = microGrainUnavailable(lane);
+  const editable = enabled && (!micro || !unavailable);
+  const option = els.denoiseMethod.querySelector('option[value="micro_grain"]');
+  if (option) {
+    const label = unavailable ? "Micro Grain · Unavailable" : "Micro Grain · Experimental";
+    if (option.disabled !== Boolean(unavailable)) option.disabled = Boolean(unavailable);
+    if (option.title !== unavailable) option.title = unavailable;
+    if (option.textContent !== label) option.textContent = label;
+  }
+  if (els.denoiseMethod.value !== settings.controls.method) els.denoiseMethod.value = settings.controls.method;
+  els.denoiseGrainControls.classList.toggle("hidden", !experimental || micro);
+  els.denoiseMicroControls?.classList.toggle("hidden", !micro);
+  els.denoiseAmount.closest(".control-row").classList.toggle("hidden", micro);
+  els.denoiseDetail.closest(".control-row").classList.toggle("hidden", micro);
+  els.denoiseLuminance.closest(".control-row").classList.toggle("hidden", micro);
+  els.denoiseColor.closest(".control-row").classList.toggle("hidden", micro);
+  els.denoiseAdvancedToggle.classList.toggle("hidden", micro);
+  els.denoiseCleanControls.classList.toggle("hidden", settings.controls.method !== "clean_grain");
+  // Color Splotches at 0% is the off switch; older grades saved a separate one.
+  const splotches = settings.controls.clean_splotches === false ? 0 : settings.controls.color_splotches;
+  els.denoiseCleanFringes.checked = settings.controls.clean_fringes !== false;
+  els.denoiseCleanFringes.disabled = !editable;
+  els.denoiseProtectEdges.checked = settings.controls.protect_color_edges === true;
+  els.denoiseSplotchSize.value = settings.controls.splotch_size;
+  els.denoiseSplotchSize.disabled = els.denoiseProtectEdges.disabled = !editable || splotches <= 0;
   els.denoiseBypass.classList.toggle("bypassed", !enabled);
   els.denoiseBypass.setAttribute("aria-pressed", String(enabled));
   group?.classList.toggle("bypassed", !enabled);
@@ -59,26 +178,27 @@ function renderDenoiseControls() {
     [els.denoiseFine, els.denoiseFineValue, settings.controls.fine_noise ?? 0.5],
     [els.denoiseMedium, els.denoiseMediumValue, settings.controls.medium_noise ?? 0.5],
     [els.denoiseCoarse, els.denoiseCoarseValue, settings.controls.coarse_noise ?? 0.5],
+    [els.denoiseEvenness, els.denoiseEvennessValue, settings.controls.grain_evenness],
+    [els.denoiseSplotches, els.denoiseSplotchesValue, splotches],
+    ...els.denoiseMicroSliders.map(([input, key, output]) => [input, output, settings.controls[key]]),
   ];
   for (const [input, output, value] of controls) {
     input.value = String(value);
     output.textContent = `${Math.round(value * 100)}%`;
-    input.disabled = !enabled || !["ready", "dirty"].includes(runtime.status);
+    input.disabled = !editable;
     updateRangeVisual(input);
   }
-  els.denoiseRecalculate.disabled = !enabled || ["preparing", "recalculating"].includes(runtime.status);
+  els.denoiseRecalculate.disabled = !editable || ["preparing", "recalculating"].includes(runtime.status);
   renderDenoiseNoiseViewControl();
   renderDenoiseAdvancedVisibility();
   const labels = { off: "Off", preparing: "Preparing", ready: "Ready", dirty: "Dirty", recalculating: "Recalculating", error: "Error" };
   if (els.denoiseState) els.denoiseState.textContent = labels[runtime.status] || runtime.status;
-  els.denoiseStatus.textContent = runtime.error || ({
-    off: "Denoise is off.",
-    preparing: "Preparing the denoise cache; the original remains interactive.",
-    ready: "Denoise cache ready.",
-    dirty: "The view changed. The previous valid result remains visible until recalculated.",
-    recalculating: "Recalculating; the previous valid result remains interactive.",
-    error: "Denoise could not be prepared. The original pipeline remains available.",
-  }[runtime.status] || "");
+  if (renderDenoiseRoute()) return;
+  // Steve, Nov 21: no status while Denoise works normally; only problems.
+  const message = runtime.error || (runtime.status === "error"
+    ? "Denoise could not be prepared. The original pipeline remains available." : "");
+  els.denoiseStatus.textContent = message;
+  els.denoiseStatus.hidden = !message;
 }
 
 /**
@@ -91,7 +211,7 @@ function denoiseNoiseViewAvailable(lane = state.currentView) {
   return Boolean(
     state.gpuPreview?.available
     && state.denoise?.[lane]?.enabled
-    && runtime && !runtime.showOriginal
+    && runtime && !runtime.showOriginal && !(state.denoise[lane].controls.method === "micro_grain" && runtime.microBackup)
     && ["ready", "dirty", "recalculating"].includes(runtime.status),
   );
 }
@@ -124,13 +244,35 @@ function toggleDenoiseNoiseView() {
   if (!state.denoiseNoiseView) debounceOverlayAndScopes();
 }
 
-function markDenoiseAnalysisDirty() {
-  const lane = state.currentView;
+function restoreDenoiseStatus(lane) {
   const runtime = state.denoiseRuntime[lane];
-  runtime.dirty = true;
+  runtime.status = !state.denoise[lane].enabled ? "off" : runtime.dirty ? "dirty" : "ready";
   runtime.error = "";
-  runtime.status = state.denoise[lane].enabled ? "dirty" : "off";
-  renderDenoiseControls();
+  if (lane === state.currentView) renderDenoiseControls();
+}
+
+function invalidateDenoisePreparation(lane, { dirty = false } = {}) {
+  const runtime = state.denoiseRuntime[lane];
+  if (!runtime) return;
+  runtime.generation += 1;
+  runtime.analysisController?.abort();
+  runtime.analysisController = null;
+  runtime.analysisInFlight = null;
+  runtime.preparationAfterCommit = null;
+  if (dirty) runtime.dirty = true;
+  restoreDenoiseStatus(lane);
+}
+
+function deferDenoisePreparation(runtime, saving) {
+  // A short pause lets rapid releases and toggles collapse onto the final
+  // settings. A render that arrives meanwhile waits for the same saved edit.
+  const quiet = new Promise(resolve => window.setTimeout(resolve, 120));
+  const pending = Promise.all([saving, quiet]).then(([saved]) => {
+    if (runtime.preparationAfterCommit === pending) runtime.preparationAfterCommit = null;
+    return saved;
+  });
+  runtime.preparationAfterCommit = pending;
+  return pending;
 }
 
 /**
@@ -143,87 +285,286 @@ function markDenoiseAnalysisDirty() {
  * requires.
  */
 function renderDenoiseAdvancedVisibility() {
-  const open = Boolean(state.denoiseAdvancedOpen);
+  const open = Boolean(state.denoiseAdvancedOpen) && state.denoise[state.currentView].controls.method !== "micro_grain";
   els.denoiseAdvancedToggle?.setAttribute("aria-expanded", String(open));
   els.denoiseAdvancedPanel?.classList.toggle("hidden", !open);
 }
 
 async function persistDenoiseSettings() {
   if (!state.session) return false;
-  const applied = await queueEditCommand("set_denoise_settings", { denoise: JSON.parse(JSON.stringify(state.denoise)) }, null, { refreshPreview: false });
-  if (applied) {
-    if (state.adjustments?.sdr?.linked_to_hdr && !valuesEqual(state.denoise.sdr, state.denoise.hdr)) {
-      state.denoise.sdr = structuredClone(state.denoise.hdr);
-      const runtime = state.denoiseRuntime.sdr;
-      runtime.generation += 1; runtime.dirty = Boolean(state.denoise.sdr.enabled);
-      runtime.status = runtime.dirty ? "dirty" : "off";
+  const draft = state.denoise;
+  const denoise = structuredClone(draft);
+  if (state.currentView === "hdr" && state.adjustments?.sdr?.linked_to_hdr) {
+    denoise.sdr = structuredClone(denoise.hdr);
+  }
+  const applied = await queueEditCommand("set_denoise_settings", { denoise }, null, { refreshPreview: false });
+  if (applied && state.denoise === draft) {
+    if (state.adjustments?.sdr?.linked_to_hdr && valuesEqual(draft.hdr, denoise.hdr)
+      && !valuesEqual(draft.sdr, draft.hdr)) {
+      draft.sdr = structuredClone(draft.hdr);
+      invalidateDenoisePreparation("sdr", { dirty: true });
     }
     renderLaneChrome();
   }
   return applied;
 }
 
-async function setDenoiseEnabled(enabled) {
+async function setDenoiseEnabled(enabled, { action } = {}) {
   if (!state.session) return;
   const sessionId = state.session.session_id;
   const lane = state.currentView;
+  const micro = state.denoise[lane].controls.method === "micro_grain";
   state.denoise[lane].enabled = Boolean(enabled);
   const runtime = state.denoiseRuntime[lane];
-  const generation = ++runtime.generation;
+  runtime.showOriginal = !enabled;
+  invalidateDenoisePreparation(lane);
+  const generation = runtime.generation;
   const isCurrent = () => state.session?.session_id === sessionId
     && state.denoiseRuntime[lane] === runtime && generation === runtime.generation;
-  runtime.error = "";
+  state.renderCoordinator?.cancelLane(lane, "superseded-by-denoise-toggle", { detach: true });
+  invalidatePreview(lane, { markDirty: false });
+  if (micro) markScopeUpdating();
   if (!enabled) {
     runtime.status = "off";
-    runtime.showOriginal = true;
     state.denoiseNoiseView = false;
     state.gpuPreview?.cancelDenoiseProcessing?.({ selectOriginal: true });
-    // Save while this photo still owns the action; a Full redraw can outlast
-    // the switch to another photo.
-    void persistDenoiseSettings();
     renderDenoiseControls();
-    await renderGpuDraft(lane, { longEdge: refinementProxyLongEdge() });
-    if (!isCurrent()) return;
+    const saving = persistDenoiseSettings().catch(() => false);
+    const revision = state.editRevision;
+    const longEdge = refinementProxyLongEdge();
+    // Keep the Denoise picture on screen until the original is ready, rather
+    // than a screen-sized underlayer enlarged to the current zoom.
+    let rendered = await renderGpuDraft(lane, { longEdge, preservePicture: true });
+    const saved = await saving;
+    if (!isCurrent() || lane !== state.currentView) return;
+    runtime.saveFailed = !saved;
+    if (rendered === false && saved && state.editRevision !== revision) {
+      rendered = await renderGpuDraft(lane, { longEdge, preservePicture: true });
+    }
+    if (rendered === false && !transientGpuRefusal() && !previewSourceCapacityRefused() && saved && isCurrent() && lane === state.currentView) {
+      rendered = await renderPreviewForLane(lane, true, longEdge, { denoiseFallback: true });
+    }
+    if (!isCurrent() || lane !== state.currentView) return;
+    if (rendered) debounceOverlayAndScopes();
+    else if (micro) restoreScopeFreshnessIfIdle();
     renderDenoiseControls();
     return;
   }
-  const applied = await persistDenoiseSettings();
+  const saving = persistDenoiseSettings().catch(() => false);
+  const afterCommit = deferDenoisePreparation(runtime, saving);
+  runtime.status = "preparing";
+  renderDenoiseControls();
+  const applied = await saving;
   if (!isCurrent()) return;
+  runtime.saveFailed = !applied;
   if (!applied) {
-    runtime.status = "error";
-    runtime.error = "Denoise settings could not be saved";
-    renderDenoiseControls();
+    if (micro && lane === state.currentView) restoreScopeFreshnessIfIdle();
+    denoiseRetryError(lane, "Denoise settings could not be saved.");
+    return;
+  }
+  if (runtime.microBackup && state.denoise[lane].controls.method === "micro_grain") {
+    await recalculateDenoise(lane, { operation: "enable_grain", action, preservePicture: true });
     return;
   }
   const denoise = state.gpuPreview?.diagnosticsSnapshot?.().denoise;
-  const expectedIdentity = `${state.session?.session_id}:${lane}:${refinementProxyLongEdge()}:${JSON.stringify(state.adjustments.shared?.geometry || {})}:source`;
-  if (!runtime.dirty && denoise?.cacheReady && denoise.identity === expectedIdentity) {
+  const longEdge = refinementProxyLongEdge();
+  const geometry = geometrySignature();
+  const source = gradeSourceIdentity(lane);
+  const expectedIdentity = `${sessionId}:${lane}:${longEdge}:${geometry}:${source}`;
+  const cachedMethod = state.gpuPreview?.denoiseSourceSelector?.controls?.method || "standard";
+  if (!runtime.dirty && denoise?.cacheReady && cachedMethod === state.denoise[lane].controls.method
+    && (denoise.identity === expectedIdentity || state.gpuPreview.retargetPreparedDenoise?.(sessionId, lane, longEdge, geometry, source))) {
     state.gpuPreview.selectDenoiseSelectorSource(true);
     runtime.status = "ready";
-    runtime.showOriginal = false;
-    await renderGpuDraft(lane, { longEdge: refinementProxyLongEdge() });
+    renderDenoiseControls();
+    // Steve, Nov 25: keep the original on screen until the denoised picture
+    // is ready; no soft whole-picture underlayer or quick pass in between.
+    let rendered = await renderGpuDraft(lane, { longEdge, preservePicture: true });
     if (!isCurrent()) return;
-    debounceOverlayAndScopes();
+    if (rendered === false && lane === state.currentView && !transientGpuRefusal() && !previewSourceCapacityRefused()) {
+      if (!runtime.microBackup) denoiseRetryError(lane, "The GPU could not draw the denoised preview.");
+      rendered = await renderPreviewForLane(lane, true, longEdge, { denoiseFallback: true });
+    }
+    if (isCurrent() && lane === state.currentView) {
+      if (rendered) debounceOverlayAndScopes();
+      else if (micro) restoreScopeFreshnessIfIdle();
+    }
     renderDenoiseControls();
     return;
   }
-  await recalculateDenoise(lane);
+  if (await afterCommit && isCurrent()) {
+    await recalculateDenoise(lane, { operation: "enable_grain", action, preservePicture: true });
+  }
+}
+
+function cleanGrainZoomViewport(lane) {
+  return state.activeWorkflow === "grade" && lane === state.currentView
+    && state.previewResolutionOverride === false && state.zoomPercent > state.fitZoomPercent
+    && state.denoise?.[lane]?.controls.method === "clean_grain"
+    && gpuPreviewEligible(lane) && gradeGrainGpuEnabled(lane);
+}
+
+function nativeDenoiseViewport(lane) {
+  // Keep the original picture bounded at native zoom too. It can stay on
+  // screen while Grain starts, without keeping a native-sized canvas alive.
+  // Below 100%, display sizing can still choose the native processing step.
+  // Micro computes the same native tiles, but only the visible ones need an
+  // HDR presentation surface.
+  const nativeMicro = state.denoise[lane]?.controls.method === "micro_grain"
+    && gradeGrainGpuEnabled(lane)
+    && requiredProcessingLongEdge() === previewTargetLongEdge("full");
+  return state.zoomMode === "custom" && (state.zoomPercent >= 100 || nativeMicro || cleanGrainZoomViewport(lane))
+    && (Boolean(state.denoise[lane]?.enabled) || (gradeGrainGpuPreferred(lane) && !nativeGeometryViewportActive(lane))
+      || (state.activeWorkflow === "grade" && lane === state.currentView && Boolean(els.previewCanvas.hdrFrameRegion)
+        && !els.previewCanvas.hdrFrameRegion.nativeGeometryViewport));
+}
+
+function gradeGrainGpuPreferred(lane) {
+  if (state.activeWorkflow !== "grade" || !state.gpuPreview) return false;
+  const method = state.denoise[lane]?.controls.method;
+  if (method === "micro_grain") return HDRGrainRoute.gpuPreferred(method, state.gpuPreview, microGrainUnavailable(lane), state.denoiseRuntime[lane]?.microBackup);
+  return HDRGrainRoute.gpuPreferred(method, state.gpuPreview);
+}
+
+function gradeGrainGpuEnabled(lane) {
+  return Boolean(state.denoise[lane]?.enabled) && !state.denoiseRuntime[lane]?.showOriginal
+    && gradeGrainGpuPreferred(lane);
+}
+
+function gradeSourceIdentity(lane) {
+  if (lane !== "sdr") return "source";
+  return state.adjustments?.sdr?.use_authored_base !== false
+    && state.editDocument?.source?.luminance?.sdr_rendition === "authored" ? "authored-sdr" : "generated-sdr";
+}
+
+function denoiseRetryError(lane, detail) {
+  const runtime = state.denoiseRuntime[lane];
+  runtime.dirty = true;
+  runtime.status = "error";
+  runtime.error = `${detail} Try Recalculate again.`;
+  if (lane === state.currentView) renderDenoiseControls();
+  return false;
+}
+
+function gradeGrainAction(lane, operation) {
+  const session = state.session;
+  const method = state.denoise[lane]?.controls.method;
+  if (!session || state.activeWorkflow !== "grade" || !state.denoise[lane]?.enabled
+    || state.denoiseRuntime[lane]?.showOriginal || !method?.endsWith("_grain")) return null;
+  return globalThis.HDRDiagnostics?.start("denoise", operation, { id: session.session_id, name: session.source?.filename },
+    { lane, method, zoom_percent: state.zoomPercent });
 }
 
 async function recalculateDenoise(lane = state.currentView, options = {}) {
+  const action = options.action ?? (options.logAction === false ? undefined
+    : gradeGrainAction(lane, options.operation || "prepare_grain"));
+  let ready = false, failed = false;
+  try {
+    ready = await recalculateDenoiseForView(lane, { ...options, action });
+    return ready;
+  } catch (error) {
+    failed = true;
+    throw error;
+  } finally {
+    if (!options.action) action?.finish(failed ? "error" : ready ? "ready" : "stopped");
+  }
+}
+
+async function recalculateDenoiseForView(lane, options) {
   const settings = state.denoise[lane];
-  if (!state.session || !settings.enabled || !state.gpuPreview?.available) return false;
+  if (!state.session || !settings.enabled || state.denoiseRuntime[lane]?.showOriginal) return false;
   const runtime = state.denoiseRuntime[lane];
+  const sessionId = state.session.session_id;
+  const sourceIdentity = gradeSourceIdentity(lane);
+  const method = settings.controls.method;
+  const workflow = state.activeWorkflow;
+  const current = () => state.session?.session_id === sessionId && state.denoiseRuntime[lane] === runtime
+    && settings.enabled && !runtime.showOriginal && settings.controls.method === method
+    && state.activeWorkflow === workflow && gradeSourceIdentity(lane) === sourceIdentity;
+  const renderFallback = async (edge) => {
+    const generation = runtime.generation;
+    const rendered = await renderPreviewForLane(lane, true, edge, { denoiseFallback: true });
+    if (!current() || generation !== runtime.generation || lane !== state.currentView) return;
+    if (rendered) debounceOverlayAndScopes();
+    else restoreScopeFreshnessIfIdle();
+  };
+  const afterCommit = runtime.preparationAfterCommit;
+  if (afterCommit && !(options.force && runtime.saveFailed)) {
+    const generation = runtime.generation;
+    if (!await afterCommit || !current() || runtime.generation !== generation) return false;
+  }
+  if (options.force && runtime.saveFailed) {
+    const generation = ++runtime.generation;
+    runtime.status = "recalculating";
+    renderDenoiseControls();
+    const saved = await persistDenoiseSettings().catch(() => false);
+    if (generation !== runtime.generation) return false;
+    if (!current()) {
+      if (state.denoiseRuntime[lane] === runtime) restoreDenoiseStatus(lane);
+      return false;
+    }
+    runtime.saveFailed = !saved;
+    if (!saved) return denoiseRetryError(lane, "Denoise settings could not be saved.");
+  }
+  if (!state.gpuPreview?.available) {
+    if (settings.controls.method === "micro_grain" && !microGrainUnavailable(lane)) {
+      const renderer = state.gpuPreview;
+      const reason = renderer?.deviceLost ? "device_lost" : "gpu_unavailable";
+      const key = renderer?.deviceLost && renderer.grainSourceKey(sessionId, geometrySignature(), sourceIdentity,
+        state.repairSourceGeneration || 0, method);
+      const error = Object.assign(new Error("The GPU is unavailable."), { grainReason: reason, grainSourceKey: key });
+      if (key && !renderer.grainFailures.get(key)) renderer.noteGrainFailure(key, error, options.action);
+      renderer?.grainEvent?.("grain_route", "cpu", reason, options.action);
+      useMicroGrainCpu(lane, error, options.action);
+    } else {
+      denoiseRetryError(lane, "The GPU is unavailable.");
+    }
+    if (options.renderAfter !== false && lane === state.currentView) {
+      await renderFallback(options.longEdge || refinementProxyLongEdge());
+    }
+    return false;
+  }
+  if (method === "micro_grain" && runtime.microBackup && runtime.microBackup.key
+    && state.gpuPreview.grainFailureCanRun(runtime.microBackup.key)) {
+    runtime.microBackup = null;
+    runtime.dirty = true;
+  }
+  if (method === "micro_grain" && runtime.microBackup) {
+    state.gpuPreview.grainEvent?.("grain_gpu_skipped", "cpu", "prior_failure_latched", options.action,
+      { prior_reason: runtime.microBackup.reason });
+    useMicroGrainCpu(lane, null, options.action);
+    if (options.renderAfter !== false && lane === state.currentView) {
+      await renderFallback(options.longEdge || refinementProxyLongEdge());
+    }
+    return false;
+  }
+  const pixels = sourceIdentity === "authored-sdr" ? "authoredSdr" : "scene";
+  // Recalculate replaces preparation for these pixels. Both generated
+  // renditions can use the new result, including after a switch of lane.
+  if (state.denoiseGrainRefresh?.sessionId !== sessionId) {
+    state.denoiseGrainRefresh = { sessionId, scene: 0, authoredSdr: 0 };
+  }
+  const refreshes = state.denoiseGrainRefresh;
+  if (options.force && settings.controls.method !== "standard") refreshes[pixels]++;
+  const refresh = refreshes[pixels];
   const longEdge = options.longEdge || refinementProxyLongEdge();
+  const { color_splotches, ...preparationControls } = settings.controls;
+  const nativePreparation = preparationControls.amount
+    && (preparationControls.luminance || preparationControls.color_noise)
+    && preparationControls.method === "clean_grain"
+    && (preparationControls.clean_splotches !== false || preparationControls.clean_fringes !== false
+      || preparationControls.grain_evenness !== 0);
   const key = JSON.stringify([
-    state.session.session_id, lane, longEdge, geometrySignature(),
-    "source", state.repairSourceGeneration || 0, settings.analysis,
+    sessionId, lane, nativePreparation ? "native" : longEdge, geometrySignature(),
+    pixels, state.repairSourceGeneration || 0, settings.analysis, refresh,
+    settings.controls.method === "standard" ? "standard" : [gradeGrainGpuEnabled(lane), preparationControls],
   ]);
   // Pan, enable and the first edit can all ask for the same setup. Sharing it
   // keeps them from repeatedly replacing the selector and measuring again.
   let pending = runtime.analysisInFlight;
   if (pending?.key !== key) {
-    pending = { key, promise: recalculateDenoiseAnalysis(lane, { longEdge, renderAfter: false }) };
+    const promise = recalculateDenoiseAnalysis(lane, { longEdge, refresh, action: options.action });
+    pending = { key, promise, generation: runtime.generation };
     runtime.analysisInFlight = pending;
   }
   let ready;
@@ -232,55 +573,112 @@ async function recalculateDenoise(lane = state.currentView, options = {}) {
   } finally {
     if (runtime.analysisInFlight === pending) runtime.analysisInFlight = null;
   }
-  if (!ready || !settings.enabled || state.denoiseRuntime[lane] !== runtime) return false;
+  if (!current() || pending.generation !== runtime.generation) return false;
+  if (!ready) {
+    if (options.renderAfter !== false && lane === state.currentView && (runtime.status === "error" || runtime.microBackup)) {
+      await renderFallback(longEdge);
+    } else if (options.renderAfter !== false && lane === state.currentView) {
+      restoreScopeFreshnessIfIdle();
+    }
+    return false;
+  }
   if (options.renderAfter !== false) {
-    await renderGpuDraft(lane, { longEdge });
-    if (state.denoiseRuntime[lane] !== runtime || !settings.enabled) return false;
-    debounceOverlayAndScopes();
+    const currentEdge = nativePreparation ? refinementProxyLongEdge() : longEdge;
+    state.gpuPreview.retargetPreparedDenoise?.(state.session.session_id, lane, currentEdge,
+      geometrySignature(), sourceIdentity);
+    const rendered = await renderGpuDraft(lane, {
+      longEdge: currentEdge, action: options.action, preservePicture: Boolean(options.preservePicture),
+    });
+    if (!current() || pending.generation !== runtime.generation) return false;
+    if (rendered === false && lane === state.currentView && !transientGpuRefusal() && !previewSourceCapacityRefused()) {
+      if (!runtime.microBackup) denoiseRetryError(lane, "The GPU could not draw the denoised preview.");
+      await renderFallback(currentEdge);
+      return false;
+    }
+    if (lane === state.currentView) {
+      if (rendered) debounceOverlayAndScopes();
+      else restoreScopeFreshnessIfIdle();
+    }
   }
   return true;
 }
 
 async function recalculateDenoiseAnalysis(lane = state.currentView, options = {}) {
   const settings = state.denoise[lane];
-  if (!state.session || !settings.enabled || !state.gpuPreview?.available) return false;
+  if (!state.session || !settings.enabled || state.denoiseRuntime[lane]?.showOriginal
+    || !state.gpuPreview?.available) return false;
   const sessionId = state.session.session_id;
   const runtime = state.denoiseRuntime[lane];
   const generation = ++runtime.generation;
-  const isCurrent = () => state.session?.session_id === sessionId
+  const sourceIdentity = gradeSourceIdentity(lane);
+  const geometry = geometrySignature();
+  const workflow = state.activeWorkflow;
+  const method = settings.controls.method;
+  const gradeGpuGrain = gradeGrainGpuEnabled(lane);
+  const controller = new AbortController();
+  runtime.analysisController?.abort();
+  runtime.analysisController = controller;
+  const ownsStatus = () => state.session?.session_id === sessionId
     && state.denoiseRuntime[lane] === runtime && generation === runtime.generation;
-  runtime.status = state.gpuPreview.diagnosticsSnapshot().denoise.cacheReady ? "recalculating" : "preparing";
+  const current = () => ownsStatus() && !controller.signal.aborted
+    && settings.enabled && !runtime.showOriginal && settings.controls.method === method
+    && state.activeWorkflow === workflow && gradeSourceIdentity(lane) === sourceIdentity
+    && geometrySignature() === geometry;
+  const cacheReady = state.gpuPreview.diagnosticsSnapshot().denoise.cacheReady;
+  if (!cacheReady) runtime.dirty = true;
+  runtime.status = cacheReady ? "recalculating" : "preparing";
   runtime.error = "";
   if (lane === state.currentView) renderDenoiseControls();
+  if (gradeGpuGrain && lane === state.currentView && nativeDenoiseViewport(lane)) {
+    state.panSourceController?.abort();
+  }
   try {
-    const ready = await state.gpuPreview.analyzeDenoiseProxy(
-      state.session.session_id,
-      lane,
-      JSON.parse(JSON.stringify(state.adjustments)),
-      options.longEdge || refinementProxyLongEdge(),
-      state.editRevision,
-      "source",
-      denoiseRendererControls(settings.controls),
-    );
-    if (!isCurrent()) return false;
-    if (!ready) throw new Error("The denoise analysis was replaced before completion.");
-    runtime.status = "ready";
-    runtime.dirty = false;
-    runtime.showOriginal = false;
-    if (options.renderAfter !== false) {
-      await renderGpuDraft(lane, { longEdge: options.longEdge || refinementProxyLongEdge() });
-      if (!isCurrent()) return false;
-      debounceOverlayAndScopes();
+    while (current()) {
+      const revision = state.editRevision;
+      const isCurrent = () => current() && state.editRevision === revision;
+      let ready;
+      try {
+        ready = await state.gpuPreview.analyzeDenoiseProxy(
+          sessionId, lane, structuredClone(state.adjustments),
+          options.longEdge || refinementProxyLongEdge(), revision, sourceIdentity,
+          denoiseRendererControls(settings.controls), options.refresh ?? 0,
+          Math.max(256, state.session.source?.width || 0, state.session.source?.height || 0),
+          { signal: controller.signal, isCurrent, gradeGpuGrain, repairGeneration: state.repairSourceGeneration || 0,
+            action: options.action, onCpuWork: run => trackGrainCpuWork(lane, method, run) },
+        );
+      } catch (error) {
+        if (!current()) return false;
+        if (state.editRevision !== revision) continue;
+        if (error?.name === "AbortError" || error?.status === 409) {
+          // The backend can reject the old revision before its new revision
+          // reaches the browser in the outstanding edit acknowledgement.
+          await state.editCommandQueue?.catch(() => false);
+          if (current() && state.editRevision !== revision) continue;
+          return false;
+        }
+        if (method === "micro_grain") {
+          state.gpuPreview.grainEvent?.("grain_route", "cpu", globalThis.HDRGrainRoute?.failureReason(error), options.action, { lane, method });
+          useMicroGrainCpu(lane, error, options.action);
+          return false;
+        }
+        state.gpuPreview.grainEvent?.("grain_preparation_failed", "refused", globalThis.HDRGrainRoute?.failureReason(error), options.action,
+          { level: "error", lane, method });
+        console.warn("Denoise analysis failed.", error);
+        return denoiseRetryError(lane, error?.message || error?.detail || "Denoise analysis failed.");
+      }
+      if (!current()) return false;
+      if (state.editRevision !== revision) continue;
+      if (!ready) return false;
+      runtime.dirty = false;
+      restoreDenoiseStatus(lane);
+      return true;
     }
-    if (lane === state.currentView) renderDenoiseControls();
-    return true;
-  } catch (error) {
-    if (!isCurrent()) return false;
-    runtime.status = "error";
-    runtime.error = error?.message || error?.detail || JSON.stringify(error) || "Denoise analysis failed.";
-    console.warn("Denoise analysis failed.", error);
-    if (lane === state.currentView) renderDenoiseControls();
     return false;
+  } finally {
+    if (ownsStatus()) {
+      runtime.analysisController = null;
+      if (["preparing", "recalculating"].includes(runtime.status)) restoreDenoiseStatus(lane);
+    }
   }
 }
 
@@ -288,8 +686,18 @@ async function updateLiveDenoiseControl(key, value) {
   const lane = state.currentView;
   const settings = state.denoise[lane];
   const runtime = state.denoiseRuntime[lane];
-  settings.controls[key] = clamp(value, 0, 1);
+  const next = clamp(value, 0, 1);
+  if (settings.controls.method === "micro_grain" && key.startsWith("micro_") && settings.controls[key] === next) return;
+  settings.controls[key] = next;
+  if (key === "color_splotches" && next > 0 && settings.controls.clean_splotches === false) {
+    // The prepared picture has no splotch pass yet; release prepares it.
+    settings.controls.clean_splotches = true;
+    runtime.splotchesTurnedOn = true;
+    return renderDenoiseControls();
+  }
   renderDenoiseControls();
+  if (runtime.splotchesTurnedOn && key === "color_splotches") return;
+  if (key === "grain_evenness" && !liveGradeGrainSelected(lane)) return;
   if (!settings.enabled || runtime.status !== "ready" || runtime.showOriginal) return;
   // Section 5.6: reconstruction is coalesced to one in-flight run plus one
   // latest pending state, so dragging a control costs runs rather than input
@@ -299,7 +707,137 @@ async function updateLiveDenoiseControl(key, value) {
     sessionId: state.session?.session_id,
     generation: runtime.generation,
     controls: denoiseRendererControls(settings.controls),
+    liveGrainControl: liveGrainControl(key, lane) ? key : null,
   });
+}
+
+function liveGradeGrainSelected(lane) {
+  const selector = state.gpuPreview?.denoiseSourceSelector;
+  return gradeGrainGpuEnabled(lane) && selector?.cache?.grain?.gpu && selector.selected === "resolved"
+    && selector.controls?.method === state.denoise[lane].controls.method
+    && selector.cache.preparedFrame === JSON.stringify([state.session?.session_id, lane, geometrySignature(), gradeSourceIdentity(lane)]);
+}
+
+function liveGrainControl(key, lane) {
+  if (state.denoise[lane].controls.method === "micro_grain") return key.startsWith("micro_");
+  return key === "grain_evenness" || (state.denoise[lane].controls.method === "clean_grain"
+    && (key === "color_splotches" || key === "splotch_size"));
+}
+
+async function commitDenoiseControl(key, value) {
+  const lane = state.currentView;
+  const settings = state.denoise[lane];
+  const runtime = state.denoiseRuntime[lane];
+  const sessionId = state.session?.session_id;
+  if (!sessionId) return;
+  if (key === "method" && value === settings.controls.method) return;
+  if (key === "color_splotches" && (runtime.splotchesTurnedOn
+    || (value > 0 && settings.controls.clean_splotches === false))) {
+    runtime.splotchesTurnedOn = false;
+    if (value !== undefined) settings.controls.color_splotches = value;
+    settings.controls.clean_splotches = false;
+    return commitDenoiseControl("clean_splotches", true);
+  }
+  const previous = settings.controls[key];
+  if (value !== undefined) settings.controls[key] = value;
+  if (key === "method") {
+    runtime.microBackup = null;
+    runtime.showOriginal = !settings.enabled;
+    state.gpuPreview?.cancelDenoiseProcessing?.({ selectOriginal: false });
+  }
+  if (key.startsWith("micro_") && runtime.microBackup && settings.enabled) {
+    invalidateDenoisePreparation(lane);
+    const generation = runtime.generation;
+    markScopeUpdating();
+    const saved = await deferDenoisePreparation(runtime, persistDenoiseSettings().catch(() => false));
+    if (state.denoiseRuntime[lane] !== runtime || runtime.generation !== generation) return;
+    runtime.saveFailed = !saved;
+    if (!saved) {
+      restoreScopeFreshnessIfIdle();
+      return denoiseRetryError(lane, "Denoise settings could not be saved.");
+    }
+    useMicroGrainCpu(lane);
+    if (lane === state.currentView) {
+      invalidatePreview(lane, { markDirty: false });
+      const rendered = await renderPreviewForLane(lane, true, refinementProxyLongEdge(), { denoiseFallback: true });
+      if (state.denoiseRuntime[lane] === runtime && runtime.generation === generation
+        && lane === state.currentView) {
+        if (rendered) debounceOverlayAndScopes();
+        else restoreScopeFreshnessIfIdle();
+      }
+    }
+    return;
+  }
+  const usesStandard = settings.controls.method === "clean_grain"
+    && settings.controls.clean_splotches === false && settings.controls.clean_fringes === false
+    && settings.controls.grain_evenness === 0;
+  const needsGrainFit = key === "grain_evenness" && settings.controls.grain_evenness > 0
+    && state.gpuPreview?.denoiseSourceSelector?.cache?.grain?.fit === null;
+  if (!usesStandard && !needsGrainFit && runtime.status === "ready" && liveGrainControl(key, lane) && liveGradeGrainSelected(lane)) {
+    const generation = runtime.generation;
+    const saved = await persistDenoiseSettings().catch(() => false);
+    if (state.session?.session_id !== sessionId || state.denoiseRuntime[lane] !== runtime
+      || runtime.generation !== generation || !settings.enabled) return;
+    runtime.saveFailed = !saved;
+    if (!saved) return denoiseRetryError(lane, "Denoise settings could not be saved.");
+    const controls = denoiseRendererControls(settings.controls);
+    const current = state.gpuPreview.denoiseSourceSelector.controls;
+    const viewport = nativeDenoiseViewport(lane);
+    if (controls.method === "micro_grain") {
+      if (viewport && !runtime.microUpdating && state.acceptedPresentation?.exact
+        && controls.microLuminance === current.microLuminance && controls.microColor === current.microColor
+        && controls.microDetail === current.microDetail) return;
+      await denoiseInputQueue().submit({ lane, sessionId, generation: runtime.generation,
+        controls, liveGrainControl: key, wholeFrame: true });
+      return;
+    }
+    const exactBlend = key === "color_splotches" && state.gpuPreview.hasReducedCleanGrain();
+    if ((!viewport && !exactBlend) || controls.grainEvenness !== current.grainEvenness
+      || controls.colorSplotches !== current.colorSplotches || controls.splotchSize !== current.splotchSize) {
+      const render = { lane, sessionId, generation: runtime.generation, controls, liveGrainControl: key };
+      const queue = denoiseInputQueue();
+      if (!viewport && key === "splotch_size") {
+        await queue.submit({ ...render, provisional: true });
+        // Let the quick picture reach the screen before the exact draw takes over.
+        await new Promise(resolve => requestAnimationFrame(resolve));
+        if (settings.controls.splotch_size !== controls.splotchSize) return;
+      }
+      await queue.submit({ ...render, wholeFrame: true });
+    }
+    return;
+  }
+  if (!settings.enabled && key !== "method") {
+    if (settings.controls[key] !== previous && key !== "color_splotches") runtime.dirty = true;
+    return persistDenoiseSettings();
+  }
+  const needsPreparation = key === "method" || runtime.status !== "ready"
+    || (settings.controls.method !== "standard" && key !== "color_splotches");
+  if (!needsPreparation) {
+    const saved = await persistDenoiseSettings().catch(() => false);
+    // The prepared CPU correction already contains the two blend endpoints.
+    if (saved && key === "color_splotches" && settings.enabled && lane === state.currentView
+      && state.denoiseRuntime[lane] === runtime) {
+      invalidatePreview(lane, { markDirty: false });
+      await renderGpuDraft(lane, { longEdge: refinementProxyLongEdge() });
+    }
+    return saved;
+  }
+  invalidateDenoisePreparation(lane, { dirty: true });
+  const generation = runtime.generation;
+  invalidatePreview(lane, { markDirty: false });
+  const saving = persistDenoiseSettings().catch(() => false);
+  if (settings.enabled) {
+    runtime.status = "recalculating";
+    renderDenoiseControls();
+    await deferDenoisePreparation(runtime, saving);
+  }
+  const saved = await saving;
+  if (state.session?.session_id !== sessionId || state.denoiseRuntime[lane] !== runtime
+    || runtime.generation !== generation) return;
+  runtime.saveFailed = !saved;
+  if (!settings.enabled) return;
+  if (!saved) return denoiseRetryError(lane, "Denoise settings could not be saved.");
+  await recalculateDenoise(lane, { operation: key === "method" ? "choose_grain_method" : "release_grain_control" });
 }
 
 /** The renderer's names for a lane's live denoise controls. */
@@ -313,6 +851,15 @@ function denoiseRendererControls(controls) {
     fineNoise: controls.fine_noise ?? 0.5,
     mediumNoise: controls.medium_noise ?? 0.5,
     coarseNoise: controls.coarse_noise ?? 0.5,
+    method: controls.method,
+    grainEvenness: controls.grain_evenness,
+    cleanSplotches: controls.clean_splotches !== false,
+    cleanFringes: controls.clean_fringes !== false,
+    protectColorEdges: controls.protect_color_edges === true,
+    colorSplotches: controls.clean_splotches === false ? 0 : controls.color_splotches,
+    splotchSize: controls.splotch_size,
+    ...(controls.method === "micro_grain" ? { microLuminance: controls.micro_luminance,
+      microColor: controls.micro_color, microDetail: controls.micro_detail } : {}),
   };
 }
 
@@ -347,12 +894,37 @@ function liveDenoiseRegion() {
   };
 }
 
-async function runLiveDenoise({ lane, sessionId, generation, controls, wholeFrame = false }) {
+async function runLiveDenoise({ lane, sessionId, generation, controls, wholeFrame = false, liveGrainControl = null, provisional = false }) {
   const isCurrent = () => sessionId === state.session?.session_id
-    && generation === state.denoiseRuntime[lane]?.generation && state.denoise[lane]?.enabled;
+    && generation === state.denoiseRuntime[lane]?.generation && state.denoise[lane]?.enabled
+    && !state.denoiseRuntime[lane]?.showOriginal
+    && (controls.method !== "micro_grain" || microGrainControlsMatch(lane, controls));
   if (!isCurrent()) return;
-  const startedAt = performance.now();
+  if (controls.method === "micro_grain" && state.denoiseRuntime[lane].microBackup) {
+    invalidatePreview(lane, { markDirty: false });
+    const rendered = await renderPreviewForLane(lane, true, refinementProxyLongEdge(), { denoiseFallback: true, showProgress: false });
+    if (rendered && isCurrent() && lane === state.currentView) debounceOverlayAndScopes();
+    return;
+  }
+  const viewport = nativeDenoiseViewport(lane);
   const interacting = !wholeFrame && Boolean(state.previewScheduler?.interacting);
+  if (liveGrainControl === "grain_evenness" && controls.grainEvenness > 0
+    && state.gpuPreview?.denoiseSourceSelector?.cache?.grain?.fit === null) return;
+  if (liveGrainControl && lane === state.currentView && liveGradeGrainSelected(lane)
+    && (viewport || wholeFrame || controls.method === "clean_grain" || controls.method === "micro_grain")) {
+    state.gpuPreview.setDenoiseControls(controls);
+    invalidatePreview(lane, { markDirty: false });
+    const exactBlend = liveGrainControl === "color_splotches" && state.gpuPreview.hasReducedCleanGrain();
+    const rendered = await renderGpuDraft(lane, { longEdge: refinementProxyLongEdge(), viewport,
+      tier: (provisional || interacting) && !viewport && !exactBlend ? "interactive" : "settled",
+      reason: "grade-grain-control" });
+    if (!rendered && isCurrent() && controls.method === "micro_grain" && state.denoiseRuntime[lane].microBackup) {
+      await renderPreviewForLane(lane, true, refinementProxyLongEdge(), { denoiseFallback: true, showProgress: false });
+    }
+    if (isCurrent()) debounceOverlayAndScopes();
+    return;
+  }
+  const startedAt = performance.now();
   // NEXT-01 #4. During a drag only what is on screen is reconstructed: a
   // tiled render (Full, or zoomed in) reconstructs each tile it draws itself,
   // and a whole-frame render zoomed in needs only the visible region. At 200%
@@ -388,13 +960,27 @@ async function runLiveDenoise({ lane, sessionId, generation, controls, wholeFram
   debounceOverlayAndScopes();
 }
 
+async function runDenoiseInput(request) {
+  if (request.controls.method !== "micro_grain") return runLiveDenoise(request);
+  const runtime = state.denoiseRuntime[request.lane];
+  if (request.sessionId !== state.session?.session_id || request.generation !== runtime.generation) return;
+  runtime.microUpdating = true;
+  if (request.lane === state.currentView) renderDenoiseControls();
+  try {
+    await runLiveDenoise(request);
+  } finally {
+    runtime.microUpdating = false;
+    if (request.lane === state.currentView && runtime === state.denoiseRuntime[request.lane]) renderDenoiseControls();
+  }
+}
+
 function denoiseInputQueue() {
   if (!state.denoiseInputQueue) {
     const Queue = window.HDRLatestWorkQueue;
     state.denoiseInputQueue = Queue
-      ? new Queue(runLiveDenoise, { onError: (error) => console.warn("Live denoise reconstruction failed.", error) })
+      ? new Queue(runDenoiseInput, { onError: (error) => console.warn("Live denoise reconstruction failed.", error) })
       : null;
   }
-  return state.denoiseInputQueue || { submit: runLiveDenoise, stats: null };
+  return state.denoiseInputQueue || { submit: runDenoiseInput, stats: null };
 }
 

@@ -24,14 +24,22 @@ def compare(a,b,lane):
 from hdr_finisher.models import AdjustmentState, PreviewKind
 
 root=Path(sys.argv[2])
-if sys.argv[1]=="make":
+if sys.argv[1] in {"make", "make-synthetic"}:
     import tifffile
     from tools.denoise_lab.corpus import cases
     entries=[]
-    for reference, case, clean, noisy in cases():
+    for reference, case, clean, noisy in (cases() if sys.argv[1] == "make" else ()):
         name=reference+"-"+case.name
         target=root/(name+".tiff")
         tifffile.imwrite(target,noisy,photometric="rgb")
+        entries.append(str(target))
+    generator=np.random.default_rng(904)
+    for name,signal in (("clipped-flame",.01),("signed-clipped-flame",.0002),("noiseless-plateaus",0)):
+        image=generator.normal(signal,.005,(256,256,3)).astype(np.float32)
+        image[:,:112]=1.25
+        if name=="noiseless-plateaus":image[:,112:]=0
+        target=root/(name+".tiff")
+        tifffile.imwrite(target,image,photometric="rgb")
         entries.append(str(target))
     (root/"corpus.json").write_text(json.dumps(entries))
 else:
@@ -44,24 +52,25 @@ else:
             return da.AdaptiveNoiseModel(a=value["a"],b=value["b"],c=value["c"],band_sigmas=tuple(tuple(row) for row in value["band_sigmas"]))
         row={k:item[k] for k in ("name","cpu_ms","gpu_ms","reuse_ms")}
         row["differences"]=[]
-        for amount in (.5,.85):
-            controls=da.AdaptiveControls(amount=amount,luminance=.7,color_noise=.8,detail_recovery=.3)
-            reference=da.resolve_adaptive(image,model(item["cpu"]),controls)
-            measured=da.resolve_adaptive(image,model(item["gpu"]),controls)
-            grade=AdjustmentState()
-            grade.hdr.exposure=1.5
-            grade.hdr.highlight_section_enabled=True
-            grade.hdr.highlight_compression_target_nits=1000
-            for lane in (PreviewKind.HDR,PreviewKind.SDR):
-                a=apply_adjustments(reference,grade,lane,include_grain=False)
-                b=apply_adjustments(measured,grade,lane,include_grain=False)
-                result={"lane":lane.value,"amount":amount,**compare(a,b,lane.value)}
-                row["differences"].append(result)
-                if lane==PreviewKind.HDR:
-                    from hdr_finisher.color import acescg_to_linear_bt2020
-                    from hdr_finisher.color_context import scene_linear_to_nits
-                    peak=float(np.max(scene_linear_to_nits(acescg_to_linear_bt2020(b),203)))
-                    assert peak<=1000,(item["name"],peak)
+        for method, clean_color in (("standard", True), ("clean_grain", False), ("clean_grain", True)):
+            for amount in (.5,.85):
+                controls=da.AdaptiveControls(method=method,clean_splotches=clean_color, clean_fringes=clean_color,amount=amount,luminance=.7,color_noise=.8,detail_recovery=.3)
+                reference=da.resolve_adaptive(image,model(item["cpu"]),controls)
+                measured=da.resolve_adaptive(image,model(item["gpu"]),controls)
+                grade=AdjustmentState()
+                grade.hdr.exposure=1.5
+                grade.hdr.highlight_section_enabled=True
+                grade.hdr.highlight_compression_target_nits=1000
+                for lane in (PreviewKind.HDR,PreviewKind.SDR):
+                    a=apply_adjustments(reference,grade,lane,include_grain=False)
+                    b=apply_adjustments(measured,grade,lane,include_grain=False)
+                    result={"method":method,"clean_color":clean_color,"lane":lane.value,"amount":amount,**compare(a,b,lane.value)}
+                    row["differences"].append(result)
+                    if lane==PreviewKind.HDR:
+                        from hdr_finisher.color import acescg_to_linear_bt2020
+                        from hdr_finisher.color_context import scene_linear_to_nits
+                        peak=float(np.max(scene_linear_to_nits(acescg_to_linear_bt2020(b),203)))
+                        assert peak<=1000,(item["name"],peak)
         results.append(row)
         print(json.dumps(row),flush=True)
     (root/"result.json").write_text(json.dumps(results,indent=2))

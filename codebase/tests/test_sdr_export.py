@@ -38,7 +38,7 @@ def _session() -> object:
 def test_sdr_jpeg_export_uses_sdr_branch_quality_and_jpg_suffix(monkeypatch, tmp_path: Path) -> None:
     observed: dict[str, object] = {}
 
-    def fake_render(session, settings, kind, adjustments):
+    def fake_render(session, settings, kind, adjustments, **_kwargs):
         _ = session, settings, adjustments
         observed["kind"] = kind
         return np.full((4, 6, 3), 0.2, dtype=np.float32)
@@ -82,6 +82,48 @@ def test_sdr_jpeg_export_uses_sdr_branch_quality_and_jpg_suffix(monkeypatch, tmp
     assert Path(observed["path"]).name.endswith(".sdr.tmp.jpg")
 
 
+@pytest.mark.parametrize(
+    ("clean_color", "authored", "resize"),
+    [(False, False, False), (True, True, False), (False, False, True)],
+)
+def test_standalone_sdr_jpeg_with_denoise_matches_the_whole_frame(
+    monkeypatch, tmp_path, clean_color, authored, resize,
+):
+    from hdr_finisher import gpu_delivery
+    from hdr_finisher.models import DenoiseDocumentSettings, OutputFinishingSettings
+
+    monkeypatch.setattr(gpu_delivery, "render_pair", lambda *args: None)
+    session = _session()
+    random = np.random.default_rng(19)
+    session.image = random.random((269, 151, 3), dtype=np.float32) * np.float32(1.4)
+    session.denoise = DenoiseDocumentSettings()
+    session.denoise.sdr.enabled = True
+    session.denoise.sdr.controls.method = "clean_grain"
+    session.denoise.sdr.controls.clean_splotches = clean_color
+    session.denoise.sdr.controls.clean_fringes = clean_color
+    if authored:
+        session.sdr_reference_image = session.image * np.float32(.65)
+        session.adjustments.sdr.use_authored_base = True
+    if resize:
+        finishing = OutputFinishingSettings(resize_mode="long_edge", long_edge=219)
+    else:
+        finishing = OutputFinishingSettings()
+    output = tmp_path / "delivery.jpg"
+    settings = ExportSettings(format="sdr_jpeg", output_path=str(output), output_finishing=finishing)
+    whole = exporter_module._render_export_branch(session, settings, PreviewKind.SDR, session.adjustments)
+    reference = tmp_path / "reference.jpg"
+    exporter_module._write_sdr_jpeg_pixels(
+        reference, exporter_module._linear_to_srgb8(whole, dither=settings.dithering),
+        quality=settings.quality, chroma_subsampling=settings.jpeg_chroma_subsampling,
+    )
+
+    result = SDRJPEGExportBackend(_available_capability()).export(session, settings)
+
+    assert result.accepted, result.message
+    assert settings._last_cpu_strips is True
+    assert output.read_bytes() == reference.read_bytes()
+
+
 @pytest.mark.parametrize("format_name", ["sdr_jpeg", "sdr_png"])
 def test_sdr_export_failure_preserves_existing_output(monkeypatch, tmp_path: Path, format_name: str) -> None:
     output = tmp_path / ("existing.jpg" if format_name == "sdr_jpeg" else "existing.png")
@@ -91,7 +133,7 @@ def test_sdr_export_failure_preserves_existing_output(monkeypatch, tmp_path: Pat
         path.write_bytes(b"partial")
         raise OSError("disk full")
 
-    monkeypatch.setattr(exporter_module, "_render_export_branch", lambda *_args: np.full((4, 6, 3), 0.2, dtype=np.float32))
+    monkeypatch.setattr(exporter_module, "_render_export_branch", lambda *_args, **_kwargs: np.full((4, 6, 3), 0.2, dtype=np.float32))
     backend = SDRJPEGExportBackend(_available_capability()) if format_name == "sdr_jpeg" else exporter_module.SDRPNGExportBackend(_available_capability())
     writer_name = "_write_sdr_jpeg" if format_name == "sdr_jpeg" else "_write_sdr_png"
     monkeypatch.setattr(exporter_module, writer_name, fail_after_partial_write)
@@ -105,7 +147,7 @@ def test_sdr_export_failure_preserves_existing_output(monkeypatch, tmp_path: Pat
 def test_sdr_jpegxl_export_uses_sdr_branch_quality_and_jxl_suffix(monkeypatch, tmp_path: Path) -> None:
     observed: dict[str, object] = {}
 
-    def fake_render(session, settings, kind, adjustments):
+    def fake_render(session, settings, kind, adjustments, **_kwargs):
         _ = session, settings, adjustments
         observed["kind"] = kind
         return np.full((4, 6, 3), 0.2, dtype=np.float32)

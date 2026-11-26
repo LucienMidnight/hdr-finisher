@@ -2,9 +2,8 @@ from __future__ import annotations
 
 import atexit
 import asyncio
-from contextlib import asynccontextmanager
-from concurrent.futures import Future
-from threading import Event, Lock
+from contextlib import ExitStack, asynccontextmanager, contextmanager
+from threading import Condition, Event, Lock
 import base64
 import binascii
 import json
@@ -28,11 +27,11 @@ from starlette.datastructures import MutableHeaders
 from starlette.concurrency import run_in_threadpool
 from pydantic import BaseModel, ValidationError
 
-from . import denoise_adaptive
+from . import denoise_adaptive, denoise_quality
 from .capabilities import probe_capabilities
 from .config import APP_NAME, APP_VERSION, DEFAULT_HOST, DEFAULT_PORT, DOCS_DIR, EXPORTS_DIR, FRONTEND_DIR, SAMPLES_DIR
 from .desktop_security import DesktopPathGrants, secret_matches
-from .exporters import ExportOverwriteRequired, build_export_backends
+from .exporters import ExportOverwriteRequired, build_export_backends, denoise_settings_for_export
 from .film_stock import available_film_stocks, film_stock_path, read_film_stock_payload, controlled_stock_payload
 from .folder_picker import pick_directory
 from .loader import LoaderError
@@ -41,7 +40,7 @@ from .library_worker import LibraryWorker
 from .library_api import create_library_router
 from .import_jobs import ImportJobManager
 from .import_opening import add_opening_routes
-from .local_adjustments import spatial_mask_signature
+from .local_adjustments import has_hue_mask, spatial_mask_signature
 from .hsl_sampling import HSLSampleRequest, sample_stage
 from .mask_softness import SOFT_ESTIMATE_LIMIT, bitmap_frame_rect, gpu_bitmap_soft_verdict, soft_mask_verdict
 from .raw_import import list_lens_profiles
@@ -63,6 +62,7 @@ from .models import (
     FavoritePathRequest,
     GeometryMapRequest,
     GeometryMapResponse,
+    MAX_MASK_TILE_BATCH_BYTES,
     PerspectiveSolveRequest,
     PerspectiveSolveResponse,
     ImportJobRequest,
@@ -95,7 +95,8 @@ from .overlay import encode_processed_overlay_bytes
 from .preview import encode_processed_preview_bytes, encode_processed_rgba8
 from .cpu_strips import StripExecutionRefused
 from .render_cache import StaleRender, TileUnavailableError, downsample_target_dimensions, encode_rgba_proxy, encode_rgba_proxy_rows, rgba_proxy_pixel_format
-from .finishing import coordinate_map_needs_full_frame, geometry_output_dimensions, perspective_guide_transform, solve_perspective_guides
+from .render_cache import MicroScopeSourceUnavailable
+from .finishing import geometry_is_identity, geometry_output_dimensions, perspective_guide_transform, solve_perspective_guides
 from .display_probe import probe_displays
 from .proofing import ProofArtifactStore
 from .projects import ProjectError, ProjectSourceRelinkRequired, open_project, save_project
@@ -114,6 +115,13 @@ from .test_pattern import build_delivery_proof_pattern
 async def library_lifecycle(_app):
     from .library_diagnostics import startup_phase
     async def start_helper():
+        from .config import APP_DATA_DIR
+        from .library_cache import LibraryCache
+        try:
+            await run_in_threadpool(LibraryCache(APP_DATA_DIR).remove_abandoned_grade_scratch)
+        except (OSError, ValueError) as error:
+            from .library_diagnostics import log
+            log("grade_scratch_cleanup_failed", reason=str(error))
         try:
             with startup_phase("helper_start"):
                 await run_in_threadpool(library_worker.start)
@@ -148,6 +156,10 @@ _EXPORT_SUFFIXES = {
 PROXY_STREAM_CHUNK_BYTES = 16 * 1024 * 1024
 # How long an aborted mask request's work survives with nobody waiting on it.
 MASK_ABANDON_GRACE_SECONDS = 0.15
+_MASK_BATCH_CAPACITY = Condition()
+_MASK_BATCH_SERIAL_LIMIT_BYTES = 512 * 1024**2
+_mask_batch_reserved_bytes = 0
+_mask_batch_serial_active = False
 
 
 def _preview_resource_payload(session, max_dimension: int) -> dict[str, object]:
@@ -183,6 +195,10 @@ def _guard_preview_resources(session, max_dimension: int) -> None:
         return
     payload = _preview_resource_payload(session, max_dimension)
     if not payload["allowed"]:
+        from .diagnostics import log as diagnostic
+        diagnostic("grade", "preview_refused", level="warn", route="refused",
+                   reason="preview_resource_limit", requested_edge_px=max_dimension,
+                   requested_bytes=payload.get("estimated_peak_bytes"), budget_bytes=payload.get("safely_available_bytes"))
         raise HTTPException(status_code=507, detail=payload["reason"])
 
 
@@ -215,6 +231,7 @@ def _cancellable_mask_request(endpoint):
         disconnected_at = 0.0
         queued_at = perf_counter()
         queue_ms = 0.0
+        response = None
         def abandon():
             # A client that aborts usually asks again at once under a newer
             # request. Give that request a moment to join the shared compile
@@ -222,10 +239,10 @@ def _cancellable_mask_request(endpoint):
             if disconnected.is_set() and perf_counter() - disconnected_at >= MASK_ABANDON_GRACE_SECONDS:
                 raise HTTPException(status_code=409, detail="Disconnected local mask work cancelled.")
         def work():
-            nonlocal queue_ms
+            nonlocal queue_ms, response
             queue_ms = (perf_counter() - queued_at) * 1000
             with request_work(None, None, abandon=abandon):
-                return endpoint(*args, **kwargs)
+                response = endpoint(*args, **kwargs)
         async def watch():
             nonlocal disconnected_at
             while True:
@@ -235,18 +252,23 @@ def _cancellable_mask_request(endpoint):
                     return
                 await anyio.sleep(.05)
         error = None
-        async with anyio.create_task_group() as group:
-            group.start_soon(watch)
-            try:
-                response = await run_in_threadpool(work)
-            except Exception as exc:
-                error = exc
-            finally:
-                group.cancel_scope.cancel()
-        if error is not None:
-            raise error
-        response.headers["X-Mask-Worker-Queue-Ms"] = f"{queue_ms:.3f}"
-        return response
+        try:
+            async with anyio.create_task_group() as group:
+                group.start_soon(watch)
+                try:
+                    await run_in_threadpool(work)
+                except Exception as exc:
+                    error = exc
+                finally:
+                    group.cancel_scope.cancel()
+            if error is not None:
+                raise error
+            response.headers["X-Mask-Worker-Queue-Ms"] = f"{queue_ms:.3f}"
+            return response
+        except BaseException:
+            if isinstance(response, _ReservedMaskBatchResponse):
+                response.release()
+            raise
     signature = inspect.signature(endpoint)
     wrapped.__signature__ = signature.replace(parameters=[*signature.parameters.values(),
         inspect.Parameter("http_request", inspect.Parameter.KEYWORD_ONLY, annotation=Request)])
@@ -260,7 +282,9 @@ def _committed_mask_identity(session, local_id: str, mask_path: str | None):
         expression = _mask_expression_at_path(local.mask, mask_path)
     except (StopIteration, HTTPException):
         return None
-    return session.adjustments.shared.geometry.model_dump_json(), spatial_mask_signature(expression)
+    adjustments = session.adjustments
+    return (session.render_cache.source_epoch, adjustments.shared.geometry.model_dump_json(),
+            spatial_mask_signature(expression), adjustments.hdr.model_dump_json() if has_hue_mask(expression) else None)
 
 
 def _compile_current_mask(session, method, *args, timing=None, expected_revision=None, identity=None, **kwargs):
@@ -401,7 +425,10 @@ class DesktopRequestBoundary:
             await self.app(scope, receive, send_hardened)
 
 
+from .diagnostics import RequestAction
+
 app.add_middleware(DesktopRequestBoundary)
+app.add_middleware(RequestAction)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -410,7 +437,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 instrument_work = InstrumentWork()
-store = SessionStore(grade_import_parallel=True)
+store = SessionStore(grade_import_parallel=True, file_back_sources=True)
 atexit.register(store.clear)
 capabilities = None
 export_backends = None
@@ -445,7 +472,7 @@ from .delivery import create_delivery_router
 app.include_router(create_delivery_router())
 from .gpu_delivery import create_gpu_delivery_router
 app.include_router(create_gpu_delivery_router())
-from .denoise_measurement import create_router as create_denoise_measurement_router
+from .denoise_measurement import create_router as create_denoise_measurement_router, proxy_model
 app.include_router(create_denoise_measurement_router(store))
 import_jobs = ImportJobManager(store, media_browser_store, workers=1)
 add_opening_routes(app, import_jobs)
@@ -648,7 +675,8 @@ def save_desktop_project(session_id: str, request: DesktopProjectSaveRequest) ->
 
 @app.get("/api/capabilities")
 def api_capabilities() -> dict[str, object]:
-    return {"capabilities": get_capabilities()}
+    from .app_memory import machine_memory
+    return {"capabilities": get_capabilities(), "ram_bytes": machine_memory()}
 
 
 @app.get("/api/film-stocks")
@@ -825,6 +853,8 @@ def post_local_sdr_match(session_id: str, target_id: str, request: SdrMatchActio
     try:
         result, message, changed = store.apply_local_sdr_match_action(
             session_id, expected_revision=request.expected_revision, target_id=target_id)
+        from .diagnostics import log as diagnostic
+        diagnostic("match", "local_match_route", route="cpu", reason="local_match_cpu", changed=changed)
         return {**result.model_dump(mode="json"), "message": message, "changed": changed}
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -854,6 +884,13 @@ def post_sdr_match(session_id: str, request: SdrMatchActionRequest, response: Re
             if bridge is not None:
                 close_bridge(session_id, bridge)
         timing["request_total_ms"] = round((perf_counter() - started) * 1000.0, 3)
+        from .diagnostics import log as diagnostic
+        route = timing.get("candidate_renderer", "cpu")
+        fallback = timing.get("gpu_candidate_fallback")
+        reason = ("gpu_candidate_unavailable" if fallback else
+                  "gpu_candidates_completed" if route == "gpu" else "cpu_candidates_selected")
+        diagnostic("match", "candidate_result", route=route, reason=reason,
+                   candidate_count=timing.get("gpu_candidates"), duration_ms=timing["request_total_ms"])
         response.headers["X-SDR-Match-Timing"] = json.dumps(timing, separators=(",", ":"))
         return result
     except KeyError as exc:
@@ -926,7 +963,7 @@ def open_project_file(request: ProjectOpenRequest) -> SessionSummary:
     return SessionSummary(session=session.to_payload())
 
 
-def _render_selected_execution(session, request, kind, adjustments, preview_long_edge, is_current):
+def _render_selected_execution(session, request, kind, adjustments, preview_long_edge, is_current, *, navigation=False):
     """Render one preview frame through the route the request asked for.
 
     ``execution="strips"`` selects the bounded CPU path. A request it cannot
@@ -944,24 +981,51 @@ def _render_selected_execution(session, request, kind, adjustments, preview_long
         if request.include_locals
         else []
     )
-    if request.execution == "strips":
+    denoise = denoise_settings_for_export(session, kind)
+    micro = _preview_micro_controls(session, kind, request, adjustments)
+    settings = session.denoise.hdr if kind == PreviewKind.HDR else session.denoise.sdr
+    if settings.enabled and settings.controls.method == "micro_grain":
+        denoise = None
+    if request.execution == "strips" and denoise is None and micro is None:
         processed, report = session.render_cache.adjusted_frame_in_strips(
             adjustments,
             kind,
             preview_long_edge,
             is_current=is_current,
             local_adjustments=local_adjustments,
-            denoise_active=_denoise_is_active(session, kind),
         )
         return processed, report
+    kwargs = {"denoise_controls": denoise.controls} if denoise is not None else {}
+    if micro is not None and navigation:
+        from .denoise_micro_grain import unavailable_reason
+
+        if not unavailable_reason(session, check_source=False):
+            cached_micro = session.render_cache.cached_micro_preview_source(session, micro, preview_long_edge)
+            preview_long_edge = min(preview_long_edge, cached_micro[1][-1])
+            kwargs.update(cached_micro=cached_micro, scope_source=True)
+    elif micro is not None:
+        kwargs.update(micro_preview=(session, micro), prioritize_micro=not request.background_preview)
     processed = session.render_cache.adjusted_frame(
         adjustments,
         kind,
         preview_long_edge,
         is_current=is_current,
         local_adjustments=local_adjustments,
+        **kwargs,
     )
     return processed, None
+
+
+def _preview_micro_controls(session, kind, request, adjustments):
+    settings = session.denoise.hdr if kind == PreviewKind.HDR else session.denoise.sdr
+    if not settings.enabled or settings.controls.method != "micro_grain" or request.micro_grain_original:
+        return None
+    controls = request.micro_grain_controls or settings.controls
+    authored = (kind == PreviewKind.SDR and session.sdr_reference_image is not None
+                and adjustments.sdr.use_authored_base and not adjustments.sdr.linked_to_hdr)
+    if not authored and (controls.micro_luminance or controls.micro_color):
+        return controls
+    return None
 
 
 def _strip_report_headers(report) -> dict[str, str]:
@@ -974,13 +1038,17 @@ def _strip_report_headers(report) -> dict[str, str]:
     return headers
 
 
-def _denoise_is_active(session, kind: PreviewKind) -> bool:
-    denoise = getattr(session, "denoise", None)
-    lane = getattr(denoise, kind.value, None) if denoise is not None else None
-    return bool(getattr(lane, "enabled", False))
+def _cpu_preview_edge(session, kind, request, requested_edge):
+    if requested_edge > FULL_PREVIEW_BASELINE_DIMENSION and denoise_settings_for_export(session, kind):
+        if request.execution == "strips" or not _preview_resource_payload(session, requested_edge)["allowed"]:
+            return FULL_PREVIEW_BASELINE_DIMENSION
+    return requested_edge
 
 
 def _strip_execution_conflict(exc: StripExecutionRefused) -> JSONResponse:
+    from .diagnostics import log as diagnostic
+
+    diagnostic("grade", "preview_refused", level="warn", route="refused", reason="strip_execution_refused")
     return JSONResponse(
         status_code=409,
         content={
@@ -1000,10 +1068,13 @@ def _cancellable_preview(endpoint):
     @wraps(endpoint)
     async def wrapped(*args, **kwargs):
         http_request = kwargs.pop("http_request")
-        key = (kwargs["session_id"], kwargs["kind"], "preview")
+        purpose = "navigation" if kwargs.get("purpose") == "navigation" else "preview"
+        key = (kwargs["session_id"], kwargs["kind"], purpose)
         try:
             return await _preview_work.run(key, http_request, lambda current: endpoint(*args, **kwargs))
         except StaleRender:
+            from .diagnostics import log as diagnostic
+            diagnostic("grade", "preview_cancelled", route="refused", reason="superseded")
             return JSONResponse(status_code=409, content={"detail": "Stale preview request dropped."})
     signature = inspect.signature(endpoint)
     wrapped.__signature__ = signature.replace(parameters=[*signature.parameters.values(),
@@ -1011,18 +1082,31 @@ def _cancellable_preview(endpoint):
     return wrapped
 
 
-def _log_cpu_preview(session, kind, edge, request):
+def _log_cpu_preview(session, kind, edge, request, requested_edge):
     from .library_diagnostics import log
+    from .diagnostics import log as diagnostic
     h, w = session.image.shape[:2]
+    source_path = str(getattr(session, "source_path", "") or "")
+    reported = (request.cpu_fallback_reason or "").partition(":")[0]
+    reasons = {
+        "user-selected-cpu": "user_selected_cpu", "gpu-unavailable": "gpu_unavailable",
+        "gpu-disabled-after-session-failure": "prior_failure_latched",
+        "unsupported-local-adjustments": "unsupported_local_adjustments",
+        "gpu-failed": "gpu_render_failed", "gpu-retry-scheduled": "gpu_retry_scheduled",
+    }
+    diagnostic("grade", "preview_route", lane=kind.value, photo={"id": source_path, "name": Path(source_path).name},
+               route="cpu_reduced" if edge < requested_edge else "cpu",
+               reason="preview_edge_reduced" if edge < requested_edge else reasons.get(reported, "backend_preview_requested"),
+               requested_edge_px=requested_edge, rendered_edge_px=edge, requested_execution=request.execution)
     scale = min(1.0, edge / max(h, w))
-    log("grade_preview_cpu", path=str(session.source_path), lane=kind.value,
+    log("grade_preview_cpu", path=source_path, lane=kind.value,
         width=round(w * scale), height=round(h * scale), long_edge=edge,
         reason=request.cpu_fallback_reason or "CPU preview requested without renderer reason")
 
 
 @app.post("/api/session/{session_id}/preview/{kind}")
 @_cancellable_preview
-def preview(session_id: str, kind: PreviewKind, request: PreviewRequest) -> Response:
+def preview(session_id: str, kind: PreviewKind, request: PreviewRequest, purpose: str | None = None) -> Response:
     if request.transient_adjustments and request.adjustments is None:
         raise HTTPException(status_code=422, detail="Transient preview adjustments are required.")
     try:
@@ -1037,10 +1121,28 @@ def preview(session_id: str, kind: PreviewKind, request: PreviewRequest) -> Resp
     except RevisionConflictError as exc:
         raise _revision_conflict(exc) from exc
 
-    preview_long_edge = request.long_edge or session.preview.long_edge
+    requested_edge = request.long_edge or session.preview.long_edge
+    preview_long_edge = _cpu_preview_edge(session, kind, request, requested_edge)
     _guard_preview_resources(session, preview_long_edge)
-    _log_cpu_preview(session, kind, preview_long_edge, request)
-    token = store.next_preview_token(session_id, kind)
+    _log_cpu_preview(session, kind, preview_long_edge, request, requested_edge)
+    navigation = purpose == "navigation"
+    if navigation:
+        from .grain_work import current_check
+
+        source_epoch = session.render_cache.source_epoch
+        edit_revision = session.edit_revision
+        caller_current = current_check()
+
+        def is_current():
+            return (caller_current is None or caller_current()) and (
+                session.edit_revision == edit_revision and store.is_source_current(session_id, source_epoch)
+            )
+    else:
+        token = store.next_preview_token(session_id, kind)
+
+        def is_current():
+            return session.preview_tokens[kind] == token
+
     try:
         processed, strip_report = _render_selected_execution(
             session,
@@ -1048,24 +1150,35 @@ def preview(session_id: str, kind: PreviewKind, request: PreviewRequest) -> Resp
             kind,
             adjustments,
             preview_long_edge,
-            lambda: session.preview_tokens[kind] == token,
+            is_current,
+            navigation=navigation,
         )
+        started = perf_counter()
         body, media_type = encode_processed_preview_bytes(
             processed,
             kind,
             hdr_display=request.hdr_display,
             reference_white_nits=session.hdr_reference_white_nits,
         )
+        if _preview_micro_controls(session, kind, request, adjustments) is not None:
+            from .diagnostics import log as diagnostic
+
+            diagnostic("grade", "micro_preview_encoded", lane=kind.value, edge_px=preview_long_edge,
+                       duration_ms=round((perf_counter() - started) * 1000, 2))
     except StripExecutionRefused as exc:
         return _strip_execution_conflict(exc)
+    except MicroScopeSourceUnavailable:
+        return JSONResponse(status_code=409, content={"detail": {"code": "micro_navigation_source_unavailable"}})
     except StaleRender:
         return JSONResponse(status_code=409, content={"detail": "Stale preview request dropped."})
     except RuntimeError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
-    if not store.is_preview_current(session_id, kind, token):
+    if not (is_current() if navigation else store.is_preview_current(session_id, kind, token)):
         return JSONResponse(status_code=409, content={"detail": "Stale preview request dropped."})
     headers = _strip_report_headers(strip_report)
+    if preview_long_edge < requested_edge:
+        headers["X-Preview-Reduced-Edge"] = str(preview_long_edge)
     return Response(content=body, media_type=media_type, headers=headers)
 
 
@@ -1092,9 +1205,17 @@ def preview_raw(session_id: str, kind: PreviewKind, request: PreviewRequest) -> 
     except RevisionConflictError as exc:
         raise _revision_conflict(exc) from exc
 
-    preview_long_edge = request.long_edge or (768 if kind == PreviewKind.SDR else 960)
+    requested_edge = request.long_edge or (768 if kind == PreviewKind.SDR else 960)
+    if request.micro_grain_viewport is not None:
+        try:
+            region = _micro_preview_raw(session_id, session, kind, request, adjustments)
+        except StaleRender:
+            return JSONResponse(status_code=409, content={"detail": "Stale raw preview request dropped."})
+        return region if region is not None else Response(status_code=204)
+
+    preview_long_edge = _cpu_preview_edge(session, kind, request, requested_edge)
     _guard_preview_resources(session, preview_long_edge)
-    _log_cpu_preview(session, kind, preview_long_edge, request)
+    _log_cpu_preview(session, kind, preview_long_edge, request, requested_edge)
     token = store.next_preview_token(session_id, kind)
     try:
         processed, strip_report = _render_selected_execution(
@@ -1123,7 +1244,66 @@ def preview_raw(session_id: str, kind: PreviewKind, request: PreviewRequest) -> 
             "X-Preview-Lane": kind.value,
             "X-Display-Interpretation": "srgb-rgba8",
             "X-Cache-Identity": f"{session_id}:{kind.value}:{token}",
+            **({"X-Preview-Reduced-Edge": str(preview_long_edge)} if preview_long_edge < requested_edge else {}),
             **_strip_report_headers(strip_report),
+        },
+    )
+
+
+def _micro_preview_raw(session_id, session, kind, request, adjustments):
+    from .denoise_micro_grain import MicroGrainControls, MicroRegionRefused
+    from .diagnostics import log
+
+    controls = _preview_micro_controls(session, kind, request, adjustments)
+    if controls is None:
+        return None
+    locals_for_preview = adjustments.enabled_locals(
+        (request.local_adjustments if request.local_adjustments is not None else session.local_adjustments)
+        if request.include_locals else []
+    )
+    token = store.next_preview_token(session_id, kind)
+    current = lambda: store.is_preview_current(session_id, kind, token)
+    try:
+        pixels, (left, top, frame_width, frame_height) = session.render_cache.micro_preview_region(
+            session, MicroGrainControls.from_settings(controls), adjustments, kind,
+            request.micro_grain_viewport, locals_for_preview, current,
+        )
+    except MicroRegionRefused as error:
+        source_path = str(getattr(session, "source_path", "") or "")
+        log("denoise", "micro_cpu_region", photo={"id": source_path, "name": Path(source_path).name},
+            route="cpu_reduced", reason=str(error))
+        return None
+    # Ordinary bounded whole-picture underlayer for offscreen pixels, panning
+    # and Fit. The native detail is returned separately and kept at its pitch.
+    underlayer = session.render_cache.adjusted_frame(
+        adjustments, kind, 960, is_current=current, local_adjustments=locals_for_preview,
+    )
+    encoded_headers = {}
+    if kind == PreviewKind.HDR and request.hdr_display:
+        def encode(image):
+            return encode_processed_preview_bytes(
+                image, kind, hdr_display=True, reference_white_nits=session.hdr_reference_white_nits
+            )
+        detail, media_type = encode(pixels)
+        if not current():
+            raise StaleRender("The CPU Micro Grain preview was replaced.")
+        base, _ = encode(underlayer)
+        encoded_headers = {"X-Micro-Media-Type": media_type, "X-Micro-Detail-Bytes": str(len(detail))}
+        body = detail + base
+    else:
+        body = encode_processed_rgba8(pixels, kind) + encode_processed_rgba8(underlayer, kind)
+    if not current():
+        raise StaleRender("The CPU Micro Grain preview was replaced.")
+    height, width = pixels.shape[:2]
+    return Response(
+        content=body, media_type="application/octet-stream",
+        headers={
+            "X-Image-Width": str(width),
+            "X-Image-Height": str(height),
+            "X-Generation": str(request.generation if request.generation is not None else token),
+            "X-Micro-Region": f"{left},{top},{frame_width},{frame_height}",
+            "X-Micro-Underlayer": f"{underlayer.shape[1]},{underlayer.shape[0]}",
+            **encoded_headers,
         },
     )
 
@@ -1169,6 +1349,17 @@ async def overlay(session_id: str, kind: PreviewKind, request: PreviewRequest, h
     return Response(content=body, media_type=media_type)
 
 
+def _scope_render_options(session, kind, request, adjustments):
+    from .denoise_micro_grain import unavailable_reason
+
+    controls = _preview_micro_controls(session, kind, request, adjustments)
+    return {"micro_preview": (session, controls)} if controls is not None and not unavailable_reason(session, check_source=False) else {}
+
+
+def _micro_scope_unavailable():
+    return JSONResponse(status_code=409, content={"detail": {"code": "micro_scope_source_unavailable"}})
+
+
 @app.get("/api/session/{session_id}/scopes")
 async def scopes(
     session_id: str,
@@ -1201,11 +1392,14 @@ async def scopes(
             is_current=is_current,
             local_adjustments=session.adjustments.enabled_locals(session.local_adjustments),
             channel_names=("R", "G", "B") if channels == "rgb" else (("Y",) if channels == "luma" else None),
+            **_scope_render_options(session, kind, PreviewRequest(), session.adjustments),
         )
     try:
         return await instrument_work.run((session_id, kind, "scopes"), http_request, render)
     except StaleRender:
         return JSONResponse(status_code=409, content={"detail": "Stale scope request dropped."})
+    except MicroScopeSourceUnavailable:
+        return _micro_scope_unavailable()
 
 
 @app.post("/api/session/{session_id}/scopes")
@@ -1249,11 +1443,14 @@ async def scopes_for_adjustments(
                 request.scope_region.width,
                 request.scope_region.height,
             ) if request.scope_region is not None else None,
+            **_scope_render_options(session, kind, request, adjustments),
         )
     try:
         result = await instrument_work.run((session_id, kind, "scopes"), http_request, render)
     except StaleRender:
         return JSONResponse(status_code=409, content={"detail": "Stale scope request dropped."})
+    except MicroScopeSourceUnavailable:
+        return _micro_scope_unavailable()
     result.tier = request.tier
     result.generation = request.generation
     return result
@@ -1315,20 +1512,21 @@ def webgpu_proxy(
 ) -> Response:
     try:
         session = store.get(session_id)
-        _check_revision(session.edit_revision, edit_revision)
+        revision = session.edit_revision
+        _check_revision(revision, edit_revision)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except RevisionConflictError as exc:
         raise _revision_conflict(exc) from exc
+    epoch = session.render_cache.source_epoch
     adjustments = _perspective_draft_base(session, long_edge) if perspective_draft_base else session.adjustments
     _guard_preview_resources(session, long_edge)
-    revision = session.edit_revision
     try:
         proxy, working_space, authoritative_geometry_signature = session.render_cache.geometry_source_proxy(
             kind,
             long_edge,
             adjustments,
-            is_current=lambda: session.edit_revision == revision,
+            is_current=lambda: session.edit_revision == revision and session.render_cache.source_epoch == epoch,
             persist_mips=False,
         )
     except StaleRender:
@@ -1345,6 +1543,8 @@ def webgpu_proxy(
     else:
         accepted_geometry_signature = authoritative_geometry_signature
     body, bytes_per_row, pixel_format = encode_rgba_proxy(proxy, prefer_half=format == "rgba16f")
+    if session.edit_revision != revision or session.render_cache.source_epoch != epoch:
+        return JSONResponse(status_code=409, content={"detail": "Stale source mip request dropped."})
     height, width = proxy.shape[:2]
     source_state = session.render_cache.source_level_state(long_edge)
     # ASGI sends the complete picture body before running these tasks. They
@@ -1352,7 +1552,6 @@ def webgpu_proxy(
     background = BackgroundTasks()
     mip_store = session.render_cache.mip_store
     if mip_store is not None:
-        epoch = session.render_cache.source_epoch
         for identity in (session.render_cache.source_identity, session.render_cache.sdr_identity):
             if identity is not None:
                 background.add_task(mip_store.persist_cached, identity, long_edge,
@@ -1368,48 +1567,11 @@ def webgpu_proxy(
             "X-Working-Space": working_space,
             "X-Pixel-Format": pixel_format,
             "X-Geometry-Signature": accepted_geometry_signature,
-            "X-Edit-Revision": str(session.edit_revision),
+            "X-Edit-Revision": str(revision),
+            "X-Source-Epoch": str(epoch),
             "X-Source-Level-State": source_state or "unknown",
         },
     )
-
-
-# Adaptive denoise models measured on preview proxies, newest last. A model is
-# a handful of numbers, but measuring one resamples its sample windows.
-_DENOISE_MODEL_CACHE: dict[tuple, dict] = {}
-_DENOISE_MODEL_CACHE_LIMIT = 16
-_DENOISE_MODEL_LOCK = Lock()
-_DENOISE_MODEL_PENDING: dict[tuple, Future] = {}
-
-
-def _cached_denoise_model(key: tuple, measure) -> dict:
-    """Overlapping warm-up and foreground requests share one measurement."""
-    with _DENOISE_MODEL_LOCK:
-        cached = _DENOISE_MODEL_CACHE.pop(key, None)
-        if cached is not None:
-            _DENOISE_MODEL_CACHE[key] = cached
-            return cached
-        pending = _DENOISE_MODEL_PENDING.get(key)
-        owner = pending is None
-        if owner:
-            pending = Future()
-            _DENOISE_MODEL_PENDING[key] = pending
-    if not owner:
-        return pending.result()
-    try:
-        result = measure()
-        with _DENOISE_MODEL_LOCK:
-            _DENOISE_MODEL_CACHE[key] = result
-            while len(_DENOISE_MODEL_CACHE) > _DENOISE_MODEL_CACHE_LIMIT:
-                _DENOISE_MODEL_CACHE.pop(next(iter(_DENOISE_MODEL_CACHE)))
-        pending.set_result(result)
-        return result
-    except BaseException as error:
-        pending.set_exception(error)
-        raise
-    finally:
-        with _DENOISE_MODEL_LOCK:
-            _DENOISE_MODEL_PENDING.pop(key, None)
 
 
 @app.get("/api/session/{session_id}/denoise-model/{kind}")
@@ -1460,7 +1622,7 @@ def adaptive_denoise_model(
             log("picture_denoise_model", path=metadata.get("path"), route="library-exact-all-cores",
                 edge=long_edge, workers=logical_cpus(), duration_ms=(time.perf_counter()-started)*1000)
             return model.as_dict()
-        return _cached_denoise_model(key, measure_library)
+        return proxy_model(key, measure_library)
     return _adaptive_denoise_model(session_id, kind, long_edge, edit_revision, geometry_signature)
 
 
@@ -1493,7 +1655,7 @@ def _adaptive_denoise_model(session_id, kind, long_edge, edit_revision, geometry
         image, source_epoch = native
         key = (session_id, "native", source_epoch)
         measure = lambda: denoise_adaptive.estimate_adaptive_model(image).as_dict()
-        return _cached_denoise_model(key, measure) if cached else measure()
+        return proxy_model(key, measure) if cached else measure()
     # A smaller level is measured on the proxy the preview denoises, at this
     # size and geometry, so the picture never depends on which geometry was
     # seen first.
@@ -1515,7 +1677,7 @@ def _adaptive_denoise_model(session_id, kind, long_edge, edit_revision, geometry
         return model.as_dict()
 
     try:
-        return _cached_denoise_model(key, measure) if cached else measure()
+        return proxy_model(key, measure) if cached else measure()
     except StaleRender:
         return JSONResponse(status_code=409, content={"detail": "Stale source mip request dropped."})
 
@@ -1542,11 +1704,13 @@ def webgpu_proxy_stream(
     """
     try:
         session = store.get(session_id)
-        _check_revision(session.edit_revision, edit_revision)
+        revision = session.edit_revision
+        _check_revision(revision, edit_revision)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except RevisionConflictError as exc:
         raise _revision_conflict(exc) from exc
+    epoch = session.render_cache.source_epoch
     adjustments = _perspective_draft_base(session, long_edge) if perspective_draft_base else session.adjustments
     native_stream = session.render_cache.native_source_stream(kind, long_edge, adjustments)
     if native_stream is None:
@@ -1559,13 +1723,12 @@ def webgpu_proxy_stream(
         )
         if not estimate.allowed:
             raise HTTPException(status_code=507, detail=estimate.reason)
-    revision = session.edit_revision
     try:
         proxy, working_space, authoritative_geometry_signature = native_stream or session.render_cache.geometry_source_proxy(
             kind,
             long_edge,
             adjustments,
-            is_current=lambda: session.edit_revision == revision,
+            is_current=lambda: session.edit_revision == revision and session.render_cache.source_epoch == epoch,
         )
     except StaleRender:
         return JSONResponse(status_code=409, content={"detail": "Stale source mip request dropped."})
@@ -1592,7 +1755,7 @@ def webgpu_proxy_stream(
         for top in range(0, height, rows_per_chunk):
             # A superseded edit ends the body early; the client sees a short
             # stream and treats it as recoverable rather than as pixels.
-            if session.edit_revision != revision:
+            if session.edit_revision != revision or session.render_cache.source_epoch != epoch:
                 return
             body, _stride = encode_rgba_proxy_rows(
                 proxy,
@@ -1604,6 +1767,8 @@ def webgpu_proxy_stream(
             yield body
 
     source_state = "native" if native_stream is not None else session.render_cache.source_level_state(long_edge)
+    if session.edit_revision != revision or session.render_cache.source_epoch != epoch:
+        return JSONResponse(status_code=409, content={"detail": "Stale source mip request dropped."})
     return StreamingResponse(
         row_strips(),
         media_type="application/octet-stream",
@@ -1615,7 +1780,8 @@ def webgpu_proxy_stream(
             "X-Working-Space": working_space,
             "X-Pixel-Format": pixel_format,
             "X-Geometry-Signature": accepted_geometry_signature,
-            "X-Edit-Revision": str(session.edit_revision),
+            "X-Edit-Revision": str(revision),
+            "X-Source-Epoch": str(epoch),
             "X-Source-Level-State": source_state or "unknown",
         },
     )
@@ -1934,31 +2100,76 @@ def local_mask_tile_proxy(
     )
 
 
+@contextmanager
+def _reserve_mask_batch(working_bytes, available_bytes, check, read_headroom, *, allow_serial=False):
+    global _mask_batch_reserved_bytes, _mask_batch_serial_active
+    serial = False
+
+    def keep_response(response_bytes):
+        nonlocal working_bytes, serial
+        global _mask_batch_reserved_bytes, _mask_batch_serial_active
+        with _MASK_BATCH_CAPACITY:
+            _mask_batch_reserved_bytes += response_bytes - working_bytes
+            working_bytes = response_bytes
+            if serial:
+                _mask_batch_serial_active = serial = False
+            _MASK_BATCH_CAPACITY.notify_all()
+
+    with _MASK_BATCH_CAPACITY:
+        while True:
+            check()
+            if not _mask_batch_serial_active:
+                if _mask_batch_reserved_bytes + working_bytes <= (available_bytes or 0):
+                    break
+                if not _mask_batch_reserved_bytes:
+                    if not allow_serial or working_bytes > _MASK_BATCH_SERIAL_LIMIT_BYTES:
+                        raise HTTPException(status_code=507, detail="Not enough host memory for this mask batch.")
+                    _mask_batch_serial_active = serial = True
+                    break
+            _MASK_BATCH_CAPACITY.wait(timeout=.05)
+            available_bytes = read_headroom()
+        _mask_batch_reserved_bytes += working_bytes
+    try:
+        yield keep_response
+    finally:
+        with _MASK_BATCH_CAPACITY:
+            _mask_batch_reserved_bytes -= working_bytes
+            if serial:
+                _mask_batch_serial_active = False
+            _MASK_BATCH_CAPACITY.notify_all()
+
+
+class _ReservedMaskBatchResponse(Response):
+    chunk_size = 256 * 1024
+
+    def __init__(self, response):
+        super().__init__(response.body, status_code=response.status_code, headers=response.headers)
+
+    def release(self):
+        self.body = b""
+        self.reservation.close()
+
+    async def __call__(self, scope, receive, send):
+        try:
+            await send({"type": "http.response.start", "status": self.status_code, "headers": self.raw_headers})
+            for offset in range(0, len(self.body), self.chunk_size):
+                await send({"type": "http.response.body", "body": self.body[offset:offset + self.chunk_size], "more_body": True})
+            await send({"type": "http.response.body", "body": b""})
+        finally:
+            self.release()
+
+
 @app.post("/api/session/{session_id}/local-mask-tiles")
 @_cancellable_mask_request
-def local_mask_tiles_batch_proxy(
-    session_id: str,
-    request: LocalMaskTileBatchRequest,
-) -> Response:
-    """Serve a bounded batch of globally anchored local-mask tiles.
+def local_mask_tiles_batch_proxy(session_id: str, request: LocalMaskTileBatchRequest) -> Response:
+    from .local_adjustments import brush_mask_working_bytes
 
-    One request carries many tiles.  Mask compilation remains authoritative
-    and whole-image, and every distinct mask identity in the batch is compiled
-    once and sliced for each of its requested rectangles, so a tiled
-    generation no longer needs one HTTP request per tile or a cold compile per
-    tile.  Entries outside the compiled mask are reported per entry instead of
-    failing the batch, and the payload is one length-prefixed container so the
-    browser parses a single response.
-    """
     session = _checked_edit_session(session_id, request.edit_revision)
     _check_mask_geometry(session, request.geometry_signature)
-    _guard_preview_resources(session, request.long_edge)
-
+    revision, epoch = session.edit_revision, session.render_cache.source_epoch
+    adjustments = session.adjustments
+    bounded_geometry = request.bounded_geometry and not geometry_is_identity(adjustments.shared.geometry)
     locals_by_id = {item.id: item for item in session.local_adjustments}
-    compiled: dict[tuple[str, str | None], np.ndarray] = {}
-    # A mask that can be evaluated for a region is evaluated once for the
-    # rectangle around all of its requested tiles and never for the whole image.
-    regions: dict[tuple[str, str | None], tuple[np.ndarray, tuple[int, int], tuple[int, int]] | None] = {}
     bounds: dict[tuple[str, str | None], list[int]] = {}
     for tile in request.tiles:
         box = bounds.setdefault((tile.local_id, tile.mask_path), [tile.x - tile.halo, tile.y - tile.halo,
@@ -1968,9 +2179,73 @@ def local_mask_tiles_batch_proxy(
         box[1] = min(box[1], tile.y - tile.halo)
         box[2] = max(box[2], tile.x + tile.width + tile.halo)
         box[3] = max(box[3], tile.y + tile.height + tile.halo)
+    plans = {}
+    invalid = {}
+    retained_bytes = retained_region_bytes = peak_scratch = 0
+    estimate = _preview_resource_payload(session, request.long_edge)
+    guarded_full_compile = False
+    for identity, box in bounds.items():
+        local_id, mask_path = identity
+        local = locals_by_id.get(local_id)
+        if local is None:
+            continue
+        try:
+            expression = _mask_expression_at_path(local.mask, mask_path)
+        except HTTPException as exc:
+            invalid[identity] = str(exc.detail)
+            continue
+        rect = (max(0, box[0]), max(0, box[1]), box[2], box[3])
+        plan = session.render_cache.local_mask_region_plan(adjustments, expression, request.long_edge, rect,
+                                                          bounded_fallback=bounded_geometry)
+        if plan is None:
+            if not guarded_full_compile:
+                _guard_preview_resources(session, request.long_edge)
+                guarded_full_compile = True
+            area = estimate["pixel_count"]
+            scratch = estimate["estimated_peak_bytes"]
+        else:
+            size = plan[0]
+            area = max(0, min(size[0], rect[2]) - rect[0]) * max(0, min(size[1], rect[3]) - rect[1])
+            retained_region_bytes += area
+            if retained_region_bytes > MAX_MASK_TILE_BATCH_BYTES:
+                raise HTTPException(status_code=422, detail="The mask tiles span too much of the output.")
+            scratch = max(0, plan[-1] - area)
+        retained_bytes += area
+        brush_scratch = brush_mask_working_bytes(expression) if area else 0
+        peak_scratch = max(peak_scratch, scratch + brush_scratch)
+        plans[identity] = (local.model_copy(update={"id": f"{local_id}:{mask_path}" if mask_path else local_id,
+                                                    "mask": expression}), rect, plan)
+    payload_bytes = sum((tile.width + 2 * tile.halo) * (tile.height + 2 * tile.halo) for tile in request.tiles)
+    from .mask_work import checkpoint, request_work
+
+    def check():
+        if ((request.edit_revision is not None and request.edit_revision != revision)
+                or session.edit_revision != revision or session.render_cache.source_epoch != epoch):
+            raise HTTPException(status_code=409, detail="The edit or source changed while preparing mask tiles.")
+
+    timing = {}
+    with ExitStack() as reservation:
+        with request_work(check, timing):
+            keep_response = reservation.enter_context(_reserve_mask_batch(
+                retained_bytes + peak_scratch + 4 * payload_bytes, estimate["safely_available_bytes"],
+                checkpoint, lambda: _preview_resource_payload(session, request.long_edge)["safely_available_bytes"],
+                allow_serial=request.long_edge <= FULL_PREVIEW_BASELINE_DIMENSION or not guarded_full_compile,
+            ))
+            response = _assemble_mask_tile_batch(session, request, adjustments, revision, locals_by_id, plans, invalid, timing)
+        held_response = _ReservedMaskBatchResponse(response)
+        # The compute scratch and compiled masks are gone. Keep charging the
+        # body and one streaming slice until send finishes or disconnects.
+        body_bytes = len(held_response.body)
+        keep_response(body_bytes + min(body_bytes, held_response.chunk_size))
+        held_response.reservation = reservation.pop_all()
+        return held_response
+
+
+def _assemble_mask_tile_batch(session, request, adjustments, revision, locals_by_id, plans, invalid, timing):
+    compiled = {}
+    regions = {}
     entries: list[dict[str, object]] = []
     payloads: list[bytes] = []
-    timing = {}
     started = perf_counter()
     for index, tile in enumerate(request.tiles):
         entry: dict[str, object] = {
@@ -1991,42 +2266,24 @@ def local_mask_tiles_batch_proxy(
             continue
         identity = (tile.local_id, tile.mask_path)
         mask = compiled.get(identity)
-        if mask is None and regions.get(identity) is None:
-            try:
-                selected_mask = _mask_expression_at_path(local.mask, tile.mask_path)
-            except HTTPException as exc:
+        if mask is None and identity not in regions:
+            if identity not in plans:
                 entry["status"] = "invalid"
-                entry["error"] = str(exc.detail)
+                entry["error"] = invalid[identity]
                 entries.append(entry)
                 payloads.append(b"")
                 continue
-            mask_source = local.model_copy(
-                update={
-                    "id": f"{local.id}:{tile.mask_path}" if tile.mask_path else local.id,
-                    "mask": selected_mask,
-                },
-                deep=True,
-            )
-            if identity not in regions:
-                box = bounds[identity]
-                origin = (max(0, box[0]), max(0, box[1]))
-                region = _compile_current_mask(session, session.render_cache.compiled_local_mask_region,
-                    session.adjustments,
-                    mask_source,
-                    request.long_edge,
-                    (origin[0], origin[1], box[2], box[3]),
-                    timing=timing, expected_revision=request.edit_revision,
-                    identity=lambda tile=tile: _committed_mask_identity(session, tile.local_id, tile.mask_path),
-                )
-                regions[identity] = None if region is None else (region[0], region[1], origin)
-            if regions[identity] is None:
-                mask = _compile_current_mask(session, session.render_cache.compiled_local_mask,
-                    session.adjustments,
-                    mask_source,
-                    request.long_edge,
-                    spatial_only=True, timing=timing, expected_revision=request.edit_revision,
-                    identity=lambda tile=tile: _committed_mask_identity(session, tile.local_id, tile.mask_path),
-                )
+            mask_source, rect, plan = plans[identity]
+            if plan is not None:
+                try:
+                    region = session.render_cache.compiled_local_mask_region(
+                        adjustments, mask_source, request.long_edge, rect, plan=plan)
+                except StaleRender as exc:
+                    raise HTTPException(status_code=409, detail=str(exc)) from exc
+                regions[identity] = (region[0], region[1], rect[:2])
+            else:
+                mask = session.render_cache.compiled_local_mask(
+                    adjustments, mask_source, request.long_edge, spatial_only=True)
                 compiled[identity] = mask
         region = regions.get(identity)
         if region is not None:
@@ -2049,7 +2306,7 @@ def local_mask_tiles_batch_proxy(
     manifest = {
         "version": 1,
         "long_edge": request.long_edge,
-        "edit_revision": session.edit_revision,
+        "edit_revision": revision,
         "entries": entries,
     }
     manifest_bytes = json.dumps(manifest, separators=(",", ":")).encode("utf-8")
@@ -2065,7 +2322,7 @@ def local_mask_tiles_batch_proxy(
             "X-Mask-Batch-Bytes": str(len(body)),
             "X-Mask-Batch-Compiles": str(len(compiled)),
             "X-Mask-Batch-Regions": str(sum(1 for region in regions.values() if region is not None)),
-            "X-Edit-Revision": str(session.edit_revision),
+            "X-Edit-Revision": str(revision),
             "X-CPU-Mask-Ms": f"{cpu_mask_ms:.3f}",
         },
     )
@@ -2167,7 +2424,7 @@ def local_mask_preview_proxy(
     response_model=GeometryMapResponse,
 )
 def geometry_map(session_id: str, request: GeometryMapRequest) -> GeometryMapResponse:
-    """Return the cached bidirectional map used by source-anchored editor tools."""
+    """Calculate frame dimensions and two small matrices without fetching pixels."""
     try:
         session = store.get(session_id)
         _check_revision(session.edit_revision, request.edit_revision)
@@ -2176,11 +2433,6 @@ def geometry_map(session_id: str, request: GeometryMapRequest) -> GeometryMapRes
     except RevisionConflictError as exc:
         raise _revision_conflict(exc) from exc
     adjustments = request.adjustments or session.adjustments
-    # Bounded zoom needs these dimensions before it can request a tile. Ordinary
-    # maps sample a few coordinates, not the full image. Only the exceptional
-    # roll path that allocates full-frame ramps needs the full-preview guard.
-    if coordinate_map_needs_full_frame(adjustments.shared.geometry):
-        _guard_preview_resources(session, request.long_edge)
     output_to_source, source_to_output, width, height = session.render_cache.geometry_map(
         adjustments,
         request.long_edge,
@@ -2306,6 +2558,22 @@ def session_diagnostics(session_id: str) -> dict[str, object]:
     return {"render_cache": session.render_cache.diagnostics()}
 
 
+# The clock of each running single-photo export, for its progress bar.
+_live_exports: dict[str, object] = {}
+_live_exports_lock = Lock()
+
+
+@app.get("/api/session/{session_id}/export/progress")
+def export_progress(session_id: str) -> dict:
+    """Fraction, stage label and seconds left of this photo's running export."""
+    with _live_exports_lock:
+        clock = _live_exports.get(session_id)
+    progress = getattr(clock, "progress", None)
+    if progress is None:
+        return {"running": clock is not None, "fraction": 0.0, "label": None, "eta_s": None}
+    return {"running": True, **progress.snapshot()}
+
+
 @app.post("/api/session/{session_id}/export")
 def export(session_id: str, settings: ExportSettings):
     try:
@@ -2370,7 +2638,19 @@ def export(session_id: str, settings: ExportSettings):
             raise HTTPException(status_code=400, detail=str(exc)) from exc
     try:
         export_started = perf_counter()
-        result = backend.export(session, settings)
+        from .delivery import delivery_diagnostics
+        from .export_timing import export_clock
+        with delivery_diagnostics("export", session.source_path), export_clock() as clock:
+            with _live_exports_lock:
+                _live_exports[session_id] = clock
+            try:
+                result = backend.export(session, settings)
+            finally:
+                with _live_exports_lock:
+                    if _live_exports.get(session_id) is clock:
+                        _live_exports.pop(session_id)
+        from .batch_export import _log_export_timing
+        _log_export_timing(clock, result, {"path": str(session.source_path)}, settings.format)
     except ExportOverwriteRequired as exc:
         raise HTTPException(
             status_code=409,
@@ -2381,6 +2661,10 @@ def export(session_id: str, settings: ExportSettings):
             },
         ) from exc
     result.timings_ms.setdefault("total", round((perf_counter() - export_started) * 1000.0, 3))
+    from .diagnostics import log as diagnostic
+    diagnostic("export", "delivery_result", route=result.renderer if result.accepted else "refused",
+               reason=("delivery_completed" if result.accepted else "encoding_failed"),
+               level="info" if result.accepted else "error", format=settings.format, duration_ms=result.timings_ms["total"])
     if not result.accepted:
         return JSONResponse(status_code=501, content=result.model_dump())
     return result
@@ -2398,7 +2682,13 @@ def create_proof_artifact(session_id: str, request: ProofArtifactRequest) -> Pro
     if backend is None:
         raise HTTPException(status_code=400, detail=f"Unsupported proof format: {request.format}")
     try:
-        return proof_store.create(session, request.model_copy(update={"adjustments": adjustments}), backend)
+        from .delivery import delivery_diagnostics
+        with delivery_diagnostics("proof", session.source_path):
+            result = proof_store.create(session, request.model_copy(update={"adjustments": adjustments}), backend)
+        from .diagnostics import log as diagnostic
+        diagnostic("proof", "delivery_result", route=result.renderer,
+                   reason="proof_artifact_available", format=request.format)
+        return result
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except RuntimeError as exc:
@@ -2716,6 +3006,13 @@ def library_page() -> HTMLResponse:
     html = (FRONTEND_DIR / "photo-library.html").read_text(encoding="utf-8")
     return HTMLResponse(content=html.replace("__HDR_FINISHER_ASSET_VERSION__", _asset_version()),
                         headers={"Cache-Control": "no-store"})
+
+
+@app.get("/denoise-quality.js")
+def denoise_quality_script() -> Response:
+    options = json.dumps({"colourReference": denoise_quality.colour_reference()})
+    return Response(f"window.HDRDenoiseQuality = Object.freeze({options});", media_type="application/javascript",
+                    headers={"Cache-Control": "no-store"})
 
 
 @app.get("/launcher")

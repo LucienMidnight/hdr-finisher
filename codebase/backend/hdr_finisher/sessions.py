@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import InitVar, dataclass, field
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import nullcontext
 import os
 import hashlib
 import json
@@ -10,14 +11,16 @@ from pathlib import Path
 from threading import RLock
 from typing import Any, Callable
 from uuid import uuid4
+from weakref import ReferenceType, ref
 
 import numpy as np
 
 from .import_defaults import apply_import_defaults, starting_adjustments, sync_highlight_source_peaks
 from .capabilities import probe_capabilities
 from .color_context import DEFAULT_HDR_REFERENCE_WHITE_NITS, RenderColorContext
+from .delivery_frames import DeliveryFrame, batch_source_buffers
 from .import_bands import grade_import_bands
-from .loader import SOURCE_COLOR_TRANSFORM_VERSION, SOURCE_DECODER_VERSION, load_image
+from .loader import SOURCE_COLOR_TRANSFORM_VERSION, load_image, source_decoder_version
 from .metadata import extract_metadata
 from .models import (
     AdjustmentState,
@@ -77,12 +80,17 @@ def _source_mip_identity(session: "LoadedSession", lane: str = "hdr") -> SourceM
         sort_keys=True,
         separators=(",", ":"),
     )
+    cleanup = session.raw_import_settings.pixel_cleanup
+    bayer_cleanup = (
+        (cleanup.remove_hot_pixels or cleanup.even_out_specks)
+        and session.metadata.get("raw_pixel_cleanup", {}).get("supported", False)
+    )
     return SourceMipIdentity(
         content_key=session.source_fingerprint_sha256,
         byte_size=session.source_byte_size,
         width=int(session.image.shape[1]),
         height=int(session.image.shape[0]),
-        decoder_version=SOURCE_DECODER_VERSION,
+        decoder_version=source_decoder_version(cleanup.even_out_specks, bayer_cleanup=bayer_cleanup),
         color_transform_version=SOURCE_COLOR_TRANSFORM_VERSION,
         orientation=1,
         lane=lane,
@@ -137,6 +145,8 @@ class LoadedSession:
     preview: PreviewSettings = field(default_factory=PreviewSettings)
     preview_tokens: dict[PreviewKind, int] = field(default_factory=lambda: {PreviewKind.HDR: 0, PreviewKind.SDR: 0})
     render_cache: SessionRenderCache = field(init=False, repr=False)
+    file_back_sources: bool = field(default=False, repr=False)
+    source_decode: SourceDecode | None = field(default=None, init=False, repr=False)
 
     def __post_init__(self, prepared_fingerprint: str | None, eager_peak_candidates: bool) -> None:
         self.retouch_original = self.image
@@ -165,6 +175,9 @@ class LoadedSession:
         session_at = perf_counter()
         self._sync_highlight_source_peaks()
         self.metadata["import_timings_ms"]["highlight_source_peaks"] = (perf_counter()-session_at)*1000
+
+    def retain_source_pixels(self, pixels):
+        return DeliveryFrame.spill_grade_source(pixels) if self.file_back_sources else pixels
 
     def _apply_import_defaults(self, adjustments: AdjustmentState) -> None:
         apply_import_defaults(adjustments, self.sdr_reference_image)
@@ -216,6 +229,7 @@ class LoadedSession:
         return EditStateResponse(
             repair_rendering=records(self),
             revision=self.edit_revision,
+            source_epoch=self.render_cache.source_epoch,
             document=self.edit_document(),
             dirty=self.dirty,
             can_undo=bool(self.undo_history),
@@ -242,10 +256,25 @@ class LoadedSession:
         )
 
 
+def source_stat_key(path: Path) -> tuple[int, ...]:
+    stat = path.stat()
+    return (stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns)
+
+
+@dataclass(frozen=True)
+class SourceDecode:
+    stat_key: tuple[int, ...]
+    raw_import_settings: RawImportSettings
+    interpretation_override: SourceInterpretationOverride
+    reference_white_nits: int
+    original: ReferenceType[np.ndarray]
+
+
 class SessionStore:
-    def __init__(self, *, grade_import_parallel: bool = False) -> None:
+    def __init__(self, *, grade_import_parallel: bool = False, file_back_sources: bool = False) -> None:
         # Library kept-preview stores retain their established serial path.
         self._grade_import_parallel = grade_import_parallel
+        self._file_back_sources = file_back_sources
         self._lock = RLock()
         self._current: LoadedSession | None = None
         self._published_retained_bytes = 0
@@ -286,11 +315,13 @@ class SessionStore:
         try:
             resolved_raw_settings = raw_import_settings or RawImportSettings()
             resolved_override = interpretation_override or SourceInterpretationOverride()
+            file_back_sources = self._file_back_sources and library_edge is None
             # One hash lane: SHA-256 is an ordered byte stream (I/O bound); splitting
             # it into independent hashes would change the source identity. Join
             # before constructing the identity; the worker retains no image.
-            with grade_import_bands(enabled=self._grade_import_parallel), ThreadPoolExecutor(max_workers=1, thread_name_prefix="source-hash") as pool:
-                initial_stat = source_path.stat()
+            buffers = batch_source_buffers() if file_back_sources else nullcontext()
+            with buffers, grade_import_bands(enabled=self._grade_import_parallel), ThreadPoolExecutor(max_workers=1, thread_name_prefix="source-hash") as pool:
+                initial_stat = source_stat_key(source_path)
                 fingerprint = pool.submit(_sha256_file, source_path)
                 image, source, metadata, analysis, sdr_reference_image = load_image(
                     source_path,
@@ -307,10 +338,9 @@ class SessionStore:
                     **({"library_edge":library_edge} if library_edge is not None else {}),
                 )
                 prepared_fingerprint = fingerprint.result()
-            final_stat = source_path.stat()
-            if (initial_stat.st_size, initial_stat.st_mtime_ns, initial_stat.st_ctime_ns) != (
-                final_stat.st_size, final_stat.st_mtime_ns, final_stat.st_ctime_ns
-            ):
+            final_stat = source_stat_key(source_path)
+            stable_source = initial_stat == final_stat
+            if not stable_source:
                 # An external source edit is exceptional: retain the old
                 # post-decode fingerprint rather than trust the early hash.
                 prepared_fingerprint = _sha256_file(source_path)
@@ -346,6 +376,9 @@ class SessionStore:
                 progress("session_indexing", "Finalizing source fingerprint and render cache")
             if cancelled is not None and cancelled():
                 raise RuntimeError("Import cancelled")
+            if file_back_sources:
+                image = DeliveryFrame.spill_grade_source(image)
+                sdr_reference_image = DeliveryFrame.spill_grade_source(sdr_reference_image)
             session = LoadedSession(
                 session_id=uuid4().hex,
                 source_path=source_path,
@@ -360,7 +393,13 @@ class SessionStore:
                 owns_source_path=owns_source_path,
                 interpretation_override=resolved_override,
                 raw_import_settings=resolved_raw_settings,
+                file_back_sources=file_back_sources,
             )
+            if stable_source and library_edge is None:
+                session.source_decode = SourceDecode(
+                    final_stat, (raw_import_settings or RawImportSettings()).model_copy(deep=True),
+                    resolved_override.model_copy(deep=True), hdr_reference_white_nits, ref(image),
+                )
         except Exception:
             if owns_source_path:
                 _remove_owned_source(source_path)
@@ -380,8 +419,11 @@ class SessionStore:
             self._publish_retained_session_bytes()
         if previous is not None and previous.owns_source_path:
             _remove_owned_source(previous.source_path)
-        if previous is not None and previous.retouch_worker is not None:
-            previous.retouch_worker.close()
+        if previous is not None:
+            previous.render_cache.discard_grain_preparation()
+            previous.render_cache.close_micro_preview()
+            if previous.retouch_worker is not None:
+                previous.retouch_worker.close()
         return payload
 
     def redevelop_session(self, session_id: str, developed: LoadedSession) -> SessionPayload:
@@ -410,12 +452,26 @@ class SessionStore:
             developed.undo_history = current.undo_history
             developed.redo_history = current.redo_history
             developed.history_bytes = current.history_bytes
+            if developed.raw_import_settings.pixel_cleanup != current.raw_import_settings.pixel_cleanup:
+                forward = EditCommand(expected_revision=current.edit_revision, command_type="set_raw_import_settings",
+                    payload={"settings": developed.raw_import_settings.model_dump(mode="json")})
+                inverse = EditCommand(expected_revision=current.edit_revision, command_type="set_raw_import_settings",
+                    payload={"settings": current.raw_import_settings.model_dump(mode="json")})
+                entry = HistoryEntry(forward=forward, inverse=inverse,
+                    byte_size=len(json.dumps([forward.model_dump(mode="json"), inverse.model_dump(mode="json")]).encode()))
+                developed.undo_history = [*current.undo_history, entry]
+                developed.redo_history = []
+                developed.history_bytes += entry.byte_size
+                while len(developed.undo_history) > 100 or developed.history_bytes > 64 * 1024 * 1024:
+                    developed.history_bytes -= developed.undo_history.pop(0).byte_size
             developed.preview = current.preview
             from .retouch_source import restore_repairs
             restore_repairs(developed, _source_mip_identity(developed))
             payload = developed.to_payload()
             self._current = developed
             self._publish_retained_session_bytes()
+            current.render_cache.discard_grain_preparation()
+            current.render_cache.close_micro_preview()
             if current.retouch_worker is not None:
                 current.retouch_worker.close()
             if getattr(self, "grade_recovery_observer", None):
@@ -452,8 +508,12 @@ class SessionStore:
             self._publish_retained_session_bytes()
         if previous is not None and previous.owns_source_path:
             _remove_owned_source(previous.source_path)
-        if previous is not None and previous.retouch_worker is not None:
-            previous.retouch_worker.close()
+        if previous is not None:
+            if previous.render_cache is not None:
+                previous.render_cache.discard_grain_preparation()
+                previous.render_cache.close_micro_preview()
+            if previous.retouch_worker is not None:
+                previous.retouch_worker.close()
 
     def get(self, session_id: str) -> LoadedSession:
         from .library_live import session as library_session
@@ -499,6 +559,15 @@ class SessionStore:
 
     def apply_edit_commands(self, session_id: str, commands: list[EditCommand]) -> EditStateResponse:
         """Prepare repair pixels before committing document/history atomically."""
+        with self._lock:
+            session = self.get(session_id)
+            history = session.undo_history if commands and commands[0].command_type == "undo" else session.redo_history
+            raw_history = bool(commands and commands[0].command_type in {"undo", "redo"} and history
+                and history[-1].forward.command_type == "set_raw_import_settings")
+        if raw_history:
+            if len(commands) != 1:
+                raise EditCommandError("RAW development history must be applied one step at a time.")
+            return self._commit_edit_commands(session_id, commands)
         if not any(c.command_type in {"set_repairs", "undo", "redo", "replace_document"} for c in commands):
             return self._commit_edit_commands(session_id, commands)
         from copy import copy
@@ -547,6 +616,7 @@ class SessionStore:
     def _commit_edit_commands(self, session_id: str, commands: list[EditCommand], *, repaired_pixels=None, repair_dirty_rects=None) -> EditStateResponse:
         with self._lock:
             session = self.get(session_id)
+            previous_image = session.image
             original = (
                 session.adjustments.model_copy(deep=True),
                 [item.model_copy(deep=True) for item in session.local_adjustments],
@@ -563,6 +633,13 @@ class SessionStore:
                 list(session.redo_history),
                 session.history_bytes,
                 session.image,
+                session.raw_import_settings,
+                session.source,
+                session.metadata,
+                session.analysis,
+                session.source_luminance,
+                session.retouch_original,
+                session.sdr_reference_image,
             )
             try:
                 for command in commands:
@@ -591,6 +668,13 @@ class SessionStore:
                     session.redo_history,
                     session.history_bytes,
                     session.image,
+                    session.raw_import_settings,
+                    session.source,
+                    session.metadata,
+                    session.analysis,
+                    session.source_luminance,
+                    session.retouch_original,
+                    session.sdr_reference_image,
                 ) = original
                 if session.render_cache.image is not session.image:
                     session.render_cache.replace_source(session.image, session.sdr_reference_image,
@@ -601,6 +685,8 @@ class SessionStore:
                 raise
             if getattr(self, "grade_recovery_observer", None):
                 self.grade_recovery_observer(session)
+            if session.image is not previous_image:
+                self._publish_retained_session_bytes()
             return session.edit_state()
 
     def apply_local_sdr_match_action(self, session_id: str, *, expected_revision: int, target_id: str):
@@ -818,6 +904,39 @@ class SessionStore:
         command_type = command.command_type
         payload = command.payload
 
+        if command_type == "set_raw_import_settings":
+            previous = session.raw_import_settings
+            settings = RawImportSettings.model_validate(payload.get("settings"))
+            image, source, metadata, analysis, reference = load_image(session.source_path,
+                overrides=session.interpretation_override.model_dump(mode="json"), raw_import_settings=settings,
+                retained_session_bytes=self._retained_session_bytes(), hdr_reference_white_nits=session.hdr_reference_white_nits)
+            image, reference = session.retain_source_pixels(image), session.retain_source_pixels(reference)
+            from copy import copy
+            from .retouch_source import build_repaired_source
+            candidate = copy(session)
+            candidate.image = image
+            candidate.retouch_original = image
+            candidate.retouch_worker = None
+            candidate.raw_import_settings = settings
+            try:
+                repaired = build_repaired_source(candidate, session.repairs)
+            finally:
+                if candidate.retouch_worker is not None:
+                    candidate.retouch_worker.close()
+            source.filename = session.source.filename
+            repaired = session.retain_source_pixels(repaired)
+            session.image, session.retouch_original = repaired, image
+            session.source, session.metadata, session.analysis = source, metadata, analysis
+            session.sdr_reference_image = reference
+            session.raw_import_settings = settings
+            session.source_luminance = describe_source_luminance(source, metadata, has_authored_sdr=reference is not None)
+            session.render_cache.replace_source(repaired, reference, identity=_source_mip_identity(session),
+                sdr_identity=_source_mip_identity(session, lane="sdr") if reference is not None else None)
+            if session.adjustments.hdr.highlight_compression_peak_measurement != "manual":
+                session._sync_highlight_source_peaks()
+            return EditCommand(expected_revision=current_revision, command_type=command_type,
+                payload={"settings": previous.model_dump(mode="json")})
+
         if command_type == "replace_document":
             previous = session.edit_document()
             document = EditDocument.model_validate(payload.get("document"))
@@ -926,7 +1045,7 @@ class SessionStore:
             adjustments = session.adjustments.model_copy(deep=True)
             setattr(adjustments, lane, getattr(session.starting_adjustments(), lane))
             denoise = session.denoise.model_copy(deep=True)
-            setattr(denoise, lane, DenoiseLaneSettings())
+            setattr(denoise, lane, DenoiseLaneSettings.new_lane())
             session.adjustments = adjustments
             session.denoise = denoise
             session.local_adjustments = [
@@ -1064,6 +1183,8 @@ class SessionStore:
                 retained_session_bytes=self._retained_session_bytes(),
                 hdr_reference_white_nits=session.hdr_reference_white_nits,
             )
+            image = session.retain_source_pixels(image)
+            sdr_reference_image = session.retain_source_pixels(sdr_reference_image)
             source.filename = original_filename
             from copy import copy
             from .retouch_source import build_repaired_source
@@ -1076,6 +1197,7 @@ class SessionStore:
             finally:
                 if candidate.retouch_worker is not None:
                     candidate.retouch_worker.close()
+            repaired = session.retain_source_pixels(repaired)
             session.image = repaired
             session.retouch_original = image
             session.retouch_generation += 1

@@ -19,7 +19,7 @@ for (const file of ["mask-request-coordinator.js", "graph-scale.js", "mask-loade
 }
 const Preview = context.window.HDRWebGPUPreview;
 
-const request = (preview, generation, locals, isCurrent = () => true) => preview.loadDirectMasks({
+const request = (preview, generation, locals, isCurrent = () => true, measureOnly = false) => preview.loadDirectMasks({
   generation,
   sessionId: "session",
   activeLocals: locals,
@@ -27,6 +27,7 @@ const request = (preview, generation, locals, isCurrent = () => true) => preview
   editRevision: 4,
   geometrySignature: "{}",
   isCurrent,
+  measureOnly,
 });
 
 test("Direct masks use the foreground coordinator and preserve local order", async () => {
@@ -70,6 +71,21 @@ test("a newer Direct generation aborts active work and never starts the old queu
   assert.equal(current.current, true);
   assert.deepEqual(Array.from(current.results), ["new-0", "new-1"]);
   assert.ok(oldStarted.length <= 6, `${oldStarted.length} obsolete requests started`);
+});
+
+test("a Direct measurement cannot abort the foreground mask loads for a pan", async () => {
+  const preview = new Preview(null);
+  let release;
+  const held = new Promise(resolve => { release = resolve; });
+  const pan = preview.maskRequestCoordinator.run("pan", ["visible"], async (tile, _index, signal) => {
+    await held;
+    assert.equal(signal.aborted, false);
+    return tile;
+  });
+  preview.loadLocalMask = async (_session, local) => local.id;
+  assert.equal((await request(preview, "histogram", [{ id: "scope" }], undefined, true)).current, true);
+  release();
+  assert.equal((await pan).current, true);
 });
 
 test("identical Direct mask leaves reuse one in-flight fetch", async () => {

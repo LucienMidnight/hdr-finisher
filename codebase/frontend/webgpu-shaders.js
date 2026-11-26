@@ -14,6 +14,7 @@
 
   const HSL_WGSL = globalThis.HDRHslShader || require("./hsl-shader.js");
   const PEAK_HISTOGRAM_BINS = 4096;
+  const FILM_DETAIL_BLOCK = Object.freeze({ width: 8, height: 32 });
   function toneZonesWgsl(indices, name) {
     return `    fn ${name}(input: vec3f, y: f32) -> vec3f {
       if (p[${indices.BLACKS}] == 0.0 && p[${indices.WHITES}] == 0.0 && p[${indices.SHADOWS}] == 0.0 && p[${indices.MIDTONES}] == 0.0 && p[${indices.HIGHLIGHTS}] == 0.0) { return input; }
@@ -194,7 +195,7 @@ fn peakSdrReferencePrefix(input: vec3f) -> vec3f {
   return rgb;
 }
 fn peakSdrScenePrefix(input: vec3f) -> vec3f {
-  let rgb = max(input * exp2(peakParams[${GPU_PARAMS.EXPOSURE}]), vec3f(0.0));
+  let rgb = input * exp2(peakParams[${GPU_PARAMS.EXPOSURE}]);
   return peakSceneColor(rgb);
 }
 fn peakSdrInput(input: vec3f, guideSource: vec3f) -> vec3f {
@@ -268,8 +269,11 @@ fn finishedPeakReductionMain(@builtin(global_invocation_id) id: vec3u) {
   const SCALED_FILM_PEAK_REDUCTION_SHADER_SOURCE = PEAK_REDUCTION_SHADER_SOURCE + `
 @compute @workgroup_size(8, 8)
 fn scaledFilmPeakReductionMain(@builtin(global_invocation_id) id: vec3u) {
-  let dimensions = textureDimensions(peakSource);
-  if (id.x >= dimensions.x || id.y >= dimensions.y) { return; }
+  var dimensions = textureDimensions(peakSource);
+  if (arrayLength(&peakParams) > ${GPU_PARAMS.TILE_VALID_HEIGHT}u && peakParams[${GPU_PARAMS.TILE_VALID_WIDTH}] > 0.0 && peakParams[${GPU_PARAMS.TILE_VALID_HEIGHT}] > 0.0) {
+    dimensions = min(dimensions, vec2u(u32(peakParams[${GPU_PARAMS.TILE_VALID_WIDTH}]), u32(peakParams[${GPU_PARAMS.TILE_VALID_HEIGHT}])));
+  }
+  if (any(id.xy >= dimensions)) { return; }
   let stored = textureLoad(peakSource, vec2i(id.xy), 0);
   recordPeak(peakSignalOf(stored.rgb * stored.a, (peakParams[${GPU_PARAMS.HDR_LANE}] < 0.5 || peakParams[${GPU_PARAMS.LINKED_SDR}] > 0.5)));
 }`;
@@ -413,9 +417,9 @@ fn adaptiveAccumulateMain(@builtin(global_invocation_id) id: vec3u) {
   let noise = (strength * ap.sigma.xyz) * (strength * ap.sigma.xyz) * variance;
   var gain = max(energy - noise, vec3f(0.0)) / max(energy, vec3f(1e-20));
   if (fine && ap.strength.w > 0.0) { gain = max(gain, vec3f(ap.strength.w)); }
-  var sum = vec3f(0.0);
-  if (level > 0) { sum = textureLoad(sumTex, p, 0).xyz; }
-  textureStore(dstTex, p, vec4f(sum + band * gain, 0.0));
+  var sum = vec4f(0.0);
+  if (level > 0) { sum = textureLoad(sumTex, p, 0); }
+  textureStore(dstTex, p, sum + vec4f(band * gain, 0.0));
 }
 
 // src = the band sum, aux = the coarsest smooth. Writes only the tile.
@@ -430,6 +434,625 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
   textureStore(outTex, storeAt, vec4f(fromOpponent(opponent), 1.0));
 }`;
 
+  const GRAIN_DENOISE_BANDS = [1, 2];
+  const GRAIN_DENOISE_RADIUS = 18;
+  const GRAIN_FIT_BLOCK = 32;
+  const GRAIN_DENOISE_SHADER_SOURCE = ADAPTIVE_DENOISE_SHADER_SOURCE + `
+@compute @workgroup_size(8, 8)
+fn adaptiveGrainGainMain(@builtin(global_invocation_id) id: vec3u) {
+  if (!inScratch(id)) { return; }
+  let p = vec2i(id.xy);
+  let energy = textureLoad(aux2Tex, p, 0).xyz;
+  let variance = textureLoad(aux3Tex, p, 0).x;
+  let fine = ap.frame.z < 2.0;
+  var strength = vec3f(ap.strength.x, ap.strength.y, ap.strength.y);
+  if (fine) { strength *= ap.strength.z; }
+  let noise = (strength * ap.sigma.xyz) * (strength * ap.sigma.xyz) * variance;
+  var gain = max(energy - noise, vec3f(0.0)) / max(energy, vec3f(1e-20));
+  if (fine && ap.strength.w > 0.0) { gain = max(gain, vec3f(ap.strength.w)); }
+  textureStore(dstTex, p, vec4f(gain, 0.0));
+}
+
+@compute @workgroup_size(8, 8)
+fn adaptiveGrainBoxMain(@builtin(global_invocation_id) id: vec3u) {
+  if (!inScratch(id)) { return; }
+  let p = vec2i(id.xy);
+  let axis = select(vec2i(0, 1), vec2i(1, 0), ap.frame.w < 0.5);
+  var total = 0.0;
+  for (var tap = -${GRAIN_DENOISE_RADIUS}; tap <= ${GRAIN_DENOISE_RADIUS}; tap++) {
+    total += textureLoad(srcTex, clampLocal(p + axis * tap), 0).x;
+  }
+  textureStore(dstTex, p, vec4f(total / ${GRAIN_DENOISE_RADIUS * 2 + 1}.0, 0.0, 0.0, 0.0));
+}
+
+@group(0) @binding(9) var<storage, read_write> grainPartials: array<vec4f>;
+var<workgroup> grainBlock: array<vec4f, 64>;
+
+@compute @workgroup_size(8, 8)
+fn adaptiveGrainFitMain(@builtin(local_invocation_id) local: vec3u,
+                        @builtin(local_invocation_index) index: u32,
+                        @builtin(workgroup_id) group: vec3u) {
+  let block = group.xy * ${GRAIN_FIT_BLOCK}u;
+  let tileSize = vec2u(ap.tile.zw);
+  let tileOrigin = vec2i(ap.tile.xy) - scratchOrigin();
+  var terms = vec4f(0.0);
+  for (var row = local.y; row < ${GRAIN_FIT_BLOCK}u; row += 8u) {
+    for (var col = local.x; col < ${GRAIN_FIT_BLOCK}u; col += 8u) {
+      let relative = block + vec2u(col, row);
+      if (all(relative < tileSize)) {
+        let p = tileOrigin + vec2i(relative);
+        let band = textureLoad(srcTex, p, 0).x - textureLoad(auxTex, p, 0).x;
+        let original = textureLoad(aux2Tex, p, 0).x;
+        let mean = textureLoad(aux3Tex, p, 0).x;
+        let power = band * band;
+        let complement = 1.0 - mean;
+        terms += power * vec4f(original * original, mean * mean, mean * complement, complement * complement);
+      }
+    }
+  }
+  grainBlock[index] = terms;
+  workgroupBarrier();
+  for (var stride = 32u; stride > 0u; stride /= 2u) {
+    if (index < stride) { grainBlock[index] += grainBlock[index + stride]; }
+    workgroupBarrier();
+  }
+  if (index == 0u) {
+    let pitch = (tileSize.x + ${GRAIN_FIT_BLOCK - 1}u) / ${GRAIN_FIT_BLOCK}u;
+    grainPartials[u32(ap.dest.x) + group.y * pitch + group.x] = grainBlock[0];
+  }
+}
+
+@compute @workgroup_size(8, 8)
+fn adaptiveGrainAccumulateMain(@builtin(global_invocation_id) id: vec3u) {
+  if (!inScratch(id)) { return; }
+  let p = vec2i(id.xy);
+  let band = textureLoad(srcTex, p, 0).xyz - textureLoad(auxTex, p, 0).xyz;
+  var gain = textureLoad(aux2Tex, p, 0).xyz;
+  let fitted = clamp(textureLoad(aux3Tex, p, 0).x * ap.model.w + ap.sigma.w, 0.0, 1.0);
+  let difference = select(0.0, band.x * (fitted - gain.x) * INV_SQRT3, ap.dest.x < 0.0);
+  gain.x = mix(gain.x, fitted, max(0.0, ap.dest.x));
+  let sum = textureLoad(sumTex, p, 0);
+  textureStore(dstTex, p, sum + vec4f(band * gain, difference));
+}
+
+@compute @workgroup_size(8, 8)
+fn adaptiveGrainEndpointsMain(@builtin(global_invocation_id) id: vec3u) {
+  if (any(id.xy >= vec2u(ap.tile.zw))) { return; }
+  let local = vec2i(ap.tile.xy) + vec2i(id.xy) - scratchOrigin();
+  let sum = textureLoad(srcTex, local, 0);
+  let rgb = fromOpponent(sum.xyz + textureLoad(auxTex, local, 0).xyz);
+  textureStore(outTex, vec2i(ap.tile.xy - ap.dest.xy) + vec2i(id.xy), vec4f(rgb, sum.a));
+}
+
+@compute @workgroup_size(8, 8)
+fn adaptiveGrainMixMain(@builtin(global_invocation_id) id: vec3u) {
+  if (any(id.xy >= vec2u(ap.tile.zw))) { return; }
+  let packed = textureLoad(srcTex, vec2i(id.xy), 0);
+  textureStore(outTex, vec2i(id.xy), vec4f(packed.rgb + vec3f(ap.dest.x * packed.a), 1.0));
+}
+
+@group(0) @binding(8) var preparedTex: texture_2d<u32>;
+
+@compute @workgroup_size(8, 8)
+fn adaptivePreparedMain(@builtin(global_invocation_id) id: vec3u) {
+  if (id.x >= u32(ap.tile.z) || id.y >= u32(ap.tile.w)) { return; }
+  let p = vec2i(id.xy);
+  let fields = textureLoad(preparedTex, p, 0);
+  let base = bitcast<vec3f>(fields.xyz);
+  let delta = fromOpponent(vec3f(0.0, unpack2x16float(fields.w) * ap.strength.x));
+  let storeAt = vec2i(ap.tile.xy) + p - vec2i(ap.dest.xy);
+  textureStore(outTex, storeAt, vec4f(base + delta - vec3f(dot(delta, ACES_LUMA)), 1.0));
+}`;
+
+  const CLEAN_GRAIN_SHADER_SOURCE = ADAPTIVE_DENOISE_SHADER_SOURCE + `
+// Clean Grain runs on the resolved Fine values, including a colour-only
+// border. Once it starts, the wavelet textures can be reused for its guides.
+fn cleanRead(p: vec2i) -> vec4f { return textureLoad(srcTex, clampLocal(p), 0); }
+fn cleanRamp(value: f32, low: f32, high: f32) -> f32 {
+  return clamp((value - low) / (high - low), 0.0, 1.0);
+}
+
+@compute @workgroup_size(8, 8)
+fn cleanBaseMain(@builtin(global_invocation_id) id: vec3u) {
+  if (any(id.xy >= vec2u(ap.tile.zw))) { return; }
+  let p = vec2i(id.xy) + vec2i(ap.tile.xy) - scratchOrigin();
+  let rgb = fromOpponent(textureLoad(srcTex, p, 0).xyz + textureLoad(auxTex, p, 0).xyz);
+  textureStore(dstTex, vec2i(id.xy), vec4f(rgb, dot(rgb, ACES_LUMA)));
+}
+
+@compute @workgroup_size(8, 8)
+fn cleanLumaMain(@builtin(global_invocation_id) id: vec3u) {
+  if (!inScratch(id)) { return; }
+  let p = vec2i(id.xy);
+  var local = 0.0;
+  var fine = 0.0;
+  for (var y = -2; y <= 2; y++) {
+    for (var x = -2; x <= 2; x++) {
+      let v = cleanRead(p + vec2i(x, y)).w;
+      fine += v;
+      if (abs(x) <= 1 && abs(y) <= 1) { local += v; }
+    }
+  }
+  textureStore(dstTex, p, vec4f(local / 9.0, abs(cleanRead(p).w - fine / 25.0), 0.0, 0.0));
+}
+
+// One invocation averages sixteen consecutive pixels along a line. The
+// running sum is rebased in each invocation to limit accumulated error.
+@compute @workgroup_size(8, 8)
+fn cleanBoxMain(@builtin(global_invocation_id) id: vec3u) {
+  let vertical = ap.frame.w > 0.5;
+  let axis = select(vec2i(1, 0), vec2i(0, 1), vertical);
+  let start = vec2i(id.xy) * (vec2i(1) + axis * 15);
+  if (any(start >= scratchSize())) { return; }
+  let radius = i32(ap.frame.z);
+  let scale = 1.0 / f32(radius * 2 + 1);
+  var sum = vec4f(0.0);
+  for (var k = -radius; k <= radius; k++) { sum += cleanRead(start + axis * k); }
+  for (var k = 0; k < 16; k++) {
+    let p = start + k * axis;
+    if (any(p >= scratchSize())) { break; }
+    textureStore(dstTex, p, sum * scale);
+    sum += cleanRead(p + axis * (radius + 1)) - cleanRead(p - axis * radius);
+  }
+}
+
+@compute @workgroup_size(8, 8)
+fn cleanNormalizeMain(@builtin(global_invocation_id) id: vec3u) {
+  if (!inScratch(id)) { return; }
+  let p = vec2i(id.xy);
+  let local = max(textureLoad(auxTex, p, 0).x, 0.0);
+  let noise = max(1.25 * textureLoad(aux2Tex, p, 0).y, 1e-7);
+  let light = local + 2.0 * noise;
+  textureStore(dstTex, p, vec4f(toOpponent(cleanRead(p).rgb).yz / light, light, noise));
+}
+
+@compute @workgroup_size(8, 8)
+fn cleanChromaResidualMain(@builtin(global_invocation_id) id: vec3u) {
+  if (!inScratch(id)) { return; }
+  let p = vec2i(id.xy);
+  let mean = textureLoad(auxTex, p, 0).xy;
+  textureStore(dstTex, p, vec4f(length(cleanRead(p).xy - mean), 0.0, 0.0, 0.0));
+}
+
+// Three replicated boxes for the luminance guides, computed together.
+@compute @workgroup_size(8, 8)
+fn cleanContextMain(@builtin(global_invocation_id) id: vec3u) {
+  if (!inScratch(id)) { return; }
+  let p = vec2i(id.xy);
+  let row = ap.frame.w < 0.5;
+  let axis = select(vec2i(0, 1), vec2i(1, 0), row);
+  var sum = vec3f(0.0);
+  for (var k = -12; k <= 12; k++) {
+    let input = cleanRead(p + axis * k);
+    let values = select(input.xyz, input.xxx, row);
+    sum += values * vec3f(select(0.0, 1.0, abs(k) <= 3), select(0.0, 1.0, abs(k) <= 5), 1.0);
+  }
+  textureStore(dstTex, p, vec4f(sum / vec3f(7.0, 11.0, 25.0), 0.0));
+}
+
+@compute @workgroup_size(8, 8)
+fn cleanTextureMain(@builtin(global_invocation_id) id: vec3u) {
+  if (!inScratch(id)) { return; }
+  let p = vec2i(id.xy);
+  let local = cleanRead(p).x;
+  let means = textureLoad(auxTex, p, 0).xyz;
+  textureStore(dstTex, p, vec4f(abs(local - means.y), max(means.z, 0.0), abs(local - means.x), 0.0));
+}
+
+@compute @workgroup_size(8, 8)
+fn cleanMaxMain(@builtin(global_invocation_id) id: vec3u) {
+  let vertical = ap.frame.w > 0.5;
+  let axis = select(vec2i(1, 0), vec2i(0, 1), vertical);
+  let start = vec2i(id.xy) * (vec2i(1) + axis * 15);
+  if (any(start >= scratchSize())) { return; }
+  let radius = i32(ap.frame.z);
+  var sharedPeak = 0.0;
+  for (var k = 15 - radius; k <= radius; k++) { sharedPeak = max(sharedPeak, cleanRead(start + k * axis).x); }
+  var left: array<f32, 16>;
+  left[15] = sharedPeak;
+  for (var k = 14; k >= 0; k--) { left[k] = max(left[k + 1], cleanRead(start + (k - radius) * axis).x); }
+  var right = sharedPeak;
+  for (var k = 0; k < 16; k++) {
+    let p = start + k * axis;
+    if (any(p >= scratchSize())) { break; }
+    if (k > 0) { right = max(right, cleanRead(p + radius * axis).x); }
+    textureStore(dstTex, p, vec4f(max(left[k], right), 0.0, 0.0, 0.0));
+  }
+}
+
+@compute @workgroup_size(8, 8)
+fn cleanGuidesMain(@builtin(global_invocation_id) id: vec3u) {
+  if (!inScratch(id)) { return; }
+  let p = vec2i(id.xy);
+  let local = max(cleanRead(p).x, 0.0);
+  let noise = textureLoad(auxTex, p, 0).w;
+  let context = textureLoad(aux2Tex, p, 0);
+  let texture = textureLoad(aux3Tex, p, 0).x / max(context.y + 3.0 * noise, 1e-6);
+  let peak = textureLoad(sumTex, p, 0).x;
+  var guide = vec3f(peak, context.y, local);
+  if (ap.strength.y > 0.0) { guide *= ap.strength.y / noise; }
+  let highlight = cleanRamp(guide.x, .065, .125);
+  let limit = (1.0 - .97 * highlight) * (1.0 - cleanRamp(texture, .045, .15) * cleanRamp(guide.y, .004, .015));
+  let dark = 1.0 - cleanRamp(guide.z, .006, .014);
+  let sharpness = cleanRamp(context.z / max(local + 4.0 * noise, 1e-6), .06, .24);
+  textureStore(dstTex, p, vec4f(limit, dark, .45 * highlight * sharpness, 0.0));
+}
+
+@compute @workgroup_size(8, 8)
+fn cleanTapsMain(@builtin(global_invocation_id) id: vec3u) {
+  if (any(id.xy >= vec2u(ap.model.zw))) { return; }
+  let p = vec2i(ap.model.xy) + vec2i(id.xy);
+  let row = ap.frame.w < 0.5;
+  let axis = select(vec2i(0, 1), vec2i(1, 0), row);
+  let radius = i32(ap.frame.z);
+  var outer = vec2f(0.0);
+  var inner = vec2f(0.0);
+  for (var k = -radius; k <= radius; k++) {
+    let v = cleanRead(p + k * axis);
+    outer += v.xy;
+    if (abs(k) < radius) { inner += select(v.zw, v.xy, row); }
+  }
+  textureStore(dstTex, p, vec4f(outer / f32(2 * radius + 1), inner / f32(2 * radius - 1)));
+}
+
+fn cleanReflect(at: i32, extent: i32) -> i32 {
+  if (at >= 0 && at < extent) { return at; }
+  if (extent < 2) { return 0; }
+  let period = 2 * (extent - 1);
+  let t = abs(at) % period;
+  return min(t, period - t);
+}
+
+fn cleanTap(p: vec2i) -> vec2f {
+  let at = p + scratchOrigin();
+  let reflected = vec2i(cleanReflect(at.x, i32(ap.frame.x)), cleanReflect(at.y, i32(ap.frame.y)));
+  return textureLoad(auxTex, clampLocal(reflected - scratchOrigin()), 0).xy;
+}
+
+@compute @workgroup_size(8, 8)
+fn cleanPairsMain(@builtin(global_invocation_id) id: vec3u) {
+  if (any(id.xy >= vec2u(ap.model.zw))) { return; }
+  let p = vec2i(ap.model.xy) + vec2i(id.xy);
+  let reach = i32(ap.frame.z);
+  let d = select(8, 20, reach == 28);
+  let offsets = array<vec2i, 4>(vec2i(reach, 0), vec2i(0, reach), vec2i(d), vec2i(-d, d));
+  let core = textureLoad(auxTex, p, 0).zw;
+  var closest = 1e30;
+  var total = vec2f(0.0);
+  var low = vec2f(1e30);
+  var high = vec2f(-1e30);
+  for (var k = 0; k < 4; k++) {
+    let first = cleanTap(p + offsets[k]);
+    let second = cleanTap(p - offsets[k]);
+    closest = min(closest, min(length(core - first), length(core - second)));
+    let pair = .5 * (first + second);
+    total += pair;
+    low = min(low, pair);
+    high = max(high, pair);
+  }
+  let surrounding = .5 * (total - low - high);
+  let delta = core - surrounding;
+  let grain = max(1.25 * textureLoad(aux2Tex, p, 0).x, 1e-7);
+  let signal = length(delta);
+  let relative = signal / grain;
+  let pixel = cleanRead(p).xy;
+  let pixelRelative = length(pixel - surrounding) / grain;
+  let isolated = cleanRamp(closest / max(signal, 1e-7), .1, .65);
+  let protection = 1.0 - (1.0 - isolated) * cleanRamp(relative, 5.0, 12.0);
+  let strength = max(cleanRamp(relative, 1.5, 5.0), cleanRamp(pixelRelative, 2.5, 5.0) * cleanRamp(relative, .65, 2.5));
+  let fine = .8 * cleanRamp(pixelRelative, 1.0, 4.0);
+  let limit = textureLoad(aux3Tex, p, 0).x;
+  let moderate = (delta + fine * (pixel - core)) * (strength * protection * limit);
+  textureStore(dstTex, p, vec4f(moderate, surrounding));
+}
+
+@compute @workgroup_size(8, 8)
+fn cleanRelativeMain(@builtin(global_invocation_id) id: vec3u) {
+  if (any(id.xy >= vec2u(ap.model.zw))) { return; }
+  let p = vec2i(ap.model.xy) + vec2i(id.xy);
+  let surrounding = textureLoad(auxTex, p, 0).zw;
+  let noise = max(1.25 * textureLoad(aux2Tex, p, 0).x, 1e-7);
+  textureStore(dstTex, p, vec4f(length(cleanRead(p).xy - surrounding) / noise, 0.0, 0.0, 0.0));
+}
+
+fn cleanMedian(p: vec2i) -> vec2f {
+  // Keep the lowest thirteen values independently for both channels.
+  var lower: array<vec2f, 13>;
+  for (var k = 0; k < 13; k++) { lower[k] = vec2f(1e30); }
+  for (var y = -2; y <= 2; y++) {
+    for (var x = -2; x <= 2; x++) {
+      var value = cleanRead(p + vec2i(x, y)).xy;
+      for (var k = 0; k < 13; k++) {
+        let next = max(value, lower[k]);
+        lower[k] = min(value, lower[k]);
+        value = next;
+      }
+    }
+  }
+  return lower[12];
+}
+
+fn cleanCross(p: vec2i, axis: vec2i, reach: i32) -> vec2f {
+  return cleanRead(p + reach * axis).xy - cleanRead(p - reach * axis).xy;
+}
+
+// Matches _protect_splotch_edges: a colour edge must continue 5, 10 and 15
+// pixels both ways, and only the correction along its colour step is held.
+fn cleanProtectEdge(p: vec2i, grain: f32, correction: vec2f) -> vec2f {
+  let axes = array<vec2i, 4>(vec2i(1,0), vec2i(0,1), vec2i(1,1), vec2i(-1,1));
+  var strongest = 0.0;
+  var step = vec2f(0.0);
+  for (var i = 0; i < 4; i++) {
+    let axis = axes[i];
+    let direction = cleanCross(p, axis, 6);
+    let contrast = max(length(direction), 1e-7);
+    if (contrast <= 4.0 * grain) { continue; }
+    var sides = contrast;
+    for (var j = 1; j <= 3; j++) {
+      let tangent = 5 * j * vec2i(-axis.y, axis.x);
+      sides = min(sides, min(dot(direction, cleanCross(p + tangent, axis, 6)),
+                             dot(direction, cleanCross(p - tangent, axis, 6))) / contrast);
+    }
+    let sharpness = contrast / max(length(cleanCross(p, axis, 12)), contrast);
+    let weight = cleanRamp(sides / grain, 4.0, 9.0) * cleanRamp(sharpness, .4, .7);
+    if (weight > strongest) { strongest = weight; step = direction / contrast; }
+  }
+  return correction - strongest * dot(correction, step) * step;
+}
+
+fn cleanFringe(p: vec2i, weight: f32, grain: f32) -> vec2f {
+  if (weight <= 0.0) { return vec2f(0.0); }
+  let delta = cleanRead(p).xy - cleanMedian(p);
+  return delta * (weight * cleanRamp(length(delta) / grain, 3.0, 8.0));
+}
+
+@compute @workgroup_size(8, 8)
+fn cleanFringeMain(@builtin(global_invocation_id) id: vec3u) {
+  if (any(id.xy >= vec2u(ap.model.zw))) { return; }
+  let p = vec2i(ap.model.xy) + vec2i(id.xy);
+  let grain = max(1.25 * textureLoad(sumTex, p, 0).x, 1e-7);
+  let weight = textureLoad(aux3Tex, p, 0).z;
+  textureStore(dstTex, p, vec4f(-cleanFringe(p, weight, grain) * cleanRead(p).z, 0.0, 0.0));
+}
+
+@compute @workgroup_size(8, 8)
+fn cleanRepairMain(@builtin(global_invocation_id) id: vec3u) {
+  if (any(id.xy >= vec2u(ap.model.zw))) { return; }
+  let p = vec2i(ap.model.xy) + vec2i(id.xy);
+  let relative = textureLoad(aux2Tex, p, 0).x;
+  let guides = textureLoad(aux3Tex, p, 0).xyz;
+  let pair = textureLoad(auxTex, p, 0);
+  let input = cleanRead(p).xy;
+  var correction = pair.xy;
+  if (guides.y > 0.0 && relative > 1.8) {
+    var peak = 0.0;
+    for (var y = -3; y <= 3; y++) {
+      for (var x = -3; x <= 3; x++) {
+        peak = max(peak, textureLoad(aux2Tex, clampLocal(p + vec2i(x, y)), 0).x);
+      }
+    }
+    let darkPeak = guides.y * cleanRamp(relative / max(peak, 1e-6), .55, .95) * cleanRamp(relative, 1.8, 4.0);
+    correction = mix(correction, (input - pair.zw) * guides.x, darkPeak);
+  }
+  let grain = max(1.25 * textureLoad(sumTex, p, 0).x, 1e-7);
+  if (ap.strength.z > 0.5 && ap.sigma.x > 0.5 && any(correction != vec2f(0.0))) {
+    correction = cleanProtectEdge(p, grain, correction);
+  }
+  if (ap.frame.z == 12.0 && ap.strength.w > 0.5) {
+    correction += cleanFringe(p, guides.z, grain);
+  }
+  textureStore(dstTex, p, vec4f(input - correction, 0.0, 0.0));
+}
+
+fn cleanCorrection(p: vec2i, base: vec3f) -> vec2f {
+  let fixed = textureLoad(auxTex, p, 0).xy;
+  let light = textureLoad(aux2Tex, p, 0).z;
+  return fixed * light - toOpponent(base).yz;
+}
+
+fn cleanAddColour(rgb: vec3f, correction: vec2f) -> vec3f {
+  let delta = fromOpponent(vec3f(0.0, correction));
+  return rgb + delta - vec3f(dot(delta, ACES_LUMA));
+}
+
+@compute @workgroup_size(8, 8)
+fn cleanOutputMain(@builtin(global_invocation_id) id: vec3u) {
+  if (any(id.xy >= vec2u(ap.tile.zw))) { return; }
+  let at = vec2i(ap.tile.xy) + vec2i(id.xy);
+  let p = at - scratchOrigin();
+  let base = cleanRead(p).rgb;
+  let fringe = textureLoad(aux3Tex, p, 0).xy;
+  let splotch = select(vec2f(0.0), cleanCorrection(p, base) - fringe, ap.strength.z > 0.5);
+  let corrected = cleanAddColour(cleanAddColour(base, fringe), splotch * ap.strength.x);
+  textureStore(outTex, at - vec2i(ap.dest.xy), vec4f(corrected, 1.0));
+}
+
+@group(0) @binding(8) var cleanPacked: texture_storage_2d<rgba32uint, write>;
+
+@compute @workgroup_size(8, 8)
+fn cleanPackMain(@builtin(global_invocation_id) id: vec3u) {
+  if (any(id.xy >= vec2u(ap.tile.zw))) { return; }
+  let at = vec2i(ap.tile.xy) + vec2i(id.xy);
+  let p = at - scratchOrigin();
+  let base = cleanRead(p).rgb;
+  let fringe = textureLoad(aux3Tex, p, 0).xy;
+  let splotch = select(vec2f(0.0), cleanCorrection(p, base) - fringe, ap.strength.z > 0.5);
+  textureStore(cleanPacked, at - vec2i(ap.dest.xy),
+    vec4u(bitcast<vec3u>(cleanAddColour(base, fringe)), pack2x16float(splotch)));
+}`;
+
+  const MICRO_GRAIN_SHADER_SOURCE = CLEAN_GRAIN_SHADER_SOURCE + `
+@compute @workgroup_size(8, 8)
+fn microAccumulateMain(@builtin(global_invocation_id) id: vec3u) {
+  if (!inScratch(id)) { return; }
+  let p = vec2i(id.xy);
+  let band = textureLoad(srcTex, p, 0).xyz - textureLoad(auxTex, p, 0).xyz;
+  let energy = textureLoad(aux2Tex, p, 0).xyz;
+  let variance = textureLoad(aux3Tex, p, 0).x;
+  let strength = vec3f(ap.strength.x, ap.strength.y, ap.strength.y) * ap.sigma.xyz;
+  let gain = max(energy - strength * strength * variance, vec3f(0.)) / max(energy, vec3f(1e-20));
+  var sum = vec3f(0.);
+  if (ap.frame.z > 0.) { sum = textureLoad(sumTex, p, 0).xyz; }
+  let fine = select(1., ap.strength.z, ap.frame.z == 0.);
+  textureStore(dstTex, p, vec4f(sum + band * (gain - 1.) * vec3f(fine, 1., 1.), 0.));
+}
+
+@compute @workgroup_size(8, 8)
+fn microGateMain(@builtin(global_invocation_id) id: vec3u) {
+  if (!inScratch(id)) { return; }
+  let p = vec2i(id.xy);
+  let source = textureLoad(auxTex, p + scratchOrigin() - vec2i(ap.dest.zw), 0);
+  let correction = textureLoad(srcTex, p, 0).xyz;
+  let keep = clamp(1. - ap.strength.w * (1. - source.a), 0., 1.);
+  textureStore(dstTex, p, vec4f(correction.x * keep, correction.yz, 0.));
+}
+
+@compute @workgroup_size(8, 8)
+fn microBaseMain(@builtin(global_invocation_id) id: vec3u) {
+  if (!inScratch(id)) { return; }
+  let p = vec2i(id.xy);
+  let source = textureLoad(srcTex, p + scratchOrigin() - vec2i(ap.dest.zw), 0).rgb;
+  let correction = textureLoad(auxTex, p, 0).xyz - textureLoad(aux2Tex, p, 0).xyz;
+  let chroma = fromOpponent(vec3f(0., correction.yz));
+  let rgb = source + chroma + vec3f(correction.x * INV_SQRT3 - dot(chroma, ACES_LUMA));
+  textureStore(dstTex, p, vec4f(rgb, dot(rgb, ACES_LUMA)));
+}
+
+@compute @workgroup_size(8, 8)
+fn microColourDeltaMain(@builtin(global_invocation_id) id: vec3u) {
+  if (any(id.xy >= vec2u(ap.model.zw))) { return; }
+  let p = vec2i(ap.model.xy) + vec2i(id.xy);
+  textureStore(dstTex, p, vec4f(cleanCorrection(p, cleanRead(p).rgb), 0., 0.));
+}
+
+@compute @workgroup_size(8, 8)
+fn microOutputMain(@builtin(global_invocation_id) id: vec3u) {
+  if (any(id.xy >= vec2u(ap.tile.zw))) { return; }
+  let at = vec2i(ap.tile.xy) + vec2i(id.xy);
+  let p = at - scratchOrigin();
+  let base = textureLoad(srcTex, p, 0).rgb;
+  let colour = textureLoad(auxTex, p, 0).xy - textureLoad(aux2Tex, p, 0).xy;
+  let delta = fromOpponent(vec3f(0., colour * ap.strength.x));
+  textureStore(outTex, at - vec2i(ap.dest.xy), vec4f((base + delta - vec3f(dot(delta, ACES_LUMA))) * ap.strength.y, 1.));
+}`;
+
+  function grainResizeShader(clean) {
+    return `
+struct Resize {
+  sizes: vec4f,
+  strip: vec4f,
+  block: vec4f,
+  source: vec4f,
+};
+@group(0) @binding(0) var<uniform> resize: Resize;
+@group(0) @binding(1) var pixels: texture_2d<f32>;
+@group(0) @binding(2) var low: texture_2d<f32>;
+@group(0) @binding(3) var high: texture_2d<f32>;
+@group(0) @binding(4) var sampled: texture_storage_2d<rgba32float, write>;
+@group(0) @binding(5) var minValues: texture_storage_2d<rgba32float, write>;
+@group(0) @binding(6) var maxValues: texture_storage_2d<rgba32float, write>;
+${clean ? `
+@group(0) @binding(7) var resizedFields: texture_storage_2d<rgba32uint, write>;
+@group(0) @binding(8) var nativeFields: texture_2d<u32>;
+@group(0) @binding(9) var baseStripOut: texture_storage_2d<rgba32float, write>;
+@group(0) @binding(10) var baseStrip: texture_2d<f32>;
+` : "@group(0) @binding(7) var resizedPixels: texture_storage_2d<rgba16float, write>;"}
+
+fn sinc(x: f32) -> f32 {
+  if (abs(x) < 1e-5) { return 1.0; }
+  let angle = x * 3.141592653589793;
+  return sin(angle) / angle;
+}
+fn lanczos(x: f32) -> f32 {
+  return select(sinc(x) * sinc(x / 3.0), 0.0, abs(x) >= 3.0);
+}
+fn support(center: f32, ratio: f32, extent: f32) -> vec2i {
+  return vec2i(clamp(vec2f(center - 3.0 * ratio + 0.5, center + 3.0 * ratio + 0.5), vec2f(0.0), vec2f(extent)));
+}
+fn rangeWindow(center: f32, extent: f32) -> vec2i {
+  let block = resize.block.x;
+  let anchor = floor(center / block) * block;
+  return vec2i(clamp(vec2f(anchor - block, anchor + 2.0 * block), vec2f(0.0), vec2f(extent)));
+}
+
+@compute @workgroup_size(8, 8)
+fn fineGrainResizeHorizontal(@builtin(global_invocation_id) id: vec3u) {
+  if (id.x >= u32(resize.block.w) || id.y >= u32(resize.strip.y)) { return; }
+  let row = i32(id.y);
+  let ratio = resize.sizes.x / resize.sizes.z;
+  let center = (resize.block.z + f32(id.x) + 0.5) * ratio;
+  let taps = support(center, max(1.0, ratio), resize.sizes.x);
+  let bounds = rangeWindow(center, resize.sizes.x);
+  var sum = vec3f(0.0);
+  var weightSum = 0.0;
+  var minimum = vec3f(65504.0);
+  var maximum = vec3f(-65504.0);
+  for (var col = min(taps.x, bounds.x); col < max(taps.y, bounds.y); col++) {
+    ${clean ? `let fields = textureLoad(nativeFields, vec2i(col - i32(resize.source.x), row), 0);
+    let value = select(bitcast<vec3f>(fields.xyz), vec3f(unpack2x16float(fields.w), 0.0), resize.block.y > 0.5);`
+      : "let value = textureLoad(pixels, vec2i(col - i32(resize.source.x), row), 0).rgb;"}
+    if (col >= taps.x && col < taps.y) {
+      let weight = lanczos((f32(col) + 0.5 - center) / max(1.0, ratio));
+      sum += value * weight;
+      weightSum += weight;
+    }
+    if (col >= bounds.x && col < bounds.y) {
+      minimum = min(minimum, value);
+      maximum = max(maximum, value);
+    }
+  }
+  let dst = vec2i(id.xy);
+  textureStore(sampled, dst, vec4f(sum / weightSum, 1.0));
+  textureStore(minValues, dst, vec4f(minimum, 1.0));
+  textureStore(maxValues, dst, vec4f(maximum, 1.0));
+}
+
+fn resizeVertical(destination: vec2i) -> vec3f {
+  let ratio = resize.sizes.y / resize.sizes.w;
+  let center = (f32(destination.y) + 0.5) * ratio;
+  let taps = support(center, max(1.0, ratio), resize.sizes.y);
+  let bounds = rangeWindow(center, resize.sizes.y);
+  var sum = vec3f(0.0);
+  var weightSum = 0.0;
+  var minimum = vec3f(65504.0);
+  var maximum = vec3f(-65504.0);
+  for (var row = min(taps.x, bounds.x); row < max(taps.y, bounds.y); row++) {
+    let sourcePoint = vec2i(destination.x, row - i32(resize.strip.x));
+    if (row >= taps.x && row < taps.y) {
+      let weight = lanczos((f32(row) + 0.5 - center) / max(1.0, ratio));
+      sum += textureLoad(pixels, sourcePoint, 0).rgb * weight;
+      weightSum += weight;
+    }
+    if (row >= bounds.x && row < bounds.y) {
+      minimum = min(minimum, textureLoad(low, sourcePoint, 0).rgb);
+      maximum = max(maximum, textureLoad(high, sourcePoint, 0).rgb);
+    }
+  }
+  return clamp(sum / weightSum, minimum, maximum);
+}
+
+@compute @workgroup_size(8, 8)
+fn fineGrainResizeVertical(@builtin(global_invocation_id) id: vec3u) {
+  if (id.x >= u32(resize.block.w) || id.y >= u32(resize.strip.w)) { return; }
+  let destination = vec2i(i32(id.x), i32(resize.strip.z) + i32(id.y));
+  let value = resizeVertical(destination);
+  let outputPoint = destination + vec2i(i32(resize.block.z), 0);
+  ${clean ? `let base = textureLoad(baseStrip, vec2i(id.xy), 0).rgb;
+  textureStore(resizedFields, outputPoint, vec4u(bitcast<vec3u>(base), pack2x16float(value.xy)));`
+    : "textureStore(resizedPixels, outputPoint, vec4f(value, 1.0));"}
+}
+${clean ? `
+@compute @workgroup_size(8, 8)
+fn fineGrainResizeBase(@builtin(global_invocation_id) id: vec3u) {
+  if (id.x >= u32(resize.block.w) || id.y >= u32(resize.strip.w)) { return; }
+  let destination = vec2i(i32(id.x), i32(resize.strip.z) + i32(id.y));
+  textureStore(baseStripOut, vec2i(id.xy), vec4f(resizeVertical(destination), 1.0));
+}
+` : ""}`;
+  }
+  const GRAIN_RESIZE_SHADER_SOURCE = grainResizeShader(false);
+  const CLEAN_GRAIN_RESIZE_SHADER_SOURCE = grainResizeShader(true);
+
   const LENS_FILTERS = ((typeof window !== "undefined" && window.HDRLensFilters)
     || (typeof module !== "undefined" && module.exports && require("./lens-filters.js")));
   const LENS_COMPONENTS_WGSL = LENS_FILTERS.components.slice(1).flat().map(([sigma,weights]) =>
@@ -439,6 +1062,7 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
 
   const SHADER_SOURCE = String.raw`
     override grainSampleLimit: u32 = ${GRAIN_SAMPLE_COUNTS.settled}u;
+    override pruneGrain: bool = false;
     @group(0) @binding(0) var sourceTexture: texture_2d<f32>;
     @group(0) @binding(1) var<storage, read> p: array<f32>;
     @group(0) @binding(2) var<storage, read> curveLuts: array<f32>;
@@ -450,6 +1074,7 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
     // four channels per layer, one texel per base-pass pixel. Other passes
     // bind a 1x1 placeholder, which keeps HSL pointwise there.
     @group(0) @binding(7) var hslSelection: texture_2d_array<f32>;
+    @group(0) @binding(8) var filmDetailOutput: texture_storage_2d<rgba16float, write>;
 
     struct VertexOut { @builtin(position) position: vec4f, @location(0) @interpolate(flat) lensComponent: u32 }
 
@@ -593,6 +1218,7 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
     const GAMUT_MATH_EPS: f32 = 0.000001;
     const GAMUT_RESIDUE_EPS: f32 = 0.00002;
     const GAMUT_NEUTRAL_RGB_EPS: f32 = 0.001;
+    const SIGNED_CHANNEL_TOE: f32 = 0.001;
 
     struct GamutCusp {
       lightness: f32,
@@ -637,10 +1263,13 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       var k3: f32;
       var k4: f32;
       var weights: vec3f;
-      if (-1.88170328 * aa - 0.80936493 * bb > 1.0) {
+      // Keep the blue vertex on the green-limited side at a float32 tie.
+      let redBoundary = -1.88170328 * aa - 0.80936493 * bb;
+      let blueVertex = bb < 0.0 && abs(redBoundary - 1.0) <= GAMUT_RESIDUE_EPS;
+      if (redBoundary > 1.0 && !blueVertex) {
         k0 = 1.19086277; k1 = 1.76576728; k2 = 0.59662641; k3 = 0.75515197; k4 = 0.56771245;
         weights = vec3f(4.0767416621, -3.3077115913, 0.2309699292);
-      } else if (1.81444104 * aa - 1.19445276 * bb > 1.0) {
+      } else if (1.81444104 * aa - 1.19445276 * bb > 1.0 || blueVertex) {
         k0 = 0.73956515; k1 = -0.45954404; k2 = 0.08285427; k3 = 0.12541070; k4 = 0.14503204;
         weights = vec3f(-1.2684380046, 2.6097574011, -0.3413193965);
       } else {
@@ -735,10 +1364,18 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       }
       return parameter;
     }
-    fn compressSrgbGamut(input: vec3f) -> vec3f {
-      if (all(input >= vec3f(0.0)) && all(input <= vec3f(1.0))) { return input; }
-      if (all(input >= vec3f(-(GAMUT_RESIDUE_EPS + GAMUT_MATH_EPS)))
-          && all(input <= vec3f(1.0 + GAMUT_RESIDUE_EPS + GAMUT_MATH_EPS))) {
+    fn compressSrgbGamut(rgb: vec3f) -> vec3f {
+      if (all(rgb >= vec3f(0.0)) && all(rgb <= vec3f(1.0))) { return rgb; }
+      let floor = min(rgb.r, min(rgb.g, rgb.b));
+      var input = rgb;
+      if (floor < 0.0) {
+        // Match the CPU toe before calculating hue, at every brightness.
+        let positive = max(rgb, vec3f(0.0));
+        let knee = min(-floor, SIGNED_CHANNEL_TOE);
+        let t = min(positive, vec3f(knee)) / knee;
+        input = positive * t * (2.0 - t);
+      }
+      if (all(input <= vec3f(1.0 + GAMUT_RESIDUE_EPS + GAMUT_MATH_EPS))) {
         return clamp(input, vec3f(0.0), vec3f(1.0));
       }
       if (max(input.r, max(input.g, input.b)) - min(input.r, min(input.g, input.b)) < GAMUT_NEUTRAL_RGB_EPS) {
@@ -1254,7 +1891,7 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       return rgb;
     }
     fn sdrScenePrefix(source: vec3f) -> vec3f {
-      let rgb = max(source * exp2(p[${GPU_PARAMS.EXPOSURE}]), vec3f(0.0));
+      let rgb = source * exp2(p[${GPU_PARAMS.EXPOSURE}]);
       return sceneColor(rgb);
     }
     fn renderSdrBase(source: vec3f) -> vec3f {
@@ -1573,41 +2210,42 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
     // star's width on the star's support, since the star carried its width by
     // putting weight at exactly +/- radius. The response still falls
     // monotonically, so the cutoff reads as a glow that ends, not as a rim.
-    // There is no bilinear
-    // pair trick available here: binding 0 is unfilterable, so sampleFilm is
-    // a texel load and the kernel reads every texel it spans. The radii are
-    // small by construction -- 0.06% of the output diagonal and at most 0.12%
-    // of the film gate, four and nine pixels on a 6K frame -- which is what
-    // keeps a dense two-dimensional kernel affordable without its own passes.
-    fn blurAtRadius(coordinate: vec2i, radius: i32) -> vec3f {
-      let sigma = max(f32(radius), 1.0) * 0.7;
-      let denominator = 2.0 * sigma * sigma;
-      // The bound is read once. sampleFilm resolves it per call, out of the
-      // params storage buffer, which costs more than the texel fetch does and
-      // is what made a dense kernel look unaffordable when it is not.
-      let bound = validTileDimensions() - vec2i(1);
-      var total = vec3f(0.0);
-      var weightTotal = 0.0;
-      for (var y: i32 = -radius; y <= radius; y = y + 1) {
-        // The kernel is separable, so the row's weight is a common factor and
-        // only the column term changes inside the inner loop.
-        let rowOffset = f32(y);
-        let rowWeight = exp(-rowOffset * rowOffset / denominator);
-        for (var x: i32 = -radius; x <= radius; x = x + 1) {
-          let columnOffset = f32(x);
-          let weight = rowWeight * exp(-columnOffset * columnOffset / denominator);
-          let texel = clamp(coordinate + vec2i(x, y), vec2i(0), bound);
-          total += textureLoad(sourceTexture, texel, 0).rgb * weight;
-          weightTotal += weight;
-        }
+    const filmDetailBlock = vec2i(${FILM_DETAIL_BLOCK.width}, ${FILM_DETAIL_BLOCK.height});
+    const filmResolutionMaxRadius = 32;
+    var<workgroup> filmDetailWeights: array<f32, filmResolutionMaxRadius + 1>;
+    var<workgroup> filmDetailRows: array<vec3f, filmDetailBlock.x * (filmDetailBlock.y + 2 * filmResolutionMaxRadius)>;
+    fn filmDetailTap(coordinate: vec2i, bound: vec2i, stored: bool) -> vec3f {
+      let texel = textureLoad(sourceTexture, clamp(coordinate, vec2i(0), bound), 0);
+      return select(texel.rgb, filmStoredRgb(texel), stored);
+    }
+    fn filmDetailBlur(coordinate: vec2i, local: vec2i, bound: vec2i, radius: i32, stored: bool) -> vec3f {
+      let weightIndex = local.y * filmDetailBlock.x + local.x;
+      if (weightIndex <= radius) {
+        let sigma = max(f32(radius), 1.0) * 0.7;
+        filmDetailWeights[weightIndex] = exp(-f32(weightIndex * weightIndex) / (2.0 * sigma * sigma));
       }
-      return total / weightTotal;
-    }
-    fn filmBlur(coordinate: vec2i, percentDiagonal: f32, maximumRadius: i32) -> vec3f {
-      return blurAtRadius(coordinate, outputRelativeOffset(percentDiagonal, maximumRadius));
-    }
-    fn filmPhysicalBlur(coordinate: vec2i, percent35mmDiagonal: f32, maximumRadius: i32) -> vec3f {
-      return blurAtRadius(coordinate, filmPhysicalOffset(percent35mmDiagonal, maximumRadius));
+      workgroupBarrier();
+      for (var row = local.y; row < filmDetailBlock.y + 2 * radius; row += filmDetailBlock.y) {
+        let center = vec2i(coordinate.x, coordinate.y - local.y + row - radius);
+        var horizontal = filmDetailTap(center, bound, stored);
+        for (var offset = 1; offset <= radius; offset++) {
+          let step = vec2i(offset, 0);
+          horizontal += (filmDetailTap(center - step, bound, stored)
+            + filmDetailTap(center + step, bound, stored)) * filmDetailWeights[offset];
+        }
+        filmDetailRows[row * filmDetailBlock.x + local.x] = horizontal;
+      }
+      workgroupBarrier();
+      let center = (local.y + radius) * filmDetailBlock.x + local.x;
+      var vertical = filmDetailRows[center];
+      var weightTotal = 1.0;
+      for (var offset = 1; offset <= radius; offset++) {
+        let step = offset * filmDetailBlock.x;
+        let weight = filmDetailWeights[offset];
+        vertical += (filmDetailRows[center - step] + filmDetailRows[center + step]) * weight;
+        weightTotal += 2.0 * weight;
+      }
+      return vertical / (weightTotal * weightTotal);
     }
     fn filmHighlightMask(rgb: vec3f, sensitivity: f32) -> f32 {
       let threshold = 0.92 - 0.50 * clamp(sensitivity, 0.0, 1.0);
@@ -1815,12 +2453,25 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       for (var dy = -1; dy <= 1; dy++) {
         for (var dx = -1; dx <= 1; dx++) {
           let cell = base + vec2i(dx, dy);
+          if (pruneGrain) {
+            // Every center is inside its cell, and its radius is at most 0.7.
+            // Leave a margin before rejecting a cell at the f32 boundary.
+            let boxDistance = max(max(vec2f(cell) - u, u - (vec2f(cell) + vec2f(1.0))), vec2f(0.0));
+            if (dot(boxDistance, boxDistance) > 0.491401) { continue; } // 0.701 squared
+          }
           let hashed = grainCellHash(cell, seeded);
           let count = grainCount(grainUniform(hashed, 999u));
           for (var k = 0u; k < count; k++) {
             let key = 8u * k;
             let centre = vec2f(cell) + vec2f(grainUniform(hashed, key + 1u), grainUniform(hashed, key + 2u));
             let radius = 0.3 + 0.4 * grainUniform(hashed, key + 3u);
+            if (pruneGrain) {
+              // A conservative rejection keeps the original radius test and
+              // float arithmetic for every grain that could contribute.
+              let delta = u - centre;
+              let bound = radius + 0.0001;
+              if (dot(delta, delta) > bound * bound) { continue; }
+            }
             let rho = length(u - centre) / radius;
             if (rho < 1.0) {
               let t = clamp((rho - edge) / (1.0 - edge), 0.0, 1.0);
@@ -1937,52 +2588,23 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       }
       return rgb;
     }
-    fn resolutionScatter(coordinate: vec2i) -> vec3f {
-      var rgb = sampleFilm(coordinate);
-      if (filmModuleActive()) {
-        if (p[${GPU_PARAMS.FILM_RESOLUTION}] < 1.0) {
-          let resolutionLoss = (1.0 - p[${GPU_PARAMS.FILM_RESOLUTION}]);
-          let resolutionSource = sampleFilm(coordinate);
-          let resolutionBlur = filmPhysicalBlur(coordinate, 0.04 + 0.08 * resolutionLoss, 32);
-          let fineDetail = resolutionSource - resolutionBlur;
-          let relativeDetail = max(abs(fineDetail.r), max(abs(fineDetail.g), abs(fineDetail.b)))
-            / (max(abs(resolutionSource.r), max(abs(resolutionSource.g), abs(resolutionSource.b))) + 0.02);
-          let edgeProtection = smoothRange(0.025, 0.20, relativeDetail);
-          rgb -= fineDetail * resolutionLoss * 0.85 * (1.0 - edgeProtection);
-        }
-      }
-      return rgb;
+    fn resolutionScatter(rgb: vec3f, blur: vec3f, loss: f32) -> vec3f {
+      if (!filmModuleActive()) { return rgb; }
+      let fineDetail = rgb - blur;
+      let relativeDetail = max(abs(fineDetail.r), max(abs(fineDetail.g), abs(fineDetail.b)))
+        / (max(abs(rgb.r), max(abs(rgb.g), abs(rgb.b))) + 0.02);
+      let edgeProtection = smoothRange(0.025, 0.20, relativeDetail);
+      return rgb - fineDetail * loss * 0.85 * (1.0 - edgeProtection);
     }
     fn filmStoredRgb(sample: vec4f) -> vec3f { return sample.rgb * sample.a; }
     fn sampleScannedFilm(coordinate: vec2i) -> vec3f {
       return filmStoredRgb(textureLoad(sourceTexture, boundedCoordinate(coordinate), 0));
     }
-    fn filmStoredBlur(coordinate: vec2i, radius: i32) -> vec3f {
-      let sigma = max(f32(radius),1.0)*0.7;
-      let bound = validTileDimensions()-vec2i(1);
-      var total = vec3f(0.0); var weightTotal = 0.0;
-      for (var y = -radius; y <= radius; y++) {
-        let rowWeight = exp(-f32(y*y)/(2.0*sigma*sigma));
-        for (var x = -radius; x <= radius; x++) {
-          let weight = rowWeight*exp(-f32(x*x)/(2.0*sigma*sigma));
-          let texel = clamp(coordinate+vec2i(x,y),vec2i(0),bound);
-          total += filmStoredRgb(textureLoad(sourceTexture,texel,0))*weight;
-          weightTotal += weight;
-        }
-      }
-      return total/weightTotal;
-    }
-    fn finishStructure(coordinate: vec2i) -> vec3f {
-      var rgb = sampleScannedFilm(coordinate);
-      if (p[${GPU_PARAMS.STRUCTURE_ENABLED}] > 0.5 && (abs(p[${GPU_PARAMS.STRUCTURE_SOFTNESS}]) > 0.000001 || abs(p[${GPU_PARAMS.STRUCTURE_MICROCONTRAST}]) > 0.000001)) {
-        let structureBlur = filmStoredBlur(coordinate, outputRelativeOffset(0.06,24));
-        let structureSource = rgb;
-        rgb = structureSource
-          + (structureBlur - structureSource) * p[${GPU_PARAMS.STRUCTURE_SOFTNESS}] * 0.65
-          + (structureSource - structureBlur) * p[${GPU_PARAMS.STRUCTURE_MICROCONTRAST}] * 0.5;
-        rgb = max(rgb, vec3f(0.0));
-      }
-      return applyVignette(rgb, coordinate);
+    fn finishStructure(rgb: vec3f, blur: vec3f, coordinate: vec2i) -> vec3f {
+      let adjusted = rgb
+        + (blur - rgb) * p[${GPU_PARAMS.STRUCTURE_SOFTNESS}] * 0.65
+        + (rgb - blur) * p[${GPU_PARAMS.STRUCTURE_MICROCONTRAST}] * 0.5;
+      return applyVignette(adjusted, coordinate);
     }
     fn applyFilmLook(coordinate: vec2i) -> vec3f {
       var rgb = sampleFilm(coordinate);
@@ -2104,9 +2726,6 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
         rgb = mix(original, rgb, p[${GPU_PARAMS.FILM_LOOK_STRENGTH}]);
       }
       if (p[${GPU_PARAMS.STRUCTURE_ENABLED}] > 0.5 && (abs(p[${GPU_PARAMS.STRUCTURE_SOFTNESS}]) > 0.000001 || abs(p[${GPU_PARAMS.STRUCTURE_MICROCONTRAST}]) > 0.000001)) { return rgb; }
-      if (filmModuleActive()) {
-        rgb = max(rgb, vec3f(0.0));
-      }
       return applyVignette(rgb, coordinate);
     }
     fn applyVignette(rgb: vec3f, coordinate: vec2i) -> vec3f {
@@ -2123,7 +2742,7 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
         let highlight = smoothRange(0.55, 0.95, filmSignalFromLuma(max(filmLuma(rgb), 0.0)));
         mask *= 1.0 - highlight * p[${GPU_PARAMS.VIGNETTE_HIGHLIGHT_PROTECTION}];
       }
-      return max(rgb * exp2(p[${GPU_PARAMS.VIGNETTE_AMOUNT}] * mask), vec3f(0.0));
+      return rgb * exp2(p[${GPU_PARAMS.VIGNETTE_AMOUNT}] * mask);
     }
 
     fn localSaturation(input: vec3f) -> vec3f {
@@ -2145,7 +2764,9 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       let pivot = max(p[${MASK_PARAMS.LOCAL.CONTRAST_PIVOT}], 0.000001);
       let stops = log2(sourceY / pivot);
       let targetStops = stops * exp2(p[${MASK_PARAMS.LOCAL.CONTRAST}]) + p[${MASK_PARAMS.LOCAL.EXPOSURE}];
-      var rgb = input * (pivot * exp2(clamp(targetStops, -32.0, 24.0)) / sourceY);
+      var gain = pivot * exp2(clamp(targetStops, -32.0, 24.0)) / sourceY;
+      if (p[${MASK_PARAMS.LOCAL.CONTRAST}] == 0.0) { gain = exp2(p[${MASK_PARAMS.LOCAL.EXPOSURE}]); }
+      var rgb = input * gain;
       rgb = localToneZones(rgb, max(select(lumaSrgb(rgb), lumaAces(rgb), hdr), 0.0));
       if (hdr) {
         let offset = (p[${MASK_PARAMS.LOCAL.WHITE_BALANCE_KELVIN}] - 6500.0) / 6500.0;
@@ -2168,7 +2789,7 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       rgb = applyCurvesOffset(rgb,hdr,u32(p[${MASK_PARAMS.LOCAL.CURVE_FLAGS}]),u32(p[${MASK_PARAMS.LOCAL.CURVE_OFFSET}]));
       rgb = applyColorGrading(rgb,hdr);
       // Wheels retain headroom through Detail and the local mask blend.
-      return max(rgb, vec3f(0.0));
+      return rgb;
     }
 
     // Log luminance needs a floor well above zero. A floor at the edge of float
@@ -2538,7 +3159,6 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       if (abs(delta) <= 0.0000001) { return vec4f(source, 1.0); }
       var result = source * exp2(delta);
       // Preserve SDR headroom until Film Look and the final output ceiling.
-      result = max(result, vec3f(0.0));
       return vec4f(result, 1.0);
     }
 
@@ -2604,7 +3224,6 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       if (abs(delta) <= 0.0000001) { return vec4f(source, 1.0); }
       var result = source * exp2(delta);
       // Preserve SDR headroom until Film Look and the final output ceiling.
-      result = max(result, vec3f(0.0));
       return vec4f(result, 1.0);
     }
 
@@ -2748,14 +3367,27 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       return vec4f(lensDiffusion(coordinate), 1.0);
     }
 
-    @fragment fn scatterFragmentMain(input: VertexOut) -> @location(0) vec4f {
-      let coordinate = clamp(vec2i(input.position.xy), vec2i(0), validTileDimensions() - vec2i(1));
-      return vec4f(resolutionScatter(coordinate), 1.0);
+    @compute @workgroup_size(${FILM_DETAIL_BLOCK.width}, ${FILM_DETAIL_BLOCK.height})
+    fn scatterComputeMain(@builtin(global_invocation_id) id: vec3u, @builtin(local_invocation_id) local: vec3u) {
+      let coordinate = vec2i(id.xy);
+      let bound = validTileDimensions() - vec2i(1);
+      let loss = 1.0 - p[${GPU_PARAMS.FILM_RESOLUTION}];
+      let radius = filmPhysicalOffset(0.04 + 0.08 * loss, filmResolutionMaxRadius);
+      let blur = filmDetailBlur(coordinate, vec2i(local.xy), bound, radius, false);
+      if (any(coordinate > bound)) { return; }
+      let rgb = textureLoad(sourceTexture, coordinate, 0).rgb;
+      textureStore(filmDetailOutput, coordinate, vec4f(resolutionScatter(rgb, blur, loss), 1.0));
     }
 
-    @fragment fn structureFragmentMain(input: VertexOut) -> @location(0) vec4f {
-      let coordinate = clamp(vec2i(input.position.xy), vec2i(0), validTileDimensions() - vec2i(1));
-      return storeFilm(linkedSdrOutput(finishStructure(coordinate)));
+    @compute @workgroup_size(${FILM_DETAIL_BLOCK.width}, ${FILM_DETAIL_BLOCK.height})
+    fn structureComputeMain(@builtin(global_invocation_id) id: vec3u, @builtin(local_invocation_id) local: vec3u) {
+      let coordinate = vec2i(id.xy);
+      let bound = validTileDimensions() - vec2i(1);
+      let radius = outputRelativeOffset(0.06, 24);
+      let blur = filmDetailBlur(coordinate, vec2i(local.xy), bound, radius, true);
+      if (any(coordinate > bound)) { return; }
+      let rgb = filmStoredRgb(textureLoad(sourceTexture, coordinate, 0));
+      textureStore(filmDetailOutput, coordinate, storeFilm(linkedSdrOutput(finishStructure(rgb, blur, coordinate))));
     }
 
     const LENS_COMPONENTS = array<vec4f,108>(${LENS_COMPONENTS_WGSL});
@@ -3297,9 +3929,13 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
   const HDRWebGPUShaders = Object.freeze({
     GRAIN_SAMPLE_COUNTS,
     BLACK_AND_WHITE_PARAM,
+    FILM_DETAIL_BLOCK,
     PEAK_REDUCTION_SHADER_SOURCE,
     SCALED_FILM_PEAK_REDUCTION_SHADER_SOURCE,
     ADAPTIVE_DENOISE_SHADER_SOURCE,
+    GRAIN_DENOISE_SHADER_SOURCE, GRAIN_DENOISE_BANDS, GRAIN_DENOISE_RADIUS, GRAIN_FIT_BLOCK, GRAIN_RESIZE_SHADER_SOURCE,
+    CLEAN_GRAIN_SHADER_SOURCE, CLEAN_GRAIN_RESIZE_SHADER_SOURCE,
+    MICRO_GRAIN_SHADER_SOURCE,
     SHADER_SOURCE,
     LUMA_MASK_SHADER_SOURCE,
   });

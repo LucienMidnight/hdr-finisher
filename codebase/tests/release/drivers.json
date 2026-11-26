@@ -17,6 +17,8 @@
     "D:/Photos/HDR Test Images/Projects/DSC00950.hdrfinisher"
   ],
   "sourceAreas": [
+    {"pattern":"^codebase/backend/hdr_finisher/raw_(pixel|speck)_cleanup\\.py$","areas":["library","preview","export-proof"]},
+    {"pattern":"^codebase/(backend/hdr_finisher/(signed_(raw\\.py|ahd\\.c)|lens_correction\\.(c|py))|tools/build_signed_ahd\\.py)$","areas":["library","preview","export-proof"]},
     {"pattern":"^codebase/frontend/(shortcut-labels|floating-surfaces)\\.(js|css)$","areas":["ui"]},
     {"pattern":"^codebase/(backend/hdr_finisher/tone\\.py|frontend/tone-engine\\.js)$","areas":["preview","export-proof","library"]},
     {"pattern":"^codebase/frontend/key-hints\\.js$","areas":["ui"]},
@@ -270,6 +272,21 @@
     }
   ],
   "drivers": [
+    {"path":"tests/raw-pixel-cleanup-delivery.js","areas":["library","preview","export-proof","ui"],"tier":"area",
+      "protects":"Real Bayer RAW hot-pixel and harsh-speck cleanup enabled in Grade, restored checkboxes, threshold release/reset, CPU/GPU Edge colour, saved Library GPU development and identical encoded Proof/export; inherits the existing edge-colour delivery comparison guards.","launch":{"method":"electron"}},
+    {"path":"tests/raw-pixel-cleanup.js","areas":["library","preview","export-proof"],"tier":"area",
+      "protects":"Optional hot-pixel and signed harsh-speck sensor cleanup integrated with production GPU normalization, Opposed color, signed AHD and WB, four CFA patterns/orientations and Off/hot-only/speck-only/combined states, threshold endpoints and exact old/explicit-Off GPU pixel equality; finished SDR DeltaE2000/HDR DeltaE ITP mean <1 and p99 <3 at -6/0/+6 EV.","launch":{"method":"electron"}},
+    {"path":"tests/signed-raw-parity.js","areas":["library","preview","export-proof"],"tier":"area",
+      "protects":"Signed Bayer AHD on all four CFA phases and orientations, finite negative scene values, and finished SDR/HDR CPU/GPU colour at -6/0/+6 EV.","launch":{"method":"electron"}},
+    {
+      "path": "tools/denoise_eval/candidates/hot_pixel_gpu.cjs",
+      "areas": ["detail", "library"],
+      "tier": "diagnostic",
+      "launch": {
+        "method": "electron",
+        "args": ["output/denoise-v1/hot-pixel/gpu-input.json", "output/denoise-v1/hot-pixel/gpu-output.json"]
+      }
+    },
     {"path":"tests/performance/sdr-linked-slider.js","areas":["film","preview"],"tier":"diagnostic","protects":"Whole Film-on slider wait on machine window, linked and independent SDR, before/after eager-prefix branch comparison on identical source.","launch":{"method":"electron"}},
     {"path":"tests/sdr-linked-interaction.js","areas":["film","masks","export-proof","ui"],"tier":"area","protects":"Safe linked Match, live HDR edits, unlink, SDR global/local edits, one Undo, N4 consent and linked finished GPU/CPU export plus reduced/full Proof agreement.","launch":{"method":"electron"}},
     {"path":"tests/sdr-linked-render.js","areas":["film","masks","export-proof"],"tier":"area","protects":"Linked SDR common HDR creatives and overlapping locals; finished float CPU/GPU agreement before encoding.","launch":{"method":"electron"}},
@@ -280,6 +297,8 @@
     {"path":"tests/ui-picker-help-selects.js","areas":["ui"],"tier":"area","protects":"Photo picker cursor lifecycle, nearby delayed tooltips, customizable select popups and keyboard behaviour across workflows and minimum-size windows.","launch":{"method":"electron"}},
     {"path":"tools/button-tiers-review.cjs","areas":["ui"],"tier":"diagnostic","protects":"Three-theme 30px panel and 26px compact actions, four-page expanded/collapsed alignment within 1px, Scopes, long preset names, open menus and Local/Retouch row centring at 2560x1440.","launch":{"method":"electron"}},
     {"path":"tests/hdr-ceiling-delivery.js","areas":["export-proof"],"tier":"core","protects":"Bounded 1600px real-photo fixture: all-codec CPU/GPU exports and reduced/full-size Proof decoded targets with encoding allowance, full-size Proof identity and mandatory checking with checkbox off. --native-source keeps the original source for a separate native-size diagnostic.","launch":{"method":"electron"}},
+    {"path":"tests/export-progress-single.js","areas":["export-proof"],"tier":"area","protects":"Single-photo export shows the export's own numeric progress, stage labels and time left in the status bar, never going back, instead of the old wall-clock messages.","launch":{"method":"electron"}},
+    {"path":"tests/performance/export-speed-app.js","areas":["export-proof"],"tier":"diagnostic","protects":"Real-app batch export of the Santorini export-speed recipe on the Sony RAW with Grade open: whole wait, whole-app peak, live progress gaps and the memory-trim rounds logged during the export.","launch":{"method":"electron","requires":"Reuses output/test-photos/export-speed-app/_DSC7970.ARW. Run under gpu-run-lock.py."}},
     {"path":"tests/performance/hdr-ceiling-cost.py","areas":["export-proof"],"tier":"diagnostic","protects":"Real read-only photo CPU export and reduced/full Proof decoded ceilings, full Proof identity, and paired CPU or Electron GPU full-export cost with/without post-encode decoding.","launch":{"method":"python","requires":"Pass existing source photo paths; --gpu measures Electron request timing. Run under gpu-run-lock.py for isolated timings."}},
     {"path":"tests/library-grid-stability.js","areas":["library","ui"],"tier":"area","protects":"Scrollbar appearance cannot trigger repeated thumbnail resizing; control reproduces the 37-photo feedback loop.","launch":{"method":"native"}},
     {"path":"tools/ui-polish-1114-review.cjs","areas":["ui"],"tier":"diagnostic","protects":"Modern Dark/Default Light neutral page tabs, retired-theme fallback, fixed Grade chrome at Fit/119% with panning, immediate source chevrons, reachable Grade/Proof/Export scope toggles and chart containment at 1408x794 and 2560x1440. Original --after mode retains Library selection, joined-divider and Export disclosure checks.","launch":{"method":"electron","args":["--after","--round2"]}},
@@ -448,6 +467,13 @@
       }
     },
     {
+      "path": "desktop/tests/denoise-library-clicks.js",
+      "areas": ["preview", "library"],
+      "tier": "full",
+      "protects": "Pointer-driven Grade Denoise switches, pixels and durable saves from the Library, at Fit and 110%.",
+      "launch": {"method": "node"}
+    },
+    {
       "path": "desktop/tests/renderer-crash.js",
       "areas": [
         "preview"
@@ -611,10 +637,24 @@
         "detail"
       ],
       "tier": "area",
-      "protects": "Adaptive denoise: the WebGPU preview against the Python the export runs.",
+      "protects": "Standard and experimental Denoise preview against the CPU reference, exact zero-evenness, live blends and recalculation.",
       "launch": {
         "method": "electron"
       }
+    },
+    {
+      "path": "tests/grain-large-photo-parity.js",
+      "areas": ["detail", "preview"],
+      "tier": "area",
+      "protects": "50 MP Grade Fine and Clean Small GPU routing and finished HDR/SDR agreement at Fit and 110%, plus the Micro Fit route or its logged refusal.",
+      "launch": { "method": "electron" }
+    },
+    {
+      "path": "tests/performance/denoise-grain-latency.js",
+      "areas": ["detail", "export-proof"],
+      "tier": "full",
+      "protects": "Denoise action-to-final-picture preparation, Recalculate, Fit/native zoom changes and pan on 18 MP and 42 MP RAWs. Opt-in Clean Grain Grade trials cover matching HDR/SDR Fit reuse, timing, memory, CPU fallback and finished colour and HDR ceiling captures. Separate baseline covers native export and Proof timings.",
+      "launch": { "method": "electron" }
     },
     {
       "path": "tests/denoise-noise-view.js",
@@ -1070,6 +1110,17 @@
       "launch": {"method": "electron"}
     },
     {
+      "path": "tests/grade-grain-pruning.js",
+      "areas": [
+        "film"
+      ],
+      "tier": "area",
+      "protects": "Grade tile grain pruning preserves the original WebGPU grain samples bit for bit.",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
       "path": "tests/grain-parity.js",
       "areas": [
         "film"
@@ -1144,7 +1195,7 @@
         "lens"
       ],
       "tier": "full",
-      "protects": "Physical lens filters: exact Direct/Tiled bytes at Fit and native.",
+      "protects": "Physical lens filters: exact Direct/Tiled bytes at Fit and native, and exact Mist reuse and invalidation with Grade edits.",
       "launch": {
         "method": "electron"
       }
@@ -4077,7 +4128,7 @@
         "export-proof"
       ],
       "tier": "core",
-      "protects": "Small GPU and forced-CPU export, delivery resize/sharpening, watermarked full-size Proof byte identity, decoded perceptual limits and HDR peak.",
+      "protects": "Small GPU and forced-CPU export for all three Denoise methods, delivery resize/sharpening, watermarked full-size Proof byte identity, finished perceptual limits and HDR peak.",
       "launch": {
         "method": "electron"
       }

@@ -1,12 +1,15 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from threading import Event, Thread
 import time
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
 
 import hdr_finisher.render_cache as render_cache_module
+from hdr_finisher import app_memory
 from hdr_finisher.color_context import RenderColorContext
 from hdr_finisher.finishing import apply_geometry
 from hdr_finisher.models import AdjustmentState, GeometryAdjustments, LocalAdjustment, MaskExpression, MaskLeaf, OverlayMode, PreviewKind
@@ -76,6 +79,77 @@ def test_adjusted_proxy_is_downsampled_before_processing_and_reused() -> None:
     assert not first.flags.writeable
 
 
+def test_cpu_preview_noise_model_reused_across_exposure_edits(monkeypatch) -> None:
+    from hdr_finisher import denoise_adaptive as adaptive
+    from hdr_finisher.models import DenoiseLiveControls
+
+    source = np.full((320, 480, 3), .18, dtype=np.float32)
+    cache = SessionRenderCache(source, source / 2)
+    settings = AdjustmentState()
+    settings.sdr.linked_to_hdr = False
+    controls = DenoiseLiveControls()
+    measurements = []
+
+    def measure(pixels):
+        measurements.append((pixels.shape[:2], float(pixels[0, 0, 0])))
+        return adaptive.AdaptiveNoiseModel(.0003, .00008, 0, ((1., .6, .36, .21, .12),) * 3)
+
+    monkeypatch.setattr(adaptive, "estimate_adaptive_model", measure)
+    monkeypatch.setattr(adaptive, "resolve_adaptive", lambda pixels, *_: pixels)
+    first = cache.adjusted_frame(settings, PreviewKind.HDR, 480, denoise_controls=controls)
+    settings.hdr.exposure = 1
+    cache.clear_adjusted()
+    second = cache.adjusted_frame(settings, PreviewKind.HDR, 480, denoise_controls=controls)
+    assert not np.array_equal(first, second)
+    assert len(measurements) == 1
+    cache.adjusted_frame(settings, PreviewKind.SDR, 480, denoise_controls=controls)
+    cache.adjusted_frame(settings, PreviewKind.HDR, 320, denoise_controls=controls)
+    settings.shared.geometry.rotation = 90
+    cache.adjusted_frame(settings, PreviewKind.HDR, 480, denoise_controls=controls)
+    cache.replace_source(source * 2, None)
+    cache.adjusted_frame(settings, PreviewKind.HDR, 480, denoise_controls=controls)
+    assert len(measurements) == 5
+
+
+def test_concurrent_cpu_previews_share_one_source_measurement(monkeypatch) -> None:
+    from hdr_finisher import denoise_adaptive as adaptive, library_diagnostics
+    from hdr_finisher.models import DenoiseLiveControls
+
+    cache = SessionRenderCache(np.full((32, 48, 3), .18, dtype=np.float32), None)
+    started, shared, release = Event(), Event(), Event()
+    calls = []
+
+    def measure(pixels):
+        calls.append(pixels)
+        started.set()
+        assert release.wait(5)
+        return adaptive.AdaptiveNoiseModel(.0003, .00008, 0, ((1., .6, .36, .21, .12),) * 3)
+
+    def log(event, **fields):
+        if event == "denoise_cpu_model_cache" and fields["reason"] == "model_in_flight":
+            shared.set()
+
+    monkeypatch.setattr(adaptive, "estimate_adaptive_model", measure)
+    monkeypatch.setattr(adaptive, "resolve_adaptive", lambda pixels, *_: pixels)
+    monkeypatch.setattr(library_diagnostics, "log", log)
+
+    def preview(exposure):
+        settings = AdjustmentState()
+        settings.hdr.exposure = exposure
+        return cache.adjusted_frame(settings, PreviewKind.HDR, 256, denoise_controls=DenoiseLiveControls())
+
+    with ThreadPoolExecutor(2) as pool:
+        first = pool.submit(preview, 0)
+        try:
+            assert started.wait(5)
+            second = pool.submit(preview, 1)
+            assert shared.wait(5)
+        finally:
+            release.set()
+        assert not np.array_equal(first.result(5), second.result(5))
+    assert len(calls) == 1
+
+
 def test_scope_request_counts_one_top_level_miss_then_one_hit() -> None:
     image = np.full((64, 96, 3), 0.18, dtype=np.float32)
     cache = SessionRenderCache(image, None)
@@ -90,6 +164,71 @@ def test_scope_request_counts_one_top_level_miss_then_one_hit() -> None:
     assert after_miss["hits"] == 0
     assert after_hit["misses"] == 1
     assert after_hit["hits"] == 1
+
+
+@pytest.mark.parametrize("warm_frame", [False, True], ids=["cold-scope", "scope-result-only"])
+def test_scope_admission_refusal_preserves_micro_cache_until_trim(monkeypatch, warm_frame) -> None:
+    monkeypatch.setattr(app_memory, "_sample", (0, None))
+    monkeypatch.setattr(app_memory, "_caches", {})
+    image = np.linspace(0.0, 1.0, 270 * 360 * 3, dtype=np.float32).reshape(270, 360, 3)
+    adjustments = AdjustmentState.model_validate({"hdr": {"exposure": 0.25}})
+    locals_ = [LocalAdjustment(id="scope-mask")]
+    scope_args = (adjustments, PreviewKind.HDR, 256, "histogram", 64, 64)
+    reference = SessionRenderCache(image, None).scope_result(*scope_args, local_adjustments=locals_)
+    cache = SessionRenderCache(image, None)
+    preview = image.copy()
+    prepared = SimpleNamespace(prepared_nbytes=preview.nbytes)
+    with cache._lock:
+        cache._micro_prepared["raw"] = prepared
+        cache._micro_previews["reduced"] = preview
+        cache._rebalance_locked()
+    if warm_frame:
+        cache.adjusted_frame(adjustments, PreviewKind.HDR, 256, local_adjustments=locals_, scope_source=True)
+    before = app_memory.cache_snapshot()["working"]["bytes"]
+    monkeypatch.setattr(app_memory, "_sample", (0, [{"workingSetBytes": app_memory.TARGET + 1}]))
+
+    result = cache.scope_result(*scope_args, local_adjustments=locals_)
+
+    assert result.model_dump() == reference.model_dump()
+    assert cache._micro_prepared.get("raw") is prepared
+    assert cache._micro_previews.get("reduced") is preview
+    assert not cache._scopes
+    if not warm_frame:
+        assert not cache._source_proxies
+        assert not cache._masks
+        assert not cache._frames
+    assert app_memory.cache_snapshot()["working"]["bytes"] == before
+
+    cache.trim_memory(0)
+
+    assert not cache._micro_prepared
+    assert not cache._micro_previews
+    assert app_memory.cache_snapshot()["working"]["bytes"] == 0
+
+
+def test_refused_scope_proxy_does_not_rebalance_micro_work(monkeypatch) -> None:
+    monkeypatch.setattr(app_memory, "_sample", (0, None))
+    monkeypatch.setattr(app_memory, "_caches", {})
+    image = np.linspace(0.0, 1.0, 270 * 360 * 3, dtype=np.float32).reshape(270, 360, 3)
+    cache = SessionRenderCache(image, None)
+    preview = image.copy()
+    prepared = SimpleNamespace(prepared_nbytes=preview.nbytes)
+    with cache._lock:
+        cache._micro_prepared["raw"] = prepared
+        cache._micro_previews["reduced"] = preview
+        cache._rebalance_locked()
+    monkeypatch.setattr(app_memory, "_sample", (0, [{"workingSetBytes": app_memory.TARGET + 1}]))
+    rebalances = []
+    original = cache._rebalance_locked
+    monkeypatch.setattr(cache, "_rebalance_locked", lambda: rebalances.append(True) or original())
+
+    with cache._lock:
+        cache._remember_proxies_locked(64, image[:48, :64].copy(), None, scope_source=True)
+
+    assert rebalances == []
+    assert not cache._source_proxies
+    assert cache._micro_prepared.get("raw") is prepared
+    assert cache._micro_previews.get("reduced") is preview
 
 
 def test_scope_region_is_a_post_geometry_view_and_has_an_independent_cache_key() -> None:
@@ -109,6 +248,42 @@ def test_scope_region_is_a_post_geometry_view_and_has_an_independent_cache_key()
 
     assert diagnostics["misses"] == 2
     assert sum(full.channels[0].bins) > sum(cropped.channels[0].bins)
+
+
+@pytest.mark.parametrize("shape", [(541, 789, 3), (789, 541, 3), (789, 13, 3)])
+def test_bounded_scope_resize_preserves_float_pixels(shape) -> None:
+    image = np.random.default_rng(30).uniform(-0.25, 4.0, size=shape).astype(np.float32)
+    expected = downsample_image(image, 256)
+    assert downsample_image(image, 256, bounded=True).tobytes() == expected.tobytes()
+
+
+def test_cold_scope_matches_existing_histogram_without_blocking_preview(monkeypatch) -> None:
+    image = np.random.default_rng(7).random((541, 789, 3), dtype=np.float32)
+    adjustments = AdjustmentState()
+    adjustments.hdr.exposure = 0.25
+    baseline = SessionRenderCache(image, None)
+    baseline.adjusted_frame(adjustments, PreviewKind.HDR, 256)
+    expected = baseline.scope_result(adjustments, PreviewKind.HDR, 256, "histogram", 64, 64)
+    cache = SessionRenderCache(image, None)
+    started = Event()
+    release = Event()
+
+    def pause_scope_source(pixels, edge, **kwargs):
+        if kwargs.get("bounded"):
+            started.set()
+            assert release.wait(5)
+        return downsample_image(pixels, edge, **kwargs)
+
+    monkeypatch.setattr(render_cache_module, "downsample_image", pause_scope_source)
+    with ThreadPoolExecutor(2) as pool:
+        scope = pool.submit(cache.scope_result, adjustments, PreviewKind.HDR, 256, "histogram", 64, 64)
+        try:
+            assert started.wait(5)
+            preview = pool.submit(cache.adjusted_frame, adjustments, PreviewKind.HDR, 384)
+            assert preview.result(2).shape[1] == 384
+        finally:
+            release.set()
+        assert scope.result(5).model_dump() == expected.model_dump()
 
 
 def test_overlay_only_changes_do_not_invalidate_adjusted_pixels() -> None:
@@ -823,14 +998,14 @@ def test_source_mip_read_failure_is_recorded_instead_of_looking_like_a_miss(
     SourceMipStore(root).level(identity, 256, image)
     store = SourceMipStore(root)
     target = store._level_path(identity, 256)
-    original_read = render_cache_module.Path.read_bytes
+    original_open = render_cache_module.Path.open
 
-    def deny(self):
-        if self == target:
+    def deny(self, mode="r", *args, **kwargs):
+        if self == target and mode == "rb":
             raise PermissionError("denied by test")
-        return original_read(self)
+        return original_open(self, mode, *args, **kwargs)
 
-    monkeypatch.setattr(render_cache_module.Path, "read_bytes", deny)
+    monkeypatch.setattr(render_cache_module.Path, "open", deny)
     level, state = store.level(identity, 256, image)
 
     assert state == "built"
@@ -1075,7 +1250,7 @@ def test_preview_recovers_after_source_resize_failure(monkeypatch, request_scope
     cache = SessionRenderCache(image, None)
     adjustments = AdjustmentState()
     expected = SessionRenderCache(image, None).adjusted_frame(adjustments, PreviewKind.HDR, 256)
-    original = cache._proxies_locked
+    original = cache._build_source_level
 
     def fail_resize(*args, **kwargs):
         raise OSError("Source resize failed")
@@ -1085,10 +1260,10 @@ def test_preview_recovers_after_source_resize_failure(monkeypatch, request_scope
             return cache.scope_result(adjustments, PreviewKind.HDR, 256, "histogram", 64, 64, **kwargs)
         return cache.adjusted_frame(adjustments, PreviewKind.HDR, 256, **kwargs)
 
-    monkeypatch.setattr(cache, "_proxies_locked", fail_resize)
+    monkeypatch.setattr(cache, "_build_source_level", fail_resize)
     with pytest.raises(OSError, match="Source resize failed"):
         request()
-    monkeypatch.setattr(cache, "_proxies_locked", original)
+    monkeypatch.setattr(cache, "_build_source_level", original)
     deadline = time.monotonic() + 1.0
     # The deadline turns the old infinite wait into a bounded test failure.
     recovered = request(is_current=lambda: time.monotonic() < deadline)

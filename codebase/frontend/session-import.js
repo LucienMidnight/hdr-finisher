@@ -411,7 +411,7 @@ function renderRawImportControls(session) {
   const bridgeQualified = Boolean(
     visible &&
       session?.metadata?.extra?.raw_mosaiced !== false &&
-      String(session?.metadata?.extra?.raw_pipeline || "").startsWith("camera_linear_float_bridge"),
+      String(session?.metadata?.extra?.raw_pipeline || "").startsWith("camera_linear_"),
   );
   setSourceModuleAvailability(
     els.rawSettingsSection,
@@ -425,6 +425,16 @@ function renderRawImportControls(session) {
       ? "Highlight Reconstruction is unavailable for this RAW sensor or color pipeline."
       : "Highlight Reconstruction is available only for supported mosaiced RAW sources.",
   );
+  setSourceModuleAvailability(els.rawPixelCleanupGroup,
+    visible && session?.metadata?.extra?.raw_pixel_cleanup?.supported === true,
+    "Pixel cleanup is available only for supported Bayer RAW sensors, not X-Trans, linear DNG or finished images.");
+  if (els.rawRemoveHotPixels) {
+    els.rawRemoveHotPixels.checked = state.editDocument?.source?.raw_import_settings?.pixel_cleanup?.remove_hot_pixels !== false;
+    const cleanup = state.editDocument?.source?.raw_import_settings?.pixel_cleanup;
+    if (els.rawEvenOutSpecks) els.rawEvenOutSpecks.checked = cleanup?.even_out_specks !== false;
+    if (els.rawSpeckThreshold) els.rawSpeckThreshold.value = String(cleanup?.speck_threshold ?? 2.5);
+    renderRawSpeckControls();
+  }
   if (!visible) {
     state.rawSettingsOpen = false;
     els.rawSettingsPanel?.classList.add("hidden");
@@ -538,10 +548,24 @@ function optionalPositiveNumber(element) {
   return Number.isFinite(value) && value > 0 ? value : null;
 }
 
+function renderRawSpeckControls() {
+  if (els.rawSpeckThresholdRow) els.rawSpeckThresholdRow.hidden = !els.rawEvenOutSpecks?.checked;
+  if (els.rawSpeckThreshold) {
+    els.rawSpeckThreshold.disabled = !els.rawEvenOutSpecks?.checked || els.rawEvenOutSpecks.disabled;
+    updateRangeVisual(els.rawSpeckThreshold);
+  }
+  if (els.rawSpeckThresholdValue) els.rawSpeckThresholdValue.textContent = `×${Number(els.rawSpeckThreshold?.value || 2.5).toFixed(1)}`;
+}
+
 function rawImportSettingsPayload() {
   return {
     white_balance: "as_shot",
     demosaic: "ahd",
+    pixel_cleanup: {
+      remove_hot_pixels: els.rawRemoveHotPixels?.checked === true,
+      even_out_specks: els.rawEvenOutSpecks?.checked === true,
+      speck_threshold: Number(els.rawSpeckThreshold?.value || 2.5),
+    },
     highlight_reconstruction: {
       enabled: els.rawHighlightBypass?.getAttribute("aria-pressed") === "true",
       method: els.rawHighlightMethod?.value || "opposed_color_v1",
@@ -673,7 +697,7 @@ function renderInterpretationGate() {
   });
 }
 
-function retireActiveSession(replacementSessionId = null) {
+function retireActiveSession(replacementSessionId = null, { preservePicture = false } = {}) {
   if (state.session?.session_id && state.session.session_id !== replacementSessionId) window.HDRGradeOpenFailed?.(state.session.session_id);
   suspendGradeInstruments();
   status.clear("match");
@@ -686,6 +710,9 @@ function retireActiveSession(replacementSessionId = null) {
   cancelRoiCatchUp();
   cancelRoiPanRefinement();
   clearNavigationThumbnail();
+  window.clearTimeout(state.zoomRefinementTimer);
+  state.zoomRefinementTimer = 0;
+  clearZoomScopeRefresh();
   window.clearTimeout(state.localMaskDraftTimer);
   state.localMaskDraftTimer = 0;
   state.localMaskDraftController?.abort();
@@ -736,8 +763,9 @@ function retireActiveSession(replacementSessionId = null) {
   state.localPreviewDirty = false;
   state.localMaskCommitDepth = 0;
   state.localMaskCommitRefreshPending = false;
+  state.localMaskCommitSettlePending = false;
   state.localErase = false;
-  clearPreviewCache();
+  clearPreviewCache({ preservePicture });
 }
 
 async function cancelActiveImport() {
@@ -745,8 +773,10 @@ async function cancelActiveImport() {
   const libraryOpen = Boolean(state.gradeOpen?.fromLibrary);
   const loadingGrade = Boolean(state.gradeOpen);
   const jobId = state.activeImportJobId;
+  const redeveloping = state.rawRedevelopGeneration === state.importGeneration;
   state.importGeneration += 1;
   const cancelledGeneration = state.importGeneration;
+  if (redeveloping) state.rawRedevelopGeneration = cancelledGeneration;
   state.activeImportJobId = null;
   state.importInProgress = false;
   setImportCancelVisible(false);
@@ -766,6 +796,7 @@ async function cancelActiveImport() {
     await projectIo.cancelImportJob(fetch, jobId).catch(() => null);
   }
   if (cancelledGeneration !== state.importGeneration) return;
+  restoreGradeAfterRawRedevelopment(cancelledGeneration);
   finishCancelledImport();
   finishGradeOpen();
   if (libraryOpen) activateWorkflowTab("import");

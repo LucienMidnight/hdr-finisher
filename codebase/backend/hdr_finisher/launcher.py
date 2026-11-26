@@ -80,12 +80,14 @@ class LauncherServer:
         *,
         listener: socket.socket | None = None,
         log_level: str = "info",
+        ws_per_message_deflate: bool = True,
     ) -> None:
         if listener is not None:
             port = int(listener.getsockname()[1])
         self.url = server_url(host, port)
         self.listener = listener
-        config = uvicorn.Config(app, host=host, port=port, log_level=log_level)
+        config = uvicorn.Config(app, host=host, port=port, log_level=log_level,
+            ws_per_message_deflate=ws_per_message_deflate)
         self.server = uvicorn.Server(config)
         self.thread = threading.Thread(
             target=self._run,
@@ -159,7 +161,7 @@ def run_desktop_sidecar(parent_pid: int) -> None:
     listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     listener.bind((DEFAULT_HOST, 0))
     listener.listen(2048)
-    service = LauncherServer(app, port=0, listener=listener, log_level="warning")
+    service = LauncherServer(app, port=0, listener=listener, log_level="warning", ws_per_message_deflate=False)
     service.start()
     deadline = time.monotonic() + 20.0
     while not service.started and service.running and time.monotonic() < deadline:

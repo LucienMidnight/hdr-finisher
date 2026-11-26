@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor, wait
+from dataclasses import replace
 from io import BytesIO
 import math
 from pathlib import Path
@@ -19,11 +20,14 @@ from hdr_finisher.models import (
     CapabilityStatus,
     DenoiseDocumentSettings,
     ExportResponse,
+    ExportSettings,
     JPEGGainMapProofMetadata,
     ProofArtifactRequest,
     ProofReconstructionRequest,
 )
 from hdr_finisher.color_context import RenderColorContext
+from hdr_finisher.delivery_frames import DeliveryFrame
+from hdr_finisher.exporters import write_avif_gainmap_renditions
 from hdr_finisher.proofing import (
     GainMapParameters,
     ProofArtifact,
@@ -39,6 +43,29 @@ from hdr_finisher.main import app, get_capabilities, store as session_store
 
 
 client = TestClient(app)
+
+
+def test_proof_store_cleans_its_directory_under_desktop_scratch(monkeypatch, tmp_path):
+    monkeypatch.setenv("HDR_FINISHER_PROOF_ROOT", str(tmp_path))
+    store = ProofArtifactStore()
+    assert store.root.parent == tmp_path
+    (store.root / "finished-frame.rgb").write_bytes(b"scratch")
+    store.clear()
+    assert not store.root.exists()
+    assert tmp_path.is_dir()
+
+
+def test_empty_desktop_proof_root_uses_system_temp(monkeypatch, tmp_path):
+    from tempfile import gettempdir
+
+    monkeypatch.setenv("HDR_FINISHER_PROOF_ROOT", "")
+    monkeypatch.chdir(tmp_path)
+    store = ProofArtifactStore()
+    try:
+        assert store.root.parent == Path(gettempdir())
+        assert not list(tmp_path.iterdir())
+    finally:
+        store.clear()
 
 
 def test_delivery_test_pattern_is_float_hdr_and_has_known_patch_range() -> None:
@@ -274,6 +301,115 @@ def test_jpeg_matrix_endpoints_publish_decode_atomically_for_concurrent_targets(
     assert final_path.stat().st_size == decoded_rgba.astype("<f2").nbytes
 
 
+def test_banded_jpeg_proof_matches_whole_image_tiles(tmp_path: Path) -> None:
+    if proofing_module.resolve_binary("avifenc") is None:
+        pytest.skip("AVIF preview encoder unavailable")
+    store = ProofArtifactStore()
+    width, height = 71, 263
+    rng = np.random.default_rng(34)
+    jpeg = tmp_path / "base.jpg"
+    Image.fromarray(rng.integers(0, 256, (height, width, 3), dtype=np.uint8)).save(jpeg)
+    raw = tmp_path / "decoded-strip-proof.rgba-f16.raw"
+    rgba = rng.random((height, width, 4), dtype=np.float32) * np.float32(6)
+    rgba[-1, -1, :3] = [10, 0, 12]  # The final partial band changes the global extrema.
+    rgba.astype("<f2").tofile(raw)
+    artifact = ProofArtifact(
+        artifact_id="strip-proof", format="jpeg_ultrahdr", path=jpeg, media_type="image/jpeg",
+        sha256="", width=width, height=height, quality=90, metadata_summary="", encoded_headroom=3,
+        reference_white_nits=100, hdr_authored=None, sdr_authored=None, jpeg_decoded=raw,
+    )
+    with Image.open(jpeg) as primary:
+        base = proofing_module._jpeg_base_endpoint(primary.convert("RGB"))
+    alternate = proofing_module._jpeg_alternate_endpoint(rgba.astype("<f2"), artifact.reference_white_nits, True)
+    for target in (1.75, 0.0, 3.0):
+        banded, peak, clipped = store._jpeg_target_tile(artifact, target)
+        whole = reconstruct_from_endpoints(base, alternate, artifact.encoded_headroom, target)
+        assert banded == proofing_module._encode_hdr_avif(whole, artifact.reference_white_nits, quality=proofing_module.PROOF_TILE_QUALITY)
+        assert (peak, clipped) == proofing_module._image_stats(whole, target, artifact.reference_white_nits)
+
+
+@pytest.mark.parametrize("format, use_tonemap", [
+    ("avif_gain_map", True),
+    ("avif_gain_map", False),
+    ("jpegxl_hdr", False),
+])
+@pytest.mark.parametrize("invalid", [False, True])
+def test_banded_authored_proof_matches_whole_image_tiles(monkeypatch, tmp_path, format, use_tonemap, invalid):
+    resolve = proofing_module.resolve_binary
+    if resolve("avifgainmaputil" if use_tonemap else "avifenc") is None:
+        pytest.skip("Native AVIF tile helper unavailable")
+    if not use_tonemap:
+        monkeypatch.setattr(proofing_module, "resolve_binary",
+                            lambda name: None if name == "avifgainmaputil" else resolve(name))
+    monkeypatch.setattr(proofing_module, "_PROOF_RECONSTRUCTION_ROWS", 8)
+
+    height, width = 29, 37
+    rng = np.random.default_rng(25)
+    base = rng.random((height, width, 3), dtype=np.float32) * 0.7
+    alternate = rng.random(base.shape, dtype=np.float32) * 7
+    path = tmp_path / "artifact.avif"
+    if use_tonemap:
+        write_avif_gainmap_renditions(
+            path, alternate, base, ExportSettings(output_path=str(path), format=format),
+        )
+    base[0, 0] = alternate[0, 0] = 0
+    base[-1, -1] = [0.0, 2.0, 0.001]
+    alternate[-1, -1] = [1e20, 0.0, 200.0]  # Extrema in the last partial band.
+    if invalid:
+        base[1, 1, 0] = alternate[1, 1, 0] = np.inf
+        alternate[-1, 0, 1] = np.nan
+
+    artifact = ProofArtifact(
+        artifact_id="authored-proof", format=format, path=path, media_type="image/avif",
+        sha256="", width=width, height=height, quality=90, metadata_summary="", encoded_headroom=3,
+        reference_white_nits=203, hdr_authored=alternate, sdr_authored=base, full_size=True,
+    )
+    store = ProofArtifactStore()
+    legacy_store = ProofArtifactStore()
+    from_files = replace(artifact,
+        hdr_authored=DeliveryFrame.spill(tmp_path / "hdr.rgb", alternate),
+        sdr_authored=DeliveryFrame.spill(tmp_path / "sdr.rgb", base))
+
+    with np.errstate(invalid="ignore"):
+        for target in (1.75, 0.0, 3.0):
+            whole = reconstruct_from_endpoints(base, alternate, artifact.encoded_headroom, target)
+            expected = legacy_store._encoded_matrix_tile(replace(artifact, full_size=False), target, whole)
+            banded, peak, clipped = store._authored_target_tile(artifact, target)
+            assert banded == expected
+            assert (peak, clipped) == proofing_module._image_stats(whole, target, artifact.reference_white_nits)
+            assert store._authored_target_tile(from_files, target) == (banded, peak, clipped)
+
+            tile = store._target_tile(artifact, target, "Target", None)
+            assert store.tile(tile.id).path.read_bytes() == expected
+            assert (tile.peak_nits, tile.clipped_percent) == (round(peak, 1), round(clipped, 3))
+
+
+def test_full_size_avif_tile_matches_legacy_above_automatic_tiling_threshold(tmp_path):
+    utility = proofing_module.resolve_binary("avifgainmaputil")
+    if utility is None or proofing_module.resolve_binary("avifenc") is None:
+        pytest.skip("Native AVIF tile helpers unavailable")
+    # Over 512 * 512 pixels so default avifenc settings can choose multiple tiles.
+    height, width = 608, 896
+    x = np.linspace(.01, .65, width, dtype=np.float32)[None, :, None]
+    y = np.linspace(.01, .2, height, dtype=np.float32)[:, None, None]
+    base = (x + y) * np.array([1, .9, .6], dtype=np.float32)
+    alternate = base * np.array([2.3, 3.5, 3.1], dtype=np.float32)
+    path = tmp_path / "artifact.avif"
+    write_avif_gainmap_renditions(path, alternate, base, ExportSettings(output_path=str(path), format="avif_gain_map"))
+    artifact = ProofArtifact(
+        artifact_id="with-split", format="avif_gain_map", path=path, media_type="image/avif",
+        sha256="", width=width, height=height, quality=90, metadata_summary="", encoded_headroom=2,
+        reference_white_nits=203, hdr_authored=None, sdr_authored=None, full_size=True,
+    )
+    store = ProofArtifactStore()
+    try:
+        legacy = replace(artifact, artifact_id="one-step", full_size=False)
+        assert store._tonemap_avif_tile(artifact, 1.0, utility) == store._tonemap_avif_tile(legacy, 1.0, utility)
+        assert not list(store.root.rglob("*.y4m"))
+    finally:
+        store.clear()
+
+
 class _FakeBackend:
     def __init__(self) -> None:
         self.last_settings = None
@@ -285,6 +421,37 @@ class _FakeBackend:
         output.write_bytes(b"encoded-proof-artifact")
         assert getattr(session, "image").shape[:2] == (12, 16)
         return ExportResponse(accepted=True, backend="fake", message="ok", output_path=str(output))
+
+
+def test_full_size_proof_evicts_old_endpoint_files_and_keeps_the_encoded_artifact(monkeypatch):
+    class Backend(_FakeBackend):
+        def export(self, session, settings):
+            response = super().export(session, settings)
+            Path(response.output_path).write_bytes(bytes([settings.quality]))
+            return response
+
+    image = np.full((12, 16, 3), 0.18, dtype=np.float32)
+    session = type("Session", (), {"session_id": "evict", "render_cache": SessionRenderCache(image, None)})()
+    monkeypatch.setattr(proofing_module, "_inspect_artifact", lambda *_args: (3.0, "test metadata"))
+    monkeypatch.setattr(proofing_module, "_render_export_branch", lambda *_args, **_kwargs: image)
+    store = ProofArtifactStore()
+    backend = Backend()
+    try:
+        artifacts = []
+        for quality in (90, 91, 92):
+            response = store.create(session, ProofArtifactRequest(
+                adjustments=AdjustmentState(), format="avif_gain_map", quality=quality, full_size=True,
+            ), backend)
+            artifact = store.artifact(response.artifact_id)
+            artifacts.append((artifact, artifact.hdr_authored.path))
+        old, path = artifacts[0]
+        assert not path.exists()
+        assert store.artifact(old.artifact_id).path.read_bytes() == bytes([90])
+        assert all(path.exists() for _, path in artifacts[1:])
+        with pytest.raises(KeyError, match="Refresh Proof"):
+            store.matrix(old.artifact_id, None)
+    finally:
+        store.clear()
 
 
 class _FailOnceWithPartialArtifactBackend:
@@ -403,12 +570,12 @@ def test_proof_signature_tracks_denoise_state() -> None:
     enabled.hdr.controls.amount = 0.8
     disabled = DenoiseDocumentSettings()
 
-    signatures = {
-        ProofArtifactStore._request_signature("session", request, context, None),
-        ProofArtifactStore._request_signature("session", request, context, enabled),
-        ProofArtifactStore._request_signature("session", request, context, disabled),
-    }
-    assert len(signatures) == 3
+    simple_off = disabled.model_copy(deep=True)
+    simple_off.hdr.controls.method = "standard"
+    signature = lambda request, denoise: ProofArtifactStore._request_signature("session", request, context, denoise)
+    assert signature(request, None) == signature(request, disabled)
+    assert signature(request, disabled) == signature(request.model_copy(update={"edit_revision": 1}), simple_off)
+    assert signature(request, enabled) != signature(request, disabled)
 
 
 def test_failed_proof_build_cleans_internal_staging_file_before_retry(monkeypatch, tmp_path: Path) -> None:
@@ -786,3 +953,59 @@ def test_proof_signature_tracks_local_adjustments() -> None:
     signature = lambda locals_: ProofArtifactStore._request_signature("session", request, context, local_adjustments=locals_)
     assert len({signature(None), signature([local]), signature([edited])}) == 3
     assert signature([local]) == signature([local.model_copy(deep=True)])
+
+
+def test_proof_endpoint_failure_closes_source_bands_before_cleanup(monkeypatch, tmp_path):
+    from types import SimpleNamespace
+
+    monkeypatch.setenv("HDR_FINISHER_PROOF_ROOT", str(tmp_path))
+    monkeypatch.setattr(proofing_module, "_inspect_artifact", lambda *_: (1.0, "metadata"))
+    pixels = np.full((180, 130, 3), .18, np.float32)
+    adjustments = AdjustmentState()
+    session = SimpleNamespace(session_id="failed-proof", image=pixels,
+        render_cache=SessionRenderCache(pixels, None), adjustments=adjustments)
+    closed = False
+    original_bands = DeliveryFrame.bands
+    original_write = DeliveryFrame.write
+    storage_class = proofing_module.TemporaryDirectory
+
+    class Backend:
+        def export(self, session, settings):
+            path = Path(settings.output_path)
+            path.write_bytes(b"proof")
+            root = settings._proof_endpoint_directory
+            endpoints = tuple(DeliveryFrame.spill(root / f"{lane}.rgb", pixels) for lane in ("hdr", "sdr"))
+            object.__setattr__(settings, "_proof_endpoints", endpoints)
+            return ExportResponse(accepted=True, backend="fake", message="ok", output_path=settings.output_path)
+
+    class Storage(storage_class):
+        def cleanup(self):
+            assert closed
+            super().cleanup()
+            raise PermissionError("simulated Windows cleanup failure")
+
+    def track_bands(self, rows):
+        nonlocal closed
+        try:
+            yield from original_bands(self, rows)
+        finally:
+            closed = True
+
+    def fail_matrix_write(self, bands):
+        if self.path.name == "sdr-matrix.rgb":
+            next(bands)
+            assert not closed
+            raise OSError("original disk error")
+        original_write(self, bands)
+
+    monkeypatch.setattr(proofing_module, "TemporaryDirectory", Storage)
+    monkeypatch.setattr(DeliveryFrame, "bands", track_bands)
+    monkeypatch.setattr(DeliveryFrame, "write", fail_matrix_write)
+    store = ProofArtifactStore()
+    try:
+        request = ProofArtifactRequest(adjustments=adjustments, format="avif_gain_map", full_size=True)
+        with pytest.raises(OSError, match="original disk error"):
+            store.create(session, request, Backend())
+        assert not list(store.root.glob("endpoints-*"))
+    finally:
+        store.clear()

@@ -3,10 +3,11 @@
  * Set HDR_FINISHER_ELECTRON_WINDOW_SIZE=2560x1440 and create/set
  * HDR_FINISHER_ELECTRON_TEST_USER_DATA to output/big-folder/measurement-profile
  * (an absolute path). No deletion is confirmed.
- * Stop on the owner's 4 GB / approximately one-second validation gate. */
+ * Stop at the platform default ceiling sampled approximately once per second. */
 if(process.platform!=='win32'){console.log('Skipped: PC-only whole-personal-library folder-scale measurement.');process.exit(0);}
-const fs = require('node:fs'), path = require('node:path'), os = require('node:os');
+const fs = require('node:fs'), path = require('node:path');
 const {spawn} = require('node:child_process');
+const {defaultAppMemoryBytes}=require('../desktop/lib/application-preferences');
 const {chromium} = require('playwright');
 const {hashProjects, checkProjects} = require('../tests/release/runner.cjs');
 const root = path.resolve(__dirname, '..');
@@ -25,7 +26,7 @@ const bounded = (promise, ms, label) => {
   const before = hashProjects(require('../tests/release/drivers.json').protectedProjects);
   const browser = await chromium.launch();
   let observer, stream, peak = 0, exceeded = false,latestCaches=null,latestFrontend=null,latestRoles=null,peakSample=null,endSample=null;
-  const report = {startedAt:new Date().toISOString(), ceilingBytes:Math.max(2_500_000_000,Math.min(4_000_000_000,os.totalmem()/4)), deleteLimitMs:1000, requestedScrollSeconds:300, finishedGridCells:[], samples:0};
+  const report = {startedAt:new Date().toISOString(), ceilingBytes:defaultAppMemoryBytes(), deleteLimitMs:1000, requestedScrollSeconds:300, finishedGridCells:[], samples:0};
   const record = () => fs.writeFileSync(path.join(output,'measurement.json'),JSON.stringify({...report,peakChargedBytes:peak,peakSample,endSample},null,2)+'\n');
   try {
     const page = await browser.newPage();

@@ -3,6 +3,7 @@ import numpy as np
 import pytest
 
 from hdr_finisher import hdr_ceiling
+from hdr_finisher.delivery_frames import DeliveryFrame
 
 NITS = .18 / 203
 
@@ -45,6 +46,106 @@ def test_only_the_neighbourhood_of_the_overshoot_changes():
     np.testing.assert_array_equal(delivered[far], original[far])
     # The patch keeps nearly all of its brightness: no whole-image dimming.
     assert hdr_ceiling.channel_nits(delivered, 203).max() > 0.85 * 1000
+
+
+def test_disk_backed_jpeg_correction_matches_whole_image_over_multiple_retries(tmp_path):
+    from hdr_finisher.hdr_ceiling import BLOCK, MARGINS
+
+    size = (261, 35)
+    rgba = np.random.default_rng(13).random((*size, 4), dtype=np.float32)
+    output = np.memmap(tmp_path / "hdr.raw", dtype="f4", mode="w+", shape=rgba.shape)
+    output[:] = rgba
+    peaks = [np.full(size, 900, dtype=np.float32) for _ in range(3)]
+    peaks[0][127, 15] = 1118
+    peaks[0][-1, -1] = 1025
+    peaks[1][128, 16] = 1072
+    delivered_pixels = []
+    array_notes = []
+    finished = hdr_ceiling.encode_within_ceiling(
+        output, 203, lambda pixels: delivered_pixels.append(np.array(pixels)) or len(delivered_pixels),
+        lambda attempt: peaks[attempt - 1], 1000, array_notes, correct_in_place=True, encoding_allowance=0.01,
+    )
+    assert finished == 3
+    expected = rgba.copy()
+    np.testing.assert_array_equal(delivered_pixels[0], expected)
+    for attempt, decoded in enumerate(peaks[:2]):
+        yy, xx = np.indices(size, dtype=np.float32)
+        blocks_y, blocks_x = (-(-axis // BLOCK) for axis in size)
+        padded = np.pad(np.maximum(decoded / np.float32(1000), 1.0),
+                        [(0, blocks_y * BLOCK - size[0]), (0, blocks_x * BLOCK - size[1])],
+                        constant_values=1)
+        grid = padded.reshape(blocks_y, BLOCK, blocks_x, BLOCK).max(axis=(1, 3))
+        halo = np.pad(grid, 1, constant_values=1)
+        grid = np.max([halo[y:y + blocks_y, x:x + blocks_x] for y in range(3) for x in range(3)], axis=0)
+        y = np.clip((yy[:, 0] + 0.5) / BLOCK - 0.5, 0, blocks_y - 1)
+        x = np.clip((xx[0] + 0.5) / BLOCK - 0.5, 0, blocks_x - 1)
+        y0, x0 = y.astype(int), x.astype(int)
+        dy, dx = (y - y0).astype(np.float32), (x - x0).astype(np.float32)
+        rows = grid[y0] * (1 - dy[:, None]) + grid[np.minimum(y0 + 1, blocks_y - 1)] * dy[:, None]
+        spread = rows[:, x0] * (1 - dx) + rows[:, np.minimum(x0 + 1, blocks_x - 1)] * dx
+        correction = np.where(spread > 1.0, 1.0 / (spread ** 2.0 * (1.0 + MARGINS[attempt])), 1.0)
+        expected[..., :3] *= correction[..., None]
+        np.testing.assert_array_equal(delivered_pixels[attempt + 1], expected)
+    np.testing.assert_array_equal(output, expected)
+    output._mmap.close()
+
+    frame = DeliveryFrame.spill(tmp_path / "authored.raw", rgba)
+    notes = []
+    streamed_pixels = []
+
+    def encode_frame(current):
+        streamed_pixels.append(b"".join(band.tobytes() for band in current.bands(hdr_ceiling.BAND_ROWS)))
+        return len(streamed_pixels)
+
+    finished = hdr_ceiling.encode_within_ceiling(frame, 203, encode_frame,
+        lambda attempt: peaks[attempt - 1], 1000, notes, encoding_allowance=0.01)
+    assert finished == 3
+    assert streamed_pixels == [pixels.tobytes() for pixels in delivered_pixels]
+    assert notes == array_notes == []
+    assert frame.path.read_bytes() == rgba.tobytes()
+    assert not list(tmp_path.glob("ceiling-*"))
+
+
+@pytest.mark.parametrize("orientation", [1, 6])
+@pytest.mark.parametrize("use_base_color_space", [False, True])
+def test_ultrahdr_decoded_peak_and_correction_match_the_per_pixel_route(
+    monkeypatch, tmp_path, orientation, use_base_color_space,
+):
+    from types import SimpleNamespace
+    from PIL import Image
+    from hdr_finisher import gainmap_decoders
+
+    random = np.random.default_rng(793)
+    width, height = 35, 261
+    rgba = random.random((height, width, 4), dtype=np.float32).astype("<f2")
+    rgba[127, 15, :3] = [4.1, 5.5, 2.4]
+    rgba[-1, -1, :3] = [5.2, 1.9, 4.7]
+    raw_path = tmp_path / "decoded.raw"
+    rgba.tofile(raw_path)
+    jpeg = tmp_path / "primary.jpg"
+    exif = Image.Exif()
+    exif[274] = orientation
+    Image.new("RGB", (width, height)).save(jpeg, exif=exif.tobytes())
+    monkeypatch.setattr(gainmap_decoders, "inspect_jpeg_gain_map",
+                        lambda path: SimpleNamespace(use_base_color_space=use_base_color_space))
+    monkeypatch.setattr(gainmap_decoders, "reconstructed_ultrahdr_rgba",
+                        lambda *args: raw_path.open("rb"))
+
+    full = hdr_ceiling.decoded_channel_nits(jpeg, "jpeg_ultrahdr")
+    reduced = hdr_ceiling.decoded_ultrahdr_ceiling(jpeg, 1000)
+    assert full.shape == reduced.shape
+    if orientation == 1:
+        assert reduced.peak == float(full.max()) > 1010
+        assert reduced.block_maxima.nbytes < full.nbytes
+    else:
+        np.testing.assert_array_equal(reduced, full)
+
+    initial = random.random((*full.shape, 4), dtype=np.float32)
+    for margin in hdr_ceiling.MARGINS:
+        expected, actual = initial.copy(), initial.copy()
+        hdr_ceiling._correct_bands(expected, full, 1000, margin)
+        hdr_ceiling._correct_bands(actual, reduced, 1000, margin)
+        np.testing.assert_array_equal(actual, expected)
 
 
 def test_a_clean_codec_is_encoded_once_and_left_alone():
@@ -108,6 +209,26 @@ def test_proof_preserves_the_peak_option_and_its_cache_signature():
     assert off.model_dump_json() != on.model_dump_json()
 
 
+def test_ceiling_retries_follow_proof_action(capsys, tmp_path):
+    import json
+
+    from hdr_finisher.delivery import delivery_diagnostics
+    from hdr_finisher.diagnostics import action_scope
+
+    photo = tmp_path / "camera.ARW"
+    with action_scope("proof-action"), delivery_diagnostics("proof", photo):
+        with pytest.raises(hdr_ceiling.CeilingError):
+            hdr_ceiling.encode_within_ceiling(scene(), 203, lambda image: image,
+                lambda image: np.full(image.shape[:2], 1012.0, np.float32), 1000)
+    rows = [json.loads(line) for line in capsys.readouterr().err.splitlines()]
+    assert [row["event"] for row in rows] == ["ceiling_retry"] * len(hdr_ceiling.MARGINS) + ["ceiling_refused"]
+    assert all(row["area"] == "proof" and row["action"] == "proof-action" for row in rows)
+    assert all(row["photo"] == {"id": str(photo), "name": photo.name} for row in rows)
+    assert rows[-1]["peak_nits"] == 1012
+    assert rows[-1]["target_nits"] == 1000
+    assert rows[-1]["route"] == "refused"
+
+
 def test_an_uncorrectable_codec_is_rejected():
     notes = []
     with pytest.raises(hdr_ceiling.CeilingError, match="1000-nit target"):
@@ -117,23 +238,33 @@ def test_an_uncorrectable_codec_is_rejected():
     assert notes == []
 
 
-def test_an_export_that_stays_over_target_preserves_the_destination(monkeypatch, tmp_path):
+@pytest.mark.parametrize(
+    ("format_name", "suffix"), [("jpegxl_hdr", ".jxl"), ("jpeg_ultrahdr", ".jpg")],
+)
+def test_an_export_that_stays_over_target_preserves_the_destination(monkeypatch, tmp_path, format_name, suffix):
     from types import SimpleNamespace
     from hdr_finisher import exporters
     from hdr_finisher.capabilities import probe_capabilities
     from hdr_finisher.models import AdjustmentState, ExportSettings
-    backend = exporters.build_export_backends(probe_capabilities())["jpegxl_hdr"]
+    backend = exporters.build_export_backends(probe_capabilities())[format_name]
     if backend.capability.status.value != "available":
         pytest.skip(backend.capability.detail)
-    monkeypatch.setattr(exporters, "_decoded_jpegxl_channel_nits", lambda payload: np.full((96, 128), 1012.0, np.float32))
+    if format_name == "jpeg_ultrahdr":
+        readout = hdr_ceiling._DecodedCeiling(
+            (96, 128), 1012.0, np.full((6, 8), np.float32(1012) / 1000, np.float32),
+        )
+        monkeypatch.setattr(exporters, "decoded_ultrahdr_ceiling", lambda path, ceiling: readout)
+    else:
+        monkeypatch.setattr(exporters, "_decoded_jpegxl_channel_nits",
+                            lambda payload: np.full((96, 128), 1012.0, np.float32))
     adjustments = AdjustmentState()
     adjustments.hdr.highlight_section_enabled = True
     adjustments.hdr.highlight_compression_target_nits = 1000
     session = SimpleNamespace(session_id="note", image=scene(4000), adjustments=adjustments, hdr_reference_white_nits=203,
         sdr_reference_image=None, local_adjustments=[])
-    output = tmp_path / "existing.jxl"
+    output = tmp_path / f"existing{suffix}"
     output.write_bytes(b"previous export")
-    result = backend.export(session, ExportSettings(format="jpegxl_hdr", quality=90, overwrite=True,
+    result = backend.export(session, ExportSettings(format=format_name, quality=90, overwrite=True,
         output_path=str(output)))
     assert not result.accepted
     assert "1000-nit target" in result.message
@@ -153,7 +284,8 @@ def test_only_active_highlights_get_the_encoding_allowance(monkeypatch, tmp_path
         pytest.skip(backend.capability.detail)
     def decoded(*args):
         return np.full((96, 128), 10050.0, np.float32)
-    monkeypatch.setattr(exporters, "decoded_channel_nits", decoded)
+    monkeypatch.setattr(exporters, "decoded_avif_ceiling", decoded)
+    monkeypatch.setattr(exporters, "decoded_ultrahdr_ceiling", decoded)
     monkeypatch.setattr(exporters, "_decoded_jpegxl_channel_nits", decoded)
     adjustments = AdjustmentState()
     adjustments.hdr.highlight_section_enabled = highlights
@@ -164,6 +296,46 @@ def test_only_active_highlights_get_the_encoding_allowance(monkeypatch, tmp_path
         guarantee_hdr_peak=True, output_path=str(tmp_path / "delivery")))
     assert result.accepted is highlights, result.message
     assert result.delivery_notes == []
+
+
+@pytest.mark.parametrize("bit_depth,chroma", [(8, "420"), (10, "422"), (12, "444")])
+def test_avif_peak_and_correction_match_the_import_decoder(tmp_path, bit_depth, chroma):
+    from hdr_finisher import gainmap_decoders
+    from hdr_finisher.binaries import resolve_binary
+    from hdr_finisher.exporters import write_avif_gainmap_renditions
+    from hdr_finisher.models import ExportSettings
+
+    if not (resolve_binary("avifgainmaputil") and resolve_binary("avifdec")):
+        pytest.skip("Bundled AVIF gain-map tools are unavailable.")
+    rng = np.random.default_rng(79)
+    hdr = rng.uniform(0, 0.4, (261, 35, 3)).astype(np.float32)
+    hdr[126:132, 13:19] = [1.75, 0.30, 0.25]
+    hdr[-5:, -5:] = [0.4, 1.4, 0.3]
+    sdr = np.minimum(hdr, np.float32(0.8))
+    avif = tmp_path / "ceiling.avif"
+    write_avif_gainmap_renditions(avif, hdr, sdr, ExportSettings(
+        format="avif_gain_map", quality=90, avif_bit_depth=bit_depth, avif_chroma_subsampling=chroma,
+    ))
+
+    full_hdr, _, _ = gainmap_decoders.decode_avif(avif)
+    with gainmap_decoders.avif_delivery_hdr_bands(avif, hdr_ceiling.BAND_ROWS) as (shape, bands):
+        assert shape == full_hdr.shape[:2]
+        np.testing.assert_array_equal(np.concatenate(list(bands)), full_hdr)
+
+    full = hdr_ceiling.channel_nits(full_hdr)
+    ceiling = 600
+    compact = hdr_ceiling.decoded_avif_ceiling(avif, ceiling)
+    assert compact.peak == float(full.max()) > ceiling
+    assert compact.shape == full.shape
+    block = hdr_ceiling.BLOCK
+    grid = np.empty((-(-shape[0] // block), -(-shape[1] // block)), dtype=np.float32)
+    hdr_ceiling._fill_block_maxima(grid, 0, full, ceiling)
+    np.testing.assert_array_equal(compact.block_maxima, grid)
+    for margin in hdr_ceiling.MARGINS:
+        expected, actual = hdr.copy(), hdr.copy()
+        hdr_ceiling._correct_bands(expected, full, ceiling, margin)
+        hdr_ceiling._correct_bands(actual, compact, ceiling, margin)
+        np.testing.assert_array_equal(actual, expected)
 
 
 def test_a_codec_can_overshoot_despite_input_headroom():
@@ -314,3 +486,32 @@ def test_all_modes_and_targets_remain_exact_after_real_encoding(tmp_path, target
         jpeg_gain_map_scale='full', dithering='off', output_path=str(tmp_path / 'exact')))
     assert result.accepted, result.message
     assert float(hdr_ceiling.decoded_channel_nits(Path(result.output_path), format_name).max()) <= target * (1 + hdr_ceiling.ENCODING_ALLOWANCE)
+
+
+def test_ceiling_retry_closes_source_bands_if_private_copy_fails(monkeypatch, tmp_path):
+    pixels = scene()
+    source = DeliveryFrame.spill(tmp_path / "delivery.rgb", pixels)
+    closed = False
+    read_bands = DeliveryFrame.bands
+
+    def track_bands(self, rows):
+        nonlocal closed
+        try:
+            yield from read_bands(self, rows)
+        finally:
+            closed = True
+
+    def fail_copy(self, bands):
+        next(bands)
+        assert not closed
+        raise OSError("disk full")
+
+    monkeypatch.setattr(DeliveryFrame, "bands", track_bands)
+    monkeypatch.setattr(DeliveryFrame, "write", fail_copy)
+    with pytest.raises(OSError, match="disk full") as caught:
+        hdr_ceiling.encode_within_ceiling(source, 203, lambda frame: frame,
+            lambda _: np.full(source.shape[:2], 1100, dtype=np.float32), 1000)
+    assert caught.value.__traceback__ is not None
+    assert closed
+    assert not list(tmp_path.glob("ceiling-*"))
+    assert source.path.read_bytes() == pixels.tobytes()

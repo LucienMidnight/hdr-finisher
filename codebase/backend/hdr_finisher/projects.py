@@ -120,20 +120,20 @@ def open_project(store: SessionStore, path: Path, source_path: Path | None = Non
 
 
 def open_document(store: SessionStore, document: EditDocument, source_path: Path | None = None,
-                  reuse_session_id: str | None = None) -> LoadedSession:
+                  reuse_session_id: str | None = None, *, prepared_session: LoadedSession | None = None) -> LoadedSession:
     """Open the same grade document from a project container or photo settings."""
     with store._lock:
-        return _open_document(store, document, source_path, reuse_session_id)
+        return _open_document(store, document, source_path, reuse_session_id, prepared_session)
 
 
-def _open_document(store, document, source_path, reuse_session_id):
+def _open_document(store, document, source_path, reuse_session_id, prepared_session):
     candidate = source_path
     if candidate is None and document.source.durable_path:
         candidate = Path(document.source.durable_path)
     if candidate is None or not candidate.expanduser().is_file():
         raise ProjectSourceRelinkRequired("The project source is missing. Select the original source to relink it.")
     resolved_source = candidate.expanduser().resolve()
-    reusable = store.get(reuse_session_id) if reuse_session_id else None
+    reusable = prepared_session if prepared_session is not None else store.get(reuse_session_id) if reuse_session_id else None
     if reusable is not None and reusable.source_path.resolve() != resolved_source:
         raise ProjectSourceRelinkRequired("The grade belongs to another source.")
     fingerprint = reusable.source_fingerprint_sha256 if reusable is not None else _sha256_file(resolved_source)
@@ -201,8 +201,10 @@ def _open_document(store, document, source_path, reuse_session_id):
     session.retouch_worker = candidate_session.retouch_worker
     if previous_worker is not None:
         previous_worker.close()
-    if not same_decode:
+    if not same_decode or prepared_session is not None:
         store.activate_session(session)
+    else:
+        store._publish_retained_session_bytes()
     return session
 
 

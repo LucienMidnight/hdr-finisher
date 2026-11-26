@@ -153,14 +153,20 @@ class LibraryMarks:
     def _sidecar(path):
         return path.with_name(path.name + SIDECAR_SUFFIX)
 
-    def _document(self, path):
+    def _document(self, path, *, observe_raw=None):
         from .library_copies import is_copy, LibraryCopies
         if is_copy(path): return self.copies.document(str(path))
         sidecar = self._sidecar(path)
         if sidecar.is_symlink():
             raise ValueError(f"Settings for {path.name} are a link; they were left untouched.")
         try:
-            document = json.loads(sidecar.read_text(encoding="utf-8"))
+            if observe_raw is None:
+                text = sidecar.read_text(encoding="utf-8")
+            else:
+                data = sidecar.read_bytes()
+                text = data.decode("utf-8")
+                observe_raw(data)
+            document = json.loads(text)
         except FileNotFoundError:
             return None
         except (OSError, ValueError) as error:
@@ -244,12 +250,13 @@ class LibraryMarks:
             db.execute("INSERT OR IGNORE INTO album_photos VALUES (?, ?)", (album, row["path"]))
 
     @audited("settings_read")
-    def read(self, values, *, documents=None, canonical=False, connected=False, observed=None):
+    def read(self, values, *, documents=None, canonical=False, connected=False, observed=None, conflicts_checked=False):
         # Folder enumeration, conflict scans and settings reads can take seconds
         # on removable disks. They must never own the shared writer lock.
         paths = [str(value) for value in values] if canonical else [str(Path(value).resolve()) for value in values]
         baseline = self._rows(paths)
-        self.conflicts.scan(paths)
+        if not conflicts_checked:
+            self.conflicts.scan(paths)
         prepared = []
         listings = {}
         for position, value in enumerate(paths):

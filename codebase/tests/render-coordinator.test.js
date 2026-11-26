@@ -3,6 +3,30 @@ const assert = require("node:assert/strict");
 
 const { HDRRenderCoordinator } = require("../frontend/render-coordinator.js");
 
+test("queued preview keeps the action that requested it", async () => {
+  const seen = [];
+  const coordinator = new HDRRenderCoordinator({ dispatch: request => {
+    seen.push(request.action);
+    return true;
+  } });
+  coordinator.noteSource("photo");
+  const action = { id: "zoom-action" };
+  await coordinator.submit({ lane: "hdr", action });
+  assert.deepEqual(seen, [action]);
+});
+
+test("only the requested render preserves the mounted picture during recovery", async () => {
+  const seen = [];
+  const coordinator = new HDRRenderCoordinator({ dispatch: request => {
+    seen.push(request.preservePicture);
+    return true;
+  } });
+  coordinator.noteSource("photo");
+  await coordinator.submit({ lane: "hdr", preservePicture: true });
+  await coordinator.submit({ lane: "hdr" });
+  assert.deepEqual(seen, [true, false]);
+});
+
 function fakeTimers() {
   let nextId = 1;
   const pending = new Map();
@@ -39,6 +63,38 @@ function deferred() {
   });
   return { promise, resolve, reject };
 }
+
+test("geometry underlayers neither queue behind busy lanes nor block newer foreground work", async () => {
+  const held = deferred();
+  const canceled = deferred();
+  const calls = [];
+  const presented = [];
+  const coordinator = new HDRRenderCoordinator({ sessionId: "photo",
+    dispatch: request => {
+      calls.push(request);
+      if (request.backgroundUnderlayer) return canceled.promise;
+      return request.lane === "sdr" ? held.promise : true;
+    },
+    present: request => presented.push(request.reason),
+  });
+  const background = { lane: "hdr", backgroundUnderlayer: true, applicationGeneration: 8 };
+  const inactive = coordinator.submit({ lane: "sdr", reason: "inactive-work" });
+  assert.equal(await coordinator.submit(background), false);
+  assert.deepEqual(calls.map(request => request.reason), ["inactive-work"]);
+  assert.equal(coordinator.state().lastRefusal, null);
+  held.resolve(true);
+  await inactive;
+  const pending = coordinator.submit(background);
+  const underlayer = calls.at(-1);
+  assert.equal(underlayer.underlayerOnly, true);
+  assert.equal(underlayer.applicationGeneration, 8);
+  assert.equal(await coordinator.submit({ reason: "new-edit" }), true);
+  assert.equal(underlayer.token.signal.aborted, true);
+  assert.equal(await pending, false);
+  canceled.resolve(true);
+  await flush();
+  assert.deepEqual(presented, ["inactive-work", "new-edit"]);
+});
 
 function deferredDispatch() {
   const queue = [];
@@ -401,10 +457,12 @@ test("the pan follow-up waits for busy work, re-arms, and re-arms the catch-up",
   coordinator.cancelCatchUp("hdr");
   const busySubmit = coordinator.submit({ lane: "hdr", reason: "settle", longEdge: 1000 });
   await flush();
-  coordinator.notePan("hdr");
+  coordinator.notePan("hdr", 70);
+  assert.equal(timers.lastDelay(), 70);
   timers.fireAll();
   await flush();
   assert.equal(coordinator.panPending("hdr"), true, "the follow-up re-arms while the device is busy");
+  assert.equal(timers.lastDelay(), 70);
   assert.equal(dispatches.length, 2, "the pan pass did not supersede the busy render");
 
   dispatch.queue[1].resolve({ rendered: true, execution: "tiled" });
@@ -519,4 +577,23 @@ test("preserving a drag never preserves ordinary settled work", async () => {
   work.resolve({ rendered: true });
   await pending;
   assert.equal(coordinator.state("hdr").accepted, null);
+});
+
+test("a detached Denoise render cannot block or present over its replacement", async () => {
+  const dispatch = deferredDispatch();
+  const { coordinator, dispatches, presentations } = makeCoordinator({ dispatchImpl: dispatch.impl });
+  const old = coordinator.submit({ lane: "hdr", reason: "denoise-on" });
+  await flush();
+  coordinator.cancelLane("hdr", "superseded-by-denoise-toggle", { detach: true });
+  const replacement = coordinator.submit({ lane: "hdr", reason: "denoise-off" });
+  await flush();
+  assert.equal(await old, false);
+  assert.equal(dispatches[0].token.signal.aborted, true);
+  assert.equal(dispatches.length, 2);
+  dispatch.queue[1].resolve({ rendered: true });
+  await replacement;
+  dispatch.queue[0].reject(new Error("late Denoise failure"));
+  await flush();
+  assert.equal(presentations.length, 1);
+  assert.equal(presentations[0].request.reason, "denoise-off");
 });

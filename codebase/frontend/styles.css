@@ -1239,6 +1239,7 @@ body[data-active-lane="sdr"] .lane-dot {
 
 #preview-image,
 #preview-canvas,
+#preview-canvas-frame[data-region],
 #chrome-proof-image,
 #comparison-image,
 #comparison-canvas {
@@ -1288,12 +1289,86 @@ body[data-active-lane="sdr"] .lane-dot {
   image-rendering: auto;
 }
 
+#preview-canvas-frame:not([data-region]) {
+  display: contents;
+}
+
+#preview-canvas-frame[data-region] {
+  display: block;
+  z-index: 1;
+  pointer-events: none;
+}
+
+#preview-canvas-frame[data-region] > #preview-canvas {
+  inset: 0;
+  transform: none;
+  image-rendering: auto;
+}
+
+#preview-denoise-detail {
+  display: none;
+  position: absolute;
+  dynamic-range-limit: no-limit;
+}
+
+#preview-canvas-frame[data-region]:not([data-grain-region]) > #preview-denoise-detail {
+  display: block;
+  z-index: 2;
+}
+
+.grain-preview-layer {
+  display: none;
+  position: absolute;
+  dynamic-range-limit: no-limit;
+}
+
+#preview-canvas-frame[data-region]:not([data-micro-region]) > .grain-preview-layer:not([hidden]) {
+  display: block;
+  z-index: 2;
+}
+
+#preview-canvas-frame[data-region] > .grain-preview-layer.primary {
+  z-index: 3;
+}
+
+#preview-micro-underlayer,
+#preview-micro-detail,
+#preview-micro-hdr-underlayer,
+#preview-micro-hdr-detail {
+  display: none;
+  position: absolute;
+  dynamic-range-limit: no-limit;
+}
+
+#preview-canvas-frame[data-micro-region] > #preview-canvas,
+#preview-canvas-frame[data-micro-region] > #preview-denoise-detail {
+  visibility: hidden;
+}
+
+#preview-canvas-frame[data-micro-region="rgba"] > #preview-micro-underlayer,
+#preview-canvas-frame[data-micro-region="hdr"] > #preview-micro-hdr-underlayer {
+  display: block;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+#preview-canvas-frame[data-micro-region="rgba"] > #preview-micro-detail:not([hidden]),
+#preview-canvas-frame[data-micro-region="hdr"] > #preview-micro-hdr-detail:not([hidden]) {
+  display: block;
+  z-index: 2;
+}
+
 #comparison-canvas {
   image-rendering: auto;
 }
 
 /* Above 100% zoom each source pixel is drawn as a sharp square. */
 #preview-canvas.pixel-magnified,
+#preview-denoise-detail.pixel-magnified,
+.grain-preview-layer.pixel-magnified,
+#preview-micro-detail.pixel-magnified,
+#preview-micro-hdr-detail.pixel-magnified,
 #comparison-canvas.pixel-magnified,
 #preview-image.pixel-magnified,
 #comparison-image.pixel-magnified {
@@ -8086,6 +8161,10 @@ input[type="range"]:focus-visible::-webkit-slider-thumb,
   gap: 4px;
 }
 
+.raw-pixel-cleanup {
+  margin-bottom: 12px;
+}
+
 .checkbox-row > input[type="checkbox"],
 .film-module-toggle > input[type="checkbox"],
 .proof-enable-row > input[type="checkbox"],
@@ -9017,7 +9096,8 @@ body:not([data-workflow="export"]) .batch-grid-panel { display:none; }
 body[data-workflow="export"].batch-export-grid .workspace-main { visibility:hidden; }
 body[data-workflow="export"] #viewer-status-dock { display:none; }
 body[data-workflow="export"] .batch-preview { pointer-events:none; background:transparent; }
-.batch-preview .batch-header, .batch-preview .batch-notice, .batch-preview .batch-empty { pointer-events:auto; }
+.batch-preview .batch-header, .batch-preview .batch-empty { pointer-events:auto; }
+.batch-preview .batch-notice { display:none; }
 body[data-workflow="export"] .batch-preview .batch-empty { background:var(--app); }
 
 .batch-quick-dialog { width:min(560px,calc(100vw - 40px)); max-width:560px; }

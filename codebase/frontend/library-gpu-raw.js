@@ -1,6 +1,6 @@
 /* Camera RAW development on the GPU (WebGPU), with the same maths as Grade's
  * CPU import: opposed-colour highlight repair, LibRaw 0.22.1 AHD demosaic,
- * camera RGB to ACEScg, import gamut projection, fixed calibration,
+ * camera RGB to signed ACEScg, fixed calibration,
  * full-source measurements and Pillow-equivalent bilinear reduction.
  * The Library uses it for camera RAW grid thumbnails (backend:
  * library_gpu_raw.py); tools/gpu_raw_prototype compares it with the CPU. */
@@ -49,7 +49,7 @@
   const NORMALIZE = COMMON + /* wgsl */ `
   @group(0) @binding(1) var<storage, read> mosaic: array<u32>;
   @group(0) @binding(2) var<storage, read_write> norm: array<f32>;
-  @group(0) @binding(3) var<storage, read_write> ints: array<u32>;
+  @group(0) @binding(3) var<storage, read_write> ints: array<i32>;
   @group(0) @binding(4) var<storage, read_write> clipbits: array<atomic<u32>>;
   @group(0) @binding(5) var<storage, read_write> coarse: array<atomic<u32>>;
   @group(0) @binding(6) var<storage, read_write> counts: array<atomic<u32>>;
@@ -65,10 +65,10 @@
       let raw = f32((mosaic[i >> 1u] >> ((i & 1u) * 16u)) & 0xffffu);
       let ch = RAWCH(r, c); let rgb = FC(r, c);
       let black = p.raw_black[ch];
-      var v = max(raw - black, 0.0) * (1.0 / p.raw_range[ch]);
+      var v = (raw - black) * (1.0 / p.raw_range[ch]);
       v = v * p.wb[rgb];
       norm[i] = v;
-      ints[i] = u32(max(raw - black, 0.0));
+      ints[i] = i32(raw - black);
       if (v >= p.thr[rgb]) {
         atomicOr(&clipbits[i >> 5u], 1u << (i & 31u));
         atomicOr(&coarse[u32(r / 3) * p.dims2.x + u32(c / 3)], 1u << rgb);
@@ -78,6 +78,80 @@
     workgroupBarrier();
     if (li < 3u) { let n = atomicLoad(&wgCount[li]); if (n > 0u) { atomicAdd(&counts[li], n); } }
   }`;
+
+  const HOT_PIXEL = /* wgsl */ `
+  struct Cleanup {
+    shot: vec4<f32>, read: vec4<f32>, steps: vec4<f32>, limits: vec4<f32>,
+  };
+  @group(0) @binding(7) var<uniform> cleanup: Cleanup;
+  fn sensor_sample(row: i32, column: i32) -> f32 {
+    let index = u32(row * W() + column);
+    let raw = f32((mosaic[index >> 1u] >> ((index & 1u) * 16u)) & 0xffffu);
+    let channel = RAWCH(row, column);
+    return (raw - p.raw_black[channel]) * (1.0 / p.raw_range[channel]);
+  }
+  const offsets = array<vec2<i32>, 8>(
+    vec2(-2,-2), vec2(-2,0), vec2(-2,2), vec2(0,-2),
+    vec2(0,2), vec2(2,-2), vec2(2,0), vec2(2,2));
+  const directions = array<vec2<i32>, 4>(vec2(0,2),vec2(2,0),vec2(2,2),vec2(2,-2));
+  fn clean_sensor(row: i32, column: i32, original: f32) -> f32 {
+    if row < 4 || column < 4 || row >= H()-4 || column >= W()-4 { return original; }
+    let phase = u32((row & 1) * 2 + (column & 1));
+    let centre = sensor_sample(row, column);
+    var largest = -3.402823e38;
+    for (var neighbour=0u; neighbour<8u; neighbour++) {
+      largest = max(largest, sensor_sample(row+offsets[neighbour].x,column+offsets[neighbour].y));
+    }
+    let quantisation = cleanup.steps[phase]*cleanup.steps[phase]/12.;
+    let variance = cleanup.shot[phase]*max(centre,0.) + cleanup.read[phase] + quantisation;
+    var floor = cleanup.limits.y;
+    if floor < 0. { floor = -floor * sqrt(cleanup.read[phase] + quantisation); }
+    if centre-largest <= max(cleanup.limits.x*sqrt(variance),floor) { return original; }
+    for (var delta_row=-2; delta_row<=2; delta_row++) {
+      for (var delta_column=-2; delta_column<=2; delta_column++) {
+        if sensor_sample(row+delta_row,column+delta_column) >= cleanup.limits.w { return original; }
+      }
+    }
+    for (var delta_row=-1; delta_row<=1; delta_row++) {
+      for (var delta_column=-1; delta_column<=1; delta_column++) {
+        let support_row = row+delta_row;
+        let support_column = column+delta_column;
+        let support_phase = u32((support_row & 1)*2+(support_column & 1));
+        if FC(support_row,support_column) == FC(row,column) { continue; }
+        var values: array<f32,8>;
+        for (var neighbour=0u; neighbour<8u; neighbour++) {
+          values[neighbour] = sensor_sample(support_row+offsets[neighbour].x,support_column+offsets[neighbour].y);
+        }
+        for (var first=0u; first<8u; first++) {
+          for (var second=first+1u; second<8u; second++) {
+            if values[second] < values[first] {
+              let saved = values[first]; values[first] = values[second]; values[second] = saved;
+            }
+          }
+        }
+        let background = .5*(values[3]+values[4]);
+        let support = sensor_sample(support_row,support_column);
+        let sigma = sqrt(cleanup.shot[support_phase]*max(max(support,background),0.) + cleanup.read[support_phase] + cleanup.steps[support_phase]*cleanup.steps[support_phase]/12.);
+        if support-background > max(cleanup.limits.z*sigma,2.*cleanup.steps[support_phase]) { return original; }
+      }
+    }
+    var smallest_difference = 3.402823e38;
+    var replacement = centre;
+    for (var direction=0u; direction<4u; direction++) {
+      let offset = directions[direction];
+      let first = sensor_sample(row-offset.x,column-offset.y);
+      let second = sensor_sample(row+offset.x,column+offset.y);
+      if abs(first-second) < smallest_difference {
+        smallest_difference = abs(first-second); replacement = .5*(first+second);
+      }
+    }
+    let channel = RAWCH(row,column);
+    return clamp(round(replacement*p.raw_range[channel]+p.raw_black[channel]),0.,65535.);
+  }
+  `;
+  const NORMALIZE_CLEAN = NORMALIZE.replace("var<workgroup> wgCount", HOT_PIXEL + "var<workgroup> wgCount")
+    .replace("let raw = f32((mosaic[i >> 1u] >> ((i & 1u) * 16u)) & 0xffffu);",
+      "let raw = clean_sensor(r, c, f32((mosaic[i >> 1u] >> ((i & 1u) * 16u)) & 0xffffu));");
 
   const DILATE = COMMON + /* wgsl */ `
   @group(0) @binding(1) var<storage, read> coarse: array<u32>;
@@ -160,7 +234,7 @@
   const REPAIR = COMMON + /* wgsl */ `
   @group(0) @binding(1) var<storage, read> norm: array<f32>;
   @group(0) @binding(2) var<storage, read> clipbits: array<u32>;
-  @group(0) @binding(3) var<storage, read_write> ints: array<u32>;
+  @group(0) @binding(3) var<storage, read_write> ints: array<i32>;
   ${OPPOSED}
   @compute @workgroup_size(16, 16)
   fn main(@builtin(global_invocation_id) g0: vec3<u32>) {
@@ -173,13 +247,14 @@
     let v = norm[i];
     let repaired = max(v, opposed(r, c, rgb) + p.chroma[rgb]) / p.wb[rgb];
     let encoded = clamp(round(repaired * p.raw_range[ch] + p.raw_black[ch]), 0.0, 65535.0);
-    ints[i] = u32(max(encoded - p.raw_black[ch], 0.0));
+    ints[i] = i32(encoded - p.raw_black[ch]);
   }`;
 
   const GREEN = COMMON + /* wgsl */ `
-  @group(0) @binding(1) var<storage, read> ints: array<u32>;
-  @group(0) @binding(2) var<storage, read_write> gpack: array<u32>;
-  fn px(r: i32, c: i32) -> i32 { return i32(ints[u32(r * W() + c)]); }
+  @group(0) @binding(1) var<storage, read> ints: array<i32>;
+  @group(0) @binding(2) var<storage, read_write> greenHorizontal: array<i32>;
+  @group(0) @binding(3) var<storage, read_write> greenVertical: array<i32>;
+  fn px(r: i32, c: i32) -> i32 { return ints[u32(r * W() + c)]; }
   fn ulim(x: i32, y: i32, z: i32) -> i32 { return clamp(x, min(y, z), max(y, z)); }
   @compute @workgroup_size(16, 16)
   fn main(@builtin(global_invocation_id) g0: vec3<u32>) {
@@ -187,22 +262,26 @@
     let c = i32(g.x); let r = i32(g.y);
     if (c >= W() || r >= H()) { return; }
     let i = u32(r * W() + c);
-    if (FC(r, c) == 1u) { let v = u32(px(r, c)); gpack[i] = v | (v << 16u); return; }
-    if (r < 2 || c < 2 || r >= H() - 2 || c >= W() - 2) { gpack[i] = 0u; return; }
+    if (FC(r, c) == 1u) { let v = px(r, c); greenHorizontal[i] = v; greenVertical[i] = v; return; }
+    if (r < 2 || c < 2 || r >= H() - 2 || c >= W() - 2) { greenHorizontal[i] = 0; greenVertical[i] = 0; return; }
     let ctr = px(r, c);
     let L = px(r, c - 1); let R = px(r, c + 1);
     let gh = ulim(((L + ctr + R) * 2 - px(r, c - 2) - px(r, c + 2)) >> 2u, L, R);
     let U = px(r - 1, c); let D = px(r + 1, c);
     let gv = ulim(((U + ctr + D) * 2 - px(r - 2, c) - px(r + 2, c)) >> 2u, U, D);
-    gpack[i] = u32(gh) | (u32(gv) << 16u);
+    greenHorizontal[i] = gh; greenVertical[i] = gv;
   }`;
 
   const AHD_RGB = /* wgsl */ `
-  @group(0) @binding(1) var<storage, read> ints: array<u32>;
-  @group(0) @binding(2) var<storage, read> gpack: array<u32>;
-  fn px(r: i32, c: i32) -> i32 { return i32(ints[u32(r * W() + c)]); }
-  fn gd(r: i32, c: i32, d: u32) -> i32 { return i32((gpack[u32(r * W() + c)] >> (16u * d)) & 0xffffu); }
-  fn clip16(v: i32) -> i32 { return clamp(v, 0, 65535); }
+  @group(0) @binding(1) var<storage, read> ints: array<i32>;
+  @group(0) @binding(2) var<storage, read> greenHorizontal: array<i32>;
+  @group(0) @binding(10) var<storage, read> greenVertical: array<i32>;
+  fn px(r: i32, c: i32) -> i32 { return ints[u32(r * W() + c)]; }
+  fn gd(r: i32, c: i32, d: u32) -> i32 {
+    let index = u32(r * W() + c);
+    return select(greenHorizontal[index], greenVertical[index], d == 1u);
+  }
+  fn clip16(v: i32) -> i32 { return min(v, 65535); }
   // LibRaw ahd_interpolate_r_and_b_in_rgb: full camera RGB at (r, c) for direction d.
   fn rgbd(r: i32, c: i32, d: u32) -> vec3<i32> {
     var out = vec3<i32>(0);
@@ -225,7 +304,10 @@
 
   const AHD_LAB = /* wgsl */ `
   @group(0) @binding(4) var<storage, read> labTable: array<f32>;
-  fn cbrt_lab(i: i32) -> f32 { return labTable[u32(i)]; }
+  fn cbrt_lab(i: i32) -> f32 {
+    if (i < 0) { return 7.787 * (f32(i) / 65535.0) + 16.0 / 116.0; }
+    return labTable[u32(min(i, 65535))];
+  }
   fn lab(v: vec3<i32>) -> vec3<i32> {
     let f = vec3<f32>(v);
     let x = cbrt_lab(clip16(i32(((0.5 + p.x0.x * f.x) + p.x0.y * f.y) + p.x0.z * f.z)));
@@ -243,14 +325,14 @@
     if (c >= W() || r >= H()) { return; }
     let i = u32(r * W() + c);
     if (r < 4 || c < 4 || r >= H() - 4 || c >= W() - 4) { homo[i] = 0u; return; }
-    var ld: array<array<u32, 4>, 2>; var ab: array<array<u32, 4>, 2>;
+    var ld: array<array<u32, 4>, 2>; var ab: array<array<f32, 4>, 2>;
     let offs = array<vec2<i32>, 4>(vec2<i32>(0, -1), vec2<i32>(0, 1), vec2<i32>(-1, 0), vec2<i32>(1, 0));
     for (var d = 0u; d < 2u; d++) {
       let l0 = lab(rgbd(r, c, d));
       for (var k = 0u; k < 4u; k++) {
         let ln = lab(rgbd(r + offs[k].x, c + offs[k].y, d));
         ld[d][k] = u32(abs(l0.x - ln.x));
-        let da = u32(abs(l0.y - ln.y)); let db = u32(abs(l0.z - ln.z));
+        let da = f32(l0.y - ln.y); let db = f32(l0.z - ln.z);
         ab[d][k] = da * da + db * db;
       }
     }
@@ -304,7 +386,7 @@
   fn gain(fr: f32, fc: f32) -> f32 { return grid(0, 1, 0, fr, fc, i32(p.misc.z), i32(p.misc.w)); }
   fn coordinate(comp: i32, fr: f32, fc: f32) -> f32 { return grid(i32(p.lensc.z), 6, comp, fr, fc, i32(p.lensc.x), i32(p.lensc.y)); }`;
 
-  // After lens correction: the import gamut projection, the calibration, then
+  // After signed lens correction: the calibration, then
   // the full-source measurements Grade takes (exact peaks, strided sample).
   const FINISHING = /* wgsl */ `
   @group(0) @binding(4) var<storage, read_write> outR: array<f32>;
@@ -315,8 +397,6 @@
   var<workgroup> wgPeak: array<atomic<u32>, 3>;
   fn finish(value: vec3<f32>, r: i32, c: i32) {
     var aces = value;
-    let lo = min(aces.x, min(aces.y, aces.z)); let hi = max(aces.x, max(aces.y, aces.z));
-    if (lo < 0.0) { aces = select(vec3<f32>(0.0), hi * (aces - lo) / (hi - lo), hi > 0.0); }
     aces = aces * p.misc.x;
     let i = u32(r * W() + c);
     outR[i] = aces.x; outG[i] = aces.y; outB[i] = aces.z;
@@ -385,6 +465,69 @@
     if (li < 3u) { atomicMax(&peaks[li], atomicLoad(&wgPeak[li])); }
   }`;
 
+  function microAhdSources() {
+    const normalize = COMMON + /* wgsl */ `
+      @group(0) @binding(1) var<storage, read> mosaic: array<u32>;
+      @group(0) @binding(2) var<storage, read_write> ints: array<i32>;
+      @compute @workgroup_size(16, 16)
+      fn main(@builtin(global_invocation_id) gid: vec3u) {
+        let col = i32(gid.x); let row = i32(gid.y);
+        if (col >= W() || row >= H()) { return; }
+        let index = u32(row * W() + col);
+        let raw = (mosaic[index >> 1u] >> ((index & 1u) * 16u)) & 0xffffu;
+        ints[index] = i32(raw) - i32(p.raw_black[RAWCH(row,col)]);
+      }`;
+    const votes = HOMOGENEITY
+      .replace("@compute @workgroup_size(16, 16)", "var<workgroup> tile: array<array<vec3i,324>,2>;\n  @compute @workgroup_size(16, 16)")
+      .replace("g0: vec3<u32>)", "g0: vec3<u32>, @builtin(local_invocation_index) thread: u32, @builtin(workgroup_id) group: vec3u)")
+      .replace("    if (c >= W() || r >= H()) { return; }", /* wgsl */ `
+        for (var index = thread; index < 324u; index += 256u) {
+          let col = i32(group.x*16u + index%18u) - 1;
+          let row = i32(group.y*16u + index/18u) - 1;
+          if (row >= 3 && col >= 3 && row < H()-3 && col < W()-3) {
+            tile[0][index] = lab(rgbd(row,col,0u));
+            tile[1][index] = lab(rgbd(row,col,1u));
+          }
+        }
+        workgroupBarrier();
+        if (c >= W() || r >= H()) { return; }
+        let local = (i32(g.y % 16u)+1)*18+i32(g.x % 16u)+1;
+      `)
+      .replace("lab(rgbd(r, c, d))", "tile[d][local]")
+      .replace("lab(rgbd(r + offs[k].x, c + offs[k].y, d))", "tile[d][local+18*offs[k].x+offs[k].y]");
+    const combine = COMMON + AHD_RGB + TURN
+      + COMBINE.slice(COMBINE.indexOf("  @group(0) @binding(3) var<storage, read> homo:"), COMBINE.lastIndexOf("  @compute")) + /* wgsl */ `
+      @group(0) @binding(4) var output: texture_storage_2d<rgba32float, write>;
+      @group(0) @binding(5) var<storage, read> gate: array<f32>;
+      @compute @workgroup_size(16, 16)
+      fn main(@builtin(global_invocation_id) gid: vec3u) {
+        let r = i32(gid.y); let c = i32(gid.x);
+        let local = vec2i(c,r) - vec2i(p.dims2.xy);
+        let crop = vec2i(p.dims2.zw);
+        if (any(local < vec2i(0)) || any(local >= crop)) { return; }
+        var cam: vec3i;
+        if (r >= 5 && c >= 5 && r < H()-5 && c < W()-5) {
+          var hm = vec2u(0u);
+          for (var y = r-1; y <= r+1; y++) {
+            for (var x = c-1; x <= c+1; x++) {
+              let vote = homo[u32(y * W() + x)];
+              hm += vec2u(vote & 255u, (vote >> 8u) & 255u);
+            }
+          }
+          if (hm.x != hm.y) { cam = rgbd(r,c,select(0u,1u,hm.y > hm.x)); }
+          else { cam = (rgbd(r,c,0u) + rgbd(r,c,1u)) >> vec3u(1u); }
+        } else { cam = border(r,c); }
+        let rgb = vec3f(cam) * p.inv_range.xyz * p.wb.xyz;
+        var at = local;
+        if (p.dims.z == 3u) { at = crop - 1 - local; }
+        if (p.dims.z == 5u) { at = vec2i(local.y,crop.x-1-local.x); }
+        if (p.dims.z == 6u) { at = vec2i(crop.y-1-local.y,local.x); }
+        let keep = gate[u32(r/2) * p.dims.w + u32(c/2)];
+        textureStore(output, at, vec4f(dot(p.m0.xyz,rgb),dot(p.m1.xyz,rgb),dot(p.m2.xyz,rgb),keep));
+      }`;
+    return [normalize, GREEN, votes, combine];
+  }
+
   const EDGE_FINISH = COMMON + TURN + LENS + FINISHING + /* wgsl */ `
   @group(0) @binding(1) var<storage, read> inR: array<f32>;
   @group(0) @binding(2) var<storage, read> inG: array<f32>;
@@ -403,7 +546,7 @@
     workgroupBarrier();if(li<3u){atomicMax(&peaks[li],atomicLoad(&wgPeak[li]));}
   }`;
 
-  // raw_import._remap_bilinear_strips on the turned picture: per-channel
+  // the CPU Lensfun remapper on the turned picture: per-channel
   // source coordinates, clamped to the frame, bilinear.
   const REMAP = COMMON + TURN + LENS + FINISHING + /* wgsl */ `
   @group(0) @binding(1) var<storage, read> inR: array<f32>;
@@ -512,8 +655,8 @@
 
   async function preparePipelines(context, beforeNext = async () => {}, names = null) {
     const {device,pipelines,compilation}=context;
-    const codes={ NORMALIZE, DILATE, RESIDUAL, REPAIR, GREEN, HOMOGENEITY, COMBINE, EDGE_FINISH, REMAP, REDUCE };
-    for(const name of names || Object.keys(codes)) {
+    const codes={ NORMALIZE, NORMALIZE_CLEAN, DILATE, RESIDUAL, REPAIR, GREEN, HOMOGENEITY, COMBINE, EDGE_FINISH, REMAP, REDUCE };
+    for(const name of names || Object.keys(codes).filter(name => name !== "NORMALIZE_CLEAN")) {
       await beforeNext();
       if(pipelines[name])continue;
       if(!compilation.has(name))compilation.set(name,device.createComputePipelineAsync({layout:"auto",compute:{module:device.createShaderModule({code:codes[name]}),entryPoint:"main"}})
@@ -683,6 +826,8 @@
   async function developRaw({ mosaic, meta, lensData = null, edges = Object.keys(meta.reduced_sizes_sensor || {}).map(Number), syncStages = false, beforeSubmit = null, memoryBudget = Infinity, signal = null, context = null, keepNative = false }) {
     const sharedContext = context || await gpu();
     await preparePipelines(sharedContext);
+    const cleanup = !meta.pixel_cleanup_applied && meta.raw_import_settings?.pixel_cleanup?.remove_hot_pixels && meta.pixel_cleanup;
+    if (cleanup) await preparePipelines(sharedContext, undefined, ["NORMALIZE_CLEAN"]);
     const { device, pipelines, errors } = sharedContext;
     const errorStart = errors.length;
     const w = meta.width, h = meta.height, n = w * h;
@@ -696,6 +841,7 @@
     const release = buffer => { if (owned.delete(buffer)) { liveBytes -= buffer.size; buffer.destroy(); } };
     const make = bytes => {
       const size = Math.max(4, Math.ceil(bytes / 4) * 4);
+      if (size > device.limits.maxStorageBufferBindingSize || size > device.limits.maxBufferSize) throw Error("GPU RAW buffer exceeds this device's storage limit.");
       if (liveBytes + size > memoryBudget) throw Error("GPU RAW development exceeds the reserved memory budget.");
       return own(device.createBuffer({ size, usage }));
     };
@@ -724,6 +870,16 @@
       own(uniform);
       device.queue.writeBuffer(uniform, 0, params);
 
+      let cleanupUniform = null;
+      if (cleanup) {
+        const values = new Float32Array([
+          ...cleanup.noise.map(phase => phase.a), ...cleanup.noise.map(phase => phase.b),
+          ...cleanup.spans.map(span => Math.fround(1 / span)), ...cleanup.thresholds,
+        ]);
+        cleanupUniform = own(device.createBuffer({size: values.byteLength, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST}));
+        device.queue.writeBuffer(cleanupUniform, 0, values);
+      }
+
       const mosaicBuf = make(n * 2);
       const whole = Math.floor(mosaic.byteLength / 4) * 4;
       await uploadBuffer(device,mosaicBuf,mosaic,whole,signal);
@@ -741,7 +897,7 @@
       // than the preemption deadline, so the permit is checked once, before it.
       const run = async (name, entries, x, y) => {
         const pipe = pipelines[name];
-        const group = device.createBindGroup({ layout: pipe.getBindGroupLayout(0), entries: entries.map((buffer, binding) => ({ binding, resource: { buffer } })) });
+        const group = device.createBindGroup({ layout: pipe.getBindGroupLayout(0), entries: entries.flatMap((buffer, binding) => buffer ? [{ binding, resource: { buffer } }] : []) });
         if (beforeSubmit) await beforeSubmit();
         if (name !== "REDUCE") device.queue.writeBuffer(uniform, 21 * 16, new Uint32Array([0, 0, 0, 0]));
         const encoder = device.createCommandEncoder(); const pass = encoder.beginComputePass();
@@ -759,7 +915,8 @@
         await staging.mapAsync(GPUMapMode.READ); const copy = staging.getMappedRange().slice(0); release(staging); return copy;
       };
 
-      await run("NORMALIZE", [uniform, mosaicBuf, norm, ints, clip, coarse, counts], wgX, wgY);
+      await run(cleanup ? "NORMALIZE_CLEAN" : "NORMALIZE", [uniform, mosaicBuf, norm, ints, clip, coarse, counts, cleanupUniform], wgX, wgY);
+      if (cleanupUniform) { await device.queue.onSubmittedWorkDone(); release(cleanupUniform); }
       const clipped = new Uint32Array(await read(counts, 16)).slice(0, 3);
       let chroma = [0, 0, 0];
       if (clipped.some(v => v > 0)) {
@@ -777,8 +934,8 @@
       await device.queue.onSubmittedWorkDone();
       for (const buffer of [mosaicBuf, norm, clip, coarse, dilated, counts, partials]) release(buffer);
 
-      const gpack = make(n * 4);
-      await run("GREEN", [uniform, ints, gpack], wgX, wgY);
+      const greenHorizontal = make(n * 4), greenVertical = make(n * 4);
+      await run("GREEN", [uniform, ints, greenHorizontal, greenVertical], wgX, wgY);
       const homo = make(n * 4);
       // LibRaw builds this table once in float32. GPU pow approximations can
       // change the integer Lab votes and choose the other demosaic direction.
@@ -789,7 +946,7 @@
       }
       const labTable = make(table.byteLength);
       device.queue.writeBuffer(labTable, 0, table);
-      await run("HOMOGENEITY", [uniform, ints, gpack, homo, labTable], wgX, wgY);
+      await run("HOMOGENEITY", [uniform, ints, greenHorizontal, homo, labTable, null, null, null, null, null, greenVertical], wgX, wgY);
       await device.queue.onSubmittedWorkDone();
       release(labTable);
       await stage("demosaic");
@@ -797,9 +954,9 @@
       const peaks = make(16); let samples = make((edgeColour ? Math.max(n, sw * sh * 3) : sw * sh * 3) * 4);
       const grid = make(lens ? lensData.byteLength : 4);
       if (lens) device.queue.writeBuffer(grid, 0, lensData.buffer, lensData.byteOffset, lensData.byteLength);
-      await run("COMBINE", [uniform, ints, gpack, homo, ...planes, peaks, samples, grid], wgX, wgY);
+      await run("COMBINE", [uniform, ints, greenHorizontal, homo, ...planes, peaks, samples, grid, greenVertical], wgX, wgY);
       await device.queue.onSubmittedWorkDone();
-      for (const buffer of [ints, gpack, homo]) release(buffer);
+      for (const buffer of [ints, greenHorizontal, greenVertical, homo]) release(buffer);
       let edgeDiagnostics = null;
       if (edgeColour) {
         await stage("camera_colour");
@@ -830,8 +987,9 @@
       await stage("combine_colour_measure");
 
       if(meta.repairs?.length){
-        const repaired=await root.HDRLibraryRetouch({device,meta,planes,make,release,read,
-          budget:()=>memoryBudget-liveBytes,permit:beforeSubmit|| (async()=>{}),signal,peaks,samples});
+        root.HDRLibraryScenes?.stage(meta.path,"Replaying saved repairs");
+        const repaired=await root.HDRLibraryRetouch({device,repairDevice:sharedContext.baseDevice||device,meta,planes,make,release,read,
+          budget:()=>memoryBudget-liveBytes,permit:beforeSubmit|| (async()=>{}),signal,peaks,samples,timings});
         planes.forEach(release);planes.splice(0,3,...repaired);await stage("retouch");
       }
       const reduced = {};
@@ -1018,6 +1176,8 @@
           return result;
         }
         catch (error) {
+          // A newer saved recipe made this attempt obsolete, not invalid.
+          if(error.repairSuperseded)throw error;
           const rejected=!!(error.gpuInvalidPixels || error.emptyChannel);
           if(context.state?.lost && !rejected){
             throw error;
@@ -1062,7 +1222,7 @@
         await lease(true); await wait(50, signal);
       }
     } catch (error) {
-      if(context.state?.lost && !error.gpuInvalidPixels && !error.emptyChannel){
+      if(context.state?.lost && !error.repairSuperseded && !error.gpuInvalidPixels && !error.emptyChannel){
         if(!work.lossCounted){work.lossCounted=true;gpuFailures.set(key,(gpuFailures.get(key)||0)+1);}
         const failures=gpuFailures.get(key),retry=!!grant && failures<2;
         root.HDRLibraryStopwatch?.(retry ? 'picture_development_gpu_retry' : 'picture_development_gpu_fallback',
@@ -1098,6 +1258,11 @@
   }
   async function develop(path, edge, signal, savedGradeOnly, nativeMode = false, liveScene = false, importance = () => 30, sceneIdentity = "", grant = null, gpuDone = () => {}, sharedJob = null) {
     const begun = performance.now();
+    const diagnostics = root.HDRDiagnostics;
+    const action = root.HDRLibraryFolderAction?.(path);
+    const photo = { id: path, name: path.split(/[\\/]/).at(-1) };
+    const sourceHeaders = { "Content-Type": "application/json" };
+    const diagnosticHeaders = diagnostics && action ? Object.fromEntries(diagnostics.headers(action, sourceHeaders)) : sourceHeaders;
     // A completed thumbnail can still own the source until its deferred save.
     // Publish that existing tier before a late screen request claims the source;
     // otherwise the new request polls its predecessor's 30-second idle lease.
@@ -1128,7 +1293,8 @@
       const late=await adoptKept();
       if(late){kept=late;sourceJob=late.token;break;}
       response = await root.HDRLibraryUpload.fetchSource(liveScene ? "/api/library/live-scene" : "/api/library/raw-sensor", { method: "POST", priority:"low", signal,
-        headers: { "Content-Type": "application/json" }, body: JSON.stringify(liveScene ? {path, edge:nativeMode?100000:edge, grant, gpu:true,max_storage_bytes:sourceLimit,source_job:sourceJob,priority:importance()} : { path, edge, grant, saved_grade_only: savedGradeOnly, native_mode:nativeMode }) });
+        headers: diagnosticHeaders,
+        body: JSON.stringify(liveScene ? {path, edge:nativeMode?100000:edge, grant, gpu:true,max_storage_bytes:sourceLimit,source_job:sourceJob,priority:importance()} : { path, edge, grant, saved_grade_only: savedGradeOnly, native_mode:nativeMode }) });
       if(grant && response.headers.get("X-Library-Wait")==="memory")await root.HDRLibraryGrants.wait(grant,signal);
       if (response.status !== 202) break;
       root.HDRLibraryScenes?.stage(path,"Waiting to develop photo",true);
@@ -1211,13 +1377,15 @@
       const parts=nativeMode && !describeOnly ? [handoffBody(header,[]),...picture.planes] : null;
       // Reduced scenes are stored as half floats. Converting here (round to
       // nearest even, as numpy does) halves the transfer and stores the same
-      // values; the backend still clamps and rejects non-finite samples.
+      // values; out-of-range and non-finite samples are refused, never clipped.
       const half=!parts && !describeOnly && (header.sample_bytes || 4)===4 && typeof Float16Array!=="undefined";
       const toHalf=plane=>{
-        // Finite samples above the half range clamp as the backend would;
-        // infinities and NaN stay invalid and are still refused.
         const source=new Float32Array(plane),out=new Float16Array(source.length);
-        for(let i=0;i<source.length;i++){const v=source[i];out[i]=v<Infinity?Math.min(v,65504):v;}
+        for(let i=0;i<source.length;i++){
+          const value=source[i];
+          if(!Number.isFinite(value)||Math.abs(value)>65504)throw Error("GPU RAW source exceeds finite half-float transport.");
+          out[i]=value;
+        }
         return out.buffer;
       };
       const planes=describeOnly ? [] : half ? picture.planes.map(toHalf) : picture.planes;
@@ -1335,9 +1503,25 @@
     if (!nativeMode) await finish(gpuResult);
     body=null;
     root.HDRLibraryStopwatch?.("picture_development", {path, duration_ms:performance.now()-begun, gpu_ms:gpuMs, sensor_ms:sensorMs, source_ms:meta.source_timings_ms, gpu_stages_ms:gpuResult.timings, quantiles_ms:quantileMs, handoff_ms:performance.now()-handoffStarted});
+    diagnostics?.event("raw", "development_finished", {
+      route: "gpu", reason: "raw_developed", photo, rendered_edge_px: edge,
+      duration_ms: Math.round(performance.now() - begun), peak_bytes: gpuResult.memory_peak_bytes,
+    }, action);
     selectedResult.scene_stored=!liveScene || (nativeMode && !selectedResult.directScene);
     return selectedResult;
     } catch(error){
+      const cancelled = error?.name === "AbortError" || signal?.aborted;
+      const reason = cancelled ? "raw_development_cancelled"
+        : error.unsupportedSource ? "unsupported_raw_source"
+        : error.gpuInvalidPixels ? "gpu_validation_error"
+        : error.gpuMemory || error.needsMemory ? "gpu_budget_exceeded"
+        : error.yieldRaw || error.libraryRequeue ? "gpu_preempted"
+        : error.gpuUnavailable ? "raw_gpu_unavailable" : "raw_development_failed";
+      diagnostics?.event("raw", error.libraryRequeue ? "development_retry" : "development_finished", {
+        route: cancelled ? "refused" : error.libraryRequeue ? "gpu" : error.gpuUnavailable ? "cpu" : "refused",
+        level: cancelled ? "info" : "warn", reason, photo, requested_edge_px: edge,
+        duration_ms: Math.round(performance.now() - begun),
+      }, action);
       // CPU fallback must never wait on this attempt's own source claim.
       if(error.gpuUnavailable && sourceJob){
         if(sharedJob)sharedJob.source=null;
@@ -1469,12 +1653,12 @@
   }
   const rawBudget = (meta,edges=[640,2560]) => {
     if(meta.dng_warp)return dngBudget(meta,edges);
-    // Ordinary Bayer peaks at three demosaic buffers plus three colour
-    // planes (24 bytes/photosite); the later lens pass also holds six planes.
+    // Signed green candidates take eight bytes/photosite rather than four.
+    // Account for the extra scratch within the unchanged scheduler budgets.
     // RGB holds its input and three planes. Keep additional headroom for
     // samples, reductions and readback; complex graphs retain their estimate.
     const complex=meta.repairs?.length || meta.dng_linear || meta.raw_import_settings?.highlight_reconstruction?.method === "edge_colour_v1" || edges.includes(100000);
-    const perPixel=complex ? 44 : 28;
+    const perPixel=complex ? 48 : 32;
     let estimate=meta.width*meta.height*perPixel+64*1024*1024;
     if(meta.rgb){
       const lanes=meta.colour?.authored_sdr || meta.sdr_reference ? 6 : 3;
@@ -1506,5 +1690,6 @@
   }
   const exported = Object.freeze({ reclaimDecoded:async(needed)=>{let released=0;for(const [key,value] of decodedSources){if(released>=needed)break;released+=value.body.byteLength;await dropDecoded(key);}for(const [key,entry] of directScenes){if(released>=needed)break;released+=entry.bytes;entry.dispose();directScenes.delete(key);}return released;}, checkNativePlanes, nativeBytes:()=>[...directScenes.values()].reduce((n,e)=>n+(e.native?e.bytes:0),0), preflight, cachedDirect, forgetDirect, selectDirect, releaseNative, releaseSource, directBytes, rawBudget, handoffBody, shared:Object.freeze({gpu,preparePipelines,COMMON,TURN,FINISHING,reducedSize,dngFootprint,uploadBuffer,yieldToWindow}), developRaw, thumbnail, enabled, quantile, reducedSize, warmup, liveScene:(path, edge, signal, importance, sceneIdentity, grant, edges) => thumbnail(path, edge, signal, {liveScene:true,nativeMode:edge===100000,importance,sceneIdentity,grant,edges}) });
   root.HDRLibraryGpuRaw = exported;
+  root.HDRMicroGrainAhdSources = microAhdSources;
   root.developRaw = developRaw;
 })(typeof window === "undefined" ? globalThis : window);

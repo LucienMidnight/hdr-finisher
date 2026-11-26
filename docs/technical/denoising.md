@@ -1,5 +1,7 @@
 # Denoising v2: Wavelet Cache Implementation Contract
 
+Start with the [Denoise module PRD](../product/modules/denoise.md) for current behaviour, decisions, trial history and open work.
+
 **Status:** Approved implementation direction. Phases 0 and 1 are accepted on `feature/denoising`. Phase 2 WebGPU analysis/resolve and Phase 3 UI/document integration are implemented and pass the measured correctness, isolation, viewport, and packaged-Electron timing gates described below.
 
 **The Phase 2 memory stop gate is closed, September 20, 2026.** It was open because sections 7 and 10 required an explicit per-device GPU byte budget that this contract did not define and that the browser WebGPU API does not expose. The [Stable Exact Preview sprint](../product/archive/Stable_Exact_Full_Preview_Sprint_PRD_2026-09-19.md) supplied the missing piece in its Phase 2: a user-controllable `maximumGpuMemoryGiB` budget with an `auto` default, an admission planner that enumerates every resource a render would hold and refuses Direct execution that does not fit, and categorized resident/transient/cached/peak diagnostics. The budget is a *configured* one rather than a driver heap reading, which is the honest form of the requirement — the API still does not expose heap usage, and nothing here pretends otherwise.
@@ -8,6 +10,204 @@
 **Decision date:** August 25, 2026.
 **Pipeline baseline:** `95060fa`; see [Image Processing Pipeline](image-processing-pipeline.md).
 **Research archive:** [Denoising Technology Watch — August 2026](denoising-technology-watch-2026.md) is background only and is not an implementation plan.
+
+## November 19, 2026: bounded native zoom and JPEG Ultra HDR delivery
+
+At 100% and higher, tiled Grade Denoise composites the padded visible region
+into a viewport-sized surface. Tile positions and the photo's display size
+still use native coordinates. The renderer releases the old processing-size
+target, source and resolved tiles before allocating the replacement. The
+viewer's swap chain keeps the last submitted picture until the new one copies
+to it. Returning to Fit keeps the native picture in place until the Fit draw.
+
+JPEG Ultra HDR selects the existing strip renderer when the finishing graph
+supports it and a native GPU job will exceed the current whole-app budget.
+The CPU uses the same Denoise stage and can share that preparation between
+HDR and SDR with identical source and settings. The two finished renditions
+use file-backed arrays under the existing full-size scratch allowance on
+this route. The JPEG writer prepares its codec input in rows. The decoded
+ceiling check reads the native HDR samples in bands and applies the same
+colour conversion and peak test.
+
+## November 19, 2026: experimental grain methods
+
+When Even out harsh specks is enabled, Bayer development now protects small
+lights before signed AHD. Positive residuals above 3.5 local sigma and
+0.005 sensor units in red, green and blue must agree within the same 3×3
+sensor neighborhood. The two-pixel margin around that support restores only
+readings lowered by the clamp. The existing same-phase speck rules and dark
+correction still apply. All three Denoise methods receive the protected source.
+
+`DenoiseLiveControls.method` selects the reconstruction. Standard retains its
+`adaptive-atrous-v1` model, control mapping, shaders and tile margin. The
+experimental methods share its noise measurement. The backend fits scale and
+offset for the radius-18 brightness gain averages on bands 1 and 2 by reducing
+the retained energy over the frame. The WebGPU resolve reuses its existing
+scratch textures for the two separable box filters. Zero evenness uses the
+Standard accumulation pass.
+
+Clean Grain compares colour against the local light and preserves scene Y.
+The 12-pixel Small reach is the default. Large adds a 28-pixel pass. A large
+colour difference that persists in a surrounding direction gets less cleanup.
+The wide pass pulls less colour around bright features and in structured
+areas. A separate five-pixel median residual keeps a narrow bright-fringe
+correction. Dark Specks and its patch search have been removed.
+
+Clean Grain prepares native geometry-fixed pixels once per
+decoded source, rendition and preparation recipe. The first request uses
+the native noise model. Zoom and pan request regions of the same result.
+Fit regions use the usual Lanczos filter and local range limit. The screen
+draw applies the stored correction strength on the GPU. During an Amount
+or other base-setting drag, wavelet feedback remains available until the
+new preparation commits on release. Color Splotches updates the prepared
+colour blend live when **Clean color splotches** is on. **Clean edge fringes**
+has its own saved switch and applies its correction independently of splotch
+strength. With both switches off and zero evenness, Clean Grain uses the
+Simple reconstruction.
+
+The temporary result holds float32 RGB with the fringe correction applied
+and two float16 opponent corrections for the splotch blend, packed into
+16 bytes per pixel. It is reserved under the existing full-size
+disk allowance before preparation starts. Grade checks physical free space
+and, if the allowance is short, evicts only as many oldest disposable
+full-size previews as it needs. Eviction and reservation share the ledger's
+publication transaction. Protected previews, the open photo's detail scene
+and active scratch are excluded. The backend records the reservation decision
+and Grade shows which storage limit refused it. Reads and writes use bounded
+regions. Grade retains the original for bypass and Show noise. Closing,
+source replacement and preparation replacement release the reservation.
+Startup reclaims abandoned scratch. Cached GPU regions still use the
+existing Denoise tile allowance.
+
+Toggling colour cleaning replaces the preparation and reuses the brightness
+fit when its inputs match. Source, geometry, noise model, Recalculate and
+the settings that affect brightness are part of the fit identity.
+Small applies its 12-pixel splotch correction to the original normalised
+chroma. Large applies its 28-pixel pass after Small and any fringe correction.
+Both suppress corrections near a coherent colour boundary. The edge check
+compares opposing samples across the edge and repeats the comparison
+five pixels in either direction along it. It checks that the nearer pair
+captures enough of the colour transition to distinguish an edge from a
+gradual colour change. Small and Large keep their native margins. Fringe-only
+uses a smaller margin. Micro Grain still uses its original combined colour
+recipe.
+
+In Grade at display-selected magnified zoom, Clean Grain reconstructs at
+native resolution inside the visible region and its padding. The compositor
+applies zoom and pan immediately. The previous sharp region and a
+budgeted recent region fill what they cover, with the prepared full-picture
+layer behind them. The requested viewport governs the coverage check before
+submission. Fit's reduced result survives moderate idle reclaim for the
+current preparation. Critical pressure and reservations can reclaim cached
+regions and the reduced result under the existing GPU allowance.
+
+The GPU brightness fit overlaps one strip upload with the previous strip's
+GPU work and maps the accumulated partials once, then sums in the original
+strip, band and block order. At zero evenness it skips the fit and probes the
+native frame dimensions. Raising evenness prepares the fit before presenting
+that setting. The action log includes fit and reduced cache decisions,
+source fetch and upload, fit waits, GPU render, presentation and refusal
+details.
+
+Grade and Show noise use WebGPU. Proof and export use the same GPU reconstruction
+when admitted and retain the CPU fallback. The experimental CPU delivery filters
+geometry-fixed pixels before grading. HDR limiting is still downstream. Scene
+reference tests use absolute 0.000002 and relative 0.00001 tolerances. Finished
+SDR uses ΔE 2000 and HDR uses ΔE ITP, mean < 1 and p99 < 3. See [round 5](research/denoise-v1-2026-11-16/round5-relative-colour-and-patch.md).
+
+The speed reference is generated by
+[`speed_baseline.py`](../../codebase/tools/denoise_eval/speed_baseline.py).
+The crop arrays use the fixed sensor rectangles and full-frame finishing,
+with a 1000-nit HDR target. Spot scores use the original Fine Grain reference
+to fix the grain threshold at each mark. The real-app
+[`denoise-grain-latency.js`](../../codebase/tests/performance/denoise-grain-latency.js)
+driver records preparation and the last accepted picture at Fit, 100% and
+110%. The backend separates grain fit from the concurrent wavelet, colour,
+packing and scratch writes. Those worker totals overlap. The renderer
+records correction-region reads, texture upload submission and presentation.
+
+## November 17, 2026: informative noise calibration
+
+Steve approved the joint brightness-bin and calibration-block repair from
+[the dark-noise investigation](research/denoise-v1-2026-11-16/dark-noise-strength.md).
+Clipped, featureless highlights must not stand in for quiet shadow noise.
+The shipping algorithm remains `adaptive-atrous-v1`; controls, D1 defaults,
+compact model layout, reconstruction shaders and tail correction are unchanged.
+This is not the separate hot-pixel/remaining-speck cleanup.
+
+CPU and GPU measurement reject a 16×16 calibration block when at least 25%
+of its Immerkaer responses have magnitude at most
+`32 * float32 epsilon * max(abs(scene luminance), 1e-20)`.
+Among eligible blocks they retain the quietest 25% by fine Y-band spread
+(including ties), then take the calibrated 10th percentile per component/band.
+Brightness observations still use positive smoothed luminance, 12 bins between
+the 2nd and 98th percentiles, at least 1,000 positive pixels and 500 pixels per
+bin, the lowest-gradient 30%, and 25th-percentile absolute high-pass response.
+A bin with zero variance or at least 25% exactly zero responses is excluded.
+GPU histogram statistics retain their existing quantile approximation; its
+new zero counters are exact, and its small-filter window boundaries reflect
+like CPU measurement. No full-statistics readback or persistent pixel cache
+is added; existing measurement admission/budgets remain unchanged.
+
+Both hosts fit the same nonnegative subsets of relative/shot/read variance
+after scaling brightness by its maximum and variance by its median. Relative
+residual weights use sqrt(pixel count) / max(scaled variance, 0.02); the read
+term retains the 2%-of-minimum-informative-variance floor. New thresholds are
+owned by CPU `CALIBRATION_RULES` and sent in the measurement description.
+Subsets are tried as c, a, b, ca, cb, ab, cab; residual improvements at most
+1e-12 in scaled weighted units retain the first subset. This resolves
+underidentified/repeated-brightness fits consistently without accepting a
+looser CPU/host agreement test.
+If no informative brightness bin or fewer than eight informative blocks
+remain, **both** shape and band selection fall back to the previous estimator;
+there is no recursive retry or mix of repaired shape and censored calibration.
+`adaptive-measure-informative-v4` invalidates CPU model and managed GPU/source
+measurement caches without changing saved sliders or the returned model layout.
+
+Result-based fast regressions cover signed and positive flame reproductions,
+ordinary-photo model stability (0.1% relative), exact legacy fallback on clean
+flats/fewer than eight blocks, cache invalidation, and CPU/GPU-host fit and
+selection (1e-6 relative, 1e-12 absolute for zero coefficients). Synthetic
+shadow-only versus flame-context predicted finest-band sigma allows 10% for
+different finite sample counts; this is not a relaxed finished-image limit.
+Existing research tests now expect shipping output to match the approved
+adapter rather than to denoise less than it. No existing tolerance is loosened.
+
+**Combined validation repair, November 17:** the GPU histogram now preserves
+exact brightness quantiles when all values in the selected bucket are equal.
+Its former within-bucket interpolation moved a clipped plateau boundary upward,
+mixed plateau and shadow observations, then rejected the whole bin. The existing
+13 boundaries are refined through compact min/max reductions in the same
+histogram; bin count, measurement allowance, CPU estimator, filter and tolerances
+are unchanged. Revision v4 invalidates models made with the faulty boundary.
+The existing driver's `--synthetic-only` mode exercises its same three generated
+cases without the unrelated missing EXR dependency; it skips the real corpus
+and 42 MP timing and is explicitly partial coverage. All 12 finished comparisons
+and exact finished HDR caps pass; the formerly failing bright-flame HDR tail at
+Amount 0.85 falls from 5.319 to 0.226 (limit <3). The full corpus remains blocked
+by the missing noise-free EXR.
+
+**GPU validation pending:** do not infer parity from the unchanged resolve
+shaders. Include `gpu-denoise-measurement.js` (now also generates clipped flame,
+signed flame and noiseless-plateau cases), `denoise-adaptive-parity.js`, and
+`gpu-delivery-smoke.js` (GPU/CPU Denoise export and shared full-size Proof)
+in Steve's combined approved slow run
+with signed RAW development and the hot-pixel checkbox. Finished SDR ΔE2000
+and HDR ΔE ITP remain mean <1, p99 <3, with the exact unencoded HDR ceiling.
+The delivery smoke's opt-in fixture includes noise and a clipped plateau at 192×128,
+so informative calibration is exercised rather than the small-image fallback;
+the 72×48 delivery/Proof size and every comparison limit remain unchanged.
+Other callers retain the original 96×64 fixture.
+
+## November 17, 2026: approved shipping defaults (D1)
+
+For `adaptive-atrous-v1`, Amount and Color Noise start at 0.75; Detail
+Recovery, Luminance and the four noise-size controls start at 0.5. Denoise
+still starts disabled in both lanes. New documents/photos, the Default preset,
+group reset, slider double-click reset and CPU/GPU fallback controls agree.
+Saved grades and user presets retain their explicit values, with no migration.
+This changes starting controls only; the algorithm and all tolerances stay fixed.
+See [decision D1](briefs/denoise-v1-quality-trial-2026-11-16.md#7-open-questions-for-steve-collected-asked-together).
 
 ## October 26, 2026: GPU noise measurement
 

@@ -42,11 +42,12 @@ def _raw_metadata(**updates: object) -> dict[str, object]:
             [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0], [0.0, 0.0, 0.0]],
             dtype=np.float32,
         ),
-        "sizes": SimpleNamespace(width=3, height=2, raw_width=3, raw_height=2),
+        "sizes": SimpleNamespace(width=4, height=4, raw_width=4, raw_height=4, flip=0),
         "lens": None,
         "other": None,
     }
     values.update(updates)
+    values["raw_colors_visible"] = np.tile(values["raw_pattern"], (2, 2))
     return values
 
 
@@ -82,7 +83,7 @@ def _install_rawpy(
 
     class FakeRaw:
         def __init__(self) -> None:
-            self.raw_image_visible = np.full((4, 4), 100, dtype=np.uint16)
+            self.raw_image_visible = np.full((4, 4), int(transport.flat[0]), dtype=np.uint16)
 
         def __enter__(self):
             return self
@@ -153,13 +154,10 @@ def test_decode_raw_is_only_the_ordered_phase_coordinator(
     assert actual_metadata is metadata
 
 
-def test_bridge_uses_exact_neutral_libraw_contract_and_records_transport(
+def test_bridge_develops_below_black_samples_and_records_signed_transport(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    transport = np.asarray(
-        [[[0, 1000, 65535], [500, 250, 125], [1000, 500, 250]]] * 2,
-        dtype=np.uint16,
-    )
+    transport = np.full((4, 4, 3), 80, dtype=np.uint16)
     calls, _ = _install_rawpy(monkeypatch, transport)
     path = tmp_path / "ordinary.cr2"
     path.write_bytes(b"synthetic")
@@ -168,28 +166,20 @@ def test_bridge_uses_exact_neutral_libraw_contract_and_records_transport(
         path, RawImportSettings(lens=LensCorrectionSettings(mode="off"))
     )
 
-    assert calls == {
-        "demosaic_algorithm": "AHD",
-        "use_camera_wb": False,
-        "use_auto_wb": False,
-        "user_wb": [1.0, 1.0, 1.0, 1.0],
-        "no_auto_bright": True,
-        "no_auto_scale": True,
-        "output_color": "raw",
-        "gamma": (1.0, 1.0),
-        "output_bps": 16,
-        "highlight_mode": "Clip",
-    }
+    assert calls == {}
+    assert np.all(image < 0)
+    assert np.isfinite(image).all()
     assert image.dtype == np.float32
     assert image.flags.c_contiguous
     development = metadata["raw_development"]
     assert development["pipeline"] == CAMERA_LINEAR_PIPELINE
     assert metadata["raw_pipeline"] == CAMERA_LINEAR_PIPELINE
-    assert development["transport_exact_65535_count"] == [0, 0, 2]
+    assert development["transport_exact_65535_count"] == [0, 0, 0]
+    assert development["transport_channel_maximum"] == [-20, -20, -20]
     assert development["black_subtracted_exactly_once"] is True
     assert development["highlight_reconstruction"]["enabled"] is True
     assert development["highlight_reconstruction"]["applied"] is True
-    assert metadata["bit_depth"] == "16-bit LibRaw camera-RGB transport; float32 color development"
+    assert metadata["bit_depth"] == "signed float32 camera-RGB development"
 
 
 def test_opposed_color_reconstruction_repairs_clipped_green_before_ahd() -> None:
@@ -379,7 +369,7 @@ def test_route_selection_depends_on_metadata_not_transport_content(
             path, RawImportSettings(lens=LensCorrectionSettings(mode="off"))
         )
         pipelines.append(metadata["raw_development"]["pipeline"])
-        assert calls["output_color"] == "raw"
+        assert calls == {}
     assert pipelines == [CAMERA_LINEAR_PIPELINE, CAMERA_LINEAR_PIPELINE]
 
 

@@ -6,7 +6,7 @@ const source = frontendSource('webgpu-preview.js');
 const begin = source.indexOf('      let encodeError = null;', source.indexOf('async encodeTiledGeneration'));
 const end = source.indexOf('      if (validationError) {', begin);
 
-function encoding({ cancelled = false, throws = false } = {}) {
+function encoding({ cancelled = false, throws = false, patchCoversViewport = null, microBand = false } = {}) {
   let scopes = 0, released = 0, freed = 0, submissions = 0;
   const dropped = [];
   const renderer = {
@@ -22,10 +22,14 @@ function encoding({ cancelled = false, throws = false } = {}) {
   const peakTarget = { busy: true };
   const context = vm.createContext({ renderer, cancelled, peakTarget,
     floatPeak:false, floatPeakRead:null,
-    lane: 'hdr', longEdge: 1600, options: {}, measureOnly: true, regionOnly: false,
-    presentation: { release: () => released++ }, presentationTarget: null,
+    lane: 'hdr', longEdge: 1600, options: { coversViewport: () => patchCoversViewport },
+    measureOnly: true, regionOnly: false, pictureRegion: patchCoversViewport === null ? null : {},
+    canvas: {}, proxy: { width: 1600, height: 1200 }, isCurrent: () => true,
+    presentation: { current: () => true, release: () => released++ }, presentationTarget: null,
     localBuffers: [{ buffer: { destroy: () => freed++ } }],
     denoiseParamBuffers: [{ destroy: () => freed++ }],
+    cleanGrainTransientTextures: cancelled || throws ? [{ destroy: () => freed++ }] : [],
+    microBandSources: new Map(microBand ? [[0, { texture: { destroy: () => freed++ } }]] : []),
     denoiseTilesUnsubmitted: ['unwritten'], denoiseTilesCreated: ['unwritten'], denoiseTilesUsed: [],
     denoiseTileKey: () => null, denoiseSource: null, denoiseControls: {}, noiseView: false,
     detailResultView: {}, clarityFrame: null, plan: { tiles: [] }, foregroundTiles: [],
@@ -37,7 +41,7 @@ function encoding({ cancelled = false, throws = false } = {}) {
 test('Cancellation closes validation scope, releases peak target and temporary buffers', async () => {
   const f = encoding({ cancelled: true });
   assert.equal((await f.run).rendered, false);
-  assert.deepEqual(f.counts(), { scopes: 0, released: 1, freed: 2, submissions: 0 });
+  assert.deepEqual(f.counts(), { scopes: 0, released: 1, freed: 3, submissions: 0 });
   assert.equal(f.peakTarget.busy, false);
   assert.deepEqual(f.dropped, ['unwritten']);
 });
@@ -45,7 +49,7 @@ test('Cancellation closes validation scope, releases peak target and temporary b
 test('An encoder exception receives the same cleanup and still propagates', async () => {
   const f = encoding({ throws: true });
   await assert.rejects(f.run, /encode failure/);
-  assert.deepEqual(f.counts(), { scopes: 0, released: 1, freed: 2, submissions: 0 });
+  assert.deepEqual(f.counts(), { scopes: 0, released: 1, freed: 3, submissions: 0 });
   assert.equal(f.peakTarget.busy, false);
   assert.deepEqual(f.dropped, ['unwritten']);
 });
@@ -58,8 +62,19 @@ test('Success balances the scope and keeps the peak reserved for readback', asyn
   assert.deepEqual(f.dropped, []);
 });
 
+test('A native patch left behind by a pan does not submit a replacement picture', async () => {
+  const f = encoding({ patchCoversViewport: false, microBand: true });
+  assert.equal((await f.run).rendered, false);
+  assert.equal(f.counts().submissions, 0);
+  assert.equal(f.counts().scopes, 0);
+  assert.equal(f.counts().freed, 3);
+  assert.equal(f.peakTarget.busy, false);
+});
+
 const trimStart = source.indexOf('    scheduleTileCacheTrim()');
 const trimEnd = source.indexOf('    /** Encode', trimStart);
+const countStart = source.indexOf('    get resourceRenderCount()');
+const countEnd = source.indexOf('    destroyAfterActiveRenders(', countStart);
 test('Cache trim waits for submitted work and overlapping active renders', async () => {
   let drain, release, trimmed = 0;
   const Preview = vm.runInNewContext(`(class { ${source.slice(trimStart, trimEnd)} })`);
@@ -75,8 +90,9 @@ test('Cache trim waits for submitted work and overlapping active renders', async
 test('A render starting during queue drain requires another lifetime wait and drain', async () => {
   let trimmed = 0;
   const releases = [], drains = [];
-  const Preview = vm.runInNewContext(`(class { ${source.slice(trimStart, trimEnd)} })`);
+  const Preview = vm.runInNewContext(`(class { ${source.slice(countStart, countEnd)} ${source.slice(trimStart, trimEnd)} })`);
   const preview = new Preview();
+  preview.activeRenderCount = 0;
   preview.device = { queue: { onSubmittedWorkDone: () => new Promise(resolve => drains.push(resolve)) } };
   preview.destroyAfterActiveRenders = callback => releases.push(callback);
   preview.trimDetailBandTiles = preview.trimMaskTiles = preview.trimDenoiseTiles = () => trimmed++;

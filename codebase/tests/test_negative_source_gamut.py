@@ -48,7 +48,7 @@ def test_linear_conversion_keeps_signed_values_until_shared_boundary():
 
 
 @pytest.mark.parametrize("route", ["raw", "linear-dng", "ultrahdr"])
-def test_decoder_normalized_routes_map_before_analysis(monkeypatch, route):
+def test_raw_keeps_signed_scene_while_codec_routes_keep_their_projection(monkeypatch, route):
     signed = np.array([[[-.08, .2, .3]]], dtype=np.float32)
     metadata = {"color_space": "ACEScg", "transfer_function": "LINEAR",
                 "decoder_normalized_to_acescg": True, "raw_input": route == "raw"}
@@ -74,7 +74,7 @@ def test_decoder_normalized_routes_map_before_analysis(monkeypatch, route):
     actual, _, _, _, sdr = loader.load_image(path)
     expected = np.asarray([[[0., .22105263, .3]]], dtype=np.float32)
     if route == "raw":
-        expected *= np.float32(2 ** -.8)
+        expected = signed * np.float32(2 ** -.8)
     np.testing.assert_allclose(actual, expected, rtol=1e-7)
     np.testing.assert_array_equal(seen[0], actual)
     if route == "ultrahdr":

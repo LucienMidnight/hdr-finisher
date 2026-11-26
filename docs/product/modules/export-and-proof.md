@@ -1,3 +1,173 @@
+## November 23 — Faster CPU Clean Grain AVIF export, real progress, quiet trims
+
+Steve's November 22 Windows batch export (one Canon CR3 cropped to
+4182 × 6273, AVIF Gain Map, 1920 px long edge, frame, the Santorini recipe in
+`codebase/tests/fixtures/export-speed/`) took 175 s with the bar at 0% until
+done. Re-measured and fixed on the MacBook Neo with the same recipe on the
+Sony `_DSC7970.ARW` (Profile A) and Clean Grain Small at native size
+(Profile B, the bounded strip path). Every exported file stayed
+byte-identical to the app before the change.
+
+- **Stage timing.** Each export logs one `export_timing` record: exclusive
+  time per lane and stage, the exporter's `timings_ms` and the unattributed
+  rest (0.1–0.5%). [Logging](../../technical/logging.md#export-stage-timing)
+- **Speed.** Film Grain renders on up to six CPU workers into one frame; the
+  SDR lane reuses the HDR lane's geometry and brush mask when both share
+  Clean Grain; the halation map is built only when shown; Detail and
+  halation blurs and Y4M bands use all cores. Profile A 148–157 s →
+  100–106 s; Profile B 30–34 s → 27–28.5 s.
+  [Measurements](../../technical/performance-table.md#november-22-2026--macbook-neo-cpu-avif-export-with-clean-grain)
+- **Progress.** The bar follows the export's own stages (Developing RAW,
+  Denoising, Rendering HDR, Rendering SDR, Encoding, Finishing), weighted by
+  measured stage costs, never goes back and shows the time left. The batch
+  meter, per-photo meter, status bar, Library Activity and single-photo
+  export all use it.
+- **Memory trims.** After a cache trim frees nothing, the desktop stops
+  repeating trims and renderer collections until caches or Grade grow, the
+  OS pressure level changes or pressure rises; Grade skips a Grain reclaim
+  that found nothing until it holds more. Trims with no OS pressure are
+  logged as `budget_pressure`.
+- **Wording.** A Clean Grain CPU export now says "Exported on the CPU.
+  Graphics-card export for Clean Grain is still being tested." The log
+  keeps `cpu_delivery_policy`.
+
+**Export-memory Step 0A (built).** The batch default is one
+photo worker below 16 GiB or when RAM is unknown, and three from 16 GiB.
+`HDR_FINISHER_BATCH_PARALLEL` still overrides it. Film Grain budgets the
+smaller of two float32 frames and 192 MiB for parallel scratch, with at
+least one chunk. JPEG XL releases shared masks before encoding. The progress
+bar follows the actual HDR and SDR renditions and the JPEG XL encoding stage.
+
+**Export-memory Step 1 (built).** CPU Tone and Color, Global HSL,
+vignette and output sharpen process rows without changing pixels. Film Grain
+feeds Film Stock in the original stock-sized batches rather than keeping a
+whole-image density map. Both Sony AVIF profiles match their golden hashes.
+At Step 1, Profile A's peak was still above the worker target. Steps 2–5
+added source spilling and verified the recipe with Grade open.
+[Step 1 measurements](../../technical/performance-table.md#november-23-2026--macbook-neo-whole-frame-export-memory-step-1).
+
+**Export-memory Step 2 (built).** The batch worker spills large
+sources to read-only scratch files and drops them before encoding the final
+version. Grade keeps its open image. EXR and eligible TIFF sources are decoded in
+bands or tiles. AVIF, Ultra HDR JPEG and JPEG XL encode from finished frames on
+disk; staged large SDR JPEG and PNG validation checks the expected pixel count
+without changing Pillow's global limit. On the Neo, Profile A AVIF's worker fell
+below 0.1 GB during encoding and the 192 MP TIFF exported. The checked baseline
+files matched their hashes, but elapsed times missed the 5% gate. The follow-up
+keeps normal worker allocation for short-lived chunks, maps large EXR, TIFF and
+camera RAW decode buffers outside that allocator, and writes delivery tiles
+through writable scratch maps closed before reading. The timing and worker RAM
+checks for this follow-up, Windows, and the remaining large-source formats are
+not yet qualified.
+[Step 2 measurements](../../technical/performance-table.md#november-23-2026--macbook-neo-file-backed-export-memory-step-2).
+
+**Export-memory Steps 3–5 (MacBook Neo verified).** The staged disk-backed CPU
+route covers geometry (channel-by-channel exact Pillow roll/perspective),
+disk-backed spatial masks, Detail (Texture, Clarity, Sharpen), Local Adjustments,
+Lens Filter, Film Resolution, Halation, fused Film Grain + Stock, Scan Sharpening,
+Look Strength, Image Structure, Vignette, guided B&W, Global HSL, whole-channel
+Lanczos resize, haloed output sharpening, highlight compression, streaming photo
+framing, in-place watermark patching, and linked-SDR HDR-grade reuse. Grade keeps
+large (`>= 256 MiB`) source frames in read-only scratch files and shares its
+immutable original pixels and authored SDR reference with the batch worker by
+hardlink or spill copy when the source and decode recipe match (ignoring Auto
+Lensfun resolved profile/database labels). On the 8 GB MacBook Neo with the same
+photo open in Grade, 42 MP Sony Profile A dropped from 5.04 GB to **1.655 GB**
+(golden SHA-256 exact, 0 trims), 42 MP A-native exported at **3.190 GB** (exact
+SHA-256), 42 MP Max (all stages on) dropped from a 9.963 GB failure to **3.951 GB**
+(exact SHA-256), and 61 MP HDR JPEG XL exported at **3.527 GB**. Headless 100 MP
+exports fit under 4 GB (3.587 GB HDR JXL, 3.577 GB SDR JPEG), and 192 MP SDR JPEG
+dropped from a 7.434 GB failure to 4.089 GB; with a 100 MP photo open in Grade
+with Santorini edits, the batch worker stays at 1.43 GB while Grade's own
+interactive 100 MP preview/mask caches bring the whole app to 4.91–5.27 GB.
+[Steps 3–6 measurements](../../technical/performance-table.md#november-23-2026--macbook-neo-grade-open-sharing--native-encoder-probe-steps-56).
+
+**Export-memory Step 6 (native encoder limits, Steve's decision November 23, 2026).**
+Bundled `avifgainmaputil combine` peaks at 2.47 GB (42 MP), 3.45 GB (61 MP) and
+5.54 GB (100 MP) regardless of `--grid` (`4×2` / `4×4` cuts `avifdec` decode RAM
+up to 9× but leaves `combine` unchanged), and `avifenc -j` leaves libaom RAM flat.
+`ultrahdr_app` enforces an upstream `8192 × 8192` dimension cap. For now, the app
+keeps single-tile AVIF output bytes 100% unchanged and shows a non-blocking
+warning on machines with under 16 GiB RAM when exporting AVIF gain maps above
+50 MP (suggesting resizing or HDR JPEG XL). The Export panel checks the source
+dimensions when Original size is selected. The encoder checks the actual
+output dimensions.
+*Future area to consider:* a custom tiled-grid `libavif` encoder helper (similar
+to `hdrf-avif-decode`) could bring 100 MP AVIF encoding well below 4 GB and cut
+AVIF decode RAM up to 9×, at the cost of changing AVIF outputs to standard ISO
+grid AVIF with full viewer, Proof and HDR-ceiling qualification.
+
+## November 22 — File-backed AVIF delivery and full-size Proof
+
+AVIF delivery stores Grain and finished frames in files owned by the export
+or Proof job. It checks free disk space before allocating a frame and counts
+the existing file's space when overwriting it. The renderer closes its maps
+after use, and the encoder inputs read the files in row bands.
+Native AVIF helpers run with the finished delivery frames on disk. Ceiling
+retries work on a private HDR copy, so Proof keeps the authored frame.
+
+Full-size AVIF and JPEG XL Proof reuse the finished HDR and SDR frames when
+the exporter supplies them. Otherwise Proof renders the endpoints to files.
+Proof converts SDR and calculates tile statistics in 128-row bands. It keeps
+the endpoint files for the two latest full-size artifacts. Full-size AVIF tiles
+are tone-mapped to temporary Y4M, then encoded with one worker and the same
+bitstream settings as the single-step helper. The single-step call still covers
+reduced tiles and systems without avifenc. Reduced AVIF Proof keeps the GPU
+rendition pair until it has built the matrix endpoints.
+[MacBook Neo measurements](../../technical/performance-table.md#november-22-2026--macbook-neo-proof-memory)
+
+## November 22 — Bounded AVIF preparation and peak check
+
+AVIF Gain Map export and Proof prepare SDR and HDR encoder inputs in row bands.
+The encoded ceiling check reads the HDR rendition in bands and keeps the exact
+peak and local correction grid. [MacBook Neo measurements](../../technical/performance-table.md#november-22-2026--macbook-neo-proof-memory)
+
+## November 21 — Share Grain Denoise in CPU delivery
+
+CPU AVIF Gain Map export and non-JPEG Proof reuse one Grain result when
+both renditions use the same source and Denoise controls. An authored SDR
+base or different controls follow the existing independent render paths.
+The reuse ends with the current export or Proof.
+
+The shared payload is bounded by the same one float32 source frame as the
+JPEG sharing path, up to 12 bytes per RGB pixel or 16 bytes per RGBA pixel.
+Proof keeps that frame in temporary storage across encoding and maps it only
+while rendering. The Sony Clean Small AVIF export, full-size Proof and both
+authored Proof endpoints match their previous bytes. The existing native
+AVIF peak is still above 4 GB on this PC measurement.
+[Delivery timings and conditions](../../technical/performance-table.md)
+
+## November 20 — Bounded native JPEG Ultra HDR Proof
+
+The existing exporter renders the grade for delivery. Full-size JPEG Proof
+uses the encoded JPEG to build its display images from the decoded base and
+alternate in 128-row bands.
+It computes the gain range across the entire picture, sends the reconstructed
+bands to the same AVIF encoder and builds one comparison image at a time.
+JPEG ceiling retries apply the original correction grid in bands and can
+reuse a private disk-backed HDR render.
+
+On the MacBook Neo, the six matched Sony/Canon Denoise comparisons peaked
+at 2.11–3.53 GB with full-size Proof, below the 4 GB cap. The
+export, Proof and both comparison images matched byte for byte. The Canon's
+1,000-nit test reached 1,000 nits before encoding and finished at 999.965 nits
+after four encodes. The existing 1% encoded allowance applies. Full conditions
+and times are in the [performance table](../../technical/performance-table.md).
+
+## November 17: signed working input; delivery qualification open
+
+Signed RAW integration removes the incidental RGB floor from shared CPU
+finishing and GPU delivery sharpening/pre-output copies. Final SDR/HDR gamut
+mapping, codec bounds and the exact pre-encode HDR target remain unchanged;
+the 1% allowance applies only to encoded rounding. Proof and export must still
+agree within the existing finished-pixel tolerance, including GPU Proof with
+CPU export fallback. No Denoise algorithm or delivery budget change.
+
+This is not a delivery qualification pass. All applicable real-device,
+framing/finishing, gain-map/codec and ceiling checks remain mandatory. The
+covering slow group exceeds 30 minutes and is stopped pending coordinator/
+Steve approval; the release plan has no usable timing history in this worktree.
+
 ## November 15: W6 Export progress alignment
 
 The progress message, finished count and result rows now use Destination's
@@ -832,8 +1002,26 @@ Settings rules (from v1.2 section 5, still in force):
 | Proof does not need to carry export resize, output sharpening or metadata policy for now. | Steve, 2026-10-01 |
 | Full encoded Proof carries selected export resize, output sharpening and frame inclusion, superseding the older finishing omission. | Photo framing brief, 2026-10-24 |
 | Do not change encoders or gain-map maths without asking. A whole-image dimming correction for the ceiling was rejected (it failed the perceptual limits). | 2026-10-18 |
+| **Proof: keep it simple.** Most users are unlikely to use Proof, so don't build complex code around it or work on its speed now. Fix it only if it is inaccurate or broken. **Export: make processing faster.** Speed up the export processing itself (encoding, ceiling checks, finishing, Denoise), not by reusing Proof results. [Export and Proof breakdown](../../technical/briefs/denoise-export-proof-breakdown-2026-11-20.md) | Steve, 2026-11-20 |
+| **GPU export within memory.** After the identical-output CPU speed-ups, make the GPU export route fit the 4 GB app limit for large photos like the Sony (today it estimates 5.3 GB and is refused), so export can run on the graphics card. [Export speed plan](../../technical/briefs/export-speed-plan-2026-11-20.md) | Steve, 2026-11-20 |
 
 ## 5. Current state (October 18, 2026)
+
+- November 20: The streamed GPU route is on by default only for native-size
+  SDR JPEG with active Clean Grain Large, up to the tested 18.02 MP, with
+  no geometry edits, frame, watermark or output sharpening. The CPU remains available
+  by preference and as fallback. Other streamed JPEG cases remain opt-in;
+  Sony Ultra HDR finished under 4 GB with Fine Grain and Clean Grain Small,
+  but stopped on system memory pressure with Denoise off. Ultra HDR Proof
+  still shares its export path. Encoders and gain-map maths are unchanged.
+  [GPU memory and timing results](../../technical/briefs/gpu-export-memory-2026-11-20.md)
+
+- November 20: CPU JPEG delivery uses a faster exact gain-map filter,
+  reuses the SDR encoder inputs across eligible retries, and checks every
+  decoded HDR sample in bands. Eligible SDR JPEG grades with Denoise use
+  bounded finishing. Canon Clean Grain Large Ultra HDR fell from 48.03 s
+  to 32.70 s with identical bytes. The highest measured after-run peak was
+  3.382 GB across the completed native exports. [Export speed results](../../technical/briefs/export-speed-plan-2026-11-20.md#integrated-result)
 
 **Built**
 
@@ -856,6 +1044,9 @@ Settings rules (from v1.2 section 5, still in force):
   numbered names on collisions, per-file results. Exported and "Edited
   since last export" states feed the Library.
 - Proof: reduced size (1,200 px) or full size, through the export pipeline.
+  Full-size targets build one at a time. For AVIF and JPEG XL, Proof measures
+  the gain range across the photo once and reconstructs a band of rows at a
+  time for statistics and any pixels the tile encoder needs.
 - Highlight Compression's target is mandatory after encoding on every HDR
   export and Proof path. The decoded brightest channel is checked even when
   the source is well below the target. Initial peaks up to 1% above target
@@ -1111,6 +1302,33 @@ No pixel change.
    October 27 status above; macOS/Linux packaging awaits CI execution and
    Steve's on-screen HDR acceptance remains manual.
 4. AVIF gain-map denoise: only if a corpus shows a net benefit.
+5. **Export memory qualification after Steps 0A–6.**
+   Before the memory changes, the 42 MP Sony Profile A export worker peaked
+   at 5.9–6.2 GB on the MacBook Neo. The staged route subsequently peaked
+   at 1.655 GB for the whole app with the same photo open in Grade and
+   matched the golden file's SHA-256. Remaining work includes the timing
+   gate, Windows qualification and the remaining large-source formats.
+   **Scan Sharpening seams fixed November 25.** Basic CPU strips read the
+   neighbouring rows Scan Sharpening needs (up to three per side), inside
+   the existing strip budget. No delivery path is rerouted to a whole-frame
+   grade. A slanted edge crossing strip boundaries matches the whole-frame
+   HDR and SDR results at native and resized output sizes. On the MacBook Neo,
+   a headless 42.4 MP Sony RAW with Scan Sharpening gave byte-identical Ultra
+   HDR JPEG export and full-size Proof at native size and 4000 px, with
+   3.16 GB peak across the backend and encoder helpers (4 GB limit).
+6. **Later options from the November 23 export-speed work** (recorded, not
+   built):
+   - Share Film Grain between HDR and SDR: about 15 s on Profile A, but it can
+     change the exported bytes.
+   - Run the spatial creative stages after resizing to the 1920 px output:
+     most of the remaining wait, but it changes the look. Steve's call.
+   - GPU Grain delivery: Clean Grain is under 10% of this wait (5.7 of about
+     100 s), so it cannot make the whole wait about 50% faster.
+   - Film stock (22 s, already on the CPU pool) and tone and colour (12.5 s,
+     a dozen small steps) are the next largest stages; both need
+     algorithmic work rather than more threads.
+   - Windows trim loop: the desktop guard is shared, but Windows'
+     private-commit headroom during an export needs checking on the PC.
 
 **Ideas (not scheduled)**
 

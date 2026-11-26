@@ -91,22 +91,35 @@ def convolve(image: np.ndarray, kernel: np.ndarray) -> np.ndarray:
     radius = kernel.shape[0]//2
     if radius == 0:
         return image.astype(np.float32, copy=True)
+    output = np.empty_like(image, dtype=np.float32)
+    for region, filtered in _convolved_tiles(image, kernel):
+        output[region] = filtered
+    return output
+
+
+def _convolved_tiles(image, kernel):
+    radius = kernel.shape[0] // 2
     block = 512
+    height, width = image.shape[:2]
+    if radius == 0:
+        for top in range(0, height, block):
+            region = np.s_[top:top + block, :]
+            yield region, image[region].astype(np.float32, copy=False)
+        return
     # Circular overlap is confined to the discarded first 2*radius samples.
     fft_size = 1 << (block+2*radius-1).bit_length()
     spectrum = [np.fft.rfft2(kernel[...,c], s=(fft_size,fft_size)) for c in range(3)]
-    output = np.empty_like(image, dtype=np.float32)
-    height,width = image.shape[:2]
     for y in range(0,height,block):
         for x in range(0,width,block):
             bh,bw = min(block,height-y),min(block,width-x)
             yy = np.clip(np.arange(y-radius,y+bh+radius),0,height-1)
             xx = np.clip(np.arange(x-radius,x+bw+radius),0,width-1)
             patch = image[yy[:,None],xx[None,:]]
+            output = np.empty((bh, bw, 3), dtype=np.float32)
             for c in range(3):
                 filtered = np.fft.irfft2(np.fft.rfft2(patch[...,c],s=(fft_size,fft_size))*spectrum[c],s=(fft_size,fft_size))
-                output[y:y+bh,x:x+bw,c] = filtered[2*radius:2*radius+bh,2*radius:2*radius+bw]
-    return output
+                output[..., c] = filtered[2*radius:2*radius+bh,2*radius:2*radius+bw]
+            yield np.s_[y:y+bh, x:x+bw], output
 
 
 def apply_filter(image: np.ndarray, family: str, strength: float, size: float,
@@ -117,3 +130,22 @@ def apply_filter(image: np.ndarray, family: str, strength: float, size: float,
     cap = max(0, int(math.floor(256*min(1.,max(.05,source_pixel_scale)))))
     blurred = convolve(image, psf(family,pixels_per_mm,size,cap))
     return ((np.float32(1)-amount)*image+amount*blurred).astype(np.float32)
+
+
+def apply_filter_to_frame(src_frame, dst_frame, family, strength, size, pixels_per_mm, source_pixel_scale=1.):
+    from .export_timing import tick
+
+    if family == "none":
+        dst_frame.write(src_frame.bands(128))
+        return dst_frame
+    amount = np.float32(scatter_fraction(family, strength))
+    cap = max(0, int(math.floor(256 * min(1., max(.05, source_pixel_scale)))))
+    kernel = psf(family, pixels_per_mm, size, cap)
+    height, width = src_frame.shape[:2]
+    done = 0
+    with src_frame.map("r") as source, dst_frame.map("w+") as output:
+        for region, filtered in _convolved_tiles(source, kernel):
+            output[region] = (np.float32(1) - amount) * source[region] + amount * filtered
+            done += filtered.shape[0] * filtered.shape[1]
+            tick(done, height * width)
+    return dst_frame

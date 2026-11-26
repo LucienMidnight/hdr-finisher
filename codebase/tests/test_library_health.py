@@ -168,6 +168,20 @@ def test_index_failure_retries_and_recovers_beyond_five_failures(tmp_path, monke
     assert "index_failed" in logs and "index_recovered" in logs and "helper system failure" in logs
 
 
+def test_unclipped_edge_colour_is_logged_but_not_listed_as_a_problem(monkeypatch):
+    from collections import deque
+    from hdr_finisher import library_diagnostics
+
+    events = []
+    monkeypatch.setattr(library_diagnostics, "_recent", deque(maxlen=50))
+    monkeypatch.setattr(library_diagnostics, "_sink", events.append)
+    library_diagnostics.log("highlight_edge_colour", reason="no_clipped_pixels")
+    library_diagnostics.log("highlight_edge_colour", reason="device_lost")
+    library_diagnostics.log("other", reason="no_clipped_pixels")
+    assert len(events) == 3
+    assert library_diagnostics.recent() == events[1:]
+
+
 def test_helper_problems_are_forwarded_into_backend_health(tmp_path, capsys):
     from hdr_finisher.library_worker import LibraryWorker
     from hdr_finisher.library_diagnostics import recent

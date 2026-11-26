@@ -10,6 +10,7 @@ import os
 import time
 from pathlib import Path
 from concurrent.futures import CancelledError, ThreadPoolExecutor
+from threading import Event
 from typing import Literal
 from .cpu_budget import logical_cpus
 
@@ -403,7 +404,7 @@ def create_library_router(worker, browser, store=None):
         from .library_documents import LibraryDocuments
         documents = LibraryDocuments(marks)
 
-    from .library_live import LivePictures, quality as live_quality, recipe as live_recipe
+    from .library_live import LivePictures, document_payload, quality as live_quality, recipe as live_recipe
     live = LivePictures(browser.root, marks, documents if store is not None else None)
     if getattr(worker, "watch_native", None):
         worker.watch_native(cache)
@@ -546,7 +547,8 @@ def create_library_router(worker, browser, store=None):
     from .library_pictures import picture_key
     from .library_source_jobs import SourceJobs
     source_foreground = getattr(worker, "foreground_source", lambda token, active: None)
-    source_jobs = SourceJobs(released=lambda token: source_foreground(token, False))
+    source_jobs = SourceJobs(released=lambda token: source_foreground(token, False),
+        reading=getattr(worker, "reading_source", lambda token, active: None))
     live.source_jobs = source_jobs
 
     @router.post("/live-source/{token}")
@@ -566,6 +568,32 @@ def create_library_router(worker, browser, store=None):
         if grades is not None:
             return grades.describe([path]).get(path, {}).get("edited", False)
         return picture_document(path) is not None
+
+    def repair_stamp(path):
+        try:
+            stat = marks._sidecar(Path(path)).stat()
+            return stat.st_mtime_ns, stat.st_ctime_ns, stat.st_size, stat.st_ino
+        except OSError:
+            return None
+
+    def repair_is_current(item, path, snapshot):
+        fresh = repair_stamp(path)
+        if fresh is None:
+            return False
+        if fresh == snapshot["stamp"]:
+            return True
+        try:
+            saved = live.document(item, validated=True)
+        except (ValueError, OSError):
+            return False
+        # The canonical live quality includes enabled recipes in replay order.
+        # The expected source file fingerprint is checked separately by decode.
+        if (saved is None or saved.source.fingerprint_sha256 != snapshot["fingerprint"]
+                or live_quality(document_payload(saved)) != snapshot["quality"]
+                or repair_stamp(path) != fresh):
+            return False
+        snapshot["stamp"] = fresh
+        return True
 
     def detail_memory(path):
         from . import app_memory
@@ -662,9 +690,13 @@ def create_library_router(worker, browser, store=None):
     @picture_errors.guard
     async def live_scene(command: LiveSceneRequest, request: Request):
         requested_at = time.perf_counter()
-        document = await run_in_threadpool(picture_document, command.path)
         path = str(marks.source_path(command.path))
-        source_quality = live_quality(document)
+        stamp = await run_in_threadpool(repair_stamp, path) if command.gpu else None
+        saved = await run_in_threadpool(live.document, command.path, validated=True)
+        document = document_payload(saved)
+        inputs = live_recipe(document, validated=True)
+        source_quality = live_quality(document, inputs=inputs)
+        recipe_ms = (time.perf_counter()-requested_at)*1000
         cached = await run_in_threadpool(live.cache.cached, path, command.edge, source_quality)
         if cached:
             await run_in_threadpool(live.cache.accept_transient, cached)
@@ -697,7 +729,21 @@ def create_library_router(worker, browser, store=None):
                         from . import library_gpu_raw, library_rgb
                         from .library_reduced import Cancelled as library_reduced_cancelled
                         from .models import RawImportSettings, SourceInterpretationOverride
-                        inputs = live_recipe(document)
+
+                        def prepare(function, *args):
+                            def decode():
+                                header, parts = function(*args)
+                                if saved and any(record.enabled for record in saved.repairs):
+                                    from .library_source_jobs import shared_fingerprint
+                                    from .sessions import _sha256_file
+                                    source = Path(path)
+                                    fingerprint = shared_fingerprint(token, source, header["identity"],
+                                        lambda: _sha256_file(source))
+                                    if saved.source.fingerprint_sha256 and saved.source.fingerprint_sha256 != fingerprint:
+                                        raise ValueError("The source photo changed; its saved grade cannot be shown.")
+                                return header, parts
+                            return source_jobs.preparing(token, path, decode)
+
                         try:
                             if Path(path).suffix.lower() in {".jpg", ".jpeg", ".png", ".exr", ".hdr", ".pfm", ".tif", ".tiff", ".jxl", ".avif", ".heic", ".heif"}:
                                 # Stop reading once the photo is no longer wanted: its
@@ -706,7 +752,7 @@ def create_library_router(worker, browser, store=None):
                                 window_grant = command.grant
                                 def unwanted():
                                     return source_jobs.cancelled(token) or bool(window_grant and not scheduler.valid(window_grant, path))
-                                header, parts = await run_in_threadpool(source_jobs.preparing, token, path, library_rgb.decoded, Path(path), inputs, command.edge, unwanted)
+                                header, parts = await run_in_threadpool(prepare, library_rgb.decoded, Path(path), inputs, command.edge, unwanted)
                             elif Path(path).suffix.lower() == ".dng":
                                 from . import library_dng
                                 if SourceInterpretationOverride.model_validate(inputs["interpretation_override"]) != SourceInterpretationOverride():
@@ -715,11 +761,11 @@ def create_library_router(worker, browser, store=None):
                                     return library_dng.decoded(Path(path), inputs,
                                         progress=lambda stage,text: source_jobs.stage(token,stage,text),
                                         cancelled=lambda: source_jobs.cancelled(token), edge=command.edge, max_storage_bytes=command.max_storage_bytes)
-                                header, parts = await run_in_threadpool(source_jobs.preparing, token, path, dng_source)
+                                header, parts = await run_in_threadpool(prepare, dng_source)
                             else:
                                 if SourceInterpretationOverride.model_validate(inputs["interpretation_override"]) != SourceInterpretationOverride():
                                     raise library_gpu_raw.NotEligible("source interpretation uses Grade's CPU development")
-                                header, parts = await run_in_threadpool(source_jobs.preparing, token, path, library_gpu_raw.sensor, Path(path),
+                                header, parts = await run_in_threadpool(prepare, library_gpu_raw.sensor, Path(path),
                                     RawImportSettings.model_validate(inputs["raw_import_settings"]))
                             if inputs.get("repairs") and header.get("dng_warp"):
                                 raise library_gpu_raw.MemoryPending("Tiled DNG repair context exceeds the bounded GPU development route")
@@ -732,11 +778,23 @@ def create_library_router(worker, browser, store=None):
                             return Response(status_code=204, headers={"X-Library-Fallback": str(error)})
                         except library_reduced_cancelled:
                             return Response(status_code=499)
-                        if inputs.get("repairs"):
-                            from .models import RepairRecord
-                            from .retouch_gpu import context_rectangles
-                            header["repairs"] = [dict(id=r.id,rectangles=context_rectangles(r.recipe))
-                                for r in map(RepairRecord.model_validate,inputs["repairs"]) if r.enabled]
+                        if saved and saved.repairs:
+                            from .library_retouch import plan
+                            width, height = header["width"], header["height"]
+                            size = (height, width) if header.get("flip") in {5,6} else (width, height)
+                            plan_at = time.perf_counter()
+                            try:
+                                batches = await run_in_threadpool(plan, saved.repairs, size)
+                            except ValueError as error:
+                                return Response(status_code=204, headers={"X-Library-Fallback": str(error)})
+                            snapshot = dict(stamp=stamp, quality=source_quality,
+                                            fingerprint=saved.source.fingerprint_sha256)
+                            source_jobs.set_retouch(token, file_commands.epoch,
+                                (command.path, path, snapshot, command.grant, size, batches))
+                            header["repairs"] = [[dict(id=r.id, rectangles=rectangles)
+                                for r, rectangles in batch] for batch in batches]
+                            header.setdefault("source_timings_ms", {})["retouch_recipe_ms"] = (
+                                recipe_ms + (time.perf_counter()-plan_at)*1000)
                         source_jobs.check(token, file_commands.epoch)
                         if await request.is_disconnected():
                             raise HTTPException(499, "Library request cancelled.")
@@ -771,28 +829,54 @@ def create_library_router(worker, browser, store=None):
     @router.post("/retouch-packet")
     async def retouch_packet(request: Request):
         from . import library_gpu_raw
-        from .models import RepairRecord
-        from .retouch_gpu import packet, context_rectangles, BoundedSource
-        import numpy as np
-        header, body = await library_gpu_raw.receive_frame(request)
-        owner = source_jobs.check(header['source_job'],file_commands.epoch)
-        path = str(marks.source_path(header['item_path']))
-        document = await run_in_threadpool(live.document,header['item_path'])
-        if owner['path'] != path or owner['quality'] != live_quality(document):
-            raise HTTPException(409,'Repair source changed during development')
-        records = [RepairRecord.model_validate(r) for r in live_recipe(document).get('repairs',[])]
-        record = next((r for r in records if r.id == header['repair'] and r.enabled),None)
-        if record is None:raise HTTPException(409,'Repair changed during development')
-        rectangles = context_rectangles(record.recipe)
-        source = BoundedSource(rectangles,np.frombuffer(body,dtype='<f4'))
+        from .library_retouch import MAX_UPLOAD_BYTES, replay
+        try:
+            header, body = await library_gpu_raw.receive_frame(request, max_bytes=MAX_UPLOAD_BYTES)
+            token = header["source_job"]
+            item, path, snapshot, grant, size, batches = source_jobs.retouch(token, file_commands.epoch)
+            index = header["batch"]
+            if header["item_path"] != item or type(index) is not int or not 0 <= index < len(batches):
+                raise ValueError("Repair batch does not match its source")
+        except (KeyError, ValueError, TypeError, OSError) as error:
+            raise HTTPException(409, str(error)) from error
+
+        def superseded():
+            detail = "Repair source changed during development"
+            log("request_changed", operation=request.url.path, reason=detail,
+                action="work discarded; refresh the picture")
+            return JSONResponse({"detail": detail, "superseded": True}, status_code=409)
+
+        if not await run_in_threadpool(repair_is_current, item, path, snapshot):
+            return superseded()
+        cancelled = Event()
+
+        def checkpoint():
+            if cancelled.is_set() or source_jobs.cancelled(token) or (grant and not scheduler.valid(grant, path)):
+                raise CancelledError("Library repair cancelled")
+
         def build():
-            (meta,values),_ = packet(record.recipe,source,
-                lambda:source_jobs.check(header['source_job'],file_commands.epoch))
-            return library_gpu_raw.frame(meta,values.tobytes())
-        result = await run_in_threadpool(build)
-        source_jobs.check(header['source_job'],file_commands.epoch)
-        log('retouch_route',path=path,repair=record.id,mode=record.recipe.mode,renderer='gpu',consumer='library')
-        return Response(result,media_type='application/octet-stream')
+            checkpoint()
+            metadata, parts = replay(batches[index], size, body, path, checkpoint)
+            source_jobs.check(token, file_commands.epoch)
+            return (metadata, parts) if repair_is_current(item, path, snapshot) else None
+
+        job = asyncio.create_task(run_in_threadpool(build))
+        try:
+            while not job.done():
+                if await request.is_disconnected():
+                    cancelled.set()
+                await asyncio.wait({job}, timeout=.05)
+            result = job.result()
+        except CancelledError:
+            return Response(status_code=499)
+        except (ValueError, OSError) as error:
+            raise HTTPException(409, str(error)) from error
+        finally:
+            cancelled.set()
+        if result is None:
+            return superseded()
+        metadata, parts = result
+        return StreamingResponse(library_gpu_raw.frame_chunks(metadata, *parts), media_type="application/octet-stream")
 
     @router.post("/live-developed")
     async def live_developed(request: Request):
@@ -934,10 +1018,17 @@ def create_library_router(worker, browser, store=None):
 
     memory_pending = None
     memory_completed = None
+    grade_cache_trim = False
+
+    def trim_for_grade():
+        from . import app_memory
+        if app_memory.grade_cache_trim_active(app_memory.grade_bytes_provider()):
+            caps = app_memory.trim_library_shares()
+            worker._send(dict(command="grade-cache-trim", caps=caps))
 
     @router.get("/memory")
-    async def memory_snapshot():
-        nonlocal memory_pending, memory_completed
+    async def memory_snapshot(fresh: bool = False):
+        nonlocal memory_pending, memory_completed, grade_cache_trim
         from .app_memory import snapshot
         # One in-flight census, shared even when the HTTP caller times out.
         # A blocked sample can never build a queue on the one-thread lane.
@@ -951,19 +1042,23 @@ def create_library_router(worker, browser, store=None):
             def sample():
                 started = time.perf_counter()
                 try:
-                    return {**snapshot(cached_only=True), "nativeDetail": [cache.native_memory(), live.cache.native_memory()]}
+                    return {**snapshot(refresh=fresh, cached_only=not fresh),
+                            "nativeDetail": [cache.native_memory(), live.cache.native_memory()]}
                 finally:
                     ended = time.perf_counter()
                     if ended-queued > .25:
                         log("memory_endpoint", wait_ms=(started-queued)*1000, run_ms=(ended-started)*1000)
             memory_pending = asyncio.get_running_loop().run_in_executor(_memory_sampler, sample)
-        if memory_completed is not None:
-            return memory_completed
-        try:
-            memory_completed = await asyncio.wait_for(asyncio.shield(memory_pending), .5)
-            return memory_completed
-        except asyncio.TimeoutError:
-            raise HTTPException(503, "Memory sample still running")
+        if fresh or memory_completed is None:
+            try:
+                memory_completed = await asyncio.wait_for(asyncio.shield(memory_pending), .5)
+            except asyncio.TimeoutError:
+                raise HTTPException(503, "Memory sample still running")
+        active = memory_completed["gradeCacheTrim"]
+        if active and not grade_cache_trim:
+            asyncio.get_running_loop().run_in_executor(_memory_reclaimer, trim_for_grade)
+        grade_cache_trim = active
+        return memory_completed
 
     @router.get("/memory-setting")
     def memory_setting():

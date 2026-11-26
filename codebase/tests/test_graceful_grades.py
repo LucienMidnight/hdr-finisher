@@ -214,7 +214,7 @@ def test_look_notice_dismissal_survives_library_reopen(library):
 def test_damaged_denoise_keeps_other_lane():
     raw=payload({"grade":{"denoise":{"hdr":{"controls":{"amount":99}},"sdr":{"enabled":True,"controls":{"amount":.7}}}}})
     saved=validate_saved(EditDocument,raw)
-    assert saved.denoise.hdr.controls.amount == .5
+    assert saved.denoise.hdr.controls.amount == .75
     assert saved.denoise.sdr.enabled and saved.denoise.sdr.controls.amount == .7
     assert notice(saved)["sections"] == ["HDR Denoise"]
 

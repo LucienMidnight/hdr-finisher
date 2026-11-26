@@ -71,7 +71,7 @@ async function settleViewport(window) {
       await new Promise(resolve => setTimeout(resolve, 50));
       const canvas = document.getElementById("preview-canvas").getBoundingClientRect();
       const key = JSON.stringify([canvas.left, canvas.top, canvas.width, canvas.height]);
-      if (key !== previous || state.gpuDraftInFlight || state.zoomRefinementTimer
+      if (key !== previous || state.gpuDraftInFlight || state.zoomRefinementTimer || state.zoomScopeTimer
         || state.renderCoordinator?.state(state.currentView).inFlight
         || state.renderCoordinator?.state(state.currentView).pending
         || document.getElementById("scope-freshness")?.classList.contains("updating")) quietSince = performance.now();
@@ -112,7 +112,7 @@ async function renderTier(window, longEdge) {
     // A diagnostic tier also starts normal scopes/refinement. Do not sample
     // placement in the middle of the resulting viewer reflow.
     while (state.gpuDraftInFlight || state.renderCoordinator?.state(state.currentView).inFlight
-      || state.renderCoordinator?.state(state.currentView).pending || state.zoomRefinementTimer
+      || state.renderCoordinator?.state(state.currentView).pending || state.zoomRefinementTimer || state.zoomScopeTimer
       || document.getElementById("scope-freshness")?.classList.contains("updating")) {
       await new Promise(resolve => setTimeout(resolve, 25));
       if (performance.now() - detail.presentedAt > 30000) throw new Error("Tier layout did not settle");

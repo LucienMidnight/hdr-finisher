@@ -20,7 +20,7 @@
 // it stays valid however far the CPU and GPU happen to be from each other.
 //
 //   node tests/tiled-cpu-detail-parity.js --url http://127.0.0.1:8000
-//     [--input local-test-media/inputs/<file>] [--tile-sizes 256,512]
+//     [--input local-test-media/inputs/<file>] [--tile-sizes 256,512] [--film-structure]
 
 const fs = require("fs");
 const { importTestPattern } = require("./helpers/import-test-pattern");
@@ -39,6 +39,7 @@ const MAX_SEAM_ELEVATION = 0.5;
 (async () => {
   const url = argument("--url", process.env.HDR_FINISHER_URL || "http://127.0.0.1:8000");
   const input = argument("--input", null);
+  const filmStructure = process.argv.includes("--film-structure");
   const tileSizes = (argument("--tile-sizes", "256,512") || "").split(",").map(Number).filter(Boolean);
 
   const browser = await chromium.launch({
@@ -108,7 +109,7 @@ const MAX_SEAM_ELEVATION = 0.5;
     // document model accepts, because the CPU reference renders the committed
     // document rather than client-side state. `globalEditDirty` is what makes
     // syncGlobalEditState actually persist it.
-    await page.evaluate(async () => {
+    await page.evaluate(async (filmStructure) => {
       state.adjustments.hdr.exposure = 0.6;
       state.adjustments.hdr.contrast = 0.6;
       state.adjustments.hdr.saturation = 0.4;
@@ -116,9 +117,13 @@ const MAX_SEAM_ELEVATION = 0.5;
         texture_amount: 45, clarity_amount: -20, clarity_radius_percent: 1.3,
         sharpen_amount: 60, sharpen_radius_px: 1.2, sharpen_threshold: 15,
       });
+      if (filmStructure) {
+        Object.assign(state.adjustments.hdr.film_look, { film_resolution: 0, grain_film_format: "super8" });
+        Object.assign(state.adjustments.hdr.detail, { softness: 80, microcontrast: -50 });
+      }
       state.globalEditDirty = true;
       await syncGlobalEditState();
-    });
+    }, filmStructure);
     await settle();
 
     const committed = await page.evaluate(() => {
@@ -128,10 +133,12 @@ const MAX_SEAM_ELEVATION = 0.5;
         locals: document.local_adjustments.length,
         localDetail: document.local_adjustments.map((local) => local.hdr_grade.detail.sharpen_amount),
         globalSharpen: detail.sharpen_amount,
+        filmStructure: [document.global_adjustments.hdr.film_look.film_resolution, detail.softness, detail.microcontrast],
         revision: state.editRevision,
       };
     });
-    if (committed.locals !== 2 || !committed.globalSharpen) {
+    if (committed.locals !== 2 || !committed.globalSharpen
+        || (filmStructure && committed.filmStructure.join(",") !== "0,80,-50")) {
       throw new Error(`The document the CPU will render is not the one under test: ${JSON.stringify(committed)}`);
     }
 

@@ -67,8 +67,20 @@ a lookup location for tests; `P0` is
 | `synthetic_24mp.hdr` | 79 | Radiance HDR | P0 |
 | `synthetic_24mp.pfm` | 275 | PFM | P0 |
 | `Projects/DSC00950.hdrfinisher` | 0 | saved project | PR/Fantastic light over village - AdamFromCanada |
+| **Noisy RAW for Denoise research (added November 18, Steve)** | | | |
+| `DSC00512.ARW` | 22 | Sony A7 III ISO 6400, 10.5 MP crop-mode RAW | Steve, Mac Desktop `noisy photos` |
+| `DSC00786.ARW` | 43 | Sony A7R III ISO 12800, 42 MP | Steve, Mac Desktop `noisy photos` |
+| `DSC05622.ARW` | 43 | Sony A7R III ISO 10000, 42 MP | Steve, Mac Desktop `noisy photos` |
+| `PA310516.ORF` | 17 | Olympus E-P5 ISO 3200 | Steve, Mac Desktop `noisy photos` |
+| `PC131157.ORF` | 17 | Olympus E-P5 ISO 10000 | Steve, Mac Desktop `noisy photos` |
+| `DSC05293.ARW` | 43 | Sony A7R III ISO 8000, 42 MP | Steve, Mac Desktop `noisy photos` |
+| `DSC08360.ARW` | 25 | Sony A6300 ISO 1000, 20 s night exposure | Steve, Mac Desktop `noisy photos` |
+| `P7310446.ORF` | 20 | Olympus E-P5 ISO 25600 | Steve, Mac Desktop `noisy photos` |
+| `P7310465.ORF` | 14 | Olympus E-P5 ISO 640, f/1.7 1/5 s low light | Steve, Mac Desktop `noisy photos` |
+| `_DSC7970.ARW` | 86 | Sony A7R III ISO 6400, uncompressed 42 MP | Steve, Mac Desktop `noisy photos` |
 
-Exactly 50 files including sidecars and the project: about 2.4 GiB (2.52 GB).
+Exactly 60 files including sidecars and the project: about 2.7 GiB (2.86 GB).
+The ten noisy RAWs added on November 18 must also be copied to the PC.
 No extra iPhone samples were added. The source column records provenance, not
 paths a test may read.
 
@@ -90,7 +102,7 @@ paths a test may read.
 
 ## On each machine
 
-`codebase/tests/test-photos.manifest.json` lists all 50 files with relative
+`codebase/tests/test-photos.manifest.json` lists all 60 files with relative
 name, bytes and SHA-256, generated from the installed Mac folder. The photo
 folder itself is not in Git. Setup compares names, sizes and hashes and names
 anything missing, different or extra (ignoring `.DS_Store`). From `codebase`,

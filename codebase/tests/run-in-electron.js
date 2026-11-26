@@ -111,6 +111,7 @@ let startupTimer;
   // resets when the crash kills the process). The app is launched with that
   // variable removed so the runner behaves the same in any host shell.
   const launchEnvironment = { ...process.env };
+  if (path.basename(testPath) === "gpu-delivery-smoke.js") launchEnvironment.HDR_FINISHER_GPU_GRAIN_DELIVERY = "1";
   const captureDrivers = ["gpu-delivery-smoke.js", "hsl-selection-delivery.js", "hsl-integration.js",
     "color-desat-delivery.js", "tone-zones-delivery.js", "hue-mask-delivery.js",
     "jpegxl-high-fidelity.js", "photo-framing-delivery.js", "local-sdr-match.js", "gpu-delivery-repeat.js", "export-parity.js"];

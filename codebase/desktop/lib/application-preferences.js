@@ -1,3 +1,5 @@
+const os = require("node:os");
+
 const DEFAULT_APPLICATION_PREFERENCES = Object.freeze({
   schemaVersion: 3,
   theme: "modern-dark",
@@ -31,6 +33,19 @@ function cleanShortcutMap(value) {
   )).slice(0, 1000));
 }
 
+function defaultAppMemoryBytes() {
+  return process.platform === "win32" && process.env.HDR_FINISHER_MEMORY_PROFILE !== "unified-8gb"
+    ? 6_000_000_000 : 4_000_000_000;
+}
+
+function clampAppMemoryBytes(bytes) {
+  if (!Number.isSafeInteger(bytes)) return null;
+  const minimum = defaultAppMemoryBytes();
+  const ram = os.totalmem();
+  const maximum = Math.max(minimum, ram - Math.max(2_000_000_000, Math.floor(ram / 10)));
+  return Math.min(Math.max(minimum, bytes), maximum);
+}
+
 function sanitizeApplicationPreferences(value = {}) {
   const tiers = ["1024", "2048", "4096", "full"];
   const presets = value.shortcutPresets && typeof value.shortcutPresets === "object" && !Array.isArray(value.shortcutPresets)
@@ -56,8 +71,7 @@ function sanitizeApplicationPreferences(value = {}) {
     developedBadge: value.developedBadge === "always" ? "always" : "hover",
     gradeAutosave: value.gradeAutosave !== false,
     navigationWindow: ["auto", "always", "off"].includes(value.navigationWindow) ? value.navigationWindow : "auto",
-    appMemoryBytes: Number.isSafeInteger(value.appMemoryBytes)
-      ? Math.min(Math.max(4_000_000_000, value.appMemoryBytes), Math.max(4_000_000_000, require("node:os").totalmem()-Math.max(2_000_000_000,Math.floor(require("node:os").totalmem()/10)))) : null,
+    appMemoryBytes: clampAppMemoryBytes(value.appMemoryBytes),
     maximumGpuMemoryGiB: (() => {
       if (value.maximumGpuMemoryGiB === "auto") return "auto";
       const numeric = Number(value.maximumGpuMemoryGiB);
@@ -77,4 +91,4 @@ function sanitizeApplicationPreferences(value = {}) {
   };
 }
 
-module.exports = { DEFAULT_APPLICATION_PREFERENCES, sanitizeApplicationPreferences };
+module.exports = { DEFAULT_APPLICATION_PREFERENCES, defaultAppMemoryBytes, sanitizeApplicationPreferences };

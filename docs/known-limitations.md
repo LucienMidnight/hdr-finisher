@@ -1,5 +1,119 @@
 # Known Limitations and Support Status
 
+## November 17: combined signed RAW, noise measurement and hot-pixel validation
+
+MacBook Neo / A18 Pro / 8 GB, unpackaged app, 1408x794, starting `949c8035`.
+All 23 requested drivers used their registered Electron launch under the shared
+GPU lock, serially. Previous combined run: **16 passed, seven incomplete/failed**; both
+90-second Library checks and an additional DJI CPU/GPU DNG comparison pass after
+repairs. The driver inventory and all three protected project hashes are intact.
+No expected pixel/file result, tolerance, limit or budget was relaxed.
+The focused follow-up below corrects that run's attributions; it does not
+repeat the entire 23-driver set.
+
+Repaired app faults: Pixel cleanup diagnostics were stringified, disabling its
+checkbox on supported Bayer RAW (`d0842dc2`); GPU histogram interpolation merged
+a shadow brightness bin with a clipped plateau before rejecting that bin
+(`3027c48f`, measurement revision v4); mandatory-opcode DJI DNG development
+incorrectly required an ordinary LibRaw camera XYZ table (`7f49eb7d`, decoder
+identity v7). Generated measurement cases now pass all 12 finished comparisons;
+the failing HDR Amount 0.85 tail falls from 5.319 to 0.226 against the unchanged
+<3 limit. The DNG repair passes signed/operation tests, 9/9 Library viewport
+pictures, ten Single steps, and DJI CPU/GPU whole/border colour comparisons plus
+59 geometry probes. Two check setups were also repaired: stale disposable
+sidecar isolation (`c73b86c5`) and enabling Highlights for the brighter Denoise
+ceiling fixture (`f3befddd`).
+
+**Follow-up from `c3b7a3ed`, November 17: A7R00619.ARW repaired.** The earlier
+lens-coordinate attribution was incomplete. Direct development with no lens
+correction agrees at P99.9 **0.00597 SDR / 0.01277 HDR**. Geometry alone is
+**0.18886 / 0.69778**; vignetting alone reproduces **3.96135 / 6.92206**.
+Lensfun's CPU colour-modification call clamps negative input to zero, while the
+signed GPU gain preserves it. The signed change removed the earlier incidental
+floor, exposing this remaining CPU-only floor. A sampled real red value
+**-0.001729** becomes **0** despite a positive **2.1565** vignette gain; the
+other channels receive that gain. This is why inspecting only the input to
+the later remap incorrectly found no negative samples.
+
+CPU vignetting (`94cdece6`) applies the unchanged Lensfun gain to magnitudes and restores
+their signs. Packed one-bit signs and 256-row unpacking avoid a second full-size
+float image within the existing working allowance. Decoder v8 / Library picture
+v14 invalidate stale CPU developments. No shader, lens mapping, budget, reserve,
+estimate rule, tolerance or delivery ceiling changes. Finished A7R00619 now
+passes at mean/P99.9 **0.0200/0.1881 SDR**, **0.0634/0.7090 HDR**; all four
+other photos in `library-gpu-raw.js` also pass their unchanged limits. The old
+failure has **1,005 SDR pixels above Delta E 3**, none in the outer ten pixels:
+real foliage/sky detail, not merely borders. Small pre-fix crop and isolation
+receipts: `codebase/output/denoise-v1-followup/a7-lens-crop.png` and
+`direct-comparison.json`, `direct-components.json`, `gain-diagnostic.json` there.
+
+**Memory follow-up: not regressions caused by signed RAW.** The exact pre-signed
+comparison is `7e444686` (first parent of merge `f0530dd1` bringing `8e84c12a`).
+No concurrent GPU job or heavy app was found; the owner's idle app was not
+terminated. macOS pressure stayed normal (level 1), physical availability
+35–75% during the quieter zoom run.
+
+- `denoise-zoomed-region.js`: the first HEAD run refuses **0.28 GiB / 0.00 GiB
+  safely available**. A quieter HEAD run and the pre-signed build both pass
+  Full-reference admission, exact bypass/restore and the <=1-byte region
+  comparison. The small 0.28 GiB charge confirms `703e7e58` native float32
+  borrowing remains active. Both then stall at the same 2-degree straighten:
+  processed long edge **1,291**, required **7,968**, no pending work. Stopped
+  baseline/HEAD after 242/104 seconds, not full driver passes. The initial
+  refusal is transient headroom; the later shared stall remains open.
+- `library-export-live-tiles.js`: both HEAD and pre-signed build complete the
+  first export on CPU, failing the required GPU assertion. This is a real
+  change since its November 14 success, but predates signed RAW: the November
+  16 ordinary-export gate (`005c36104`, then `bcf33691f`) charges **5.332 GB**
+  including the fixed starting footprint for the **7,968 x 5,320** source,
+  against the unchanged **4.000 GB** ceiling. More free machine memory cannot
+  change that arithmetic. No limit/accounting relaxation was made; a genuinely
+  smaller GPU working set would be separate export work.
+
+**Single test setup repaired (`9464839e`); older picture failures exposed.** The shared-photo
+symlink makes the app's canonical paths differ from the worktree paths used by
+the test. The test now resolves paths and waits for the exact pictured cell,
+not a skeleton. This setup issue predates signed RAW. All 18 unchanged picture
+comparisons run and are saved before later UI/detail waits. **14 pass / four
+fail on both HEAD and the pre-signed build**: DSC00264 native HDR mean/P99.9
+**1.5241/13.2945** (baseline **1.5079/12.2576**); DSC06615 screen-2560 HDR
+**0.3992/4.0073** (**0.3988/3.9846**), native HDR **1.3397/18.1279**
+(**1.3357/16.9098**), native SDR **0.7163/4.7713** (**0.7158/4.5534**).
+DSC04375 passes all six. The unchanged A7 repair does not remove these failures;
+their cause is not investigated here. An earlier selector-only run reached
+Single/neighbour drawing but timed out waiting for native detail, consistent
+with the previous detail-admission block. No full Single pass is claimed.
+
+Other incomplete checks, not new app fixes in this group:
+
+- `gpu-denoise-measurement.js`: full corpus still needs the documented noise-free
+  linear EXR >=540x540. Its explicit `--synthetic-only` mode passes the three
+  generated cases and does not claim corpus or 42 MP timing coverage.
+- `denoise-adaptive-parity.js`: documented GPU result readback failure.
+- Zoomed Denoise and RAW Single: see corrected follow-up above; neither is
+  retrospectively classified as a documented November 14 failure.
+- `preview-export-compare`: documented `source_relink_required` for protected
+  DSC00950; the project remains untouched.
+- Live Export tiles: the pre-signed export-admission regression above remains.
+- Follow-up plain-Electron Library smoke: attempted under the lock at the same
+  window size; hard timeout in `observe` (130-second deadline, 188.6 seconds
+  including bounded shutdown). No smoke pass or root-cause attribution claimed.
+
+Compact logs, receipts, before/after generated measurement results and the
+per-driver summary are in `codebase/output/denoise-v1-validation/`; final
+Library reports are there and under `codebase/output/quick-library-check/denoise-v1/`.
+Large renders, temporary profiles and the comparison checkout are removed.
+No push, merge, tag or installer; this group remains unqualified for shipping.
+
+Follow-up logs and compact diagnostics are retained separately in
+`codebase/output/denoise-v1-followup/`; large source arrays and owned temporary
+profiles are removed. The three read-only projects remain unchanged.
+Follow-up final fast checks: **1,103 Node pass / one skip; 4,215 Python pass /
+155 skips / one xpass**, existing warning only. Slow validation took about
+**26 minutes** (23m22s retained real-app invocation windows plus CPU isolation).
+Output at the end is **13.3 GB**, below the 100 GB limit (13.2 GB shared test
+photos). No push; unresolved driver failures still prevent qualification.
+
 ## November 16: encoding fidelity is not renderer agreement
 
 Steve approved the separate checks in the Export/Proof module. Actual finished

@@ -1,9 +1,19 @@
+function clearZoomScopeRefresh() {
+  if (!state.zoomScopeTimer) return;
+  window.clearTimeout(state.zoomScopeTimer);
+  state.zoomScopeTimer = 0;
+  restoreScopeFreshnessIfIdle();
+}
+
 function suspendGradeInstruments() {
+  cancelGeometryUnderlayer();
   state.gradeWorkGeneration = (state.gradeWorkGeneration || 0) + 1;
   state.previewScheduler?.cancel();
   state.cpuPreviewInflight?.clear();
   window.clearTimeout(state.refreshTimer);
   window.clearTimeout(state.settleTimer);
+  clearZoomScopeRefresh();
+  state.zoomRefinementInFlight = null;
   for (const [lane, controller] of Object.entries(state.previewControllers || {})) {
     controller?.abort();
     state.previewControllers[lane] = null;
@@ -11,9 +21,8 @@ function suspendGradeInstruments() {
   state.scopeGeneration += 1;
   state.scopeRequestInFlight?.controller?.abort();
   state.pendingScopeRequest?.resolve(false);
-  state.pendingGpuScopeRequest?.resolve(false);
+  cancelGpuScopeRequests();
   state.pendingScopeRequest = null;
-  state.pendingGpuScopeRequest = null;
   state.scopeAwaitingPresentation = null;
   state.overlayAbortController?.abort();
 }
@@ -27,23 +36,33 @@ function scopeLongEdge(tier) {
   return Math.min(profile.settledEdge, settledProxyLongEdge());
 }
 
-function refreshScopes(longEdge = 960, { tier = "settled", generation = null, lane = state.currentView } = {}) {
+function refreshScopes(longEdge = 960, { tier = "settled", generation = null, lane = state.currentView, retryAuxiliary = true } = {}) {
   if (["import", "export"].includes(state.activeWorkflow) || document.hidden || !state.session || geometryDraftActive()) return Promise.resolve(false);
+  if (state.rawRedevelopGeneration != null && state.rawRedevelopGeneration === state.importGeneration) {
+    return Promise.resolve(false);
+  }
   // Scopes describe the lane on screen. A request left over from the lane just
   // switched away from could only be a whole-picture CPU grade, and its answer
   // is discarded on arrival.
   if (lane !== state.currentView) return Promise.resolve(false);
+  if (state.zoomScopeTimer) {
+    if (tier === "settled") state.scopeAwaitingPresentation = scopePresentationIdentity(lane);
+    return Promise.resolve(false);
+  }
   // A live GPU scope during a drag reads the presented canvas, not the
   // backend's copy, so it does not wait for a save round trip. Waiting put its
   // readback on the GPU beside the next drag frame. The save still runs at
   // release and in the settled pass, and a CPU scope still saves first.
   const liveGpuScope = tier === "interactive" && gpuScopeEligible(lane);
+  if (tier === "interactive" && generation !== null && !liveGpuScope && cpuMicroPreviewSelected(lane)) {
+    return Promise.resolve(false);
+  }
   if (state.globalEditDirty && !liveGpuScope) {
     // A deferred or rejected sync can leave edits dirty. Retrying it in a
     // resolved-Promise loop starves input and grows the heap until V8 OOMs.
     const workGeneration = state.gradeWorkGeneration;
     return syncGlobalEditState().then((applied) => workGeneration === state.gradeWorkGeneration && applied && !state.globalEditDirty
-      ? refreshScopes(longEdge, { tier, generation, lane })
+      ? refreshScopes(longEdge, { tier, generation, lane, retryAuxiliary })
       : false);
   }
   // Scheduler generations and direct refreshes originate in different
@@ -51,6 +70,7 @@ function refreshScopes(longEdge = 960, { tier = "settled", generation = null, la
   // so an older response can never become current again.
   const requestGeneration = Math.max(state.scopeGeneration + 1, generation ?? 0);
   state.scopeGeneration = requestGeneration;
+  cancelGpuScopeRequests();
   const mode = state.scopeMode;
   const resolution = mode === "waveform"
     ? waveformRequestResolution(tier)
@@ -63,6 +83,9 @@ function refreshScopes(longEdge = 960, { tier = "settled", generation = null, la
 
   const request = {
     sessionId: state.session.session_id,
+    presentation: scopePresentationIdentity(lane),
+    importGeneration: state.importGeneration,
+    rawRedevelopGeneration: state.rawRedevelopGeneration,
     lane,
     mode,
     quality: state.scopeQuality,
@@ -70,6 +93,7 @@ function refreshScopes(longEdge = 960, { tier = "settled", generation = null, la
     tier,
     generation: requestGeneration,
     longEdge: effectiveLongEdge,
+    retryAuxiliary,
     resolution,
     maxNits: state.scopeMaxNits,
     edit_revision: state.editRevision,
@@ -78,48 +102,85 @@ function refreshScopes(longEdge = 960, { tier = "settled", generation = null, la
       ? JSON.parse(JSON.stringify(localAdjustments()))
       : null,
     scopeRegion,
+    microGrain: microGrainPreviewRequest(lane),
     resolve: null,
     controller: null,
   };
 
-  if (gpuScopeEligible(lane)) {
-    return enqueueGpuScopeRequest(request);
-  }
-  if (gpuPreviewEligible(lane)
-    && lane === state.currentView
-    && (!state.acceptedPresentation || els.previewCanvas.style.display !== "none")
+  const useGpu = gpuScopeEligible(lane);
+  // Before the first picture, a GPU-eligible lane is about to draw on the
+  // canvas: defer its CPU scope instead of building one for a frame that
+  // the GPU will replace (November 16).
+  const canvasVisible = !useGpu && (!state.acceptedPresentation || els.previewCanvas.style.display !== "none");
+  const imageVisible = !useGpu && els.previewImage && els.previewImage.style.display !== "none";
+  if (!useGpu && !scopePresentationMatches(state.acceptedPresentation, lane)
+    && ((canvasVisible && (gpuPreviewEligible(lane) || state.acceptedPresentation?.execution === "cpu-viewport"))
+      || (cpuMicroPreviewSelected(lane) && (canvasVisible || imageVisible)))
     && !state.comparePeekActive
     && state.activeWorkflow !== "proof") {
-    // The grading render owns source identity. Never analyze the previous
-    // WebGPU texture under a newer edit generation; retain the last valid scope
-    // with Updating until the matching preview has actually been presented.
-    state.scopeAwaitingPresentation = { sessionId: request.sessionId, lane };
+    // The grading render owns source identity. Keep the last scope until the
+    // matching picture arrives; a scheduler gesture already owns its settle.
+    if (tier === "interactive" && generation !== null) return Promise.resolve(false);
+    state.scopeAwaitingPresentation = request.presentation;
     markScopeUpdating();
     return Promise.resolve(false);
   }
 
+  const pending = state.scopeAwaitingPresentation;
+  if (tier === "settled" && pending?.sessionId === request.sessionId && pending.lane === lane) {
+    state.scopeAwaitingPresentation = null;
+  }
+  if (useGpu) return enqueueGpuScopeRequest(request);
   return new Promise((resolve) => {
     enqueueScopeRequest({ ...request, resolve });
   });
 }
 
+function scopePresentationIdentity(lane) {
+  const settings = state.denoise?.[lane];
+  return {
+    sessionId: state.session?.session_id,
+    lane,
+    generation: state.previewGeneration[lane],
+    geometrySignature: geometrySignature(),
+    gradeSourceIdentity: gradeSourceIdentity(lane),
+    denoiseEnabled: Boolean(settings?.enabled),
+    denoiseMethod: settings?.enabled ? settings.controls?.method : undefined,
+    denoiseOriginal: Boolean(settings?.enabled && state.denoiseRuntime?.[lane]?.showOriginal),
+    microKey: settings?.enabled ? microGrainPreviewKey(lane) : null,
+    repairSourceGeneration: state.repairSourceGeneration || 0,
+    rawSettingsKey: JSON.stringify(state.editDocument?.source?.raw_import_settings ?? null),
+  };
+}
+
+function scopePresentationMatches(presentation, lane) {
+  const current = scopePresentationIdentity(lane);
+  return Boolean(current.sessionId && lane === state.currentView && presentation
+    && Object.keys(current).every((key) => presentation[key] === current[key]));
+}
+
+function wholeScopePresentation(presentation) {
+  return Boolean(presentation && presentation.execution !== "cpu-viewport"
+    && !presentation.approximate && !presentation.coarse);
+}
+
+function scopeWaitingForWholePicture(lane) {
+  const accepted = state.acceptedPresentation;
+  return scopePresentationMatches(state.scopeUnavailable, lane) && wholeScopePresentation(accepted)
+    && accepted !== state.scopeUnavailable.accepted;
+}
+
 function refreshScopesAfterPresentation(lane) {
-  const pending = state.scopeAwaitingPresentation;
-  if (!pending || pending.lane !== lane || !gpuScopeEligible(lane)) return;
-  state.scopeAwaitingPresentation = null;
-  if (pending.sessionId === state.session?.session_id) {
-    void refreshScopes(scopeLongEdge("settled"), { tier: "settled", lane });
-  }
+  if (state.zoomScopeTimer || !scopePresentationMatches(state.acceptedPresentation, lane)
+    || (!scopePresentationMatches(state.scopeAwaitingPresentation, lane) && !scopeWaitingForWholePicture(lane))) return;
+  void refreshScopes(scopeLongEdge("settled"), { tier: "settled", lane });
 }
 
 function gpuScopeEligible(lane) {
   return Boolean(
     state.gpuPreview?.available
-    && lane === state.currentView
-    && state.acceptedPresentation?.lane === lane
+    && scopePresentationMatches(state.acceptedPresentation, lane)
     && state.acceptedPresentation?.transport === "WebGPU"
-    && state.acceptedPresentation?.generation === state.previewGeneration[lane]
-    && state.acceptedPresentation?.geometrySignature === geometrySignature()
     && Number.isInteger(state.acceptedPresentation?.sourceSerial)
     && els.previewCanvas.style.display !== "none"
     && !state.comparePeekActive
@@ -127,9 +188,19 @@ function gpuScopeEligible(lane) {
   );
 }
 
+function auxiliaryGpuCancelled(error) {
+  return error?.name === "AbortError" || error?.superseded || error?.cancelled;
+}
+
+function auxiliaryGpuRefusalCancelled(renderer, previousRefusal) {
+  const refusal = renderer.lastRenderRefusal;
+  return refusal !== previousRefusal
+    && /superseded|cancelled|newer-render-started|application-not-current/.test(refusal?.reason ?? "");
+}
+
 async function runGpuScopeRequest(request) {
   const { lane, mode, tier, generation, resolution, maxNits, scopeRegion } = request;
-  markScopeUpdating();
+  const signal = request.controller?.signal;
   const widthLimit = tier === "interactive"
     ? state.scopeQuality === "performance" ? 192 : state.scopeQuality === "reference" ? 384 : 320
     : state.scopeQuality === "performance" ? 384 : state.scopeQuality === "reference" ? 768 : 640;
@@ -145,75 +216,101 @@ async function runGpuScopeRequest(request) {
     return false;
   }
   const accepted = state.acceptedPresentation;
-  const isCurrent = () => state.acceptedPresentation?.lane === lane
-    && state.acceptedPresentation?.generation === accepted?.generation
-    && state.acceptedPresentation?.geometrySignature === accepted?.geometrySignature
-    && (accepted?.execution === "tiled" || state.acceptedPresentation?.sourceSerial === accepted?.sourceSerial)
+  const isCurrent = () => !signal?.aborted && !document.hidden
+    && !["import", "export", "proof"].includes(state.activeWorkflow) && !geometryDraftActive()
+    && scopePresentationMatches(request.presentation, lane)
+    && state.acceptedPresentation === accepted && scopePresentationMatches(accepted, lane)
+    && request.importGeneration === state.importGeneration
+    && request.rawRedevelopGeneration === state.rawRedevelopGeneration
     && accepted?.generation === state.previewGeneration[lane]
     && generation === state.scopeGeneration
+    && !state.zoomScopeTimer
     && request.sessionId === state.session?.session_id
     && lane === state.currentView && mode === state.scopeMode;
+  if (!isCurrent()) return false;
+  markScopeUpdating();
+  const reschedule = () => {
+    if (!isCurrent() || tier === "interactive" || request.retryAuxiliary === false) return false;
+    window.setTimeout(() => {
+      if (isCurrent()) {
+        void refreshScopes(request.longEdge, { tier, lane, retryAuxiliary: false })
+          .catch((error) => console.error("Scope recovery failed", error));
+      }
+    }, 200);
+    return false;
+  };
+  const fallback = async () => {
+    if (!isCurrent() || tier === "interactive" || state.globalEditDirty) return false;
+    // Requeue the same bounded whole-picture request on the CPU. Cancellation
+    // of the GPU request still cancels the fallback, including its peak work.
+    const applied = await new Promise(resolve => enqueueScopeRequest({
+      ...request, edit_revision: state.editRevision, signal, resolve,
+    }));
+    // Micro waits for a matching whole-picture source, not a timer. For
+    // other failures allow one quiet retry and then wait for the next input.
+    if (!applied && !scopePresentationMatches(state.scopeUnavailable, lane)) reschedule();
+    return applied;
+  };
   let scopeCanvas = els.previewCanvas;
   let sourceSerial = accepted?.sourceSerial;
-  if (accepted?.execution === "tiled") {
-    // A tiled canvas retains only the viewport. Its scopes still describe the
-    // entire picture, so grade a bounded proxy on a separate GPU canvas after
-    // settlement. Live input keeps the last scope until its settled request;
-    // it never starts an extra grading graph beside the gesture's tiles.
-    if (tier === "interactive") return false;
-    let sourceSuperseded = false;
-    const renderProxy = async () => {
-      while (isCurrent() && (state.gpuDraftInFlight || state.gpuPreview.activeRenderCount > 0)) {
-        await new Promise((resolve) => window.setTimeout(resolve, 16));
+  let analysis;
+  let analysisRevision;
+  try {
+    if (accepted?.execution === "tiled") {
+      // A tiled canvas retains only the viewport. Grade a bounded GPU proxy
+      // for the whole-picture scope after foreground work has settled.
+      if (tier === "interactive") return false;
+      const renderProxy = async (revision) => {
+        if (!isCurrent()) return null;
+        cancelGeometryUnderlayer();
+        while (isCurrent() && (state.gpuDraftInFlight || state.gpuPreview.activeRenderCount > 0)) {
+          await new Promise((resolve) => window.setTimeout(resolve, 16));
+        }
+        if (!isCurrent() || revision !== state.editRevision) return null;
+        return state.gpuPreview.renderScopeProxy(
+          request.sessionId, lane, state.adjustments, sampleCurvePoints,
+          request.longEdge, request.include_locals ? localAdjustments() : [],
+          revision, projectReferenceWhiteNits(),
+          { width: state.session.source.width, height: state.session.source.height },
+          { applicationGeneration: accepted.generation, isCurrent, signal, cancelCoarseFetches: true },
+        );
+      };
+      const previousRefusal = state.gpuPreview.lastRenderRefusal;
+      let revision = state.editRevision;
+      let rendered;
+      try {
+        rendered = await renderProxy(revision);
+      } catch (error) {
+        if (error?.status !== 409) throw error;
+        // A save can reach the backend before its revision reaches the browser.
+        await state.editCommandQueue;
+        if (!isCurrent() || revision === state.editRevision) return false;
+        revision = state.editRevision;
+        rendered = await renderProxy(revision);
       }
-      if (!isCurrent()) return null;
-      return state.gpuPreview.renderScopeProxy(
-        request.sessionId, lane, state.adjustments, sampleCurvePoints,
-        request.longEdge, request.include_locals ? localAdjustments() : [],
-        request.edit_revision, projectReferenceWhiteNits(),
-        { width: state.session.source.width, height: state.session.source.height },
-        { applicationGeneration: accepted.generation, isCurrent },
-      ).catch((error) => {
-        // A newer generation stopping this one's source load is not a failure;
-        // the scope that replaces it is already on its way.
-        // Source publication can reach the backend before its edit response
-        // reaches this browser. A 409 then belongs to the old source even
-        // while the browser still has that revision; its replacement follows.
-        if (error?.status === 409) { sourceSuperseded = true; return null; }
-        if (error?.superseded || !isCurrent() || request.edit_revision !== state.editRevision) return null;
-        throw error;
-      });
-    };
-    const startedAt = performance.now();
-    let rendered = await renderProxy();
-    if (!isCurrent() || sourceSuperseded) return false;
-    // A pan or catch-up pass of the same generation can start meanwhile and
-    // take this pass's masks. That is not the GPU refusing the scope, and no
-    // later request replaces it: wait for that pass and ask once more.
-    const refusal = state.gpuPreview.lastRenderRefusal;
-    if (!rendered && refusal?.at >= startedAt && String(refusal.reason).startsWith("superseded")) {
-      rendered = await renderProxy();
+      if (!isCurrent() || revision !== state.editRevision) return false;
+      if (!rendered) {
+        if (auxiliaryGpuRefusalCancelled(state.gpuPreview, previousRefusal)) return reschedule();
+        return fallback();
+      }
+      scopeCanvas = rendered.canvas;
+      sourceSerial = rendered.sourceSerial;
     }
     if (!isCurrent()) return false;
-    if (!rendered) {
-      // The accepted tiled picture is current, but an auxiliary GPU graph
-      // can still be refused under memory pressure. Keep the same generation
-      // guards and settle through the established CPU scope fallback.
-      return new Promise(resolve => enqueueScopeRequest({...request,resolve}));
-    }
-    scopeCanvas = rendered.canvas;
-    sourceSerial = rendered.sourceSerial;
+    analysisRevision = state.editRevision;
+    analysis = await state.gpuPreview.analyzeScope(scopeCanvas, {
+      width: sampleWidth,
+      height: sampleHeight,
+      generation,
+      tier,
+    });
+  } catch (error) {
+    if (analysisRevision !== undefined && analysisRevision !== state.editRevision) return false;
+    if (auxiliaryGpuCancelled(error)) return reschedule();
+    if (error?.status === 409) return false;
+    return fallback();
   }
-  const analysis = await state.gpuPreview.analyzeScope(scopeCanvas, {
-    width: sampleWidth,
-    height: sampleHeight,
-    generation,
-    tier,
-  });
-  // A saturated two-buffer readback pool is intentional backpressure. Keep
-  // the last valid scope visible and let the next scheduled generation win;
-  // never fall back to an image-sized CPU request merely because the GPU is busy.
-  if (!analysis) return false;
+  if (!analysis) return analysisRevision === state.editRevision ? fallback() : reschedule();
   if (analysis.sessionId !== request.sessionId
     || analysis.sourceSerial !== sourceSerial
     || analysis.applicationGeneration !== accepted?.generation
@@ -233,7 +330,7 @@ async function runGpuScopeRequest(request) {
   // proxy peak is the right trade, and it is labelled as such.
   let exactPeak = null;
   if (tier === "settled" && !scopeRegion) {
-    exactPeak = await measureExactScopePeak({ lane });
+    exactPeak = await measureExactScopePeak({ lane, signal });
     // The measurement is a render of its own and takes time. Anything that
     // moved underneath it invalidates this payload exactly as it would have
     // above, so the same question is asked again rather than presenting a
@@ -263,6 +360,24 @@ async function runGpuScopeRequest(request) {
   return true;
 }
 
+function cancelGpuScopeRequests() {
+  state.gpuScopeRequestInFlight?.controller?.abort();
+  state.pendingGpuScopeRequest?.resolve(false);
+  state.pendingGpuScopeRequest = null;
+}
+
+function rescheduleGpuScopeAfterPan(lane) {
+  const sessionId = state.session?.session_id;
+  if (![state.gpuScopeRequestInFlight, state.pendingGpuScopeRequest].some((request) => (
+    request?.lane === lane && request.sessionId === sessionId && !request.controller?.signal.aborted
+  ))) return;
+  cancelGpuScopeRequests();
+  state.scopeAwaitingPresentation = scopePresentationIdentity(lane);
+  clearZoomScopeRefresh();
+  scheduleZoomScopeRefresh({ sessionId, lane, generation: state.previewGeneration[lane],
+    signature: geometrySignature(), target: requiredProcessingLongEdge() });
+}
+
 function enqueueGpuScopeRequest(request) {
   // A newer GPU scope supersedes CPU work just as a newer CPU request does.
   // In particular, a startup scope must not keep building the old Film grain
@@ -286,10 +401,13 @@ function enqueueGpuScopeRequest(request) {
 }
 
 async function runQueuedGpuScopeRequest(request) {
+  request.controller = new AbortController();
   state.gpuScopeRequestInFlight = request;
   let applied = false;
   try {
     applied = await runGpuScopeRequest(request);
+  } catch (error) {
+    if (!request.controller.signal.aborted) console.error("GPU scope refresh failed", error);
   } finally {
     request.resolve(applied);
     if (state.gpuScopeRequestInFlight !== request) return;
@@ -297,10 +415,7 @@ async function runQueuedGpuScopeRequest(request) {
     const next = state.pendingGpuScopeRequest;
     state.pendingGpuScopeRequest = null;
     if (next) void runQueuedGpuScopeRequest(next);
-    else if (!state.scopeRequestInFlight && gpuScopeEligible(state.currentView)) {
-      els.scopeFreshness.classList.remove("updating");
-      if (!applied) els.scopeFreshness.textContent = state.lastScope ? scopeFreshnessLabel(state.lastScope.tier) : "Waiting";
-    }
+    else if (!applied) restoreScopeFreshnessIfIdle();
   }
 }
 
@@ -329,11 +444,37 @@ function scopeFreshnessLabel(tier) {
   return scopeUi.freshnessLabel(tier);
 }
 
+function restoreScopeFreshnessIfIdle() {
+  if (state.scopeRequestInFlight || state.pendingScopeRequest
+    || state.gpuScopeRequestInFlight || state.pendingGpuScopeRequest) return;
+  if (els.scopeFreshness.textContent !== "Updating") return;
+  els.scopeFreshness.classList.remove("updating");
+  if (state.scopeUnavailable && scopePresentationMatches(state.scopeUnavailable, state.currentView)) {
+    els.scopeFreshness.textContent = "Unavailable";
+  } else {
+    const current = !state.scopeResultPresentation || scopePresentationMatches(state.scopeResultPresentation, state.currentView);
+    els.scopeFreshness.textContent = state.lastScope && current ? scopeFreshnessLabel(state.lastScope.tier) : "Waiting";
+  }
+}
+
 async function runScopeRequest(request) {
-  if (["import", "export"].includes(state.activeWorkflow) || document.hidden
-    || request.sessionId !== state.session?.session_id || request.lane !== state.currentView) { request.resolve(false); return; }
+  let signal = request.signal;
+  const isCurrentPresentation = () => !signal?.aborted && !state.zoomScopeTimer && !geometryDraftActive()
+    && !["import", "export"].includes(state.activeWorkflow) && !document.hidden
+    && scopePresentationMatches(request.presentation, request.lane)
+    && request.importGeneration === state.importGeneration
+    && request.rawRedevelopGeneration === state.rawRedevelopGeneration
+    && request.generation === state.scopeGeneration && request.mode === state.scopeMode;
+  const isCurrent = () => isCurrentPresentation() && request.edit_revision === state.editRevision;
+  if (!isCurrent()) {
+    request.resolve(false);
+    restoreScopeFreshnessIfIdle();
+    return;
+  }
   const controller = new AbortController();
+  signal = signal ? AbortSignal.any([signal, controller.signal]) : controller.signal;
   request.controller = controller;
+  request.acceptedAtStart = state.acceptedPresentation;
   state.scopeRequestInFlight = request;
   markScopeUpdating();
   let applied = false;
@@ -353,8 +494,9 @@ async function runScopeRequest(request) {
         generation,
         tier,
         scope_region: scopeRegion,
+        ...request.microGrain,
       }),
-      signal: controller.signal,
+      signal,
     });
     let response = await requestScope(edit_revision);
     if (response.status === 409) {
@@ -364,39 +506,41 @@ async function runScopeRequest(request) {
       // optimistic slider value in the middle of a gesture and visibly flash
       // both the preview and the next scope back to an older state.
       if (conflict?.detail === "Stale scope request dropped.") return false;
+      if (showUnavailableMicroScope(conflict, request, isCurrent)) return false;
       await (state.editCommandQueue || Promise.resolve());
+      if (!isCurrentPresentation()) return false;
       if (state.editRevision === edit_revision) {
         await refreshEditState({ preserveLocalDraft: state.localPreviewDirty });
       }
-      if (state.session?.session_id !== sessionId || lane !== state.currentView || mode !== state.scopeMode) return false;
       request.edit_revision = state.editRevision;
-      response = await requestScope(state.editRevision);
+      if (!isCurrent()) return false;
+      response = await requestScope(request.edit_revision);
     }
     if (!response.ok) {
+      if (!isCurrent()) return false;
+      if (response.status === 409 && showUnavailableMicroScope(await safeJson(response), request, isCurrent)) return false;
+      if (!isCurrent()) return false;
       els.scopeNote.textContent = `The ${mode} could not be refreshed. It will retry with the next edit.`;
       return false;
     }
     const payload = await response.json();
-    if (state.session?.session_id !== sessionId || lane !== state.currentView || mode !== state.scopeMode) return false;
+    if (!isCurrent()) return false;
     if (payload.generation !== null && payload.generation !== generation) return false;
-    if (generation !== state.scopeGeneration) {
-      state.previewScheduler?.recordStaleResult();
-      return false;
-    }
-    if (tier === "settled" && !request.scopeRegion) {
-      const measured = await measureExactScopePeak({lane});
-      if (generation !== state.scopeGeneration || request.sessionId !== state.session?.session_id) return false;
-      applyEditingScopePeak(payload, measured, lane);
-    } else if (tier === "settled" && !request.scopeRegion) {
+    if (payload.micro_source_long_edge != null) {
       applyEditingScopePeak(payload, null, lane);
+    } else if (tier === "settled" && !request.scopeRegion) {
+      const measured = await measureExactScopePeak({lane, signal});
+      if (!isCurrent()) return false;
+      applyEditingScopePeak(payload, measured, lane);
     }
     applyAcceptedCpuScopePeak(payload, request);
     recordDisplayedScopePeak(payload, request);
-    presentScopePayload(payload, { generation, tier, lane, mode, source: "cpu" });
+    presentScopePayload(payload, { generation, tier, lane, mode, source: "cpu",
+      metric: { applicationGeneration: request.presentation.generation } });
     applied = true;
     return true;
   } catch (error) {
-    if (error.name !== "AbortError") console.error(error);
+    if (!signal.aborted && error.name !== "AbortError") console.error(error);
     return false;
   } finally {
     if (state.scopeRequestInFlight === request) state.scopeRequestInFlight = null;
@@ -405,11 +549,23 @@ async function runScopeRequest(request) {
     state.pendingScopeRequest = null;
     if (next) {
       void runScopeRequest(next);
-    } else if (!state.gpuScopeRequestInFlight && !state.pendingGpuScopeRequest) {
-      els.scopeFreshness.classList.remove("updating");
-      if (!applied) els.scopeFreshness.textContent = state.lastScope ? scopeFreshnessLabel(state.lastScope.tier) : "Waiting";
+    } else if (!applied) {
+      restoreScopeFreshnessIfIdle();
+      if (isCurrent() && scopeWaitingForWholePicture(request.lane)) refreshScopesAfterPresentation(request.lane);
     }
   }
+}
+
+function showUnavailableMicroScope(error, request, isCurrent) {
+  if (error?.detail?.code !== "micro_scope_source_unavailable") return false;
+  if (!isCurrent()) return true;
+  state.scopeUnavailable = { ...request.presentation, accepted: request.acceptedAtStart };
+  state.lastScope = null;
+  els.scopeFreshness.textContent = "Unavailable";
+  els.scopeFreshness.classList.remove("updating");
+  drawHistogram(null);
+  updateExportAvailability();
+  return true;
 }
 
 function applyAcceptedCpuScopePeak(payload, request) {
@@ -513,6 +669,8 @@ function scopeQualityProfile() {
 }
 
 function presentScopePayload(payload, { generation, tier, lane, mode, source, metric = null }) {
+  state.scopeUnavailable = null;
+  state.scopeResultPresentation = scopePresentationIdentity(lane);
   state.lastScope = payload;
   els.scopeFreshness.textContent = scopeFreshnessLabel(tier);
   els.scopeFreshness.classList.remove("updating");

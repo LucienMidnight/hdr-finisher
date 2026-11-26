@@ -17,9 +17,12 @@ import numpy as np
 
 from .color import _ACESCG_TO_LINEAR_BT2020, _LINEAR_BT2020_TO_ACESCG
 from .delivery_memory import DeliveryMemory
+from .highlight_edge_colour import CLIP_SOFT_START
 
 _work = ContextVar("edge_colour_source_work", default=(0, None))
 _cpu_only = ContextVar("edge_colour_cpu_only", default=False)
+_PREFLIGHT_ROWS = 64
+_TRANSPORT_GAIN = float(np.abs(_ACESCG_TO_LINEAR_BT2020).sum(axis=0).max())
 
 
 @contextmanager
@@ -31,6 +34,34 @@ def source_work(*, priority, cancelled=None, cpu_only=False):
     finally:
         _work.reset(token)
         _cpu_only.reset(cpu_token)
+
+
+def _row_strips(array, cancelled):
+    for start in range(0, array.shape[0], _PREFLIGHT_ROWS):
+        if cancelled and cancelled():
+            raise CancelledError("RAW reconstruction cancelled.")
+        yield array[start:start + _PREFLIGHT_ROWS]
+
+
+def _needs_seed_selection(ratio, cancelled):
+    """The shader's float32 smoothstep is monotone, so test each strip's peak."""
+    lower = np.float32(CLIP_SOFT_START)
+    upper = np.float32(1)
+    for part in _row_strips(ratio, cancelled):
+        peak = part.astype(np.float32, copy=False).max()
+        if np.isnan(peak):
+            return True
+        weight = np.clip((peak - lower) / (upper - lower), np.float32(0), upper)
+        if weight * weight * (np.float32(3) - np.float32(2) * weight) >= np.float32(.5):
+            return True
+    return False
+
+
+def _safe_noop_input(image, cancelled):
+    """Prove the shader's 32x transport bound fits float32, with rounding headroom."""
+    limit = float(np.finfo(np.float32).max) / (64 * _TRANSPORT_GAIN)
+    return all(-limit <= float(part.min()) and float(part.max()) <= limit
+        for part in _row_strips(image, cancelled))
 
 
 def reconstruct(image, ratio, expand, cancelled=None):
@@ -56,6 +87,16 @@ def reconstruct(image, ratio, expand, cancelled=None):
         if cancelled and cancelled():
             raise CancelledError("RAW reconstruction cancelled.")
         h, w = ratio.shape
+        expand = float(expand)
+        if (h and w and image.shape == (h, w, 3) and image.dtype == np.float32 and np.isfinite(expand)
+                and not _needs_seed_selection(ratio, cancelled) and _safe_noop_input(image, cancelled)):
+            return image, {
+                "algorithm_version": "hdr-finisher-edge-colour-v1",
+                "stage": "acescg_after_camera_conversion_before_lens_correction",
+                "expand_percent": expand, "applied": False, "clipped_pixel_fraction": 0.0,
+                "reason": "no_clipped_pixels", "renderer": "skipped", "fallback_reason": None,
+                "memory_peak_bytes": 0, "total_ms": round((time.perf_counter() - started) * 1000, 1),
+            }
         description, packed = memory.allocate((4, h, w))
         packed[:3] = image.transpose(2, 0, 1)
         packed[3] = ratio
@@ -65,7 +106,7 @@ def reconstruct(image, ratio, expand, cancelled=None):
         directory.mkdir()
         delivery._atomic(directory / "request.json", {
             "id": identity, "operation": "edge_colour", "width": w, "height": h,
-            "expand": float(expand), "toBT": _ACESCG_TO_LINEAR_BT2020.T.tolist(),
+            "expand": expand, "toBT": _ACESCG_TO_LINEAR_BT2020.T.tolist(),
             "fromBT": _LINEAR_BT2020_TO_ACESCG.T.tolist(),
             "memory": {"edge_input": description, "edge": output},
             "priority": priority, "created": time.time(),
@@ -82,8 +123,7 @@ def reconstruct(image, ratio, expand, cancelled=None):
             raise RuntimeError("GPU edge colour returned an incomplete result.")
         result = np.ascontiguousarray(memory.attach(output).transpose(1, 2, 0))
         input_peak = max(abs(float(image.min())), abs(float(image.max())))
-        transport_gain = float(np.abs(_ACESCG_TO_LINEAR_BT2020).sum(axis=0).max())
-        bound = 32 * max(input_peak * transport_gain, 1e-6)
+        bound = 32 * max(input_peak * _TRANSPORT_GAIN, 1e-6)
         result_peak = max(abs(float(result.min())), abs(float(result.max())))
         if not np.isfinite(result).all() or not np.isfinite(bound) or result_peak > bound:
             raise ValueError("GPU edge colour returned invalid pixels.")

@@ -119,6 +119,7 @@ async function loadCapabilities() {
   const response = await fetch("/api/capabilities");
   const data = await response.json();
   state.capabilities = data.capabilities;
+  state.machineRamBytes = Number(data.ram_bytes) || null;
 }
 
 async function loadDefaultExportDirectory() {
@@ -184,6 +185,19 @@ function splitOutputPath(path) {
 
 async function exportCurrentSession() {
   if (!state.session) return;
+  const diagnostics = globalThis.HDRDiagnostics;
+  const action = diagnostics?.start("export", "export_photo", gradeDiagnosticPhoto(), { format: els.exportFormat.value });
+  try {
+    await exportWithDiagnostics(action);
+  } catch (error) {
+    action?.finish("error", { level: "error", route: "refused", reason: "export_failed" });
+    throw error;
+  } finally {
+    action?.finish("cancelled", { route: "refused", reason: "export_cancelled" });
+  }
+}
+
+async function exportWithDiagnostics(action) {
   status.post({ id: "export", severity: "progress", message: "Export queued…", progress: "indeterminate" });
   const pendingApplied = await (state.editCommandQueue || Promise.resolve(true));
   const globalsApplied = pendingApplied === false ? false : await syncGlobalEditState();
@@ -191,6 +205,7 @@ async function exportCurrentSession() {
     ? false
     : await (state.editCommandQueue || Promise.resolve(true));
   if (editsApplied === false) {
+    action?.finish("refused", { route: "refused", reason: "edit_sync_failed" });
     status.post({ id: "export", severity: "error", message: "Export paused because the latest edit could not be saved. Review the edit error and try again." });
     return;
   }
@@ -217,23 +232,26 @@ async function exportCurrentSession() {
   status.post({ id: "export", severity: "progress", message: "Rendering full-resolution HDR and SDR endpoints…", progress: "indeterminate" });
   els.exportResult.classList.add("hidden");
   state.lastExportMessage = "";
-  const exportStartedAt = performance.now();
-  let lastExportExpectation = "Rendering full-resolution HDR and SDR endpoints";
-  const exportTicker = window.setInterval(() => {
-    const elapsedSeconds = Math.max(1, Math.round((performance.now() - exportStartedAt) / 1000));
-    const expectation = elapsedSeconds < 20
-      ? "Rendering full-resolution HDR and SDR endpoints"
-      : elapsedSeconds < 60
-        ? "Encoding gain-map media; large sources can take a minute or more"
-        : "Still working locally; the final file will be validated before completion";
-    if (expectation !== lastExportExpectation) {
-      lastExportExpectation = expectation;
-      status.update("export", { severity: "progress", message: expectation, progress: "indeterminate" });
-    }
-  }, 1000);
+  // The export reports its own stage and fraction while the request runs.
+  const exportSessionId = state.session.session_id;
+  let exportPolling = true;
+  const pollExportProgress = async () => {
+    if (!exportPolling) return;
+    try {
+      const live = await safeJson(await fetch(`/api/session/${exportSessionId}/export/progress`));
+      if (exportPolling && live?.running && live.label) {
+        const left = Number.isFinite(live.eta_s) && live.eta_s > 0 ? ` · about ${formatSecondsLeft(live.eta_s)} left` : "";
+        status.update("export", { severity: "progress", message: `${live.label}…${left}`, progress: 100 * live.fraction,
+          progressLabel: "Export progress" });
+        desktop?.setOperationProgress({ kind: "export", value: Math.max(0.01, live.fraction), state: "normal" });
+      }
+    } catch { /* The export request reports failures. */ }
+    if (exportPolling) exportTicker = window.setTimeout(pollExportProgress, 500);
+  };
+  let exportTicker = window.setTimeout(pollExportProgress, 250);
   try {
     desktop?.setOperationProgress({ kind: "export", value: 0.01, state: "indeterminate" });
-    let response = await requestSessionExport(outputPath, Boolean(nativeOverwrite), pathGrant, nativeOverwrite);
+    let response = await requestSessionExport(outputPath, Boolean(nativeOverwrite), pathGrant, nativeOverwrite, action);
     let payload = await safeJson(response);
     if (response.status === 409 && payload?.detail?.code === "overwrite_required") {
       const detail = payload.detail;
@@ -246,13 +264,16 @@ async function exportCurrentSession() {
         return;
       }
       status.post({ id: "export", severity: "progress", message: "Replacing the existing file and validating the result…", progress: "indeterminate" });
-      response = await requestSessionExport(outputPath, true, pathGrant, null);
+      globalThis.HDRDiagnostics?.event("export", "overwrite_approved", {}, action);
+      response = await requestSessionExport(outputPath, true, pathGrant, null, action);
       payload = await safeJson(response);
     }
     if (!response.ok) {
+      action?.finish("error", { level: "error", route: "refused", reason: "export_failed", status_code: response.status });
       status.post({ id: "export", severity: "error", message: responseErrorMessage(payload, "Export failed.") });
       return;
     }
+    action?.finish("success");
     // The status bar says only that it finished. The file path is in the
     // Export panel, and any measurement warning is spelled out there too.
     const totalExportMs = Number(payload.timings_ms?.total);
@@ -275,10 +296,12 @@ async function exportCurrentSession() {
       els.exportResult.classList.remove("hidden");
     }
   } catch (error) {
+    action?.finish("error", { level: "error", route: "refused", reason: "export_transport_failed" });
     console.error(error);
     status.post({ id: "export", severity: "error", message: "Export could not reach the local HDR Finisher server." });
   } finally {
-    window.clearInterval(exportTicker);
+    exportPolling = false;
+    window.clearTimeout(exportTicker);
     els.exportConfirmButton.disabled = false;
     desktop?.setOperationProgress({ kind: "export", value: -1, state: "normal" });
   }
@@ -338,10 +361,14 @@ function currentExportSettings(outputPath = null, overwrite = false, pathGrant =
     };
 }
 
-function requestSessionExport(outputPath, overwrite, pathGrant = null, overwriteTarget = null) {
+function formatSecondsLeft(seconds) {
+  return seconds < 60 ? `${Math.round(seconds)}s` : `${Math.round(seconds / 60)} min`;
+}
+
+function requestSessionExport(outputPath, overwrite, pathGrant = null, overwriteTarget = null, action = null) {
   return fetch(`/api/session/${state.session.session_id}/export`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: globalThis.HDRDiagnostics?.headers(action, { "Content-Type": "application/json" }) ?? { "Content-Type": "application/json" },
     body: JSON.stringify(currentExportSettings(outputPath, overwrite, pathGrant, overwriteTarget)),
   });
 }
@@ -528,6 +555,22 @@ function renderFormatCards() {
   applyExportOptionTooltips();
   if (!sourceMetadataApplicable) els.exportMetadataPolicy.title = els.exportMetadataPolicyNote.textContent;
   if (!ditherApplicable) els.exportDithering.title = els.exportDitheringNote.textContent;
+  const avifRamWarning = largeAvifMemoryWarning();
+  if (avifRamWarning) {
+    els.exportStatus.textContent = avifRamWarning;
+  } else if (els.exportStatus?.textContent?.includes("Native AVIF above 50 MP")) {
+    els.exportStatus.textContent = state.lastExportMessage || "Choose a format and destination.";
+  }
+}
+
+function largeAvifMemoryWarning() {
+  if (!(state.machineRamBytes > 0 && state.machineRamBytes < 16 * 1024 ** 3)) return "";
+  if (els.exportFormat?.value !== "avif_gain_map") return "";
+  if ((els.exportResizeMode?.value || "original") !== "original") return "";
+  const width = Number(state.session?.source?.width) || 0;
+  const height = Number(state.session?.source?.height) || 0;
+  if (width * height <= 50_000_000) return "";
+  return "Native AVIF above 50 MP uses heavy memory on machines with under 16 GB RAM and may swap or fail. Resize down or use HDR JPEG XL if needed.";
 }
 
 function formatChroma(value) {

@@ -429,7 +429,7 @@
         <div class="viewport-frame" id="dropzone">
           <div id="preview-stage" class="preview-stage" data-compare-layout="single" data-primary-lane="hdr">
             <div id="preview-primary-pane" class="preview-pane preview-primary-pane" data-lane="hdr">
-              <canvas id="preview-canvas" aria-label="Active HDR Finisher preview"></canvas>
+              <div id="preview-canvas-frame"><canvas id="preview-canvas" aria-label="Active HDR Finisher preview"></canvas><canvas id="preview-denoise-detail" aria-hidden="true"></canvas><canvas id="preview-micro-underlayer" aria-hidden="true"></canvas><canvas id="preview-micro-detail" aria-hidden="true"></canvas><img id="preview-micro-hdr-underlayer" alt=""><img id="preview-micro-hdr-detail" alt=""></div>
               <img id="preview-image" alt="Active HDR Finisher preview" draggable="false">
               <img id="preview-overlay" alt="" aria-hidden="true" draggable="false">
               <canvas id="local-mask-overlay" class="local-mask-overlay" tabindex="0" aria-label="Local mask editor. Use bracket keys to select nodes, H to cycle node and handles, arrow keys to move, Enter to add, and Delete to remove."></canvas>
@@ -626,6 +626,14 @@
           <span>Raw development</span>
         </button>
         <div id="raw-settings-panel" class="disclosure-content hidden">
+          <div id="raw-pixel-cleanup-group" class="checkbox-stack raw-pixel-cleanup">
+            <label class="checkbox-row" data-tooltip="Fixes single stuck bright pixels from the sensor. It can occasionally remove a real tiny light, such as a star or a glint, so turn it off for night skies."><input id="raw-remove-hot-pixels" type="checkbox" checked disabled> Remove hot pixels</label>
+            <label class="checkbox-row" data-tooltip="Pulls unusual sensor readings toward the local noise range before development. Small stars and thin lettering may soften; colourful blobs can remain."><input id="raw-even-out-specks" type="checkbox" checked disabled> Even out harsh specks</label>
+            <div id="raw-speck-threshold-row" class="control-row">
+              <div class="control-heading"><label for="raw-speck-threshold" data-tooltip="Smooth readings beyond this multiple of the local noise range. Lower values are stronger. Applies when you release the slider.">Speck threshold</label><output id="raw-speck-threshold-value">×2.5</output></div>
+              <input id="raw-speck-threshold" type="range" min="2" max="4" step="0.1" value="2.5" disabled>
+            </div>
+          </div>
           <label><span id="lens-settings-note" class="tooltip-trigger" data-tooltip="Auto applies only one exact profile match. Off and Manual are always available.">Lens correction</span>
             <select id="lens-mode">
               <option value="off">Off</option>
@@ -694,21 +702,50 @@
           <div class="denoise-view-actions">
             <button id="denoise-show-noise" class="local-overlay-toggle" type="button" aria-pressed="false" disabled data-tooltip="Shows only what Denoise removes, as gray with the removed noise on top. Even grain is safe; visible edges, lettering or texture mean detail is being lost."><span class="local-overlay-icon" aria-hidden="true"></span><span>Show noise</span></button>
           </div>
+          <div class="control-row">
+            <label for="denoise-method" class="visually-hidden">Method</label>
+            <select id="denoise-method" data-tooltip="Clean Grain evens out the brightness grain and reduces colour splotches. Simple uses the original noise reduction.">
+              <option value="clean_grain">Clean Grain</option>
+              <option value="standard">Simple</option>
+              <option value="micro_grain">Micro Grain · Experimental</option>
+            </select>
+          </div>
+          <p id="denoise-status" class="helper" aria-live="polite" hidden></p>
+          <button id="denoise-route-action" class="text-button" type="button" hidden></button>
+          <div id="denoise-micro-controls" class="hidden">
+            <div class="control-row"><div class="control-heading"><label for="denoise-micro-luminance" data-tooltip="Reduces brightness noise while keeping a fine grain.">Luminance</label><output id="denoise-micro-luminance-value">50%</output></div><input id="denoise-micro-luminance" type="range" min="0" max="1" step="0.01" value="0.5"></div>
+            <div class="control-row"><div class="control-heading"><label for="denoise-micro-color" data-tooltip="Reduces colour noise and blotches.">Color</label><output id="denoise-micro-color-value">50%</output></div><input id="denoise-micro-color" type="range" min="0" max="1" step="0.01" value="0.5"></div>
+            <div class="control-row"><div class="control-heading"><label for="denoise-micro-detail" data-tooltip="Keeps more texture and edge detail at higher settings.">Detail</label><output id="denoise-micro-detail-value">50%</output></div><input id="denoise-micro-detail" type="range" min="0" max="1" step="0.01" value="0.5"></div>
+          </div>
           <!-- PRD 6.3 progressive disclosure: Amount and Detail Recovery are
-               always visible; Luminance and Colour Noise sit under Advanced.
+               always visible. Steve, November 25: Luminance and Color Noise
+               sit right under Amount, which scales both; only the noise sizes
+               stay under Advanced.
                Amount keeps its name. 6.3 calls the always-visible master
                "Strength" but also forbids changing labels, defaults, math or
                schema before the presets are measured against the corpus, and
                that measurement is deferred with DENOISE-01 -- so renaming it
                now would be the one thing 6.3 rules out. -->
-          <div class="control-row"><div class="control-heading"><label for="denoise-amount">Amount</label><output id="denoise-amount-value">50%</output></div><input id="denoise-amount" type="range" min="0" max="1" step="0.01" value="0.5"></div>
-          <div class="control-row"><div class="control-heading"><label for="denoise-detail">Detail Recovery</label><output id="denoise-detail-value">0%</output></div><input id="denoise-detail" type="range" min="0" max="1" step="0.01" value="0"></div>
+          <div class="control-row"><div class="control-heading"><label for="denoise-amount">Amount</label><output id="denoise-amount-value">75%</output></div><input id="denoise-amount" type="range" min="0" max="1" step="0.01" value="0.75"></div>
+          <div class="control-row"><div class="control-heading"><label for="denoise-luminance" data-tooltip="How much brightness noise is removed. Amount scales this and Color Noise together.">Luminance</label><output id="denoise-luminance-value">50%</output></div><input id="denoise-luminance" type="range" min="0" max="1" step="0.01" value="0.5"></div>
+          <div class="control-row"><div class="control-heading"><label for="denoise-color" data-tooltip="How much colour noise of every size is removed, before splotch cleanup. Amount scales this and Luminance together. Raise it first when colour blotches remain.">Color Noise</label><output id="denoise-color-value">75%</output></div><input id="denoise-color" type="range" min="0" max="1" step="0.01" value="0.75"></div>
+          <div class="control-row"><div class="control-heading"><label for="denoise-detail">Detail Recovery</label><output id="denoise-detail-value">50%</output></div><input id="denoise-detail" type="range" min="0" max="1" step="0.01" value="0.5"></div>
+          <div id="denoise-grain-controls" class="hidden">
+            <div class="control-row"><div class="control-heading"><label for="denoise-evenness" data-tooltip="Spreads the remaining brightness grain more evenly. 0% gives Standard’s grain and 100% uses the grain-matched 18-pixel setting.">Grain Evenness</label><output id="denoise-evenness-value">100%</output></div><input id="denoise-evenness" type="range" min="0" max="1" step="0.01" value="1"></div>
+          </div>
+          <div id="denoise-clean-controls" class="hidden">
+            <div class="control-row"><div class="control-heading"><label for="denoise-splotches" data-tooltip="Pulls coloured blotches toward their surroundings while preserving scene brightness. 0% switches off this correction.">Color Splotches</label><output id="denoise-splotches-value">100%</output></div><input id="denoise-splotches" type="range" min="0" max="1" step="0.01" value="1"></div>
+            <div class="control-row">
+              <label for="denoise-splotch-size" data-tooltip="Small samples colour about 12 pixels away. Large also samples about 28 pixels away to reach beyond wider blotches.">Splotch Size</label>
+              <select id="denoise-splotch-size"><option value="small" selected>Small</option><option value="large">Large</option></select>
+            </div>
+            <label class="checkbox-row" data-tooltip="Leave splotch cleanup off sharp colour boundaries that run in a line, so skin, clothing and sky edges keep their colour. Turn off if it leaves splotches near edges."><input id="denoise-protect-edges" type="checkbox"> Protect color edges</label>
+            <label class="checkbox-row" data-tooltip="Reduce narrow colour fringes along bright edges."><input id="denoise-clean-fringes" type="checkbox" checked> Clean edge fringes</label>
+          </div>
           <button id="denoise-advanced-toggle" class="disclosure-trigger" type="button" aria-expanded="false" aria-controls="denoise-advanced-panel">
             <span>Advanced</span>
           </button>
           <div id="denoise-advanced-panel" class="disclosure-content hidden">
-            <div class="control-row"><div class="control-heading"><label for="denoise-luminance">Luminance</label><output id="denoise-luminance-value">50%</output></div><input id="denoise-luminance" type="range" min="0" max="1" step="0.01" value="0.5"></div>
-            <div class="control-row"><div class="control-heading"><label for="denoise-color">Color Noise</label><output id="denoise-color-value">50%</output></div><input id="denoise-color" type="range" min="0" max="1" step="0.01" value="0.5"></div>
             <div id="denoise-size-controls" class="denoise-size-controls">
               <p class="denoise-size-heading tooltip-trigger" data-tooltip="How strongly each size of noise is removed. 50% is the measured amount; 0% leaves that size alone. Luminance and Color Noise still decide brightness versus colour.">Noise size</p>
               <div class="control-row"><div class="control-heading"><label for="denoise-finest">Finest · 1–2 px</label><output id="denoise-finest-value">50%</output></div><input id="denoise-finest" type="range" min="0" max="1" step="0.01" value="0.5"></div>
@@ -720,7 +757,6 @@
           <div class="control-actions">
             <button id="denoise-recalculate" class="button-secondary" type="button">Recalculate Denoise</button>
           </div>
-          <p id="denoise-status" class="support-copy" aria-live="polite">Denoise is off.</p>
         </div>
       </section>
 
@@ -2023,6 +2059,11 @@
 <script src="/static/gpu-params.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
   <script src="/static/idle-warmup.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
 <script src="/static/denoise-measurement.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
+<script src="/static/library-gpu-raw.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
+<script src="/static/micro-grain-gpu.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
+<script src="/static/diagnostics.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
+<script src="/static/grain-route.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
+<script src="/denoise-quality.js"></script>
 <script src="/static/webgpu-preview.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
   <script src="/static/preview-scheduler.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
   <script src="/static/tile-scheduler.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>

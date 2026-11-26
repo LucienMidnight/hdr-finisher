@@ -15,7 +15,264 @@ within Steve's 15 s target when the import was admitted. Low available RAM
 can still prevent a large import from starting. See the performance table
 for stages, test conditions and the observed memory refusal.
 
+### November 25, 2026: Pixel cleanup on by default, inside Raw development (Steve)
+
+**Steve, November 25:** both Pixel cleanup options start on for new photos and
+live at the top of **Raw development**, not in their own module. **Even out
+harsh specks** drops the Experimental label; the Threshold slider is now
+**Speck threshold** and still appears only when that box is checked. The
+module's Reset is gone. Grades saved before an option existed keep it off
+(a saved grade missing either field reads it as off), so their look does not
+change. Re-developing the open photo now keeps its panels open. Measured cost
+on this MacBook: both options add about 0.3–0.5 s per RAW development
+(42 MP Sony 3.0 → 3.3 s; 20 MP Olympus 1.5 → 1.9 s; 18 MP Canon 1.7 → 2.1 s).
+Library and Grade cache keys for unedited RAWs change once with the new default.
+
+### November 17, 2026: optional harsh-speck control (Steve approved)
+
+Pixel cleanup now also contains **Even out harsh specks (Experimental)**,
+default off, followed when enabled by **Threshold** ×2–×4, default ×2.5.
+Lower thresholds generally act more strongly; changing the slider applies on
+release, not during dragging. Both controls use existing components/tokens,
+with the existing Bayer eligibility explanation, modified marker and Reset.
+The tooltip warns that small stars and thin lettering may soften. Colourful
+blobs can remain. Raising the threshold is not a guarantee of protecting stars:
+the research's component detector can split a feature at higher thresholds.
+Denoise defaults and the original hot-pixel algorithm are unchanged.
+
+**November 19 (Steve’s app test):** on the atrium RAW `DSC01212.ARW`,
+the old clamp reduced real signal in all three channels around a small railing
+light, by different amounts across the Bayer samples. The finished SDR centre
+went from soft purple (95, 89, 127) to saturated blue (42, 82, 138). Positive
+signals in red, green and blue now protect the light and the pixels immediately
+around it. The centre returns to (95, 89, 127), and the 9×9 finished SDR
+window goes from ΔE 2000 mean 7.93 / p95 30.41 against Off to 0.00 / 0.00.
+Four nearby lights also match Off in their 9×9 windows. Cached developments
+and noise fits for recipes with the option on use a fresh source identity.
+On the noisy reference set, the additional protection spares 172 of 208,976
+previously changed Canon readings, 31 of 338,068 Sony readings and 35 of
+417,576 portrait readings. All three retain over 99.6% of the total absolute
+correction. The atrium itself spares 14,830 of 49,120 previously changed
+readings. The clean ISO 100 reference DSC04375 spares 167 of 10,670,
+retaining 94.6% of the absolute correction. Those are whole-photo sensor
+changes, including changes on real features. The fixed marked-spot comparison
+lost no successes, and Clean Grain brought two more Canon colour spots to
+grain level.
+
+Order: optional hot-pixel removal → optional signed per-phase soft clamp →
+Opposed-color evidence/reconstruction → signed AHD → WB/camera transform →
+Edge colour → Denoise. The clamp uses the 5×5 same-phase median, sensor-model
+noise floor raised by residual MAD, smoothstep threshold ramp, fixed envelope
+1.5 and strength .75, both signs, eight-connected same-sign area ≤5 counted
+before the always-on two-similar-neighbours veto. After the existing clamp,
+only positive reductions are restored around the confirmed three-colour light.
+Preserve the research's
+outer four same-phase samples (eight sensor pixels), and near-saturation
+≥.98 with its 5×5 same-phase context. No median replacement or zero floor.
+Changed readings are encoded into the existing DN buffer, retaining signed
+black-subtracted values. Bounded strips preserve original context at seams.
+Unavailable four-phase noise fits leave input untouched, as with hot pixels.
+
+CPU development and Library GPU RAW preparation share the new sensor step.
+When both options are on, GPU preparation also runs the unchanged CPU hot
+filter first and explicitly suppresses the later GPU hot filter. The hot-only
+GPU path remains. Grade, saved Library developments, export/Proof and Edge
+colour re-development all receive the same cleaned sensor source. Off skips
+noise fitting and clamping and preserves prior pixels exactly, including old
+projects without the fields. There is no migration code. Saved projects,
+sidecars, RAW-containing recipes and selective paste carry `even_out_specks`
+and `speck_threshold`; rendition-only grading presets keep their scope.
+Undo/Redo re-develops the stored recipe.
+
+**Absolute floor included: .005 normalized sensor units.** Shared-lock native
+comparison on clean DSC04375 (ISO100) changes 223,318 readings without it and
+10,670 with it (95.2% fewer); total absolute DN correction 1,792,391 →334,535.
+Noisy IMG_0790 (ISO3200) stays exactly 208,976 changed readings and 14,476,601
+absolute DN correction, retaining 100% on both measures. Floors .001/.002
+were also measured; the brief records the predeclared selection rule. These
+are sensor-change proxies, not proof that every changed reading was noise.
+The existing research's star/text warnings still apply. Development timings
+are in the performance table.
+
+**Focused minimum-Mac qualification:** full Node 1,108 pass / one skip;
+full Python 4,236 pass / 155 skips / one xpass, with the existing deprecation
+warning. The final sensor/state set passes 53 tests, with the Gaussian-star
+fixture subsequently tightened to FWHM4.24 sensor pixels (23 sensor tests pass).
+The GPU driver passes 128 cases / 768 finished SDR/HDR comparisons at unchanged
+limits, including 32 byte-identical old/explicit-Off GPU recipe pairs. Real
+DSC00264/IMG_3129 checks pass with both options enabled: CPU/GPU Grade and saved
+Library GPU agreement, identical encoded Proof/export, restored controls,
+input-only slider movement, exactly one development on release and Reset.
+The separate five-photo Library GPU RAW and default Edge colour checks pass.
+Plain 90-second Library passes 9/9 visible photos; all ten Single steps pass.
+Both run in visible plain Electron at 1408×794 under the same shared lock.
+This is focused qualification, not a release check.
+
+
+### November 17: Steve's initial hot-pixel decision and implementation
+
+**Steve, November 17, 2026:** add a RAW development section named **Pixel
+cleanup**, initially containing only **Remove hot pixels**, off by default.
+No strength, cold/dead-pixel mode or camera defect maps. Leave it off unless
+isolated stuck bright sensor pixels are visible: one photograph cannot always
+distinguish a defect from a tiny star or glint.
+
+The implementation in this commit follows the approved single-photo filter in
+`../../technical/research/denoise-v1-2026-11-16/raw-pixel-cleanup.md`:
+signed per-phase black/white normalization → optional cleanup → Opposed color
+highlight reconstruction → WB/AHD → camera/ACEScg → Edge colour → Denoise.
+Detection exceeds all eight same-phase neighbors by both 8σ and 0.02; an
+adjacent other-colour rise above 2.5σ and 2 DN vetoes repair. Context ≥0.98
+and the four-pixel border are preserved. Repair averages the most consistent
+opposite same-phase pair, always reading the original mosaic. Four provisional
+phase noise estimates come from bounded samples of this photograph, not a
+camera calibration; unavailable estimates leave the mosaic untouched.
+
+CPU import and Library band development share the bounded sensor filter. The
+existing GPU RAW route applies the same backend thresholds/profile during
+normalization, before clipping evidence, without another full-frame buffer.
+Off skips estimation/filtering and keeps the previous pixel path exactly.
+The checkbox is disabled with a reason for X-Trans, linear DNG and non-RAW
+sources. The UI uses the existing collapsed source-module and checkbox styles,
+with Reset and a modified marker; no design tokens or budgets change.
+
+The saved per-photo RAW recipe carries the setting through projects, sidecars,
+selective grade copy/paste and RAW-containing saved recipes; rendition-only
+grading presets remain rendition-only. Source/development identities include
+the recipe. Changing the checkbox re-develops the source while preserving the
+grade, and Undo/Redo re-develops the previous/next recipe. Library, Grade,
+Proof, export and batch consume those same developed pixels/recipes.
+
+**Initial implementation before the focused qualification above.** Fast result tests cover detection,
+light/clipping/border preservation, Off equality, strip seams, placement before
+clipping evidence/AHD, saved identity, copy/paste and undo failure rollback.
+Full Node: 1,103 passed / one skipped; full Python: 4,125 passed / 155 skipped /
+one xpassed, no failures. The existing Starlette/httpx deprecation warning stays.
+Final focused filter/state checks pass 20/4 tests after the fixture additions and
+test-file split. The CPU fixture generator also passes all 32 cases.
+
+At that initial point, `raw-pixel-cleanup.js` was registered but not run:
+production GPU normalization/Opposed/AHD/WB on four Bayer layouts, both states
+and four orientations, with finished SDR ΔE2000 / HDR ΔE ITP mean <1 and
+p99 <3 at −6/0/+6 EV. `raw-pixel-cleanup-delivery.js` adds the enabled saved
+recipe and restored checkbox to the existing real-RAW Edge colour/Library/
+Proof/export checks. Real-device UI/re-development, memory and delivery remain
+part of Steve's combined signed-RAW/noise-measurement/cleanup validation;
+no GPU/Electron check was run for this implementation.
+The production CPU step cost is recorded separately in the performance table;
+it is not a measurement of the whole UI wait.
+
+**Combined validation repair, November 17:** session metadata now transports
+Pixel cleanup diagnostics as an object, retaining the boolean eligibility and
+enabled flags. Previously generic metadata formatting converted this object to
+a string, leaving the real-app checkbox disabled even on supported Bayer RAWs.
+Other metadata formatting and all sensor/filter/output rules are unchanged.
+
+**Combined validation DNG repair, November 17:** mandatory-opcode Bayer DNGs
+now use LibRaw's already prepared camera-to-RGB coefficients for signed AHD
+and its sensor metadata gate. DJI DNGs can legitimately have no ordinary
+`rgb_xyz_matrix`; requiring that table stopped both frozen Library DJI photos.
+The prepared coefficients retain LibRaw's DNG demosaic colour basis. Mandatory
+opcodes, DNG metadata colour conversion, crop/orientation and BaselineExposure
+remain in their original order, with no unsigned demosaic fallback. Decoder
+identity v7 invalidates developed sources. A result test covers the missing
+table, signed samples and exactly-once mandatory operations.
+
+### November 17: Steve's signed RAW development decision; qualification open
+
+**November 17 validation follow-up: signed Lensfun vignetting.** Lensfun's CPU
+colour-modification call clamps negative ACEScg channels, even though its gain
+is positive. The signed GPU route correctly retains them. This remaining CPU
+floor, not a new lens-coordinate error, caused A7R00619's Library comparison
+to fail in real foliage. CPU import now applies the same Lensfun operation to
+magnitudes and restores signs, using packed one-bit masks and 256-row scratch
+inside the existing working allowance, not another full-size float image.
+Decoder v8 / Library picture v14 invalidate affected cached CPU developments.
+Existing RAW projects with negative channels and vignetting can change as
+intended by the signed-development decision; protected projects are not saved.
+The five-photo GPU RAW driver passes: A7 P99.9 falls from 4.1014/6.9366 to
+0.1881/0.7090 (SDR/HDR), with the unchanged limit of 3. No lens mapping, shader,
+memory allowance or perceptual limit changes. The separate Single/native,
+zoom-straighten and pre-signed live-export admission failures remain open in
+the November 17 known-limitations follow-up; this is not release qualification.
+Final fast suites: Node 1,103 pass / one skip; Python 4,215 pass / 155 skips /
+one xpass, no failures. Two new result tests verify signed vignette gains over
+band boundaries and restoration when Lensfun raises an error.
+
+**Steve, November 17, 2026:** preserve noisy sensor readings below black through
+development and editing; let Blacks/Tone crush shadows to taste. This is a
+correctness/latitude change, not a demonstrated Canon-speck or Denoise fix.
+
+Bayer CPU development now uses a bounded native signed AHD helper, 256-row
+strips with eight-row context, observed visible CFA, per-phase black subtraction,
+signed Lab toe and the existing 65,535 upper DN bound. GPU AHD uses signed
+integer samples and unpacked green candidates. The linear WB/camera transform,
+white levels, highlight reconstruction selection, lens/order and orientation
+policies remain. RAW import projection is bypassed consistently at Grade,
+Library CPU bands/quick/full sources and GPU RAW/DNG entries. Denoise's filter
+and controls are unchanged. Incidental downstream floors are deferred to output;
+authored black crush, Film physical-domain floors, codec bounds and the exact
+HDR ceiling remain strict.
+
+The C helper is built during setup and PyInstaller packaging using setuptools
+compiler discovery (MSVC on Windows; system C compiler on macOS/Linux). Flatpak
+builds the same source with its SDK compiler. The app loads the bundled library;
+it never compiles on the user's computer. Mac compilation is checked; Windows,
+Linux and Flatpak build/package execution remain unqualified.
+
+**Not ready to ship.** X-Trans retains its existing unsigned LibRaw demosaic;
+preserving that decoder policy does not provide signed X-Trans. Its implementation
+needs a separate supported signed demosaic decision. Real-GPU parity/memory,
+highlight/lens, Denoise and every applicable Proof/export/ceiling driver remain
+gated pending approval of more than 30 minutes of slow validation. The new focused
+`signed-raw-parity.js` covers four Bayer phases/orientations and finished SDR/HDR
+agreement at −6/0/+6 EV, but does not substitute for those end-to-end checks.
+
+Source/development/source-colour, Denoise-model and finished-picture identities
+advance together. Existing RAW grades keep slider values and rerender rather
+than reuse clipped caches; no compatibility mode. All RAW projects can change
+appearance, especially lifted high-ISO shadows, Film/local grades and fitted
+Match results. Protected DSC00264 four-mask/fifty-local projects,
+DSC00950.hdrfinisher and DSC07060.ARW.hdrf are potentially affected; do not
+overwrite them. Denoise quality remains separate research.
+
+Same-Mac production-helper development-only costs are recorded in the performance
+table; no action-to-screen speed or GPU memory qualification is claimed. All
+cache/scheduler allowances, perceptual tolerances and delivery ceilings stay fixed.
+
+Fast checks: Node **1,091 passed / one skipped / zero failed**; Python
+**4,063 passed / 155 skipped / one xpassed / zero failed**. The existing
+Starlette/httpx deprecation warning remains. Result checks now expect signed RAW
+transport and no RAW import projection; the peak-prefix shader identity changes
+intentionally, while Denoise's filter/shader identity does not. After separating
+the two candidate GPU bindings to preserve the source-size limit, all 26 focused
+RAW/shader Node checks pass. This does not execute the shaders on a real GPU.
+Slow qualification
+is estimated at **90–150 minutes or more**, not a timed runner estimate: the
+release plan has no usable driver history and includes unrelated branch work.
+Do not run that group without approval or interpret fast passes as delivery sign-off.
+
+### November 22: Native Lensfun correction
+
+A full RAW or Micro Grain correction now runs in parallel on the CPU. Each
+worker uses its own Lensfun modifier and holds only 64 rows of coordinates.
+It reuses the row positions from a whole-height four-column probe so the
+finished pixels match the previous correction byte for byte. If a coordinate
+strip fails, the app retries the correction with smaller serial strips.
+The app skips vignetting for profiles without that calibration and keeps
+the same signed vignetting operation on profiles that have it.
+[Mac timings and exactness](../../technical/performance-table.md#november-22-2026--native-lensfun-correction)
+
 ### November 15: W2 P5 Lensfun stage measurement; no rewrite
+
+**November 21 follow-up (R2-6).** Full-frame CPU Lensfun correction now
+uses 128-row coordinates seeded with Lensfun's own whole-frame row values.
+The original vignetting call and bilinear arithmetic apply to those same
+samples. On the MacBook Neo, both coordinate layouts, the corrected RAW
+and the SDR finish matched the whole-frame reference byte for byte.
+The existing whole-frame path handles unavailable bindings, failed self-checks
+and mid-image strip failures, with a logged reason. Windows confirmation is open.
+[Mac measurements](../../technical/performance-table.md#november-21--byte-exact-lensfun-strips-on-macbook-neo)
 
 The existing RAW import phase history now separates Lensfun profile/modifier,
 vignette preparation, exact coordinate generation and parallel strip remapping.
@@ -373,6 +630,7 @@ Rules in force:
 
 | Decision | Date |
 | --- | --- |
+| **Keep zoom after RAW redevelopment.** Grade retains custom magnification and pan for the same RAW and clamps pan to the new output bounds. Grade falls back to Fit when the prior view is unavailable, a geometry draft is active, or the orientation or perspective changes, and opens a different photo at Fit. | Steve, 2026-11-22 |
 | Camera RAW uses a camera-linear bridge: LibRaw unpack and AHD demosaic, unity white balance through 16-bit, then float32 white balance and camera RGB to ACEScg. Opposed-colour highlight reconstruction removes magenta clipping. | 2026-09-03 |
 | **Exposure starts at zero.** RAW development is tuned so that the camera JPEG, the RAW as first shown, and Grade's starting point roughly agree. The Library's starting look must match Grade's. Every RAW grade saved before the change will look brighter or darker; no migration. The strict testing rule applies (RAW import). | Steve, 2026-10-11 |
 | Generic, not tuned to one camera. | 2026-10-09 |
@@ -757,6 +1015,13 @@ route. Matched photographic HDR/SDR comparisons passed the existing limits;
 Library loading results and remaining AVIF/queue costs are in the Photo Library PRD.
 
 ## 6. Open work, in order
+
+**November 17 signed-development gate:** Bayer integration is implemented but
+not qualified for shipping. Complete signed X-Trans/unsupported-RAW coverage
+without substituting decoder policy; run the focused real-GPU RAW, highlights,
+lens, Denoise, edited-stage and every applicable Proof/export/ceiling check;
+qualify Windows, macOS, Linux and Flatpak packages and review changed grades
+with Steve. Slow qualification needs approval first (more than 30 minutes).
 
 **V1 scope (Steve, October 26, 2026):** item 1 (Steve's review of the zero
 RAW start) is v1. Items 2 and 3 (Linux mounted drives; unrecognised TIFF

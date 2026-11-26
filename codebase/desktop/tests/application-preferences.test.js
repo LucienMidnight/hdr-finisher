@@ -1,6 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { DEFAULT_APPLICATION_PREFERENCES, sanitizeApplicationPreferences } = require("../lib/application-preferences");
+const { DEFAULT_APPLICATION_PREFERENCES, defaultAppMemoryBytes, sanitizeApplicationPreferences } = require("../lib/application-preferences");
 
 test("desktop preferences preserve the Test Patterns opt-in as a boolean", () => {
   assert.equal(sanitizeApplicationPreferences({ libraryTestPatterns: true }).libraryTestPatterns, true);
@@ -32,9 +32,29 @@ test("Developed badge preference accepts Always and defaults to On hover", () =>
   assert.equal(sanitizeApplicationPreferences({developedBadge:"always"}).developedBadge, "always");
 });
 
-test('app memory clamps saved settings to the common 4 GB minimum', () => {
-  for (const saved of [2500000000, 3000000000, 3999999999, 4000000000]) {
-    assert.equal(sanitizeApplicationPreferences({appMemoryBytes:saved}).appMemoryBytes,4000000000);
+test('app memory clamps to the platform default and retains the system reserve', t => {
+  const ram = 16 * 1024**3;
+  t.mock.method(require('node:os'), 'totalmem', () => ram);
+  const original = Object.getOwnPropertyDescriptor(process, 'platform');
+  const profile = process.env.HDR_FINISHER_MEMORY_PROFILE;
+  t.after(() => {
+    Object.defineProperty(process, 'platform', original);
+    if (profile === undefined) delete process.env.HDR_FINISHER_MEMORY_PROFILE;
+    else process.env.HDR_FINISHER_MEMORY_PROFILE = profile;
+  });
+  for (const [platform, emulated, minimum] of [
+    ['win32', false, 6_000_000_000],
+    ['win32', true, 4_000_000_000],
+    ['darwin', false, 4_000_000_000],
+    ['linux', false, 4_000_000_000],
+  ]) {
+    Object.defineProperty(process, 'platform', { value: platform });
+    if (emulated) process.env.HDR_FINISHER_MEMORY_PROFILE = 'unified-8gb';
+    else delete process.env.HDR_FINISHER_MEMORY_PROFILE;
+    assert.equal(defaultAppMemoryBytes(), minimum);
+    assert.equal(sanitizeApplicationPreferences({appMemoryBytes: 2_500_000_000}).appMemoryBytes, minimum);
+    assert.equal(sanitizeApplicationPreferences({appMemoryBytes: 8_000_000_000}).appMemoryBytes, 8_000_000_000);
+    assert.equal(sanitizeApplicationPreferences({appMemoryBytes: ram}).appMemoryBytes, ram - 2_000_000_000);
+    assert.equal(sanitizeApplicationPreferences({appMemoryBytes: null}).appMemoryBytes, null);
   }
-  assert.equal(sanitizeApplicationPreferences({appMemoryBytes:null}).appMemoryBytes,null);
 });

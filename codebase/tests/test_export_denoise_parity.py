@@ -111,6 +111,7 @@ class _Document:
 def _document(lane: str = "hdr", **overrides) -> _Document:
     document = _Document(DenoiseDocumentSettings())
     settings = getattr(document.denoise, lane)
+    settings.controls.method = "standard"
     settings.enabled = overrides.pop("enabled", True)
     settings.controls.amount = overrides.pop("amount", 0.8)
     settings.controls.luminance = overrides.pop("luminance", 0.7)
@@ -166,6 +167,67 @@ def test_a_session_without_a_document_exports_undenoised() -> None:
 
     assert denoise_settings_for_export(session, PreviewKind.HDR) is None
     assert _denoised_export_source(session, PreviewKind.HDR) is image
+
+
+def test_standard_denoise_jpeg_strips_preserve_finished_pixels(monkeypatch):
+    from hdr_finisher import exporters, gpu_delivery
+    from hdr_finisher.models import ExportSettings
+
+    monkeypatch.setattr(gpu_delivery, "render_pair", lambda *args: None)
+    session = _session(_document(), _noisy())
+    adjustments = AdjustmentState()
+    settings = ExportSettings(format="jpeg_ultrahdr")
+    prepare = exporters._jpeg_denoise_source(session, adjustments)
+    for lane in (PreviewKind.HDR, PreviewKind.SDR):
+        whole = exporters._render_unwatermarked_branch(session, settings, lane, adjustments)
+        strips = exporters._render_unwatermarked_branch(session, settings, lane, adjustments,
+                                                         denoise_source=prepare)
+        np.testing.assert_array_equal(strips, whole)
+
+
+@pytest.mark.parametrize("method", ["standard", "clean_grain"])
+def test_authored_sdr_standard_and_equivalent_grain_render_the_reference(monkeypatch, method):
+    from hdr_finisher import exporters, gpu_delivery
+    from hdr_finisher.models import ExportSettings
+
+    monkeypatch.setattr(gpu_delivery, "render_pair", lambda *args: None)
+    session = _session(_document("sdr"), _noisy())
+    session.sdr_reference_image = _noisy(seed=3) * .55
+    lane = session.denoise.sdr
+    lane.controls.method = method
+    lane.controls.grain_evenness = lane.controls.color_splotches = 0
+    kind = PreviewKind.SDR
+    settings = ExportSettings(format="jpeg_ultrahdr")
+    adjustments = session.adjustments
+    renderer = exporters._render_unwatermarked_branch
+    whole = renderer(session, settings, kind, adjustments)
+    strips = renderer(session, settings, kind, adjustments,
+                      denoise_source=exporters._jpeg_denoise_source(session, adjustments))
+    lane.enabled = False
+    plain = renderer(session, settings, kind, adjustments)
+    assert not np.array_equal(whole, plain)
+    np.testing.assert_array_equal(strips, whole)
+
+
+def test_cpu_grade_fallback_renders_grain_even_when_full_strips_are_requested():
+    from hdr_finisher.main import _render_selected_execution
+    from hdr_finisher.models import PreviewRequest
+    from hdr_finisher.render_cache import SessionRenderCache
+
+    session = _session(_document("sdr"), _noisy())
+    session.sdr_reference_image = _noisy(seed=5) * .55
+    session.render_cache = SessionRenderCache(session.image, session.sdr_reference_image)
+    kind = PreviewKind.SDR
+    settings = session.denoise.sdr
+    settings.controls.method = "clean_grain"
+    settings.controls.clean_splotches = False
+    settings.controls.clean_fringes = False
+    request = PreviewRequest(execution="strips")
+    denoised, _ = _render_selected_execution(session, request, kind, session.adjustments, 640, lambda: True)
+    settings.enabled = False
+    plain, _ = _render_selected_execution(session, request, kind, session.adjustments, 640, lambda: True)
+    assert denoised.shape == plain.shape
+    assert not np.array_equal(denoised, plain)
 
 
 def test_the_export_branch_actually_renders_the_denoised_source() -> None:
@@ -229,3 +291,71 @@ def test_adaptive_is_the_only_method() -> None:
         DenoiseDocumentSettings.model_validate(
             {"hdr": {"analysis": {"algorithm_version": "compact-haar-residual-v1"}}},
         )
+
+
+@pytest.fixture(scope="module")
+def pre_file_delivery_exporters():
+    from pathlib import Path
+    import subprocess
+    import sys
+    from types import ModuleType
+
+    from hdr_finisher import exporters
+
+    blob = "9b4c8a69:codebase/backend/hdr_finisher/exporters.py"
+    try:
+        source = subprocess.check_output(
+            ["git", "cat-file", "blob", blob], cwd=Path(__file__).resolve().parents[2], stderr=subprocess.DEVNULL)
+    except (OSError, subprocess.CalledProcessError):
+        pytest.skip("The pre-file-delivery revision is unavailable")
+    module = ModuleType("hdr_finisher.exporters_before_file_delivery")
+    module.__package__ = exporters.__package__
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setitem(sys.modules, module.__name__, module)
+        exec(compile(source, blob, "exec"), module.__dict__)
+        yield module
+
+
+@pytest.mark.parametrize("format_name", ["avif_gain_map", "jpeg_ultrahdr"])
+@pytest.mark.parametrize("denoise", ["off", "both", "hdr_only"])
+@pytest.mark.parametrize("highlights", [False, True])
+@pytest.mark.parametrize("linked", [False, True])
+def test_cpu_delivery_preserves_measurements_before_file_delivery(
+    monkeypatch, tmp_path, pre_file_delivery_exporters, format_name, denoise, highlights, linked,
+):
+    from hdr_finisher import exporters, gpu_delivery
+    from hdr_finisher.models import CapabilityInfo, CapabilityStatus, ExportSettings
+
+    monkeypatch.setattr(gpu_delivery, "render_pair", lambda *args: None)
+    session = _session(_document(enabled=denoise != "off"), _noisy(130, 64) * .4)
+    session.denoise.sdr.enabled = denoise == "both"
+    session.denoise.sdr.controls.method = "standard"
+    session.sdr_reference_image = _noisy(130, 64, seed=5) * .4
+    session.adjustments.sdr.use_authored_base = True
+    session.adjustments.sdr.linked_to_hdr = linked
+    for lane in (session.adjustments.hdr, session.adjustments.sdr):
+        lane.highlight_section_enabled = highlights
+        lane.highlight_compression_mode = "peak_fit"
+        lane.highlight_compression_peak_measurement = "robust"
+
+    name, suffix = (
+        ("AVIFGainMapExportBackend", ".avif") if format_name == "avif_gain_map"
+        else ("JPEGUltraHDRExportBackend", ".jpg")
+    )
+    binary = "avifgainmaputil" if format_name == "avif_gain_map" else "ultrahdr_app"
+    if exporters.resolve_binary(binary) is None:
+        pytest.skip(f"{binary} is unavailable")
+    capability = CapabilityInfo(name=format_name, status=CapabilityStatus.AVAILABLE, detail="")
+    measurements = {"hdr": {"peak": .3, "anchor": .4}, "sdr": {"peak": .5, "anchor": .3}}
+
+    def export(module, label):
+        path = tmp_path / f"{label}{suffix}"
+        settings = ExportSettings(format=format_name, output_path=str(path), editing_measurements=measurements)
+        result = getattr(module, name)(capability).export(session, settings)
+        assert result.accepted, result.message
+        return settings._exact_measurements, result.measurement_warnings, path.read_bytes()
+
+    expected = export(pre_file_delivery_exporters, "previous")
+    actual = export(exporters, "current")
+    assert actual[:2] == expected[:2]
+    assert actual[2] == expected[2]

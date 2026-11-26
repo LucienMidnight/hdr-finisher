@@ -4,6 +4,7 @@ Widths are authored in cropped source pixels or percent of its shorter side.
 Round half up once at source size, then once for final output; viewers scale
 these rectangles instead of rounding again at proxy or display resolution.
 """
+from .export_timing import timed as _timed_stage
 from dataclasses import dataclass
 from fractions import Fraction
 
@@ -82,7 +83,7 @@ def output_layout(width, height, framing, finishing, include=True):
         target_height = min(target_height, height + 2 * total)
     return FramingLayout(target_width, target_height, total - border, border)
 
-def delivery_layout(session, settings, adjustments):
+def delivery_layout(session, settings, adjustments, *, streaming=False):
     """Resolve from native cropped photo pixels, including reduced Proof."""
     from .finishing import geometry_output_dimensions
     framing = getattr(session, "framing", None)
@@ -97,6 +98,8 @@ def delivery_layout(session, settings, adjustments):
         from .models import OutputFinishingSettings
         layout = output_layout(width, height, framing, OutputFinishingSettings(
             resize_mode="long_edge", long_edge=limit, prevent_enlargement=True))
+    if streaming:
+        return layout
     from .resource_preflight import detect_memory_resources, estimate_resources
     estimate = estimate_resources(width=layout.width, height=layout.height,
         samples=4, bytes_per_sample=4, resources=detect_memory_resources(),
@@ -124,6 +127,7 @@ def layer_colors(framing, lane, white, ceiling=10000):
     return convert(framing.frame.color), convert(framing.border.color)
 
 
+@_timed_stage("framing")
 def compose(image, layout, colors):
     import numpy as np
     if layout is None:
@@ -132,9 +136,50 @@ def compose(image, layout, colors):
         raise ValueError("Photo pixels do not match the framing content rectangle")
     frame, border = colors
     result = np.empty((layout.height, layout.width, 3), dtype=np.float32)
-    result[:] = border
-    b = layout.border
-    result[b:layout.height-b or None, b:layout.width-b or None] = frame
     x, y, width, height = layout.photo
+    rim = layout.border
+    right, bottom = layout.width - rim, layout.height - rim
+    if rim:
+        result[:rim] = border
+        result[bottom:] = border
+        result[rim:bottom, :rim] = border
+        result[rim:bottom, right:] = border
+    result[rim:y, rim:right] = frame
+    result[y+height:bottom, rim:right] = frame
+    result[y:y+height, rim:x] = frame
+    result[y:y+height, x+width:right] = frame
     result[y:y+height, x:x+width] = image
     return result
+
+
+@_timed_stage("framing")
+def stream_compose(source, path, layout, colors):
+    import numpy as np
+    from .delivery_frames import DeliveryFrame
+    from .export_timing import tick
+    from .pixel_rows import row_slices
+
+    x, y, width, height = layout.photo
+    if source.shape[:2] != (height, width):
+        raise ValueError("Photo pixels do not match the framing content rectangle")
+    frame, border = colors
+    rim = layout.border
+    right, bottom = layout.width - rim, layout.height - rim
+
+    def bands(pixels):
+        for rows in row_slices(layout.height):
+            band = np.empty((rows.stop - rows.start, layout.width, 3), dtype=np.float32)
+            band[:] = border
+            first, last = max(rows.start, rim), min(rows.stop, bottom)
+            if first < last:
+                band[first - rows.start:last - rows.start, rim:right] = frame
+            first, last = max(rows.start, y), min(rows.stop, y + height)
+            if first < last:
+                band[first - rows.start:last - rows.start, x:x + width] = pixels[first - y:last - y]
+            yield band
+            tick(rows.stop, layout.height)
+
+    output = DeliveryFrame(path, (layout.height, layout.width, 3))
+    with source.map("r") as pixels:
+        output.write(bands(pixels))
+    return output

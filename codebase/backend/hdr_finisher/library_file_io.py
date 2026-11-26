@@ -8,13 +8,30 @@ from pathlib import Path
 from tempfile import NamedTemporaryFile
 from contextlib import contextmanager
 from contextvars import ContextVar
+from time import perf_counter
 
 _removals = ContextVar('library_file_removals', default=None)
+hash_timings = ContextVar('library_file_hash_timings', default=None)
 
 
 def digest(path):
-    with Path(path).open('rb') as stream:
-        return hashlib.file_digest(stream, 'sha256').hexdigest()
+    timings = hash_timings.get()
+    started = perf_counter()
+    try:
+        with Path(path).open('rb') as stream:
+            return hashlib.file_digest(stream, 'sha256').hexdigest()
+    finally:
+        if timings is not None:
+            timings['hashing'] += (perf_counter() - started) * 1000
+
+
+def digest_bytes(data):
+    timings = hash_timings.get()
+    started = perf_counter()
+    checksum = hashlib.sha256(data).hexdigest()
+    if timings is not None:
+        timings['hashing'] += (perf_counter() - started) * 1000
+    return checksum
 
 
 def signature(path):
@@ -23,6 +40,13 @@ def signature(path):
         raise ValueError('Links are left untouched.')
     s = path.stat()
     return [s.st_dev, s.st_ino, s.st_size, s.st_mtime_ns]
+
+
+def optional_signature(path):
+    try:
+        return signature(path)
+    except FileNotFoundError:
+        return None
 
 
 def same(path, stamp, checksum=None):

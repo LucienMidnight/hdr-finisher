@@ -1,0 +1,18 @@
+{
+  "darktable": {
+    "commit": "b407398a1b9d03d552f59d7227bd3eff66045495",
+    "files": {
+      "denoiseprofile.c": "4fd3ee664a9a2b785e9c76df6f3b9c3d28c7109e67301da3d0ec3e7e659c39ab",
+      "eaw.c": "01a1e0462cfc6f7a6beb7ac35f05823306076d1a14f73e1b02f2043b7eed2c9f"
+    }
+  },
+  "GALOSH": {
+    "commit": "11de0593cc8091933ad76d1d6d873f7dee537f15",
+    "files": {
+      "galosh_raw_cpu.c": "a8ab231a7609c28ec08f63ca91df9215c13e9af006d99a072af7aee8a9705cd6",
+      "galosh_cpu.h": "85af65c196e24d3aa4872a95fc3454c46664e1a96f2ac9e2155581c47c641bc1",
+      "GALOSH-LICENSE": "2ce16d8759eb9a66d1e637753aa65de794e19b4944934a61609cb3bfc7a33d83",
+      "GALOSH-NOTICE": "feec040432fbb94d1f9284656f7f5679337e978043cee1660fafd19c701b3679"
+    }
+  }
+}

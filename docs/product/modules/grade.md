@@ -27,6 +27,350 @@ Texture channels and 193 native Original Texture channels differently despite
 identical source bytes and donor centres. All seven cases pass twice on the
 minimum Mac. The production repair computation and comparison limit did not change.
 
+## November 24, 2026: Saved Heal and Clone replay
+
+Heal and Clone use the float64 CPU solver for saved and visible repairs in
+Library, Grade, Proof and export. Independent repairs can solve across the
+available cores from the original source. The app composites them in saved
+order so overlaps and donor locations keep their meaning. Inpaint still
+attempts the GPU with the existing CPU fallback. Expected Heal and Clone CPU
+work is recorded as the renderer in diagnostics. Only an actual fallback
+shows the fallback notice.
+
+## November 19, 2026: Signed channels in SDR output
+
+The final SDR gamut mapping eases negative channels into display black at
+any brightness before calculating perceptual hue. The same rule covers dark
+sensor noise and saturated midtones such as fire-lit skin. Legal colours
+pass through unchanged. Pixels above SDR white still use the highlight
+projection, now calculated from the prepared colour. Grade, Proof and export
+share the rule on CPU and GPU. RAW retains signed editing data and HDR uses
+its existing path. Finished SDR Library thumbnails and screen previews get a
+new cache identity. Previously built SDR screen previews can be rebuilt when
+the originals are available.
+
+## November 19, 2026: Denoise zoom and delivery memory
+
+Start with the [Denoise module PRD](denoise.md) for current behaviour, decisions, trial history and open work.
+
+Native Denoise zoom draws a sharp patch over a display-sized picture of
+the whole photo. During a drag or Navigate jump, newly exposed areas show
+the softer picture immediately. A completed patch takes over only if it
+covers the current view. Both layers use the same geometry and rendition.
+The last complete picture stays on screen until its replacement is ready,
+including while the softer layer is refreshed after a grade change. Both
+Grain layers share highlight measurements from the same native preparation,
+so rebuilding the softer layer cannot trigger another measurement and redraw.
+JPEG Ultra HDR can use the existing bounded CPU grade when its GPU delivery would
+exceed the memory ceiling and the graph supports strips. JPEG Ultra HDR
+input packing and decoded peak verification work in rows. The wait and
+memory results, including any remaining overages, are in the
+[performance table](../../technical/performance-table.md).
+
+Warm native zoom and the isolated full-size Standard export of the Sony
+passed the 4 GB gate. Sony Standard full-size Proof still exceeds the gate
+while building its decoded reference views. Fine and Clean Sony delivery
+needs a fresh-profile check after the full-size Proof memory work, and Canon
+Standard delivery needs rechecking with the final GPU admission estimate.
+
+Fine-to-Clean Grain now reuses the native Fine Grain pixels for the same
+source, geometry, noise fit and base controls. The 110% switch took 2.63 s on
+the Canon and 5.05 s on the Sony, from 13.54 s and 32.96 s. Changing a base
+control still prepares fresh pixels. The app publishes the Clean Grain
+result when the colour pass completes.
+
+Grade measures Grain noise from the native source on the first render,
+including when the photo opens at Fit. If an edit replaces the preparation,
+Grade keeps the last complete picture while it requests the current one.
+
+The four-photo comparison covers 54 fixed crops across all three methods.
+The finished CPU crops from the Standard and Fine Grain preparations were
+identical to the reference. Clean Grain's largest crop mean and p99 were
+0.00037 and 0.0051 for SDR ΔE 2000, and 0.00112 and 0.0169 for HDR ΔE ITP.
+Every marked count held. Clean Grain retained 13 colour spots and 1 pit on
+the Canon, 22 and 2 on the Sony, and 13 and 4 on the portrait.
+
+### Whole-photo GPU preparation estimate
+
+The trial stopped at the estimate. The candidate would reduce grain energy
+across the whole photo, then filter tiles and read back their finished
+pixels to the native scratch file. Clean Grain would add colour cleanup on
+the same native grid. The existing 110% Fine Grain writer held its lock for
+6.17 s Canon and 19.47 s Sony. It could overlap GPU filtering, but it starts
+after the grain fit and still has to finish before the final draw.
+
+Using Standard's measured whole-image GPU draw of 0.55 s Canon and 1.72 s
+Sony as a planning proxy for the fit pass, and the observed 0.57 s and
+0.81 s from the end of preparation to the final frame, makes the estimate
+with the current writer **7.5–9 s Canon and 22–26 s Sony**. The Sony write
+time alone exceeds the 17 s goal. For cold Clean Grain the corresponding
+estimate is **8.5–12 s Canon and 22–29 s Sony**. Its 110% baseline spent
+7.46 s and 18.99 s in the locked writer. The range allows for the GPU colour
+pass to overlap writing once the global fit is ready.
+
+A native input and prepared output on the GPU at once would add about
+0.58 GB Canon or 1.36 GB Sony. Bounded tiles would need an estimated
+0.12–0.20 GB of additional GPU scratch, transfers and readback on this
+unified-memory Mac. These are projections, with measured native scratch
+writing as the limiting step.
+
+## November 19, 2026: Denoise speed baseline and acceptance
+
+The Denoise reference covers Standard, Fine Grain and Clean Grain at
+defaults, with Even out harsh specks ×2.5. It uses the fixed railing-light
+RAW `DSC01212.ARW`, the Canon `IMG_0790.CR2`, the Sony `_DSC7970.ARW` and the
+marked portrait `DSC05622.ARW`. The review page uses the fixed areas and
+1:1 Retina SDR crops. The downloadable native crop arrays include
+scene-linear ACEScg, finished linear SDR and finished BT.2020 HDR in nits.
+The MacBook Neo waits and timing conditions are in the [performance table](../../technical/performance-table.md).
+
+Future speed changes must match these reference crops with finished SDR
+ΔE 2000 and HDR ΔE ITP mean < 1 and p99 < 3. The marked colour and pit counts
+must hold for each method and photo. The usual Proof/export agreement and
+the exact pre-encode HDR target still apply. The 4 GB whole-app ceiling on
+the MacBook Neo remains the first item for the speed work.
+
+### Proposed speed work in order
+
+These ranges are projections from the [MacBook waits](../../technical/performance-table.md).
+Repeat the same action with the same zoom, source and method before taking
+a speed claim.
+
+1. **Keep zoom and delivery inside 4 GB.** Drop textures tied to the old
+   zoom dimensions before loading the next ones. Keep the last complete
+   picture visible through the change and use a drawing surface sized to
+   the display. At 42 MP a single full-size RGBA16F surface is about 339 MB.
+   The corresponding display-sized surface is at most 36 MB on this Mac.
+   The Sony Fine Grain zoom-out reached 4.87 GB, so releasing the surface
+   alone covers only part of the 0.87 GB excess. Check live and retiring
+   source buffers and the retained tiles together. Budget separately for
+   native delivery, where the Sony Standard CPU fallback reached 6.82 GB.
+   With the same region read, Fine Grain zoom-out would still take about
+   **1.1–1.3 s Canon / 3.1–3.4 s Sony**. Retiring a texture too early could
+   briefly show an old frame or leave an area blank.
+2. **Reuse Fine Grain pixels when switching to Clean Grain.** The same
+   grain fit is already reused. Reuse the resolved RGB for the same source,
+   controls and geometry too, then calculate the colour correction from
+   those native pixels. Publish the new result only when complete and stay
+   inside the existing scratch allowance. The observed 110% switch was
+   13.54 s Canon / 32.96 s Sony. Removing repeated wavelet work and allowing
+   time to read the saved tiles projects **6–8 s Canon / 13–17 s Sony**.
+   Stale RGB or missing neighbours could change grain or create seams.
+3. **Compute each wavelet core once on a fresh preparation.** Fine Grain
+   currently pays for the downstream colour margin. Clean Grain can share
+   finished pixels across adjacent colour tiles. Preserve the filter reads
+   across every boundary. On the Fine Grain 110% preparation, roughly 28%
+   less wavelet tile work projects **12–13 s Canon / 28–30 s Sony** from
+   14.40 / 34.06 s. The risk is rounding differences at seams or a shift in
+   fine grain.
+4. **Reuse already drawn Fit pixels on warm zoom-out.** Reading the
+   correction took about 1.05 s on the Canon and 3.09 s on the Sony during
+   the Fine Grain zoom-out. Reuse a Fit result for the unchanged recipe
+   within the existing allowances when one is ready. Project **0.3–0.8 s
+   Canon / 0.6–1.3 s Sony** on that warm action. A changed zoom target or
+   grade could pick stale pixels. Compare both native and Fit results.
+
+The 110% correction uploads used about 0.04–0.05 s of submission time. The
+CPU filter work is the larger opportunity. Reassess a new GPU filter route
+after the CPU changes and the memory fix. To justify it against this Fine
+Grain 110% baseline, the whole wait would need to land near 7 s on the Canon
+and 17 s on the Sony. A GPU port adds CPU/GPU parity and unified-memory risk.
+
+## November 19, 2026: Clean Grain app-test follow-up
+
+Steve requested halo and colour protection after testing Clean Grain. Small
+is the new default. Clean Grain pulls less broadly around bright lights
+and large colour differences, with a narrow pass for edge fringes. Dark
+Specks is removed. The one isolation trial required a dark centre to have
+brighter samples on every side and brought 7 of 12 Canon pits and 4 of 5
+Sony pits to grain level. The three sampled Canon and Sony shadow groups,
+plus the Sony shirt, were within the proposed colour tolerance. The Canon
+pit count missed the required 10, so the slider and preparation were removed.
+Previously saved Clean Grain grades using Dark Specks lose that correction.
+
+Both experimental methods had been fitting the source at the current
+preview size. At Fit, Clean Grain's native-pixel reaches covered several
+times as much of the scene. The renderer now reuses one prepared native
+result from disk across zoom and pan. The existing Grade memory limit and
+full-size disk allowance apply. Fit versus native and real MacBook waits
+are recorded with the associated checks. The Sony zoom-out still sampled
+above the 4 GB whole-app ceiling. See the [performance table](../../technical/performance-table.md).
+
+Fine Grain's colour gains match Standard's. Its changed brightness gain can
+make the existing colour more conspicuous when the scene is mapped to the
+screen. In Steve's aligned screenshots the planter rim increased from
+13.5 to 14.5 display code values in red-minus-blue contrast, while its peak
+brightness gradient fell from 24.4 to 22.3 codes per screenshot pixel.
+The screenshots show a planter, while the approved IMG_0790.CR2 fixture is
+the fire-dancer photo. The planter measurements therefore use the supplied
+screenshots. An edge-aware brightness gain could preserve Standard's
+brightness behaviour on steep edges. Fine Grain's filter is unchanged.
+
+On the round 5 mark set, Small at 100% brought **11/28 Canon** and
+**22/24 Sony** colour marks to grain level. Canon's target was 20. Six
+Canon colour marks rendered black from negative scene luminance. A
+colour-only correction cannot lift their centres. The same fixed SDR
+views gave these ΔE 2000 readings against Fine Grain.
+
+| Area | Mean | p95 |
+| --- | ---: | ---: |
+| Canon highlight rings, pooled | 0.083 | 0.392 |
+| Sony highlight rings, pooled | 0.204 | 1.091 |
+| Canon flame | 0.243 | 1.293 |
+| Canon centre face | 0.407 | 2.243 |
+| Canon left face and hair | 0.474 | 2.938 |
+| Canon grass skirt | 0.615 | 3.214 |
+| Sony eye and lashes | 0.506 | 2.161 |
+| Sony hair | 0.806 | 2.948 |
+| Sony ear | 0.389 | 1.710 |
+
+All 20 Canon rings and 19 of 20 Sony rings meet the per-ring mean <1 and
+p95 <3 limits. The Canon skirt misses the detail tail limit. The actual
+planter's after-fix result still needs the source photo. Colour acceptance
+remains open under the [follow-up brief](../../technical/briefs/denoise-clean-grain-fixes-2026-11-19.md).
+
+## November 19, 2026: experimental Fine Grain and Clean Grain
+
+Steve chose to add Fine Grain and Clean Grain next to Standard for hands-on
+testing. Fine Grain uses the 18-pixel brightness-grain match from round 4.
+Clean Grain defaults to the round 5 combination of large colour splotch cleanup
+and nearby dark-pit repair. All three share the noise model and the eight
+existing controls. Method and added controls belong to the same saved settings,
+copy/paste and presets. Standard stays the default for new and existing grades.
+
+Steve approved a whole-photo grain fit before preview and a preparation wait
+shown in the status line. Color Splotches and Dark Specks blend live after
+preparation. Grain Evenness prepares again after release when needed. Grade and
+Show Noise use WebGPU, as they do for Standard. Proof and export retain their CPU
+fallback at the existing perceptual tolerance. Signed RAW and Pixel cleanup
+stay in place. The guide recommends Even out harsh specks at ×2.5 for RAWs.
+The experiment exposes the observed coloured rims and softer faces, lashes
+and fine hair. Steve's visual acceptance and any decision to ship remain open.
+The AI method stays deferred to v2.
+
+The two default experimental CPU results match the research rows exactly on
+the full signed 18 MP Canon and 42 MP Sony inputs. The MacBook Neo timings are
+in the [performance table](../../technical/performance-table.md). The
+three-fixture synthetic GPU measurement comparison passes all 36 finished
+comparisons. The full measurement corpus still needs a noise-free linear
+EXR render at least 540×540 in HDR Test Images.
+
+## November 17, 2026: informative Denoise measurement (Steve's decision)
+
+Steve approved excluding uninformative brightness bins **and** quiet calibration
+blocks together, as recommended by the
+[dark-noise report](../../technical/research/denoise-v1-2026-11-16/dark-noise-strength.md).
+Clipped, featureless flame/lamp/sky areas no longer falsely report nearly zero
+noise beside noisy shadows. CPU and GPU share eligibility thresholds and a
+scaled nonnegative variance fit, with the complete previous-estimator fallback
+when too little informative evidence remains. Measurement revision
+`adaptive-measure-informative-v3` prevents old models from being reused.
+
+`adaptive-atrous-v1`, reconstruction, controls and D1 defaults remain unchanged.
+Existing saved grades with Denoise enabled may clean noisy shadows differently,
+including flame/highlight test fixtures and any such test projects; saved slider
+values do not change. No old-project compatibility route is added. Ordinary
+fixture models remain within 0.1%; fast CPU/host-fit checks do not establish GPU
+finished-pixel parity. GPU validation remains open below; this is not a claim
+that all signed dark-shadow pits or demosaic specks are solved.
+
+Combined validation on November 17 found and fixed a GPU histogram boundary
+error: a constant clipped plateau could absorb the adjacent shadow bin before
+that bin was excluded. Exact plateau boundaries now retain those shadow
+observations, within the existing histogram and budget. Measurement identity
+advances to `adaptive-measure-informative-v4`. The three generated real-GPU
+cases pass all 12 finished-pixel comparisons; full-corpus qualification still
+needs the missing noise-free EXR. The algorithm, controls and limits stay fixed.
+
+Final fast checks on the 8 GB MacBook under the shared lock: Node **1,101 pass,
+one skip, zero failures**; Python **4,105 pass, 155 skips, one xpass, zero
+failures**, with the existing Starlette/httpx deprecation warning. The two
+research flame expectations now require agreement with shipping instead of
+stronger cleaning than shipping; no tolerance was loosened. The protected
+`DSC00264-four-masks.hdrfinisher`, `DSC00264-fifty-locals.hdrfinisher` and
+`DSC00950.hdrfinisher` all have Denoise off in both lanes, so this measurement
+fix does not change their saved appearance unless Denoise is enabled. Their
+files were read only and were not rewritten.
+
+## November 17: signed RAW scene inputs; no Denoise algorithm change
+
+Steve's signed-development decision preserves below-black Bayer readings through
+source Denoise/model setup, HDR/generated-SDR exposure and local grading. Local
+zero-contrast exposure is an exact signed multiplication; local-stack, active
+Detail and vignette no longer floor working RGB incidentally. Statistical/log
+guides stay positive; negative Blacks deliberately crushes to zero. Authored SDR
+keeps its independent decoder contract. The adaptive algorithm and approved D1
+controls stay unchanged; only the signed-source model identity advances.
+
+Saved sliders stay unchanged, while rebuilt RAW shadows/Film/local grades and
+Match inputs can change. This is not an invisible bug fix or a speck-cleanup
+claim. CPU result-based identity, ±6 EV, signed stage and exact-cap cases are
+covered; real GPU/Denoise/Library/Proof/export qualification remains open under
+the slow-validation approval gate. X-Trans signed demosaicing remains open.
+
+## November 17: residual-noise cleanup trial (research only)
+
+Committed CPU research adapters `994152ca` / `f8f6e22b` retain current Denoise
+and its approved D1 defaults. Four classical outlier/chroma variants were
+measured; the conservative surrounding-brightness version gains only .062 dB
+on held-out scene-weighted pairs, still loses fine text and leaves the Canon
+ringed shadow specks. It is **not selected for shipping** as Denoise
+(Experimental). No requirement, tolerance, model dependency, cache allowance
+or production rendering changed. Native Mac research costs and the proposed
+GPU/CPU path are in
+[speck-cleanup.md](../../technical/research/denoise-v1-2026-11-16/speck-cleanup.md).
+The harness gains explicit lifted-shadow residual tails and twelve fixed
+review rows with an experimental column; D2 and the wider trial remain open.
+
+## November 17, 2026: Denoise shipping defaults (Steve's decision D1)
+
+Steve approved Amount 0.75, Color Noise 0.75 and Detail Recovery 0.5 for
+`adaptive-atrous-v1`, from the November 16 quality trial. Luminance and all
+four noise-size controls stay at 0.5; Denoise starts off. Backend, frontend,
+GPU fallback, new-photo/project values, the Default preset, group reset and
+double-click reset use these values. Saved grades and user presets keep their
+explicit values; there is no migration or change to the algorithm or tolerances.
+The CPU research shipping-default adapter follows the document model; earlier
+research measurements remain historical results with their recorded controls.
+D2 and the remaining quality-trial work stay open in
+[the brief](../../technical/briefs/denoise-v1-quality-trial-2026-11-16.md).
+
+## November 16: Denoise quality-trial measurement harness
+
+Phase 1 CPU-only research tooling is committed in `da0d5ace`: bounded Bayer
+and ACEScg inputs, provisional per-camera noise fits, deterministic targets,
+off/current-Denoise adapters, contract measurements and a small static review.
+The app's Denoise and controls are unchanged. Baseline shows substantial noise
+reduction but loss of high-ISO edge/detail; no replacement is selected or
+approved, and no proposed tolerance is relaxed. Calibration remains limited
+by single noisy frames and missing clean/dark pairs. See
+[the baseline](../../technical/research/denoise-v1-2026-11-16/harness-baseline.md)
+and [the active brief](../../technical/briefs/denoise-v1-quality-trial-2026-11-16.md).
+Phase 2 RawNIND linear/Bayer research adapters and strength comparisons are
+recorded in [the prototype report](../../technical/research/denoise-v1-2026-11-16/rawnind-prototype.md).
+Neither qualifies: linear improves high-ISO noise but fails low-ISO fidelity,
+detail/halo and HDR/exposure safeguards; Bayer changes clean fine detail and
+uses an explicit AHD fallback on out-of-domain real sensor inputs. The separate
+unclipped Bayer native timings are experimental extrapolation, not qualification.
+The later November 16 verification supersedes those Bayer measurements: its
+research adapter now clips normalised sensor input as upstream does and anchors
+global gain to AHD camera RGB. All eight real crops now use neural inference;
+full strength improves ISO 6400/25600 fidelity but still fails low ISO,
+detail/halo/colour and real-structure requirements. The pinned upstream
+reference also changes clean fabric/text. Earlier native Bayer timings do not
+include the revised AHD anchor pass. No shipping replacement is selected.
+The current Denoise remains unchanged; classical comparison and Steve's visual
+decision remain open. No tolerance, cache allowance or shipping dependency changes.
+
+Committed research tooling `20f2224a` adds an explicitly CC0 RawNIND noisy/clean
+subset, with documented held-out versus seen-by-RawNIND labels and crop-only
+registration/exposure matching. The [public-pairs results](../../technical/research/denoise-v1-2026-11-16/public-pairs.md)
+score 52 crops / 11 scenes / four cameras; four held-out scenes survive input
+screens. All candidates above ISO 6400 are excluded, not qualified. Default
+Denoise reduces real noise; tuning trades edge/detail for small aggregate
+fidelity gains. This addresses a research-input gap, not laboratory calibration
+or a shipping denoiser decision. Current defaults and quality limits stay fixed.
+
 ## November 16: safe linked SDR built and scoped qualification
 
 Whole-photo Match now tries the trial's body/colour-best output tail, then
@@ -1980,6 +2324,7 @@ that draws the preview belongs to [preview-and-gpu](preview-and-gpu.md).
 | Decision | Date |
 | --- | --- |
 | HDR and SDR are independent branches after source interpretation. An HDR control never changes the SDR side, and the reverse. | 2026-08 |
+| “Let's share methods between HDR and SDR for now.” Both renditions offer the same Denoise methods and use the same preparation code. Grade reuses Grain preparation for identical source pixels and preparation settings, including after Recalculate. Authored SDR has its own preparation. Denoise settings remain per rendition, with the existing Match and linked-grade behaviour. | Steve, 2026-11-20 |
 | HDR controls stay continuous at neutral, keep luminance order and add no hidden ceiling. Values above the curve range pass through. | 2026-08 |
 | Detail (Texture, Clarity, Sharpen) is corrective and separate from Film Look's fixed-scale character. Global Detail runs after the colour grade and before local adjustments; local Detail runs inside each local grade. | 2026-09 |
 | Match entire HDR grade captures the whole HDR recipe (global, locals, Detail, Film Look, vignette, grain) and builds an SDR base from it. SDR controls stay as trims. Rematch and Revert are single history steps. | 2026-09 |
@@ -2272,6 +2617,13 @@ groups U1 to U3), not here.
 
 ## 5. Open work, in order
 
+- **Informative Denoise measurement GPU validation pending (November 17).**
+  Combine measurement parity (including signed/positive flame and clean flats),
+  adaptive reconstruction and Proof/export Denoise parity with signed RAW
+  development and the hot-pixel checkbox in one Steve-approved slow validation.
+  Keep SDR ΔE2000 / HDR ΔE ITP mean <1, p99 <3 and the exact finished HDR ceiling.
+  Fast checks exercise the GPU path's host fit/selection only, not GPU dispatch.
+
 - **Retouch tool needs further work (Steve, November 2, 2026).**
   Steve's manual review finds that the tool itself still needs work. Keep this
   open separately from the Batch 2 Library loading/lease fix; passing loading
@@ -2302,6 +2654,15 @@ Sharpen review below are v1. Item 2 waits on Steve's recorded photo. Item 4
   starting point for methods that amplify noise less: deconvolution/capture
   sharpening, edge or noise masking, and darktable’s diffuse-or-sharpen
   approach. Compare quality and processing cost before choosing.
+- **V2: consider a Defringe tool (Steve, November 19, 2026).** In the Canon
+  night test, lit edges keep an orange-yellow colour fringe in Standard and
+  Fine Grain. Clean Grain removes it, but only as a side effect of its colour
+  cleanup. A dedicated Defringe tool would act only along high-contrast edges,
+  as defringe tools in other editors do. It would let a Fine Grain photo get
+  clean edges without Clean Grain's other changes. Not v1; no design yet. The
+  Clean Grain fixes round reports whether Fine Grain strengthens these edges
+  or keeps what is already there
+  ([brief](../../technical/briefs/denoise-clean-grain-fixes-2026-11-19.md)).
 
 1. **Built October 27:** Highlight and Shadow Desaturation in Color
    (COLOR-DESAT-01), awaiting Steve’s by-eye review; see section 4.

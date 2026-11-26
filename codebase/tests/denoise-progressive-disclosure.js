@@ -1,7 +1,7 @@
 // PRD 6.3 -- progressive disclosure for the Denoise controls.
 //
-// Amount and Detail Recovery are always visible; Luminance and Colour Noise
-// sit behind Advanced. There is one method, so no method selector.
+// Amount, Luminance, Color Noise and Detail Recovery are always visible; the
+// noise sizes sit behind Advanced. Clean Grain offers an optional colour correction.
 //
 //   node tests/denoise-progressive-disclosure.js --url http://127.0.0.1:8765
 //
@@ -67,22 +67,39 @@ function assert(condition, message) {
 
     assert(await shown("denoise-amount"), "Amount is not always visible.");
     assert(await shown("denoise-detail"), "Detail Recovery is not always visible.");
-    assert(await page.locator("#denoise-detail").inputValue() === "0", "A new project did not start Detail Recovery at 0%.");
-    assert(await page.locator("#denoise-detail-value").textContent() === "0%", "The new Detail Recovery default was not displayed as 0%.");
-    for (const removed of ["denoise-algorithm", "denoise-method", "denoise-levels"]) {
+    assert(await page.locator("#denoise-detail").inputValue() === "0.5", "A new project did not start Detail Recovery at 50%.");
+    assert(await page.locator("#denoise-detail-value").textContent() === "50%", "The new Detail Recovery default was not displayed as 50%.");
+    for (const key of ["amount", "color"]) {
+      assert(await page.locator(`#denoise-${key}`).inputValue() === "0.75", `${key} did not start at 75%.`);
+      assert(await page.locator(`#denoise-${key}-value`).textContent() === "75%", `${key} did not display 75%.`);
+    }
+    for (const removed of ["denoise-algorithm", "denoise-levels"]) {
       assert(await page.locator(`#${removed}`).count() === 0, `The removed control #${removed} is still in the panel.`);
     }
-    assert(!await shown("denoise-luminance"), "Luminance is visible before Advanced is opened.");
-    assert(!await shown("denoise-color"), "Colour Noise is visible before Advanced is opened.");
+    const method = page.locator("#denoise-method");
+    assert(await method.inputValue() === "clean_grain", "A new photo should select Clean Grain.");
+    const options = await method.locator("option").evaluateAll(options =>
+      options.map(option => [option.value, option.textContent.trim()]));
+    assert(JSON.stringify(options.slice(0, 2)) === JSON.stringify([
+      ["clean_grain", "Clean Grain"], ["standard", "Simple"],
+    ]) && options[2]?.[0] === "micro_grain" && options.length === 3, "The Denoise menu changed.");
+    // Steve, November 25: Color Noise moved out of Advanced, and Color
+    // Splotches at 0% replaced the Clean color splotches checkbox.
+    assert(await page.locator("#denoise-clean-splotches").count() === 0, "The Clean color splotches checkbox is back.");
+    assert(await shown("denoise-splotches") && await page.locator("#denoise-splotches").inputValue() === "1",
+      "Clean Grain should start with Color Splotches at 100%.");
+    assert(!await page.locator("#denoise-protect-edges").isChecked(), "Protect color edges should start off.");
+    assert(await shown("denoise-color"), "Color Noise is not in the main panel.");
+    assert(await shown("denoise-luminance"), "Luminance is not in the main panel.");
+    assert(!await shown("denoise-finest"), "Noise sizes are visible before Advanced is opened.");
 
     await page.click("#denoise-advanced-toggle");
-    assert(await shown("denoise-luminance"), "Advanced did not reveal Luminance.");
-    assert(await shown("denoise-color"), "Advanced did not reveal Colour Noise.");
+    assert(await shown("denoise-finest"), "Advanced did not reveal the noise sizes.");
     assert(await page.evaluate(
       () => document.getElementById("denoise-advanced-toggle").getAttribute("aria-expanded"),
     ) === "true", "Advanced did not report itself expanded.");
     await page.click("#denoise-advanced-toggle");
-    assert(!await shown("denoise-luminance"), "Advanced did not hide Luminance again.");
+    assert(!await shown("denoise-finest"), "Advanced did not hide the noise sizes again.");
 
     assert(await shown("denoise-recalculate"), "Recalculate is not reachable.");
 
@@ -90,6 +107,13 @@ function assert(condition, message) {
 
     const enableDenoise = async () => {
       await page.evaluate(() => {
+        const original = state.gpuPreview.analyzeDenoiseProxy;
+        state.gpuPreview.analyzeDenoiseProxy = function (...args) {
+          this.analyzeDenoiseProxy = original;
+          window.denoiseEditableWhilePreparing = !els.denoiseAmount.disabled && !els.denoiseSplotchSize.disabled
+            && els.denoiseRecalculate.disabled;
+          return original.apply(this, args);
+        };
         const group = document.querySelector(".denoise-group .group-toggle");
         if (group.getAttribute("aria-expanded") !== "true") group.click();
         const bypass = document.querySelector("#denoise-bypass");
@@ -103,6 +127,8 @@ function assert(condition, message) {
       await page.waitForTimeout(1200);
     };
     await enableDenoise();
+    assert(await page.evaluate(() => window.denoiseEditableWhilePreparing),
+      "Denoise should allow editing Amount and Splotch Size during preparation.");
 
     // Capture only the visible image region. A locator screenshot of the
     // oversized zoomed canvas also captures page controls lying over it.
@@ -141,28 +167,74 @@ function assert(condition, message) {
       "Opening and closing Advanced changed the stored controls: "
       + JSON.stringify({ documentBefore, documentAfterToggle }));
 
-    // A control that is hidden must still apply. Drive Luminance to an
+    // A control that is hidden must still apply. Drive Finest to an
     // extreme with the panel shut; the picture has to move. If disclosure had
     // quietly detached the control, this is what would catch it.
-    const luminanceHidden = await shown("denoise-luminance");
-    assert(!luminanceHidden, "Luminance should be hidden for this step.");
+    const finestHidden = await shown("denoise-finest");
+    assert(!finestHidden, "Finest should be hidden for this step.");
     await page.evaluate(() => {
-      const input = document.querySelector("#denoise-luminance");
+      const input = document.querySelector("#denoise-finest");
       input.value = "0";
       input.dispatchEvent(new Event("input", { bubbles: true }));
       input.dispatchEvent(new Event("change", { bubbles: true }));
     });
     await settled();
     const afterHiddenEdit = await capture();
-    const storedLuminance = await page.evaluate(
-      () => state.denoise[state.currentView].controls.luminance,
+    const storedFinest = await page.evaluate(
+      () => state.denoise[state.currentView].controls.finest_noise,
     );
 
-    assert(storedLuminance === 0,
-      "A hidden control did not reach the document: luminance is " + storedLuminance);
+    assert(storedFinest === 0,
+      "A hidden control did not reach the document: finest_noise is " + storedFinest);
     assert(digest(before) !== digest(afterHiddenEdit),
-      "Luminance made no difference to the picture while hidden, so disclosure "
+      "Finest made no difference to the picture while hidden, so disclosure "
       + "has detached it from the render.");
+
+    // A grade saved with the old checkbox off shows Color Splotches at 0%.
+    // Raising the slider must prepare the splotch pass and reach the render.
+    await page.evaluate(() => commitDenoiseControl("clean_splotches", false));
+    await page.waitForFunction(() => state.denoiseRuntime[state.currentView].status === "ready"
+      && state.gpuPreview.denoiseSourceSelector?.controls?.cleanSplotches === false, null, { timeout: 300000 });
+    assert(await page.locator("#denoise-splotches").inputValue() === "0", "Splotches off did not show 0%.");
+    assert(await page.locator("#denoise-splotch-size").isDisabled(), "Splotch Size stayed enabled at 0%.");
+    await page.evaluate(() => {
+      const input = document.querySelector("#denoise-splotches");
+      input.value = "0.6";
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await page.waitForFunction(() => {
+      const controls = state.gpuPreview.denoiseSourceSelector?.controls;
+      return state.denoiseRuntime[state.currentView].status === "ready"
+        && controls?.cleanSplotches === true && controls.colorSplotches === 0.6;
+    }, null, { timeout: 300000 });
+    const raised = await page.evaluate(() => state.denoise[state.currentView].controls);
+    assert(raised.clean_splotches === true && raised.color_splotches === 0.6,
+      "Raising Color Splotches from 0% did not turn splotch cleanup back on: " + JSON.stringify(raised));
+    assert(!await page.locator("#denoise-splotch-size").isDisabled(), "Splotch Size stayed disabled above 0%.");
+
+    // The reset routes must agree with the fresh-photo values, including
+    // Advanced controls. Dispatch the actual double-click handler.
+    const resetDefaults = await page.evaluate(() => {
+      const expected = { method: "clean_grain", amount: 0.75, luminance: 0.5, color_noise: 0.75,
+        detail_recovery: 0.5, finest_noise: 0.5, fine_noise: 0.5,
+        medium_noise: 0.5, coarse_noise: 0.5 };
+      const lane = state.currentView;
+      for (const [id, key] of [["amount", "amount"], ["color", "color_noise"], ["detail", "detail_recovery"]]) {
+        const control = document.getElementById(`denoise-${id}`);
+        control.value = "0.1";
+        control.dispatchEvent(new Event("input", { bubbles: true }));
+        control.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+        if (state.denoise[lane].controls[key] !== expected[key]) return false;
+      }
+      state.denoise[lane].controls.amount = 0.1;
+      resetControlGroup("denoise");
+      const preset = builtInGroupPresets({ group: "denoise", lane })[0];
+      return Object.entries(expected).every(([key, value]) =>
+        state.denoise[lane].controls[key] === value
+        && preset.values[`denoise.${lane}.controls`][key] === value);
+    });
+    assert(resetDefaults, "Group reset, double-click reset and Default preset disagree with the approved defaults.");
 
     assert(pageErrors.length === 0, "Page errors: " + JSON.stringify(pageErrors));
     console.log("Denoise progressive disclosure matches 6.3, and changes no results: "

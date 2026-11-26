@@ -6,7 +6,9 @@ function drawHistogram(scope) {
   ctx.clearRect(0, 0, width, height);
   if (!scope?.channels?.length) {
     els.scopeTitle.textContent = "Histogram";
-    els.scopeNote.textContent = "Reference scopes will appear here after a preview is rendered.";
+    els.scopeNote.textContent = scopePresentationMatches(state.scopeUnavailable, state.currentView)
+      ? "This scope needs a whole-picture Micro Grain preview. Try Fit view to prepare one."
+      : "Reference scopes will appear here after a preview is rendered.";
     canvas.removeAttribute("title");
     els.scopeStats.innerHTML = "";
     state.lastScope = null;

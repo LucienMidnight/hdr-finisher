@@ -3,6 +3,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const vm = require("node:vm");
 const { test } = require("node:test");
+const { HDRMaskTileBatch } = require("../frontend/mask-request-coordinator.js");
 
 const context = vm.createContext({
   console,
@@ -11,6 +12,7 @@ const context = vm.createContext({
   window: {},
   GPUTextureUsage: { COPY_DST: 2, TEXTURE_BINDING: 4 },
 });
+vm.runInContext(fs.readFileSync(path.join(__dirname, "../frontend/source-transport.js"), "utf8"), context);
 vm.runInContext(
   fs.readFileSync(path.join(__dirname, "../frontend/mask-loader.js"), "utf8"),
   context,
@@ -179,8 +181,8 @@ test("a tile batch posts only missing tiles and caches its padded uploads", asyn
     return { ok: true, arrayBuffer: async () => new ArrayBuffer(0) };
   };
 
-  const first = await tileRequest(target);
-  const second = await tileRequest(target);
+  const first = await tileRequest(target, { sourceEpoch: 1 });
+  const second = await tileRequest(target, { sourceEpoch: 1, editRevision: 5 });
 
   assert.equal(first.localIndex, 3);
   assert.equal(first.entries.size, 1);
@@ -190,6 +192,59 @@ test("a tile batch posts only missing tiles and caches its padded uploads", asyn
   assert.equal(bodies[0].tiles[0].local_id, "local-1");
   assert.equal(target.writes[0][2].bytesPerRow, 256);
   assert.equal(target.writes[0][1].byteLength, 512);
+  const replaced = await tileRequest(target, { sourceEpoch: 2, editRevision: 5 });
+  assert.notEqual(replaced.entries.get("0,0|h0"), first.entries.get("0,0|h0"));
+  assert.equal(bodies.length, 2);
+});
+
+test("shared mask rectangles upload once and cover contained pans and edits", async () => {
+  const target = renderer();
+  const bodies = [];
+  target.maskTileBatch = {
+    cover: HDRMaskTileBatch.cover,
+    parse: () => ({ entries: [{ status: "ok", tile_x: 1, tile_y: 2, tile_width: 9, tile_height: 4,
+      output_width: 40, output_height: 20, payload: new Uint8Array(36) }] }),
+  };
+  context.fetch = async (_url, options) => {
+    bodies.push(JSON.parse(options.body));
+    return { ok: true, arrayBuffer: async () => new ArrayBuffer(0) };
+  };
+  const tile = (key, x, width) => ({ key, rect: { x, y: 2, width, height: 4 },
+    haloRect: { x, y: 2, width, height: 4 }, halo: 0 });
+  const batch = { localIndex: 3, local: { id: "local-1" }, sharedRegion: true,
+    tiles: [tile("first", 1, 6), tile("second", 4, 6)] };
+  const first = await tileRequest(target, { batch, sourceEpoch: 1 });
+  assert.deepEqual(bodies[0].tiles, [{ local_id: "local-1", x: 1, y: 2, width: 9, height: 4, halo: 0 }]);
+  const entry = first.entries.get("first");
+  assert.equal(first.entries.get("second"), entry);
+  assert.deepEqual(Array.from(entry.frameRect), [1 / 40, 2 / 20, 9 / 40, 4 / 20]);
+  const set = target.maskTiles.set.bind(target.maskTiles);
+  let touches = 0;
+  target.maskTiles.set = (...args) => { touches += 1; return set(...args); };
+  const panned = await tileRequest(target, { sourceEpoch: 1, editRevision: 7,
+    batch: { ...batch, tiles: [tile("panned", 2, 7), tile("overlap", 3, 7)] } });
+  assert.equal(panned.entries.get("panned"), entry);
+  assert.equal(panned.entries.get("overlap"), entry);
+  assert.equal(touches, 1);
+  assert.equal(bodies.length, 1);
+  assert.equal(target.writes.length, 1);
+});
+
+test("a neutral-geometry capacity refusal backs off rather than looking superseded", async () => {
+  const target = renderer();
+  let fetches = 0;
+  context.fetch = async () => {
+    fetches += 1;
+    return { ok: false, status: 507, json: async () => ({ detail: "Mask capacity is busy" }) };
+  };
+  const refused = { status: 507, message: "Mask capacity is busy", retryAfter: 4010 };
+  await assert.rejects(tileRequest(target), refused);
+  await assert.rejects(tileRequest(target, { batch: { localIndex: 4, local: { id: "sibling" },
+    tiles: [{ key: "2,2|h0", rect: { x: 2, y: 2, width: 2, height: 2 }, halo: 0 }] } }), refused);
+  assert.equal(fetches, 1);
+  context.window.HDRSourceTransport.clearCapacityRefusals(target);
+  await assert.rejects(tileRequest(target), refused);
+  assert.equal(fetches, 2);
 });
 
 test("a superseded tile batch publishes none of its decoded entries", async () => {

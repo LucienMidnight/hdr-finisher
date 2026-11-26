@@ -6,7 +6,7 @@
   const button = (text, fn) => { const b=node("button",text,"button-secondary"); b.type="button"; b.onclick=()=>Promise.resolve(fn()).catch(report); return b; };
   const help = (element, text) => { element.classList.add("tooltip-trigger"); element.dataset.tooltip=text; element.tabIndex=0; element.setAttribute("aria-description",text); return element; };
   const report = error => status.post({id:"batch-export",severity:"error",message:error.message||String(error)});
-  async function api(url, data, method="POST") { const r=await fetch(url,data === undefined?{}:{method,headers:{"Content-Type":"application/json"},body:JSON.stringify(data)}); const p=await r.json(); if(!r.ok) throw Error(typeof p.detail==="string"?p.detail:"Export request failed."); return p; }
+  async function api(url, data, method="POST", action=null) { const r=await fetch(url,data === undefined?{}:{method,headers:globalThis.HDRDiagnostics?.headers(action, {"Content-Type":"application/json"}) ?? {"Content-Type":"application/json"},body:JSON.stringify(data)}); const p=await r.json(); if(!r.ok) throw Error(typeof p.detail==="string"?p.detail:"Export request failed."); return p; }
   async function presetURL() { const directory=state.appPreferences?.folders?.presetSave || await desktop?.getDefaultPresetDirectory?.(); return `/api/export-presets${directory?`?directory=${encodeURIComponent(directory)}`:""}`; }
   function settings() { const s=currentExportSettings(); delete s.output_path; delete s.path_grant; delete s.overwrite; delete s.overwrite_target; delete s.edit_revision; delete s.editing_measurements; return s; }
   function capture() { if(!model.draft)return; const v=model.draft.versions[model.version]; v.settings=settings(); v.quality_preset=els.exportPreset.value; v.pattern=$("batch-pattern").value; v.subfolder=$("batch-subfolder").value; v.name=$("batch-version-name").value.trim()||`Version ${model.version+1}`; v.reference_white=Number($("batch-white").value)||null; model.draft.name=$("batch-preset-name").value.trim()||"Untitled preset"; $("batch-modified").textContent=JSON.stringify(model.draft)!==JSON.stringify(model.saved)?"Unsaved changes":""; example(); }
@@ -74,6 +74,7 @@
   const HDR_FORMATS=["avif_gain_map","jpeg_ultrahdr","jpegxl_hdr"];
   // An SDR-only photo only loses something when the preset has an HDR version.
   function hdrSkipped(photo,versions=model.draft?.versions||[]){return !!photo.sdr_only&&versions.some(v=>HDR_FORMATS.includes(v.settings.format));}
+  function largeAvifRisk(photo,versions=model.draft?.versions||[]){return Boolean(state.machineRamBytes>0&&state.machineRamBytes<16*1024**3&&(photo.megapixels||0)>50&&versions.some(v=>v.settings.format==="avif_gain_map"&&(v.settings.output_finishing?.resize_mode||"original")==="original"));}
   const OUTCOMES={exported:"Exported",renamed:"Renamed",skipped:"Skipped",failed:"Failed"};
   // The written file relative to the export folder, keeping its sub-folder.
   function writtenName(output,directory){if(!output)return "—";const unify=value=>String(value).replace(/\\/g,"/").replace(/\/+$/,"");const file=unify(output),folder=directory?unify(directory)+"/":"";const relative=folder&&file.toLowerCase().startsWith(folder.toLowerCase())?file.slice(folder.length):file.split("/").pop();return String(output).includes("\\")?relative.replace(/\//g,"\\"):relative;}
@@ -109,7 +110,7 @@
     $("batch-footer-count").hidden=true;
     const files=model.photos.reduce((n,p)=>n+fileCount(p),0);
     $("batch-count").textContent=`${model.photos.length} ${model.photos.length===1?"photo":"photos"} · ${model.draft.versions.length} ${model.draft.versions.length===1?"version":"versions"} · ${files} ${files===1?"file":"files"}${model.selected.size?` · ${model.selected.size} selected`:""}`;
-    const flagged=model.photos.filter(p=>p.unsaved||hdrSkipped(p)).length;
+    const flagged=model.photos.filter(p=>p.unsaved||hdrSkipped(p)||largeAvifRisk(p)).length;
     $("batch-notice").hidden=!flagged;
     $("batch-notice").textContent=`${flagged} ${flagged===1?"photo needs":"photos need"} a look before exporting. Details are on each photo below.`;
     $("batch-empty").hidden=!!model.photos.length;
@@ -141,13 +142,13 @@
       row.setAttribute("aria-selected",String(model.selected.has(p.path)));
       const picture=row.firstChild;
       const caption=row.lastChild;caption.replaceChildren(node("strong",p.name+(p.copy_name?` · ${p.copy_name}`:"")),node("small",`${fileCount(p)} ${fileCount(p)===1?"file":"files"}`));
-      for(const flag of [p.unsaved?"Unsaved changes in Grade · last saved grade used":"",hdrSkipped(p)?"SDR only · HDR version skipped":""])if(flag)caption.append(node("span",flag,"batch-flag"));
+      for(const flag of [p.unsaved?"Unsaved changes in Grade · last saved grade used":"",hdrSkipped(p)?"SDR only · HDR version skipped":"",largeAvifRisk(p)?"Native AVIF above 50 MP may swap or fail under 16 GB RAM · resize or use HDR JPEG XL":""])if(flag)caption.append(node("span",flag,"batch-flag"));
       picture.querySelectorAll(".batch-badge,progress").forEach(e=>e.remove());
       const results=model.job?.results.filter(r=>r.photo===p.path)||[],active=model.job?.active_photo===p.path&&!terminal(model.job);
       const skipped=results.filter(r=>r.outcome==="skipped").length,failed=results.some(r=>r.outcome==="failed");
-      const label=failed?"Failed":active?"Exporting…":skipped?`${skipped} skipped`:results.length?"Done":"";
+      const label=failed?"Failed":active?(model.job.stage||"Exporting…"):skipped?`${skipped} skipped`:results.length?"Done":"";
       if(label)picture.append(node("span",label,"batch-badge"));
-      if(active){const meter=node("progress","","status-entry-progress batch-photo-progress");meter.max=model.job.photo_total||model.draft.versions.length;meter.value=model.job.photo_completed||0;meter.setAttribute("aria-label",`Versions completed for ${p.name}`);picture.append(meter);}
+      if(active){const meter=node("progress","","status-entry-progress batch-photo-progress");meter.max=100;meter.value=100*(model.job.photo_progress??((model.job.photo_completed||0)/Math.max(1,model.job.photo_total||model.draft.versions.length)));meter.setAttribute("aria-label",`Export progress for ${p.name}`);picture.append(meter);}
       return row;
     });
     if(tiles.length!==grid.children.length||tiles.some((e,i)=>e!==grid.children[i]))grid.replaceChildren(...tiles);
@@ -158,8 +159,8 @@
     const j=model.job,strip=$("batch-run-strip");strip.hidden=!j||model.closedJob===j.id;if(!j)return;
     const done=terminal(j),counts=Object.fromEntries(["exported","renamed","skipped","failed"].map(k=>[k,j.results.filter(r=>r.outcome===k).length]));
     $("batch-progress").textContent=done?`${j.state==="cancelled"?"Cancelled · ":""}${counts.exported+counts.renamed} ${counts.exported+counts.renamed===1?"file":"files"} exported · ${counts.renamed} renamed · ${counts.skipped} skipped${counts.failed?` · ${counts.failed} failed`:""}`:`${j.state==="paused"?"Paused · ":""}Exporting ${Math.min(j.completed+1,j.total)} of ${j.total} ${j.total===1?"file":"files"}`;
-    $("batch-eta").textContent=!done&&j.estimated_seconds?`about ${j.estimated_seconds}s left`:"";
-    $("batch-meter").hidden=done;$("batch-meter").max=Math.max(1,j.total);$("batch-meter").value=j.completed;
+    $("batch-eta").textContent=done?"":[j.stage,j.estimated_seconds?`about ${remaining(j.estimated_seconds)} left`:""].filter(Boolean).join(" · ");
+    $("batch-meter").hidden=done;$("batch-meter").max=100;$("batch-meter").value=100*overall(j);
     $("batch-pause").hidden=$("batch-cancel").hidden=done;$("batch-pause").textContent=j.state==="paused"?"Resume":"Pause";
     $("batch-reveal").hidden=$("batch-close").hidden=!done;
     $("batch-results").hidden=!done;
@@ -169,13 +170,16 @@
   // The shared status bar shows export progress from any page.
   function appStatus(j,done,counts){
     const bar=window.HDRStatus;if(!bar)return;
-    if(!done){bar.post({id:"batch-export",severity:"progress",message:`${j.state==="paused"?"Export paused":"Exporting"} ${Math.min(j.completed+1,j.total)} of ${j.total}`,progress:100*j.completed/Math.max(1,j.total),progressLabel:"Overall export progress",actions:[
+    if(!done){bar.post({id:"batch-export",severity:"progress",message:`${j.state==="paused"?"Export paused":"Exporting"} ${Math.min(j.completed+1,j.total)} of ${j.total}${j.stage&&j.state!=="paused"?` · ${j.stage}`:""}${j.estimated_seconds?` · about ${remaining(j.estimated_seconds)} left`:""}`,progress:100*overall(j),progressLabel:"Overall export progress",actions:[
       {label:j.state==="paused"?"Resume the current export":"Pause the current export",icon:j.state==="paused"?"player-play":"player-pause",run:()=>control(j.state==="paused"?"resume":"pause").catch(report)},
       {label:"Cancel the current export",icon:"ban",run:()=>control("cancel").catch(report)}]});return;}
     if(bar.get("batch-export")?.severity!=="progress")return;
     const written=counts.exported+counts.renamed;
     bar.post({id:"batch-export",severity:counts.failed||j.state==="failed"?"attention":"success",message:`${j.state==="cancelled"?"Export cancelled":"Export finished"} · ${written} ${written===1?"file":"files"}${counts.failed?` · ${counts.failed} failed`:""}`,dismissible:!!counts.failed});
   }
+  // Live progress from the export's own stages; finished files before the first report.
+  function overall(j){return Number.isFinite(j.progress)?j.progress:j.completed/Math.max(1,j.total);}
+  function remaining(seconds){return seconds<60?`${seconds}s`:`${Math.round(seconds/60)} min`;}
   // Observation changes demand, while progress polls only update badges.
   const tileJobs=new Map();
   const observer=new IntersectionObserver(entries=>{
@@ -220,8 +224,8 @@
     }else if(!model.grant)await folder();
   }
   async function folder(){const selected=await desktop?.chooseBatchExportDirectory?.(model.directory);if(selected){model.directory=selected.path;model.grant=selected.grant;}else if(!desktop)model.directory=$("batch-directory").value;$("batch-directory").value=model.directory;$("batch-directory").title=model.directory;return selected;}
-  async function run(preset=model.draft,paths=model.paths){capture();if(!paths.length)throw Error("Add photos from the Library before exporting.");if(!model.directory)await folder();if(!model.directory)return;if(desktop){await authorizeDirectory();if(!model.grant)return;}if(model.photos.some(p=>p.unsaved)&&!await HDRDialogs.confirm("The photo open in Grade has unsaved changes. This batch exports its last saved grade.",{title:"Export saved grades",confirmLabel:"Export"}))return;const job=await api("/api/batch-export",{paths,preset,directory:model.directory,path_grant:model.grant});model.grant=null;model.job=job;localStorage.setItem("last-export-preset",preset.id);poll();}
-  async function poll(){if(!model.job)return;model.job=await api(`/api/batch-export/${model.job.id}`);window.dispatchEvent(new CustomEvent("batch-export-activity",{detail:model.job}));renderJob();renderGrid();if(!terminal(model.job))setTimeout(()=>poll().catch(report),750);}
+  async function run(preset=model.draft,paths=model.paths){capture();if(!paths.length)throw Error("Add photos from the Library before exporting.");if(!model.directory)await folder();if(!model.directory)return;if(desktop){await authorizeDirectory();if(!model.grant)return;}if(model.photos.some(p=>p.unsaved)&&!await HDRDialogs.confirm("The photo open in Grade has unsaved changes. This batch exports its last saved grade.",{title:"Export saved grades",confirmLabel:"Export"}))return;const job=await api("/api/batch-export",{paths,preset,directory:model.directory,path_grant:model.grant},"POST",{id:crypto.randomUUID()});model.grant=null;model.job=job;localStorage.setItem("last-export-preset",preset.id);poll();}
+  async function poll(){if(!model.job)return;model.job=await api(`/api/batch-export/${model.job.id}`);window.dispatchEvent(new CustomEvent("batch-export-activity",{detail:model.job}));renderJob();renderGrid();if(!terminal(model.job))setTimeout(()=>poll().catch(report),500);}
   async function control(action){if(model.job){model.job=await api(`/api/batch-export/${model.job.id}`,{action});renderJob();}}
   function view(grid){
     const gridButton = $("batch-view-grid");

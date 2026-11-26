@@ -12,6 +12,7 @@ import hdr_finisher.binaries as binaries
 import hdr_finisher.capabilities as capability_module
 import hdr_finisher.exporters as exporter_module
 from hdr_finisher.gainmap_decoders import parse_jpeg_gain_map_probe
+from hdr_finisher.delivery_frames import row_bands
 from hdr_finisher.exporters import (
     AVIFGainMapExportBackend,
     ExportOverwriteRequired,
@@ -190,7 +191,9 @@ def test_export_uses_independent_hdr_and_sdr_branches_and_forces_jpg(monkeypatch
     observed: dict[str, object] = {}
     original_writer = exporter_module.write_jpeg_gainmap_renditions
     def capture_inputs(output, hdr, sdr, *args, **kwargs):
-        observed["hdr"], observed["sdr"] = hdr.copy(), sdr.copy()
+        observed["hdr"], observed["sdr"] = (
+            np.concatenate([band.copy() for band in row_bands(frame, 16)]) for frame in (hdr, sdr)
+        )
         return original_writer(output, hdr, sdr, *args, **kwargs)
 
     def fake_run(command: list[str]):
@@ -301,6 +304,33 @@ def test_ultrahdr_gain_map_denoise_reduces_smooth_region_noise_and_preserves_edg
     before_edge = float(before[:, width // 2 + 2].mean() - before[:, width // 2 - 3].mean())
     after_edge = float(after[:, width // 2 + 2].mean() - after[:, width // 2 - 3].mean())
     assert after_edge > before_edge * 0.9
+
+
+def test_native_gain_map_filter_matches_the_missing_build_fallback(monkeypatch, tmp_path):
+    from hdr_finisher import gainmap_filter
+
+    native = gainmap_filter._load_box5()
+    if native is None:
+        pytest.skip("Optional gain-map filter build is unavailable")
+    random = np.random.default_rng(635)
+    planes = [random.standard_normal(shape, dtype=np.float32) for shape in ((1, 1), (2, 7), (9, 2), (59, 133))]
+    planes.extend((planes[-1][:, ::-2], np.full((3, 9), -0.0, dtype=np.float32)))
+    primary, gain = io.BytesIO(), io.BytesIO()
+    for buffer in (primary, gain):
+        Image.fromarray(random.integers(0, 256, (49, 41, 3), dtype=np.uint8)).save(buffer, format="JPEG")
+    inputs = (primary.getvalue(), gain.getvalue())
+    native_planes = [_box_blur_float(plane, 2) for plane in planes]
+    native_jpeg = _denoised_ultrahdr_gain_map_jpeg(*inputs, quality=90, stripe_rows=17)
+    gainmap_filter._load_box5.cache_clear()
+    try:
+        with monkeypatch.context() as patch:
+            patch.setattr(gainmap_filter, "BIN_DIR", tmp_path)
+            assert gainmap_filter._load_box5() is None
+            for plane, native_plane in zip(planes, native_planes):
+                np.testing.assert_array_equal(native_plane.view(np.uint32), _box_blur_float(plane, 2).view(np.uint32))
+            assert native_jpeg == _denoised_ultrahdr_gain_map_jpeg(*inputs, quality=90, stripe_rows=17)
+    finally:
+        gainmap_filter._load_box5.cache_clear()
 
 
 def test_parallel_gain_map_channels_match_serial_filter_exactly() -> None:
@@ -542,6 +572,23 @@ def test_real_ultrahdr_export_and_decode_when_encoder_is_available(tmp_path: Pat
     assert float(np.percentile(decoded_hdr, 99)) > float(np.percentile(legacy_linear, 99))
 
 
+def test_ultrahdr_file_inputs_match_array_inputs(tmp_path: Path) -> None:
+    from hdr_finisher.delivery_frames import DeliveryFrame
+
+    binary = binaries.resolve_binary("ultrahdr_app")
+    if binary is None:
+        pytest.skip("Native Ultra HDR encoder unavailable")
+    hdr = build_hdr_test_pattern(width=96, height=259)
+    sdr = np.clip(hdr * np.float32(.55), 0, 1)
+    settings = ExportSettings(format="jpeg_ultrahdr", quality=90, dithering="subtle")
+    array_path, file_path = tmp_path / "array.jpg", tmp_path / "file.jpg"
+    exporter_module.write_jpeg_gainmap_renditions(array_path, hdr, sdr, settings, ultrahdr_app=binary)
+    hdr_file = DeliveryFrame.spill(tmp_path / "hdr.rgb", hdr)
+    sdr_file = DeliveryFrame.spill(tmp_path / "sdr.rgb", sdr)
+    exporter_module.write_jpeg_gainmap_renditions(file_path, hdr_file, sdr_file, settings, ultrahdr_app=binary)
+    assert file_path.read_bytes() == array_path.read_bytes()
+
+
 def test_real_ultrahdr_gradient_has_no_long_reconstruction_plateaus_when_encoder_is_available(tmp_path: Path) -> None:
     capability = capability_module._ultrahdr_status()
     if capability.status != CapabilityStatus.AVAILABLE:
@@ -606,6 +653,7 @@ def test_base_floor_keeps_hdr_shadows_recoverable() -> None:
 def test_real_no_headroom_export_and_proof_preserve_both_renditions(tmp_path, hdr_exposure, sdr_exposure):
     from hdr_finisher.render_cache import SessionRenderCache
     from hdr_finisher.gainmap_decoders import decode_ultrahdr_jpeg, inspect_jpeg_gain_map
+    from hdr_finisher.hdr_ceiling import channel_nits, decoded_channel_nits
     from hdr_finisher.models import ProofArtifactRequest
     from hdr_finisher.proofing import ProofArtifactStore
     capability=capability_module._ultrahdr_status()
@@ -624,6 +672,7 @@ def test_real_no_headroom_export_and_proof_preserve_both_renditions(tmp_path, hd
     assert metadata.hdr_capacity_max>metadata.hdr_capacity_min==1
     assert metadata.hdr_capacity_max==pytest.approx(1.00001,abs=1e-7)
     hdr,sdr,_=decode_ultrahdr_jpeg(path)
+    np.testing.assert_array_equal(decoded_channel_nits(path, "jpeg_ultrahdr"), channel_nits(hdr))
     finishing=exporter_module._finishing_adjustments_for_export(session)
     for lane,decoded in [(PreviewKind.HDR,hdr),(PreviewKind.SDR,sdr)]:
         expected=exporter_module._render_export_branch(session,settings,lane,finishing)
@@ -699,3 +748,46 @@ def test_framed_jpeg_resolves_full_gain_map_without_mutating_version(monkeypatch
     assert calls == [("full", 100, (2, 2, 20, 12)), ("half", 95, None)]
     assert settings.jpeg_gain_map_scale == "half"
     assert any("full-resolution" in note for note in notes)
+
+
+@pytest.mark.parametrize("changes_positive_mask", [False, True])
+def test_ultrahdr_reuses_the_sdr_inputs_only_while_the_floor_is_unchanged(
+    monkeypatch, tmp_path, changes_positive_mask,
+):
+    paths = []
+    sdr_inputs = []
+    staged_writes = []
+    write_raw = exporter_module._write_sdr_rgba8888_pixels
+
+    def stage_raw(path, rgb):
+        staged_writes.append(path)
+        write_raw(path, rgb)
+
+    def run_helper(command):
+        primary = Path(command[command.index("-i") + 1])
+        raw = Path(command[command.index("-y") + 1])
+        paths.append((primary, raw))
+        sdr_inputs.append((primary.read_bytes(), raw.read_bytes()))
+
+    def retry(hdr, white, encode, decode, ceiling, notes, **kwargs):
+        encode(hdr)
+        corrected = hdr * np.float32(.9)
+        if changes_positive_mask:
+            corrected[0:16, 0:16, 0] = 0.0
+        return encode(corrected)
+
+    hdr = np.full((31, 33, 3), .18, dtype=np.float32)
+    sdr = np.zeros_like(hdr)
+    monkeypatch.setattr(exporter_module, "encode_within_ceiling", retry)
+    monkeypatch.setattr(exporter_module, "_run_command", run_helper)
+    monkeypatch.setattr(exporter_module, "_write_sdr_rgba8888_pixels", stage_raw)
+    monkeypatch.setattr(exporter_module, "_denoise_ultrahdr_gain_map", lambda *args, **kwargs: None)
+    exporter_module.write_jpeg_gainmap_renditions(
+        tmp_path / "out.jpg", hdr, sdr, ExportSettings(dithering="off"),
+        ultrahdr_app=Path("ultrahdr_app"), ceiling_nits=1000,
+    )
+
+    assert len(staged_writes) == 1 + changes_positive_mask
+    assert len(sdr_inputs) == 2
+    assert (sdr_inputs[0] != sdr_inputs[1]) == changes_positive_mask
+    assert all(not path.exists() for pair in paths for path in pair)

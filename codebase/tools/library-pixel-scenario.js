@@ -1,8 +1,8 @@
-async function({photo,edge}){
+async function({photo,edge,ceiling}){
    const w=window,controller=new AbortController(),timer=setTimeout(()=>controller.abort(),180000);
    const record={name:photo.replaceAll('\\','/').split('/').pop(),photo};
    let canvas,gpu,original,captured,refusal;
-   const watch=setInterval(()=>{const job=HDRLibraryGrants.snapshot().jobs.find(j=>j.path===photo&&j.reason==='needs more memory'&&j.estimate>4e9);if(job){refusal='Needs more memory: '+job.estimate;controller.abort();}},250);
+   const watch=setInterval(()=>{const job=HDRLibraryGrants.snapshot().jobs.find(j=>j.path===photo&&j.reason==='needs more memory'&&j.estimate>ceiling);if(job){refusal='Needs more memory: '+job.estimate;controller.abort();}},250);
    try{
     HDRLibraryScenes.viewport([photo],[]);
     const meta=await HDRLibraryScenes.load(photo,edge,controller.signal,0,false,null,{viewportDemand:true});

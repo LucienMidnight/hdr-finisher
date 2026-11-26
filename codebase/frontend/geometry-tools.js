@@ -11,8 +11,15 @@ function geometryTransformIsNeutral(geometry = state.adjustments.shared?.geometr
   return geometryMath.geometryTransformIsNeutral(geometry);
 }
 
+function geometryFrameKey() {
+  const session = state.session;
+  const source = session?.source;
+  // RAW redevelopment can replace the dimensions without replacing the session ID.
+  return `${session?.session_id || "none"}:${source?.width}:${source?.height}`;
+}
+
 function geometryCoordinateMapKey(signature = geometrySignature(), longEdge = settledProxyLongEdge()) {
-  return `${state.session?.session_id || "none"}:${longEdge}:${signature}`;
+  return `${geometryFrameKey()}:${longEdge}:${signature}`;
 }
 
 function currentGeometryCoordinateMap() {
@@ -24,24 +31,32 @@ function projectivePoint(matrix, point) {
   return geometryMath.projectivePoint(matrix, point);
 }
 
-async function ensureGeometryCoordinateMap(longEdge = settledProxyLongEdge()) {
+let geometryMapCapacityRefusals = new Map();
+
+function clearGeometryMapCapacityRefusals() {
+  geometryMapCapacityRefusals = new Map();
+}
+
+async function ensureGeometryCoordinateMap(longEdge = settledProxyLongEdge(), { reportFailure = false } = {}) {
   if (!state.session || geometryTransformIsNeutral()) return IDENTITY_GEOMETRY_COORDINATE_MAP;
-  const sessionId = state.session.session_id;
+  const frameKey = geometryFrameKey();
   const signature = geometrySignature();
   const key = geometryCoordinateMapKey(signature, longEdge);
   const cached = geometryCoordinateMapCache.get(key);
   if (cached) return cached;
-  const inflight = geometryCoordinateMapRequests.get(key);
-  if (inflight) return inflight;
+  const editRevision = state.editRevision;
+  const requestKey = `${key}:${editRevision}`;
   const adjustments = JSON.parse(JSON.stringify(state.adjustments));
-  const request = fetch(`/api/session/${state.session.session_id}/geometry-map`, {
+  const transport = window.HDRSourceTransport;
+  const request = geometryCoordinateMapRequests.get(requestKey) || transport.withCapacityBackoff(geometryMapCapacityRefusals, requestKey, () => fetch(`/api/session/${state.session.session_id}/geometry-map`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ adjustments, edit_revision: state.editRevision, long_edge: longEdge }),
+    body: JSON.stringify({ adjustments, edit_revision: editRevision, long_edge: longEdge }),
   }).then(async (response) => {
-    if (!response.ok) throw new Error(`Geometry coordinate map failed (${response.status}).`);
+    if (!response.ok) throw await transport.sourceResponseError(response, `Geometry coordinate map failed (${response.status}).`);
     const payload = await response.json();
-    if (state.session?.session_id !== sessionId || signature !== geometrySignature()) return null;
+    if (geometryCoordinateMapRequests.get(requestKey) !== request
+      || geometryFrameKey() !== frameKey || signature !== geometrySignature()) return null;
     const result = {
       outputToSource: payload.output_to_source,
       sourceToOutput: payload.source_to_output,
@@ -51,7 +66,7 @@ async function ensureGeometryCoordinateMap(longEdge = settledProxyLongEdge()) {
       fullOutputHeight: payload.full_output_height,
     };
     geometryCoordinateMapCache.set(key, result);
-    geometryFullOutputFrames.set(`${sessionId}:${signature}`, result);
+    geometryFullOutputFrames.set(`${frameKey}:${signature}`, result);
     while (geometryFullOutputFrames.size > 12) {
       geometryFullOutputFrames.delete(geometryFullOutputFrames.keys().next().value);
     }
@@ -62,12 +77,19 @@ async function ensureGeometryCoordinateMap(longEdge = settledProxyLongEdge()) {
     applyZoomGeometry();
     if (state.cropMode) constrainCropToRatio();
     return result;
-  }).catch((error) => {
-    console.warn("Source-anchored editor geometry is unavailable.", error);
+  })).finally(() => {
+    if (geometryCoordinateMapRequests.get(requestKey) === request) geometryCoordinateMapRequests.delete(requestKey);
+  });
+  geometryCoordinateMapRequests.set(requestKey, request);
+  try {
+    return await request;
+  } catch (error) {
+    if (reportFailure) throw error;
+    if (error?.status !== 409 && error?.status !== 507) {
+      console.warn("Source-anchored editor geometry is unavailable.", error);
+    }
     return null;
-  }).finally(() => geometryCoordinateMapRequests.delete(key));
-  geometryCoordinateMapRequests.set(key, request);
-  return request;
+  }
 }
 
 function bindCropEditor() {
@@ -247,6 +269,7 @@ function geometryDraftActive() {
 }
 
 function suspendGeometryPreviewWork() {
+  cancelGeometryUnderlayer();
   // Retire ordinary preview work, including frames already decoding or waiting
   // on a GPU proxy, before this transaction can change the geometry.
   state.previewScheduler?.cancel();
@@ -662,6 +685,8 @@ async function renderPerspectiveGpuDraft() {
     state.perspectiveDraftFrame = { ...result, signature: geometrySignature() };
     els.previewImage.style.display = "none";
     els.previewCanvas.style.display = "block";
+    clearDenoiseDetail();
+    els.previewCanvas.hdrWholeFrame = null;
     els.emptyState.style.display = "none";
     setGpuSurfaceHdr(lane, result.hdr);
     setZoomMode(state.zoomMode);
@@ -858,7 +883,7 @@ function updateStraightenInteractive(value) {
   // the authoritative render applies the largest valid-pixel crop on release.
   // Scaling to cover the old frame here made portrait images appear to zoom by
   // 25% or more and did not match the backend's variable-aspect safe crop.
-  [els.previewImage, els.previewCanvas, els.previewOverlay, els.localMaskOverlay, els.chromeProofImage].forEach((preview) => {
+  [els.previewImage, els.previewCanvas, els.previewCanvas.parentElement, els.previewOverlay, els.localMaskOverlay, els.chromeProofImage].forEach((preview) => {
     preview?.style.setProperty("--interactive-straighten-angle", `${-delta}deg`);
     preview?.style.setProperty("--interactive-straighten-scale", "1");
     if (preview) preview.style.clipPath = "";
@@ -870,6 +895,10 @@ function finishStraightenGesture() {
   state.straightenGestureActive = false;
   hideStraightenGrid();
   if (!state.rotateDraftGeometry) {
+    if (state.adjustments.shared.geometry.straighten_angle !== state.straightenPreviewBaseAngle) {
+      state.geometryTransformHandoffSignature = geometrySignature();
+      state.geometryPresentationPending = true;
+    }
     invalidatePreview("hdr");
     invalidatePreview("sdr");
     debouncePreview(state.currentView);
@@ -945,7 +974,7 @@ function clearInteractiveStraightenPreview() {
   }
   state.straightenPreviewBaseAngle = null;
   state.straightenPreviewFrameRect = null;
-  [els.previewImage, els.previewCanvas, els.previewOverlay, els.localMaskOverlay, els.chromeProofImage].forEach((preview) => {
+  [els.previewImage, els.previewCanvas, els.previewCanvas.parentElement, els.previewOverlay, els.localMaskOverlay, els.chromeProofImage].forEach((preview) => {
     preview?.style.removeProperty("--interactive-straighten-angle");
     preview?.style.removeProperty("--interactive-straighten-scale");
     if (preview) preview.style.clipPath = "";
@@ -989,7 +1018,7 @@ function renderRotateDraftTransform({ reflow = false } = {}) {
     if (reflow) applyZoomGeometry();
     return;
   }
-  [els.previewImage, els.previewCanvas, els.chromeProofImage].forEach((preview) => {
+  [els.previewImage, els.previewCanvas, els.previewCanvas.parentElement, els.chromeProofImage].forEach((preview) => {
     preview?.style.setProperty("--interactive-rotate-angle", `${delta}deg`);
     preview?.style.setProperty("--interactive-flip-x", String(flipX));
     preview?.style.setProperty("--interactive-flip-y", String(flipY));
@@ -1021,7 +1050,7 @@ function applySourceOverlayGeometryTransform(original, current) {
 }
 
 function clearRotateDraftTransformProperties() {
-  [els.previewImage, els.previewCanvas, els.previewOverlay, els.localMaskOverlay, els.chromeProofImage].forEach((preview) => {
+  [els.previewImage, els.previewCanvas, els.previewCanvas.parentElement, els.previewOverlay, els.localMaskOverlay, els.chromeProofImage].forEach((preview) => {
     preview?.style.removeProperty("--interactive-rotate-angle");
     preview?.style.removeProperty("--interactive-flip-x");
     preview?.style.removeProperty("--interactive-flip-y");
@@ -1167,7 +1196,7 @@ function sourcePixelFrameDimensions(geometry = state.adjustments?.shared?.geomet
   // until its own map arrived the frame fell back to arithmetic that knows
   // nothing of perspective, so the picture was laid out at the wrong size and
   // jumped when the map landed.
-  const map = geometryFullOutputFrames.get(`${state.session?.session_id || "none"}:${JSON.stringify(geometry)}`);
+  const map = geometryFullOutputFrames.get(`${geometryFrameKey()}:${JSON.stringify(geometry)}`);
   return geometryMath.sourcePixelFrameDimensions(source, geometry, map);
 }
 

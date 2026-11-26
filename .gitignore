@@ -43,6 +43,18 @@ codebase/desktop/node_modules/
 codebase/node_modules/
 
 # Locally built platform-native encoder tools
+codebase/bin/signed_ahd.dll
+codebase/bin/signed_ahd.dylib
+codebase/bin/signed_ahd.so
+codebase/bin/denoise_filters.dll
+codebase/bin/denoise_filters.dylib
+codebase/bin/denoise_filters.so
+codebase/bin/gainmap_filter.dll
+codebase/bin/gainmap_filter.dylib
+codebase/bin/gainmap_filter.so
+codebase/bin/lens_correction.dll
+codebase/bin/lens_correction.dylib
+codebase/bin/lens_correction.so
 codebase/bin/avifenc
 codebase/bin/avifdec
 codebase/bin/avifgainmaputil

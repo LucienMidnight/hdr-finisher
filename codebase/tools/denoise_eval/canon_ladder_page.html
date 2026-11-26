@@ -1,0 +1,331 @@
+<!doctype html>
+<html lang="en" data-theme="modern-dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Canon speck strength ladders</title>
+<link rel="stylesheet" href="../../../frontend/visual-tokens.css">
+<style>
+/* MARKING_STYLE */
+  .ladder-area { border-top: 1px solid var(--border); padding: 14px 0 20px; scroll-margin-top: 145px; }
+  .area-summary { display: flex; align-items: start; gap: 12px; margin-bottom: 8px; }
+  .area-summary .thumbnail { width: 92px; flex: 0 0 92px; }
+  .controls { margin: 5px 0; }
+  .controls[aria-label="Method"] { margin: 8px 0 0; }
+  .columns { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(155px, 1fr);
+    gap: 6px; overflow-x: auto; margin: 9px 0; }
+  .columns .comparison { min-width: 0; grid-template-rows: minmax(3lh, auto) 1fr; }
+  figcaption small { display: block; font-weight: var(--font-weight-regular); }
+  .columns .view { position: relative; height: 208px; overflow: hidden; max-width: none;
+    touch-action: pan-y; }
+  .columns .frame { position: absolute; }
+  .columns .crop-image { cursor: grab; }
+  .columns .crop-image:active { cursor: grabbing; }
+  .columns .point { pointer-events: none; }
+  .exact-patch { position: absolute; overflow: hidden; pointer-events: none; }
+  .exact-patch img { position: absolute; display: block; image-rendering: pixelated; }
+  .placeholder { display: grid; align-content: center; padding: 8px; }
+  .question select:disabled { opacity: .6; }
+  #areas { padding-bottom: 46vh; }
+</style>
+</head>
+<body>
+<header>
+  <div class="wrap">
+    <h1>Canon speck strength ladders</h1>
+    <div class="toolbar">
+      <label>Area <select id="jump"></select></label>
+      <label><input type="checkbox" id="show-marks"> Show Steve’s marks</label>
+      <label>Linked zoom
+        <select id="zoom">
+          <option value="fit">Fit crop</option><option value="1">1×</option>
+          <option value="3">3×</option><option value="6" selected>6×</option><option value="9">9×</option>
+        </select>
+      </label>
+      <button type="button" id="export">Export marks and answers</button>
+      <span id="status" role="status"></span>
+    </div>
+    <p>Choose a method and compare its steps with the baseline. Choose a mark for an exact close-up or drag a picture to move all columns together.</p>
+  </div>
+</header>
+<main class="wrap" id="areas"></main>
+<script>
+const study = /* REVIEW_DATA */;
+const zoom = document.querySelector("#zoom");
+const showMarks = document.querySelector("#show-marks");
+const jump = document.querySelector("#jump");
+const storageKey = "canon-speck-ladder-v1-" + study.marks_hash;
+const targets = {colour: "Colour only", brightness: "Brightness only", both: "Colour and brightness"};
+const views = [];
+let answers = {};
+try {
+  answers = JSON.parse(localStorage.getItem(storageKey) || "{}");
+} catch {
+  answers = {};
+}
+
+function element(tag, parent, text) {
+  const node = document.createElement(tag);
+  if (text) node.textContent = text;
+  parent.append(node);
+  return node;
+}
+
+function option(select, label, value) {
+  const node = element("option", select, label);
+  node.value = value;
+}
+
+function selectField(parent, title, pairs) {
+  const label = element("label", parent, title + " ");
+  const select = element("select", label);
+  for (const [value, name] of pairs) option(select, name, value);
+  return select;
+}
+
+function position(state) {
+  const [x, y] = state.centre;
+  const selected = state.markSelect.value;
+  const patchSize = study.patch_size;
+  const [left, top] = state.area.sensor_xy;
+  const point = state.marks.length === 0
+    ? {sensor_x: left + state.area.size / 2, sensor_y: top + state.area.size / 2}
+    : selected === "" ? null : state.marks[Number(selected)];
+  const patchOrigin = value => Math.max(0, Math.min(state.area.size - patchSize, value - patchSize / 2));
+  for (const {view, frame, overlay, patch, sprite} of state.figures) {
+    state.scale = zoom.value === "fit"
+      ? Math.min(view.clientWidth, view.clientHeight) / state.area.size : Number(zoom.value);
+    const size = state.area.size * state.scale;
+    frame.style.width = frame.style.height = size + "px";
+    frame.style.left = Math.round(zoom.value === "fit" ? (view.clientWidth - size) / 2
+      : view.clientWidth / 2 - (x + .5) * state.scale) + "px";
+    frame.style.top = Math.round(zoom.value === "fit" ? (view.clientHeight - size) / 2
+      : view.clientHeight / 2 - (y + .5) * state.scale) + "px";
+    overlay.hidden = !showMarks.checked;
+    patch.hidden = !point || state.scale < 3;
+    if (!patch.hidden) {
+      const edge = patchSize * state.scale;
+      patch.style.width = patch.style.height = edge + "px";
+      patch.style.left = patchOrigin(point.sensor_x - left) * state.scale + "px";
+      patch.style.top = patchOrigin(point.sensor_y - top) * state.scale + "px";
+      sprite.style.width = edge + "px";
+      sprite.style.height = edge * Math.max(1, state.marks.length) + "px";
+      sprite.style.top = -edge * Number(selected) + "px";
+    }
+  }
+}
+
+function setCentre(state, x, y) {
+  const bound = value => Math.min(state.area.size - 1, Math.max(0, value));
+  state.centre = [bound(x), bound(y)];
+  position(state);
+}
+
+function addFigure(state, key, title, description) {
+  const figure = element("figure", state.columns);
+  figure.className = "comparison";
+  const caption = element("figcaption", figure, title);
+  if (description) element("small", caption, description);
+  const view = element("div", figure);
+  view.className = "view";
+  if (!state.area.images[key]) {
+    view.classList.add("placeholder");
+    element("p", view, "AI reference unavailable for this run.");
+    return;
+  }
+  const frame = element("div", view);
+  frame.className = "frame";
+  const image = element("img", frame);
+  image.className = "crop-image";
+  image.alt = state.area.id + " · " + title;
+  image.src = state.area.images[key];
+  image.draggable = false;
+  image.loading = "lazy";
+  const patch = element("div", frame);
+  patch.className = "exact-patch";
+  patch.setAttribute("aria-hidden", "true");
+  const sprite = element("img", patch);
+  sprite.alt = "";
+  if (state.area.patches[key]) sprite.src = state.area.patches[key];
+  sprite.loading = "lazy";
+  const overlay = element("div", frame);
+  overlay.className = "marked-points";
+  overlay.setAttribute("aria-hidden", "true");
+  const [left, top] = state.area.sensor_xy;
+  state.marks.forEach(point => {
+    const marker = element("span", overlay);
+    marker.className = "point";
+    marker.style.left = (100 * (point.sensor_x - left + .5) / state.area.size) + "%";
+    marker.style.top = (100 * (point.sensor_y - top + .5) / state.area.size) + "%";
+  });
+  let drag;
+  view.addEventListener("pointerdown", event => {
+    if (event.button !== 0 || zoom.value === "fit") return;
+    view.setPointerCapture(event.pointerId);
+    drag = {x: event.clientX, y: event.clientY, centre: state.centre, moved: false};
+    event.preventDefault();
+  });
+  view.addEventListener("pointermove", event => {
+    if (!drag) return;
+    const dx = event.clientX - drag.x;
+    const dy = event.clientY - drag.y;
+    if (Math.hypot(dx, dy) > 3) drag.moved = true;
+    if (drag.moved) setCentre(state, drag.centre[0] - dx / state.scale, drag.centre[1] - dy / state.scale);
+  });
+  view.addEventListener("pointerup", event => {
+    if (drag && !drag.moved) {
+      const {left, top} = frame.getBoundingClientRect();
+      state.markSelect.value = "";
+      setCentre(state, (event.clientX - left) / state.scale - .5, (event.clientY - top) / state.scale - .5);
+    }
+    drag = null;
+  });
+  view.addEventListener("pointercancel", () => { drag = null; });
+  state.figures.push({view, frame, overlay, patch, sprite});
+}
+
+function shownSteps(state) {
+  return study.steps.filter(step => step.method === state.method && step.target === state.target);
+}
+
+function redraw(state) {
+  const steps = shownSteps(state);
+  state.columns.replaceChildren();
+  state.figures = [];
+  addFigure(state, "noisy", study.references.noisy, "Signed RAW, Denoise and Even out off");
+  addFigure(state, "baseline", study.references.baseline);
+  addFigure(state, "ai", study.references.ai, "Full-strength AI with the flame protected");
+  steps.forEach(step => addFigure(state, step.key, "Step " + step.step, step.description));
+  position(state);
+
+  state.stepSelect.replaceChildren();
+  option(state.stepSelect, "Choose the first step", "");
+  steps.forEach(step => option(state.stepSelect, "Step " + step.step, String(step.step)));
+  option(state.stepSelect, "Specks remain at every step", "none");
+  const answer = answers[state.area.id]?.[state.method]?.[state.target];
+  state.stepSelect.value = answer?.specks_gone_step ?? "";
+  state.costSelect.value = answer?.detail_cost_acceptable ?? "";
+  state.costSelect.disabled = !Number(state.stepSelect.value);
+}
+
+function saveAnswer(state) {
+  const choice = state.stepSelect.value;
+  state.costSelect.disabled = !Number(choice);
+  const targetsForMethod = ((answers[state.area.id] ??= {})[state.method] ??= {});
+  if (choice) {
+    targetsForMethod[state.target] = {specks_gone_step: choice === "none" ? "none" : Number(choice),
+      detail_cost_acceptable: Number(choice) ? state.costSelect.value || null : null};
+  } else {
+    delete targetsForMethod[state.target];
+  }
+  try {
+    localStorage.setItem(storageKey, JSON.stringify(answers));
+  } catch {
+    document.querySelector("#status").textContent = "Export to save your answers.";
+  }
+}
+
+function addArea(area) {
+  const row = element("section", document.querySelector("#areas"));
+  row.className = "ladder-area";
+  row.id = "area-" + area.id;
+  option(jump, area.id + " · " + area.problem_label, row.id);
+  const summary = element("div", row);
+  summary.className = "area-summary";
+  const thumb = element("div", summary);
+  thumb.className = "thumbnail";
+  const thumbImage = element("img", thumb);
+  thumbImage.src = study.photo.thumbnail;
+  thumbImage.alt = "Position in the whole photo";
+  const outline = element("span", thumb);
+  outline.className = "outline";
+  const [width, height] = study.photo.sensor_wh;
+  const [x, y] = area.sensor_xy;
+  outline.style.left = (100 * x / width) + "%";
+  outline.style.top = (100 * y / height) + "%";
+  outline.style.width = (100 * area.size / width) + "%";
+  outline.style.height = (100 * area.size / height) + "%";
+  const heading = element("div", summary);
+  element("h2", heading, area.id + " · " + area.problem_label);
+  element("p", heading, area.what);
+
+  const marks = study.marks.filter(point => point.area_id === area.id);
+  const state = {area, marks, figures: [], centre: [area.size / 2, area.size / 2], method: "even",
+    target: area.problem === "dark_pits" ? "brightness" : "colour"};
+  const controls = element("div", row);
+  controls.className = "controls";
+  const method = selectField(controls, "Method", Object.entries(study.methods));
+  const target = selectField(controls, "Apply to", []);
+  state.markSelect = selectField(controls, "Go to mark", [
+    ["", marks.length ? "Choose a mark" : "No marks in this area"],
+    ...marks.map((_, i) => [i, (i + 1) + " of " + marks.length])]);
+  state.markSelect.disabled = marks.length === 0;
+  function selectMark() {
+    const point = state.markSelect.value === "" ? null : marks[Number(state.markSelect.value)];
+    if (point) {
+      if (zoom.value === "fit") {
+        zoom.value = "6";
+        views.forEach(position);
+      }
+      setCentre(state, point.sensor_x - x, point.sensor_y - y);
+    } else {
+      position(state);
+    }
+  }
+  state.markSelect.addEventListener("change", selectMark);
+
+  state.columns = element("div", row);
+  state.columns.className = "columns";
+  const question = element("div", row);
+  question.className = "question";
+  state.stepSelect = selectField(question, "Specks gone at step", []);
+  state.costSelect = selectField(question, "Is the detail loss acceptable at that step?",
+    [["", "Choose an answer"], ["yes", "Yes"], ["no", "No"], ["not_sure", "Not sure"]]);
+  state.stepSelect.addEventListener("change", () => {
+    state.costSelect.value = "";
+    saveAnswer(state);
+  });
+  state.costSelect.addEventListener("change", () => saveAnswer(state));
+  function updateTargets() {
+    const choices = [...new Set(study.steps.filter(step => step.method === state.method).map(step => step.target))];
+    if (!choices.includes(state.target)) state.target = choices[0];
+    target.replaceChildren();
+    choices.forEach(key => option(target, targets[key], key));
+    target.value = state.target;
+    redraw(state);
+  }
+  method.addEventListener("change", () => {
+    state.method = method.value;
+    updateTargets();
+  });
+  target.addEventListener("change", () => {
+    state.target = target.value;
+    redraw(state);
+  });
+  views.push(state);
+  updateTargets();
+  if (marks.length) {
+    state.markSelect.value = "0";
+    selectMark();
+  }
+}
+
+study.photo.areas.forEach(addArea);
+zoom.addEventListener("change", () => views.forEach(position));
+showMarks.addEventListener("change", () => views.forEach(position));
+window.addEventListener("resize", () => views.forEach(position));
+jump.addEventListener("change", () => document.getElementById(jump.value).scrollIntoView());
+document.querySelector("#export").addEventListener("click", () => {
+  const report = {version: 1, file: study.photo.file, area_set_sha256: study.area_hash,
+    original_marks_sha256: study.marks_hash, marks: study.marks, methods: study.methods, answers};
+  const url = URL.createObjectURL(new Blob([JSON.stringify(report, null, 2) + "\n"], {type: "application/json"}));
+  const anchor = document.createElement("a");
+  anchor.download = "canon-speck-ladder-answers.json";
+  anchor.href = url;
+  anchor.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1500);
+  document.querySelector("#status").textContent = "Exported marks and answers.";
+});
+</script>
+</body>
+</html>

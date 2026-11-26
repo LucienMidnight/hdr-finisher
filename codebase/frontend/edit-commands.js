@@ -103,15 +103,33 @@ function queueEditCommand(commandType, payload = {}, targetId = null, { refreshP
       && globalEditGeneration !== state.globalEditGeneration;
     const optimisticAdjustments = preserveNewerGlobalEdit ? state.adjustments : null;
     const draftGeometry = geometryDraftActive() ? state.adjustments.shared.geometry : null;
+    const previousGeometrySignature = geometrySignature();
     const shownInputs = refreshPreview === "if-changed"
       ? stablePreviewJson([state.adjustments, state.editDocument?.local_adjustments]) : null;
     const creativeBefore=stablePreviewJson([state.adjustments,state.editDocument?.local_adjustments,
       state.editDocument?.repairs,state.editDocument?.denoise,state.editDocument?.hdr_reference_white_nits]);
     const previousRepairs = JSON.stringify(state.editDocument?.repairs || []);
+    const rawChanged = JSON.stringify(state.editDocument?.source?.raw_import_settings) !== JSON.stringify(result.document.source?.raw_import_settings);
     state.editRevision = result.revision;
     state.editDocument = result.document;
     state.session.repair_rendering = result.repair_rendering || [];
-    await resetRepairSource(previousRepairs, result.document);
+    if (rawChanged) {
+      const response = await fetch(`/api/session/${sessionId}`);
+      if (!response.ok) throw new Error("Could not refresh the re-developed RAW source.");
+      const session = await safeJson(response);
+      if (state.session?.session_id !== sessionId || state.editRevision !== result.revision) return false;
+      state.session = session;
+      state.renderCoordinator?.noteSource(sessionId);
+      state.gpuPreview?.resetSession(sessionId);
+      state.gpuPreparedLane = { hdr: false, sdr: false };
+      resetLocalSourceMasks();
+      clearNavigationThumbnail();
+      for (const lane of ["hdr", "sdr"]) {
+        invalidateDenoisePreparation(lane, { dirty: true });
+      }
+      renderRawImportControls(session);
+    }
+    await resetRepairSource(previousRepairs, result.document, result.source_epoch);
     if (state.session?.session_id !== sessionId || state.editRevision !== result.revision) return false;
     recordAcknowledgedLocals(result.document);
     if (commandType === "replace_document") loadDenoiseDocument(state.editDocument);
@@ -130,6 +148,8 @@ function queueEditCommand(commandType, payload = {}, targetId = null, { refreshP
       }
     }
     if (draftGeometry) state.adjustments.shared.geometry = draftGeometry;
+    const geometryChanged = geometrySignature() !== previousGeometrySignature;
+    if (geometryChanged) state.geometryPresentationPending = true;
     if (state.geometryTransformHandoffSignature
       && state.geometryTransformHandoffSignature !== geometrySignature()) {
       state.geometryTransformHandoffSignature = null;
@@ -158,16 +178,16 @@ function queueEditCommand(commandType, payload = {}, targetId = null, { refreshP
     // start a new render generation for values already on screen, both during
     // a drag (the scope pass saves) and after release, where it cost a
     // duplicate render and the settle debounce before the settled pass.
-    const previewInputsChanged = refreshPreview === "if-changed"
+    const previewInputsChanged = rawChanged || (refreshPreview === "if-changed"
       ? stablePreviewJson([state.adjustments, state.editDocument?.local_adjustments]) !== shownInputs
-      : refreshPreview;
-    const framingOnlyHistory=["undo","redo"].includes(commandType) && creativeBefore===stablePreviewJson([
+      : refreshPreview);
+    const framingOnlyHistory=!rawChanged && ["undo","redo"].includes(commandType) && creativeBefore===stablePreviewJson([
       state.adjustments,state.editDocument?.local_adjustments,state.editDocument?.repairs,
       state.editDocument?.denoise,state.editDocument?.hdr_reference_white_nits]);
     if (typeof window.HDRPhotoFramingUI!=="undefined") {
       window.HDRPhotoFramingUI.render();applyZoomGeometry();window.HDRProofing?.invalidate();
     }
-    if (previewInputsChanged && !framingOnlyHistory) {
+    if (geometryChanged || (previewInputsChanged && !framingOnlyHistory)) {
       invalidatePreview("hdr", { local: true });
       invalidatePreview("sdr", { local: true });
       debouncePreview(state.currentView);
@@ -223,7 +243,7 @@ async function syncGlobalEditState() {
   return state.globalEditDirty || state.globalEditSyncPending ? syncGlobalEditState() : true;
 }
 
-async function resetRepairSource(previousRepairs, documentState) {
+async function resetRepairSource(previousRepairs, documentState, sourceEpoch) {
   if (previousRepairs === JSON.stringify(documentState.repairs || [])) return;
   state.repairSourceGeneration = (state.repairSourceGeneration || 0) + 1;
   const sessionId = state.session.session_id, revision = state.editRevision;
@@ -231,19 +251,10 @@ async function resetRepairSource(previousRepairs, documentState) {
   const fitSource = state.zoomMode === "fit" && displayed?.exact && displayed.lane === state.currentView
     ? displayed : null;
   state.gpuPreparedLane = { hdr: false, sdr: false };
-  state.localMaskDraftController?.abort();
-  state.localMaskDraftGeneration += 1;
-  for (const pending of localAuthoritativeMaskRequests.values()) pending.controller?.abort();
-  localAuthoritativeMaskRequests.clear();
-  for (const pending of localComparisonMaskRequests.values()) pending.controller?.abort();
-  localComparisonMaskRequests.clear();
-  localAuthoritativeMaskCache.clear();
-  localComparisonMaskCache.clear();
-  localComparisonCompositeCache.clear();
+  resetLocalSourceMasks();
   clearNavigationThumbnail();
   for (const lane of ["hdr", "sdr"]) {
-    const runtime = state.denoiseRuntime?.[lane];
-    if (runtime) { runtime.dirty = true; runtime.generation += 1; runtime.analysisInFlight = null; }
+    invalidateDenoisePreparation(lane, { dirty: true });
     invalidatePreview(lane, { local: true });
   }
   renderLaneChrome();
@@ -256,12 +267,24 @@ async function resetRepairSource(previousRepairs, documentState) {
   const reordered = JSON.stringify(oldRepairs.filter(r => r.enabled && newIds.has(r.id)).map(r => r.id)) !==
     JSON.stringify(newRepairs.filter(r => r.enabled && oldIds.has(r.id)).map(r => r.id));
   if (renderer) await HDRSourceTransport.refreshRepairs(renderer, {
-    sessionId, editRevision: revision, fitSource,
+    sessionId, editRevision: revision, fitSource, sourceEpoch,
     sourceSize: [state.session.source.width, state.session.source.height],
     geometry: documentState.global_adjustments.shared.geometry,
     records: reordered ? [...oldRepairs, ...newRepairs] : [...changedRepairs(oldRepairs, newRepairs), ...changedRepairs(newRepairs, oldRepairs)],
     isCurrent: () => state.session?.session_id === sessionId && state.editRevision === revision,
   });
+}
+
+function resetLocalSourceMasks() {
+  state.localMaskDraftController?.abort();
+  state.localMaskDraftGeneration += 1;
+  for (const pending of localAuthoritativeMaskRequests.values()) pending.controller?.abort();
+  localAuthoritativeMaskRequests.clear();
+  for (const pending of localComparisonMaskRequests.values()) pending.controller?.abort();
+  localComparisonMaskRequests.clear();
+  localAuthoritativeMaskCache.clear();
+  localComparisonMaskCache.clear();
+  localComparisonCompositeCache.clear();
 }
 
 async function refreshEditState({ preserveLocalDraft = false } = {}) {
@@ -275,10 +298,11 @@ async function refreshEditState({ preserveLocalDraft = false } = {}) {
   const result = await safeJson(response);
   if (!response.ok || state.session?.session_id !== sessionId) return;
   const draftGeometry = geometryDraftActive() ? state.adjustments.shared.geometry : null;
+  const previousGeometrySignature = geometrySignature();
   const previousRepairs = JSON.stringify(state.editDocument?.repairs || []);
   state.editRevision = result.revision;
   state.editDocument = result.document;
-  await resetRepairSource(previousRepairs, result.document);
+  await resetRepairSource(previousRepairs, result.document, result.source_epoch);
   if (state.session?.session_id !== sessionId || state.editRevision !== result.revision) return;
   recordAcknowledgedLocals(result.document);
   loadDenoiseDocument(state.editDocument);
@@ -286,6 +310,12 @@ async function refreshEditState({ preserveLocalDraft = false } = {}) {
   state.documentDirty = state.globalEditDirty || Boolean(result.dirty);
   state.adjustments = result.document.global_adjustments;
   if (draftGeometry) state.adjustments.shared.geometry = draftGeometry;
+  if (state.geometryPresentationPending || geometrySignature() !== previousGeometrySignature) {
+    state.geometryPresentationPending = true;
+    invalidatePreview("hdr", { local: true });
+    invalidatePreview("sdr", { local: true });
+    debouncePreview(state.currentView);
+  }
   // Rebuilding the active range input releases pointer capture. Keep the
   // existing control alive while its optimistic local object is still in use.
   if (!preserveLocalDraft) renderLocalAdjustments();

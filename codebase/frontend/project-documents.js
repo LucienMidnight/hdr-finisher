@@ -92,6 +92,13 @@ function syncSourceFilenameOverflow() {
   }
 }
 
+function gradeDiagnosticPhoto() {
+  const source = state.editDocument?.source;
+  const path = source?.durable_path || state.gradeOpen?.path;
+  const id = path || state.session?.session_id;
+  return id ? { id, name: path?.split(/[\\/]/).at(-1) || source?.filename || state.session?.source?.filename } : null;
+}
+
 async function openDesktopSelection(selection) {
   if (!selection) return;
   if (selection.kind === "project") {
@@ -139,6 +146,25 @@ function finishGradeOpen() {
   renderReadouts();
 }
 
+function restoreGradeAfterRawRedevelopment(generation) {
+  if (generation !== state.importGeneration || generation !== state.rawRedevelopGeneration) return;
+  state.rawRedevelopGeneration = null;
+  const session = state.session;
+  if (!session) return;
+  const lane = state.currentView;
+  const workGeneration = state.gradeWorkGeneration;
+  if (state.acceptedPresentation) {
+    state.acceptedPresentation = { ...state.acceptedPresentation, exact: false, sourceSerial: null };
+  }
+  state.gpuPreview?.resetSession(session.session_id);
+  void settlePreview(lane, { applicationGeneration: state.previewGeneration[lane], preservePicture: true })
+    .then(() => {
+      if (generation === state.importGeneration && state.session === session && lane === state.currentView
+        && workGeneration === state.gradeWorkGeneration) refreshOverlayAndScopesImmediately();
+    })
+    .catch(error => console.error("The retained Grade preview could not be restored.", error));
+}
+
 async function openStagedDesktopSource(selection) {
   const generation = claimSessionReplacement();
   const name = selection.path?.split(/[/\\]/).pop() || "photo";
@@ -162,7 +188,15 @@ async function openStagedDesktopSource(selection) {
     renderSessionChrome();
     status.post({ id: "import", severity: "progress", message: `Loading ${name}…`, progress: "indeterminate" });
     gradeOpenStage("grade_open_visible");
+  } else {
+    window.clearTimeout(state.zoomRefinementTimer);
+    state.zoomRefinementTimer = 0;
+    clearZoomScopeRefresh();
   }
+  const diagnostics = globalThis.HDRDiagnostics;
+  const action = diagnostics?.start("grade", "open_photo", { id: selection.path, name });
+  const request = (url, options) => fetch(url, { ...options, headers: diagnostics?.headers(action, options?.headers) ?? options?.headers });
+  if (state.gradeOpen?.generation === generation) state.gradeOpen.action = action;
   let openingJobId = null, completed = false;
   try {
     if (state.activeImportJobId) {
@@ -178,7 +212,19 @@ async function openStagedDesktopSource(selection) {
     setImportCancelVisible(true);
     const recoveryChoice = selection.replaceSessionId ? null : await window.HDRGradeSaving.prepare(selection);
     if (generation !== state.importGeneration) return;
-    const { response, payload: initialJob } = await projectIo.createImportJob(fetch, {
+    if (selection.replaceSessionId) {
+      state.rawRedevelopGeneration = generation;
+      suspendGradeInstruments();
+      for (const lane of ["hdr", "sdr"]) state.renderCoordinator?.cancelLane(lane, "superseded-by-source");
+      for (const panel of document.querySelectorAll(".source-rail, .grade-rail")) {
+        panel.inert = true;
+        panel.setAttribute("aria-busy", "true");
+      }
+      state.gpuPreparedLane = { hdr: false, sdr: false };
+      await state.gpuPreview?.releaseForSourceReplacement();
+      if (generation !== state.importGeneration) return;
+    }
+    const { response, payload: initialJob } = await projectIo.createImportJob(request, {
       grant: selection.grant,
       rawImportSettings: selection.rawImportSettings,
       replaceSessionId: selection.replaceSessionId,
@@ -205,7 +251,7 @@ async function openStagedDesktopSource(selection) {
       const reassurance = elapsed >= 10 ? " · still working normally" : "";
       setIndeterminatePreviewMessage(`${label}${reassurance} · ${elapsed.toFixed(1)}s elapsed`);
       if (job.state === "ready" && job.session_id) {
-        const { response: sessionResponse, payload } = await projectIo.fetchSession(fetch, job.session_id);
+        const { response: sessionResponse, payload } = await projectIo.fetchSession(request, job.session_id);
         if (generation !== state.importGeneration || state.activeImportJobId !== job.job_id) return;
         state.activeImportJobId = null;
         state.importInProgress = false;
@@ -220,7 +266,10 @@ async function openStagedDesktopSource(selection) {
         const gradeSession = selection.replaceSessionId ? payload.session : await window.HDRGradeSaving.open(payload.session, selection.itemKey, () => generation === state.importGeneration, recoveryChoice);
         if (generation !== state.importGeneration) return;
         gradeOpenStage("grade_open_attached");
-        await activateDesktopSession(gradeSession, retainedProjectPath, generation, {openingJobId});
+        state.rawRedevelopGeneration = null;
+        await activateDesktopSession(gradeSession, retainedProjectPath, generation, {
+          openingJobId, replaceSessionId: selection.replaceSessionId,
+        });
         if (generation !== state.importGeneration) return;
         gradeOpenStage("grade_open_controls");
         completed = true;
@@ -240,7 +289,7 @@ async function openStagedDesktopSource(selection) {
       }
       if (!firstPoll) await new Promise((resolve) => window.setTimeout(resolve, 250));
       firstPoll = false;
-      const { response: poll, payload } = await projectIo.pollImportJob(fetch, job.job_id);
+      const { response: poll, payload } = await projectIo.pollImportJob(request, job.job_id);
       job = payload;
       if (!poll.ok) {
         state.activeImportJobId = null;
@@ -251,6 +300,7 @@ async function openStagedDesktopSource(selection) {
     }
   } catch (error) {
     if (generation !== state.importGeneration) return;
+    action?.finish("error", { level: "error", route: "refused", reason: "source_open_failed" });
     gradeOpenStage("grade_open_failed");
     if (!selection.replaceSessionId) {
       retireActiveSession();
@@ -265,22 +315,54 @@ async function openStagedDesktopSource(selection) {
     if (selection.fromLibrary) activateWorkflowTab("import");
     showUploadError(error.message || `Could not open ${name}.`);
   } finally {
+    action?.finish(completed ? "success" : "cancelled", completed ? {} : { route: "refused", reason: "source_open_cancelled" });
     if (!completed && openingJobId) void projectIo.cancelImportJob(fetch, openingJobId).catch(()=>{});
     if (generation === state.importGeneration) {
       state.importInProgress = false;
       state.activeImportJobId = null;
       setImportCancelVisible(false);
+      restoreGradeAfterRawRedevelopment(generation);
       finishGradeOpen();
       updateExportAvailability();
+    } else if (state.rawRedevelopGeneration === generation) {
+      state.rawRedevelopGeneration = null;
     }
   }
 }
 
+function retainedRedevelopmentZoom(session) {
+  const before = state.session.source;
+  const after = session.source;
+  const oldGeometry = state.adjustments?.shared?.geometry || {};
+  const newGeometry = session.adjustments?.shared?.geometry || {};
+  const sameOrientation = ["rotation", "flip_horizontal", "flip_vertical", "straighten_angle",
+    "perspective_horizontal", "perspective_vertical", "perspective_rotate"]
+    .every(key => (oldGeometry[key] || 0) === (newGeometry[key] || 0));
+  const viewport = els.dropzone;
+  if (state.zoomMode !== "custom" || !previewIsVisible() || state.cropMode || geometryDraftActive() || !sameOrientation
+    || ![before.width, before.height, after.width, after.height, state.zoomPercent]
+      .every(value => Number.isFinite(value) && value > 0)
+    || (before.width > before.height && after.width < after.height)
+    || (before.width < before.height && after.width > after.height)
+    || !Number.isFinite(viewport.scrollLeft) || !Number.isFinite(viewport.scrollTop)) return null;
+
+  return {
+    percent: clamp(state.zoomPercent, MIN_ZOOM_PERCENT, MAX_ZOOM_PERCENT),
+    left: viewport.scrollLeft,
+    top: viewport.scrollTop,
+  };
+}
+
 // stayOnTab: a background reload of the open photo (paste, outside change) keeps the current page.
-async function activateDesktopSession(session, projectPath, openGeneration = null, { stayOnTab = false, openingJobId = null } = {}) {
-  retireActiveSession(session.session_id);
+async function activateDesktopSession(session, projectPath, openGeneration = null,
+  { stayOnTab = false, openingJobId = null, replaceSessionId = null } = {}) {
+  const redevelopment = Boolean(replaceSessionId && state.session?.session_id === replaceSessionId
+    && session.session_id === replaceSessionId);
+  const zoom = redevelopment ? retainedRedevelopmentZoom(session) : null;
+  retireActiveSession(session.session_id, { preservePicture: redevelopment });
   gradeOpening.reset(openingJobId);
-  if (!stayOnTab) collapseGradeModules();
+  // Re-developing the open photo keeps its panels open (Steve, November 25).
+  if (!stayOnTab && !redevelopment) collapseGradeModules();
   state.session = session;
   state.renderCoordinator?.noteSource(session.session_id);
   state.importInProgress = false;
@@ -294,11 +376,8 @@ async function activateDesktopSession(session, projectPath, openGeneration = nul
   state.selectedLocalId = state.editDocument.local_adjustments[0]?.id || null;
   state.projectPath = projectPath || "";
   state.currentView = "hdr";
-  // A source replacement starts as a new viewing task. Carrying an Actual or
-  // custom zoom across differently-sized files makes the first authoritative
-  // frame arrive cropped or far off-screen, so every import begins at Fit.
-  state.zoomMode = "fit";
-  state.zoomPercent = 100;
+  state.zoomMode = zoom ? "custom" : "fit";
+  state.zoomPercent = zoom?.percent ?? 100;
   state.zoomReferenceFrame = null;
   if (!projectPath && !window.HDRGradeSaving?.hasGrade(session.session_id)) await applyNewSessionPreferences();
   if (openGeneration !== null && openGeneration !== state.importGeneration) return;
@@ -310,6 +389,13 @@ async function activateDesktopSession(session, projectPath, openGeneration = nul
   renderSession();
   renderLocalAdjustments();
   seedExportFieldsFromSession();
+  if (redevelopment) {
+    if (holdingNativeDenoisePictureForFit()) clearDenoiseDetail();
+    applyZoomGeometry();
+    const viewport = els.dropzone;
+    viewport.scrollLeft = clamp(zoom?.left ?? 0, 0, Math.max(0, viewport.scrollWidth - viewport.clientWidth));
+    viewport.scrollTop = clamp(zoom?.top ?? 0, 0, Math.max(0, viewport.scrollHeight - viewport.clientHeight));
+  }
   let gpuReady = await renderGpuDraft("hdr", { hideStatus: false, longEdge: settledProxyLongEdge() });
   if (openGeneration !== null && openGeneration !== state.importGeneration) return;
   // The first photo with a film stock waits for that stock's tables, and
@@ -321,12 +407,19 @@ async function activateDesktopSession(session, projectPath, openGeneration = nul
     if (openGeneration !== null && openGeneration !== state.importGeneration) return;
   }
   // A second supersession means newer scheduled work will present the frame.
-  if (!gpuReady && !transientGpuRefusal()) await refreshPreview({ progressSteps: [36, 76, 92] });
+  const sourceCapacityRefused = !gpuReady && previewSourceCapacityRefused();
+  const useCpuPreview = !gpuReady && !transientGpuRefusal() && !sourceCapacityRefused;
+  const denoiseFallback = useCpuPreview && state.denoise.hdr.enabled;
+  if (useCpuPreview) {
+    const options = { progressSteps: [36, 76, 92], denoiseFallback };
+    if (zoom) await renderPreviewForLane("hdr", true, settledProxyLongEdge(), options);
+    else await refreshPreview(options);
+  }
   if (openGeneration !== null && openGeneration !== state.importGeneration) return;
   gradeOpenStage("grade_open_first_frame");
   if(state.gpuPreview)state.gpuPreview.deferDenoiseWarm = false;
   requestAnimationFrame(()=>{
-    if(state.session?.session_id!==session.session_id)return;
+    if(denoiseFallback || state.session?.session_id!==session.session_id)return;
     if(state.acceptedPresentation?.generation!==state.previewGeneration[state.currentView]
         ||state.acceptedPresentation?.lane!==state.currentView)return;
     const native = Math.max(session.source.width, session.source.height);
@@ -340,11 +433,11 @@ async function activateDesktopSession(session, projectPath, openGeneration = nul
     if (state.session?.session_id === session.session_id) console.error("Photo analysis could not finish.", error);
   });
   if (openGeneration !== null && openGeneration !== state.importGeneration) return;
-  if (state.denoise.hdr.enabled) await recalculateDenoise();
+  if (!denoiseFallback && !sourceCapacityRefused && state.denoise.hdr.enabled) await recalculateDenoise();
   if (openGeneration !== null && openGeneration !== state.importGeneration) return;
-  hidePreviewMessage();
+  if (!sourceCapacityRefused) hidePreviewMessage();
   prepareInactivePreview();
-  if (previewNeedsRefinement()) debouncePreview("hdr");
+  if (!denoiseFallback && !sourceCapacityRefused && previewNeedsRefinement()) debouncePreview("hdr");
   syncDesktopDocumentState();
   window.HDRGradeSaving?.activated(session, projectPath);
 }

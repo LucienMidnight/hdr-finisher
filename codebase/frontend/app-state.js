@@ -297,11 +297,17 @@ const geometryFullOutputFrames = new Map();
 let localMaskOverlayFrame = 0;
 let pathMarchingAntFrame = 0;
 
-const defaultDenoiseDocument = () => ({
-  schema_version: 1,
-  hdr: { enabled: false, controls: { amount: 0.5, luminance: 0.5, color_noise: 0.5, detail_recovery: 0, finest_noise: 0.5, fine_noise: 0.5, medium_noise: 0.5, coarse_noise: 0.5 }, analysis: { algorithm_version: "adaptive-atrous-v1" } },
-  sdr: { enabled: false, controls: { amount: 0.5, luminance: 0.5, color_noise: 0.5, detail_recovery: 0, finest_noise: 0.5, fine_noise: 0.5, medium_noise: 0.5, coarse_noise: 0.5 }, analysis: { algorithm_version: "adaptive-atrous-v1" } },
+const defaultDenoiseLane = () => ({
+  enabled: false,
+  controls: {
+    amount: 0.75, luminance: 0.5, color_noise: 0.75, detail_recovery: 0.5,
+    finest_noise: 0.5, fine_noise: 0.5, medium_noise: 0.5, coarse_noise: 0.5,
+    method: "clean_grain", grain_evenness: 1, clean_splotches: true, clean_fringes: true, protect_color_edges: false, color_splotches: 1, splotch_size: "small",
+    micro_luminance: 0.5, micro_color: 0.5, micro_detail: 0.5,
+  },
+  analysis: { algorithm_version: "adaptive-atrous-v1" },
 });
+const defaultDenoiseDocument = () => ({ schema_version: 1, hdr: defaultDenoiseLane(), sdr: defaultDenoiseLane() });
 
 const state = {
   session: null,
@@ -358,6 +364,7 @@ const state = {
   localPreviewDirty: false,
   localMaskCommitDepth: 0,
   localMaskCommitRefreshPending: false,
+  localMaskCommitSettlePending: false,
   localErase: false,
   projectPath: "",
   globalEditDirty: false,
@@ -505,6 +512,8 @@ const state = {
   groupPresetContext: null,
   previewCache: { hdr: null, sdr: null },
   zoomRefinementTimer: 0,
+  zoomRefinementInFlight: null,
+  zoomScopeTimer: 0,
   // Lost-wake-up safety net (see initializePreviewScheduler): the number of
   // consecutive automatic re-arms and the interval that makes them.
   previewWatchdogTimer: 0,
@@ -935,6 +944,22 @@ const els = {
   denoiseBypass: document.getElementById("denoise-bypass"),
   denoiseShowNoise: document.getElementById("denoise-show-noise"),
   noiseViewBadge: document.getElementById("noise-view-badge"),
+  denoiseMethod: document.getElementById("denoise-method"),
+  denoiseRouteAction: document.getElementById("denoise-route-action"),
+  denoiseMicroControls: document.getElementById("denoise-micro-controls"),
+  denoiseMicroSliders: ["luminance", "color", "detail"].map(name => [
+    document.getElementById(`denoise-micro-${name}`), `micro_${name}`,
+    document.getElementById(`denoise-micro-${name}-value`),
+  ]),
+  denoiseGrainControls: document.getElementById("denoise-grain-controls"),
+  denoiseCleanControls: document.getElementById("denoise-clean-controls"),
+  denoiseEvenness: document.getElementById("denoise-evenness"),
+  denoiseEvennessValue: document.getElementById("denoise-evenness-value"),
+  denoiseCleanFringes: document.getElementById("denoise-clean-fringes"),
+  denoiseProtectEdges: document.getElementById("denoise-protect-edges"),
+  denoiseSplotches: document.getElementById("denoise-splotches"),
+  denoiseSplotchesValue: document.getElementById("denoise-splotches-value"),
+  denoiseSplotchSize: document.getElementById("denoise-splotch-size"),
   denoiseAmount: document.getElementById("denoise-amount"),
   denoiseLuminance: document.getElementById("denoise-luminance"),
   denoiseColor: document.getElementById("denoise-color"),
@@ -1007,6 +1032,12 @@ const els = {
   lensSettingsNote: document.getElementById("lens-settings-note"),
   applyRawSettings: document.getElementById("apply-raw-settings"),
   rawHighlightGroup: document.getElementById("raw-highlight-group"),
+  rawPixelCleanupGroup: document.getElementById("raw-pixel-cleanup-group"),
+  rawRemoveHotPixels: document.getElementById("raw-remove-hot-pixels"),
+  rawEvenOutSpecks: document.getElementById("raw-even-out-specks"),
+  rawSpeckThreshold: document.getElementById("raw-speck-threshold"),
+  rawSpeckThresholdRow: document.getElementById("raw-speck-threshold-row"),
+  rawSpeckThresholdValue: document.getElementById("raw-speck-threshold-value"),
   rawHighlightBypass: document.getElementById("raw-highlight-bypass"),
   rawHighlightReset: document.getElementById("raw-highlight-reset"),
   rawHighlightMethod: document.getElementById("raw-highlight-method"),
@@ -1070,6 +1101,11 @@ const els = {
   previewPrimaryPane: document.getElementById("preview-primary-pane"),
   previewSecondaryPane: document.getElementById("preview-secondary-pane"),
   previewCanvas: document.getElementById("preview-canvas"),
+  previewDenoiseDetail: document.getElementById("preview-denoise-detail"),
+  previewMicroDetail: document.getElementById("preview-micro-detail"),
+  previewMicroUnderlayer: document.getElementById("preview-micro-underlayer"),
+  previewMicroHdrDetail: document.getElementById("preview-micro-hdr-detail"),
+  previewMicroHdrUnderlayer: document.getElementById("preview-micro-hdr-underlayer"),
   previewImage: document.getElementById("preview-image"),
   comparisonCanvas: document.getElementById("comparison-canvas"),
   comparisonImage: document.getElementById("comparison-image"),

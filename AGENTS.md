@@ -367,6 +367,12 @@ speed comparison is finished. Still open:
    (`EISDIR` on `link`). Needs a tooling fix that still avoids per-run RAW
    copies.
 
+**Test photos added on the Mac (November 18):** copy `DSC00512.ARW`,
+`DSC00786.ARW`, `DSC05293.ARW`, `DSC05622.ARW`, `DSC08360.ARW`, `_DSC7970.ARW`,
+`P7310446.ORF`, `P7310465.ORF`, `PA310516.ORF` and `PC131157.ORF` (noisy RAWs
+for Denoise research) into the PC's `HDR Test Images`; setup checks them against
+the manifest.
+
 **PC confirmation from the 0.9.3 focused Mac release check (November 14):**
 
 0.9.3 was released after the three Mac memory regressions in item 4 were fixed
@@ -486,6 +492,8 @@ module PRD for the area you touch, then `docs/technical/code-map.md`.
   cache or size.
 - `docs/product/modules/grade.md`: the Grade editor (tools, tone, local
   adjustments, retouch, HSL).
+- Denoise work starts by reading `docs/product/modules/denoise.md`. Add new
+  methods tried, problems found and Steve's decisions there.
 - `docs/product/modules/preview-and-gpu.md`: GPU preview, render planning,
   VRAM budgets, tiles.
 - `docs/product/modules/export-and-proof.md`: export formats, metadata,
@@ -519,6 +527,8 @@ module PRD for the area you touch, then `docs/technical/code-map.md`.
 - `docs/technical/reports/encoding-drift-jpeg-ultrahdr-2026-11-16.md`:
   non-shipping JPEG Ultra HDR sensitivity, stage and own-source fidelity research.
 
+- `docs/technical/logging.md`: rotating diagnostic logs, action correlation,
+  Grade Grain reason codes and timeline usage.
 - `docs/technical/code-map.md`: where things live in the code. Read before
   editing.
 - `docs/technical/library-grade-resource-map-2026-11-05.md`: Library/Grade
@@ -532,7 +542,8 @@ module PRD for the area you touch, then `docs/technical/code-map.md`.
 - `docs/technical/local-adjustments.md`: local adjustment data and edge
   controls.
 - `docs/technical/sdr-match.md`: HDR-to-SDR Match.
-- `docs/technical/denoising.md`: Denoise v2 implementation contract.
+- `docs/technical/denoising.md`: Denoise implementation contract, including
+  the Standard, Fine Grain and Clean Grain reconstruction and delivery paths.
 - `docs/technical/denoise-accuracy-review-plan-2026-10-04.md`,
   `denoise-followups-2026-10-04.md`: Denoise review history.
 - `docs/technical/denoising-technology-watch-2026.md`: denoise research.
@@ -600,6 +611,109 @@ Completed UI polish round 3 (pending visual sign-off): `docs/technical/archive/b
 - `docs/technical/briefs/sprint-0-9-3-feedback-2026-11-15.md`: the current
   sprint. Steve's 0.9.3 notes, review findings on the November 15 PC
   changes, status board, decisions and work packages W1–W7.
+- `docs/technical/briefs/denoise-v1-quality-trial-2026-11-16.md`: Denoise
+  v1 quality trial (AI or classical): goal, measured quality contract,
+  candidates, phases and open questions for Steve. Research reports go in
+  `docs/technical/research/denoise-v1-2026-11-16/`.
+- `docs/technical/research/denoise-v1-2026-11-16/`: Phase 1 Denoise research;
+  `candidates.md` checks weight/code licences, classical alternatives,
+  minimum-Mac feasibility and the four recommended prototype adapters.
+  `harness-baseline.md` is the CPU harness baseline: corpus ISO inventory,
+  provisional camera noise fits and current Denoise quality limits.
+  `rawnind-prototype.md` records Phase 2 RawNIND linear/Bayer adapters,
+  strength curves, clean-mosaic bias, native-frame timing and quality verdicts.
+  `classical-prototypes.md` records Phase 2 tuned-current, darktable wavelet
+  and GALOSH RAW CPU quality, native-frame time/memory, review crops and
+  licence/patent qualifications; no shipping replacement is approved.
+  `public-pairs.md` records public dataset licences, the explicitly CC0
+  RawNIND subset, held-out/seen labels, bounded registration and baseline
+  truth measurements; no replacement candidate is run on the full pair set.
+  `pilot-wiener.md` records cached self/tuned/RawNIND-pilot empirical Wiener
+  adapters, full/half-resolution fidelity including held-out/seen public
+  pairs, live-control sweeps, native CPU time/memory, review crops and
+  per-variant quality-contract verdicts.
+  `ai-experimental-design.md` proposes the standalone experimental Bayer
+  RawNIND integration: shared RAW source, eligibility, live Strength, offline
+  packaging, cache/memory choices, work packages and decisions for Steve.
+  `ai-highlights.md` evaluates original-sensor Bayer AI with Opposed/Edge
+  reconstruction, protected region blends, boundary/texture risks, signed
+  shadows, frame-global gain, native CPU costs and decision crops; research only.
+  `speck-cleanup.md` records residual-outlier and shadow-colour classical
+  cleanup variants, lifted-shadow tails, detail failures, native CPU costs
+  and the GPU/CPU integration limits; current Denoise stays unchanged.
+  `noise-model-and-raw-specks.md` records the clipped-bright-bin noise-fit
+  failure, stable model and held-out/seen comparisons, native CPU costs,
+  GPU integration limits and the stopped RAW-adapter handoff.
+  `dark-noise-strength.md` diagnoses clipped-bright calibration and signed
+  shadow-speck retention, tests informative-block/gain adapters on signed
+  primary and clipped secondary inputs, and records quality, crops, native
+  CPU costs and the partial-fix/GPU-qualification limits.
+  `demosaic-noise.md` separates signed demosaic changes from light per-CFA
+  smoothing, with fixed-shadow tails, clean-detail/held-out comparisons,
+  native CPU costs, decision crops and unmeasured GPU-integration limits.
+  `lmmse-demosaic.md` evaluates the faithful pinned RawTherapee LMMSE port on
+  signed Bayer: calibration-repaired comparisons, clean-input risks, fixed
+  shadow tails, native CPU costs, decision crops and shipping/GPU requirements.
+  `raw-pixel-cleanup.md` records historical calibration-backed cleanup and
+  the November 17 map-free single-photo hot-pixel trial: real-light risks,
+  unconfirmed candidates, held-out/seen results, native cost and kernel
+  CPU/GPU agreement; optional default-off recommendation, no app integration.
+  `signed-shadows.md` records signed AHD and unchanged-Denoise trials,
+  neutral-bias gains but unresolved Canon specks, native CPU cost and the
+  complete downstream signed-range shipping/changed-grade audit.
+  `early-outlier-taming.md` records signed pre/post-AHD soft noise-envelope
+  clamping, similarity/size and threshold sweeps, uniform-grain alternatives,
+  fixed speck zooms, small-star/clean-detail failures, native CPU cost and
+  bounded GPU-kernel agreement; research only, no automatic default approved.
+  `chroma-cleanup.md` records green-CFA matching, colour-difference medians
+  and luminance-preserving green–magenta repairs on approved 2.5σ taming,
+  fixed gallery/clean-colour risks, held-out/seen fidelity, native CPU cost
+  and the limits of colour-only cleanup; research only, no app changes.
+  `speck-rnd-proposal.md` maps noise to its correction stage and ranks the next
+  four trials. Its six-RAW diagnostic tests whether Denoise makes existing
+  peaks more conspicuous, with same-site evidence on the Canon night photo.
+  `colour-speck-trials.md` traces Steve's 238 marked spots, compares the two
+  colour-only methods across all 54 areas and records native CPU costs.
+  `canon-speck-ladder.md` compares strength ladders and protected Bayer AI
+  on Steve's six Canon areas, with 38 marked-site readings and native CPU costs.
+  `even-keep-round4.md` compares brightness grain, local hue range, dark clump
+  breakup and the 54-area edge-case check, with native CPU timings.
+  `round5-relative-colour-and-patch.md` compares relative colour cleanup,
+  nearby healing and whole-area patch averaging on the Canon and Sony,
+  with marked-site results, visible artefacts and native CPU timings.
+  `predemosaic-round4.md` records the quieter fine-grain trial, the six-step
+  luminance sweep, the native crops and the remaining hair and mark issues.
+- `docs/technical/archive/briefs/denoise-experimental-grain-modes-2026-11-19.md`:
+  completed experimental Fine Grain and Clean Grain implementation beside
+  Standard. MacBook timings and the open visual review are in the Grade and
+  performance documents. The AI method stays deferred to v2.
+- `docs/technical/briefs/denoise-clean-grain-fixes-2026-11-19.md`: Clean Grain
+  fixes after Steve's first app test. Native preparation, the removal of Dark
+  Specks and the Fine Grain edge finding are recorded in the Grade PRD.
+  The colour-mark and detail acceptance work remains open.
+- `docs/technical/archive/briefs/denoise-harsh-specks-baseline-speed-2026-11-19.md`:
+  railing-light fix, the three-method crop reference and MacBook baseline
+  with 110% measurements. Lists the remaining Canon timing cases. The Grade
+  PRD records the ranked speed plan and the memory failures.
+- `docs/technical/briefs/sprint-denoise-gpu-logging-2026-11-21.md`: the
+  current sprint. App-wide logs, Grade Grain route robustness, a faster CPU
+  Grain backup and Grain on the GPU above 8,192 pixels. Read it before any
+  sprint package.
+- `docs/technical/briefs/denoise-gpu-fallback-memory-2026-11-21.md`: PC
+  measurements of Grade Grain memory, the map of every GPU-to-CPU exit and
+  the inferred MacBook Neo limits.
+- `docs/technical/briefs/denoise-micro-grain-app-2026-11-20.md`:
+  Round 3 Bayer Denoise app design and feasibility checks.
+- `docs/technical/briefs/denoise-export-proof-breakdown-2026-11-20.md`:
+  MacBook Neo delivery stage timings, whole-app Proof memory, Sony GPU
+  admission, and reuse opportunities for Fine Grain and Clean Grain.
+- `docs/technical/briefs/denoise-speed-memory-gpu-prep-2026-11-19.md`: Denoise
+  speed round 1: bounded zoom and JPEG delivery, Fine-to-Clean Grain reuse,
+  and a GPU estimate that missed the go threshold. Full-size Proof memory
+  and the remaining delivery checks are open.
+- `docs/technical/briefs/denoise-speck-rnd-prompt-2026-11-18.md`: prompt for the
+  next Denoise speck R&D proposal (whole-workflow stage map, what was tried,
+  earlier research limitations, constraints); proposal only, no app changes.
 - `docs/technical/briefs/tone-endpoints-design-2026-11-15.md`: proposed
   five-control Tone block (Blacks/Whites endpoints, broad zones, fixed
   Highlight Compression cap) with open decisions T1-b to T1-f.
@@ -675,6 +789,12 @@ Completed UI polish round 5 (pending visual sign-off):
   manual.
 
 ### Code-side READMEs
+
+- `codebase/tools/denoise_eval/README.md`: CPU-only Denoise quality harness,
+  adapters, sensor calibration, fixed display transforms and metric definitions.
+- `codebase/tools/denoise_eval/speed_baseline.py`: fixed Denoise crop and marked
+  spot references for the minimum-Mac speed work. Generates the local review
+  under `codebase/output/review/denoise-speed-baseline/`.
 
 - `codebase/bin/README.md` (bundled encoders) and `codebase/bin/licenses/`.
 - `codebase/samples/README.md`: generated HDR reference samples.

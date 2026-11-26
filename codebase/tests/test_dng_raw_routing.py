@@ -56,7 +56,16 @@ def _install_rawpy(monkeypatch: pytest.MonkeyPatch, *, libraw_version: tuple[int
         raw_pattern = np.asarray([[0, 1], [1, 2]])
         camera_whitebalance = [2, 1, 1.5, 1]
         daylight_whitebalance = [1.8, 1, 1.4, 1]
-        sizes = SimpleNamespace(width=4, height=4, raw_width=4, raw_height=4)
+        sizes = SimpleNamespace(width=4, height=4, raw_width=4, raw_height=4, flip=0)
+        raw_colors_visible = np.tile(raw_pattern, (2, 2))
+        raw_image_visible = np.full((4, 4), 16484, dtype=np.uint16)
+        num_colors = 3
+        color_desc = b"RGBG"
+        black_level_per_channel = [100] * 4
+        camera_white_level_per_channel = [65535] * 4
+        white_level = 65535
+        rgb_xyz_matrix = np.vstack([np.eye(3), np.zeros(3)])
+        color_matrix = np.eye(3, 4, dtype=np.float32)
 
         def __enter__(self) -> FakeRaw:
             return self
@@ -88,10 +97,9 @@ def test_mandatory_dng_operations_run_once_in_camera_linear_order_and_disable_au
     path = tmp_path / "source.dng"
     path.write_bytes(b"DNG")
     image, metadata = decode_raw(path, RawImportSettings(), dng_inspection=_inspection())
-    assert calls["output_color"] == "raw"
-    assert calls["use_camera_wb"] is False
-    assert calls["user_flip"] == 0
-    assert calls["highlight_mode"] == "Clip"
+    assert calls == {}
+    assert np.isfinite(image).all()
+    assert np.all(image > 0)
     assert metadata["raw_development"]["highlight_mode"] == "clip"
     audit = metadata["dng_opcode_audit"]
     assert [item["name"] for item in audit["operations"]] == ["GainMap", "WarpRectilinear"]
@@ -136,3 +144,17 @@ def test_manual_lensfun_cannot_stack_with_mandatory_dng_operations(
     settings = RawImportSettings(lens=LensCorrectionSettings(mode="manual", profile_id="profile"))
     with pytest.raises(RawImportError, match="cannot be combined"):
         decode_raw(path, settings, dng_inspection=_inspection())
+
+
+def test_signed_mandatory_dng_uses_prepared_libraw_colour_without_camera_xyz_table(monkeypatch, tmp_path):
+    calls = _install_rawpy(monkeypatch)
+    raw_class = type(sys.modules["rawpy"].imread("unused"))
+    raw_class.rgb_xyz_matrix = np.zeros((4, 3), dtype=np.float32)
+    raw_class.raw_image_visible = np.full((4, 4), 96, dtype=np.uint16)
+    path = tmp_path / "dng-colour-metadata.dng"
+    path.write_bytes(b"DNG")
+    image, metadata = decode_raw(path, RawImportSettings(), dng_inspection=_inspection())
+    assert calls == {}
+    assert np.isfinite(image).all()
+    assert image.min() < 0
+    assert all(item["status"] == "applied" for item in metadata["dng_opcode_audit"]["operations"])

@@ -27,10 +27,11 @@
       this.generation = null;
     }
 
-    async run(generation, tasks, worker, isCurrent = () => true) {
+    async run(generation, tasks, worker, isCurrent = () => true, requestSignal) {
       this.cancel();
       const serial = this.serial;
       const controller = new AbortController();
+      const signal = requestSignal ? AbortSignal.any([controller.signal, requestSignal]) : controller.signal;
       this.controller = controller;
       this.generation = generation;
       const queue = Array.from(tasks || []);
@@ -39,19 +40,22 @@
 
       const next = async () => {
         while (cursor < queue.length) {
-          if (serial !== this.serial || controller.signal.aborted || !isCurrent()) return;
+          if (serial !== this.serial || signal.aborted || !isCurrent()) return;
           const index = cursor;
           cursor += 1;
           // Recheck after claiming the slot. A generation can be superseded
           // between turns without allowing its queued request to reach fetch.
-          if (serial !== this.serial || controller.signal.aborted || !isCurrent()) return;
+          if (serial !== this.serial || signal.aborted || !isCurrent()) return;
           this.active += 1;
           this.started += 1;
           this.maxObserved = Math.max(this.maxObserved, this.active);
           try {
-            results[index] = await worker(queue[index], index, controller.signal);
+            results[index] = await worker(queue[index], index, signal);
           } catch (error) {
-            if (error?.name !== "AbortError") throw error;
+            if (error?.name !== "AbortError" && !signal.aborted) {
+              controller.abort();
+              throw error;
+            }
             this.cancelled += 1;
           } finally {
             this.active -= 1;
@@ -63,9 +67,12 @@
         { length: Math.min(this.maxConcurrent, queue.length) },
         () => next(),
       );
-      await Promise.all(workers);
-      const current = serial === this.serial && !controller.signal.aborted && isCurrent();
-      if (current && this.controller === controller) this.controller = null;
+      try {
+        await Promise.all(workers);
+      } finally {
+        if (this.controller === controller) this.controller = null;
+      }
+      const current = serial === this.serial && !signal.aborted && isCurrent();
       return { results, current };
     }
 
@@ -92,6 +99,15 @@
    * batch carries one mask identity and the backend compiles it once.
    */
   class HDRMaskTileBatch {
+    static cover(tiles) {
+      if (!tiles.length || tiles.some(tile => !tile.haloRect)) return null;
+      const rects = tiles.map(tile => tile.haloRect);
+      const x = Math.min(...rects.map(rect => rect.x));
+      const y = Math.min(...rects.map(rect => rect.y));
+      return { x, y, width: Math.max(...rects.map(rect => rect.x + rect.width)) - x,
+        height: Math.max(...rects.map(rect => rect.y + rect.height)) - y };
+    }
+
     static tileBytes(tile) {
       const rect = tile?.rect || {};
       const halo = Math.max(0, Number(tile?.halo) || 0);
@@ -106,7 +122,15 @@
       const maxTiles = Math.max(1, Math.floor(Number(options.maxTiles) || DEFAULT_MAX_BATCH_TILES));
       const maxBytes = Math.max(1, Math.floor(Number(options.maxBytes) || DEFAULT_MAX_BATCH_BYTES));
       const batches = [];
+      const region = options.maxRegionEdge ? HDRMaskTileBatch.cover(tiles) : null;
+      const shared = region && tiles.length > 1 && Math.max(region.width, region.height) <= options.maxRegionEdge
+        && region.width * region.height <= maxBytes
+        && region.width * region.height < tiles.reduce((sum, tile) => sum + HDRMaskTileBatch.tileBytes(tile), 0);
       for (const [localIndex, local] of locals.entries()) {
+        if (shared) {
+          batches.push({ local, localIndex, tiles, bytes: region.width * region.height, sharedRegion: true });
+          continue;
+        }
         let current = null;
         for (const tile of tiles) {
           const bytes = HDRMaskTileBatch.tileBytes(tile);

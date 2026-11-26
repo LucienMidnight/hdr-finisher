@@ -3,6 +3,8 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
+from hdr_finisher.adjustments import apply_sdr_output_highlight_compression
+from hdr_finisher.models import AdjustmentState
 from hdr_finisher.sdr_gamut import (
     CHROMA_EPS,
     GAMUT_EPS,
@@ -38,6 +40,56 @@ def test_inclusive_in_gamut_values_are_bit_exact_identity() -> None:
     np.testing.assert_array_equal(compress_to_srgb_gamut(source), source)
 
 
+@pytest.mark.parametrize("shoulder_enabled", [False, True])
+def test_signed_shadows_use_the_positive_channels_without_lifting_them(shoulder_enabled: bool) -> None:
+    signed = np.array(
+        [
+            [-0.03861563, 0.02389059, -0.01062917],  # Canon fire-dancer background
+            [0.009, 0.014, -0.021],
+            [-0.001, 0.006, 0.025],
+            [0.04, -0.002, 0.006],
+            [-0.02, -0.01, -0.03],
+        ],
+        dtype=np.float32,
+    )
+    saturated_dark = np.array([[0.035, 0, 0.004], [0, 0.004, 0.03]], dtype=np.float32)
+    midtones = np.array([[0.18, 0.20, 0.22], [0.4, 0.24, 0.11]], dtype=np.float32)
+    highlights = np.array([[5.0, 1.2, 0.275], [1.3, 1.25, 1.1]], dtype=np.float32)
+    positive_frame = np.concatenate((np.maximum(signed, 0), saturated_dark, midtones, highlights))
+    signed_frame = np.concatenate((signed, saturated_dark, midtones, highlights))
+    adjustments = AdjustmentState()
+    adjustments.sdr.highlight_section_enabled = shoulder_enabled
+    expected = apply_sdr_output_highlight_compression(positive_frame, adjustments)
+    rendered = apply_sdr_output_highlight_compression(signed_frame, adjustments)
+    np.testing.assert_array_equal(rendered, expected)
+    np.testing.assert_array_equal(rendered[len(signed):len(signed) + len(saturated_dark)], saturated_dark)
+
+
+@pytest.mark.parametrize("red", [0.012, 0.12, 0.45, 0.95])
+def test_signed_channel_toe_joins_black_and_positive_color_smoothly(red: float) -> None:
+    values = np.linspace(-0.0001, 0.0012, 1301, dtype=np.float32)
+    source = np.stack((np.full_like(values, red), values, np.full_like(values, -0.004)), axis=-1)
+    result = compress_to_srgb_gamut(source)
+    green = result[:, 1]
+    np.testing.assert_array_equal(result[:, 0], source[:, 0])
+    assert np.all(result[:, 2] == 0.0)
+    assert np.all(green[values <= 0.0] == 0.0)
+    assert np.all(np.diff(green) >= 0.0)
+    assert 0.0 < green[101] < 0.01 * values[101]
+    np.testing.assert_array_equal(green[values >= 0.001], values[values >= 0.001])
+
+
+@pytest.mark.parametrize("peak", [0.01, 0.08, 0.12, 0.16, 0.44, 0.85, 1.0, 1.2, 4.0])
+def test_negative_channel_cannot_shift_the_remaining_hue(peak: float) -> None:
+    negative = np.linspace(-0.04, 0.0, 101, dtype=np.float32)
+    source = np.stack((np.full_like(negative, peak), np.full_like(negative, peak * 0.22), negative), axis=-1)
+    # Rotate the same ramp through all three possible negative channels.
+    for shift in range(3):
+        ramp = np.roll(source, shift, axis=1)
+        expected = compress_to_srgb_gamut(np.maximum(ramp, np.float32(0.0)))
+        np.testing.assert_array_equal(compress_to_srgb_gamut(ramp), expected)
+
+
 @pytest.mark.parametrize(
     "source",
     [
@@ -57,10 +109,9 @@ def test_out_of_gamut_values_map_to_finite_legal_rgb(source: list[float]) -> Non
     assert float(result.max()) <= 1.0
 
 
-def test_chromatic_mapping_preserves_oklch_hue() -> None:
+def test_positive_highlight_mapping_preserves_oklch_hue() -> None:
     source = np.array(
         [
-            [-0.25, 0.3, 0.8],
             [1.4, 0.2, 0.05],
             [0.05, 1.25, 0.3],
             [0.05, 0.2, 3.0],
@@ -72,7 +123,7 @@ def test_chromatic_mapping_preserves_oklch_hue() -> None:
     after = linear_srgb_to_oklab(compress_to_srgb_gamut(source))
     chroma = np.hypot(after[:, 1], after[:, 2])
     chromatic = chroma >= CHROMA_EPS
-    assert np.count_nonzero(chromatic) == 4
+    assert np.count_nonzero(chromatic) == 3
     assert float(np.max(_hue_difference(_hue_degrees(before[chromatic]), _hue_degrees(after[chromatic])))) <= 0.02
 
 
@@ -143,6 +194,18 @@ def test_dense_edges_neutrals_and_blue_vertex_are_continuous_and_legal() -> None
     # vertex. The residue-sized neighborhood must nevertheless be smooth.
     blue_residue = blue_edge[np.abs(blue_edge[:, 0]) <= float(GAMUT_EPS)]
     assert float(np.max(np.abs(np.diff(compress_to_srgb_gamut(blue_residue), axis=0)))) < 0.01
+
+
+@pytest.mark.parametrize("blue", [1.00003, 1.2, 1.7, 4.0])
+def test_bright_blue_edge_approaches_the_vertex_from_both_sides(blue: float) -> None:
+    offset = np.linspace(-1e-5, 1e-5, 101, dtype=np.float32)
+    ramp = np.stack((offset, np.zeros_like(offset), np.full_like(offset, blue)), axis=-1)
+    opposite = ramp[:, [1, 0, 2]]
+    for source in (ramp, opposite):
+        mapped = compress_to_srgb_gamut(source)
+        # All samples are within the existing float32 residue neighborhood
+        # of the pure blue ray. There should be no jump between cusp sectors.
+        assert np.max(np.abs(np.diff(mapped, axis=0))) < 2e-4
 
 
 def test_production_alpha_is_from_declared_sweep() -> None:

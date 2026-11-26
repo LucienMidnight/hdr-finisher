@@ -10,7 +10,7 @@ Dynamic entries show the JavaScript expression/template, with supporting definit
 
 ## Coverage and limits
 
-This inventory contains **768 source entries**, not 768 distinct hover messages. Shared helpers can produce many messages; multiple sources can feed one control. It scans HTML and JavaScript in frontend and the desktop shell (including embedded markup), title/data-tooltip/data-tip/data-native-tooltip attributes and assignments, authored title-tooltip spans, accessible-label fallbacks, and selected-option names. No app or photo is opened.
+This inventory contains **788 source entries**, not 788 distinct hover messages. Shared helpers can produce many messages; multiple sources can feed one control. It scans HTML and JavaScript in frontend and the desktop shell (including embedded markup), title/data-tooltip/data-tip/data-native-tooltip attributes and assignments, authored title-tooltip spans, accessible-label fallbacks, and selected-option names. No app or photo is opened.
 
 Runtime names, paths, errors, backend capability messages, custom album/label meanings and selected values have no finite list of text: their expression is recorded. Arbitrary computed property names, new helper APIs, external content and native operating-system menus are not discoverable by this static scanner. Supporting expressions are conservative and may include strings that are not shown as tooltips. When adding a new tooltip mechanism, extend the extractor and its fixture test.
 
@@ -61,34 +61,34 @@ Clipped lane, scope, preview and filename labels use their visible text; dynamic
 | Activity | Library Activity | fixed | codebase/frontend/photo-library.html::#index-status · [source](../../codebase/frontend/photo-library.html#L15) |
 | Resize details panel | Resize details panel | name only (fallback) | codebase/frontend/photo-library.html::#library-right-splitter · [source](../../codebase/frontend/photo-library.html#L16) |
 | Collapse details | Collapse details | name only (fallback) | codebase/frontend/photo-library.html::#collapse-right · [source](../../codebase/frontend/photo-library.html#L17) |
-| note.title | &#96;Shown as ${assumed}. Choose its colour in Grade.&#96; | dynamic expression | codebase/frontend/photo-library.js:608 · [source](../../codebase/frontend/photo-library.js#L608) |
-| name.title | photo.name | dynamic expression; name/status supplied at runtime | codebase/frontend/photo-library.js:660 · [source](../../codebase/frontend/photo-library.js#L660) |
-| element.title | Online-only. Open this photo to download it. | fixed | codebase/frontend/photo-library.js:786 · [source](../../codebase/frontend/photo-library.js#L786) |
-| element aria-label | Photo row loading | name only (fallback candidate) | codebase/frontend/photo-library.js:834 · [source](../../codebase/frontend/photo-library.js#L834) |
-| element.title | name | dynamic expression | codebase/frontend/photo-library.js:934 · [source](../../codebase/frontend/photo-library.js#L934) |
-| reviewMarks aria-label | Photo marks | name only (fallback candidate) | codebase/frontend/photo-library.js:1199 · [source](../../codebase/frontend/photo-library.js#L1199) |
-| button.title | warning.reason | dynamic expression | codebase/frontend/photo-library.js:1207 · [source](../../codebase/frontend/photo-library.js#L1207) |
-| next aria-label | Detail preview | name only (fallback candidate) | codebase/frontend/photo-library.js:1442 · [source](../../codebase/frontend/photo-library.js#L1442) |
-| .title | place.kind === "smart" ? "Smart album · saved filter across the indexed library" : place.kind === "album" ? "Album. Photos stay where they are." : place.kind ? "Every connected photo that carries this tag" : path | dynamic expression | codebase/frontend/photo-library.js:1585 · [source](../../codebase/frontend/photo-library.js#L1585) |
-| path — text used by dynamic tooltips | place.path &#124;&#124; "" | dynamic supporting definition | codebase/frontend/photo-library.js:1569 · [source](../../codebase/frontend/photo-library.js#L1569) |
-| expand aria-label | &#96;Expand ${folder.name}&#96; | dynamic expression | codebase/frontend/photo-library.js:1869 · [source](../../codebase/frontend/photo-library.js#L1869) |
-| name.title | folder.path | dynamic expression; name/status supplied at runtime | codebase/frontend/photo-library.js:1870 · [source](../../codebase/frontend/photo-library.js#L1870) |
-| ) aria-label | &#96;${closed ? "Expand" : "Collapse"} ${side === "left" ? "folders" : "details"}&#96; | dynamic expression | codebase/frontend/photo-library.js:2113 · [source](../../codebase/frontend/photo-library.js#L2113) |
-| closed — text used by dynamic tooltips | !(library.classList.contains("library-left-closed") && library.classList.contains("library-right-closed")) | dynamic supporting definition | codebase/frontend/photo-library.js:2571 · [source](../../codebase/frontend/photo-library.js#L2571) |
+| note.title | &#96;Shown as ${assumed}. Choose its colour in Grade.&#96; | dynamic expression | codebase/frontend/photo-library.js:640 · [source](../../codebase/frontend/photo-library.js#L640) |
+| name.title | photo.name | dynamic expression; name/status supplied at runtime | codebase/frontend/photo-library.js:692 · [source](../../codebase/frontend/photo-library.js#L692) |
+| element.title | Online-only. Open this photo to download it. | fixed | codebase/frontend/photo-library.js:824 · [source](../../codebase/frontend/photo-library.js#L824) |
+| element aria-label | Photo row loading | name only (fallback candidate) | codebase/frontend/photo-library.js:872 · [source](../../codebase/frontend/photo-library.js#L872) |
+| element.title | name | dynamic expression | codebase/frontend/photo-library.js:972 · [source](../../codebase/frontend/photo-library.js#L972) |
+| reviewMarks aria-label | Photo marks | name only (fallback candidate) | codebase/frontend/photo-library.js:1237 · [source](../../codebase/frontend/photo-library.js#L1237) |
+| button.title | warning.reason | dynamic expression | codebase/frontend/photo-library.js:1245 · [source](../../codebase/frontend/photo-library.js#L1245) |
+| next aria-label | Detail preview | name only (fallback candidate) | codebase/frontend/photo-library.js:1480 · [source](../../codebase/frontend/photo-library.js#L1480) |
+| .title | place.kind === "smart" ? "Smart album · saved filter across the indexed library" : place.kind === "album" ? "Album. Photos stay where they are." : place.kind ? "Every connected photo that carries this tag" : path | dynamic expression | codebase/frontend/photo-library.js:1629 · [source](../../codebase/frontend/photo-library.js#L1629) |
+| path — text used by dynamic tooltips | place.path &#124;&#124; "" | dynamic supporting definition | codebase/frontend/photo-library.js:1607 · [source](../../codebase/frontend/photo-library.js#L1607) |
+| expand aria-label | &#96;Expand ${folder.name}&#96; | dynamic expression | codebase/frontend/photo-library.js:1940 · [source](../../codebase/frontend/photo-library.js#L1940) |
+| name.title | folder.path | dynamic expression; name/status supplied at runtime | codebase/frontend/photo-library.js:1941 · [source](../../codebase/frontend/photo-library.js#L1941) |
+| ) aria-label | &#96;${closed ? "Expand" : "Collapse"} ${side === "left" ? "folders" : "details"}&#96; | dynamic expression | codebase/frontend/photo-library.js:2184 · [source](../../codebase/frontend/photo-library.js#L2184) |
+| closed — text used by dynamic tooltips | !(library.classList.contains("library-left-closed") && library.classList.contains("library-right-closed")) | dynamic supporting definition | codebase/frontend/photo-library.js:2657 · [source](../../codebase/frontend/photo-library.js#L2657) |
 | library — text used by dynamic tooltips | $("library") | dynamic supporting definition | codebase/frontend/photo-library.js:7 · [source](../../codebase/frontend/photo-library.js#L7) |
-| .title | &#96;Sorted by ${item.textContent.toLowerCase()}&#96; | dynamic expression | codebase/frontend/photo-library.js:2142 · [source](../../codebase/frontend/photo-library.js#L2142) |
-| item — text used by dynamic tooltips | event.target.closest("[data-sort]") | dynamic supporting definition | codebase/frontend/photo-library.js:2160 · [source](../../codebase/frontend/photo-library.js#L2160) |
-| event — text used by dynamic tooltips | JSON.parse(pending.join("")) | dynamic supporting definition | codebase/frontend/photo-library.js:1656 · [source](../../codebase/frontend/photo-library.js#L1656) |
-| ) aria-label | label | dynamic expression; name/status supplied at runtime | codebase/frontend/photo-library.js:2145 · [source](../../codebase/frontend/photo-library.js#L2145) |
-| label — text used by dynamic tooltips | state.descending ? "Descending. Switch to ascending" : "Ascending. Switch to descending" | dynamic supporting definition | codebase/frontend/photo-library.js:2144 · [source](../../codebase/frontend/photo-library.js#L2144) |
+| .title | &#96;Sorted by ${item.textContent.toLowerCase()}&#96; | dynamic expression | codebase/frontend/photo-library.js:2213 · [source](../../codebase/frontend/photo-library.js#L2213) |
+| item — text used by dynamic tooltips | event.target.closest("[data-sort]") | dynamic supporting definition | codebase/frontend/photo-library.js:2231 · [source](../../codebase/frontend/photo-library.js#L2231) |
+| event — text used by dynamic tooltips | JSON.parse(pending.join("")) | dynamic supporting definition | codebase/frontend/photo-library.js:1707 · [source](../../codebase/frontend/photo-library.js#L1707) |
+| ) aria-label | label | dynamic expression; name/status supplied at runtime | codebase/frontend/photo-library.js:2216 · [source](../../codebase/frontend/photo-library.js#L2216) |
+| label — text used by dynamic tooltips | state.descending ? "Descending. Switch to ascending" : "Ascending. Switch to descending" | dynamic supporting definition | codebase/frontend/photo-library.js:2215 · [source](../../codebase/frontend/photo-library.js#L2215) |
 | state — text used by dynamic tooltips | { photos: [], allPhotos: [], reading: false, hdr: false, zoom: false, zoomX: .5, zoomY: .5, zoomScale: 1, native: null, nativeMeta: null, nativeLoading: false, fitMeta: null, displayEpoch: 0, scanError: "", sort: "time", descending: false, filters: {}, index: -1, path: "", view: "grid", review: false, beforeReview: "grid", pins: [], cells: new Map(), filmCells: new Map(), size: 190, selection: new Set(), anchor: -1, scan: null, single: null, active: true, timing: false, picker: null, hiddenFiles: 0, folderSelection: new Set(), folderAnchor: "", collection: null, smartFilters: null, allFacts: false, labelNames: {}, indexing: null } | dynamic supporting definition | codebase/frontend/photo-library.js:8 · [source](../../codebase/frontend/photo-library.js#L8) |
-| .title | label | dynamic expression; name/status supplied at runtime | codebase/frontend/photo-library.js:2145::2 · [source](../../codebase/frontend/photo-library.js#L2145) |
-| ) aria-label | Dock Library | name only (fallback candidate) | codebase/frontend/photo-library.js:2650 · [source](../../codebase/frontend/photo-library.js#L2650) |
-| .title | Return Library to the main window | fixed | codebase/frontend/photo-library.js:2651 · [source](../../codebase/frontend/photo-library.js#L2651) |
-| notice.title | job.stage | dynamic expression | codebase/frontend/photo-library.js:2681 · [source](../../codebase/frontend/photo-library.js#L2681) |
-| job — text used by dynamic tooltips | jobs.filter(j=&gt;j.path===cell.dataset.path && j.kind!=="quick" && j.reason==="needs more memory").sort((a,b)=&gt;b.estimate-a.estimate)[0] | dynamic supporting definition | codebase/frontend/photo-library.js:2677 · [source](../../codebase/frontend/photo-library.js#L2677) |
-| stage — text used by dynamic tooltips | $("single-stage") | dynamic supporting definition | codebase/frontend/photo-library.js:1461 · [source](../../codebase/frontend/photo-library.js#L1461) |
-| notice aria-label | job.stage+" Open memory settings" | dynamic expression | codebase/frontend/photo-library.js:2682 · [source](../../codebase/frontend/photo-library.js#L2682) |
+| .title | label | dynamic expression; name/status supplied at runtime | codebase/frontend/photo-library.js:2216::2 · [source](../../codebase/frontend/photo-library.js#L2216) |
+| ) aria-label | Dock Library | name only (fallback candidate) | codebase/frontend/photo-library.js:2736 · [source](../../codebase/frontend/photo-library.js#L2736) |
+| .title | Return Library to the main window | fixed | codebase/frontend/photo-library.js:2737 · [source](../../codebase/frontend/photo-library.js#L2737) |
+| notice.title | job.stage | dynamic expression | codebase/frontend/photo-library.js:2767 · [source](../../codebase/frontend/photo-library.js#L2767) |
+| job — text used by dynamic tooltips | jobs.filter(j=&gt;j.path===cell.dataset.path && j.kind!=="quick" && j.reason==="needs more memory").sort((a,b)=&gt;b.estimate-a.estimate)[0] | dynamic supporting definition | codebase/frontend/photo-library.js:2763 · [source](../../codebase/frontend/photo-library.js#L2763) |
+| stage — text used by dynamic tooltips | $("single-stage") | dynamic supporting definition | codebase/frontend/photo-library.js:1499 · [source](../../codebase/frontend/photo-library.js#L1499) |
+| notice aria-label | job.stage+" Open memory settings" | dynamic expression | codebase/frontend/photo-library.js:2768 · [source](../../codebase/frontend/photo-library.js#L2768) |
 
 ### library albums
 
@@ -129,9 +129,9 @@ Clipped lane, scope, preview and filename labels use their visible text; dynamic
 
 | Control / visible name | Text | Flags | ID and source |
 | --- | --- | --- | --- |
-| dialog aria-label | title | dynamic expression; name/status supplied at runtime | codebase/frontend/library-file-commands.js:22 · [source](../../codebase/frontend/library-file-commands.js#L22) |
-| select aria-label | Destination folder | name only (fallback candidate) | codebase/frontend/library-file-commands.js:23 · [source](../../codebase/frontend/library-file-commands.js#L23) |
-| dialog aria-label | Name clash | name only (fallback candidate) | codebase/frontend/library-file-commands.js:36 · [source](../../codebase/frontend/library-file-commands.js#L36) |
+| dialog aria-label | title | dynamic expression; name/status supplied at runtime | codebase/frontend/library-file-commands.js:68 · [source](../../codebase/frontend/library-file-commands.js#L68) |
+| select aria-label | Destination folder | name only (fallback candidate) | codebase/frontend/library-file-commands.js:69 · [source](../../codebase/frontend/library-file-commands.js#L69) |
+| dialog aria-label | Name clash | name only (fallback candidate) | codebase/frontend/library-file-commands.js:82 · [source](../../codebase/frontend/library-file-commands.js#L82) |
 
 ### library filters
 
@@ -205,300 +205,319 @@ Clipped lane, scope, preview and filename labels use their visible text; dynamic
 | Control / visible name | Text | Flags | ID and source |
 | --- | --- | --- | --- |
 | Raw development | Convenience development uses as-shot white balance, AHD demosaic, linear ACES output, and no destructive LibRaw auto brightening or sharpening. The metered starting exposure remains an editable Tone adjustment and is not baked into decoded pixels. | fixed | codebase/frontend/index.html::#raw-settings-toggle · [source](../../codebase/frontend/index.html#L625) |
-| Lens correction | Auto applies only one exact profile match. Off and Manual are always available. | fixed | codebase/frontend/index.html::#lens-settings-note · [source](../../codebase/frontend/index.html#L629) |
-| Off | Off | name only (selected option, when clipped) | codebase/frontend/index.html:631 · [source](../../codebase/frontend/index.html#L631) |
-| Auto · editable | Auto · editable | name only (selected option, when clipped) | codebase/frontend/index.html:632 · [source](../../codebase/frontend/index.html#L632) |
-| Manual profile | Manual profile | name only (selected option, when clipped) | codebase/frontend/index.html:633 · [source](../../codebase/frontend/index.html#L633) |
-| Search profiles… | Search profiles… | name only (selected option, when clipped) | codebase/frontend/index.html:638 · [source](../../codebase/frontend/index.html#L638) |
-| Edit the HDR version, shown on HDR screens. | Edit the HDR version, shown on HDR screens. | fixed | codebase/frontend/index.html::#hdr-controls-tooltip · [source](../../codebase/frontend/index.html#L927) |
-| Edit the SDR version, shown on screens without HDR. | Edit the SDR version, shown on screens without HDR. | fixed | codebase/frontend/index.html::#sdr-controls-tooltip · [source](../../codebase/frontend/index.html#L931) |
+| Remove hot pixels | Fixes single stuck bright pixels from the sensor. It can occasionally remove a real tiny light, such as a star or a glint, so turn it off for night skies. | fixed | codebase/frontend/index.html:630 · [source](../../codebase/frontend/index.html#L630) |
+| Even out harsh specks | Pulls unusual sensor readings toward the local noise range before development. Small stars and thin lettering may soften; colourful blobs can remain. | fixed | codebase/frontend/index.html:631 · [source](../../codebase/frontend/index.html#L631) |
+| Speck threshold | Smooth readings beyond this multiple of the local noise range. Lower values are stronger. Applies when you release the slider. | fixed | codebase/frontend/index.html::for=raw-speck-threshold · [source](../../codebase/frontend/index.html#L633) |
+| Lens correction | Auto applies only one exact profile match. Off and Manual are always available. | fixed | codebase/frontend/index.html::#lens-settings-note · [source](../../codebase/frontend/index.html#L637) |
+| Off | Off | name only (selected option, when clipped) | codebase/frontend/index.html:639 · [source](../../codebase/frontend/index.html#L639) |
+| Auto · editable | Auto · editable | name only (selected option, when clipped) | codebase/frontend/index.html:640 · [source](../../codebase/frontend/index.html#L640) |
+| Manual profile | Manual profile | name only (selected option, when clipped) | codebase/frontend/index.html:641 · [source](../../codebase/frontend/index.html#L641) |
+| Search profiles… | Search profiles… | name only (selected option, when clipped) | codebase/frontend/index.html:646 · [source](../../codebase/frontend/index.html#L646) |
+| Edit the HDR version, shown on HDR screens. | Edit the HDR version, shown on HDR screens. | fixed | codebase/frontend/index.html::#hdr-controls-tooltip · [source](../../codebase/frontend/index.html#L963) |
+| Edit the SDR version, shown on screens without HDR. | Edit the SDR version, shown on screens without HDR. | fixed | codebase/frontend/index.html::#sdr-controls-tooltip · [source](../../codebase/frontend/index.html#L967) |
 
 ### grade / raw-highlights
 
 | Control / visible name | Text | Flags | ID and source |
 | --- | --- | --- | --- |
-| Highlight Reconstruction | Repairs clipped RAW color channels before AHD demosaic. Changing this module re-develops the source. | fixed | codebase/frontend/index.html:656 · [source](../../codebase/frontend/index.html#L656) |
-| ◉ | Toggle RAW highlight reconstruction | name only (fallback) | codebase/frontend/index.html::#raw-highlight-bypass · [source](../../codebase/frontend/index.html#L658) |
-| Opposed color | Opposed color | name only (selected option, when clipped) | codebase/frontend/index.html:664 · [source](../../codebase/frontend/index.html#L664) |
-| Edge colour (prototype) | Edge colour (prototype) | name only (selected option, when clipped) | codebase/frontend/index.html:665 · [source](../../codebase/frontend/index.html#L665) |
-| Small | A narrow blend just past the clip line. | fixed | codebase/frontend/index.html:678 · [source](../../codebase/frontend/index.html#L678) |
-| Medium | The starting point: a moderate blend past the clip line. | fixed | codebase/frontend/index.html:679 · [source](../../codebase/frontend/index.html#L679) |
-| Large | A wide blend that melts large clipped lights into their glow. | fixed | codebase/frontend/index.html:680 · [source](../../codebase/frontend/index.html#L680) |
-| Expand % | How far the blend reaches past the clip line, as % of the picture's long edge. Each change re-develops the RAW; type a value and press Enter. | fixed | codebase/frontend/index.html:682 · [source](../../codebase/frontend/index.html#L682) |
+| Highlight Reconstruction | Repairs clipped RAW color channels before AHD demosaic. Changing this module re-develops the source. | fixed | codebase/frontend/index.html:664 · [source](../../codebase/frontend/index.html#L664) |
+| ◉ | Toggle RAW highlight reconstruction | name only (fallback) | codebase/frontend/index.html::#raw-highlight-bypass · [source](../../codebase/frontend/index.html#L666) |
+| Opposed color | Opposed color | name only (selected option, when clipped) | codebase/frontend/index.html:672 · [source](../../codebase/frontend/index.html#L672) |
+| Edge colour (prototype) | Edge colour (prototype) | name only (selected option, when clipped) | codebase/frontend/index.html:673 · [source](../../codebase/frontend/index.html#L673) |
+| Small | A narrow blend just past the clip line. | fixed | codebase/frontend/index.html:686 · [source](../../codebase/frontend/index.html#L686) |
+| Medium | The starting point: a moderate blend past the clip line. | fixed | codebase/frontend/index.html:687 · [source](../../codebase/frontend/index.html#L687) |
+| Large | A wide blend that melts large clipped lights into their glow. | fixed | codebase/frontend/index.html:688 · [source](../../codebase/frontend/index.html#L688) |
+| Expand % | How far the blend reaches past the clip line, as % of the picture's long edge. Each change re-develops the RAW; type a value and press Enter. | fixed | codebase/frontend/index.html:690 · [source](../../codebase/frontend/index.html#L690) |
 
 ### grade / denoise
 
 | Control / visible name | Text | Flags | ID and source |
 | --- | --- | --- | --- |
-| Denoise | Independent for the active HDR or SDR rendition. Match/Rematch copies the current HDR denoise recipe into SDR once. | fixed | codebase/frontend/index.html:689 · [source](../../codebase/frontend/index.html#L689) |
-| ◉ | Toggle Denoise preview | name only (fallback) | codebase/frontend/index.html::#denoise-bypass · [source](../../codebase/frontend/index.html#L691) |
-| Show noise | Shows only what Denoise removes, as gray with the removed noise on top. Even grain is safe; visible edges, lettering or texture mean detail is being lost. | fixed | codebase/frontend/index.html::#denoise-show-noise · [source](../../codebase/frontend/index.html#L695) |
-| Noise size | How strongly each size of noise is removed. 50% is the measured amount; 0% leaves that size alone. Luminance and Color Noise still decide brightness versus colour. | fixed | codebase/frontend/index.html:713 · [source](../../codebase/frontend/index.html#L713) |
+| Denoise | Independent for the active HDR or SDR rendition. Match/Rematch copies the current HDR denoise recipe into SDR once. | fixed | codebase/frontend/index.html:697 · [source](../../codebase/frontend/index.html#L697) |
+| ◉ | Toggle Denoise preview | name only (fallback) | codebase/frontend/index.html::#denoise-bypass · [source](../../codebase/frontend/index.html#L699) |
+| Show noise | Shows only what Denoise removes, as gray with the removed noise on top. Even grain is safe; visible edges, lettering or texture mean detail is being lost. | fixed | codebase/frontend/index.html::#denoise-show-noise · [source](../../codebase/frontend/index.html#L703) |
+| Clean Grain Simple Micro Grain · Experimental | Clean Grain evens out the brightness grain and reduces colour splotches. Simple uses the original noise reduction. | fixed | codebase/frontend/index.html::#denoise-method · [source](../../codebase/frontend/index.html#L707) |
+| Clean Grain | Clean Grain | name only (selected option, when clipped) | codebase/frontend/index.html:708 · [source](../../codebase/frontend/index.html#L708) |
+| Simple | Simple | name only (selected option, when clipped) | codebase/frontend/index.html:709 · [source](../../codebase/frontend/index.html#L709) |
+| Micro Grain · Experimental | Micro Grain · Experimental | name only (selected option, when clipped) | codebase/frontend/index.html:710 · [source](../../codebase/frontend/index.html#L710) |
+| Luminance | Reduces brightness noise while keeping a fine grain. | fixed | codebase/frontend/index.html::for=denoise-micro-luminance · [source](../../codebase/frontend/index.html#L716) |
+| Color | Reduces colour noise and blotches. | fixed | codebase/frontend/index.html::for=denoise-micro-color · [source](../../codebase/frontend/index.html#L717) |
+| Detail | Keeps more texture and edge detail at higher settings. | fixed | codebase/frontend/index.html::for=denoise-micro-detail · [source](../../codebase/frontend/index.html#L718) |
+| Luminance | How much brightness noise is removed. Amount scales this and Color Noise together. | fixed | codebase/frontend/index.html::for=denoise-luminance · [source](../../codebase/frontend/index.html#L730) |
+| Color Noise | How much colour noise of every size is removed, before splotch cleanup. Amount scales this and Luminance together. Raise it first when colour blotches remain. | fixed | codebase/frontend/index.html::for=denoise-color · [source](../../codebase/frontend/index.html#L731) |
+| Grain Evenness | Spreads the remaining brightness grain more evenly. 0% gives Standard’s grain and 100% uses the grain-matched 18-pixel setting. | fixed | codebase/frontend/index.html::for=denoise-evenness · [source](../../codebase/frontend/index.html#L734) |
+| Color Splotches | Pulls coloured blotches toward their surroundings while preserving scene brightness. 0% switches off this correction. | fixed | codebase/frontend/index.html::for=denoise-splotches · [source](../../codebase/frontend/index.html#L737) |
+| Splotch Size | Small samples colour about 12 pixels away. Large also samples about 28 pixels away to reach beyond wider blotches. | fixed | codebase/frontend/index.html::for=denoise-splotch-size · [source](../../codebase/frontend/index.html#L739) |
+| Small | Small | name only (selected option, when clipped) | codebase/frontend/index.html:740 · [source](../../codebase/frontend/index.html#L740) |
+| Large | Large | name only (selected option, when clipped) | codebase/frontend/index.html:740::2 · [source](../../codebase/frontend/index.html#L740) |
+| Protect color edges | Leave splotch cleanup off sharp colour boundaries that run in a line, so skin, clothing and sky edges keep their colour. Turn off if it leaves splotches near edges. | fixed | codebase/frontend/index.html:742 · [source](../../codebase/frontend/index.html#L742) |
+| Clean edge fringes | Reduce narrow colour fringes along bright edges. | fixed | codebase/frontend/index.html:743 · [source](../../codebase/frontend/index.html#L743) |
+| Noise size | How strongly each size of noise is removed. 50% is the measured amount; 0% leaves that size alone. Luminance and Color Noise still decide brightness versus colour. | fixed | codebase/frontend/index.html:750 · [source](../../codebase/frontend/index.html#L750) |
 
 ### grade / geometry
 
 | Control / visible name | Text | Flags | ID and source |
 | --- | --- | --- | --- |
-| Crop | Crop | fixed; name only | codebase/frontend/index.html::#crop-tool-toggle · [source](../../codebase/frontend/index.html#L868) |
-| Rotate | Rotate | fixed; name only | codebase/frontend/index.html::#rotate-tool-toggle · [source](../../codebase/frontend/index.html#L869) |
-| Free | Free | name only (selected option, when clipped) | codebase/frontend/index.html:874 · [source](../../codebase/frontend/index.html#L874) |
-| Original | Original | name only (selected option, when clipped) | codebase/frontend/index.html:874::2 · [source](../../codebase/frontend/index.html#L874) |
-| 1:1 | 1:1 | name only (selected option, when clipped) | codebase/frontend/index.html:874::3 · [source](../../codebase/frontend/index.html#L874) |
-| 3:2 | 3:2 | name only (selected option, when clipped) | codebase/frontend/index.html:874::4 · [source](../../codebase/frontend/index.html#L874) |
-| 2:3 | 2:3 | name only (selected option, when clipped) | codebase/frontend/index.html:874::5 · [source](../../codebase/frontend/index.html#L874) |
-| 4:3 | 4:3 | name only (selected option, when clipped) | codebase/frontend/index.html:874::6 · [source](../../codebase/frontend/index.html#L874) |
-| 3:4 | 3:4 | name only (selected option, when clipped) | codebase/frontend/index.html:874::7 · [source](../../codebase/frontend/index.html#L874) |
-| 5:4 | 5:4 | name only (selected option, when clipped) | codebase/frontend/index.html:874::8 · [source](../../codebase/frontend/index.html#L874) |
-| 4:5 | 4:5 | name only (selected option, when clipped) | codebase/frontend/index.html:874::9 · [source](../../codebase/frontend/index.html#L874) |
-| 16:9 | 16:9 | name only (selected option, when clipped) | codebase/frontend/index.html:874::10 · [source](../../codebase/frontend/index.html#L874) |
-| 9:16 | 9:16 | name only (selected option, when clipped) | codebase/frontend/index.html:874::11 · [source](../../codebase/frontend/index.html#L874) |
-| 2:1 | 2:1 | name only (selected option, when clipped) | codebase/frontend/index.html:874::12 · [source](../../codebase/frontend/index.html#L874) |
-| Custom | Custom | name only (selected option, when clipped) | codebase/frontend/index.html:874::13 · [source](../../codebase/frontend/index.html#L874) |
-| Swap | Swap custom ratio orientation | name only (fallback) | codebase/frontend/index.html::#swap-custom-ratio · [source](../../codebase/frontend/index.html#L879) |
-| None | None | name only (selected option, when clipped) | codebase/frontend/index.html:883 · [source](../../codebase/frontend/index.html#L883) |
-| Rule of Thirds | Rule of Thirds | name only (selected option, when clipped) | codebase/frontend/index.html:883::2 · [source](../../codebase/frontend/index.html#L883) |
-| Golden Ratio | Golden Ratio | name only (selected option, when clipped) | codebase/frontend/index.html:883::3 · [source](../../codebase/frontend/index.html#L883) |
-| Grid | Grid | name only (selected option, when clipped) | codebase/frontend/index.html:883::4 · [source](../../codebase/frontend/index.html#L883) |
-| X Pattern | X Pattern | name only (selected option, when clipped) | codebase/frontend/index.html:883::5 · [source](../../codebase/frontend/index.html#L883) |
-| Diagonal Method | Diagonal Method | name only (selected option, when clipped) | codebase/frontend/index.html:883::6 · [source](../../codebase/frontend/index.html#L883) |
+| Crop | Crop | fixed; name only | codebase/frontend/index.html::#crop-tool-toggle · [source](../../codebase/frontend/index.html#L904) |
+| Rotate | Rotate | fixed; name only | codebase/frontend/index.html::#rotate-tool-toggle · [source](../../codebase/frontend/index.html#L905) |
+| Free | Free | name only (selected option, when clipped) | codebase/frontend/index.html:910 · [source](../../codebase/frontend/index.html#L910) |
+| Original | Original | name only (selected option, when clipped) | codebase/frontend/index.html:910::2 · [source](../../codebase/frontend/index.html#L910) |
+| 1:1 | 1:1 | name only (selected option, when clipped) | codebase/frontend/index.html:910::3 · [source](../../codebase/frontend/index.html#L910) |
+| 3:2 | 3:2 | name only (selected option, when clipped) | codebase/frontend/index.html:910::4 · [source](../../codebase/frontend/index.html#L910) |
+| 2:3 | 2:3 | name only (selected option, when clipped) | codebase/frontend/index.html:910::5 · [source](../../codebase/frontend/index.html#L910) |
+| 4:3 | 4:3 | name only (selected option, when clipped) | codebase/frontend/index.html:910::6 · [source](../../codebase/frontend/index.html#L910) |
+| 3:4 | 3:4 | name only (selected option, when clipped) | codebase/frontend/index.html:910::7 · [source](../../codebase/frontend/index.html#L910) |
+| 5:4 | 5:4 | name only (selected option, when clipped) | codebase/frontend/index.html:910::8 · [source](../../codebase/frontend/index.html#L910) |
+| 4:5 | 4:5 | name only (selected option, when clipped) | codebase/frontend/index.html:910::9 · [source](../../codebase/frontend/index.html#L910) |
+| 16:9 | 16:9 | name only (selected option, when clipped) | codebase/frontend/index.html:910::10 · [source](../../codebase/frontend/index.html#L910) |
+| 9:16 | 9:16 | name only (selected option, when clipped) | codebase/frontend/index.html:910::11 · [source](../../codebase/frontend/index.html#L910) |
+| 2:1 | 2:1 | name only (selected option, when clipped) | codebase/frontend/index.html:910::12 · [source](../../codebase/frontend/index.html#L910) |
+| Custom | Custom | name only (selected option, when clipped) | codebase/frontend/index.html:910::13 · [source](../../codebase/frontend/index.html#L910) |
+| Swap | Swap custom ratio orientation | name only (fallback) | codebase/frontend/index.html::#swap-custom-ratio · [source](../../codebase/frontend/index.html#L915) |
+| None | None | name only (selected option, when clipped) | codebase/frontend/index.html:919 · [source](../../codebase/frontend/index.html#L919) |
+| Rule of Thirds | Rule of Thirds | name only (selected option, when clipped) | codebase/frontend/index.html:919::2 · [source](../../codebase/frontend/index.html#L919) |
+| Golden Ratio | Golden Ratio | name only (selected option, when clipped) | codebase/frontend/index.html:919::3 · [source](../../codebase/frontend/index.html#L919) |
+| Grid | Grid | name only (selected option, when clipped) | codebase/frontend/index.html:919::4 · [source](../../codebase/frontend/index.html#L919) |
+| X Pattern | X Pattern | name only (selected option, when clipped) | codebase/frontend/index.html:919::5 · [source](../../codebase/frontend/index.html#L919) |
+| Diagonal Method | Diagonal Method | name only (selected option, when clipped) | codebase/frontend/index.html:919::6 · [source](../../codebase/frontend/index.html#L919) |
 
 ### grade / hdr / hdr-highlights
 
 | Control / visible name | Text | Flags | ID and source |
 | --- | --- | --- | --- |
-| ◉ | Toggle Highlight Compression preview | name only (fallback) | codebase/frontend/index.html:944 · [source](../../codebase/frontend/index.html#L944) |
-| Peak | Sets the final peak after grading and finishing. At least 225 nit keeps HDR headroom above project and gain-map reference white. | fixed | codebase/frontend/index.html::for=hdr-compression-target · [source](../../codebase/frontend/index.html#L950) |
-| Mode | Peak Fit anchors the measured final-grade peak at the output target. | fixed | codebase/frontend/index.html::#highlight-compression-summary · [source](../../codebase/frontend/index.html#L961) |
-| Peak Fit | Peak Fit | name only (selected option, when clipped); duplicated HDR/SDR | codebase/frontend/index.html:964 · [source](../../codebase/frontend/index.html#L964) |
-| Fixed cap | Fixed cap | name only (selected option, when clipped); duplicated HDR/SDR | codebase/frontend/index.html:965 · [source](../../codebase/frontend/index.html#L965) |
-| Soft Ceiling | Soft Ceiling | name only (selected option, when clipped); duplicated HDR/SDR | codebase/frontend/index.html:965::2 · [source](../../codebase/frontend/index.html#L965) |
-| Clip | Clip | name only (selected option, when clipped); duplicated HDR/SDR | codebase/frontend/index.html:966 · [source](../../codebase/frontend/index.html#L966) |
-| Highlight Color | Smooth color rolloff gently compresses each Rec.2020 channel toward white. Preserve color keeps channel ratios intact. Neutralize peak groups channels so the brightest highlights converge to neutral white. Attenuate (prototype) fades bright colours gradually toward white, AgX-style. | fixed | codebase/frontend/index.html::for=hdr-compression-color · [source](../../codebase/frontend/index.html#L979) |
-| Smooth color rolloff | Smooth color rolloff | name only (selected option, when clipped); duplicated HDR/SDR | codebase/frontend/index.html:982 · [source](../../codebase/frontend/index.html#L982) |
-| Preserve color | Preserve color | name only (selected option, when clipped); duplicated HDR/SDR | codebase/frontend/index.html:983 · [source](../../codebase/frontend/index.html#L983) |
-| Neutralize peak | Neutralize peak | name only (selected option, when clipped); duplicated HDR/SDR | codebase/frontend/index.html:984 · [source](../../codebase/frontend/index.html#L984) |
-| Attenuate (AgX-style, prototype) | Attenuate (AgX-style, prototype) | name only (selected option, when clipped); duplicated HDR/SDR | codebase/frontend/index.html:985 · [source](../../codebase/frontend/index.html#L985) |
-| Attenuation | How strongly bright colours fade toward white as they are compressed. 0% matches Smooth color rolloff. | fixed | codebase/frontend/index.html::for=hdr-compression-attenuation · [source](../../codebase/frontend/index.html#L989) |
-| Measured maximum | Measured maximum | name only (selected option, when clipped); duplicated HDR/SDR | codebase/frontend/index.html:1004 · [source](../../codebase/frontend/index.html#L1004) |
-| Ignore isolated pixels | Ignore isolated pixels | name only (selected option, when clipped); duplicated HDR/SDR | codebase/frontend/index.html:1005 · [source](../../codebase/frontend/index.html#L1005) |
-| Manual | Manual | name only (selected option, when clipped); duplicated HDR/SDR | codebase/frontend/index.html:1006 · [source](../../codebase/frontend/index.html#L1006) |
+| ◉ | Toggle Highlight Compression preview | name only (fallback) | codebase/frontend/index.html:980 · [source](../../codebase/frontend/index.html#L980) |
+| Peak | Sets the final peak after grading and finishing. At least 225 nit keeps HDR headroom above project and gain-map reference white. | fixed | codebase/frontend/index.html::for=hdr-compression-target · [source](../../codebase/frontend/index.html#L986) |
+| Mode | Peak Fit anchors the measured final-grade peak at the output target. | fixed | codebase/frontend/index.html::#highlight-compression-summary · [source](../../codebase/frontend/index.html#L997) |
+| Peak Fit | Peak Fit | name only (selected option, when clipped); duplicated HDR/SDR | codebase/frontend/index.html:1000 · [source](../../codebase/frontend/index.html#L1000) |
+| Fixed cap | Fixed cap | name only (selected option, when clipped); duplicated HDR/SDR | codebase/frontend/index.html:1001 · [source](../../codebase/frontend/index.html#L1001) |
+| Soft Ceiling | Soft Ceiling | name only (selected option, when clipped); duplicated HDR/SDR | codebase/frontend/index.html:1001::2 · [source](../../codebase/frontend/index.html#L1001) |
+| Clip | Clip | name only (selected option, when clipped); duplicated HDR/SDR | codebase/frontend/index.html:1002 · [source](../../codebase/frontend/index.html#L1002) |
+| Highlight Color | Smooth color rolloff gently compresses each Rec.2020 channel toward white. Preserve color keeps channel ratios intact. Neutralize peak groups channels so the brightest highlights converge to neutral white. Attenuate (prototype) fades bright colours gradually toward white, AgX-style. | fixed | codebase/frontend/index.html::for=hdr-compression-color · [source](../../codebase/frontend/index.html#L1015) |
+| Smooth color rolloff | Smooth color rolloff | name only (selected option, when clipped); duplicated HDR/SDR | codebase/frontend/index.html:1018 · [source](../../codebase/frontend/index.html#L1018) |
+| Preserve color | Preserve color | name only (selected option, when clipped); duplicated HDR/SDR | codebase/frontend/index.html:1019 · [source](../../codebase/frontend/index.html#L1019) |
+| Neutralize peak | Neutralize peak | name only (selected option, when clipped); duplicated HDR/SDR | codebase/frontend/index.html:1020 · [source](../../codebase/frontend/index.html#L1020) |
+| Attenuate (AgX-style, prototype) | Attenuate (AgX-style, prototype) | name only (selected option, when clipped); duplicated HDR/SDR | codebase/frontend/index.html:1021 · [source](../../codebase/frontend/index.html#L1021) |
+| Attenuation | How strongly bright colours fade toward white as they are compressed. 0% matches Smooth color rolloff. | fixed | codebase/frontend/index.html::for=hdr-compression-attenuation · [source](../../codebase/frontend/index.html#L1025) |
+| Measured maximum | Measured maximum | name only (selected option, when clipped); duplicated HDR/SDR | codebase/frontend/index.html:1040 · [source](../../codebase/frontend/index.html#L1040) |
+| Ignore isolated pixels | Ignore isolated pixels | name only (selected option, when clipped); duplicated HDR/SDR | codebase/frontend/index.html:1041 · [source](../../codebase/frontend/index.html#L1041) |
+| Manual | Manual | name only (selected option, when clipped); duplicated HDR/SDR | codebase/frontend/index.html:1042 · [source](../../codebase/frontend/index.html#L1042) |
 
 ### grade / hdr / hdr-tone
 
 | Control / visible name | Text | Flags | ID and source |
 | --- | --- | --- | --- |
-| ◉ | Toggle Tone preview | name only (fallback) | codebase/frontend/index.html:1024 · [source](../../codebase/frontend/index.html#L1024) |
-| Blacks | Lifts or clips the narrow black floor. Tones above the floor are unchanged. Tone ranges are selected before any of the five controls. | fixed; duplicated HDR/SDR | codebase/frontend/index.html::for=hdr-blacks · [source](../../codebase/frontend/index.html#L1043) |
-| Shadows | Brightens or darkens the shadow tones. Black stays black. Center and Width choose which tones count as shadows. | fixed; duplicated HDR/SDR | codebase/frontend/index.html::for=hdr-shadows · [source](../../codebase/frontend/index.html#L1048) |
-| Center | Where the zone sits, in stops from photographic mid-grey: 18% of reference white. Exposure runs first. | fixed; duplicated HDR/SDR | codebase/frontend/index.html::for=hdr-shadows-center · [source](../../codebase/frontend/index.html#L1053) |
-| Width | How many stops the zone covers. Its effect fades smoothly at both ends and is gated away from the black floor and white peak. | fixed; duplicated HDR/SDR | codebase/frontend/index.html::for=hdr-shadows-width · [source](../../codebase/frontend/index.html#L1054) |
-| Midtones | Brightens or darkens the middle tones. Black and the brightest tones stay where they are. | fixed; duplicated HDR/SDR | codebase/frontend/index.html::for=hdr-midtones · [source](../../codebase/frontend/index.html#L1059) |
-| Center | Where the zone sits, in stops from photographic mid-grey: 18% of reference white. Exposure runs first. | fixed; duplicated HDR/SDR | codebase/frontend/index.html::for=hdr-midtones-center · [source](../../codebase/frontend/index.html#L1064) |
-| Width | How many stops the zone covers. Its effect fades smoothly at both ends and is gated away from the black floor and white peak. | fixed; duplicated HDR/SDR | codebase/frontend/index.html::for=hdr-midtones-width · [source](../../codebase/frontend/index.html#L1065) |
-| Highlights | Brightens or darkens the bright tones. The very brightest (sun, reflections) stay put; Highlight Compression looks after those. | fixed; duplicated HDR/SDR | codebase/frontend/index.html::for=hdr-highlights · [source](../../codebase/frontend/index.html#L1070) |
-| Center | Where the zone sits, in stops from photographic mid-grey: 18% of reference white. Exposure runs first. | fixed; duplicated HDR/SDR | codebase/frontend/index.html::for=hdr-highlights-center · [source](../../codebase/frontend/index.html#L1075) |
-| Width | How many stops the zone covers. Its effect fades smoothly at both ends and is gated away from the black floor and white peak. | fixed; duplicated HDR/SDR | codebase/frontend/index.html::for=hdr-highlights-width · [source](../../codebase/frontend/index.html#L1076) |
-| Whites | Adjusts the top stop below Target Peak (display white in SDR). Positive values overdrive Film Look; final Highlight Compression still owns the delivery ceiling. | fixed; duplicated HDR/SDR | codebase/frontend/index.html::for=hdr-whites · [source](../../codebase/frontend/index.html#L1080) |
+| ◉ | Toggle Tone preview | name only (fallback) | codebase/frontend/index.html:1060 · [source](../../codebase/frontend/index.html#L1060) |
+| Blacks | Lifts or clips the narrow black floor. Tones above the floor are unchanged. Tone ranges are selected before any of the five controls. | fixed; duplicated HDR/SDR | codebase/frontend/index.html::for=hdr-blacks · [source](../../codebase/frontend/index.html#L1079) |
+| Shadows | Brightens or darkens the shadow tones. Black stays black. Center and Width choose which tones count as shadows. | fixed; duplicated HDR/SDR | codebase/frontend/index.html::for=hdr-shadows · [source](../../codebase/frontend/index.html#L1084) |
+| Center | Where the zone sits, in stops from photographic mid-grey: 18% of reference white. Exposure runs first. | fixed; duplicated HDR/SDR | codebase/frontend/index.html::for=hdr-shadows-center · [source](../../codebase/frontend/index.html#L1089) |
+| Width | How many stops the zone covers. Its effect fades smoothly at both ends and is gated away from the black floor and white peak. | fixed; duplicated HDR/SDR | codebase/frontend/index.html::for=hdr-shadows-width · [source](../../codebase/frontend/index.html#L1090) |
+| Midtones | Brightens or darkens the middle tones. Black and the brightest tones stay where they are. | fixed; duplicated HDR/SDR | codebase/frontend/index.html::for=hdr-midtones · [source](../../codebase/frontend/index.html#L1095) |
+| Center | Where the zone sits, in stops from photographic mid-grey: 18% of reference white. Exposure runs first. | fixed; duplicated HDR/SDR | codebase/frontend/index.html::for=hdr-midtones-center · [source](../../codebase/frontend/index.html#L1100) |
+| Width | How many stops the zone covers. Its effect fades smoothly at both ends and is gated away from the black floor and white peak. | fixed; duplicated HDR/SDR | codebase/frontend/index.html::for=hdr-midtones-width · [source](../../codebase/frontend/index.html#L1101) |
+| Highlights | Brightens or darkens the bright tones. The very brightest (sun, reflections) stay put; Highlight Compression looks after those. | fixed; duplicated HDR/SDR | codebase/frontend/index.html::for=hdr-highlights · [source](../../codebase/frontend/index.html#L1106) |
+| Center | Where the zone sits, in stops from photographic mid-grey: 18% of reference white. Exposure runs first. | fixed; duplicated HDR/SDR | codebase/frontend/index.html::for=hdr-highlights-center · [source](../../codebase/frontend/index.html#L1111) |
+| Width | How many stops the zone covers. Its effect fades smoothly at both ends and is gated away from the black floor and white peak. | fixed; duplicated HDR/SDR | codebase/frontend/index.html::for=hdr-highlights-width · [source](../../codebase/frontend/index.html#L1112) |
+| Whites | Adjusts the top stop below Target Peak (display white in SDR). Positive values overdrive Film Look; final Highlight Compression still owns the delivery ceiling. | fixed; duplicated HDR/SDR | codebase/frontend/index.html::for=hdr-whites · [source](../../codebase/frontend/index.html#L1116) |
 
 ### grade / hdr / hdr-equalizer
 
 | Control / visible name | Text | Flags | ID and source |
 | --- | --- | --- | --- |
-| Exposure Bands Default | Adjust exposure by scene brightness. 0 EV is the app's 100-nit diffuse-white reference; the dashed edge marks the 10,000-nit PQ limit. | fixed | codebase/frontend/index.html:1088 · [source](../../codebase/frontend/index.html#L1088) |
-| ◉ | Toggle Exposure Bands preview | name only (fallback) | codebase/frontend/index.html:1089 · [source](../../codebase/frontend/index.html#L1089) |
-| - | Decrease proportional influence radius | name only (fallback) | codebase/frontend/index.html::#tone-equalizer-radius-down · [source](../../codebase/frontend/index.html#L1098) |
-| + | Increase proportional influence radius | name only (fallback) | codebase/frontend/index.html::#tone-equalizer-radius-up · [source](../../codebase/frontend/index.html#L1099) |
+| Exposure Bands Default | Adjust exposure by scene brightness. 0 EV is the app's 100-nit diffuse-white reference; the dashed edge marks the 10,000-nit PQ limit. | fixed | codebase/frontend/index.html:1124 · [source](../../codebase/frontend/index.html#L1124) |
+| ◉ | Toggle Exposure Bands preview | name only (fallback) | codebase/frontend/index.html:1125 · [source](../../codebase/frontend/index.html#L1125) |
+| - | Decrease proportional influence radius | name only (fallback) | codebase/frontend/index.html::#tone-equalizer-radius-down · [source](../../codebase/frontend/index.html#L1134) |
+| + | Increase proportional influence radius | name only (fallback) | codebase/frontend/index.html::#tone-equalizer-radius-up · [source](../../codebase/frontend/index.html#L1135) |
 
 ### grade / hdr / hdr-color
 
 | Control / visible name | Text | Flags | ID and source |
 | --- | --- | --- | --- |
-| ◉ | Toggle Color preview | name only (fallback) | codebase/frontend/index.html:1118 · [source](../../codebase/frontend/index.html#L1118) |
-| Vibrance | Targets lower-chroma colors more strongly and protects colors that are already saturated. | fixed; duplicated HDR/SDR | codebase/frontend/index.html::for=hdr-vibrance · [source](../../codebase/frontend/index.html#L1136) |
+| ◉ | Toggle Color preview | name only (fallback) | codebase/frontend/index.html:1154 · [source](../../codebase/frontend/index.html#L1154) |
+| Vibrance | Targets lower-chroma colors more strongly and protects colors that are already saturated. | fixed; duplicated HDR/SDR | codebase/frontend/index.html::for=hdr-vibrance · [source](../../codebase/frontend/index.html#L1172) |
 
 ### grade / sdr / sdr-highlights
 
 | Control / visible name | Text | Flags | ID and source |
 | --- | --- | --- | --- |
-| ◉ | Toggle SDR Highlight Compression preview | name only (fallback) | codebase/frontend/index.html:1162 · [source](../../codebase/frontend/index.html#L1162) |
-| Mode | Peak Fit anchors the measured source peak at display white while preserving a smooth highlight gradient. | fixed | codebase/frontend/index.html::#sdr-highlight-compression-summary · [source](../../codebase/frontend/index.html#L1168) |
-| Peak Fit | Peak Fit | name only (selected option, when clipped); duplicated HDR/SDR | codebase/frontend/index.html:1169 · [source](../../codebase/frontend/index.html#L1169) |
-| Fixed cap | Fixed cap | name only (selected option, when clipped); duplicated HDR/SDR | codebase/frontend/index.html:1169::2 · [source](../../codebase/frontend/index.html#L1169) |
-| Soft Ceiling | Soft Ceiling | name only (selected option, when clipped); duplicated HDR/SDR | codebase/frontend/index.html:1169::3 · [source](../../codebase/frontend/index.html#L1169) |
-| Clip | Clip | name only (selected option, when clipped); duplicated HDR/SDR | codebase/frontend/index.html:1169::4 · [source](../../codebase/frontend/index.html#L1169) |
-| Highlight Color | Smooth color rolloff gently compresses each sRGB channel toward white. Preserve color keeps channel ratios intact. Neutralize peak groups channels so the brightest highlights converge to neutral white. | fixed | codebase/frontend/index.html::for=sdr-compression-color · [source](../../codebase/frontend/index.html#L1180) |
-| Smooth color rolloff | Smooth color rolloff | name only (selected option, when clipped); duplicated HDR/SDR | codebase/frontend/index.html:1181 · [source](../../codebase/frontend/index.html#L1181) |
-| Preserve color | Preserve color | name only (selected option, when clipped); duplicated HDR/SDR | codebase/frontend/index.html:1181::2 · [source](../../codebase/frontend/index.html#L1181) |
-| Neutralize peak | Neutralize peak | name only (selected option, when clipped); duplicated HDR/SDR | codebase/frontend/index.html:1181::3 · [source](../../codebase/frontend/index.html#L1181) |
-| Attenuate (AgX-style, prototype) | Attenuate (AgX-style, prototype) | name only (selected option, when clipped); duplicated HDR/SDR | codebase/frontend/index.html:1181::4 · [source](../../codebase/frontend/index.html#L1181) |
-| Attenuation | How strongly bright colours fade toward white as they are compressed. 0% matches per-channel rolloff. | fixed | codebase/frontend/index.html::for=sdr-compression-attenuation · [source](../../codebase/frontend/index.html#L1184) |
-| Measured maximum | Measured maximum | name only (selected option, when clipped); duplicated HDR/SDR | codebase/frontend/index.html:1196 · [source](../../codebase/frontend/index.html#L1196) |
-| Ignore isolated pixels | Ignore isolated pixels | name only (selected option, when clipped); duplicated HDR/SDR | codebase/frontend/index.html:1196::2 · [source](../../codebase/frontend/index.html#L1196) |
-| Manual | Manual | name only (selected option, when clipped); duplicated HDR/SDR | codebase/frontend/index.html:1196::3 · [source](../../codebase/frontend/index.html#L1196) |
+| ◉ | Toggle SDR Highlight Compression preview | name only (fallback) | codebase/frontend/index.html:1198 · [source](../../codebase/frontend/index.html#L1198) |
+| Mode | Peak Fit anchors the measured source peak at display white while preserving a smooth highlight gradient. | fixed | codebase/frontend/index.html::#sdr-highlight-compression-summary · [source](../../codebase/frontend/index.html#L1204) |
+| Peak Fit | Peak Fit | name only (selected option, when clipped); duplicated HDR/SDR | codebase/frontend/index.html:1205 · [source](../../codebase/frontend/index.html#L1205) |
+| Fixed cap | Fixed cap | name only (selected option, when clipped); duplicated HDR/SDR | codebase/frontend/index.html:1205::2 · [source](../../codebase/frontend/index.html#L1205) |
+| Soft Ceiling | Soft Ceiling | name only (selected option, when clipped); duplicated HDR/SDR | codebase/frontend/index.html:1205::3 · [source](../../codebase/frontend/index.html#L1205) |
+| Clip | Clip | name only (selected option, when clipped); duplicated HDR/SDR | codebase/frontend/index.html:1205::4 · [source](../../codebase/frontend/index.html#L1205) |
+| Highlight Color | Smooth color rolloff gently compresses each sRGB channel toward white. Preserve color keeps channel ratios intact. Neutralize peak groups channels so the brightest highlights converge to neutral white. | fixed | codebase/frontend/index.html::for=sdr-compression-color · [source](../../codebase/frontend/index.html#L1216) |
+| Smooth color rolloff | Smooth color rolloff | name only (selected option, when clipped); duplicated HDR/SDR | codebase/frontend/index.html:1217 · [source](../../codebase/frontend/index.html#L1217) |
+| Preserve color | Preserve color | name only (selected option, when clipped); duplicated HDR/SDR | codebase/frontend/index.html:1217::2 · [source](../../codebase/frontend/index.html#L1217) |
+| Neutralize peak | Neutralize peak | name only (selected option, when clipped); duplicated HDR/SDR | codebase/frontend/index.html:1217::3 · [source](../../codebase/frontend/index.html#L1217) |
+| Attenuate (AgX-style, prototype) | Attenuate (AgX-style, prototype) | name only (selected option, when clipped); duplicated HDR/SDR | codebase/frontend/index.html:1217::4 · [source](../../codebase/frontend/index.html#L1217) |
+| Attenuation | How strongly bright colours fade toward white as they are compressed. 0% matches per-channel rolloff. | fixed | codebase/frontend/index.html::for=sdr-compression-attenuation · [source](../../codebase/frontend/index.html#L1220) |
+| Measured maximum | Measured maximum | name only (selected option, when clipped); duplicated HDR/SDR | codebase/frontend/index.html:1232 · [source](../../codebase/frontend/index.html#L1232) |
+| Ignore isolated pixels | Ignore isolated pixels | name only (selected option, when clipped); duplicated HDR/SDR | codebase/frontend/index.html:1232::2 · [source](../../codebase/frontend/index.html#L1232) |
+| Manual | Manual | name only (selected option, when clipped); duplicated HDR/SDR | codebase/frontend/index.html:1232::3 · [source](../../codebase/frontend/index.html#L1232) |
 
 ### grade / sdr / sdr-tone
 
 | Control / visible name | Text | Flags | ID and source |
 | --- | --- | --- | --- |
-| ◉ | Toggle SDR Tone preview | name only (fallback) | codebase/frontend/index.html:1213 · [source](../../codebase/frontend/index.html#L1213) |
-| Blacks | Lifts or clips the narrow black floor. Tones above the floor are unchanged. Tone ranges are selected before any of the five controls. | fixed; duplicated HDR/SDR | codebase/frontend/index.html::for=sdr-blacks · [source](../../codebase/frontend/index.html#L1232) |
-| Shadows | Brightens or darkens the shadow tones. Black stays black. Center and Width choose which tones count as shadows. | fixed; duplicated HDR/SDR | codebase/frontend/index.html::for=sdr-shadows · [source](../../codebase/frontend/index.html#L1237) |
-| Center | Where the zone sits, in stops from photographic mid-grey: 18% of reference white. Exposure runs first. | fixed; duplicated HDR/SDR | codebase/frontend/index.html::for=sdr-shadows-center · [source](../../codebase/frontend/index.html#L1242) |
-| Width | How many stops the zone covers. Its effect fades smoothly at both ends and is gated away from the black floor and white peak. | fixed; duplicated HDR/SDR | codebase/frontend/index.html::for=sdr-shadows-width · [source](../../codebase/frontend/index.html#L1243) |
-| Midtones | Brightens or darkens the middle tones. Black and the brightest tones stay where they are. | fixed; duplicated HDR/SDR | codebase/frontend/index.html::for=sdr-midtones · [source](../../codebase/frontend/index.html#L1248) |
-| Center | Where the zone sits, in stops from photographic mid-grey: 18% of reference white. Exposure runs first. | fixed; duplicated HDR/SDR | codebase/frontend/index.html::for=sdr-midtones-center · [source](../../codebase/frontend/index.html#L1253) |
-| Width | How many stops the zone covers. Its effect fades smoothly at both ends and is gated away from the black floor and white peak. | fixed; duplicated HDR/SDR | codebase/frontend/index.html::for=sdr-midtones-width · [source](../../codebase/frontend/index.html#L1254) |
-| Highlights | Brightens or darkens the bright tones. The very brightest (sun, reflections) stay put; Highlight Compression looks after those. | fixed; duplicated HDR/SDR | codebase/frontend/index.html::for=sdr-highlights · [source](../../codebase/frontend/index.html#L1259) |
-| Center | Where the zone sits, in stops from photographic mid-grey: 18% of reference white. Exposure runs first. | fixed; duplicated HDR/SDR | codebase/frontend/index.html::for=sdr-highlights-center · [source](../../codebase/frontend/index.html#L1264) |
-| Width | How many stops the zone covers. Its effect fades smoothly at both ends and is gated away from the black floor and white peak. | fixed; duplicated HDR/SDR | codebase/frontend/index.html::for=sdr-highlights-width · [source](../../codebase/frontend/index.html#L1265) |
-| Whites | Adjusts the top stop below Target Peak (display white in SDR). Positive values overdrive Film Look; final Highlight Compression still owns the delivery ceiling. | fixed; duplicated HDR/SDR | codebase/frontend/index.html::for=sdr-whites · [source](../../codebase/frontend/index.html#L1269) |
+| ◉ | Toggle SDR Tone preview | name only (fallback) | codebase/frontend/index.html:1249 · [source](../../codebase/frontend/index.html#L1249) |
+| Blacks | Lifts or clips the narrow black floor. Tones above the floor are unchanged. Tone ranges are selected before any of the five controls. | fixed; duplicated HDR/SDR | codebase/frontend/index.html::for=sdr-blacks · [source](../../codebase/frontend/index.html#L1268) |
+| Shadows | Brightens or darkens the shadow tones. Black stays black. Center and Width choose which tones count as shadows. | fixed; duplicated HDR/SDR | codebase/frontend/index.html::for=sdr-shadows · [source](../../codebase/frontend/index.html#L1273) |
+| Center | Where the zone sits, in stops from photographic mid-grey: 18% of reference white. Exposure runs first. | fixed; duplicated HDR/SDR | codebase/frontend/index.html::for=sdr-shadows-center · [source](../../codebase/frontend/index.html#L1278) |
+| Width | How many stops the zone covers. Its effect fades smoothly at both ends and is gated away from the black floor and white peak. | fixed; duplicated HDR/SDR | codebase/frontend/index.html::for=sdr-shadows-width · [source](../../codebase/frontend/index.html#L1279) |
+| Midtones | Brightens or darkens the middle tones. Black and the brightest tones stay where they are. | fixed; duplicated HDR/SDR | codebase/frontend/index.html::for=sdr-midtones · [source](../../codebase/frontend/index.html#L1284) |
+| Center | Where the zone sits, in stops from photographic mid-grey: 18% of reference white. Exposure runs first. | fixed; duplicated HDR/SDR | codebase/frontend/index.html::for=sdr-midtones-center · [source](../../codebase/frontend/index.html#L1289) |
+| Width | How many stops the zone covers. Its effect fades smoothly at both ends and is gated away from the black floor and white peak. | fixed; duplicated HDR/SDR | codebase/frontend/index.html::for=sdr-midtones-width · [source](../../codebase/frontend/index.html#L1290) |
+| Highlights | Brightens or darkens the bright tones. The very brightest (sun, reflections) stay put; Highlight Compression looks after those. | fixed; duplicated HDR/SDR | codebase/frontend/index.html::for=sdr-highlights · [source](../../codebase/frontend/index.html#L1295) |
+| Center | Where the zone sits, in stops from photographic mid-grey: 18% of reference white. Exposure runs first. | fixed; duplicated HDR/SDR | codebase/frontend/index.html::for=sdr-highlights-center · [source](../../codebase/frontend/index.html#L1300) |
+| Width | How many stops the zone covers. Its effect fades smoothly at both ends and is gated away from the black floor and white peak. | fixed; duplicated HDR/SDR | codebase/frontend/index.html::for=sdr-highlights-width · [source](../../codebase/frontend/index.html#L1301) |
+| Whites | Adjusts the top stop below Target Peak (display white in SDR). Positive values overdrive Film Look; final Highlight Compression still owns the delivery ceiling. | fixed; duplicated HDR/SDR | codebase/frontend/index.html::for=sdr-whites · [source](../../codebase/frontend/index.html#L1305) |
 
 ### grade / sdr / sdr-equalizer
 
 | Control / visible name | Text | Flags | ID and source |
 | --- | --- | --- | --- |
-| Exposure Bands Default | Adjust the tone-mapped SDR image by brightness. Bands are relative to 18% display-linear gray; values above 100% are clipped by the SDR output. | fixed | codebase/frontend/index.html:1277 · [source](../../codebase/frontend/index.html#L1277) |
-| ◉ | Toggle SDR Exposure Bands preview | name only (fallback) | codebase/frontend/index.html:1278 · [source](../../codebase/frontend/index.html#L1278) |
-| &minus; | Decrease SDR Exposure Band influence | name only (fallback) | codebase/frontend/index.html::#sdr-tone-equalizer-radius-down · [source](../../codebase/frontend/index.html#L1291) |
-| + | Increase SDR Exposure Band influence | name only (fallback) | codebase/frontend/index.html::#sdr-tone-equalizer-radius-up · [source](../../codebase/frontend/index.html#L1292) |
+| Exposure Bands Default | Adjust the tone-mapped SDR image by brightness. Bands are relative to 18% display-linear gray; values above 100% are clipped by the SDR output. | fixed | codebase/frontend/index.html:1313 · [source](../../codebase/frontend/index.html#L1313) |
+| ◉ | Toggle SDR Exposure Bands preview | name only (fallback) | codebase/frontend/index.html:1314 · [source](../../codebase/frontend/index.html#L1314) |
+| &minus; | Decrease SDR Exposure Band influence | name only (fallback) | codebase/frontend/index.html::#sdr-tone-equalizer-radius-down · [source](../../codebase/frontend/index.html#L1327) |
+| + | Increase SDR Exposure Band influence | name only (fallback) | codebase/frontend/index.html::#sdr-tone-equalizer-radius-up · [source](../../codebase/frontend/index.html#L1328) |
 
 ### grade / sdr / sdr-color
 
 | Control / visible name | Text | Flags | ID and source |
 | --- | --- | --- | --- |
-| ◉ | Toggle SDR Color preview | name only (fallback) | codebase/frontend/index.html:1304 · [source](../../codebase/frontend/index.html#L1304) |
-| Vibrance | Targets lower-chroma colors more strongly and protects colors that are already saturated. | fixed; duplicated HDR/SDR | codebase/frontend/index.html::for=sdr-vibrance · [source](../../codebase/frontend/index.html#L1317) |
+| ◉ | Toggle SDR Color preview | name only (fallback) | codebase/frontend/index.html:1340 · [source](../../codebase/frontend/index.html#L1340) |
+| Vibrance | Targets lower-chroma colors more strongly and protects colors that are already saturated. | fixed; duplicated HDR/SDR | codebase/frontend/index.html::for=sdr-vibrance · [source](../../codebase/frontend/index.html#L1353) |
 
 ### grade / hsl
 
 | Control / visible name | Text | Flags | ID and source |
 | --- | --- | --- | --- |
-| ◉ | Toggle HSL preview | name only (fallback) | codebase/frontend/index.html:1341 · [source](../../codebase/frontend/index.html#L1341) |
+| ◉ | Toggle HSL preview | name only (fallback) | codebase/frontend/index.html:1377 · [source](../../codebase/frontend/index.html#L1377) |
 
 ### grade / curves
 
 | Control / visible name | Text | Flags | ID and source |
 | --- | --- | --- | --- |
-| ◉ | Toggle Curves preview | name only (fallback) | codebase/frontend/index.html:1349 · [source](../../codebase/frontend/index.html#L1349) |
+| ◉ | Toggle Curves preview | name only (fallback) | codebase/frontend/index.html:1385 · [source](../../codebase/frontend/index.html#L1385) |
 
 ### grade / color-grading
 
 | Control / visible name | Text | Flags | ID and source |
 | --- | --- | --- | --- |
-| ◉ | Toggle Color Grading preview | name only (fallback) | codebase/frontend/index.html:1372 · [source](../../codebase/frontend/index.html#L1372) |
+| ◉ | Toggle Color Grading preview | name only (fallback) | codebase/frontend/index.html:1408 · [source](../../codebase/frontend/index.html#L1408) |
 
 ### grade / black-and-white
 
 | Control / visible name | Text | Flags | ID and source |
 | --- | --- | --- | --- |
-| Black & White | Converts this rendition to black & white. Turn it on with the eye; the sliders set how bright each colour becomes in grey. With every slider at 0 it matches Saturation -100. | fixed | codebase/frontend/index.html:1388 · [source](../../codebase/frontend/index.html#L1388) |
-| ◉ | Toggle Black & White | name only (fallback) | codebase/frontend/index.html:1389 · [source](../../codebase/frontend/index.html#L1389) |
+| Black & White | Converts this rendition to black & white. Turn it on with the eye; the sliders set how bright each colour becomes in grey. With every slider at 0 it matches Saturation -100. | fixed | codebase/frontend/index.html:1424 · [source](../../codebase/frontend/index.html#L1424) |
+| ◉ | Toggle Black & White | name only (fallback) | codebase/frontend/index.html:1425 · [source](../../codebase/frontend/index.html#L1425) |
 
 ### grade / detail
 
 | Control / visible name | Text | Flags | ID and source |
 | --- | --- | --- | --- |
-| Detail | Scale-selective detail: fine texture, mid-scale clarity, qualified edges, and an overall softness and microcontrast. | fixed | codebase/frontend/index.html:1415 · [source](../../codebase/frontend/index.html#L1415) |
-| ◉ | Toggle Detail preview | name only (fallback) | codebase/frontend/index.html:1416 · [source](../../codebase/frontend/index.html#L1416) |
-| Softness | Softens hard digital edges across the whole picture, in colour. Runs after local adjustments, before grain. | fixed | codebase/frontend/index.html::for=detail-softness · [source](../../codebase/frontend/index.html#L1425) |
-| Microcontrast | Lowers or raises fine local contrast across the whole picture, in colour. It works differently from Texture. Runs after local adjustments, before grain. | fixed | codebase/frontend/index.html::for=detail-microcontrast · [source](../../codebase/frontend/index.html#L1426) |
-| Sharpen | Judge sharpening at 100% zoom. | fixed | codebase/frontend/index.html::for=detail-sharpen · [source](../../codebase/frontend/index.html#L1429) |
+| Detail | Scale-selective detail: fine texture, mid-scale clarity, qualified edges, and an overall softness and microcontrast. | fixed | codebase/frontend/index.html:1451 · [source](../../codebase/frontend/index.html#L1451) |
+| ◉ | Toggle Detail preview | name only (fallback) | codebase/frontend/index.html:1452 · [source](../../codebase/frontend/index.html#L1452) |
+| Softness | Softens hard digital edges across the whole picture, in colour. Runs after local adjustments, before grain. | fixed | codebase/frontend/index.html::for=detail-softness · [source](../../codebase/frontend/index.html#L1461) |
+| Microcontrast | Lowers or raises fine local contrast across the whole picture, in colour. It works differently from Texture. Runs after local adjustments, before grain. | fixed | codebase/frontend/index.html::for=detail-microcontrast · [source](../../codebase/frontend/index.html#L1462) |
+| Sharpen | Judge sharpening at 100% zoom. | fixed | codebase/frontend/index.html::for=detail-sharpen · [source](../../codebase/frontend/index.html#L1465) |
 
 ### grade / film-look
 
 | Control / visible name | Text | Flags | ID and source |
 | --- | --- | --- | --- |
-| ◉ | Toggle Film Look preview | name only (fallback) | codebase/frontend/index.html:1442 · [source](../../codebase/frontend/index.html#L1442) |
-| Film stock | The stock supplies colour, tone, grain, halation and matching paper. Slide films scan directly without a print. | fixed | codebase/frontend/index.html:1451 · [source](../../codebase/frontend/index.html#L1451) |
-| Neutral | Neutral | name only (selected option, when clipped) | codebase/frontend/index.html:1451::2 · [source](../../codebase/frontend/index.html#L1451) |
-| Kodak Portra 400 | Kodak Portra 400 | name only (selected option, when clipped) | codebase/frontend/index.html:1451::3 · [source](../../codebase/frontend/index.html#L1451) |
-| Kodak Portra 160 | Kodak Portra 160 | name only (selected option, when clipped) | codebase/frontend/index.html:1451::4 · [source](../../codebase/frontend/index.html#L1451) |
-| Kodak Portra 800 | Kodak Portra 800 | name only (selected option, when clipped) | codebase/frontend/index.html:1451::5 · [source](../../codebase/frontend/index.html#L1451) |
-| Kodak Ektar 100 | Kodak Ektar 100 | name only (selected option, when clipped) | codebase/frontend/index.html:1451::6 · [source](../../codebase/frontend/index.html#L1451) |
-| Kodak Gold 200 | Kodak Gold 200 | name only (selected option, when clipped) | codebase/frontend/index.html:1451::7 · [source](../../codebase/frontend/index.html#L1451) |
-| Fujifilm Pro 400H | Fujifilm Pro 400H | name only (selected option, when clipped) | codebase/frontend/index.html:1451::8 · [source](../../codebase/frontend/index.html#L1451) |
-| Fujifilm C200 | Fujifilm C200 | name only (selected option, when clipped) | codebase/frontend/index.html:1451::9 · [source](../../codebase/frontend/index.html#L1451) |
-| Fujifilm Provia 100F | Fujifilm Provia 100F | name only (selected option, when clipped) | codebase/frontend/index.html:1451::10 · [source](../../codebase/frontend/index.html#L1451) |
-| Fujifilm Velvia 100 | Fujifilm Velvia 100 | name only (selected option, when clipped) | codebase/frontend/index.html:1451::11 · [source](../../codebase/frontend/index.html#L1451) |
-| Fujifilm Superia X-Tra 400 | Fujifilm Superia X-Tra 400 | name only (selected option, when clipped) | codebase/frontend/index.html:1451::12 · [source](../../codebase/frontend/index.html#L1451) |
-| Kodak Ektachrome 100 | Kodak Ektachrome 100 | name only (selected option, when clipped) | codebase/frontend/index.html:1451::13 · [source](../../codebase/frontend/index.html#L1451) |
-| Kodak Kodachrome 64 | Kodak Kodachrome 64 | name only (selected option, when clipped) | codebase/frontend/index.html:1451::14 · [source](../../codebase/frontend/index.html#L1451) |
-| Kodak Ultramax 400 | Kodak Ultramax 400 | name only (selected option, when clipped) | codebase/frontend/index.html:1451::15 · [source](../../codebase/frontend/index.html#L1451) |
-| Kodak Verita 200D | Kodak Verita 200D | name only (selected option, when clipped) | codebase/frontend/index.html:1451::16 · [source](../../codebase/frontend/index.html#L1451) |
-| Kodak Vision3 200T | Kodak Vision3 200T | name only (selected option, when clipped) | codebase/frontend/index.html:1451::17 · [source](../../codebase/frontend/index.html#L1451) |
-| Kodak Vision3 250D | Kodak Vision3 250D | name only (selected option, when clipped) | codebase/frontend/index.html:1451::18 · [source](../../codebase/frontend/index.html#L1451) |
-| Kodak Vision3 500T | Kodak Vision3 500T | name only (selected option, when clipped) | codebase/frontend/index.html:1451::19 · [source](../../codebase/frontend/index.html#L1451) |
-| Kodak Vision3 50D | Kodak Vision3 50D | name only (selected option, when clipped) | codebase/frontend/index.html:1451::20 · [source](../../codebase/frontend/index.html#L1451) |
+| ◉ | Toggle Film Look preview | name only (fallback) | codebase/frontend/index.html:1478 · [source](../../codebase/frontend/index.html#L1478) |
+| Film stock | The stock supplies colour, tone, grain, halation and matching paper. Slide films scan directly without a print. | fixed | codebase/frontend/index.html:1487 · [source](../../codebase/frontend/index.html#L1487) |
+| Neutral | Neutral | name only (selected option, when clipped) | codebase/frontend/index.html:1487::2 · [source](../../codebase/frontend/index.html#L1487) |
+| Kodak Portra 400 | Kodak Portra 400 | name only (selected option, when clipped) | codebase/frontend/index.html:1487::3 · [source](../../codebase/frontend/index.html#L1487) |
+| Kodak Portra 160 | Kodak Portra 160 | name only (selected option, when clipped) | codebase/frontend/index.html:1487::4 · [source](../../codebase/frontend/index.html#L1487) |
+| Kodak Portra 800 | Kodak Portra 800 | name only (selected option, when clipped) | codebase/frontend/index.html:1487::5 · [source](../../codebase/frontend/index.html#L1487) |
+| Kodak Ektar 100 | Kodak Ektar 100 | name only (selected option, when clipped) | codebase/frontend/index.html:1487::6 · [source](../../codebase/frontend/index.html#L1487) |
+| Kodak Gold 200 | Kodak Gold 200 | name only (selected option, when clipped) | codebase/frontend/index.html:1487::7 · [source](../../codebase/frontend/index.html#L1487) |
+| Fujifilm Pro 400H | Fujifilm Pro 400H | name only (selected option, when clipped) | codebase/frontend/index.html:1487::8 · [source](../../codebase/frontend/index.html#L1487) |
+| Fujifilm C200 | Fujifilm C200 | name only (selected option, when clipped) | codebase/frontend/index.html:1487::9 · [source](../../codebase/frontend/index.html#L1487) |
+| Fujifilm Provia 100F | Fujifilm Provia 100F | name only (selected option, when clipped) | codebase/frontend/index.html:1487::10 · [source](../../codebase/frontend/index.html#L1487) |
+| Fujifilm Velvia 100 | Fujifilm Velvia 100 | name only (selected option, when clipped) | codebase/frontend/index.html:1487::11 · [source](../../codebase/frontend/index.html#L1487) |
+| Fujifilm Superia X-Tra 400 | Fujifilm Superia X-Tra 400 | name only (selected option, when clipped) | codebase/frontend/index.html:1487::12 · [source](../../codebase/frontend/index.html#L1487) |
+| Kodak Ektachrome 100 | Kodak Ektachrome 100 | name only (selected option, when clipped) | codebase/frontend/index.html:1487::13 · [source](../../codebase/frontend/index.html#L1487) |
+| Kodak Kodachrome 64 | Kodak Kodachrome 64 | name only (selected option, when clipped) | codebase/frontend/index.html:1487::14 · [source](../../codebase/frontend/index.html#L1487) |
+| Kodak Ultramax 400 | Kodak Ultramax 400 | name only (selected option, when clipped) | codebase/frontend/index.html:1487::15 · [source](../../codebase/frontend/index.html#L1487) |
+| Kodak Verita 200D | Kodak Verita 200D | name only (selected option, when clipped) | codebase/frontend/index.html:1487::16 · [source](../../codebase/frontend/index.html#L1487) |
+| Kodak Vision3 200T | Kodak Vision3 200T | name only (selected option, when clipped) | codebase/frontend/index.html:1487::17 · [source](../../codebase/frontend/index.html#L1487) |
+| Kodak Vision3 250D | Kodak Vision3 250D | name only (selected option, when clipped) | codebase/frontend/index.html:1487::18 · [source](../../codebase/frontend/index.html#L1487) |
+| Kodak Vision3 500T | Kodak Vision3 500T | name only (selected option, when clipped) | codebase/frontend/index.html:1487::19 · [source](../../codebase/frontend/index.html#L1487) |
+| Kodak Vision3 50D | Kodak Vision3 50D | name only (selected option, when clipped) | codebase/frontend/index.html:1487::20 · [source](../../codebase/frontend/index.html#L1487) |
 
 ### grade / film-look / camera
 
 | Control / visible name | Text | Flags | ID and source |
 | --- | --- | --- | --- |
-| Format | Controls physical enlargement for halation, resolution, and grain. Grain uses one shared deterministic HDR/SDR field and is added in the negative, before print. | fixed | codebase/frontend/index.html:1454 · [source](../../codebase/frontend/index.html#L1454) |
-| 65mm | 65mm | name only (selected option, when clipped) | codebase/frontend/index.html:1454::2 · [source](../../codebase/frontend/index.html#L1454) |
-| 35mm | 35mm | name only (selected option, when clipped) | codebase/frontend/index.html:1454::3 · [source](../../codebase/frontend/index.html#L1454) |
-| Super 35 | Super 35 | name only (selected option, when clipped) | codebase/frontend/index.html:1454::4 · [source](../../codebase/frontend/index.html#L1454) |
-| Super 16 | Super 16 | name only (selected option, when clipped) | codebase/frontend/index.html:1454::5 · [source](../../codebase/frontend/index.html#L1454) |
-| 16mm | 16mm | name only (selected option, when clipped) | codebase/frontend/index.html:1454::6 · [source](../../codebase/frontend/index.html#L1454) |
-| Super 8 | Super 8 | name only (selected option, when clipped) | codebase/frontend/index.html:1454::7 · [source](../../codebase/frontend/index.html#L1454) |
-| Custom | Custom | name only (selected option, when clipped) | codebase/frontend/index.html:1454::8 · [source](../../codebase/frontend/index.html#L1454) |
-| Capture | Strip modes anchor the cross-scan dimension for stitched and linescan images. | fixed | codebase/frontend/index.html:1455 · [source](../../codebase/frontend/index.html#L1455) |
-| Frame | Frame | name only (selected option, when clipped) | codebase/frontend/index.html:1455::2 · [source](../../codebase/frontend/index.html#L1455) |
-| Horizontal strip | Horizontal strip | name only (selected option, when clipped) | codebase/frontend/index.html:1455::3 · [source](../../codebase/frontend/index.html#L1455) |
-| Vertical strip | Vertical strip | name only (selected option, when clipped) | codebase/frontend/index.html:1455::4 · [source](../../codebase/frontend/index.html#L1455) |
-| Film Exposure | Exposes the negative brighter or darker before printing, which moves the picture along the stock's curve. | fixed | codebase/frontend/index.html::for=film-stock-exposure · [source](../../codebase/frontend/index.html#L1461) |
-| None | None | name only (selected option, when clipped) | codebase/frontend/index.html:1463 · [source](../../codebase/frontend/index.html#L1463) |
-| Black Pro-Mist | Black Pro-Mist | name only (selected option, when clipped) | codebase/frontend/index.html:1463::2 · [source](../../codebase/frontend/index.html#L1463) |
-| Pro-Mist | Pro-Mist | name only (selected option, when clipped) | codebase/frontend/index.html:1463::3 · [source](../../codebase/frontend/index.html#L1463) |
-| Glimmerglass | Glimmerglass | name only (selected option, when clipped) | codebase/frontend/index.html:1463::4 · [source](../../codebase/frontend/index.html#L1463) |
-| CineBloom | CineBloom | name only (selected option, when clipped) | codebase/frontend/index.html:1463::5 · [source](../../codebase/frontend/index.html#L1463) |
+| Format | Controls physical enlargement for halation, resolution, and grain. Grain uses one shared deterministic HDR/SDR field and is added in the negative, before print. | fixed | codebase/frontend/index.html:1490 · [source](../../codebase/frontend/index.html#L1490) |
+| 65mm | 65mm | name only (selected option, when clipped) | codebase/frontend/index.html:1490::2 · [source](../../codebase/frontend/index.html#L1490) |
+| 35mm | 35mm | name only (selected option, when clipped) | codebase/frontend/index.html:1490::3 · [source](../../codebase/frontend/index.html#L1490) |
+| Super 35 | Super 35 | name only (selected option, when clipped) | codebase/frontend/index.html:1490::4 · [source](../../codebase/frontend/index.html#L1490) |
+| Super 16 | Super 16 | name only (selected option, when clipped) | codebase/frontend/index.html:1490::5 · [source](../../codebase/frontend/index.html#L1490) |
+| 16mm | 16mm | name only (selected option, when clipped) | codebase/frontend/index.html:1490::6 · [source](../../codebase/frontend/index.html#L1490) |
+| Super 8 | Super 8 | name only (selected option, when clipped) | codebase/frontend/index.html:1490::7 · [source](../../codebase/frontend/index.html#L1490) |
+| Custom | Custom | name only (selected option, when clipped) | codebase/frontend/index.html:1490::8 · [source](../../codebase/frontend/index.html#L1490) |
+| Capture | Strip modes anchor the cross-scan dimension for stitched and linescan images. | fixed | codebase/frontend/index.html:1491 · [source](../../codebase/frontend/index.html#L1491) |
+| Frame | Frame | name only (selected option, when clipped) | codebase/frontend/index.html:1491::2 · [source](../../codebase/frontend/index.html#L1491) |
+| Horizontal strip | Horizontal strip | name only (selected option, when clipped) | codebase/frontend/index.html:1491::3 · [source](../../codebase/frontend/index.html#L1491) |
+| Vertical strip | Vertical strip | name only (selected option, when clipped) | codebase/frontend/index.html:1491::4 · [source](../../codebase/frontend/index.html#L1491) |
+| Film Exposure | Exposes the negative brighter or darker before printing, which moves the picture along the stock's curve. | fixed | codebase/frontend/index.html::for=film-stock-exposure · [source](../../codebase/frontend/index.html#L1497) |
+| None | None | name only (selected option, when clipped) | codebase/frontend/index.html:1499 · [source](../../codebase/frontend/index.html#L1499) |
+| Black Pro-Mist | Black Pro-Mist | name only (selected option, when clipped) | codebase/frontend/index.html:1499::2 · [source](../../codebase/frontend/index.html#L1499) |
+| Pro-Mist | Pro-Mist | name only (selected option, when clipped) | codebase/frontend/index.html:1499::3 · [source](../../codebase/frontend/index.html#L1499) |
+| Glimmerglass | Glimmerglass | name only (selected option, when clipped) | codebase/frontend/index.html:1499::4 · [source](../../codebase/frontend/index.html#L1499) |
+| CineBloom | CineBloom | name only (selected option, when clipped) | codebase/frontend/index.html:1499::5 · [source](../../codebase/frontend/index.html#L1499) |
 
 ### grade / film-look / negative
 
 | Control / visible name | Text | Flags | ID and source |
 | --- | --- | --- | --- |
-| Stock Color | How much of the stock's color is used. At 0 your own color is kept. | fixed | codebase/frontend/index.html::for=film-stock-color · [source](../../codebase/frontend/index.html#L1469) |
-| Stock Tone | How much of the stock's contrast curve is used. At 0 your own tone is kept. | fixed | codebase/frontend/index.html::for=film-stock-tone · [source](../../codebase/frontend/index.html#L1470) |
-| Color Separation | Pushes the stock's colors further apart, or closer together, in the negative. Greys are unchanged. | fixed | codebase/frontend/index.html::for=film-stock-separation · [source](../../codebase/frontend/index.html#L1473) |
-| Show halation map | Shows where the halation glow can appear, as a grayscale map. It shows placement, not strength: Amount and Hue do not change it. Preview only: never exported. | fixed | codebase/frontend/index.html::data-path=current.film_look.halation_view_map · [source](../../codebase/frontend/index.html#L1477) |
-| Show grain map | Shows the grain field alone on mid-gray, at the strength each tone of the picture receives. Preview only: never exported. | fixed | codebase/frontend/index.html::data-path=current.film_look.grain_view_map · [source](../../codebase/frontend/index.html#L1490) |
-| Film Type | Color negative builds grain from three dye layers of different sizes. Black & white uses one layer of sharper silver grains and has no color grain. | fixed | codebase/frontend/index.html:1492 · [source](../../codebase/frontend/index.html#L1492) |
-| Color negative | Color negative | name only (selected option, when clipped) | codebase/frontend/index.html:1492::2 · [source](../../codebase/frontend/index.html#L1492) |
-| Black & white | Black & white | name only (selected option, when clipped) | codebase/frontend/index.html:1492::3 · [source](../../codebase/frontend/index.html#L1492) |
+| Stock Color | How much of the stock's color is used. At 0 your own color is kept. | fixed | codebase/frontend/index.html::for=film-stock-color · [source](../../codebase/frontend/index.html#L1505) |
+| Stock Tone | How much of the stock's contrast curve is used. At 0 your own tone is kept. | fixed | codebase/frontend/index.html::for=film-stock-tone · [source](../../codebase/frontend/index.html#L1506) |
+| Color Separation | Pushes the stock's colors further apart, or closer together, in the negative. Greys are unchanged. | fixed | codebase/frontend/index.html::for=film-stock-separation · [source](../../codebase/frontend/index.html#L1509) |
+| Show halation map | Shows where the halation glow can appear, as a grayscale map. It shows placement, not strength: Amount and Hue do not change it. Preview only: never exported. | fixed | codebase/frontend/index.html::data-path=current.film_look.halation_view_map · [source](../../codebase/frontend/index.html#L1513) |
+| Show grain map | Shows the grain field alone on mid-gray, at the strength each tone of the picture receives. Preview only: never exported. | fixed | codebase/frontend/index.html::data-path=current.film_look.grain_view_map · [source](../../codebase/frontend/index.html#L1526) |
+| Film Type | Color negative builds grain from three dye layers of different sizes. Black & white uses one layer of sharper silver grains and has no color grain. | fixed | codebase/frontend/index.html:1528 · [source](../../codebase/frontend/index.html#L1528) |
+| Color negative | Color negative | name only (selected option, when clipped) | codebase/frontend/index.html:1528::2 · [source](../../codebase/frontend/index.html#L1528) |
+| Black & white | Black & white | name only (selected option, when clipped) | codebase/frontend/index.html:1528::3 · [source](../../codebase/frontend/index.html#L1528) |
 
 ### grade / film-look / development
 
 | Control / visible name | Text | Flags | ID and source |
 | --- | --- | --- | --- |
-| Push/Pull | Whole stops. Portra 800 +1 and +2 use measured profiles; all other settings approximate development using film contrast. | fixed | codebase/frontend/index.html::for=film-push_pull · [source](../../codebase/frontend/index.html#L1508) |
+| Push/Pull | Whole stops. Portra 800 +1 and +2 use measured profiles; all other settings approximate development using film contrast. | fixed | codebase/frontend/index.html::for=film-push_pull · [source](../../codebase/frontend/index.html#L1544) |
 
 ### grade / film-look / print
 
 | Control / visible name | Text | Flags | ID and source |
 | --- | --- | --- | --- |
-| Stock’s own paper | Stock’s own paper | name only (selected option, when clipped) | codebase/frontend/index.html:1513 · [source](../../codebase/frontend/index.html#L1513) |
-| Kodak 2383 | Kodak 2383 | name only (selected option, when clipped) | codebase/frontend/index.html:1513::2 · [source](../../codebase/frontend/index.html#L1513) |
-| Fujifilm Crystal Archive Type II | Fujifilm Crystal Archive Type II | name only (selected option, when clipped) | codebase/frontend/index.html:1513::3 · [source](../../codebase/frontend/index.html#L1513) |
-| Print Exposure | More light on the paper makes a darker print; independent of Film Exposure. | fixed | codebase/frontend/index.html::for=film-print_exposure · [source](../../codebase/frontend/index.html#L1514) |
-| Print Warmth | The enlarger's yellow filter: warmer or cooler prints. 100% is a 20 CC filter. | fixed | codebase/frontend/index.html::for=film-stock-warmth · [source](../../codebase/frontend/index.html#L1515) |
-| Print Tint | The enlarger's magenta filter. 100% is a 20 CC filter. | fixed | codebase/frontend/index.html::for=film-stock-tint · [source](../../codebase/frontend/index.html#L1516) |
-| Preflash | Flashes the print paper with light, lifting and softening the shadows. | fixed | codebase/frontend/index.html::for=film-stock-preflash · [source](../../codebase/frontend/index.html#L1517) |
-| Print Contrast | Contrast of the paper itself; independent of Film Exposure. | fixed | codebase/frontend/index.html::for=film-print_contrast · [source](../../codebase/frontend/index.html#L1518) |
-| Shadow Contrast | Changes the paper layers that carry scene shadows. | fixed | codebase/frontend/index.html::for=film-shadow_contrast · [source](../../codebase/frontend/index.html#L1519) |
-| Highlight Contrast | Changes the paper layers that carry highlights. Negative values also soften the shoulder through developer exhaustion. | fixed | codebase/frontend/index.html::for=film-highlight_contrast · [source](../../codebase/frontend/index.html#L1520) |
+| Stock’s own paper | Stock’s own paper | name only (selected option, when clipped) | codebase/frontend/index.html:1549 · [source](../../codebase/frontend/index.html#L1549) |
+| Kodak 2383 | Kodak 2383 | name only (selected option, when clipped) | codebase/frontend/index.html:1549::2 · [source](../../codebase/frontend/index.html#L1549) |
+| Fujifilm Crystal Archive Type II | Fujifilm Crystal Archive Type II | name only (selected option, when clipped) | codebase/frontend/index.html:1549::3 · [source](../../codebase/frontend/index.html#L1549) |
+| Print Exposure | More light on the paper makes a darker print; independent of Film Exposure. | fixed | codebase/frontend/index.html::for=film-print_exposure · [source](../../codebase/frontend/index.html#L1550) |
+| Print Warmth | The enlarger's yellow filter: warmer or cooler prints. 100% is a 20 CC filter. | fixed | codebase/frontend/index.html::for=film-stock-warmth · [source](../../codebase/frontend/index.html#L1551) |
+| Print Tint | The enlarger's magenta filter. 100% is a 20 CC filter. | fixed | codebase/frontend/index.html::for=film-stock-tint · [source](../../codebase/frontend/index.html#L1552) |
+| Preflash | Flashes the print paper with light, lifting and softening the shadows. | fixed | codebase/frontend/index.html::for=film-stock-preflash · [source](../../codebase/frontend/index.html#L1553) |
+| Print Contrast | Contrast of the paper itself; independent of Film Exposure. | fixed | codebase/frontend/index.html::for=film-print_contrast · [source](../../codebase/frontend/index.html#L1554) |
+| Shadow Contrast | Changes the paper layers that carry scene shadows. | fixed | codebase/frontend/index.html::for=film-shadow_contrast · [source](../../codebase/frontend/index.html#L1555) |
+| Highlight Contrast | Changes the paper layers that carry highlights. Negative values also soften the shoulder through developer exhaustion. | fixed | codebase/frontend/index.html::for=film-highlight_contrast · [source](../../codebase/frontend/index.html#L1556) |
 
 ### grade / film-look / scan
 
 | Control / visible name | Text | Flags | ID and source |
 | --- | --- | --- | --- |
-| Scan Sharpening | Sharpens the completed scan, including grain, before Look Strength mixes it with your picture. Starts off; 70 matches spektrafilm’s amount. Unlike Detail, it sharpens all colours without restricting itself to stronger edges. | fixed | codebase/frontend/index.html::for=film-scan_sharpening · [source](../../codebase/frontend/index.html#L1524) |
+| Scan Sharpening | Sharpens the completed scan, including grain, before Look Strength mixes it with your picture. Starts off; 70 matches spektrafilm’s amount. Unlike Detail, it sharpens all colours without restricting itself to stronger edges. | fixed | codebase/frontend/index.html::for=film-scan_sharpening · [source](../../codebase/frontend/index.html#L1560) |
 
 ### grade / vignette
 
 | Control / visible name | Text | Flags | ID and source |
 | --- | --- | --- | --- |
-| ◉ | Toggle Vignette preview | name only (fallback) | codebase/frontend/index.html:1532 · [source](../../codebase/frontend/index.html#L1532) |
-| Show overlay | Outlines where the vignette starts and where it reaches full strength. Preview only: never exported. | fixed | codebase/frontend/index.html::#vignette-show-overlay · [source](../../codebase/frontend/index.html#L1537) |
+| ◉ | Toggle Vignette preview | name only (fallback) | codebase/frontend/index.html:1568 · [source](../../codebase/frontend/index.html#L1568) |
+| Show overlay | Outlines where the vignette starts and where it reaches full strength. Preview only: never exported. | fixed | codebase/frontend/index.html::#vignette-show-overlay · [source](../../codebase/frontend/index.html#L1573) |
 
 ### color wheels
 
@@ -507,13 +526,19 @@ Clipped lane, scope, preview and filename labels use their visible text; dynamic
 | tabs aria-label | Color wheel range | name only (fallback candidate) | codebase/frontend/color-wheels.js:6 · [source](../../codebase/frontend/color-wheels.js#L6) |
 | tab aria-label | &#96;${container.dataset.wheel}${modified ? ", modified" : ""}&#96; | dynamic expression | codebase/frontend/color-wheels.js:119 · [source](../../codebase/frontend/color-wheels.js#L119) |
 
+### denoise ui
+
+| Control / visible name | Text | Flags | ID and source |
+| --- | --- | --- | --- |
+| option.title | unavailable | dynamic expression | codebase/frontend/denoise-ui.js:149 · [source](../../codebase/frontend/denoise-ui.js#L149) |
+
 ### geometry tools
 
 | Control / visible name | Text | Flags | ID and source |
 | --- | --- | --- | --- |
-| handle aria-label | &#96;${orientation} guide ${guideIndex + 1} ${pointName}. Use arrow keys to move; Shift moves ten pixels.&#96; | dynamic expression | codebase/frontend/geometry-tools.js:427 · [source](../../codebase/frontend/geometry-tools.js#L427) |
-| geometryReset.title | Reset all Crop & Rotate values | fixed | codebase/frontend/geometry-tools.js:1307 · [source](../../codebase/frontend/geometry-tools.js#L1307) |
-| geometryReset aria-label | Reset all Crop & Rotate values | name only (fallback candidate) | codebase/frontend/geometry-tools.js:1308 · [source](../../codebase/frontend/geometry-tools.js#L1308) |
+| handle aria-label | &#96;${orientation} guide ${guideIndex + 1} ${pointName}. Use arrow keys to move; Shift moves ten pixels.&#96; | dynamic expression | codebase/frontend/geometry-tools.js:450 · [source](../../codebase/frontend/geometry-tools.js#L450) |
+| geometryReset.title | Reset all Crop & Rotate values | fixed | codebase/frontend/geometry-tools.js:1336 · [source](../../codebase/frontend/geometry-tools.js#L1336) |
+| geometryReset aria-label | Reset all Crop & Rotate values | name only (fallback candidate) | codebase/frontend/geometry-tools.js:1337 · [source](../../codebase/frontend/geometry-tools.js#L1337) |
 
 ### grade paste
 
@@ -563,9 +588,9 @@ Clipped lane, scope, preview and filename labels use their visible text; dynamic
 | unlink data-tooltip | Returns to the independent SDR grade. Match SDR tries to link again. Undo restores the link. | fixed | codebase/frontend/sdr-match-ui.js:26 · [source](../../codebase/frontend/sdr-match-ui.js#L26) |
 | input aria-label | SDR output exposure in stops | name only (fallback candidate) | codebase/frontend/sdr-match-ui.js:37 · [source](../../codebase/frontend/sdr-match-ui.js#L37) |
 | input data-tooltip | Changes SDR brightness after the shared HDR Film Look. Keeps this photo linked. | fixed | codebase/frontend/sdr-match-ui.js:38 · [source](../../codebase/frontend/sdr-match-ui.js#L38) |
-| button data-tooltip | explanation | dynamic expression | codebase/frontend/sdr-match-ui.js:208 · [source](../../codebase/frontend/sdr-match-ui.js#L208) |
-| explanation — text used by dynamic tooltips | state.adjustments?.sdr?.linked_to_hdr ? "Fits this adjustment in independent SDR. A changed result unlinks this photo; no change keeps the link. The mask stays unchanged." : "Matches this adjustment only. Global grade and mask stay unchanged." | dynamic supporting definition | codebase/frontend/sdr-match-ui.js:204 · [source](../../codebase/frontend/sdr-match-ui.js#L204) |
-| button aria-label | &#96;Match SDR for ${local?.name &#124;&#124; "selected adjustment"}&#96; | dynamic expression | codebase/frontend/sdr-match-ui.js:209 · [source](../../codebase/frontend/sdr-match-ui.js#L209) |
+| button data-tooltip | explanation | dynamic expression | codebase/frontend/sdr-match-ui.js:221 · [source](../../codebase/frontend/sdr-match-ui.js#L221) |
+| explanation — text used by dynamic tooltips | state.adjustments?.sdr?.linked_to_hdr ? "Fits this adjustment in independent SDR. A changed result unlinks this photo; no change keeps the link. The mask stays unchanged." : "Matches this adjustment only. Global grade and mask stay unchanged." | dynamic supporting definition | codebase/frontend/sdr-match-ui.js:217 · [source](../../codebase/frontend/sdr-match-ui.js#L217) |
+| button aria-label | &#96;Match SDR for ${local?.name &#124;&#124; "selected adjustment"}&#96; | dynamic expression | codebase/frontend/sdr-match-ui.js:222 · [source](../../codebase/frontend/sdr-match-ui.js#L222) |
 
 ### tone preview ui
 
@@ -584,31 +609,31 @@ Clipped lane, scope, preview and filename labels use their visible text; dynamic
 
 | Control / visible name | Text | Flags | ID and source |
 | --- | --- | --- | --- |
-| Brush | New brush adjustment | fixed | codebase/frontend/index.html:752 · [source](../../codebase/frontend/index.html#L752) |
-| Gradient | New linear gradient adjustment | fixed | codebase/frontend/index.html:754 · [source](../../codebase/frontend/index.html#L754) |
-| Hue | New hue range adjustment | fixed | codebase/frontend/index.html:755 · [source](../../codebase/frontend/index.html#L755) |
-| Luma | New luma range adjustment | fixed | codebase/frontend/index.html:756 · [source](../../codebase/frontend/index.html#L756) |
-| Path | New path adjustment | fixed | codebase/frontend/index.html:757 · [source](../../codebase/frontend/index.html#L757) |
-| Show overlay | Show mask overlay | name only (fallback) | codebase/frontend/index.html::#local-show-mask · [source](../../codebase/frontend/index.html#L760) |
-| Overlay color | Choose overlay color | name only (fallback) | codebase/frontend/index.html::#local-overlay-color-button · [source](../../codebase/frontend/index.html#L762) |
-| ◉ | Toggle Local Adjustments | name only (fallback) | codebase/frontend/index.html::#local-adjustments-bypass · [source](../../codebase/frontend/index.html#L767) |
-| Duplicate | Duplicate selected local adjustment | fixed | codebase/frontend/index.html::#local-duplicate · [source](../../codebase/frontend/index.html#L778) |
-| Remove selected local adjustment | Remove selected local adjustment | fixed; name only | codebase/frontend/index.html::#local-delete · [source](../../codebase/frontend/index.html#L779) |
-| Move local adjustment up | Move local adjustment up | fixed; name only | codebase/frontend/index.html::#local-move-up · [source](../../codebase/frontend/index.html#L781) |
-| Move local adjustment down | Move local adjustment down | fixed; name only | codebase/frontend/index.html::#local-move-down · [source](../../codebase/frontend/index.html#L782) |
-| Match SDR | Matches this adjustment only. Global grade and mask stay unchanged. | fixed | codebase/frontend/index.html::#local-sdr-match · [source](../../codebase/frontend/index.html#L793) |
+| Brush | New brush adjustment | fixed | codebase/frontend/index.html:788 · [source](../../codebase/frontend/index.html#L788) |
+| Gradient | New linear gradient adjustment | fixed | codebase/frontend/index.html:790 · [source](../../codebase/frontend/index.html#L790) |
+| Hue | New hue range adjustment | fixed | codebase/frontend/index.html:791 · [source](../../codebase/frontend/index.html#L791) |
+| Luma | New luma range adjustment | fixed | codebase/frontend/index.html:792 · [source](../../codebase/frontend/index.html#L792) |
+| Path | New path adjustment | fixed | codebase/frontend/index.html:793 · [source](../../codebase/frontend/index.html#L793) |
+| Show overlay | Show mask overlay | name only (fallback) | codebase/frontend/index.html::#local-show-mask · [source](../../codebase/frontend/index.html#L796) |
+| Overlay color | Choose overlay color | name only (fallback) | codebase/frontend/index.html::#local-overlay-color-button · [source](../../codebase/frontend/index.html#L798) |
+| ◉ | Toggle Local Adjustments | name only (fallback) | codebase/frontend/index.html::#local-adjustments-bypass · [source](../../codebase/frontend/index.html#L803) |
+| Duplicate | Duplicate selected local adjustment | fixed | codebase/frontend/index.html::#local-duplicate · [source](../../codebase/frontend/index.html#L814) |
+| Remove selected local adjustment | Remove selected local adjustment | fixed; name only | codebase/frontend/index.html::#local-delete · [source](../../codebase/frontend/index.html#L815) |
+| Move local adjustment up | Move local adjustment up | fixed; name only | codebase/frontend/index.html::#local-move-up · [source](../../codebase/frontend/index.html#L817) |
+| Move local adjustment down | Move local adjustment down | fixed; name only | codebase/frontend/index.html::#local-move-down · [source](../../codebase/frontend/index.html#L818) |
+| Match SDR | Matches this adjustment only. Global grade and mask stay unchanged. | fixed | codebase/frontend/index.html::#local-sdr-match · [source](../../codebase/frontend/index.html#L829) |
 
 ### grade / local-adjustments / hsl
 
 | Control / visible name | Text | Flags | ID and source |
 | --- | --- | --- | --- |
-| On | Toggle local HSL | name only (fallback) | codebase/frontend/index.html::#local-hsl-bypass · [source](../../codebase/frontend/index.html#L839) |
+| On | Toggle local HSL | name only (fallback) | codebase/frontend/index.html::#local-hsl-bypass · [source](../../codebase/frontend/index.html#L875) |
 
 ### grade / local-adjustments / detail
 
 | Control / visible name | Text | Flags | ID and source |
 | --- | --- | --- | --- |
-| Sharpen | Judge sharpening at 100% zoom. | fixed | codebase/frontend/index.html:847 · [source](../../codebase/frontend/index.html#L847) |
+| Sharpen | Judge sharpening at 100% zoom. | fixed | codebase/frontend/index.html:883 · [source](../../codebase/frontend/index.html#L883) |
 
 ### local adjustments ui
 
@@ -622,8 +647,8 @@ Clipped lane, scope, preview and filename labels use their visible text; dynamic
 | menuButton aria-label | &#96;More actions for ${title}&#96; | dynamic expression | codebase/frontend/local-adjustments-ui.js:731 · [source](../../codebase/frontend/local-adjustments-ui.js#L731) |
 | menuButton.title | &#96;More actions for ${title}&#96; | dynamic expression | codebase/frontend/local-adjustments-ui.js:735 · [source](../../codebase/frontend/local-adjustments-ui.js#L735) |
 | menu aria-label | &#96;Actions for ${title}&#96; | dynamic expression | codebase/frontend/local-adjustments-ui.js:743 · [source](../../codebase/frontend/local-adjustments-ui.js#L743) |
-| summary.title | count ? &#96;${count} modified controls&#96; : "Default" | dynamic expression | codebase/frontend/local-adjustments-ui.js:1101 · [source](../../codebase/frontend/local-adjustments-ui.js#L1101) |
-| summary aria-label | summary.title | dynamic expression | codebase/frontend/local-adjustments-ui.js:1101::2 · [source](../../codebase/frontend/local-adjustments-ui.js#L1101) |
+| summary.title | count ? &#96;${count} modified controls&#96; : "Default" | dynamic expression | codebase/frontend/local-adjustments-ui.js:1106 · [source](../../codebase/frontend/local-adjustments-ui.js#L1106) |
+| summary aria-label | summary.title | dynamic expression | codebase/frontend/local-adjustments-ui.js:1106::2 · [source](../../codebase/frontend/local-adjustments-ui.js#L1106) |
 
 ### mask controls
 
@@ -657,13 +682,13 @@ Clipped lane, scope, preview and filename labels use their visible text; dynamic
 
 | Control / visible name | Text | Flags | ID and source |
 | --- | --- | --- | --- |
-| New Inpaint repair | New Inpaint repair | fixed; name only | codebase/frontend/index.html::#retouch-mode-inpaint · [source](../../codebase/frontend/index.html#L734) |
-| New Heal repair | New Heal repair | fixed; name only | codebase/frontend/index.html::#retouch-mode-heal · [source](../../codebase/frontend/index.html#L735) |
-| New Clone repair | New Clone repair | fixed; name only | codebase/frontend/index.html::#retouch-mode-clone · [source](../../codebase/frontend/index.html#L736) |
-| Standard inpaint | Standard inpaint | name only (selected option, when clipped) | codebase/frontend/index.html:738 · [source](../../codebase/frontend/index.html#L738) |
-| Edge feather · prototype | Edge feather · prototype | name only (selected option, when clipped) | codebase/frontend/index.html:738::2 · [source](../../codebase/frontend/index.html#L738) |
-| Preserve original texture · prototype | Preserve original texture · prototype | name only (selected option, when clipped) | codebase/frontend/index.html:738::3 · [source](../../codebase/frontend/index.html#L738) |
-| Replace texture from donors · prototype | Replace texture from donors · prototype | name only (selected option, when clipped) | codebase/frontend/index.html:738::4 · [source](../../codebase/frontend/index.html#L738) |
+| New Inpaint repair | New Inpaint repair | fixed; name only | codebase/frontend/index.html::#retouch-mode-inpaint · [source](../../codebase/frontend/index.html#L770) |
+| New Heal repair | New Heal repair | fixed; name only | codebase/frontend/index.html::#retouch-mode-heal · [source](../../codebase/frontend/index.html#L771) |
+| New Clone repair | New Clone repair | fixed; name only | codebase/frontend/index.html::#retouch-mode-clone · [source](../../codebase/frontend/index.html#L772) |
+| Standard inpaint | Standard inpaint | name only (selected option, when clipped) | codebase/frontend/index.html:774 · [source](../../codebase/frontend/index.html#L774) |
+| Edge feather · prototype | Edge feather · prototype | name only (selected option, when clipped) | codebase/frontend/index.html:774::2 · [source](../../codebase/frontend/index.html#L774) |
+| Preserve original texture · prototype | Preserve original texture · prototype | name only (selected option, when clipped) | codebase/frontend/index.html:774::3 · [source](../../codebase/frontend/index.html#L774) |
+| Replace texture from donors · prototype | Replace texture from donors · prototype | name only (selected option, when clipped) | codebase/frontend/index.html:774::4 · [source](../../codebase/frontend/index.html#L774) |
 
 ### retouch ui
 
@@ -710,8 +735,8 @@ Clipped lane, scope, preview and filename labels use their visible text; dynamic
 
 | Control / visible name | Text | Flags | ID and source |
 | --- | --- | --- | --- |
-| els.viewerBranchNote.textContent | canShow ? &#96;Chromium Proof · ${proofSizeLabel()} · ${proofFormatLabel()} · ${proofPreviewLabel()} · scopes: authored HDR.&#96; : "Chromium Proof is not current · build or refresh it from the Proof settings rail." | dynamic expression | codebase/frontend/proofing-ui.js:322 · [source](../../codebase/frontend/proofing-ui.js#L322) |
-| els.viewerBranchNote.textContent | branchCopy[state.currentView] | dynamic expression | codebase/frontend/proofing-ui.js:327 · [source](../../codebase/frontend/proofing-ui.js#L327) |
+| els.viewerBranchNote.textContent | canShow ? &#96;Chromium Proof · ${proofSizeLabel()} · ${proofFormatLabel()} · ${proofPreviewLabel()} · scopes: authored HDR.&#96; : "Chromium Proof is not current · build or refresh it from the Proof settings rail." | dynamic expression | codebase/frontend/proofing-ui.js:330 · [source](../../codebase/frontend/proofing-ui.js#L330) |
+| els.viewerBranchNote.textContent | branchCopy[state.currentView] | dynamic expression | codebase/frontend/proofing-ui.js:335 · [source](../../codebase/frontend/proofing-ui.js#L335) |
 
 ## Export
 
@@ -719,64 +744,64 @@ Clipped lane, scope, preview and filename labels use their visible text; dynamic
 
 | Control / visible name | Text | Flags | ID and source |
 | --- | --- | --- | --- |
-| AVIF + gain map | AVIF + gain map | name only (selected option, when clipped) | codebase/frontend/index.html:1561 · [source](../../codebase/frontend/index.html#L1561) |
-| JPEG Ultra HDR | JPEG Ultra HDR | name only (selected option, when clipped) | codebase/frontend/index.html:1562 · [source](../../codebase/frontend/index.html#L1562) |
-| JPEG XL HDR | JPEG XL HDR | name only (selected option, when clipped) | codebase/frontend/index.html:1563 · [source](../../codebase/frontend/index.html#L1563) |
-| JPEG XL (SDR) | JPEG XL (SDR) | name only (selected option, when clipped) | codebase/frontend/index.html:1564 · [source](../../codebase/frontend/index.html#L1564) |
-| PNG (SDR) | PNG (SDR) | name only (selected option, when clipped) | codebase/frontend/index.html:1565 · [source](../../codebase/frontend/index.html#L1565) |
-| JPEG (SDR) | JPEG (SDR) | name only (selected option, when clipped) | codebase/frontend/index.html:1566 · [source](../../codebase/frontend/index.html#L1566) |
-| Web Default Web Optimized Maximum Fidelity High fidelity JPEG XL Custom | Manual encoding changes switch the preset to Custom. | fixed | codebase/frontend/index.html::#export-preset · [source](../../codebase/frontend/index.html#L1572) |
-| Web Default | Web Default | name only (selected option, when clipped) | codebase/frontend/index.html:1573 · [source](../../codebase/frontend/index.html#L1573) |
-| Web Optimized | Web Optimized | name only (selected option, when clipped) | codebase/frontend/index.html:1574 · [source](../../codebase/frontend/index.html#L1574) |
-| Maximum Fidelity | Maximum Fidelity | name only (selected option, when clipped) | codebase/frontend/index.html:1575 · [source](../../codebase/frontend/index.html#L1575) |
-| High fidelity JPEG XL | High fidelity JPEG XL | name only (selected option, when clipped) | codebase/frontend/index.html:1576 · [source](../../codebase/frontend/index.html#L1576) |
-| Custom | Custom | name only (selected option, when clipped) | codebase/frontend/index.html:1577 · [source](../../codebase/frontend/index.html#L1577) |
-| 8-bit | 8-bit | name only (selected option, when clipped) | codebase/frontend/index.html:1597 · [source](../../codebase/frontend/index.html#L1597) |
-| 10-bit | 10-bit | name only (selected option, when clipped) | codebase/frontend/index.html:1597::2 · [source](../../codebase/frontend/index.html#L1597) |
-| 12-bit | 12-bit | name only (selected option, when clipped) | codebase/frontend/index.html:1597::3 · [source](../../codebase/frontend/index.html#L1597) |
-| 4:2:0 | 4:2:0 | name only (selected option, when clipped) | codebase/frontend/index.html:1600 · [source](../../codebase/frontend/index.html#L1600) |
-| 4:2:2 | 4:2:2 | name only (selected option, when clipped) | codebase/frontend/index.html:1600::2 · [source](../../codebase/frontend/index.html#L1600) |
-| 4:4:4 | 4:4:4 | name only (selected option, when clipped) | codebase/frontend/index.html:1600::3 · [source](../../codebase/frontend/index.html#L1600) |
-| Half | Half | name only (selected option, when clipped) | codebase/frontend/index.html:1607 · [source](../../codebase/frontend/index.html#L1607) |
-| Full | Full | name only (selected option, when clipped) | codebase/frontend/index.html:1607::2 · [source](../../codebase/frontend/index.html#L1607) |
-| Full | Full | name only (selected option, when clipped) | codebase/frontend/index.html:1616 · [source](../../codebase/frontend/index.html#L1616) |
-| Half | Half | name only (selected option, when clipped) | codebase/frontend/index.html:1616::2 · [source](../../codebase/frontend/index.html#L1616) |
-| 4:2:0 | 4:2:0 | name only (selected option, when clipped) | codebase/frontend/index.html:1619 · [source](../../codebase/frontend/index.html#L1619) |
-| 4:2:2 | 4:2:2 | name only (selected option, when clipped) | codebase/frontend/index.html:1619::2 · [source](../../codebase/frontend/index.html#L1619) |
-| 4:4:4 | 4:4:4 | name only (selected option, when clipped) | codebase/frontend/index.html:1619::3 · [source](../../codebase/frontend/index.html#L1619) |
-| 4:2:0 | 4:2:0 | name only (selected option, when clipped) | codebase/frontend/index.html:1623 · [source](../../codebase/frontend/index.html#L1623) |
-| 4:2:2 | 4:2:2 | name only (selected option, when clipped) | codebase/frontend/index.html:1623::2 · [source](../../codebase/frontend/index.html#L1623) |
-| 4:4:4 | 4:4:4 | name only (selected option, when clipped) | codebase/frontend/index.html:1623::3 · [source](../../codebase/frontend/index.html#L1623) |
-| 10-bit integer | 10-bit integer | name only (selected option, when clipped) | codebase/frontend/index.html:1626 · [source](../../codebase/frontend/index.html#L1626) |
-| 12-bit integer | 12-bit integer | name only (selected option, when clipped) | codebase/frontend/index.html:1626::2 · [source](../../codebase/frontend/index.html#L1626) |
-| 16-bit integer | 16-bit integer | name only (selected option, when clipped) | codebase/frontend/index.html:1626::3 · [source](../../codebase/frontend/index.html#L1626) |
-| 16-bit float | 16-bit float | name only (selected option, when clipped) | codebase/frontend/index.html:1626::4 · [source](../../codebase/frontend/index.html#L1626) |
-| 32-bit float | 32-bit float | name only (selected option, when clipped) | codebase/frontend/index.html:1626::5 · [source](../../codebase/frontend/index.html#L1626) |
-| 8-bit | 8-bit | name only (selected option, when clipped) | codebase/frontend/index.html:1630 · [source](../../codebase/frontend/index.html#L1630) |
-| 16-bit | 16-bit | name only (selected option, when clipped) | codebase/frontend/index.html:1630::2 · [source](../../codebase/frontend/index.html#L1630) |
-| Auto | Auto | name only (selected option, when clipped) | codebase/frontend/index.html:1633 · [source](../../codebase/frontend/index.html#L1633) |
-| Off | Off | name only (selected option, when clipped) | codebase/frontend/index.html:1633::2 · [source](../../codebase/frontend/index.html#L1633) |
-| Subtle | Subtle | name only (selected option, when clipped) | codebase/frontend/index.html:1633::3 · [source](../../codebase/frontend/index.html#L1633) |
-| None | None | name only (selected option, when clipped) | codebase/frontend/index.html:1637 · [source](../../codebase/frontend/index.html#L1637) |
-| Copyright only | Copyright only | name only (selected option, when clipped) | codebase/frontend/index.html:1637::2 · [source](../../codebase/frontend/index.html#L1637) |
-| All except location | All except location | name only (selected option, when clipped) | codebase/frontend/index.html:1637::3 · [source](../../codebase/frontend/index.html#L1637) |
-| All including location | All including location | name only (selected option, when clipped) | codebase/frontend/index.html:1637::4 · [source](../../codebase/frontend/index.html#L1637) |
-| Guarantee HDR peakHighlight Compression checks every HDR export and Proof after encoding. Up to 1% above target is accepted unchanged; larger overshoots are corrected locally toward the target. Files still above the allowance are not delivered. This option also checks the codec ceiling when Highlight Compression is bypassed. | Highlight Compression checks every HDR export and Proof after encoding. Up to 1% above target is accepted unchanged; larger overshoots are corrected locally toward the target. Files still above the allowance are not delivered. This option also checks the codec ceiling when Highlight Compression is bypassed. | fixed | codebase/frontend/index.html:1648 · [source](../../codebase/frontend/index.html#L1648) |
-| Original (cropped)Long edgeFit within dimensions | Original (cropped) | fixed | codebase/frontend/index.html::#export-resize-mode · [source](../../codebase/frontend/index.html#L1656) |
-| Original (cropped) | Original (cropped) | name only (selected option, when clipped) | codebase/frontend/index.html:1656 · [source](../../codebase/frontend/index.html#L1656) |
-| Long edge | Long edge | name only (selected option, when clipped) | codebase/frontend/index.html:1656::2 · [source](../../codebase/frontend/index.html#L1656) |
-| Fit within dimensions | Fit within dimensions | name only (selected option, when clipped) | codebase/frontend/index.html:1656::3 · [source](../../codebase/frontend/index.html#L1656) |
-| Off | Off | name only (selected option, when clipped) | codebase/frontend/index.html:1664 · [source](../../codebase/frontend/index.html#L1664) |
-| Subtle | Subtle | name only (selected option, when clipped) | codebase/frontend/index.html:1664::2 · [source](../../codebase/frontend/index.html#L1664) |
-| Standard | Standard | name only (selected option, when clipped) | codebase/frontend/index.html:1664::3 · [source](../../codebase/frontend/index.html#L1664) |
-| Strong | Strong | name only (selected option, when clipped) | codebase/frontend/index.html:1664::4 · [source](../../codebase/frontend/index.html#L1664) |
-| Off | Off | name only (selected option, when clipped) | codebase/frontend/index.html:1670 · [source](../../codebase/frontend/index.html#L1670) |
-| Text in both renditions | Text in both renditions | name only (selected option, when clipped) | codebase/frontend/index.html:1670::2 · [source](../../codebase/frontend/index.html#L1670) |
-| Gain-map test: HDR / SDR | Gain-map test: HDR / SDR | name only (selected option, when clipped) | codebase/frontend/index.html:1670::3 · [source](../../codebase/frontend/index.html#L1670) |
-| Bottom right | Bottom right | name only (selected option, when clipped) | codebase/frontend/index.html:1672 · [source](../../codebase/frontend/index.html#L1672) |
-| Bottom left | Bottom left | name only (selected option, when clipped) | codebase/frontend/index.html:1672::2 · [source](../../codebase/frontend/index.html#L1672) |
-| Top right | Top right | name only (selected option, when clipped) | codebase/frontend/index.html:1672::3 · [source](../../codebase/frontend/index.html#L1672) |
-| Top left | Top left | name only (selected option, when clipped) | codebase/frontend/index.html:1672::4 · [source](../../codebase/frontend/index.html#L1672) |
+| AVIF + gain map | AVIF + gain map | name only (selected option, when clipped) | codebase/frontend/index.html:1597 · [source](../../codebase/frontend/index.html#L1597) |
+| JPEG Ultra HDR | JPEG Ultra HDR | name only (selected option, when clipped) | codebase/frontend/index.html:1598 · [source](../../codebase/frontend/index.html#L1598) |
+| JPEG XL HDR | JPEG XL HDR | name only (selected option, when clipped) | codebase/frontend/index.html:1599 · [source](../../codebase/frontend/index.html#L1599) |
+| JPEG XL (SDR) | JPEG XL (SDR) | name only (selected option, when clipped) | codebase/frontend/index.html:1600 · [source](../../codebase/frontend/index.html#L1600) |
+| PNG (SDR) | PNG (SDR) | name only (selected option, when clipped) | codebase/frontend/index.html:1601 · [source](../../codebase/frontend/index.html#L1601) |
+| JPEG (SDR) | JPEG (SDR) | name only (selected option, when clipped) | codebase/frontend/index.html:1602 · [source](../../codebase/frontend/index.html#L1602) |
+| Web Default Web Optimized Maximum Fidelity High fidelity JPEG XL Custom | Manual encoding changes switch the preset to Custom. | fixed | codebase/frontend/index.html::#export-preset · [source](../../codebase/frontend/index.html#L1608) |
+| Web Default | Web Default | name only (selected option, when clipped) | codebase/frontend/index.html:1609 · [source](../../codebase/frontend/index.html#L1609) |
+| Web Optimized | Web Optimized | name only (selected option, when clipped) | codebase/frontend/index.html:1610 · [source](../../codebase/frontend/index.html#L1610) |
+| Maximum Fidelity | Maximum Fidelity | name only (selected option, when clipped) | codebase/frontend/index.html:1611 · [source](../../codebase/frontend/index.html#L1611) |
+| High fidelity JPEG XL | High fidelity JPEG XL | name only (selected option, when clipped) | codebase/frontend/index.html:1612 · [source](../../codebase/frontend/index.html#L1612) |
+| Custom | Custom | name only (selected option, when clipped) | codebase/frontend/index.html:1613 · [source](../../codebase/frontend/index.html#L1613) |
+| 8-bit | 8-bit | name only (selected option, when clipped) | codebase/frontend/index.html:1633 · [source](../../codebase/frontend/index.html#L1633) |
+| 10-bit | 10-bit | name only (selected option, when clipped) | codebase/frontend/index.html:1633::2 · [source](../../codebase/frontend/index.html#L1633) |
+| 12-bit | 12-bit | name only (selected option, when clipped) | codebase/frontend/index.html:1633::3 · [source](../../codebase/frontend/index.html#L1633) |
+| 4:2:0 | 4:2:0 | name only (selected option, when clipped) | codebase/frontend/index.html:1636 · [source](../../codebase/frontend/index.html#L1636) |
+| 4:2:2 | 4:2:2 | name only (selected option, when clipped) | codebase/frontend/index.html:1636::2 · [source](../../codebase/frontend/index.html#L1636) |
+| 4:4:4 | 4:4:4 | name only (selected option, when clipped) | codebase/frontend/index.html:1636::3 · [source](../../codebase/frontend/index.html#L1636) |
+| Half | Half | name only (selected option, when clipped) | codebase/frontend/index.html:1643 · [source](../../codebase/frontend/index.html#L1643) |
+| Full | Full | name only (selected option, when clipped) | codebase/frontend/index.html:1643::2 · [source](../../codebase/frontend/index.html#L1643) |
+| Full | Full | name only (selected option, when clipped) | codebase/frontend/index.html:1652 · [source](../../codebase/frontend/index.html#L1652) |
+| Half | Half | name only (selected option, when clipped) | codebase/frontend/index.html:1652::2 · [source](../../codebase/frontend/index.html#L1652) |
+| 4:2:0 | 4:2:0 | name only (selected option, when clipped) | codebase/frontend/index.html:1655 · [source](../../codebase/frontend/index.html#L1655) |
+| 4:2:2 | 4:2:2 | name only (selected option, when clipped) | codebase/frontend/index.html:1655::2 · [source](../../codebase/frontend/index.html#L1655) |
+| 4:4:4 | 4:4:4 | name only (selected option, when clipped) | codebase/frontend/index.html:1655::3 · [source](../../codebase/frontend/index.html#L1655) |
+| 4:2:0 | 4:2:0 | name only (selected option, when clipped) | codebase/frontend/index.html:1659 · [source](../../codebase/frontend/index.html#L1659) |
+| 4:2:2 | 4:2:2 | name only (selected option, when clipped) | codebase/frontend/index.html:1659::2 · [source](../../codebase/frontend/index.html#L1659) |
+| 4:4:4 | 4:4:4 | name only (selected option, when clipped) | codebase/frontend/index.html:1659::3 · [source](../../codebase/frontend/index.html#L1659) |
+| 10-bit integer | 10-bit integer | name only (selected option, when clipped) | codebase/frontend/index.html:1662 · [source](../../codebase/frontend/index.html#L1662) |
+| 12-bit integer | 12-bit integer | name only (selected option, when clipped) | codebase/frontend/index.html:1662::2 · [source](../../codebase/frontend/index.html#L1662) |
+| 16-bit integer | 16-bit integer | name only (selected option, when clipped) | codebase/frontend/index.html:1662::3 · [source](../../codebase/frontend/index.html#L1662) |
+| 16-bit float | 16-bit float | name only (selected option, when clipped) | codebase/frontend/index.html:1662::4 · [source](../../codebase/frontend/index.html#L1662) |
+| 32-bit float | 32-bit float | name only (selected option, when clipped) | codebase/frontend/index.html:1662::5 · [source](../../codebase/frontend/index.html#L1662) |
+| 8-bit | 8-bit | name only (selected option, when clipped) | codebase/frontend/index.html:1666 · [source](../../codebase/frontend/index.html#L1666) |
+| 16-bit | 16-bit | name only (selected option, when clipped) | codebase/frontend/index.html:1666::2 · [source](../../codebase/frontend/index.html#L1666) |
+| Auto | Auto | name only (selected option, when clipped) | codebase/frontend/index.html:1669 · [source](../../codebase/frontend/index.html#L1669) |
+| Off | Off | name only (selected option, when clipped) | codebase/frontend/index.html:1669::2 · [source](../../codebase/frontend/index.html#L1669) |
+| Subtle | Subtle | name only (selected option, when clipped) | codebase/frontend/index.html:1669::3 · [source](../../codebase/frontend/index.html#L1669) |
+| None | None | name only (selected option, when clipped) | codebase/frontend/index.html:1673 · [source](../../codebase/frontend/index.html#L1673) |
+| Copyright only | Copyright only | name only (selected option, when clipped) | codebase/frontend/index.html:1673::2 · [source](../../codebase/frontend/index.html#L1673) |
+| All except location | All except location | name only (selected option, when clipped) | codebase/frontend/index.html:1673::3 · [source](../../codebase/frontend/index.html#L1673) |
+| All including location | All including location | name only (selected option, when clipped) | codebase/frontend/index.html:1673::4 · [source](../../codebase/frontend/index.html#L1673) |
+| Guarantee HDR peakHighlight Compression checks every HDR export and Proof after encoding. Up to 1% above target is accepted unchanged; larger overshoots are corrected locally toward the target. Files still above the allowance are not delivered. This option also checks the codec ceiling when Highlight Compression is bypassed. | Highlight Compression checks every HDR export and Proof after encoding. Up to 1% above target is accepted unchanged; larger overshoots are corrected locally toward the target. Files still above the allowance are not delivered. This option also checks the codec ceiling when Highlight Compression is bypassed. | fixed | codebase/frontend/index.html:1684 · [source](../../codebase/frontend/index.html#L1684) |
+| Original (cropped)Long edgeFit within dimensions | Original (cropped) | fixed | codebase/frontend/index.html::#export-resize-mode · [source](../../codebase/frontend/index.html#L1692) |
+| Original (cropped) | Original (cropped) | name only (selected option, when clipped) | codebase/frontend/index.html:1692 · [source](../../codebase/frontend/index.html#L1692) |
+| Long edge | Long edge | name only (selected option, when clipped) | codebase/frontend/index.html:1692::2 · [source](../../codebase/frontend/index.html#L1692) |
+| Fit within dimensions | Fit within dimensions | name only (selected option, when clipped) | codebase/frontend/index.html:1692::3 · [source](../../codebase/frontend/index.html#L1692) |
+| Off | Off | name only (selected option, when clipped) | codebase/frontend/index.html:1700 · [source](../../codebase/frontend/index.html#L1700) |
+| Subtle | Subtle | name only (selected option, when clipped) | codebase/frontend/index.html:1700::2 · [source](../../codebase/frontend/index.html#L1700) |
+| Standard | Standard | name only (selected option, when clipped) | codebase/frontend/index.html:1700::3 · [source](../../codebase/frontend/index.html#L1700) |
+| Strong | Strong | name only (selected option, when clipped) | codebase/frontend/index.html:1700::4 · [source](../../codebase/frontend/index.html#L1700) |
+| Off | Off | name only (selected option, when clipped) | codebase/frontend/index.html:1706 · [source](../../codebase/frontend/index.html#L1706) |
+| Text in both renditions | Text in both renditions | name only (selected option, when clipped) | codebase/frontend/index.html:1706::2 · [source](../../codebase/frontend/index.html#L1706) |
+| Gain-map test: HDR / SDR | Gain-map test: HDR / SDR | name only (selected option, when clipped) | codebase/frontend/index.html:1706::3 · [source](../../codebase/frontend/index.html#L1706) |
+| Bottom right | Bottom right | name only (selected option, when clipped) | codebase/frontend/index.html:1708 · [source](../../codebase/frontend/index.html#L1708) |
+| Bottom left | Bottom left | name only (selected option, when clipped) | codebase/frontend/index.html:1708::2 · [source](../../codebase/frontend/index.html#L1708) |
+| Top right | Top right | name only (selected option, when clipped) | codebase/frontend/index.html:1708::3 · [source](../../codebase/frontend/index.html#L1708) |
+| Top left | Top left | name only (selected option, when clipped) | codebase/frontend/index.html:1708::4 · [source](../../codebase/frontend/index.html#L1708) |
 
 ### batch export
 
@@ -784,45 +809,45 @@ Clipped lane, scope, preview and filename labels use their visible text; dynamic
 | --- | --- | --- | --- |
 | element.dataset.tooltip | text | dynamic expression | codebase/frontend/batch-export.js:7 · [source](../../codebase/frontend/batch-export.js#L7) |
 | b aria-label | label | dynamic expression; name/status supplied at runtime | codebase/frontend/batch-export.js:58 · [source](../../codebase/frontend/batch-export.js#L58) |
-| label — text used by dynamic tooltips | failed?"Failed":active?"Exporting…":skipped?&#96;${skipped} skipped&#96;:results.length?"Done":"" | dynamic supporting definition | codebase/frontend/batch-export.js:148 · [source](../../codebase/frontend/batch-export.js#L148) |
-| skipped — text used by dynamic tooltips | results.filter(r=&gt;r.outcome==="skipped").length | dynamic supporting definition | codebase/frontend/batch-export.js:147 · [source](../../codebase/frontend/batch-export.js#L147) |
-| results — text used by dynamic tooltips | node("ul") | dynamic supporting definition | codebase/frontend/batch-export.js:314 · [source](../../codebase/frontend/batch-export.js#L314) |
-| b.title | label | dynamic expression; name/status supplied at runtime | codebase/frontend/batch-export.js:58::2 · [source](../../codebase/frontend/batch-export.js#L58) |
-| els.exportResizeMode.title | els.exportResizeMode.selectedOptions[0]?.textContent &#124;&#124; "" | dynamic expression | codebase/frontend/batch-export.js:106 · [source](../../codebase/frontend/batch-export.js#L106) |
-| patternHelp.dataset.tooltip | $("batch-example").textContent | dynamic expression | codebase/frontend/batch-export.js:107 · [source](../../codebase/frontend/batch-export.js#L107) |
-| meter aria-label | &#96;Versions completed for ${p.name}&#96; | dynamic expression | codebase/frontend/batch-export.js:150 · [source](../../codebase/frontend/batch-export.js#L150) |
-| name — text used by dynamic tooltips | node("input") | dynamic supporting definition | codebase/frontend/batch-export.js:249 · [source](../../codebase/frontend/batch-export.js#L249) |
-| firstChild aria-label | error.message | dynamic expression | codebase/frontend/batch-export.js:197 · [source](../../codebase/frontend/batch-export.js#L197) |
-| .title | model.directory | dynamic expression | codebase/frontend/batch-export.js:212 · [source](../../codebase/frontend/batch-export.js#L212) |
+| label — text used by dynamic tooltips | failed?"Failed":active?(model.job.stage&#124;&#124;"Exporting…"):skipped?&#96;${skipped} skipped&#96;:results.length?"Done":"" | dynamic supporting definition | codebase/frontend/batch-export.js:149 · [source](../../codebase/frontend/batch-export.js#L149) |
 | model — text used by dynamic tooltips | {paths:[],photos:[],presets:[],draft:null,saved:null,version:0,job:null,selected:new Set(),directory:"",grant:null,initialized:false,anchor:0,grid:true,closedJob:null} | dynamic supporting definition | codebase/frontend/batch-export.js:3 · [source](../../codebase/frontend/batch-export.js#L3) |
-| job — text used by dynamic tooltips | await api("/api/batch-export",{paths,preset,directory:model.directory,path_grant:model.grant}) | dynamic supporting definition | codebase/frontend/batch-export.js:223 · [source](../../codebase/frontend/batch-export.js#L223) |
-| grid — text used by dynamic tooltips | node("div") | dynamic supporting definition | codebase/frontend/batch-export.js:308 · [source](../../codebase/frontend/batch-export.js#L308) |
-| .title | model.directory | dynamic expression | codebase/frontend/batch-export.js:219 · [source](../../codebase/frontend/batch-export.js#L219) |
-| .title | model.directory | dynamic expression | codebase/frontend/batch-export.js:222 · [source](../../codebase/frontend/batch-export.js#L222) |
-| collapse aria-label | collapsed?"Expand export presets":"Collapse export presets" | dynamic expression | codebase/frontend/batch-export.js:242 · [source](../../codebase/frontend/batch-export.js#L242) |
-| collapsed — text used by dynamic tooltips | document.body.classList.toggle("batch-presets-collapsed") | dynamic supporting definition | codebase/frontend/batch-export.js:240 · [source](../../codebase/frontend/batch-export.js#L240) |
-| collapse.title | collapsed?"Expand export presets":"Collapse export presets" | dynamic expression | codebase/frontend/batch-export.js:243 · [source](../../codebase/frontend/batch-export.js#L243) |
-| collapse aria-label | Collapse export presets | name only (fallback candidate) | codebase/frontend/batch-export.js:247 · [source](../../codebase/frontend/batch-export.js#L247) |
-| collapse.title | Collapse export presets | fixed | codebase/frontend/batch-export.js:247::2 · [source](../../codebase/frontend/batch-export.js#L247) |
-| select aria-label | Output version | name only (fallback candidate) | codebase/frontend/batch-export.js:256 · [source](../../codebase/frontend/batch-export.js#L256) |
-| exportFormat aria-label | Format | name only (fallback candidate) | codebase/frontend/batch-export.js:262 · [source](../../codebase/frontend/batch-export.js#L262) |
-| exportPreset aria-label | Quality profile | name only (fallback candidate) | codebase/frontend/batch-export.js:262::2 · [source](../../codebase/frontend/batch-export.js#L262) |
-| els.exportResizeMode.title | els.exportResizeMode.selectedOptions[0]?.textContent &#124;&#124; "" | dynamic expression | codebase/frontend/batch-export.js:264 · [source](../../codebase/frontend/batch-export.js#L264) |
-| input aria-label | &#96;${label} in pixels&#96; | dynamic expression | codebase/frontend/batch-export.js:269 · [source](../../codebase/frontend/batch-export.js#L269) |
-| pattern aria-label | File name pattern | name only (fallback candidate) | codebase/frontend/batch-export.js:285 · [source](../../codebase/frontend/batch-export.js#L285) |
-| tokens aria-label | Insert filename token | name only (fallback candidate) | codebase/frontend/batch-export.js:286 · [source](../../codebase/frontend/batch-export.js#L286) |
-| dest aria-label | Destination folder | name only (fallback candidate) | codebase/frontend/batch-export.js:298 · [source](../../codebase/frontend/batch-export.js#L298) |
-| dest.title | dest.value | dynamic expression; name/status supplied at runtime | codebase/frontend/batch-export.js:298::2 · [source](../../codebase/frontend/batch-export.js#L298) |
-| dest — text used by dynamic tooltips | node("input") | dynamic supporting definition | codebase/frontend/batch-export.js:298::3 · [source](../../codebase/frontend/batch-export.js#L298) |
-| b aria-label | kind==="grid"?"Grid":"Preview" | dynamic expression | codebase/frontend/batch-export.js:305 · [source](../../codebase/frontend/batch-export.js#L305) |
-| b.title | kind==="grid"?"Grid":"Preview" | dynamic expression | codebase/frontend/batch-export.js:305::2 · [source](../../codebase/frontend/batch-export.js#L305) |
-| b.title | label | dynamic expression; name/status supplied at runtime | codebase/frontend/batch-export.js:306 · [source](../../codebase/frontend/batch-export.js#L306) |
-| b aria-label | label | dynamic expression; name/status supplied at runtime | codebase/frontend/batch-export.js:306::2 · [source](../../codebase/frontend/batch-export.js#L306) |
-| grid aria-label | Photos in this batch | name only (fallback candidate) | codebase/frontend/batch-export.js:308::2 · [source](../../codebase/frontend/batch-export.js#L308) |
-| meter aria-label | Overall export progress | name only (fallback candidate) | codebase/frontend/batch-export.js:314::2 · [source](../../codebase/frontend/batch-export.js#L314) |
-| Export help | Each output version creates a separate file from the same saved photo edits, with its own export settings (format, size and naming). Changes here affect only the selected version. Export creates all versions. | fixed | codebase/frontend/batch-export.js:258 · [source](../../codebase/frontend/batch-export.js#L258) |
-| Export help | framingNote.textContent | dynamic expression | codebase/frontend/batch-export.js:275 · [source](../../codebase/frontend/batch-export.js#L275) |
-| Export help | Filename preview | fixed | codebase/frontend/batch-export.js:289 · [source](../../codebase/frontend/batch-export.js#L289) |
+| job — text used by dynamic tooltips | await api("/api/batch-export",{paths,preset,directory:model.directory,path_grant:model.grant},"POST",{id:crypto.randomUUID()}) | dynamic supporting definition | codebase/frontend/batch-export.js:227 · [source](../../codebase/frontend/batch-export.js#L227) |
+| grid — text used by dynamic tooltips | node("div") | dynamic supporting definition | codebase/frontend/batch-export.js:312 · [source](../../codebase/frontend/batch-export.js#L312) |
+| skipped — text used by dynamic tooltips | results.filter(r=&gt;r.outcome==="skipped").length | dynamic supporting definition | codebase/frontend/batch-export.js:148 · [source](../../codebase/frontend/batch-export.js#L148) |
+| results — text used by dynamic tooltips | node("ul") | dynamic supporting definition | codebase/frontend/batch-export.js:318 · [source](../../codebase/frontend/batch-export.js#L318) |
+| b.title | label | dynamic expression; name/status supplied at runtime | codebase/frontend/batch-export.js:58::2 · [source](../../codebase/frontend/batch-export.js#L58) |
+| els.exportResizeMode.title | els.exportResizeMode.selectedOptions[0]?.textContent &#124;&#124; "" | dynamic expression | codebase/frontend/batch-export.js:107 · [source](../../codebase/frontend/batch-export.js#L107) |
+| patternHelp.dataset.tooltip | $("batch-example").textContent | dynamic expression | codebase/frontend/batch-export.js:108 · [source](../../codebase/frontend/batch-export.js#L108) |
+| meter aria-label | &#96;Export progress for ${p.name}&#96; | dynamic expression | codebase/frontend/batch-export.js:151 · [source](../../codebase/frontend/batch-export.js#L151) |
+| name — text used by dynamic tooltips | node("input") | dynamic supporting definition | codebase/frontend/batch-export.js:253 · [source](../../codebase/frontend/batch-export.js#L253) |
+| firstChild aria-label | error.message | dynamic expression | codebase/frontend/batch-export.js:201 · [source](../../codebase/frontend/batch-export.js#L201) |
+| .title | model.directory | dynamic expression | codebase/frontend/batch-export.js:216 · [source](../../codebase/frontend/batch-export.js#L216) |
+| .title | model.directory | dynamic expression | codebase/frontend/batch-export.js:223 · [source](../../codebase/frontend/batch-export.js#L223) |
+| .title | model.directory | dynamic expression | codebase/frontend/batch-export.js:226 · [source](../../codebase/frontend/batch-export.js#L226) |
+| collapse aria-label | collapsed?"Expand export presets":"Collapse export presets" | dynamic expression | codebase/frontend/batch-export.js:246 · [source](../../codebase/frontend/batch-export.js#L246) |
+| collapsed — text used by dynamic tooltips | document.body.classList.toggle("batch-presets-collapsed") | dynamic supporting definition | codebase/frontend/batch-export.js:244 · [source](../../codebase/frontend/batch-export.js#L244) |
+| collapse.title | collapsed?"Expand export presets":"Collapse export presets" | dynamic expression | codebase/frontend/batch-export.js:247 · [source](../../codebase/frontend/batch-export.js#L247) |
+| collapse aria-label | Collapse export presets | name only (fallback candidate) | codebase/frontend/batch-export.js:251 · [source](../../codebase/frontend/batch-export.js#L251) |
+| collapse.title | Collapse export presets | fixed | codebase/frontend/batch-export.js:251::2 · [source](../../codebase/frontend/batch-export.js#L251) |
+| select aria-label | Output version | name only (fallback candidate) | codebase/frontend/batch-export.js:260 · [source](../../codebase/frontend/batch-export.js#L260) |
+| exportFormat aria-label | Format | name only (fallback candidate) | codebase/frontend/batch-export.js:266 · [source](../../codebase/frontend/batch-export.js#L266) |
+| exportPreset aria-label | Quality profile | name only (fallback candidate) | codebase/frontend/batch-export.js:266::2 · [source](../../codebase/frontend/batch-export.js#L266) |
+| els.exportResizeMode.title | els.exportResizeMode.selectedOptions[0]?.textContent &#124;&#124; "" | dynamic expression | codebase/frontend/batch-export.js:268 · [source](../../codebase/frontend/batch-export.js#L268) |
+| input aria-label | &#96;${label} in pixels&#96; | dynamic expression | codebase/frontend/batch-export.js:273 · [source](../../codebase/frontend/batch-export.js#L273) |
+| pattern aria-label | File name pattern | name only (fallback candidate) | codebase/frontend/batch-export.js:289 · [source](../../codebase/frontend/batch-export.js#L289) |
+| tokens aria-label | Insert filename token | name only (fallback candidate) | codebase/frontend/batch-export.js:290 · [source](../../codebase/frontend/batch-export.js#L290) |
+| dest aria-label | Destination folder | name only (fallback candidate) | codebase/frontend/batch-export.js:302 · [source](../../codebase/frontend/batch-export.js#L302) |
+| dest.title | dest.value | dynamic expression; name/status supplied at runtime | codebase/frontend/batch-export.js:302::2 · [source](../../codebase/frontend/batch-export.js#L302) |
+| dest — text used by dynamic tooltips | node("input") | dynamic supporting definition | codebase/frontend/batch-export.js:302::3 · [source](../../codebase/frontend/batch-export.js#L302) |
+| b aria-label | kind==="grid"?"Grid":"Preview" | dynamic expression | codebase/frontend/batch-export.js:309 · [source](../../codebase/frontend/batch-export.js#L309) |
+| b.title | kind==="grid"?"Grid":"Preview" | dynamic expression | codebase/frontend/batch-export.js:309::2 · [source](../../codebase/frontend/batch-export.js#L309) |
+| b.title | label | dynamic expression; name/status supplied at runtime | codebase/frontend/batch-export.js:310 · [source](../../codebase/frontend/batch-export.js#L310) |
+| b aria-label | label | dynamic expression; name/status supplied at runtime | codebase/frontend/batch-export.js:310::2 · [source](../../codebase/frontend/batch-export.js#L310) |
+| grid aria-label | Photos in this batch | name only (fallback candidate) | codebase/frontend/batch-export.js:312::2 · [source](../../codebase/frontend/batch-export.js#L312) |
+| meter aria-label | Overall export progress | name only (fallback candidate) | codebase/frontend/batch-export.js:318::2 · [source](../../codebase/frontend/batch-export.js#L318) |
+| Export help | Each output version creates a separate file from the same saved photo edits, with its own export settings (format, size and naming). Changes here affect only the selected version. Export creates all versions. | fixed | codebase/frontend/batch-export.js:262 · [source](../../codebase/frontend/batch-export.js#L262) |
+| Export help | framingNote.textContent | dynamic expression | codebase/frontend/batch-export.js:279 · [source](../../codebase/frontend/batch-export.js#L279) |
+| Export help | Filename preview | fixed | codebase/frontend/batch-export.js:293 · [source](../../codebase/frontend/batch-export.js#L293) |
 
 ### export ui
 
@@ -878,18 +903,18 @@ Clipped lane, scope, preview and filename labels use their visible text; dynamic
 
 | Control / visible name | Text | Flags | ID and source |
 | --- | --- | --- | --- |
-| Close | Close folder browser | name only (fallback) | codebase/frontend/index.html::#directory-browser-close · [source](../../codebase/frontend/index.html#L1705) |
+| Close | Close folder browser | name only (fallback) | codebase/frontend/index.html::#directory-browser-close · [source](../../codebase/frontend/index.html#L1741) |
 | Close | Close folder browser | name only (fallback) | codebase/frontend/media-browser-standalone.html::#directory-browser-close · [source](../../codebase/frontend/media-browser-standalone.html#L15) |
 
 ### directory-browser
 
 | Control / visible name | Text | Flags | ID and source |
 | --- | --- | --- | --- |
-| Resize Name column | Resize Name column | name only (fallback) | codebase/frontend/index.html:1723 · [source](../../codebase/frontend/index.html#L1723) |
-| Resize Size column | Resize Size column | name only (fallback) | codebase/frontend/index.html:1727 · [source](../../codebase/frontend/index.html#L1727) |
-| Resize Kind column | Resize Kind column | name only (fallback) | codebase/frontend/index.html:1731 · [source](../../codebase/frontend/index.html#L1731) |
-| Resize Date Added column | Resize Date Added column | name only (fallback) | codebase/frontend/index.html:1735 · [source](../../codebase/frontend/index.html#L1735) |
-| Resize preview panel | Resize preview panel | name only (fallback) | codebase/frontend/index.html:1740 · [source](../../codebase/frontend/index.html#L1740) |
+| Resize Name column | Resize Name column | name only (fallback) | codebase/frontend/index.html:1759 · [source](../../codebase/frontend/index.html#L1759) |
+| Resize Size column | Resize Size column | name only (fallback) | codebase/frontend/index.html:1763 · [source](../../codebase/frontend/index.html#L1763) |
+| Resize Kind column | Resize Kind column | name only (fallback) | codebase/frontend/index.html:1767 · [source](../../codebase/frontend/index.html#L1767) |
+| Resize Date Added column | Resize Date Added column | name only (fallback) | codebase/frontend/index.html:1771 · [source](../../codebase/frontend/index.html#L1771) |
+| Resize preview panel | Resize preview panel | name only (fallback) | codebase/frontend/index.html:1776 · [source](../../codebase/frontend/index.html#L1776) |
 | Resize Name column | Resize Name column | name only (fallback) | codebase/frontend/media-browser-standalone.html:33 · [source](../../codebase/frontend/media-browser-standalone.html#L33) |
 | Resize Size column | Resize Size column | name only (fallback) | codebase/frontend/media-browser-standalone.html:37 · [source](../../codebase/frontend/media-browser-standalone.html#L37) |
 | Resize Kind column | Resize Kind column | name only (fallback) | codebase/frontend/media-browser-standalone.html:41 · [source](../../codebase/frontend/media-browser-standalone.html#L41) |
@@ -900,77 +925,77 @@ Clipped lane, scope, preview and filename labels use their visible text; dynamic
 
 | Control / visible name | Text | Flags | ID and source |
 | --- | --- | --- | --- |
-| Close settings | Close | fixed | codebase/frontend/index.html::#settings-close · [source](../../codebase/frontend/index.html#L1761) |
+| Close settings | Close | fixed | codebase/frontend/index.html::#settings-close · [source](../../codebase/frontend/index.html#L1797) |
 
 ### general
 
 | Control / visible name | Text | Flags | ID and source |
 | --- | --- | --- | --- |
-| 203 nit · Standard | 203 nit · Standard | name only (selected option, when clipped) | codebase/frontend/index.html:1779 · [source](../../codebase/frontend/index.html#L1779) |
-| 100 nit · Controlled workflow | 100 nit · Controlled workflow | name only (selected option, when clipped) | codebase/frontend/index.html:1780 · [source](../../codebase/frontend/index.html#L1780) |
+| 203 nit · Standard | 203 nit · Standard | name only (selected option, when clipped) | codebase/frontend/index.html:1815 · [source](../../codebase/frontend/index.html#L1815) |
+| 100 nit · Controlled workflow | 100 nit · Controlled workflow | name only (selected option, when clipped) | codebase/frontend/index.html:1816 · [source](../../codebase/frontend/index.html#L1816) |
 
 ### performance
 
 | Control / visible name | Text | Flags | ID and source |
 | --- | --- | --- | --- |
-| 1 GB | 1 GB | name only (selected option, when clipped) | codebase/frontend/index.html:1794 · [source](../../codebase/frontend/index.html#L1794) |
-| 2 GB | 2 GB | name only (selected option, when clipped) | codebase/frontend/index.html:1794::2 · [source](../../codebase/frontend/index.html#L1794) |
-| 5 GB | 5 GB | name only (selected option, when clipped) | codebase/frontend/index.html:1794::3 · [source](../../codebase/frontend/index.html#L1794) |
-| 10 GB | 10 GB | name only (selected option, when clipped) | codebase/frontend/index.html:1794::4 · [source](../../codebase/frontend/index.html#L1794) |
-| 20 GB | 20 GB | name only (selected option, when clipped) | codebase/frontend/index.html:1794::5 · [source](../../codebase/frontend/index.html#L1794) |
-| 1 GB | 1 GB | name only (selected option, when clipped) | codebase/frontend/index.html:1798 · [source](../../codebase/frontend/index.html#L1798) |
-| 2 GB | 2 GB | name only (selected option, when clipped) | codebase/frontend/index.html:1798::2 · [source](../../codebase/frontend/index.html#L1798) |
-| 5 GB | 5 GB | name only (selected option, when clipped) | codebase/frontend/index.html:1798::3 · [source](../../codebase/frontend/index.html#L1798) |
-| 10 GB | 10 GB | name only (selected option, when clipped) | codebase/frontend/index.html:1798::4 · [source](../../codebase/frontend/index.html#L1798) |
-| 20 GB | 20 GB | name only (selected option, when clipped) | codebase/frontend/index.html:1798::5 · [source](../../codebase/frontend/index.html#L1798) |
-| 1 GB | 1 GB | name only (selected option, when clipped) | codebase/frontend/index.html:1802 · [source](../../codebase/frontend/index.html#L1802) |
-| 2 GB | 2 GB | name only (selected option, when clipped) | codebase/frontend/index.html:1802::2 · [source](../../codebase/frontend/index.html#L1802) |
-| 5 GB | 5 GB | name only (selected option, when clipped) | codebase/frontend/index.html:1802::3 · [source](../../codebase/frontend/index.html#L1802) |
-| 10 GB | 10 GB | name only (selected option, when clipped) | codebase/frontend/index.html:1802::4 · [source](../../codebase/frontend/index.html#L1802) |
-| 20 GB | 20 GB | name only (selected option, when clipped) | codebase/frontend/index.html:1802::5 · [source](../../codebase/frontend/index.html#L1802) |
-| Auto · Recommended | Auto · Recommended | name only (selected option, when clipped) | codebase/frontend/index.html:1814 · [source](../../codebase/frontend/index.html#L1814) |
-| GPU preferred | GPU preferred | name only (selected option, when clipped) | codebase/frontend/index.html:1815 · [source](../../codebase/frontend/index.html#L1815) |
-| CPU compatibility | CPU compatibility | name only (selected option, when clipped) | codebase/frontend/index.html:1816 · [source](../../codebase/frontend/index.html#L1816) |
-| Faster dragging | For slower computers: shows a softer image while you drag, sharp again when you let go. Exports are unaffected. | fixed | codebase/frontend/index.html:1820 · [source](../../codebase/frontend/index.html#L1820) |
-| Auto · up to half of your graphics card's memory | Auto · up to half of your graphics card's memory | name only (selected option, when clipped) | codebase/frontend/index.html:1829 · [source](../../codebase/frontend/index.html#L1829) |
-| 1 GiB | 1 GiB | name only (selected option, when clipped) | codebase/frontend/index.html:1830 · [source](../../codebase/frontend/index.html#L1830) |
-| 2 GiB | 2 GiB | name only (selected option, when clipped) | codebase/frontend/index.html:1831 · [source](../../codebase/frontend/index.html#L1831) |
-| 3 GiB | 3 GiB | name only (selected option, when clipped) | codebase/frontend/index.html:1832 · [source](../../codebase/frontend/index.html#L1832) |
-| 4 GiB | 4 GiB | name only (selected option, when clipped) | codebase/frontend/index.html:1833 · [source](../../codebase/frontend/index.html#L1833) |
-| 6 GiB | 6 GiB | name only (selected option, when clipped) | codebase/frontend/index.html:1834 · [source](../../codebase/frontend/index.html#L1834) |
-| 8 GiB | 8 GiB | name only (selected option, when clipped) | codebase/frontend/index.html:1835 · [source](../../codebase/frontend/index.html#L1835) |
-| 12 GiB | 12 GiB | name only (selected option, when clipped) | codebase/frontend/index.html:1836 · [source](../../codebase/frontend/index.html#L1836) |
-| Custom… | Custom… | name only (selected option, when clipped) | codebase/frontend/index.html:1837 · [source](../../codebase/frontend/index.html#L1837) |
+| 1 GB | 1 GB | name only (selected option, when clipped) | codebase/frontend/index.html:1830 · [source](../../codebase/frontend/index.html#L1830) |
+| 2 GB | 2 GB | name only (selected option, when clipped) | codebase/frontend/index.html:1830::2 · [source](../../codebase/frontend/index.html#L1830) |
+| 5 GB | 5 GB | name only (selected option, when clipped) | codebase/frontend/index.html:1830::3 · [source](../../codebase/frontend/index.html#L1830) |
+| 10 GB | 10 GB | name only (selected option, when clipped) | codebase/frontend/index.html:1830::4 · [source](../../codebase/frontend/index.html#L1830) |
+| 20 GB | 20 GB | name only (selected option, when clipped) | codebase/frontend/index.html:1830::5 · [source](../../codebase/frontend/index.html#L1830) |
+| 1 GB | 1 GB | name only (selected option, when clipped) | codebase/frontend/index.html:1834 · [source](../../codebase/frontend/index.html#L1834) |
+| 2 GB | 2 GB | name only (selected option, when clipped) | codebase/frontend/index.html:1834::2 · [source](../../codebase/frontend/index.html#L1834) |
+| 5 GB | 5 GB | name only (selected option, when clipped) | codebase/frontend/index.html:1834::3 · [source](../../codebase/frontend/index.html#L1834) |
+| 10 GB | 10 GB | name only (selected option, when clipped) | codebase/frontend/index.html:1834::4 · [source](../../codebase/frontend/index.html#L1834) |
+| 20 GB | 20 GB | name only (selected option, when clipped) | codebase/frontend/index.html:1834::5 · [source](../../codebase/frontend/index.html#L1834) |
+| 1 GB | 1 GB | name only (selected option, when clipped) | codebase/frontend/index.html:1838 · [source](../../codebase/frontend/index.html#L1838) |
+| 2 GB | 2 GB | name only (selected option, when clipped) | codebase/frontend/index.html:1838::2 · [source](../../codebase/frontend/index.html#L1838) |
+| 5 GB | 5 GB | name only (selected option, when clipped) | codebase/frontend/index.html:1838::3 · [source](../../codebase/frontend/index.html#L1838) |
+| 10 GB | 10 GB | name only (selected option, when clipped) | codebase/frontend/index.html:1838::4 · [source](../../codebase/frontend/index.html#L1838) |
+| 20 GB | 20 GB | name only (selected option, when clipped) | codebase/frontend/index.html:1838::5 · [source](../../codebase/frontend/index.html#L1838) |
+| Auto · Recommended | Auto · Recommended | name only (selected option, when clipped) | codebase/frontend/index.html:1850 · [source](../../codebase/frontend/index.html#L1850) |
+| GPU preferred | GPU preferred | name only (selected option, when clipped) | codebase/frontend/index.html:1851 · [source](../../codebase/frontend/index.html#L1851) |
+| CPU compatibility | CPU compatibility | name only (selected option, when clipped) | codebase/frontend/index.html:1852 · [source](../../codebase/frontend/index.html#L1852) |
+| Faster dragging | For slower computers: shows a softer image while you drag, sharp again when you let go. Exports are unaffected. | fixed | codebase/frontend/index.html:1856 · [source](../../codebase/frontend/index.html#L1856) |
+| Auto · up to half of your graphics card's memory | Auto · up to half of your graphics card's memory | name only (selected option, when clipped) | codebase/frontend/index.html:1865 · [source](../../codebase/frontend/index.html#L1865) |
+| 1 GiB | 1 GiB | name only (selected option, when clipped) | codebase/frontend/index.html:1866 · [source](../../codebase/frontend/index.html#L1866) |
+| 2 GiB | 2 GiB | name only (selected option, when clipped) | codebase/frontend/index.html:1867 · [source](../../codebase/frontend/index.html#L1867) |
+| 3 GiB | 3 GiB | name only (selected option, when clipped) | codebase/frontend/index.html:1868 · [source](../../codebase/frontend/index.html#L1868) |
+| 4 GiB | 4 GiB | name only (selected option, when clipped) | codebase/frontend/index.html:1869 · [source](../../codebase/frontend/index.html#L1869) |
+| 6 GiB | 6 GiB | name only (selected option, when clipped) | codebase/frontend/index.html:1870 · [source](../../codebase/frontend/index.html#L1870) |
+| 8 GiB | 8 GiB | name only (selected option, when clipped) | codebase/frontend/index.html:1871 · [source](../../codebase/frontend/index.html#L1871) |
+| 12 GiB | 12 GiB | name only (selected option, when clipped) | codebase/frontend/index.html:1872 · [source](../../codebase/frontend/index.html#L1872) |
+| Custom… | Custom… | name only (selected option, when clipped) | codebase/frontend/index.html:1873 · [source](../../codebase/frontend/index.html#L1873) |
 
 ### appearance
 
 | Control / visible name | Text | Flags | ID and source |
 | --- | --- | --- | --- |
-| On hover | On hover | name only (selected option, when clipped) | codebase/frontend/index.html:1852 · [source](../../codebase/frontend/index.html#L1852) |
-| Always | Always | name only (selected option, when clipped) | codebase/frontend/index.html:1852::2 · [source](../../codebase/frontend/index.html#L1852) |
+| On hover | On hover | name only (selected option, when clipped) | codebase/frontend/index.html:1888 · [source](../../codebase/frontend/index.html#L1888) |
+| Always | Always | name only (selected option, when clipped) | codebase/frontend/index.html:1888::2 · [source](../../codebase/frontend/index.html#L1888) |
 
 ### shortcuts
 
 | Control / visible name | Text | Flags | ID and source |
 | --- | --- | --- | --- |
-| Shortcut presets… | Shortcut presets… | name only (selected option, when clipped) | codebase/frontend/index.html:1877 · [source](../../codebase/frontend/index.html#L1877) |
+| Shortcut presets… | Shortcut presets… | name only (selected option, when clipped) | codebase/frontend/index.html:1913 · [source](../../codebase/frontend/index.html#L1913) |
 
 ### diagnostics
 
 | Control / visible name | Text | Flags | ID and source |
 | --- | --- | --- | --- |
-| Auto · the budget decides Force Direct Force Tiled | Diagnostic. Auto lets the memory budget decide. Forcing Tiled always works. Forcing Direct is ignored when the budget cannot hold a whole-frame render, because a diagnostic switch must not override the memory guard. | fixed | codebase/frontend/index.html::#settings-execution-override · [source](../../codebase/frontend/index.html#L1888) |
-| Auto · the budget decides | Auto · the budget decides | name only (selected option, when clipped) | codebase/frontend/index.html:1889 · [source](../../codebase/frontend/index.html#L1889) |
-| Force Direct | Force Direct | name only (selected option, when clipped) | codebase/frontend/index.html:1890 · [source](../../codebase/frontend/index.html#L1890) |
-| Force Tiled | Force Tiled | name only (selected option, when clipped) | codebase/frontend/index.html:1891 · [source](../../codebase/frontend/index.html#L1891) |
-| Off · display driven | Off · display driven | name only (selected option, when clipped) | codebase/frontend/index.html:1897 · [source](../../codebase/frontend/index.html#L1897) |
-| 1K | 1K | name only (selected option, when clipped) | codebase/frontend/index.html:1898 · [source](../../codebase/frontend/index.html#L1898) |
-| 2K | 2K | name only (selected option, when clipped) | codebase/frontend/index.html:1899 · [source](../../codebase/frontend/index.html#L1899) |
-| 4K | 4K | name only (selected option, when clipped) | codebase/frontend/index.html:1900 · [source](../../codebase/frontend/index.html#L1900) |
-| Full | Full | name only (selected option, when clipped) | codebase/frontend/index.html:1901 · [source](../../codebase/frontend/index.html#L1901) |
-| Whole frame · refinement processes every tile Visible region · refinement processes what you see | When enabled, only the refinement pass is limited to the visible region: the tiles you can see are refined at full tier quality and the rest of the frame keeps the accepted image. Pan and zoom are never limited, so a newly exposed region always has complete pixels. | fixed | codebase/frontend/index.html::#settings-roi-preview · [source](../../codebase/frontend/index.html#L1906) |
-| Whole frame · refinement processes every tile | Whole frame · refinement processes every tile | name only (selected option, when clipped) | codebase/frontend/index.html:1907 · [source](../../codebase/frontend/index.html#L1907) |
-| Visible region · refinement processes what you see | Visible region · refinement processes what you see | name only (selected option, when clipped) | codebase/frontend/index.html:1908 · [source](../../codebase/frontend/index.html#L1908) |
+| Auto · the budget decides Force Direct Force Tiled | Diagnostic. Auto lets the memory budget decide. Forcing Tiled always works. Forcing Direct is ignored when the budget cannot hold a whole-frame render, because a diagnostic switch must not override the memory guard. | fixed | codebase/frontend/index.html::#settings-execution-override · [source](../../codebase/frontend/index.html#L1924) |
+| Auto · the budget decides | Auto · the budget decides | name only (selected option, when clipped) | codebase/frontend/index.html:1925 · [source](../../codebase/frontend/index.html#L1925) |
+| Force Direct | Force Direct | name only (selected option, when clipped) | codebase/frontend/index.html:1926 · [source](../../codebase/frontend/index.html#L1926) |
+| Force Tiled | Force Tiled | name only (selected option, when clipped) | codebase/frontend/index.html:1927 · [source](../../codebase/frontend/index.html#L1927) |
+| Off · display driven | Off · display driven | name only (selected option, when clipped) | codebase/frontend/index.html:1933 · [source](../../codebase/frontend/index.html#L1933) |
+| 1K | 1K | name only (selected option, when clipped) | codebase/frontend/index.html:1934 · [source](../../codebase/frontend/index.html#L1934) |
+| 2K | 2K | name only (selected option, when clipped) | codebase/frontend/index.html:1935 · [source](../../codebase/frontend/index.html#L1935) |
+| 4K | 4K | name only (selected option, when clipped) | codebase/frontend/index.html:1936 · [source](../../codebase/frontend/index.html#L1936) |
+| Full | Full | name only (selected option, when clipped) | codebase/frontend/index.html:1937 · [source](../../codebase/frontend/index.html#L1937) |
+| Whole frame · refinement processes every tile Visible region · refinement processes what you see | When enabled, only the refinement pass is limited to the visible region: the tiles you can see are refined at full tier quality and the rest of the frame keeps the accepted image. Pan and zoom are never limited, so a newly exposed region always has complete pixels. | fixed | codebase/frontend/index.html::#settings-roi-preview · [source](../../codebase/frontend/index.html#L1942) |
+| Whole frame · refinement processes every tile | Whole frame · refinement processes every tile | name only (selected option, when clipped) | codebase/frontend/index.html:1943 · [source](../../codebase/frontend/index.html#L1943) |
+| Visible region · refinement processes what you see | Visible region · refinement processes what you see | name only (selected option, when clipped) | codebase/frontend/index.html:1944 · [source](../../codebase/frontend/index.html#L1944) |
 
 ### library dialogs
 
@@ -1087,8 +1112,8 @@ Clipped lane, scope, preview and filename labels use their visible text; dynamic
 | NAVIGATE | Drag to move the Navigate window | fixed | codebase/frontend/index.html:482 · [source](../../codebase/frontend/index.html#L482) |
 | Resize analysis dock | Resize analysis dock | name only (fallback) | codebase/frontend/index.html::#dock-splitter · [source](../../codebase/frontend/index.html#L487) |
 | Resize grade rail | Resize grade rail | name only (fallback) | codebase/frontend/index.html::#grade-splitter · [source](../../codebase/frontend/index.html#L587) |
-| Close help | Close | fixed | codebase/frontend/index.html::#help-close · [source](../../codebase/frontend/index.html#L1928) |
-| Close presets | Close | fixed | codebase/frontend/index.html::#group-preset-close · [source](../../codebase/frontend/index.html#L1942) |
+| Close help | Close | fixed | codebase/frontend/index.html::#help-close · [source](../../codebase/frontend/index.html#L1964) |
+| Close presets | Close | fixed | codebase/frontend/index.html::#group-preset-close · [source](../../codebase/frontend/index.html#L1978) |
 
 ### analysis-dock
 
@@ -1115,24 +1140,24 @@ Clipped lane, scope, preview and filename labels use their visible text; dynamic
 
 | Control / visible name | Text | Flags | ID and source |
 | --- | --- | --- | --- |
-| control aria-label | label | dynamic expression; name/status supplied at runtime | codebase/frontend/adjustment-controls.js:483 · [source](../../codebase/frontend/adjustment-controls.js#L483) |
-| dot aria-label | &#96;Reset ${label} to ${HDRFilmCharacter.owned.includes(key) ? "the stock" : "the baseline"}&#96; | dynamic expression | codebase/frontend/adjustment-controls.js:484 · [source](../../codebase/frontend/adjustment-controls.js#L484) |
-| key — text used by dynamic tooltips | path.replace("shared.geometry.", "") | dynamic supporting definition | codebase/frontend/adjustment-controls.js:315 · [source](../../codebase/frontend/adjustment-controls.js#L315) |
-| dot.title | &#96;Mod. Reset ${label} to ${HDRFilmCharacter.owned.includes(key) ? "the stock" : "the baseline"}&#96; | dynamic expression | codebase/frontend/adjustment-controls.js:485 · [source](../../codebase/frontend/adjustment-controls.js#L485) |
-| control.title | film.film_stock === "none" ? "Neutral has no halation of its own; these are absolute effect controls." : "100% is this stock's own value; Hue Offset 0 keeps its colour. Set values stay fixed when changing stock." | dynamic expression | codebase/frontend/adjustment-controls.js:486 · [source](../../codebase/frontend/adjustment-controls.js#L486) |
-| summary.title | summaries[name] | dynamic expression | codebase/frontend/adjustment-controls.js:540 · [source](../../codebase/frontend/adjustment-controls.js#L540) |
-| summaries — text used by dynamic tooltips | { camera:text("grain_film_format")+(film.lens_filter === "none" ? "" : &#96; · ${text("lens_filter")} ${grade}&#96;), negative:(film.grain_enabled ? &#96;Grain ${Math.round(film.grain_amount)}&#96; : "No grain")+" · "+(film.halation_enabled ? &#96;Halation ${Math.round(HDRFilmCharacter.toUi(film, "halation_amount", film.halation_amount))}%&#96; : "No halation"), development:film.push_pull === 0 ? "Normal" : film.push_pull &gt; 0 ? &#96;Push +${film.push_pull}&#96; : &#96;Pull ${film.push_pull}&#96;, print:slide ? "No print" : paper+(film.stock_print_warmth ? film.stock_print_warmth &gt; 0 ? " · Warm" : " · Cool" : ""), scan:(film.lab_levels ? "Lab levels" : "Clean")+(film.scan_sharpening ? &#96; · Sharpen ${film.scan_sharpening}&#96; : "")} | dynamic supporting definition | codebase/frontend/adjustment-controls.js:531 · [source](../../codebase/frontend/adjustment-controls.js#L531) |
-| grade — text used by dynamic tooltips | {0.125:"1/8", 0.25:"1/4", 0.5:"1/2", 1:"1", 2:"2"}[film.lens_strength] &#124;&#124; Number(film.lens_strength).toFixed(2) | dynamic supporting definition | codebase/frontend/adjustment-controls.js:530 · [source](../../codebase/frontend/adjustment-controls.js#L530) |
-| slide — text used by dynamic tooltips | film.film_stock !== "none" && character.default_paper === null | dynamic supporting definition | codebase/frontend/adjustment-controls.js:502 · [source](../../codebase/frontend/adjustment-controls.js#L502) |
-| paper — text used by dynamic tooltips | paperName(film.print_paper === "default" ? character.default_paper : film.print_paper) | dynamic supporting definition | codebase/frontend/adjustment-controls.js:512 · [source](../../codebase/frontend/adjustment-controls.js#L512) |
-| modified.title | count ? &#96;${count} modified controls&#96; : "" | dynamic expression | codebase/frontend/adjustment-controls.js:543 · [source](../../codebase/frontend/adjustment-controls.js#L543) |
+| control aria-label | label | dynamic expression; name/status supplied at runtime | codebase/frontend/adjustment-controls.js:479 · [source](../../codebase/frontend/adjustment-controls.js#L479) |
+| dot aria-label | &#96;Reset ${label} to ${HDRFilmCharacter.owned.includes(key) ? "the stock" : "the baseline"}&#96; | dynamic expression | codebase/frontend/adjustment-controls.js:480 · [source](../../codebase/frontend/adjustment-controls.js#L480) |
+| key — text used by dynamic tooltips | path.replace("shared.geometry.", "") | dynamic supporting definition | codebase/frontend/adjustment-controls.js:311 · [source](../../codebase/frontend/adjustment-controls.js#L311) |
+| dot.title | &#96;Mod. Reset ${label} to ${HDRFilmCharacter.owned.includes(key) ? "the stock" : "the baseline"}&#96; | dynamic expression | codebase/frontend/adjustment-controls.js:481 · [source](../../codebase/frontend/adjustment-controls.js#L481) |
+| control.title | film.film_stock === "none" ? "Neutral has no halation of its own; these are absolute effect controls." : "100% is this stock's own value; Hue Offset 0 keeps its colour. Set values stay fixed when changing stock." | dynamic expression | codebase/frontend/adjustment-controls.js:482 · [source](../../codebase/frontend/adjustment-controls.js#L482) |
+| summary.title | summaries[name] | dynamic expression | codebase/frontend/adjustment-controls.js:536 · [source](../../codebase/frontend/adjustment-controls.js#L536) |
+| summaries — text used by dynamic tooltips | { camera:text("grain_film_format")+(film.lens_filter === "none" ? "" : &#96; · ${text("lens_filter")} ${grade}&#96;), negative:(film.grain_enabled ? &#96;Grain ${Math.round(film.grain_amount)}&#96; : "No grain")+" · "+(film.halation_enabled ? &#96;Halation ${Math.round(HDRFilmCharacter.toUi(film, "halation_amount", film.halation_amount))}%&#96; : "No halation"), development:film.push_pull === 0 ? "Normal" : film.push_pull &gt; 0 ? &#96;Push +${film.push_pull}&#96; : &#96;Pull ${film.push_pull}&#96;, print:slide ? "No print" : paper+(film.stock_print_warmth ? film.stock_print_warmth &gt; 0 ? " · Warm" : " · Cool" : ""), scan:(film.lab_levels ? "Lab levels" : "Clean")+(film.scan_sharpening ? &#96; · Sharpen ${film.scan_sharpening}&#96; : "")} | dynamic supporting definition | codebase/frontend/adjustment-controls.js:527 · [source](../../codebase/frontend/adjustment-controls.js#L527) |
+| grade — text used by dynamic tooltips | {0.125:"1/8", 0.25:"1/4", 0.5:"1/2", 1:"1", 2:"2"}[film.lens_strength] &#124;&#124; Number(film.lens_strength).toFixed(2) | dynamic supporting definition | codebase/frontend/adjustment-controls.js:526 · [source](../../codebase/frontend/adjustment-controls.js#L526) |
+| slide — text used by dynamic tooltips | film.film_stock !== "none" && character.default_paper === null | dynamic supporting definition | codebase/frontend/adjustment-controls.js:498 · [source](../../codebase/frontend/adjustment-controls.js#L498) |
+| paper — text used by dynamic tooltips | paperName(film.print_paper === "default" ? character.default_paper : film.print_paper) | dynamic supporting definition | codebase/frontend/adjustment-controls.js:508 · [source](../../codebase/frontend/adjustment-controls.js#L508) |
+| modified.title | count ? &#96;${count} modified controls&#96; : "" | dynamic expression | codebase/frontend/adjustment-controls.js:539 · [source](../../codebase/frontend/adjustment-controls.js#L539) |
 
 ### app state
 
 | Control / visible name | Text | Flags | ID and source |
 | --- | --- | --- | --- |
-| branchCopy / hdr | Displays the active HDR grade or SDR fallback with current adjustments applied. Switch renditions in the Control Panel or use the layout buttons to view them side-by-side. | fixed (dynamic lookup) | codebase/frontend/app-state.js:1368 · [source](../../codebase/frontend/app-state.js#L1368) |
-| branchCopy / sdr | Displays the active HDR grade or SDR fallback with current adjustments applied. Switch renditions in the Control Panel or use the layout buttons to view them side-by-side. | fixed (dynamic lookup) | codebase/frontend/app-state.js:1369 · [source](../../codebase/frontend/app-state.js#L1369) |
+| branchCopy / hdr | Displays the active HDR grade or SDR fallback with current adjustments applied. Switch renditions in the Control Panel or use the layout buttons to view them side-by-side. | fixed (dynamic lookup) | codebase/frontend/app-state.js:1404 · [source](../../codebase/frontend/app-state.js#L1404) |
+| branchCopy / sdr | Displays the active HDR grade or SDR fallback with current adjustments applied. Switch renditions in the Control Panel or use the layout buttons to view them side-by-side. | fixed (dynamic lookup) | codebase/frontend/app-state.js:1405 · [source](../../codebase/frontend/app-state.js#L1405) |
 
 ### control panel
 
@@ -1149,21 +1174,21 @@ Clipped lane, scope, preview and filename labels use their visible text; dynamic
 | --- | --- | --- | --- |
 | button aria-label | Presets | name only (fallback candidate) | codebase/frontend/group-presets.js:46 · [source](../../codebase/frontend/group-presets.js#L46) |
 | row aria-label | preset.name | dynamic expression; name/status supplied at runtime | codebase/frontend/group-presets.js:181 · [source](../../codebase/frontend/group-presets.js#L181) |
-| button.title | title | dynamic expression; name/status supplied at runtime | codebase/frontend/group-presets.js:480 · [source](../../codebase/frontend/group-presets.js#L480) |
+| button.title | title | dynamic expression; name/status supplied at runtime | codebase/frontend/group-presets.js:486 · [source](../../codebase/frontend/group-presets.js#L486) |
 
 ### info panels
 
 | Control / visible name | Text | Flags | ID and source |
 | --- | --- | --- | --- |
-| dd.title | String(value ?? "") | dynamic expression | codebase/frontend/info-panels.js:355 · [source](../../codebase/frontend/info-panels.js#L355) |
+| dd.title | String(value ?? "") | dynamic expression | codebase/frontend/info-panels.js:357 · [source](../../codebase/frontend/info-panels.js#L357) |
 
 ### lanes compare
 
 | Control / visible name | Text | Flags | ID and source |
 | --- | --- | --- | --- |
-| els.viewerBranchNote.textContent | branchCopy[lane] | dynamic expression | codebase/frontend/lanes-compare.js:241 · [source](../../codebase/frontend/lanes-compare.js#L241) |
-| els.viewerBranchNote.textContent | &#96;${branchCopy[other]} Release V to return to the authored preview.&#96; | dynamic expression | codebase/frontend/lanes-compare.js:373 · [source](../../codebase/frontend/lanes-compare.js#L373) |
-| other — text used by dynamic tooltips | state.currentView === "hdr" ? "sdr" : "hdr" | dynamic supporting definition | codebase/frontend/lanes-compare.js:397 · [source](../../codebase/frontend/lanes-compare.js#L397) |
+| els.viewerBranchNote.textContent | branchCopy[lane] | dynamic expression | codebase/frontend/lanes-compare.js:248 · [source](../../codebase/frontend/lanes-compare.js#L248) |
+| els.viewerBranchNote.textContent | &#96;${branchCopy[other]} Release V to return to the authored preview.&#96; | dynamic expression | codebase/frontend/lanes-compare.js:381 · [source](../../codebase/frontend/lanes-compare.js#L381) |
+| other — text used by dynamic tooltips | state.currentView === "hdr" ? "sdr" : "hdr" | dynamic supporting definition | codebase/frontend/lanes-compare.js:406 · [source](../../codebase/frontend/lanes-compare.js#L406) |
 
 ### overlay ui
 
@@ -1183,7 +1208,7 @@ Clipped lane, scope, preview and filename labels use their visible text; dynamic
 
 | Control / visible name | Text | Flags | ID and source |
 | --- | --- | --- | --- |
-| replacement aria-label | canvas.getAttribute("aria-label") &#124;&#124; "Settled comparison preview" | dynamic expression | codebase/frontend/preview-pipeline.js:530 · [source](../../codebase/frontend/preview-pipeline.js#L530) |
+| replacement aria-label | canvas.getAttribute("aria-label") &#124;&#124; "Settled comparison preview" | dynamic expression | codebase/frontend/preview-pipeline.js:944 · [source](../../codebase/frontend/preview-pipeline.js#L944) |
 
 ### range controls
 
@@ -1196,8 +1221,8 @@ Clipped lane, scope, preview and filename labels use their visible text; dynamic
 
 | Control / visible name | Text | Flags | ID and source |
 | --- | --- | --- | --- |
-| canvas aria-label | els.scopeTitle.textContent | dynamic expression; name/status supplied at runtime | codebase/frontend/scope-drawing.js:17 · [source](../../codebase/frontend/scope-drawing.js#L17) |
-| canvas.title | scopeGuideTooltip(scope) | dynamic expression | codebase/frontend/scope-drawing.js:27 · [source](../../codebase/frontend/scope-drawing.js#L27) |
+| canvas aria-label | els.scopeTitle.textContent | dynamic expression; name/status supplied at runtime | codebase/frontend/scope-drawing.js:19 · [source](../../codebase/frontend/scope-drawing.js#L19) |
+| canvas.title | scopeGuideTooltip(scope) | dynamic expression | codebase/frontend/scope-drawing.js:29 · [source](../../codebase/frontend/scope-drawing.js#L29) |
 
 ### scope ui
 
@@ -1209,11 +1234,11 @@ Clipped lane, scope, preview and filename labels use their visible text; dynamic
 
 | Control / visible name | Text | Flags | ID and source |
 | --- | --- | --- | --- |
-| els.lensSettingsNote.dataset.tooltip | applied?.applied ? &#96;Applied ${applied.profile?.lens_maker &#124;&#124; ""} ${applied.profile?.lens_model &#124;&#124; "selected profile"}. Re-development is required after changing these controls.&#96; : applied?.warning &#124;&#124; applied?.reason &#124;&#124; "Auto applies only one exact profile match. Off and Manual are always available." | dynamic expression | codebase/frontend/session-import.js:451 · [source](../../codebase/frontend/session-import.js#L451) |
-| module.title | available ? "" : unavailableReason | dynamic expression | codebase/frontend/session-import.js:471 · [source](../../codebase/frontend/session-import.js#L471) |
-| option.title | &#96;${profile.mount &#124;&#124; "Unknown mount"} · ${profile.distortion ? "distortion" : "no distortion data"} · ${profile.chromatic_aberration ? "CA" : "no CA data"} · ${profile.vignetting ? "vignetting" : "no vignetting data"}&#96; | dynamic expression | codebase/frontend/session-import.js:530 · [source](../../codebase/frontend/session-import.js#L530) |
-| els.lensSettingsNote.dataset.tooltip | Save or relink the durable source before re-development. | fixed | codebase/frontend/session-import.js:569 · [source](../../codebase/frontend/session-import.js#L569) |
-| els.lensSettingsNote.dataset.tooltip | Choose a manual Lensfun profile or switch to Auto/Off. | fixed | codebase/frontend/session-import.js:573 · [source](../../codebase/frontend/session-import.js#L573) |
+| els.lensSettingsNote.dataset.tooltip | applied?.applied ? &#96;Applied ${applied.profile?.lens_maker &#124;&#124; ""} ${applied.profile?.lens_model &#124;&#124; "selected profile"}. Re-development is required after changing these controls.&#96; : applied?.warning &#124;&#124; applied?.reason &#124;&#124; "Auto applies only one exact profile match. Off and Manual are always available." | dynamic expression | codebase/frontend/session-import.js:461 · [source](../../codebase/frontend/session-import.js#L461) |
+| module.title | available ? "" : unavailableReason | dynamic expression | codebase/frontend/session-import.js:481 · [source](../../codebase/frontend/session-import.js#L481) |
+| option.title | &#96;${profile.mount &#124;&#124; "Unknown mount"} · ${profile.distortion ? "distortion" : "no distortion data"} · ${profile.chromatic_aberration ? "CA" : "no CA data"} · ${profile.vignetting ? "vignetting" : "no vignetting data"}&#96; | dynamic expression | codebase/frontend/session-import.js:540 · [source](../../codebase/frontend/session-import.js#L540) |
+| els.lensSettingsNote.dataset.tooltip | Save or relink the durable source before re-development. | fixed | codebase/frontend/session-import.js:593 · [source](../../codebase/frontend/session-import.js#L593) |
+| els.lensSettingsNote.dataset.tooltip | Choose a manual Lensfun profile or switch to Auto/Off. | fixed | codebase/frontend/session-import.js:597 · [source](../../codebase/frontend/session-import.js#L597) |
 
 ### status manager
 

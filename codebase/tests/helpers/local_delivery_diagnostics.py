@@ -58,7 +58,7 @@ def codec_bisect(array_path):
                         jpeg_gain_map_scale='full', dithering='off')
                     file = Path(tmp) / f'{renderer}.jpg'
                     # These isolate the initial codec, before local ceiling correction.
-                    e._write_jpeg_gainmap_once(file, hdr, sdr, settings)
+                    e.write_jpeg_gainmap_renditions(file, hdr, sdr, settings)
                     decoded[renderer] = load_image(file)
                     peaks[renderer] = float(channel_nits(decoded[renderer][0]).max())
                 results['encodes'][scenario] = {lane: metric(decoded['gpu'][index], decoded['cpu'][index], lane)

@@ -11,6 +11,8 @@ from .import_defaults import calibrate_camera_raw
 from .import_bands import map_import_negative
 
 from .analysis import classify_hdr
+from .denoise_quality import raw_cache_suffix
+from .delivery_frames import empty_source_array, mapped_source_array, source_float32
 from .color import (
     display_referred_sdr,
     sdr_file_renditions,
@@ -38,11 +40,11 @@ EXR_COLOR_INTEROP_SPACES = {
     "lin_ap1_scene": "ACEScg",
 }
 
-# Provenance for the persistent source mip cache (PRD 5.3). Bump either
-# constant when a change alters the decoded scene-linear pixels for the same
-# file; stale levels are then ignored and removed by version.
-SOURCE_DECODER_VERSION = "hdr-finisher-loader-jxl-metadata-v5"
-SOURCE_COLOR_TRANSFORM_VERSION = "acescg-source-primaries-v3"
+# Provenance for the persistent source mip cache (PRD 5.3). A recipe-specific
+# change can version just the affected source identities.
+SOURCE_DECODER_VERSION = "hdr-finisher-loader-signed-raw-v8"
+SOURCE_COLOR_TRANSFORM_VERSION = "acescg-signed-raw-source-v4"
+BAYER_NOISE_FIT_CACHE_SUFFIX = ":bayer-noise-fit-v1"
 
 # Display-P3 and sRGB share D65, so the hot-path linear conversion is a fixed
 # float32 matrix and does not require a general-purpose colour transform.
@@ -54,6 +56,13 @@ DISPLAY_P3_TO_SRGB = np.asarray(
     ],
     dtype=np.float32,
 )
+
+
+def source_decoder_version(even_out_specks: bool, *, bayer_cleanup: bool) -> str:
+    """Version the cached source pixels and measurements affected by RAW cleanup."""
+    speck_suffix = ":speck-light-v1" if even_out_specks else ""
+    fit_suffix = BAYER_NOISE_FIT_CACHE_SUFFIX if bayer_cleanup else ""
+    return SOURCE_DECODER_VERSION + speck_suffix + fit_suffix + raw_cache_suffix()
 
 
 class LoaderError(RuntimeError):
@@ -105,7 +114,7 @@ def load_image(
         elif suffix in {".tif", ".tiff"}:
             if progress:
                 progress("decoding_tiff", "Decoding full-resolution TIFF")
-            image, metadata = _load_tiff(path, library_edge=library_edge)
+            image, metadata = _load_tiff(path, library_edge=library_edge, cancelled=cancelled)
         elif suffix == ".exr":
             if progress:
                 progress("decoding_exr", "Decoding full-resolution OpenEXR")
@@ -181,7 +190,13 @@ def load_image(
     if image.ndim != 3:
         raise LoaderError(f"Decoded image has unsupported dimensions {image.shape}; expected a single 2D image.")
     if image.shape[2] == 1:
-        image = np.repeat(image, 3, axis=2)
+        rgb = mapped_source_array((*image.shape[:2], 3), image.dtype)
+        if rgb is None:
+            image = np.repeat(image, 3, axis=2)
+        else:
+            rgb[:] = image
+            image = rgb
+        del rgb
     if image.shape[2] > 3:
         image = image[..., :3]
 
@@ -239,13 +254,22 @@ def load_image(
     if (sdr_reference_image is None and not metadata.get("needs_color_override")
             and not metadata.get("decoder_normalized_to_acescg")
             and display_referred_sdr(metadata.get("color_space"), metadata.get("transfer_function"), suffix)):
-        normalized, sdr_reference_image = sdr_file_renditions(normalized)
+        sdr_reference_image = mapped_source_array(normalized.shape)
+        if sdr_reference_image is None:
+            normalized, sdr_reference_image = sdr_file_renditions(normalized)
+        else:
+            for top in range(0, len(normalized), 128):
+                _raise_if_cancelled(cancelled)
+                band = slice(top, top + 128)
+                scene, reference = sdr_file_renditions(normalized[band])
+                normalized[band] = scene
+                sdr_reference_image[band] = reference
         metadata["sdr_file_rendition"] = True
     reference_ms = (perf_counter()-reference_started)*1000
     # Unknown/conflicting primaries must be resolved before an irreversible
-    # AP1 gamut operation. All resolved import routes share this boundary,
-    # including decoder-normalized RAW, DNG and JPEG Ultra HDR.
-    if not metadata.get("needs_color_override") and metadata.get("color_space") is not None:
+    # AP1 gamut operation. Resolved non-RAW routes share this boundary;
+    # RAW and DNG scenes remain signed through source analysis and Denoise.
+    if not metadata.get("raw_input") and not metadata.get("needs_color_override") and metadata.get("color_space") is not None:
         normalized = map_import_negative(
             normalized, map_negative_acescg, cancelled=cancelled
         )
@@ -363,6 +387,17 @@ def _load_with_pillow(path: Path, *, encoded_samples: bool = False, draft_edge: 
     return normalized, metadata
 
 
+def _decode_tiff_integer_segments(page, shape, dtype, workers, cancelled):
+    pixels = empty_source_array(shape)
+    scale = np.float32(1.0 / float(np.iinfo(dtype).max))
+    for segment, (_, _, top, left, _), (_, rows, columns, _) in page.segments(maxworkers=workers):
+        _raise_if_cancelled(cancelled)
+        band = pixels[top:top + rows, left:left + columns]
+        band[:] = page.nodata if segment is None else segment[0, :band.shape[0], :band.shape[1]]
+        band *= scale
+    return pixels
+
+
 def _load_tiff(path: Path, *, library_edge: int | None = None, cancelled=None) -> tuple[np.ndarray, dict[str, Any]]:
     try:
         import tifffile
@@ -371,17 +406,33 @@ def _load_tiff(path: Path, *, library_edge: int | None = None, cancelled=None) -
 
     with tifffile.TiffFile(path) as tif:
         series = tif.series[0]
+        dtype = series.dtype
         from .cpu_budget import logical_cpus
         if library_edge is not None:
             from .library_reduced import read
             array, _ = read(path, edge=library_edge, cancelled=cancelled)
+            dtype = array.dtype
         else:
-            array = series.asarray(maxworkers=logical_cpus())
+            page = series.keyframe
+            def read_series():
+                return series.asarray(out=mapped_source_array(series.shape, dtype), maxworkers=logical_cpus())
+
+            if page.is_memmappable and dtype != np.dtype(np.float32):
+                try:
+                    array = tifffile.memmap(path, series=0, mode="r")
+                except ValueError:
+                    array = read_series()
+            elif (len(series.pages) == 1 and series.axes == "YXS" and np.issubdtype(dtype, np.integer)
+                  and page.shaped == (1, 1, *series.shape) and len(page.dataoffsets) > 1
+                  and not page.is_subsampled):
+                array = _decode_tiff_integer_segments(page, series.shape, dtype, logical_cpus(), cancelled)
+            else:
+                array = read_series()
         if library_edge is None:
             array = _normalize_tiff_layout(array, getattr(series, "axes", None))
         page = tif.pages[0]
         metadata = {
-            "bit_depth": str(array.dtype),
+            "bit_depth": str(dtype),
             "color_space": "unknown",
             "transfer_function": None,
             "photometric": str(getattr(page, "photometric", "unknown")),
@@ -399,10 +450,10 @@ def _load_tiff(path: Path, *, library_edge: int | None = None, cancelled=None) -
 
     if np.issubdtype(array.dtype, np.integer):
         max_value = float(np.iinfo(array.dtype).max)
-        normalized = array.astype(np.float32)
+        normalized = source_float32(array)
         normalized *= np.float32(1.0 / max_value)
     else:
-        normalized = array.astype(np.float32, copy=False)
+        normalized = source_float32(array, copy=False)
     del array
     return normalized, metadata
 
@@ -488,14 +539,9 @@ def _load_exr(
         height = dw.max.y - dw.min.y + 1
         float_type = Imath.PixelType(Imath.PixelType.FLOAT)
         channel_names = _select_exr_rgb_channels(header.get("channels", {}).keys())
-        image = np.empty((height, width, 3), dtype=np.float32)
+        image = empty_source_array((height, width, 3))
         read_timings = None
         if combined_channels:
-            # Library-only opt-in. One binding call per band shares compressed-
-            # block work across channels. The binding holds Python's lock for
-            # the whole call, so read in 256-row bands (a multiple of every EXR
-            # block height): other requests, such as the memory check, are
-            # answered between bands. The samples are identical.
             read_ms = interleave_ms = 0.0
             for top in range(0, height, EXR_BAND_ROWS):
                 _raise_if_cancelled(cancelled)
@@ -510,10 +556,14 @@ def _load_exr(
                 interleave_ms += (perf_counter() - started) * 1000
             read_timings = {"channels": read_ms, "interleave": interleave_ms}
         else:
-            for index, name in enumerate(channel_names):
+            for top in range(0, height, EXR_BAND_ROWS):
                 _raise_if_cancelled(cancelled)
-                channel = np.frombuffer(file.channel(name, float_type), dtype=np.float32)
-                image[..., index] = channel.reshape(height, width)
+                bottom = min(height, top + EXR_BAND_ROWS)
+                for index, name in enumerate(channel_names):
+                    channel = np.frombuffer(file.channel(name, float_type, dw.min.y + top, dw.min.y + bottom - 1),
+                                            dtype=np.float32)
+                    image[top:bottom, :, index] = channel.reshape(bottom - top, width)
+                    del channel
     finally:
         close = getattr(file, "close", None)
         if callable(close):

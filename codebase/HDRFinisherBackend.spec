@@ -8,6 +8,9 @@ from PyInstaller.utils.hooks import collect_all, collect_submodules
 
 block_cipher = None
 
+import runpy
+runpy.run_path("tools/build_signed_ahd.py", run_name="__main__")
+
 datas = [
     ("frontend", "frontend"),
     ("samples", "samples"),
@@ -43,6 +46,15 @@ imagecodecs_datas, imagecodecs_binaries, imagecodecs_hiddenimports = collect_all
 datas += imagecodecs_datas
 rawpy_datas, rawpy_binaries, rawpy_hiddenimports = collect_all("rawpy")
 lensfun_datas, lensfun_binaries, lensfun_hiddenimports = collect_all("lensfunpy")
+# The manylinux wheel stores Lensfun beside the Python package. Preserve that
+# path so the native correction loads the same library as lensfunpy.
+from importlib.metadata import distribution
+lensfun_distribution = distribution("lensfunpy")
+lensfun_binaries += [
+    (str(lensfun_distribution.locate_file(entry)), str(entry.parent))
+    for entry in lensfun_distribution.files
+    if entry.parent.name == "lensfunpy.libs" and entry.name.startswith("liblensfun-")
+]
 # Native hue selection uses OpenCV filtering. collect_all retains the wheel's
 # full LICENSE.txt and LICENSE-3RD-PARTY.txt as well as its native libraries.
 cv2_datas, cv2_binaries, cv2_hiddenimports = collect_all("cv2")
@@ -50,7 +62,6 @@ vips_datas, vips_binaries, vips_hiddenimports = collect_all("pyvips")
 # The binary wheel installs a top-level extension/DLL, not a pyvips_binary
 # import package. Resolve its installed files rather than collecting a name
 # which does not exist (and would silently omit the native decoder).
-from importlib.metadata import distribution
 vips_distribution = distribution("pyvips-binary")
 vips_native_binaries = [(str(vips_distribution.locate_file(file)), ".")
     for file in vips_distribution.files if str(file).endswith((".dll", ".pyd", ".so", ".dylib"))]
