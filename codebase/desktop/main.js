@@ -860,6 +860,7 @@ function registerIpc() {
     return choosePhotoTransition(options.actionLabel);
   });
   handle("desktop:complete-photo-close", (allowed) => {
+    if (allowed !== true && mainWindow?.pendingCloseAfterSave) mainWindow.pendingCloseAfterSave = false;
     if (!mainWindow?.pendingSidecarClose) return false;
     mainWindow.pendingSidecarClose = false;
     if (allowed !== true) return false;

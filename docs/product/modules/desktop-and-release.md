@@ -1,3 +1,11 @@
+### November 26, 2026: cancelled close-save requests
+
+Cancelling or failing a project Save during a window-close request clears the
+pending close through the existing close acknowledgement. A later unrelated
+successful Save keeps the window open. Successful close-saves and sidecar
+close acknowledgements retain their existing behavior. Five targeted desktop
+regressions cover cancellation, failure, later Save and the sidecar route.
+
 ## November 16: menu layering and platform shortcut labels
 
 Context menus, application menus and viewer/Library popovers use Chromium's
