@@ -1,5 +1,12 @@
 # Large native exports at the 4 GB default
 
+## November 26 - PC A1 corruption traced to faulty VRAM
+
+Steve confirmed that this PC's graphics card has faulty VRAM; the A1 50 MP GPU corruption was traced to that hardware, not application code.
+A full HDR intermediate scan was finite (maximum 1.5693), but a plain GPU copy changed red from 0.01077 to 2.08e23 at (8070, 2465), leaving green and blue unchanged.
+Full-size constant and two-dimensional synthetic inputs passed; alternate writes, shader specialization and retaining textures did not cure the real-photo corruption.
+All experiment code was restored. No app fix or tolerance change was made; qualify this A1 GPU case again on healthy hardware.
+
 ## Recommendation
 
 Keep GPU export and Proof when the job fits. At the Mac's 4 GB default,
