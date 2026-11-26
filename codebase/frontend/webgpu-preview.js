@@ -5346,6 +5346,7 @@
         encodeError = error;
       } finally {
         presentation?.release();
+        if (hslTileEngine?.retired.length) this.destroyAfterActiveRenders(() => hslTileEngine.dropRetired());
         localBuffers.forEach((entry) => entry.buffer.destroy());
         denoiseParamBuffers.forEach((buffer) => buffer.destroy());
         cleanGrainTransientTextures.forEach(texture => texture.destroy());

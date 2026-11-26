@@ -8,6 +8,14 @@
   scopes UI; backend `render_cache.py`, `cpu_strips.py`, `preview.py`,
   `scopes.py`, `overlay.py`, `peak_*.py`.
 
+## November 26: explicit HSL parameter-buffer retirement
+
+HSL selection parameter buffers now join the existing retired-resource list.
+They stay alive through command encoding and are explicitly destroyed after
+submission or abandonment, including the tiled-render cleanup path. Previously
+only outgrown textures used that cleanup; buffers depended on garbage collection.
+No shader, selection arithmetic, cache cap or image output changes.
+
 ## November 26: presentation setup recovery
 
 A throwing staleness check or canvas-resize callback releases the canvas gate
@@ -290,7 +298,7 @@ fresh results.
 
 ## November 8: movable Navigate window
 
-The Navigate window can be moved by dragging its labelled title bar, marked
+The Navigate window can be moved by dragging the solid top strip, marked
 with two grip lines. Dragging the picture still pans the photo. Placement
 lasts for the app session across photos, zoom and visibility changes; resizing
 the viewer keeps the window inside its bounds. It starts at bottom-right on
