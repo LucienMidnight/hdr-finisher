@@ -224,7 +224,9 @@ The other release failures and missing coverage below remain open.
   the unchanged 1000-nit target plus 1% encoding allowance.
 - `library-export-live-tiles.js`: complete seven-export run passes, all GPU
   including Sony, live drawing with Export open and closed, unchanged 5%
-  open-page timing guard. The former Sony refusal is gone.
+  open-page timing guard. The former Sony refusal is gone. Current policy keeps GPU
+  only when the job fits the app memory budget; larger eligible exports use
+  bounded CPU strips (see `technical/research/large-export-cpu-default.md`).
 
 Cause: `2202eddd` enabled previously unavailable Mac memory readings, exposing
 the old full-CPU-preview estimate on a source-only stream. `03af5471` improved
