@@ -749,11 +749,11 @@ cancellation, budget and allocation-failure checks.
 ## November 26: Grade Retouch spot removal
 
 MacBook Neo A18 Pro, 8 GB, 1408x794 points, unpackaged Electron under the
-shared GPU lock. Warm 6000x4000 synthetic photo with twelve saved 100 px
-Donor Texture Inpaint spots in the stack (one 12 px dust spot, eleven
-100 px spots). Times are from clicking Remove to the new exact picture.
-The matched baseline substitutes the original Retouch source/cache and
-transport code from `367b37d1`. Before and after use the same fixture,
+shared GPU lock. Warm 6000x4000 synthetic photo with twelve saved Inpaint
+spots (one 12 px dust repair, eleven 100 px Donor Texture spots). Times
+are from clicking Remove to the new exact picture. The matched baseline
+substitutes the pre-fix Retouch source, cache and transport implementations
+in the same checkout. Before and after use the same fixture,
 prepared at Fit in one setup transaction without artificial full reloads.
 
 | Action | Target | Before | After this change |
