@@ -362,6 +362,35 @@ class SourceMipStore:
         if published:
             self._prune_disk()
 
+    def refresh_repair_levels(
+        self, previous: SourceMipIdentity, identity: SourceMipIdentity, image: np.ndarray,
+        dirty_rects: tuple[tuple[int, int, int, int], ...],
+    ) -> None:
+        """Replace warm levels in the existing byte-bounded LRU, one at a time."""
+        from .retouch_preview import refresh_repair_level
+        old_digest, new_digest = previous.digest(), identity.digest()
+        with self._lock:
+            keys = [key for key in self._memory if key[0] == old_digest]
+        for key in keys:
+            with self._lock:
+                level = self._memory.get(key)
+            if level is None:
+                continue
+            try:
+                updated = refresh_repair_level(image, level, dirty_rects)
+            except MemoryError:
+                # Warming this level is optional. Keep the normal cold path
+                # when transient headroom disappears during an edit.
+                updated = None
+            with self._lock:
+                if self._memory.get(key) is not level:
+                    continue
+                self._memory_bytes -= int(self._memory.pop(key).nbytes)
+                if updated is not None:
+                    self._insert_memory_locked((new_digest, key[1]), updated)
+                else:
+                    app_memory.claim(self._ram_key, "working", self._memory_bytes)
+
     def discard_memory(self, identity: SourceMipIdentity) -> None:
         """Drop this identity's in-memory levels; disk entries stay reusable."""
         digest = identity.digest()
@@ -828,12 +857,20 @@ class SessionRenderCache:
         *,
         identity: SourceMipIdentity | None = None,
         sdr_identity: SourceMipIdentity | None = None,
+        repair_dirty_rects: tuple[tuple[int, int, int, int], ...] | None = None,
     ) -> None:
         with self._lock:
+            bounded = repair_dirty_rects is not None and image.shape == self.image.shape
+            same_sdr = (
+                bounded and self.sdr_reference_image is sdr_reference_image and self.sdr_identity == sdr_identity
+            )
             if self.mip_store is not None:
                 if self.source_identity is not None:
-                    self.mip_store.discard_memory(self.source_identity)
-                if self.sdr_identity is not None:
+                    if bounded and identity is not None:
+                        self.mip_store.refresh_repair_levels(self.source_identity, identity, image, repair_dirty_rects)
+                    else:
+                        self.mip_store.discard_memory(self.source_identity)
+                if self.sdr_identity is not None and not same_sdr:
                     self.mip_store.discard_memory(self.sdr_identity)
             self.image = image
             self._hue_stages.clear()
@@ -843,7 +880,8 @@ class SessionRenderCache:
             self.sdr_identity = sdr_identity
             self._source_epoch += 1
             self._source_proxies.clear()
-            self._sdr_proxies.clear()
+            if not same_sdr:
+                self._sdr_proxies.clear()
             self._source_ranges.clear()
             self._frames.clear()
             self._frame_scope_peaks.clear()
@@ -851,7 +889,18 @@ class SessionRenderCache:
             self._masks.clear()
             self._geometry_maps.clear()
             self._cancel_inflight_locked()
-            self._build_peak_candidates()
+            if bounded:
+                from .peak_candidates import source_candidates
+                # The original evidence and current source agree outside the
+                # changed cells, including cells that supply real peak samples.
+                previous = self._peak_candidates.get("hdr")
+                if previous is not None:
+                    self._peak_candidates["hdr"] = source_candidates(
+                        image, previous=previous, dirty_rects=repair_dirty_rects)
+                if not same_sdr:
+                    self._peak_candidates.pop("sdr", None)
+            else:
+                self._build_peak_candidates()
             self._rebalance_locked()
 
     def clear_adjusted(self, *, clear_masks: bool = False) -> None:

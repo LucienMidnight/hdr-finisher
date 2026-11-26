@@ -6,7 +6,7 @@ function fixture() {
   const pixels = new Float32Array(8*6*4).fill(1);
   const texture = {pixels, destroyed:false, destroy(){this.destroyed=true;}};
   const proxy = {texture, width:8, height:6, longEdge:256, lane:'hdr', sessionId:'photo',
-    geometrySignature:'{}', sourceIdentity:'source', pixelFormat:'rgba32float'};
+    geometrySignature:'{}', sourceIdentity:'source', workingSpace:'acescg', pixelFormat:'rgba32float'};
   const reduced = {...proxy, width:4, height:3, texture:{destroy(){this.destroyed=true;}}};
   const renderer = {proxies:new Map([['native',proxy],['reduced',reduced]]), resourceGeneration:0,
     device:{queue:{writeTexture({texture,origin}, data, layout, size){
@@ -92,4 +92,34 @@ for(const refused of [false,true])test(`held source bytes remain charged during 
   });
   assert.equal(await HDRSourceTransport.refreshRepairs(f.renderer,f.options),!refused);
   assert.equal(liveBytes,0,'temporary source reservation leaked');
+});
+
+test('Fit source refresh updates only the affected filtered box and retains the texture', async t => {
+  const f = fixture();
+  const width = 513, height = 385, fitWidth = 256, fitHeight = 192;
+  const texture = {width:fitWidth,pixels:new Float32Array(fitWidth*fitHeight*4).fill(1),
+    destroy(){this.destroyed=true;}};
+  const proxy = {...f.proxy,texture,width:fitWidth,height:fitHeight,longEdge:fitWidth};
+  f.renderer.proxies = new Map([['fit',proxy]]);
+  f.options.sourceSize = [width,height];
+  f.options.fitSource = {lane:'hdr',processedLongEdge:fitWidth,geometrySignature:'{}'};
+  f.options.records = [{enabled:true,recipe:{search_rect:[201,111,214,122]}}];
+  const [left,top,right,bottom] = [97,52,110,64];
+  t.mock.method(globalThis,'fetch',async url=>{
+    const q = new URL(url,'http://test').searchParams;
+    assert.deepEqual(['x','y','width','height'].map(key=>Number(q.get(key))),
+      [left,top,right-left,bottom-top]);
+    return new Response(new Float32Array((right-left)*(bottom-top)*4).fill(7).buffer,{headers:{
+      'X-Geometry-Signature':'{}','X-Edit-Revision':'3','X-Source-Epoch':'4',
+      'X-Pixel-Format':'rgba32float','X-Working-Space':'acescg',
+      'X-Tile-X':left,'X-Tile-Y':top,'X-Tile-Width':right-left,'X-Tile-Height':bottom-top,
+      'X-Output-Width':fitWidth,'X-Output-Height':fitHeight,'X-Bytes-Per-Row':(right-left)*16,
+    }});
+  });
+  assert.equal(await HDRSourceTransport.refreshRepairs(f.renderer,f.options),true);
+  assert.equal(f.renderer.proxies.get('fit'),proxy);
+  assert.equal(texture.destroyed,undefined);
+  for(let y=0;y<fitHeight;y++)for(let x=0;x<fitWidth;x++){
+    assert.equal(texture.pixels[(y*fitWidth+x)*4], x>=left&&x<right&&y>=top&&y<bottom ? 7 : 1);
+  }
 });

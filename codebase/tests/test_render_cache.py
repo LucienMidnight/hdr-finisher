@@ -722,6 +722,50 @@ def test_source_replacement_swaps_identity_and_drops_the_old_memory(tmp_path) ->
     assert float(np.max(level)) < 1.0
 
 
+@pytest.mark.parametrize("height,width", [(601, 823), (997, 701)])
+def test_retouch_reuses_exact_warm_mip_and_peak_evidence(tmp_path, height, width):
+    rng = np.random.default_rng(9)
+    original = rng.normal(0.1, 0.3, (height, width, 3)).astype(np.float32)
+    authored_sdr = original * .5
+    store = SourceMipStore(tmp_path / "mips")
+    original_id = _mip_identity(original)
+    sdr_id = _mip_identity(authored_sdr, content_key="authored-sdr")
+    cache = SessionRenderCache(original, authored_sdr, source_identity=original_id,
+                               sdr_identity=sdr_id, mip_store=store)
+    edge = 263
+    before, sdr_before = cache.source_pair(edge)
+    base_adjustments = AdjustmentState()
+    original_peaks = cache.peak_candidates(PreviewKind.HDR, base_adjustments)
+    # Exercise overlapping repairs and the ends of incomplete downsample
+    # blocks, with real negatives and new bright pixels in or near the spots.
+    rectangles = ((0, 0, 11, 12), (35, 42, 59, 66), (52, 60, 67, 73),
+                  (width - 9, height - 7, width, height))
+    repaired = original.copy()
+    for l, t, r, b in rectangles:
+        repaired[t:b, l:r, 0] = 5
+        repaired[t:b, l:r, 1] = -0.9
+    repairs_id = _mip_identity(repaired, content_key="repaired")
+    cache.replace_source(repaired, authored_sdr, identity=repairs_id,
+                         sdr_identity=sdr_id, repair_dirty_rects=rectangles)
+    after, sdr_after = cache.source_pair(edge)
+    np.testing.assert_array_equal(after.view(np.uint32), downsample_image(repaired, edge).view(np.uint32))
+    np.testing.assert_array_equal(before.view(np.uint32), downsample_image(original, edge).view(np.uint32))
+    assert sdr_after is sdr_before and not after.flags.writeable
+    assert store.diagnostics()["cold_builds"] == 2
+    reference = SessionRenderCache(repaired, None)
+    assert cache.peak_candidates(PreviewKind.HDR, base_adjustments)["samples"] == reference.peak_candidates(
+        PreviewKind.HDR, base_adjustments)["samples"]
+
+    cache.replace_source(original, authored_sdr, identity=original_id,
+                         sdr_identity=sdr_id, repair_dirty_rects=rectangles)
+    restored, _ = cache.source_pair(edge)
+    np.testing.assert_array_equal(restored.view(np.uint32), before.view(np.uint32))
+    restored_peaks = cache.peak_candidates(PreviewKind.HDR, base_adjustments)
+    assert restored_peaks["source_epoch"] > original_peaks["source_epoch"]
+    assert restored_peaks["samples"] == original_peaks["samples"]
+    assert store.diagnostics()["cold_builds"] == 2
+
+
 def test_color_context_changes_do_not_invalidate_source_mips(tmp_path) -> None:
     image = _mip_image()
     store = SourceMipStore(tmp_path / "mips")

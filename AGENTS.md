@@ -374,9 +374,8 @@ speed comparison is finished. Still open:
 same-Mac v0.9.2 comparisons and exact errors: `docs/known-limitations.md`,
 “Focused 0.9.3 release check on the minimum Mac”. Do not loosen guards.
 
-3. Confirm Retouch spot removal under one second, generated-SDR peak
-   reduction, and the extreme HDR Film case. Each
-   reproduces on v0.9.2 on this Mac. (Adaptive Denoise readback was a test
+3. Confirm generated-SDR peak reduction and the extreme HDR Film case.
+   Both reproduce on v0.9.2 on this Mac. (Adaptive Denoise readback was a test
    transport bug, fixed November 25; it now passes on the Mac.)
 4. Confirm zoomed Denoise, Film/Lens 4K-to-Full, repeated GPU delivery and live
    Export tiles on the PC. On the Mac these were fixed by `703e7e58` and pass.

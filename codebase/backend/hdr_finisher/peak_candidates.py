@@ -1,8 +1,8 @@
-"""Source evidence for bounded editing measurements, built once at import.
+"""Source evidence for bounded editing measurements, built at import.
 
 Keep real RGB pixels and their positions: independently pooled channels would
-invent colours. Editing only transforms this fixed, small list. It never scans
-the native source again and never grades pixels on the CPU.
+invent colours. Editing only transforms this fixed, small list. Retouch refreshes
+only the cells touched by changed repairs. It never grades pixels on the CPU.
 """
 from __future__ import annotations
 
@@ -14,18 +14,34 @@ GRID = 64
 MAX_CANDIDATES = GRID * GRID * 4
 
 
-def source_candidates(image: np.ndarray) -> np.ndarray:
+def source_candidates(image: np.ndarray, *, previous=None, dirty_rects=()) -> np.ndarray:
+    """Reuse evidence for unchanged grid cells when a repair changes the source."""
     height, width = image.shape[:2]
-    positions = set()
     ys = np.linspace(0, height, min(GRID, height) + 1, dtype=int)
     xs = np.linspace(0, width, min(GRID, width) + 1, dtype=int)
+    if previous is None:
+        positions = set()
+        cells = np.ndindex(len(ys) - 1, len(xs) - 1)
+    elif not dirty_rects:
+        return previous
+    else:
+        changed = np.zeros((len(ys) - 1, len(xs) - 1), dtype=bool)
+        for left, top, right, bottom in dirty_rects:
+            columns = (xs[:-1] < right) & (xs[1:] > left)
+            rows = (ys[:-1] < bottom) & (ys[1:] > top)
+            changed |= rows[:, None] & columns[None, :]
+        px = np.searchsorted(xs, previous[:, 0], side="right") - 1
+        py = np.searchsorted(ys, previous[:, 1], side="right") - 1
+        positions = set(map(tuple, previous[~changed[py, px], :2].astype(int)))
+        cells = np.argwhere(changed)
     weights = np.array([.2722287, .6740818, .0536895], dtype=np.float32)
-    for top, bottom in zip(ys[:-1], ys[1:]):
-        for left, right in zip(xs[:-1], xs[1:]):
-            cell = image[top:bottom, left:right, :3]
-            for signal in [cell[..., channel] for channel in range(3)] + [cell @ weights]:
-                y, x = np.unravel_index(np.argmax(signal), signal.shape)
-                positions.add((left + int(x), top + int(y)))
+    for iy, ix in cells:
+        top, bottom = ys[iy:iy + 2]
+        left, right = xs[ix:ix + 2]
+        cell = image[top:bottom, left:right, :3]
+        for signal in [cell[..., channel] for channel in range(3)] + [cell @ weights]:
+            y, x = np.unravel_index(np.argmax(signal), signal.shape)
+            positions.add((left + int(x), top + int(y)))
     xy = np.array(sorted(positions), dtype=np.float32)
     return np.column_stack((xy, image[xy[:, 1].astype(int), xy[:, 0].astype(int), :3])).astype(np.float32)
 

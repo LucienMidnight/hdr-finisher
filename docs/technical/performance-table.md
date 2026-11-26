@@ -746,6 +746,31 @@ comparisons against GPU passed at the existing limits. The 59 synthetic
 GPU cases passed with worst absolute error 0.00000510, plus the existing
 cancellation, budget and allocation-failure checks.
 
+## November 26: Grade Retouch spot removal
+
+MacBook Neo A18 Pro, 8 GB, 1408x794 points, unpackaged Electron under the
+shared GPU lock. Warm 6000x4000 synthetic photo with twelve saved 100 px
+Donor Texture Inpaint spots in the stack (one 12 px dust spot, eleven
+100 px spots). Times are from clicking Remove to the new exact picture.
+The matched baseline substitutes the original Retouch source/cache and
+transport code from `367b37d1`. Before and after use the same fixture,
+prepared at Fit in one setup transaction without artificial full reloads.
+
+| Action | Target | Before | After this change |
+| --- | --- | --- | --- |
+| Delete a saved Inpaint spot at 100% | ≤ 1 s | 0.668–0.966 s | 0.201–0.511 s |
+| Delete a saved Inpaint spot at Fit | ≤ 1 s | 0.872–0.897 s | 0.192–0.489 s |
+
+One matched baseline and two final runs, three removals per view per run.
+The old setup's locked trace captured 0.832–0.975 s at 100% and
+0.920–1.419 s at Fit. It showed zero solves on deletion, 27–119 ms for the
+native snapshot copy/composite, 450–815 ms to install it, and a fresh
+8.6 MiB Fit texture upload. The new Fit path transfers 24.5–25 KiB of
+changed Fit pixels per removal, in addition to the existing native patch.
+The earlier partial fix without retained Fit textures still hit 1.106 s
+once. The latest runs kept every deletion under budget. No timing, pixel
+or memory guard was loosened. Evidence: `output/retouch-nov26-isolated*/result.json`.
+
 ## November 25: overnight focused release check on the minimum Mac
 
 MacBook Neo A18 Pro, 8 GB, 1408x794 points, unpackaged Electron under the

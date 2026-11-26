@@ -826,11 +826,11 @@
     }
   }
 
-  /** Retain only unresampled native source textures; refresh solved pixels,
-   * never rerun repair at a display tier. All derived render caches are reset.
-   * Any refusal drops the retained textures and uses the normal full loader.
+  /** Retain native source textures and the currently displayed Fit level.
+   * The backend supplies the same filtered pixels as a whole-source reload.
+   * Derived render caches are reset, and a refusal uses the ordinary loader.
    */
-  async function refreshRepairs(renderer, {sessionId, editRevision, sourceSize, geometry, records, isCurrent}) {
+  async function refreshRepairs(renderer, {sessionId, editRevision, sourceSize, geometry, records, fitSource, isCurrent}) {
     const [width, height] = sourceSize;
     const crop = geometry.crop;
     const untransformed = !geometry.rotation && !geometry.flip_horizontal && !geometry.flip_vertical
@@ -838,9 +838,13 @@
       && !geometry.perspective_rotate && crop.x === 0 && crop.y === 0 && crop.width === 1 && crop.height === 1;
     const retained = new Map();
     if (untransformed) for (const [key, proxy] of renderer.proxies) {
+      const native = proxy.width === width && proxy.height === height
+        && proxy.longEdge >= Math.max(width, height);
+      const visibleFit = fitSource && !proxy.region && proxy.longEdge < Math.max(width, height)
+        && proxy.longEdge === fitSource.processedLongEdge && proxy.lane === fitSource.lane
+        && proxy.geometrySignature === fitSource.geometrySignature;
       if (proxy.sessionId === sessionId && (!proxy.region || proxy.regionTransport) && proxy.sourceIdentity === "source"
-          && proxy.width === width && proxy.height === height && proxy.longEdge >= Math.max(width, height)
-          && ["rgba16float", "rgba32float"].includes(proxy.pixelFormat)) {
+          && (native || visibleFit) && ["rgba16float", "rgba32float"].includes(proxy.pixelFormat)) {
         retained.set(key, proxy);
         renderer.proxies.delete(key);
       }
@@ -861,15 +865,25 @@
     const rectangles = [...new Map(records.filter(r => r.enabled).map(r =>
       [r.recipe.search_rect.join(","), r.recipe.search_rect])).values()];
     const refreshed = new Set();
-    let transferredBytes = 0;
+    let transferredBytes = 0, fitTextures = 0;
     try {
       for (const proxy of retained.values()) {
         if (refreshed.has(proxy.texture)) continue;
         let epoch;
-        const region = proxy.region || {x:0, y:0, width, height};
+        const region = proxy.region || {x:0, y:0, width:proxy.width, height:proxy.height};
+        const reduced = proxy.width !== width || proxy.height !== height;
+        const sx = width / proxy.width, sy = height / proxy.height;
+        const block = Math.ceil(Math.max(sx, sy));
         for (const rectangle of rectangles) {
-          const left = Math.max(rectangle[0], region.x), top = Math.max(rectangle[1], region.y);
-          const right = Math.min(rectangle[2], region.x+region.width), bottom = Math.min(rectangle[3], region.y+region.height);
+          const [l, t, r, b] = rectangle;
+          // Cover the Lanczos taps and neighbouring range-clamp blocks used
+          // by the backend's Fit resize, including pixels outside the brush.
+          const mx = reduced ? Math.max(3 * sx, 2 * block) : 0;
+          const my = reduced ? Math.max(3 * sy, 2 * block) : 0;
+          const left = Math.max(Math.floor((l-mx)/sx), region.x);
+          const top = Math.max(Math.floor((t-my)/sy), region.y);
+          const right = Math.min(Math.ceil((r+mx)/sx), region.x+region.width);
+          const bottom = Math.min(Math.ceil((b+my)/sy), region.y+region.height);
           if (left >= right || top >= bottom) continue;
           const query = new URLSearchParams({long_edge: proxy.longEdge, format: proxy.pixelFormat === "rgba16float" ? "rgba16f" : "rgba32f",
             edit_revision: editRevision, geometry_signature: proxy.geometrySignature,
@@ -882,9 +896,10 @@
           if (!current() || headers.get("X-Geometry-Signature") !== proxy.geometrySignature
               || Number(headers.get("X-Edit-Revision")) !== editRevision
               || headers.get("X-Pixel-Format") !== proxy.pixelFormat
+              || headers.get("X-Working-Space") !== proxy.workingSpace
               || Number(headers.get("X-Tile-X")) !== left || Number(headers.get("X-Tile-Y")) !== top
               || Number(headers.get("X-Tile-Width")) !== right-left || Number(headers.get("X-Tile-Height")) !== bottom-top
-              || Number(headers.get("X-Output-Width")) !== width || Number(headers.get("X-Output-Height")) !== height) {
+              || Number(headers.get("X-Output-Width")) !== proxy.width || Number(headers.get("X-Output-Height")) !== proxy.height) {
             throw supersededError("Repair texture refresh superseded");
           }
           epoch = headers.get("X-Source-Epoch");
@@ -895,6 +910,7 @@
           transferredBytes += data.byteLength;
         }
         refreshed.add(proxy.texture);
+        if (reduced) fitTextures += 1;
       }
       if (!current()) throw supersededError("Repair texture refresh superseded");
       // Re-register synchronously, without double charging the reservation.
@@ -905,7 +921,7 @@
         if (renderer.proxies.has(key)) continue;
         renderer.proxies.set(key, proxy);
       }
-      renderer.recordStage("repair-source-refresh", {bytes: transferredBytes, textures: refreshed.size});
+      renderer.recordStage("repair-source-refresh", {bytes: transferredBytes, textures: refreshed.size, fitTextures});
       return true;
     } catch (error) {
       renderer.recordStage("repair-source-refresh", {textures:0, reason:error.message});

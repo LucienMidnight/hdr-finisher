@@ -504,7 +504,7 @@ class SessionStore:
         from copy import copy
         from types import SimpleNamespace
         from concurrent.futures import CancelledError
-        from .retouch_source import build_repaired_source, repair_identity
+        from .retouch_source import build_repaired_source, repair_dirty_rectangles, repair_identity
         with self._lock:
             session = self.get(session_id)
             if any(c.command_type == "set_repairs" and c.payload.get("repair_request_id") in session.retouch_cancelled_requests for c in commands):
@@ -522,6 +522,7 @@ class SessionStore:
                     raise RevisionConflictError(command.expected_revision, draft.edit_revision)
                 self._apply_edit_command(draft, command)
             changed = repair_identity(draft.repairs) != repair_identity(session.repairs)
+            dirty_rects = repair_dirty_rectangles(session.repairs, draft.repairs) if changed else None
             if changed and session.retouch_worker is None:
                 from .retouch_jobs import RepairWorker
                 session.retouch_worker = RepairWorker()
@@ -533,17 +534,17 @@ class SessionStore:
                     or session.retouch_original is not original or self.current() is not session):
                 raise CancelledError("Repair cancelled or superseded; the previous image was retained")
         try:
-            pixels = build_repaired_source(session, draft.repairs, check, previous_records=session.repairs)
+            pixels = build_repaired_source(session, draft.repairs, check, dirty_rects=dirty_rects)
         except CancelledError as exc:
             raise EditCommandError(str(exc)) from exc
         try:
             with self._lock:
                 check()
-                return self._commit_edit_commands(session_id, commands, repaired_pixels=pixels)
+                return self._commit_edit_commands(session_id, commands, repaired_pixels=pixels, repair_dirty_rects=dirty_rects)
         except CancelledError as exc:
             raise EditCommandError(str(exc)) from exc
 
-    def _commit_edit_commands(self, session_id: str, commands: list[EditCommand], *, repaired_pixels=None) -> EditStateResponse:
+    def _commit_edit_commands(self, session_id: str, commands: list[EditCommand], *, repaired_pixels=None, repair_dirty_rects=None) -> EditStateResponse:
         with self._lock:
             session = self.get(session_id)
             original = (
@@ -570,7 +571,8 @@ class SessionStore:
                     self._apply_edit_command(session, command)
                 if repaired_pixels is not None:
                     from .retouch_source import install_repaired_source
-                    install_repaired_source(session, repaired_pixels, _source_mip_identity(session))
+                    install_repaired_source(session, repaired_pixels, _source_mip_identity(session),
+                        dirty_rects=repair_dirty_rects)
                     self._publish_retained_session_bytes()
             except Exception:
                 (

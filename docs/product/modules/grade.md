@@ -1,3 +1,21 @@
+## November 26: deleting a Retouch spot in Grade
+
+Removing a saved spot restores original native pixels and composites any
+surviving overlapping repairs in saved order. Inpaint isn't rerun for
+unrelated spots. The edit passes the changed native footprints to preview
+publication. Warm Fit levels reuse filtered pixels outside those footprints
+and their filter margins. The viewer patches the affected part of the
+displayed Fit texture rather than uploading the whole texture again. Peak
+evidence is rescanned only for intersecting cells when already cached.
+Cold or large edits can still use the full resize. No new cache, saved field,
+memory allowance or repair algorithm was introduced.
+
+The latency driver deletes saved Inpaint spots. It does not measure creating
+or retrying a repair. The November 24 Heal/Clone CPU change (`62d79a99` on
+`feat/denoise-v1`) explicitly retained the Inpaint GPU route with CPU fallback
+and is not in this branch. Both final locked Mac runs passed the one-second
+guard at 100% and Fit. See the performance table for the matched measurements.
+
 ## November 26: exact Retouch GPU input comparison
 
 The GPU kernel driver now independently builds one packet through the production

@@ -12,11 +12,36 @@ from .retouch_jobs import RepairRevision, RepairWorker
 from .retouch_recipe import stroke_mask
 
 
+REPAIR_PUBLICATION_SCRATCH_BYTES = 64 * 1024**2
+
+
 def repair_identity(records):
     return json.dumps([r.model_dump(mode="json") for r in records], sort_keys=True, separators=(",", ":"))
 
 
-def build_repaired_source(session, records, checkpoint=lambda: None, *, previous_records=None):
+def repair_footprint(record):
+    recipe = record.recipe
+    width, height = recipe.source_size
+    radius = recipe.radius_px
+    xs = [p.x * width for p in recipe.points]
+    ys = [p.y * height for p in recipe.points]
+    return (max(0, int(np.floor(min(xs)-radius))), max(0, int(np.floor(min(ys)-radius))),
+            min(width, int(np.ceil(max(xs)+radius))), min(height, int(np.ceil(max(ys)+radius))))
+
+
+def repair_dirty_rectangles(previous_records, records):
+    """Native footprints whose composite can change between two documents."""
+    old = {r.id: r.recipe for r in previous_records if r.enabled}
+    new = {r.id: r.recipe for r in records if r.enabled}
+    reordered = ([key for key in old if key in new] != [key for key in new if key in old])
+    dirty = [repair_footprint(r) for r in previous_records
+             if r.enabled and (reordered or r.recipe != new.get(r.id))]
+    dirty += [repair_footprint(r) for r in records
+              if r.enabled and (reordered or r.recipe != old.get(r.id))]
+    return tuple(dict.fromkeys(dirty))
+
+
+def build_repaired_source(session, records, checkpoint=lambda: None, *, dirty_rects=None):
     base = session.retouch_original
     active = [record for record in records if record.enabled]
     if not active:
@@ -31,37 +56,12 @@ def build_repaired_source(session, records, checkpoint=lambda: None, *, previous
     resources = detect_memory_resources()
     if resources.total_ram_bytes is not None and resources.available_ram_bytes is not None:
         safe = max(0, resources.available_ram_bytes - max(2 * GIB, int(resources.total_ram_bytes * .15)))
-        if base.nbytes + 64 * 1024**2 > safe:
+        if base.nbytes + REPAIR_PUBLICATION_SCRATCH_BYTES > safe:
             raise ValueError("Not enough memory to publish this repair; free memory and try again")
-    def signature(record):
-        return (record.enabled, record.recipe.model_dump_json())
-
-    def footprint(record):
-        recipe = record.recipe
-        width, height = recipe.source_size
-        radius = recipe.radius_px
-        xs = [p.x * width for p in recipe.points]
-        ys = [p.y * height for p in recipe.points]
-        return (max(0, int(np.floor(min(xs)-radius))), max(0, int(np.floor(min(ys)-radius))),
-                min(width, int(np.ceil(max(xs)+radius))), min(height, int(np.ceil(max(ys)+radius))))
-
-    incremental = previous_records is not None
-    if incremental:
-        old = {r.id: r for r in previous_records}
-        new = {r.id: r for r in records}
-        dirty = [footprint(r) for r in previous_records
-                 if r.enabled and (r.id not in new or signature(r) != signature(new[r.id]))]
-        dirty += [footprint(r) for r in records
-                  if r.enabled and (r.id not in old or signature(r) != signature(old[r.id]))]
-        # Reordering changes precedence in overlapping painted areas.
-        old_ids = {r.id for r in previous_records if r.enabled}
-        new_ids = {r.id for r in active}
-        if ([r.id for r in previous_records if r.enabled and r.id in new_ids] !=
-                [r.id for r in active if r.id in old_ids]):
-            dirty = [footprint(r) for r in (*previous_records, *records) if r.enabled]
-    else:
+    if dirty_rects is None:
         dirty = [(0, 0, base.shape[1], base.shape[0])]
-    dirty = list(dict.fromkeys(dirty))
+    else:
+        dirty = dirty_rects
     if not dirty:
         checkpoint()
         return session.image
@@ -69,7 +69,7 @@ def build_repaired_source(session, records, checkpoint=lambda: None, *, previous
     def intersects(a, b):
         return a[0] < b[2] and a[2] > b[0] and a[1] < b[3] and a[3] > b[1]
 
-    needed = [r for r in active if any(intersects(footprint(r), rect) for rect in dirty)]
+    needed = [r for r in active if any(intersects(repair_footprint(r), rect) for rect in dirty)]
     worker = session.retouch_worker
     if worker is None:
         worker = session.retouch_worker = RepairWorker()
@@ -91,7 +91,7 @@ def build_repaired_source(session, records, checkpoint=lambda: None, *, previous
         ph, pw = patch.pixels.shape[:2]
         patches.append((patch, alpha[oy:oy+ph, ox:ox+pw] > 0))
     result = np.empty_like(base)
-    source = session.image if incremental else base
+    source = session.image if dirty_rects is not None else base
     for top in range(0, base.shape[0], 128):
         checkpoint()
         result[top:top+128] = source[top:top+128]
@@ -113,10 +113,11 @@ def build_repaired_source(session, records, checkpoint=lambda: None, *, previous
     return result
 
 
-def install_repaired_source(session, pixels, identity):
+def install_repaired_source(session, pixels, identity, *, dirty_rects=None):
     session.image = pixels
     session.render_cache.replace_source(pixels, session.sdr_reference_image,
-        identity=identity, sdr_identity=session.render_cache.sdr_identity)
+        identity=identity, sdr_identity=session.render_cache.sdr_identity,
+        repair_dirty_rects=dirty_rects)
 
 
 def restore_repairs(session, identity, checkpoint=lambda: None):

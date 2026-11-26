@@ -227,6 +227,9 @@ async function resetRepairSource(previousRepairs, documentState) {
   if (previousRepairs === JSON.stringify(documentState.repairs || [])) return;
   state.repairSourceGeneration = (state.repairSourceGeneration || 0) + 1;
   const sessionId = state.session.session_id, revision = state.editRevision;
+  const displayed = state.acceptedPresentation;
+  const fitSource = state.zoomMode === "fit" && displayed?.exact && displayed.lane === state.currentView
+    ? displayed : null;
   state.gpuPreparedLane = { hdr: false, sdr: false };
   state.localMaskDraftController?.abort();
   state.localMaskDraftGeneration += 1;
@@ -253,7 +256,7 @@ async function resetRepairSource(previousRepairs, documentState) {
   const reordered = JSON.stringify(oldRepairs.filter(r => r.enabled && newIds.has(r.id)).map(r => r.id)) !==
     JSON.stringify(newRepairs.filter(r => r.enabled && oldIds.has(r.id)).map(r => r.id));
   if (renderer) await HDRSourceTransport.refreshRepairs(renderer, {
-    sessionId, editRevision: revision,
+    sessionId, editRevision: revision, fitSource,
     sourceSize: [state.session.source.width, state.session.source.height],
     geometry: documentState.global_adjustments.shared.geometry,
     records: reordered ? [...oldRepairs, ...newRepairs] : [...changedRepairs(oldRepairs, newRepairs), ...changedRepairs(newRepairs, oldRepairs)],
