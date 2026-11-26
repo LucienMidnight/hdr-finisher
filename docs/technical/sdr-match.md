@@ -30,6 +30,17 @@ parity or speed guarantees; extreme highlights can still differ visibly.
 The calibrated materialization test retains its existing median-luma cap of
 0.012 and now passes. No match acceptance or perceptual limits were relaxed.
 
+Validation on the PC: 53 targeted Python tests and 19 Node tests passed.
+`tests/sdr-match-gpu-interaction.js` passed inside disposable Electron at
+2560x1440 under the shared GPU lock. Whole Match took 674 ms / 21 GPU
+candidates on its `hdr_headroom.tiff` scenario. Moving Exposure preserved all
+other global and local values; raw GPU pixels equalled the original matched
+recipe with only Exposure changed. The interaction stayed on WebGPU with no
+CPU previews or SDR source-proxy requests. Match and slider Undo/Redo, stable
+Denoise/grain previews and resetting the visible controls also passed.
+This richer scenario reported `needs_review` (p95 luma 0.03142, p95 OKLab
+0.01741); the existing 0.03 normal-match luma gate remains unchanged.
+
 ## November 16 (historical): Steve approved safe linking and target-relative ordering
 
 Whole-photo Match first tries the common HDR creative scene and a late SDR

@@ -1,3 +1,4 @@
+const assert = require("node:assert/strict");
 const { chromium } = require("playwright");
 const fs = require("fs");
 const path = require("path");
@@ -149,6 +150,8 @@ function sameBuffer(left, right) {
       throw new Error(`Committed match exceeded its safety gate: ${JSON.stringify(matched.metrics)}`);
     }
 
+    assert.equal(await page.evaluate(() => state.adjustments.sdr.linked_to_hdr), false);
+    const matchedDocument = await page.evaluate(() => structuredClone(state.editDocument));
     interactionRequests.tracking = true;
     const exposureInteraction = await page.evaluate(() => {
       const beforeGeneration = state.previewGeneration.sdr;
@@ -181,6 +184,32 @@ function sameBuffer(left, right) {
         exposureInteraction, exposureResult, interactionRequests,
       })}`);
     }
+
+    await page.evaluate(() => syncGlobalEditState());
+    const edited = await page.evaluate(() => structuredClone(state.editDocument));
+    const expected = structuredClone(matchedDocument);
+    expected.global_adjustments.sdr.exposure = edited.global_adjustments.sdr.exposure;
+    assert.deepEqual(edited.global_adjustments, expected.global_adjustments,
+      "moving Exposure preserves every other matched control");
+    assert.deepEqual(edited.local_adjustments, expected.local_adjustments);
+    // Compare actual GPU pixels with the original recipe plus only Exposure.
+    // Identical recipes on the same GPU must be byte-identical, not approximate.
+    const images = await page.evaluate(async expected => {
+      state.previewScheduler?.cancel();
+      if (state.gpuDraftInFlight) await state.gpuDraftInFlight.catch(() => null);
+      const read = async adjustments => {
+        const canvas = document.createElement('canvas');
+        const result = await state.gpuPreview.renderTo(canvas, state.session.session_id, 'sdr', adjustments,
+          sampleCurvePoints, 768, state.editDocument.local_adjustments, state.editRevision, null,
+          projectReferenceWhiteNits(), {width: state.session.source.width, height: state.session.source.height},
+          {measureOnly:true, scopeAnalysis:true, sourceLane:'hdr', frameAnchor:true});
+        if (!result) throw Error('GPU reference refused');
+        const pixels = await state.gpuPreview.analyzeScope(canvas, {width:canvas.width,height:canvas.height,tier:'picture',raw:true});
+        return Array.from(pixels.halves);
+      };
+      return [await read(state.adjustments), await read(expected.global_adjustments)];
+    }, expected);
+    assert.deepEqual(images[0], images[1], 'picture changes only by the edited control');
 
     const interactionCleanup = await page.evaluate(async (matchedRecipe) => {
       await syncGlobalEditState();
