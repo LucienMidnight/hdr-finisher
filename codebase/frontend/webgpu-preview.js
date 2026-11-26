@@ -1935,14 +1935,6 @@
       if (maskEngine) this.destroyAfterActiveRenders(() => maskEngine.destroy());
     }
 
-    hslSelectionBytes() {
-      let bytes = 0;
-      for (const owned of this.hslSelectionEngines?.values() || []) {
-        for (const engine of Object.values(owned)) bytes += engine.bytes();
-      }
-      return bytes;
-    }
-
     /** Global HSL channels as the selection reads them, from the packed slots. */
     hslSelectionChannels(params) {
       if (!(params[GPU_PARAMS.HSL_SHARED_SELECTION] > 0.5)) return [];

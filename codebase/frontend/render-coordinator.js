@@ -332,10 +332,6 @@
       return this.laneState(lane).inFlight;
     }
 
-    inFlightPromise(lane) {
-      return this.laneState(lane).inFlight?.promise || null;
-    }
-
     foregroundBusy() {
       for (const lane of this.lanes.keys()) {
         const st = this.laneState(lane);

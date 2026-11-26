@@ -4,9 +4,17 @@
 - **Master PRD:** [PRD](../PRD.md)
 - **Last status check:** October 18, 2026, against the code.
 - **Code:** frontend `webgpu-preview.js`, `webgpu-shaders.js`, `gpu-*.js`
-  (including `gpu-param-layout.js`, `graph-scale.js`), `render-plan*.js`,
+  (including `gpu-param-layout.js`, `graph-scale.js`), `gpu-render-plan.js`,
   scopes UI; backend `render_cache.py`, `cpu_strips.py`, `preview.py`,
   `scopes.py`, `overlay.py`, `peak_*.py`.
+
+## November 26: unused helpers and stale planning comments
+
+Removed the uncalled in-flight-promise accessor and HSL byte-summing method
+(confirmed against frontend, tests, tools and docs). Delivery now reads its job
+size directly instead of optionally calling a geometry helper that does not
+exist and always fell back to that same size. Viewport/tile comments describe
+the shipped region route; Auto-budget comments name the existing calibration.
 
 ## November 26: explicit HSL parameter-buffer retirement
 

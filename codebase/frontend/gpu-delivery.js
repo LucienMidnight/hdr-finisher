@@ -194,7 +194,7 @@
         stamp("raw_development_ms");
       }
       gpu.executionOverride="tiled";
-      const [width,height]=window.HDRGeometryResample?.outputDimensions?.(job.width,job.height,job.adjustments.shared.geometry)||[job.width,job.height];
+      const {width,height}=job;
       // Reserve all full-frame finishing scratch before admitting the creative
       // graph. It can choose its existing tiled route within the remainder.
       const filmPixels=width*height,outputPixels=job.output[0]*job.output[1];
