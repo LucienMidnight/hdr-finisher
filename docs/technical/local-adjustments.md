@@ -162,9 +162,9 @@ Local adjustments are an ordered stage between global color grading and post-loc
 
 ## V1 additions planned (Steve, October 21, 2026)
 
-- **Healing brush:** required in the local adjustment module for v1. Not
-  implemented. See the Retouch brush development plan below for Inpaint,
-  Heal and Clone modes, CPU-first reasoning and implementation gates.
+- **Retouch brush, built:** Inpaint, Heal and Clone publish repaired native
+  pixels for Grade, Library, Proof and export. The Grade module PRD records
+  current routes and validation; the October plan below is historical.
 - **Hue-selection mask, built October 27:** `hue_range` is an ordinary mask
   leaf with nullable `hue_center`, `hue_width` (half-range), `hue_smoothness`,
   `saturation_floor` and mask opacity. Null centre selects nothing. Photo
@@ -231,16 +231,18 @@ Proof/export identity and exact decoded HDR ceiling. No tolerances changed.
 Measurements, codec limitation, defaults and final validation are recorded in
 the Grade PRD's October 27 hue-refinement note.
 
-Retouch remains planned in full; hue selection is part of the contracts below.
-The [Grade module PRD](../product/modules/grade.md) owns their scope and
+Retouch and hue selection are implemented. The
+[Grade module PRD](../product/modules/grade.md) owns their current scope and
 implementation status.
 
 ## Retouch brush development plan (October 21, 2026)
 
-**Status:** isolated CPU quality prototype implemented October 21, 2026;
-the Retouch brush, application integration and quality gate remain unbuilt.
-This section records Steve's agreed direction and the development sequence.
-The existing shipping contracts below do not yet include retouching.
+**Historical plan, superseded by the Grade module PRD:** the isolated CPU
+prototype grew into the integrated Retouch brush. Inpaint uses the GPU with
+CPU fallback; saved Heal and Clone use the float64 CPU solver. Repairs read
+the immutable original and composite in saved order, so adding or removing a
+spot cannot change completed donors. The following problem statement and
+development sequence record the October 21 plan, not remaining work.
 
 ### Problem and intended result
 

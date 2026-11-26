@@ -154,8 +154,8 @@ def prepare_repair(recipe: InpaintRecipe, read_region, *, read_excluded=None,
 def compose_repairs(pixels: np.ndarray, origin: tuple[int, int], patches) -> np.ndarray:
     """Copy intersections of completed native patches, without another solve.
 
-    Patches are already feathered. They must come from the same source and
-    dependency revision, in document order, each solved over preceding repairs.
+    Patches are already feathered. They must come from the same immutable
+    original and dependency revision, and be composited in document order.
     This function cannot establish that identity; the session must check it.
     Only the caller's requested window is copied; source and cache stay intact.
     """
