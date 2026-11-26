@@ -891,3 +891,10 @@ metrics and small decision crops. `tests/test_ai_highlights_research.py`
 checks mask/blend results, Bayer phases and the unchanged original-sensor gain
 anchor. These are offline experiments, never production imports; findings:
 [AI highlights](research/denoise-v1-2026-11-16/ai-highlights.md).
+
+## November 26: portable Denoise research builds
+
+`codebase/tools/denoise_eval/candidates/native_build.py` builds the offline
+signed-AHD and LMMSE research libraries: discovered Visual C++ on Windows,
+unchanged Clang commands on macOS/Linux. Temporary compiler files stay outside
+the checkout; no production processing or packaged helper changes.

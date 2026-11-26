@@ -12,10 +12,11 @@ import hashlib
 import io
 import os
 from pathlib import Path
-import subprocess
 from types import SimpleNamespace
 
 import numpy as np
+
+from tools.denoise_eval.candidates.native_build import build_shared
 import rawpy
 import tifffile
 
@@ -36,10 +37,7 @@ def library():
         BUILD.mkdir(parents=True, exist_ok=True)
         binary = BUILD / (digest + ('.dll' if os.name == 'nt' else '.so'))
         if not binary.exists():
-            command = ['clang', '-O3', '-std=c11', '-shared', str(source), '-o', str(binary)]
-            if os.name != 'nt':
-                command += ['-fPIC', '-lm']
-            subprocess.run(command, check=True)
+            build_shared(source, binary)
         _LIBRARY = ctypes.CDLL(str(binary))
         pointer = np.ctypeslib.ndpointer(dtype=np.float32, flags='C_CONTIGUOUS')
         integers = np.ctypeslib.ndpointer(dtype=np.int32, flags='C_CONTIGUOUS')
