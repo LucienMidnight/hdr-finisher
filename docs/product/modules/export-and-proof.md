@@ -1,3 +1,16 @@
+## November 26 — Resized GPU delivery admission
+
+Resized exports and full-size Proof count the native source and resize scratch,
+but size the delivered HDR and SDR buffers at the requested output dimensions.
+The expanded CPU strip path had applied the native-delivery estimate to resized
+output too, routing a 42 MP Sony resized to 4000 px to CPU before a GPU attempt.
+Resized GPU delivery uses the existing bounded row transfer, and the vertical
+resize output is allocated after the horizontal pass releases the native input.
+For large sources, each lane releases its native proxy and grading work before
+starting the resize. The second lane uploads the source again so the native
+grading and finishing textures do not need to stay resident together.
+The app memory ceiling, GPU budget and native-delivery fallback are unchanged.
+
 ## November 26 — Grade-to-Export GPU handoff
 
 Opening Export already cancels Grade's pending preview and Denoise work.

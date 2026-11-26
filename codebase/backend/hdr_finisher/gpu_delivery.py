@@ -246,7 +246,7 @@ def _render_pair(frame, owner, settings, adjustments):
         if getattr(settings, "_bounded_cpu_delivery", False):
             reason = "app_memory_ceiling"
             record = {"renderer": "cpu", "fallback_reason":
-                "Native GPU delivery working set does not fit the existing app memory ceiling; using bounded CPU strips."}
+                "GPU delivery working set does not fit the existing app memory ceiling; using bounded CPU strips."}
             return None
         if grain_reconstruction and not grain_trial:
             # The log keeps the reason code; the export result says it in plain words.
@@ -260,13 +260,16 @@ def _render_pair(frame, owner, settings, adjustments):
             cacheable = False
             raise RuntimeError("The GPU delivery renderer is unavailable.")
         reference = getattr(frame, "sdr_reference_image", None)
-        from .finishing import geometry_output_dimensions, resolve_output_dimensions
+        from .delivery_frames import SOURCE_SPILL_BYTES
+        from .finishing import resolve_output_dimensions
         height, width = frame.image.shape[:2]
-        output = resolve_output_dimensions(*geometry_output_dimensions(width, height, adjustments.shared.geometry), settings.output_finishing)
+        native = geometry_output_dimensions(width, height, adjustments.shared.geometry)
+        output = resolve_output_dimensions(*native, settings.output_finishing)
         from .photo_framing import delivery_layout, layer_colors
         from .hdr_ceiling import delivery_ceiling_nits
         layout = delivery_layout(frame, settings, adjustments)
         photo_output = list(layout.photo[2:]) if layout else list(output)
+        resized = tuple(photo_output) != native
         if layout:
             output = (layout.width, layout.height)
         raw = getattr(frame, "raw_development", None)
@@ -328,6 +331,10 @@ def _render_pair(frame, owner, settings, adjustments):
             "locals": [v.model_dump(mode="json") for v in adjustments.enabled_locals(getattr(frame, "local_adjustments", []))],
             "denoise": denoise.model_dump(mode="json"), "denoise_source_identity": source_identity(frame),
             "grain_reconstruction": grain_trial,
+            # Do not allocate another full final-size RGBA array for browser
+            # readback and upload while a resized job holds finishing buffers.
+            "row_upload": grain_trial or resized,
+            "retire_before_finish": resized and frame.image.nbytes >= SOURCE_SPILL_BYTES,
             "finishing": settings.output_finishing.model_dump(mode="json"),
             "priority": getattr(frame, "delivery_priority", 20), "created": time.time()})
         reply = _wait_for_result(directory, root, frame)
@@ -799,7 +806,7 @@ def create_gpu_delivery_router():
         _, value = active[identity]
         if value.get("streamed") or lane not in value["memory"]:
             raise HTTPException(400, "Unexpected delivery lane.")
-        if (row is not None or rows is not None) != bool(value.get("grain_reconstruction")):
+        if (row is not None or rows is not None) != bool(value.get("row_upload")):
             raise HTTPException(400, "Incorrect delivery pixel transport.")
         if row is not None or rows is not None:
             width, height = value["output"]

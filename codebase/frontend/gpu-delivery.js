@@ -261,13 +261,19 @@
             stamp("finish_readback_and_handoff_ms",lane);
             continue;
           }
+          if(job.retire_before_finish){
+            // On large sources, do not keep the native proxy and creative
+            // graph resident through resize just to save the other lane's upload.
+            await gpu.waitForSubmittedWork();
+            gpu.resetSession(job.id);hdrSource=null;
+          }
           const endpoint=`/api/delivery/gpu/${job.id}/pixels/${lane}`;
           const sendRows=async(row,rows,pixels)=>{
             const uploaded=await fetch(`${endpoint}?row=${row}&rows=${rows}`,{method:"POST",body:new Blob([pixels])});
             if(!uploaded.ok)throw Error("GPU encoder strip handoff failed.");
           };
           const texture=await finishing.finish(capture,job,lane);stamp("finishing_ms",lane);
-          if(job.grain_reconstruction){
+          if(job.row_upload){
             await finishing.read(texture,sendRows);
             stamp("readback_and_handoff_ms",lane);
             continue;

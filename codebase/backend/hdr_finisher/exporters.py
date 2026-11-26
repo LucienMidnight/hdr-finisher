@@ -336,8 +336,24 @@ def _render_branch_pixels(
         from . import app_memory
         height, width = session.image.shape[:2]
         from .finishing import geometry_output_dimensions
-        output = geometry_output_dimensions(width, height, adjustments.shared.geometry)
-        gpu_required = width * height * 12 + output[0] * output[1] * 76 + 288 * 1024**2
+        native = geometry_output_dimensions(width, height, adjustments.shared.geometry)
+        output = (layout.width, layout.height) if layout is not None else target_size
+        native_pixels = native[0] * native[1]
+        output_pixels = output[0] * output[1]
+        resized = target_size != native
+        finishing_and_handoff = 76 * native_pixels
+        if resized:
+            photo_pixels = target_size[0] * target_size[1]
+            # Keep native capture/conversion and resize scratch in the estimate,
+            # even for very small outputs. Only the two RGBA handoffs and their
+            # RGB copies (2 * (16 + 12) bytes per pixel) are always final size.
+            conversion = 24 * native_pixels
+            resize = 16 * (native_pixels + target_size[0] * native[1] + photo_pixels)
+            finish_bytes = photo_pixels * (32 if settings.output_finishing.sharpening == "off" else 96)
+            if layout is not None:
+                finish_bytes += 16 * output_pixels
+            finishing_and_handoff = 56 * output_pixels + max(conversion, resize, finish_bytes)
+        gpu_required = width * height * 12 + finishing_and_handoff + 288 * 1024**2
         # The hidden renderer has its own working set on top of the current
         # Grade window. Don't allocate its shared input and output arrays when
         # the measured desktop already leaves too little room for them.
@@ -345,10 +361,10 @@ def _render_branch_pixels(
         if gpu_prepared_denoise and os.environ.get("HDR_FINISHER_DESKTOP_PID"):
             memory = app_memory.snapshot()
             starting = max(starting, memory["totalBytes"] + memory["reservedBytes"])
-            # The hidden renderer's readback and the main process's mapped
-            # upload can coexist for the current float32 RGBA rendition.
+            # Keep the extra float32 RGBA transport headroom for prepared
+            # Denoise, even though a resized job transfers it in rows.
             if not grain_delivery_enabled(session):
-                gpu_required += output[0] * output[1] * 2 * 16
+                gpu_required += (output_pixels if resized else native_pixels) * 2 * 16
         if starting + gpu_required > app_memory.CEILING:
             object.__setattr__(settings, "_bounded_cpu_delivery", True)
     pair = render_pair(session, settings, adjustments)

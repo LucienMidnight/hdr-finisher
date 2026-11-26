@@ -519,6 +519,27 @@ def _finishing_session(image):
         framing=framing, sdr_reference_image=None, local_adjustments=[], hdr_reference_white_nits=203)
 
 
+@pytest.mark.parametrize(("resize_mode", "bounded_cpu"), [("original", True), ("long_edge", False)])
+def test_resized_delivery_counts_final_size_handoffs(tmp_path, monkeypatch, resize_mode, bounded_cpu):
+    from hdr_finisher import app_memory, exporters, gpu_delivery
+
+    monkeypatch.setattr(app_memory, "CEILING", 4_000_000_000)
+    monkeypatch.delenv(gpu_delivery.STREAMED_TRIAL_ENV, raising=False)
+    source = np.broadcast_to(np.float32(.18), (7968, 5320, 3))
+    session = SimpleNamespace(image=source, adjustments=AdjustmentState(), local_adjustments=[])
+    settings = ExportSettings(format="jpeg_ultrahdr", output_finishing=OutputFinishingSettings(
+        resize_mode=resize_mode, long_edge=4000, sharpening="off"))
+
+    def render_pair(frame, request, adjustments):
+        assert bool(getattr(request, "_bounded_cpu_delivery", False)) is bounded_cpu
+        # Admission is the subject here; do not allocate the full-size pair.
+        return {"hdr": np.zeros((1, 1, 3), dtype=np.float32)}
+
+    monkeypatch.setattr(gpu_delivery, "render_pair", render_pair)
+    exporters._render_export_branch(session, settings, PreviewKind.HDR, session.adjustments,
+                                    delivery_path=tmp_path / "hdr.rgb")
+
+
 @pytest.mark.parametrize("kind", [PreviewKind.HDR, PreviewKind.SDR])
 def test_delivery_preserves_whole_frame_roll_pixels(tmp_path, monkeypatch, kind):
     from hdr_finisher import exporters, gpu_delivery

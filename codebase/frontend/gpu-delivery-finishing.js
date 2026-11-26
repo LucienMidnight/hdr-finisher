@@ -107,8 +107,11 @@ fn lanczos(v:f32)->f32 { if(abs(v)>=3.){return 0.;} return sinc(v)*sinc(v/3.); }
     await this.run(0,capture,image);this.release(capture);
     const [width,height]=job.photo_output || job.output;
     if(width!==image.width || height!==image.height){
-      const horizontal=this.texture(width,image.height), resized=this.texture(width,height);
+      const horizontal=this.texture(width,image.height);
       await this.run(1,image,horizontal,{axis:0});this.release(image);
+      // Do not hold the resized texture alongside the native input. The
+      // horizontal pass has fenced its work before we release that input.
+      const resized=this.texture(width,height);
       await this.run(1,horizontal,resized,{axis:1});this.release(horizontal);image=resized;
     }
     if(job.finishing.sharpening!=="off"){

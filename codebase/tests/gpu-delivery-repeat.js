@@ -59,7 +59,7 @@ const harness=global.HDRFinisherElectronTestHarness;
         output_finishing:{resize_mode:"long_edge",long_edge:4000,sharpening:"off"}};
       const start=Date.now();
       const exported=await api(`/api/session/${id}/export`,{...settings,output_path:file,path_grant:destination.grant});
-      assert.ok(exported.accepted,JSON.stringify(exported));assert.equal(exported.renderer,renderer);
+      assert.ok(exported.accepted,JSON.stringify(exported));assert.equal(exported.renderer,renderer,exported.fallback_reason);
       const proof=await api(`/api/session/${id}/proof/artifact`,{...settings,full_size:true});
       assert.equal(proof.renderer,renderer);
       const response=await harness.fetch(`/api/proof/artifact/${proof.artifact_id}.jpg`);

@@ -7,12 +7,12 @@ import pytest
 from fastapi import FastAPI, WebSocketDisconnect
 from fastapi.testclient import TestClient
 from hdr_finisher import app_memory, gpu_delivery, delivery
-from hdr_finisher.models import AdjustmentState, DenoiseDocumentSettings, ExportSettings
+from hdr_finisher.models import AdjustmentState, DenoiseDocumentSettings, ExportSettings, OutputFinishingSettings
 
 
 @pytest.mark.parametrize("worker_ready_at_first_request", [True, False])
-@pytest.mark.parametrize("grain", [False, True])
-def test_paired_handoff_reuses_compatible_versions_and_proof_owner(tmp_path, monkeypatch, worker_ready_at_first_request, grain):
+@pytest.mark.parametrize("mode", ["native", "grain", "resized"])
+def test_paired_handoff_reuses_compatible_versions_and_proof_owner(tmp_path, monkeypatch, worker_ready_at_first_request, mode):
     monkeypatch.setattr(delivery, "PREFERENCES_PATH", tmp_path / "policy.json")
     monkeypatch.delenv(delivery.FORCE_CPU_ENV, raising=False)
     monkeypatch.setattr(gpu_delivery, "_clients", {})
@@ -20,12 +20,14 @@ def test_paired_handoff_reuses_compatible_versions_and_proof_owner(tmp_path, mon
     app = FastAPI(); app.include_router(gpu_delivery.create_gpu_delivery_router())
     frame = SimpleNamespace(image=np.full((4,6,3), .18, dtype=np.float32), local_adjustments=[],
         adjustments=AdjustmentState(), denoise=DenoiseDocumentSettings())
-    if grain:
+    if mode == "grain":
         frame.denoise.hdr.enabled = True
         frame.denoise.hdr.controls.method = "clean_grain"
         monkeypatch.setenv(gpu_delivery.GRAIN_TRIAL_ENV, "1")
         monkeypatch.setattr(app_memory, "snapshot", lambda: {"totalBytes": 0, "reservedBytes": 0})
     settings=ExportSettings()
+    if mode == "resized":
+        settings.output_finishing = OutputFinishingSettings(resize_mode="long_edge", long_edge=3)
     with TestClient(app) as client, ThreadPoolExecutor(max_workers=1) as worker:
         if not worker_ready_at_first_request:
             assert gpu_delivery.render_pair(frame, settings, frame.adjustments) is None
@@ -38,24 +40,29 @@ def test_paired_handoff_reuses_compatible_versions_and_proof_owner(tmp_path, mon
             if job is not None: break
             assert time.monotonic()<deadline
             time.sleep(.01)
+        width, height = (3, 2) if mode == "resized" else (6, 4)
+        first_rows = height // 2
+        cut = first_rows * width * 16
         for lane, value in (("hdr", .18), ("sdr", .3)):
-            pixels=np.full((4,6,4), value, dtype="<f4").tobytes()
+            pixels=np.full((height,width,4), value, dtype="<f4").tobytes()
             endpoint = f"/api/delivery/gpu/{job['id']}/pixels/{lane}"
-            if grain:
+            if mode != "native":
                 assert client.post(endpoint, content=pixels).status_code == 400
-                assert client.post(f"{endpoint}?row=2&rows=2", content=pixels[192:]).status_code == 400
-                assert client.post(f"{endpoint}?row=0&rows=2", content=pixels[:192]).status_code == 204
-                assert client.post(f"{endpoint}?row=2&rows=2", content=pixels[192:]).status_code == 204
+                second = f"{endpoint}?row={first_rows}&rows={height - first_rows}"
+                assert client.post(second, content=pixels[cut:]).status_code == 400
+                assert client.post(f"{endpoint}?row=0&rows={first_rows}", content=pixels[:cut]).status_code == 204
+                assert client.post(second, content=pixels[cut:]).status_code == 204
             else:
                 assert client.post(endpoint, content=pixels).status_code == 204
         assert client.post(f"/api/delivery/gpu/{job['id']}/complete", json={}).status_code==200
         pair=pending.result(timeout=5)
+        assert pair["hdr"].shape == (height, width, 3)
         np.testing.assert_allclose(pair["hdr"], .18)
         np.testing.assert_allclose(pair["sdr"], .3)
         proof=SimpleNamespace(**vars(frame)); proof.delivery_owner=frame
         # Full-size Proof supplies native framing dimensions even without a frame.
         proof.framing_source_size=(6,4); proof.framing_output_limit=None
-        compatible=ExportSettings(format="sdr_png")
+        compatible=ExportSettings(format="sdr_png", output_finishing=settings.output_finishing)
         assert gpu_delivery.render_pair(proof, compatible, frame.adjustments) is pair
         assert proof._delivery_record=={"renderer":"gpu", "fallback_reason":None}
         assert client.get("/api/delivery/gpu/next").json() is None
