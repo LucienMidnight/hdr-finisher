@@ -90,3 +90,32 @@ def test_shared_export_executor_removes_failed_staging_file(tmp_path: Path) -> N
     assert len(staged_paths) == 1
     assert not staged_paths[0].exists()
     assert not (tmp_path / "output.png").exists()
+
+
+@pytest.mark.parametrize("overwrite", [False, True])
+def test_file_created_during_encoding_requires_overwrite_permission(tmp_path, overwrite):
+    output = tmp_path / "output.png"
+    staged_paths = []
+
+    def write(path):
+        staged_paths.append(path)
+        path.write_bytes(b"encoded export")
+        output.write_bytes(b"another export")
+
+    def run():
+        return exporters._execute_export(
+            SimpleNamespace(name="fixture"), SimpleNamespace(session_id="session"),
+            _settings(output).model_copy(update={"overwrite": overwrite}),
+            suffix=".png",
+            prepare=lambda: exporters._PreparedExport(".png", write, lambda _: None),
+            success_message=lambda *_: "saved", failure_prefix=None,
+        )
+
+    if overwrite:
+        assert run().accepted
+        assert output.read_bytes() == b"encoded export"
+    else:
+        with pytest.raises(exporters.ExportOverwriteRequired):
+            run()
+        assert output.read_bytes() == b"another export"
+    assert not staged_paths[0].exists()
