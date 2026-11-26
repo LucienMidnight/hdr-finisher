@@ -142,3 +142,27 @@ Note: the November 24 "Heal and Clone on the CPU" change is only on
 
 Still waiting on files from the PC: DSC00950 source link, a noise-free EXR,
 Edge and the JPEG XL helper (see the table above).
+
+## Denoise merge — November 26
+
+`feat/denoise-v1` merged at `2fc09428` (conflict choices in that commit message).
+Full release run after the first merge fixes (`74286a54`): 101 passed, 2 flaky,
+20 failed. Fixed and re-checked on the Mac since: Library native/recovery
+timeouts (4 drivers), Library stage A, overlay backlog, zoomed Denoise source
+region, linear DNG memory, GPU export handoff (HSL, ceiling), signed EXR Denoise
+measurement, local adjustments, Retouch CPU fallback. Steve skipped a second full
+release run; fast checks only before merging to `main`.
+
+Still open after the merge:
+- `tests/gpu-delivery-repeat.js`: a later repeated GPU export is refused with
+  0.09 GiB safely available and falls back to CPU. Possibly memory not
+  released between exports. Needs a look.
+- `tests/menu-shortcuts.js`: dialog shortcut step fails; an unverified driver
+  fix hung for 25 minutes and was not committed
+  (`ai-handoff-2026-11-26/unverified-menu-shortcuts.diff`).
+- `tests/film-stock-parity.js`: the accepted paper-gain difference is matched,
+  but the `--presets-ui` follow-up has a separate error; an untested fix is in
+  `ai-handoff-2026-11-26/unverified-film-presets-ui-check.diff`.
+- `tests/test_denoise_native_model.py::test_fixed_calibration_matches_the_seeded_white_noise_measurement`
+  fails by ~6e-7 (also on `feat/denoise-v1` alone); tolerance not changed.
+- Native helpers changed: run setup after pulling on the PC.
