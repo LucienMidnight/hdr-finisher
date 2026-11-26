@@ -4327,6 +4327,34 @@ during the explicit 640 and 2560 px requests in each route/run. The photo
 was named while the matching source actually ran in all six route cases
 per run. No app behavior or output tolerance changed.
 
+## November 26: Linear DNG Library memory admission
+
+MacBook Neo, A18 Pro, 8 GB, 1408×794 points, unpackaged Electron under the
+shared GPU lock. Default 4.0 GB app ceiling and unchanged OS/GPU reserves.
+These are observed waits, not a new time limit.
+
+| DxO optical-correction DNG (42.2 MP) | CPU + GPU reservation on unified memory | Source grant result |
+| --- | ---: | --- |
+| Merged `2fc09428`, GPU Library preview | 1.181 + 2.092 = 3.273 GB | 664.9 s waiting before refusal, in a roughly 750 s driver run |
+| Denoise alone at `3067a98e`, GPU-only sample | 1.181 + 2.092 = 3.273 GB | Stalled after 60.5 s, still waiting when stopped after over four minutes |
+| RGB-pass calculation (`2c7cf1e3`) | 1.181 + 1.105 = 2.286 GB | Four grants waited 0–0.518 s. Both full drivers passed in 116.52 and 116.89 s |
+
+The old grant waited on whole-app memory, GPU room and the OS reserve, then
+collected and reclaimed memory. When it refused, 1.129 GB already in use plus
+the 3.273 GB reservation exceeded the protected turn's 4.4 GB allowance by
+2.1 MB. No GPU source decode ran in either failing comparison. Denoise
+added 4 bytes per pixel for signed Bayer candidates to a shared estimate,
+including this already-demosaiced RGB file. The CPU GainMap/Warp work did
+not run on it. The corrected estimate covers the full RGB input, three
+planes, the compact highlight mask and one-plane reduction. Its embedded
+SDR frame runs after the first frame frees its GPU buffers, not alongside it.
+
+DxO's explicit 640 px GPU development took 3.67–3.78 s. The GPU allocation
+peak was 1.035 GB on each grant. The largest measured whole-app increase
+during a grant was 1.402 GB. Both runs passed all three DNGs on both routes,
+all 59 synthetic geometry cases, and the existing finished-pixel and border
+checks. No tolerance, admission limit or output changed.
+
 ## November 26: Grade Retouch spot removal
 
 MacBook Neo A18 Pro, 8 GB, 1408x794 points, unpackaged Electron under the
