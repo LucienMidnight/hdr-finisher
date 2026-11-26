@@ -37,3 +37,19 @@ test('batch grid accepts an empty job and clears removed rows',()=>{
  s.model.photos=[];s.render();assert.equal(s.grid.children.length,0);
 });
 module.exports={harness};
+
+
+test('late batch selection replies cannot replace newer photos or reset their destination',async()=>{
+ const source=fs.readFileSync(require.resolve('../frontend/batch-export.js'),'utf8');
+ const pending=[],display={};let renders=0;
+ const model={paths:[],photos:[],selected:new Set(),directory:'',grant:null,anchor:0};
+ const context={model,$:()=>display,renderGrid:()=>renders++,api:(_route,body)=>new Promise(resolve=>pending.push({body,resolve}))};
+ vm.createContext(context);const start=source.indexOf('  let photoRequest='),end=source.indexOf('  async function authorizeDirectory',start);
+ vm.runInContext(source.slice(start,end),context);
+ const old=context.setPhotos(['old']),fresh=context.setPhotos(['fresh']);
+ pending[1].resolve({photos:[{path:'fresh',source_path:'/new/photo.raw'}]});assert.equal(await fresh,true);
+ model.directory='/chosen';model.grant='chosen-grant';model.selected.add('fresh');
+ pending[0].resolve({photos:[{path:'old',source_path:'/old/photo.raw'}]});assert.equal(await old,false);
+ assert.deepEqual(Array.from(model.paths),['fresh']);assert.equal(model.photos[0].path,'fresh');
+ assert.equal(model.directory,'/chosen');assert.equal(model.grant,'chosen-grant');assert.deepEqual([...model.selected],['fresh']);assert.equal(renders,1);
+});
