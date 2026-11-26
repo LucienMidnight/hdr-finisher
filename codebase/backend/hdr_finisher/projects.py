@@ -102,12 +102,11 @@ def open_project(store: SessionStore, path: Path, source_path: Path | None = Non
                 raise ProjectError("The project container is missing required entries.")
             manifest = json.loads(archive.read(PROJECT_MANIFEST_NAME))
             backups = {name: archive.read(name) for name in names if name.startswith("grade-backups/")}
-            schema_version = manifest.get("schema_version")
-            if manifest.get("contains_source_pixels") is not False:
+            if not isinstance(manifest, dict) or manifest.get("contains_source_pixels") is not False:
                 raise ProjectError("Invalid project manifest.")
             state_payload = _read_state(archive)
             document = _validate_ignoring_unknown_fields(state_payload)
-    except (zipfile.BadZipFile, KeyError, json.JSONDecodeError) as exc:
+    except (zipfile.BadZipFile, KeyError, json.JSONDecodeError, UnicodeDecodeError) as exc:
         raise ProjectError("The project file is malformed or unreadable.") from exc
 
     session = open_document(store, document, source_path)
