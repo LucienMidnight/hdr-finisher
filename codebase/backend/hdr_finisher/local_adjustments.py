@@ -13,6 +13,8 @@ from weakref import ref
 
 import numpy as np
 
+from .box_blur import prefix_box_blur as _box_blur_strip
+
 from .color import acescg_to_linear_srgb, linear_srgb_to_acescg
 from .mask_work import checkpoint as mask_checkpoint, in_request_context as mask_in_request_context
 from .finishing import apply_geometry
@@ -1524,29 +1526,6 @@ def _box_blur_axis(values: np.ndarray, radius: int, axis: int) -> np.ndarray:
             result[tuple(region)] = _box_blur_strip(np.ascontiguousarray(strip.T), radius, 1).T
         else:
             result[tuple(region)] = _box_blur_strip(strip, radius, axis)
-    return result
-
-
-def _box_blur_strip(values: np.ndarray, radius: int, axis: int) -> np.ndarray:
-    padding = [(0, 0)] * values.ndim
-    padding[axis] = (radius, radius)
-    padded = np.pad(values, padding, mode="edge")
-    cumulative_shape = list(padded.shape)
-    cumulative_shape[axis] += 1
-    cumulative = np.empty(cumulative_shape, dtype=np.float32)
-    first = [slice(None)] * values.ndim
-    first[axis] = 0
-    cumulative[tuple(first)] = 0.0
-    rest = [slice(None)] * values.ndim
-    rest[axis] = slice(1, None)
-    np.cumsum(padded, axis=axis, dtype=np.float32, out=cumulative[tuple(rest)])
-    width = radius * 2 + 1
-    after = [slice(None)] * values.ndim
-    before = [slice(None)] * values.ndim
-    after[axis] = slice(width, None)
-    before[axis] = slice(None, -width)
-    result = np.subtract(cumulative[tuple(after)], cumulative[tuple(before)])
-    result /= np.float32(width)
     return result
 
 

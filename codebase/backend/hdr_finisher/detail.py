@@ -385,21 +385,8 @@ def _box_blur_axis(values: np.ndarray, radius: int, axis: int) -> np.ndarray:
 def _box_blur_axis_lines(values: np.ndarray, radius: int, axis: int) -> np.ndarray:
     if radius <= 0:
         return values
-    padding = [(0, 0)] * values.ndim
-    padding[axis] = (radius, radius)
-    padded = np.pad(values, padding, mode="edge")
-    cumulative_shape = list(padded.shape)
-    cumulative_shape[axis] += 1
-    cumulative = np.zeros(cumulative_shape, dtype=np.float32)
-    tail = [slice(None)] * values.ndim
-    tail[axis] = slice(1, None)
-    np.cumsum(padded, axis=axis, dtype=np.float32, out=cumulative[tuple(tail)])
-    width = radius * 2 + 1
-    after = [slice(None)] * values.ndim
-    before = [slice(None)] * values.ndim
-    after[axis] = slice(width, None)
-    before[axis] = slice(None, -width)
-    return (cumulative[tuple(after)] - cumulative[tuple(before)]) / np.float32(width)
+    from .box_blur import prefix_box_blur
+    return prefix_box_blur(values, radius, axis)
 
 
 def _local_extrema(values: np.ndarray) -> tuple[np.ndarray, np.ndarray]:

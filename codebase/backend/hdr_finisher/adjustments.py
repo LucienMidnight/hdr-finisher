@@ -2148,25 +2148,8 @@ def _box_blur_axis(image: np.ndarray, radius: int, axis: int) -> np.ndarray:
 def _box_blur_axis_lines(image: np.ndarray, radius: int, axis: int) -> np.ndarray:
     if radius <= 0:
         return image
-    pads = [(0, 0)] * image.ndim
-    pads[axis] = (radius, radius)
-    padded = np.pad(image, pads, mode="edge")
-    # The running sum is written straight into a buffer that already carries
-    # the leading zero the difference needs, rather than being concatenated
-    # onto one afterwards. At export sizes each avoided copy of the frame is
-    # worth about a second.
-    cumulative_shape = list(padded.shape)
-    cumulative_shape[axis] += 1
-    cumulative = np.zeros(cumulative_shape, dtype=np.float32)
-    tail = [slice(None)] * image.ndim
-    tail[axis] = slice(1, None)
-    np.cumsum(padded, axis=axis, dtype=np.float32, out=cumulative[tuple(tail)])
-    high = [slice(None)] * image.ndim
-    low = [slice(None)] * image.ndim
-    width = 2 * radius + 1
-    high[axis] = slice(width, None)
-    low[axis] = slice(None, -width)
-    return ((cumulative[tuple(high)] - cumulative[tuple(low)]) / np.float32(width)).astype(np.float32)
+    from .box_blur import prefix_box_blur
+    return prefix_box_blur(image, radius, axis)
 
 
 def _box_blur(image: np.ndarray, radius: int) -> np.ndarray:

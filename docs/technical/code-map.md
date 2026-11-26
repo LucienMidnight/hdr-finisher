@@ -215,8 +215,9 @@ Open the file named for the thing you are changing. Most files are focused.
 | Data shapes (every adjustment, mask and project field) | `models.py` |
 | Opening files | `loader.py`, `raw_import.py`, `linear_dng.py`, `dng_color.py`, `dng_opcodes.py`, `gainmap_decoders.py`, `jpegxl.py`, `avif_info.py`, `metadata.py`, `import_jobs.py`, `media_browser.py`, `resource_preflight.py` |
 | Colour | `color.py`, `color_context.py`, `sdr_gamut.py`, `analysis.py`, `source_luminance.py` |
-| Global adjustments (the exact reference) | `adjustments.py`, `detail.py`, `finishing.py` (geometry and output finishing), `film_grain.py`, `denoise_adaptive.py` (Standard), `denoise_grain.py` (experimental grain and cleanup) |
+| Global adjustments (the exact reference) | `adjustments.py`, `detail.py`, `finishing.py` (geometry and output finishing), `film_grain.py`, `denoise_adaptive.py` (Standard), `denoise_grain.py` (Clean Grain and shared grain primitives), `denoise_micro_grain.py` (Micro Grain) |
 | Local adjustments and masks | `local_adjustments.py`, `mask_softness.py`, `mask_work.py` |
+| Shared float32 box pass | `box_blur.py`; detail, Film Look and local masks retain their own strip scheduling |
 | SDR Match | `sdr_match.py`, `sdr_match_inputs.py`, `sdr_match_remote.py` |
 | CPU preview, caches | `render_cache.py`, `cpu_strips.py`, `preview.py` |
 | Scopes, overlays, peak | `scopes.py`, `overlay.py`, `peak_accuracy.py`, `peak_candidates.py` |
