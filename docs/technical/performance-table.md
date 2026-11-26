@@ -4405,6 +4405,21 @@ or outstanding grant. RAW development took 5.4–5.5 s and CPU Edge colour
 8.9 s. These observations were under different host load, so they are not a
 controlled speed comparison. No decoder, reconstruction or memory limit changed.
 
+### GPU RAW Single memory and pixel comparison
+
+An early recheck got through native zoom and passed all 18 pixel comparisons
+but recorded 1.62 GB of OS headroom just after starting the full-size CPU
+Grade reference alongside Electron. A separate loaded run also fell below
+the reserve before the comparison could start. Neither run counted as a pass.
+The driver now checks navigation and memory with Electron open, then closes
+it before running the same pixel comparison on the saved pictures.
+
+Both final runs passed all 18 HDR/SDR pixel comparisons and the unchanged
+memory and navigation checks. Whole-app peak was 3.18–3.25 GB, settling to
+2.06–2.13 GB with no OS reserve violation. Native preparation plus crop took
+5.0–5.7 s, prepared-neighbour navigation took 67 ms in each run, and the
+complete driver took 158.3–158.6 s. No pixel or memory tolerance changed.
+
 ## November 26: Grade Retouch spot removal
 
 MacBook Neo A18 Pro, 8 GB, 1408x794 points, unpackaged Electron under the

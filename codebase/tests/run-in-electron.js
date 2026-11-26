@@ -537,10 +537,18 @@ let startupTimer;
         dialog.showSaveDialog = async () => ({ canceled: false, filePath });
       }, path.resolve(selectedPath));
     },
-    close: async () => {
+    close: async ({ afterShutdown } = {}) => {
       console.log("[runner] driver end (harness.close)");
       stop();
-      setTimeout(() => process.exit(process.exitCode || 0), 5000).unref();
+      try {
+        // The disposable profile remains available until process exit.
+        if (afterShutdown) {
+          if (shutdownReport.survivors.length) throw new Error("Cannot run offline checks while the app tree is still alive");
+          await afterShutdown();
+        }
+      } finally {
+        setTimeout(() => process.exit(process.exitCode || 0), 5000).unref();
+      }
     },
   };
 

@@ -18,6 +18,8 @@ const {MemoryMonitor}=require('../tools/library-memory-monitor.cjs');
 const memory=new MemoryMonitor(defaultAppMemoryBytes());let observer;
 (async()=>{
  const browser=await chromium.launch();
+ const electron=global.HDRFinisherElectronTestHarness;
+ let finish;
  if(process.env.HDR_FINISHER_ELECTRON_MAIN_PID){
   observer=spawn(require('../tools/lib/platform.cjs').pythonExecutable(),[path.join(root,'tools/measure-library-processes.py'),process.env.HDR_FINISHER_ELECTRON_MAIN_PID,'.25'],{windowsHide:true});
   let pending='';observer.stdout.on('data',chunk=>{pending+=chunk;let end;while((end=pending.indexOf('\n'))>=0){const line=pending.slice(0,end);pending=pending.slice(end+1);if(line){const sample=JSON.parse(line);memory.sample(sample);fs.appendFileSync(path.join(folder,'memory.jsonl'),line+'\n');}}});
@@ -54,14 +56,6 @@ const memory=new MemoryMonitor(defaultAppMemoryBytes());let observer;
   },{photos,uiOnly});
   fs.writeFileSync(path.join(folder,'result.json'),JSON.stringify(result,null,2));
   console.log('GPU grid, screen and native sources prepared for three RAWs.');
-  let report={photos:[],uiOnly:true};
-  if(!uiOnly){
-   const compared=await execFile(require('../tools/lib/platform.cjs').pythonExecutable(),[path.join(root,'tests/helpers/gpu_raw_single_compare.py'),path.join(folder,'result.json')],{cwd:root,maxBuffer:1<<24});
-   report=JSON.parse(compared.stdout.trim().split('\n').at(-1));
-  }
-  fs.writeFileSync(path.join(folder,'comparison.json'),JSON.stringify(report,null,2));
-  console.log(JSON.stringify({report}));
-  for(const row of report.photos)for(const check of row.comparisons)assert.ok(check.passed,JSON.stringify({photo:row.photo,...check}));
   await page.evaluate(()=>activateWorkflowTab('import'));
   await library.evaluate((element,folder)=>element.contentWindow.HDRLibrary.browse(folder),photoFolder);
   await frame.locator(`#grid-space .library-cell[data-path=${JSON.stringify(photos[0])}]`).click();
@@ -98,6 +92,23 @@ const memory=new MemoryMonitor(defaultAppMemoryBytes());let observer;
   fs.writeFileSync(path.join(folder,'memory-summary.json'),JSON.stringify({...memory.report(),lastBytes:memory.last?.totalBytes},null,2));
   if(observer){assert.equal(memory.violation,null,'Native RAW exceeded the whole-app memory rule');assert.ok(memory.report().settledUnderTarget,'Native RAW did not settle below the target');}
   }
-  console.log(JSON.stringify({timings:result.rows.map(r=>({photo:path.basename(r.path),coldMs:r.coldMs,reuseMs:r.reuseMs,nativeMs:r.nativeMs,memory:r.screen.gpu_memory_peak_bytes})),neighbourMs,report}));
- }finally{observer?.kill();fs.writeFileSync(path.join(folder,'memory-summary.json'),JSON.stringify({...memory.report(),lastBytes:memory.last?.totalBytes},null,2));await browser.close();}
+  // The full-size CPU Grade reference should not consume the OS reserve
+  // while the app's native memory and navigation checks are still running.
+  finish=async()=>{
+   let report={photos:[],uiOnly:true};
+   if(!uiOnly){
+    console.log('Comparing saved Library pixels to Grade after browser shutdown.');
+    const compared=await execFile(require('../tools/lib/platform.cjs').pythonExecutable(),[path.join(root,'tests/helpers/gpu_raw_single_compare.py'),path.join(folder,'result.json')],{cwd:root,maxBuffer:1<<24});
+    report=JSON.parse(compared.stdout.trim().split('\n').at(-1));
+   }
+   fs.writeFileSync(path.join(folder,'comparison.json'),JSON.stringify(report,null,2));
+   console.log(JSON.stringify({timings:result.rows.map(r=>({photo:path.basename(r.path),coldMs:r.coldMs,reuseMs:r.reuseMs,nativeMs:r.nativeMs,memory:r.screen.gpu_memory_peak_bytes})),neighbourMs,report}));
+   for(const row of report.photos)for(const check of row.comparisons)assert.ok(check.passed,JSON.stringify({photo:row.photo,...check}));
+  };
+ }finally{
+  observer?.kill();fs.writeFileSync(path.join(folder,'memory-summary.json'),JSON.stringify({...memory.report(),lastBytes:memory.last?.totalBytes},null,2));
+  if(electron&&finish)await electron.close({afterShutdown:finish});
+  else await browser.close();
+ }
+ if(!electron)await finish();
 })().catch(error=>{console.error(error);process.exitCode=1;});
