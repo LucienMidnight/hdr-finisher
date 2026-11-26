@@ -182,3 +182,21 @@ def test_native_lens_database_keeps_search_signatures_and_refuses_mounts():
         native.mounts
     with pytest.raises(NotImplementedError):
         native.find_mount("Canon EF-S")
+
+
+@pytest.mark.parametrize("source_shape,coordinate_shape", [
+    ((4, 5), (2, 3, 2)),
+    ((4, 5, 1), (2, 3, 2)),
+    ((4, 5, 4), (2, 3, 2)),
+    ((0, 5, 3), (2, 3, 2)),
+    ((4, 5, 3), (2, 3, 3)),
+    ((4, 5, 3), (2, 3, 2, 2)),
+])
+def test_lens_tile_rejects_unsafe_native_buffer_layouts(source_shape, coordinate_shape, monkeypatch):
+    # Wrong channel/coordinate strides can read or write past the native buffer.
+    monkeypatch.setattr(lens_correction, "_library", lambda: pytest.fail("unsafe native call"))
+    with pytest.raises(ValueError, match="RGB tile|coordinate layout"):
+        lens_correction.remap_region(
+            np.zeros(source_shape, np.float32), np.zeros(coordinate_shape, np.float32),
+            frame_shape=(4, 5), origin=(0, 0), check=lambda: None,
+        )

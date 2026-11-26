@@ -331,6 +331,13 @@ def remap_region(image, coordinates, *, frame_shape, origin, check):
     """Sample a source tile with coordinates expressed in the original frame."""
     source = np.ascontiguousarray(image, dtype=np.float32)
     coordinates = np.ascontiguousarray(coordinates, dtype=np.float32)
+    # The C sampler assumes packed RGB and either one XY or three XY pairs
+    # per output pixel. A different layout can overrun both native buffers.
+    if source.ndim != 3 or source.shape[2] != 3 or min(source.shape[:2]) <= 0:
+        raise ValueError("Lensfun source needs a non-empty RGB tile")
+    if not ((coordinates.ndim == 3 and coordinates.shape[2:] == (2,))
+            or (coordinates.ndim == 4 and coordinates.shape[2:] == (3, 2))):
+        raise ValueError("Lensfun coordinate layout must be HxWx2 or HxWx3x2")
     output = np.empty((*coordinates.shape[:2], 3), dtype=np.float32)
     library = _library()
     height, width = source.shape[:2]
