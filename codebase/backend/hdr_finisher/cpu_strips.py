@@ -16,10 +16,11 @@ whole transformed frame is built either.
 **It is exact, or it refuses.** The refusals mirror the GPU tiled path's
 (``tiledExecutionRefusals`` in ``webgpu-preview.js``) because they exist for
 the same reason: a strip would silently treat itself as the whole image.
-Vignette normalizes to the frame, grain seeds on absolute coordinates, Detail
-derives its radii from the frame diagonal, and masks, Denoise and wider spatial
-Film Look kernels need inputs this route does not carry.
-Those are Phases 5 to 7.
+Vignette and grain use absolute frame coordinates through ``FrameWindow`` and
+can run in strips. Active Detail, local adjustments, Denoise and wider spatial
+Film Look kernels are refused by the direct strip route; delivery can stage
+their inputs separately. Geometry and downsample restrictions are listed by
+``strip_execution_refusals``.
 
 The one thing a *pointwise* graph still takes from the whole frame is the
 highlight anchor: Peak Fit fits its shoulder to the brightest pixel in the

@@ -1,4 +1,4 @@
-"""One isolated low-priority photo at a time, sharing GPU delivery."""
+"""Bounded isolated low-priority photo workers sharing serial GPU delivery."""
 from base64 import b64decode, b64encode
 from copy import deepcopy
 from contextlib import ExitStack

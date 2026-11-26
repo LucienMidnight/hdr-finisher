@@ -55,8 +55,8 @@ def rows_in_parts(convert: Callable[[np.ndarray, int], np.ndarray], band: np.nda
     """``convert(band, top)`` with the band's rows split over the CPU pool.
 
     For a per-pixel conversion that takes its first row's frame position
-    (dithering uses it). One band is in flight at a time, as before, so the
-    memory held stays that of the serial conversion.
+    (dithering uses it). One band is in flight at a time. The returned pieces
+    coexist with the concatenated output until this function returns.
     """
     rows = band.shape[0]
     if not _exporting() or rows < 2 * MINIMUM_PART_ROWS:

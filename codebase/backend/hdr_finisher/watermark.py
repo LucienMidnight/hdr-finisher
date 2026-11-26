@@ -1,6 +1,5 @@
 """Final-size text on authored delivery lanes; never modifies cached GPU pixels."""
 from .export_timing import timed as _timed_stage
-from .config import FRONTEND_DIR
 
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
