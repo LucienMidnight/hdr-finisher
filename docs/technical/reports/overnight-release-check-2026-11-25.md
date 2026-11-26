@@ -118,3 +118,27 @@ that could be saved), `library-gpu-raw-single` 5 min.
   linear Rec.709) and Grade (asks; sRGB curve until chosen), as decided on
   November 2. Whether Grade should start from the Library's assumption is a
   product choice.
+
+## Follow-up fixes — November 26
+
+Codex Sol 6.2 (high) workers in the shared checkout; each re-checked on the
+GPU at the final commit `c3352376` on a quiet Mac. Fast checks: Node 1121
+pass, Python 3900 pass.
+
+| Item | Result | Commits |
+| --- | --- | --- |
+| Endless "Preparing…" after a 507 memory refusal | App fixed: CPU preview fallback, then Unavailable with reason | `a36e38eb` |
+| `library-live-grid.js` | Test counted shared-folder photos; app no longer delays CPU fallback behind a deferred save. Passes | `38f56307` |
+| `denoise-zoomed-region.js` hang | App fixed: geometry-map no longer refused by a full-image memory check (only exact quarter turns keep it). Driver now fails before the runner deadline and names the unmet condition. One later refusal was real macOS memory pressure (0.98–1.29 GiB free vs 2 GiB reserve); proposal recorded | `6209e7cc`, `c3352376` |
+| `library-grade-saving.js` (Escape with Metadata) | App fixed: dialogs get Escape first; Metadata stays open. Passes | `6aa509d3` |
+| CPU DNG speed | Gain map and warp now multi-threaded, output byte-identical. DJI_0071 59.1 → 12.0–13.9 s; Leica X2 48.8 → 3.7–3.9 s | `9c5791a6` |
+| Retouch spot deletion (`retouch-latency.js`) | App fixed: deletion refreshes only the changed area and reuses the Fit image. 0.19–0.51 s (was 0.9–2.4 s) | `2d4cb0df`, `f21d39f6`, `03cdc314`, `77406592` |
+| `retouch-gpu-kernels.js` | Test compared against a different shader; now uses the production shader. Bit-identical | `d9b35d32` |
+| `library-dng-warp.js` | Test stopped watching Activity when the embedded preview filled the grid; now watches real development | `1d377cd0` |
+| `full-tier-preview.js` | Test race; app peak behaviour unchanged | `b355c427` |
+
+Note: the November 24 "Heal and Clone on the CPU" change is only on
+`feat/denoise-v1` (merge `07e55dd5`), not on this release branch.
+
+Still waiting on files from the PC: DSC00950 source link, a noise-free EXR,
+Edge and the JPEG XL helper (see the table above).
