@@ -1655,8 +1655,8 @@
       if (place.kind && !controller.signal.aborted) action?.finish("success", { photo_count: state.allPhotos.length });
     }
   }
-  let folderPaintTimer;
   async function openFolderStream(path, controller, action) {
+    let folderPaintTimer;
     const started = performance.now(), rows = new Map(), copies = new Map();
     const opening = {path, controller, started, request:null, presented:false, action};
     state.folderOpen = opening;
@@ -1808,10 +1808,15 @@
   };
   // Batch visible settings reads before any picture work. Offscreen rows already
   // carry indexed marks/grades; their sources are never opened for drawing.
-  let visibleDetails = new Map(), detailsTimer;
+  let visibleDetails = new Map(), detailsTimer, detailsOwner;
   function hydrateVisible(photo, current, signal) {
     if(!state.folderOpen || state.folderOpen.controller !== state.scan || photo._details)return Promise.resolve();
     const controller=state.scan;
+    if(detailsOwner!==controller){
+      clearTimeout(detailsTimer);detailsTimer=null;
+      for(const items of visibleDetails.values())for(const item of items)item.reject(new DOMException("Cancelled","AbortError"));
+      visibleDetails.clear();detailsOwner=controller;
+    }
     return new Promise((resolve,reject)=>{
       const key=photo.source_path || photo.path;
       const pending=visibleDetails.get(key)||[];
