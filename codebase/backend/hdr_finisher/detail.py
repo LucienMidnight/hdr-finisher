@@ -53,8 +53,9 @@ def apply_detail(
 
 def _detail_log_luma(image, kind):
     weights = _ACESCG_LUMA if kind == PreviewKind.HDR else _SRGB_LUMA
+    # Keep accumulation independent of band size and the platform BLAS kernel.
     original_luma = np.maximum(
-        np.einsum("...c,c->...", image[..., :3], weights, optimize=True), _DETAIL_LUMA_FLOOR
+        np.einsum("...c,c->...", image[..., :3], weights, optimize=False), _DETAIL_LUMA_FLOOR
     )
     # Log luminance makes equal local contrast changes read consistently in
     # shadows and highlights.  Values below black remain clamped and finite.

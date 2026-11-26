@@ -1913,7 +1913,7 @@ def _color_grading_rows(image, grading, kind, wheels):
         tint += masks[..., index, None] * vector * np.float32(wheel.saturation / 400.0)
         luminance_ev += masks[..., index] * np.float32(wheel.luminance_ev)
     tinted = image.astype(np.float32, copy=False) + tint * source_luma[..., None]
-    tinted_luma = np.maximum(np.einsum("...c,c->...", tinted, weights, optimize=True), 1e-7)
+    tinted_luma = np.maximum(np.einsum("...c,c->...", tinted, weights, optimize=False), 1e-7)
     tinted *= np.where(source_luma > 1e-7, source_luma / tinted_luma, 1.0)[..., None]
     tinted *= np.exp2(luminance_ev)[..., None]
     # A wheel must never limit pixels, including those outside its range.

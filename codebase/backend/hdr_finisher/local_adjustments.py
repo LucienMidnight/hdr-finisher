@@ -1960,7 +1960,7 @@ def _apply_local_grade(
 
     result = image.astype(np.float32, copy=True)
     weights = ACESCG_LUMA if kind == PreviewKind.HDR else LINEAR_SRGB_LUMA
-    luma = np.maximum(np.einsum("...c,c->...", result[..., :3], weights, optimize=True), 1e-8)
+    luma = np.maximum(np.einsum("...c,c->...", result[..., :3], weights, optimize=False), 1e-8)
     stops = np.log2(luma / np.float32(grade.contrast_pivot))
     contrast_factor = np.float32(2.0 ** grade.contrast)
     target_stops = stops * contrast_factor + np.float32(grade.exposure)
