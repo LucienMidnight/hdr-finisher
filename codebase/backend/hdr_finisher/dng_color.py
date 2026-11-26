@@ -291,6 +291,13 @@ def transform_normalized_to_acescg_in_place(
     return image
 
 
+def highlight_support_layout(width: int, height: int) -> tuple[int, int, int, int]:
+    """Header-only bounds for the compact float32 highlight support mask."""
+    radius = min(192, max(8, round(min(height, width) * 0.025)))
+    block = max(1, min(8, radius // 12))
+    return radius, block, (width + block - 1) // block, (height + block - 1) // block
+
+
 def _build_clipped_highlight_support(
     image: np.ndarray,
     recovery_limit: float,
@@ -305,10 +312,7 @@ def _build_clipped_highlight_support(
     is spatially associated with a real clipped highlight.
     """
     height, width = image.shape[:2]
-    radius = int(np.clip(round(min(height, width) * 0.025), 8, 192))
-    block = max(1, min(8, radius // 12))
-    reduced_height = (height + block - 1) // block
-    reduced_width = (width + block - 1) // block
+    radius, block, reduced_width, reduced_height = highlight_support_layout(width, height)
     core = np.zeros((reduced_height, reduced_width), dtype=bool)
     margin = max(1.0 / 1024.0, recovery_limit * 0.005)
     core_onset = max(0.0, recovery_limit - margin)

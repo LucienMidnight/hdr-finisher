@@ -115,6 +115,21 @@ test('DNG reservation fits one-plane reduction without raising shared budgets',(
  assert.equal(HDRLibraryGpuRaw.rawBudget({...meta,dng_warp:undefined,repairs:[{}]}),8000*6000*48+64*1024*1024);
 });
 
+test('linear DNG reservation covers RGB conversion on the 8 GB Mac without Bayer scratch',()=>{
+ const width=5304,height=7954,pixels=width*height,support=4*Math.ceil(width/8)*Math.ceil(height/8);
+ const meta={rgb:true,width,height,dng_linear:{width,height,support:{bytes:support}},colour:{authored_sdr:false}};
+ const bytes=HDRLibraryGpuRaw.rawBudget(meta);
+ assert.ok(bytes>=pixels*24+support);
+ // 4 GB app setting, 1.3 GB starting allowance and 28 B/px CPU-side grant.
+ assert.ok(bytes+pixels*28<=4_000_000_000-1_300_000_000);
+ const cropped={...meta,width:640,height:480};
+ assert.ok(HDRLibraryGpuRaw.rawBudget(cropped)>=2*pixels*12,'a crop still uploads the original input');
+ assert.ok(HDRLibraryGpuRaw.rawBudget({...meta,repairs:[{}]})>bytes);
+ assert.equal(HDRLibraryGpuRaw.rawBudget({...meta,sdr_reference:{bytes:pixels*12}}),bytes,
+   'embedded SDR runs as a separate RGB pass');
+ assert.ok(HDRLibraryGpuRaw.rawBudget(meta,[100000])>bytes);
+});
+
 test('DNG footprints enclose independent per-channel maps across off-centre and non-monotone warps',()=>{
  const {dngFootprint}=HDRLibraryGpuRaw.shared;
  const warp={width:8000,height:6000,center:[2700,3800],radius:6600,

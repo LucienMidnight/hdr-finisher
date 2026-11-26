@@ -68,16 +68,26 @@ def test_bridge_demosaics_but_defers_ordered_gain_and_warp_to_gpu(monkeypatch,tm
 def test_linear_bridge_preserves_samples_and_defers_colour(monkeypatch,tmp_path):
     from test_linear_dng import _write_linear
     from hdr_finisher import dng_color
+    from hdr_finisher.library_estimates import gpu_metadata
     from hdr_finisher.library_live import recipe
     path=tmp_path/"linear.dng"
     image=np.full((24,32,3),32768,np.uint16);image[8:12,9:15,0]=65535
     _write_linear(path,image)
+    import tifffile
+    with monkeypatch.context() as no_pixels:
+        no_pixels.setattr(tifffile.TiffPage,"asarray",lambda *a,**k:pytest.fail("admission read pixels"))
+        preflight=gpu_metadata(path,edge=640)
     monkeypatch.setattr(dng_color,"transform_normalized_to_acescg_in_place",lambda *a,**k:pytest.fail("CPU colour conversion ran"))
     header,parts=decoded(path,recipe(None))
     np.testing.assert_allclose(np.frombuffer(parts[0],dtype="<f4").reshape(image.shape),image.astype(np.float32)/65535,rtol=1e-6)
     assert header["dng_linear"]["width"]==32
     assert header["dng_linear"]["support"]["bytes"]>0
     assert header["sdr_reference"] is None
+    assert not preflight["colour"]["authored_sdr"]
+    assert (preflight["width"],preflight["height"])==(header["width"],header["height"])
+    assert preflight["dng_linear"]["width"]==header["dng_linear"]["width"]
+    assert preflight["dng_linear"]["height"]==header["dng_linear"]["height"]
+    assert preflight["dng_linear"]["support"]["bytes"]==header["dng_linear"]["support"]["bytes"]
     assert header["colour"]["decoder_metadata"]["raw_input"]
 
 
@@ -102,6 +112,7 @@ def test_linear_embedded_reference_survives_publication(tmp_path):
     import tifffile
     from test_linear_dng import _write_linear
     from hdr_finisher import library_rgb
+    from hdr_finisher.library_estimates import gpu_metadata
     from hdr_finisher.library_live import recipe,quality
     from hdr_finisher.library_pictures import LibraryPictureCache
     from hdr_finisher.sessions import SessionStore
@@ -112,6 +123,9 @@ def test_linear_embedded_reference_survives_publication(tmp_path):
     expected=SessionStore().prepare_session(path,owns_source_path=False)
     header,parts=decoded(path,recipe(None))
     data=b"".join(bytes(p) for p in parts);ref=header["sdr_reference"]
+    preflight=gpu_metadata(path,edge=640)
+    assert preflight["sdr_reference"]["bytes"]>=ref["bytes"]
+    assert not preflight["colour"]["authored_sdr"]
     encoded=np.frombuffer(data,dtype=np.uint8,offset=ref["offset"],count=ref["bytes"]).reshape(24,32,3)
     np.testing.assert_array_equal(encoded,np.full((24,32,3),128,np.uint8))
     assert ref["quantize_half"] and ref["direct_srgb"]

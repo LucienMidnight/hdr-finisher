@@ -319,20 +319,37 @@ def gpu_metadata(path, document=None, edge=2560):
                     or (edge == 100000 and inspection.metadata.get('sdr_preview_series_index') is not None)):
                 return {'cpu_route':'unsupported-gpu'}
             width, height, *_ = geometry(inspection.metadata, inspection.width, inspection.height)
+            authored_sdr = True
             if inspection.route is DngRoute.LINEAR_DNG:
                 meta['dng_linear'] = True
-                if (edge <= 2560 and inspection.primary_page_index is not None
-                        and not (inspection.required_opcodes or inspection.optional_opcodes)
-                        and inspection.metadata.get('sdr_preview_series_index') is None):
-                    from .library_reduced import sample_size
-                    width, height = sample_size(width, height, 10240)
+                has_reference = inspection.metadata.get('sdr_preview_series_index') is not None
+                if edge != 100000:
+                    source_width, source_height = inspection.width, inspection.height
+                    if not has_reference and edge <= 2560 and inspection.primary_page_index is not None:
+                        from .library_reduced import sample_size
+                        source_width, source_height = sample_size(source_width, source_height, 10240)
+                        if (source_width, source_height) != (inspection.width, inspection.height):
+                            width, height = sample_size(width, height, 10240)
+                    if not inputs.get('repairs'):
+                        from .dng_color import highlight_support_layout
+                        _, _, sw, sh = highlight_support_layout(source_width, source_height)
+                        # Input and output can differ after cropping and turning.
+                        # Budget for clipped highlights without reading the pixels.
+                        meta['dng_linear'] = dict(width=source_width, height=source_height,
+                                                  support=dict(bytes=sw*sh*4))
+                        if has_reference:
+                            # The bridge keeps the SDR reference only if it
+                            # matches the oriented output. Allow float32 RGB
+                            # even if the embedded preview is actually uint8.
+                            meta['sdr_reference'] = dict(bytes=width*height*12)
+                        authored_sdr = False
             else:
                 try:
                     plan(inspection)
                 except NotEligible:
                     return {'cpu_route':'unsupported-gpu'}
                 meta['dng_warp'] = True
-            meta.update(width=width, height=height, rgb=True, colour={'authored_sdr':True})
+            meta.update(width=width, height=height, rgb=True, colour={'authored_sdr':authored_sdr})
         elif suffix in RATES:
             # Match the decode boundary: Pillow applies JPEG/PNG EXIF turns;
             # Grade's TIFF route deliberately leaves its tag unapplied.

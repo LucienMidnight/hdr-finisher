@@ -1651,8 +1651,29 @@
     }
     return peak;
   }
+  function linearDngBudget(meta, edges) {
+    const input=Math.max(meta.mosaic_bytes ?? meta.dng_linear.width*meta.dng_linear.height*12,
+      meta.sdr_reference?.bytes ?? 0);
+    const support=meta.dng_support?.byteLength ?? meta.dng_linear.support?.bytes ?? 4;
+    const {width,height}=meta, planes=width*height*12;
+    const stride=meta.sample_stride ?? Math.max(1,Math.ceil(Math.sqrt(width*height/2_000_000)));
+    const samples=Math.ceil(width/stride)*Math.ceil(height/stride)*12;
+    // No Bayer candidates. The embedded SDR reference runs after the primary
+    // frame has released its GPU buffers, so reserve for the larger input.
+    // Upload can stage a copy of the input, drained before colour conversion.
+    // By reduction the input is gone and we reduce/read one plane at a time.
+    let peak=Math.max(2*input,input+planes+samples+2*support);
+    for(const edge of edges){
+      const [h,w]=reducedSize(meta,edge);
+      const scratch=h===height&&w===width ? h*w*4 : Math.max(height*w*4+h*w*4,h*w*8);
+      peak=Math.max(peak,planes+samples+support+scratch);
+    }
+    return peak+64*1024*1024;
+  }
   const rawBudget = (meta,edges=[640,2560]) => {
     if(meta.dng_warp)return dngBudget(meta,edges);
+    if(meta.dng_linear?.width && !edges.includes(100000) && !meta.repairs?.length && !meta.colour?.authored_sdr)
+      return linearDngBudget(meta,edges);
     // Signed green candidates take eight bytes/photosite rather than four.
     // Account for the extra scratch within the unchanged scheduler budgets.
     // RGB holds its input and three planes. Keep additional headroom for
