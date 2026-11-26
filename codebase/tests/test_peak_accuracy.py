@@ -25,6 +25,24 @@ def test_real_isolated_source_peaks_survive_evidence_and_crop_rotation():
     assert found[:2] == [84, 62]
 
 
+def test_retouch_refresh_matches_rebuilding_all_peak_evidence():
+    rng = np.random.default_rng(371)
+    before = rng.normal(size=(137, 169, 3)).astype(np.float32)
+    before[2, 1] = [4, 30, 12]
+    before[-1, -1] = [11, 9, 40]
+    cached = source_candidates(before)
+    after = before.copy()
+    after[:6, :9] = -.5  # The old brightest pixel disappears.
+    after[-4:, -5:] = 5  # Crosses the right and bottom grid edges.
+    after[52:71, 79:85] *= 3
+    dirty = ((0, 0, 9, 6), (164, 133, 169, 137), (79, 52, 85, 71))
+
+    np.testing.assert_array_equal(
+        source_candidates(after, previous=cached, dirty_rects=dirty),
+        source_candidates(after),
+    )
+
+
 @pytest.mark.parametrize("error, warns", [(0.009, False), (.011, True), (-.23, True)])
 def test_warnings_use_approved_one_percent_in_both_directions(error, warns):
     warnings = measurement_warnings({"hdr": {"peak": 1+error}}, {"hdr": {"peak": 1}})
