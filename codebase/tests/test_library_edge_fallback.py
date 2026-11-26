@@ -49,6 +49,7 @@ def test_cpu_colour_cancels_at_safe_points_without_mutating_source():
     assert np.all(image == .5) and np.all(ratio == 1)
 
 
+@pytest.mark.serial  # Native helper/process startup deadlines need uncontended CPU.
 def test_parent_timeout_cancels_only_reconstruction_without_restarting_helper(tmp_path, monkeypatch):
     helper = LibraryWorker(tmp_path)
     sent = []
@@ -65,6 +66,7 @@ def test_parent_timeout_cancels_only_reconstruction_without_restarting_helper(tm
     assert "edge" not in helper._work
 
 
+@pytest.mark.serial  # Native helper/process startup deadlines need uncontended CPU.
 @pytest.mark.parametrize("rejected,phase", [(False,"cpu_edge_fallback"),(True,"reading")])
 def test_all_other_decoder_deadlines_stay_unchanged(tmp_path, monkeypatch, rejected, phase):
     helper = LibraryWorker(tmp_path)

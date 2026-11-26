@@ -164,6 +164,7 @@ def test_requested_empty_check_reports_completion(library):
     assert index.checks.events[-1]["message"] == "Checked Intake: no new photos"
     assert index.checks.status()["folders"][0]["last_checked"] is not None
 
+@pytest.mark.serial  # Native helper/process startup deadlines need uncontended CPU.
 def test_helper_check_runs_ahead_of_index_and_grade_gate_is_retained(tmp_path):
     large, selected = tmp_path / "large", tmp_path / "selected"
     large.mkdir(); selected.mkdir()
@@ -210,6 +211,7 @@ def _controlled_worker(connection, root, parent_pid, paused):
     _worker_main(connection, root, parent_pid, paused)
 
 
+@pytest.mark.serial  # Native helper/process startup deadlines need uncontended CPU.
 @pytest.mark.xfail(sys.platform == "darwin", strict=False,
                    reason="On macOS the interrupted background scan did not finish in CI (0.9.1); not yet diagnosed.")
 def test_requested_check_interrupts_a_running_scan_without_restarting_it(tmp_path, monkeypatch):

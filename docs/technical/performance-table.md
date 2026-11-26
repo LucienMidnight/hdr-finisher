@@ -1,3 +1,9 @@
+## November 26-27: bounded parallel Python tests (PC)
+
+| Action | Serial baseline | Parallel runner | Conditions |
+| --- | --- | --- | --- |
+| Full Python suite, 5,088 collected cases | 949.56 s (15m 50s) | 604.66 / 588.89 s (10m 05s / 9m 49s), 36-38% less wall time | Windows PC, nominal 64 GB RAM, 12 logical CPUs; CPU-only. Four xdist workers followed by 45 serial process/deadline cases. Each full run: 5,032 passed / 56 skipped. `194d01c9` + this tooling change; baseline after token-contract repairs. Whole runner time includes both phases, collection and startup. Original pixel/data fixtures and all deadlines/tolerances retained; no cases removed. [Logs and counters](../../codebase/output/test-speed-2026-11-27/results.json). |
+
 ## November 26: HSL resource-retirement correctness diagnostic (PC)
 
 | Action | Observed | Conditions |

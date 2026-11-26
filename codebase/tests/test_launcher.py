@@ -74,11 +74,10 @@ def test_launcher_server_starts_and_stops() -> None:
     def health() -> dict[str, str]:
         return {"status": "ok"}
 
-    with socket.socket() as probe:
-        probe.bind(("127.0.0.1", 0))
-        port = int(probe.getsockname()[1])
-
-    service = LauncherServer(test_app, port=port)
+    listener = socket.socket()
+    listener.bind(("127.0.0.1", 0))
+    listener.listen()
+    service = LauncherServer(test_app, listener=listener)
     service.start()
     try:
         deadline = time.monotonic() + 5.0

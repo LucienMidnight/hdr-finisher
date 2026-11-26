@@ -153,6 +153,7 @@ def test_uppercase_canonical_settings_suffix_is_not_a_conflict(tmp_path):
     assert marks.conflicts.status() == []
 
 
+@pytest.mark.serial  # Native helper/process startup deadlines need uncontended CPU.
 def test_reads_queue_during_helper_restart_without_waiting_on_request_thread(tmp_path, monkeypatch):
     worker = LibraryWorker(tmp_path / "cache")
     worker._recovering = True
@@ -201,6 +202,7 @@ def test_index_retries_offline_pin_and_rescan_wakes_long_retry(tmp_path):
         index.close()
 
 
+@pytest.mark.serial  # Native helper/process startup deadlines need uncontended CPU.
 def test_helper_restart_limit_fails_waiters_and_leaves_grade_gate_available(tmp_path, capsys):
     worker = LibraryWorker(tmp_path / "cache")
     worker._restart_limit = 1

@@ -90,6 +90,7 @@ def test_cache_off_keeps_scene_in_memory_and_clear_removes_stored_scene(tmp_path
     assert not live.cache.file(stored["key"]).is_file()
 
 
+@pytest.mark.serial  # Native helper/process startup deadlines need uncontended CPU.
 def test_worker_accepts_live_scene_and_cancelled_work_stays_cancelled(tmp_path):
     from hdr_finisher.library_worker import LibraryWorker
     worker=LibraryWorker(tmp_path/"cache")
@@ -198,6 +199,7 @@ def test_save_revert_and_copy_do_not_launch_finished_picture_work(tmp_path):
     assert not list((tmp_path/"app").rglob("*.jpg"))
 
 
+@pytest.mark.serial  # Native helper/process startup deadlines need uncontended CPU.
 def test_retired_file_routes_are_gone_and_scene_resume_preserves_other_pauses(tmp_path):
     from fastapi import FastAPI
     from fastapi.testclient import TestClient

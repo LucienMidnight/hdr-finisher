@@ -182,6 +182,7 @@ def test_unclipped_edge_colour_is_logged_but_not_listed_as_a_problem(monkeypatch
     assert library_diagnostics.recent() == events[1:]
 
 
+@pytest.mark.serial  # Native helper/process startup deadlines need uncontended CPU.
 def test_helper_problems_are_forwarded_into_backend_health(tmp_path, capsys):
     from hdr_finisher.library_worker import LibraryWorker
     from hdr_finisher.library_diagnostics import recent

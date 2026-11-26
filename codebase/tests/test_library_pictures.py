@@ -142,6 +142,7 @@ def test_cache_discards_oldest_in_a_batch(tmp_path):
     assert cache.file(b["key"]).exists()
 
 
+@pytest.mark.serial  # Native helper/process startup deadlines need uncontended CPU.
 def test_picture_and_scan_run_in_helper_and_cached_picture_survives_pause(tmp_path):
     source = photo(tmp_path)
     helper = LibraryWorker(tmp_path / "app-data")
@@ -228,6 +229,7 @@ def test_non_raw_decode_keeps_completed_pixels_after_viewer_cancels(tmp_path, mo
     assert cache.cached(source, 2560, "quick")["key"] == result["key"]
 
 
+@pytest.mark.serial  # Native helper/process startup deadlines need uncontended CPU.
 def test_non_raw_browse_waiters_share_job_across_pause_and_promote_it(tmp_path):
     source = photo(tmp_path)
     helper = LibraryWorker(tmp_path / "cache")

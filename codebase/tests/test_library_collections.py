@@ -248,6 +248,7 @@ def test_library_preferences_survive_and_are_not_in_the_database(tmp_path):
     assert not again.marks.database.exists()
 
 
+@pytest.mark.serial  # Native helper/process startup deadlines need uncontended CPU.
 def test_background_indexing_reaches_a_pinned_folder_never_visited(tmp_path):
     from PIL import Image
     folder = tmp_path / "photos" / "2024"

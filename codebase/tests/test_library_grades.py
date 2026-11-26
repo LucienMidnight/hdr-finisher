@@ -373,6 +373,7 @@ def test_conflict_clears_when_the_file_returns_to_the_saved_grade(setup):
     assert "changed_again" not in grades.resolve(str(session.session_id), "mine", external)
 
 
+@pytest.mark.serial  # Native helper/process startup deadlines need uncontended CPU.
 def test_grade_save_reaches_disk_while_grade_scope_and_gesture_hold_helper(setup):
     from hdr_finisher.library_worker import LibraryWorker
     photo, store, session, marks, grades = setup

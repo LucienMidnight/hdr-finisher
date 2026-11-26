@@ -136,11 +136,15 @@ def test_http_disconnect_cancels_worker_and_preserves_http_error_shape():
 def _serve(app):
     import socket
     import uvicorn
-    with socket.socket() as probe:
-        probe.bind(('127.0.0.1', 0))
-        port = probe.getsockname()[1]
+    listener = socket.socket()
+    listener.bind(('127.0.0.1', 0))
+    listener.listen()
+    port = listener.getsockname()[1]
     server = uvicorn.Server(uvicorn.Config(app, host='127.0.0.1', port=port, log_level='warning'))
-    Thread(target=server.run, daemon=True).start()
+    thread = Thread(target=server.run, kwargs={'sockets': [listener]}, daemon=True)
+    thread.start()
+    server._test_thread = thread
+    server._test_listener = listener
     deadline = time.monotonic() + 10
     while not server.started and time.monotonic() < deadline:
         time.sleep(.02)
@@ -204,6 +208,8 @@ def test_client_abort_reaches_the_worker_through_the_desktop_boundary(monkeypatc
         assert outcome.get('result') == 'cancelled'
     finally:
         server.should_exit = True
+        server._test_thread.join(timeout=5)
+        server._test_listener.close()
 
 
 def test_abandoned_owner_finishes_for_a_waiter_and_stops_without_one(monkeypatch):

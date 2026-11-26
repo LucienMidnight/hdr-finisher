@@ -47,7 +47,7 @@ The default real-app Library check is `.venv/Scripts/python.exe tools/gpu-run-lo
 Run the fast checks, from `codebase`:
 
 - `node --test tests/*.test.js`
-- `.venv/Scripts/python.exe -m pytest tests -q` (use the `.venv` Python;
+- `.venv/Scripts/python.exe tools/test-python.py` (use the `.venv` Python;
   `.venv/bin/python` on macOS and Linux)
 
 Then run only the one or two GPU checks that directly cover what you touched.
@@ -61,8 +61,18 @@ per change. GPU checks run one at a time through `tests/run-in-electron.js`
 
 For a speed investigation, add `--durations=50` to the Python command.
 Use targeted test files while iterating; keep the complete suites for grouped
-verification. Do not add `-n auto`: pytest-xdist is not installed by default
-and shared-file/native-resource tests have not been qualified for parallel use.
+verification. Setup installs pinned pytest-xdist. The automatic worker count is
+capped at four (two on machines with at most 8 GiB RAM), reserves 2 GiB for the
+OS/open app, and allows 3 GiB per worker using currently available memory.
+Unknown or low memory uses one worker. Avoid explicit higher `-n N` counts,
+which bypass that memory policy. Serial fallback: `.venv/Scripts/python.exe -m
+pytest tests -q` (POSIX: `.venv/bin/python -m pytest tests -q`). The runner executes parallel-safe tests first, then the
+`serial` native
+process/deadline checks in one process. Do not run the entire suite with bare
+`-n auto`, which also schedules serial-marked tests concurrently. Tests use
+disposable profiles, caches, exports, proof scratch and locks; native
+encoders/test photos are read-only. Real GPU/release checks remain sequential
+and keep the shared lock and all rules below unchanged.
 
 ### Release points only
 

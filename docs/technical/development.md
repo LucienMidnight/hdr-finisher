@@ -145,16 +145,66 @@ Fast checks do not need the GPU lock:
 
 ```bash
 node --test tests/*.test.js
-.venv/bin/python -m pytest tests -q
+.venv/bin/python tools/test-python.py
 ```
 
 For test-speed work, use `.venv/bin/python -m pytest tests -q --durations=50`
 (Windows: `.venv/Scripts/python.exe`). After finding a slow group, pass only
 its test paths while iterating. This still uses the same isolation fixtures
 and assertions. Reserve a full-suite rerun for the grouped final changes.
-pytest-xdist is not installed by default; do not use `-n auto` until shared
-files, native builds and GPU/resource tests are explicitly isolated and
-qualified for parallel execution.
+Setup installs `pytest-xdist==3.8.0` via `requirements-dev.txt` on every platform.
+Use the parallel command above by default. Serial fallback: `.venv/bin/python
+-m pytest tests -q` (Windows: `.venv/Scripts/python.exe -m pytest tests -q`).
+
+The runner executes `pytest tests -q -m "not serial" -n auto --maxprocesses=4
+--dist=worksteal`, then `pytest tests -q -m serial` without xdist. Both phases
+must pass; their pass/skip totals together equal the full serial suite. A test
+failure in phase one still runs phase two. Do not run the entire suite with bare
+`-n auto`: markers alone do not prevent concurrent scheduling.
+
+The conftest auto-worker hook caps execution at four workers, or two on machines
+with at most 8 GiB physical RAM. It reserves 2 GiB of currently available memory
+for the OS/open app and allows 3 GiB per test worker. Low/unknown memory uses
+one worker; the 8 GB Mac will usually choose one with the app open.
+`--maxprocesses=4` is a second CPU-count ceiling; do not replace
+`-n auto` with an explicit larger number, which bypasses the memory hook.
+Work stealing spreads slow parametrized codec cases across workers. Fixtures
+and pixel/resource assertions are unchanged; this is a launch-time estimate,
+not a hard RSS limit. Close other memory-heavy applications or use the serial
+fallback if memory pressure rises. Native encoders must be built by setup
+before running tests, never built concurrently from a test.
+
+Parallel-safety audit (Windows PC, 26-27 Nov 2026): app data, source cache, default
+exports and Proof scratch are unique before collection in each process;
+SQLite ledgers follow those roots or per-test `tmp_path`. GPU broker tests use
+temporary spools and fake renderer transports, not the graphics card. Spools
+live inside the per-process scratch root so stale-spool cleanup cannot inspect
+the live app or another worker. GPU-lock
+and machine-settings tests use temporary locks/JSON. Socket tests keep their
+OS-assigned listener reserved through startup. The exFAT tests already use
+unique scratch directories on the repository volume; shared photo/codec inputs
+are read-only. Environment patches, module globals and working-directory
+changes stay inside one worker process.
+
+Native Library helper startup/readiness, recovery and deadline tests, plus the
+hard-process-exit sidecar recovery cases, carry `serial`: under concurrent CPU
+load a crash-recovery subprocess missed its unchanged 10-second deadline and
+Library helpers missed their unchanged 30-second readiness limit. The marker
+also covers tests constructing the real LibraryWorker so that helper lifecycle
+checks do not compete with other pytest workers. No deadlines are lengthened,
+fixtures reduced, or assertions removed. The two fake GPU-broker queue/deadline
+checks also run serially: their unchanged 200 ms deadline can expire before the
+simulated response arrives under CPU contention.
+The real-app/GPU drivers and focused release rules above remain unchanged.
+
+PC qualification, 26-27 Nov 2026: a full one-process baseline passed 5,032 tests
+and skipped 56 in 949.56 seconds wall time. Two final runner executions each
+matched those totals (4,987 passed / 56 skipped in parallel, then 45 passed
+serially) in 604.66 and 588.89 seconds: 36-38% less wall time. The full Node
+suite also passed (1,490 passed / 1 skipped). No fixtures, existing assertions,
+deadlines or numerical tolerances were weakened. Mac timings remain unmeasured.
+Counters and complete logs: `codebase/output/test-speed-2026-11-27/`.
+
 
 Pytest sets disposable app-data, local-data and source-cache roots **before test
 collection**, including subprocesses, and removes them when done. This prevents
@@ -169,7 +219,7 @@ Production dependencies include FastAPI, Uvicorn, Pydantic, NumPy, Pillow, tifff
 From `codebase/`:
 
 ```powershell
-.\.venv\Scripts\python.exe -m pytest -q tests
+.\.venv\Scripts\python.exe tools/test-python.py
 powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\run_alpha_qa.ps1
 ```
 

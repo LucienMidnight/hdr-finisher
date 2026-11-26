@@ -363,6 +363,7 @@ def test_old_export_is_not_starved_by_new_raw_thumbnails(tmp_path, monkeypatch):
         assert not client.post('/api/delivery/gpu/raw-budget/new',json={"bytes":400}).json()["granted"]
 
 
+@pytest.mark.serial  # Preserve the 200 ms fake-render deadline without CPU contention.
 def test_a_queued_job_waits_past_the_render_deadline_and_still_uses_the_gpu(tmp_path, monkeypatch):
     # Waiting behind other delivery work is not a GPU failure (Steve's batch
     # fell back to the CPU while visible Library pictures held the queue).
@@ -385,6 +386,7 @@ def test_a_queued_job_waits_past_the_render_deadline_and_still_uses_the_gpu(tmp_
         assert frame._delivery_record == {"renderer": "gpu", "fallback_reason": None}
 
 
+@pytest.mark.serial  # Preserve the 200 ms fake-render deadline without CPU contention.
 def test_a_claimed_job_past_the_render_deadline_falls_back(tmp_path, monkeypatch):
     app = _broker(tmp_path, monkeypatch)
     monkeypatch.setattr(gpu_delivery, "RENDER_DEADLINE_SECONDS", .2)

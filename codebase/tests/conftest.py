@@ -8,10 +8,15 @@ import pytest
 import tempfile
 
 _TEST_STATE = tempfile.TemporaryDirectory(prefix="hdr-finisher-test-pytest-")
-_TEST_ENV = {key: os.environ.get(key) for key in ("HDR_FINISHER_APP_DATA_DIR", "LOCALAPPDATA", "HDR_FINISHER_SOURCE_CACHE_DIR")}
+_TEST_ENV = {key: os.environ.get(key) for key in (
+    "HDR_FINISHER_APP_DATA_DIR", "LOCALAPPDATA", "HDR_FINISHER_SOURCE_CACHE_DIR",
+    "HDR_FINISHER_PROOF_ROOT",
+)}
 os.environ["HDR_FINISHER_APP_DATA_DIR"] = str(Path(_TEST_STATE.name) / "profile")
 os.environ["LOCALAPPDATA"] = str(Path(_TEST_STATE.name) / "local")
 os.environ["HDR_FINISHER_SOURCE_CACHE_DIR"] = str(Path(_TEST_STATE.name) / "source-mips")
+os.environ["HDR_FINISHER_PROOF_ROOT"] = str(Path(_TEST_STATE.name) / "proof")
+Path(os.environ["HDR_FINISHER_PROOF_ROOT"]).mkdir()
 
 def pytest_unconfigure(config):
     # SQLite ledgers are process-cached. Close only this disposable profile's
@@ -35,6 +40,43 @@ BACKEND = ROOT / "backend"
 FIXTURES = ROOT / "tests" / "fixtures"
 if str(BACKEND) not in sys.path:
     sys.path.insert(0, str(BACKEND))
+
+# Standalone exports otherwise default to a shared codebase/exports folder.
+# Set this before collection imports exporters and captures the constant.
+from hdr_finisher import config as _app_config
+_app_config.EXPORTS_DIR = Path(_TEST_STATE.name) / "exports"
+
+# GPU broker tests simulate delivery on the CPU. Its stale-spool sweeper must
+# never inspect the live app's or another worker's system-temp spools.
+from functools import partial
+from types import SimpleNamespace
+from hdr_finisher import gpu_delivery as _gpu_delivery
+_gpu_scratch = Path(_TEST_STATE.name) / "gpu-spools"
+_gpu_scratch.mkdir()
+_gpu_delivery.tempfile = SimpleNamespace(mkdtemp=partial(tempfile.mkdtemp, dir=_gpu_scratch))
+
+
+
+def _parallel_worker_count(cpu_count, total_bytes, available_bytes):
+    """Reserve 2 GiB for the OS/app and allow 3 GiB per CPU test process.
+
+    Low-memory machines stay at one worker; unknown memory is conservative.
+    The 8 GB Mac is additionally capped at two workers, the PC at four.
+    """
+    gib = 1024**3
+    if not total_bytes or not available_bytes:
+        return 1
+    machine_cap = 2 if total_bytes <= 8 * gib else 4
+    return max(1, min(cpu_count or 1, machine_cap, (available_bytes - 2 * gib) // (3 * gib)))
+
+
+@pytest.hookimpl(optionalhook=True)
+def pytest_xdist_auto_num_workers(config):
+    # This hook only affects -n auto/-n logical. Explicit -n N is an override.
+    from hdr_finisher.resource_preflight import detect_memory_resources
+    resources = detect_memory_resources()
+    return _parallel_worker_count(os.cpu_count(), resources.total_ram_bytes, resources.available_ram_bytes)
+
 
 @pytest.fixture(scope="session", autouse=True)
 def _isolate_source_mip_cache(tmp_path_factory) -> None:

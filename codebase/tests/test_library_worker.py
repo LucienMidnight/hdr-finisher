@@ -28,6 +28,7 @@ def source(tmp_path, name="photo.png", color=(80, 120, 160)):
     return output
 
 
+@pytest.mark.serial  # Native helper/process startup deadlines need uncontended CPU.
 def test_thumbnail_runs_in_low_priority_process_and_cache_survives_pause(worker, tmp_path, monkeypatch):
     image = source(tmp_path)
     browser = MediaBrowserStore(worker.root, thumbnail_worker=worker)
@@ -45,6 +46,7 @@ def test_thumbnail_runs_in_low_priority_process_and_cache_survives_pause(worker,
     worker.pause("grading", False)
 
 
+@pytest.mark.serial  # Native helper/process startup deadlines need uncontended CPU.
 def test_paused_jobs_prioritize_visible_work_and_cancel_without_decoding(worker, tmp_path):
     worker.pause("grading", True)
     worker.pause("export", True)
@@ -73,6 +75,7 @@ def test_paused_jobs_prioritize_visible_work_and_cancel_without_decoding(worker,
     assert len(list((worker.root / "thumbnails").glob("*.jpg"))) == 2
 
 
+@pytest.mark.serial  # Native helper/process startup deadlines need uncontended CPU.
 def test_waiting_thumbnail_observes_import_cancellation(worker, tmp_path):
     worker.pause("grading", True)
     cancelled = Event()
@@ -82,6 +85,7 @@ def test_waiting_thumbnail_observes_import_cancellation(worker, tmp_path):
     assert not worker._pending
 
 
+@pytest.mark.serial  # Native helper/process startup deadlines need uncontended CPU.
 def test_worker_reports_decode_errors_and_continues(worker, tmp_path):
     broken = tmp_path / "broken.jpg"
     broken.write_bytes(b"not an image")
@@ -90,6 +94,7 @@ def test_worker_reports_decode_errors_and_continues(worker, tmp_path):
     assert worker.thumbnail(str(source(tmp_path))).is_file()
 
 
+@pytest.mark.serial  # Native helper/process startup deadlines need uncontended CPU.
 def test_process_failure_restarts_and_recovers_pending_jobs(worker, tmp_path, capsys):
     worker.pause("grading", True)
     _job_id, future = worker.submit_thumbnail(str(source(tmp_path)))
@@ -110,6 +115,7 @@ def test_process_failure_restarts_and_recovers_pending_jobs(worker, tmp_path, ca
     assert "helper_stopped" in logs and "helper_restart" in logs
 
 
+@pytest.mark.serial  # Native helper/process startup deadlines need uncontended CPU.
 def test_close_stops_process_and_cancels_pending_work(worker, tmp_path):
     worker.pause("grading", True)
     _job_id, future = worker.submit_thumbnail(str(source(tmp_path)))
@@ -119,6 +125,7 @@ def test_close_stops_process_and_cancels_pending_work(worker, tmp_path):
     worker.close()
 
 
+@pytest.mark.serial  # Native helper/process startup deadlines need uncontended CPU.
 def test_paused_http_thumbnail_releases_connection_and_retries(worker, tmp_path, monkeypatch):
     from fastapi.testclient import TestClient
     from hdr_finisher import main
@@ -137,6 +144,7 @@ def test_paused_http_thumbnail_releases_connection_and_retries(worker, tmp_path,
     assert response.headers["content-type"] == "image/jpeg"
 
 
+@pytest.mark.serial  # Native helper/process startup deadlines need uncontended CPU.
 def test_native_helper_retention_is_charged_to_parent_owner_and_pressure_releases_it(worker,tmp_path):
     from hdr_finisher import app_memory
     image=source(tmp_path)
@@ -171,6 +179,7 @@ def _faulting_decoder_stub(connection, root, parent_pid, paused):
         connection.send({'id': message['id'], 'path': str(path)})
 
 
+@pytest.mark.serial  # Native helper/process startup deadlines need uncontended CPU.
 @pytest.mark.parametrize('payload', [b'CRAFTED-CRASH', b'HANG'])
 def test_identified_bad_decoder_is_not_replayed_and_next_file_recovers(tmp_path, monkeypatch, payload):
     from hdr_finisher import library_worker
@@ -191,6 +200,7 @@ def test_identified_bad_decoder_is_not_replayed_and_next_file_recovers(tmp_path,
         helper.close()
 
 
+@pytest.mark.serial  # Native helper/process startup deadlines need uncontended CPU.
 def test_decoder_deadline_does_not_count_queued_or_grade_pause_time(tmp_path, monkeypatch):
     from concurrent.futures import Future
     from hdr_finisher.library_worker import LibraryWorker
@@ -206,6 +216,7 @@ def test_decoder_deadline_does_not_count_queued_or_grade_pause_time(tmp_path, mo
     assert not any(f.done() for f in helper._pending.values())
 
 
+@pytest.mark.serial  # Native helper/process startup deadlines need uncontended CPU.
 def test_retouch_replay_allowance_cancels_only_the_timed_out_job(tmp_path, monkeypatch):
     from concurrent.futures import Future
     from hdr_finisher.library_worker import DecoderTimeout, retouch_replay_allowance
@@ -231,6 +242,7 @@ def test_retouch_replay_allowance_cancels_only_the_timed_out_job(tmp_path, monke
     assert not helper._identified_failure
 
 
+@pytest.mark.serial  # Native helper/process startup deadlines need uncontended CPU.
 def test_foreground_scene_gates_cpu_pictures_only_while_reading(worker, tmp_path):
     photo = source(tmp_path, 'cpu-photo.png')
     source(tmp_path, 'background.png')
@@ -251,6 +263,7 @@ def test_foreground_scene_gates_cpu_pictures_only_while_reading(worker, tmp_path
         worker.foreground_source('gpu-photo', False)
 
 
+@pytest.mark.serial  # Native helper/process startup deadlines need uncontended CPU.
 def test_helper_attaches_another_tier_to_the_active_source(worker, tmp_path):
     from hdr_finisher.library_live import quality
     image=source(tmp_path); before=image.read_bytes()
@@ -263,6 +276,7 @@ def test_helper_attaches_another_tier_to_the_active_source(worker, tmp_path):
     assert image.read_bytes()==before and not Path(str(image)+'.hdrf').exists()
 
 
+@pytest.mark.serial  # Native helper/process startup deadlines need uncontended CPU.
 def test_grade_view_revokes_render_holds_without_releasing_other_owners(worker):
     worker.pause("export:delivery", True)
     with worker.busy("POST /api/session/photo/scopes", grade=True):
@@ -277,6 +291,7 @@ def test_grade_view_revokes_render_holds_without_releasing_other_owners(worker):
     assert not worker.status()["paused"]
 
 
+@pytest.mark.serial  # Native helper/process startup deadlines need uncontended CPU.
 def test_hidden_grade_requests_and_errors_cannot_strand_holds(worker):
     worker.grade_active(False)
     with worker.busy("late hidden scope", grade=True):
@@ -290,6 +305,7 @@ def test_hidden_grade_requests_and_errors_cannot_strand_holds(worker):
     assert not worker.status()["paused"]
 
 
+@pytest.mark.serial  # Native helper/process startup deadlines need uncontended CPU.
 def test_jpegxl_cpu_scene_in_helper_preserves_decoded_pixels(worker, tmp_path):
     import numpy as np
     from hdr_finisher.jpegxl import encode_sdr_jpegxl, decode_jpegxl
@@ -311,6 +327,7 @@ def test_jpegxl_cpu_scene_in_helper_preserves_decoded_pixels(worker, tmp_path):
     assert path.read_bytes() == before
 
 
+@pytest.mark.serial  # Native helper/process startup deadlines need uncontended CPU.
 def test_idle_result_reader_does_not_retain_delivered_scene(tmp_path):
     from concurrent.futures import Future
     from threading import Thread

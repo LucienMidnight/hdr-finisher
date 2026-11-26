@@ -177,6 +177,7 @@ def test_pending_reset_and_source_changes_invalidate_inflight_errors(broken):
     assert errors.get(path) is None
 
 
+@pytest.mark.serial  # Native helper/process startup deadlines need uncontended CPU.
 def test_two_real_decoder_failures_release_helper_for_next_photo(tmp_path):
     from concurrent.futures import ThreadPoolExecutor
     from hdr_finisher.library_worker import LibraryWorker
