@@ -217,3 +217,43 @@ test("a released drag aborts active mask requests without a replacement batch", 
   assert.deepEqual(started, ["active"]);
   assert.equal(coordinator.snapshot().active, 0);
 });
+
+
+test("a failed mask batch waits for aborted siblings before releasing caller resources", async () => {
+  const coordinator = new HDRMaskRequestCoordinator(2);
+  const fail = deferred();
+  const cleanup = deferred();
+  const failure = Object.assign(new Error("capacity"), { status: 507 });
+  let siblingAborted = false;
+  let settled = false;
+  const started = [];
+  const run = coordinator.run("failed", ["refused", "sibling", "queued"], async (task, _index, signal) => {
+    started.push(task);
+    if (task === "refused") {
+      await fail.promise;
+      throw failure;
+    }
+    await new Promise(resolve => signal.addEventListener("abort", () => {
+      siblingAborted = true;
+      resolve();
+    }, { once: true }));
+    // GPU fences and body-reader cleanup can outlive the abort event.
+    await cleanup.promise;
+  });
+  const checked = assert.rejects(run, error => error === failure);
+  run.then(() => { settled = true; }, () => { settled = true; });
+  fail.resolve();
+  await new Promise(resolve => setImmediate(resolve));
+  try {
+    assert.equal(siblingAborted, true);
+    assert.equal(coordinator.snapshot().active, 1);
+    assert.equal(settled, false, "caller must retain shared resources until siblings unwind");
+    assert.notEqual(coordinator.controller, null);
+    assert.deepEqual(started, ["refused", "sibling"]);
+  } finally {
+    cleanup.resolve();
+    await checked;
+  }
+  assert.equal(coordinator.snapshot().active, 0);
+  assert.equal(coordinator.controller, null);
+});

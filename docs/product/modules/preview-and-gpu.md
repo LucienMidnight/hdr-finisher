@@ -8,6 +8,14 @@
   scopes UI; backend `render_cache.py`, `cpu_strips.py`, `preview.py`,
   `scopes.py`, `overlay.py`, `peak_*.py`.
 
+## November 26: mask batch failure cleanup
+
+A failed mask batch aborts sibling requests and waits for all workers to unwind
+before returning the error. This keeps the caller's shared scene-mask pin alive
+through body-reader and GPU cleanup. The mask coordinator regression tests
+cover delayed sibling cleanup and preservation of the original failure.
+No shader, output, concurrency cap or memory allowance changes.
+
 ## November 16: measured stage costs and exact scope cleanup
 
 The follow-up records named GPU completion-path increments, CPU profiling,

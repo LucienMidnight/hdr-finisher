@@ -68,7 +68,12 @@
         () => next(),
       );
       try {
-        await Promise.all(workers);
+        // Abort asks siblings to stop; their body readers and GPU waits can
+        // still be unwinding. Keep caller-owned resources pinned until every
+        // worker has finished, then propagate the original failure.
+        const settled = await Promise.allSettled(workers);
+        const failed = settled.find(result => result.status === "rejected");
+        if (failed) throw failed.reason;
       } finally {
         if (this.controller === controller) this.controller = null;
       }
