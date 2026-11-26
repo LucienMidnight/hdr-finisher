@@ -90,3 +90,44 @@ test('A queued Delete shows its current wait phase and item count', async () => 
   release({count:2,attached_copies:0,recycle:2,warnings:[]});
   await pending;
 });
+
+
+test('A failed file-command refresh is retried by the next identical health reply', async () => {
+  const context = vm.createContext({HDRLibraryDialogs:{}});
+  context.window = context;
+  vm.runInContext(fs.readFileSync(path.join(__dirname,'../frontend/library-file-commands.js'),'utf8'),context);
+  const seen = [];
+  let fail = true;
+  const feed = context.HDRLibraryFileCommands.createChangeFeed(async changes => {
+    seen.push(changes.map(entry => entry.revision).join(','));
+    if (fail) { fail = false; throw Error('Temporary folder refresh failure'); }
+  });
+  const first = {revision:1,recent_changes:[{revision:1,changes:[]}]};
+  const failed = feed.receive(first);
+  const retry = feed.receive(first);
+  await assert.rejects(failed,/Temporary folder refresh failure/);
+  await retry;
+  await feed.receive(first);
+  assert.deepEqual(seen,['1','1'],'The failed revision retries once; successful duplicates are ignored');
+});
+
+test('A newer file-command reply catches up failed revisions without applying older replies again', async () => {
+  const context = vm.createContext({HDRLibraryDialogs:{}});
+  context.window = context;
+  vm.runInContext(fs.readFileSync(path.join(__dirname,'../frontend/library-file-commands.js'),'utf8'),context);
+  const applied = [];
+  let fail = true;
+  const feed = context.HDRLibraryFileCommands.createChangeFeed(async (changes,missed) => {
+    assert.equal(missed,false);
+    if (fail) { fail = false; throw Error('Offline'); }
+    applied.push(...changes.map(entry => entry.revision));
+  });
+  const entries = [1,2].map(revision => ({revision,changes:[]}));
+  const first = {revision:1,recent_changes:entries.slice(0,1)};
+  const failed = feed.receive(first);
+  const newer = feed.receive({revision:2,recent_changes:entries});
+  const older = feed.receive(first);
+  await assert.rejects(failed,/Offline/);
+  await Promise.all([newer,older]);
+  assert.deepEqual(applied,[1,2]);
+});

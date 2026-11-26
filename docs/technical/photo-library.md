@@ -9,8 +9,16 @@ specific file, rule or message.
 - Sections 1 to 10 describe what is built. Section 11 lists the remaining
   gaps. Section 12 explains the library-wide health report and diagnostics.
 - The Library is still being built, and its controls change often. A
-  how-to-use guide will be written when they settle. Product intent lives in
-  the [Photo Library PRD](../product/archive/Photo_Library_PRD_2026-10-09.md).
+  how-to-use guide is available in the [Library manual](../user-guide/library.md).
+  Product intent lives in the [Photo Library PRD](../product/modules/photo-library.md).
+
+### File-command refresh recovery (November 26, 2026)
+
+The frontend serializes direct replies and health updates. A file-command
+revision is acknowledged only after its Library refresh succeeds; a later health
+reply retries failed refreshes and successful duplicates remain ignored.
+`library-file-command-feedback.test.js` covers overlapping replies, retry and
+catch-up after failure.
 
 ### Native macOS original-file operations (November 14, 2026)
 
