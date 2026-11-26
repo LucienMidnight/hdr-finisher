@@ -4,7 +4,7 @@
 
 Develop a camera RAW or a finished HDR file, grade the HDR picture on a real HDR display, grade a separate SDR picture for everyone else, and deliver both in a single gain-map file. HDR screens show the full range; ordinary screens and older apps show the SDR picture you made for them.
 
-Windows · macOS (Apple Silicon) · Linux &nbsp;|&nbsp; GPL-3.0, no subscription &nbsp;|&nbsp; Version 0.9.1, technical alpha
+Windows · macOS (Apple Silicon) · Linux &nbsp;|&nbsp; GPL-3.0, no subscription &nbsp;|&nbsp; Version 0.9.3, technical alpha
 
 [Download](https://github.com/LucienMidnight/hdr-finisher/releases) · [Quick start](docs/getting-started/quick-start.md) · [Documentation](docs/README.md) · [Known limitations](docs/known-limitations.md)
 
@@ -14,7 +14,7 @@ Windows · macOS (Apple Silicon) · Linux &nbsp;|&nbsp; GPL-3.0, no subscription
 
 - **Two pictures, one file.** HDR and SDR are graded as two independent renditions of the same photo. Neither is an automatic by-product of the other. Gain-map export joins them, so each viewer gets the version made for their screen.
 - **Gain maps in and out.** Exports JPEG Ultra HDR and AVIF with ISO 21496-1 gain maps, plus direct JPEG XL HDR. Gain-map files from phones and other editors open with their SDR base kept as the SDR rendition.
-- **A peak you can rely on.** Set a highlight target in nits, and the rendered HDR picture never goes above it. Encoders can nudge a few highlights over; the optional **Guarantee HDR peak** check decodes the written file and corrects them.
+- **A peak you can rely on.** Set a highlight target in nits, and the rendered HDR picture never goes above it. Every HDR export and Proof is checked after encoding. Anything more than 1% over the target is corrected or refused without replacing an existing file.
 - **Proof before you publish.** Proof encodes the real export file, then shows how it adapts on displays with less headroom, from SDR up to full HDR, or at a chosen peak in nits.
 - **Scene-linear throughout.** Every source is converted to a 32-bit float ACEScg working image, with a 203-nit HDR reference white. Rendered EXR from Blender and other 3D tools is handled as carefully as camera RAW.
 - **GPU first.** Preview, export, batch export, Proof and Library pictures all render on the graphics card with the same shaders. The CPU takes over if no usable GPU is found.
@@ -26,7 +26,7 @@ Windows · macOS (Apple Silicon) · Linux &nbsp;|&nbsp; GPL-3.0, no subscription
 
 | Kind | Formats | Notes |
 |---|---|---|
-| Camera RAW | `.arw` `.cr2` `.cr3` `.nef` `.nrw` `.raf` `.rw2` `.orf` `.ori` `.pef` `.srw` `.dng` | Developed with LibRaw, one generic method for every camera. Includes Fujifilm X-Trans, highlight reconstruction and automatic Lensfun lens correction. DNG import is experimental. |
+| Camera RAW | `.arw` `.cr2` `.cr3` `.nef` `.nrw` `.raf` `.rw2` `.orf` `.ori` `.pef` `.srw` `.dng` | Decoded with LibRaw, with signed AHD development for supported Bayer sensors. Includes Fujifilm X-Trans, highlight reconstruction and automatic Lensfun lens correction. DNG import is experimental. |
 | Scene-linear HDR | OpenEXR, 32-bit float TIFF, Radiance HDR, PFM | The preferred handoff from other editors and 3D renderers. |
 | HDR with a gain map | JPEG Ultra HDR, AVIF (ISO 21496-1), iPhone HEIC | The file's SDR base becomes the SDR rendition. |
 | Encoded HDR | AVIF and 16-bit TIFF in PQ or HLG, JPEG XL | |
@@ -48,13 +48,13 @@ Export presets can resize, sharpen for output, choose what metadata to keep, and
 - **Library.** Browse folders as a grid, filmstrip or full screen, and compare two photos side by side. Rate, label, tag, and build manual and smart albums. Use focus and exposure overlays, virtual copies, and copy and paste of selected parts of a grade.
 - **RAW development.** Camera RAW opens straight into an HDR grade, with lens correction and white balance in floating point.
 - **HDR and SDR grading.** Tone, Highlight Compression, Exposure Bands (a tone equalizer), Color, Color Grading, Curves, Detail, Vignette, and crop, straighten and perspective correction. Match entire HDR grade builds a starting SDR from your finished HDR grade.
-- **Local adjustments.** Brush, gradient, luminance-range and freeform path masks, which can be combined, each with its own grade.
+- **Local adjustments.** Brush, gradient, luminance-range, hue-range and freeform path masks, which can be combined, each with its own grade.
 - **Denoise** that measures the noise in each file, and **Black & White** with eight colour sliders.
 - **Film Look.** Negative and slide film stocks, print papers, push/pull, grain, halation and lens-filter glow, applied in the order light passes through film and rendered in real time on the GPU. The film and paper data comes from Andrea Volpato's [spektrafilm](https://github.com/andreavolpato/spektrafilm), whose physical film simulation also guided HDR Finisher's own engine.
 - **Scopes and full-resolution preview.** HDR waveform and histogram in nits, and true source pixels at 100% zoom, even on 40-megapixel files.
 - **Batch export.** Export a whole selection in the background with a preset, with pause, cancel and a result for each file.
 
-**Coming in 1.0:** a Retouch brush (Inpaint, Heal and Clone) and hue selection as a local-adjustment mask.
+**Retouch:** Inpaint, Heal and Clone are available; quality review remains open. See [Local adjustments and Retouch](docs/user-guide/local-adjustments.md#hue-selection-and-retouch).
 
 ## Who it is for
 
@@ -70,7 +70,7 @@ Then read the [quick start](docs/getting-started/quick-start.md) and [monitor se
 
 ## Status
 
-HDR Finisher is a technical alpha, heading for 1.0. Windows is the best-tested platform. Windows builds are unsigned and macOS builds are not notarized. On macOS and Linux the Library cannot yet rename, move or delete files. Saved projects and presets may need to be recreated between versions until 1.0. See [Known limitations](docs/known-limitations.md) and the [release notes](RELEASE_NOTES.md).
+HDR Finisher is a technical alpha, heading for 1.0. Windows is the best-tested platform. Windows builds are unsigned and macOS builds are not notarized. Library rename, move and delete work on Windows and macOS; they remain unavailable on Linux. Saved projects and presets may need to be recreated between versions until 1.0. See [Known limitations](docs/known-limitations.md) and the [release notes](RELEASE_NOTES.md).
 
 ## Development
 

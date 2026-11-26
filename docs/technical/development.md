@@ -142,6 +142,14 @@ node --test tests/*.test.js
 .venv/bin/python -m pytest tests -q
 ```
 
+For test-speed work, use `.venv/bin/python -m pytest tests -q --durations=50`
+(Windows: `.venv/Scripts/python.exe`). After finding a slow group, pass only
+its test paths while iterating. This still uses the same isolation fixtures
+and assertions. Reserve a full-suite rerun for the grouped final changes.
+pytest-xdist is not installed by default; do not use `-n auto` until shared
+files, native builds and GPU/resource tests are explicitly isolated and
+qualified for parallel execution.
+
 Pytest sets disposable app-data, local-data and source-cache roots **before test
 collection**, including subprocesses, and removes them when done. This prevents
 `codebase/HDR Finisher/Cache` and `library.sqlite3` appearing in the repository.

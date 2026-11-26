@@ -42,7 +42,7 @@ for more only if it says why. Steve can always ask for more or less.
 
 ### Every change
 
-The default real-app Library check is `node tools/quick-library-check.cjs --label=<name>` from `codebase` (90 seconds); add `--single` for ten Single steps. It launches plain Electron itself without run-in-electron.js or DevTools.
+The default real-app Library check is `.venv/Scripts/python.exe tools/gpu-run-lock.py --label <name> -- node tools/quick-library-check.cjs --label=<name>` from `codebase` (90 seconds); add `--single` for ten Single steps. Use `.venv/bin/python` on macOS/Linux. It launches plain Electron itself without run-in-electron.js or DevTools.
 
 Run the fast checks, from `codebase`:
 
@@ -57,7 +57,12 @@ Group related changes and run their GPU checks once for the group, not once
 per change. GPU checks run one at a time through `tests/run-in-electron.js`
 (or `tests/run-native-electron.js`) with
 `HDR_FINISHER_ELECTRON_WINDOW_SIZE` set to the machine's window size (see
-"Machines": 2560x1440 on the PC, 1408x794 on the MacBook). Never overlap them.
+"Machines": 2560x1440 on the PC, 1408x794 on the MacBook). Never overlap them. Always wrap real-app/GPU commands in `tools/gpu-run-lock.py`, including quick Library and release runs; see `docs/technical/development.md` for commands. The release runner's internal lock alone does not coordinate standalone checks.
+
+For a speed investigation, add `--durations=50` to the Python command.
+Use targeted test files while iterating; keep the complete suites for grouped
+verification. Do not add `-n auto`: pytest-xdist is not installed by default
+and shared-file/native-resource tests have not been qualified for parallel use.
 
 ### Release points only
 
