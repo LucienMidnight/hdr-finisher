@@ -1,3 +1,19 @@
+## November 26 - Test infrastructure (PC review)
+
+Test-only changes on `integrate/pc-tests-review-2026-11-26`; app behavior and
+GPU waits are unchanged. Single observations during concurrent review, with
+5% treated as timing noise rather than a regression. From `codebase`,
+`npm run test:release -- --plan` took 19.81 s before and 5.81 s after lazy
+photo-path/project lookup and avoiding irrelevant history-log reads. The
+selection grew from 123 to 124 drivers during other reviewers' work, so this
+is not a controlled benchmark. The command launches no drivers.
+The targeted runner checks took 68.47 s before (28 passing) and 41.56 s after
+(30 passing, including the photo-path checks); process/Git tests dominate.
+Evidence: `codebase/output/test-infra-release-plan-{before,after}.txt`,
+`test-infra-runner-targeted.txt` and `test-infra-runner-after.txt` in the
+same output directory. Python full-suite after-time is deferred until all
+reviewers finish; no full-suite speedup is claimed here.
+
 ## November 26 - Native large export, GPU versus CPU on Windows
 
 Windows 11 PC, Ryzen 5 7600 / RTX 4070 Ti, unpackaged Electron at 2560×1440,

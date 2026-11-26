@@ -71,6 +71,24 @@ test('estimates use actual latest durations, reserve one failed retry and expose
   const actual=runner.estimate([{path:'a'},{path:'b'},{path:'c'}],[{driver:'a',durationSeconds:4,exitCode:0},{driver:'a',durationSeconds:8,exitCode:1},{driver:'b',durationSeconds:3,exitCode:0},{driver:'b',durationSeconds:999,exitCode:null,interrupted:true}]);
   assert.equal(actual.seconds,11);assert.equal(actual.retrySeconds,8);assert.deepEqual(actual.unknown,['c']);
 });
+test('estimates read logs only for failed drivers with known signatures', t => {
+  const root = scratch(t), log = path.join(root, 'attempt.log');
+  fs.writeFileSync(log, 'Error: old failure');
+  const read = fs.readFileSync;
+  const reads = [];
+  t.mock.method(fs, 'readFileSync', function(file, ...args) {
+    reads.push(file);
+    return read.call(this, file, ...args);
+  });
+  const rows = [{path:'passed'}, {path:'new'}, {path:'known'}];
+  const records = rows.map((row, i) => ({driver:row.path, durationSeconds:i+1, exitCode:i === 0 ? 0 : 1, log}));
+  const known = {failures:[{driver:'passed', messages:['Error: old failure']}, {driver:'known', messages:['Error: old failure']}]};
+  const actual = runner.estimate(rows, records, known);
+  assert.equal(actual.seconds, 6);
+  assert.equal(actual.retrySeconds, 2);
+  assert.deepEqual(reads, [log]);
+});
+
 test('fixture protection detects changed and missing files without overwriting them', t => {
   const file=path.join(scratch(t),'fixture.hdrfinisher');fs.writeFileSync(file,'original');
   const hashes=runner.hashProjects([file]);runner.checkProjects(hashes);

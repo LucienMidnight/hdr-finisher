@@ -60,7 +60,7 @@ function select(list, mode, value, changed = []) {
   return { rows, ...mapping };
 }
 function command(row, out, list) {
-  const vars = { output: out, root: ROOT, project: photosPath(list.protectedProjects[2]), get electron() { return require('../../tools/lib/platform.cjs').electronExecutable(); } };
+  const vars = { output: out, root: ROOT, get project() { return photosPath(list.protectedProjects[2]); }, get electron() { return require('../../tools/lib/platform.cjs').electronExecutable(); } };
   const expand = text => String(text).replace(/\{(output|root|project|electron)\}/g, (_, key) => vars[key]);
   const method = row.launch.method;
   const posixSampler = method === 'powershell' && process.platform !== 'win32' && row.path === 'tests/performance/sample-process-memory.ps1';
@@ -123,7 +123,9 @@ function estimate(rows, records, known = {failures:[]}) {
     const prior = records.filter(record => record.driver === row.path && !record.interrupted).at(-1);
     if (!prior) { unknown.push(row.path); continue; }
     seconds += prior.durationSeconds;
-    const recordedKnown = prior.log && fs.existsSync(prior.log) && knownMessage(cleanLog(fs.readFileSync(prior.log, 'utf8')), known, row.path);
+    // Only a failed driver with a matching known signature needs its log read.
+    const recordedKnown = prior.exitCode !== 0 && known.failures.some(f => f.driver === row.path)
+      && prior.log && fs.existsSync(prior.log) && knownMessage(cleanLog(fs.readFileSync(prior.log, 'utf8')), known, row.path);
     if (prior.exitCode !== 0 && !recordedKnown) retrySeconds += prior.durationSeconds;
     evidence.push({ driver: row.path, seconds: prior.durationSeconds, source: prior.source || 'runner history' });
   }

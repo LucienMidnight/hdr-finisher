@@ -20,8 +20,11 @@ function photosRoot() {
 }
 
 /** The local path for a D:/Photos path (either slash direction). */
-function photosPath(file, root = photosRoot()) {
-  if (!root || typeof file !== 'string' || !PC_ROOT.test(file)) return file;
+function photosPath(file, root) {
+  // Most driver arguments are not photo paths; do not spawn Git for those.
+  if (typeof file !== 'string' || !PC_ROOT.test(file)) return file;
+  if (root === undefined) root = photosRoot();
+  if (!root) return file;
   return path.join(root, ...file.replace(PC_ROOT, '').split(/[\\/]+/).filter(Boolean));
 }
 
