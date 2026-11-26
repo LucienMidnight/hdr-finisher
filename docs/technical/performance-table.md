@@ -703,6 +703,49 @@ All passes kept bypass exact and the visible patch matched the whole-frame
 reference exactly. A forced settle timeout named the blocked zoom refinement
 timer and exited without waiting for the release runner.
 
+## November 26: CPU DNG correction on the minimum Mac
+
+MacBook Neo, A18 Pro, 8 GB, 1408×794 points. Shared GPU lock for every run.
+Before uses the November 25 app baseline at `0f64b37f` and the identical
+November 25 opcode implementation (`367b37d1`) for the standalone phase probe.
+After is this change on the November 26 checkout. Each successful app pair
+uses a fresh unpackaged Electron profile and the unchanged
+`library-dng-warp.js --sample` driver with the two original RAWs linked into
+disposable folders. One observation per photo per route, not a percentile or
+a guarantee under memory pressure. The existing 10% diagnostic timing band
+is not an extension of Steve's 15 s target.
+
+| Library folder open → developed DNG thumbnail | CPU before → after | GPU before → after | CPU after, first decode |
+| --- | ---: | ---: | ---: |
+| DJI_0071-2, 48 MP | 59.06 → 13.87 s | 4.68 → 4.57 s | 11.90 s |
+| Leica X2, 16 MP | 48.81 → 3.93 s | 2.00 → 1.62 s | 2.92 s |
+
+The after times above are when the DNG is visible alongside the small PNG,
+not when the unrelated PNG first appears. DJI's first app CPU decode spent
+2.22 s in LibRaw development and float buffer preparation, 0.50 s in GainMap,
+8.73 s in warp and 0.34 s in DNG colour. Leica spent 0.91 s developing,
+1.72 s in warp and 0.13 s in DNG colour, with no GainMap. The remaining wait
+includes analysis, session setup, reduction and drawing. An earlier DJI
+attempt was refused before decoding (1.63 GiB estimated, 1.60 GiB safely
+available). The fresh retry passed without changing admission or the RAM cap.
+
+Standalone full-image CPU preparation on the same Mac, one observation per
+condition. This isolates decode and corrections, without Electron or the
+Library scheduler. Columns are seconds, before → after.
+
+| Photo | LibRaw read and development | GainMap | Warp | DNG colour and crop | ACEScg normalization | Analysis | Loader total |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| DJI_0071-2 | 1.91 → 2.01 | 6.17 → 0.44 | 30.21 → 8.94 | 0.36 → 0.40 | 0.74 → 0.74 | 0.75 → 0.75 | 40.42 → 13.70 |
+| Leica X2 | 0.89 → 0.81 | — | 8.96 → 1.53 | 0.10 → 0.15 | 0.33 → 0.48 | 0.30 → 0.44 | 10.76 → 3.57 |
+
+DJI's final warp used 37.5 process-CPU seconds in 8.94 s of wall time.
+Standalone Python peak RSS was 1,743 → 1,516 MiB for DJI and 895 → 927 MiB
+for Leica. Both full-resolution after outputs had the same SHA-256 as the
+previous CPU outputs. All eight real-photo HDR/SDR whole-picture and border
+comparisons against GPU passed at the existing limits. The 59 synthetic
+GPU cases passed with worst absolute error 0.00000510, plus the existing
+cancellation, budget and allocation-failure checks.
+
 ## November 25: overnight focused release check on the minimum Mac
 
 MacBook Neo A18 Pro, 8 GB, 1408x794 points, unpackaged Electron under the

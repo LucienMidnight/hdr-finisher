@@ -308,13 +308,15 @@ def _apply_raw_corrections(
         image, gpu_diagnostics = correct_gpu(camera_linear, dng_inspection, cancelled)
         _raise_if_cancelled(cancelled)
         if image is None:
+            # Abandoning GPU correction leaves this buffer solely owned by
+            # CPU import, so GainMap can update it without a full-image copy.
             camera_linear, opcode_diagnostics = apply_opcode_list3(
                 camera_linear,
                 sorted(
                     (*dng_inspection.required_opcodes, *dng_inspection.optional_opcodes),
                     key=lambda opcode: opcode.index,
                 ),
-                cancelled=cancelled, progress=progress,
+                cancelled=cancelled, progress=progress, consume_input=True,
             )
             if progress: progress("dng_colour", "Converting DNG colour")
             color_metadata = color_metadata_from_mapping(dng_inspection.metadata)

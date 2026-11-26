@@ -161,6 +161,9 @@ def test_warp_bicubic_weight_reuse_preserves_clipped_reference() -> None:
                 expected[row, col, channel] = value / total
 
     assert np.allclose(result, expected, rtol=0.0, atol=2e-7)
+    np.testing.assert_array_equal(
+        apply_warp_rectilinear(np.asfortranarray(image), warp, rows=2), result
+    )
 
 
 def test_warp_cancellation_is_checked_between_bounded_row_chunks() -> None:
@@ -178,6 +181,50 @@ def test_warp_cancellation_is_checked_between_bounded_row_chunks() -> None:
     with pytest.raises(DngImportCancelled):
         apply_warp_rectilinear(image, identity, rows=64, cancelled=cancelled)
     assert calls == 2
+
+
+def test_threaded_opcodes_match_serial_on_signed_samples(monkeypatch) -> None:
+    from hdr_finisher import dng_opcodes
+
+    height, width = 832, 1024
+    image = np.random.default_rng(17).standard_normal((height, width, 3), dtype=np.float32)
+    gain_map = GainMapParameters(
+        AreaSpec(1, 3, height, width - 1, 1, 2, 3, 2),
+        2, 2, 0.6, 0.7, -0.1, 0.2, 3,
+        np.arange(12, dtype=np.float64).reshape(2, 2, 3) / 5,
+    )
+    warp = WarpRectilinearParameters(
+        np.asarray([
+            [1, 0.03, -0.02, 0.01, 0.015, -0.01],
+            [1, 0, 0, 0, 0, 0],
+            [1, -0.01, 0.03, -0.02, 0.02, -0.005],
+        ], dtype=np.float64),
+        0.23, 0.75,
+    )
+    original = image.copy()
+    monkeypatch.setattr(dng_opcodes, "logical_cpus", lambda: 1)
+    serial_gain = apply_gain_map(image, gain_map)
+    serial = apply_warp_rectilinear(serial_gain, warp)
+
+    monkeypatch.setattr(dng_opcodes, "logical_cpus", lambda: 4)
+    threaded_gain = apply_gain_map(image, gain_map)
+    np.testing.assert_array_equal(threaded_gain, serial_gain)
+    np.testing.assert_array_equal(image, original)
+    # A pitched sample inside the overlap of all four map points, and its
+    # neighbouring row and column, which the AreaSpec must leave untouched.
+    y, x, plane = 103, 503, 1
+    v = ((y + 0.5) / height + 0.1) / 0.6
+    h = ((x + 0.5) / width - 0.2) / 0.7
+    grid = gain_map.gains[..., plane]
+    top = grid[0, 0] * (1 - h) + grid[0, 1] * h
+    bottom = grid[1, 0] * (1 - h) + grid[1, 1] * h
+    expected = image[y, x, plane] * np.float32(top * (1 - v) + bottom * v)
+    assert threaded_gain[y, x, plane] == expected
+    assert threaded_gain[y - 1, x, plane] == image[y - 1, x, plane]
+    assert threaded_gain[y, x - 1, plane] == image[y, x - 1, plane]
+    assert apply_gain_map(image, gain_map, consume_input=True) is image
+    np.testing.assert_array_equal(image, serial_gain)
+    np.testing.assert_array_equal(apply_warp_rectilinear(image, warp), serial)
 
 
 def test_warp_parser_accepts_real_target_shape_and_rejects_unknown_planes() -> None:

@@ -1,3 +1,20 @@
+### November 26: faster CPU correction for camera DNGs
+
+On CPU fallback, GainMap reuses its horizontal interpolation and can update
+the private mosaic-development buffer in place. WarpRectilinear keeps the
+clamped float64 cubic, using separate horizontal and vertical passes and
+copying identity channels directly. Both corrections use the shared CPU
+workers in bounded row bands. GPU routing, opcode order, cancellation,
+memory admission and pixel tolerances are unchanged.
+
+The full-size DJI_0071-2 and Leica X2 CPU outputs matched the previous CPU
+outputs byte for byte. Both photos also passed the existing Library CPU/GPU
+checks for finished HDR and SDR pictures, including borders. On the minimum
+Mac, the developed CPU picture appeared in 13.9 s and 3.9 s respectively,
+within Steve's 15 s target when the import was admitted. Low available RAM
+can still prevent a large import from starting. See the performance table
+for stages, test conditions and the observed memory refusal.
+
 ### November 15: W2 P5 Lensfun stage measurement; no rewrite
 
 The existing RAW import phase history now separates Lensfun profile/modifier,

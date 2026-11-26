@@ -1,10 +1,18 @@
 from __future__ import annotations
 
+from concurrent.futures import FIRST_COMPLETED, wait
 from dataclasses import dataclass
 import struct
 from typing import Callable, Iterable
 
 import numpy as np
+
+from .cpu_budget import CpuExecutor, logical_cpus
+
+
+# Limit each correction to one wave of about 400k scratch pixels. The pool is
+# shared with other CPU work and each task writes disjoint output rows.
+_SCRATCH_PIXELS = 400_000
 
 
 OPCODE_NAMES = {
@@ -184,7 +192,9 @@ def apply_gain_map(
     *,
     rows: int = 128,
     cancelled: Callable[[], bool] | None = None,
+    consume_input: bool = False,
 ) -> np.ndarray:
+    """Apply a gain map, optionally overwriting an owned writable image."""
     source = np.asarray(image, dtype=np.float32)
     if source.ndim != 3:
         raise DngOpcodeError("GainMap input must be an H×W×C image")
@@ -194,34 +204,44 @@ def apply_gain_map(
         raise DngOpcodeError("GainMap AreaSpec exceeds the decoded image")
     if gain_map.map_planes > channels:
         raise DngOpcodeError("GainMap has more map planes than the decoded image")
-    output = np.array(source, dtype=np.float32, copy=True, order="C")
-    for start in range(area.top, area.bottom, rows):
-        _raise_if_cancelled(cancelled)
-        end = min(area.bottom, start + rows)
-        yy = np.arange(start, end, dtype=np.float64)[:, None]
-        xx = np.arange(area.left, area.right, dtype=np.float64)[None, :]
-        # DNG SDK reference semantics use pixel centers normalized over the
-        # complete image bounds, not endpoint-normalized pixel indices.
+    output = source if consume_input and source.flags.writeable else np.array(source, copy=True, order="C")
+    # DNG SDK reference semantics use pixel centers normalized over the
+    # complete image bounds, not endpoint-normalized pixel indices.
+    xx = np.arange(area.left, area.right, area.col_pitch, dtype=np.float64)[None, :]
+    gh = (((xx + 0.5) / width) - gain_map.map_origin_h) / gain_map.map_spacing_h
+    gh = np.clip(gh, 0.0, gain_map.map_points_h - 1.0)
+    h0 = np.floor(gh).astype(np.intp)
+    h1 = np.minimum(h0 + 1, gain_map.map_points_h - 1)
+    wh = gh - h0
+    left_weight = 1.0 - wh
+
+    def band(start: int, end: int) -> None:
+        first = start + (area.top - start) % area.row_pitch
+        if first >= end:
+            return
+        yy = np.arange(first, end, area.row_pitch, dtype=np.float64)[:, None]
         gv = (((yy + 0.5) / height) - gain_map.map_origin_v) / gain_map.map_spacing_v
-        gh = (((xx + 0.5) / width) - gain_map.map_origin_h) / gain_map.map_spacing_h
         gv = np.clip(gv, 0.0, gain_map.map_points_v - 1.0)
-        gh = np.clip(gh, 0.0, gain_map.map_points_h - 1.0)
-        v0 = np.floor(gv).astype(np.int32)
-        h0 = np.floor(gh).astype(np.int32)
+        v0 = np.floor(gv).astype(np.intp)
         v1 = np.minimum(v0 + 1, gain_map.map_points_v - 1)
-        h1 = np.minimum(h0 + 1, gain_map.map_points_h - 1)
         wv = gv - v0
-        wh = gh - h0
+        top_weight = 1.0 - wv
+        # Interpolate each contributing grid row horizontally just once per
+        # band. A dense or sparse grid still uses at most two rows per sample.
+        grid_rows, inverse = np.unique(np.concatenate((v0[:, 0], v1[:, 0])), return_inverse=True)
+        top_rows, bottom_rows = np.split(inverse, 2)
+        target = output[first:end:area.row_pitch, area.left:area.right:area.col_pitch]
         for relative_plane in range(area.planes):
             plane = area.plane + relative_plane
             map_plane = min(plane, gain_map.map_planes - 1)
-            top = gain_map.gains[v0, h0, map_plane] * (1.0 - wh) + gain_map.gains[v0, h1, map_plane] * wh
-            bottom = gain_map.gains[v1, h0, map_plane] * (1.0 - wh) + gain_map.gains[v1, h1, map_plane] * wh
-            gains = top * (1.0 - wv) + bottom * wv
-            target = output[start:end, area.left:area.right, plane]
-            row_mask = ((np.arange(start, end) - area.top) % area.row_pitch) == 0
-            col_mask = ((np.arange(area.left, area.right) - area.left) % area.col_pitch) == 0
-            target[np.ix_(row_mask, col_mask)] *= gains[np.ix_(row_mask, col_mask)].astype(np.float32)
+            horizontal = gain_map.gains[grid_rows[:, None], h0, map_plane] * left_weight
+            horizontal += gain_map.gains[grid_rows[:, None], h1, map_plane] * wh
+            gains = horizontal[top_rows]
+            gains *= top_weight
+            gains += horizontal[bottom_rows] * wv
+            target[..., plane] *= gains.astype(np.float32)
+
+    _run_opcode_bands(band, area.top, area.bottom, xx.size, rows, cancelled)
     return output
 
 
@@ -250,22 +270,43 @@ def apply_warp_rectilinear(
     )
     x_pixels = np.arange(width, dtype=np.float64)[None, :]
     x = (x_pixels - center_x) / scale
-    for start in range(0, height, rows):
-        _raise_if_cancelled(cancelled)
-        end = min(height, start + rows)
+    x2 = x * x
+    coefficients = [
+        warp.coefficients[0 if warp.coefficients.shape[0] == 1 else channel]
+        for channel in range(channels)
+    ]
+    identity = [np.array_equal(c, (1, 0, 0, 0, 0, 0)) for c in coefficients]
+    all_identity = all(identity)
+
+    def band(start: int, end: int) -> None:
+        if all_identity:
+            output[start:end] = source[start:end]
+            return
         y_pixels = np.arange(start, end, dtype=np.float64)[:, None]
         y = (y_pixels - center_y) / scale
-        r2 = np.minimum(x * x + y * y, 1.0)
-        for channel in range(channels):
-            k0, k1, k2, k3, k4, k5 = warp.coefficients[
-                0 if warp.coefficients.shape[0] == 1 else channel
-            ]
-            radial = k0 + k1 * r2 + k2 * r2**2 + k3 * r2**3
-            source_x = center_x + scale * (x * radial + 2.0 * k4 * x * y + k5 * (r2 + 2.0 * x * x))
-            source_y = center_y + scale * (y * radial + k4 * (r2 + 2.0 * y * y) + 2.0 * k5 * x * y)
+        y2 = y * y
+        r2 = np.minimum(x2 + y2, 1.0)
+        r4, r6 = r2**2, r2**3
+        for channel, (k0, k1, k2, k3, k4, k5) in enumerate(coefficients):
+            if identity[channel]:
+                output[start:end, :, channel] = source[start:end, :, channel]
+                continue
+            radial = k0 + k1 * r2 + k2 * r4 + k3 * r6
+            source_x, source_y = x * radial, y * radial
+            if k4 or k5:
+                source_x += 2.0 * k4 * x * y
+                source_x += k5 * (r2 + 2.0 * x * x)
+                source_y += k4 * (r2 + 2.0 * y * y)
+                source_y += 2.0 * k5 * x * y
+            source_x *= scale
+            source_y *= scale
+            source_x += center_x
+            source_y += center_y
             output[start:end, :, channel] = _sample_bicubic_clipped(
                 source[..., channel], source_x, source_y
             )
+
+    _run_opcode_bands(band, 0, height, width, rows, cancelled)
     return output
 
 
@@ -275,7 +316,9 @@ def apply_opcode_list3(
     *,
     cancelled: Callable[[], bool] | None = None,
     progress: Callable[[str, str], None] | None = None,
+    consume_input: bool = False,
 ) -> tuple[np.ndarray, tuple[dict[str, object], ...]]:
+    """Apply opcodes in tag order. Only consume input when the caller owns it."""
     result = np.asarray(image, dtype=np.float32)
     diagnostics: list[dict[str, object]] = []
     for opcode in opcodes:
@@ -288,13 +331,18 @@ def apply_opcode_list3(
         if progress and opcode.opcode_id in {9, 1}:
             progress("dng_gain_map" if opcode.opcode_id == 9 else "dng_warp", "Applying DNG brightness correction" if opcode.opcode_id == 9 else "Correcting DNG distortion")
         if opcode.opcode_id == 9:
-            result = apply_gain_map(result, parse_gain_map(opcode.parameters), cancelled=cancelled)
+            result = apply_gain_map(
+                result, parse_gain_map(opcode.parameters),
+                cancelled=cancelled, consume_input=consume_input,
+            )
             diagnostics.append(_diagnostic(opcode, "applied"))
+            consume_input = True  # Subsequent operations own this buffer.
         elif opcode.opcode_id == 1:
             result = apply_warp_rectilinear(
                 result, parse_warp_rectilinear(opcode.parameters), cancelled=cancelled
             )
             diagnostics.append(_diagnostic(opcode, "applied"))
+            consume_input = True
         elif opcode.optional:
             diagnostics.append(_diagnostic(opcode, "skipped_optional"))
         else:
@@ -304,44 +352,87 @@ def apply_opcode_list3(
     return result, tuple(diagnostics)
 
 
+def _run_opcode_bands(
+    band: Callable[[int, int], None], top: int, bottom: int, width: int,
+    rows: int, cancelled: Callable[[], bool] | None,
+) -> None:
+    # Leave small jobs on the calling thread. Larger corrections keep one
+    # bounded wave in flight and join it before changing opcode or releasing
+    # the source and destination, even on cancellation.
+    if (bottom - top) * width > _SCRATCH_PIXELS:
+        workers = min(logical_cpus(), max(1, _SCRATCH_PIXELS // width))
+        rows = min(rows, max(1, _SCRATCH_PIXELS // workers // width))
+    else:
+        workers = 1
+    starts = range(top, bottom, rows)
+
+    def process(start: int) -> None:
+        _raise_if_cancelled(cancelled)
+        band(start, min(bottom, start + rows))
+
+    if workers == 1 or len(starts) < 2:
+        for start in starts:
+            process(start)
+        return
+    with CpuExecutor() as pool:
+        pending = {pool.submit(process, start) for start in starts[:workers]}
+        remaining = iter(starts[workers:])
+        while pending:
+            done, pending = wait(pending, return_when=FIRST_COMPLETED)
+            for task in done:
+                task.result()
+            for _, start in zip(done, remaining):
+                pending.add(pool.submit(process, start))
+
+
 def _sample_bicubic_clipped(
-    plane: np.ndarray, x: np.ndarray, y: np.ndarray
+    plane: np.ndarray, x: np.ndarray, y: np.ndarray,
 ) -> np.ndarray:
     height, width = plane.shape
-    safe_x = np.clip(x, 0.0, width - 1.0)
-    safe_y = np.clip(y, 0.0, height - 1.0)
-    x0 = np.floor(safe_x).astype(np.int32)
-    y0 = np.floor(safe_y).astype(np.int32)
-    fx = safe_x - x0
-    fy = safe_y - y0
+    safe_x = np.clip(x, 0.0, width - 1.0, out=x)
+    safe_y = np.clip(y, 0.0, height - 1.0, out=y)
+    x0 = np.floor(safe_x).astype(np.intp)
+    y0 = np.floor(safe_y).astype(np.intp)
+    fx = np.subtract(safe_x, x0, out=safe_x)
+    fy = np.subtract(safe_y, y0, out=safe_y)
     result = np.zeros_like(safe_x, dtype=np.float64)
     total_weight = np.zeros_like(safe_x, dtype=np.float64)
-    # x coordinates are shared by all four source rows. Cache these arrays
-    # outside the outer tap loop to avoid evaluating the cubic polynomial 4x.
-    x_weights = tuple(_bicubic_weight(offset - fx) for offset in (-1, 0, 1, 2))
+    row_sum = np.empty_like(result)
+    contribution = np.empty_like(result)
+    # Separable cubic: gather the same sixteen clamped taps in float64, but
+    # apply the y weight only once per horizontally interpolated source row.
+    x_taps = tuple(
+        (np.clip(x0 + offset, 0, width - 1), _bicubic_weight(offset, fx))
+        for offset in (-1, 0, 1, 2)
+    )
     for row_offset in (-1, 0, 1, 2):
         source_y = np.clip(y0 + row_offset, 0, height - 1)
-        wy = _bicubic_weight(row_offset - fy)
-        for col_offset, wx in zip((-1, 0, 1, 2), x_weights):
-            source_x = np.clip(x0 + col_offset, 0, width - 1)
-            weight = wy * wx
-            result += plane[source_y, source_x] * weight
-            total_weight += weight
-    return np.asarray(result / total_weight, dtype=np.float32)
+        wy = _bicubic_weight(row_offset, fy)
+        source_x, wx = x_taps[0]
+        np.multiply(plane[source_y, source_x], wx, out=row_sum)
+        for source_x, wx in x_taps[1:]:
+            np.multiply(plane[source_y, source_x], wx, out=contribution)
+            row_sum += contribution
+        row_sum *= wy
+        result += row_sum
+        total_weight += wy
+    _, wx0 = x_taps[0]
+    _, wx1 = x_taps[1]
+    _, wx2 = x_taps[2]
+    _, wx3 = x_taps[3]
+    total_weight *= wx0 + wx1 + wx2 + wx3
+    np.divide(result, total_weight, out=result)
+    return result.astype(np.float32)
 
 
-def _bicubic_weight(distance: np.ndarray) -> np.ndarray:
-    x = np.abs(distance)
+def _bicubic_weight(offset: int, fraction: np.ndarray) -> np.ndarray:
+    # The fractional part is in [0, 1), so the tap determines the interval
+    # of the cubic. Both polynomials give exactly zero at the shared endpoint.
+    x = np.abs(offset - fraction)
     a = -0.75
-    return np.where(
-        x >= 2.0,
-        0.0,
-        np.where(
-            x >= 1.0,
-            ((a * x - 5.0 * a) * x + 8.0 * a) * x - 4.0 * a,
-            ((a + 2.0) * x - (a + 3.0)) * x * x + 1.0,
-        ),
-    )
+    if offset in {-1, 2}:
+        return ((a * x - 5.0 * a) * x + 8.0 * a) * x - 4.0 * a
+    return ((a + 2.0) * x - (a + 3.0)) * x * x + 1.0
 
 
 def _diagnostic(opcode: DngOpcode, status: str) -> dict[str, object]:
