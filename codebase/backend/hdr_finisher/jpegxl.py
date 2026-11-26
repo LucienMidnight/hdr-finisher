@@ -474,11 +474,17 @@ def _validate_app_metadata(value: dict[str, Any]) -> dict[str, Any]:
         "reference_white_nits",
     }
     schema_version = value.get("schema_version")
+    if type(schema_version) is not int:
+        raise JPEGXLError("JPEG XL HDR Finisher marker has an invalid schema version.")
     if schema_version in {1, 2}:
         raise JPEGXLError("JPEG XL HDR Finisher prototype marker v1/v2 is unsupported; re-export with v3.")
     if schema_version == _APP_METADATA_VERSION:
         if set(value) != common | {"sample_type"}:
             raise JPEGXLError("JPEG XL HDR Finisher marker has an invalid schema.")
+        if type(value.get("bit_depth")) is not int:
+            raise JPEGXLError("JPEG XL HDR Finisher marker has an invalid bit depth.")
+        if any(not isinstance(value.get(field), str) for field in ("color_space", "transfer_function", "sample_type")):
+            raise JPEGXLError("JPEG XL HDR Finisher marker has an invalid color interpretation or sample type.")
         interpretation = (value.get("color_space"), value.get("transfer_function"))
         if interpretation == ("sRGB", "sRGB"):
             allowed_precisions = {(8, "integer")}
