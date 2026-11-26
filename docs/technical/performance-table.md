@@ -8196,3 +8196,18 @@ are verification runs, not a speed comparison.
 
 All four runs pass the existing HDR and SDR renderer agreement, encoded HDR
 ceiling and byte-identical full-size Proof checks.
+
+
+## November 26: CPU HSL obsolete protection-plane cleanup (PC)
+
+The old bright-spot protection plane was uniformly one. Removing it preserves
+selection pixels exactly (nine signed/HDR, scale and edge-control comparisons)
+and avoids one retained float32 plane. At 2048 x 1536, prepared-selection arrays
+fall from 26,738,688 to 14,155,776 bytes: 12 MiB saved.
+
+CPU `prepare` plus `select`, including all preparation and mask processing,
+measured median 451.31 ms before and 469.40 ms after over five paired samples
+(one warmup omitted, same deterministic 3 MP RGB array). The 4.0% change is
+inside the existing 5% comparison band; no speedup or whole-app latency claim.
+Other reviewers and Steve's app were running on the PC. This is an allocation
+cleanup and CPU diagnostic, not a new timing baseline or GPU qualification.

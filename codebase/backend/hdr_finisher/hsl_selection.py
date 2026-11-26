@@ -57,7 +57,6 @@ def geometry(scale=1.0):
 class PreparedSelection:
     chroma: np.ndarray       # smoothed coarse relative chroma (a/L, b/L)
     guide: np.ndarray        # log2 Oklab lightness, full resolution
-    protection: np.ndarray   # bright-edge / colour-mismatch protection
     geometry: SelectionGeometry
     origin: tuple
     scale: float
@@ -110,7 +109,6 @@ def _interpolate(coarse, prepared_shape, origin, cell):
 
 def prepare(rgb, scale=1.0, origin=(0, 0)):
     """Selection data that depends only on the stage input, not the controls."""
-    geo = geometry(scale)
     origin = (int(origin[0]), int(origin[1]))
     lab = to_lab(np.asarray(rgb, dtype=np.float32)[..., :3]).astype(np.float32)
     light = np.maximum(np.abs(lab[..., 0]), 1e-6)
@@ -129,8 +127,7 @@ def prepare_fields(ab, guide, scale=1.0, origin=(0, 0)):
     coarse = cv2.sepFilter2D(coarse, -1, kernel, kernel, borderType=cv2.BORDER_REFLECT)
     # No bright-spot protection: small bright spots follow their surroundings
     # (Steve, 2026-10-27; excluding them left harsh dots when darkening).
-    protection = np.ones(guide.shape, np.float32)
-    return PreparedSelection(coarse, guide, protection, geo, origin, min(1, max(MIN_SCALE, float(scale))))
+    return PreparedSelection(coarse, guide, geo, origin, min(1, max(MIN_SCALE, float(scale))))
 
 
 def _qualify(chroma, ranges, floor):
@@ -159,7 +156,7 @@ def select(prepared, ranges, floor=.02, *, edge=0, edge_feather=0, edge_detail=5
         a = np.zeros_like(a)
     b = mean_p - a * mean_i
     refined = _box(a, geo.guide) * guide + _box(b, geo.guide)
-    refined = np.clip(refined * prepared.protection, 0, 1).astype(np.float32)
+    refined = np.clip(refined, 0, 1).astype(np.float32)
     if edge == 0 and edge_feather == 0:
         return refined
     radius = abs(edge) * prepared.scale
