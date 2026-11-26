@@ -50,18 +50,18 @@ async function canvasVariationCount(locator) {
   const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
   const pageErrors = [];
   const requestFailures = [];
-  const supersededProxyCancellations = [];
+  const supersededSourceCancellations = [];
   page.on("pageerror", (error) => pageErrors.push(error.message));
   page.on("requestfailed", (request) => {
     const failure = request.failure()?.errorText || "unknown failure";
     if (failure === "net::ERR_ABORTED" && /\/(preview|scopes)(\/|\?)/.test(request.url())) return;
-    // A source proxy is keyed by session, edit revision, and geometry. Keep
+    // Both source routes are keyed by session, edit revision, and geometry. Keep
     // aborted GETs pending until the final state lets us verify they went stale.
     if (failure === "net::ERR_ABORTED" && request.method() === "GET") {
       const url = new URL(request.url());
-      const match = url.pathname.match(/^\/api\/session\/([^/]+)\/proxy\/(hdr|sdr)$/);
+      const match = url.pathname.match(/^\/api\/session\/([^/]+)\/(?:proxy|source-tile)\/(hdr|sdr)$/);
       if (match && url.searchParams.has("edit_revision") && url.searchParams.has("geometry_signature")) {
-        supersededProxyCancellations.push({
+        supersededSourceCancellations.push({
           sessionId: match[1],
           editRevision: Number(url.searchParams.get("edit_revision")),
           geometrySignature: url.searchParams.get("geometry_signature"),
@@ -364,19 +364,20 @@ async function canvasVariationCount(locator) {
         `Applying crop changed viewer zoom before the cropped preview was presented: ${JSON.stringify({ before: previewRectBeforeCropApply, during: cropHandoff })}`,
       );
     }
-    await page.waitForFunction(() => {
+    const appliedCrop = await page.waitForFunction(() => {
       const preview = activePreviewElement();
-      const bitmapWidth = preview instanceof HTMLCanvasElement ? preview.width : preview.naturalWidth;
-      const bitmapHeight = preview instanceof HTMLCanvasElement ? preview.height : preview.naturalHeight;
-      return bitmapHeight > 0 && Math.abs(bitmapWidth / bitmapHeight - 4 / 3) < 0.01;
-    }, null, { timeout: 30000 });
-    const appliedCropRatios = await page.evaluate(() => {
-      const preview = activePreviewElement();
+      // A regional GPU preview mounts a frame wrapper, not a full bitmap.
+      // Check the rendered region's full-frame dimensions against the wrapper.
+      const { width, height } = preview instanceof HTMLImageElement
+        ? { width: preview.naturalWidth, height: preview.naturalHeight }
+        : previewCanvasFrameSize();
+      const bitmap = width / height;
+      if (!(height > 0 && Math.abs(bitmap - 4 / 3) < 0.01)) return false;
       const rect = preview.getBoundingClientRect();
-      const bitmapWidth = preview instanceof HTMLCanvasElement ? preview.width : preview.naturalWidth;
-      const bitmapHeight = preview instanceof HTMLCanvasElement ? preview.height : preview.naturalHeight;
-      return { bitmap: bitmapWidth / bitmapHeight, displayed: rect.width / rect.height };
-    });
+      return { bitmap, displayed: rect.width / rect.height };
+    }, null, { timeout: 30000 });
+    const appliedCropRatios = await appliedCrop.jsonValue();
+    await appliedCrop.dispose();
     assert(await page.evaluate(() => !state.geometryPresentationPending), "Crop preview handoff remained pending after the cropped frame was presented.");
     assert(Math.abs(appliedCropRatios.displayed - appliedCropRatios.bitmap) < 0.01, `Applied crop was stretched in the viewer: ${JSON.stringify(appliedCropRatios)}`);
 
@@ -525,13 +526,13 @@ async function canvasVariationCount(locator) {
     await page.locator(".grade-rail").screenshot({ path: globalRailShot });
 
     if (pageErrors.length) throw new Error(`Browser errors: ${pageErrors.join(" | ")}`);
-    if (supersededProxyCancellations.length) {
+    if (supersededSourceCancellations.length) {
       const activeSource = await page.evaluate(() => ({
         sessionId: state.session?.session_id || null,
         editRevision: state.editRevision,
         geometrySignature: geometrySignature(),
       }));
-      for (const cancelled of supersededProxyCancellations) {
+      for (const cancelled of supersededSourceCancellations) {
         const isSuperseded = cancelled.sessionId !== activeSource.sessionId
           || cancelled.editRevision !== activeSource.editRevision
           || cancelled.geometrySignature !== activeSource.geometrySignature;
