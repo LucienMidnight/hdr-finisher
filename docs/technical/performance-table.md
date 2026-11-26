@@ -4379,6 +4379,15 @@ timeouts. Temporary Recovery had the same ungranted GPU reservation after
 stopped earlier, at a separate native crop parity assertion before Single
 zoom. The merged reference run passed those pixel comparisons.
 
+The first two native checks were rerun after `c3de03d6` and `ab71e60f`, on
+the same Mac with a fresh Electron profile each time. Elapsed times cover
+Electron launch to driver completion and exclude waiting for the GPU lock.
+
+| Driver | Passes | Elapsed | What finished |
+| --- | ---: | ---: | --- |
+| Stage C | 2/2 | 51.0–71.3 s | 100% RAW zoom and pan, then both DNG variants. The source files were unchanged. |
+| Live Native | 2/2 | 40.1–46.1 s | Fit remained visible until native detail arrived, and later zooms reused the scene. PNG and RAW drawing used 217 MB and 410 MB, below their working budgets. |
+
 ## November 26: Grade Retouch spot removal
 
 MacBook Neo A18 Pro, 8 GB, 1408x794 points, unpackaged Electron under the
