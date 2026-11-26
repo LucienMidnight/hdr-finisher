@@ -269,3 +269,12 @@ The report's historical slow-driver failures have fixes or machine-specific
 explanations in the follow-ups above. This pass does not claim new GPU runs,
 Mac memory validation, or Mac calibration validation. Denoise research and
 export failures in the PC Python log are handled by separate workers.
+
+
+Full Python result for the tooling pass: **4955 passed, 56 skipped, 7 failed**.
+All seven failures are in `test_export_memory_exactness.py`: the three
+`test_staged_creative_graph_is_exact` cases and four
+`test_staged_spatial_delivery_matches_whole_frame` cases. These are assigned
+to the export worker. The run started during that worker's edits, so its
+result does not replace validation of the final export changes. No other
+Python failure remained in this run; both assigned Windows regressions passed.
