@@ -80,48 +80,41 @@ function assert(condition, message) {
     assert(cpuFull.exact === true && cpuFull.requestedTier === "full" && cpuFull.tier === "full",
       `CPU Full was not accepted truthfully: ${JSON.stringify(cpuFull)}`);
 
-    assert(stripPeaks.length > 0 && Number.isFinite(stripPeaks.at(-1)),
-      `CPU Full response did not carry its exact scope peak: ${JSON.stringify(stripPeaks)}`);
-    // CPU authoring reports its accepted preview peak with an honest preview label.
-    await page.evaluate(() => {
+    assert(stripPeaks.length > 0 && Number.isFinite(stripPeaks.at(-1))
+      && cpuFull.scopePeak === stripPeaks.at(-1),
+    `CPU Full did not retain the peak measured by its strip render: ${JSON.stringify({ cpuFull, stripPeaks })}`);
+
+    // A settled full-image scope automatically uses a separate bounded peak
+    // estimate when WebGPU is available, even with CPU preview selected.
+    const firstScopeGeneration = await page.evaluate(() => {
+      const first = state.scopeGeneration + 1;
       void refreshScopes(scopeLongEdge("settled"), { tier: "settled" });
+      return first;
     });
-    try {
-      await page.waitForFunction(() => state.lastScope?.peak_exact === false
-        && state.lastScope?.peak_value === state.acceptedPresentation?.scopePeak,
-      null, { timeout: 120000 });
-    } catch (error) {
-      const diagnostics = await page.evaluate(() => ({
-        accepted: state.acceptedPresentation,
-        lastScope: state.lastScope && { tier: state.lastScope.tier,
-          peak_value: state.lastScope.peak_value, peak_exact: state.lastScope.peak_exact },
-        scopeGeneration: state.scopeGeneration,
-        previewGeneration: state.previewGeneration,
-        currentView: state.currentView,
-        inFlight: state.scopeRequestInFlight && {
-          lane: state.scopeRequestInFlight.lane,
-          tier: state.scopeRequestInFlight.tier,
-          generation: state.scopeRequestInFlight.generation,
-        },
-      }));
-      throw new Error(`CPU Full preview peak never became current: ${JSON.stringify(diagnostics)} (${error.message})`);
-    }
-    const cpuScope = await page.evaluate(() => ({ scope: state.lastScope }));
-    assert(cpuScope.scope?.peak_exact === false
-      && cpuScope.scope?.peak_value === stripPeaks.at(-1)
-      && cpuScope.scope?.stats?.[0]?.label === "Peak (preview)",
-    `CPU Full scope did not use the accepted presentation peak: ${JSON.stringify({ cpuScope, stripPeaks })}`);
+    await page.waitForFunction((first) => state.lastScope?.tier === "settled"
+      && state.lastScope.generation >= first && state.lastScope.generation === state.scopeGeneration,
+    firstScopeGeneration, { timeout: 120000 });
+    const cpuScope = await page.evaluate(() => {
+      const scope = state.lastScope;
+      const measurement = exactScopePeakCache.get(exactScopePeakKey("hdr"));
+      return {
+        tier: scope.tier,
+        peakValue: scope.peak_value,
+        peakExact: scope.peak_exact,
+        peakMeasuredLongEdge: scope.peak_measured_long_edge,
+        peakStat: scope.stats?.[0],
+        boundedPeak: measurement?.peak / .18 * projectReferenceWhiteNits(),
+      };
+    });
+    assert(cpuScope.peakExact === false && cpuScope.peakStat?.label === "Peak (estimate)"
+      && Number.isFinite(cpuScope.boundedPeak) && cpuScope.peakValue === cpuScope.boundedPeak,
+    `Settled CPU scope did not show the bounded estimate: ${JSON.stringify(cpuScope)}`);
 
     console.log(JSON.stringify({
       fullOptions,
       gpuFull,
       cpuFull,
-      cpuScope: {
-        peakValue: cpuScope.scope.peak_value,
-        peakExact: cpuScope.scope.peak_exact,
-        peakMeasuredLongEdge: cpuScope.scope.peak_measured_long_edge,
-        peakStat: cpuScope.scope.stats?.[0],
-      },
+      cpuScope,
       fullCpuRequests,
       stripResponses,
       stripPeaks,
