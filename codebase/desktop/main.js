@@ -38,7 +38,6 @@ const SOURCE_FILTERS = [
   { name: "HDR and camera images", extensions: ["exr", "tif", "tiff", "hdr", "pfm", "heic", "heif", "avif", "jxl", "png", "jpg", "jpeg", "dng", "arw", "cr2", "cr3", "nef", "nrw", "raf", "rw2", "orf", "ori", "pef", "srw"] },
   { name: "All files", extensions: ["*"] },
 ];
-const PROJECT_FILTERS = [{ name: "HDR Finisher Project", extensions: ["hdrfinisher"] }];
 const GRADING_PRESET_GROUPS = new Set([
   "hdr-tone", "hdr-highlights", "hdr-equalizer", "hdr-color", "hdr-zones",
   "sdr-base", "sdr-tone", "sdr-highlights", "sdr-equalizer", "sdr-color", "sdr-zones",
@@ -802,7 +801,6 @@ function registerIpc() {
     await shell.openExternal(url);
     return true;
   });
-  handle("desktop:set-rendering-mode", (mode) => setRenderingMode(mode));
   handle("desktop:write-clipboard-text", (value) => {
     if (typeof value !== "string" || value.length > 32768) throw new Error("Invalid clipboard text.");
     clipboard.writeText(value);
@@ -828,33 +826,9 @@ function registerIpc() {
     knownProjectPaths.add(pathKey(selection.path || resolved));
     return { ...selection, exists };
   });
-  handle("desktop:open-project", async () => {
-    const result = await dialog.showOpenDialog(mainWindow, { title: "Open project", defaultPath: directoryPreference("projectImport", "documents"), properties: ["openFile"], filters: PROJECT_FILTERS });
-    if (result.canceled) return null;
-    const selection = await grantPath(result.filePaths[0], "project-open");
-    knownProjectPaths.add(pathKey(selection.path || result.filePaths[0]));
-    return selection;
-  });
   handle("desktop:relink-source", async () => {
     const result = await dialog.showOpenDialog(mainWindow, { title: "Relink original source", properties: ["openFile"], filters: SOURCE_FILTERS });
     return result.canceled ? null : grantPath(result.filePaths[0], "source-relink");
-  });
-  handle("desktop:save-project", async (options = {}) => {
-    const saveAs = Boolean(options.saveAs);
-    if (!saveAs && documentState.path && knownProjectPaths.has(pathKey(documentState.path))) {
-      return grantPath(documentState.path, "project-save");
-    }
-    const suggested = safeSuggestedName(options.suggestedName, "Untitled.hdrfinisher");
-    const result = await dialog.showSaveDialog(mainWindow, {
-      title: saveAs ? "Save Project As" : "Save Project",
-      defaultPath: documentState.path || path.join(directoryPreference("projectSave", "documents"), suggested),
-      filters: PROJECT_FILTERS,
-    });
-    if (result.canceled || !result.filePath) return null;
-    const projectPath = isProjectPath(result.filePath) ? result.filePath : `${result.filePath}.hdrfinisher`;
-    const selection = await grantPath(projectPath, "project-save");
-    knownProjectPaths.add(pathKey(selection.path || projectPath));
-    return selection;
   });
   handle("desktop:confirm-unsaved-transition", async (options = {}) => {
     return choosePhotoTransition(options.actionLabel);
@@ -889,14 +863,6 @@ function registerIpc() {
     const selection = await grantPath(result.filePaths[0], "export-directory");
     grantedExportPaths.add(pathKey(selection.path || result.filePaths[0]));
     return selection;
-  });
-  handle("desktop:choose-export-directory", async (initialPath) => {
-    const result = await dialog.showOpenDialog(mainWindow, {
-      title: "Choose export folder",
-      defaultPath: typeof initialPath === "string" && initialPath ? initialPath : directoryPreference("fileSave", "pictures"),
-      properties: ["openDirectory", "createDirectory"],
-    });
-    return result.canceled ? null : result.filePaths[0];
   });
   handle("desktop:choose-export-path", async (options = {}) => {
     const extension = typeof options.extension === "string" ? options.extension.replace(/^\./, "") : "jpg";

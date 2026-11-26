@@ -268,7 +268,6 @@ def test_electron_preview_correctness_contract() -> None:
     assert "const activeBackend = backend;" in main
     assert 'activeBackend.authoringSecret' in main
     assert 'details.requestHeaders["X-HDR-Finisher-Token"] = backend.authoringSecret' not in main
-    assert 'setRenderingMode: (mode)' in preload
     assert 'writeClipboardText: (value)' in preload
     assert 'resolveDroppedFile: async (file)' in preload
     assert 'webUtils.getPathForFile(file)' in preload

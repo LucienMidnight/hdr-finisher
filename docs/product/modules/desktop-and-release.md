@@ -1,3 +1,13 @@
+### November 26, 2026: retired native-browser bridge
+
+Removed the unused native project Open/Save and export-directory IPC handlers,
+their preload methods and project filter constant. The unified media browser
+already owns those flows and grants; active source relinking, native export-file
+selection and batch-export directory grants stay. Rendering-mode changes use
+application preferences and the native menu, so its unused direct IPC was also
+removed. The old bridge-only rendering-mode source assertion was retired;
+preference sanitization and native menu checks remain.
+
 ### November 26, 2026: cancelled close-save requests
 
 Cancelling or failing a project Save during a window-close request clears the
