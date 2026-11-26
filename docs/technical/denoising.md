@@ -2,6 +2,20 @@
 
 Start with the [Denoise module PRD](../product/modules/denoise.md) for current behaviour, decisions, trial history and open work.
 
+**November 26 review:** Simple (`method="standard"`) uses the shipping adaptive
+atrous model in `denoise_adaptive.py`; Clean Grain adds the native brightness
+and colour processing in `denoise_grain.py`. Experimental Micro Grain uses
+signed Bayer preparation in `denoise_micro_grain.py`. Measurement and its
+identity/cache boundary are in `denoise_measurement.py`. These methods apply
+to authored-image rendering and delivery; they are separate from the generated
+Ultra HDR gain-map filter.
+
+The dated updates below describe their development. Numbered sections 1-13
+retain the August/September wavelet-cache design and acceptance history;
+references there to `compact-haar-residual-v1`, preset recalculation and the
+removed `denoise_reference` module are historical, not the current algorithm.
+Do not recreate those superseded paths from this document.
+
 **Status:** Approved implementation direction. Phases 0 and 1 are accepted on `feature/denoising`. Phase 2 WebGPU analysis/resolve and Phase 3 UI/document integration are implemented and pass the measured correctness, isolation, viewport, and packaged-Electron timing gates described below.
 
 **The Phase 2 memory stop gate is closed, September 20, 2026.** It was open because sections 7 and 10 required an explicit per-device GPU byte budget that this contract did not define and that the browser WebGPU API does not expose. The [Stable Exact Preview sprint](../product/archive/Stable_Exact_Full_Preview_Sprint_PRD_2026-09-19.md) supplied the missing piece in its Phase 2: a user-controllable `maximumGpuMemoryGiB` budget with an `auto` default, an admission planner that enumerates every resource a render would hold and refuses Direct execution that does not fit, and categorized resident/transient/cached/peak diagnostics. The budget is a *configured* one rather than a driver heap reading, which is the honest form of the requirement — the API still does not expose heap usage, and nothing here pretends otherwise.

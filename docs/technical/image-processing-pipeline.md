@@ -422,7 +422,16 @@ Gain-map outputs render matched full-resolution HDR and SDR endpoints independen
 
 The JPEG Ultra HDR exporter currently performs a bounded, SDR-guided filter on the generated logarithmic gain map before repacking/validating the delivery file. This changes publishing metadata/residual data only. It does **not** denoise the authored HDR image, the authored SDR image, the working source, preview, or grading pipeline. Refer to it as **delivery-only gain-map cleanup** to avoid confusing it with the reverted authored-image denoiser.
 
-## 10. Denoising rollback: what future work must learn
+## 10. Denoising rollback and historical isolation design
+
+**November 26 status:** the rollback below is history. Authored-image Denoise
+is implemented for preview and delivery. Simple uses `adaptive-atrous-v1`,
+Clean Grain adds brightness-grain fitting and colour cleanup, and experimental
+Micro Grain develops signed Bayer samples before its scene-light stage.
+`denoise_measurement.py` owns shared measurement identities; the source stage
+precedes ordinary creative grading. See the [Denoise module PRD](../product/modules/denoise.md)
+for current controls, defaults and supported routes. The old Haar-cache worktree
+snapshot and proposed sequence below do not describe the shipping algorithm.
 
 ### 10.1 Established facts
 
@@ -437,9 +446,9 @@ Observed failures were:
 
 That evidence establishes an integration regression. It does not, by itself, prove which single line or algorithm caused it. Likely causes such as unconditional generalized shader/state overhead or coupling proxy dimensions to layout are useful hypotheses, not historical facts.
 
-The `feature/denoising` worktree now contains an interactive authored-image denoising stage after geometry and before the established Exposure/Color/Film/local pipeline. It lazily analyzes the active 1K/2K/4K geometry-corrected proxy into a compact two-level Haar residual cache, retains both original and resolved proxies, and lets the four live controls reconstruct without analysis. The stage is absent from full-resolution export, and a never-enabled Off document retains the established pre-denoise route with zero denoise allocations or dispatches. The separate Ultra HDR delivery gain-map cleanup described above remains active and is not part of authored-image denoising.
+The August 2026 `feature/denoising` worktree snapshot contained an interactive authored-image denoising stage after geometry and before the established Exposure/Color/Film/local pipeline. It lazily analyzes the active 1K/2K/4K geometry-corrected proxy into a compact two-level Haar residual cache, retains both original and resolved proxies, and lets the four live controls reconstruct without analysis. The stage is absent from full-resolution export, and a never-enabled Off document retains the established pre-denoise route with zero denoise allocations or dispatches. The separate Ultra HDR delivery gain-map cleanup described above remains active and is not part of authored-image denoising.
 
-The [Denoising v2 implementation contract](denoising.md) defines the authoritative wavelet-cache direction, records the implemented Phase 0–3 evidence, and identifies the unresolved per-device memory-budget stop gate. Broader technology research remains non-normative.
+The [Denoising v2 implementation contract](denoising.md) records the historical wavelet-cache direction, the implemented Phase 0–3 evidence, and the then-unresolved per-device memory-budget stop gate (subsequently closed, as that document records). Broader technology research remains non-normative.
 
 ### 10.2 Required gates before denoise returns
 
