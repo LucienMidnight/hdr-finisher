@@ -83,12 +83,25 @@ def test_camera_bands_and_integer_diagnostics_are_byte_identical(monkeypatch):
             [-.01810, 1.38317, -.36507], [.03633, -.19228, 1.15596]]))
     serial = _normalize_camera_rgb_float32(transport, metadata)
     _camera_rgb_to_acescg_float32(serial, metadata)
-    expected = _transport_diagnostics(transport)
+    expected = {
+        "channel_maximum": np.max(transport, axis=(0, 1)).tolist(),
+        "exact_65535_count": np.count_nonzero(transport == 65535, axis=(0, 1)).tolist(),
+    }
+    assert _transport_diagnostics(transport) == expected
     with bands.grade_import_bands():
         parallel = _normalize_camera_rgb_float32(transport, metadata)
         assert _camera_rgb_to_acescg_float32(parallel, metadata) is parallel
         assert _transport_diagnostics(transport) == expected
     assert serial.tobytes() == parallel.tobytes()
+
+
+def test_signed_transport_counts_exact_ceiling_samples_below_higher_peaks():
+    transport = np.array([[[-8, 65536, 65535], [-2, 65535, 65535]],
+                          [[-5, 65535, 42], [-4, 61200, -7]]], dtype=np.float32)
+    assert _transport_diagnostics(transport, rows=1) == {
+        "channel_maximum": [-2, 65536, 65535],
+        "exact_65535_count": [0, 2, 2],
+    }
 
 
 @pytest.mark.parametrize("all_negative", [False, True])

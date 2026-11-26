@@ -1224,7 +1224,13 @@ def _transport_diagnostics(
     def band(start):
         _raise_if_cancelled(cancelled)
         strip = source[start:start + rows]
-        return np.max(strip, axis=(0, 1)), np.count_nonzero(strip == 65535, axis=(0, 1))
+        # Reduce each channel directly instead of accumulating interleaved
+        # triples. There is nothing to count below the transport ceiling.
+        channels = [strip[..., index] for index in range(3)]
+        peaks = [np.max(channel) for channel in channels]
+        counts = [0 if peak < 65535 else np.count_nonzero(channel == 65535)
+                  for channel, peak in zip(channels, peaks)]
+        return peaks, counts
     for band_maximum, band_count in run_bands(band, range(0, source.shape[0], rows)):
         maximum = np.maximum(maximum, band_maximum)
         ceiling_count += band_count

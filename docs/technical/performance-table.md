@@ -4388,6 +4388,23 @@ Electron launch to driver completion and exclude waiting for the GPU lock.
 | Stage C | 2/2 | 51.0–71.3 s | 100% RAW zoom and pan, then both DNG variants. The source files were unchanged. |
 | Live Native | 2/2 | 40.1–46.1 s | Fit remained visible until native detail arrived, and later zooms reused the scene. PNG and RAW drawing used 217 MB and 410 MB, below their working budgets. |
 
+### CPU recovery after GPU Edge colour rejection
+
+Once GPU admission was restored, Temporary Recovery exposed a separate CPU
+deadline on the 42.56 MP Sony RAW. Under concurrent test load the ordinary
+decoder used 8.1–8.6 s in RAW development alone against an 8.79 s allowance
+for work outside reconstruction. The helper restarted after the ordinary
+deadline, even though reconstruction itself finished in 13.9–14.5 s, under
+its separate 66 s allowance. That run failed after 112.9 s.
+
+RAW transport diagnostics now reduce each channel directly and skip the
+exact-65535 count pass when that channel's maximum is below 65535. The same
+statistics and pixels are retained. With fresh profiles, Temporary Recovery
+passed both faults in both runs (32.0–32.1 s total), leaving no durable error
+or outstanding grant. RAW development took 5.4–5.5 s and CPU Edge colour
+8.9 s. These observations were under different host load, so they are not a
+controlled speed comparison. No decoder, reconstruction or memory limit changed.
+
 ## November 26: Grade Retouch spot removal
 
 MacBook Neo A18 Pro, 8 GB, 1408x794 points, unpackaged Electron under the
