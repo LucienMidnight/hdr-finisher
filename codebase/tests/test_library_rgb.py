@@ -547,8 +547,12 @@ def test_rgb_description_precedes_pixels_and_keeps_publication_guards(tmp_path, 
     from hdr_finisher.media_browser import MediaBrowserStore
     from hdr_finisher.library_gpu_raw import unframe, frame
     from hdr_finisher.library_live import LivePictures
+    foreground = set()
     class Helper:
         def status(self): return {"running": True, "paused": False, "pending": 0}
+        def foreground_source(self, token, active):
+            if active: foreground.add(token)
+            else: foreground.discard(token)
     photo = tmp_path / "photo.png"
     Image.new("RGB", (8, 4), (120, 80, 20)).save(photo)
     profile = tmp_path / "profile"
@@ -562,6 +566,8 @@ def test_rgb_description_precedes_pixels_and_keeps_publication_guards(tmp_path, 
     app = FastAPI(); app.include_router(create_library_router(Helper(), MediaBrowserStore(profile)))
     with TestClient(app) as client:
         header, _ = unframe(client.post("/api/library/live-scene", json={"path":str(photo), "edge":edge, "gpu":True}).content)
+        token = header["source_job"]
+        assert foreground == {token}
         header.update(height=4, width=8, source_width=8, source_height=4, memory_peak_bytes=1024,
             peaks={"peak":.18,"peak_luma":.18,"peak_bt2020":.18,"sdr":.5},
             robust={"channel":.18,"luma":.18,"bt2020":.18}, draw_first=True)
@@ -573,7 +579,11 @@ def test_rgb_description_precedes_pixels_and_keeps_publication_guards(tmp_path, 
         assert not list(profile.rglob("*.npz"))
         assert not list(profile.rglob("*.tmp"))
         assert not Path(str(photo)+".hdrf").exists()
-        if changed: return
+        if changed:
+            assert foreground == {token}, "An invalid handoff cannot retire active work"
+            return
+        assert not foreground, "CPU pictures must not queue behind a finished GPU scene awaiting a save"
+        assert client.post("/api/library/live-source/"+token).status_code == 200, "Deferred publication still owns the source"
         described = response.json()
         assert described["direct_supported"] and described["scene_width"] == 8
         pixels = np.full((6,4,8), .125, dtype="<f4").tobytes()

@@ -9682,6 +9682,16 @@ at 2560x1440; fast Node passes after rebasing onto local main (921 checks).
 Backend unchanged; Python not rerun for this driver-only repair. Evidence:
 `codebase/output/w15-gpu-recovery/{baseline,driver,node-rebased}.log`.
 
+## November 26: live grid after GPU loss
+
+Once GPU development completes, a scene awaiting a deferred cache save no
+longer blocks CPU picture work. Its source and publication checks still apply
+to the save. After GPU loss, visible tiles can show CPU pictures while waiting
+for the GPU to come back. The live-grid driver opens only its own four photos
+and checks that those tiles return to live drawing. Two passes on the minimum
+Mac took 3.30–4.20 s from forced loss through fallback and restored GPU drawing.
+No retry, timeout or memory limit changed.
+
 ## November 11: scroll-cache regression checks a stable photo order
 
 The release driver's default capture-time order could change while background

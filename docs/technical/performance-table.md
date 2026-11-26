@@ -4126,3 +4126,19 @@ No comparison speedup or cross-machine inference is claimed.
 | Check | Result | Conditions |
 | --- | --- | --- |
 | Library viewport smoke | 90 s; first picture 0.4 s; all 9 requested pictures, no errors; independent app peak 2.458 GB | Neo / 8 GB / 1408×794, plain Electron, shared lock, frozen v1 unchanged. `output/quick-library-check/jxl-high-fidelity/report.json`; not whole-folder qualification. |
+
+## November 26: Library live grid and GPU loss
+
+MacBook Neo, A18 Pro, 8 GB, 1408×794. Two `library-live-grid.js` passes
+under the shared GPU lock with disposable Electron profiles and caches, three
+Sony RAWs and one PNG. Measured in the commit containing this note. Browse
+starts after fixture preparation. The roughly 10 s user-wait target is not a
+new test timeout. The existing 120 s grid checks are unchanged.
+
+| Action | Before | After (two passes) |
+| --- | --- | --- |
+| Browse to all expected tiles shown | The seven actual folder entries drew in 0.33–0.40 s from the first picture request. Three extra RAWs were on disk, so the four-cell recovery assertion timed out. | 0.76–1.34 s from Browse, all four isolated fixtures shown |
+| Forced device loss to CPU pictures shown | At `367b37d1`, the first CPU jobs queued for 27.6–28.4 s, until a finished GPU scene's deferred save cleared the hold. From first CPU job submission to last helper job completion was 28.3–29.1 s in the two Nov 25 release attempts and Nov 26 reproduction. No equivalent on-screen assertion passed. | 1.18–2.09 s |
+| GPU made available again to all four live tiles | Not reached by the old driver | 2.11 s, or 3.30–4.20 s total from loss through restored live drawing |
+| Prepared scene reuse (per photo) | — | 23–33 ms |
+| Open Single / step to the next photo (2560 edge) | — | 0.27–0.66 s / 0.29–0.44 s |

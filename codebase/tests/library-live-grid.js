@@ -1,17 +1,28 @@
 /* Live unedited cells: stored scene reuse, no JPEG publication and GPU recovery. */
 const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
 const {chromium}=require('playwright');
-const root=path.resolve(__dirname,'..'),folder=path.join(root,'output/test-photos/library-live-grid'),resultFolder=path.join(root,'output/library-live-grid');
+const root=path.resolve(__dirname,'..'),folder=path.join(root,'output/test-photos/library-live-grid-driver'),resultFolder=path.join(root,'output/library-live-grid');
 fs.mkdirSync(resultFolder,{recursive:true});
 fs.mkdirSync(folder,{recursive:true});
-const sources=['DSC00264','DSC04375','DSC06615'].map(n=>require('./helpers/photos-root.cjs').photosPath('D:/Photos/HDR Test Images/'+n+'.ARW'));
-for(const source of [...sources,path.join(root,'tests/fixtures/sdr_gradient.png')])if(!fs.existsSync(path.join(folder,path.basename(source))))fs.copyFileSync(source,path.join(folder,path.basename(source)));
+const {source:approvedPhoto}=require('./helpers/reuse-test-photo.cjs');
+const sources=['DSC00264','DSC04375','DSC06615'].map(n=>approvedPhoto(n+'.ARW'));
+// The old shared folder can contain other checks' RAWs and sidecars.
+// Reuse a dedicated set instead of copying the large inputs on every run.
+const fixtures=[...sources,path.join(root,'tests/fixtures/sdr_gradient.png')];
+const fixtureNames=fixtures.map(file=>path.basename(file)).sort();
+const fixturePaths=fixtureNames.map(name=>path.join(folder,name));
+for(const source of fixtures){
+ const target=path.join(folder,path.basename(source));
+ if(!fs.existsSync(target))fs.copyFileSync(source,target,fs.constants.COPYFILE_FICLONE|fs.constants.COPYFILE_EXCL);
+}
+assert.deepEqual(fs.readdirSync(folder).sort(),fixtureNames,'The live-grid driver needs its four unedited fixtures only');
 // The Library lists photos of at least 1 KB (file gate, October 30). The
 // 111-byte gradient fixture keeps its pixels: trailing bytes after IEND make
 // the disposable copy a listed photo.
 const gradient=path.join(folder,'sdr_gradient.png'),gradientBytes=fs.statSync(gradient).size;
 if(gradientBytes<1024)fs.appendFileSync(gradient,Buffer.alloc(1024-gradientBytes));
 const temporaryCache=fs.mkdtempSync(path.join(require('node:os').tmpdir(),'hdr-live-grid-cache-'));
+process.once('exit',()=>fs.rmSync(temporaryCache,{recursive:true,force:true,maxRetries:10,retryDelay:100}));
 let cacheSettingsPath,originalCacheSettings;
 (async()=>{
  const browser=await chromium.launch();
@@ -52,18 +63,29 @@ let cacheSettingsPath,originalCacheSettings;
   assert.equal(detached.starts,2,'Different resolutions develop independently; matching demand reuses preparation');
   assert.equal(detached.returnedEdge,2560);assert.ok(detached.smallCached&&detached.largeCached,'Each requested resolution is stored and reused');
   // Original files/camera pictures stay undeveloped until the explicit command.
-  await library.evaluate(async(element,folder)=>{
+  await library.evaluate(async(element,photos)=>{
     const w=element.contentWindow;
-    for(const name of ['DSC04375.ARW','DSC06615.ARW','sdr_gradient.png'])await w.HDRLibraryScenes.load(folder+'/'+name,640,undefined,10,null,{develop:true});
-  },folder);
-  const start=Date.now();
-  await library.evaluate((element,folder)=>element.contentWindow.HDRLibrary.browse(folder),folder);
-  const settled=()=>page.waitForFunction(()=>{
+    for(const photo of photos)await w.HDRLibraryScenes.load(photo,640,undefined,10,null,{develop:true});
+  },fixturePaths.slice(1));
+  const waitForGrid=(phase,allowFallback=false)=>page.waitForFunction(({paths,allowFallback})=>{
    const d=document.querySelector('#library-frame').contentWindow.document;
-   return [...d.querySelectorAll('#grid-space .library-cell canvas[data-picture-key]')].filter(c=>!c.hidden).length===4;
-  },null,{timeout:120000}).catch(async error=>{throw Error(error.message+' '+JSON.stringify(await library.evaluate(element=>[...element.contentWindow.document.querySelectorAll('#grid-space .library-cell')].map(cell=>({path:cell.dataset.path.split(/[\/]/).at(-1),pictures:[...cell.querySelectorAll('canvas,img')].map(p=>({tag:p.tagName,hidden:p.hidden,key:p.dataset.pictureKey||'',fallback:p.dataset.cpuFallback||'',src:!!p.src}))})))));});
-  await settled();
-  const coldMs=Date.now()-start;
+   const cells=[...d.querySelectorAll('#grid-space .library-cell')];
+   const actual=cells.map(cell=>cell.dataset.path.replaceAll('\\','/')).sort();
+   const live='canvas[data-picture-key]:not([hidden])',cpu='img[data-cpu-fallback="true"]:not([hidden])';
+   const hasFallback=cells.some(cell=>cell.querySelector(cpu));
+   return actual.length===paths.length&&actual.every((photo,i)=>photo===paths[i])&&
+     cells.every(cell=>cell.querySelector(allowFallback?live+','+cpu:live))&&
+     hasFallback===allowFallback;
+  },{paths:fixturePaths.map(photo=>photo.replaceAll('\\','/')),allowFallback},{timeout:120000}).catch(async error=>{
+   const cells=await library.evaluate(element=>[...element.contentWindow.document.querySelectorAll('#grid-space .library-cell')].map(cell=>({
+    path:cell.dataset.path.split(/[\\/]/).at(-1),pictures:[...cell.querySelectorAll('canvas,img')].map(p=>({tag:p.tagName,hidden:p.hidden,key:p.dataset.pictureKey||'',fallback:p.dataset.cpuFallback||'',src:!!p.src}))
+   })));
+   throw Error(phase+': '+error.message+' '+JSON.stringify(cells),{cause:error});
+  });
+  const start=performance.now();
+  await library.evaluate((element,folder)=>element.contentWindow.HDRLibrary.browse(folder),folder);
+  await waitForGrid('Initial live grid');
+  const coldMs=performance.now()-start;
   const report=await library.evaluate(async element=>{
    const w=element.contentWindow,paths=[...w.document.querySelectorAll('#grid-space .library-cell')].map(c=>c.dataset.path),rows=[];
    for(const p of paths){const start=performance.now(),meta=await w.HDRLibraryScenes.load(p,640);rows.push({name:p.split(/[\\/]/).at(-1),cacheHit:meta.cache_hit,reuseMs:performance.now()-start,meta});}
@@ -76,6 +98,7 @@ let cacheSettingsPath,originalCacheSettings;
   assert.equal(report.requests.filter(r=>r.url==='/api/library/fallback-picture').length,0,'Usable GPU never makes CPU-finished pictures');
   // Hold hardware unavailable through the loss, then allow it back. Existing
   // CPU pictures must appear only for the visible cells and must not stick.
+  const lossStarted=performance.now();
   await library.evaluate(async element=>{
    const w=element.contentWindow,gpu=await w.HDRLibraryPictures.initialize();
    w.__requestAdapter=w.navigator.gpu.requestAdapter.bind(w.navigator.gpu);
@@ -83,28 +106,28 @@ let cacheSettingsPath,originalCacheSettings;
   });
   // Camera and original pictures are drawn without the GPU (November 3) and
   // stay; only cells showing a developed scene need CPU files, visible ones only.
-  await page.waitForFunction(()=>{
-   const d=document.querySelector('#library-frame').contentWindow.document,cells=[...d.querySelectorAll('#grid-space .library-cell')];
-   return cells.length===4&&cells.every(c=>[...c.querySelectorAll('canvas[data-picture-key],img[data-cpu-fallback="true"]')].some(p=>!p.hidden))&&d.querySelectorAll('#grid-space img[data-cpu-fallback="true"]:not([hidden])').length>0;
-  },null,{timeout:120000});
+  await waitForGrid('CPU fallback after GPU loss',true);
+  report.fallbackMs=performance.now()-lossStarted;
   const fallback=await library.evaluate(element=>{
    const w=element.contentWindow,requests=w.__liveRequests.filter(r=>r.url==='/api/library/fallback-picture');
    const shown=[...w.document.querySelectorAll('#grid-space .library-cell')].filter(c=>c.querySelector('img[data-cpu-fallback="true"]:not([hidden])')).map(c=>c.dataset.path);
    return {shown,requested:requests.map(r=>JSON.parse(r.body).path)};
   });
   assert.deepEqual([...new Set(fallback.requested)].sort(),fallback.shown.sort(),'CPU files are requested only for visible cells that need them');
+  const recoveryStarted=performance.now();
   await library.evaluate(element=>{const w=element.contentWindow;w.navigator.gpu.requestAdapter=w.__requestAdapter;});
-  await settled();
+  await waitForGrid('Restored live grid');
+  report.recoveryMs=performance.now()-recoveryStarted;
   const gridOnly=await library.evaluate(element=>element.contentWindow.__developments.slice(2));
   assert.ok(gridOnly.every(row=>row.edge===640),'Cold grid and recovery develop only 640');
   const beforeToggle=await library.evaluate(element=>element.contentWindow.__developments.length);
   await library.evaluate(element=>element.contentWindow.document.getElementById('hdr-button').click());
-  await settled();
+  await waitForGrid('First HDR/SDR switch');
   await library.evaluate(element=>element.contentWindow.document.getElementById('hdr-button').click());
-  await settled();
+  await waitForGrid('Second HDR/SDR switch');
   assert.equal(await library.evaluate(element=>element.contentWindow.__developments.length),beforeToggle,'M20: changing HDR/SDR only redraws the existing scene');
   report.m20=true;
-  const singleStarted=Date.now();
+  const singleStarted=performance.now();
   await library.evaluate(element=>{
    const d=element.contentWindow.document;
    [...d.querySelectorAll('#grid-space .library-cell')].find(c=>c.dataset.path.endsWith('DSC04375.ARW')).click();
@@ -114,12 +137,12 @@ let cacheSettingsPath,originalCacheSettings;
    const c=document.querySelector('#library-frame').contentWindow.document.getElementById('single-picture');
    return c.dataset.picturePath?.endsWith('DSC04375.ARW')&&Number(c.dataset.pictureEdge)===2560;
   },null,{timeout:60000});
-  report.singleMs=Date.now()-singleStarted;
+  report.singleMs=performance.now()-singleStarted;
   // Single develops only the selected photo; neighbour read-ahead was removed.
-  const stepStarted=Date.now();
+  const stepStarted=performance.now();
   await library.evaluate(element=>[...element.contentWindow.document.querySelectorAll('#film-space .library-cell')].find(c=>c.dataset.path.endsWith('DSC06615.ARW')).click());
   await page.waitForFunction(()=>{const c=document.querySelector('#library-frame').contentWindow.document.getElementById('single-picture');return c.dataset.picturePath?.endsWith('DSC06615.ARW')&&Number(c.dataset.pictureEdge)===2560;},null,{timeout:60000});
-  report.neighbourStepMs=Date.now()-stepStarted;
+  report.neighbourStepMs=performance.now()-stepStarted;
   await library.evaluate(element=>element.contentWindow.document.getElementById('grid-view').click());
   await new Promise(resolve=>setTimeout(resolve,1000));
   report.developments=await library.evaluate(element=>element.contentWindow.__developments);
@@ -127,10 +150,9 @@ let cacheSettingsPath,originalCacheSettings;
   report.neighboursStopped=true;
   assert.deepEqual(errors,[],'No page errors');
   fs.writeFileSync(path.join(resultFolder,'result.json'),JSON.stringify({coldMs,...report},null,2));
-  console.log(JSON.stringify({coldMs,reuse:report.rows.map(r=>({name:r.name,ms:r.reuseMs})),residentBytes:report.memory.resident.totalBytes,gpuRecovery:true}));
+  console.log(JSON.stringify({coldMs,fallbackMs:report.fallbackMs,recoveryMs:report.recoveryMs,singleMs:report.singleMs,neighbourStepMs:report.neighbourStepMs,reuse:report.rows.map(r=>({name:r.name,ms:r.reuseMs})),residentBytes:report.memory.resident.totalBytes,gpuRecovery:true}));
  }finally{
   if(cacheSettingsPath){if(originalCacheSettings)fs.writeFileSync(cacheSettingsPath,originalCacheSettings);else fs.rmSync(cacheSettingsPath,{force:true});}
   await browser.close();
-  process.once('exit',()=>fs.rmSync(temporaryCache,{recursive:true,force:true,maxRetries:10,retryDelay:100}));
  }
 })().catch(error=>{console.error(error);process.exitCode=1;});

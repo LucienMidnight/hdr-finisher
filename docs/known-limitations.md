@@ -189,7 +189,6 @@ names except for desktop drivers. Every still-failing selected driver is listed.
 | `gpu-delivery-repeat.js` | a — tag passes; current 3 GiB GPU cap succeeds, 2 GiB case falls back to CPU after host refusal (needs 3.41 GiB, latest safely available 3.12) | CPU fallback works, but required GPU repeatability qualification fails. Kept memory safeguards. |
 | `library-gpu-raw-single.js` | b — both refuse full-size detail for insufficient memory | Native detail is not qualified; PC confirmation required. |
 | `library-temporary-recovery.js` | b — same `Every forced-fault scenario must recover` on tag | No recovery retry added. |
-| `library-live-grid.js` | b — same 120-second live drawing wait on tag | No timing/coverage relaxation. |
 | `library-live-native.js` | b — both reach `100% unavailable · Not enough memory for full-size detail` | Canonical path helper repaired; native development still unavailable. |
 | `library-export-live-tiles.js` | a — current Sony export falls back to CPU after host refusal; tag successfully GPU-exports DSC00264 and DSC04375 before its whole seven-export comparison is capped at three minutes | Specific admission difference established, not a complete passing tag timing run. No 5% allowance or memory change. |
 | `library-iso-source.js` | c — both versions fail `library_rgb_compare.py:55` locating the reference source `.npz` (`StopIteration`) | Native executable name and explicit large-source publication repaired; the remaining reference lookup is unresolved. No finished-pixel accuracy pass. |
@@ -221,6 +220,12 @@ bytes, retaining the 2 GiB guard; its release recheck passes. Color/Desat hidden
 window readiness, native Mac theme menus, file-command preview expectations,
 canonical shared-photo paths, native Command shortcuts, startup defaults and
 isolated fixture-helper app data were repaired and their focused checks pass.
+
+November 26 follow-up: `library-live-grid.js` now passes twice on the minimum
+Mac with the same 120-second timeout. A shared test folder supplied three
+unrelated photos, and finished GPU work held up CPU fallback while awaiting a
+deferred save. The driver uses its own four fixtures and the app no longer
+holds the CPU for that save. See the November 26 performance-table entry.
 
 **Release recommendation: block 0.9.3 qualification.** In particular, exact Full
 Denoise and Film/Lens completion regress against the same-Mac tag, and required

@@ -382,7 +382,7 @@ same-Mac v0.9.2 comparisons and exact errors: `docs/known-limitations.md`,
    Export tiles on the PC. On the Mac these were fixed by `703e7e58` and pass.
 5. Confirm Grade Escape with Metadata open, Library Stage A real-format drawing,
    Stage C filter-clear drawing, native RAW Single, temporary recovery, live
-   grid/native and precision-source preparation. Same-Mac tag comparisons
+   native detail and precision-source preparation. Same-Mac tag comparisons
    reproduce these failures; see the separate DNG comparison qualification.
 6. Supply a noise-free linear EXR render >=540x540 for Denoise; provide usable
    source linkage for protected DSC00950.hdrfinisher without overwriting it.

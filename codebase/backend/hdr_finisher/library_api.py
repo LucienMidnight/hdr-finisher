@@ -875,6 +875,11 @@ def create_library_router(worker, browser, store=None):
                 adjustments = validate_saved(AdjustmentState, described["adjustments"])
                 described["render_identity"] = picture_key(path, 0, header["source_quality"]) + ":" + sha256(json.dumps(document or {}, sort_keys=True).encode()).hexdigest()
                 described["direct_supported"] = direct_drawable(adjustments.shared.geometry, described["locals"], described["denoise"])
+            if header.get("describe_only") and header.get("source_job"):
+                # The GPU has finished developing this source. The token still
+                # guards deferred publication, but must not park CPU decoders
+                # (including GPU-loss fallback) until the scene is saved.
+                source_foreground(header["source_job"], False)
             return described
         except (ValueError, OSError, KeyError) as error:
             raise HTTPException(409, str(error)) from error
