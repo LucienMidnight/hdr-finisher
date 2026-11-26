@@ -313,9 +313,9 @@
       const response=await fetch("/api/delivery/gpu/next");if(!response.ok)throw Error("Delivery queue unavailable.");
       const job=await response.json();
       if(!job){await pause(50);continue;}
-      window.hdrDeliveryMemory?.idle(false);
+      await window.hdrDeliveryMemory?.idle(false);
       try{await runJob(job);}
-      finally{window.hdrDeliveryMemory?.idle(true);}
+      finally{await window.hdrDeliveryMemory?.idle(true);}
     }catch(error){
       console.error("GPU delivery",error);
       await pause(100);

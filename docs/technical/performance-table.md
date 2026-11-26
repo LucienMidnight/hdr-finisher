@@ -1,3 +1,12 @@
+## November 26 - PC repeated-delivery follow-up
+
+Windows PC, 2560x1440, branch fix/overnight-report-followups, Steve's Electron
+app still open on the shared GPU. gpu-delivery-repeat's post-change rounds took
+80.2 s then 43.0 s, each including export, full-size Proof and two read-only
+ceiling decodes. These are test-round times, not export-only speed measurements
+or a before/after performance comparison. Both stayed on GPU and matched exactly.
+Evidence: codebase/output/gpu-delivery-repeat/result.json.
+
 ## November 16: controlled draft-grain comparison and interactive stage costs
 
 **The earlier slowdown is not reproduced consistently; its cause remains

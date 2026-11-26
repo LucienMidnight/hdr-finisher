@@ -64,7 +64,6 @@ app.commandLine.appendSwitch("js-flags", [app.commandLine.getSwitchValue("js-fla
 const recentProjects = createRecentProjects(path.join(app.getPath("userData"), "recent-projects.json"));
 
 let deliveryWindow = null;
-let deliveryIdleTimer = null;
 async function collectDeliveryMemory(level = 'moderate') {
   if (deliveryWindow && !deliveryWindow.isDestroyed())
     await require('./memory-pressure.cjs').notifyChromiumPressure(deliveryWindow.webContents, level);
@@ -581,15 +580,13 @@ function registerIpc() {
     const record = validateSender(event);
     return callback(record, ...args);
   });
-  ipcMain.on('desktop:delivery-memory-idle', (event, idle) => {
-    if (!deliveryWindow || deliveryWindow.isDestroyed() || event.sender !== deliveryWindow.webContents) return;
-    clearTimeout(deliveryIdleTimer);
-    if (idle === true) {
-      deliveryIdleTimer = setTimeout(() => {
-        void collectDeliveryMemory().catch(error => libraryStage('chromium_pressure_error', {reason:error.message}));
-      }, 250);
-      deliveryIdleTimer.unref();
-    }
+  ipcMain.handle('desktop:delivery-memory-idle', async (event, idle) => {
+    if (!deliveryWindow || deliveryWindow.isDestroyed() || event.sender !== deliveryWindow.webContents
+        || event.senderFrame !== event.sender.mainFrame) return;
+    // Acknowledged at the job boundary, after runJob's ArrayBuffers go out of
+    // scope. A following job must not cancel collection of the previous one.
+    if (idle === true) await collectDeliveryMemory().catch(error =>
+      libraryStage('chromium_pressure_error', {reason:error.message}));
   });
   handleWindow("desktop:reclaim-library-storage", async record => {
     // Decision 20: references have been evicted for an actual waiting job.
@@ -1372,7 +1369,6 @@ async function beginShutdown() {
       await fetch(`${backend.url}/api/batch-export/shutdown`, {method:"POST",
         headers:{"X-HDR-Finisher-Token":backend.authoringSecret},signal:AbortSignal.timeout(7000)}).catch(()=>{});
     }
-    clearTimeout(deliveryIdleTimer);
     if (deliveryWindow && !deliveryWindow.isDestroyed()) deliveryWindow.destroy();
     deliveryWindow = null;
   } finally {

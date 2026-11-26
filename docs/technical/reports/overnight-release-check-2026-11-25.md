@@ -166,3 +166,22 @@ Still open after the merge:
 - `tests/test_denoise_native_model.py::test_fixed_calibration_matches_the_seeded_white_noise_measurement`
   fails by ~6e-7 (also on `feat/denoise-v1` alone); tolerance not changed.
 - Native helpers changed: run setup after pulling on the PC.
+
+## PC follow-up - November 26 (fix/overnight-report-followups)
+
+Repeated delivery: the PC did not reproduce the Mac's refusal before the fix.
+Both pre-change exports and both post-change exports admitted the GPU at 3 GiB
+then 2 GiB test caps. HDR and SDR finished pixels matched exactly; each full-size
+Proof was byte-identical to its delivered JPEG; encoded peaks passed the existing
+1% allowance. A real cleanup race was found: the next job cancelled the hidden
+renderer's 250 ms idle collection timer. Collection is now acknowledged and
+bounded by the existing one-second collection deadline before the next job can
+start. No memory default, GPU allowance, shader or CPU-strip policy changed.
+The Mac refusal needs a repeat on the Mac; the PC result cannot certify that
+machine's free memory.
+
+Checks: delivery acknowledgement/pressure Node checks 16 pass; Python broker
+38 pass; gpu-delivery-repeat passes before and after the fix, sequentially at
+2560x1440. Logs: codebase/output/overnight-repeat.log,
+overnight-repeat-fixed.log and overnight-broker-tests.log. Steve's already-open
+Electron app was left running; only launcher-owned test apps were stopped.

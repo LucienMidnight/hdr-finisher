@@ -1,3 +1,13 @@
+## November 26 - Repeated delivery cleanup
+
+The hidden delivery renderer now acknowledges collection of dead JavaScript
+pixel buffers at the end of each job, before polling for the next job. Its
+former 250 ms idle timer was cancelled when another job started, so consecutive
+jobs could skip collection. GPU textures still reset at the existing job
+boundary. No shader, delivery tolerance, memory ceiling or CPU-strip policy
+changed. The PC already passed repeated delivery before this change; the Mac's
+low-free-memory refusal still needs confirmation on that machine.
+
 ## November 26 — Resized GPU delivery admission
 
 Resized exports and full-size Proof count the native source and resize scratch,
