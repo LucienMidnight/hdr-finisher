@@ -57,7 +57,6 @@ body:is(.slider-hover, .tool-key-hints) .slider-key-legend { opacity: 1; }
 :root .control-group.bypassed .control-group-body { opacity: .35; }
 :root .control-group .group-toggle, :root .control-group .control-group-name, :root .control-foldout > summary { font: var(--font-weight-medium) var(--font-size-md) var(--font-body); letter-spacing: var(--tracking-none); text-transform: none; color: var(--text); }
 :root .group-toggle > .control-group-name { margin-left: 0; }
-:root .control-group.modified > .control-group-header > .group-toggle::after { content: "Mod"; width: auto; height: auto; flex-basis: auto; border-radius: var(--radius-1); padding: 1px 5px; background: var(--accent-bed); color: var(--accent-strong); font: var(--font-weight-medium) var(--font-size-min) var(--font-body); }
 :root .control-group .group-reset { opacity: 1; }
 :root .control-group:not(.modified) .group-reset { visibility: hidden; }
 :root .group-preset { opacity: 0; }
@@ -674,7 +673,7 @@ html.desktop-shell .window-menu-popover button[role="menuitemradio"][aria-checke
 :root .instrument-slider-control > .range-shell { margin-bottom: 0; align-self: start; }
 
 /* Selection on a button is the pressed plate and accent ink, never an accent outline or border (Steve, November 11, 2026). Photo and folder tiles keep their selection frame. */
-:root :is(button, [role="button"], [role="tab"]):is(.active, [aria-pressed="true"], [aria-selected="true"], [aria-expanded="true"]):not(.workflow-tab, .batch-photo, .directory-browser-entry, .hsl-channel, .accent-option, .group-toggle, .disclosure-trigger) { border-color: var(--plate-edge) !important; outline: none; }
+:root :is(button, [role="button"], [role="tab"]):is(.active, [aria-pressed="true"], [aria-selected="true"], [aria-expanded="true"]):not(.workflow-tab, .batch-photo, .directory-browser-entry, .hsl-channel, .accent-option, .group-toggle, .disclosure-trigger) { border-color: var(--plate-edge) !important; }
 
 /* Compact actions share a square target; panel-header menus retain 30px. */
 :root :is(.batch-preset-row, .batch-version-row, .batch-version-tabs) .top-icon-button { width: var(--compact-action-size); min-width: var(--compact-action-size); height: var(--compact-action-size); min-height: var(--compact-action-size); flex-basis: var(--compact-action-size); }
@@ -685,7 +684,6 @@ html.desktop-shell .window-menu-popover button[role="menuitemradio"][aria-checke
 :root .color-grading-group.modified > .control-group-header:has(.group-preset) { grid-template-columns: minmax(0,max-content) auto 1fr var(--compact-action-size); }
 :root .control-group-header:has(.group-preset) .group-reset { grid-column: 2; order: 2; }
 :root .control-group-header:has(.group-preset) .group-preset { grid-column: 3; order: 3; opacity: 1; justify-self: end; }
-:root .control-group:not(.modified) .group-reset:not(.perspective-reset-retry) { display: none; }
 :root .control-group.modified .group-reset::after { content: none; }
 :root .control-group.modified .group-reset::before { content: ""; display: inline-block; vertical-align: middle; margin-right: 4px; width: 5px; height: 5px; border-radius: var(--radius-pill); background: var(--muted); }
 :root :is(.window-menu-popover button, .window-menu-trigger, .unified-menu-button):hover:not(:disabled) { background: var(--plate-up-hover); }
