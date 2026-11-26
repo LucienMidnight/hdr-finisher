@@ -8,6 +8,14 @@ not a change to shipping constants or pixels. Explicit float32 scalar dots on
 PC versus NumPy matmul move the seeded quantiles by up to 0.00114%; the Mac
 reported about 6e-7 absolute. Browser/CPU constants remain pinned exactly.
 
+### November 26 - Micro Grain response cleanup
+
+Superseded, conflicting and failed Bayer responses cancel their unread bodies
+before returning the existing error. This releases transport buffers and
+connections without changing successful samples or the GPU pipeline.
+Transport regression tests cover all three refusal paths, cancellation failure
+and successful body reads.
+
 # Module PRD: Denoise
 
 **November 24, 2026 Clean Grain navigation and colour.** Intermediate zooms use native regions, and recent sharp regions stay available under the existing memory allowance. Separate per-rendition switches control colour splotches and edge fringes. Both default on. The splotch pass protects coherent colour boundaries. MacBook Neo real-app confirmation remains open.
