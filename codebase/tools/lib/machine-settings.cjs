@@ -5,7 +5,7 @@ const os = require('node:os');
 const { execFileSync } = require('node:child_process');
 const CODEBASE = path.resolve(__dirname, '../..');
 function machineSettings(codebase = CODEBASE) {
-  const repo = path.dirname(execFileSync('git', ['rev-parse', '--path-format=absolute', '--git-common-dir'], { cwd: codebase, encoding: 'utf8', windowsHide: true }).trim());
+  const repo = path.resolve(path.dirname(execFileSync('git', ['rev-parse', '--path-format=absolute', '--git-common-dir'], { cwd: codebase, encoding: 'utf8', windowsHide: true }).trim()));
   const file = path.resolve(process.env.HDR_FINISHER_MACHINE_SETTINGS || path.join(repo, '../hdr-finisher-machine.json'));
   const base = path.dirname(file);
   const result = {

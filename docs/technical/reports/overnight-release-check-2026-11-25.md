@@ -241,3 +241,31 @@ Focused Python broker/native-model checks: 38 + 16 pass. No push, main merge,
 installer build or full release sweep was performed.
 
 Scratch output finished at 46.6 GB, below the 100 GB limit.
+
+
+## PC fast-tooling fixes - November 26
+
+- Machine settings: Git emits forward slashes on Windows. JavaScript kept
+  those in `mainRepository` while Python normalized them. Normalize the
+  JavaScript repository path too; settings now agree without relaxing the test.
+- AI highlight review: HTML includes Unicode minus signs that Windows cp1252
+  cannot write. JSON and HTML now explicitly use UTF-8; the regression also
+  checks a Unicode row title survives. Partial/completed selection is unchanged.
+- Tooltip catalogue: the extractor truncated raw HTML at 600 characters,
+  sometimes cutting an SVG tag in half. CRLF vs LF shifted that cut and produced
+  different bogus control names. Strip markup before limiting the label; an
+  icon-only button now uses its accessible name. A fixture proves LF/CRLF
+  equality. The only catalogue change is that control name; no pending wording
+  edits were present or overwritten, and no app tooltip changed.
+
+Focused checks: machine/highlight Python files 21 pass, 2 platform skips;
+Unicode regression passes; tooltip checks 3 pass. Full Node suite: 1446 pass,
+1 skipped, zero failures. Logs: `codebase/output/assigned-followups-node.log`
+and `codebase/output/assigned-followups-pytest.log` (full Python run).
+No application processing, pixel tolerance, GPU budget or product decision
+changed. No GPU driver directly covers these offline-tooling changes.
+
+The report's historical slow-driver failures have fixes or machine-specific
+explanations in the follow-ups above. This pass does not claim new GPU runs,
+Mac memory validation, or Mac calibration validation. Denoise research and
+export failures in the PC Python log are handled by separate workers.

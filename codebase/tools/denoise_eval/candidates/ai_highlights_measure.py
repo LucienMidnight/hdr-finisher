@@ -51,7 +51,7 @@ VIEW_CALIBRATION = np.float32(2 ** RAW_CALIBRATION_EV)
 
 def write_json(path, data):
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, indent=2, allow_nan=False) + '\n')
+    path.write_text(json.dumps(data, indent=2, allow_nan=False) + '\n', encoding='utf-8')
 
 
 def provenance():
@@ -534,10 +534,10 @@ def synthetic():
 
 def review():
     paths = sorted(OUTPUT.glob('real-*.json')) + sorted(OUTPUT.glob('synthetic-*.json'))
-    records = [record for path in paths if 'review_rows' in (record := json.loads(path.read_text()))]
+    records = [record for path in paths if 'review_rows' in (record := json.loads(path.read_text(encoding='utf-8')))]
     completed = {record['name'] for record in records}
     records += [record for path in sorted(OUTPUT.glob('partial-*.json'))
-                if (record := json.loads(path.read_text()))['name'] not in completed]
+                if (record := json.loads(path.read_text(encoding='utf-8')))['name'] not in completed]
     rows = [row for record in records for row in record.get('review_rows', [])]
     sections = []
     for row in rows:
@@ -564,7 +564,7 @@ Saturation is not a guarantee that all channels are noiseless. Synthetic capture
 real-photo highpass measurements mix texture and noise. Visual sign-off is Steve's, not a metric pass.</p>
 ''' + ''.join(sections) + '</body></html>'
     REVIEW.mkdir(parents=True, exist_ok=True)
-    (REVIEW / 'index.html').write_text(page)
+    (REVIEW / 'index.html').write_text(page, encoding='utf-8')
     write_json(REVIEW / 'manifest.json', dict(records=[record['name'] for record in records], rows=rows))
     referenced = {filename for row in rows for title, filename in row['images']}
     for filename in referenced:

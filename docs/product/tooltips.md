@@ -1085,7 +1085,7 @@ Clipped lane, scope, preview and filename labels use their visible text; dynamic
 | Horizontal split | Horizontal split · HDR top, SDR bottom | fixed | codebase/frontend/index.html:248 · [source](../../codebase/frontend/index.html#L248) |
 | Side-by-side horizontal | Side by side · HDR left, SDR right | fixed | codebase/frontend/index.html:251 · [source](../../codebase/frontend/index.html#L251) |
 | Side-by-side vertical | Stacked · HDR top, SDR bottom | fixed | codebase/frontend/index.html:254 · [source](../../codebase/frontend/index.html#L254) |
-| &lt;path class="scope | Scope Region · draw a box to limit scopes · Shift+R | fixed | codebase/frontend/index.html::#scope-region-toggle · [source](../../codebase/frontend/index.html#L259) |
+| Toggle Scope Region (Shift+R) | Scope Region · draw a box to limit scopes · Shift+R | fixed | codebase/frontend/index.html::#scope-region-toggle · [source](../../codebase/frontend/index.html#L259) |
 | &minus; | Zoom out | fixed | codebase/frontend/index.html::#zoom-out · [source](../../codebase/frontend/index.html#L271) |
 | Zoom percentage | Enter a zoom percentage | fixed | codebase/frontend/index.html::#zoom-readout · [source](../../codebase/frontend/index.html#L272) |
 | Zoom in | Zoom in | fixed; name only | codebase/frontend/index.html::#zoom-in · [source](../../codebase/frontend/index.html#L274) |
