@@ -144,10 +144,15 @@ test('another active runner blocks GPU work across selections', t => {
 });
 
 test('known signatures do not hide a second failure in a combined invocation', () => {
-  const known={failures:[{driver:'film',messages:['Error: exact numerical failure']}]};
-  assert.equal(runner.knownMessage('Error: exact numerical failure',known,'film'),true);
-  assert.equal(runner.knownMessage('Error: exact numerical failure\npage.evaluate: Error: preset await',known,'film'),false);
+  const accepted='Error: exact numerical failure';
+  const unexpected='page.evaluate: Error: stage Mod count disagrees with deliberate controls';
+  const known={failures:[{driver:'film',messages:[accepted]}]};
+  const mixed=`${accepted}\n    at firstDriver (film.js:1)\n${unexpected}`;
+  assert.equal(runner.knownMessage(accepted,known,'film'),true);
+  assert.equal(runner.knownMessage(mixed,known,'film'),false);
   assert.equal(runner.knownMessage('Error: changed numerical failure',known,'film'),false);
+  assert.equal(runner.summaryFailureMessage(mixed,known,'film'),unexpected);
+  assert.equal(runner.summaryFailureMessage(accepted,known,'film'),accepted);
 });
 test('unfinished selection includes only incomplete work plus explicit reruns', () => {
   const previous={drivers:['tests/pass.js','tests/incomplete.js','tests/failed.js'],results:{'tests/pass.js':{classification:'passed'},'tests/incomplete.js':{attempts:[]},'tests/failed.js':{classification:'new'}}};

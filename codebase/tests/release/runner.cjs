@@ -89,13 +89,23 @@ function history(output = OUTPUT, root = ROOT) {
   if (fs.existsSync(file)) for (const line of fs.readFileSync(file, 'utf8').trim().split('\n').filter(Boolean)) records.push(JSON.parse(line));
   return records;
 }
+function failureHeaders(log, known, driver) {
+  const signatures = known.failures.filter(f => f.driver === driver && f.messages.every(m => log.includes(m)));
+  return log.split('\n')
+    .filter(line => /^(?:[\w.]+: )?(?:\w*Error(?: \[[^\]]+\])?:|.*Timeout \d+ms exceeded\.)/.test(line))
+    .map(line => ({ line, known: signatures.some(f => f.messages.some(m => m.includes(line.trim()))) }));
+}
 function knownMessage(log, known, driver) {
-  const failures = known.failures.filter(f => f.driver === driver && f.messages.every(m => log.includes(m)));
-  if (!failures.length) return false;
   // A combined driver may also report a different failure (notably Film's UI
   // follow-up). Every error header must be covered before suppressing a retry.
-  const errors = log.split('\n').filter(line => /^(?:[\w.]+: )?(?:\w*Error(?: \[[^\]]+\])?:|.*Timeout \d+ms exceeded\.)/.test(line));
-  return errors.length > 0 && errors.every(line => failures.some(f => f.messages.some(m => m.includes(line.trim()))));
+  const errors = failureHeaders(log, known, driver);
+  return errors.length > 0 && errors.every(error => error.known);
+}
+function summaryFailureMessage(log, known, driver) {
+  const errors = failureHeaders(log, known, driver);
+  // For a mixed log, show the error that made the result new.
+  if (errors.some(error => error.known)) return (errors.find(error => !error.known) ?? errors[0]).line;
+  return log.split('\n').find(line => /Error|Timeout|FAIL/.test(line));
 }
 function unfinishedSelection(list, previous, additional = []) {
   const paths = [...new Set([...previous.drivers.filter(file => !previous.results[file]?.classification), ...additional])];
@@ -391,7 +401,7 @@ async function main(args = process.argv.slice(2)) {
     const result = state.results[file];
     if (!result || result.classification === 'passed') continue;
     const last = result.attempts.at(-1);
-    const message = last ? cleanLog(fs.readFileSync(last.log, 'utf8')).split('\n').find(line => /Error|Timeout|FAIL/.test(line)) : '';
+    const message = last ? summaryFailureMessage(cleanLog(fs.readFileSync(last.log, 'utf8')), known, file) : '';
     lines.push(`${result.classification || 'unfinished'}: ${file}${message ? `: ${message.slice(0, 320)}` : ''}`);
   }
   if (fatal) lines.push(fatal);
@@ -401,5 +411,5 @@ async function main(args = process.argv.slice(2)) {
   process.exitCode = fatal || counts.new || counts.known ? 1 : counts.unfinished ? 130 : 0;
   return { out, state, counts };
 }
-module.exports = { attemptTimeout, launchFailed, stopTree, enforceShutdown, electronRoots, verifyElectronGone, runInvocations, inventory, validate, changedAreas, select, command, history, estimate, classify, knownMessage, unfinishedSelection, hashProjects, checkProjects, parse, main };
+module.exports = { attemptTimeout, launchFailed, stopTree, enforceShutdown, electronRoots, verifyElectronGone, runInvocations, inventory, validate, changedAreas, select, command, history, estimate, classify, knownMessage, summaryFailureMessage, unfinishedSelection, hashProjects, checkProjects, parse, main };
 if (require.main === module) main().catch(error => { console.error(error.message); process.exitCode = 1; });
