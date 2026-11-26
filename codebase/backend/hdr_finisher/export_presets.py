@@ -3,6 +3,7 @@ from datetime import datetime
 import os
 from pathlib import Path
 import re
+from tempfile import NamedTemporaryFile
 from threading import RLock
 from uuid import uuid4
 from pydantic import BaseModel, Field
@@ -70,9 +71,16 @@ class ExportPresets:
         with self.lock:
             self.root.mkdir(parents=True, exist_ok=True)
             target = self.root / (preset.id + ".json")
-            temporary = target.with_suffix(".tmp")
-            temporary.write_text(preset.model_dump_json(indent=2), encoding="utf-8")
-            os.replace(temporary, target)
+            temporary = None
+            try:
+                with NamedTemporaryFile(mode="w", encoding="utf-8", prefix=f".{preset.id}.",
+                                        suffix=".tmp", dir=self.root, delete=False) as handle:
+                    temporary = Path(handle.name)
+                    handle.write(preset.model_dump_json(indent=2))
+                os.replace(temporary, target)
+            finally:
+                if temporary is not None:
+                    temporary.unlink(missing_ok=True)
         return preset
     def delete(self, identity):
         if not re.fullmatch(r"[a-zA-Z0-9_-]{1,80}", identity): raise ValueError("Invalid preset.")
