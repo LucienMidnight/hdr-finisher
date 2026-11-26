@@ -513,6 +513,9 @@ module PRD for the area you touch, then `docs/technical/code-map.md`.
   release check of Nov 25 (97/117), every failure's cause and fix, Steve's
   open decision on CPU-strip exports (with its ready `.diff`), timings.
 
+- `docs/technical/research/large-export-cpu-default.md`: native CPU/GPU routing
+  at the 4 GB Mac and 6 GB Windows defaults, with PC measurements.
+
 - `docs/technical/reports/encoding-fidelity-fixes-2026-11-16.md`:
   finished-renderer test split, shared-picker regression, stage attribution and
   non-shipping JPEG/AVIF/JXL fidelity-versus-size options.

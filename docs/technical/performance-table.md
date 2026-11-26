@@ -1,3 +1,21 @@
+## November 26 - Native large export, GPU versus CPU on Windows
+
+Windows 11 PC, Ryzen 5 7600 / RTX 4070 Ti, unpackaged Electron at 2560×1440,
+`76f1cf12`, 8 GB diagnostic ceiling, one native HDR JPEG XL Q95/12-bit
+Library export per arm. No Grade photo held. Time is batch start to finish,
+including RAW development, encode, validation and finished-pixel capture.
+Peak is sampled private commit for the test app tree, not dedicated VRAM.
+
+| Source | CPU wait / peak | GPU wait / peak | Finished HDR agreement |
+| --- | --- | --- | --- |
+| DSC00636.ARW, 50.09 MP, default grade | 155.7 s / 5.857 GB | 177.3 s / 8.174 GB | Fail. Extreme finite samples in the GPU render made ΔE ITP non-finite. |
+| DSC04375.ARW, 42.39 MP, saved grade | 157.4 s / 5.740 GB | 131.5 s / 7.536 GB | Pass. ΔE ITP mean 0.02246 / P99.9 0.06071. |
+
+Single observations, not speed baselines. JXL encoding was 103–118 s per
+arm. The initial 6 GB DSC00636 Ultra HDR JPEG probe selected bounded CPU
+and stopped at the codec's 8192-pixel width limit (65.4 s, 3.921 GB).
+[Settings, method and caveats](research/large-export-cpu-default.md).
+
 ## November 26 - PC repeated-delivery follow-up
 
 Windows PC, 2560x1440, commit fef365cb (fix/overnight-report-followups), Steve's Electron
