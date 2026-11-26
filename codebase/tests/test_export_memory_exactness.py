@@ -367,7 +367,7 @@ def test_vignette_matches_full_coordinate_grids(image, kind, protection, roundne
     dy /= np.float32(vignette.scale_y / 100)
     exponent = 2 + (6 if roundness >= 0 else 1) * (roundness / 100)
     radius = np.power(np.power(dx, exponent) + np.power(dy, exponent), 1 / exponent)
-    midpoint = np.float32(0.15 + 0.70 * vignette.midpoint / 100)
+    midpoint = np.float32(0.15 + 1.40 * vignette.midpoint / 100)
     feather = np.float32(0.02 + 0.98 * vignette.feather / 100)
     mask = adjustments._smoothstep(float(midpoint), float(midpoint + feather), radius)
     if protection:

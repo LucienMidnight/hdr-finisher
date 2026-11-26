@@ -1948,7 +1948,7 @@ def _apply_vignette(
     roundness = float(vignette.roundness) / 100.0
     exponent = 2.0 + 6.0 * roundness if roundness >= 0.0 else 2.0 + roundness
     dx_power = np.power(dx, exponent)
-    midpoint = np.float32(0.15 + 0.70 * vignette.midpoint / 100.0)
+    midpoint = np.float32(0.15 + 1.40 * vignette.midpoint / 100.0)
     feather_width = np.float32(0.02 + 0.98 * vignette.feather / 100.0)
     ev = np.float32(2.0 * vignette.amount / 100.0)
 

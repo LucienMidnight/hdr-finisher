@@ -261,7 +261,7 @@ function renderVignetteShape() {
   overlay.setAttribute("preserveAspectRatio", "none");
   // The same start and end the renderer uses: nothing inside the inner line,
   // full strength outside the dashed outer line.
-  const start = 0.15 + 0.70 * (vignette.midpoint ?? 50) / 100;
+  const start = 0.15 + 1.40 * (vignette.midpoint ?? 25) / 100;
   const end = start + 0.02 + 0.98 * (vignette.feather ?? 75) / 100;
   overlay.querySelector(".vignette-shape-inner").setAttribute("d", vignetteOutlinePath(vignette, start, frameWidth, frameHeight));
   overlay.querySelector(".vignette-shape-outer").setAttribute("d", vignetteOutlinePath(vignette, end, frameWidth, frameHeight));

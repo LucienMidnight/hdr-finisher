@@ -160,7 +160,7 @@ Object.assign(MANUAL_VALUE_RULES, {
   "current.color_grading.blending": { min: 0, max: 100, decimals: 0 },
   "current.color_grading.balance": { min: -100, max: 100, decimals: 0 },
   "current.vignette.amount": { min: -200, max: 200, decimals: 0 },
-  "current.vignette.midpoint": { min: 0, max: 100, decimals: 0 },
+  "current.vignette.midpoint": { min: 0, max: 200, decimals: 1 },
   "current.vignette.roundness": { min: -100, max: 100, decimals: 0 },
   "current.vignette.feather": { min: 0, max: 100, decimals: 0 },
   "current.vignette.highlight_protection": { min: 0, max: 100, decimals: 0 },
@@ -747,7 +747,7 @@ const defaultColorGrading = () => ({
   balance: 0,
 });
 
-const defaultVignette = () => ({ amount: 0, midpoint: 50, roundness: 0, feather: 75, highlight_protection: 0, center_x: 0.5, center_y: 0.5, scale_x: 100, scale_y: 100 });
+const defaultVignette = () => ({ amount: 0, midpoint: 25, midpoint_scale_version: 2, roundness: 0, feather: 75, highlight_protection: 0, center_x: 0.5, center_y: 0.5, scale_x: 100, scale_y: 100 });
 // BW-01 Black & White: how bright each colour becomes in grey. All zero is the
 // plain luminance conversion, the same as Saturation -100.
 const BLACK_AND_WHITE_SLIDERS = Object.freeze(["reds", "oranges", "yellows", "greens", "aquas", "blues", "purples", "magentas"]);

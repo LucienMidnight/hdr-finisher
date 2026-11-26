@@ -1,3 +1,32 @@
+## November 26: wider Vignette Midpoint
+
+Midpoint now covers 0?200% on both slider and typed value. The start radius is
+`0.15 + 1.40 * midpoint / 100`, in units of half the shorter frame dimension.
+At default centre, Roundness and Scale, 100% reaches near the corners of a 3:2
+frame; 200% extends beyond them. Feather keeps its existing width. CPU rendering,
+GPU preview/delivery and the on-image outline use the same radius.
+
+Steve explicitly requested preservation of saved edits for this change.
+The nested Vignette recipe carries `midpoint_scale_version: 2`; unmarked saved
+recipes load with Midpoint divided by two (old 100 becomes 50), exactly retaining
+the previous radius. This applies wherever that recipe loads: sidecars, projects,
+presets and copied grades. Repeated save/load does not divide again. The default
+is now 25%, retaining the previous default appearance. Fractional values survive.
+The containing project/sidecar schema versions stay unchanged: the version belongs
+to the shared Vignette recipe. Older apps reject the new field under their strict
+schema, or their saved-grade recovery may offer to omit it; omitting it would
+interpret the smaller number on the old scale and change the look. Keep an
+original copy when going back to an older app; new saves are not backwards compatible.
+
+Focused checks: legacy-pixel equality and round trips, expanded radius, typed
+limits and outline geometry; hardware preview and CPU/GPU PNG delivery use
+finished SDR Delta E 2000 mean ? 1 and p99.9 ? 2 (below/near visible differences).
+No existing parity tolerance is changed.
+Targeted Python and Node checks passed. The locked PC hardware check passed
+at 100% and 200% in both editing lanes and for actual CPU/GPU PNG exports;
+finished SDR mean Delta E 2000 stayed below 0.001, p99.9 was zero.
+Old saved-recipe rendering remained byte-exact against the previous equation.
+
 ## November 26: repair name edits under memory pressure
 
 Renaming a saved repair, including undo and redo of its name, reuses the

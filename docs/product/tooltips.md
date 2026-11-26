@@ -518,6 +518,7 @@ Clipped lane, scope, preview and filename labels use their visible text; dynamic
 | --- | --- | --- | --- |
 | ◉ | Toggle Vignette preview | name only (fallback) | codebase/frontend/index.html:1568 · [source](../../codebase/frontend/index.html#L1568) |
 | Show overlay | Outlines where the vignette starts and where it reaches full strength. Preview only: never exported. | fixed | codebase/frontend/index.html::#vignette-show-overlay · [source](../../codebase/frontend/index.html#L1573) |
+| current.vignette.midpoint | Sets where the vignette starts. 100% reaches near the corners of a 3:2 frame; values up to 200% push it beyond the frame. Roundness and Scale also change its reach. | fixed | codebase/frontend/index.html::data-path=current.vignette.midpoint · [source](../../codebase/frontend/index.html#L1576) |
 
 ### color wheels
 

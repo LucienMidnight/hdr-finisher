@@ -272,6 +272,8 @@
     }
   ],
   "drivers": [
+    {"path":"tests/vignette-midpoint.js","areas":["preview","export-proof","ui"],"tier":"area",
+      "protects":"Expanded Vignette midpoint authoring and real GPU preview versus CPU rendering and CPU/GPU PNG exports at 100 and 200 percent.","launch":{"method":"electron"}},
     {"path":"tests/raw-pixel-cleanup-delivery.js","areas":["library","preview","export-proof","ui"],"tier":"area",
       "protects":"Real Bayer RAW hot-pixel and harsh-speck cleanup enabled in Grade, restored checkboxes, threshold release/reset, CPU/GPU Edge colour, saved Library GPU development and identical encoded Proof/export; inherits the existing edge-colour delivery comparison guards.","launch":{"method":"electron"}},
     {"path":"tests/raw-pixel-cleanup.js","areas":["library","preview","export-proof"],"tier":"area",

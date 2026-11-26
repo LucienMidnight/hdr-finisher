@@ -29,7 +29,8 @@ def put(document, path, data):
 
 def leaves(data, prefix):
     if isinstance(data, dict):
-        return [p for key, item in data.items() for p in leaves(item, prefix+'.'+key)]
+        return [p for key, item in data.items() if key != 'midpoint_scale_version'
+                for p in leaves(item, prefix+'.'+key)]
     return [prefix]
 
 

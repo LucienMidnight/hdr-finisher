@@ -366,7 +366,7 @@
     const vignette = branch.vignette || {};
     params[GPU_PARAMS.VIGNETTE_ENABLED] = branch.vignette_section_enabled !== false ? 1 : 0;
     params[GPU_PARAMS.VIGNETTE_AMOUNT] = 2 * (vignette.amount || 0) / 100;
-    params[GPU_PARAMS.VIGNETTE_MIDPOINT] = 0.15 + 0.70 * (vignette.midpoint ?? 50) / 100;
+    params[GPU_PARAMS.VIGNETTE_MIDPOINT] = 0.15 + 1.40 * (vignette.midpoint ?? 25) / 100;
     const roundness = (vignette.roundness || 0) / 100;
     params[GPU_PARAMS.VIGNETTE_ROUNDNESS] = roundness >= 0 ? 2 + 6 * roundness : 2 + roundness;
     params[GPU_PARAMS.VIGNETTE_FEATHER] = 0.02 + 0.98 * (vignette.feather ?? 75) / 100;
