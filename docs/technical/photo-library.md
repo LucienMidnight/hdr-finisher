@@ -12,6 +12,16 @@ specific file, rule or message.
   how-to-use guide is available in the [Library manual](../user-guide/library.md).
   Product intent lives in the [Photo Library PRD](../product/modules/photo-library.md).
 
+### Thumbnail cancellation (November 26, 2026)
+
+Stored-thumbnail reads recheck cancellation before each 32-photo request and
+before GPU initialization. In-flight shared reads finish normally; later
+cancelled groups are skipped without affecting surviving visible cells.
+The controlled 72-cell regression makes 1 request instead of 3 when all cells
+are cancelled during the first read, or 2 instead of 3 when only the middle
+group is cancelled. These are request counts, not measured screen-time gains.
+`library-finished-thumbnails.test.js` checks both races and unchanged pixel bytes.
+
 ### File-command refresh recovery (November 26, 2026)
 
 The frontend serializes direct replies and health updates. A file-command

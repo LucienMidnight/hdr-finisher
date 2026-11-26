@@ -44,7 +44,9 @@ window.HDRLibraryFinishedThumbnails = (() => {
         try{
           if(!active.length)return;
           for(let at=0;at<active.length;at+=32){
-          const group=active.slice(at,at+32);
+          // Scrolling may retire later groups while an earlier read is in flight.
+          const group=active.slice(at,at+32).filter(item=>!item.signal.aborted);
+          if(!group.length)continue;
           const response=await fetch('/api/library/finished-thumbnails?'+new URLSearchParams({lane:hdr?'hdr':'sdr',format}),
             {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({paths:group.map(item=>item.path)})});
           if(!response.ok)throw Error('Finished thumbnail batch failed: '+response.status);
@@ -72,8 +74,10 @@ window.HDRLibraryFinishedThumbnails = (() => {
       if(signal.aborted)throw error;
       console.debug('Finished thumbnail read:',error.message);return null;
     });
+    if(signal.aborted||!current())throw new DOMException('Invalidated','AbortError');
     if(!result)return null;
     await window.HDRLibraryGrants?.waitForGrade(signal);
+    if(signal.aborted||!current())throw new DOMException('Invalidated','AbortError');
     const gpu=await HDRLibraryPictures.initialize().catch(error=>{if(error.gpuUnavailable)return null;throw error;});
     if(!gpu)return null;
     const {info,body}=result;
