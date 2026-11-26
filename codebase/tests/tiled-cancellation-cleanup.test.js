@@ -21,7 +21,7 @@ function encoding({ cancelled = false, throws = false, patchCoversViewport = nul
   };
   const peakTarget = { busy: true };
   const context = vm.createContext({ renderer, cancelled, peakTarget,
-    floatPeak:false, floatPeakRead:null,
+    floatPeak:false, floatPeakRead:null, hslTileEngine:null,
     lane: 'hdr', longEdge: 1600, options: { coversViewport: () => patchCoversViewport },
     measureOnly: true, regionOnly: false, pictureRegion: patchCoversViewport === null ? null : {},
     canvas: {}, proxy: { width: 1600, height: 1200 }, isCurrent: () => true,
