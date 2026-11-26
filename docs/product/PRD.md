@@ -334,7 +334,7 @@ section 3; the October 18 list below is kept as history.
 
 1. **GPU delivery:** export, batch export, Proof and saved-grade Library
    pictures on the GPU. Brief:
-   [codex-brief-gpu-delivery-build-2026-10-18](../technical/briefs/codex-brief-gpu-delivery-build-2026-10-18.md).
+   [codex-brief-gpu-delivery-build-2026-10-18](../technical/archive/briefs/codex-brief-gpu-delivery-build-2026-10-18.md).
    Details: [export-and-proof](modules/export-and-proof.md).
 2. **Library responsiveness** (goal clarified by Steve, October 25): prepare
    a folder of roughly 200-300 photos, then browse and rate fullscreen in real

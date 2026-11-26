@@ -1,3 +1,7 @@
+Local evidence links under `codebase/output/` refer to ignored measurement
+artifacts. They may be absent on another device or after scratch cleanup;
+the dated results below remain the record, not a promise those files ship.
+
 ## November 26 - Library/shell review visibility-limited check
 
 | Action | Result | Conditions and evidence |
