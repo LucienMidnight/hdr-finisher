@@ -47,7 +47,7 @@ At **100%** and above, Ready means the visible region was processed at native so
 
 Proxy resampling preserves float values and uses a high-quality filter, but downsampling can still hide single-pixel clipping or artifacts.
 
-Drag the **Navigate** window by its title bar (beside the two grip lines) to
+Drag the **Navigate** window by the solid strip with two grip lines above its preview to
 move it out of your way. Drag inside its thumbnail to pan the photo. Its
 position stays while the app is open and resets on the next launch.
 

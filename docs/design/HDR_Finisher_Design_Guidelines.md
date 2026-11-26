@@ -63,6 +63,13 @@ display” is explicit and undoable; telemetry never changes a delivery target.
 
 ## Information hierarchy
 
+November 26: the Navigate overview has a thin `plate-edge` border directly around
+its preview, without padding. A solid `raised` strip above the preview holds two
+full-width `muted` grip lines and remains the drag target. No visible title is
+shown; the button retains its Navigator accessible name, keyboard centring and
+picture click-to-pan. The strip uses the existing chevron height and disclosure
+inset tokens. A translucent separator token must never fill this floating frame.
+
 The workspace has four stable regions:
 
 - Source rail: source identity, interpretation, metadata, and preview facts.
