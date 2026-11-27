@@ -235,7 +235,7 @@ Source: `codebase/tests/inventory.json`. Seconds are summed case time, not paral
 | tests/test_denoise_hot_pixel.py | Checks denoise hot pixel behavior and regression contracts. | 12 | 0.0208 | unknown |  |
 | tests/test_denoise_informative.py | Shipping measurement rejects censored evidence without changing reconstruction. | 10 | 0.145 | unknown |  |
 | tests/test_denoise_lmmse.py | Checks denoise lmmse behavior and regression contracts. | 45 | 0.6985 | unknown |  |
-| tests/test_denoise_measurement.py | Measurements belong to source pixels, survive restart, and reject stale work. | 15 | 7.1235 | unknown |  |
+| tests/test_denoise_measurement.py | Measurements belong to source pixels, survive restart, and reject stale work. | 16 | 7.1235 | unknown |  |
 | tests/test_denoise_model_windows.py | The Denoise noise model reads a few sample windows, so the preview corrects | 7 | 3.5428 | unknown |  |
 | tests/test_denoise_native_model.py | At full size the Denoise noise model is the source's own: one measurement per | 16 | 3.5409 | unknown |  |
 | tests/test_denoise_noise_model_specks.py | Behavioural coverage for the isolated noise-model/RAW-speck research. | 12 | 0.0586 | unknown |  |

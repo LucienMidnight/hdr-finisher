@@ -299,3 +299,51 @@ def test_native_exr_measurement_preserves_source_precision_and_window(context, t
     h, w, read = library_live.native_exr_denoise_windows(precision_meta)
     assert (h, w) == (height, width)
     np.testing.assert_array_equal(read(11, 13, 42, 37), expected[11:42, 13:37])
+
+
+def test_reduced_tiff_measures_float32_and_does_not_cache_half_fallback(context, tmp_path, monkeypatch):
+    import tifffile
+    from hdr_finisher import library_live, library_scheduler, loader
+    from hdr_finisher.library_reduced import SAMPLE_EDGE
+
+    client, frame = context
+    path = tmp_path / "override.tif"
+    samples = np.random.default_rng(19).integers(4000, 16000, (64, 96, 3), dtype=np.uint16)
+    tifffile.imwrite(path, samples, photometric="rgb", extratags=[(274, "H", 1, 6, False)])
+    edge = 640
+    document = {"interpretation_override": {"color_space": "sRGB", "transfer_function": "BT.709"}}
+    expected, *_ = loader.load_image(path, overrides=document["interpretation_override"],
+                                     library_edge=SAMPLE_EDGE, analyze_hdr=False)
+    height, width = expected.shape[:2]
+    quality = library_live.quality(document)
+    meta = {"key": library_live.picture_key(path, edge, quality), "edge": edge,
+            "path": str(path), "quality": quality, "width": width, "height": height,
+            "source_width": width, "source_height": height, "has_reference": False,
+            "adjustments": frame.adjustments.model_dump(mode="json")}
+    scene = library_live.LivePictures(tmp_path, None).describe(path, meta, document=document)
+    url = f"/api/session/{scene['key']}/denoise-measurement/hdr?long_edge={edge}"
+    half = expected.astype(np.float16)
+    scheduler = library_scheduler.Scheduler()
+    monkeypatch.setattr(library_scheduler, "scheduler", scheduler)
+    monkeypatch.setattr(library_live, "native_denoise_pixels", lambda _: half)
+
+    scheduler.update(total=scheduler.ceiling)
+    with monkeypatch.context() as refused:
+        def forbidden_decode(*args, **kwargs):
+            pytest.fail("A refused source grant must not decode the TIFF")
+
+        refused.setattr(loader, "load_image", forbidden_decode)
+        response = client.get(url + "&source=true")
+        assert response.status_code == 200
+        assert response.json()["algorithm_version"] == MODEL["algorithm_version"]
+    assert scheduler.jobs == {}
+    assert client.get(url).status_code == 204, "Do not cache the fallback under the float32 key"
+
+    scheduler.update()
+    response = client.get(url + "&source=true")
+    assert response.status_code == 200
+    length = struct.unpack("<I", response.content[:4])[0]
+    pixels = np.frombuffer(response.content[4 + length:], dtype="<f4").reshape(height, width, 4)[..., :3]
+    np.testing.assert_array_equal(pixels, expected)
+    assert not np.array_equal(pixels, half)
+    assert scheduler.jobs == {}

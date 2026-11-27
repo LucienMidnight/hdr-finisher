@@ -3030,7 +3030,7 @@
       "suite": "python",
       "area": "denoise",
       "purpose": "Measurements belong to source pixels, survive restart, and reject stale work.",
-      "test_count": 15,
+      "test_count": 16,
       "seconds": {
         "windows": 7.1235,
         "mac": null

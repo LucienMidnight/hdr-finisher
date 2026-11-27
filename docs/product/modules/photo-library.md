@@ -6673,6 +6673,14 @@ preservation, interpretation gates/order and equivalent starting documents.
 Originals/sidecars are preserved; the pre-existing Blender sidecar retains
 SHA-256 `69F50AE23B96291A8F3D98CFAF1AAA571C658831AA939F6C9BD54E7E855ADC29`.
 
+**November 28 precision fix.** Reduced TIFF Denoise measures the original
+float32 Library samples before half-float picture transport rounds them. This
+matters for low-noise TIFFs with a manual BT.709 transfer. The existing source
+scheduler admits the extra read at its unchanged full-import estimate. With
+no headroom the previous estimate remains usable and is not published as a
+float32 measurement. No changes to TIFF interpretation, Grade, export, Proof,
+the stored scene, or pixel guards. The full Mac rendition matrix passes.
+
 **Remaining blocker/readiness.** The existing imageio v3 route raises
 `OSError: Could not find a backend ... with iomode r` on real `alps_field_1k.hdr`
 and a valid signed little-endian float PFM. Installed requirements include

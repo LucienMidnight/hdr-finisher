@@ -89,6 +89,8 @@ def _context(store, session_id, kind, long_edge, edit_revision, geometry_signatu
         source = {"scene": meta["source_key"]}
         if native and "native_exr_interpretation" in meta:
             source["measurement_pixels"] = "native-exr-float32-v1"
+        elif native and "reduced_tiff_interpretation" in meta:
+            source["measurement_pixels"] = "reduced-tiff-float32-v1"
         path = meta.get("path")
         usage = "Library"
     else:
@@ -271,6 +273,28 @@ def cpu_delivery_model(frame, *, authored_image=None, geometry=None):
     value = cached["model"]
     return AdaptiveNoiseModel(a=value["a"], b=value["b"], c=value["c"],
         band_sigmas=tuple(tuple(row) for row in value["band_sigmas"]))
+
+
+def _pack_measurement_source(key, height, width, read):
+    # At most 1 MP of original samples, without resizing/noise smoothing.
+    # Small pictures use every pixel; larger ones use an even 4x4 grid.
+    if height*width <= 1024*1024:
+        rectangles = [(0,0,height,width)]
+    else:
+        th, tw = min(height,256), min(width,256)
+        ys=np.linspace(0,height-th,4).astype(int);xs=np.linspace(0,width-tw,4).astype(int)
+        rectangles=[(int(y),int(x),int(y)+th,int(x)+tw) for y in ys for x in xs]
+    packed=[]; descriptions=[]
+    for y0,x0,y1,x1 in rectangles:
+        rgb=np.asarray(read(y0,x0,y1,x1),dtype=np.float32)
+        rgba=np.ones((*rgb.shape[:2],4),dtype="<f4");rgba[...,:3]=rgb[...,:3]
+        packed.append(rgba.tobytes())
+        descriptions.append({"edges":[y0==0,y1==height,x0==0,x1==width]})
+    description={"key":key,"width":rectangles[0][3]-rectangles[0][1],"height":rectangles[0][2]-rectangles[0][0],
+        "windows":descriptions,"source_width":width,"source_height":height,"version":VERSION,
+        "calibration":CALIBRATION_RULES}
+    header=json.dumps(description).encode();header+=b" "*((-len(header))%4)
+    return Response(struct.pack("<I",len(header))+header+b"".join(packed),media_type="application/octet-stream")
 
 
 def create_router(store):
@@ -561,7 +585,18 @@ def create_router(store):
         if frame is None:
             authored = kind == PreviewKind.SDR and meta.get("has_reference", False) and meta["adjustments"].get("sdr", {}).get("use_authored_base", True)
             if not authored and long_edge >= max(meta["scene_width"],meta["scene_height"]):
-                from .library_live import native_denoise_pixels, native_exr_denoise_windows
+                from .library_live import native_denoise_pixels, native_exr_denoise_windows, reduced_tiff_denoise_pixels
+                if "reduced_tiff_interpretation" in meta:
+                    with reduced_tiff_denoise_pixels(meta) as pixels:
+                        if pixels is not None:
+                            height, width = pixels.shape[:2]
+                            return _pack_measurement_source(key, height, width, lambda y0,x0,y1,x1: pixels[y0:y1,x0:x1,:3])
+                    # On memory refusal retain the old model without publishing
+                    # the half-based measurement under the float32 identity.
+                    from .denoise_adaptive import estimate_adaptive_model
+                    from .cpu_budget import logical_cpus
+                    log("picture_denoise_model", path=meta["path"], route="library-tiff-half-memory-fallback")
+                    return estimate_adaptive_model(native_denoise_pixels(session_id), workers=logical_cpus()).as_dict()
                 precision_windows = native_exr_denoise_windows(meta)
                 if precision_windows is None:
                     native = (native_denoise_pixels(session_id), 0)
@@ -585,25 +620,7 @@ def create_router(store):
                 image, _, _ = frame.render_cache.geometry_source_proxy(*request)
                 height, width = image.shape[:2]
                 read = lambda y0,x0,y1,x1: image[y0:y1,x0:x1,:3]
-        # At most 1 MP of original samples, without resizing/noise smoothing.
-        # Small pictures use every pixel; larger ones use an even 4x4 grid.
-        if height*width <= 1024*1024:
-            rectangles = [(0,0,height,width)]
-        else:
-            th, tw = min(height,256), min(width,256)
-            ys=np.linspace(0,height-th,4).astype(int);xs=np.linspace(0,width-tw,4).astype(int)
-            rectangles=[(int(y),int(x),int(y)+th,int(x)+tw) for y in ys for x in xs]
-        packed=[]; descriptions=[]
-        for y0,x0,y1,x1 in rectangles:
-            rgb=np.asarray(read(y0,x0,y1,x1),dtype=np.float32)
-            rgba=np.ones((*rgb.shape[:2],4),dtype="<f4");rgba[...,:3]=rgb[...,:3]
-            packed.append(rgba.tobytes())
-            descriptions.append({"edges":[y0==0,y1==height,x0==0,x1==width]})
-        description={"key":key,"width":rectangles[0][3]-rectangles[0][1],"height":rectangles[0][2]-rectangles[0][0],
-            "windows":descriptions,"source_width":width,"source_height":height,"version":VERSION,
-            "calibration":CALIBRATION_RULES}
-        header=json.dumps(description).encode();header+=b" "*((-len(header))%4)
-        return Response(struct.pack("<I",len(header))+header+b"".join(packed),media_type="application/octet-stream")
+        return _pack_measurement_source(key, height, width, read)
 
     @router.post("/api/session/{session_id}/denoise-measurement/{kind}")
     def accept(session_id: str, kind: PreviewKind, value: dict = Body(...),

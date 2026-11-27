@@ -34,6 +34,7 @@ fixture issue. A pass after an earlier timeout is recorded explicitly.
 - `tests/library-export-live-tiles.js` — (c) all three previous Sony fixtures exceeded the intentional native 4 GB CPU-strip cutover (`d1556e87`). Replace one with a curated 10.5 MP Sony RAW. Both delivery routes, seven exports, no progress redraws and the unchanged 5% timing check pass in `library-export-live-tiles.log`.
 - `tests/performance/preview-export-compare.js` — (c) relink repaired in `02a05544`; old capture compared a zoomed GPU detail target to the soft base canvas. Capture the visible detail using exact full-frame coordinates. Enforced HDR/SDR, all six viewports, masks and tone gates pass without changing pixel limits or the project.
 - `tests/photo-library-stage-b.js` — (b), fixed. The v0.9.3 Details redraw also cancelled the pending suggestion lookup while preserving the input. The current failure reproduced at the same locator as November 26. Deterministic redraw during debounce now passes with exact suggestion count, keyboard choice and disk persistence.
+- `tests/library-precision-rendition.js` — (a), fixed. v0.9.3 passes (BT.709 HDR p99.9 0.210); 0.9.4 reproduced 3.261. Denoise was measuring half-float rounding as noise. With a safely admitted float32 measurement at reduced Library tiers, the unchanged full matrix passes at 0.170, below 3.0. Grade, export, Proof and display transport are unchanged. Targeted Python 16 pass.
 
 ## Earlier fast checks
 

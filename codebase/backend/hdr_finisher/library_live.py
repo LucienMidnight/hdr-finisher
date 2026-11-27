@@ -5,6 +5,7 @@ Denoise endpoints see a read-only view of the stored scene, not another RAW
 import or a finished-picture file.
 """
 from collections import OrderedDict
+from contextlib import contextmanager
 from copy import deepcopy
 from hashlib import sha256
 import json
@@ -394,13 +395,17 @@ class LivePictures:
         result["width"], result["height"] = geometry_output_dimensions(metadata["width"], metadata["height"], adjustments.shared.geometry)
         result["source_width"], result["source_height"] = geometry_output_dimensions(metadata["source_width"], metadata["source_height"], adjustments.shared.geometry)
         internal = deepcopy(result)
-        if (Path(path).suffix.lower() == ".exr"
-                and (metadata["width"], metadata["height"]) == (metadata["source_width"], metadata["source_height"])):
+        suffix = Path(path).suffix.lower()
+        precision_exr = suffix == ".exr" and (metadata["width"], metadata["height"]) == (
+            metadata["source_width"], metadata["source_height"])
+        precision_tiff = suffix in {".tif", ".tiff"} and metadata["edge"] <= 2560
+        if precision_exr or precision_tiff:
             from .file_gate import decode_suffix
 
             inputs = recipe(document, validated=True)
-            if decode_suffix(path) == ".exr" and not any(repair.get("enabled", True) for repair in inputs["repairs"]):
-                internal["native_exr_interpretation"] = inputs["interpretation_override"]
+            if decode_suffix(path) == suffix and not any(repair.get("enabled", True) for repair in inputs["repairs"]):
+                field = "native_exr_interpretation" if precision_exr else "reduced_tiff_interpretation"
+                internal[field] = inputs["interpretation_override"]
         with _registry_lock:
             _registry[identity] = (self, internal)
             _registry.move_to_end(identity)
@@ -556,6 +561,70 @@ def native_exr_denoise_windows(meta):
         return pixels
 
     return meta["scene_height"], meta["scene_width"], read
+
+
+@contextmanager
+def reduced_tiff_denoise_pixels(meta):
+    """Use float32 for measurement without changing the stored half-float scene."""
+    from uuid import uuid4
+
+    from fastapi import HTTPException
+
+    from .library_estimates import full_import_estimate
+    from .library_reduced import SAMPLE_EDGE
+    from .library_rgb import assumed_interpretation
+    from .library_scheduler import scheduler
+    from .loader import LoaderError, load_image
+
+    path = Path(meta["path"])
+    qualities = equivalent_qualities(meta["quality"])
+
+    def check_source():
+        try:
+            if any(picture_key(path, meta["edge"], quality) == meta["source_key"] for quality in qualities):
+                return
+        except OSError:
+            pass
+        raise HTTPException(409, "The TIFF source changed before Denoise measurement.")
+
+    check_source()
+    token = "tiff-denoise-" + uuid4().hex
+    # Reserve the existing full-import estimate even though the normal TIFF
+    # reader reduces large inputs before conversion. Do not queue a second
+    # decode while there is no headroom for it.
+    amount = full_import_estimate(path)
+    grant = scheduler.ask(token, "backend", str(path), "cpu", amount, "now")
+    held = False
+    try:
+        if grant.granted is None:
+            yield None
+            return
+        held = scheduler.hold_decode(token)
+        interpretation = dict(meta["reduced_tiff_interpretation"])
+        assumed = assumed_interpretation(path, interpretation)
+        if assumed:
+            interpretation.update(color_space=assumed["color_space"],
+                transfer_function=interpretation.get("transfer_function") or assumed["transfer_function"])
+
+        def cancelled():
+            return not scheduler.valid(token, str(path), "cpu")
+
+        try:
+            pixels, *_ = load_image(path, overrides=interpretation, hdr_reference_white_nits=meta["white"],
+                                    analyze_hdr=False, library_edge=SAMPLE_EDGE, cancelled=cancelled)
+            pixels = reduce_picture(pixels, meta["edge"])
+        except LoaderError as exc:
+            if not cancelled():
+                raise HTTPException(422, str(exc)) from exc
+            pixels = None
+        check_source()
+        if pixels is not None and pixels.shape[:2] != (meta["scene_height"], meta["scene_width"]):
+            raise HTTPException(409, "The TIFF source dimensions changed before Denoise measurement.")
+        yield pixels
+    finally:
+        scheduler.finish(token)
+        if held:
+            scheduler.release_decode(token)
 
 
 def native_denoise_pixels(identity):
