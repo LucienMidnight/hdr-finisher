@@ -161,6 +161,9 @@ let startupTimer;
     env: launchEnvironment,
     timeout: 180000,
   });
+  // Playwright disposes its dispatcher on graceful close. Read the OS
+  // identity while connected so teardown never calls the disposed app.
+  const electronLaunchIdentity = { pid: app.process()?.pid, created: launchStarted };
   const evaluate = app.evaluate.bind(app);
   app.evaluate = async (...args) => {
     let timer;
@@ -182,7 +185,7 @@ let startupTimer;
     runnerStopping = true;
     shutdownReport = stopProcessTree([
       { pid: electronMainProcessId, created: electronMainStarted },
-      { pid: app.process()?.pid },
+      electronLaunchIdentity,
     ]);
   };
   cleanup = stop;
