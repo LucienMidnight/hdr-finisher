@@ -96,3 +96,42 @@ node --test tests/backend-startup.test.js desktop/tests/backend-process.test.js
 Mac/Linux and packaged builds were not run. Job Object assignment is intentionally
 required on Windows; failure produces a logged startup error instead of silently
 running a backend whose descendants cannot be owned.
+
+
+## Integration verification ? 27 November 2026
+
+The earlier manifest/catalogue blockers are resolved. The owned-launch helper is
+registered with real parent drivers; no schema extension or launch routing change
+was needed. Inventory records seven backend-startup cases and four catalogue cases.
+The release follow-up deadline test now uses a controlled clock. Generated timing
+outputs are written after the tracked-input check, preserving that safety guard.
+
+- Final full Node suite: 1,567 passed, one skipped (24.66 seconds).
+- Full Python via tools/test-python.py: 5,246 passed, 56 skipped; 842.62 seconds
+  total (parallel 769.12 seconds, serial 68.84 seconds). PowerShell redirection
+  surfaced NativeCommandError from informational stderr despite both passing
+  pytest summaries; no Python assertion failed.
+- Film release runner: PASS, first attempt, 213.582 seconds, including exposure
+  and stock/panel/presets UI follow-ups. The previous 225.657-second passing run
+  exposed the runner-generated-output safety stop, fixed before this clean rerun.
+- HSL release runner --all: PASS, first attempt, 824.339 seconds, neutral/global/local.
+  Encoding-fidelity/decoded-pair diagnostics remain report-only, as before.
+- Startup lifecycle: ten successful cycles, 7,713?8,014 ms each; missing-backend
+  failure also passed; all eleven records have zero survivors.
+- Quick Library: exit 0, 90-second viewport observation, 30/33 eligible pictured,
+  no errors, peak 5.483 GB. QNY_8816.NEF, synthetic_24mp.hdr and
+  synthetic_24mp.pfm were not pictured within the window; this is not full-folder
+  coverage. No additional run or unrelated Library repair was performed.
+- Protected project hashes stayed unchanged. No VRAM-corruption failure required
+  retry. Steve's Electron PID 12888 (08:43:53 start) stayed running.
+
+Evidence is local under codebase/output: full-node-final.log, full-python-final.log,
+release-checks/2026-11-27T06-37-50-200Z-00005967ea40d76cc775,
+release-checks/2026-11-27T06-43-50-456Z-f83b7f49c0185f6b7da7,
+startup-lifecycle/report.json and quick-library-check/final-review-library/report.json.
+
+Steve's subsequent timing-cutoff request is committed separately (eeba5df5):
+current-platform complete-driver median, floor 30 seconds, multiplier 1.7 through
+20 minutes and 1.25 above 20 minutes. Retries share the same derived policy;
+timeout failures retain cutoff/baseline evidence. Unmeasured drivers retain the
+old rules. The next-Mac checklist records tuning after the full release run.
