@@ -97,7 +97,15 @@ async function verifyToneHierarchy(page) {
    await page.evaluate(() => document.fonts.ready);
    assert(await panel.isVisible(), name + " must be visible before measuring.");
    rows[name] = await measure(panel);
-   assert.equal(rows[name].length, name === "local-light" ? 7 : 8);
+   assert.equal(rows[name].length, name === "local-light" ? 7 : name === "global-sdr-tone" ? 9 : 8);
+   if (name === "global-sdr-tone") {
+    assert.deepEqual(rows[name].slice(0, 2).map(row => row.label), ["Exposure", "SDR exposure comp"]);
+    const comp = panel.locator("#sdr-output-exposure");
+    await change(comp, 1);
+    assert.match(await panel.locator('output[data-value-path="sdr.output_exposure"]').innerText(), /^\+?1\.00 EV$/);
+    await comp.dblclick();
+    assert.equal(Number(await comp.inputValue()), 0);
+   }
    await snapshot(panel, theme + "-" + name);
    const button = heading(panel);
    await button.click();
