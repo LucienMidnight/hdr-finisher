@@ -68,9 +68,10 @@ const out=path.resolve('output/review/picker-help-selects');fs.mkdirSync(out,{re
  await page.locator('[data-local-grade-section="hsl"] summary').click();
  await page.locator('#hsl-local-panel [data-hsl-mode="pick"]').click();
  assert.match(await page.evaluate(()=>getComputedStyle(activePreviewElement()).cursor),/data:image/);
- const softness=page.locator('#hsl-local-panel [data-hsl-key="feather"]');await softness.scrollIntoViewIfNeeded();
- assert.equal(await softness.evaluate(e=>HDRTooltips.textFor(e)),'');
- await page.screenshot({path:path.join(out,'local-softness-no-repeated-help.png')});
+ const softness=page.getByRole('slider',{name:'HSL Hue softness',exact:true}).and(page.locator('#hsl-local-panel input'));
+ assert.equal(await softness.count(),1);
+ assert.equal(await page.locator('#hsl-local-panel [data-hsl-key="edge_feather"]').count(),0);
+ await tooltip(page,'#hsl-local-panel [data-hsl-key="feather"]','local-hue-softness');
  await page.locator('#local-mask-overlay').focus();await page.keyboard.press('Escape');assert.doesNotMatch(await page.locator('#local-mask-overlay').evaluate(e=>getComputedStyle(e).cursor),/data:image/);
  await page.locator('#local-gizmo-toggle').click();assert.match(await page.locator('#local-mask-overlay').evaluate(e=>getComputedStyle(e).cursor),/data:image/);
  await page.evaluate(()=>activateWorkflowTab('proof'));assert.doesNotMatch(await page.locator('#local-mask-overlay').evaluate(e=>getComputedStyle(e).cursor),/data:image/);
