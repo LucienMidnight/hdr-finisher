@@ -9,7 +9,7 @@ vm.runInContext(source.slice(source.indexOf('const defaultFilmLook ='), source.i
 const {defaultFilmLook,FILM_LOOK_PRESETS:looks}=context.result;
 const plain = x => JSON.parse(JSON.stringify(x));
 test('each stage changes only its controls and owns every deliberately set value',()=>{
- const allowed={Lens:['lens_filter','lens_strength','lens_size'],Format:['grain_film_format'],Development:['push_pull'],Print:['print_paper','print_exposure','stock_print_warmth','stock_print_tint','stock_preflash','print_contrast','shadow_contrast','highlight_contrast'],Scan:['scan_sharpening','lab_levels']};
+ const allowed={Format:['grain_film_format'],Development:['push_pull'],Print:['print_paper','print_exposure','stock_print_warmth','stock_print_tint','stock_preflash','print_contrast','shadow_contrast','highlight_contrast'],Scan:['scan_sharpening','lab_levels']};
  for(const [stage,entries] of Object.entries(C.stages)) for(let i=0;i<entries.length;i++) {
   const f=C.select(defaultFilmLook(),'kodak_gold_200');
   C.set(f,'look_strength',63); const before=plain(f);
@@ -55,4 +55,21 @@ test('measured push inherits pushed grain without pinning it into the Look',()=>
 test('Portra leads the list while a new Film Look remains Neutral',()=>{
  assert.equal(looks[0].id,'portra-400-natural');
  assert.equal(defaultFilmLook().film_stock,'none');
+});
+
+
+test('saved lens choices round-trip in lane state and full Look recipes',()=>{
+ // These are the values previously written by the five Lens shortcuts.
+ for(const [filter,strength] of [['none',.5],['black_pro_mist',.125],['pro_mist',.25],['glimmerglass',.25],['cinebloom',.5]]) {
+  const f=C.select(defaultFilmLook(),'kodak_portra_400');
+  for(const [key,value] of Object.entries({lens_filter:filter,lens_strength:strength,lens_size:1})) C.set(f,key,value);
+  const reopened=plain(f);
+  assert.deepEqual(plain(C.expand(plain(C.sparse(reopened)))),reopened);
+  for(const look of looks) {
+   const recipe={...plain(look.recipe),lens_filter:filter,lens_strength:strength,lens_size:1};
+   const restored=C.expand(plain(recipe));
+   assert.equal(restored.lens_filter,filter); assert.equal(restored.lens_strength,strength); assert.equal(restored.lens_size,1);
+   assert.deepEqual(plain(C.expand(plain(C.sparse(restored)))),plain(restored));
+  }
+ }
 });

@@ -1,3 +1,22 @@
+## November 27: Lens shortcuts removed
+
+Removed the five Camera Lens shortcut buttons (None, Light diffusion,
+Soft glow, Sparkle, Heavy bloom). Use Lens Filter, Strength and Size directly.
+The full Film Look presets remain available. Shortcuts stored only those three
+renderer fields and their deliberate override keys, never a shortcut name or
+ID; existing saved edits and sparse/full Look recipes need no migration.
+The Lens recipe table and its stage-test branch were removed. Shortcut CSS
+is shared with Print, Scan and RAW Expand, so none is Lens-only or dead.
+The tooltip catalogue is regenerated after removing the row.
+
+Unchanged section shortcuts for Steve's review: Print (Neutral, Warm, Cool,
+Soft, Rich, Cinema); Scan (Clean scan, Lab scan); Development's Push/Pull
+positions (-2, -1, 0, +1, +2). Negative has no shortcut button row: its Film
+Stock and Grain Film Format choices are dropdowns. Whole Film Look presets
+are separate from these rows. Twelve targeted preset/character tests pass,
+including all five former shortcut values through every built-in Look's
+sparse save/reopen path.
+
 ## November 27: Film Exposure direction
 
 Film Exposure now uses a fixed zero-EV middle-grey calibration on CPU and

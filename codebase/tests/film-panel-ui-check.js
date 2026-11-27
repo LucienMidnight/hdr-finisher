@@ -19,6 +19,8 @@ module.exports = async function checkFilmPanel(page) {
  }
  assert.equal(await page.evaluate(()=>JSON.stringify(state.adjustments[state.currentView].film_look)),originalFilm,'folding changes processing');
  await stage('camera').click();
+ assert.equal(await group.locator('[data-film-shortcuts="Lens"]').count(),0);
+ for (const id of ['film-lens-filter','film-lens-strength','film-lens-size']) assert.equal(await group.locator(`#${id}`).isVisible(),true);
  await head.click(); await head.click();
  assert.equal(await stage('camera').getAttribute('aria-expanded'),'true');
  const choose = async id => {

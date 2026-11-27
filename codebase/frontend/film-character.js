@@ -107,12 +107,6 @@
     return film;
   }
   const stages = {
-    Lens: [
-      ["None", {lens_filter:"none", lens_strength:.5, lens_size:1}],
-      ["Light diffusion (Black Pro-Mist 1/8)", {lens_filter:"black_pro_mist", lens_strength:.125, lens_size:1}],
-      ["Soft glow (Pro-Mist 1/4)", {lens_filter:"pro_mist", lens_strength:.25, lens_size:1}],
-      ["Sparkle (Glimmerglass 1/4)", {lens_filter:"glimmerglass", lens_strength:.25, lens_size:1}],
-      ["Heavy bloom (CineBloom 1/2)", {lens_filter:"cinebloom", lens_strength:.5, lens_size:1}]],
     Development: [["Pull 1", {push_pull:-1}], ["Normal", {push_pull:0}], ["Push 1", {push_pull:1}], ["Push 2", {push_pull:2}]],
     Print: [
       ["Neutral print", {}], ["Warm print", {stock_print_warmth:15}],
