@@ -238,6 +238,8 @@ def test_an_uncorrectable_codec_is_rejected():
     assert notes == []
 
 
+@pytest.mark.slow
+@pytest.mark.needs_native_helper
 @pytest.mark.parametrize(
     ("format_name", "suffix"), [("jpegxl_hdr", ".jxl"), ("jpeg_ultrahdr", ".jpg")],
 )
@@ -272,6 +274,8 @@ def test_an_export_that_stays_over_target_preserves_the_destination(monkeypatch,
     assert list(tmp_path.iterdir()) == [output]
 
 
+@pytest.mark.slow
+@pytest.mark.needs_native_helper
 @pytest.mark.parametrize("format_name", ["jpeg_ultrahdr", "avif_gain_map", "jpegxl_hdr"])
 @pytest.mark.parametrize("highlights", [False, True])
 def test_only_active_highlights_get_the_encoding_allowance(monkeypatch, tmp_path, format_name, highlights):
@@ -298,6 +302,7 @@ def test_only_active_highlights_get_the_encoding_allowance(monkeypatch, tmp_path
     assert result.delivery_notes == []
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("bit_depth,chroma", [(8, "420"), (10, "422"), (12, "444")])
 def test_avif_peak_and_correction_match_the_import_decoder(tmp_path, bit_depth, chroma):
     from hdr_finisher import gainmap_decoders
@@ -363,6 +368,8 @@ def test_the_ceiling_is_the_target_only_while_highlight_compression_is_on():
     assert hdr_ceiling.delivery_ceiling_nits(adjustments) == 1000
 
 
+@pytest.mark.slow
+@pytest.mark.needs_native_helper
 @pytest.mark.parametrize("format_name", ["jpeg_ultrahdr", "avif_gain_map", "jpegxl_hdr"])
 @pytest.mark.parametrize("full_size", [False, True])
 def test_real_encoders_land_at_or_under_a_bright_edge_peak(tmp_path, format_name, full_size):
@@ -404,6 +411,7 @@ def test_real_encoders_land_at_or_under_a_bright_edge_peak(tmp_path, format_name
         store.clear()
 
 
+@pytest.mark.needs_native_helper
 def test_bypassed_highlights_without_explicit_check_still_encode_once(monkeypatch, tmp_path):
     from types import SimpleNamespace
     from hdr_finisher import exporters
@@ -425,6 +433,8 @@ def test_bypassed_highlights_without_explicit_check_still_encode_once(monkeypatc
     assert result.accepted and result.delivery_notes == []
 
 
+@pytest.mark.slow
+@pytest.mark.needs_native_helper
 @pytest.mark.parametrize("format_name", ["jpeg_ultrahdr", "avif_gain_map", "jpegxl_hdr"])
 def test_compliant_encoded_bytes_do_not_change(monkeypatch, tmp_path, format_name):
     from types import SimpleNamespace
@@ -451,6 +461,8 @@ def test_compliant_encoded_bytes_do_not_change(monkeypatch, tmp_path, format_nam
     assert Path(checked.output_path).read_bytes() == Path(unchecked.output_path).read_bytes()
 
 
+@pytest.mark.slow
+@pytest.mark.needs_native_helper
 @pytest.mark.parametrize('target', [203, 600, 1000, 4000])
 @pytest.mark.parametrize('mode', ['peak_fit', 'soft_ceiling', 'clip', 'fixed_cap'])
 @pytest.mark.parametrize('format_name', ['jpeg_ultrahdr', 'avif_gain_map', 'jpegxl_hdr'])

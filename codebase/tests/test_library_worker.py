@@ -179,6 +179,7 @@ def _faulting_decoder_stub(connection, root, parent_pid, paused):
         connection.send({'id': message['id'], 'path': str(path)})
 
 
+@pytest.mark.slow
 @pytest.mark.serial  # Native helper/process startup deadlines need uncontended CPU.
 @pytest.mark.parametrize('payload', [b'CRAFTED-CRASH', b'HANG'])
 def test_identified_bad_decoder_is_not_replayed_and_next_file_recovers(tmp_path, monkeypatch, payload):
@@ -385,6 +386,7 @@ def _cpu_progress_stub(connection, root, parent_pid, paused=False):
         connection.send({'id':job['id'],'path':job['path']})
 
 
+@pytest.mark.slow
 @pytest.mark.serial
 def test_cpu_progress_outlives_decoder_deadline_but_a_stall_still_recovers(tmp_path,monkeypatch):
     from hdr_finisher import library_worker

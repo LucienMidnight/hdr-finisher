@@ -10,6 +10,7 @@ import pytest
 from hdr_finisher import denoise_adaptive as da
 
 
+@pytest.mark.needs_native_helper
 def test_native_separable_filters_match_numpy_bytes(monkeypatch) -> None:
     native = da.denoise_filters.library()
     if native is None:

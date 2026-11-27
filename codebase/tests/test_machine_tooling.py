@@ -42,6 +42,7 @@ def test_js_python_settings_agree(tmp_path, monkeypatch):
     assert json.loads(result) == settings()
 
 
+@pytest.mark.slow
 def test_lock_passes_window_and_return_code(tmp_path):
     result = subprocess.run(lock_command(tmp_path, '--label', 'test', '--', sys.executable, '-c',
                            'import os,sys;print(os.environ["HDR_FINISHER_ELECTRON_WINDOW_SIZE"]);sys.exit(7)'), capture_output=True, text=True, timeout=15)
@@ -50,6 +51,7 @@ def test_lock_passes_window_and_return_code(tmp_path):
     assert not (tmp_path / 'gpu-run.lock').exists()
 
 
+@pytest.mark.slow
 def test_legacy_lock_blocks_new_wrapper(tmp_path):
     lock = tmp_path / 'gpu-run.lock'
     lock.mkdir()
@@ -82,6 +84,7 @@ def test_stale_dead_lock_is_recovered(tmp_path, monkeypatch):
     assert owner.read_text() == 'replacement'
 
 
+@pytest.mark.posix_only
 @pytest.mark.skipif(os.name == 'nt', reason='POSIX groups; Windows uses existing taskkill /T')
 def test_timeout_stops_detached_grandchild(tmp_path):
     module = load_lock()
@@ -123,6 +126,7 @@ def test_shared_media_link_is_repeatable_and_keeps_one_copy(tmp_path):
     assert (source / 'photo').read_text() == 'same original'
 
 
+@pytest.mark.mac_only
 @pytest.mark.skipif(sys.platform != 'darwin', reason='macOS physical-footprint diagnostic')
 def test_memory_sampler_keeps_native_footprint():
     child = subprocess.Popen([sys.executable, str(TOOLS / 'sample-process-memory.py'), str(os.getpid())],
@@ -143,6 +147,7 @@ def test_memory_sampler_keeps_native_footprint():
             child.communicate(timeout=10)
 
 
+@pytest.mark.slow
 def test_waiters_acquire_in_registration_order(tmp_path):
     # Block registration behind a legacy owner, then release a queued burst.
     lock = tmp_path / 'gpu-run.lock'

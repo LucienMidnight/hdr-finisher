@@ -110,6 +110,7 @@ def test_photo_progress_uses_version_format_before_the_clock_has_a_plan():
         assert photo.snapshot()["label"] == "Rendering SDR"
 
 
+@pytest.mark.needs_native_helper
 @pytest.mark.parametrize("format_name,proof", [
     ("sdr_jpegxl", False), ("jpegxl_hdr", False), ("jpegxl_hdr", True),
 ])

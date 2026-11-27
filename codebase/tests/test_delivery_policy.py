@@ -22,6 +22,7 @@ def policy(tmp_path, monkeypatch):
     return delivery.PREFERENCES_PATH
 
 
+@pytest.mark.slow
 def test_shared_setting_survives_worker_process(policy):
     delivery.save_preferences(True)
     assert delivery.preferences()["effective_force_cpu"]

@@ -318,6 +318,7 @@ def test_authored_sdr_base_is_exact():
     np.testing.assert_array_equal(strips, reference)
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("stock_id", ["none", "kodak_portra_400", "fujifilm_velvia_100"])
 @pytest.mark.parametrize("kind", [PreviewKind.HDR, PreviewKind.SDR])
 def test_placed_stages_are_exact(kind, stock_id):

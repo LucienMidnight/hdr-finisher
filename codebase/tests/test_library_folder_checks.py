@@ -295,6 +295,7 @@ def test_removed_subfolder_clears_saved_collection_counts_but_keeps_pending_mark
     assert not index.marks.album_paths("Saved album")
     assert index.marks._rows([str(pending)])[str(pending)]["marks"]["rating"] == 5
 
+@pytest.mark.windows_only
 def test_periodic_pin_signal_skips_unchanged_and_detects_nested_edits(tmp_path):
     import os
     from hdr_finisher.library_change_signal import FolderChangeSignal

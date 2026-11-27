@@ -256,6 +256,8 @@ def test_library_native_source_uses_same_repair_before_reduction(photo, tmp_path
     assert _develop_cpu(tmp_path, session.source_path, saved, 32, cache=CaptureCache()) == 32
 
 
+@pytest.mark.slow
+@pytest.mark.needs_native_helper
 @pytest.mark.parametrize("method", ["standard","edge-feather","original-detail","donor-detail","clone","heal"])
 def test_repair_invalidates_proof_cache_and_full_proof_matches_export(photo, tmp_path, method):
     from hashlib import sha256

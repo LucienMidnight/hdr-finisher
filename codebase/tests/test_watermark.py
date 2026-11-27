@@ -42,6 +42,8 @@ def test_invalid_settings_and_tiny_output():
     assert apply_watermark(image, WatermarkSettings(mode="rendition_test"), "hdr").shape == image.shape
 
 
+@pytest.mark.slow
+@pytest.mark.needs_native_helper
 @pytest.mark.parametrize("format", ["jpeg_ultrahdr", "avif_gain_map"])
 def test_real_encoded_labels_and_full_proof_identity(tmp_path, format):
     from types import SimpleNamespace

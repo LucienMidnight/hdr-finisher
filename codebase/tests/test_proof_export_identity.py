@@ -151,6 +151,8 @@ def backends():
     return capabilities, build_export_backends(capabilities)
 
 
+@pytest.mark.slow
+@pytest.mark.needs_native_helper
 @pytest.mark.parametrize("format_name", sorted(FORMATS))
 def test_full_size_proof_is_the_export_byte_for_byte(backends, tmp_path: Path, format_name: str) -> None:
     capabilities, export_backends = backends
@@ -227,6 +229,8 @@ def test_full_size_proof_is_the_export_byte_for_byte(backends, tmp_path: Path, f
         store.clear()
 
 
+@pytest.mark.slow
+@pytest.mark.needs_native_helper
 @pytest.mark.parametrize("format_name", ["jpegxl_hdr", "sdr_jpegxl", "jpeg_ultrahdr"])
 def test_filed_delivery_matches_in_memory_denoise_and_encoding(backends, tmp_path, format_name):
     from hdr_finisher import exporters
@@ -318,6 +322,8 @@ def test_full_size_is_part_of_the_proof_request_signature() -> None:
     )
 
 
+@pytest.mark.slow
+@pytest.mark.needs_native_helper
 @pytest.mark.parametrize("stock_id", ["kodak_portra_400", "fujifilm_velvia_100"])
 def test_film_density_grain_proof_is_export_byte_for_byte(backends, tmp_path, stock_id):
     capabilities, export_backends = backends
@@ -347,6 +353,8 @@ def test_film_density_grain_proof_is_export_byte_for_byte(backends, tmp_path, st
         store.clear()
 
 
+@pytest.mark.slow
+@pytest.mark.needs_native_helper
 @pytest.mark.parametrize("resize", [False, True])
 def test_scan_sharpening_finished_pixels_and_full_proof_match_export(backends, tmp_path, resize):
     from hdr_finisher.adjustments import (
@@ -407,6 +415,8 @@ def test_scan_sharpening_finished_pixels_and_full_proof_match_export(backends, t
         store.clear()
 
 
+@pytest.mark.slow
+@pytest.mark.needs_native_helper
 @pytest.mark.parametrize("stock,paper", [("kodak_portra_800","kodak_2383"),
     ("fujifilm_velvia_100","default"), ("none","default")])
 def test_physical_film_controls_proof_is_export(backends, tmp_path, stock, paper):
@@ -436,6 +446,8 @@ def test_physical_film_controls_proof_is_export(backends, tmp_path, stock, paper
 
 
 
+@pytest.mark.slow
+@pytest.mark.needs_native_helper
 @pytest.mark.parametrize("format_name,source_mode,export_calls,proof_calls", [
     ("avif_gain_map", "matched", 1, 1),
     ("avif_gain_map", "different_controls", 2, 2),
@@ -521,6 +533,7 @@ def test_delivery_shares_grain_only_for_matched_inputs(
     assert shared_outputs[0] == shared_outputs[1]
 
 
+@pytest.mark.needs_native_helper
 @pytest.mark.parametrize("full_size", [False, True])
 def test_avif_proof_uses_one_gpu_delivery_pair(backends, monkeypatch, tmp_path, full_size):
     from hdr_finisher import gpu_delivery, proofing

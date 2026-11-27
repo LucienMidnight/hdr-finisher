@@ -78,6 +78,7 @@ def test_canonicalisation_keeps_every_site_and_is_involutive():
         assert set(converted[::2, ::2].ravel()) == set(image[red_row::2, red_column::2].ravel())
 
 
+@pytest.mark.needs_native_helper
 @pytest.mark.skipif(not BINARY.exists(), reason='Offline GALOSH binary not built')
 def test_galosh_finite_bypass_matches_same_ahd_and_shared_fit():
     image = np.random.default_rng(9).normal(.2, .02, (64, 80)).astype(np.float32)
@@ -96,6 +97,7 @@ def test_galosh_finite_bypass_matches_same_ahd_and_shared_fit():
     assert np.mean(difference) < 1 and np.quantile(difference, .99) < 3
 
 
+@pytest.mark.needs_native_helper
 @pytest.mark.skipif(not BINARY.exists(), reason='Offline GALOSH binary not built')
 def test_galosh_blind_fit_is_global_and_finite():
     image = np.random.default_rng(7).normal(.12, .015, (96, 96)).astype(np.float32)
@@ -106,6 +108,7 @@ def test_galosh_blind_fit_is_global_and_finite():
     assert np.isfinite(adapter.process(image, md, state)).all()
 
 
+@pytest.mark.needs_native_helper
 @pytest.mark.skipif(not BINARY.exists(), reason='Offline GALOSH binary not built')
 def test_galosh_shifted_grid_has_real_internal_boundaries():
     image = np.random.default_rng(31).normal(.2, .02, (384, 400)).astype(np.float32)

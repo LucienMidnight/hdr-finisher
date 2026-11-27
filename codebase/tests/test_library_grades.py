@@ -304,6 +304,8 @@ def test_opened_sidecar_and_project_produce_identical_reference_branches(setup, 
         np.testing.assert_array_equal(actual, reference)
 
 
+@pytest.mark.slow
+@pytest.mark.needs_native_helper
 @pytest.mark.parametrize("format_name", ["jpeg_ultrahdr", "avif_gain_map", "jpegxl_hdr"])
 def test_sidecar_and_project_export_and_proof_are_byte_identical(setup, tmp_path, format_name):
     import hashlib

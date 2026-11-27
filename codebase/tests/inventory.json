@@ -1,0 +1,7000 @@
+{
+  "schema_version": 1,
+  "measurement": {
+    "platform": "Windows",
+    "machine": "DESKTOP-QEEPV6H",
+    "common_requirements": {
+      "python": "Project .venv with setup-pinned dependencies; pytest-xdist for phased runner.",
+      "node": "Node and installed project dependencies; subprocess/tooling tests also use Git and the project Python."
+    },
+    "timing_basis": "Sum of reported test durations including Python setup/teardown; parallel wall time differs; skipped tests include skip-check cost.",
+    "counts": "Collected parametrized pytest cases; Node reported test events excluding suites (includes parent tests).",
+    "requirements_scope": "File-level union: only the marked subset may require each optional resource. Existing skip conditions remain authoritative.",
+    "refresh": "See tools/test-inventory.py docstring; never infer Mac timings from Windows."
+  },
+  "files": [
+    {
+      "file": "tests/analytic-mask-region.test.js",
+      "suite": "node",
+      "area": "analytic",
+      "purpose": "live gradient eligibility retains content and resampling fallbacks",
+      "test_count": 8,
+      "seconds": {
+        "windows": 1.3626,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/app-dialog.test.js",
+      "suite": "node",
+      "area": "app",
+      "purpose": "Escape in the open app dialog allows native cancel without reaching page controls",
+      "test_count": 2,
+      "seconds": {
+        "windows": 0.0074,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/appearance.test.js",
+      "suite": "node",
+      "area": "appearance",
+      "purpose": "accent choices survive preference sanitization and match browser normalization",
+      "test_count": 9,
+      "seconds": {
+        "windows": 0.6906,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/backend-log.test.js",
+      "suite": "node",
+      "area": "backend",
+      "purpose": "slow diagnostic disk has bounded buffers and reports omitted records",
+      "test_count": 1,
+      "seconds": {
+        "windows": 0.0349,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/backend-startup.test.js",
+      "suite": "node",
+      "area": "backend",
+      "purpose": "startup extends the idle deadline for genuine progress",
+      "test_count": 5,
+      "seconds": {
+        "windows": 2.1308,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/batch-grid.test.js",
+      "suite": "node",
+      "area": "batch",
+      "purpose": "batch progress groups each photo without changing badge precedence or retained rows",
+      "test_count": 3,
+      "seconds": {
+        "windows": 0.0202,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/brush-native-feather.test.js",
+      "suite": "node",
+      "area": "brush",
+      "purpose": "native Feather plans the export reduction grid and needs no viewport halo",
+      "test_count": 18,
+      "seconds": {
+        "windows": 6.2618,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/brush-native-shift.test.js",
+      "suite": "node",
+      "area": "brush",
+      "purpose": "native Shift plan uses native sigma and the complete summed finite halo",
+      "test_count": 8,
+      "seconds": {
+        "windows": 2.6311,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/brush-regional-erase.test.js",
+      "suite": "node",
+      "area": "brush",
+      "purpose": "paint qualification excludes erasers; native attenuation retains repaint and frame placement",
+      "test_count": 4,
+      "seconds": {
+        "windows": 1.3391,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/color-wheels.test.js",
+      "suite": "node",
+      "area": "color",
+      "purpose": "hdr: stationary puck is exact; pad input and drawing share radius",
+      "test_count": 2,
+      "seconds": {
+        "windows": 0.0153,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/control-panel-values.test.js",
+      "suite": "node",
+      "area": "control",
+      "purpose": "edited status ignores object key order and default roundoff but preserves real changes and array order",
+      "test_count": 4,
+      "seconds": {
+        "windows": 0.4814,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/cpu-preview-singleflight.test.js",
+      "suite": "node",
+      "area": "cpu",
+      "purpose": "Concurrent identical CPU preview requests share one computation",
+      "test_count": 6,
+      "seconds": {
+        "windows": 0.6538,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/curve-sampling.test.js",
+      "suite": "node",
+      "area": "curve",
+      "purpose": "index.html samples the same bounded monotone curves",
+      "test_count": 3,
+      "seconds": {
+        "windows": 0.0273,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/delivery-activity.test.js",
+      "suite": "node",
+      "area": "delivery",
+      "purpose": "active exports can exceed 60 seconds indefinitely",
+      "test_count": 3,
+      "seconds": {
+        "windows": 0.025,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/delivery-memory-ack.test.js",
+      "suite": "node",
+      "area": "delivery",
+      "purpose": "delivery idle reports await the main process collection acknowledgement",
+      "test_count": 1,
+      "seconds": {
+        "windows": 0.0032,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/delivery-settings.test.js",
+      "suite": "node",
+      "area": "delivery",
+      "purpose": "delivery setting saves a CPU override and can turn it off",
+      "test_count": 2,
+      "seconds": {
+        "windows": 0.0031,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/denoise-analysis-singleflight.test.js",
+      "suite": "node",
+      "area": "denoise",
+      "purpose": "Denoise method controls recover after a rejected save, missing GPU, or expired preparation",
+      "test_count": 8,
+      "seconds": {
+        "windows": 1.5808,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/denoise-compare-presentation.test.js",
+      "suite": "node",
+      "area": "denoise",
+      "purpose": "hdr standard split-vertical waits for and presents its denoised comparison",
+      "test_count": 40,
+      "seconds": {
+        "windows": 1.5048,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/denoise-measurement-fit.test.js",
+      "suite": "node",
+      "area": "denoise",
+      "purpose": "CPU and GPU host fit sparse or repeated brightness observations alike",
+      "test_count": 11,
+      "seconds": {
+        "windows": 0.0061,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/denoise-ownership.test.js",
+      "suite": "node",
+      "area": "denoise",
+      "purpose": "Denoise off starts saving its own photo alongside a delayed redraw",
+      "test_count": 21,
+      "seconds": {
+        "windows": 4.3132,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/denoise-preview-presentation.test.js",
+      "suite": "node",
+      "area": "denoise",
+      "purpose": "panning back reveals a covering Clean Grain picture immediately and skips a stale grade",
+      "test_count": 49,
+      "seconds": {
+        "windows": 7.889,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/denoise-source-load-ownership.test.js",
+      "suite": "node",
+      "area": "denoise",
+      "purpose": "adaptive source loading survives a grading supersession while its source stays current",
+      "test_count": 3,
+      "seconds": {
+        "windows": 0.0012,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/desktop-memory-pressure.test.js",
+      "suite": "node",
+      "area": "desktop",
+      "purpose": "trims once per level rise, never at none",
+      "test_count": 15,
+      "seconds": {
+        "windows": 0.0718,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/desktop-window-state.test.js",
+      "suite": "node",
+      "area": "desktop",
+      "purpose": "native window-state events update maximize/restore image and accessible name together",
+      "test_count": 1,
+      "seconds": {
+        "windows": 0.0013,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/diagnostics.test.js",
+      "suite": "node",
+      "area": "diagnostics",
+      "purpose": "concurrent actions carry separate ids and preserve request headers",
+      "test_count": 4,
+      "seconds": {
+        "windows": 0.0251,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/direct-mask-coordination.test.js",
+      "suite": "node",
+      "area": "direct",
+      "purpose": "Direct masks use the foreground coordinator and preserve local order",
+      "test_count": 4,
+      "seconds": {
+        "windows": 0.0442,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/display-driven-scale.test.js",
+      "suite": "node",
+      "area": "display",
+      "purpose": "Fit uses the source scale needed by the displayed aspect and crop",
+      "test_count": 5,
+      "seconds": {
+        "windows": 6.8844,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/edge-colour-range.test.js",
+      "suite": "node",
+      "area": "edge",
+      "purpose": "non-finite input goes straight to CPU before reconstruction",
+      "test_count": 2,
+      "seconds": {
+        "windows": 0.0038,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/edit-sync-retry.test.js",
+      "suite": "node",
+      "area": "edit",
+      "purpose": "refreshScopes() stops retrying with perspective draft",
+      "test_count": 14,
+      "seconds": {
+        "windows": 0.7075,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/editing-mask-cache.test.js",
+      "suite": "node",
+      "area": "editing",
+      "purpose": "measurement and magnified masks cannot evict unchanged Fit bitmaps",
+      "test_count": 5,
+      "seconds": {
+        "windows": 0.0033,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/electron-initial-load.test.js",
+      "suite": "node",
+      "area": "electron",
+      "purpose": "initial load completes when finish-load has passed but stop-loading is pending",
+      "test_count": 8,
+      "seconds": {
+        "windows": 0.2107,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/exact-peak-singleflight.test.js",
+      "suite": "node",
+      "area": "exact",
+      "purpose": "Repeated robust highlight anchor measurements retain one dedicated set of intermediates",
+      "test_count": 18,
+      "seconds": {
+        "windows": 3.117,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/export-patterns.test.js",
+      "suite": "node",
+      "area": "export",
+      "purpose": "live exported filename expands every token and sanitizes reserved characters",
+      "test_count": 2,
+      "seconds": {
+        "windows": 0.003,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/film-character-data.test.js",
+      "suite": "node",
+      "area": "film",
+      "purpose": "bootstrap exactly matches source metadata and every default has confidence and source",
+      "test_count": 1,
+      "seconds": {
+        "windows": 0.5265,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/film-character.test.js",
+      "suite": "node",
+      "area": "film",
+      "purpose": "stock defaults update only inherited controls, including equal-value deliberate edits",
+      "test_count": 6,
+      "seconds": {
+        "windows": 0.005,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/film-parity-limits.test.js",
+      "suite": "node",
+      "area": "film",
+      "purpose": "strict byte cases fail mean drift and keep the existing p99.9 gate",
+      "test_count": 6,
+      "seconds": {
+        "windows": 29.7391,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/film-presets.test.js",
+      "suite": "node",
+      "area": "film",
+      "purpose": "all approved Looks replace previous choices and survive sparse save/reopen and stock changes",
+      "test_count": 6,
+      "seconds": {
+        "windows": 0.0234,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/film-select-preview.test.js",
+      "suite": "node",
+      "area": "film",
+      "purpose": "arrows are temporary; a changed commit makes exactly one undo to the opening value",
+      "test_count": 6,
+      "seconds": {
+        "windows": 0.0058,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/font-tokens.test.js",
+      "suite": "node",
+      "area": "font",
+      "purpose": "size tokens never go below the minimum",
+      "test_count": 3,
+      "seconds": {
+        "windows": 1.3246,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/geometry-math.test.js",
+      "suite": "node",
+      "area": "geometry",
+      "purpose": "neutral geometry is decided from geometry alone",
+      "test_count": 9,
+      "seconds": {
+        "windows": 0.5885,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/geometry-preview-recovery.test.js",
+      "suite": "node",
+      "area": "geometry",
+      "purpose": "capacity recovery requests the bounded route at the same reduced edge",
+      "test_count": 8,
+      "seconds": {
+        "windows": 4.6646,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/geometry-resample.test.js",
+      "suite": "node",
+      "area": "geometry",
+      "purpose": "the plan and Pillow bicubic reproduce the export geometry stage pixel for pixel",
+      "test_count": 3,
+      "seconds": {
+        "windows": 0.2166,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/gpu-allocator.test.js",
+      "suite": "node",
+      "area": "gpu",
+      "purpose": "the least recently used registered entry is evicted first",
+      "test_count": 8,
+      "seconds": {
+        "windows": 0.5252,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/gpu-brush-mask.test.js",
+      "suite": "node",
+      "area": "gpu",
+      "purpose": "qualified brush bitmap reuses cache without a CPU mask request",
+      "test_count": 7,
+      "seconds": {
+        "windows": 4.5458,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/gpu-budget.test.js",
+      "suite": "node",
+      "area": "gpu",
+      "purpose": "with nothing verified, Auto is the stated policy and says it is the fallback",
+      "test_count": 12,
+      "seconds": {
+        "windows": 0.0269,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/gpu-delivery-finishing.test.js",
+      "suite": "node",
+      "area": "gpu",
+      "purpose": "finish: job cleanup releases every allocation after failure at any setup or submission step",
+      "test_count": 10,
+      "seconds": {
+        "windows": 8.5401,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/gpu-delivery-lifetime.test.js",
+      "suite": "node",
+      "area": "gpu",
+      "purpose": "completed delivery buffers are unreachable before the next job, on success, failure, cancellation and hand-over",
+      "test_count": 1,
+      "seconds": {
+        "windows": 5.2358,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/gpu-param-layout.test.js",
+      "suite": "node",
+      "area": "gpu",
+      "purpose": "the global parameter list pins Tone endpoint allocations without moving existing positions",
+      "test_count": 8,
+      "seconds": {
+        "windows": 0.8076,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/gpu-pass-layout.test.js",
+      "suite": "node",
+      "area": "gpu",
+      "purpose": "local and mask pass slots have one frozen position list",
+      "test_count": 7,
+      "seconds": {
+        "windows": 0.7192,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/gpu-pass-probe.test.js",
+      "suite": "node",
+      "area": "gpu",
+      "purpose": "GPU pass probe leaves disabled encoders untouched",
+      "test_count": 3,
+      "seconds": {
+        "windows": 0.0079,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/grade-background-pause.test.js",
+      "suite": "node",
+      "area": "grade",
+      "purpose": "Grade resumes when a canvas tool consumes pointerup",
+      "test_count": 8,
+      "seconds": {
+        "windows": 0.5935,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/grade-library-pictures.test.js",
+      "suite": "node",
+      "area": "grade",
+      "purpose": "publication starts after saving, defers capture, and preserves release timing",
+      "test_count": 11,
+      "seconds": {
+        "windows": 0.0321,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/grade-module-collapse.test.js",
+      "suite": "node",
+      "area": "grade",
+      "purpose": "opening a photo closes modules and RAW settings without changing adjustments",
+      "test_count": 1,
+      "seconds": {
+        "windows": 0.625,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/grade-open-loading.test.js",
+      "suite": "node",
+      "area": "grade",
+      "purpose": "Grade loads immediately with an empty preview and locked controls, then returns to Library on failure",
+      "test_count": 15,
+      "seconds": {
+        "windows": 4.0121,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/grade-opening.test.js",
+      "suite": "node",
+      "area": "grade",
+      "purpose": "a failed http presentation POST retries without another picture and success is idempotent",
+      "test_count": 5,
+      "seconds": {
+        "windows": 0.0407,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/grade-panel-order.test.js",
+      "suite": "node",
+      "area": "grade",
+      "purpose": "both lanes interleave the same live sections without losing their identity or fold state",
+      "test_count": 3,
+      "seconds": {
+        "windows": 0.0113,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/grade-paste.test.js",
+      "suite": "node",
+      "area": "grade",
+      "purpose": "paste selection preserves partial choices and inactive lane values",
+      "test_count": 18,
+      "seconds": {
+        "windows": 0.7079,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/grade-preview-settle.test.js",
+      "suite": "node",
+      "area": "grade",
+      "purpose": "a zoomed tiled edit settles exactly once after edit sync and requests one scope",
+      "test_count": 14,
+      "seconds": {
+        "windows": 11.1696,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/grade-speed.test.js",
+      "suite": "node",
+      "area": "grade",
+      "purpose": "only interactive and coarse requests reduce grain, never delivery or measurement",
+      "test_count": 14,
+      "seconds": {
+        "windows": 1.8383,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/grade-tile-reuse.test.js",
+      "suite": "node",
+      "area": "grade",
+      "purpose": "catch-up reuses tiles when the saved revision is the only change",
+      "test_count": 6,
+      "seconds": {
+        "windows": 1.2424,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/grading-preset-files.test.js",
+      "suite": "node",
+      "area": "grading",
+      "purpose": "saved grading presets round trip without changing settings",
+      "test_count": 7,
+      "seconds": {
+        "windows": 0.0332,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/grain-route.test.js",
+      "suite": "node",
+      "area": "grain",
+      "purpose": "the help line appears only when the slower CPU route is used or the method cannot run",
+      "test_count": 21,
+      "seconds": {
+        "windows": 4.7,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/grain-work.test.js",
+      "suite": "node",
+      "area": "grain",
+      "purpose": "CPU reason distinguishes eligibility and actual renderer refusal",
+      "test_count": 5,
+      "seconds": {
+        "windows": 0.0167,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/graph-scale.test.js",
+      "suite": "node",
+      "area": "graph",
+      "purpose": "the declared contract names every module the sprint asks about",
+      "test_count": 16,
+      "seconds": {
+        "windows": 0.0094,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/highlight-anchor.test.js",
+      "suite": "node",
+      "area": "highlight",
+      "purpose": "a measurement on the denoised source is not reused for the original, or for another reconstruction",
+      "test_count": 11,
+      "seconds": {
+        "windows": 0.0209,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/highlight-delivery-floor.test.js",
+      "suite": "node",
+      "area": "highlight",
+      "purpose": "peak input and pasted state keep HDR headroom at 100-nit white",
+      "test_count": 3,
+      "seconds": {
+        "windows": 0.0246,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/hsl-packing.test.js",
+      "suite": "node",
+      "area": "hsl",
+      "purpose": "HSL packs every bounded channel and range without touching existing slots",
+      "test_count": 4,
+      "seconds": {
+        "windows": 0.0087,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/hsl-picker.test.js",
+      "suite": "node",
+      "area": "hsl",
+      "purpose": "HSL picks visible image coordinates in CSS points at 1x, including pan",
+      "test_count": 10,
+      "seconds": {
+        "windows": 0.6859,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/hsl-preview-pacing.test.js",
+      "suite": "node",
+      "area": "hsl",
+      "purpose": "Global HSL exact drag frames finish across newer slider inputs, only while enabled",
+      "test_count": 4,
+      "seconds": {
+        "windows": 1.3976,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/hsl-prototype.test.js",
+      "suite": "node",
+      "area": "hsl",
+      "purpose": "picker unions separated colors, subtracts, wraps red and rejects neutral samples",
+      "test_count": 9,
+      "seconds": {
+        "windows": 0.0244,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/hsl-resource-lifetime.test.js",
+      "suite": "node",
+      "area": "hsl",
+      "purpose": "HSL parameter buffers survive encoding and are destroyed with retired submission resources",
+      "test_count": 2,
+      "seconds": {
+        "windows": 0.0016,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/hsl-selection-delivery.test.js",
+      "suite": "node",
+      "area": "hsl",
+      "purpose": "combined HSL mode delivers neutral once and checks both isolated edits in full",
+      "test_count": 4,
+      "seconds": {
+        "windows": 0.1547,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/hsl-viewport.test.js",
+      "suite": "node",
+      "area": "hsl",
+      "purpose": "2x selection requests the clipped viewport and places its cropped overlay in full-photo coordinates",
+      "test_count": 2,
+      "seconds": {
+        "windows": 0.6616,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/interpretation-ownership.test.js",
+      "suite": "node",
+      "area": "interpretation",
+      "purpose": "late interpretation success cannot reinstall a replaced photo",
+      "test_count": 4,
+      "seconds": {
+        "windows": 0.5874,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/latest-work-queue.test.js",
+      "suite": "node",
+      "area": "latest",
+      "purpose": "rapid submits collapse to one in-flight run plus the latest pending",
+      "test_count": 5,
+      "seconds": {
+        "windows": 0.0025,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/lens-filters.test.js",
+      "suite": "node",
+      "area": "lens",
+      "purpose": "lens components agree with pinned upstream coefficients and preserve channel energy",
+      "test_count": 3,
+      "seconds": {
+        "windows": 0.0042,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/library-activity.test.js",
+      "suite": "node",
+      "area": "library",
+      "purpose": "remembered errors stay in Activity after workers finish; ignored errors stay quiet",
+      "test_count": 12,
+      "seconds": {
+        "windows": 0.0336,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/library-album-names.test.js",
+      "suite": "node",
+      "area": "library",
+      "purpose": "copy names are editable proposals, unique across album kinds and capitals",
+      "test_count": 1,
+      "seconds": {
+        "windows": 0.0008,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/library-build-previews.test.js",
+      "suite": "node",
+      "area": "library",
+      "purpose": "preview completion retains success when refreshing disk usage fails",
+      "test_count": 2,
+      "seconds": {
+        "windows": 0.045,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/library-collection-removal.test.js",
+      "suite": "node",
+      "area": "library",
+      "purpose": "manual: newest list wins",
+      "test_count": 22,
+      "seconds": {
+        "windows": 1.1965,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/library-culling-feedback.test.js",
+      "suite": "node",
+      "area": "library",
+      "purpose": "ratings appear before saving, keep their captured photo and survive older replies; errors roll back",
+      "test_count": 1,
+      "seconds": {
+        "windows": 0.0217,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/library-denoise-setup.test.js",
+      "suite": "node",
+      "area": "library",
+      "purpose": "identical Library source/lane/scale/geometry/model keeps scratch and selector; controls update",
+      "test_count": 9,
+      "seconds": {
+        "windows": 0.0203,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/library-detail-stream.test.js",
+      "suite": "node",
+      "area": "library",
+      "purpose": "full-size detail planes leave the GPU in bands of at most 64 MB, every byte in order",
+      "test_count": 3,
+      "seconds": {
+        "windows": 0.7917,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/library-editor.test.js",
+      "suite": "node",
+      "area": "library",
+      "purpose": "paste asks the leave gate for the exact open virtual copy and respects Cancel",
+      "test_count": 4,
+      "seconds": {
+        "windows": 0.0157,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/library-file-command-feedback.test.js",
+      "suite": "node",
+      "area": "library",
+      "purpose": "Delete uses the backend's Recycle Bin destination without changing its confirmation route",
+      "test_count": 7,
+      "seconds": {
+        "windows": 0.0164,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/library-finished-thumbnails.test.js",
+      "suite": "node",
+      "area": "library",
+      "purpose": "visible stored surfaces share one request and upload the original exact bytes",
+      "test_count": 8,
+      "seconds": {
+        "windows": 0.0864,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/library-folder-lifecycle.test.js",
+      "suite": "node",
+      "area": "library",
+      "purpose": "a previous folder stream cannot cancel the current folder paint timer",
+      "test_count": 2,
+      "seconds": {
+        "windows": 0.0119,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/library-fullscreen-selection.test.js",
+      "suite": "node",
+      "area": "library",
+      "purpose": "fullscreen keeps a multi-photo selection for when it closes",
+      "test_count": 6,
+      "seconds": {
+        "windows": 0.0353,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/library-gpu-raw.test.js",
+      "suite": "node",
+      "area": "library",
+      "purpose": "Library releases finished cache memory before accepting a RAW budget refusal",
+      "test_count": 30,
+      "seconds": {
+        "windows": 1.792,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/library-gpu-residency.test.js",
+      "suite": "node",
+      "area": "library",
+      "purpose": "Library session change keeps owned scenes while releasing ordinary proxies",
+      "test_count": 4,
+      "seconds": {
+        "windows": 0.0152,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/library-grants.test.js",
+      "suite": "node",
+      "area": "library",
+      "purpose": "one ask waits without HTTP retries, is promoted and cancels immediately",
+      "test_count": 23,
+      "seconds": {
+        "windows": 0.5383,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/library-idle-warmup.test.js",
+      "suite": "node",
+      "area": "library",
+      "purpose": "Library prepares every render and compute pipeline asynchronously when no names are given",
+      "test_count": 7,
+      "seconds": {
+        "windows": 1.2534,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/library-invalid-gpu-retry.test.js",
+      "suite": "node",
+      "area": "library",
+      "purpose": "an invalid result goes to the CPU at once and releases its reservation",
+      "test_count": 12,
+      "seconds": {
+        "windows": 0.6115,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/library-layout.test.js",
+      "suite": "node",
+      "area": "library",
+      "purpose": "large folders keep only intersecting rows in the virtual grid",
+      "test_count": 3,
+      "seconds": {
+        "windows": 0.0012,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/library-measure-viewport.test.js",
+      "suite": "node",
+      "area": "library",
+      "purpose": "folder discovery replaces the observed screen instead of waiting on rows that moved offscreen",
+      "test_count": 1,
+      "seconds": {
+        "windows": 0.0023,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/library-membership.test.js",
+      "suite": "node",
+      "area": "library",
+      "purpose": "whole library includes kept photos, selected and unpinned folder rules do not",
+      "test_count": 1,
+      "seconds": {
+        "windows": 0.001,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/library-memory-monitor.test.js",
+      "suite": "node",
+      "area": "library",
+      "purpose": "brief overrun passes and records peak, active type, duration and settling",
+      "test_count": 6,
+      "seconds": {
+        "windows": 0.0023,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/library-navigation.test.js",
+      "suite": "node",
+      "area": "library",
+      "purpose": "pin drag previews before/after insertion, persists that order and ignores photo drops",
+      "test_count": 1,
+      "seconds": {
+        "windows": 0.0032,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/library-overlays.test.js",
+      "suite": "node",
+      "area": "library",
+      "purpose": "switching Exposure preserves Focus request and switching Focus preserves Exposure",
+      "test_count": 27,
+      "seconds": {
+        "windows": 2.425,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/library-picture-errors.test.js",
+      "suite": "node",
+      "area": "library",
+      "purpose": "interpretation refusal stays blocked through folder rechecks, until explicitly cleared or source changes",
+      "test_count": 7,
+      "seconds": {
+        "windows": 0.5381,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/library-picture-shape.test.js",
+      "suite": "node",
+      "area": "library",
+      "purpose": "Library camera-raw-gpu keeps old shape during loading",
+      "test_count": 3,
+      "seconds": {
+        "windows": 0.6775,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/library-publication.test.js",
+      "suite": "node",
+      "area": "library",
+      "purpose": "a saved-thumbnail flight cannot publish after Undo",
+      "test_count": 8,
+      "seconds": {
+        "windows": 0.0224,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/library-query.test.js",
+      "suite": "node",
+      "area": "library",
+      "purpose": "Capture dates sort with unknown dates last in both directions",
+      "test_count": 8,
+      "seconds": {
+        "windows": 0.0246,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/library-quick-draw.test.js",
+      "suite": "node",
+      "area": "library",
+      "purpose": "quick work runs independently and selected sharp follows only the in-flight neighbour",
+      "test_count": 2,
+      "seconds": {
+        "windows": 0.6928,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/library-ram.test.js",
+      "suite": "node",
+      "area": "library",
+      "purpose": "ready surfaces and direct scenes share one byte ceiling",
+      "test_count": 2,
+      "seconds": {
+        "windows": 0.0138,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/library-ready-window.test.js",
+      "suite": "node",
+      "area": "library",
+      "purpose": "ready pictures reuse only their exact photo, grade, source and display identity",
+      "test_count": 8,
+      "seconds": {
+        "windows": 0.0236,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/library-refresh.test.js",
+      "suite": "node",
+      "area": "library",
+      "purpose": "Refresh acknowledges before the backend answers and rejects old front-end work at both boundaries",
+      "test_count": 9,
+      "seconds": {
+        "windows": 0.0307,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/library-request-queue.test.js",
+      "suite": "node",
+      "area": "library",
+      "purpose": "picture decoding leaves two browser connections available for pixels",
+      "test_count": 4,
+      "seconds": {
+        "windows": 0.0106,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/library-rgb-layout.test.js",
+      "suite": "node",
+      "area": "library",
+      "purpose": "RGB clamp flag occupies lensc.z without aliasing DNG tile dimensions",
+      "test_count": 1,
+      "seconds": {
+        "windows": 0.0022,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/library-rules.test.js",
+      "suite": "node",
+      "area": "library",
+      "purpose": "Offered values come from the photos on screen, with counts and honest gaps",
+      "test_count": 7,
+      "seconds": {
+        "windows": 0.0174,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/library-scene-scheduler.test.js",
+      "suite": "node",
+      "area": "library",
+      "purpose": "source demand merges, promotes selected work and stops only after its last user leaves",
+      "test_count": 24,
+      "seconds": {
+        "windows": 0.1568,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/library-scenes.test.js",
+      "suite": "node",
+      "area": "library",
+      "purpose": "quick stored-scene misses never start a source; a stopped request may prepare it",
+      "test_count": 54,
+      "seconds": {
+        "windows": 3.1832,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/library-selection.test.js",
+      "suite": "node",
+      "area": "library",
+      "purpose": "Ctrl toggles independently and Shift keeps its anchor in both directions",
+      "test_count": 3,
+      "seconds": {
+        "windows": 0.0033,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/library-single-ready.test.js",
+      "suite": "node",
+      "area": "library",
+      "purpose": "Single swaps the correct finished canvas and hides the previous grade while a replacement waits",
+      "test_count": 10,
+      "seconds": {
+        "windows": 0.6632,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/library-smart-rules.test.js",
+      "suite": "node",
+      "area": "library",
+      "purpose": "every filter field is available to the smart album and handles is not",
+      "test_count": 5,
+      "seconds": {
+        "windows": 0.0569,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/library-smart-worker.test.js",
+      "suite": "node",
+      "area": "library",
+      "purpose": "worker caches counts and choices, checks versions, and invalidates on index change",
+      "test_count": 1,
+      "seconds": {
+        "windows": 0.0143,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/library-tags-selection.test.js",
+      "suite": "node",
+      "area": "library",
+      "purpose": "filtering tags after selecting the last row makes Shift-click safe",
+      "test_count": 2,
+      "seconds": {
+        "windows": 0.562,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/library-tile-pool.test.js",
+      "suite": "node",
+      "area": "library",
+      "purpose": "completed surfaces are reused without disposal and the recent pool stays bounded",
+      "test_count": 3,
+      "seconds": {
+        "windows": 0.0023,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/library-upload.test.js",
+      "suite": "node",
+      "area": "library",
+      "purpose": "streamed detail bands transfer once, upload bounded pieces and release ownership",
+      "test_count": 2,
+      "seconds": {
+        "windows": 0.0775,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/library-zoom.test.js",
+      "suite": "node",
+      "area": "library",
+      "purpose": "100% needs detail unless the Fit picture on screen is full size",
+      "test_count": 5,
+      "seconds": {
+        "windows": 0.002,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/local-adjustment-drafts.test.js",
+      "suite": "node",
+      "area": "local",
+      "purpose": "tool clicks create selected unused drafts; another type converts and the lit tool creates anew",
+      "test_count": 5,
+      "seconds": {
+        "windows": 1.156,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/local-detail-passes.test.js",
+      "suite": "node",
+      "area": "local",
+      "purpose": "only shader-active Texture and Sharpen need the packed band pair",
+      "test_count": 3,
+      "seconds": {
+        "windows": 0.0074,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/local-sdr-match.test.js",
+      "suite": "node",
+      "area": "local",
+      "purpose": "local acknowledgements refresh stale markers without replacing newer strokes",
+      "test_count": 6,
+      "seconds": {
+        "windows": 0.0087,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/luma-region-routing.test.js",
+      "suite": "node",
+      "area": "luma",
+      "purpose": "locals with shared range stops retain independent immutable feather results",
+      "test_count": 9,
+      "seconds": {
+        "windows": 3.8946,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/mask-expression.test.js",
+      "suite": "node",
+      "area": "mask",
+      "purpose": "mask leaf defaults remain complete for every authoring tool",
+      "test_count": 6,
+      "seconds": {
+        "windows": 0.003,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/mask-loader.test.js",
+      "suite": "node",
+      "area": "mask",
+      "purpose": "a stale mask response is cancelled without an upload",
+      "test_count": 9,
+      "seconds": {
+        "windows": 0.0109,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/mask-raster.test.js",
+      "suite": "node",
+      "area": "mask",
+      "purpose": "only geometry and feather forms with an exact tile contract are admitted",
+      "test_count": 4,
+      "seconds": {
+        "windows": 0.0032,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/mask-request-coordinator.test.js",
+      "suite": "node",
+      "area": "mask",
+      "purpose": "mask requests never exceed the configured concurrency",
+      "test_count": 10,
+      "seconds": {
+        "windows": 0.0302,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/mask-resample.test.js",
+      "suite": "node",
+      "area": "mask",
+      "purpose": "only straighten and perspective leaves get a resampling plan",
+      "test_count": 14,
+      "seconds": {
+        "windows": 7.1617,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/mask-sampling.test.js",
+      "suite": "node",
+      "area": "mask",
+      "purpose": "range sampling waits for saved upstream edits and reacquires the acknowledged mask",
+      "test_count": 7,
+      "seconds": {
+        "windows": 0.0352,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/match-preview-recovery.test.js",
+      "suite": "node",
+      "area": "match",
+      "purpose": "Match retries a peak handoff on GPU without CPU fallback",
+      "test_count": 15,
+      "seconds": {
+        "windows": 0.3062,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/micro-grain-transport.test.js",
+      "suite": "node",
+      "area": "micro",
+      "purpose": "Micro Grain cancels an unread superseded response",
+      "test_count": 5,
+      "seconds": {
+        "windows": 1.1572,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/native-anchor-scheduling.test.js",
+      "suite": "node",
+      "area": "native",
+      "purpose": "Native anchors coalesce latest inputs and wait for foreground presentation",
+      "test_count": 5,
+      "seconds": {
+        "windows": 1.3941,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/navigation-thumbnail-scheduling.test.js",
+      "suite": "node",
+      "area": "navigation",
+      "purpose": "Navigate uses the retained lower picture once active zoom work settles",
+      "test_count": 6,
+      "seconds": {
+        "windows": 0.2965,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/parity-bytes.test.js",
+      "suite": "node",
+      "area": "parity",
+      "purpose": "byte histogram preserves the former sorted full-frame parity calculation exactly",
+      "test_count": 2,
+      "seconds": {
+        "windows": 1.8617,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/perspective-draft-preview.test.js",
+      "suite": "node",
+      "area": "perspective",
+      "purpose": "perspective draft cancellation leaves the current status alone",
+      "test_count": 2,
+      "seconds": {
+        "windows": 0.0769,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/photo-framing.test.js",
+      "suite": "node",
+      "area": "photo",
+      "purpose": "viewer framing keeps photo pixels and independent per-side layers",
+      "test_count": 4,
+      "seconds": {
+        "windows": 0.0061,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/photo-transition.test.js",
+      "suite": "node",
+      "area": "photo",
+      "purpose": "clean transitions and synchronous system exit avoid prompting",
+      "test_count": 5,
+      "seconds": {
+        "windows": 0.0037,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/photos-root.test.js",
+      "suite": "node",
+      "area": "photos",
+      "purpose": "non-photo arguments and explicit roots need no machine discovery",
+      "test_count": 2,
+      "seconds": {
+        "windows": 0.5801,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/picture-request-monitor.test.js",
+      "suite": "node",
+      "area": "picture",
+      "purpose": "picture monitor counts bodies after headers and detects five live requests",
+      "test_count": 3,
+      "seconds": {
+        "windows": 0.0094,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/platform-panels.test.js",
+      "suite": "node",
+      "area": "platform",
+      "purpose": "Linux HDR warning waits for a photo and clears when it closes",
+      "test_count": 1,
+      "seconds": {
+        "windows": 0.0039,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/presentation-gate.test.js",
+      "suite": "node",
+      "area": "presentation",
+      "purpose": "presentations to one canvas never overlap",
+      "test_count": 7,
+      "seconds": {
+        "windows": 0.0215,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/preview-coarse-scale.test.js",
+      "suite": "node",
+      "area": "preview",
+      "purpose": "Faster dragging uses a stable 2K coarse source before exact refinement",
+      "test_count": 1,
+      "seconds": {
+        "windows": 0.0012,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/preview-latency-controller.test.js",
+      "suite": "node",
+      "area": "preview",
+      "purpose": "Precise always starts exact and interaction ends at exact scale",
+      "test_count": 5,
+      "seconds": {
+        "windows": 0.003,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/preview-scheduler-pacing.test.js",
+      "suite": "node",
+      "area": "preview",
+      "purpose": "drag frames are capped at 60 fps on a 164 Hz display",
+      "test_count": 4,
+      "seconds": {
+        "windows": 0.0168,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/preview-scheduler-settle.test.js",
+      "suite": "node",
+      "area": "preview",
+      "purpose": "release after a completed drag frame settles without the 110 ms wait",
+      "test_count": 10,
+      "seconds": {
+        "windows": 0.0694,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/preview-source-memory.test.js",
+      "suite": "node",
+      "area": "preview",
+      "purpose": "a 507 single-response proxy refusal reports Unavailable instead of preparing",
+      "test_count": 5,
+      "seconds": {
+        "windows": 0.6214,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/preview-watchdog.test.js",
+      "suite": "node",
+      "area": "preview",
+      "purpose": "watchdog waits for real scheduler work {\"frameInFlight\":true}",
+      "test_count": 5,
+      "seconds": {
+        "windows": 0.0962,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/process-tree.test.js",
+      "suite": "node",
+      "area": "process",
+      "purpose": "a stale parent ID does not pull an older unrelated process into the tree",
+      "test_count": 18,
+      "seconds": {
+        "windows": 2.7037,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": [
+        "test('a killed child that is not yet collected counts as stopped', { skip: process.platform === 'win32' && 'Windows has no zombie processes' }, () => {"
+      ]
+    },
+    {
+      "file": "tests/project-io.test.js",
+      "suite": "node",
+      "area": "project",
+      "purpose": "desktop project open owns grant shape and optional relink grant",
+      "test_count": 7,
+      "seconds": {
+        "windows": 0.0509,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/quick-library-check.test.js",
+      "suite": "node",
+      "area": "quick",
+      "purpose": "unset quick switch touches no app, page, filesystem or backend capability",
+      "test_count": 20,
+      "seconds": {
+        "windows": 0.0807,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/raw-pixel-cleanup.test.js",
+      "suite": "node",
+      "area": "raw",
+      "purpose": "Pixel cleanup is enabled only for supported Bayer RAW and restores saved state",
+      "test_count": 3,
+      "seconds": {
+        "windows": 0.008,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/recent-projects.test.js",
+      "suite": "node",
+      "area": "recent",
+      "purpose": "recent projects survive restart, put the latest first and reject non-project entries",
+      "test_count": 1,
+      "seconds": {
+        "windows": 0.0112,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/release-runner.test.js",
+      "suite": "node",
+      "area": "release",
+      "purpose": "every standalone JS driver is listed once and all listed files exist",
+      "test_count": 28,
+      "seconds": {
+        "windows": 134.67,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": [
+        "test('failed-start status stops the run without a retry or later drivers', {skip:process.platform!=='win32'}, t => {"
+      ]
+    },
+    {
+      "file": "tests/render-coordinator.test.js",
+      "suite": "node",
+      "area": "render",
+      "purpose": "queued preview keeps the action that requested it",
+      "test_count": 24,
+      "seconds": {
+        "windows": 0.0269,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/render-failure.test.js",
+      "suite": "node",
+      "area": "render",
+      "purpose": "every Section 5.8 class is recognized from the error it produces",
+      "test_count": 7,
+      "seconds": {
+        "windows": 0.0112,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/render-plan-admission.test.js",
+      "suite": "node",
+      "area": "render",
+      "purpose": "a recorded graph produces an identical plan every time",
+      "test_count": 23,
+      "seconds": {
+        "windows": 0.0289,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/retouch-source-refresh.test.js",
+      "suite": "node",
+      "area": "retouch",
+      "purpose": "repair refresh changes only bounded native pixels and discards reduced evidence",
+      "test_count": 9,
+      "seconds": {
+        "windows": 0.0323,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/reuse-test-photo.test.js",
+      "suite": "node",
+      "area": "reuse",
+      "purpose": "persistent test copies reuse pixels and restore disposable sidecars on success or failure",
+      "test_count": 2,
+      "seconds": {
+        "windows": 2.0151,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/roi-source-region.test.js",
+      "suite": "node",
+      "area": "roi",
+      "purpose": "a magnified fetch region covers every foreground tile's halo rect",
+      "test_count": 4,
+      "seconds": {
+        "windows": 0.0646,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/saved-preset-read.test.js",
+      "suite": "node",
+      "area": "saved",
+      "purpose": "saved Film Look reaches recovery before unknown or damaged data is discarded: {\"bloom_amount\":20}",
+      "test_count": 3,
+      "seconds": {
+        "windows": 1.1994,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/scope-analysis.test.js",
+      "suite": "node",
+      "area": "scope",
+      "purpose": "scope transport conversion retains the exact pre-cleanup double-precision results",
+      "test_count": 6,
+      "seconds": {
+        "windows": 0.0558,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/scope-gpu-handoff.test.js",
+      "suite": "node",
+      "area": "scope",
+      "purpose": "first GPU picture defers CPU scopes, while an accepted CPU picture retains fallback",
+      "test_count": 4,
+      "seconds": {
+        "windows": 0.6834,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/scope-peak-disclosure.test.js",
+      "suite": "node",
+      "area": "scope",
+      "purpose": "a refused editing measurement cannot become an exact peak through CPU fallback",
+      "test_count": 3,
+      "seconds": {
+        "windows": 0.0039,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/scope-readback.test.js",
+      "suite": "node",
+      "area": "scope",
+      "purpose": "scope analysis unpacks padded half-float rows and releases its resource",
+      "test_count": 7,
+      "seconds": {
+        "windows": 0.081,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/scope-ui.test.js",
+      "suite": "node",
+      "area": "scope",
+      "purpose": "scope quality and freshness policies are pure inputs",
+      "test_count": 5,
+      "seconds": {
+        "windows": 0.0024,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/sdr-match-session.test.js",
+      "suite": "node",
+      "area": "sdr",
+      "purpose": "a Match response (200) for a replaced photo cannot update the new photo",
+      "test_count": 4,
+      "seconds": {
+        "windows": 0.0082,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/shared-export-status.test.js",
+      "suite": "node",
+      "area": "shared",
+      "purpose": "shared export progress offers pause/resume and cancel, completion removes controls",
+      "test_count": 4,
+      "seconds": {
+        "windows": 0.0117,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/shortcut-labels.test.js",
+      "suite": "node",
+      "area": "shortcut",
+      "purpose": "Mac explicit bindings use Apple modifier order and distinguish Control from Command",
+      "test_count": 5,
+      "seconds": {
+        "windows": 0.0067,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/source-interpretation.test.js",
+      "suite": "node",
+      "area": "source",
+      "purpose": "unresolved interpretation stays visible and export stays blocked until real resolution",
+      "test_count": 1,
+      "seconds": {
+        "windows": 0.0036,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/source-transport.test.js",
+      "suite": "node",
+      "area": "source",
+      "purpose": "in-place repair refresh retains native textures with their new source epoch",
+      "test_count": 52,
+      "seconds": {
+        "windows": 5.7079,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test-catalogue.test.js",
+      "suite": "node",
+      "area": "test",
+      "purpose": "all release drivers have usable agent briefs, requirements and platform estimates",
+      "test_count": 4,
+      "seconds": {
+        "windows": 0.0305,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_adjustments.py",
+      "suite": "python",
+      "area": "adjustments",
+      "purpose": "Checks adjustments behavior and regression contracts.",
+      "test_count": 236,
+      "seconds": {
+        "windows": 9.4813,
+        "mac": null
+      },
+      "markers": [
+        "parametrize"
+      ],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_advanced_finishing.py",
+      "suite": "python",
+      "area": "advanced",
+      "purpose": "Checks advanced finishing behavior and regression contracts.",
+      "test_count": 25,
+      "seconds": {
+        "windows": 0.8608,
+        "mac": null
+      },
+      "markers": [
+        "parametrize"
+      ],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_ai_highlights_research.py",
+      "suite": "python",
+      "area": "ai",
+      "purpose": "Checks ai highlights research behavior and regression contracts.",
+      "test_count": 15,
+      "seconds": {
+        "windows": 1.015,
+        "mac": null
+      },
+      "markers": [
+        "parametrize"
+      ],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_api.py",
+      "suite": "python",
+      "area": "api",
+      "purpose": "Checks api behavior and regression contracts.",
+      "test_count": 69,
+      "seconds": {
+        "windows": 23.8915,
+        "mac": null
+      },
+      "markers": [
+        "parametrize"
+      ],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_app_memory.py",
+      "suite": "python",
+      "area": "app",
+      "purpose": "Checks app memory behavior and regression contracts.",
+      "test_count": 35,
+      "seconds": {
+        "windows": 7.6254,
+        "mac": null
+      },
+      "markers": [
+        "parametrize",
+        "serial",
+        "skipif",
+        "windows_only"
+      ],
+      "requirements": [
+        "windows_only"
+      ],
+      "platform_notes": [
+        "pytest.mark.skipif(os.name != \"nt\", reason=\"Windows private commit and EmptyWorkingSet\")"
+      ]
+    },
+    {
+      "file": "tests/test_avif_info.py",
+      "suite": "python",
+      "area": "avif",
+      "purpose": "Checks avif info behavior and regression contracts.",
+      "test_count": 3,
+      "seconds": {
+        "windows": 4.5381,
+        "mac": null
+      },
+      "markers": [
+        "needs_native_helper",
+        "skipif"
+      ],
+      "requirements": [
+        "needs_native_helper"
+      ],
+      "platform_notes": [
+        "pytest.mark.skipif(resolve_binary(\"avifdec\") is None, reason=\"avifdec is not available\")",
+        "pytest.mark.skipif(resolve_binary(\"avifenc\") is None or resolve_binary(\"avifdec\") is None, reason=\"AVIF tools are not available\")"
+      ]
+    },
+    {
+      "file": "tests/test_batch_export.py",
+      "suite": "python",
+      "area": "batch",
+      "purpose": "Result-based batch orchestration checks; tiny disposable sources only.",
+      "test_count": 31,
+      "seconds": {
+        "windows": 150.1323,
+        "mac": null
+      },
+      "markers": [
+        "needs_native_helper",
+        "parametrize",
+        "slow"
+      ],
+      "requirements": [
+        "needs_native_helper"
+      ],
+      "platform_notes": [
+        "Conditional skip: encoder.status.value != 'available'",
+        "Conditional skip: format in required and caps[required[format]].status.value != 'available'",
+        "pytest.skip(caps[required[format]].detail)",
+        "pytest.skip(encoder.detail)"
+      ]
+    },
+    {
+      "file": "tests/test_black_and_white.py",
+      "suite": "python",
+      "area": "black",
+      "purpose": "BW-01 Black & White: a per-rendition monochrome conversion with an",
+      "test_count": 19,
+      "seconds": {
+        "windows": 0.087,
+        "mac": null
+      },
+      "markers": [
+        "parametrize"
+      ],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_bordermuse_geometry.py",
+      "suite": "python",
+      "area": "bordermuse",
+      "purpose": "Measured conformance vectors, plus exact-arithmetic boundary checks.",
+      "test_count": 5,
+      "seconds": {
+        "windows": 0.005,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_camera_linear_raw_bridge.py",
+      "suite": "python",
+      "area": "camera",
+      "purpose": "Checks camera linear raw bridge behavior and regression contracts.",
+      "test_count": 19,
+      "seconds": {
+        "windows": 0.0668,
+        "mac": null
+      },
+      "markers": [
+        "parametrize"
+      ],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_camera_linear_raw_corpus.py",
+      "suite": "python",
+      "area": "camera",
+      "purpose": "Checks camera linear raw corpus behavior and regression contracts.",
+      "test_count": 1,
+      "seconds": {
+        "windows": 0.0002,
+        "mac": null
+      },
+      "markers": [
+        "needs_test_photos",
+        "skipif",
+        "windows_only"
+      ],
+      "requirements": [
+        "needs_test_photos",
+        "windows_only"
+      ],
+      "platform_notes": [
+        "pytest.mark.skipif(     sys.platform != 'win32' or not CORPUS_ROOT,     reason=\"PC-only historical qualification: dropped 1.7 GB line-scan DNG and clipped Canon sample; set HDR_FINISHER_RAW_TEST_SUITE on PC\", )"
+      ]
+    },
+    {
+      "file": "tests/test_capability_gates.py",
+      "suite": "python",
+      "area": "capability",
+      "purpose": "Checks capability gates behavior and regression contracts.",
+      "test_count": 1,
+      "seconds": {
+        "windows": 0.0004,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_clarity_map.py",
+      "suite": "python",
+      "area": "clarity",
+      "purpose": "Clarity's blurred base: a smooth pyramid, not a staircase.",
+      "test_count": 9,
+      "seconds": {
+        "windows": 0.0767,
+        "mac": null
+      },
+      "markers": [
+        "parametrize",
+        "skipif"
+      ],
+      "requirements": [],
+      "platform_notes": [
+        "pytest.mark.skipif(shutil.which(\"node\") is None, reason=\"node is not installed\")"
+      ]
+    },
+    {
+      "file": "tests/test_color_desaturation.py",
+      "suite": "python",
+      "area": "color",
+      "purpose": "Checks color desaturation behavior and regression contracts.",
+      "test_count": 2,
+      "seconds": {
+        "windows": 0.007,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_color_wheels_headroom.py",
+      "suite": "python",
+      "area": "color",
+      "purpose": "W3: grading ranges are edits, never an implicit output limiter.",
+      "test_count": 15,
+      "seconds": {
+        "windows": 0.1119,
+        "mac": null
+      },
+      "markers": [
+        "parametrize"
+      ],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_coordinate_map_bounded.py",
+      "suite": "python",
+      "area": "coordinate",
+      "purpose": "Checks coordinate map bounded behavior and regression contracts.",
+      "test_count": 24,
+      "seconds": {
+        "windows": 0.2767,
+        "mac": null
+      },
+      "markers": [
+        "parametrize"
+      ],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_core.py",
+      "suite": "python",
+      "area": "core",
+      "purpose": "Checks core behavior and regression contracts.",
+      "test_count": 71,
+      "seconds": {
+        "windows": 0.4471,
+        "mac": null
+      },
+      "markers": [
+        "parametrize"
+      ],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_cpu_budget.py",
+      "suite": "python",
+      "area": "cpu",
+      "purpose": "Checks cpu budget behavior and regression contracts.",
+      "test_count": 2,
+      "seconds": {
+        "windows": 0.0041,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_cpu_strips.py",
+      "suite": "python",
+      "area": "cpu",
+      "purpose": "Phase 4: the bounded CPU strip path must equal the whole-frame path exactly.",
+      "test_count": 185,
+      "seconds": {
+        "windows": 33.8385,
+        "mac": null
+      },
+      "markers": [
+        "parametrize",
+        "slow"
+      ],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_cpu_strips_api.py",
+      "suite": "python",
+      "area": "cpu",
+      "purpose": "Phase 4: the bounded CPU path has to be reachable, and honest when it is not.",
+      "test_count": 6,
+      "seconds": {
+        "windows": 2.0643,
+        "mac": null
+      },
+      "markers": [
+        "parametrize"
+      ],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_delivery_colour.py",
+      "suite": "python",
+      "area": "delivery",
+      "purpose": "Checks delivery colour behavior and regression contracts.",
+      "test_count": 7,
+      "seconds": {
+        "windows": 0.0307,
+        "mac": null
+      },
+      "markers": [
+        "parametrize"
+      ],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_delivery_comparison.py",
+      "suite": "python",
+      "area": "delivery",
+      "purpose": "Checks delivery comparison behavior and regression contracts.",
+      "test_count": 6,
+      "seconds": {
+        "windows": 1.4298,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_delivery_policy.py",
+      "suite": "python",
+      "area": "delivery",
+      "purpose": "Checks delivery policy behavior and regression contracts.",
+      "test_count": 8,
+      "seconds": {
+        "windows": 13.3081,
+        "mac": null
+      },
+      "markers": [
+        "parametrize",
+        "slow"
+      ],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_denoise_adaptive.py",
+      "suite": "python",
+      "area": "denoise",
+      "purpose": "Adaptive denoise: the contracts the preview and export both rely on.",
+      "test_count": 13,
+      "seconds": {
+        "windows": 2.393,
+        "mac": null
+      },
+      "markers": [
+        "needs_native_helper"
+      ],
+      "requirements": [
+        "needs_native_helper"
+      ],
+      "platform_notes": [
+        "Conditional skip: native is None",
+        "pytest.skip(\"Native Denoise filters have not been built\")"
+      ]
+    },
+    {
+      "file": "tests/test_denoise_chroma_cleanup.py",
+      "suite": "python",
+      "area": "denoise",
+      "purpose": "Behaviour checks for non-shipping colour-cleanup research.",
+      "test_count": 12,
+      "seconds": {
+        "windows": 0.0572,
+        "mac": null
+      },
+      "markers": [
+        "parametrize"
+      ],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_denoise_classical.py",
+      "suite": "python",
+      "area": "denoise",
+      "purpose": "Behavioural checks for non-shipping, CPU-only classical prototypes.",
+      "test_count": 10,
+      "seconds": {
+        "windows": 0.6166,
+        "mac": null
+      },
+      "markers": [
+        "needs_native_helper",
+        "parametrize",
+        "skipif"
+      ],
+      "requirements": [
+        "needs_native_helper"
+      ],
+      "platform_notes": [
+        "pytest.mark.skipif(not BINARY.exists(), reason='Offline GALOSH binary not built')"
+      ]
+    },
+    {
+      "file": "tests/test_denoise_dark_noise.py",
+      "suite": "python",
+      "area": "denoise",
+      "purpose": "Behavioural regression cases for the isolated dark-noise research adapters.",
+      "test_count": 11,
+      "seconds": {
+        "windows": 0.7154,
+        "mac": null
+      },
+      "markers": [
+        "parametrize"
+      ],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_denoise_demosaic_noise.py",
+      "suite": "python",
+      "area": "denoise",
+      "purpose": "Checks denoise demosaic noise behavior and regression contracts.",
+      "test_count": 20,
+      "seconds": {
+        "windows": 0.9121,
+        "mac": null
+      },
+      "markers": [
+        "parametrize"
+      ],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_denoise_document.py",
+      "suite": "python",
+      "area": "denoise",
+      "purpose": "Checks denoise document behavior and regression contracts.",
+      "test_count": 12,
+      "seconds": {
+        "windows": 0.2311,
+        "mac": null
+      },
+      "markers": [
+        "parametrize"
+      ],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_denoise_early_outlier.py",
+      "suite": "python",
+      "area": "denoise",
+      "purpose": "Checks denoise early outlier behavior and regression contracts.",
+      "test_count": 20,
+      "seconds": {
+        "windows": 0.9761,
+        "mac": null
+      },
+      "markers": [
+        "parametrize"
+      ],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_denoise_eval.py",
+      "suite": "python",
+      "area": "denoise",
+      "purpose": "Result-based checks for the CPU quality harness; no private corpus needed.",
+      "test_count": 11,
+      "seconds": {
+        "windows": 0.2573,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_denoise_grain.py",
+      "suite": "python",
+      "area": "denoise",
+      "purpose": "Checks denoise grain behavior and regression contracts.",
+      "test_count": 13,
+      "seconds": {
+        "windows": 0.6022,
+        "mac": null
+      },
+      "markers": [
+        "needs_native_helper"
+      ],
+      "requirements": [
+        "needs_native_helper"
+      ],
+      "platform_notes": [
+        "Conditional skip: enabled == '1' and (not hasattr(native, 'colour_guides_relative'))",
+        "Conditional skip: not hasattr(native, 'colour_guides')",
+        "pytest.skip(\"Run machine setup to build the optional native filters.\")",
+        "pytest.skip(\"Run machine setup to rebuild the optional native filters.\")"
+      ]
+    },
+    {
+      "file": "tests/test_denoise_hot_pixel.py",
+      "suite": "python",
+      "area": "denoise",
+      "purpose": "Checks denoise hot pixel behavior and regression contracts.",
+      "test_count": 12,
+      "seconds": {
+        "windows": 0.0224,
+        "mac": null
+      },
+      "markers": [
+        "parametrize"
+      ],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_denoise_informative.py",
+      "suite": "python",
+      "area": "denoise",
+      "purpose": "Shipping measurement rejects censored evidence without changing reconstruction.",
+      "test_count": 10,
+      "seconds": {
+        "windows": 0.1497,
+        "mac": null
+      },
+      "markers": [
+        "parametrize"
+      ],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_denoise_lmmse.py",
+      "suite": "python",
+      "area": "denoise",
+      "purpose": "Checks denoise lmmse behavior and regression contracts.",
+      "test_count": 45,
+      "seconds": {
+        "windows": 0.4542,
+        "mac": null
+      },
+      "markers": [
+        "parametrize"
+      ],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_denoise_measurement.py",
+      "suite": "python",
+      "area": "denoise",
+      "purpose": "Measurements belong to source pixels, survive restart, and reject stale work.",
+      "test_count": 15,
+      "seconds": {
+        "windows": 6.7984,
+        "mac": null
+      },
+      "markers": [
+        "parametrize"
+      ],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_denoise_model_windows.py",
+      "suite": "python",
+      "area": "denoise",
+      "purpose": "The Denoise noise model reads a few sample windows, so the preview corrects",
+      "test_count": 7,
+      "seconds": {
+        "windows": 2.7525,
+        "mac": null
+      },
+      "markers": [
+        "parametrize"
+      ],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_denoise_native_model.py",
+      "suite": "python",
+      "area": "denoise",
+      "purpose": "At full size the Denoise noise model is the source's own: one measurement per",
+      "test_count": 16,
+      "seconds": {
+        "windows": 2.8349,
+        "mac": null
+      },
+      "markers": [
+        "parametrize"
+      ],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_denoise_noise_model_specks.py",
+      "suite": "python",
+      "area": "denoise",
+      "purpose": "Behavioural coverage for the isolated noise-model/RAW-speck research.",
+      "test_count": 12,
+      "seconds": {
+        "windows": 0.052,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_denoise_pilot_wiener.py",
+      "suite": "python",
+      "area": "denoise",
+      "purpose": "Checks denoise pilot wiener behavior and regression contracts.",
+      "test_count": 12,
+      "seconds": {
+        "windows": 0.2689,
+        "mac": null
+      },
+      "markers": [
+        "parametrize"
+      ],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_denoise_public_pairs.py",
+      "suite": "python",
+      "area": "denoise",
+      "purpose": "Deterministic pair registration, masking and loading; no network/private photos.",
+      "test_count": 9,
+      "seconds": {
+        "windows": 0.0823,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_denoise_quality.py",
+      "suite": "python",
+      "area": "denoise",
+      "purpose": "Checks denoise quality behavior and regression contracts.",
+      "test_count": 5,
+      "seconds": {
+        "windows": 3.5481,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": [
+        "pytest.skip('The pre-qualification revision is not available in this checkout')"
+      ]
+    },
+    {
+      "file": "tests/test_denoise_rawnind.py",
+      "suite": "python",
+      "area": "denoise",
+      "purpose": "Optional result tests: local verified weights only, no download.",
+      "test_count": 15,
+      "seconds": {
+        "windows": 0.6193,
+        "mac": null
+      },
+      "markers": [
+        "parametrize"
+      ],
+      "requirements": [],
+      "platform_notes": [
+        "Conditional skip: candidate.kind != 'bayer'",
+        "Conditional skip: not (MODEL_ROOT / f'model_{request.param}.onnx').is_file()",
+        "pytest.skip('Bayer camera-RGB gain only')",
+        "pytest.skip('Bayer downstream scene-linear colour tail only')",
+        "pytest.skip('Bayer sensor convention only')",
+        "pytest.skip('Research-only RawNIND model not installed')"
+      ]
+    },
+    {
+      "file": "tests/test_denoise_speck_cleanup.py",
+      "suite": "python",
+      "area": "denoise",
+      "purpose": "Result-based research tests; no photographs or network weights needed.",
+      "test_count": 12,
+      "seconds": {
+        "windows": 1.0638,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_desktop_security.py",
+      "suite": "python",
+      "area": "desktop",
+      "purpose": "Checks desktop security behavior and regression contracts.",
+      "test_count": 6,
+      "seconds": {
+        "windows": 0.0616,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_detail_processing.py",
+      "suite": "python",
+      "area": "detail",
+      "purpose": "Checks detail processing behavior and regression contracts.",
+      "test_count": 9,
+      "seconds": {
+        "windows": 0.6394,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_detail_softness_microcontrast.py",
+      "suite": "python",
+      "area": "detail",
+      "purpose": "Softness and Microcontrast moved from Film Look to Detail (NEXT-01 #2).",
+      "test_count": 6,
+      "seconds": {
+        "windows": 0.0302,
+        "mac": null
+      },
+      "markers": [
+        "parametrize"
+      ],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_diagnostics.py",
+      "suite": "python",
+      "area": "diagnostics",
+      "purpose": "Checks diagnostics behavior and regression contracts.",
+      "test_count": 2,
+      "seconds": {
+        "windows": 0.0373,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_dng_color.py",
+      "suite": "python",
+      "area": "dng",
+      "purpose": "Checks dng color behavior and regression contracts.",
+      "test_count": 16,
+      "seconds": {
+        "windows": 0.0227,
+        "mac": null
+      },
+      "markers": [
+        "parametrize"
+      ],
+      "requirements": [],
+      "platform_notes": [
+        "Conditional skip: logical_cpus() < 2",
+        "pytest.skip(\"One logical CPU\")"
+      ]
+    },
+    {
+      "file": "tests/test_dng_gpu.py",
+      "suite": "python",
+      "area": "dng",
+      "purpose": "Grade DNG correction hands bounded work to delivery without altering its source.",
+      "test_count": 12,
+      "seconds": {
+        "windows": 0.1461,
+        "mac": null
+      },
+      "markers": [
+        "parametrize"
+      ],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_dng_opcodes.py",
+      "suite": "python",
+      "area": "dng",
+      "purpose": "Checks dng opcodes behavior and regression contracts.",
+      "test_count": 25,
+      "seconds": {
+        "windows": 0.5828,
+        "mac": null
+      },
+      "markers": [
+        "parametrize"
+      ],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_dng_raw_routing.py",
+      "suite": "python",
+      "area": "dng",
+      "purpose": "Checks dng raw routing behavior and regression contracts.",
+      "test_count": 6,
+      "seconds": {
+        "windows": 0.0361,
+        "mac": null
+      },
+      "markers": [
+        "parametrize"
+      ],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_dng_resource_preflight.py",
+      "suite": "python",
+      "area": "dng",
+      "purpose": "Checks dng resource preflight behavior and regression contracts.",
+      "test_count": 31,
+      "seconds": {
+        "windows": 0.0215,
+        "mac": null
+      },
+      "markers": [
+        "parametrize",
+        "usefixtures"
+      ],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_docs_root.py",
+      "suite": "python",
+      "area": "docs",
+      "purpose": "MINOR-11 -- the in-app Help documents must be the ones the app serves.",
+      "test_count": 3,
+      "seconds": {
+        "windows": 0.0079,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_editor_overlays.py",
+      "suite": "python",
+      "area": "editor",
+      "purpose": "Checks editor overlays behavior and regression contracts.",
+      "test_count": 1,
+      "seconds": {
+        "windows": 0.0014,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_encoding_fidelity_options.py",
+      "suite": "python",
+      "area": "encoding",
+      "purpose": "Checks encoding fidelity options behavior and regression contracts.",
+      "test_count": 3,
+      "seconds": {
+        "windows": 0.0177,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_even_keep_round4.py",
+      "suite": "python",
+      "area": "even",
+      "purpose": "Output checks for the standalone Round 4 Denoise experiments.",
+      "test_count": 7,
+      "seconds": {
+        "windows": 0.1562,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_exact_highlight_ceiling.py",
+      "suite": "python",
+      "area": "exact",
+      "purpose": "The final ceiling is exact, including float32 matrix/unit roundoff.",
+      "test_count": 177,
+      "seconds": {
+        "windows": 0.4167,
+        "mac": null
+      },
+      "markers": [
+        "parametrize"
+      ],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_export_denoise_parity.py",
+      "suite": "python",
+      "area": "export",
+      "purpose": "Authored denoise has to reach the export, and reach it the same way.",
+      "test_count": 38,
+      "seconds": {
+        "windows": 160.1654,
+        "mac": null
+      },
+      "markers": [
+        "needs_native_helper",
+        "parametrize",
+        "slow"
+      ],
+      "requirements": [
+        "needs_native_helper"
+      ],
+      "platform_notes": [
+        "Conditional skip: exporters.resolve_binary(binary) is None",
+        "pytest.skip(\"The pre-file-delivery revision is unavailable\")",
+        "pytest.skip(f\"{binary} is unavailable\")"
+      ]
+    },
+    {
+      "file": "tests/test_export_lifecycle.py",
+      "suite": "python",
+      "area": "export",
+      "purpose": "Checks export lifecycle behavior and regression contracts.",
+      "test_count": 7,
+      "seconds": {
+        "windows": 0.0474,
+        "mac": null
+      },
+      "markers": [
+        "parametrize",
+        "skipif",
+        "windows_only"
+      ],
+      "requirements": [
+        "windows_only"
+      ],
+      "platform_notes": [
+        "pytest.mark.skipif(exporters.os.name != \"nt\", reason=\"Windows exclusive rename\")"
+      ]
+    },
+    {
+      "file": "tests/test_export_memory_exactness.py",
+      "suite": "python",
+      "area": "export",
+      "purpose": "Checks export memory exactness behavior and regression contracts.",
+      "test_count": 107,
+      "seconds": {
+        "windows": 65.2525,
+        "mac": null
+      },
+      "markers": [
+        "needs_native_helper",
+        "parametrize",
+        "slow"
+      ],
+      "requirements": [
+        "needs_native_helper"
+      ],
+      "platform_notes": [
+        "Conditional skip: capability is not None and capabilities[capability].status != CapabilityStatus.AVAILABLE",
+        "pytest.skip(capabilities[capability].detail)"
+      ]
+    },
+    {
+      "file": "tests/test_export_metadata.py",
+      "suite": "python",
+      "area": "export",
+      "purpose": "Metadata changes must leave delivery-owned bytes and privacy intact.",
+      "test_count": 10,
+      "seconds": {
+        "windows": 15.8347,
+        "mac": null
+      },
+      "markers": [
+        "needs_native_helper",
+        "parametrize",
+        "slow"
+      ],
+      "requirements": [
+        "needs_native_helper"
+      ],
+      "platform_notes": [
+        "pytest.skip(\"Run tools/fetch_exiftool.py to install the pinned metadata helper.\")"
+      ]
+    },
+    {
+      "file": "tests/test_export_parallel.py",
+      "suite": "python",
+      "area": "export",
+      "purpose": "Checks export parallel behavior and regression contracts.",
+      "test_count": 9,
+      "seconds": {
+        "windows": 1.809,
+        "mac": null
+      },
+      "markers": [
+        "parametrize"
+      ],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_export_parity.py",
+      "suite": "python",
+      "area": "export",
+      "purpose": "Unit and end-to-end tests for the export/reference parity file-side check.",
+      "test_count": 21,
+      "seconds": {
+        "windows": 5.538,
+        "mac": null
+      },
+      "markers": [
+        "needs_native_helper",
+        "parametrize",
+        "slow"
+      ],
+      "requirements": [
+        "needs_native_helper"
+      ],
+      "platform_notes": [
+        "Conditional skip: capability.status != CapabilityStatus.AVAILABLE",
+        "pytest.skip(capability.detail)"
+      ]
+    },
+    {
+      "file": "tests/test_export_preset_writes.py",
+      "suite": "python",
+      "area": "export",
+      "purpose": "Independent API preset stores must not share a temporary filename.",
+      "test_count": 2,
+      "seconds": {
+        "windows": 0.0199,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_export_progress.py",
+      "suite": "python",
+      "area": "export",
+      "purpose": "Checks export progress behavior and regression contracts.",
+      "test_count": 14,
+      "seconds": {
+        "windows": 5.3845,
+        "mac": null
+      },
+      "markers": [
+        "needs_native_helper",
+        "parametrize"
+      ],
+      "requirements": [
+        "needs_native_helper"
+      ],
+      "platform_notes": [
+        "Conditional skip: capabilities['jpegxl_export'].status != CapabilityStatus.AVAILABLE",
+        "Conditional skip: resolve_binary('avifgainmaputil') is None",
+        "pytest.skip(\"JPEG XL encoder is unavailable\")",
+        "pytest.skip(\"avifgainmaputil is not installed\")"
+      ]
+    },
+    {
+      "file": "tests/test_export_shared_work.py",
+      "suite": "python",
+      "area": "export",
+      "purpose": "Export renditions share work they would otherwise repeat, with the same pixels.",
+      "test_count": 4,
+      "seconds": {
+        "windows": 0.0507,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_export_speed_profile.py",
+      "suite": "python",
+      "area": "export",
+      "purpose": "Checks export speed profile behavior and regression contracts.",
+      "test_count": 6,
+      "seconds": {
+        "windows": 12.434,
+        "mac": null
+      },
+      "markers": [
+        "parametrize",
+        "slow"
+      ],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_export_timing.py",
+      "suite": "python",
+      "area": "export",
+      "purpose": "Checks export timing behavior and regression contracts.",
+      "test_count": 7,
+      "seconds": {
+        "windows": 0.2162,
+        "mac": null
+      },
+      "markers": [
+        "parametrize"
+      ],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_export_y4m.py",
+      "suite": "python",
+      "area": "export",
+      "purpose": "Checks export y4m behavior and regression contracts.",
+      "test_count": 28,
+      "seconds": {
+        "windows": 0.7474,
+        "mac": null
+      },
+      "markers": [
+        "parametrize"
+      ],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_exposure_admission.py",
+      "suite": "python",
+      "area": "exposure",
+      "purpose": "Checks exposure admission behavior and regression contracts.",
+      "test_count": 12,
+      "seconds": {
+        "windows": 0.1106,
+        "mac": null
+      },
+      "markers": [
+        "parametrize"
+      ],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_extended_formats.py",
+      "suite": "python",
+      "area": "extended",
+      "purpose": "Checks extended formats behavior and regression contracts.",
+      "test_count": 95,
+      "seconds": {
+        "windows": 65.1579,
+        "mac": null
+      },
+      "markers": [
+        "needs_native_helper",
+        "parametrize",
+        "skipif",
+        "windows_only"
+      ],
+      "requirements": [
+        "needs_native_helper",
+        "windows_only"
+      ],
+      "platform_notes": [
+        "pytest.mark.skipif(__import__(\"hdr_finisher.binaries\", fromlist=[\"resolve_binary\"]).resolve_binary(\"hdrf-jxl-info\") is None,                     reason=\"Structured JPEG XL colour profiles need the native hdrf-jxl-info helper (Windows build only).\")",
+        "pytest.mark.skipif(os.name != \"nt\", reason=\"Windows drive-letter behavior\")"
+      ]
+    },
+    {
+      "file": "tests/test_file_gate.py",
+      "suite": "python",
+      "area": "file",
+      "purpose": "The Library's file gate: which files are listed and read (design section 6.9, edge cases F1-F18).",
+      "test_count": 38,
+      "seconds": {
+        "windows": 1.7952,
+        "mac": null
+      },
+      "markers": [
+        "parametrize",
+        "skipif",
+        "windows_only"
+      ],
+      "requirements": [
+        "windows_only"
+      ],
+      "platform_notes": [
+        "pytest.mark.skipif(not WINDOWS, reason=\"Windows file attributes\")",
+        "pytest.mark.skipif(not WINDOWS, reason=\"Windows junctions\")"
+      ]
+    },
+    {
+      "file": "tests/test_film_character.py",
+      "suite": "python",
+      "area": "film",
+      "purpose": "Stock metadata and saved ownership; rendering equations remain unchanged.",
+      "test_count": 23,
+      "seconds": {
+        "windows": 0.0644,
+        "mac": null
+      },
+      "markers": [
+        "parametrize"
+      ],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_film_controls.py",
+      "suite": "python",
+      "area": "film",
+      "purpose": "Physical paper/development controls; measured source data stays immutable.",
+      "test_count": 23,
+      "seconds": {
+        "windows": 4.0493,
+        "mac": null
+      },
+      "markers": [
+        "parametrize"
+      ],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_film_grain.py",
+      "suite": "python",
+      "area": "film",
+      "purpose": "The film grain field: statistics, texture, film types and strip exactness.",
+      "test_count": 19,
+      "seconds": {
+        "windows": 3.7206,
+        "mac": null
+      },
+      "markers": [
+        "parametrize"
+      ],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_film_stock.py",
+      "suite": "python",
+      "area": "film",
+      "purpose": "Checks film stock behavior and regression contracts.",
+      "test_count": 237,
+      "seconds": {
+        "windows": 15.1672,
+        "mac": null
+      },
+      "markers": [
+        "parametrize"
+      ],
+      "requirements": [],
+      "platform_notes": [
+        "Conditional skip: not (REAL_STOCK_DIR / 'kodak_portra_400.json').is_file()",
+        "pytest.skip(\"kodak_portra_400.json has not been baked yet\")"
+      ]
+    },
+    {
+      "file": "tests/test_focus_cached_map.py",
+      "suite": "python",
+      "area": "focus",
+      "purpose": "Checks focus cached map behavior and regression contracts.",
+      "test_count": 3,
+      "seconds": {
+        "windows": 0.8302,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_focus_camera_api.py",
+      "suite": "python",
+      "area": "focus",
+      "purpose": "Checks focus camera api behavior and regression contracts.",
+      "test_count": 4,
+      "seconds": {
+        "windows": 1.5447,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_focus_camera_quality.py",
+      "suite": "python",
+      "area": "focus",
+      "purpose": "Synthetic camera-JPEG checks; these do not establish real-eye accuracy.",
+      "test_count": 18,
+      "seconds": {
+        "windows": 0.8512,
+        "mac": null
+      },
+      "markers": [
+        "parametrize"
+      ],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_focus_camera_source.py",
+      "suite": "python",
+      "area": "focus",
+      "purpose": "Checks focus camera source behavior and regression contracts.",
+      "test_count": 6,
+      "seconds": {
+        "windows": 1.6124,
+        "mac": null
+      },
+      "markers": [
+        "parametrize"
+      ],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_focus_source_loading.py",
+      "suite": "python",
+      "area": "focus",
+      "purpose": "Focus source loading preserves import pixels without a Grade document.",
+      "test_count": 10,
+      "seconds": {
+        "windows": 0.115,
+        "mac": null
+      },
+      "markers": [
+        "parametrize"
+      ],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_folder_picker.py",
+      "suite": "python",
+      "area": "folder",
+      "purpose": "Checks folder picker behavior and regression contracts.",
+      "test_count": 6,
+      "seconds": {
+        "windows": 0.0114,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_frontend_controls_contract.py",
+      "suite": "python",
+      "area": "frontend",
+      "purpose": "Checks frontend controls contract behavior and regression contracts.",
+      "test_count": 12,
+      "seconds": {
+        "windows": 5.1974,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_frontend_editor_layout_contract.py",
+      "suite": "python",
+      "area": "frontend",
+      "purpose": "Checks frontend editor layout contract behavior and regression contracts.",
+      "test_count": 11,
+      "seconds": {
+        "windows": 0.5709,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_frontend_inventory_contract.py",
+      "suite": "python",
+      "area": "frontend",
+      "purpose": "Checks frontend inventory contract behavior and regression contracts.",
+      "test_count": 1,
+      "seconds": {
+        "windows": 0.0182,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_frontend_local_scope_contract.py",
+      "suite": "python",
+      "area": "frontend",
+      "purpose": "Checks frontend local scope contract behavior and regression contracts.",
+      "test_count": 20,
+      "seconds": {
+        "windows": 0.9928,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_frontend_presentation_contract.py",
+      "suite": "python",
+      "area": "frontend",
+      "purpose": "Checks frontend presentation contract behavior and regression contracts.",
+      "test_count": 6,
+      "seconds": {
+        "windows": 4.6047,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_frontend_render_pipeline_contract.py",
+      "suite": "python",
+      "area": "frontend",
+      "purpose": "Checks frontend render pipeline contract behavior and regression contracts.",
+      "test_count": 15,
+      "seconds": {
+        "windows": 4.3308,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_frontend_source_workflow_contract.py",
+      "suite": "python",
+      "area": "frontend",
+      "purpose": "Checks frontend source workflow contract behavior and regression contracts.",
+      "test_count": 17,
+      "seconds": {
+        "windows": 2.965,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_frontend_status_contract.py",
+      "suite": "python",
+      "area": "frontend",
+      "purpose": "Checks frontend status contract behavior and regression contracts.",
+      "test_count": 2,
+      "seconds": {
+        "windows": 0.0038,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_gainmap_import.py",
+      "suite": "python",
+      "area": "gainmap",
+      "purpose": "Checks gainmap import behavior and regression contracts.",
+      "test_count": 13,
+      "seconds": {
+        "windows": 38.4623,
+        "mac": null
+      },
+      "markers": [
+        "needs_native_helper",
+        "parametrize",
+        "skipif",
+        "slow"
+      ],
+      "requirements": [
+        "needs_native_helper"
+      ],
+      "platform_notes": [
+        "Conditional skip: capabilities[capability_name].status != CapabilityStatus.AVAILABLE",
+        "Conditional skip: resolve('hdrf-avif-decode') is None",
+        "pytest.mark.skipif(     probe_capabilities()[\"avif_decoder\"].status != CapabilityStatus.AVAILABLE,     reason=\"avifdec is unavailable\", )",
+        "pytest.mark.skipif(     probe_capabilities()[\"avif_gain_map_decoder\"].status != CapabilityStatus.AVAILABLE,     reason=\"AVIF gain-map decoder tools are unavailable\", )",
+        "pytest.skip(\"Native AVIF handoff is not built on this platform\")",
+        "pytest.skip(capabilities[capability_name].detail)"
+      ]
+    },
+    {
+      "file": "tests/test_geometry_audit.py",
+      "suite": "python",
+      "area": "geometry",
+      "purpose": "Checks geometry audit behavior and regression contracts.",
+      "test_count": 94,
+      "seconds": {
+        "windows": 1.3058,
+        "mac": null
+      },
+      "markers": [
+        "parametrize"
+      ],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_geometry_region.py",
+      "suite": "python",
+      "area": "geometry",
+      "purpose": "Phase 3: post-geometry region extraction must equal the full-frame path.",
+      "test_count": 51,
+      "seconds": {
+        "windows": 0.3428,
+        "mac": null
+      },
+      "markers": [
+        "parametrize"
+      ],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_geometry_roll_cache.py",
+      "suite": "python",
+      "area": "geometry",
+      "purpose": "Resampled source tiles are cut from the source, not from a rebuilt frame.",
+      "test_count": 8,
+      "seconds": {
+        "windows": 0.6134,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_gpu_delivery.py",
+      "suite": "python",
+      "area": "gpu",
+      "purpose": "Fast broker checks; the Electron driver checks real decoded GPU pixels.",
+      "test_count": 39,
+      "seconds": {
+        "windows": 8.9394,
+        "mac": null
+      },
+      "markers": [
+        "parametrize",
+        "serial"
+      ],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_gpu_mask_bitmap_verdict.py",
+      "suite": "python",
+      "area": "gpu",
+      "purpose": "Checks gpu mask bitmap verdict behavior and regression contracts.",
+      "test_count": 2,
+      "seconds": {
+        "windows": 0.0668,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_graceful_grades.py",
+      "suite": "python",
+      "area": "graceful",
+      "purpose": "Result checks for damaged and future saved grades. All files are disposable.",
+      "test_count": 45,
+      "seconds": {
+        "windows": 5.1016,
+        "mac": null
+      },
+      "markers": [
+        "parametrize"
+      ],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_grade_open_reuse.py",
+      "suite": "python",
+      "area": "grade",
+      "purpose": "Fast source identity and single-decode checks using disposable pixels.",
+      "test_count": 5,
+      "seconds": {
+        "windows": 1.1337,
+        "mac": null
+      },
+      "markers": [
+        "parametrize"
+      ],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_grade_sweep_summary.py",
+      "suite": "python",
+      "area": "grade",
+      "purpose": "Release reporting distinguishes frame noise and cancelled work from failures.",
+      "test_count": 2,
+      "seconds": {
+        "windows": 0.0015,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_grain_work.py",
+      "suite": "python",
+      "area": "grain",
+      "purpose": "Cancellation and exact grain output from baseline 88775059.",
+      "test_count": 13,
+      "seconds": {
+        "windows": 6.6657,
+        "mac": null
+      },
+      "markers": [
+        "slow"
+      ],
+      "requirements": [],
+      "platform_notes": [
+        "Conditional skip: cpu_budget.logical_cpus() < 2",
+        "pytest.skip(\"Multiple CPU workers are needed\")"
+      ]
+    },
+    {
+      "file": "tests/test_hdr_ceiling.py",
+      "suite": "python",
+      "area": "hdr",
+      "purpose": "Decoded HDR target enforcement and local correction.",
+      "test_count": 94,
+      "seconds": {
+        "windows": 597.5859,
+        "mac": null
+      },
+      "markers": [
+        "needs_native_helper",
+        "parametrize",
+        "slow"
+      ],
+      "requirements": [
+        "needs_native_helper"
+      ],
+      "platform_notes": [
+        "Conditional skip: backend.capability.status.value != 'available'",
+        "Conditional skip: not (resolve_binary('avifgainmaputil') and resolve_binary('avifdec'))",
+        "pytest.skip(\"Bundled AVIF gain-map tools are unavailable.\")",
+        "pytest.skip(backend.capability.detail)"
+      ]
+    },
+    {
+      "file": "tests/test_hdr_delivery.py",
+      "suite": "python",
+      "area": "hdr",
+      "purpose": "Checks hdr delivery behavior and regression contracts.",
+      "test_count": 6,
+      "seconds": {
+        "windows": 25.6688,
+        "mac": null
+      },
+      "markers": [
+        "needs_native_helper",
+        "parametrize",
+        "slow"
+      ],
+      "requirements": [
+        "needs_native_helper"
+      ],
+      "platform_notes": [
+        "Conditional skip: backend.capability.status.value != 'available'",
+        "pytest.skip(backend.capability.detail)"
+      ]
+    },
+    {
+      "file": "tests/test_hdr_from_sdr.py",
+      "suite": "python",
+      "area": "hdr",
+      "purpose": "Checks hdr from sdr behavior and regression contracts.",
+      "test_count": 17,
+      "seconds": {
+        "windows": 0.4109,
+        "mac": null
+      },
+      "markers": [
+        "parametrize"
+      ],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_highlight_attenuate.py",
+      "suite": "python",
+      "area": "highlight",
+      "purpose": "AgX-style Attenuate colour handling (prototype, October 2026): results, not wording.",
+      "test_count": 8,
+      "seconds": {
+        "windows": 0.0193,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_highlight_delivery_floor.py",
+      "suite": "python",
+      "area": "highlight",
+      "purpose": "Checks highlight delivery floor behavior and regression contracts.",
+      "test_count": 32,
+      "seconds": {
+        "windows": 189.0542,
+        "mac": null
+      },
+      "markers": [
+        "needs_native_helper",
+        "parametrize",
+        "slow"
+      ],
+      "requirements": [
+        "needs_native_helper"
+      ],
+      "platform_notes": [
+        "Conditional skip: backend.capability.status.value != 'available'",
+        "pytest.skip(backend.capability.detail)"
+      ]
+    },
+    {
+      "file": "tests/test_highlight_edge_colour.py",
+      "suite": "python",
+      "area": "highlight",
+      "purpose": "Edge-colour highlight reconstruction (prototype, October 2026): results on a synthetic clip.",
+      "test_count": 4,
+      "seconds": {
+        "windows": 1.3936,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_highlight_edge_gpu.py",
+      "suite": "python",
+      "area": "highlight",
+      "purpose": "Edge-colour uses the shared delivery queue without changing source identity.",
+      "test_count": 16,
+      "seconds": {
+        "windows": 4.3446,
+        "mac": null
+      },
+      "markers": [
+        "parametrize"
+      ],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_histogram_correctness.py",
+      "suite": "python",
+      "area": "histogram",
+      "purpose": "Checks histogram correctness behavior and regression contracts.",
+      "test_count": 5,
+      "seconds": {
+        "windows": 0.6277,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_hosting_probe.py",
+      "suite": "python",
+      "area": "hosting",
+      "purpose": "Checks hosting probe behavior and regression contracts.",
+      "test_count": 3,
+      "seconds": {
+        "windows": 0.0276,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_hsl.py",
+      "suite": "python",
+      "area": "hsl",
+      "purpose": "Behavioral contract for the production Python port of the HSL prototype.",
+      "test_count": 7,
+      "seconds": {
+        "windows": 2.2107,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_hsl_integration.py",
+      "suite": "python",
+      "area": "hsl",
+      "purpose": "Pipeline, settings carriers, exact neutral and actual-stage sampling.",
+      "test_count": 49,
+      "seconds": {
+        "windows": 1.5601,
+        "mac": null
+      },
+      "markers": [
+        "parametrize"
+      ],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_hsl_selection.py",
+      "suite": "python",
+      "area": "hsl",
+      "purpose": "Behaviour of the shared colour selection CPU reference and its use by HSL.",
+      "test_count": 10,
+      "seconds": {
+        "windows": 0.0433,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_hue_mask.py",
+      "suite": "python",
+      "area": "hue",
+      "purpose": "Local hue-mask leaves on the shared colour selection (selected before HSL).",
+      "test_count": 9,
+      "seconds": {
+        "windows": 0.2063,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_import_bands.py",
+      "suite": "python",
+      "area": "import",
+      "purpose": "Checks import bands behavior and regression contracts.",
+      "test_count": 11,
+      "seconds": {
+        "windows": 0.5048,
+        "mac": null
+      },
+      "markers": [
+        "parametrize"
+      ],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_import_opening.py",
+      "suite": "python",
+      "area": "import",
+      "purpose": "Checks import opening behavior and regression contracts.",
+      "test_count": 10,
+      "seconds": {
+        "windows": 0.0693,
+        "mac": null
+      },
+      "markers": [
+        "parametrize"
+      ],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_instrument_work.py",
+      "suite": "python",
+      "area": "instrument",
+      "purpose": "Checks instrument work behavior and regression contracts.",
+      "test_count": 2,
+      "seconds": {
+        "windows": 0.1658,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_jpegxl_helper_fallback.py",
+      "suite": "python",
+      "area": "jpegxl",
+      "purpose": "Checks jpegxl helper fallback behavior and regression contracts.",
+      "test_count": 13,
+      "seconds": {
+        "windows": 10.0105,
+        "mac": null
+      },
+      "markers": [
+        "parametrize"
+      ],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_jpegxl_marker_validation.py",
+      "suite": "python",
+      "area": "jpegxl",
+      "purpose": "Bad typed marker values must be reported as a JPEG XL input error.",
+      "test_count": 5,
+      "seconds": {
+        "windows": 0.0492,
+        "mac": null
+      },
+      "markers": [
+        "parametrize"
+      ],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_large_avif_import_performance.py",
+      "suite": "python",
+      "area": "large",
+      "purpose": "Checks large avif import performance behavior and regression contracts.",
+      "test_count": 1,
+      "seconds": {
+        "windows": 0.0004,
+        "mac": null
+      },
+      "markers": [
+        "needs_test_photos",
+        "skipif"
+      ],
+      "requirements": [
+        "needs_test_photos"
+      ],
+      "platform_notes": [
+        "pytest.mark.skipif(not LARGE_AVIF, reason=\"Set HDR_FINISHER_LARGE_AVIF to run the local 40+ MP AVIF gate.\")"
+      ]
+    },
+    {
+      "file": "tests/test_launcher.py",
+      "suite": "python",
+      "area": "launcher",
+      "purpose": "Checks launcher behavior and regression contracts.",
+      "test_count": 7,
+      "seconds": {
+        "windows": 1.9938,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_lens_correction.py",
+      "suite": "python",
+      "area": "lens",
+      "purpose": "Checks lens correction behavior and regression contracts.",
+      "test_count": 23,
+      "seconds": {
+        "windows": 15.6724,
+        "mac": null
+      },
+      "markers": [
+        "parametrize"
+      ],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_lens_filter.py",
+      "suite": "python",
+      "area": "lens",
+      "purpose": "Physical lens-filter results; no source-text contracts.",
+      "test_count": 24,
+      "seconds": {
+        "windows": 0.4822,
+        "mac": null
+      },
+      "markers": [
+        "parametrize"
+      ],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_library_album_commands.py",
+      "suite": "python",
+      "area": "library",
+      "purpose": "Album creation commands on disposable sources, each one undo step.",
+      "test_count": 4,
+      "seconds": {
+        "windows": 3.4967,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_library_cache.py",
+      "suite": "python",
+      "area": "library",
+      "purpose": "Behaviour checks for the shared Library cache and its JPEG transport.",
+      "test_count": 19,
+      "seconds": {
+        "windows": 29.2215,
+        "mac": null
+      },
+      "markers": [
+        "parametrize",
+        "slow"
+      ],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_library_collections.py",
+      "suite": "python",
+      "area": "library",
+      "purpose": "Tag management, albums and the Library index, on temporary copies only.",
+      "test_count": 11,
+      "seconds": {
+        "windows": 4.2218,
+        "mac": null
+      },
+      "markers": [
+        "serial"
+      ],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_library_copies.py",
+      "suite": "python",
+      "area": "library",
+      "purpose": "Checks library copies behavior and regression contracts.",
+      "test_count": 19,
+      "seconds": {
+        "windows": 16.1328,
+        "mac": null
+      },
+      "markers": [
+        "parametrize"
+      ],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_library_cpu_bands.py",
+      "suite": "python",
+      "area": "library",
+      "purpose": "Checks library cpu bands behavior and regression contracts.",
+      "test_count": 7,
+      "seconds": {
+        "windows": 0.0995,
+        "mac": null
+      },
+      "markers": [
+        "parametrize"
+      ],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_library_direct_draw.py",
+      "suite": "python",
+      "area": "library",
+      "purpose": "Which reduced Library scenes the page may draw from its own planes.",
+      "test_count": 2,
+      "seconds": {
+        "windows": 0.0014,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_library_dng.py",
+      "suite": "python",
+      "area": "library",
+      "purpose": "Checks library dng behavior and regression contracts.",
+      "test_count": 33,
+      "seconds": {
+        "windows": 0.6067,
+        "mac": null
+      },
+      "markers": [
+        "parametrize",
+        "usefixtures"
+      ],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_library_edge_fallback.py",
+      "suite": "python",
+      "area": "library",
+      "purpose": "Scoped reconstruction timing, cancellation and isolation after GPU rejection.",
+      "test_count": 9,
+      "seconds": {
+        "windows": 0.0181,
+        "mac": null
+      },
+      "markers": [
+        "parametrize",
+        "serial"
+      ],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_library_embedded_jpeg.py",
+      "suite": "python",
+      "area": "library",
+      "purpose": "Checks library embedded jpeg behavior and regression contracts.",
+      "test_count": 11,
+      "seconds": {
+        "windows": 2.4085,
+        "mac": null
+      },
+      "markers": [
+        "needs_test_photos",
+        "parametrize"
+      ],
+      "requirements": [
+        "needs_test_photos"
+      ],
+      "platform_notes": [
+        "Conditional skip: not path.exists()",
+        "pytest.skip('Mixed v1 fixture required: ' + name)"
+      ]
+    },
+    {
+      "file": "tests/test_library_estimates.py",
+      "suite": "python",
+      "area": "library",
+      "purpose": "Checks library estimates behavior and regression contracts.",
+      "test_count": 74,
+      "seconds": {
+        "windows": 5.9443,
+        "mac": null
+      },
+      "markers": [
+        "parametrize"
+      ],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_library_file_cache_index.py",
+      "suite": "python",
+      "area": "library",
+      "purpose": "Checks library file cache index behavior and regression contracts.",
+      "test_count": 16,
+      "seconds": {
+        "windows": 3.3827,
+        "mac": null
+      },
+      "markers": [
+        "parametrize"
+      ],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_library_file_commands.py",
+      "suite": "python",
+      "area": "library",
+      "purpose": "Checks library file commands behavior and regression contracts.",
+      "test_count": 43,
+      "seconds": {
+        "windows": 5.6651,
+        "mac": null
+      },
+      "markers": [
+        "parametrize",
+        "skipif",
+        "windows_only"
+      ],
+      "requirements": [
+        "windows_only"
+      ],
+      "platform_notes": [
+        "Conditional skip: os.name != 'nt'",
+        "pytest.mark.skipif(os.name != 'nt' and sys.platform != 'darwin', reason='Library file commands require Windows or macOS.')",
+        "pytest.skip('Windows named streams')"
+      ]
+    },
+    {
+      "file": "tests/test_library_file_delete.py",
+      "suite": "python",
+      "area": "library",
+      "purpose": "Checks library file delete behavior and regression contracts.",
+      "test_count": 52,
+      "seconds": {
+        "windows": 9.5185,
+        "mac": null
+      },
+      "markers": [
+        "mac_only",
+        "parametrize",
+        "skipif",
+        "windows_only"
+      ],
+      "requirements": [
+        "mac_only",
+        "windows_only"
+      ],
+      "platform_notes": [
+        "Conditional skip: kind == 'link'",
+        "Conditional skip: not library_recycle.available(photo)",
+        "Conditional skip: os.name != 'nt'",
+        "Conditional skip: os.name == 'nt' and getattr(e, 'winerror', None) == 1314",
+        "pytest.mark.skipif(os.name != 'nt' and sys.platform != 'darwin', reason='Library file commands require Windows or macOS.')",
+        "pytest.mark.skipif(os.name != 'nt', reason='Only Windows offers explicit permanent deletion.')",
+        "pytest.mark.skipif(sys.platform!='darwin',reason='macOS Trash registers in-app Undo.')",
+        "pytest.skip('This disposable drive has no Bin')",
+        "pytest.skip('Windows did not grant symlink creation')",
+        "pytest.skip('Windows explicit RecycleItem')"
+      ]
+    },
+    {
+      "file": "tests/test_library_file_exfat.py",
+      "suite": "python",
+      "area": "library",
+      "purpose": "Exercise D's actual unstable IDs only in newly made disposable folders.",
+      "test_count": 43,
+      "seconds": {
+        "windows": 174.8357,
+        "mac": null
+      },
+      "markers": [
+        "parametrize",
+        "slow"
+      ],
+      "requirements": [],
+      "platform_notes": [
+        "Conditional skip: os.name != 'nt' or stable_ids(output)",
+        "pytest.skip('This workspace is not on a FAT filesystem')"
+      ]
+    },
+    {
+      "file": "tests/test_library_file_folders.py",
+      "suite": "python",
+      "area": "library",
+      "purpose": "Checks library file folders behavior and regression contracts.",
+      "test_count": 22,
+      "seconds": {
+        "windows": 3.856,
+        "mac": null
+      },
+      "markers": [
+        "parametrize",
+        "skipif"
+      ],
+      "requirements": [],
+      "platform_notes": [
+        "pytest.mark.skipif(os.name != 'nt' and sys.platform != 'darwin', reason='Library file commands require Windows or macOS.')"
+      ]
+    },
+    {
+      "file": "tests/test_library_file_macos.py",
+      "suite": "python",
+      "area": "library",
+      "purpose": "Disposable-file macOS coverage; real Trash checks require the shared lock.",
+      "test_count": 38,
+      "seconds": {
+        "windows": 0.0112,
+        "mac": null
+      },
+      "markers": [
+        "mac_only",
+        "parametrize",
+        "skipif"
+      ],
+      "requirements": [
+        "mac_only"
+      ],
+      "platform_notes": [
+        "pytest.mark.skipif(not os.environ.get('HDR_FINISHER_TEST_CROSS_VOLUME'), reason='No disposable second volume selected')",
+        "pytest.mark.skipif(os.environ.get('HDR_FINISHER_TEST_MAC_TRASH') != '1',     reason='Run with HDR_FINISHER_TEST_MAC_TRASH=1 through gpu-run-lock.py')",
+        "pytest.mark.skipif(sys.platform != 'darwin', reason='macOS native primitives')"
+      ]
+    },
+    {
+      "file": "tests/test_library_file_platform.py",
+      "suite": "python",
+      "area": "library",
+      "purpose": "Checks library file platform behavior and regression contracts.",
+      "test_count": 1,
+      "seconds": {
+        "windows": 0.0372,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_library_finished_thumbnails.py",
+      "suite": "python",
+      "area": "library",
+      "purpose": "Checks library finished thumbnails behavior and regression contracts.",
+      "test_count": 12,
+      "seconds": {
+        "windows": 1.0177,
+        "mac": null
+      },
+      "markers": [
+        "parametrize"
+      ],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_library_folder_checks.py",
+      "suite": "python",
+      "area": "library",
+      "purpose": "Folder checks on disposable photos, with a fake clock and no real timer waits.",
+      "test_count": 14,
+      "seconds": {
+        "windows": 6.6805,
+        "mac": null
+      },
+      "markers": [
+        "serial",
+        "windows_only",
+        "xfail"
+      ],
+      "requirements": [
+        "windows_only"
+      ],
+      "platform_notes": [
+        "Conditional skip: os.name != 'nt'",
+        "pytest.skip(\"Windows change notification\")"
+      ]
+    },
+    {
+      "file": "tests/test_library_folder_commands.py",
+      "suite": "python",
+      "area": "library",
+      "purpose": "Checks library folder commands behavior and regression contracts.",
+      "test_count": 20,
+      "seconds": {
+        "windows": 0.0943,
+        "mac": null
+      },
+      "markers": [
+        "parametrize"
+      ],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_library_folder_stream.py",
+      "suite": "python",
+      "area": "library",
+      "purpose": "Folder streaming reads the index first and bounds discovery/reconciliation.",
+      "test_count": 12,
+      "seconds": {
+        "windows": 2.2349,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_library_gpu_raw.py",
+      "suite": "python",
+      "area": "library",
+      "purpose": "Camera RAW Library thumbnails developed on the GPU: the backend half.",
+      "test_count": 29,
+      "seconds": {
+        "windows": 0.9088,
+        "mac": null
+      },
+      "markers": [
+        "parametrize"
+      ],
+      "requirements": [],
+      "platform_notes": [
+        "Conditional skip: profile is None",
+        "pytest.skip(\"Lensfun profile unavailable\")"
+      ]
+    },
+    {
+      "file": "tests/test_library_grade_pictures.py",
+      "suite": "python",
+      "area": "library",
+      "purpose": "Saved-grade hand-offs: identity, persistent pixels, and no development.",
+      "test_count": 16,
+      "seconds": {
+        "windows": 9.3957,
+        "mac": null
+      },
+      "markers": [
+        "parametrize"
+      ],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_library_grades.py",
+      "suite": "python",
+      "area": "library",
+      "purpose": "Slice 3 Stage A: real grade documents, disposable files, writer/recovery boundaries.",
+      "test_count": 24,
+      "seconds": {
+        "windows": 60.0313,
+        "mac": null
+      },
+      "markers": [
+        "needs_native_helper",
+        "parametrize",
+        "serial",
+        "slow"
+      ],
+      "requirements": [
+        "needs_native_helper"
+      ],
+      "platform_notes": [
+        "Conditional skip: capabilities[capability].status != CapabilityStatus.AVAILABLE",
+        "pytest.skip(f\"{capability} is not available\")"
+      ]
+    },
+    {
+      "file": "tests/test_library_grants.py",
+      "suite": "python",
+      "area": "library",
+      "purpose": "Checks library grants behavior and regression contracts.",
+      "test_count": 6,
+      "seconds": {
+        "windows": 0.0386,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_library_health.py",
+      "suite": "python",
+      "area": "library",
+      "purpose": "Stage B health, controls and diagnostics on disposable photos only.",
+      "test_count": 13,
+      "seconds": {
+        "windows": 25.4078,
+        "mac": null
+      },
+      "markers": [
+        "parametrize",
+        "serial",
+        "slow"
+      ],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_library_history.py",
+      "suite": "python",
+      "area": "library",
+      "purpose": "Checks library history behavior and regression contracts.",
+      "test_count": 10,
+      "seconds": {
+        "windows": 6.3668,
+        "mac": null
+      },
+      "markers": [
+        "parametrize"
+      ],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_library_lane_progress.py",
+      "suite": "python",
+      "area": "library",
+      "purpose": "Exercise the real helper lanes with deterministic decode checkpoints.",
+      "test_count": 1,
+      "seconds": {
+        "windows": 0.0098,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_library_live.py",
+      "suite": "python",
+      "area": "library",
+      "purpose": "Stored source identity, read-only grades and the existing cache controls.",
+      "test_count": 42,
+      "seconds": {
+        "windows": 17.7845,
+        "mac": null
+      },
+      "markers": [
+        "parametrize",
+        "serial"
+      ],
+      "requirements": [],
+      "platform_notes": [
+        "Conditional skip: logical_cpus() < 2",
+        "pytest.skip(\"One logical CPU\")"
+      ]
+    },
+    {
+      "file": "tests/test_library_marks.py",
+      "suite": "python",
+      "area": "library",
+      "purpose": "Checks library marks behavior and regression contracts.",
+      "test_count": 16,
+      "seconds": {
+        "windows": 0.9206,
+        "mac": null
+      },
+      "markers": [
+        "parametrize"
+      ],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_library_measurement_identity.py",
+      "suite": "python",
+      "area": "library",
+      "purpose": "Checks library measurement identity behavior and regression contracts.",
+      "test_count": 2,
+      "seconds": {
+        "windows": 0.7274,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_library_membership.py",
+      "suite": "python",
+      "area": "library",
+      "purpose": "Pins/album scope on disposable photos and app data only.",
+      "test_count": 12,
+      "seconds": {
+        "windows": 2.6944,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_library_metadata.py",
+      "suite": "python",
+      "area": "library",
+      "purpose": "Checks library metadata behavior and regression contracts.",
+      "test_count": 7,
+      "seconds": {
+        "windows": 0.0638,
+        "mac": null
+      },
+      "markers": [
+        "parametrize"
+      ],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_library_native.py",
+      "suite": "python",
+      "area": "library",
+      "purpose": "Checks library native behavior and regression contracts.",
+      "test_count": 4,
+      "seconds": {
+        "windows": 0.385,
+        "mac": null
+      },
+      "markers": [
+        "serial"
+      ],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_library_os_junk.py",
+      "suite": "python",
+      "area": "library",
+      "purpose": "Checks library os junk behavior and regression contracts.",
+      "test_count": 3,
+      "seconds": {
+        "windows": 0.0599,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_library_overlay_identity.py",
+      "suite": "python",
+      "area": "library",
+      "purpose": "Checks library overlay identity behavior and regression contracts.",
+      "test_count": 2,
+      "seconds": {
+        "windows": 0.8916,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_library_overlays.py",
+      "suite": "python",
+      "area": "library",
+      "purpose": "Checks library overlays behavior and regression contracts.",
+      "test_count": 54,
+      "seconds": {
+        "windows": 1.3071,
+        "mac": null
+      },
+      "markers": [
+        "parametrize"
+      ],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_library_paste.py",
+      "suite": "python",
+      "area": "library",
+      "purpose": "Selective bulk paste exercises saved documents, virtual items and durable work.",
+      "test_count": 31,
+      "seconds": {
+        "windows": 13.5135,
+        "mac": null
+      },
+      "markers": [
+        "parametrize"
+      ],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_library_picture_errors.py",
+      "suite": "python",
+      "area": "library",
+      "purpose": "Failed pictures are durable cache results, never repeated decoder jobs.",
+      "test_count": 42,
+      "seconds": {
+        "windows": 24.762,
+        "mac": null
+      },
+      "markers": [
+        "parametrize",
+        "serial"
+      ],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_library_pictures.py",
+      "suite": "python",
+      "area": "library",
+      "purpose": "Checks library pictures behavior and regression contracts.",
+      "test_count": 24,
+      "seconds": {
+        "windows": 4.6586,
+        "mac": null
+      },
+      "markers": [
+        "parametrize",
+        "serial"
+      ],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_library_pins.py",
+      "suite": "python",
+      "area": "library",
+      "purpose": "Checks library pins behavior and regression contracts.",
+      "test_count": 2,
+      "seconds": {
+        "windows": 13.6495,
+        "mac": null
+      },
+      "markers": [
+        "slow"
+      ],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_library_raw.py",
+      "suite": "python",
+      "area": "library",
+      "purpose": "Checks library raw behavior and regression contracts.",
+      "test_count": 9,
+      "seconds": {
+        "windows": 6.0736,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_library_reduced.py",
+      "suite": "python",
+      "area": "library",
+      "purpose": "Checks library reduced behavior and regression contracts.",
+      "test_count": 38,
+      "seconds": {
+        "windows": 2.7087,
+        "mac": null
+      },
+      "markers": [
+        "parametrize"
+      ],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_library_refresh.py",
+      "suite": "python",
+      "area": "library",
+      "purpose": "Refresh thumbnail removes one photo's stored pictures and nothing else.",
+      "test_count": 10,
+      "seconds": {
+        "windows": 0.5369,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_library_responsiveness.py",
+      "suite": "python",
+      "area": "library",
+      "purpose": "Foreground results and lock isolation, using disposable data only.",
+      "test_count": 8,
+      "seconds": {
+        "windows": 1.8985,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_library_review.py",
+      "suite": "python",
+      "area": "library",
+      "purpose": "Checks library review behavior and regression contracts.",
+      "test_count": 2,
+      "seconds": {
+        "windows": 0.0017,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_library_rgb.py",
+      "suite": "python",
+      "area": "library",
+      "purpose": "Checks library rgb behavior and regression contracts.",
+      "test_count": 70,
+      "seconds": {
+        "windows": 63.3598,
+        "mac": null
+      },
+      "markers": [
+        "needs_test_photos",
+        "parametrize",
+        "slow"
+      ],
+      "requirements": [
+        "needs_test_photos"
+      ],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_library_scheduler.py",
+      "suite": "python",
+      "area": "library",
+      "purpose": "Execute the RAM admission rules without sampling the test runner.",
+      "test_count": 52,
+      "seconds": {
+        "windows": 0.0609,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_library_screen_previews.py",
+      "suite": "python",
+      "area": "library",
+      "purpose": "Persistent finished pictures: identity, independent eviction and HDR ceiling.",
+      "test_count": 6,
+      "seconds": {
+        "windows": 0.9891,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_library_settings_writer.py",
+      "suite": "python",
+      "area": "library",
+      "purpose": "Stage A recovery/Undo boundaries, using only disposable photos and settings.",
+      "test_count": 36,
+      "seconds": {
+        "windows": 8.1948,
+        "mac": null
+      },
+      "markers": [
+        "parametrize",
+        "serial"
+      ],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_library_smart_albums.py",
+      "suite": "python",
+      "area": "library",
+      "purpose": "Checks library smart albums behavior and regression contracts.",
+      "test_count": 16,
+      "seconds": {
+        "windows": 4.5932,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_library_source_baseline.py",
+      "suite": "python",
+      "area": "library",
+      "purpose": "Exercise the measurement driver against real stored scenes in a disposable profile.",
+      "test_count": 3,
+      "seconds": {
+        "windows": 27.0087,
+        "mac": null
+      },
+      "markers": [
+        "skipif",
+        "slow"
+      ],
+      "requirements": [],
+      "platform_notes": [
+        "pytest.mark.skipif(sys.platform == \"darwin\" and bool(os.environ.get(\"CI\")), reason=\"Overlap timing assumption does not hold on the macOS CI runner (0.9.2 follow-up).\")"
+      ]
+    },
+    {
+      "file": "tests/test_library_stage_c.py",
+      "suite": "python",
+      "area": "library",
+      "purpose": "Stage C recovery on disposable photos, folders, databases and processes.",
+      "test_count": 17,
+      "seconds": {
+        "windows": 5.1317,
+        "mac": null
+      },
+      "markers": [
+        "parametrize",
+        "serial",
+        "skipif",
+        "windows_only"
+      ],
+      "requirements": [
+        "windows_only"
+      ],
+      "platform_notes": [
+        "pytest.mark.skipif(os.name != \"nt\", reason=\"Windows case-insensitive filename semantics\")"
+      ]
+    },
+    {
+      "file": "tests/test_library_startup_logging.py",
+      "suite": "python",
+      "area": "library",
+      "purpose": "Checks library startup logging behavior and regression contracts.",
+      "test_count": 2,
+      "seconds": {
+        "windows": 0.0327,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_library_stopwatch.py",
+      "suite": "python",
+      "area": "library",
+      "purpose": "Checks library stopwatch behavior and regression contracts.",
+      "test_count": 1,
+      "seconds": {
+        "windows": 0.1925,
+        "mac": null
+      },
+      "markers": [
+        "serial"
+      ],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_library_test_patterns.py",
+      "suite": "python",
+      "area": "library",
+      "purpose": "Checks library test patterns behavior and regression contracts.",
+      "test_count": 3,
+      "seconds": {
+        "windows": 1.4735,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_library_trim_concurrency.py",
+      "suite": "python",
+      "area": "library",
+      "purpose": "A blocked disk spill must not own the shared transport lock.",
+      "test_count": 1,
+      "seconds": {
+        "windows": 0.0481,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_library_worker.py",
+      "suite": "python",
+      "area": "library",
+      "purpose": "Checks library worker behavior and regression contracts.",
+      "test_count": 21,
+      "seconds": {
+        "windows": 42.533,
+        "mac": null
+      },
+      "markers": [
+        "parametrize",
+        "serial",
+        "slow"
+      ],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_linear_dng.py",
+      "suite": "python",
+      "area": "linear",
+      "purpose": "Checks linear dng behavior and regression contracts.",
+      "test_count": 26,
+      "seconds": {
+        "windows": 0.4187,
+        "mac": null
+      },
+      "markers": [
+        "needs_native_helper",
+        "needs_test_photos",
+        "parametrize",
+        "usefixtures"
+      ],
+      "requirements": [
+        "needs_native_helper",
+        "needs_test_photos"
+      ],
+      "platform_notes": [
+        "Conditional skip: compression in {'jpegxl', 'jpegxl_lossy'}",
+        "Conditional skip: not imagecodecs.JPEGXL.available",
+        "Conditional skip: not root.exists()",
+        "pytest.skip(\"Shared HDR Test Images corpus is not present.\")",
+        "pytest.skip('JPEG XL decoder unavailable')"
+      ]
+    },
+    {
+      "file": "tests/test_linear_dng_probe.py",
+      "suite": "python",
+      "area": "linear",
+      "purpose": "Checks linear dng probe behavior and regression contracts.",
+      "test_count": 11,
+      "seconds": {
+        "windows": 0.0068,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_linked_sdr_tail_probe.py",
+      "suite": "python",
+      "area": "linked",
+      "purpose": "Checks linked sdr tail probe behavior and regression contracts.",
+      "test_count": 8,
+      "seconds": {
+        "windows": 0.0134,
+        "mac": null
+      },
+      "markers": [
+        "parametrize"
+      ],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_linux_launcher.py",
+      "suite": "python",
+      "area": "linux",
+      "purpose": "Checks linux launcher behavior and regression contracts.",
+      "test_count": 1,
+      "seconds": {
+        "windows": 0.0003,
+        "mac": null
+      },
+      "markers": [
+        "posix_only",
+        "skipif"
+      ],
+      "requirements": [
+        "posix_only"
+      ],
+      "platform_notes": [
+        "pytest.mark.skipif(os.name == \"nt\", reason=\"POSIX parent-process behavior\")"
+      ]
+    },
+    {
+      "file": "tests/test_loader_fixtures.py",
+      "suite": "python",
+      "area": "loader",
+      "purpose": "Checks loader fixtures behavior and regression contracts.",
+      "test_count": 61,
+      "seconds": {
+        "windows": 2.1617,
+        "mac": null
+      },
+      "markers": [
+        "needs_test_photos",
+        "parametrize"
+      ],
+      "requirements": [
+        "needs_test_photos"
+      ],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_loader_interpretation.py",
+      "suite": "python",
+      "area": "loader",
+      "purpose": "A manual interpretation resolves both fields and starts from encoded pixels.",
+      "test_count": 10,
+      "seconds": {
+        "windows": 1.3025,
+        "mac": null
+      },
+      "markers": [
+        "needs_native_helper",
+        "parametrize",
+        "skipif"
+      ],
+      "requirements": [
+        "needs_native_helper"
+      ],
+      "platform_notes": [
+        "pytest.mark.skipif(__import__(\"hdr_finisher.binaries\", fromlist=[\"resolve_binary\"]).resolve_binary(\"hdrf-jxl-info\") is None,                     reason=\"Structured JPEG XL colour profiles need the native hdrf-jxl-info helper (Windows build only).\")"
+      ]
+    },
+    {
+      "file": "tests/test_local_adjustments.py",
+      "suite": "python",
+      "area": "local",
+      "purpose": "Checks local adjustments behavior and regression contracts.",
+      "test_count": 117,
+      "seconds": {
+        "windows": 5.7682,
+        "mac": null
+      },
+      "markers": [
+        "parametrize"
+      ],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_log_noise.py",
+      "suite": "python",
+      "area": "log",
+      "purpose": "Checks log noise behavior and regression contracts.",
+      "test_count": 2,
+      "seconds": {
+        "windows": 0.0033,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_log_timeline.py",
+      "suite": "python",
+      "area": "log",
+      "purpose": "Checks log timeline behavior and regression contracts.",
+      "test_count": 1,
+      "seconds": {
+        "windows": 4.3415,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_machine_tooling.py",
+      "suite": "python",
+      "area": "machine",
+      "purpose": "Tooling checks use disposable locks and small child processes, never the GPU.",
+      "test_count": 11,
+      "seconds": {
+        "windows": 46.5702,
+        "mac": null
+      },
+      "markers": [
+        "mac_only",
+        "posix_only",
+        "skipif",
+        "slow"
+      ],
+      "requirements": [
+        "mac_only",
+        "posix_only"
+      ],
+      "platform_notes": [
+        "pytest.mark.skipif(os.name == 'nt', reason='POSIX groups; Windows uses existing taskkill /T')",
+        "pytest.mark.skipif(sys.platform != 'darwin', reason='macOS physical-footprint diagnostic')"
+      ]
+    },
+    {
+      "file": "tests/test_mask_blur_strips.py",
+      "suite": "python",
+      "area": "mask",
+      "purpose": "Checks mask blur strips behavior and regression contracts.",
+      "test_count": 48,
+      "seconds": {
+        "windows": 0.2939,
+        "mac": null
+      },
+      "markers": [
+        "parametrize"
+      ],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_mask_region.py",
+      "suite": "python",
+      "area": "mask",
+      "purpose": "Exact masks for a region only (Viewport-Bounded GPU Preview PRD 5.1).",
+      "test_count": 60,
+      "seconds": {
+        "windows": 9.0543,
+        "mac": null
+      },
+      "markers": [
+        "parametrize"
+      ],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_mask_softness.py",
+      "suite": "python",
+      "area": "mask",
+      "purpose": "The soft-mask rule (Viewport-Bounded GPU Preview PRD 5.1).",
+      "test_count": 8,
+      "seconds": {
+        "windows": 8.3976,
+        "mac": null
+      },
+      "markers": [
+        "slow"
+      ],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_mask_work.py",
+      "suite": "python",
+      "area": "mask",
+      "purpose": "Checks mask work behavior and regression contracts.",
+      "test_count": 12,
+      "seconds": {
+        "windows": 2.5816,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_media_browser_locations.py",
+      "suite": "python",
+      "area": "media",
+      "purpose": "Saved browser locations are shortcuts only; Library pins stay separate (Steve, November 13, 2026).",
+      "test_count": 1,
+      "seconds": {
+        "windows": 0.4849,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_media_browser_peek.py",
+      "suite": "python",
+      "area": "media",
+      "purpose": "Checks media browser peek behavior and regression contracts.",
+      "test_count": 6,
+      "seconds": {
+        "windows": 0.8062,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_metadata.py",
+      "suite": "python",
+      "area": "metadata",
+      "purpose": "Checks metadata behavior and regression contracts.",
+      "test_count": 16,
+      "seconds": {
+        "windows": 0.0168,
+        "mac": null
+      },
+      "markers": [
+        "parametrize"
+      ],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_metadata_helper_lifecycle.py",
+      "suite": "python",
+      "area": "metadata",
+      "purpose": "Metadata helper shutdown releases pipes as well as the child process.",
+      "test_count": 1,
+      "seconds": {
+        "windows": 0.9267,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_micro_grain_cpu_preview.py",
+      "suite": "python",
+      "area": "micro",
+      "purpose": "Checks micro grain cpu preview behavior and regression contracts.",
+      "test_count": 52,
+      "seconds": {
+        "windows": 13.3031,
+        "mac": null
+      },
+      "markers": [
+        "parametrize"
+      ],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_model_declaration_contracts.py",
+      "suite": "python",
+      "area": "model",
+      "purpose": "Checks model declaration contracts behavior and regression contracts.",
+      "test_count": 2,
+      "seconds": {
+        "windows": 0.0084,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_native_source_stream.py",
+      "suite": "python",
+      "area": "native",
+      "purpose": "Checks native source stream behavior and regression contracts.",
+      "test_count": 16,
+      "seconds": {
+        "windows": 0.187,
+        "mac": null
+      },
+      "markers": [
+        "parametrize"
+      ],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_negative_source_gamut.py",
+      "suite": "python",
+      "area": "negative",
+      "purpose": "Import-boundary gamut projection: signed conversion, shared routes and cache identity.",
+      "test_count": 11,
+      "seconds": {
+        "windows": 0.0317,
+        "mac": null
+      },
+      "markers": [
+        "parametrize"
+      ],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_peak_accuracy.py",
+      "suite": "python",
+      "area": "peak",
+      "purpose": "Checks peak accuracy behavior and regression contracts.",
+      "test_count": 6,
+      "seconds": {
+        "windows": 0.2678,
+        "mac": null
+      },
+      "markers": [
+        "parametrize"
+      ],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_performance_pipeline.py",
+      "suite": "python",
+      "area": "performance",
+      "purpose": "Checks performance pipeline behavior and regression contracts.",
+      "test_count": 12,
+      "seconds": {
+        "windows": 0.2167,
+        "mac": null
+      },
+      "markers": [
+        "parametrize"
+      ],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_photo_framing.py",
+      "suite": "python",
+      "area": "photo",
+      "purpose": "Checks photo framing behavior and regression contracts.",
+      "test_count": 39,
+      "seconds": {
+        "windows": 1.9308,
+        "mac": null
+      },
+      "markers": [
+        "needs_native_helper",
+        "parametrize",
+        "usefixtures"
+      ],
+      "requirements": [
+        "needs_native_helper"
+      ],
+      "platform_notes": [
+        "Conditional skip: caps['jpegxl_export'].status.value != 'available'",
+        "pytest.skip(\"JPEG XL encoder unavailable\")"
+      ]
+    },
+    {
+      "file": "tests/test_pixel_cleanup.py",
+      "suite": "python",
+      "area": "pixel",
+      "purpose": "Behaviour checks for calibration-backed Pixel cleanup, no private photos.",
+      "test_count": 22,
+      "seconds": {
+        "windows": 0.0872,
+        "mac": null
+      },
+      "markers": [
+        "parametrize"
+      ],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_preview_display.py",
+      "suite": "python",
+      "area": "preview",
+      "purpose": "Checks preview display behavior and regression contracts.",
+      "test_count": 7,
+      "seconds": {
+        "windows": 0.9737,
+        "mac": null
+      },
+      "markers": [
+        "needs_native_helper",
+        "parametrize"
+      ],
+      "requirements": [
+        "needs_native_helper"
+      ],
+      "platform_notes": [
+        "Conditional skip: resolve_binary('avifenc') is None",
+        "pytest.skip(\"AVIF preview encoder unavailable\")"
+      ]
+    },
+    {
+      "file": "tests/test_preview_export_compare.py",
+      "suite": "python",
+      "area": "preview",
+      "purpose": "The comparison tool's own arithmetic (Viewport-Bounded GPU Preview PRD, 4.6).",
+      "test_count": 19,
+      "seconds": {
+        "windows": 0.0435,
+        "mac": null
+      },
+      "markers": [
+        "parametrize"
+      ],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_preview_export_parity.py",
+      "suite": "python",
+      "area": "preview",
+      "purpose": "Preview and export must be the same graph, differing only where they say so.",
+      "test_count": 16,
+      "seconds": {
+        "windows": 1.3233,
+        "mac": null
+      },
+      "markers": [
+        "parametrize"
+      ],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_preview_geometry.py",
+      "suite": "python",
+      "area": "preview",
+      "purpose": "Checks preview geometry behavior and regression contracts.",
+      "test_count": 12,
+      "seconds": {
+        "windows": 2.2162,
+        "mac": null
+      },
+      "markers": [
+        "parametrize"
+      ],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_preview_resolution_contract.py",
+      "suite": "python",
+      "area": "preview",
+      "purpose": "Checks preview resolution contract behavior and regression contracts.",
+      "test_count": 4,
+      "seconds": {
+        "windows": 0.9636,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_project_manifest.py",
+      "suite": "python",
+      "area": "project",
+      "purpose": "Malformed project manifests fail as project errors, without opening a source.",
+      "test_count": 5,
+      "seconds": {
+        "windows": 0.0519,
+        "mac": null
+      },
+      "markers": [
+        "parametrize"
+      ],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_project_open_tolerance.py",
+      "suite": "python",
+      "area": "project",
+      "purpose": "A saved project outlives the settings it was saved with.",
+      "test_count": 4,
+      "seconds": {
+        "windows": 0.009,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_project_save_conflicts.py",
+      "suite": "python",
+      "area": "project",
+      "purpose": "Saving a project must keep conflict detection attached to its destination.",
+      "test_count": 2,
+      "seconds": {
+        "windows": 0.0727,
+        "mac": null
+      },
+      "markers": [
+        "parametrize"
+      ],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_proof_export_identity.py",
+      "suite": "python",
+      "area": "proof",
+      "purpose": "A full-size Proof is the export, byte for byte.",
+      "test_count": 21,
+      "seconds": {
+        "windows": 206.2887,
+        "mac": null
+      },
+      "markers": [
+        "needs_native_helper",
+        "parametrize",
+        "slow"
+      ],
+      "requirements": [
+        "needs_native_helper"
+      ],
+      "platform_notes": [
+        "Conditional skip: capabilities['ultrahdr_encoder'].status != CapabilityStatus.AVAILABLE",
+        "Conditional skip: capabilities[FORMATS['avif_gain_map'][0]].status != CapabilityStatus.AVAILABLE",
+        "Conditional skip: capabilities[capability].status != CapabilityStatus.AVAILABLE",
+        "pytest.skip(\"AVIF Gain Map encoder unavailable\")",
+        "pytest.skip(\"Finished pixels passed but the Ultra HDR encoder is unavailable\")",
+        "pytest.skip(\"Ultra HDR encoder unavailable\")",
+        "pytest.skip(capabilities[capability].detail)",
+        "pytest.skip(f\"{capability} is not available: {capabilities[capability].detail}\")",
+        "pytest.skip(f\"{capability} unavailable\")"
+      ]
+    },
+    {
+      "file": "tests/test_proofing.py",
+      "suite": "python",
+      "area": "proofing",
+      "purpose": "Checks proofing behavior and regression contracts.",
+      "test_count": 45,
+      "seconds": {
+        "windows": 102.6534,
+        "mac": null
+      },
+      "markers": [
+        "needs_native_helper",
+        "parametrize",
+        "slow"
+      ],
+      "requirements": [
+        "needs_native_helper"
+      ],
+      "platform_notes": [
+        "Conditional skip: get_capabilities()['avif_gain_map_encoder'].status != CapabilityStatus.AVAILABLE",
+        "Conditional skip: get_capabilities()[capability_name].status != CapabilityStatus.AVAILABLE",
+        "Conditional skip: proofing_module.resolve_binary('avifenc') is None",
+        "Conditional skip: resolve('avifgainmaputil' if use_tonemap else 'avifenc') is None",
+        "Conditional skip: utility is None or proofing_module.resolve_binary('avifenc') is None",
+        "pytest.skip(\"AVIF preview encoder unavailable\")",
+        "pytest.skip(\"Native AVIF tile helper unavailable\")",
+        "pytest.skip(\"Native AVIF tile helpers unavailable\")",
+        "pytest.skip(get_capabilities()[\"avif_gain_map_encoder\"].detail)",
+        "pytest.skip(get_capabilities()[capability_name].detail)"
+      ]
+    },
+    {
+      "file": "tests/test_pytest_profile_cleanup.py",
+      "suite": "python",
+      "area": "pytest",
+      "purpose": "Exercise pytest shutdown itself, including Windows' open-file restriction.",
+      "test_count": 1,
+      "seconds": {
+        "windows": 8.6784,
+        "mac": null
+      },
+      "markers": [
+        "slow"
+      ],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_raw_exposure.py",
+      "suite": "python",
+      "area": "raw",
+      "purpose": "Checks raw exposure behavior and regression contracts.",
+      "test_count": 19,
+      "seconds": {
+        "windows": 0.1923,
+        "mac": null
+      },
+      "markers": [
+        "parametrize"
+      ],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_raw_highlight_project_compatibility.py",
+      "suite": "python",
+      "area": "raw",
+      "purpose": "Checks raw highlight project compatibility behavior and regression contracts.",
+      "test_count": 1,
+      "seconds": {
+        "windows": 0.0007,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_raw_pixel_cleanup.py",
+      "suite": "python",
+      "area": "raw",
+      "purpose": "Checks raw pixel cleanup behavior and regression contracts.",
+      "test_count": 24,
+      "seconds": {
+        "windows": 0.2026,
+        "mac": null
+      },
+      "markers": [
+        "parametrize"
+      ],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_raw_pixel_cleanup_state.py",
+      "suite": "python",
+      "area": "raw",
+      "purpose": "Checks raw pixel cleanup state behavior and regression contracts.",
+      "test_count": 12,
+      "seconds": {
+        "windows": 2.5366,
+        "mac": null
+      },
+      "markers": [
+        "parametrize"
+      ],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_raw_speck_cleanup.py",
+      "suite": "python",
+      "area": "raw",
+      "purpose": "Checks raw speck cleanup behavior and regression contracts.",
+      "test_count": 25,
+      "seconds": {
+        "windows": 0.0918,
+        "mac": null
+      },
+      "markers": [
+        "parametrize"
+      ],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_render_cache.py",
+      "suite": "python",
+      "area": "render",
+      "purpose": "Checks render cache behavior and regression contracts.",
+      "test_count": 59,
+      "seconds": {
+        "windows": 7.4187,
+        "mac": null
+      },
+      "markers": [
+        "parametrize"
+      ],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_retouch.py",
+      "suite": "python",
+      "area": "retouch",
+      "purpose": "Checks retouch behavior and regression contracts.",
+      "test_count": 27,
+      "seconds": {
+        "windows": 4.1354,
+        "mac": null
+      },
+      "markers": [
+        "parametrize"
+      ],
+      "requirements": [],
+      "platform_notes": [
+        "Conditional skip: logical_cpus() < 2",
+        "pytest.skip(\"needs two logical CPUs\")"
+      ]
+    },
+    {
+      "file": "tests/test_retouch_integration.py",
+      "suite": "python",
+      "area": "retouch",
+      "purpose": "Interactive repairs publish one native source transaction for every consumer.",
+      "test_count": 35,
+      "seconds": {
+        "windows": 45.2328,
+        "mac": null
+      },
+      "markers": [
+        "needs_native_helper",
+        "parametrize",
+        "slow"
+      ],
+      "requirements": [
+        "needs_native_helper"
+      ],
+      "platform_notes": [
+        "Conditional skip: capabilities['jpegxl_export'].status != CapabilityStatus.AVAILABLE",
+        "pytest.skip(\"JPEG XL encoder unavailable\")"
+      ]
+    },
+    {
+      "file": "tests/test_retouch_methods.py",
+      "suite": "python",
+      "area": "retouch",
+      "purpose": "Behavioral tests for the explicitly selectable native repair prototypes.",
+      "test_count": 11,
+      "seconds": {
+        "windows": 0.8253,
+        "mac": null
+      },
+      "markers": [
+        "parametrize"
+      ],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_retouch_parallel.py",
+      "suite": "python",
+      "area": "retouch",
+      "purpose": "Parallel score lanes preserve the serial candidate scores and donor ordering.",
+      "test_count": 3,
+      "seconds": {
+        "windows": 0.0079,
+        "mac": null
+      },
+      "markers": [
+        "parametrize"
+      ],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_retouch_recipe.py",
+      "suite": "python",
+      "area": "retouch",
+      "purpose": "Checks retouch recipe behavior and regression contracts.",
+      "test_count": 22,
+      "seconds": {
+        "windows": 2.6927,
+        "mac": null
+      },
+      "markers": [
+        "parametrize"
+      ],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_retouch_routes.py",
+      "suite": "python",
+      "area": "retouch",
+      "purpose": "Finished patch reuse and route disclosure across preview and delivery.",
+      "test_count": 13,
+      "seconds": {
+        "windows": 2.9586,
+        "mac": null
+      },
+      "markers": [
+        "parametrize"
+      ],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_retouch_transfer.py",
+      "suite": "python",
+      "area": "retouch",
+      "purpose": "Native clone/heal behavior, independent of UI wording or code structure.",
+      "test_count": 8,
+      "seconds": {
+        "windows": 0.1102,
+        "mac": null
+      },
+      "markers": [
+        "parametrize"
+      ],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_revert_rendition.py",
+      "suite": "python",
+      "area": "revert",
+      "purpose": "Checks revert rendition behavior and regression contracts.",
+      "test_count": 9,
+      "seconds": {
+        "windows": 0.1314,
+        "mac": null
+      },
+      "markers": [
+        "parametrize"
+      ],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_scope_correctness.py",
+      "suite": "python",
+      "area": "scope",
+      "purpose": "Checks scope correctness behavior and regression contracts.",
+      "test_count": 6,
+      "seconds": {
+        "windows": 0.5377,
+        "mac": null
+      },
+      "markers": [
+        "needs_test_photos"
+      ],
+      "requirements": [
+        "needs_test_photos"
+      ],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_sdr_export.py",
+      "suite": "python",
+      "area": "sdr",
+      "purpose": "Checks sdr export behavior and regression contracts.",
+      "test_count": 13,
+      "seconds": {
+        "windows": 0.3694,
+        "mac": null
+      },
+      "markers": [
+        "parametrize"
+      ],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_sdr_gamut.py",
+      "suite": "python",
+      "area": "sdr",
+      "purpose": "Checks sdr gamut behavior and regression contracts.",
+      "test_count": 34,
+      "seconds": {
+        "windows": 0.0557,
+        "mac": null
+      },
+      "markers": [
+        "parametrize"
+      ],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_sdr_link.py",
+      "suite": "python",
+      "area": "sdr",
+      "purpose": "Checks sdr link behavior and regression contracts.",
+      "test_count": 14,
+      "seconds": {
+        "windows": 3.6789,
+        "mac": null
+      },
+      "markers": [
+        "parametrize"
+      ],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_sdr_local_match.py",
+      "suite": "python",
+      "area": "sdr",
+      "purpose": "Checks sdr local match behavior and regression contracts.",
+      "test_count": 17,
+      "seconds": {
+        "windows": 4.1492,
+        "mac": null
+      },
+      "markers": [
+        "parametrize"
+      ],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_sdr_match_editable.py",
+      "suite": "python",
+      "area": "sdr",
+      "purpose": "Match commits one editable recipe, shared by persistence and rendering.",
+      "test_count": 3,
+      "seconds": {
+        "windows": 1.5562,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_sdr_match_inputs.py",
+      "suite": "python",
+      "area": "sdr",
+      "purpose": "Checks sdr match inputs behavior and regression contracts.",
+      "test_count": 6,
+      "seconds": {
+        "windows": 0.0769,
+        "mac": null
+      },
+      "markers": [
+        "parametrize"
+      ],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_sdr_match_materialization.py",
+      "suite": "python",
+      "area": "sdr",
+      "purpose": "Checks sdr match materialization behavior and regression contracts.",
+      "test_count": 17,
+      "seconds": {
+        "windows": 7.2299,
+        "mac": null
+      },
+      "markers": [
+        "parametrize"
+      ],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_sdr_match_remote.py",
+      "suite": "python",
+      "area": "sdr",
+      "purpose": "Match candidates rendered by the page instead of the CPU.",
+      "test_count": 6,
+      "seconds": {
+        "windows": 4.3105,
+        "mac": null
+      },
+      "markers": [
+        "parametrize"
+      ],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_sdr_match_state.py",
+      "suite": "python",
+      "area": "sdr",
+      "purpose": "Checks sdr match state behavior and regression contracts.",
+      "test_count": 13,
+      "seconds": {
+        "windows": 0.4627,
+        "mac": null
+      },
+      "markers": [
+        "parametrize"
+      ],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_signed_ahd.py",
+      "suite": "python",
+      "area": "signed",
+      "purpose": "Checks signed ahd behavior and regression contracts.",
+      "test_count": 17,
+      "seconds": {
+        "windows": 0.0238,
+        "mac": null
+      },
+      "markers": [
+        "parametrize"
+      ],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_signed_raw_development.py",
+      "suite": "python",
+      "area": "signed",
+      "purpose": "Checks signed raw development behavior and regression contracts.",
+      "test_count": 29,
+      "seconds": {
+        "windows": 0.0506,
+        "mac": null
+      },
+      "markers": [
+        "parametrize"
+      ],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_signed_shadows.py",
+      "suite": "python",
+      "area": "signed",
+      "purpose": "Checks signed shadows behavior and regression contracts.",
+      "test_count": 18,
+      "seconds": {
+        "windows": 0.0528,
+        "mac": null
+      },
+      "markers": [
+        "parametrize"
+      ],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_source_primaries.py",
+      "suite": "python",
+      "area": "source",
+      "purpose": "Independent transfer equations and asymmetric colours catch forced BT.2020.",
+      "test_count": 37,
+      "seconds": {
+        "windows": 0.4976,
+        "mac": null
+      },
+      "markers": [
+        "parametrize"
+      ],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_source_space_luminance_mask.py",
+      "suite": "python",
+      "area": "source",
+      "purpose": "A luminance mask under straighten or perspective is finished before the warp.",
+      "test_count": 7,
+      "seconds": {
+        "windows": 0.5986,
+        "mac": null
+      },
+      "markers": [
+        "parametrize"
+      ],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_source_tile_api.py",
+      "suite": "python",
+      "area": "source",
+      "purpose": "Phase 3: the bounded source-tile transport contract.",
+      "test_count": 16,
+      "seconds": {
+        "windows": 5.0032,
+        "mac": null
+      },
+      "markers": [
+        "parametrize"
+      ],
+      "requirements": [],
+      "platform_notes": [
+        "Conditional skip: probe.status_code == 409",
+        "pytest.skip(f\"tile path declined this geometry: {probe.json()['detail']}\")"
+      ]
+    },
+    {
+      "file": "tests/test_subprocess_utils.py",
+      "suite": "python",
+      "area": "subprocess",
+      "purpose": "Checks subprocess utils behavior and regression contracts.",
+      "test_count": 1,
+      "seconds": {
+        "windows": 0.0008,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_test_inventory.py",
+      "suite": "python",
+      "area": "test",
+      "purpose": "The everyday inventory must cover every collected source file.",
+      "test_count": 1,
+      "seconds": {
+        "windows": 0.4692,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_test_photos.py",
+      "suite": "python",
+      "area": "test",
+      "purpose": "Corpus validation uses tiny disposable files, never the private photos.",
+      "test_count": 5,
+      "seconds": {
+        "windows": 0.0612,
+        "mac": null
+      },
+      "markers": [
+        "parametrize"
+      ],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_tiff_interpretation.py",
+      "suite": "python",
+      "area": "tiff",
+      "purpose": "Generated oriented / custom-gamma TIFF fixtures, before loader changes.",
+      "test_count": 23,
+      "seconds": {
+        "windows": 0.2343,
+        "mac": null
+      },
+      "markers": [
+        "parametrize"
+      ],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_tone_zones.py",
+      "suite": "python",
+      "area": "tone",
+      "purpose": "Checks tone zones behavior and regression contracts.",
+      "test_count": 33,
+      "seconds": {
+        "windows": 0.3529,
+        "mac": null
+      },
+      "markers": [
+        "parametrize"
+      ],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_ultrahdr_export.py",
+      "suite": "python",
+      "area": "ultrahdr",
+      "purpose": "Checks ultrahdr export behavior and regression contracts.",
+      "test_count": 40,
+      "seconds": {
+        "windows": 87.4909,
+        "mac": null
+      },
+      "markers": [
+        "needs_native_helper",
+        "parametrize",
+        "slow"
+      ],
+      "requirements": [
+        "needs_native_helper"
+      ],
+      "platform_notes": [
+        "Conditional skip: binary is None",
+        "Conditional skip: capability.status != CapabilityStatus.AVAILABLE",
+        "Conditional skip: native is None",
+        "pytest.skip(\"Native Ultra HDR encoder unavailable\")",
+        "pytest.skip(\"Optional gain-map filter build is unavailable\")",
+        "pytest.skip(capability.detail)"
+      ]
+    },
+    {
+      "file": "tests/test_vignette_midpoint.py",
+      "suite": "python",
+      "area": "vignette",
+      "purpose": "Checks vignette midpoint behavior and regression contracts.",
+      "test_count": 20,
+      "seconds": {
+        "windows": 0.0651,
+        "mac": null
+      },
+      "markers": [
+        "parametrize"
+      ],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/test_watermark.py",
+      "suite": "python",
+      "area": "watermark",
+      "purpose": "Checks watermark behavior and regression contracts.",
+      "test_count": 11,
+      "seconds": {
+        "windows": 36.6079,
+        "mac": null
+      },
+      "markers": [
+        "needs_native_helper",
+        "parametrize",
+        "slow"
+      ],
+      "requirements": [
+        "needs_native_helper"
+      ],
+      "platform_notes": [
+        "Conditional skip: backend.capability.status.value != 'available'",
+        "pytest.skip(backend.capability.detail)"
+      ]
+    },
+    {
+      "file": "tests/test_zoom_block_compare.py",
+      "suite": "python",
+      "area": "zoom",
+      "purpose": "Validate PRD block alignment/area integration before trusting its verdicts.",
+      "test_count": 5,
+      "seconds": {
+        "windows": 0.3785,
+        "mac": null
+      },
+      "markers": [
+        "parametrize"
+      ],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/tier-acceptance-geometry.test.js",
+      "suite": "node",
+      "area": "tier",
+      "purpose": "the tier target still comes from the source, not from the trimmed frame",
+      "test_count": 11,
+      "seconds": {
+        "windows": 1.5956,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/tile-scheduler.test.js",
+      "suite": "node",
+      "area": "tile",
+      "purpose": "tiles are anchored to global output coordinates, not to an index",
+      "test_count": 17,
+      "seconds": {
+        "windows": 0.1049,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/tiled-cancellation-cleanup.test.js",
+      "suite": "node",
+      "area": "tiled",
+      "purpose": "Cancellation closes validation scope, releases peak target and temporary buffers",
+      "test_count": 9,
+      "seconds": {
+        "windows": 0.0156,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/tiled-local-state.test.js",
+      "suite": "node",
+      "area": "tiled",
+      "purpose": "Local Detail prefixes preserve the original cache identity exactly",
+      "test_count": 4,
+      "seconds": {
+        "windows": 1.9261,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/tiled-render-lifetime.test.js",
+      "suite": "node",
+      "area": "tiled",
+      "purpose": "direct renderTiledTo calls retain resources until their async lifetime ends",
+      "test_count": 3,
+      "seconds": {
+        "windows": 0.0195,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/tone-preview.test.js",
+      "suite": "node",
+      "area": "tone",
+      "purpose": "darwin endpoint tooltips name the platform's drag modifier",
+      "test_count": 10,
+      "seconds": {
+        "windows": 1.1424,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/tone-zones.test.js",
+      "suite": "node",
+      "area": "tone",
+      "purpose": "CPU and GPU parameter-only interval bounds agree across lanes, references, endpoints and extreme ranges",
+      "test_count": 2,
+      "seconds": {
+        "windows": 48.3952,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/tooltip-catalogue.test.js",
+      "suite": "node",
+      "area": "tooltip",
+      "purpose": "tooltip catalogue matches source (preserve pending edits before regenerating)",
+      "test_count": 3,
+      "seconds": {
+        "windows": 21.414,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/tooltips.test.js",
+      "suite": "node",
+      "area": "tooltips",
+      "purpose": "Escape cancels pending help but still reaches the dialog",
+      "test_count": 5,
+      "seconds": {
+        "windows": 0.7114,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/viewer-state-transitions.test.js",
+      "suite": "node",
+      "area": "viewer",
+      "purpose": "an exact result at the current generation is Ready",
+      "test_count": 16,
+      "seconds": {
+        "windows": 0.0049,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/viewport-request.test.js",
+      "suite": "node",
+      "area": "viewport",
+      "purpose": "Fit produces a whole-output request with no padding to amplify",
+      "test_count": 14,
+      "seconds": {
+        "windows": 0.0064,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/vignette-midpoint.test.js",
+      "suite": "node",
+      "area": "vignette",
+      "purpose": "typed midpoint rule accepts 200 and preserves migrated half steps",
+      "test_count": 2,
+      "seconds": {
+        "windows": 0.0063,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/webgpu-allocation-agreement.test.js",
+      "suite": "node",
+      "area": "webgpu",
+      "purpose": "grading residency reports the four core textures the device actually created",
+      "test_count": 14,
+      "seconds": {
+        "windows": 4.8584,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/webgpu-memory-diagnostics.test.js",
+      "suite": "node",
+      "area": "webgpu",
+      "purpose": "direct model reproduces the approved two-level 24MP logical baseline",
+      "test_count": 9,
+      "seconds": {
+        "windows": 0.0199,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/webgpu-shaders.test.js",
+      "suite": "node",
+      "area": "webgpu",
+      "purpose": "the peak and Denoise WGSL sources retain the audited byte identities",
+      "test_count": 4,
+      "seconds": {
+        "windows": 0.0142,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/whole-image-preview-pipe.test.js",
+      "suite": "node",
+      "area": "whole",
+      "purpose": "whole-image purposes cannot inherit a native Full edge",
+      "test_count": 3,
+      "seconds": {
+        "windows": 0.0018,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    },
+    {
+      "file": "tests/zoom-scope-recovery.test.js",
+      "suite": "node",
+      "area": "zoom",
+      "purpose": "single-action zoom finishes ahead of one settled scope refresh",
+      "test_count": 75,
+      "seconds": {
+        "windows": 13.6249,
+        "mac": null
+      },
+      "markers": [],
+      "requirements": [],
+      "platform_notes": []
+    }
+  ]
+}

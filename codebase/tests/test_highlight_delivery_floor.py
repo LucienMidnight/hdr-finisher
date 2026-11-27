@@ -26,6 +26,8 @@ def test_floor_leaves_valid_recipe_untouched():
     assert hdr.highlight_compression_start_nits == 400
 
 
+@pytest.mark.slow
+@pytest.mark.needs_native_helper
 @pytest.mark.parametrize("reference", [100, 203])
 @pytest.mark.parametrize("mode", ["peak_fit", "soft_ceiling", "clip", "fixed_cap"])
 @pytest.mark.parametrize("format_name", ["jpeg_ultrahdr", "avif_gain_map", "jpegxl_hdr"])

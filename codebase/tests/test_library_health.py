@@ -77,6 +77,7 @@ def test_writer_pause_and_progress_do_not_claim_unwritten_files(library):
     assert (status["done"], status["total"], status["waiting"]) == (1, 3, 2)
 
 
+@pytest.mark.slow
 def test_failure_flood_is_one_group_with_three_examples(library, monkeypatch, capsys):
     store, photos, _ = library
     def broken(path):

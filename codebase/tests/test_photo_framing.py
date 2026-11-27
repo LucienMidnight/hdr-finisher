@@ -241,6 +241,7 @@ def test_proof_cache_tracks_authored_frame_only_when_included():
     assert key(first) == key(second)
 
 
+@pytest.mark.needs_native_helper
 @pytest.mark.usefixtures("ample_preflight_memory")
 def test_small_source_with_large_frame_has_honest_reduced_proof(tmp_path):
     from hdr_finisher.proofing import ProofArtifactStore

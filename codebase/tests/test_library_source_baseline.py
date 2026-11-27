@@ -12,6 +12,7 @@ from PIL import Image
 # The overlapping-tier check assumes both tiers run at once; on the 3-core
 # macOS CI runner they ran one after the other (two correct preparations).
 # It passes on a 6-core MacBook (November 13, 2026), so only CI skips it.
+@pytest.mark.slow
 @pytest.mark.skipif(sys.platform == "darwin" and bool(os.environ.get("CI")), reason="Overlap timing assumption does not hold on the macOS CI runner (0.9.2 follow-up).")
 def test_source_baseline_counts_preparations_without_touching_source_or_sidecar(tmp_path, monkeypatch):
     monkeypatch.syspath_prepend(str(Path(__file__).parent / "performance"))
@@ -64,6 +65,7 @@ def test_iso_probe_keeps_direction_exact_headroom_and_per_channel_metadata(monke
             driver.parse_iso_metadata_probe(invalid)
 
 
+@pytest.mark.slow
 def test_iso_interface_probe_preserves_real_source_and_does_not_claim_gpu(monkeypatch):
     monkeypatch.syspath_prepend(str(Path(__file__).parent / "performance"))
     driver = importlib.import_module("library-source-baseline")

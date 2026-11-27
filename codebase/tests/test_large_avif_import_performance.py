@@ -15,6 +15,7 @@ from hdr_finisher.sessions import SessionStore
 LARGE_AVIF = os.environ.get("HDR_FINISHER_LARGE_AVIF")
 
 
+@pytest.mark.needs_test_photos
 @pytest.mark.skipif(not LARGE_AVIF, reason="Set HDR_FINISHER_LARGE_AVIF to run the local 40+ MP AVIF gate.")
 def test_large_gain_map_avif_builds_a_staged_session_within_budget(tmp_path: Path) -> None:
     source = Path(str(LARGE_AVIF)).expanduser().resolve(strict=True)

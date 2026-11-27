@@ -200,6 +200,7 @@ def test_windows_default_keeps_existing_cache_shares(monkeypatch):
     assert raised_shares['raw'] > shares['raw']
 
 
+@pytest.mark.windows_only
 @pytest.mark.skipif(os.name != "nt", reason="Windows private commit and EmptyWorkingSet")
 def test_windows_child_commit_survives_working_set_trim(monkeypatch):
     size = 128 * 1024**2

@@ -38,6 +38,7 @@ def exported_hashes(results):
     return [sha256(Path(row["output_path"]).read_bytes()).hexdigest() for row in results]
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("saved_grade", [True, False])
 def test_grade_source_hardlink_survives_grade_close_and_worker_exports_exactly(tmp_path, monkeypatch, capsys, saved_grade):
     from hdr_finisher import delivery_frames
@@ -133,6 +134,7 @@ def test_replacing_grade_source_keeps_active_view_valid_until_released(tmp_path,
     store.clear()
 
 
+@pytest.mark.needs_native_helper
 @pytest.mark.parametrize(("format_name", "capability"), [
     ("jpeg_ultrahdr", "ultrahdr_encoder"), ("avif_gain_map", "avif_gain_map_encoder"),
 ])
@@ -394,6 +396,7 @@ def test_preset_crud_names_subfolders_and_validation(tmp_path):
     with pytest.raises(ValueError):render_pattern("{unknown}",photo,1,"HDR","Delivery")
     with pytest.raises(ValueError):version_destination(tmp_path,ExportVersion(subfolder="../escape"),photo,1,"p")
 
+@pytest.mark.slow
 @pytest.mark.parametrize("formats",[("sdr_png","sdr_jpeg"),("jpeg_ultrahdr","avif_gain_map")])
 def test_three_photos_two_versions_match_single_export_exactly(tmp_path,formats):
     caps=probe_capabilities()

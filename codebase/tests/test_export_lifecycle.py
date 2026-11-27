@@ -92,6 +92,7 @@ def test_shared_export_executor_removes_failed_staging_file(tmp_path: Path) -> N
     assert not (tmp_path / "output.png").exists()
 
 
+@pytest.mark.windows_only
 @pytest.mark.skipif(exporters.os.name != "nt", reason="Windows exclusive rename")
 def test_windows_publication_preserves_file_created_after_final_check(tmp_path, monkeypatch):
     output = tmp_path / "race.png"

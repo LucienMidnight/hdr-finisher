@@ -314,6 +314,7 @@ def test_precision_publication_matches_grade_document(tmp_path,authored,sample_b
         if authored:
             np.testing.assert_array_equal(stored['reference'], np.clip(expected.sdr_reference_image, 0, 65504).astype(np.float16))
 
+@pytest.mark.slow
 @pytest.mark.parametrize("transfer,bits,dtype",[("sRGB",8,"uint8"),("PQ",12,"uint16"),("HLG",16,"uint16"),("PQ",32,"float32")])
 def test_jxl_samples_precision_gate_and_encoded_override_order(tmp_path, monkeypatch, transfer, bits, dtype):
     import sys
@@ -382,6 +383,7 @@ def test_plain_heif_selects_primary_and_preserves_auxiliary_policy(tmp_path,monk
     assert "sdr_reference" not in header  # No Apple headroom: Grade also leaves this auxiliary unused.
     # The same decoder/profile classification as Grade remains authoritative.
 
+@pytest.mark.slow
 @pytest.mark.parametrize("suffix,transfer",[("jxl",16),("avif",18),("heic",13)])
 def test_codec_publication_preserves_grade_start_document(tmp_path,suffix,transfer):
     from hdr_finisher.library_pictures import LibraryPictureCache
@@ -410,6 +412,8 @@ def test_codec_publication_preserves_grade_start_document(tmp_path,suffix,transf
     assert cache.default_document(path)==expected.edit_document().model_dump(mode='json')
 
 
+@pytest.mark.slow
+@pytest.mark.needs_test_photos
 def test_real_gainmap_avif_preserves_reconstructed_and_encoded_reference_samples():
     from pathlib import Path
     root=Path(__file__).resolve().parents[1]

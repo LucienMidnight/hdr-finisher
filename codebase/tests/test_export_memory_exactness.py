@@ -597,6 +597,8 @@ def test_file_finishing_matches_whole_frame(image, tmp_path, monkeypatch, kind, 
     assert set(tmp_path.iterdir()) == {frame.path}
 
 
+@pytest.mark.slow
+@pytest.mark.needs_native_helper
 @pytest.mark.parametrize("spatial", [False, True])
 @pytest.mark.parametrize(("format_name", "capability", "suffix"), [
     ("avif_gain_map", "avif_gain_map_encoder", ".avif"),

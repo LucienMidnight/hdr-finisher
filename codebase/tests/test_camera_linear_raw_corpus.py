@@ -12,6 +12,8 @@ import pytest
 CORPUS_ROOT = os.environ.get("HDR_FINISHER_RAW_TEST_SUITE")
 
 
+@pytest.mark.needs_test_photos
+@pytest.mark.windows_only
 @pytest.mark.skipif(
     sys.platform != 'win32' or not CORPUS_ROOT,
     reason="PC-only historical qualification: dropped 1.7 GB line-scan DNG and clipped Canon sample; set HDR_FINISHER_RAW_TEST_SUITE on PC",

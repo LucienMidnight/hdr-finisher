@@ -27,6 +27,8 @@ def source(tmp_path):
         "-XMP-dc:Title=Source title","-XMP-photoshop:City=Private city",str(path))
     return path
 
+@pytest.mark.slow
+@pytest.mark.needs_native_helper
 @pytest.mark.parametrize("format",["jpeg_ultrahdr","sdr_png"])
 @pytest.mark.parametrize("policy",["none","copyright","all_except_location","all_including_location"])
 def test_policies_templates_and_delivery_bytes(source,tmp_path,format,policy):

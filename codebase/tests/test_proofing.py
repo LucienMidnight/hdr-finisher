@@ -301,6 +301,8 @@ def test_jpeg_matrix_endpoints_publish_decode_atomically_for_concurrent_targets(
     assert final_path.stat().st_size == decoded_rgba.astype("<f2").nbytes
 
 
+@pytest.mark.slow
+@pytest.mark.needs_native_helper
 def test_banded_jpeg_proof_matches_whole_image_tiles(tmp_path: Path) -> None:
     if proofing_module.resolve_binary("avifenc") is None:
         pytest.skip("AVIF preview encoder unavailable")
@@ -328,6 +330,8 @@ def test_banded_jpeg_proof_matches_whole_image_tiles(tmp_path: Path) -> None:
         assert (peak, clipped) == proofing_module._image_stats(whole, target, artifact.reference_white_nits)
 
 
+@pytest.mark.slow
+@pytest.mark.needs_native_helper
 @pytest.mark.parametrize("format, use_tonemap", [
     ("avif_gain_map", True),
     ("avif_gain_map", False),
@@ -384,6 +388,8 @@ def test_banded_authored_proof_matches_whole_image_tiles(monkeypatch, tmp_path, 
             assert (tile.peak_nits, tile.clipped_percent) == (round(peak, 1), round(clipped, 3))
 
 
+@pytest.mark.slow
+@pytest.mark.needs_native_helper
 def test_full_size_avif_tile_matches_legacy_above_automatic_tiling_threshold(tmp_path):
     utility = proofing_module.resolve_binary("avifgainmaputil")
     if utility is None or proofing_module.resolve_binary("avifenc") is None:
@@ -779,6 +785,8 @@ def test_auto_reconstruction_requires_display_headroom() -> None:
         assert bounds.status_code == 422
 
 
+@pytest.mark.slow
+@pytest.mark.needs_native_helper
 @pytest.mark.parametrize(
     ("format_name", "capability_name", "suffix", "media_type"),
     [
@@ -845,6 +853,7 @@ def test_real_proof_artifact_and_matrix_endpoints(
     session_store.clear()
 
 
+@pytest.mark.needs_native_helper
 @pytest.mark.parametrize(("bit_depth", "chroma"), [(8, "420"), (10, "422"), (12, "444")])
 def test_real_avif_proof_honors_primary_precision_and_chroma(bit_depth: int, chroma: str) -> None:
     if get_capabilities()["avif_gain_map_encoder"].status != CapabilityStatus.AVAILABLE:
@@ -871,6 +880,7 @@ def test_real_avif_proof_honors_primary_precision_and_chroma(bit_depth: int, chr
     session_store.clear()
 
 
+@pytest.mark.needs_native_helper
 @pytest.mark.parametrize("gain_map_chroma", ["444", "422", "420", "400"])
 def test_real_avif_proof_honors_gain_map_chroma(gain_map_chroma: str) -> None:
     if get_capabilities()["avif_gain_map_encoder"].status != CapabilityStatus.AVAILABLE:

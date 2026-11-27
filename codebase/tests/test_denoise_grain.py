@@ -1,3 +1,4 @@
+import pytest
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from threading import Barrier, Event
@@ -272,6 +273,7 @@ def test_native_warmup_runs_visible_tiles_together(tmp_path, monkeypatch):
         pool.pool.shutdown()
 
 
+@pytest.mark.needs_native_helper
 def test_native_colour_correction_matches_numpy_bytes(monkeypatch):
     import pytest
     from hdr_finisher import denoise_filters, denoise_grain

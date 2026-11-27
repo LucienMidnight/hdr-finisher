@@ -34,6 +34,7 @@ BOUNDARIES += [('cross',stage) for stage in ['copy_chunk','verified','photo','so
 BOUNDARIES += [('delete',stage) for stage in ['record','delete_settings_staged','settings_published','delete_prepared','recycle_returned','photo_deleted','settings_recycle_returned','settings_deleted','indexed','before_clear']]
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize('op,stage',BOUNDARIES)
 def test_real_exfat_interruption_boundaries(fat,monkeypatch,op,stage):
     from hdr_finisher import library_recycle
@@ -61,6 +62,7 @@ def test_real_exfat_interruption_boundaries(fat,monkeypatch,op,stage):
     if op=='folder_rename': assert (new.parent/'notes.txt').read_bytes()==b'unknown file content' and (new.parent/'empty').is_dir()
 
 
+@pytest.mark.slow
 def test_changed_exfat_staging_file_is_never_overwritten(fat):
     photo,target,c,_=fat;plan=c.plan(FileRequest(action='move',paths=[str(photo)],destination=str(target)))
     record=c.plans.pop(plan['token']);record['items'][0]['cross']=True;c.save(record)
@@ -73,6 +75,7 @@ def test_changed_exfat_staging_file_is_never_overwritten(fat):
     assert (target/photo.name).read_bytes()==b'original pixels'*100
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize('folder',[False,True])
 def test_identical_arrival_cannot_be_mistaken_for_a_completed_move(fat,folder):
     import shutil

@@ -1,10 +1,12 @@
 """Exercise pytest shutdown itself, including Windows' open-file restriction."""
+import pytest
 import os
 from pathlib import Path
 import subprocess
 import sys
 
 
+@pytest.mark.slow
 def test_process_cached_cache_ledger_does_not_break_profile_cleanup(tmp_path):
     codebase = Path(__file__).resolve().parents[1]
     tests = tmp_path / "tests"

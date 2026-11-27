@@ -161,6 +161,7 @@ def test_gainmap_jpeg_never_silently_falls_back_when_decoder_is_missing(
         load_image(path)
 
 
+@pytest.mark.needs_native_helper
 @pytest.mark.skipif(
     probe_capabilities()["avif_gain_map_decoder"].status != CapabilityStatus.AVAILABLE,
     reason="AVIF gain-map decoder tools are unavailable",
@@ -232,6 +233,7 @@ def test_avif_gainmap_accepts_bt709_transfer_on_sdr_base(
     assert tonemap_command[3].endswith("hdr.png")
 
 
+@pytest.mark.needs_native_helper
 @pytest.mark.skipif(
     probe_capabilities()["avif_decoder"].status != CapabilityStatus.AVAILABLE,
     reason="avifdec is unavailable",
@@ -258,6 +260,8 @@ def test_direct_pq_avif_import_does_not_double_decode(tmp_path: Path) -> None:
     np.testing.assert_allclose(decoded_100, decoded * np.float32(2.03), rtol=1e-5, atol=1e-6)
 
 
+@pytest.mark.slow
+@pytest.mark.needs_native_helper
 @pytest.mark.parametrize("format_name", ["avif_gain_map", "jpeg_ultrahdr"])
 def test_production_export_reimports_hdr_and_authored_sdr(tmp_path: Path, format_name: str) -> None:
     capabilities = probe_capabilities()
@@ -344,6 +348,8 @@ def test_apple_gainmap_aux_selection_ignores_other_auxiliary_images() -> None:
     assert _select_apple_gainmap_aux_type({}) is None
 
 
+@pytest.mark.slow
+@pytest.mark.needs_native_helper
 def test_native_avif_transport_preserves_reconstructed_samples_and_cpu_fallback(monkeypatch, tmp_path):
     from hdr_finisher import gainmap_decoders as gain
     source=Path(__file__).resolve().parents[1]/"samples/hdr_reference.avif"

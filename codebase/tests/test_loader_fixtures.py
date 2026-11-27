@@ -21,6 +21,7 @@ from hdr_finisher.loader import (
 from hdr_finisher.models import HDRClassification
 
 
+@pytest.mark.needs_test_photos
 def test_load_real_png_fixture() -> None:
     image, source, metadata, analysis, sdr_reference = load_image(fixture_path("sdr_gradient.png"))
     assert source.suffix == ".png"
@@ -33,6 +34,7 @@ def test_load_real_png_fixture() -> None:
     assert float(sdr_reference.max()) == pytest.approx(1.0, abs=1e-3)
 
 
+@pytest.mark.needs_test_photos
 def test_load_real_tiff_fixture_with_hdr_headroom() -> None:
     image, source, metadata, analysis, sdr_reference = load_image(fixture_path("hdr_headroom.tiff"))
     assert source.suffix == ".tiff"
@@ -49,6 +51,7 @@ def test_load_real_tiff_fixture_with_hdr_headroom() -> None:
     assert sdr_reference is None
 
 
+@pytest.mark.needs_test_photos
 def test_tiff_import_reports_decode_conversion_and_analysis_phases() -> None:
     phases: list[str] = []
 
@@ -214,6 +217,7 @@ def test_loader_wraps_unexpected_decoder_errors(monkeypatch, tmp_path) -> None:
         load_image(source_path)
 
 
+@pytest.mark.needs_test_photos
 def test_load_real_linear_exr_fixture() -> None:
     image, source, metadata, analysis, sdr_reference = load_image(fixture_path("linear_unconfirmed.exr"))
     assert source.suffix == ".exr"
@@ -227,6 +231,7 @@ def test_load_real_linear_exr_fixture() -> None:
     assert sdr_reference is None
 
 
+@pytest.mark.needs_test_photos
 def test_load_blender_exr_recognizes_ocio_color_interop_id() -> None:
     image, source, metadata, analysis, sdr_reference = load_image(
         fixture_path("blender_linear_rec2020.exr")
@@ -315,6 +320,7 @@ def test_batch_load_maps_large_sources_without_changing_bytes(tmp_path, monkeypa
         assert reference is None
 
 
+@pytest.mark.needs_test_photos
 def test_blender_rec2020_fixture_is_numerically_normalized_to_acescg() -> None:
     import OpenEXR
 
@@ -332,6 +338,7 @@ def test_blender_rec2020_fixture_is_numerically_normalized_to_acescg() -> None:
     assert not np.allclose(normalized, raw, rtol=1e-4, atol=1e-5)
 
 
+@pytest.mark.needs_test_photos
 def test_manual_bt2020_override_applies_to_linear_exr_fixture() -> None:
     image, source, metadata, analysis, sdr_reference = load_image(
         fixture_path("linear_unconfirmed.exr"),
@@ -345,6 +352,7 @@ def test_manual_bt2020_override_applies_to_linear_exr_fixture() -> None:
     assert sdr_reference is None
 
 
+@pytest.mark.needs_test_photos
 def test_manual_diffuse_white_one_override_normalizes_linear_exr_scale() -> None:
     path = fixture_path("linear_unconfirmed.exr")
     baseline, *_ = load_image(
@@ -365,6 +373,7 @@ def test_manual_diffuse_white_one_override_normalizes_linear_exr_scale() -> None
     assert "normalized" in metadata["linear_reference_note"]
 
 
+@pytest.mark.needs_test_photos
 def test_transfer_only_override_does_not_confirm_unknown_exr_primaries() -> None:
     _image, source, metadata, analysis, _sdr_reference = load_image(
         fixture_path("linear_unconfirmed.exr"),

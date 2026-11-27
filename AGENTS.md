@@ -75,6 +75,8 @@ encoders/test photos are read-only. Real GPU/release checks remain sequential
 and keep the shared lock and all rules below unchanged.
 
 
+Everyday test groups are listed at file level in `codebase/tests/inventory.json` (schema version 1). Each entry records suite, area, purpose, expanded test count, Windows measured seconds, separate unmeasured Mac seconds (`null`), markers/requirements and platform skip conditions. Refresh with `codebase/tools/test-inventory.py` using its documented pytest measurement plugin and Node reporter; the fast inventory test rejects missing test files. `slow` means a measured case over five seconds; `serial` still exclusively controls the parallel/serial phases. Requirements describe optional real resources; GPU protocol simulations do not require a GPU.
+
 ### Release points only
 
 Before a push to `main`, a merge into it, or an installer build, run the

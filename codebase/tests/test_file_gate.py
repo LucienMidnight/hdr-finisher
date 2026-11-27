@@ -72,6 +72,7 @@ def test_folder_tree_and_add_folder_browser_hide_skipped_folders(tmp_path):
     assert browser.folder_peek(str(root))["count"] == 2
 
 
+@pytest.mark.windows_only
 @pytest.mark.skipif(not WINDOWS, reason="Windows file attributes")
 def test_windows_hidden_and_system_files_and_folders_are_skipped(tmp_path):
     import ctypes
@@ -85,6 +86,7 @@ def test_windows_hidden_and_system_files_and_folders_are_skipped(tmp_path):
     assert [p["name"] for p in _walk_photos(root, [], [lambda: False]) if p] == ["visible.jpg"]
 
 
+@pytest.mark.windows_only
 @pytest.mark.skipif(not WINDOWS, reason="Windows junctions")
 def test_junction_loops_are_not_followed(tmp_path):
     import _winapi

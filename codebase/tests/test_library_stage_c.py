@@ -145,6 +145,7 @@ def test_unreadable_named_conflict_is_detected_without_reading_canonical_peers(t
     assert conflict.read_bytes() == b"broken conflict settings"
 
 
+@pytest.mark.windows_only
 @pytest.mark.skipif(os.name != "nt", reason="Windows case-insensitive filename semantics")
 def test_uppercase_canonical_settings_suffix_is_not_a_conflict(tmp_path):
     marks, folder, photo = setup(tmp_path)
