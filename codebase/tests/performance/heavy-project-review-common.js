@@ -51,12 +51,15 @@ async function open(page, project, manual = false) {
       return result;
     };
   });
-  await page.evaluate(async target => {
+  const sourcePath = path.basename(project) === 'DSC00950.hdrfinisher'
+    ? require('../helpers/reuse-test-photo.cjs').source('DSC00950.ARW') : null;
+  await page.evaluate(async ({target, sourcePath}) => {
     const selection=await desktop.grantProjectPath(target,'project-open');
-    const {response,payload}=await projectIo.openDesktopProject(fetch,{projectGrant:selection.grant});
+    const source = sourcePath ? await desktop.grantSourcePath(sourcePath) : null;
+    const {response,payload}=await projectIo.openDesktopProject(fetch,{projectGrant:selection.grant,sourceGrant:source?.grant});
     if(!response.ok)throw Error(`Project fixture could not open: ${JSON.stringify(payload)}`);
     await activateDesktopSession(payload.session,selection.path);
-  }, project);
+  }, {target:project, sourcePath});
   await stable(page);
   if (manual) for (const lane of ['hdr', 'sdr']) {
     await page.evaluate(x => switchLane(x), lane); await stable(page);

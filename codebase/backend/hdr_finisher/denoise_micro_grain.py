@@ -289,19 +289,6 @@ def develop_tile(raw, profile, controls, outer, demosaic, target, cancelled=None
     return rgb, gate
 
 
-def render_tile(sensor, profile, model, controls, rect, *, cancelled=None):
-    """Return a sensor-coordinate core. Scratch is bounded by the caller's core."""
-    outer, demosaic, target = tile_regions(rect, sensor.shape)
-    raw = BayerTile(sensor[_inset(outer, (0, 0, 0, 0))], profile, color=bool(controls.color))
-    rgb, gate = develop_tile(raw, profile, controls, outer, demosaic, target, cancelled)
-    if controls.color or controls.luminance:
-        x, y, right, bottom = target
-        height, width = sensor.shape
-        edges = wave._Edges(y == 0, bottom == height, x == 0, right == width, height, width)
-        rgb = resolve_scene(rgb, model, controls, edges, gate)
-    return rgb[_inset(rect, target)].copy()
-
-
 class MicroGrainUnavailable(ValueError):
     pass
 

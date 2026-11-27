@@ -1,3 +1,14 @@
+## November 27: Film Look dropdown previews
+
+`film-select-preview.js` binds native base-select option focus to a temporary
+recipe transaction; `app-boot.js` routes only Film selects through it.
+`edit-commands.js` excludes those drafts from document/history sync, while
+`adjustment-controls.js` renders committed-only controls and markers.
+`film-select-preview.test.js` covers no-op/cancel/commit/save races;
+`helpers/film-select-preview-ui.cjs` exercises the actual picker, history,
+redo and stale coordinator tokens through the existing Film panel driver.
+`helpers/indicator-dots.cjs` checks shared panel headings in three themes.
+
 # Code map
 
 ## November 16: interruptible Grade preview work
@@ -215,8 +226,9 @@ Open the file named for the thing you are changing. Most files are focused.
 | Data shapes (every adjustment, mask and project field) | `models.py` |
 | Opening files | `loader.py`, `raw_import.py`, `linear_dng.py`, `dng_color.py`, `dng_opcodes.py`, `gainmap_decoders.py`, `jpegxl.py`, `avif_info.py`, `metadata.py`, `import_jobs.py`, `media_browser.py`, `resource_preflight.py` |
 | Colour | `color.py`, `color_context.py`, `sdr_gamut.py`, `analysis.py`, `source_luminance.py` |
-| Global adjustments (the exact reference) | `adjustments.py`, `detail.py`, `finishing.py` (geometry and output finishing), `film_grain.py`, `denoise_adaptive.py` (Standard), `denoise_grain.py` (experimental grain and cleanup) |
+| Global adjustments (the exact reference) | `adjustments.py`, `detail.py`, `finishing.py` (geometry and output finishing), `film_grain.py`, `denoise_adaptive.py` (Standard), `denoise_grain.py` (Clean Grain and shared grain primitives), `denoise_micro_grain.py` (Micro Grain) |
 | Local adjustments and masks | `local_adjustments.py`, `mask_softness.py`, `mask_work.py` |
+| Shared float32 box pass | `box_blur.py`; detail, Film Look and local masks retain their own strip scheduling |
 | SDR Match | `sdr_match.py`, `sdr_match_inputs.py`, `sdr_match_remote.py` |
 | CPU preview, caches | `render_cache.py`, `cpu_strips.py`, `preview.py` |
 | Scopes, overlays, peak | `scopes.py`, `overlay.py`, `peak_accuracy.py`, `peak_candidates.py` |
@@ -296,6 +308,7 @@ by the move. `bindEvents` and `markRefining` remain whole in their files.
 | `highlight-controls.js` | Highlight compression panels | `normalizeHighlightCompressionControls`, `renderHighlightCompressionControls` |
 | `group-presets.js` | Saved presets per control group | `groupPresetPaths`, `initializeGroupPresetControls` |
 | `curve-editor.js` | Curves | `bindCurveEditor`, `drawCurveEditor`, `normalizeCurvePoints` |
+| `gpu-delivery-curves.js` | Shared Grade, Library and delivery curve sampling | `sampleCurvePoints`, `monotoneCurveValues` |
 | `tone-equalizer.js` | Tone equalizer | `bindToneEqualizerEditor`, `drawToneEqualizerEditor` |
 | `denoise-ui.js` | Denoise panel | `loadDenoiseDocument`, `renderDenoiseControls`, `runLiveDenoise` |
 | `color-wheels.js` | Colour wheels and vignette centre | `bindColorWheels`, `bindVignetteCenter` |
@@ -891,3 +904,10 @@ metrics and small decision crops. `tests/test_ai_highlights_research.py`
 checks mask/blend results, Bayer phases and the unchanged original-sensor gain
 anchor. These are offline experiments, never production imports; findings:
 [AI highlights](research/denoise-v1-2026-11-16/ai-highlights.md).
+
+## November 26: portable Denoise research builds
+
+`codebase/tools/denoise_eval/candidates/native_build.py` builds the offline
+signed-AHD and LMMSE research libraries: discovered Visual C++ on Windows,
+unchanged Clang commands on macOS/Linux. Temporary compiler files stay outside
+the checkout; no production processing or packaged helper changes.

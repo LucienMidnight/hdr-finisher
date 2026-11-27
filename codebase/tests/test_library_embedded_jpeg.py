@@ -6,6 +6,7 @@ from hdr_finisher.library_embedded_jpeg import camera_jpeg_header
 from hdr_finisher.library_estimates import estimate_details
 
 
+@pytest.mark.needs_test_photos
 @pytest.mark.parametrize('name', ['DSCF6495.RAF', 'IMG_7723.CR3', 'P1010004.ORF', 'P1010300.ORF', 'P1150601.RW2'])
 def test_preview_header_matches_the_jpeg_libraw_actually_extracts(name):
     import rawpy

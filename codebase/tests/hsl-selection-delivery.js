@@ -3,11 +3,12 @@
 // The finished pre-encode GPU/CPU gap is measured with HSL neutral first; the active edit may add at
 // most 0.15 mean / 0.5 p99 to it. Also the 1000-nit HDR ceiling on every file and that
 // full-size Proof is the delivered file.
-// node tests/run-in-electron.js tests/hsl-selection-delivery.js [--local]
+// node tests/run-in-electron.js tests/hsl-selection-delivery.js [--local | --all]
 const assert=require('node:assert/strict'),fs=require('node:fs'),os=require('node:os'),path=require('node:path');
 const {chromium}=require('playwright');const {execFileSync}=require('node:child_process');
 const {photosPath}=require('./helpers/photos-root.cjs');
-const local=process.argv.includes('--local'),keep=process.argv.includes('--keep');
+const local=process.argv.includes('--local'),all=process.argv.includes('--all'),keep=process.argv.includes('--keep');
+assert.ok(!(local&&all),'Choose --local or --all');
 const python=require('../tools/lib/platform.cjs').pythonExecutable(),env={...process.env,PYTHONPATH:path.resolve(__dirname,'../backend')};
 const settled=()=>state.acceptedPresentation?.exact&&state.acceptedPresentation.lane===state.currentView
  &&state.acceptedPresentation.generation===state.previewGeneration[state.currentView]&&viewerState().status==='ready';
@@ -50,7 +51,7 @@ const settled=()=>state.acceptedPresentation?.exact&&state.acceptedPresentation.
    result.cpu_peak_nits=JSON.parse(execFileSync(python,['-c','import sys,json;from hdr_finisher.hdr_delivery import check_decoded_hdr_ceiling;print(json.dumps(check_decoded_hdr_ceiling(sys.argv[1],"jpeg_ultrahdr",1000)))',path.join(dir,'cpu.jpg')],{env,encoding:'utf8'}));
    console.log(tag,JSON.stringify({...result,...timings}));
    /* Both read-only helper calls enforce the shared encoding allowance. */return result;};
-  const configure=active=>page.evaluate(async ({local,active})=>{
+  const configure=(active,localMode=local)=>page.evaluate(async ({local,active})=>{
    activateWorkflowTab('grade');
    for(const lane of ['hdr','sdr']){const b=state.adjustments[lane];b.highlight_section_enabled=true;b.highlight_compression_mode='peak_fit';
     if(lane==='hdr'){b.highlight_compression_target_nits=1000;b.highlight_compression_start_nits=400;}
@@ -61,13 +62,20 @@ const settled=()=>state.acceptedPresentation?.exact&&state.acceptedPresentation.
     selectedLocal().sdr_grade.exposure=1.05;selectedLocal().hdr_grade.exposure=1.05;
     if(!await commitSelectedLocal({maskContent:true}))throw Error('Local mask commit failed');setGradeMode('global');}
    state.previewScheduler?.cancel();while(state.gpuDraftInFlight)await state.gpuDraftInFlight.catch(()=>null);
-  },{local,active});
+  },{local:localMode,active});
+  // --all shares the identical neutral renderer/ceiling/Proof checks. Keep
+  // standalone modes self-contained; never reuse results from another run.
   await configure(false);const off=await deliver('neutral');
-  await configure(true);const on=await deliver(local?'local':'global');
-  for(const lane of ['hdr','sdr']){
-   assert.ok(off[lane].passed&&on[lane].passed,`${lane}: finished renderer agreement ${JSON.stringify({off:off[lane],on:on[lane]})}`);
-   assert.ok(on[lane].mean<=off[lane].mean+.15&&on[lane].p99<=off[lane].p99+.5,
-    `${lane}: HSL adds a GPU/CPU difference ${JSON.stringify({off:off[lane],on:on[lane]})}`);
+  for(const localMode of all?[false,true]:[local]){
+   // Remove the global edit before adding a local mask, so the local case
+   // still measures the hue mask alone against the neutral baseline.
+   if(all&&localMode)await configure(false,false);
+   await configure(true,localMode);const on=await deliver(localMode?'local':'global');
+   for(const lane of ['hdr','sdr']){
+    assert.ok(off[lane].passed&&on[lane].passed,`${lane}: finished renderer agreement ${JSON.stringify({off:off[lane],on:on[lane]})}`);
+    assert.ok(on[lane].mean<=off[lane].mean+.15&&on[lane].p99<=off[lane].p99+.5,
+     `${lane}: HSL adds a GPU/CPU difference ${JSON.stringify({off:off[lane],on:on[lane]})}`);
+   }
   }
   assert.deepEqual(errors,[]);console.log('PASS');
  }finally{await api('/api/delivery/preferences',{force_cpu:false}).catch(()=>{});await browser.close();if(keep)console.log('kept',root);else fs.rmSync(root,{recursive:true,force:true});}

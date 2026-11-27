@@ -1,4 +1,4 @@
-"""Grain-matched adaptive Denoise and the experimental cleanup stages.
+"""Grain-matched adaptive Denoise and native Clean Grain colour cleanup.
 
 All neighbourhood work stays in linear light. A whole-image reduction fits two
 brightness gains, then each tile runs the same reconstruction and cleanup.

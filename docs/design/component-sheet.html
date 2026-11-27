@@ -7,6 +7,7 @@
 <!-- The app's own tokens. This page defines no colours, fonts or sizes of its own
      and reads its approved tokens from the app. -->
 <link rel="stylesheet" href="../../codebase/frontend/visual-tokens.css">
+<link rel="stylesheet" href="../../codebase/frontend/scrollbars.css">
 
 <!-- Sheet layout only: not part of the app's components. -->
 <style id="sheet">
@@ -248,14 +249,20 @@
   .hf-group-reset::after { content: ""; width: 5px; height: 5px; border-radius: 50%; background: var(--muted); }
   .hf-group-body { padding: 4px 14px 12px; background: var(--raised); }
 
-  /* List: one solid surface, thin dividers, and a scrollbar rail that is
-     always shown and lighter than the list. The outer box clips the corners. */
+  /* Proposed side-panel overlay. These static specimens do not set timing. */
+  /* Full-width rows meet the lane in the overflowing example. */
+  .hf-panel-scroll { padding: 0; max-height: calc(3.5 * var(--list-row-h)); overflow-y: auto; }
+  .hf-panel-row {
+    display: flex; align-items: center; justify-content: space-between;
+    min-height: var(--list-row-h); padding-inline: var(--space-12);
+    border-bottom: 1px solid var(--hairline);
+  }
+  .hf-panel-title { font: var(--section-title-font); background: var(--raised); }
+  .hf-panel-row small { font-size: var(--font-size-sm); color: var(--muted); }
+
+  /* One solid list surface clips its native lane at the corners. */
   .hf-list { border: 1px solid var(--border); border-radius: var(--radius-1); overflow: hidden; background: var(--raised); }
-  .hf-list-scroll { height: calc(var(--list-row-h) * 4); overflow-y: scroll; }
-  .hf-list-scroll::-webkit-scrollbar { width: var(--scrollbar-w); }
-  .hf-list-scroll::-webkit-scrollbar-track { background: var(--border); }
-  .hf-list-scroll::-webkit-scrollbar-thumb { border: 2px solid transparent; border-radius: var(--radius-pill); background: var(--quiet) padding-box; }
-  .hf-list-scroll::-webkit-scrollbar-thumb:hover { background: var(--muted) padding-box; }
+  .hf-list-scroll { height: calc(var(--list-row-h) * 4); overflow-y: auto; }
   .hf-list-row { display: flex; align-items: center; gap: 8px; height: var(--list-row-h); padding: 0 6px 0 12px; border-bottom: 1px solid var(--hairline); color: var(--text); font: var(--font-weight-medium) var(--font-size-sm) var(--font-body); cursor: pointer; }
   .hf-list-row:hover { background: var(--plate-up-hover); }
   /* Selected is neutral: the row is pushed in like a selected tab; only the 2px edge carries the accent. */
@@ -279,12 +286,12 @@
   .hf-graph .curve { fill: none; stroke: var(--curve-neutral); stroke-width: 2; stroke-linejoin: round; }
   .hf-graph .node { fill: var(--panel); stroke: var(--curve-neutral); stroke-width: 2; }
   .hf-graph .node.end { fill: var(--curve-endpoint); stroke: none; }
-  .hf-graph .node.selected { fill: var(--curve-selected); stroke: var(--curve-selected-ring); }
+  .hf-graph .node.selected { fill: var(--graph-selected); stroke: var(--curve-selected-ring); }
   .hf-graph .band-wash { fill: var(--equalizer-influence-wash); }
   .hf-graph .zero { stroke: var(--equalizer-zero); stroke-width: 1; }
   .hf-graph .eq-curve { fill: none; stroke: var(--equalizer-curve); stroke-width: 2; }
   .hf-graph .eq-node { fill: var(--equalizer-node); }
-  .hf-graph .eq-node.selected { fill: var(--equalizer-selected); }
+  .hf-graph .eq-node.selected { fill: var(--graph-selected); }
   .hf-graph .hist-luma { fill: var(--scope-luma); fill-opacity: .55; stroke: var(--scope-luma); stroke-width: 1; }
   .hf-graph .hist-r { fill: none; stroke: var(--scope-red); stroke-width: 1; }
   .hf-graph .hist-g { fill: none; stroke: var(--scope-green); stroke-width: 1; }
@@ -334,6 +341,7 @@
   <a href="#sliders">Sliders</a>
   <a href="#panels">Panels and sections</a>
   <a href="#lists">Lists and scrollbars</a>
+  <a href="#scrollbars">Panel scrollbar</a>
   <a href="#graphs">Graphs</a>
   <a href="#tooltips">Tooltips</a>
 </nav>
@@ -610,8 +618,8 @@
   <ul class="rules">
     <li>A list is one solid surface with thin dividers between rows, no pills. Rows are <code>--list-row-h</code> (34 px).</li>
     <li>The list's own border clips everything inside, so the scrollbar can't poke out at the corners.</li>
-    <li>The scrollbar rail is always shown, lighter than the list, with a quiet pill thumb that brightens on hover.</li>
-    <li>An empty list keeps the same surface and rail, with one centred muted line. No black blocks.</li>
+    <li>The same Library-style lane appears only when the rows overflow.</li>
+    <li>An empty list keeps the same surface, with one centred muted line and no lane. No black blocks.</li>
     <li>The selected row is neutral: pushed in like a selected tab (<code>--plate-down</code>, <code>--plate-press</code>), with a 2 px accent edge at the left. No coloured background.</li>
   </ul>
   <div class="specimens">
@@ -622,6 +630,30 @@
     <div class="specimen"><h3>Empty list</h3>
       <div class="demo on-raised" data-css="hf-list-empty">
         <div class="hf-list"><div class="hf-list-scroll"><div class="hf-list-empty">Choose a mask tool to start an adjustment.</div></div></div>
+      </div></div>
+  </div>
+</section>
+
+<section id="scrollbars">
+  <h2>Panel scrollbar</h2>
+  <p>The native 15 px lane uses the Library&#8217;s pill thumb and arrow buttons,
+    with a hairline along its left edge. The line meets the panel dividers.
+    The lane is always visible while needed and takes no space when content fits.</p>
+  <div class="specimens">
+    <div class="specimen"><h3>Overflows</h3>
+      <div class="demo hf-panel-scroll" tabindex="0" aria-label="Overflowing control panel example" data-css="hf-panel-scroll hf-panel-row">
+        <div class="hf-panel-row hf-panel-title">Control Panel</div>
+        <div class="hf-panel-row">Tone <small>Reset</small></div>
+        <div class="hf-panel-row">Exposure <small>+1.00 EV</small></div>
+        <div class="hf-panel-row">Shadows <small>0.00 EV</small></div>
+        <div class="hf-panel-row">Highlights <small>0.00 EV</small></div>
+        <div class="hf-panel-row">Color</div>
+      </div></div>
+    <div class="specimen"><h3>Fits</h3>
+      <div class="demo hf-panel-scroll">
+        <div class="hf-panel-row hf-panel-title">Control Panel</div>
+        <div class="hf-panel-row">Tone</div>
+        <div class="hf-panel-row">Color</div>
       </div></div>
   </div>
 </section>

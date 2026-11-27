@@ -24,7 +24,7 @@ def lock_command(tmp_path, *args):
     # Override settings in the subprocess: no production lock is acquired.
     script = ('import importlib.util,sys;sys.path.insert(0,sys.argv.pop(1));'
               's=importlib.util.spec_from_file_location("lock",sys.argv.pop(1));'
-              'm=importlib.util.module_from_spec(s);s.loader.exec_module(m);'
+              'm=importlib.util.module_from_spec(s);s.loader.exec_module(m);m.POLL_SECONDS=.05;'
               'folder=sys.argv.pop(1);m.settings=lambda:dict(lockFolder=folder,mainRepository=folder+"/repo",windowSize="1408x794");'
               'sys.exit(m.main())')
     return [sys.executable, '-c', script, str(TOOLS), str(TOOLS / 'gpu-run-lock.py'), str(tmp_path), *map(str, args)]
@@ -42,6 +42,7 @@ def test_js_python_settings_agree(tmp_path, monkeypatch):
     assert json.loads(result) == settings()
 
 
+@pytest.mark.slow
 def test_lock_passes_window_and_return_code(tmp_path):
     result = subprocess.run(lock_command(tmp_path, '--label', 'test', '--', sys.executable, '-c',
                            'import os,sys;print(os.environ["HDR_FINISHER_ELECTRON_WINDOW_SIZE"]);sys.exit(7)'), capture_output=True, text=True, timeout=15)
@@ -50,6 +51,7 @@ def test_lock_passes_window_and_return_code(tmp_path):
     assert not (tmp_path / 'gpu-run.lock').exists()
 
 
+@pytest.mark.slow
 def test_legacy_lock_blocks_new_wrapper(tmp_path):
     lock = tmp_path / 'gpu-run.lock'
     lock.mkdir()
@@ -82,6 +84,7 @@ def test_stale_dead_lock_is_recovered(tmp_path, monkeypatch):
     assert owner.read_text() == 'replacement'
 
 
+@pytest.mark.posix_only
 @pytest.mark.skipif(os.name == 'nt', reason='POSIX groups; Windows uses existing taskkill /T')
 def test_timeout_stops_detached_grandchild(tmp_path):
     module = load_lock()
@@ -123,6 +126,7 @@ def test_shared_media_link_is_repeatable_and_keeps_one_copy(tmp_path):
     assert (source / 'photo').read_text() == 'same original'
 
 
+@pytest.mark.mac_only
 @pytest.mark.skipif(sys.platform != 'darwin', reason='macOS physical-footprint diagnostic')
 def test_memory_sampler_keeps_native_footprint():
     child = subprocess.Popen([sys.executable, str(TOOLS / 'sample-process-memory.py'), str(os.getpid())],
@@ -141,3 +145,63 @@ def test_memory_sampler_keeps_native_footprint():
         if child.poll() is None:
             child.kill()
             child.communicate(timeout=10)
+
+
+@pytest.mark.slow
+def test_waiters_acquire_in_registration_order(tmp_path):
+    # Block registration behind a legacy owner, then release a queued burst.
+    lock = tmp_path / 'gpu-run.lock'
+    lock.mkdir()
+    (lock / 'owner.txt').write_text(f'legacy pid={os.getpid()}\n')
+    order = tmp_path / 'order.txt'
+    children = []
+    def until(predicate):
+        deadline = time.monotonic() + 15
+        while not predicate() and time.monotonic() < deadline:
+            time.sleep(.02)
+        assert predicate()
+    try:
+        for index in range(3):
+            script = f'from pathlib import Path;p=Path({str(order)!r});p.open("a").write("{index}\\n")'
+            children.append(subprocess.Popen(lock_command(tmp_path, '--label', f'fifo-{index}', '--',
+                                                       sys.executable, '-c', script),
+                                             stdout=subprocess.DEVNULL, stderr=subprocess.PIPE))
+            until(lambda: len(list((tmp_path / 'gpu-run.queue').glob('*.ticket'))) == index + 1)
+        (lock / 'owner.txt').unlink()
+        lock.rmdir()
+        for child in children:
+            _, errors = child.communicate(timeout=30)
+            assert child.returncode == 0, errors
+        assert order.read_text().splitlines() == ['0', '1', '2']
+        assert not list((tmp_path / 'gpu-run.queue').glob('*.ticket'))
+        assert not lock.exists()
+    finally:
+        for child in children:
+            if child.poll() is None:
+                child.kill()
+                child.communicate(timeout=10)
+
+
+def test_dead_waiter_is_skipped_but_live_waiter_is_never_bypassed(tmp_path, monkeypatch):
+    module = load_lock()
+    earlier = module.enqueue(tmp_path)
+    later = module.enqueue(tmp_path)
+    monkeypatch.setattr(module, 'pid_alive', lambda pid: True)
+    assert not module.queue_turn(tmp_path, later)
+    assert earlier.exists()
+    monkeypatch.setattr(module, 'pid_alive', lambda pid: False)
+    assert module.queue_turn(tmp_path, later)
+    assert not earlier.exists()
+    later.unlink()
+
+
+def test_interrupted_wait_removes_its_ticket(tmp_path, monkeypatch):
+    module = load_lock()
+    monkeypatch.setattr(module, 'old_lock_held', lambda folder: True)
+    def interrupt(seconds):
+        raise KeyboardInterrupt
+    monkeypatch.setattr(module.time, 'sleep', interrupt)
+    with pytest.raises(KeyboardInterrupt):
+        module.acquire(tmp_path, 'interrupted')
+    assert not list((tmp_path / 'gpu-run.queue').glob('*.ticket'))
+    assert not (tmp_path / 'gpu-run.lock').exists()

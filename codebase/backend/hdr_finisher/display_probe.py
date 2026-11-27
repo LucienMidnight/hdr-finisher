@@ -254,6 +254,7 @@ def _query_windows_displays() -> list[dict[str, Any]]:
                 "id": f"{target.adapterId.HighPart:x}:{target.adapterId.LowPart:x}:{target.id}",
                 "name": str(target_name.monitorFriendlyDeviceName) or gdi_name or f"Display {target.id}",
                 "device_name": gdi_name,
+                "physical_bounds": dxgi_info.get("physical_bounds"),
                 "hdr_supported": hdr_supported,
                 "hdr_enabled": hdr_enabled,
                 "bits_per_channel": int(color.bitsPerColorChannel) if color_result == 0 else None,
@@ -297,7 +298,12 @@ def _query_dxgi_outputs() -> dict[str, dict[str, Any]]:
                         if hr == 0 and output6.value:
                             desc = DXGI_OUTPUT_DESC1()
                             if _com_call(output6, 27, ctypes.c_long, [ctypes.POINTER(DXGI_OUTPUT_DESC1)], ctypes.byref(desc)) == 0:
+                                rect = desc.DesktopCoordinates
                                 found[str(desc.DeviceName)] = {
+                                    "physical_bounds": {
+                                        "x": rect.left, "y": rect.top,
+                                        "width": rect.right - rect.left, "height": rect.bottom - rect.top,
+                                    },
                                     "max_luminance_nits": float(desc.MaxLuminance),
                                     "max_full_frame_luminance_nits": round(float(desc.MaxFullFrameLuminance), 2),
                                     "primary": desc.DesktopCoordinates.left == 0 and desc.DesktopCoordinates.top == 0,

@@ -21,6 +21,7 @@ from hdr_finisher.loader import (
 from hdr_finisher.models import HDRClassification
 
 
+@pytest.mark.needs_test_photos
 def test_load_real_png_fixture() -> None:
     image, source, metadata, analysis, sdr_reference = load_image(fixture_path("sdr_gradient.png"))
     assert source.suffix == ".png"
@@ -33,6 +34,7 @@ def test_load_real_png_fixture() -> None:
     assert float(sdr_reference.max()) == pytest.approx(1.0, abs=1e-3)
 
 
+@pytest.mark.needs_test_photos
 def test_load_real_tiff_fixture_with_hdr_headroom() -> None:
     image, source, metadata, analysis, sdr_reference = load_image(fixture_path("hdr_headroom.tiff"))
     assert source.suffix == ".tiff"
@@ -49,6 +51,7 @@ def test_load_real_tiff_fixture_with_hdr_headroom() -> None:
     assert sdr_reference is None
 
 
+@pytest.mark.needs_test_photos
 def test_tiff_import_reports_decode_conversion_and_analysis_phases() -> None:
     phases: list[str] = []
 
@@ -214,6 +217,7 @@ def test_loader_wraps_unexpected_decoder_errors(monkeypatch, tmp_path) -> None:
         load_image(source_path)
 
 
+@pytest.mark.needs_test_photos
 def test_load_real_linear_exr_fixture() -> None:
     image, source, metadata, analysis, sdr_reference = load_image(fixture_path("linear_unconfirmed.exr"))
     assert source.suffix == ".exr"
@@ -227,6 +231,7 @@ def test_load_real_linear_exr_fixture() -> None:
     assert sdr_reference is None
 
 
+@pytest.mark.needs_test_photos
 def test_load_blender_exr_recognizes_ocio_color_interop_id() -> None:
     image, source, metadata, analysis, sdr_reference = load_image(
         fixture_path("blender_linear_rec2020.exr")
@@ -315,6 +320,7 @@ def test_batch_load_maps_large_sources_without_changing_bytes(tmp_path, monkeypa
         assert reference is None
 
 
+@pytest.mark.needs_test_photos
 def test_blender_rec2020_fixture_is_numerically_normalized_to_acescg() -> None:
     import OpenEXR
 
@@ -332,6 +338,7 @@ def test_blender_rec2020_fixture_is_numerically_normalized_to_acescg() -> None:
     assert not np.allclose(normalized, raw, rtol=1e-4, atol=1e-5)
 
 
+@pytest.mark.needs_test_photos
 def test_manual_bt2020_override_applies_to_linear_exr_fixture() -> None:
     image, source, metadata, analysis, sdr_reference = load_image(
         fixture_path("linear_unconfirmed.exr"),
@@ -345,6 +352,7 @@ def test_manual_bt2020_override_applies_to_linear_exr_fixture() -> None:
     assert sdr_reference is None
 
 
+@pytest.mark.needs_test_photos
 def test_manual_diffuse_white_one_override_normalizes_linear_exr_scale() -> None:
     path = fixture_path("linear_unconfirmed.exr")
     baseline, *_ = load_image(
@@ -365,6 +373,7 @@ def test_manual_diffuse_white_one_override_normalizes_linear_exr_scale() -> None
     assert "normalized" in metadata["linear_reference_note"]
 
 
+@pytest.mark.needs_test_photos
 def test_transfer_only_override_does_not_confirm_unknown_exr_primaries() -> None:
     _image, source, metadata, analysis, _sdr_reference = load_image(
         fixture_path("linear_unconfirmed.exr"),
@@ -378,37 +387,22 @@ def test_transfer_only_override_does_not_confirm_unknown_exr_primaries() -> None
     assert analysis.needs_color_override is True
 
 
-@pytest.mark.parametrize("name,dtype,transfer,resolved", [
-    ("Display P3", "uint16", "sRGB", True),
-    ("P3D65 Display Gamma", "uint16", "sRGB", True),
-    ("sRGB", "uint8", "sRGB", True),
-    ("Rec.709", "uint16", "sRGB", True),
-    ("Display P3", "float32", None, False),
-    ("P3D65 PQ Display Full", "uint16", "PQ", True),
-    ("Display P3 HLG", "uint16", "HLG", True),
-    ("P3D65 PQ (Linear RGB Profile)", "float32", "LINEAR", True),
-    ("Linear Rec.2020", "float32", "LINEAR", True),
-    ("ProPhoto RGB", "uint16", None, False),
-    ("Unknown profile", "uint16", None, False),
-    ("Rec.2020", "uint16", None, False),
-])
-def test_integer_sdr_icc_tiff_interpretation(tmp_path, monkeypatch, name, dtype, transfer, resolved):
+@pytest.mark.parametrize("name", ["Display P3", "sRGB", "P3D65 PQ Display Full",
+                                  "Display P3 HLG", "Linear Rec.2020", "ProPhoto RGB"])
+@pytest.mark.parametrize("dtype", ["uint8", "uint16", "float32"])
+def test_corrupt_tiff_profile_never_resolves_colour_by_name(tmp_path, monkeypatch, name, dtype):
+    # Replaces the former name-classification test: a four-byte fake ICC payload
+    # is invalid regardless of its reported name. Real ICC transforms have
+    # dedicated custom-gamma fixtures in test_tiff_interpretation.py.
     path = tmp_path / "tagged.tif"
-    # Real TIFF sample metadata and ICC tag handling; substitute only the name.
     monkeypatch.setattr("hdr_finisher.loader._read_icc_profile_name", lambda _: name)
-    value = 2.0 if dtype == "float32" and transfer == "LINEAR" else (0.5 if dtype == "float32" else (32768 if dtype == "uint16" else 128))
-    tifffile.imwrite(path, np.full((4, 6, 3), value, dtype=dtype), photometric="rgb",
-                      extratags=[(34675, "B", 4, b"test", False)])
+    tifffile.imwrite(path, np.full((4, 6, 3), .5 if dtype == "float32" else 128, dtype=dtype),
+                      photometric="rgb", extratags=[(34675, "B", 4, b"test", False)])
     _, descriptor, metadata, analysis, reference = load_image(path)
-    assert metadata["transfer_function"] == transfer
-    assert analysis.needs_color_override is not resolved
-    if transfer == "sRGB":
-        assert descriptor.color_space_confident
-        assert analysis.classification == HDRClassification.SDR_ONLY
-        assert reference is not None
-        assert float(reference.mean()) == pytest.approx(0.216, abs=0.003)
-    if transfer == "LINEAR":
-        assert analysis.classification == HDRClassification.HDR_TRUE
+    assert metadata["transfer_function"] is None
+    assert metadata["needs_color_override"]
+    assert analysis.needs_color_override
+    assert not descriptor.color_space_confident
 
 
 @pytest.mark.parametrize("suffix", [".exr", ".hdr", ".pfm"])

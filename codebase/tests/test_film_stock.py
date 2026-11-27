@@ -346,13 +346,15 @@ def test_real_portra_400_keeps_middle_grey_near_neutral(kind, monkeypatch) -> No
         np.testing.assert_allclose(output, level, rtol=0.05)
 
 
-def test_real_portra_400_meets_both_lanes_at_the_same_exposure(monkeypatch) -> None:
+@pytest.mark.parametrize("exposure", [-1, 0, 1])
+def test_real_portra_400_meets_both_lanes_at_the_same_exposure(monkeypatch, exposure) -> None:
     _real_portra()
     monkeypatch.setattr(film_stock_module, "FILM_STOCK_DIR", REAL_STOCK_DIR)
     scale = float(adjustments_module.SDR_SCENE_TO_DISPLAY_SCALE)
     sdr = np.array([[[0.32, 0.18, 0.09], [0.05, 0.12, 0.04], [0.6, 0.55, 0.5]]], dtype=np.float32)
     hdr = linear_srgb_to_acescg(sdr / scale)
-    look = FilmLookAdjustments(film_stock="kodak_portra_400", stock_tone=100.0)
+    look = FilmLookAdjustments(film_stock="kodak_portra_400", stock_tone=100.0,
+                               stock_exposure=exposure)
     sdr_out = _stage(sdr, look, PreviewKind.SDR)
     hdr_out = _stage(hdr, look, PreviewKind.HDR)
     np.testing.assert_allclose(adjustments_module.acescg_to_linear_srgb(hdr_out) * scale, sdr_out, rtol=2e-3, atol=1e-5)
@@ -491,3 +493,61 @@ def test_partial_stock_mixes_do_not_cancel_density_grain(tone, color, monkeypatc
     clean = _apply_film_look(source, state, PreviewKind.SDR, include_grain=False)
     grained = _apply_film_look(source, state, PreviewKind.SDR)
     assert float(np.std(_linear_luma(grained - clean))) > .0001
+
+
+@pytest.mark.parametrize("kind", [PreviewKind.HDR, PreviewKind.SDR])
+@pytest.mark.parametrize("stock_id", [*film_stock_module.FILM_STOCK_IDS, "none"])
+@pytest.mark.parametrize("push", [-2, 0, 1, 2])
+def test_film_exposure_brightens_all_stocks_at_fixed_print_exposure(monkeypatch, kind, stock_id, push):
+    monkeypatch.setattr(film_stock_module, "FILM_STOCK_DIR", REAL_STOCK_DIR)
+    image = np.repeat(np.array([.03, .09, .18, .4], np.float32)[None, :, None], 3, axis=2)
+    if kind == PreviewKind.HDR:
+        image = linear_srgb_to_acescg(image / adjustments_module.SDR_SCENE_TO_DISPLAY_SCALE)
+    outputs = [_stage(image, FilmLookAdjustments(film_stock=stock_id, stock_exposure=ev,
+        push_pull=push), kind) for ev in (-1, 0, 1)]
+    lumas = [LUMA[kind](output) for output in outputs]
+    assert np.all(lumas[0] < lumas[1])
+    assert np.all(lumas[1] < lumas[2])
+
+
+@pytest.mark.parametrize("kind", [PreviewKind.HDR, PreviewKind.SDR])
+def test_black_and_white_film_exposure_and_physical_print_direction(kind):
+    # Black & White overrides the stock with the neutral chain.
+    image = np.full((1, 1, 3), .09, np.float32)
+    for push in (-2, 0, 2):
+        outputs = [_apply_film_look(image.copy(), _state(kind, _look(stock_exposure=ev,
+            push_pull=push), black_and_white=True), kind) for ev in (-1, 0, 1)]
+        assert np.all(outputs[0] < outputs[1])
+        assert np.all(outputs[1] < outputs[2])
+    outputs = [_stage(image, FilmLookAdjustments(print_exposure=ev), kind) for ev in (-1, 0, 1)]
+    assert np.all(outputs[0] > outputs[1])
+    assert np.all(outputs[1] > outputs[2])
+
+
+@pytest.mark.parametrize("kind", [PreviewKind.HDR, PreviewKind.SDR])
+def test_film_exposure_is_not_cancelled_by_middle_grey_calibration(stock_dir, kind):
+    stock_dir(_synthetic_stock())
+    image = np.full((1, 1, 3), .06, np.float32)
+    for ev in (-1, 1):
+        output = _stage(image, _look(stock_exposure=ev), kind)
+        np.testing.assert_allclose(output, image * 2 ** ev, rtol=2e-3, atol=1e-5)
+
+
+
+def test_neutral_scanner_extreme_white_and_normal_signal_identity():
+    stock = film_stock_module.controlled_film_stock("none", None, 100, 100, 100, False)
+    # Values on the scanner's sampled curve avoid testing inverse interpolation.
+    density = stock.film_curves_plain[[0, 32, 100, 150, 200, 255]].copy()
+    axis = np.linspace(*stock.film_range, film_stock_module.CURVE_SAMPLES)
+    log_e = np.stack([np.interp(density[:, c], stock.film_curves_plain[:, c], axis)
+                      for c in range(3)], axis=-1)
+    original = np.power(10., -log_e).astype(np.float32)
+    output = film_stock_module.scan_density(stock, density)
+    normal = np.all(original <= 16, axis=1)
+    assert np.any(normal) and np.any(~normal)
+    np.testing.assert_array_equal(output[normal], original[normal])
+    np.testing.assert_array_equal(output[~normal], np.full_like(output[~normal], 16))
+    # One over-range channel reaches the same white in all three channels.
+    mixed = density[[0]].copy()
+    mixed[0, 1:] = density[-1, 1:]
+    np.testing.assert_array_equal(film_stock_module.scan_density(stock, mixed), [[16, 16, 16]])

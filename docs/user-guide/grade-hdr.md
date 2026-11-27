@@ -160,6 +160,26 @@ Red, green, and blue **Hue** rotate each working primary in the ACEScg chromatic
 
 These are matrix-style global primary-shaping controls inspired by darktable-like primaries work. They are not HSL selections and do not isolate objects named “red,” “green,” or “blue.” Extreme purity can create negative or highly out-of-gamut intermediate values that later stages sanitize or compress.
 
+## HSL
+
+HSL changes selected colours without changing the rest of the photo. Pick a
+colour band or use **Pick** on the picture. **Add** includes more colours
+and **Subtract** excludes them. **Show selection** follows the wheel as you
+drag, then sharpens the overlay when you let go.
+
+- **Range** widens the band that gets the full adjustment. **Hue softness**
+  fades the adjustment into neighbouring hues beyond that band.
+- **Edge feather**, next to Hue softness in Global HSL, spreads the fade across the
+  photo at the selection edge. It goes from 0 to 64 source pixels. It
+  smooths the mask, not the photo.
+- **Edge grow/shrink** expands or contracts selected areas. Raise
+  **Edge detail** to follow light and dark edges more closely. Lower it to
+  smooth across texture.
+- **Hue** shifts the selected colours around the wheel. **Saturation**
+  changes their richness and **Luminance** changes their brightness.
+  **Uniformity** brings them closer to the centre hue. **Amount** controls
+  how much of the channel's adjustment is applied.
+
 ## Global tonal shaping
 
 Use the five-control Tone block described above; the former Lift/Gamma/Gain

@@ -54,6 +54,7 @@ def test_native_source_is_released_while_grade_is_busy(tmp_path):
     assert cache._native_source is None
 
 
+@pytest.mark.serial  # Native helper/process startup deadlines need uncontended CPU.
 def test_grade_pause_yields_backend_detail_to_source_mips(tmp_path, monkeypatch):
     from hdr_finisher import app_memory
     from hdr_finisher.library_api import create_library_router

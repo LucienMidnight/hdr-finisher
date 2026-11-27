@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Any, Callable
 
 import numpy as np
 
-from .import_bands import parallel_import_enabled, run_bands
+from .import_bands import run_bands
 
 from .color import aces2065_to_acescg, transform_float32_bounded
 from .delivery_frames import empty_source_array, source_float32

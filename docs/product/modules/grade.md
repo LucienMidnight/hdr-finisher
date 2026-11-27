@@ -1,3 +1,155 @@
+## November 27: keep the denoised rendition in Compare
+
+A lane switch keeps the already finished whole picture in the comparison
+canvas when the GPU can copy it safely. Switching to SDR for Match no longer
+discards the HDR picture and waits for a second, much slower CPU render of
+the same grade. Two split views and two side-by-side views reuse the picture
+while its source, geometry and HDR edit are unchanged. If the current frame
+cannot be copied or is no longer current, Compare still renders the actual
+lane-specific grade on the backend. It does not substitute an undenoised frame.
+
+## November 27: live HSL selection and more room to feather
+
+**Show selection** follows changes to the wheel's colour band and its
+Range, Softness, and spatial edge controls using one smaller preview at a
+time. It keeps up with new input without writing each drag step, and
+replaces the draft with the detailed overlay after release. Colour
+adjustments stay on their existing render paths.
+
+**Range** sets the fully selected hues. **Softness** extends the fade to
+neighbouring hues and is unchanged (1 to 90 degrees). **Feather** smooths
+the mask across the photo, not across the colour wheel. It now sits beside
+Softness and reaches 64 instead of 16 source pixels in Global HSL. Existing
+settings, including zero, still give exactly the same result. The separate
+Local Hue mask controls and Local HSL have not gained spatial controls.
+
+On a straight, saturated colour boundary at native scale, the transition
+from 10% to 90% coverage was 11 pixels without Feather. At minimum, middle
+and maximum, old widths were 11, 15 and 24 pixels. New widths are 11, 42
+and 82 pixels. On a uniform hue 40 degrees from the centre of a
+15-degree half-width band, minimum, middle and maximum Softness gave
+0%, 43% and 81% coverage. They address different things. The optional names
+**Hue softness** and **Edge feather** await Steve's decision.
+
+## November 27: make Tone sliders peers
+
+Steve approved full-width peer sliders in Global HDR and SDR Tone and in
+Local Light. Only Center and Width are subordinate. Shadows, Midtones and
+Highlights each have a quiet Range disclosure with a live EV summary, a changed
+dot and the existing histogram range preview. The disclosure starts closed and
+is shared per zone across both renditions and Global/Local for the session.
+Opening it does not edit the grade or save anything into a project or preset.
+Slider values, defaults, resets, undo and Match are unchanged.
+
+## November 27: one scale for HDR and SDR Curves
+
+Steve approved the same settings across both renditions and gentler tonal
+changes. All four global and local curves use the same scene-relative ACEScg
+scale. A 5% change in graph height is about 0.55 stop at middle grey and about
+half a stop near reference white and above. The point follows the pointer
+directly. HDR labels use the project reference white. SDR marks its white and
+leaves the shaded headroom editable. Curves do not clip that headroom.
+
+Whole-photo Match, local Match and Match HDR curves copy the HDR points
+unchanged. The fit does not author curves, and the local tone fit does not
+count an HDR curve twice. Saved non-neutral curves use the new interpretation
+with no migration. Film Look, Grain, Halation, Vignette and Tone keep their
+previous transfer or pivot.
+
+Windows qualification used the eight saved test copies with an in-memory
+S-luma curve and teal–orange RGB curves, plus WCFA0332's existing HDR Luma
+curve. All 17 fits copied the points exactly. Sixteen stayed at or below the
+body mean ΔE 2000 target of 2. P1011900 with S-luma measured 2.52 and stayed
+Needs review. The acceptance gates are unchanged. The small local review is
+at `codebase/output/review/shared-curves/index.html`.
+
+## November 27: SDR exposure comp and Match
+
+Steve approved a separate **SDR exposure comp** slider below Exposure. In
+generated, authored and linked SDR it changes the finished picture after Film
+Look and Vignette, before Highlight Compression and the final gamut map.
+Zero EV leaves the SDR untouched. It remains active when Tone is bypassed.
+Match SDR and Match HDR tone keep Exposure at the effective HDR Exposure
+and fit this separate output gain to the brighter SDR Match target. Contrast,
+Exposure Bands and Highlight Compression remain editable. Match acceptance
+guards and the saved adjustment schema did not change.
+
+## November 27: SDR Match aims for brighter main tones
+
+Steve approved a roughly one-stop increase to the Match target: "1 stop
+following textbook convention sounds right. Just like in HDR, I expect
+myself and other users to spend time tuning highlights if anything. The
+main tones should be as similar as possible after the button-press."
+
+Match uses 0.985 linear placement at HDR reference white before a smooth
+shoulder starting at 0.75. The body/shoulder split follows the new target.
+Generated SDR placement, existing saved grades, and Match safety thresholds
+are unchanged. Highlight appearance remains open for Steve's visual review.
+
+**PC qualification remains open.** The new target improved main-tone
+brightness on committed fits, but the 2 Delta E 2000 body target was not
+met on all photos. Three of the nine refused at the unchanged guards,
+including _DSC7970, rather than replacing their SDR grades. Alternate
+Highlight Compression starting points and stronger safety weighting did not
+recover the refused samples in diagnostic trials. No new colour controls or
+rendering changes were added to force a pass.
+
+## November 27: SDR Match fits the picture
+
+Steve approved fitting Exposure first, Contrast only when HDR uses it, five
+gentle Exposure Bands points and a fitted Highlight Compression Start. Match
+chooses between Soft Ceiling and Peak Fit. The five SDR Tone zone strengths stay
+neutral. No residual RGB curves or colour-slider corrections are authored.
+This fit initially kept the old target. Highlight output rendering and Match acceptance gates stay unchanged.
+
+HSL and Curves have one-shot copy actions. Tone and Highlight Compression
+have one-shot fitting actions that preserve the other SDR modules. Each is
+one Undo step. The shared-curves decision above extends verbatim copying to
+whole-photo and local Match. Steve's visual review of highlights is open.
+
+PC qualification used the eight saved grades in the brief. All eight committed
+and met the body mean Delta E 2000 limit of 2 (range 0.036?1.450), with both the
+flower and the black-and-white photo marked matched. Fireworks and DSC07654
+still show Needs review at the existing gates. No synthetic RGB curve was
+introduced. See the [performance row](../../technical/performance-table.md#november-27--windows-sdr-match-picture-fit)
+and the local Target / Old / New review.
+
+## November 26: wider Vignette Midpoint
+
+Midpoint now covers 0?200% on both slider and typed value. The start radius is
+`0.15 + 1.40 * midpoint / 100`, in units of half the shorter frame dimension.
+At default centre, Roundness and Scale, 100% reaches near the corners of a 3:2
+frame; 200% extends beyond them. Feather keeps its existing width. CPU rendering,
+GPU preview/delivery and the on-image outline use the same radius.
+
+Steve explicitly requested preservation of saved edits for this change.
+The nested Vignette recipe carries `midpoint_scale_version: 2`; unmarked saved
+recipes load with Midpoint divided by two (old 100 becomes 50), exactly retaining
+the previous radius. This applies wherever that recipe loads: sidecars, projects,
+presets and copied grades. Repeated save/load does not divide again. The default
+is now 25%, retaining the previous default appearance. Fractional values survive.
+The containing project/sidecar schema versions stay unchanged: the version belongs
+to the shared Vignette recipe. Older apps reject the new field under their strict
+schema, or their saved-grade recovery may offer to omit it; omitting it would
+interpret the smaller number on the old scale and change the look. Keep an
+original copy when going back to an older app; new saves are not backwards compatible.
+
+Focused checks: legacy-pixel equality and round trips, expanded radius, typed
+limits and outline geometry; hardware preview and CPU/GPU PNG delivery use
+finished SDR Delta E 2000 mean ? 1 and p99.9 ? 2 (below/near visible differences).
+No existing parity tolerance is changed.
+Targeted Python and Node checks passed. The locked PC hardware check passed
+at 100% and 200% in both editing lanes and for actual CPU/GPU PNG exports;
+finished SDR mean Delta E 2000 stayed below 0.001, p99.9 was zero.
+Old saved-recipe rendering remained byte-exact against the previous equation.
+
+## November 26: repair name edits under memory pressure
+
+Renaming a saved repair, including undo and redo of its name, reuses the
+published native pixels before checking memory for a new frame. Pixel-changing
+repair edits still pass the existing memory admission check. Regression tests
+cover all three name-edit operations with no memory available above the reserve.
+
 ## November 26: native CPU Retouch preview under memory pressure
 
 The repair edit was already saved when the Mac refused the next 24 MP
@@ -3427,3 +3579,12 @@ pointer-up and swallowed the first click on the minimum Mac. The same framing
 UI steps succeed on v0.9.2 before its missing local encoder stops delivery.
 Clicks that open Metadata keep it open; the pre-click open state is captured
 before dismissal. No grade, rendering, framing dimensions or delivery settings change.
+
+### November 27, 2026: Unified scrollbars and status borders
+
+The Grade Control Panel (Global, Local and Retouch), both boxed stacks,
+and the shared Metadata and Scopes areas use the Library's 15 px native
+scrollbar. It has arrows and a left hairline when content overflows, with
+no fade or reserved lane when content fits. The stacks still show six rows
+before scrolling. The Grade and Proof status rows regain their top hairline.
+This replaces the earlier permanent stack rail and fading panel thumb.

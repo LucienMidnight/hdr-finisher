@@ -1,3 +1,181 @@
+## November 27: Neutral extreme ideal-scanner white
+
+The ideal Neutral scanner now saturates any scanned pixel with a channel above
+16 linear-sRGB units to white (16, 16, 16), identically on CPU and GPU, before
+Lab Levels and working-space conversion. Measured stocks and real papers bypass
+this rule. Normal scanner signals retain their original values without an extra
+colour-space round trip. No control range or test tolerance changes.
+
+The stacked maximum-paper-gain case previously produced millions of scene units.
+Converting and storing those signals loses the nearly empty colour channels;
+preventing texture overflow alone did not fix it. Bounding the ideal scanner
+before that amplification avoids false colour; the synthetic extreme endpoint
+now becomes white deliberately. This replaces the earlier decision to retain
+that Film limitation; the general shared-stage HDR range limit remains separate.
+
+Focused uncompressed HDR case passes at added mean 0.025, p99.9 1 (limits 0.1 / 2).
+The CPU scanner regression also checks normal-signal identity and mixed-channel
+extreme white. At d487a8a9 the complete HDR/SDR matrix and all 72 exposure cases passed.
+The same 72 configurations were also bit-for-bit identical to the old CPU
+renderer on a 120x80 sampled version of the driver's hue/brightness grid.
+Node checks: 1,549 passed, one skipped; Python: 5,245 passed, 56 skipped.
+
+Release orchestration did not pass: its final stock-character/panel/preset UI
+follow-up timed out in Electron launch before obtaining a process handle.
+The earlier run also hit a Windows EPERM progress-file replacement error.
+Own leftover test Electron trees were stopped and verified gone; Steve's
+morning Electron window (12888) was left open. No timeout or tolerance was
+relaxed. One direct stock-character/panel/preset attempt also timed out at
+Electron launch (exit 86); its test processes are verified gone. Root cause
+(launcher/app versus interaction with the owner's old open app) is not isolated.
+The standard Library smoke was not run after the startup failures and handoff
+of the GPU to the timing worker. Final release evidence:
+codebase/output/release-checks/2026-11-27T05-44-22-681Z-43634390507ec9a031f1/.
+The numeric PC/Mac known-failure entries are removed; Mac hardware confirmation
+of this shared rule remains unrun.
+
+## November 27: PC parity deadline investigation
+
+The d7da33c1 release attempt progressed normally into its exposure follow-up
+before the shared 900-second attempt deadline expired. The test transported
+2.88 million channel differences per frame through CDP and sorted normalized
+copies. Commit 8ba7be54 keeps the full baseline in the renderer and returns
+exact histogram statistics. A full-frame unit comparison preserves the old
+mean, p99.9 and maximum bit-for-bit. Limits and case coverage are unchanged.
+Optional --texture-stats reads the finished texture without enabling HDR
+compression; --timings exposes settling, GPU and CPU stage timestamps.
+
+Two repeated uncompressed HDR Neutral maximum-paper-gain runs reproduced
+all bytes of the October PC signature, also present in the v0.9.3 tag:
+mean 3.2009965277764834, p99.9 250, identical worst coordinates/RGB. This is
+an existing numerical limitation, not evidence of random VRAM corruption or
+the November 27 exposure change. Finished Film storage has no NaN/infinity;
+stored magnitudes are at most 32752, decoded magnitudes reach 5382144.
+The scaled final Film texture therefore does not overflow. Extreme precision
+loss and colour conversion remain implicated; this is not a complete
+stage-by-stage attribution of the older shared-range limitation.
+A disposable alternative storage trial reduced but did not fix the error
+(mean 1.919, p99.9 53), and was reverted. No production rendering fix is
+claimed. The existing decision to retain this extreme-preview limitation
+without expanding shared-stage precision or reducing controls remains open
+for Steve to revisit.
+
+Final targeted release driver at 8ba7be54 completed in 212.596 seconds:
+NOT READY, one known failure, zero new failures, zero unfinished checks.
+The complete exposure and stock-character/panel/preset UI follow-ups passed;
+36 focused Node tests passed. No tolerance, deadline, retry policy, protected
+project or production renderer changed. Evidence:
+codebase/output/release-checks/2026-11-27T05-13-07-686Z-90e04d6b10d96bf309ff/.
+
+## November 27: Print and Scan shortcuts removed
+
+Removed Print's Neutral, Warm, Cool, Soft, Rich and Cinema buttons and Scan's
+Clean scan and Lab scan buttons, following the Lens shortcut removal.
+Use the underlying Print and Scan controls directly. Development's Push/Pull
+control and the full Film Look presets remain unchanged.
+
+These shortcuts saved renderer control values and deliberate override keys,
+never shortcut names or IDs. Existing edits and sparse/full Look recipes need
+no migration and render identically. Round-trip tests cover all six former
+Print choices combined with both Scan choices through every built-in Look.
+The unused stage recipe table and shortcut button builder are removed; shared
+shortcut CSS remains in use by RAW Expand. The single-indicator-dot rule and
+its three-theme app check remain intact. The tooltip catalogue is regenerated.
+
+## November 27: temporary native-dropdown previews
+
+Every Film Look select (Film Stock, Lens Filter, Grain Film Format, Capture
+Geometry, Film Type and Print Paper) previews the focused native option immediately.
+Chromium's existing base-select picker provides option focus events, so its
+native opening, screen-reader semantics, arrow navigation, type-ahead and
+selection remain. Enter, an option click or ordinary closing commits the
+highlighted choice; Escape restores the opening adjustments. No custom
+listbox, menu, token or layout is added.
+
+Each highlight starts from the opening recipe, including stock inheritance,
+rather than accumulating edits. Intermediate adjustments are preview-only:
+global synchronization refuses to persist them, controls and changed markers
+read the opening committed recipe, and autosave/sidecar history continues to
+use the backend document. Closing on the original value or Escape creates no
+history entry and preserves redo. A different final choice uses the normal
+single gesture: one Undo returns to the pre-open recipe; Redo reapplies the
+final choice. Every preview and close retires older render generations through
+the existing coordinator, without writing the preview pipeline.
+
+Qualification on the PC: all six native pickers pass live-arrow/cancel checks;
+Lens also passes option click, ordinary outside close, original-value no-op,
+single Undo, preserved Redo, committed-only indicators/backend state and stale
+coordinator-token rejection. Full preset application and sparse save/reopen
+checks pass. The shared indicator fixture passes all three themes. Final Node
+suite: 1,542 passed, one skipped. Full Python: 5,235 passed, 56 skipped, one
+unrelated Denoise decoder-version pin failure
+(`test_untouched_sources_keep_pre_qualification_decoder_versions`, expects
+signed-RAW v8 where the branch already reports TIFF-ICC v9); left unchanged.
+The 72 Film Exposure GPU/CPU cases and 259 targeted film CPU tests pass. No
+encoded all-codec/release qualification or performance improvement is claimed.
+Library smoke is incomplete: 28/30 viewport photos pictured; DSC00264 and
+DSC01226 fail GPU RAW finite-half-float transport before Film. Memory gates
+pass. Left unchanged; evidence and conditions are in the performance table.
+
+Other dropdowns that could adopt this later, unchanged here: Denoise Method/
+Splotch Size; RAW Lens Mode/Profile and Highlight Recovery; Grade Highlight
+Compression modes/colour handling, scope channel/mode and overlay choices;
+Proof format/size/target/display; Export format/colour/encoding choices.
+
+## November 27: single changed marker
+
+A deliberate Film control override keeps its clickable reset dot and suppresses
+the adjacent passive label dot. This removes the duplicate on Lens Strength,
+Size and every other Film slider/numeric row with a visible reset marker.
+Lens Filter keeps its one reset marker. Module headers, Camera/Negative/Print/
+Scan subsection summaries and passive changed controls without an override
+retain their existing meaning. Equal-value deliberate edits still show Reset.
+The design guideline records the shared rule. The DOM/CSS regression checks
+all panel headings (including Proof/Export markup), explicit and passive states,
+in all three themes using the app's Chromium; no GPU/photo is needed by the
+fixture itself.
+
+## November 27: Lens shortcuts removed
+
+Removed the five Camera Lens shortcut buttons (None, Light diffusion,
+Soft glow, Sparkle, Heavy bloom). Use Lens Filter, Strength and Size directly.
+The full Film Look presets remain available. Shortcuts stored only those three
+renderer fields and their deliberate override keys, never a shortcut name or
+ID; existing saved edits and sparse/full Look recipes need no migration.
+The Lens recipe table and its stage-test branch were removed. Shortcut CSS
+is shared with RAW Expand, so none is Lens-only or dead.
+The tooltip catalogue is regenerated after removing the row.
+
+Development's Push/Pull positions (-2, -1, 0, +1, +2) remain available. Negative has no shortcut button row: its Film
+Stock and Grain Film Format choices are dropdowns. Whole Film Look presets
+are separate from these rows. Twelve targeted preset/character tests pass,
+including all five former shortcut values through every built-in Look's
+sparse save/reopen path.
+
+## November 27: Film Exposure direction
+
+Film Exposure now uses a fixed zero-EV middle-grey calibration on CPU and
+WebGPU. The camera exposure remains `2^EV` before film development; positive
+EV brightens and negative EV darkens on negative, slide and neutral/B&W
+stocks, including measured and approximate Push/Pull. Previously the
+reference was exposed along with the picture, cancelling the gain and
+sometimes reversing it through the stock's curved response. Print Exposure
+still models light on paper: positive EV darkens the print; slides bypass it.
+Stock Tone at zero still preserves the original luminance.
+
+Saved values are retained without migration. A sign flip cannot preserve the
+old appearance: the bug changed a normalization ratio, not the camera gain's
+sign, and its effect depends on stock, development and pixel brightness.
+Keeping that appearance would require the old renderer or a new compensating
+control. In line with the pre-1.0 no-compatibility rule, existing negative/slide
+recipes with nonzero Film Exposure will change when rendered again. Zero-EV
+recipes and the neutral/B&W chain retain their existing behavior. The current
+tooltip already describes camera exposure correctly and needs no copy change.
+
+Qualification: 259 targeted CPU tests pass. All 72 focused HDR/SDR WebGPU
+exposure cases pass direction and the unchanged CPU/export parity gate,
+covering negative, slide, neutral and measured-push Portra 800.
+
 ## November 16: draft-grain follow-up
 
 Seven interleaved parent/`4e84549e` pairs (84 Fit drags) do not reproduce the

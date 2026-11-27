@@ -86,14 +86,15 @@ with the previous detail-admission block. No full Single pass is claimed.
 
 Other incomplete checks, not new app fixes in this group:
 
-- `gpu-denoise-measurement.js`: full corpus still needs the documented noise-free
-  linear EXR >=540x540. Its explicit `--synthetic-only` mode passes the three
-  generated cases and does not claim corpus or 42 MP timing coverage.
+- `gpu-denoise-measurement.js`: Steve retired the noise-free render-reference
+  requirement and render-only lab case on November 26. Photographic cases no
+  longer stop for that file. This does not claim a new full-corpus GPU pass.
 - `denoise-adaptive-parity.js`: documented GPU result readback failure.
 - Zoomed Denoise and RAW Single: see corrected follow-up above; neither is
   retrospectively classified as a documented November 14 failure.
 - `preview-export-compare`: documented `source_relink_required` for protected
-  DSC00950; the project remains untouched.
+  DSC00950; November 26 drivers now relink their disposable session to the
+  matching curated RAW, leaving the protected project untouched.
 - Live Export tiles: the pre-signed export-admission regression above remains.
 - Follow-up plain-Electron Library smoke: attempted under the lock at the same
   window size; hard timeout in `observe` (130-second deadline, 188.6 seconds
@@ -223,7 +224,9 @@ The other release failures and missing coverage below remain open.
   the unchanged 1000-nit target plus 1% encoding allowance.
 - `library-export-live-tiles.js`: complete seven-export run passes, all GPU
   including Sony, live drawing with Export open and closed, unchanged 5%
-  open-page timing guard. The former Sony refusal is gone.
+  open-page timing guard. The former Sony refusal is gone. Current policy keeps GPU
+  only when the job fits the app memory budget; larger eligible exports use
+  bounded CPU strips (see `technical/research/large-export-cpu-default.md`).
 
 Cause: `2202eddd` enabled previously unavailable Mac memory readings, exposing
 the old full-CPU-preview estimate on a source-only stream. `03af5471` improved
@@ -287,8 +290,8 @@ names except for desktop drivers. Every still-failing selected driver is listed.
 
 | Driver | Category and evidence | Action / remaining qualification |
 | --- | --- | --- |
-| `desktop/tests/proof-grade-diagnostic.js` | c — `source_relink_required` for protected DSC00950 project | Its saved source is `D:\Photos\Play_Raw\Fantastic light over village - AdamFromCanada\DSC00950.ARW`; project unchanged. A valid source grant/relinked disposable copy is needed. |
-| `gpu-denoise-measurement.js` | c — missing noise-free linear EXR render >=540x540 in HDR Test Images | Cleanup now closes Electron on fixture failure; two prompt errors replace the old 15-minute hang. Steve must supply the render. |
+| `desktop/tests/proof-grade-diagnostic.js` | c — `source_relink_required` for protected DSC00950 project | Its saved source is `D:\Photos\Play_Raw\Fantastic light over village - AdamFromCanada\DSC00950.ARW`; project unchanged. November 26: review drivers now grant the matching curated RAW to the disposable session. |
+| `gpu-denoise-measurement.js` | c — missing noise-free linear EXR render >=540x540 in HDR Test Images | Cleanup now closes Electron on fixture failure; two prompt errors replace the old 15-minute hang. Superseded November 26: Steve retired this requirement and lab case. |
 | `denoise-adaptive-parity.js` | b — `The GPU result could not be read back` on both versions | Replaced oversized JSON transport with identical float bytes; no accuracy pass is claimed. |
 | `denoise-zoomed-region.js` | a — tag passes; current fails both fresh comparison attempts, needs 3.41 GiB host work, only 1.20 GiB safely available | Current native Mac memory detection differs from the tag; headroom is a confound, not evidence of a leak. Full reference remains unavailable; no safe small fix or limit change made. |
 | `film-stock-parity.js` | b — same extreme HDR Neutral maximum-paper-gain numerical failure on tag | Full current matrix still fails. Preset disclosure harness repaired; complete character/presets/panel follow-up now passes separately. |
@@ -1035,6 +1038,11 @@ physical HDR display validation remain separate release checks.
 
 
 ## Extreme HDR preview range (October 16, 2026)
+
+November 27 update: the Film-specific stacked Neutral trigger described below
+is fixed by shared CPU/GPU ideal-scanner white saturation; see the Film Look
+module PRD. Its PC and Mac known-failure signatures are retired. The older
+non-Film shared-stage range limit remains; the following measurements are history.
 
 The preview's earlier shared half-float stages have a finite range of 65,504
 scene units, 18.47 stops above HDR reference white (0.18). Extreme uncompressed

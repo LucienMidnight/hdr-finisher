@@ -87,6 +87,10 @@ An imported upload is copied into a temporary owned source, decoded, normalized,
 
 Grading sessions live in memory. Library photos keep their grade in a `.hdrf` sidecar beside the photo, indexed by `library.sqlite3`, which can be rebuilt (see [Photo Library: how it works](photo-library.md)). For single-file work, `.hdrfinisher` project files persist the source reference, adjustment document, and project settings so work can be reopened. Ejecting or replacing a session discards adjustments that have not been saved to a project. Application preferences are stored separately as local desktop state. Exports and manually recorded proof evidence are additional durable artifacts.
 
+After each successful project save, including Save As, the session tracks that
+destination and its SHA-256 fingerprint. Subsequent saves refuse to overwrite
+external changes to that file until it is reopened.
+
 ## Preview scheduling
 
 The interaction-aware scheduler coalesces control input to one WebGPU render per animation frame. Interactive scope work is throttled, normal settling follows after roughly 110 ms idle, and optional high-quality refinement follows only after longer idle. Image, scope, refinement, and inactive-lane work have separate generations; requests are abortable and stale results are rejected by both frontend and backend checks.

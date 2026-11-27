@@ -71,8 +71,14 @@
       body: JSON.stringify({ method: "micro_grain", micro_luminance: controls.microLuminance,
         micro_color: controls.microColor, micro_detail: controls.microDetail }),
     });
-    if (!current() || response.status === 409) throw new DOMException("Micro Grain was replaced.", "AbortError");
-    if (!response.ok) throw new Error(`Micro Grain could not read Bayer samples (${response.status}).`);
+    const superseded = !current() || response.status === 409;
+    if (superseded || !response.ok) {
+      // Rejected Bayer bodies still own a connection and buffered samples.
+      // Drain neither: cancel the body, keeping the original failure reason.
+      await response.body?.cancel?.().catch(() => null);
+      if (superseded) throw new DOMException("Micro Grain was replaced.", "AbortError");
+      throw new Error(`Micro Grain could not read Bayer samples (${response.status}).`);
+    }
     return response.arrayBuffer();
   }
 

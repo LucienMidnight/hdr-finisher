@@ -2230,7 +2230,7 @@ class SessionRenderCache:
         local_adjustments: list[LocalAdjustment] | None = None,
         channel_names: tuple[str, ...] | None = None,
         scope_region: tuple[float, float, float, float] | None = None,
-        *, micro_preview=None,
+        *, micro_preview=None, display_peak_nits: float = 1000.0,
     ) -> Any:
         """Return a cached, single-flight scope payload for the adjusted proxy."""
         edge = max(256, int(long_edge))
@@ -2245,6 +2245,8 @@ class SessionRenderCache:
         requested_channels = tuple(channel_names or ("R", "G", "B", "Y"))
         region_key = tuple(round(float(value), 6) for value in scope_region) if scope_region is not None else None
         key = (source_epoch, kind.value, edge, signature, mode, int(bins), int(columns), int(max_nits), requested_channels, region_key)
+        if kind == PreviewKind.HDR:
+            key += (display_peak_nits,)
         flight_key = ("scope", *key)
         while True:
             with self._lock:
@@ -2296,6 +2298,7 @@ class SessionRenderCache:
                 max_nits=max_nits,
                 color_context=self.color_context,
                 channel_names=requested_channels,
+                display_peak_nits=display_peak_nits,
             )
             if cached_micro is not None:
                 result.micro_source_long_edge = min(edge, max(source.shape[:2]))

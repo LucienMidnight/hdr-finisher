@@ -219,10 +219,14 @@ See the five-control Tone strength, Center and Width limits above.
 
 ### Vignette
 
+Older saved edits retain their appearance: their Midpoint number is halved on
+load (old 100% becomes 50%). New saves should be opened in this app version
+or newer; older versions do not understand the new Midpoint scale.
+
 | Control | Slider | Typed value | Notes |
 | --- | --- | --- | --- |
 | Amount | -100 to 100 % | **-200 to 200 %** | 100 is 2 EV; 200 is 4 EV. |
-| Midpoint | 0 to 100 % | 0 to 100 % |  |
+| Midpoint | 0 to 200 % | 0 to 200 % | 100% reaches near the corners of a centred 3:2 frame at default Roundness and Scale; 200% extends beyond it. |
 | Roundness | -100 to 100 % | -100 to 100 % |  |
 | Feather | 0 to 100 % | 0 to 100 % |  |
 | Highlight Protection | 0 to 100 % | 0 to 100 % | Only when Amount is negative (darkening); otherwise the control is off. |

@@ -32,7 +32,7 @@ class HSLRecipe(BaseModel):
     uniformity: float = Field(default=0, ge=0, le=100)
     opacity: float = Field(default=1, ge=0, le=1)
     edge: float = Field(default=0, ge=-8, le=8)
-    edge_feather: float = Field(default=0, ge=0, le=16)
+    edge_feather: float = Field(default=0, ge=0, le=64)
     edge_detail: float = Field(default=50, ge=0, le=100)
 
 

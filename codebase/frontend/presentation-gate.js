@@ -37,11 +37,17 @@
       const held = new Promise((resolve) => { release = resolve; });
       this.locks.set(canvas, tail.then(() => held));
       await tail;
-      if (typeof isCurrent === "function" && isCurrent() === false) {
+      try {
+        if (typeof isCurrent === "function" && isCurrent() === false) {
+          release();
+          return null;
+        }
+        if (typeof resize === "function") resize();
+      } catch (error) {
+        // Setup has no caller-owned lease yet; leave the next frame runnable.
         release();
-        return null;
+        throw error;
       }
-      if (typeof resize === "function") resize();
       return {
         current: () => typeof isCurrent !== "function" || isCurrent() !== false,
         release,

@@ -254,6 +254,7 @@ def test_disabled_overlay_is_transient_and_raw_save_is_skipped(tmp_path):
     assert not LibraryCache(profile).directory('library-raw-thumbnails').exists()
 
 
+@pytest.mark.slow
 def test_running_total_publications_replacements_drift_and_clear(tmp_path, monkeypatch):
     from time import perf_counter
     cache = LibraryCache(tmp_path)

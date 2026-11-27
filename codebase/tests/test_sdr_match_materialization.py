@@ -21,7 +21,6 @@ from hdr_finisher.sdr_match import (
     SDRMatchMaterializationError,
     _materialize_local_grades,
     _quality_metrics,
-    _refine_image_highlights,
     build_sdr_match_target,
     materialize_sdr_match,
 )
@@ -54,6 +53,7 @@ def _calibrated_grade() -> tuple[AdjustmentState, list[LocalAdjustment]]:
     local.hdr_grade.exposure = 0.2
     local.hdr_grade.highlights = 0.4
     local.hdr_grade.saturation = 0.08
+    local.hdr_grade.luma_curve = [[0, 0], [.4, .42], [1, 1]]
     return adjustments, [local]
 
 
@@ -116,34 +116,6 @@ def test_input_reuse_preserves_the_complete_generated_recipe() -> None:
     assert reused.status == baseline.status
 
 
-def _curve_has_useful_slope(points: list[list[float]]) -> bool:
-    values = np.asarray(points, dtype=np.float32)
-    return bool(np.all(np.diff(values[:, 1]) / np.diff(values[:, 0]) >= 0.19))
-
-
-@pytest.mark.parametrize("failure", ["color", "white", "no_highlights"])
-def test_highlight_fit_does_not_trade_body_color_or_white_area_for_highlight_accuracy(monkeypatch, failure):
-    source = np.array([[[0.2, 0.2, 0.2], [0.95, 0.95, 0.95]]], dtype=np.float32)
-    target = source.copy()
-    target[0, 1] = 0.98
-    body = np.array([[True, failure == "no_highlights"]])
-    adjustments = AdjustmentState()
-    before = adjustments.model_dump()
-    quality = _quality_metrics(target, source, body)
-    trial = target.copy()
-    if failure == "color":
-        trial[0, 0] = [0.7, (0.2 - 0.2126 * 0.7 - 0.0722 * 0.16) / 0.7152, 0.16]
-    else:
-        trial[0, 1] = 1.0
-    monkeypatch.setattr("hdr_finisher.sdr_match._render_candidate", lambda *args: trial)
-    candidate, fitted_quality = _refine_image_highlights(
-        source, adjustments, [], 1.0, target, body, source, quality
-    )
-    np.testing.assert_array_equal(candidate, source)
-    assert fitted_quality == quality
-    assert adjustments.model_dump() == before
-
-
 def test_calibrated_scene_materializes_into_normal_visible_modules() -> None:
     source = tifffile.imread(FIXTURE).astype(np.float32)
     adjustments, locals_ = _calibrated_grade()
@@ -169,30 +141,29 @@ def test_calibrated_scene_materializes_into_normal_visible_modules() -> None:
         assert result.quality.p95_oklab_error <= 0.04
     assert result.adjustments.sdr.use_authored_base is False
     assert result.adjustments.sdr.highlight_section_enabled is True
-    assert result.adjustments.sdr.highlight_compression_mode == "soft_ceiling"
-    assert result.adjustments.sdr.highlight_compression_color_handling == ("smooth_rolloff" if result.adjustments.sdr.linked_to_hdr else "preserve_color")
-    assert _curve_is_identity(result.adjustments.sdr.luma_curve)
-    if not result.adjustments.sdr.linked_to_hdr:
-        assert any(abs(node.adjustment_ev) > 0.001 for node in result.adjustments.sdr.tone_equalizer_nodes)
-    tone_targets = [node.input_ev + node.adjustment_ev for node in result.adjustments.sdr.tone_equalizer_nodes]
-    assert np.all(np.diff(tone_targets) > 0.0)
-    for curve in (
-        result.adjustments.sdr.red_curve,
-        result.adjustments.sdr.green_curve,
-        result.adjustments.sdr.blue_curve,
-    ):
-        assert len(curve) <= 7
-        assert _curve_has_useful_slope(curve)
-    # Headroom no longer needs RGB curves to compensate channel clipping.
+    sdr = result.adjustments.sdr
+    assert sdr.exposure == adjustments.hdr.exposure
+    assert sdr.output_exposure > 0.5
+    assert sdr.highlight_compression_mode in {"soft_ceiling", "peak_fit"}
+    assert sdr.highlight_compression_color_handling == (
+        "preserve_color" if sdr.highlight_compression_mode == "soft_ceiling"
+        else adjustments.hdr.highlight_compression_color_handling
+    )
+    assert all(getattr(sdr, name) == 0 for name in ("blacks", "shadows", "midtones", "highlights", "whites"))
+    nodes = sdr.tone_equalizer_nodes
+    assert len(nodes) == 5 and nodes[0].input_ev == -6 and nodes[-1].input_ev == 6
+    assert np.all(np.diff([node.input_ev for node in nodes]) >= .75 - 1e-6)
+    assert np.all(np.diff([node.input_ev + node.adjustment_ev for node in nodes]) > 0)
+    keys = ("luma_curve", "red_curve", "green_curve", "blue_curve")
+    assert sdr.curves_section_enabled == adjustments.hdr.curves_section_enabled
+    assert all(getattr(sdr, key) == getattr(adjustments.hdr, key) for key in keys)
+    # Match may never invent RGB curves to compensate channel clipping.
     # Judge the finished result against the existing quality limits above.
     finished = apply_adjustments(source, result.adjustments, PreviewKind.SDR,
                                  include_grain=False, local_adjustments=result.local_adjustments)
     assert np.isfinite(finished).all() and finished.min() >= 0 and finished.max() <= 1
     local_grade = result.local_adjustments[0].sdr_grade
-    assert _curve_is_identity(local_grade.luma_curve)
-    assert _curve_is_identity(local_grade.red_curve)
-    assert _curve_is_identity(local_grade.green_curve)
-    assert _curve_is_identity(local_grade.blue_curve)
+    assert all(getattr(local_grade, key) == getattr(locals_[0].hdr_grade, key) for key in keys)
     assert abs(local_grade.exposure) > 0.01 or abs(local_grade.highlights) > 0.01
     assert result.local_adjustments[0].mask == locals_[0].mask
 
@@ -207,7 +178,7 @@ def test_calibrated_scene_materializes_into_normal_visible_modules() -> None:
     target_luma = np.einsum("...c,c->...", target, SDR_LUMA, optimize=True)
     candidate_luma = np.einsum("...c,c->...", candidate, SDR_LUMA, optimize=True)
     source_luma = np.einsum("...c,c->...", settled_hdr, HDR_LUMA, optimize=True)
-    uncompressed = source_luma / 0.18 * (100.0 / 203.0)
+    uncompressed = source_luma / 0.18 * 0.985
     body = uncompressed <= MATCH_SHOULDER_START
     body_p95 = float(np.percentile(np.abs(target_luma[body] - candidate_luma[body]), 95))
     assert body_p95 <= (0.03 if result.status == "matched" else 0.05)
@@ -220,10 +191,7 @@ def test_calibrated_scene_materializes_into_normal_visible_modules() -> None:
     assert float(np.mean(candidate_luma[ordinary_highlights] >= 0.999)) < 0.01
 
     raised = result.adjustments.model_copy(deep=True)
-    if raised.sdr.linked_to_hdr:
-        raised.sdr.output_exposure += 0.5
-    else:
-        raised.sdr.exposure += 0.5
+    raised.sdr.output_exposure += 0.5
     raised_candidate = apply_adjustments(
         source,
         raised,

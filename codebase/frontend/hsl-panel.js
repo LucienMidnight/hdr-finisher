@@ -21,6 +21,18 @@ function syncPhotoPickCursor() {
   pane.style.setProperty('--photo-pick-cursor', `url("data:image/svg+xml,${encodeURIComponent(svg)}") ${Math.round(4*size/24)} ${Math.round(20*size/24)}, crosshair`);
 }
 
+const hslSliderTips = {
+  width: 'Widen the band of colours that get the full adjustment.',
+  feather: 'Higher values blend the adjustment into more neighbouring hues.',
+  edge_feather: 'Higher values spread the fade farther across the photo at selection edges.',
+  edge: 'Negative values shrink selected areas. Positive values grow them.',
+  edge_detail: 'Higher values follow light and dark edges more closely. Lower values smooth over texture.',
+  hue: 'Shift selected colours around the wheel. Positive and negative values turn in opposite directions.',
+  saturation: 'Raise to make selected colours richer. Lower to mute them.',
+  luminance: 'Raise to brighten selected colours. Lower to darken them.',
+  uniformity: 'Raise to pull selected colours closer to the middle of their hue range.',
+  opacity: 'Raise to apply more of the adjustment. Zero turns its effect off.',
+};
 function initializeHslPanels() {
   for (const scope of ['global', 'local']) {
     const host = document.getElementById(`hsl-${scope}-panel`);
@@ -28,27 +40,30 @@ function initializeHslPanels() {
     hslUI.panels.push(ui);
     host.innerHTML = `<div class="hsl-channels" aria-label="${scope === 'global' ? 'Channels' : 'Quick starts'}"></div>
       <div class="hsl-customs"></div><div class="hsl-title"><strong></strong><span></span>
-      <button type="button" class="text-button" data-hsl-action="reset">Reset channel</button>
-      <button type="button" class="text-button" data-hsl-action="delete">Delete</button></div>
+      <button type="button" class="text-button" data-hsl-action="reset" data-tooltip="Restore this channel’s starting settings.">Reset channel</button>
+      <button type="button" class="text-button" data-hsl-action="delete" data-tooltip="Delete this custom channel and its adjustment.">Delete</button></div>
       <svg class="hsl-wheel" viewBox="0 0 320 320" aria-label="HSL colour selection wheel"></svg>
-      <div class="hsl-picker">${['pick','add','subtract'].map(m=>`<button type="button" class="text-button" data-hsl-mode="${m}">${m[0].toUpperCase()+m.slice(1)}</button>`).join('')}
-      <button type="button" class="text-button" data-hsl-action="stop">Stop picking</button></div>
-      <button type="button" class="text-button hsl-selection-toggle" data-hsl-selection aria-pressed="false">Show selection</button>
+      <div class="hsl-picker">
+      <button type="button" class="text-button" data-hsl-mode="pick" data-tooltip="Click or drag on the photo to replace the colour selection.">Pick</button>
+      <button type="button" class="text-button" data-hsl-mode="add" data-tooltip="Click or drag on the photo to include more colours.">Add</button>
+      <button type="button" class="text-button" data-hsl-mode="subtract" data-tooltip="Click or drag on the photo to exclude colours from the selection.">Subtract</button>
+      <button type="button" class="text-button" data-hsl-action="stop" data-tooltip="Stop sampling colours from the photo.">Stop picking</button></div>
+      <button type="button" class="text-button hsl-selection-toggle" data-hsl-selection aria-pressed="false" data-tooltip="Show where the active selection applies. Stronger overlay means more coverage.">Show selection</button>
       <div class="hsl-sliders"></div><p class="hsl-notice" role="status" aria-live="polite"></p>`;
-    const specs = [['width','Range',1,180,1,16],['feather','Softness',1,90,1,12],['edge','Edge grow/shrink',-8,8,.25,0],['edge_feather','Feather',0,16,.25,0],['edge_detail','Edge detail',0,100,1,50],['hue','Hue',-180,180,1,0],['saturation','Saturation',-100,100,1,0],['luminance','Luminance',-2,2,.01,0],['uniformity','Uniformity',0,100,1,0],['opacity','Amount',0,1,.01,1]];
+    const specs = [['width','Range',1,180,1,16],['feather','Hue softness',1,90,1,12],['edge_feather','Edge feather',0,64,.25,0],['edge','Edge grow/shrink',-8,8,.25,0],['edge_detail','Edge detail',0,100,1,50],['hue','Hue',-180,180,1,0],['saturation','Saturation',-100,100,1,0],['luminance','Luminance',-2,2,.01,0],['uniformity','Uniformity',0,100,1,0],['opacity','Amount',0,1,.01,1]];
     for (const [key,label,min,max,step,value] of specs.filter(([key]) => scope === 'global' || !['edge','edge_feather','edge_detail'].includes(key))) {
       const row = document.createElement('div'); row.className = 'control-row instrument-slider-control';
       row.innerHTML = `<div class="control-heading"><label>${label}</label><output></output></div><input type="range" aria-label="HSL ${label}" data-hsl-key="${key}" min="${min}" max="${max}" step="${step}" value="${value}">`;
       host.querySelector('.hsl-sliders').append(row);
       const input = row.querySelector('input');
-      input.title = ({edge:'Grow or shrink the selected area.',edge_feather:'Soften the selection boundary.',edge_detail:'Smooth across texture or follow light and dark edges.'})[key] || label;
+      input.dataset.tooltip = hslSliderTips[key];
       input.addEventListener('pointerdown',()=>hslBegin(ui));
       input.addEventListener('input',()=>{
         const channel = hslChannel(ui); if (!channel) return;
         hslBegin(ui);
         const target = ['width','feather'].includes(key) ? channel.recipe.ranges[ui.range] : channel.recipe;
         if (!target) return;
-        target[key] = Number(input.value); hslPreview(ui); hslSync(ui);
+        target[key] = Number(input.value); hslPreview(ui, ['width','feather','edge','edge_feather','edge_detail'].includes(key)); hslSync(ui);
       });
       input.addEventListener('change',()=>hslEnd(ui));
       input.addEventListener('pointerup',()=>hslEnd(ui));
@@ -112,9 +127,10 @@ function hslBegin(ui){
   if(ui.scope==='global')beginGlobalEditGesture(ui.host);
   state.previewScheduler?.beginInteraction();
 }
-function hslPreview(ui){
+function hslPreview(ui, selectionChanged = false){
   if(ui.scope==='local'){hideLocalMaskOverlayForGradePreview();scheduleLocalPreview();}
   else {invalidatePreview(state.currentView);debouncePreview(state.currentView);}
+  if(selectionChanged && ui.host.querySelector('[data-hsl-selection]').getAttribute('aria-pressed')==='true')void hslSelection(ui,{draft:true});
 }
 function hslEnd(ui){
   if(!ui.gesture)return;ui.gesture=false;state.previewScheduler?.endInteraction();
@@ -165,10 +181,12 @@ function hslSync(ui){
   for(const ch of channels){
     const button=document.createElement('button');button.type='button';button.className='hsl-channel text-button';
     button.setAttribute('aria-label',global?`${ch.name} channel`:`${ch.name} quick start`);
-    const band=e.BANDS.find(b=>b.id===ch.id);button.style.background=band?.hex||'conic-gradient(red,yellow,lime,cyan,blue,magenta,red)';
+    const band=e.BANDS.find(b=>b.id===ch.id);button.style.background=band?.hex||'var(--hsl-fallback-spectrum)';
     button.setAttribute('aria-pressed',String(global&&c.id===ch.id));
     if(global&&!valuesEqual(ch.recipe,defaults.find(d=>d.id===ch.id)?.recipe))button.classList.add('modified');
-    button.title=ch.name;
+    button.dataset.tooltip=global
+      ? ch.kind==='all' ? 'Adjust all colours together.' : `Adjust the ${ch.name.toLowerCase()} colour band.`
+      : `Use ${ch.name.toLowerCase()} as a starting colour for Pick, Add or Subtract.`;
     button.onclick=()=>{
       if(global){ui.channel=ch.id;ui.range=0;hslSync(ui);if(ui.host.querySelector('[data-hsl-selection]').getAttribute('aria-pressed')==='true')void hslSelection(ui);}
       else hslEdit(ui,()=>{const r=hslChannel(ui).recipe;if(ui.mode==='pick')r.ranges=[e.bandRange(ch)];else{if(r.ranges.length>=32)throw Error('Selection is limited to 32 ranges; remove or widen a range.');r.ranges.push({...e.bandRange(ch),subtract:ui.mode==='subtract'});}ui.range=r.ranges.length-1;});
@@ -177,9 +195,9 @@ function hslSync(ui){
   const customs=ui.host.querySelector('.hsl-customs');customs.replaceChildren();customs.hidden=!global;
   if(global){
     for(const ch of owner.hsl.channels.filter(v=>v.kind==='custom')){
-      const b=document.createElement('button');b.className='text-button';b.type='button';b.textContent=ch.name+(!valuesEqual(ch.recipe,e.newRecipe())?' •':'');b.setAttribute('aria-pressed',String(c.id===ch.id));b.onclick=()=>{ui.channel=ch.id;ui.range=0;hslSync(ui);if(ui.host.querySelector('[data-hsl-selection]').getAttribute('aria-pressed')==='true')void hslSelection(ui);};customs.append(b);
+      const b=document.createElement('button');b.className='text-button';b.type='button';b.dataset.tooltip='Edit this custom colour selection.';b.textContent=ch.name+(!valuesEqual(ch.recipe,e.newRecipe())?' •':'');b.setAttribute('aria-pressed',String(c.id===ch.id));b.onclick=()=>{ui.channel=ch.id;ui.range=0;hslSync(ui);if(ui.host.querySelector('[data-hsl-selection]').getAttribute('aria-pressed')==='true')void hslSelection(ui);};customs.append(b);
     }
-    const add=document.createElement('button');add.type='button';add.className='text-button';add.textContent='+ Custom';add.disabled=owner.hsl.channels.length>=13;add.title=add.disabled?'All four Custom channels are in use':'';add.onclick=()=>hslEdit(ui,()=>hslAddCustom(ui));customs.append(add);
+    const add=document.createElement('button');add.type='button';add.className='text-button';add.textContent='+ Custom';add.disabled=owner.hsl.channels.length>=13;add.dataset.tooltip=add.disabled?'All four Custom channels are in use.':'Create a separate channel for colours you pick.';add.onclick=()=>hslEdit(ui,()=>hslAddCustom(ui));customs.append(add);
   }
   ui.host.querySelector('.hsl-title strong').textContent=c.name;
   ui.host.querySelector('.hsl-title span').textContent=`${c.recipe.ranges.filter(r=>!r.subtract).length} in · ${c.recipe.ranges.filter(r=>r.subtract).length} out`;
@@ -213,7 +231,14 @@ function hslWheel(ui){
   node('text',{x:160,y:155,'text-anchor':'middle',fill:'currentColor'}).textContent=c.name;
   node('text',{x:160,y:178,'text-anchor':'middle',fill:'currentColor',class:'hsl-polar-caption'}).textContent='outer: source · inner: result';
   if(c.kind==='all')return;
+  const handleTips = {
+    move: 'Drag to move the whole band to another colour.',
+    edge: 'Drag to widen or narrow the band of fully selected colours.',
+    feather: 'Drag to change how far the selection fades into nearby hues.',
+    target: 'Drag to shift the selected colours toward this hue.',
+  };
   const handle=(kind,h,r,i,label)=>{const group=node('g',{'data-hsl-handle':kind,'data-range':i,tabindex:0,role:'slider','aria-label':label,'aria-valuemin':0,'aria-valuemax':360,'aria-valuenow':e.wrap(h)}),p=pt(h,r);
+    group.dataset.tooltip=handleTips[kind.replace(/-?1$/, '')];
     if(kind.startsWith('edge')){const a=pt(h,r-9),b=pt(h,r+9);node('line',{x1:a[0],y1:a[1],x2:b[0],y2:b[1],stroke:'transparent','stroke-width':16},group);node('line',{x1:a[0],y1:a[1],x2:b[0],y2:b[1],stroke:'currentColor','stroke-width':4},group);}
     else{node('circle',{cx:p[0],cy:p[1],r:11,fill:'transparent'},group);node('circle',{cx:p[0],cy:p[1],r:kind.startsWith('feather')?4:6,fill:kind==='move'?css(rgb(h)):'currentColor',stroke:'currentColor','stroke-width':2},group);}
   };
@@ -221,7 +246,7 @@ function hslWheel(ui){
     node('path',{d:arc(r.center-r.width-r.feather,r.center+r.width+r.feather,radius),stroke:'currentColor','stroke-width':6,fill:'none',opacity:.25,'data-hsl-handle':'move','data-range':i});
     node('path',{d:arc(r.center-r.width,r.center+r.width,radius),stroke:'currentColor','stroke-width':5,fill:'none','stroke-dasharray':r.subtract?'4 3':'none','data-hsl-handle':'move','data-range':i});
     handle('move',r.center,radius,i,`${r.subtract?'Excluded':'Included'} range centre`);
-    if(i===ui.range){for(const side of [-1,1]){handle(`edge${side}`,r.center+side*r.width,radius,i,side<0?'Range start':'Range end');handle(`feather${side}`,r.center+side*(r.width+r.feather),radius,i,side<0?'Softness start':'Softness end');}if(!r.subtract)handle('target',r.center+c.recipe.hue,88,i,'Hue shift target');}
+    if(i===ui.range){for(const side of [-1,1]){handle(`edge${side}`,r.center+side*r.width,radius,i,side<0?'Range start':'Range end');handle(`feather${side}`,r.center+side*(r.width+r.feather),radius,i,side<0?'Hue softness start':'Hue softness end');}if(!r.subtract)handle('target',r.center+c.recipe.hue,88,i,'Hue shift target');}
   });
 }
 function hslRemoveRange(ui,i){
@@ -242,7 +267,7 @@ function hslBindWheel(ui){
   const svg=ui.host.querySelector('svg');let drag=null;
   const hue=event=>{const box=svg.getBoundingClientRect();return hslWheelHue(Math.atan2(event.clientY-box.top-box.height/2,event.clientX-box.left-box.width/2)*180/Math.PI);};
   svg.addEventListener('pointerdown',event=>{const target=event.target.closest('[data-hsl-handle]');if(!target||event.button!==0)return;event.preventDefault();const i=Number(target.dataset.range);ui.range=i;hslBegin(ui);drag={kind:target.dataset.hslHandle,i,offset:target.dataset.hslHandle==='move'?HDRHSL.delta(hslChannel(ui).recipe.ranges[i].center,hue(event)):0};svg.setPointerCapture(event.pointerId);hslSync(ui);});
-  svg.addEventListener('pointermove',event=>{if(!drag)return;hslMoveHandle(ui,drag.kind,drag.i,hue(event)+drag.offset);hslPreview(ui);hslSync(ui);});
+  svg.addEventListener('pointermove',event=>{if(!drag)return;hslMoveHandle(ui,drag.kind,drag.i,hue(event)+drag.offset);hslPreview(ui,drag.kind!=='target');hslSync(ui);});
   const end=()=>{if(!drag)return;drag=null;hslEnd(ui);};svg.addEventListener('pointerup',end);svg.addEventListener('lostpointercapture',end);svg.addEventListener('pointercancel',end);
   svg.addEventListener('contextmenu',event=>{const target=event.target.closest('[data-hsl-handle]');if(!target)return;event.preventDefault();if(target.dataset.hslHandle!=='target')hslRemoveRange(ui,Number(target.dataset.range));});
   svg.addEventListener('keydown',event=>{const target=event.target.closest('[data-hsl-handle]');if(!target)return;const i=Number(target.dataset.range),kind=target.dataset.hslHandle;
@@ -263,9 +288,14 @@ function hslPoint(event){
 function hslPickStart(event){if(!hslUI.picker||event.button!==0||!state.session||!els.previewPrimaryPane.contains(event.target)||event.target.closest('button,input,select,textarea,a,[role="button"]'))return;const point=hslPoint(event);if(!point)return;event.preventDefault();event.stopImmediatePropagation();hslUI.stroke={ui:hslUI.picker,points:[point],lane:state.currentView,session:state.session.session_id,localId:hslUI.picker.scope==='local'?selectedLocal()?.id:null};}
 function hslPickMove(event){const s=hslUI.stroke;if(!s)return;event.preventDefault();event.stopImmediatePropagation();const p=hslPoint(event),last=s.points.at(-1);if(p&&s.points.length<512&&Math.hypot(p.x-last.x,p.y-last.y)>.003)s.points.push(p);}
 function hslPickEnd(event){if(!hslUI.stroke)return;event.preventDefault();event.stopImmediatePropagation();const s=hslUI.stroke;hslUI.stroke=null;void hslPickSamples(s);}
-async function hslFetchStage(ui,points,extra={}){
-  if(await syncGlobalEditState()===false)throw Error("The current edit could not be saved.");
-  await state.editCommandQueue;
+async function hslFetchStage(ui,points,extra={}, {draft=false, isCurrent=()=>true}={}){
+  // Selection requests already carry the in-memory recipe and stage settings.
+  // Do not turn every pointer move into a history/save round trip.
+  if(!draft){
+    if(await syncGlobalEditState()===false)throw Error("The current edit could not be saved.");
+    await state.editCommandQueue;
+  }
+  if(!isCurrent())return null;
   const response=await fetch(`/api/session/${state.session.session_id}/hsl-sample`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({lane:state.currentView,local_id:ui.scope==='local'?selectedLocal()?.id:null,points,adjustments:state.adjustments,local_adjustments:localAdjustments(),edit_revision:state.editRevision,long_edge:1000,...extra})});
   const result=await safeJson(response);if(!response.ok)throw Error(typeof result.detail==='string'?result.detail:'HSL stage sampling failed.');return result;
 }
@@ -301,7 +331,7 @@ function hslVisibleRect(){
   if(right<=left||bottom<=top||left===photo.left&&top===photo.top&&right===photo.right&&bottom===photo.bottom)return null;
   return{x:(left-photo.left)/photo.width,y:(top-photo.top)/photo.height,width:(right-left)/photo.width,height:(bottom-top)/photo.height};
 }
-function hslClearSelection(){clearTimeout(hslUI.selectionTimer);clearTimeout(hslUI.viewportTimer);hslUI.overlayRevision++;document.getElementById('hsl-selection-overlay')?.remove();for(const ui of hslUI.panels)ui.host.querySelector('[data-hsl-selection]').setAttribute('aria-pressed','false');}
+function hslClearSelection(){clearTimeout(hslUI.selectionTimer);clearTimeout(hslUI.viewportTimer);hslUI.overlayRevision++;hslUI.pendingSelection=null;document.getElementById('hsl-selection-overlay')?.remove();for(const ui of hslUI.panels)ui.host.querySelector('[data-hsl-selection]').setAttribute('aria-pressed','false');}
 function hslPlaceOverlay(){
   const image=document.getElementById('hsl-selection-overlay'),preview=activePreviewElement();
   if(!image||!preview)return;
@@ -313,30 +343,50 @@ function hslPlaceOverlay(){
     clearTimeout(hslUI.viewportTimer);
     const visible=hslVisibleRect()||{x:0,y:0,width:1,height:1};
     if(!image.hslOwner?.selectionRequest&&(visible.x<region.x-1e-9||visible.y<region.y-1e-9||visible.x+visible.width>region.x+region.width+1e-9||visible.y+visible.height>region.y+region.height+1e-9)){
-      hslUI.viewportTimer=setTimeout(()=>{if(document.getElementById('hsl-selection-overlay')===image)void hslSelection(image.hslOwner);},60);
+      hslUI.viewportTimer=setTimeout(()=>{if(document.getElementById('hsl-selection-overlay')===image)void hslSelection(image.hslOwner,{draft:Boolean(image.hslOwner?.gesture)});},60);
     }
   }
 }
-async function hslSelection(ui){
+function hslSelection(ui,{draft=false}={}){
   const button=ui.host.querySelector('[data-hsl-selection]');
   if(button.getAttribute('aria-pressed')!=='true'||!state.session||state.activeWorkflow!=='grade'||hslBypassed(ui)){hslClearSelection();return;}
   clearTimeout(hslUI.selectionTimer);clearTimeout(hslUI.viewportTimer);
-  const revision=++hslUI.overlayRevision;
   for(const panel of hslUI.panels)panel.host.querySelector('[data-hsl-selection]').setAttribute('aria-pressed',String(panel===ui));
-  ui.selectionRequest=revision;
+  // Let an in-flight draft paint even if more pointer moves arrive. Keep
+  // just the newest pending request, and fence drafts when settling or hiding.
+  if(!draft)hslUI.overlayRevision++;
+  hslUI.pendingSelection={ui,draft,revision:hslUI.overlayRevision};
+  hslUI.selectionWork ||= hslDrainSelection();
+  return hslUI.selectionWork;
+}
+async function hslDrainSelection(){
   try{
-    const data=await hslFetchStage(ui,[{x:.5,y:.5}],{selection_recipe:hslChannel(ui).recipe,selection_rect:ui.scope==='global'?hslVisibleRect():null,long_edge:1600});
-    if(revision!==hslUI.overlayRevision)return;
+    while(hslUI.pendingSelection){
+      const request=hslUI.pendingSelection;
+      hslUI.pendingSelection=null;
+      await hslRenderSelection(request);
+    }
+  }finally{hslUI.selectionWork=null;}
+}
+async function hslRenderSelection({ui,draft,revision}){
+  const isCurrent=()=>revision===hslUI.overlayRevision;
+  ui.selectionRequest=true;
+  try{
+    const data=await hslFetchStage(ui,[{x:.5,y:.5}],{selection_recipe:hslChannel(ui).recipe,
+      selection_rect:ui.scope==='global'?hslVisibleRect():null,long_edge:draft?640:1600},{draft,isCurrent});
+    if(!data||!isCurrent())return;
     const image=document.createElement('img');image.id='hsl-selection-overlay';image.alt='';image.src=data.selection_overlay;image.hslRegion=data.selection_region;image.hslOwner=ui;
     image.style.cssText='position:absolute;pointer-events:none;z-index:3;max-width:none;';
     await image.decode();
-    if(revision!==hslUI.overlayRevision)return;
+    if(!isCurrent())return;
     const previous=document.getElementById('hsl-selection-overlay');
     if(previous)previous.replaceWith(image);else els.previewPrimaryPane.append(image);
     ui.selectionRequest=0;hslPlaceOverlay();
   }catch(error){
-    if(revision===hslUI.overlayRevision){document.getElementById('hsl-selection-overlay')?.remove();hslNotice(ui,error.message);}
-  }finally{if(ui.selectionRequest===revision)ui.selectionRequest=0;}
+    // A draft may race a save revision. Keep the last good mask and let
+    // the next draft or the settled request use the acknowledged revision.
+    if(!draft&&isCurrent()){document.getElementById('hsl-selection-overlay')?.remove();hslNotice(ui,error.message);}
+  }finally{ui.selectionRequest=false;}
 }
 
 function hslWheelAnchors() {

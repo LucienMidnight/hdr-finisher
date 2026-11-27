@@ -36,7 +36,7 @@ window.HDRLibraryBuildPreviews=(()=>{
       }
       job.state='finished';
     }catch(error){job.state=controller.signal.aborted?'cancelled':'failed';job.error=controller.signal.aborted?'':error.message;}
-    finally{await refresh();HDRLibraryStopwatch('built_previews_finished',{count:job.done,total:job.total,reason:job.state+(job.error?' · '+job.error:''),picture_size:'screen preview'});changed();}
+    finally{await refresh().catch(error=>console.debug('Built preview usage:',error.message));HDRLibraryStopwatch('built_previews_finished',{count:job.done,total:job.total,reason:job.state+(job.error?' · '+job.error:''),picture_size:'screen preview'});changed();}
     return snapshot();
   }
   async function start(selection){

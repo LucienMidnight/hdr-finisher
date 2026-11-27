@@ -1,3 +1,112 @@
+### November 27, 2026: CPU progress and banded development
+
+Steve approved CPU-specific limits for fallback and CPU-only machines. Helper
+CPU work now has an inactivity allowance of at least 120 seconds (or the
+existing size/type decoder allowance when longer). The PC 50 MP DSC00636.ARW
+baseline was 56.4 seconds, so the floor exceeds twice that whole decode.
+Completed sensor/reduction bands renew the allowance, throttled to once a
+second; no timer heartbeat is sent while a native call is stuck. Queueing and
+Grade holds remain excluded. Genuine stalls still set aside the offending file
+and restart the disposable helper; the three-restart budget is unchanged.
+Retouch and rejected-pixel Edge Colour keep their separate existing guards.
+GPU preparation, upload, scheduling and drawing limits are unchanged. The
+15-second grant expiry is an owner-connection lease (5-second heartbeats),
+not a photo deadline; scheduler stall thresholds only log diagnostics. The
+45-second upload and 310-second scene-download guards remain transport guards.
+
+CPU Bayer development retains full-resolution AHD, lens correction, peak and
+robust measurements, and shared 640/2560 scene preparation. Horizontal triangle
+reduction uses Pillow's float filter instead of Python column gathers. Planar
+lens sampling uses the existing native lens helper with ordered double-weight
+interpolation, avoiding large NumPy gather/weight temporaries. The native
+coordinate regression matches the former NumPy result byte for byte; banded
+reduction retains its existing whole-image Pillow tolerance. Source/output
+recipes, cache identities, priorities and memory budgets are unchanged.
+Recovery previously serialized admitted jobs behind one worker, retaining their
+memory reservations and blocking later sources. Recovery now shares the existing
+foreground CPU partition with ordinary picture work (at most photo_lanes active
+CPU pictures/recoveries combined), with a recovery worker per available lane.
+The GPU development/save place counts are unchanged. Selected/visible-first
+ordering and shared-tier source reuse were already present. Before/after measurements and qualification are in the performance
+table.
+
+Validation: the frozen 90-second PC check now passes 30/30 (last viewport
+picture 79.1 s), with four successful real CPU recoveries and zero helper
+restarts. Drawing/memory guards pass unchanged (5.804 GB peak). All 37 focused
+worker/band/fallback tests pass, including real helper progress-versus-stall
+recovery, Grade-pause exclusion, native coordinate bytes, banded filter parity
+and concurrent admitted CPU recovery. Full Python before the final shared-lane
+adjustment: 5192 passed / 56 skipped, plus 47 serial passes; one parallel helper
+startup timeout passed alone afterward. Full Node: 1546 passed / one skipped,
+with the previously recorded unrelated release-runner follow-up-log deadline
+failure unchanged. The focused 37-case suite covers the final lane adjustment.
+
+### November 27, 2026: rejected GPU transport and CPU recovery
+
+The PC quick check reproduced 28/30 viewport pictures: DSC00264.ARW and
+DSC01226.ARW failed the existing finite-half-float transport guard. The guard
+was introduced November 17, not by today's TIFF/ICC, watchdog or Compare work.
+The new shared decoder/live identity invalidates prior pictures, exposing fresh
+GPU development. Downloaded GPU samples included values around 1e20, whereas
+both full CPU RAW decodes were finite and byte-identical before/after the TIFF
+change (peaks below 3). This is consistent with this PC's known faulty VRAM;
+it is not a RAW decoder-output or fixture acceptance change.
+
+Reduced scenes are now checked before presentation/deferred saving, inside the
+scheduler's failure handling. Invalid/range-rejected samples go straight to the
+CPU and that same GPU work is blocked for the session. The existing finite
+half-float bound stays unchanged; no clipping or extra GPU retry is added.
+An app rerun exposed a second old gap: equal-priority queued work repeatedly
+preempted edge-cpu recovery, preventing progress. CPU recovery now yields its
+turn only to a genuinely higher priority class; Grade preemption remains.
+Memory limits and development/save place counts are unchanged.
+
+The Denoise cache test now checks its original cleanup suffix contract against
+the current shared decoder base. The TIFF/ICC base invalidation remains intact;
+real RAW pixels and Denoise's existing off-candidate byte checks are unchanged.
+Validation: 107 focused Library Node cases passed (30 scheduler/transport cases
+rechecked after the final native-plane scope adjustment), 28 Denoise/TIFF Python
+cases and 61 scheduler/fallback cases passed. Full Python phases: 5190 passed /
+56 skipped, then 46 passed; the two new priority tests also passed separately.
+Full Node: 1546 passed, one skipped, one unrelated release-runner follow-up-log
+deadline failure (null exit code instead of zero); left unchanged.
+
+Remaining blocker: the final isolated-CPU-load app check is still 26/30, not a
+pass. Four RAW scenes now correctly enter CPU recovery, but its existing decoder
+time limit restarts the helper three times before recovery finishes; the helper
+then refuses those pictures. This is separate from the original generic transport
+error and from the fixed equal-priority starvation. No deadline was raised and
+no helper-restart protection was bypassed. Further CPU fallback work or an
+explicitly approved deadline policy change is needed before Library qualification.
+Validation evidence and PC run conditions are recorded in the performance table.
+
+### November 26, 2026: Library frontend review
+
+Reviewed grid/virtual scrolling, thumbnail/live-tile ownership and cache plumbing,
+folder streaming and big-folder hydration, selection/keyboard and tag ranges,
+original-file commands, paste-grade preparation, batch-export UI/progress and
+metadata Details. GPU RAW/RGB transport and CPU fallback still have active
+callers; no shader, cache allowance, output recipe or delivery math changed.
+
+Fixed cross-folder paint-timer cancellation and detail requests inheriting a
+previous folder's abort. Tag Shift-selection now follows tag identity through
+sorting/filtering, and Meta+Shift preserves additions. Incomplete GPS metadata
+cannot crash Details. Preview completion keeps its real success/failure when
+refreshing disk-usage information fails. A late batch-selection response cannot
+replace newer photos, selection or an explicitly chosen export destination.
+
+Removed unused scroll look-ahead calculations, batch initialization/view flags,
+an unreachable filter-state branch, a redundant stopwatch assignment and an
+unused ready-window query. Batch progress groups results once per refresh;
+controlled JavaScript timings are in the performance table. All desktop check
+scripts retain test/tool callers and were kept.
+
+Validation: 414 grouped targeted Node tests passed, followed by the additional
+batch-selection race regression and 30 relevant rechecks after final cleanup.
+Six desktop-security Python tests and the focused desktop preview contract
+passed. No extra GPU run was queued; the parent review owns the final visible
+Library check. The earlier occluded run remains an invalid visibility check.
+
 ### November 24, 2026: Saved Retouch replay
 
 The Library keeps GPU source development and draws as before. It gathers
@@ -9780,3 +9889,12 @@ Grade's source interpretation and reference-white handling for the samples.
 Reduced and repaired scenes keep their existing measurement inputs. Drawing
 storage, delivery and colour limits stay unchanged. The old half-float noise
 measurement is not reused for the float32 route.
+
+### November 27, 2026: Unified scrollbars and status borders
+
+The Library grid, navigation, Details, filmstrip and auxiliary lists use
+the shared Library-style 15 px native scrollbar with a hairline. The grid
+no longer reserves a lane when the photos fit. Layout decides whether to
+show the lane from the full width first, so near the threshold the rail and
+thumbnail sizes do not repeatedly flip. The upper status row uses the
+same top hairline as the other workflows.

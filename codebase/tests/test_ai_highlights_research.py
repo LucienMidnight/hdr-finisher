@@ -150,12 +150,14 @@ def test_review_keeps_guarded_partial_without_duplicating_completed_photo(tmp_pa
     measure.REVIEW.mkdir()
     measure.record_image('preview', np.full((8, 8, 3), .18, np.float32))
     filename = next(measure.REVIEW.glob('*.png')).name
-    row = dict(name='Guarded Opposed only', images=[['Normal', filename]])
+    row = dict(name='Guarded Opposed only \u2212 caf\u00e9', images=[['Normal', filename]])
     measure.write_json(tmp_path / 'real-finished.json', dict(name='finished', review_rows=[row]))
     measure.write_json(tmp_path / 'partial-finished.json', dict(name='finished', review_rows=[row]))
     measure.write_json(tmp_path / 'partial-guarded.json', dict(name='guarded', review_rows=[row]))
     measure.write_json(tmp_path / 'synthetic-guard.json', dict(returncode=0))
     measure.review()
-    manifest = json.loads((measure.REVIEW / 'manifest.json').read_text())
+    manifest = json.loads((measure.REVIEW / 'manifest.json').read_text(encoding='utf-8'))
     assert manifest['records'] == ['finished', 'guarded']
     assert len(manifest['rows']) == 2
+
+    assert row['name'] in (measure.REVIEW / 'index.html').read_text(encoding='utf-8')

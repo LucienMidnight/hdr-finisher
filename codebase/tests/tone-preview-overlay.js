@@ -258,6 +258,10 @@ tifffile.imwrite(sys.argv[1],rgb,photometric='rgb')`, path.join(temporary, "tone
         return JSON.stringify(state.adjustments);
       });
       const originalExport = await exportedBytes();
+      const range = page.locator('[aria-controls="' + lane + '-midtones-range"]');
+      await range.hover();
+      await page.waitForFunction(() => document.getElementById("tone-preview-key")?.textContent.includes("Midtones"));
+      if (await range.getAttribute("aria-expanded") === "false") await range.click();
       for (const name of ["blacks", "whites", "shadows", "midtones", "highlights", "midtones-center", "midtones-width"]) {
         await page.locator(`#${lane}-${name}`).hover();
         await page.waitForFunction(() => !document.getElementById("tone-preview-key").classList.contains("hidden"));

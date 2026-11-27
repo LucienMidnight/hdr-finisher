@@ -20,11 +20,13 @@ No push, tag, packaging or installer command is performed.
 
 ## Photo inputs
 
-Setup and `python tools/check-test-photos.py` verify the shared 50-file
+Setup and `python tools/check-test-photos.py` verify the shared curated
 `<photosRoot>/HDR Test Images` corpus against `tests/test-photos.manifest.json`.
 Use the machine's venv Python. Paths are resolved by `tests/helpers/photos-root.cjs`.
 Protected projects retain their hashes; the curated DSC00950 project still names
 its old Play_Raw source internally and must not be edited by a test.
+Review drivers explicitly relink the disposable session to the curated
+DSC00950.ARW; the backend verifies its saved source hash.
 PC-only personal-folder/giant-file drivers print a plain skip on Mac.
 The frozen v1 Library fixture remains the default until the Library speed
 comparison finishes; v2 is available explicitly. See `docs/technical/test-photos.md`.
@@ -374,13 +376,23 @@ preset-await finding remain open, and the combined Film result is new.
 ## Hang and shutdown protection (November 7, 2026)
 
 Each attempt has one deadline shared by its primary invocation and all
-follow-ups: the greater of five minutes or three times the latest successful
-complete attempt, or fifteen minutes without usable successful history.
-Interrupted, timed-out, partial, errored, non-successful and sub-second records
-cannot calibrate that deadline. Existing selection, one-retry policy, known
-failure signatures and overall time caps are unchanged. A timeout is recorded
-as `TIMEOUT` and follows the usual retry/classification rules; it cannot be
-classified as a known failure just because an earlier error matched.
+follow-ups. With a measured median in `timings.json` for the current platform,
+it is max(30 seconds, 1.7 times that median); above 20 minutes typical duration,
+the multiplier is 1.25. Thus 18 seconds gets 30.6 seconds, and 25 minutes gets
+31.25 minutes (still subject to the overall selection cap). Constants live in
+`DEADLINE_POLICY` in `runner.cjs`. Current timings cover complete drivers, so
+follow-ups share the whole-driver budget; they have no separate timing baseline.
+The derived policy is frozen before attempts: the single retry uses the same
+cutoff, never a timeout-inflated duration. Timeout samples cannot update medians.
+
+Unmeasured platforms/drivers retain the previous rule: max(5 minutes, 3 times
+the latest successful complete local attempt), or 15 minutes without usable
+history. Interrupted, timed-out, partial, errored and sub-second records cannot
+calibrate that fallback. Selection caps, protected hashes and shutdown checks
+remain unchanged. A verified timeout allows the run to continue to later drivers;
+unverifiable cleanup still stops it. Exhausted timeout retries are a distinct
+`timeout` failure, never a known assertion failure. Text/JSON summaries retain
+the timeout deadline and measured typical time, also if a retry passes as flaky.
 
 Each shared log labels the primary invocation and numbered follow-ups.
 Before retrying after a timeout the runner kills the child tree and verifies
@@ -397,7 +409,7 @@ The launchers' shutdown check no longer throws or changes the exit code. At
 exit they print `[runner] driver result: passed|failed (exit code N)` first;
 any shutdown problem follows as a separate `SHUTDOWN WARNING (separate from the
 driver result)` line. Each launcher also prints
-`[runner] electron-main {"pid":…,"created":…}`. After every attempt the runner
+`[runner] electron-main {"pid":â€¦,"created":â€¦}`. After every attempt the runner
 re-checks those trees itself (`tests/release/process-tree.cjs`), kills
 anything left, and waits up to 60 s. It stops the run (lock kept, as before)
 only if an Electron process, including its GPU process, is still alive. A
@@ -431,3 +443,47 @@ graceful close five seconds before forcing shutdown. The retouch cancellation
 handshake and evaluate waits also fail with a named bounded error. Unit tests
 exercise timeout calibration, sleeping/exiting fake processes, follow-up logs
 and shutdown failure without launching Electron or using the GPU.
+
+## Agent briefs and durable timing estimates (schema 2)
+
+Read each driver's `brief`, `requirements`, `platforms`, `expectedMinutes.win/mac`
+and `deadlinePolicy` in `drivers.json` before selecting it. `deadlineMinutes` is
+15 (the default attempt deadline), not a fixed override; helpers use their parent.
+Measured current-platform medians use the tiered cutoff above. The local-history
+rule and 15-minute default apply only without a measured median. The runner still accepts schema-1
+manifests; the catalogue test requires the committed schema-2 briefs.
+
+`timings.json` survives output cleanups. After checking tracked inputs at the end of a selection, the runner imports
+complete local history records, updates the current platform only, and regenerates
+`docs/technical/test-catalogue.md`. Commit those generated changes before another
+real run. `--plan` stays read-only. The summary retains up to 31 recent sample
+seconds per driver/platform; `sampleCount` and median describe that bounded window.
+Last revision/date and source identify the evidence. Interrupted, timed-out,
+partial and launch-failed attempts are excluded. Completed assertion failures are
+useful duration samples, not passes. Approximate report imports are labelled.
+
+When local history is absent the runner uses the committed same-platform median;
+local records take precedence. Same-platform measured medians calibrate attempt deadlines as described above;
+summary timings never certify results. Estimates conservatively reserve a retry when a saved failed
+sample has no surviving log to match an exact known signature. Unknown durations
+stay null; do not copy PC times to the 8 GB Mac or use individual action latencies
+as whole-test durations. Manifest expected minutes are a reviewed baseline;
+the catalogue prefers the newer timing summary.
+
+Regenerate with `node codebase/tools/test-catalogue.cjs` from the repository root.
+The catalogue includes `codebase/tests/inventory.json` when present, groups slow
+drivers by area/tier and gives core, per-area and all-area focused subtotals with
+unknown counts. It is not a promise of a complete estimate when samples are missing.
+Keep briefs and fixture/platform prerequisites current whenever editing a driver.
+Validate using `node --test codebase/tests/test-catalogue.test.js
+codebase/tests/release-runner.test.js` (one command, both paths).
+
+## Electron startup and cleanup
+
+Use the GPU lock and the standard `run-in-electron.js` / `run-native-electron.js`
+launchers. Plain launch tools must set `HDR_FINISHER_TEST_MODE=1`, provide a
+disposable profile, capture the OS child before awaiting DevTools, and verify
+that the owned tree exits after graceful quit or forced cleanup. Unexpected
+native dialogs fail without displaying; preserve failure logs. Sidecar/debug
+ports are OS-selected. Repeat startup checks with
+`node tools/check-startup-lifecycle.cjs` under the GPU lock.

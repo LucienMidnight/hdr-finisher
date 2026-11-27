@@ -71,6 +71,24 @@ test('estimates use actual latest durations, reserve one failed retry and expose
   const actual=runner.estimate([{path:'a'},{path:'b'},{path:'c'}],[{driver:'a',durationSeconds:4,exitCode:0},{driver:'a',durationSeconds:8,exitCode:1},{driver:'b',durationSeconds:3,exitCode:0},{driver:'b',durationSeconds:999,exitCode:null,interrupted:true}]);
   assert.equal(actual.seconds,11);assert.equal(actual.retrySeconds,8);assert.deepEqual(actual.unknown,['c']);
 });
+test('estimates read logs only for failed drivers with known signatures', t => {
+  const root = scratch(t), log = path.join(root, 'attempt.log');
+  fs.writeFileSync(log, 'Error: old failure');
+  const read = fs.readFileSync;
+  const reads = [];
+  t.mock.method(fs, 'readFileSync', function(file, ...args) {
+    reads.push(file);
+    return read.call(this, file, ...args);
+  });
+  const rows = [{path:'passed'}, {path:'new'}, {path:'known'}];
+  const records = rows.map((row, i) => ({driver:row.path, durationSeconds:i+1, exitCode:i === 0 ? 0 : 1, log}));
+  const known = {failures:[{driver:'passed', messages:['Error: old failure']}, {driver:'known', messages:['Error: old failure']}]};
+  const actual = runner.estimate(rows, records, known);
+  assert.equal(actual.seconds, 6);
+  assert.equal(actual.retrySeconds, 2);
+  assert.deepEqual(reads, [log]);
+});
+
 test('fixture protection detects changed and missing files without overwriting them', t => {
   const file=path.join(scratch(t),'fixture.hdrfinisher');fs.writeFileSync(file,'original');
   const hashes=runner.hashProjects([file]);runner.checkProjects(hashes);
@@ -89,6 +107,7 @@ function isolatedRunner(t) {
   const root=scratch(t);
   for (const dir of ['tests/release','tests/performance','desktop/tests','output']) fs.mkdirSync(path.join(root,dir),{recursive:true});
   fs.copyFileSync(path.join(__dirname,'release/runner.cjs'),path.join(root,'tests/release/runner.cjs'));
+  fs.copyFileSync(path.join(__dirname,'release/timings.cjs'),path.join(root,'tests/release/timings.cjs'));
   fs.copyFileSync(path.join(__dirname,'release/process-tree.cjs'),path.join(root,'tests/release/process-tree.cjs'));
   fs.mkdirSync(path.join(root,'tests/helpers'),{recursive:true});
   fs.copyFileSync(path.join(__dirname,'helpers/photos-root.cjs'),path.join(root,'tests/helpers/photos-root.cjs'));
@@ -222,13 +241,13 @@ test('attempt deadlines use the latest complete success and reject polluted hist
   assert.equal(runner.launchFailed(-1073741502),true);
   assert.equal(runner.launchFailed(null),false);
 });
-async function fakeInvocations(t, variants, timeout, kill) {
+async function fakeInvocations(t, variants, timeout, kill, onChild = () => {}) {
   const dir = scratch(t), log = path.join(dir,'attempt.log'), fd = fs.openSync(log,'w');
   let active, capped = false;
   try {
     const results = await runner.runInvocations({executable:process.execPath,env:{}},
       variants.map(code=>['-e',code]), fd,
-      {stopped:()=>false,child:child=>{active=child;},cap:()=>{capped=true;}},
+      {stopped:()=>false,child:child=>{active=child;onChild(child);},cap:()=>{capped=true;}},
       Infinity, Date.now()+timeout, kill);
     return {results,log:fs.readFileSync(log,'utf8'),capped};
   } finally {
@@ -245,7 +264,14 @@ test('sleeping fake driver times out and exits before another invocation', async
   assert.doesNotMatch(r.log,/follow-up invocation/);
 });
 test('follow-up logs are labelled and share the primary deadline', async t => {
-  const r = await fakeInvocations(t,['console.log("primary");','setInterval(()=>{},1000)'],1000);
+  // Freeze the attempt clock while the real primary process starts/exits.
+  // Expire that same deadline only after the follow-up has been spawned.
+  t.mock.timers.enable({apis:['Date','setTimeout'],now:10000});
+  let launches = 0;
+  const r = await fakeInvocations(t,['console.log("primary");','setInterval(()=>{},1000)'],1000,
+    undefined, child => {
+      if (child && ++launches === 2) queueMicrotask(() => t.mock.timers.tick(1000));
+    });
   assert.equal(r.results[0].exitCode,0);
   assert.equal(r.results[1].timedOut,true);
   assert.match(r.log,/primary invocation/);
@@ -255,10 +281,10 @@ test('tree-kill failure rejects instead of continuing to another driver', async 
   await assert.rejects(fakeInvocations(t,['setInterval(()=>{},1000)'],200,
     ()=>{throw Error('STOP: simulated tree-kill failure');}), /simulated tree-kill failure/);
 });
-test('timed-out known-message attempt is a new failure', t => {
+test('timed-out known-message attempt is a distinct timeout failure', t => {
   const log=path.join(scratch(t),'attempt.log'); fs.writeFileSync(log,'Error: old failure');
   assert.equal(runner.classify([{exitCode:1,timedOut:true,log}],
-    {failures:[{driver:'a',messages:['Error: old failure']}]},'a'),'new');
+    {failures:[{driver:'a',messages:['Error: old failure']}]},'a'),'timeout');
 });
 test('failed-start status stops the run without a retry or later drivers', {skip:process.platform!=='win32'}, t => {
   const fixture=isolatedRunner(t);
@@ -320,4 +346,58 @@ test('all three protected project hashes and driver arguments map the photo root
   assert.deepEqual(invocation.args.slice(1),files);
   fs.writeFileSync(files[2],'changed');
   assert.throws(()=>runner.checkProjects(hashes),/protected project changed/);
+});
+
+
+test('schema-2 generated outputs do not trip the tracked-input guard, but driver edits do', t => {
+  for (const mutate of [false, true]) {
+    const fixture = isolatedRunner(t);
+    const manifest = path.join(fixture.root,'tests/release/drivers.json');
+    const data = JSON.parse(fs.readFileSync(manifest,'utf8'));
+    data.schemaVersion = 2;
+    fs.writeFileSync(manifest,JSON.stringify(data));
+    fs.mkdirSync(path.join(fixture.root,'docs/technical'),{recursive:true});
+    fs.writeFileSync(path.join(fixture.root,'docs/technical/test-catalogue.md'),'before');
+    fs.writeFileSync(path.join(fixture.root,'tools/test-catalogue.cjs'),
+      `exports.generate=()=>require('fs').writeFileSync(require('path').join(__dirname,'../docs/technical/test-catalogue.md'),'after');`);
+    if (mutate) fs.writeFileSync(path.join(fixture.root,'tests/pass.js'),
+      `require('fs').appendFileSync('tests/pass.js','// unexpected edit');`);
+    fixture.git('add','.');fixture.git('commit','-qm','schema-2 output fixture');
+    const result = fixture.run('--driver','tests/pass.js');
+    assert.equal(result.status,mutate ? 1 : 0,result.stdout+result.stderr);
+    assert.equal(fs.readFileSync(path.join(fixture.root,'docs/technical/test-catalogue.md'),'utf8'),'after');
+    assert.equal(fixture.states()[0].results['tests/pass.js'].classification,'passed');
+    assert.equal(fixture.states()[0].completed,!mutate);
+    if (mutate) assert.match(result.stdout,/tracked files changed/);
+  }
+});
+
+
+test('measured deadlines use the current platform median, a floor, and a smaller long-driver multiplier', () => {
+  const timings = {drivers:{a:{win:{medianSeconds:18},mac:{medianSeconds:1500}}}};
+  const short = runner.attemptPolicy('a',[],timings,'win32');
+  assert.equal(short.deadlineMs,30600);
+  assert.equal(short.typicalSeconds,18);
+  assert.equal(runner.attemptTimeout('a',[],timings,'darwin'),1875000);
+  timings.drivers.a.win.medianSeconds = 1;
+  assert.equal(runner.attemptTimeout('a',[],timings,'win32'),30000);
+  timings.drivers.a.win.medianSeconds = 1200;
+  assert.equal(runner.attemptTimeout('a',[],timings,'win32'),2040000);
+  timings.drivers.a.win.medianSeconds = 1201;
+  assert.equal(runner.attemptTimeout('a',[],timings,'win32'),1501250);
+  assert.equal(runner.attemptTimeout('missing',[],timings,'win32'),900000);
+  assert.equal(runner.attemptTimeout('a',[],timings,'linux'),900000);
+  assert.equal(runner.attemptTimeout('missing',[{driver:'missing',exitCode:0,durationSeconds:200}],timings,'win32'),600000);
+  for (const bad of [null,0,-1,NaN]) {
+    timings.drivers.a.win.medianSeconds = bad;
+    assert.equal(runner.attemptTimeout('a',[],timings,'win32'),900000);
+  }
+});
+
+test('timeouts remain distinct failures with cutoff evidence, including when a retry passes', () => {
+  const timeout = {exitCode:null,timedOut:true,deadlineMs:30600,typicalSeconds:18,deadlineSource:'timings.json'};
+  assert.equal(runner.classify([timeout,timeout],{failures:[]},'a'),'timeout');
+  assert.equal(runner.classify([timeout,{exitCode:0}],{failures:[]},'a'),'flaky');
+  assert.deepEqual(runner.timeoutDetails([timeout,{exitCode:0}]),[
+    {attempt:1,deadlineSeconds:30.6,typicalSeconds:18,source:'timings.json'}]);
 });

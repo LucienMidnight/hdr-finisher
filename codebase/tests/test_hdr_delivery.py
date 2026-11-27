@@ -56,6 +56,8 @@ def test_decoded_ceiling_accepts_rounding_but_rejects_one_over_allowance_pixel(
         hdr_delivery.check_decoded_hdr_ceiling(path, format_name, 1000)
 
 
+@pytest.mark.slow
+@pytest.mark.needs_native_helper
 @pytest.mark.parametrize("format_name", ["jpeg_ultrahdr", "avif_gain_map", "jpegxl_hdr"])
 def test_ceiling_reads_real_exported_hdr_pixels(tmp_path, format_name):
     backend = build_export_backends(probe_capabilities())[format_name]

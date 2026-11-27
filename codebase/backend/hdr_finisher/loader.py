@@ -42,7 +42,7 @@ EXR_COLOR_INTEROP_SPACES = {
 
 # Provenance for the persistent source mip cache (PRD 5.3). A recipe-specific
 # change can version just the affected source identities.
-SOURCE_DECODER_VERSION = "hdr-finisher-loader-signed-raw-v8"
+SOURCE_DECODER_VERSION = "hdr-finisher-loader-tiff-icc-v9"
 SOURCE_COLOR_TRANSFORM_VERSION = "acescg-signed-raw-source-v4"
 BAYER_NOISE_FIT_CACHE_SUFFIX = ":bayer-noise-fit-v1"
 
@@ -257,7 +257,8 @@ def load_image(
     reference_started = perf_counter()
     if (sdr_reference_image is None and not metadata.get("needs_color_override")
             and not metadata.get("decoder_normalized_to_acescg")
-            and display_referred_sdr(metadata.get("color_space"), metadata.get("transfer_function"), suffix)):
+            and (display_referred_sdr(metadata.get("color_space"), metadata.get("transfer_function"), suffix)
+                 or (metadata.get("icc_converted_to_linear_srgb") and not metadata.get("user_override")))):
         sdr_reference_image = mapped_source_array(normalized.shape)
         if sdr_reference_image is None:
             normalized, sdr_reference_image = sdr_file_renditions(normalized)
@@ -408,6 +409,7 @@ def _load_tiff(path: Path, *, library_edge: int | None = None, cancelled=None) -
     except ImportError as exc:
         raise LoaderError("tifffile is required for TIFF input.") from exc
 
+    profile_data = None
     with tifffile.TiffFile(path) as tif:
         series = tif.series[0]
         dtype = series.dtype
@@ -435,22 +437,25 @@ def _load_tiff(path: Path, *, library_edge: int | None = None, cancelled=None) -
         if library_edge is None:
             array = _normalize_tiff_layout(array, getattr(series, "axes", None))
         page = tif.pages[0]
+        orientation = int(page.tags["Orientation"].value) if "Orientation" in page.tags else 1
+        array = _orient_tiff(array, orientation)
+        source_width, source_height = int(page.imagewidth), int(page.imagelength)
+        if orientation in {5, 6, 7, 8}:
+            source_width, source_height = source_height, source_width
         metadata = {
             "bit_depth": str(dtype),
             "color_space": "unknown",
             "transfer_function": None,
             "photometric": str(getattr(page, "photometric", "unknown")),
             "series_axes": str(getattr(series, "axes", "")),
-            **({"source_width":int(page.imagewidth),"source_height":int(page.imagelength)} if library_edge is not None else {}),
+            **({"source_width":source_width,"source_height":source_height} if library_edge is not None else {}),
             "needs_color_override": True,
         }
         if getattr(page, "tags", None) is not None:
             color_profile = page.tags.get("InterColorProfile") or page.tags.get("ICCProfile")
             if color_profile is not None:
-                profile_name = _read_icc_profile_name(color_profile.value)
-                metadata["icc_profile_name"] = profile_name
-                metadata["color_space"] = _classify_icc_profile_name(profile_name)
-                metadata["needs_color_override"] = metadata["color_space"] in UNRESOLVED_PROFILES
+                profile_data = color_profile.value
+                metadata["icc_profile_name"] = _read_icc_profile_name(profile_data)
 
     if np.issubdtype(array.dtype, np.integer):
         max_value = float(np.iinfo(array.dtype).max)
@@ -459,7 +464,64 @@ def _load_tiff(path: Path, *, library_edge: int | None = None, cancelled=None) -
     else:
         normalized = source_float32(array, copy=False)
     del array
+    if profile_data is not None:
+        # Use the profile's transform, never its human-readable name. libvips
+        # imports through LittleCMS to float XYZ, then linear sRGB; no 8-bit hop.
+        # Float/HDR device encodings are not defined by the integer TIFF route.
+        if np.dtype(dtype) in (np.dtype("uint8"), np.dtype("uint16")):
+            try:
+                converted = _tiff_icc_to_linear_srgb(normalized, profile_data, cancelled)
+            except LoaderError as error:
+                metadata["icc_interpretation_error"] = str(error)
+            else:
+                normalized = converted
+                metadata.update(color_space="sRGB", transfer_function="LINEAR",
+                                source_icc_profile_name=metadata["icc_profile_name"],
+                                icc_converted_to_linear_srgb=True, needs_color_override=False)
+        else:
+            metadata["icc_interpretation_error"] = "Floating-point TIFF ICC encoding requires a source colour choice."
     return normalized, metadata
+
+
+def _orient_tiff(image, orientation):
+    if orientation == 2: return image[:, ::-1]
+    if orientation == 3: return image[::-1, ::-1]
+    if orientation == 4: return image[::-1]
+    if orientation == 5: return np.swapaxes(image, 0, 1)
+    if orientation == 6: return np.rot90(image, -1)
+    if orientation == 7: return np.swapaxes(image, 0, 1)[::-1, ::-1]
+    if orientation == 8: return np.rot90(image, 1)
+    return image
+
+
+def _tiff_icc_to_linear_srgb(image, profile, cancelled=None):
+    import pyvips
+    from PIL import ImageCms
+    # libvips can silently substitute sRGB for a corrupt embedded profile.
+    # Validate it before evaluating any transform, so that cannot resolve colour.
+    try:
+        parsed = ImageCms.ImageCmsProfile(BytesIO(profile))
+        if parsed.profile.xcolor_space.strip() != "RGB":
+            raise ValueError("TIFF samples and ICC device space differ")
+    except (OSError, ValueError) as error:
+        raise LoaderError("The TIFF ICC profile is invalid or is not RGB. Choose a source colour interpretation.") from error
+    if image.ndim != 3 or image.shape[2] not in {3, 4}:
+        raise LoaderError("Embedded TIFF ICC conversion requires RGB samples.")
+    output = empty_source_array(image.shape)
+    # Bound ICC scratch independently of the source size and honour cancellation.
+    for row in range(0, image.shape[0], 128):
+        _raise_if_cancelled(cancelled)
+        band = np.ascontiguousarray(np.rint(np.clip(image[row:row+128, :, :3], 0, 1)*65535), dtype=np.uint16)
+        source = pyvips.Image.new_from_memory(band.data, band.shape[1], band.shape[0], 3, "ushort").copy(interpretation="rgb16")
+        source.set_type(pyvips.GValue.blob_type, "icc-profile-data", profile)
+        try:
+            converted = source.icc_import(embedded=True, pcs="xyz", intent="relative").colourspace("scrgb")
+            output[row:row+128, :, :3] = np.frombuffer(converted.write_to_memory(), np.float32).reshape(band.shape)
+        except pyvips.Error as error:
+            raise LoaderError("The embedded TIFF ICC profile could not be applied. Choose a source colour interpretation.") from error
+        if image.shape[2] == 4:
+            output[row:row+128, :, 3] = image[row:row+128, :, 3]
+    return output
 
 
 def _normalize_tiff_layout(array: np.ndarray, axes: str | None) -> np.ndarray:

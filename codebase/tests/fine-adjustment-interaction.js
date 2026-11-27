@@ -3,17 +3,6 @@ const { importTestPattern } = require("./helpers/import-test-pattern");
 
 const baseUrl = process.env.HDR_FINISHER_URL || "http://127.0.0.1:8000";
 
-function curvePointPosition(box, x, y) {
-  const left = 18;
-  const right = 14;
-  const top = 14;
-  const bottom = 34;
-  return {
-    x: left + x * (box.width - left - right),
-    y: box.height - bottom - y * (box.height - top - bottom),
-  };
-}
-
 function exposureBandPosition(box, inputEv, adjustmentEv = 0) {
   const minimumEv = -6;
   const maximumEv = Math.log2(10000 / 100);
@@ -207,7 +196,14 @@ async function dragRange(page, slider, distance, { ctrl = false, shift = false, 
     const curve = page.locator("#curve-editor");
     const curveBox = await curve.boundingBox();
     if (!curveBox) throw new Error("Curve editor was not visible.");
-    const middleCurvePoint = curvePointPosition(curveBox, 0.5, 0.5);
+    const { point: middleCurvePoint, plotWidth, plotHeight } = await curve.evaluate(canvas => {
+      const layout = curveEditorLayout();
+      return {
+        point: curvePointCanvasPosition([.5, .5]),
+        plotWidth: canvas.getBoundingClientRect().width - layout.left - layout.right,
+        plotHeight: canvas.getBoundingClientRect().height - layout.top - layout.bottom,
+      };
+    });
     await page.keyboard.down("Control");
     await page.mouse.move(curveBox.x + middleCurvePoint.x, curveBox.y + middleCurvePoint.y);
     await page.mouse.down();
@@ -220,7 +216,7 @@ async function dragRange(page, slider, distance, { ctrl = false, shift = false, 
     });
     const curveDeltaX = shiftedCurvePoint[0] - 0.5;
     const curveDeltaY = shiftedCurvePoint[1] - 0.5;
-    if (!(curveDeltaX > 0.005 && curveDeltaX < 0.06 && curveDeltaY > 0.002 && curveDeltaY < 0.05)) {
+    if (Math.abs(curveDeltaX * plotWidth - 6) > .2 || Math.abs(curveDeltaY * plotHeight - 6) > .2) {
       throw new Error(`Ctrl curve-point drag was not fine-grained: ${JSON.stringify(shiftedCurvePoint)}.`);
     }
 

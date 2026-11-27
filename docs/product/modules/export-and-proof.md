@@ -1,3 +1,13 @@
+## November 26 - Repeated delivery cleanup
+
+The hidden delivery renderer now acknowledges collection of dead JavaScript
+pixel buffers at the end of each job, before polling for the next job. Its
+former 250 ms idle timer was cancelled when another job started, so consecutive
+jobs could skip collection. GPU textures still reset at the existing job
+boundary. No shader, delivery tolerance, memory ceiling or CPU-strip policy
+changed. The PC already passed repeated delivery before this change; the Mac's
+low-free-memory refusal still needs confirmation on that machine.
+
 ## November 26 — Resized GPU delivery admission
 
 Resized exports and full-size Proof count the native source and resize scratch,
@@ -1582,3 +1592,10 @@ reconstruction, file serving and export pixels/files are unchanged.
 November 13, 2026 - Steve: one shared status and shortcuts bar on every page. Export and Library place it above their own footer. Export progress includes Pause/Resume and Cancel icons after the progress bar, using the existing export controls. Export Batch also shows a non-empty selection count. Implementation is in the working tree, awaiting commit and visual approval.
 
 November 15, 2026: Export Presets header actions use the component-sheet panel-control size for both menu and collapse. The Tabler collapse mask is centred in a grid, overriding the legacy Metadata flex layout.
+
+### November 27, 2026: Unified scrollbars and status borders
+
+Proof settings, single and batch Export settings and the batch lists and
+grid use the shared Library-style 15 px scrollbar. The lane has arrows and
+a left hairline, appears only with overflow and does not fade. The upper
+Proof and Export status rows use the same top hairline as the other workflows.

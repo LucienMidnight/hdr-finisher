@@ -166,6 +166,7 @@ def test_large_cpu_jobs_share_a_limit_without_blocking_unrelated_work():
         pool.pool.shutdown()
 
 
+@pytest.mark.slow
 def test_export_grain_on_several_workers_matches_the_serial_render():
     from hdr_finisher import cpu_budget
     from hdr_finisher.adjustments import EXPORT_GRAIN_CHUNK_ROWS, grain_export_workers

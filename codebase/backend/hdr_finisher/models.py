@@ -275,7 +275,25 @@ class VignetteAdjustments(BaseModel):
 
     # The slider covers -100 to 100 (2 EV each way); typed values reach 200 (4 EV).
     amount: float = Field(default=0.0, ge=-200.0, le=200.0)
-    midpoint: float = Field(default=50.0, ge=0.0, le=100.0)
+    # Version 2 doubles the radius contribution. Keep old saved recipes exact.
+    midpoint: float = Field(default=25.0, ge=0.0, le=200.0)
+    midpoint_scale_version: Literal[2] = 2
+
+    @model_validator(mode="before")
+    @classmethod
+    def upgrade_midpoint_scale(cls, value: Any) -> Any:
+        if isinstance(value, dict) and "midpoint_scale_version" not in value:
+            value = dict(value)
+            try:
+                old_midpoint = float(value.get("midpoint", 50.0))
+            except (TypeError, ValueError) as error:
+                raise ValueError("Vignette Midpoint must be a number") from error
+            if not 0 <= old_midpoint <= 100:
+                raise ValueError("Legacy Vignette Midpoint must be between 0 and 100")
+            value["midpoint"] = old_midpoint / 2.0
+            value["midpoint_scale_version"] = 2
+        return value
+
     roundness: float = Field(default=0.0, ge=-100.0, le=100.0)
     feather: float = Field(default=75.0, ge=0.0, le=100.0)
     highlight_protection: float = Field(default=0.0, ge=0.0, le=100.0)
@@ -1178,6 +1196,7 @@ class SdrMatchActionRequest(BaseModel):
 
     expected_revision: int = Field(ge=0)
     authored_sdr_override_consent: bool = False
+    section: Literal["whole", "tone", "highlight"] = "whole"
     # The page will render Match candidates on its GPU (sdr_match_remote).
     gpu_candidates: bool = False
     # Diagnostic: also render each GPU candidate on the CPU and report the difference.

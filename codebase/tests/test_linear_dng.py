@@ -162,6 +162,7 @@ def test_changed_file_fingerprint_rejects_before_decode(tmp_path: Path) -> None:
         decode_linear_dng(path, inspection)
 
 
+@pytest.mark.needs_test_photos
 def test_real_local_corpus_routes_when_present() -> None:
     import sys
     sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
@@ -284,6 +285,7 @@ def test_dng_cancellation_is_transactional(
     assert store.current() is active
 
 
+@pytest.mark.needs_native_helper
 @pytest.mark.parametrize('compression',[None,'jpegxl','jpegxl_lossy'])
 @pytest.mark.parametrize('bits',[10,12,16])
 @pytest.mark.usefixtures("ample_preflight_memory")

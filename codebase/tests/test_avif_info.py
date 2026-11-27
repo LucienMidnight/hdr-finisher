@@ -40,6 +40,7 @@ Image decoded: sample.avif
     assert parsed["alternate_image"]["bit_depth"] == 10
 
 
+@pytest.mark.needs_native_helper
 @pytest.mark.skipif(resolve_binary("avifdec") is None, reason="avifdec is not available")
 def test_sample_avif_contains_expected_gain_map_metadata() -> None:
     sample = Path(__file__).resolve().parents[1] / "samples" / "hdr_reference.avif"
@@ -57,6 +58,7 @@ def test_sample_avif_contains_expected_gain_map_metadata() -> None:
     assert info["alternate_image"]["bit_depth"] == 10
 
 
+@pytest.mark.needs_native_helper
 @pytest.mark.skipif(resolve_binary("avifenc") is None or resolve_binary("avifdec") is None, reason="AVIF tools are not available")
 def test_hdr_preview_avif_is_pq_bt2020_without_gain_map(tmp_path: Path) -> None:
     image = build_hdr_test_pattern(width=96, height=54)

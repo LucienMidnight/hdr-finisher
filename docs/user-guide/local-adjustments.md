@@ -62,7 +62,7 @@ and Contrast, before its colour and Detail. One control does not move another
 control’s selected range. Center/Width defaults are Shadows −1.5/5 EV,
 Midtones 0/4 EV, and Highlights +2.25/4.5 EV HDR or +1.75/3.5 EV SDR. Blacks
 and Whites are narrow endpoints; Whites uses the project’s HDR target or SDR
-white, not monitor brightness. Scroll the panel to reach all range controls.
+white, not monitor brightness. Open **Range** below Shadows, Midtones or Highlights to adjust its Center and Width.
 Older saved local Tone edits render differently under the new curves and
 strength units; there is no automatic conversion.
 

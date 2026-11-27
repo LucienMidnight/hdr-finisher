@@ -44,7 +44,11 @@ def _coordinate(tags, name):
     except (KeyError, TypeError, ValueError, ZeroDivisionError, AttributeError):
         return None
     value = degrees + minutes / 60 + seconds / 3600
-    if reference not in "NSEW" or not reference or not 0 <= value <= 180 or (degrees, minutes, seconds) == (0, 0, 0):
+    latitude = name == "GPSLatitude"
+    if (reference not in ("NS" if latitude else "EW") or not reference
+            or not 0 <= value <= (90 if latitude else 180)
+            or not 0 <= minutes < 60 or not 0 <= seconds < 60 or degrees < 0
+            or (degrees, minutes, seconds) == (0, 0, 0)):
         return None
     return round(-value if reference in "SW" else value, 6)
 

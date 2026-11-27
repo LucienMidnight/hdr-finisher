@@ -91,9 +91,10 @@ def finished_micro_grain_suffix(path, document, lane):
 
 def _quality(inputs, *, bayer_cleanup=False):
     from .loader import SOURCE_COLOR_TRANSFORM_VERSION, source_decoder_version
+    from .library_rgb import VERSION as rgb_adapter_version
     specks_enabled = inputs["raw_import_settings"].get("pixel_cleanup", {}).get("even_out_specks", False)
     identity = {"recipe": inputs, "decoder": source_decoder_version(specks_enabled, bayer_cleanup=bayer_cleanup),
-                "colour": SOURCE_COLOR_TRANSFORM_VERSION, "rgb_adapter": "library-rgb-reduced-v5"}
+                "colour": SOURCE_COLOR_TRANSFORM_VERSION, "rgb_adapter": rgb_adapter_version}
     return "live-scene-v2:" + sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()
 
 

@@ -40,6 +40,7 @@ def test_hdr_rgb_parade_measures_rec2020_transport_primaries() -> None:
     assert scope.peak_value == pytest.approx(203.0 * 0.6780, rel=2e-5)
 
 
+@pytest.mark.needs_test_photos
 def test_blender_rec2020_exr_parade_round_trips_source_channels() -> None:
     import OpenEXR
 

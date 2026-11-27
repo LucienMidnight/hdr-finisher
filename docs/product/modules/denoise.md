@@ -1,3 +1,43 @@
+### November 27 - Denoise in HDR/SDR comparisons
+
+The inactive comparison pane now uses the backend's lane-specific denoised
+preview whenever that rendition has Denoise enabled. Its former direct GPU
+render could silently draw the original source because the renderer owns only
+one lane/scale's Denoise selector; that original was then marked finished.
+The active viewer and single-view lane switches retain their existing GPU
+preparation path. Before / After intentionally keeps its original image.
+
+Comparisons wait for the denoised backend image and decode it before display.
+A photo, lane, layout, mode, geometry or preview-generation change discards an
+obsolete result. Denoise-off comparisons explicitly select the original GPU
+source. This avoids replacing the active lane's preparation, at the cost of
+CPU preparation time for the inactive denoised rendition. Node regressions
+cover both lanes, four compare layouts, all methods, deferred completion and
+stale results; targeted Denoise document/adaptive/Grain Python checks pass (38 tests).
+The full Node suite passed (1,534 passed, one skipped). After the shared GPU
+lock cleared, a disposable Electron smoke passed all four layouts in both
+active lanes with Standard Denoise on a generated noisy 640 x 480 source;
+each comparison decoded and displayed its denoised backend cache image. This
+checks presentation and routing, not perceptual pixel parity on the faulty PC GPU.
+
+### November 26 - Reference corpus and calibration checks
+
+Steve retired the lab's noise-free render reference and its render-only noise
+case: a real render is not a noise-free reference. The lab keeps photographic
+references with processed and RAW noise; it no longer stops for an absent EXR.
+The calibration recomputation test allows 0.002% relative numerical rounding,
+not a change to shipping constants or pixels. Explicit float32 scalar dots on
+PC versus NumPy matmul move the seeded quantiles by up to 0.00114%; the Mac
+reported about 6e-7 absolute. Browser/CPU constants remain pinned exactly.
+
+### November 26 - Micro Grain response cleanup
+
+Superseded, conflicting and failed Bayer responses cancel their unread bodies
+before returning the existing error. This releases transport buffers and
+connections without changing successful samples or the GPU pipeline.
+Transport regression tests cover all three refusal paths, cancellation failure
+and successful body reads.
+
 # Module PRD: Denoise
 
 **November 24, 2026 Clean Grain navigation and colour.** Intermediate zooms use native regions, and recent sharp regions stay available under the existing memory allowance. Separate per-rendition switches control colour splotches and edge fringes. Both default on. The splotch pass protects coherent colour boundaries. MacBook Neo real-app confirmation remains open.
@@ -296,7 +336,7 @@ Round 3 is implemented as **Micro Grain · Experimental**. The round 4 flat-area
 | Fine Grain GPU rollout | **On by default in Grade.** The fresh run beat the CPU waits and stayed under 4 GB on the MacBook Neo. Canon Show original and bypass restored the same finished pixels as Denoise off. [Rollout measurements](../../technical/performance-table.md#november-20--fine-grain-enabled-in-grade) |
 | Clean Grain GPU rollout | **On by default in Grade.** Less halo work and reuse of overlapping source pixels closed the Large wide-pan gap on the Sony. The paired run was within 1.4% of the CPU and a repeat was 35% faster. Finished colour, tile joins and fallback stayed within the limits. [Clean Grain measurements](../../technical/performance-table.md#november-20--clean-grain-large-pan-and-grade-rollout) |
 | Match at 300 nits | **Safe refusal.** On Canon at +1 EV and a 120/300-nit compression range, Mac p95 colour was 0.077 and PC 0.061 against 0.050. Mac kept the prior independent SDR grade and revision. At 120/450 nits Mac completed in 5.47 s and marked it Needs review. [Match check](../../technical/briefs/denoise-mac-open-items-2026-11-20.md#4-match-with-the-canons-separate-sdr-grade--done-with-one-refusal) |
-| Blocked fixtures and readback | **Blocked.** Full GPU noise measurement needs a noise-free linear EXR at least 540 × 540 in HDR Test Images. Proof/Grade and preview/export comparison need a usable source path for protected `DSC00950.hdrfinisher`, which saves a Windows source URI. Preserve the protected file. `DSC07060.ARW.hdrf` is a separate missing private fixture. Adaptive GPU parity has a recorded GPU readback failure even on v0.9.2 on this Mac. [Known limitations](../../known-limitations.md) · [Test photos](../../technical/test-photos.md) |
+| Fixture follow-up | **November 26:** the noise-free EXR requirement and lab render case are retired at Steve's request. DSC00950 review drivers explicitly relink their disposable session to the curated RAW with the matching saved source hash; the protected project is unchanged. DSC07060.ARW.hdrf remains a separate missing fixture. Full GPU measurement is not newly certified by this fixture cleanup. |
 | Coarse brightness grain | **Confirmed on the Canon.** Off grain sizes are similar in the shadows and slightly larger in DxO on the floor. DxO Standard keeps more of the 2–4 px brightness pattern relative to the 8–32 px pattern. Clean Grain favours larger sizes. The TIFFs show the difference between the complete developments and cannot identify DxO's internal filter. [DxO spectrum](../../technical/research/denoise-v1-2026-11-16/dxo-comparison.md#spectral-fingerprint-of-dxo-standard) |
 | Cleaning the mosaic before demosaic | **Open; no shipping candidate.** Separate early wavelets made the grain finer but did not clear colour, marks, detail or the full small-light check. The ISO 10000 holdout lost most hair texture; the atrium's light centres matched unfiltered development but one light's surrounding contrast changed by 11%. Separate RAW controls still interacted after demosaic. A lighter, retuned Standard pass was not a rescue. Keep current methods and no grain add-back. For the next trial, aim for 3–4 px Canon grain with less neighbour correlation at preserved shadow brightness. Try a separate, edge-aware colour pass and compare it with the earlier shadow-only later treatment. Score real texture, mark visibility and light surroundings before GPU or app work. [DxO-based research targets](../../technical/research/denoise-v1-2026-11-16/dxo-comparison.md#proposed-targets-for-the-next-early-bayer-trial) Grade still needs a Bayer-to-viewport route if a candidate passes. [Round two](../../technical/research/denoise-v1-2026-11-16/predemosaic-round2-wavelet-colour.md) |
 | Colour mottling and fine detail | **Open.** Lifted shadows can retain broad colour patches. Clean Grain's Small correction brought 11/28 Canon and 22/24 Sony colour marks to grain level in the app-test follow-up. Canon's target was 20. Six marked Canon centres rendered black from negative scene luminance, so a colour-only correction cannot lift them. Wider correction can pull colour near lights or soften detail. The Fine Grain planter rim looked more saturated after display mapping. The actual planter's after-fix appearance is unconfirmed. [Grade follow-up](grade.md#november-19-2026-clean-grain-app-test-follow-up) · [Marked areas](../../technical/research/denoise-v1-2026-11-16/round5-relative-colour-and-patch.md) |

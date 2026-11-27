@@ -31,10 +31,10 @@ test('fullscreen adds the shown photo when Ctrl-click had deselected it',()=>{
 // Exercise the actual grid drawing with layout math, rather than pinning source wording.
 function gridHarness(count, index, width=900, height=400) {
  const source=fs.readFileSync(require.resolve('../frontend/photo-library'),'utf8');
- const fn=source.slice(source.indexOf('  let gridRequests ='),source.indexOf('  let lastFilmLeft ='));
+ const fn=source.slice(source.indexOf('  let gridRequests ='),source.indexOf('  let FILM_PITCH ='));
  const state={active:true,view:'grid',photos:Array.from({length:count},(_,i)=>({path:String(i)})),pins:[],index,size:190,cells:new Map()};
- const grid={clientWidth:width,clientHeight:height,scrollTop:0}, space={style:{}};
- const context={selected:()=>state.photos[state.index],state,grid,space,HDRLibraryLayout:require('../frontend/library-layout'),$:()=>({}),reconcile:()=>0,paintMemoryNeeds(){}};
+ const grid={offsetWidth:width,clientHeight:height,scrollTop:0}, space={style:{}};
+ const context={getComputedStyle:()=>({getPropertyValue:()=>"15px"}),selected:()=>state.photos[state.index],state,grid,space,HDRLibraryLayout:require('../frontend/library-layout'),$:()=>({}),reconcile:()=>0,paintMemoryNeeds(){}};
  vm.runInNewContext(fn+';this.paint=paintGrid;',context);
  return {state,grid,paint:context.paint,restore:value=>vm.runInNewContext(`restoreReviewGrid = ${JSON.stringify(value)}`,context)};
 }
@@ -47,7 +47,7 @@ test('returning from fullscreen reveals the current photo beyond the old viewpor
  assert.ok(state.index>=state.layout.first && state.index<state.layout.last);
  assert.ok(state.layout.scrollFor(state.index+state.layout.columns)<=grid.scrollTop+grid.clientHeight);
  // Native fullscreen exit can change column count after the grid has returned.
- grid.clientWidth=600;grid.clientHeight=300;paint();
+ grid.offsetWidth=600;grid.clientHeight=300;paint();
  assert.ok(state.index>=state.layout.first && state.index<state.layout.last);
  assert.ok(state.layout.scrollFor(state.index+state.layout.columns)<=grid.scrollTop+grid.clientHeight);
 });
@@ -61,12 +61,12 @@ test('ordinary grid scrolling stays free to move away from the selection',()=>{
 test('fullscreen restores exact non-row-aligned position across OS resize',()=>{
  const {grid,paint,restore}=gridHarness(120,30);
  paint();restore({top:417,path:'30'});paint(true);assert.equal(grid.scrollTop,417);
- grid.clientWidth=600;grid.clientHeight=300;paint();assert.equal(grid.scrollTop,417);
+ grid.offsetWidth=600;grid.clientHeight=300;paint();assert.equal(grid.scrollTop,417);
 });
 test('fullscreen centers changed selection across OS resize',()=>{
  const {state,grid,paint,restore}=gridHarness(120,75);
  paint();restore({top:417,path:'30'});paint();
  const centered=()=>state.layout.scrollFor(75)+state.layout.rowHeight/2-grid.clientHeight/2;
  assert.equal(grid.scrollTop,centered());
- grid.clientWidth=600;paint();assert.equal(grid.scrollTop,centered());
+ grid.offsetWidth=600;paint();assert.equal(grid.scrollTop,centered());
 });

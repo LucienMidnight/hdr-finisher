@@ -517,7 +517,7 @@ const HDRLibraryPictureFactory = (quick = false) => {
       HDRLibraryStopwatch("picture_drawn", { ...window.HDRLibraryPictureLog?.(meta), key: meta.key, duration_ms: performance.now() - started, first: draws++ === 0, kept: false });
       let route=canvas.parentElement?.querySelector('.library-retouch-route');
       if(meta.repair_fallback_reason){
-        if(!route){route=document.createElement('span');route.className='library-retouch-route';route.style.cssText='position:absolute;bottom:0;left:0;right:0;background:#332819;color:#fff;font:var(--font-size-xs) var(--font-body);padding:4px;z-index:2';canvas.after(route);}
+        if(!route){route=document.createElement('span');route.className='library-retouch-route';route.style.cssText='position:absolute;bottom:0;left:0;right:0;background:var(--repair-fallback-background);color:var(--repair-fallback-text);font:var(--font-size-xs) var(--font-body);padding:var(--space-4);z-index:2';canvas.after(route);}
         route.textContent=meta.path.split(/[\\/]/).at(-1)+' · '+meta.repair_fallback_reason;
       }else route?.remove();
       canvas.dataset.rendition = hdr ? "hdr" : "sdr";

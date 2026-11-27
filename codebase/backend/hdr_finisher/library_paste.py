@@ -29,7 +29,8 @@ def put(document, path, data):
 
 def leaves(data, prefix):
     if isinstance(data, dict):
-        return [p for key, item in data.items() for p in leaves(item, prefix+'.'+key)]
+        return [p for key, item in data.items() if key != 'midpoint_scale_version'
+                for p in leaves(item, prefix+'.'+key)]
     return [prefix]
 
 
@@ -55,7 +56,7 @@ SETTING_LABELS = {
     'black_and_white_section_enabled':'Black & white enabled',
     'film_look_section_enabled':'Film look enabled',
     'color_grading_section_enabled':'Colour grading enabled', 'vignette_section_enabled':'Vignette enabled',
-    'hsl':'HSL', 'channels':'Colour channels', 'exposure':'Exposure', 'contrast':'Contrast',
+    'hsl':'HSL', 'channels':'Colour channels', 'exposure':'Exposure', 'output_exposure':'SDR exposure comp', 'contrast':'Contrast',
     'contrast_pivot':'Contrast pivot', 'blacks':'Blacks', 'whites':'Whites', 'shadows':'Shadows',
     'midtones':'Midtones', 'highlights':'Highlights', 'shadows_center':'Shadows centre',
     'shadows_width':'Shadows width', 'midtones_center':'Midtones centre',
@@ -127,7 +128,7 @@ def setting_group(field):
     if field.endswith('_curve') or field == 'curves_section_enabled': return 'curves'
     for name in ('hsl','film_look','color_grading','vignette','detail','black_and_white'):
         if field == name or field == name+'_section_enabled': return name.replace('_','-')
-    if field in ('exposure','contrast','contrast_pivot','blacks','whites','tone_section_enabled') or field.startswith(('shadows','midtones','highlights')): return 'tone'
+    if field in ('exposure','output_exposure','contrast','contrast_pivot','blacks','whites','tone_section_enabled') or field.startswith(('shadows','midtones','highlights')): return 'tone'
     return 'color'
 
 
@@ -257,7 +258,7 @@ class LibraryPaste:
             fields={}
             for field,data in grade['global_adjustments'][lane].items():
                 if field in ('highlight_compression_source_peak_nits','highlight_compression_source_peak_percent',
-                             'linked_to_hdr', 'output_exposure'): continue
+                             'linked_to_hdr'): continue
                 group=setting_group(field)
                 fields.setdefault(group,[]).extend(leaves(data,'global_adjustments.'+lane+'.'+field))
             for group,paths in fields.items():

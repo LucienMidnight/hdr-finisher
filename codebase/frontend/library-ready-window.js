@@ -43,7 +43,7 @@
       }).catch(error => { if (entries.get(id) === entry) remove(id); throw error; });
       return entry.promise;
     }
-    return Object.freeze({get, update, invalidate, contains:photo => entries.has(key(photo)),
+    return Object.freeze({get, update, invalidate,
       evictFinished:(predicate=()=>true,needed=Infinity)=>{let released=0;for(const [id,entry] of entries){if(released>=needed)break;if(entry.value && predicate(entry.photo)){released+=entry.value.bytes||0;remove(id);}}return released;}, has:photo => !!entries.get(key(photo))?.value, size:() => entries.size});
   }
   // Borrow only the current photo/grade/rendition, including a shown camera picture.

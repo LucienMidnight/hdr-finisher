@@ -1935,14 +1935,6 @@
       if (maskEngine) this.destroyAfterActiveRenders(() => maskEngine.destroy());
     }
 
-    hslSelectionBytes() {
-      let bytes = 0;
-      for (const owned of this.hslSelectionEngines?.values() || []) {
-        for (const engine of Object.values(owned)) bytes += engine.bytes();
-      }
-      return bytes;
-    }
-
     /** Global HSL channels as the selection reads them, from the packed slots. */
     hslSelectionChannels(params) {
       if (!(params[GPU_PARAMS.HSL_SHARED_SELECTION] > 0.5)) return [];
@@ -5346,6 +5338,7 @@
         encodeError = error;
       } finally {
         presentation?.release();
+        if (hslTileEngine?.retired.length) this.destroyAfterActiveRenders(() => hslTileEngine.dropRetired());
         localBuffers.forEach((entry) => entry.buffer.destroy());
         denoiseParamBuffers.forEach((buffer) => buffer.destroy());
         cleanGrainTransientTextures.forEach(texture => texture.destroy());
@@ -5552,6 +5545,54 @@
       if (!backgroundUnderlayer) this.lastRenderRefusal = { reason, at: performance.now() };
       this.recordStage("render-refused", { reason, backgroundUnderlayer });
       return false;
+    }
+
+    // A lane switch can keep the image the viewer already rendered before
+    // the other lane takes over the single Denoise selector. Use the same
+    // compositor/format as the original, not a tone-mapped canvas screenshot.
+    async copyComparisonPicture(canvas, {sessionId, lane, generation, geometry, sourceSerial, maxLongEdge, isCurrent}) {
+      const primary = this.canvas;
+      const frame = this.lastPresentedFrame;
+      if (!this.available || primary.hdrFrameRegion || frame?.sessionId !== sessionId
+        || frame.lane !== lane || frame.applicationGeneration !== generation || frame.geometrySignature !== geometry
+        || primary.width !== frame.width || primary.height !== frame.height
+        || Math.max(frame.width, frame.height) > maxLongEdge) return null;
+      const source = this.scopeSources.get(primary);
+      const direct = frame.execution === "direct" && source?.serial === sourceSerial
+        && source?.comparisonComposite && source.applicationGeneration === generation;
+      const target = frame.execution === "tiled" && this.presentationTarget;
+      const tiled = target?.valid && !target.region && target.width === frame.width
+        && target.height === frame.height && target.format === frame.format;
+      if (!direct && !tiled) return null;
+      const current = () => isCurrent() && this.lastPresentedFrame === frame
+        && this.scopeSources.get(primary) === source && (!tiled || this.presentationTarget === target);
+      const {width, height, format} = frame;
+      if (!await this.admitGradeMemory("comparison-picture", () => this.gradeCanvasSwapGrowth(canvas, width, height, format), current)
+        || !current()) return null;
+      const context = canvas.getContext("webgpu");
+      if (!context) return null;
+      const probe = this.surfaceProbeCanvas();
+      const surface = this.configureSurface(probe, probe.getContext("webgpu"), lane === "hdr");
+      if (surface.format !== format) return null;
+      if (canvas.width !== width) canvas.width = width;
+      if (canvas.height !== height) canvas.height = height;
+      this.configureSurface(canvas, context, lane === "hdr");
+      const texture = context.getCurrentTexture();
+      const encoder = this.device.createCommandEncoder();
+      if (tiled) {
+        encoder.copyTextureToTexture({texture: target.texture}, {texture}, {width, height});
+      } else {
+        const pass = encoder.beginRenderPass({colorAttachments: [{
+          view: texture.createView(), loadOp: "clear", storeOp: "store", clearValue: {r: 0, g: 0, b: 0, a: 1},
+        }]});
+        pass.setPipeline(this.pipelineFor(format).composite);
+        pass.setBindGroup(0, source.comparisonComposite);
+        pass.draw(3);
+        pass.end();
+      }
+      this.device.queue.submit([encoder.finish()]);
+      this.noteGradeCanvasSwap(canvas, format);
+      return { width, height, resourceGeneration: this.resourceGeneration };
     }
 
     async renderTo(canvas, sessionId, lane, adjustments, curveSampler, longEdge = 1600, localAdjustments = [], editRevision = 0, maskOverlay = null, referenceWhiteNits = 203, sourceSize = null, sourceOptions = null) {
@@ -6453,6 +6494,7 @@
         spatialTexture: intermediate.spatialATexture || intermediate.finishTexture,
         params: new Float32Array(params),
         sessionId,
+        comparisonComposite: canvas === this.canvas && overlayIndex < 0 ? compositeBindGroup : null,
       });
       if (this.instrumentationEnabled) {
         const metric = {
@@ -8923,7 +8965,8 @@
       if (candidate.sdr.linked_to_hdr) candidate.hdr.film_look = { ...candidate.hdr.film_look, grain_amount: 0 };
       const rendered = await this.renderTo(canvas, sessionId, "sdr", candidate, curveSampler,
         longEdge, locals, revision, null, white, sourceSize,
-        { measureOnly: true, scopeAnalysis: true, forceSdrSurface: true, sourceLane: "hdr", frameAnchor: true });
+        { measureOnly: true, scopeAnalysis: true, forceSdrSurface: true, frameAnchor: true,
+          sourceLane: candidate.sdr.use_authored_base && !candidate.sdr.linked_to_hdr ? "sdr" : "hdr" });
       if (rendered?.execution !== "direct" || rendered.width !== expected.width || rendered.height !== expected.height
         || !this.scopeSources.has(canvas)) return null;
       const renderedAt = performance.now();
@@ -8956,49 +8999,54 @@
       const startedAt = performance.now();
       resource.busy = true;
       this.activeScopeCount += 1;
-      const params = new Float32Array(source.params);
-      params[GPU_PARAMS.SCOPE_WIDTH] = width;
-      params[GPU_PARAMS.SCOPE_HEIGHT] = height;
-      this.device.queue.writeBuffer(resource.paramBuffer, 0, params);
-      const bindGroup = this.device.createBindGroup({
-        layout: this.bindGroupLayout,
-        entries: [
-          { binding: 0, resource: source.filmTexture.createView() },
-          { binding: 1, resource: { buffer: resource.paramBuffer } },
-          { binding: 2, resource: { buffer: this.curveBuffer } },
-          { binding: 3, resource: source.spatialTexture.createView() },
-          { binding: 4, resource: this.spatialSampler },
-          { binding: 5, resource: source.spatialTexture.createView() },
-          { binding: 6, resource: this.filmStockBinding() },
-          { binding: 7, resource: this.hslSelectionPlaceholderView },
-        ],
-      });
-      const encoder = this.device.createCommandEncoder();
-      const pass = encoder.beginRenderPass({
-        colorAttachments: [{
-          view: resource.texture.createView(),
-          clearValue: { r: 0, g: 0, b: 0, a: 1 },
-          loadOp: "clear",
-          storeOp: "store",
-        }],
-      });
-      pass.setPipeline(tier === "interactive" ? this.scopePipeline
-        : tier === "picture" ? this.outputPicturePipeline : this.settledScopePipeline);
-      pass.setBindGroup(0, bindGroup);
-      pass.draw(3);
-      pass.end();
-      encoder.copyTextureToBuffer(
-        { texture: resource.texture },
-        { buffer: resource.readBuffer, bytesPerRow: resource.bytesPerRow, rowsPerImage: height },
-        { width, height },
-      );
-      const encodedAt = performance.now();
-      this.device.queue.submit([encoder.finish()]);
-      const submittedAt = performance.now();
-      return scopeReadback().readAnalysis(this, {
-        canvas, source, resource, width, height, generation, tier,
-        startedAt, encodedAt, submittedAt, halfToFloat, raw, snapshot, transient,
-      });
+      try {
+        const params = new Float32Array(source.params);
+        params[GPU_PARAMS.SCOPE_WIDTH] = width;
+        params[GPU_PARAMS.SCOPE_HEIGHT] = height;
+        this.device.queue.writeBuffer(resource.paramBuffer, 0, params);
+        const bindGroup = this.device.createBindGroup({
+          layout: this.bindGroupLayout,
+          entries: [
+            { binding: 0, resource: source.filmTexture.createView() },
+            { binding: 1, resource: { buffer: resource.paramBuffer } },
+            { binding: 2, resource: { buffer: this.curveBuffer } },
+            { binding: 3, resource: source.spatialTexture.createView() },
+            { binding: 4, resource: this.spatialSampler },
+            { binding: 5, resource: source.spatialTexture.createView() },
+            { binding: 6, resource: this.filmStockBinding() },
+            { binding: 7, resource: this.hslSelectionPlaceholderView },
+          ],
+        });
+        const encoder = this.device.createCommandEncoder();
+        const pass = encoder.beginRenderPass({
+          colorAttachments: [{
+            view: resource.texture.createView(),
+            clearValue: { r: 0, g: 0, b: 0, a: 1 },
+            loadOp: "clear",
+            storeOp: "store",
+          }],
+        });
+        pass.setPipeline(tier === "interactive" ? this.scopePipeline
+          : tier === "picture" ? this.outputPicturePipeline : this.settledScopePipeline);
+        pass.setBindGroup(0, bindGroup);
+        pass.draw(3);
+        pass.end();
+        encoder.copyTextureToBuffer(
+          { texture: resource.texture },
+          { buffer: resource.readBuffer, bytesPerRow: resource.bytesPerRow, rowsPerImage: height },
+          { width, height },
+        );
+        const encodedAt = performance.now();
+        this.device.queue.submit([encoder.finish()]);
+        const submittedAt = performance.now();
+        return scopeReadback().readAnalysis(this, {
+          canvas, source, resource, width, height, generation, tier,
+          startedAt, encodedAt, submittedAt, halfToFloat, raw, snapshot, transient,
+        });
+      } catch (error) {
+        scopeReadback().releaseAnalysis(this, resource, width, height, transient);
+        throw error;
+      }
     }
 
     acquireScopeResource(width, height) {
@@ -9016,20 +9064,28 @@
         busy: false,
         bytesPerRow,
         byteSize: width * height * 8 + bytesPerRow * height + PARAM_COUNT * 4,
-        texture: this.device.createTexture({
+      };
+      try {
+        resource.texture = this.device.createTexture({
           size: { width, height },
           format: "rgba16float",
           usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC,
-        }),
-        readBuffer: this.device.createBuffer({
+        });
+        resource.readBuffer = this.device.createBuffer({
           size: bytesPerRow * height,
           usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
-        }),
-        paramBuffer: this.device.createBuffer({
+        });
+        resource.paramBuffer = this.device.createBuffer({
           size: PARAM_COUNT * 4,
           usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
-        }),
-      };
+        });
+      } catch (error) {
+        resource.texture?.destroy();
+        resource.readBuffer?.destroy();
+        resource.paramBuffer?.destroy();
+        if (!pool.length) this.scopeResources.delete(key);
+        throw error;
+      }
       pool.push(resource);
       this.recordAllocation("scope", width * height * 8 + bytesPerRow * height + PARAM_COUNT * 4, { width, height });
       return resource;

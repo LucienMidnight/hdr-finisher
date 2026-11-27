@@ -7,7 +7,10 @@ const root=path.resolve(__dirname,'..'),out=path.join(root,'output/review/menu-s
 const scratch=fs.mkdtempSync(path.join(os.tmpdir(),'hdr-finisher-test-menu-')),profile=path.join(scratch,'test-profile'),folder=path.join(scratch,'photos');
 fs.mkdirSync(profile);fs.mkdirSync(folder);fs.copyFileSync(path.join(root,'tests/fixtures/library_photo.png'),path.join(folder,'photo.png'));
 fs.writeFileSync(path.join(profile,'pinned-folders.json'),JSON.stringify([folder]));
+const deadline=setTimeout(()=>{console.error('Error: menu-shortcuts exceeded 180000 ms');process.exit(1);},180000);
 const records=[];
+// The native launcher's earlier exit handler stops its owned app first.
+process.once('exit',()=>{try{fs.rmSync(scratch,{recursive:true,force:true,maxRetries:3,retryDelay:100});}catch(error){console.error('Menu scratch cleanup:',error.message);}});
 async function surface(frame,selector){
  await frame.waitForFunction(selector=>document.querySelector(selector)?.matches(':popover-open'),selector);
  const result=await frame.locator(selector).evaluate(e=>{
@@ -45,9 +48,14 @@ async function surface(frame,selector){
  // Physical Command combinations reach the real Library handlers.
  await cell.click();await page.keyboard.press(`${mod}+c`);await lib.waitForFunction(()=>document.querySelector('#library-status').textContent.includes('Grade copied'));
  for(const key of ['v','Shift+v']){
+  console.log('Checking paste shortcut',key);
+  await cell.click();
   await lib.locator('#library-grid').focus();await page.keyboard.press(`${mod}+${key}`);
   await lib.locator('dialog[open]').waitFor();assert.match(await lib.locator('dialog[open]').innerText(),mac?/⌘Z/:/Ctrl\+Z/);
   await page.keyboard.press('Escape');await lib.locator('dialog[open]').waitFor({state:'hidden'});
+  // Escape removes the dialog before its close-event promise finishes.
+  // Let that handler release the paste command before the next shortcut.
+  await lib.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
  }
  await lib.locator('#library-grid').focus();await page.keyboard.press(`${mod}+f`);assert.equal(await lib.locator('#library-filterbar').isVisible(),true);await page.keyboard.press(`${mod}+f`);
  const quick=page.waitForFunction(()=>document.querySelector('dialog[open]')||document.body.dataset.workflow==='export');
@@ -73,4 +81,4 @@ async function surface(frame,selector){
  const popped=await opened;await popped.waitForURL(/\/library/);await popped.waitForFunction(()=>window.HDRLibrary);await popped.locator('#grid-space .library-cell').first().click({button:'right'});await surface(popped,'#library-folder-menu');await popped.screenshot({path:path.join(out,'library-popout.png')});
  fs.writeFileSync(path.join(out,'report.json'),JSON.stringify({platform:process.platform,records,checks:['native Command copy, paste, choose-paste, filter and quick export','Grade/Proof popovers, Export menus, application menu','minimum/default Library context menus, scroll and separate Library window']},null,2));
  console.log('PASS menu stacking, window bounds, long-menu scrolling and native platform shortcuts.');
-}catch(error){if(page){await page.screenshot({path:path.join(out,'failure.png')}).catch(()=>{});console.error(await page.evaluate(()=>({workflow:document.body.dataset.workflow,body:document.body.innerText.slice(-1500)})).catch(()=>null));}throw error;}finally{await app?.close();fs.rmSync(scratch,{recursive:true,force:true});}})().catch(error=>{fs.writeFileSync(path.join(out,'failure.json'),JSON.stringify({error:String(error.stack||error),records},null,2));console.error(error);process.exitCode=1;});
+}catch(error){if(page){await page.screenshot({path:path.join(out,'failure.png')}).catch(()=>{});console.error(await page.evaluate(()=>({workflow:document.body.dataset.workflow,body:document.body.innerText.slice(-1500)})).catch(()=>null));}throw error;}finally{clearTimeout(deadline);await app?.close();fs.rmSync(scratch,{recursive:true,force:true});}})().catch(error=>{fs.writeFileSync(path.join(out,'failure.json'),JSON.stringify({error:String(error.stack||error),records},null,2));console.error(error);process.exitCode=1;});

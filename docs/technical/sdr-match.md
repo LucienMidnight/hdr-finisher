@@ -1,6 +1,100 @@
 # HDR-to-SDR Match
 
-## November 16: Steve approved safe linking and target-relative ordering
+## November 27: picture-based independent Match
+
+Whole-photo Match builds a temporary target from the settled HDR picture.
+Relative to HDR reference white (scene-linear 0.18), the linear placement is
+`x = luma / 0.18 * 0.985`, one stop above the previous 100/203 placement.
+Above the 0.75 knee the target rolls off as `1 - 0.25 * exp(-(x - 0.75)/0.25)`.
+Thus reference white is already on the shoulder (~90% of SDR white after
+roll-off), and below the knee the main tones retain their brighter linear
+placement. The luma ratio preserves colour before the normal sRGB gamut
+compression. Body metrics and highlight ordering use this knee, as do the
+shoulder derivative for semantic translation and the targets for Local Match.
+Standalone Local Match still transfers only the HDR local's relative change.
+
+This is not a change to ordinary generated SDR placement (still 100/203),
+the saved recipe schema, or how an existing SDR grade renders. Match measures
+the actual HDR and SDR render paths at a bounded
+384-pixel proxy, omitting stochastic grain for fitting. Exposure stays at the
+effective HDR Exposure, so the film stock does not receive the brightness lift.
+Match fits SDR exposure comp after Film Look and Vignette, optional Contrast
+(only if used by HDR), and Highlight Compression Start. Then it places five
+Exposure Bands points and penalizes large adjustments.
+The three interior points start at dark, middle and bright body percentiles
+with at least 0.75 EV spacing. When HDR uses bands or zones, Match seeds the
+five points from the early HDR tonal response on the SDR scale, so the bands
+do not trade away film-input accuracy for output brightness. A final bounded
+pass settles the controls together.
+The five Tone zone strengths stay at zero. Body mean and P95 OKLab error guide
+the search, with lower weight for highlights.
+
+Both Soft Ceiling (100% softness and Preserve color) and Peak Fit (HDR Highlight
+Color, Detail, Bias and Attenuation with robust peak measurement) are evaluated.
+The closer safe candidate wins. Colour controls come from semantic translation,
+not fitting. Whole-photo Match copies the HDR Curves on/off state and all four
+point lists verbatim as fixed controls. Local Match also copies all four
+curves, using a temporary neutral-curve grade for its initial tonal fit so
+the same changes are not counted twice. Match never invents curves.
+
+Candidates use the existing page WebGPU bridge. The chosen recipe is measured
+again on CPU, using the unchanged body gates and highlight-order diagnostic.
+If the GPU route fails or produces an unsafe fit, the same search restarts once
+on CPU. Match still reports matched, needs review or refusal. The fit does
+not change safety limits or the stored recipe schema.
+
+SDR HSL and Curves can copy HDR settings with one Undo. Curves copy the points
+literally on the shared scale used in both renditions. SDR Tone and Highlight
+Compression can instead fit their respective controls against the current HDR
+target while leaving the other SDR modules, locals and Denoise alone. Tone
+includes SDR exposure comp and Exposure Bands. A Tone fit edits the independent grade like any SDR
+creative edit. A Highlight Compression fit can keep a previously linked grade.
+Neither action changes the authored SDR base choice or the whole-Match status.
+
+The sections below record earlier approaches and do not describe the new fitter.
+
+## November 26: editable materialization for new Match actions
+
+New whole-photo Match actions use the independent materialization fitter and
+commit its normal SDR controls. The live HDR prefix could differ from the
+stored SDR recipe, so disabling a link on the first creative edit exposed a
+different picture. New results are one-shot independent grades; subsequent
+HDR edits require another Match. Re-match replaces manual SDR tweaks, with
+the existing local/authored override confirmations and atomic Undo retained.
+
+Saved linked grades still use the existing linked CPU/GPU renderers unchanged.
+Automatic re-fitting after HDR edits is deferred: it would run the iterative
+fit after each settled HDR change and needs latency and cancellation design.
+
+The fitter now adds two bounded coordinate-search passes over Exposure,
+Contrast, Midtones, Highlights, Whites, shoulder Start and highlight
+desaturation. Its loss includes the bright population separately, rather
+than ignoring highlights outside the body mask. Already-satisfied body gates
+cannot regress. Luma curves remain neutral, preserving Exposure headroom.
+GPU candidates are still CPU-certified before refinement; unsafe proposals
+still discard the whole attempt and run the CPU fallback.
+
+Focused comparison: `hdr_match_scene.tiff`, HDR Exposure +0.2, Contrast +0.12,
+203-nit reference, no locals or Film Look. Against the previous linked render,
+mean / p95 / p99.9 Delta E 2000 changed from 0.318 / 1.416 / 9.076 before
+refinement to 0.109 / 0.401 / 3.650 after refinement. Tiny-fixture fit time
+changed from 0.065 s to 0.254 s. These are diagnostic samples, not general
+parity or speed guarantees; extreme highlights can still differ visibly.
+The calibrated materialization test retains its existing median-luma cap of
+0.012 and now passes. No match acceptance or perceptual limits were relaxed.
+
+Validation on the PC: 53 targeted Python tests and 19 Node tests passed.
+`tests/sdr-match-gpu-interaction.js` passed inside disposable Electron at
+2560x1440 under the shared GPU lock. Whole Match took 674 ms / 21 GPU
+candidates on its `hdr_headroom.tiff` scenario. Moving Exposure preserved all
+other global and local values; raw GPU pixels equalled the original matched
+recipe with only Exposure changed. The interaction stayed on WebGPU with no
+CPU previews or SDR source-proxy requests. Match and slider Undo/Redo, stable
+Denoise/grain previews and resetting the visible controls also passed.
+This richer scenario reported `needs_review` (p95 luma 0.03142, p95 OKLab
+0.01741); the existing 0.03 normal-match luma gate remains unchanged.
+
+## November 16 (historical): Steve approved safe linking and target-relative ordering
 
 Whole-photo Match first tries the common HDR creative scene and a late SDR
 output tail. Only a fit passing all safeguards becomes linked; otherwise the
@@ -123,8 +217,9 @@ individually matched or non-neutral SDR locals (including manual edits).
 
 ## Current recipe and output contract
 
-`SDRAdjustments.linked_to_hdr` defaults false. Only an accepted new whole-photo
-Match sets it true and disables the authored SDR base. `output_exposure` is a
+`SDRAdjustments.linked_to_hdr` defaults false. The following describes the
+previously shipped live-link path. New whole-photo Match is independent and
+replaces the authored SDR base only with consent. `output_exposure` is a
 visible late trim in stops, applied after the common Film and before SDR HC.
 It defaults to zero and is ignored by independent SDR rendering. No pixel
 snapshot, captured grain selector, migration or compatibility renderer exists.

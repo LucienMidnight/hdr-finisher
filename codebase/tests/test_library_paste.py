@@ -21,7 +21,7 @@ def test_schema_order_authored_labels_and_safe_defaults(setup):
     assert [group['id'] for group in groups if group['lane']=='hdr'] == ['hdr-'+module for module in MODULE_ORDER]
     expected={path for lane in ('hdr','sdr') for field,data in grade['global_adjustments'][lane].items()
               if field not in ('highlight_compression_source_peak_nits','highlight_compression_source_peak_percent',
-                               'linked_to_hdr','output_exposure')
+                               'linked_to_hdr')
               for path in leaves(data,'global_adjustments.'+lane+'.'+field)}
     expected.update(leaves(grade['global_adjustments']['shared']['geometry'],'global_adjustments.shared.geometry'))
     expected.update(leaves({key:data for key,data in grade['source']['raw_import_settings'].items() if key!='lens'},'source.raw_import_settings'))
@@ -31,6 +31,9 @@ def test_schema_order_authored_labels_and_safe_defaults(setup):
         expected.add('denoise.'+lane+'.enabled')
         expected.update(leaves(grade['denoise'][lane]['controls'],'denoise.'+lane+'.controls'))
     assert {row['id'] for group in groups for row in group['settings']} == expected
+    sdr_tone=next(group for group in groups if group['id']=='sdr-tone')
+    assert next(row['label'] for row in sdr_tone['settings']
+                if row['id']=='global_adjustments.sdr.output_exposure') == 'SDR exposure comp'
     colour=next(group for group in groups if group['id']=='hdr-color')
     assert 'global_adjustments.hdr.highlight_desaturation' in {row['id'] for row in colour['settings']}
     selected=set(paste.selection(groups)['settings'])

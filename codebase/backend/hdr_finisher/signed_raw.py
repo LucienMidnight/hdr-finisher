@@ -47,7 +47,7 @@ def demosaic(sensor, pattern, black, matrix, *, rows=256, half_size=False, cance
             raise InterruptedError("RAW development cancelled")
         bottom = min(height, top + rows)
         first, last = max(0, top - 8), min(height, bottom + 8)
-        strip = source[first:last].astype(np.float32)
+        strip = source[first:last].astype(np.float32, order="C")
         for phase_row in range(2):
             for phase_column in range(2):
                 strip[phase_row::2, phase_column::2] -= levels[phase_row, phase_column]

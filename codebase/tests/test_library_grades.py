@@ -304,6 +304,8 @@ def test_opened_sidecar_and_project_produce_identical_reference_branches(setup, 
         np.testing.assert_array_equal(actual, reference)
 
 
+@pytest.mark.slow
+@pytest.mark.needs_native_helper
 @pytest.mark.parametrize("format_name", ["jpeg_ultrahdr", "avif_gain_map", "jpegxl_hdr"])
 def test_sidecar_and_project_export_and_proof_are_byte_identical(setup, tmp_path, format_name):
     import hashlib
@@ -373,6 +375,7 @@ def test_conflict_clears_when_the_file_returns_to_the_saved_grade(setup):
     assert "changed_again" not in grades.resolve(str(session.session_id), "mine", external)
 
 
+@pytest.mark.serial  # Native helper/process startup deadlines need uncontended CPU.
 def test_grade_save_reaches_disk_while_grade_scope_and_gesture_hold_helper(setup):
     from hdr_finisher.library_worker import LibraryWorker
     photo, store, session, marks, grades = setup

@@ -63,3 +63,14 @@ def test_unsupported_and_missing_files_have_no_facts(tmp_path):
     records = read_metadata([str(text), str(tmp_path / "gone.jpg")])["photos"]
     assert all(record[name] is None for record in records for name in FACT_FIELDS)
     assert all("mtime_ns" not in record for record in records)
+
+
+@pytest.mark.parametrize("latitude,reference", [(120, "N"), (52, "E")])
+def test_invalid_latitude_does_not_become_a_location(tmp_path, latitude, reference):
+    path = tmp_path / "invalid-gps.jpg"
+    exif = Image.Exif()
+    exif[34853] = {1: reference, 2: tuple(IFDRational(v) for v in (latitude, 0, 0)),
+                   3: "E", 4: tuple(IFDRational(v) for v in (13, 24, 36))}
+    Image.new("RGB", (16, 8)).save(path, exif=exif)
+    record = read_metadata([str(path)])["photos"][0]
+    assert record["latitude"] is None and record["longitude"] is None

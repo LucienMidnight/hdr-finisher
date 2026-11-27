@@ -49,6 +49,7 @@ def test_cpu_colour_cancels_at_safe_points_without_mutating_source():
     assert np.all(image == .5) and np.all(ratio == 1)
 
 
+@pytest.mark.serial  # Native helper/process startup deadlines need uncontended CPU.
 def test_parent_timeout_cancels_only_reconstruction_without_restarting_helper(tmp_path, monkeypatch):
     helper = LibraryWorker(tmp_path)
     sent = []
@@ -65,6 +66,7 @@ def test_parent_timeout_cancels_only_reconstruction_without_restarting_helper(tm
     assert "edge" not in helper._work
 
 
+@pytest.mark.serial  # Native helper/process startup deadlines need uncontended CPU.
 @pytest.mark.parametrize("rejected,phase", [(False,"cpu_edge_fallback"),(True,"reading")])
 def test_all_other_decoder_deadlines_stay_unchanged(tmp_path, monkeypatch, rejected, phase):
     helper = LibraryWorker(tmp_path)
@@ -85,3 +87,28 @@ def test_background_fallback_does_not_take_development_or_save_places():
     assert edge.granted is not None and not edge.development and not edge.saving
     assert all(photo.granted is not None for photo in photos)
     assert estimate_pixels(".arw",8000,6000,"edge-cpu") == estimate_pixels(".arw",8000,6000,"cpu")
+
+
+def test_same_priority_waiters_do_not_starve_rejected_pixel_fallback():
+    scheduler = Scheduler()
+    scheduler.update(available=60_000_000_000, ram=68_000_000_000)
+    notices = []
+    edge = scheduler.ask("edge", "window", "a.arw", "edge-cpu", 64_000_000, notify=notices.append)
+    photos = [scheduler.ask(str(i), "window", str(i), "source", 64_000_000) for i in range(DEVELOPMENTS + 1)]
+    assert edge.granted is not None and scheduler.valid(edge.id, edge.path)
+    assert photos[-1].granted is None
+    assert not any(n["type"] == "gpu-preempt" for n in notices)
+    scheduler.finish(photos[0].id)
+    assert photos[-1].granted is not None
+    assert scheduler.valid(edge.id, edge.path)
+
+
+def test_higher_priority_waiter_can_still_preempt_rejected_pixel_fallback():
+    scheduler = Scheduler()
+    scheduler.update(available=60_000_000_000, ram=68_000_000_000)
+    notices = []
+    edge = scheduler.ask("edge", "window", "a.arw", "edge-cpu", 64_000_000, "soon", notify=notices.append)
+    for i in range(DEVELOPMENTS + 1):
+        scheduler.ask(str(i), "window", str(i), "source", 64_000_000)
+    assert hasattr(edge, "gpu_preempted_at")
+    assert any(n["type"] == "gpu-preempt" for n in notices)

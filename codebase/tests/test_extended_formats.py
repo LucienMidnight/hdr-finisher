@@ -548,6 +548,7 @@ def test_raw_thumbnail_orientation_uses_libraw_flip(flip: int, expected: np.ndar
     np.testing.assert_array_equal(actual[..., 0], expected)
 
 
+@pytest.mark.windows_only
 @pytest.mark.skipif(os.name != "nt", reason="Windows drive-letter behavior")
 def test_connected_roots_excludes_assigned_non_volume_drive_letters(monkeypatch) -> None:
     from hdr_finisher import media_browser
@@ -860,6 +861,7 @@ def test_replace_document_rejects_interpretation_without_reloading_pixels(tmp_pa
         sessions.replace_edit_document(payload.session_id, document, expected_revision=0)
 
 
+@pytest.mark.needs_native_helper
 @pytest.mark.skipif(__import__("hdr_finisher.binaries", fromlist=["resolve_binary"]).resolve_binary("hdrf-jxl-info") is None,
                     reason="Structured JPEG XL colour profiles need the native hdrf-jxl-info helper (Windows build only).")
 @pytest.mark.parametrize("primaries,color_space", [(1, "sRGB"), (9, "BT.2020"), (11, "Display P3")])

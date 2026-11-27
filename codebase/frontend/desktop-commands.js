@@ -15,7 +15,13 @@ async function initializeDesktopBridge() {
     });
   });
   desktop.onDisplayStateChanged?.((environment) => {
+    const previous = state.desktopEnvironment?.currentDisplay;
+    const current = environment.currentDisplay;
     state.desktopEnvironment = environment;
+    if (environment.platform === "win32" && (previous?.id !== current?.id
+      || JSON.stringify(previous?.physicalBounds) !== JSON.stringify(current?.physicalBounds))) {
+      void window.HDRProofing?.refreshDisplayTelemetry?.().catch(() => null);
+    }
     state.displayInfo = buildDisplayProbe(environment);
     state.displayInfo.gpu = state.gpuPreview?.detail || "Backend fallback";
     clearGpuSurfaceHdr();
@@ -45,7 +51,11 @@ async function handleDesktopCommand(command, payload = null) {
   if (command === "open-source") return requestSourceImport();
   if (command === "recent-projects") return showRecentProjects();
   if (command === "open-project") return openProjectFromPath();
-  if (command === "save") return saveProjectToPath({ saveAs: false });
+  if (command === "save") {
+    let saved = false;
+    try { saved = await saveProjectToPath({ saveAs: false }); return saved; }
+    finally { if (saved !== true) await desktop?.completePhotoClose(false); }
+  }
   if (command === "save-as") return saveProjectToPath({ saveAs: true });
   if (command === "export") return openExportSheet();
   if (command === "revert-hdr") return revertRendition("hdr");

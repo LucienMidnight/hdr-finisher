@@ -23,6 +23,7 @@ from hdr_finisher.projects import ProjectError, open_project, save_project
 from hdr_finisher.sessions import EditCommandError, RevisionConflictError, SessionStore
 from hdr_finisher.sdr_match import (
     MATCH_SHOULDER_START,
+    automatic_sdr_match_derivative,
     automatic_sdr_match_luma,
     build_sdr_match_target,
 )
@@ -178,16 +179,17 @@ def test_slider_history_group_undoes_one_complete_gesture(tmp_path: Path) -> Non
     assert redone.document.global_adjustments.hdr.exposure == 0.9
 
 
-def test_match_target_preserves_body_and_rolls_only_top_sdr_headroom() -> None:
-    transition_scene = 0.18 * 0.90 / (100.0 / 203.0)
-    luma = np.array([0.0, 0.18, transition_scene - 1e-5, transition_scene, transition_scene + 1e-5, 0.72, 2.0])
+def test_match_target_doubles_main_tone_placement_and_rolls_off_highlights() -> None:
+    transition_scene = 0.18 * 0.75 / 0.985
+    luma = np.array([0.0, 0.09, transition_scene - 1e-5, transition_scene, transition_scene + 1e-5, 0.18, 0.72, 2.0])
     image = np.repeat(luma[None, :, None], 3, axis=2).astype(np.float32)
     target = build_sdr_match_target(image)
     output = np.einsum("...c,c->...", target[0], np.array([0.2126, 0.7152, 0.0722], dtype=np.float32))
 
-    np.testing.assert_allclose(output[1], 100.0 / 203.0, atol=1e-4)
-    np.testing.assert_allclose(output[2], luma[2] / 0.18 * (100.0 / 203.0), atol=1e-4)
+    np.testing.assert_allclose(output[1], 0.4925, atol=1e-4)
+    np.testing.assert_allclose(output[2], luma[2] / 0.18 * 0.985, atol=1e-4)
     np.testing.assert_allclose(output[3], MATCH_SHOULDER_START, atol=2e-4)
+    np.testing.assert_allclose(output[5], 1.0 - 0.25 * np.exp(-0.235 / 0.25), atol=1e-4)
     assert np.all(np.diff(output) >= 0.0)
     assert output[-1] <= 1.0
     left_slope = (output[3] - output[2]) / 1e-5
@@ -195,12 +197,20 @@ def test_match_target_preserves_body_and_rolls_only_top_sdr_headroom() -> None:
     assert abs(left_slope - right_slope) / left_slope < 0.02
 
 
+
+    x = np.array([0.5, 0.75, 0.9, 0.985, 1.5], dtype=np.float32)
+    step = 1e-4
+    difference = (automatic_sdr_match_luma((x + step) * 0.18 / 0.985)
+                  - automatic_sdr_match_luma((x - step) * 0.18 / 0.985)) / (2 * step)
+    np.testing.assert_allclose(automatic_sdr_match_derivative(x), difference, atol=6e-4)
+
+
 @pytest.mark.parametrize("reference_white", (100, 203))
 def test_automatic_transition_tracks_project_reference_white(reference_white: int) -> None:
-    transition_nits = reference_white * 0.90 / (100.0 / 203.0)
+    transition_nits = reference_white * 0.75 / 0.985
     transition_scene = 0.18 * transition_nits / reference_white
     mapped = automatic_sdr_match_luma(np.array([transition_scene], dtype=np.float32))[0]
-    np.testing.assert_allclose(mapped, 0.90, atol=1e-6)
+    np.testing.assert_allclose(mapped, 0.75, atol=1e-6)
 
 
 def test_v4_project_persists_the_match_result(tmp_path: Path) -> None:
@@ -300,12 +310,10 @@ def test_match_action_materializes_visible_controls_and_is_one_undo_step(tmp_pat
     assert matched.document.sdr_match.materialized_status in {"matched", "needs_review"}
     assert matched.document.global_adjustments.sdr.use_authored_base is False
     assert matched.document.global_adjustments.sdr.highlight_section_enabled is True
-    assert matched.document.global_adjustments.sdr.highlight_compression_mode == "soft_ceiling"
+    assert matched.document.global_adjustments.sdr.highlight_compression_mode in {"soft_ceiling", "peak_fit"}
     assert all(abs(x - y) < 1e-7 for x, y in matched.document.global_adjustments.sdr.luma_curve)
-    assert any(
-        abs(node.adjustment_ev) > 0.001
-        for node in matched.document.global_adjustments.sdr.tone_equalizer_nodes
-    )
+    assert len(matched.document.global_adjustments.sdr.tone_equalizer_nodes) == 5
+    assert matched.document.global_adjustments.sdr.contrast == 0.0
     assert matched.document.denoise.sdr == matched.document.denoise.hdr
     assert len(session.undo_history) == 1
 

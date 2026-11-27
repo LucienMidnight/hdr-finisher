@@ -23,8 +23,8 @@ def linked_highlight_order_is_safe(hdr, target, candidate):
     Identical HDR-brightness quantiles, inclusive bins, sample minimum and
     .005 allowance to the independent diagnostic. That diagnostic is unchanged.
     """
-    from .sdr_match import MATCH_SHOULDER_START
-    normalized = np.maximum(_acescg_luma(hdr), 0.0) / np.float32(.18) * SDR_DISPLAY_REFERENCE_WHITE
+    from .sdr_match import MATCH_SHOULDER_START, match_uncompressed_luma
+    normalized = match_uncompressed_luma(_acescg_luma(hdr))
     selection = normalized > MATCH_SHOULDER_START
     if int(np.count_nonzero(selection)) < 8:
         return True
@@ -41,12 +41,12 @@ def linked_highlight_order_is_safe(hdr, target, candidate):
 
 
 def acceptance_reason(hdr, target, candidate, raised, *, relative_order=True):
-    from .sdr_match import MATCH_SHOULDER_START, _highlight_order_is_safe, _quality_metrics
+    from .sdr_match import MATCH_SHOULDER_START, _highlight_order_is_safe, _quality_metrics, match_uncompressed_luma
     if not np.isfinite(candidate).all() or not np.isfinite(raised).all():
         return 'the linked picture contains invalid values', None
     if np.min(candidate) < 0 or np.max(candidate) > 1:
         return 'the linked picture is outside the SDR range', None
-    q = _quality_metrics(target, candidate, _acescg_luma(hdr) * SDR_SCENE_TO_DISPLAY_SCALE <= MATCH_SHOULDER_START)
+    q = _quality_metrics(target, candidate, match_uncompressed_luma(_acescg_luma(hdr)) <= MATCH_SHOULDER_START)
     if q.median_luma_error > .010 or q.p95_luma_error > .030 or q.median_oklab_error > .015 or q.p95_oklab_error > .040:
         return 'the linked picture changes body brightness or colour too much', q
     order_safe = linked_highlight_order_is_safe(hdr, target, candidate) if relative_order else _highlight_order_is_safe(hdr, candidate)
@@ -70,7 +70,7 @@ def acceptance_reason(hdr, target, candidate, raised, *, relative_order=True):
 
 def try_linked_match(source, adjustments, locals_, settled_hdr, *, reference_white_nits, source_pixel_scale, relative_order=True):
     from .sdr_match import (MaterializedSDRMatch, _semantic_sdr_translation, build_sdr_match_target,
-                            MATCH_SHOULDER_START, _quality_metrics)
+                            MATCH_REFERENCE_WHITE, MATCH_SHOULDER_START, _quality_metrics, match_uncompressed_luma)
     common = apply_adjustments(source, adjustments, PreviewKind.HDR, include_grain=False,
         include_output_highlight_compression=False, apply_output_clamp=False,
         local_adjustments=adjustments.enabled_locals(locals_),
@@ -86,11 +86,13 @@ def try_linked_match(source, adjustments, locals_, settled_hdr, *, reference_whi
     target = build_sdr_match_target(settled_hdr)
     if not np.isfinite(target).all():
         return None, 'the HDR Match target contains invalid values'
-    body = _acescg_luma(settled_hdr) * SDR_SCENE_TO_DISPLAY_SCALE <= MATCH_SHOULDER_START
+    body = match_uncompressed_luma(_acescg_luma(settled_hdr)) <= MATCH_SHOULDER_START
     result = adjustments.model_copy(deep=True)
     result.sdr = _semantic_sdr_translation(adjustments, settled_hdr)
     result.sdr.linked_to_hdr, result.sdr.use_authored_base = True, False
-    result.sdr.output_exposure = 0
+    gain = float(MATCH_REFERENCE_WHITE / SDR_DISPLAY_REFERENCE_WHITE)
+    result.sdr.output_exposure = float(np.log2(gain))
+    placed *= np.float32(gain)
     # Fit the trial's colour/body-best tail first, then judge it. Searching
     # only guard-passing tails can conceal a substantially different bright
     # look by selecting a broader/darker shoulder just to get a link.

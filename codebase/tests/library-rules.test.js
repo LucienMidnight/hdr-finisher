@@ -73,3 +73,12 @@ test("Details never guess: missing facts say so, and unread facts say they are b
   assert.match(facts.headline(photos[1]), /^ARW · 2\.0 MB · /);
   assert.equal(facts.headline(photos[3]), "PNG · 0.0 MB");
 });
+
+
+test("partial camera GPS metadata cannot break the Details panel", () => {
+  const facts = require("../frontend/library-facts.js");
+  for (const coords of [{latitude:1}, {latitude:1,longitude:null}, {longitude:2}]) {
+    const groups = facts.groups({path:"photo.jpg",name:"photo.jpg",bytes:0,indexed:true,...coords});
+    assert.equal(groups.find(([name])=>name==="Location")[1][0][1],"Not recorded");
+  }
+});

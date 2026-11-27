@@ -38,7 +38,6 @@ const SOURCE_FILTERS = [
   { name: "HDR and camera images", extensions: ["exr", "tif", "tiff", "hdr", "pfm", "heic", "heif", "avif", "jxl", "png", "jpg", "jpeg", "dng", "arw", "cr2", "cr3", "nef", "nrw", "raf", "rw2", "orf", "ori", "pef", "srw"] },
   { name: "All files", extensions: ["*"] },
 ];
-const PROJECT_FILTERS = [{ name: "HDR Finisher Project", extensions: ["hdrfinisher"] }];
 const GRADING_PRESET_GROUPS = new Set([
   "hdr-tone", "hdr-highlights", "hdr-equalizer", "hdr-color", "hdr-zones",
   "sdr-base", "sdr-tone", "sdr-highlights", "sdr-equalizer", "sdr-color", "sdr-zones",
@@ -50,6 +49,9 @@ const GRADING_PRESET_GROUPS = new Set([
   "hdr-denoise", "sdr-denoise",
 ]);
 
+if (process.env.HDR_FINISHER_TEST_MODE === "1" && !process.env.HDR_FINISHER_USER_DATA_DIR) {
+  process.env.HDR_FINISHER_USER_DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "hdr-finisher-test-desktop-"));
+}
 if (process.env.HDR_FINISHER_USER_DATA_DIR) {
   app.setPath("userData", path.resolve(process.env.HDR_FINISHER_USER_DATA_DIR));
 }
@@ -64,7 +66,6 @@ app.commandLine.appendSwitch("js-flags", [app.commandLine.getSwitchValue("js-fla
 const recentProjects = createRecentProjects(path.join(app.getPath("userData"), "recent-projects.json"));
 
 let deliveryWindow = null;
-let deliveryIdleTimer = null;
 async function collectDeliveryMemory(level = 'moderate') {
   if (deliveryWindow && !deliveryWindow.isDestroyed())
     await require('./memory-pressure.cjs').notifyChromiumPressure(deliveryWindow.webContents, level);
@@ -76,6 +77,12 @@ let forceClose = false;
 let shuttingDown = false;
 let shutdownComplete = false;
 let quitRequested = false;
+let failedTest = false;
+const testMode = process.env.HDR_FINISHER_TEST_MODE === "1"
+  || (Boolean(process.env.HDR_FINISHER_USER_DATA_DIR) && /(?:^|[-_])test[-_]/i.test(path.basename(app.getPath("userData"))));
+if (testMode) require("./lib/test-mode.cjs").installTestDialogs(dialog, {
+  fail: () => { failedTest = true; void beginShutdown(); },
+});
 let documentState = { path: "", dirty: false, displayName: "Untitled" };
 let renderingMode = "auto";
 let applicationPreferences = null;
@@ -357,6 +364,7 @@ async function startBackend() {
   const proofScratchRoot = createProofScratch(os.tmpdir());
   const current = backendProcess = { authoringSecret, controlSecret, log, logPath, proofScratchRoot };
   const child = current.child = spawn(command.executable, command.args, {
+    detached: process.platform !== "win32",
     cwd: command.cwd,
     env: {
       ...process.env,
@@ -384,29 +392,14 @@ async function startBackend() {
   libraryStage("backend_process_started", { pid: child.pid });
   readline.createInterface({ input: child.stderr }).on("line", line => events.backend(line, child.pid));
 
-  const readiness = new Promise((resolve, reject) => {
-    const timeout = setTimeout(() => reject(new Error("The image-processing backend did not become ready in time.")), 30000);
-    const lines = readline.createInterface({ input: child.stdout });
-    lines.on("line", (line) => {
-      writeBackendLog(line);
-      if (!line.startsWith("HDR_FINISHER_READY ")) return;
-      try {
-        const record = JSON.parse(line.slice("HDR_FINISHER_READY ".length));
-        clearTimeout(timeout);
-        resolve(record);
-      } catch (error) {
-        clearTimeout(timeout);
-        reject(error);
-      }
-    });
-    child.once("error", (error) => {
-      clearTimeout(timeout);
-      reject(error);
-    });
-    child.once("exit", (code) => {
-      clearTimeout(timeout);
-      reject(new Error(`The image-processing backend exited during startup (${code ?? "unknown"}).`));
-    });
+  const readiness = require("./lib/backend-readiness.cjs").waitForBackend(child, {
+    write: writeBackendLog,
+    idleMs: testMode ? 45000 : 90000,
+    totalMs: testMode ? 120000 : 300000,
+    onProgress: (phase, elapsed) => {
+      libraryStage("backend_startup_progress", { phase, duration_ms: elapsed });
+      if (elapsed >= 10000) splash?.step(`Starting image engine: ${phase}...`, 0.1, 0.5);
+    },
   });
 
   try {
@@ -420,7 +413,7 @@ async function startBackend() {
     throw new Error(`Desktop/backend version mismatch (${app.getVersion()} / ${ready.backend_version}).`);
   }
   const url = `http://127.0.0.1:${ready.port}`;
-  const health = await fetch(`${url}/health`);
+  const health = await fetch(`${url}/health`, { signal: AbortSignal.timeout(10000) });
   const healthPayload = await health.json();
   if (!health.ok || healthPayload.status !== "ok") {
     throw new Error("The image-processing backend failed its health check.");
@@ -461,7 +454,7 @@ async function stopBackend() {
     console.warn(`Backend termination failed: ${error.message}`);
   } finally {
     clearProofScratch(current.proofScratchRoot);
-    current.log.end();
+    // The shutdown action still writes to this log after backend termination.
   }
 }
 
@@ -506,7 +499,13 @@ function existingFileIdentity(filePath) {
 
 function currentDisplayState(window = mainWindow) {
   if (!window || window.isDestroyed()) return null;
-  return serializeDisplay(screen.getDisplayMatching(window.getBounds()));
+  const display = screen.getDisplayMatching(window.getBounds());
+  const serialized = serializeDisplay(display);
+  // DXGI reports physical desktop coordinates, not Electron's DIPs.
+  if (serialized && process.platform === "win32") {
+    serialized.physicalBounds = screen.dipToScreenRect(null, display.bounds);
+  }
+  return serialized;
 }
 
 function desktopEnvironment(window = mainWindow) {
@@ -581,15 +580,13 @@ function registerIpc() {
     const record = validateSender(event);
     return callback(record, ...args);
   });
-  ipcMain.on('desktop:delivery-memory-idle', (event, idle) => {
-    if (!deliveryWindow || deliveryWindow.isDestroyed() || event.sender !== deliveryWindow.webContents) return;
-    clearTimeout(deliveryIdleTimer);
-    if (idle === true) {
-      deliveryIdleTimer = setTimeout(() => {
-        void collectDeliveryMemory().catch(error => libraryStage('chromium_pressure_error', {reason:error.message}));
-      }, 250);
-      deliveryIdleTimer.unref();
-    }
+  ipcMain.handle('desktop:delivery-memory-idle', async (event, idle) => {
+    if (!deliveryWindow || deliveryWindow.isDestroyed() || event.sender !== deliveryWindow.webContents
+        || event.senderFrame !== event.sender.mainFrame) return;
+    // Acknowledged at the job boundary, after runJob's ArrayBuffers go out of
+    // scope. A following job must not cancel collection of the previous one.
+    if (idle === true) await collectDeliveryMemory().catch(error =>
+      libraryStage('chromium_pressure_error', {reason:error.message}));
   });
   handleWindow("desktop:reclaim-library-storage", async record => {
     // Decision 20: references have been evicted for an actual waiting job.
@@ -805,7 +802,6 @@ function registerIpc() {
     await shell.openExternal(url);
     return true;
   });
-  handle("desktop:set-rendering-mode", (mode) => setRenderingMode(mode));
   handle("desktop:write-clipboard-text", (value) => {
     if (typeof value !== "string" || value.length > 32768) throw new Error("Invalid clipboard text.");
     clipboard.writeText(value);
@@ -831,38 +827,15 @@ function registerIpc() {
     knownProjectPaths.add(pathKey(selection.path || resolved));
     return { ...selection, exists };
   });
-  handle("desktop:open-project", async () => {
-    const result = await dialog.showOpenDialog(mainWindow, { title: "Open project", defaultPath: directoryPreference("projectImport", "documents"), properties: ["openFile"], filters: PROJECT_FILTERS });
-    if (result.canceled) return null;
-    const selection = await grantPath(result.filePaths[0], "project-open");
-    knownProjectPaths.add(pathKey(selection.path || result.filePaths[0]));
-    return selection;
-  });
   handle("desktop:relink-source", async () => {
     const result = await dialog.showOpenDialog(mainWindow, { title: "Relink original source", properties: ["openFile"], filters: SOURCE_FILTERS });
     return result.canceled ? null : grantPath(result.filePaths[0], "source-relink");
-  });
-  handle("desktop:save-project", async (options = {}) => {
-    const saveAs = Boolean(options.saveAs);
-    if (!saveAs && documentState.path && knownProjectPaths.has(pathKey(documentState.path))) {
-      return grantPath(documentState.path, "project-save");
-    }
-    const suggested = safeSuggestedName(options.suggestedName, "Untitled.hdrfinisher");
-    const result = await dialog.showSaveDialog(mainWindow, {
-      title: saveAs ? "Save Project As" : "Save Project",
-      defaultPath: documentState.path || path.join(directoryPreference("projectSave", "documents"), suggested),
-      filters: PROJECT_FILTERS,
-    });
-    if (result.canceled || !result.filePath) return null;
-    const projectPath = isProjectPath(result.filePath) ? result.filePath : `${result.filePath}.hdrfinisher`;
-    const selection = await grantPath(projectPath, "project-save");
-    knownProjectPaths.add(pathKey(selection.path || projectPath));
-    return selection;
   });
   handle("desktop:confirm-unsaved-transition", async (options = {}) => {
     return choosePhotoTransition(options.actionLabel);
   });
   handle("desktop:complete-photo-close", (allowed) => {
+    if (allowed !== true && mainWindow?.pendingCloseAfterSave) mainWindow.pendingCloseAfterSave = false;
     if (!mainWindow?.pendingSidecarClose) return false;
     mainWindow.pendingSidecarClose = false;
     if (allowed !== true) return false;
@@ -891,14 +864,6 @@ function registerIpc() {
     const selection = await grantPath(result.filePaths[0], "export-directory");
     grantedExportPaths.add(pathKey(selection.path || result.filePaths[0]));
     return selection;
-  });
-  handle("desktop:choose-export-directory", async (initialPath) => {
-    const result = await dialog.showOpenDialog(mainWindow, {
-      title: "Choose export folder",
-      defaultPath: typeof initialPath === "string" && initialPath ? initialPath : directoryPreference("fileSave", "pictures"),
-      properties: ["openDirectory", "createDirectory"],
-    });
-    return result.canceled ? null : result.filePaths[0];
   });
   handle("desktop:choose-export-path", async (options = {}) => {
     const extension = typeof options.extension === "string" ? options.extension.replace(/^\./, "") : "jpg";
@@ -1149,7 +1114,8 @@ function restoredBounds(role) {
 function saveWindowBounds(record) {
   const window = record.window;
   if (window.isDestroyed() || window.isMinimized()) return;
-  fs.writeFileSync(windowStatePath(record.role), JSON.stringify(window.getNormalBounds()));
+  try { fs.writeFileSync(windowStatePath(record.role), JSON.stringify(window.getNormalBounds())); }
+  catch (error) { console.warn(`Could not save window bounds: ${error.message}`); }
 }
 
 async function createWindow(role = "main") {
@@ -1365,14 +1331,13 @@ async function beginShutdown() {
   // the backend, clear Proof scratch and let the app quit.
   try {
     for (const record of [...windows.values()]) {
-      try { saveWindowBounds(record); } catch (error) { console.warn(`Could not save window bounds: ${error.message}`); }
+      saveWindowBounds(record);
       if (!record.window.isDestroyed()) record.window.destroy();
     }
     if (backend) {
       await fetch(`${backend.url}/api/batch-export/shutdown`, {method:"POST",
         headers:{"X-HDR-Finisher-Token":backend.authoringSecret},signal:AbortSignal.timeout(7000)}).catch(()=>{});
     }
-    clearTimeout(deliveryIdleTimer);
     if (deliveryWindow && !deliveryWindow.isDestroyed()) deliveryWindow.destroy();
     deliveryWindow = null;
   } finally {
@@ -1382,8 +1347,11 @@ async function beginShutdown() {
         action, operation: "shutdown", outcome: "success", duration_ms: Math.round(performance.now() - started),
       });
     } finally {
+      backendLogWriter?.events.flush();
+      if (backendLogWriter) await new Promise(resolve => backendLogWriter.log.end(resolve));
       shutdownComplete = true;
-      app.quit();
+      if (failedTest) app.exit(1);
+      else app.quit();
     }
   }
 }
@@ -1606,12 +1574,14 @@ if (!gotLock) {
       }
     } catch (error) {
       desktopEvent("app", "action_finished", {
-        level: "error", action, operation: "startup", outcome: "error", route: "refused", reason: "startup_failed",
+        level: "error", action, operation: "startup", outcome: "error", route: "refused", reason: "startup_failed", error: error.message, log_path: getBackendLogWriter().logPath,
         duration_ms: Date.now() - libraryAppStarted,
       });
       splash?.close();
       await stopBackend();
       if (shuttingDown) return;
+      console.error(`[startup] ${error.stack || error}; log: ${getBackendLogWriter().logPath}`);
+      if (testMode) { failedTest = true; await beginShutdown(); return; }
       await dialog.showMessageBox({ type: "error", title: "HDR Finisher could not start", message: "HDR Finisher could not start its image-processing backend.", detail: error.message, buttons: ["Quit"] });
       beginShutdown();
     }

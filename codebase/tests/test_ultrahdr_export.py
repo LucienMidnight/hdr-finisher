@@ -306,6 +306,7 @@ def test_ultrahdr_gain_map_denoise_reduces_smooth_region_noise_and_preserves_edg
     assert after_edge > before_edge * 0.9
 
 
+@pytest.mark.needs_native_helper
 def test_native_gain_map_filter_matches_the_missing_build_fallback(monkeypatch, tmp_path):
     from hdr_finisher import gainmap_filter
 
@@ -534,6 +535,7 @@ def test_validation_rejects_missing_iso_metadata(monkeypatch, tmp_path: Path) ->
         _validate_ultrahdr_output(output, tmp_path / "ultrahdr_app.exe")
 
 
+@pytest.mark.needs_native_helper
 def test_real_ultrahdr_export_and_decode_when_encoder_is_available(tmp_path: Path) -> None:
     capability = capability_module._ultrahdr_status()
     if capability.status != CapabilityStatus.AVAILABLE:
@@ -572,6 +574,8 @@ def test_real_ultrahdr_export_and_decode_when_encoder_is_available(tmp_path: Pat
     assert float(np.percentile(decoded_hdr, 99)) > float(np.percentile(legacy_linear, 99))
 
 
+@pytest.mark.slow
+@pytest.mark.needs_native_helper
 def test_ultrahdr_file_inputs_match_array_inputs(tmp_path: Path) -> None:
     from hdr_finisher.delivery_frames import DeliveryFrame
 
@@ -589,6 +593,8 @@ def test_ultrahdr_file_inputs_match_array_inputs(tmp_path: Path) -> None:
     assert file_path.read_bytes() == array_path.read_bytes()
 
 
+@pytest.mark.slow
+@pytest.mark.needs_native_helper
 def test_real_ultrahdr_gradient_has_no_long_reconstruction_plateaus_when_encoder_is_available(tmp_path: Path) -> None:
     capability = capability_module._ultrahdr_status()
     if capability.status != CapabilityStatus.AVAILABLE:
@@ -649,6 +655,8 @@ def test_base_floor_keeps_hdr_shadows_recoverable() -> None:
     assert int(floored[3, 3, 0]) == 0
 
 
+@pytest.mark.slow
+@pytest.mark.needs_native_helper
 @pytest.mark.parametrize("hdr_exposure,sdr_exposure", [(0,0),(-1,0),(0,-1)])
 def test_real_no_headroom_export_and_proof_preserve_both_renditions(tmp_path, hdr_exposure, sdr_exposure):
     from hdr_finisher.render_cache import SessionRenderCache

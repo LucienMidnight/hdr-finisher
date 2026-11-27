@@ -1,22 +1,23 @@
-async function applyComparisonUrl(url) {
-  els.comparisonImage.style.visibility="hidden";
+async function applyComparisonUrl(url, isCurrent = () => true) {
   try {
-    await new Promise((resolve, reject) => {
-      els.comparisonImage.onload = () => resolve();
-      els.comparisonImage.onerror = () => reject(new Error("Comparison image could not load settled preview data."));
-      els.comparisonImage.src = url;
-    });
+    await decodePreviewImage(url);
   } catch (error) {
     console.warn(error);
     return false;
-  } finally {
-    els.comparisonImage.onload = null;
-    els.comparisonImage.onerror = null;
   }
+  if (!isCurrent()) return false;
+  els.comparisonImage.src = url;
   els.comparisonCanvas.style.display = "none";
   els.comparisonImage.style.display = "block";
-  els.comparisonImage.style.visibility="";
+  els.comparisonImage.style.visibility = "";
   return true;
+}
+
+// The GPU renderer owns one lane/scale's Denoise selector. An inactive
+// rendition must use the backend's lane-specific Denoise, rather than draw
+// an original proxy or replace the active viewer's preparation.
+function comparisonNeedsDenoise(lane) {
+  return Boolean(state.denoise?.[lane]?.enabled && !state.denoiseRuntime?.[lane]?.showOriginal);
 }
 
 /**
@@ -39,6 +40,7 @@ function clearComparisonPreview({ keepRenderedState = false } = {}) {
     state.comparisonRenderedLane = null;
     state.comparisonRenderedGeneration = null;
     state.comparisonRenderedGeometry = null;
+    state.comparisonPresentation = null;
     state.beforeRenderedKey = null;
   }
 }
@@ -162,6 +164,10 @@ async function switchLane(lane) {
   if (outgoing !== lane && state.denoiseRuntime[outgoing]?.analysisInFlight) {
     invalidateDenoisePreparation(outgoing);
   }
+  // Keep a settled denoised picture before switching the viewer's sole GPU
+  // selector. The inactive lane otherwise has to wait for a full CPU grade.
+  if (outgoing !== lane) await retainDenoisedComparison(outgoing, switchGeneration);
+  if (switchGeneration !== state.laneSwitchGeneration) return;
   state.currentView = lane;
   state.renderCoordinator?.noteActiveLane(lane);
   state.selectedCurvePoint = Math.min(state.selectedCurvePoint ?? 0, currentCurveValues().length - 1);
@@ -261,7 +267,8 @@ function renderLaneChrome() {
     els.sdrMatchEntire.textContent = match?.rematch_required ? "↻ Rematch SDR" : "Match SDR";
     els.sdrMatchEntire.classList.toggle("rematch-required", Boolean(match?.rematch_required));
   }
-  if (els.sdrMatchEntire) els.sdrMatchEntire.disabled = !state.session;
+  els.sdrMatchModuleActions?.forEach(row => row.classList.toggle("hidden", lane !== "sdr"));
+  refreshSdrMatchButtons();
   if (els.sdrMatchEntireStatus) {
     els.sdrMatchEntireStatus.textContent = state.adjustments?.sdr?.linked_to_hdr
       ? "Linked to HDR · HDR edits update SDR live. SDR creative edits unlink."
@@ -270,7 +277,7 @@ function renderLaneChrome() {
       : match?.materialized_status === "needs_review"
       ? "Independent SDR · Match needs review"
       : match?.materialized_status === "matched"
-        ? "Independent SDR · Match SDR to try linking again."
+        ? "Independent SDR · Matched values are editable. Match again after HDR edits."
         : "";
   }
   renderLinkedSdrState();
@@ -422,22 +429,74 @@ function renderCompareLayout() {
   renderCompareStatus();
 }
 
+async function retainDenoisedComparison(lane, switchGeneration) {
+  const accepted = state.acceptedPresentation;
+  const sessionId = state.session?.session_id;
+  const generation = state.previewGeneration[lane];
+  const geometry = geometrySignature();
+  if (!sessionId || state.compareMode === "before" || state.comparePeekActive
+    || state.localShowMask || denoiseNoiseViewActive(lane) || !comparisonNeedsDenoise(lane)
+    || accepted?.lane !== lane || accepted.generation !== generation || !accepted.exact
+    || accepted.transport !== "WebGPU" || accepted.grainRoute?.route === "original") return;
+  const isCurrent = () => state.laneSwitchGeneration === switchGeneration && state.session?.session_id === sessionId
+    && state.currentView === lane && state.previewGeneration[lane] === generation
+    && state.acceptedPresentation === accepted && geometrySignature() === geometry;
+  try {
+    const picture = await state.gpuPreview?.copyComparisonPicture?.(els.comparisonCanvas, {
+      sessionId, lane, generation, geometry, sourceSerial: accepted.sourceSerial,
+      maxLongEdge: Math.max(settledProxyLongEdge(), refinementProxyLongEdge()), isCurrent,
+    });
+    if (!picture || !isCurrent()) return;
+    state.comparisonRenderedLane = lane;
+    state.comparisonRenderedGeneration = generation;
+    state.comparisonRenderedGeometry = geometry;
+    state.comparisonPresentation = {
+      lane, generation, longEdge: Math.max(picture.width, picture.height),
+      transport: "WebGPU", exact: true, retained: true, sessionId, resourceGeneration: picture.resourceGeneration,
+    };
+  } catch (error) {
+    console.warn("Could not retain denoised picture for Compare.", error);
+  }
+}
+
 async function renderComparisonPreview(lane, { force = false } = {}) {
   if (state.compareMode === "before") {
     return state.compareLayout === "single" ? false : renderBeforePreview({ force });
   }
   if (!state.session || state.compareLayout === "single" || lane === state.currentView) return false;
+  const sessionId = state.session.session_id;
+  const layout = state.compareLayout;
   const generation = state.previewGeneration[lane];
   const sourceIdentity = gradeSourceIdentity(lane);
   const signature = geometrySignature();
-  const alreadyRendered = state.comparisonRenderedLane === lane
+  const isCurrent = () => state.session?.session_id === sessionId
+    && state.compareLayout === layout && state.compareMode !== "before"
+    && lane !== state.currentView && generation === state.previewGeneration[lane]
+    && gradeSourceIdentity(lane) === sourceIdentity && geometrySignature() === signature;
+  const presentation = state.comparisonPresentation;
+  const matches = state.comparisonRenderedLane === lane
     && state.comparisonRenderedGeneration === generation
-    && state.comparisonRenderedGeometry === signature
+    && state.comparisonRenderedGeometry === signature;
+  const retained = presentation?.retained && presentation.sessionId === sessionId
+    && state.gpuPreview?.available && presentation.resourceGeneration === state.gpuPreview.resourceGeneration
+    && comparisonNeedsDenoise(lane);
+  const alreadyRendered = matches && (!presentation?.retained || retained)
     && (els.comparisonCanvas.style.display !== "none" || els.comparisonImage.style.display !== "none");
+  // Match edits the SDR grade, not the retained HDR pixels. The same
+  // finished picture also works when moving between split and side-by-side.
+  if (matches && retained) {
+    els.previewSecondaryPane.dataset.lane = lane;
+    els.comparisonImage.style.display = "none";
+    els.comparisonCanvas.style.display = "block";
+    applyZoomGeometry();
+    renderCompareStatus();
+    return true;
+  }
   if (!force && alreadyRendered) return true;
 
   els.previewSecondaryPane.dataset.lane = lane;
-  if (gpuPreviewEligible(lane)) {
+  if (!alreadyRendered) clearComparisonPreview();
+  if (!comparisonNeedsDenoise(lane) && gpuPreviewEligible(lane)) {
     try {
       const result = await state.gpuPreview.renderTo(
         els.comparisonCanvas,
@@ -451,10 +510,9 @@ async function renderComparisonPreview(lane, { force = false } = {}) {
         null,
         projectReferenceWhiteNits(),
         { width: state.session.source.width, height: state.session.source.height },
-        { identity: sourceIdentity },
+        { identity: sourceIdentity, originalSource: true, isCurrent },
       );
-      if (result && lane !== state.currentView && generation === state.previewGeneration[lane]
-        && gradeSourceIdentity(lane) === sourceIdentity) {
+      if (result && isCurrent()) {
         state.gpuPreparedLane[lane] = true;
         els.comparisonImage.style.display = "none";
         els.comparisonCanvas.style.display = "block";
@@ -477,18 +535,21 @@ async function renderComparisonPreview(lane, { force = false } = {}) {
     }
   }
 
+  if (!isCurrent()) return false;
   let cached = state.previewCache[lane];
   if (!(cached?.generation === generation && cached.geometrySignature === signature && (cached.raw || cached.url))) {
     await renderPreviewForLane(lane, false, settledProxyLongEdge(), {
       showProgress: false,
+      denoiseFallback: comparisonNeedsDenoise(lane),
       raw: !state.gpuPreview?.available,
     });
     cached = state.previewCache[lane];
   }
-  if (!cached || lane === state.currentView || generation !== state.previewGeneration[lane]) return false;
+  if (!isCurrent() || !cached || cached.generation !== generation
+    || cached.geometrySignature !== signature) return false;
   if (cached.raw) applyRawComparisonPreview(cached);
   else if (cached.url) {
-    const applied = await applyComparisonUrl(cached.url);
+    const applied = await applyComparisonUrl(cached.url, isCurrent);
     if (!applied) return false;
   } else return false;
   state.comparisonRenderedLane = lane;

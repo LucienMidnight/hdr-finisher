@@ -32,7 +32,7 @@
     const separator = Math.max(photo.path.lastIndexOf("\\"), photo.path.lastIndexOf("/"));
     const settings = photo.storage === "sidecar" ? "Beside the photo" : photo.storage === "database" ? (photo.write_reason ? `Cannot be written: ${{ locked: "settings file in use", disk_full: "drive full", unwritable: "folder cannot be written", offline: "folder not connected", unreadable: "settings file cannot be read", io: "system could not write the file" }[photo.write_reason] || "writing failed"}; marks are safe in the library` : "Waiting to be written; marks are safe in the library") : "None yet";
     const bias = photo.exposure_bias == null ? (waiting ? "Reading…" : NONE) : `${photo.exposure_bias > 0 ? "+" : ""}${Number(photo.exposure_bias.toFixed(2))} EV`;
-    const place = photo.latitude == null ? (waiting ? "Reading…" : NONE) : `${photo.latitude.toFixed(5)}, ${photo.longitude.toFixed(5)}`;
+    const place = photo.latitude == null || photo.longitude == null ? (waiting ? "Reading…" : NONE) : `${photo.latitude.toFixed(5)}, ${photo.longitude.toFixed(5)}`;
     return [
       ["File", [["Name", photo.name], ["File type", photo.type], ["Size", megabytes(photo.bytes)],
         ...(photo.width && photo.height ? [["Dimensions", `${photo.width} × ${photo.height}`]] : []),

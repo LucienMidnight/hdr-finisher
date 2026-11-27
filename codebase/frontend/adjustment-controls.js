@@ -1,3 +1,34 @@
+function bindToneRangeDisclosures() {
+  // These views share three transient disclosure states. Nothing goes in a grade.
+  const byZone = new Map();
+  for (const zone of document.querySelectorAll(".tone-zone[data-zone-hover]")) {
+    const heading = zone.querySelector(".tone-range-heading");
+    const body = document.getElementById(heading.getAttribute("aria-controls"));
+    const matches = byZone.get(zone.dataset.zoneHover) || [];
+    matches.push({ heading, body });
+    byZone.set(zone.dataset.zoneHover, matches);
+    heading.addEventListener("click", () => {
+      const expand = heading.getAttribute("aria-expanded") === "false";
+      for (const peer of matches) {
+        peer.heading.setAttribute("aria-expanded", String(expand));
+        peer.body.hidden = !expand;
+      }
+    });
+  }
+}
+
+function renderToneRange(zone, grade, defaults) {
+  const center = zone.dataset.zoneHover + "_center";
+  const width = zone.dataset.zoneHover + "_width";
+  const heading = zone.querySelector(".tone-range-heading");
+  const summary = heading.querySelector(".tone-range-summary");
+  const ev = (value) => Number(value).toFixed(2).replace("-", "−") + " EV";
+  const text = ev(grade[center]) + " · " + ev(grade[width]);
+  if (summary.textContent !== text) summary.textContent = text;
+  heading.classList.toggle("modified",
+    !valuesEqual(grade[center], defaults[center]) || !valuesEqual(grade[width], defaults[width]));
+}
+
 function bindRangeResetControls() {
   document.addEventListener("dblclick", (event) => {
     const control = event.target.closest('input[type="range"]:not([data-no-double-reset])');
@@ -98,6 +129,12 @@ function syncPressedControl(control, pressed) {
 }
 
 function syncControlsFromState() {
+  const draft=state.filmSelectDraft;
+  if (draft && state.adjustments !== draft.before) {
+    const preview=state.adjustments;
+    state.adjustments=draft.before;
+    try { return syncControlsFromState(); } finally { state.adjustments=preview; }
+  }
   syncHighlightCompressionMinimum();
   els.controls.forEach((control) => {
     const value = getValueByPath(state.adjustments, control.dataset.path);
@@ -168,6 +205,12 @@ function renderFilmStockControls() {
 }
 
 function renderControlState() {
+  const draft=state.filmSelectDraft;
+  if (draft && state.adjustments !== draft.before) {
+    const preview=state.adjustments;
+    state.adjustments=draft.before;
+    try { return renderControlState(); } finally { state.adjustments=preview; }
+  }
   renderHslPanels();
   const defaults = defaultAdjustments();
   const filmLook = state.adjustments[state.currentView]?.film_look;
@@ -180,6 +223,11 @@ function renderControlState() {
   els.controlRows.forEach((row) => {
     row.classList.toggle("modified", isPathModified(row.dataset.controlPath, defaults));
   });
+  for (const lane of ["hdr", "sdr"]) {
+    for (const zone of document.querySelectorAll(`[data-group="${lane}-tone"] .tone-zone`)) {
+      renderToneRange(zone, state.adjustments[lane], defaults[lane]);
+    }
+  }
   for (const [group, paths] of Object.entries(controlGroups)) {
     const count = paths.filter((path) => isPathModified(path, defaults)).length;
     const output = document.querySelector(`[data-modified-count="${group}"]`);

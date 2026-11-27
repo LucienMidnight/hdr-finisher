@@ -49,3 +49,19 @@ test('inventory reads windows, templates, fallback names and helper text without
     assert.equal(after.find(e=>e.anchor==='for=blacks').id,entries.find(e=>e.anchor==='for=blacks').id,'element target ID survives a copy edit');
   } finally {fs.rmSync(root,{recursive:true,force:true});}
 });
+
+
+test('icon-only labels and catalogue stay identical across source line endings',()=>{
+  const root=fs.mkdtempSync(path.join(os.tmpdir(),'hdr-tooltip-lines-'));
+  try {
+    fs.mkdirSync(path.join(root,'codebase/frontend'),{recursive:true});
+    fs.mkdirSync(path.join(root,'codebase/desktop'));
+    const file=path.join(root,'codebase/frontend/index.html');
+    const html='<button id="scope" aria-label="Toggle Scope Region" title="Draw a box">\n<svg>\n'+('<path class="scope" d="M 0 0"/>\n'.repeat(30))+'</svg>\n</button>';
+    fs.writeFileSync(file,html);
+    const lf=extract(root);
+    assert.equal(lf[0].name,'Toggle Scope Region');
+    fs.writeFileSync(file,html.replace(/\n/g,'\r\n'));
+    assert.equal(render(extract(root)),render(lf));
+  } finally {fs.rmSync(root,{recursive:true,force:true});}
+});

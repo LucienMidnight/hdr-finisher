@@ -7,6 +7,7 @@ the exact compile. ``tests/performance/soft_mask_fuzz.py`` is the full-size
 version the rule was calibrated on.
 """
 from __future__ import annotations
+import pytest
 
 from pathlib import Path
 import sys
@@ -143,6 +144,7 @@ def test_the_stated_rectangle_places_a_cropped_bitmap_to_a_small_fraction_of_a_p
             assert float(off[inner].max()) < 0.01, fields
 
 
+@pytest.mark.slow
 def test_masks_judged_soft_stay_within_the_working_limit_of_the_exact_mask() -> None:
     rng = np.random.default_rng(7)
     image = np.zeros((SOURCE[1], SOURCE[0], 3), dtype=np.float32)

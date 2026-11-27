@@ -1,5 +1,5 @@
 const reusePhoto=require('./helpers/reuse-test-photo.cjs');
-/* Same three photos, same GPU export settings, Export page open versus closed. */
+/* Same three photos and settings, Export page open versus closed. */
 const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
 const {chromium}=require('playwright');
 const root=path.resolve(__dirname,'..'),folder=path.join(root,'output/library-export-live-tiles',String(Date.now()));fs.mkdirSync(folder,{recursive:true});
@@ -14,9 +14,9 @@ function removeExports(){for(const file of exported)fs.rmSync(file,{force:true})
  await page.goto(process.env.HDR_FINISHER_URL,{waitUntil:'networkidle'});
  await page.evaluate(()=>activateWorkflowTab('import'));
  // The check measures finished live tiles; unedited RAWs now start as camera pictures.
- await page.locator('#library-frame').evaluate(async(element,photos)=>{
+ const dimensions=await page.locator('#library-frame').evaluate(async(element,photos)=>{
   const w=element.contentWindow;
-  for(const photo of photos){const meta=await w.HDRLibraryScenes.load(photo,640,undefined,10,null,{develop:true});await meta.directScene?.store();}
+  const sizes=[];for(const photo of photos){const meta=await w.HDRLibraryScenes.load(photo,640,undefined,10,null,{develop:true});await meta.directScene?.store();sizes.push([meta.source_width,meta.source_height]);}return sizes;
  },photos);
  await page.evaluate(paths=>batchExport.open(paths,{fromLibrary:true}),photos);
  await page.waitForFunction(()=>document.querySelectorAll('.batch-photo canvas[data-live-tile]').length===3,null,{timeout:120000});
@@ -31,6 +31,10 @@ function removeExports(){for(const file of exported)fs.rmSync(file,{force:true})
   w.__tileDraws=0;const descriptor=Object.getOwnPropertyDescriptor(w,'HDRLibraryPictures');
   Object.defineProperty(w,'HDRLibraryPictures',{...descriptor,value:{...w.HDRLibraryPictures,show(...args){w.__tileDraws++;return original(...args);}}});
  });
+ const memory=await (await global.HDRFinisherElectronTestHarness.fetch('/api/library/memory-setting')).json();
+ assert.ok(dimensions.every(([w,h])=>w>640&&h>640),'Native dimensions are available');
+ const cpuExpected=dimensions.map(([w,h])=>1_300_000_000+88*w*h+288*1024**2>memory.ceilingBytes);
+ assert.ok(cpuExpected.some(value=>!value),'Retain a within-budget GPU coverage photo');
  const measurements=[];
  async function run(photo,open,label){
   await page.evaluate(photo=>batchExport.open([photo],{fromLibrary:true}),photo);
@@ -45,7 +49,9 @@ function removeExports(){for(const file of exported)fs.rmSync(file,{force:true})
   const seconds=(Date.now()-started)/1000,job=await page.evaluate(()=>batchExport.activity());
   for(const result of job.results||[])if(result.output_path)exported.add(result.output_path);
   assert.equal(job.state,'finished',JSON.stringify(job));assert.equal(job.results.length,1);
-  assert.equal(job.results[0].renderer,'gpu',JSON.stringify(job.results));assert.ok(['exported','renamed'].includes(job.results[0].outcome),JSON.stringify(job.results));
+  const expectedCpu=cpuExpected[photos.indexOf(photo)];
+  assert.equal(job.results[0].renderer,expectedCpu?'cpu':'gpu',JSON.stringify(job.results));
+  if(expectedCpu)assert.equal(job.results[0].fallback_reason,'GPU delivery working set does not fit the existing app memory ceiling; using bounded CPU strips.');assert.ok(['exported','renamed'].includes(job.results[0].outcome),JSON.stringify(job.results));
   const after=await page.locator('#library-frame').evaluate(e=>e.contentWindow.__tileDraws);
   assert.equal(after,before,'Progress never redraws a completed tile');
   measurements.push({photo:path.basename(photo),page:label,seconds});console.log(JSON.stringify(measurements.at(-1)));

@@ -29,6 +29,7 @@ a lookup location for tests; `P0` is
 | `A7R00619.ARW` | 41 | another photographer's Sony (A7R IIIa) | PR/Lakeland landscape in dry Summer |
 | `2025_0730_1331_3.arw` | 82 | lower-case extension; another photographer | PR/An alley at Seoul - lucas faco |
 | `DSC00950.ARW` + `.ARW.hdrf` | 35 | heavy saved project baseline | PR/Fantastic light over village - AdamFromCanada |
+| `DSC00636.ARW` | 54 | Sony ILCE-1, 50.2 MP; large-photo Grain routing/parity | Steve supplied Nov 26 (Play Raw copy) |
 | **Other cameras** | | | |
 | `IMG_0114.CR2` + `.hdrf` | 25 | Canon CR2; all HSL checks | PR/Balanced Rock in Arches Nat Park - LaurentFromSF |
 | `IMG_0790.CR2` | 23 | noisy Canon (Denoise, focus) | PR/Hawai'ian Fire Dancers - Challenge the Darkside - LaurentFromSF |
@@ -161,10 +162,6 @@ so an old scratch copy cannot quietly stand in for the new photo.
 
 ### Coverage Steve would need to supply
 
-- A noise-free, scene-linear EXR **render at least 540 × 540 pixels** for the
-  Denoise lab render-reference case. The committed Blender interoperability
-  fixture is only 8 × 8 and is not a valid substitute; the lab names this gap
-  and stops, rather than inventing a clean render or reporting a pass.
 - An authored HDR linear DNG, if the former `DJI_0071-2-HDR.dng` photographic
   case must be retained. The curated drone and Leica samples are mosaiced;
   the curated DxO sample covers ordinary linear DNG. Synthetic opcode checks
@@ -173,9 +170,16 @@ so an old scratch copy cannot quietly stand in for the new photo.
   are not reproduced. Those reviews now use curated landscape pixels; old
   crop names/caches and visual baselines must not be reused as evidence.
 
-No missing Olympus sample, 40-RAW folder or 50+ MP RAW is silently invented.
-The curated set has an Olympus ORF, 18 RAWs, 42 MP Sony RAWs and 192 MP raster
-files. Raster stress is not a claim of 50+ MP RAW-decoder coverage.
+The corpus now includes Steve's private Sony ILCE-1 `DSC00636.ARW`
+(8672 x 5784 sensor pixels, 50.2 MP; LibRaw's active image is 8660 x 5784).
+Setup verifies its byte size and SHA-256 like the other curated photos. The
+large-photo Grain driver uses the shared reusable-photo helper, not a required
+pre-existing scratch copy. Transfer this private RAW to the Mac separately.
+
+The lab's `blender-render` clean-reference case and render-only degradation
+benchmark are retired at Steve's request (November 26): real renders are not
+noise-free ground truth. Photographic references remain; no external clean EXR
+is required or counted as missing coverage.
 
 ## Library fixture hand-over
 
@@ -237,9 +241,10 @@ The two protected DSC00264 mask projects still name the retained
 `HDR Test Images/DSC00264.ARW`. The curated `Projects/DSC00950.hdrfinisher`
 still embeds `D:\Photos\Play_Raw\Fantastic light over village - AdamFromCanada\DSC00950.ARW`
 as its durable source path. Its RAW is present in the curated root, but the
-protected project was **not** rewritten. Heavy-project runs may need Steve to
-resolve that source in a new disposable project; this is not an alternate photo
-search path for drivers. All protected project bytes remain unchanged.
+protected project is not rewritten. The curated RAW's SHA-256 matches its saved
+source fingerprint. Preview/export review and Proof/Grade diagnostic explicitly
+relink their disposable sessions to that RAW; the backend still checks identity.
+Steve does not need another file or to edit the protected project.
 
 ## Validation on Mac (November 14, commit containing this record)
 

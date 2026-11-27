@@ -111,12 +111,17 @@
   }
 
   function curveSetNeutral(branch) {
-    return ["luma_curve", "red_curve", "green_curve", "blue_curve"].every(name=>curvePointsNeutral(branch?.[name]));
+    return curveChannelFlags(branch) === 0;
+  }
+
+  function curveChannelFlags(branch) {
+    return ["luma_curve", "red_curve", "green_curve", "blue_curve"].reduce((flags, name, index) =>
+      curvePointsNeutral(branch?.[name]) ? flags : flags | (1 << index), 0);
   }
 
   function curvePointsNeutral(points) {
-    return Array.isArray(points) && points.length >= 2
-      && points.every(point=>Array.isArray(point) && Math.abs(Number(point[0])-Number(point[1]))<0.000001);
+    return points == null || (Array.isArray(points) && points.length >= 2
+      && points.every(point=>Array.isArray(point) && Math.abs(Number(point[0]) - Number(point[1])) <= 1e-7));
   }
 
   function toneEqualizerNeutral(branch) {
@@ -172,7 +177,7 @@
   function buildParams(lane, adjustments, workingSpace, hdrSurface, referenceWhiteNits = 203, sourcePixelScale = 1) {
     if (lane === "sdr" && adjustments.sdr.linked_to_hdr) {
       const params = buildParams("hdr", adjustments, workingSpace, hdrSurface, referenceWhiteNits, sourcePixelScale);
-      const tail = buildParams("sdr", { ...adjustments, sdr: { ...adjustments.sdr, linked_to_hdr: false } },
+      const tail = buildParams("sdr", { ...adjustments, sdr: { ...adjustments.sdr, linked_to_hdr: false, output_exposure: 0 } },
         workingSpace, hdrSurface, referenceWhiteNits, sourcePixelScale);
       for (const name of ["HIGHLIGHT_SOFTNESS", "HIGHLIGHT_START", "HIGHLIGHT_TARGET", "HIGHLIGHT_TARGET_NITS",
         "HIGHLIGHT_MODE", "HIGHLIGHT_ANCHOR", "HIGHLIGHT_PEAK_DETAIL", "HIGHLIGHT_BIAS",
@@ -191,6 +196,7 @@
       && globalThis.HDRHslSelectionGpu && globalThis.HDRHslSharedSelection !== false ? 1 : 0;
     const colorSource = branch;
     params[GPU_PARAMS.HDR_LANE] = lane === "hdr" ? 1 : 0;
+    params[GPU_PARAMS.OUTPUT_EXPOSURE_GAIN] = lane === "sdr" ? Math.pow(2, branch.output_exposure || 0) : 1;
     params[GPU_PARAMS.SOURCE_LINEAR_SRGB] = workingSpace === "linear-srgb" ? 1 : 0;
     const toneEnabled = branch.tone_section_enabled !== false;
     const highlightEnabled = branch.highlight_section_enabled !== false;
@@ -213,7 +219,8 @@
     params[GPU_PARAMS.CONTRAST_PIVOT] = branch.contrast_pivot || (lane === "hdr" ? 0.1845 : 0.5);
     params[GPU_PARAMS.WHITE_BALANCE_KELVIN] = colorActive ? colorSource.white_balance_kelvin || 6500 : 6500;
     params[GPU_PARAMS.TINT] = colorActive ? colorSource.tint || 0 : 0;
-    params[GPU_PARAMS.CURVES_ENABLED] = branch.curves_section_enabled !== false && !curveSetNeutral(branch) ? 1 : 0;
+    // Same Luma/R/G/B bit order as the local pass. Zero bypasses the stage.
+    params[GPU_PARAMS.CURVES_ENABLED] = branch.curves_section_enabled !== false ? curveChannelFlags(branch) : 0;
     params[GPU_PARAMS.HDR_SURFACE] = hdrSurface ? 1 : 0;
     // The transport limit is absolute; scene-linear scale follows the project.
     params[GPU_PARAMS.HDR_DISPLAY_HEADROOM] = 10000 * 0.18 / projectReferenceWhite;
@@ -262,7 +269,8 @@
       ? toneAdjustedHighlightPeakLinear(branch, toneEnabled, projectReferenceWhite)
       : Math.max(0.01, (branch.highlight_compression_peak_measurement === "manual"
         ? branch.highlight_compression_manual_peak_percent ?? 100
-        : branch.highlight_compression_source_peak_percent ?? 100) / 100 * (toneEnabled ? Math.pow(2, branch.exposure || 0) : 1));
+        : branch.highlight_compression_source_peak_percent ?? 100) / 100 * (toneEnabled ? Math.pow(2, branch.exposure || 0) : 1))
+        * params[GPU_PARAMS.OUTPUT_EXPOSURE_GAIN];
     params[GPU_PARAMS.PROJECT_REFERENCE_WHITE_NITS] = projectReferenceWhite;
     params[GPU_PARAMS.FILM_REFERENCE_WHITE_NITS] = 203;
     params[GPU_PARAMS.HIGHLIGHT_PEAK_DETAIL] = Math.min(1, Math.max(0, (branch.highlight_compression_peak_detail ?? 35) / 100));
@@ -366,7 +374,7 @@
     const vignette = branch.vignette || {};
     params[GPU_PARAMS.VIGNETTE_ENABLED] = branch.vignette_section_enabled !== false ? 1 : 0;
     params[GPU_PARAMS.VIGNETTE_AMOUNT] = 2 * (vignette.amount || 0) / 100;
-    params[GPU_PARAMS.VIGNETTE_MIDPOINT] = 0.15 + 0.70 * (vignette.midpoint ?? 50) / 100;
+    params[GPU_PARAMS.VIGNETTE_MIDPOINT] = 0.15 + 1.40 * (vignette.midpoint ?? 25) / 100;
     const roundness = (vignette.roundness || 0) / 100;
     params[GPU_PARAMS.VIGNETTE_ROUNDNESS] = roundness >= 0 ? 2 + 6 * roundness : 2 + roundness;
     params[GPU_PARAMS.VIGNETTE_FEATHER] = 0.02 + 0.98 * (vignette.feather ?? 75) / 100;
@@ -495,9 +503,7 @@
     values[MASK_PARAMS.LOCAL.SHARPEN_RADIUS] = Math.min(3, Math.max(0.3, Number(detail.sharpen_radius_px) || 0.8));
     values[MASK_PARAMS.LOCAL.SHARPEN_THRESHOLD] = Math.min(1, Math.max(0, (Number(detail.sharpen_threshold) || 0) / 100)) * 0.5;
     values[MASK_PARAMS.LOCAL.SOURCE_PIXEL_SCALE] = Math.min(1, Math.max(0.05, Number(sourcePixelScale) || 1));
-    ['luma_curve','red_curve','green_curve','blue_curve'].forEach((name,index)=>{
-      if (!curvePointsNeutral(grade[name])) values[MASK_PARAMS.LOCAL.CURVE_FLAGS] += 1 << index;
-    });
+    values[MASK_PARAMS.LOCAL.CURVE_FLAGS] = curveChannelFlags(grade);
     values[MASK_PARAMS.LOCAL.CURVE_OFFSET] = curveOffset;
     const grading = grade.color_grading || {};
     values[GPU_PARAMS.COLOR_GRADING_ENABLED] = 1;

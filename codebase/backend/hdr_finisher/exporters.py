@@ -939,7 +939,16 @@ def _execute_export(
             timings["metadata"] = round((perf_counter() - metadata_started) * 1000, 3)
             _fsync_path(staged_output)
             validation = prepared.validate(staged_output)
-        os.replace(staged_output, output_path)
+        _require_overwrite_permission(output_path, settings)
+        if os.name == "nt" and not settings.overwrite:
+            # Windows rename refuses an existing destination atomically. Unlike
+            # hard links, this also works on removable FAT/exFAT export volumes.
+            try:
+                os.rename(staged_output, output_path)
+            except FileExistsError as exc:
+                raise ExportOverwriteRequired(output_path) from exc
+        else:
+            os.replace(staged_output, output_path)
         staged_output = None
     except ExportOverwriteRequired:
         raise

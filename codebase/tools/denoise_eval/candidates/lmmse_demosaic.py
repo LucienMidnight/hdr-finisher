@@ -11,9 +11,10 @@ from dataclasses import dataclass
 import hashlib
 import os
 from pathlib import Path
-import subprocess
 
 import numpy as np
+
+from tools.denoise_eval.candidates.native_build import build_shared
 
 from hdr_finisher.signed_raw import _library as shipping_ahd_library
 from tools.denoise_eval.candidates.dark_noise import factory as calibrated
@@ -65,7 +66,7 @@ int rt_lmmse(float* sensor, int height, int width, const int* cfa,
     } catch (...) { return 1; }
 }
 '''
-        translation = '#include "' + str(SHIM) + '"\n' + source + entry
+        translation = '#include "' + SHIM.as_posix() + '"\n' + source + entry
         digest = hashlib.sha256((translation + SHIM.read_text()).encode()).hexdigest()[:16]
         build = ROOT / 'output/denoise-v1/lmmse-demosaic/build'
         build.mkdir(parents=True, exist_ok=True)
@@ -74,10 +75,7 @@ int rt_lmmse(float* sensor, int height, int width, const int* cfa,
             unit = build / (digest + '.cc')
             unit.write_text(translation)
             try:
-                command = ['clang++', '-O3', '-std=c++17', '-ffp-contract=off', '-shared', str(unit), '-o', str(binary)]
-                if os.name != 'nt':
-                    command += ['-fPIC']
-                subprocess.run(command, check=True)
+                build_shared(unit, binary, cpp=True)
             finally:
                 unit.unlink(missing_ok=True)
         loaded = ctypes.CDLL(str(binary))

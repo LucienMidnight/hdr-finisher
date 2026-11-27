@@ -1,0 +1,67 @@
+{
+  "schemaVersion": 1,
+  "drivers": {
+    "tests/denoise-zoomed-region.js": {
+      "mac": {
+        "medianSeconds": 18,
+        "lastSeconds": 18,
+        "sampleCount": 1,
+        "sampleSeconds": [
+          18
+        ],
+        "revision": "0f64b37f (report; later denoise rechecks)",
+        "date": "2026-11-25",
+        "exitCode": 0,
+        "source": "docs/technical/reports/overnight-release-check-2026-11-25.md, Test-suite cost / intermittent sections; approximate, pre-trim",
+        "lastSampleKey": "2026-11-25T23:59:59.000Z|report-tests/denoise-zoomed-region.js"
+      }
+    },
+    "tests/film-stock-parity.js": {
+      "win": {
+        "medianSeconds": 213.582,
+        "lastSeconds": 213.582,
+        "sampleCount": 3,
+        "sampleSeconds": [
+          211.735,
+          225.657,
+          213.582
+        ],
+        "revision": "c2992d5f415a600719a53165fcbd1b6a3d4ebad5",
+        "date": "2026-11-27",
+        "exitCode": 0,
+        "source": "release runner history (complete attempts, including failures)",
+        "lastSampleKey": "2026-11-27T06:41:24.074Z|tests__film-stock-parity.js.1.1795761470492.log"
+      }
+    },
+    "tests/hsl-selection-delivery.js": {
+      "win": {
+        "medianSeconds": 824.339,
+        "lastSeconds": 824.339,
+        "sampleCount": 1,
+        "sampleSeconds": [
+          824.339
+        ],
+        "revision": "eeba5df51d65a8052ba7dd5ee4e0a08671d4f627",
+        "date": "2026-11-27",
+        "exitCode": 0,
+        "source": "release runner history (complete attempts, including failures)",
+        "lastSampleKey": "2026-11-27T06:57:35.135Z|tests__hsl-selection-delivery.js.1.1795761830795.log"
+      }
+    },
+    "tests/library-gpu-raw-single.js": {
+      "mac": {
+        "medianSeconds": 300,
+        "lastSeconds": 300,
+        "sampleCount": 1,
+        "sampleSeconds": [
+          300
+        ],
+        "revision": "0f64b37f (report; later denoise rechecks)",
+        "date": "2026-11-25",
+        "exitCode": 0,
+        "source": "docs/technical/reports/overnight-release-check-2026-11-25.md, Test-suite cost / intermittent sections; approximate, pre-trim",
+        "lastSampleKey": "2026-11-25T23:59:59.000Z|report-tests/library-gpu-raw-single.js"
+      }
+    }
+  }
+}

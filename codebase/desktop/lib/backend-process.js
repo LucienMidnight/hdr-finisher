@@ -89,7 +89,9 @@ async function stopBackendProcess(child) {
       }
     }
   } else {
-    child.kill();
+    // Desktop sidecars own a process group, including native encoders.
+    try { process.kill(-child.pid, "SIGKILL"); }
+    catch { child.kill(); }
   }
   if (await waitForExit(child)) return;
   child.kill("SIGKILL");

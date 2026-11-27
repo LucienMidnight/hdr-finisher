@@ -50,3 +50,15 @@ def test_upper_dn_limit_is_unchanged():
     sensor = np.random.default_rng(3).integers(0, 65536, (32, 32), dtype=np.uint16)
     result = demosaic(sensor, PATTERNS[0], np.zeros((2, 2)), np.eye(3))
     assert result.max() <= 65535
+
+
+@pytest.mark.parametrize("half_size", [False, True])
+def test_transposed_sensor_matches_contiguous_sensor_without_mutation(half_size):
+    sensor = np.random.default_rng(23).integers(0, 800, (41, 49), dtype=np.uint16).T
+    original = sensor.copy()
+    expected = demosaic(np.ascontiguousarray(sensor), PATTERNS[0], np.full((2, 2), 250),
+                        np.eye(3), rows=16, half_size=half_size)
+    actual = demosaic(sensor, PATTERNS[0], np.full((2, 2), 250), np.eye(3),
+                      rows=16, half_size=half_size)
+    np.testing.assert_array_equal(actual, expected)
+    np.testing.assert_array_equal(sensor, original)

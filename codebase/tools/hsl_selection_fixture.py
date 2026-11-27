@@ -49,7 +49,7 @@ before = selection(rgb, yellow)[0]
 seam = float(np.abs(tile_weight[ty - y0:ty - y0 + th, tx - x0:tx - x0 + tw] - weight[ty:ty + th, tx:tx + tw]).max())
 cases[0]['weights'][0] = weight.tolist()
 # Exercise every edge control on the full frame, half scale, and a halo tile.
-for edge, feather, detail in [(-3,0,50),(3,0,50),(0,6,50),(0,0,0),(0,0,100),(8,16,100),(-8,16,0),(.75,.5,25)]:
+for edge, feather, detail in [(-3,0,50),(3,0,50),(0,6,50),(0,0,0),(0,0,100),(8,16,100),(-8,16,0),(.75,.5,25),(0,32,50),(0,64,50)]:
     controls=dict(edge=edge,edge_feather=feather,edge_detail=detail)
     cs=[dict(c,**controls) for c in channels]
     for scale in (1,.5):

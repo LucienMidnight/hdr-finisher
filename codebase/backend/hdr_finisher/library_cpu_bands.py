@@ -7,11 +7,19 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 import numpy as np
 def _bilinear(plane, y, x):
-    x=np.clip(x,0,plane.shape[1]-1); y=np.clip(y,0,plane.shape[0]-1)
-    x0=x.astype(np.int32); y0=y.astype(np.int32)
-    x1=np.minimum(x0+1,plane.shape[1]-1); y1=np.minimum(y0+1,plane.shape[0]-1)
-    fx=x-x0; fy=y-y0
-    return (plane[y0,x0]*(1-fx)*(1-fy)+plane[y0,x1]*fx*(1-fy)+plane[y1,x0]*(1-fx)*fy+plane[y1,x1]*fx*fy).astype(np.float32)
+    import ctypes as C
+    from .lens_correction import _library
+    plane=np.ascontiguousarray(plane,dtype=np.float32)
+    x,y=np.broadcast_arrays(x,y)
+    x=np.ascontiguousarray(x,dtype=np.float32); y=np.ascontiguousarray(y,dtype=np.float32)
+    output=np.empty(x.shape,dtype=np.float32)
+    sample=_library().lens_sample_plane
+    floats=np.ctypeslib.ndpointer(dtype=np.float32,flags='C_CONTIGUOUS')
+    sample.argtypes=[floats,C.c_int,C.c_int,floats,floats,C.c_size_t,floats]
+    sample.restype=None
+    sample(plane,plane.shape[1],plane.shape[0],x,y,x.size,output)
+    return output
+
 
 
 def _weights(source, destination):
@@ -28,16 +36,20 @@ class _Reduction:
     def __init__(self,width,height,edge):
         scale=min(1.,edge/max(width,height))
         self.width,self.height=max(1,round(width*scale)),max(1,round(height*scale))
-        self.x=_weights(width,self.width); self.y=_weights(height,self.height)
+        self.y=_weights(height,self.height)
         self.pixels=np.zeros((self.height,self.width,3),dtype=np.float32)
 
     def add(self,start,pixels):
-        horizontal=np.empty((len(pixels),self.width,3),dtype=np.float32)
-        for column,(indices,weights) in enumerate(self.x):
-            horizontal[:,column]=np.sum(pixels[:,indices]*weights[None,:,None],axis=1)
+        from PIL import Image
+        # Same float triangle filter as reduce_picture, without thousands of
+        # Python/NumPy gathers per source band. Keep only this resident band.
+        horizontal=np.stack([np.asarray(Image.fromarray(pixels[:,:,c]).resize(
+            (self.width,len(pixels)),Image.Resampling.BILINEAR)) for c in range(3)],axis=2)
         for row,(indices,weights) in enumerate(self.y):
+            if indices[-1] < start or indices[0] >= start+len(pixels): continue
             keep=(indices>=start)&(indices<start+len(pixels))
-            if np.any(keep): self.pixels[row]+=np.sum(horizontal[indices[keep]-start]*weights[keep,None,None],axis=0)
+            self.pixels[row]+=np.sum(horizontal[indices[keep]-start]*weights[keep,None,None],axis=0)
+
 
 
 def develop(root, path, document, edge, cancelled, cache, progress, draw_first, prepared=None):
@@ -93,6 +105,7 @@ def develop(root, path, document, edge, cancelled, cache, progress, draw_first, 
             # Eight rows retain every AHD homogeneity neighbour at a strip seam.
             for start in range(0,height,256):
                 check(); stop=min(height,start+256)
+                if progress: progress('demosaic','Developing RAW in bands')
                 lo=max(0,start-8); hi=min(height,stop+8)
                 band=np.fromfile(sensor,dtype=np.uint16,count=(hi-lo)*width,offset=lo*width*2).reshape(hi-lo,width)
                 rgb=demosaic(band,pattern,black,lab_matrix,cancelled=cancelled)[start-lo:stop-lo]
@@ -116,6 +129,7 @@ def develop(root, path, document, edge, cancelled, cache, progress, draw_first, 
         if progress: progress('reduction','Correcting and reducing RAW bands')
         for start in range(0,out_h,64):
             check(); stop=min(out_h,start+64)
+            if progress: progress('reduction','Correcting and reducing RAW bands')
             y,x=np.mgrid[start:stop,0:out_w].astype(np.float32)
             pixels=np.empty((stop-start,out_w,3),dtype=np.float32)
             for c,p in enumerate(planes):

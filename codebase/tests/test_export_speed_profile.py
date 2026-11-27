@@ -105,6 +105,7 @@ def test_build_writes_valid_profiles_with_active_max_stages(tmp_path):
         assert branch.vignette_section_enabled and branch.vignette.amount != 0
 
 
+@pytest.mark.slow
 def test_synthetic_through_max_source_filter_and_render(tmp_path):
     photo = profile.synthetic("256x256", tmp_path / "photo.exr")
     profile.build(photo, tmp_path)

@@ -5,6 +5,10 @@ from hdr_finisher.library_worker import LibraryWorker
 from hdr_finisher.media_browser import MediaBrowserStore
 
 
+import pytest
+
+
+@pytest.mark.serial  # Native helper/process startup deadlines need uncontended CPU.
 def test_batched_page_events_reach_existing_log_with_original_timestamp(tmp_path, monkeypatch):
     records = []
     monkeypatch.setattr('hdr_finisher.library_api.log', lambda event, **fields: records.append((event, fields)))

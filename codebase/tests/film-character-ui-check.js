@@ -2,7 +2,7 @@ const assert = require('node:assert/strict');
 module.exports = async function checkStockCharacterUi(page) {
  const result = await page.evaluate(async () => {
   const check = (value, label) => { if (!value) throw Error(label); };
-  const original = structuredClone(state.adjustments);
+  const original = structuredClone(state.adjustments), originalLane = state.currentView;
   const hdr = () => state.adjustments.hdr.film_look;
   const input = (key, value) => {
    const control=document.querySelector(`[data-path="current.film_look.${key}"]`);
@@ -50,7 +50,12 @@ module.exports = async function checkStockCharacterUi(page) {
   const typed=normalizeManualControlValue('current.film_look.halation_radius','150');
   commitAdjustmentValue('current.film_look.halation_radius',typed.value,{manual:true}); await syncGlobalEditState();
   check(Math.abs(state.adjustments.sdr.film_look.halation_radius-HDRFilmCharacterData.stocks.fujifilm_velvia_100.defaults.halation_radius*1.5)<1e-6,'typed relative spread');
-  state.adjustments=original; syncControlsFromState(); invalidatePreview('hdr'); invalidatePreview('sdr'); await syncGlobalEditState();
+  // Finish the last typed edit before restoring the backend as well as the UI.
+  // A following UI check must not inherit this check's queued edits or lane.
+  await syncGlobalEditState(); await state.editCommandQueue;
+  await queueEditCommand('set_global_adjustments', {adjustments:original});
+  await switchLane(originalLane); syncControlsFromState(); renderControlState();
+  invalidatePreview('hdr', {markDirty:false}); invalidatePreview('sdr', {markDirty:false});
   return {passed:true};
  });
  assert.equal(result.passed,true);

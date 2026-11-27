@@ -316,6 +316,8 @@ def pre_file_delivery_exporters():
         yield module
 
 
+@pytest.mark.slow
+@pytest.mark.needs_native_helper
 @pytest.mark.parametrize("format_name", ["avif_gain_map", "jpeg_ultrahdr"])
 @pytest.mark.parametrize("denoise", ["off", "both", "hdr_only"])
 @pytest.mark.parametrize("highlights", [False, True])

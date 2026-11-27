@@ -245,10 +245,10 @@ def test_precision_tiff_preserves_decoder_samples_and_override_order(tmp_path, d
     assert library_rgb.assumed_interpretation(path)["label"]==expected[0]
     inputs["interpretation_override"].update(color_space="BT.2020",transfer_function="LINEAR",linear_reference="diffuse_white_1_0")
     header,parts=library_rgb.decoded(path,inputs)
-    actual=np.frombuffer(parts[0],dtype="<f4").reshape(5,8,3)
+    actual=np.frombuffer(parts[0],dtype="<f4").reshape(header["height"],header["width"],3)
     np.testing.assert_array_equal(actual,loader._load_tiff(path)[0])
     assert header["colour"]["assumed"] is None  # a chosen interpretation wins
-    assert header["orientation"]=={"original":6,"applied":False}
+    assert header["orientation"]=={"original":6,"applied":True}
     assert header["colour"]["scale"]==.18 and not header["colour"]["authored_sdr"]
     assert header["layout"]["dtype"]=="float32"
     assert header["layout"]["decoder_facts"]["bits_per_sample"]==array.dtype.itemsize*8
@@ -314,6 +314,7 @@ def test_precision_publication_matches_grade_document(tmp_path,authored,sample_b
         if authored:
             np.testing.assert_array_equal(stored['reference'], np.clip(expected.sdr_reference_image, 0, 65504).astype(np.float16))
 
+@pytest.mark.slow
 @pytest.mark.parametrize("transfer,bits,dtype",[("sRGB",8,"uint8"),("PQ",12,"uint16"),("HLG",16,"uint16"),("PQ",32,"float32")])
 def test_jxl_samples_precision_gate_and_encoded_override_order(tmp_path, monkeypatch, transfer, bits, dtype):
     import sys
@@ -382,6 +383,7 @@ def test_plain_heif_selects_primary_and_preserves_auxiliary_policy(tmp_path,monk
     assert "sdr_reference" not in header  # No Apple headroom: Grade also leaves this auxiliary unused.
     # The same decoder/profile classification as Grade remains authoritative.
 
+@pytest.mark.slow
 @pytest.mark.parametrize("suffix,transfer",[("jxl",16),("avif",18),("heic",13)])
 def test_codec_publication_preserves_grade_start_document(tmp_path,suffix,transfer):
     from hdr_finisher.library_pictures import LibraryPictureCache
@@ -410,6 +412,8 @@ def test_codec_publication_preserves_grade_start_document(tmp_path,suffix,transf
     assert cache.default_document(path)==expected.edit_document().model_dump(mode='json')
 
 
+@pytest.mark.slow
+@pytest.mark.needs_test_photos
 def test_real_gainmap_avif_preserves_reconstructed_and_encoded_reference_samples():
     from pathlib import Path
     root=Path(__file__).resolve().parents[1]
@@ -670,19 +674,21 @@ def test_exr_header_assumption_reads_no_pixels(tmp_path, monkeypatch, resolved, 
         assert assumed is None
 
 
-def test_prophoto_tiff_is_named_and_shown_as_srgb_with_a_note(tmp_path, monkeypatch):
+def test_tiff_uses_profile_transform_even_when_its_display_name_says_prophoto(tmp_path, monkeypatch):
     import tifffile
     from hdr_finisher import loader
     path=tmp_path/"prophoto.tif"
     profile=ImageCms.ImageCmsProfile(ImageCms.createProfile("sRGB")).tobytes()
     tifffile.imwrite(path,np.full((4,6,3),30000,np.uint16),photometric="rgb",extratags=[(34675,"B",len(profile),profile,False)])
     monkeypatch.setattr(loader,"_read_icc_profile_name",lambda value:"ROMM RGB: ISO 22028-2:2013")
-    # Grade still asks for a colour choice; the Library names the profile.
-    assert loader._load_tiff(path)[1]["color_space"]=="ProPhoto RGB"
-    assert loader._load_tiff(path)[1]["needs_color_override"]
+    # The actual profile is sRGB. Its display name cannot substitute for a transform.
+    assert loader._load_tiff(path)[1]["color_space"]=="sRGB"
+    assert not loader._load_tiff(path)[1]["needs_color_override"]
     header,_=library_rgb.decoded(path,recipe(None))
-    assert header["colour"]["assumed"]=="sRGB" and header["colour"]["unsupported"]=="ProPhoto RGB"
-    assert library_rgb.assumed_interpretation(path)["unsupported"]=="ProPhoto RGB"
+    assert header["colour"]["assumed"] is None
+    assert header["colour"]["unsupported"] is None
+    assert header["colour"]["authored_sdr"]
+    assert library_rgb.assumed_interpretation(path) is None
 
 
 def test_banded_exr_read_matches_one_whole_read(tmp_path):

@@ -60,7 +60,7 @@ function select(list, mode, value, changed = []) {
   return { rows, ...mapping };
 }
 function command(row, out, list) {
-  const vars = { output: out, root: ROOT, project: photosPath(list.protectedProjects[2]), get electron() { return require('../../tools/lib/platform.cjs').electronExecutable(); } };
+  const vars = { output: out, root: ROOT, get project() { return photosPath(list.protectedProjects[2]); }, get electron() { return require('../../tools/lib/platform.cjs').electronExecutable(); } };
   const expand = text => String(text).replace(/\{(output|root|project|electron)\}/g, (_, key) => vars[key]);
   const method = row.launch.method;
   const posixSampler = method === 'powershell' && process.platform !== 'win32' && row.path === 'tests/performance/sample-process-memory.ps1';
@@ -75,7 +75,7 @@ function command(row, out, list) {
 }
 // Historical results supply estimates only; never count them as current passes.
 function history(output = OUTPUT, root = ROOT) {
-  const records = [];
+  const records = require('./timings.cjs').fallbackRecords(require('./timings.cjs').readTimings(path.join(root, 'tests/release/timings.json')));
   for (const folder of ['prerelease-0.9-2026-10-09', 'prerelease-0.9.1-2026-10-16']) {
     const file = path.join(root, 'output/performance/review', folder, 'results.json');
     if (!fs.existsSync(file)) continue;
@@ -120,10 +120,14 @@ function estimate(rows, records, known = {failures:[]}) {
   let seconds = 0, retrySeconds = 0;
   const unknown = [], evidence = [];
   for (const row of rows) {
-    const prior = records.filter(record => record.driver === row.path && !record.interrupted).at(-1);
+    const prior = records.filter(record => record.driver === row.path && !record.interrupted
+      && !record.timedOut && !record.error && !record.signal && record.exitCode !== 86 && !launchFailed(record.exitCode)
+      && Number.isFinite(record.durationSeconds) && record.durationSeconds > 0).at(-1);
     if (!prior) { unknown.push(row.path); continue; }
     seconds += prior.durationSeconds;
-    const recordedKnown = prior.log && fs.existsSync(prior.log) && knownMessage(cleanLog(fs.readFileSync(prior.log, 'utf8')), known, row.path);
+    // Only a failed driver with a matching known signature needs its log read.
+    const recordedKnown = prior.exitCode !== 0 && known.failures.some(f => f.driver === row.path)
+      && prior.log && fs.existsSync(prior.log) && knownMessage(cleanLog(fs.readFileSync(prior.log, 'utf8')), known, row.path);
     if (prior.exitCode !== 0 && !recordedKnown) retrySeconds += prior.durationSeconds;
     evidence.push({ driver: row.path, seconds: prior.durationSeconds, source: prior.source || 'runner history' });
   }
@@ -132,7 +136,7 @@ function estimate(rows, records, known = {failures:[]}) {
 function classify(attempts, known, driver) {
   if (attempts[0]?.exitCode === 0) return 'passed';
   if (attempts.at(-1)?.exitCode === 0) return 'flaky';
-  if (attempts.some(a => a.timedOut)) return 'new';
+  if (attempts.some(a => a.timedOut)) return 'timeout';
   const logs = attempts.map(attempt => cleanLog(fs.readFileSync(attempt.log, 'utf8')));
   return logs.every(log => knownMessage(log, known, driver)) ? 'known' : 'new';
 }
@@ -148,11 +152,31 @@ function write(file, value) {
 }
 const DLL_INIT_FAILED = 3221225794;
 function launchFailed(code) { return Number.isInteger(code) && (code >>> 0) === DLL_INIT_FAILED; }
-function attemptTimeout(driver, records) {
+// Complete-driver medians include all follow-ups. Freeze this policy before retries.
+const DEADLINE_POLICY = Object.freeze({floorMs:30000, multiplier:1.7,
+  longThresholdSeconds:20*60, longMultiplier:1.25});
+function attemptPolicy(driver, records, timings = require('./timings.cjs').readTimings(), platform = process.platform) {
+  const key = {win32:'win',darwin:'mac',win:'win',mac:'mac'}[platform];
+  const typicalSeconds = key && timings.drivers?.[driver]?.[key]?.medianSeconds;
+  if (Number.isFinite(typicalSeconds) && typicalSeconds > 0) {
+    const multiplier = typicalSeconds > DEADLINE_POLICY.longThresholdSeconds
+      ? DEADLINE_POLICY.longMultiplier : DEADLINE_POLICY.multiplier;
+    return {deadlineMs:Math.max(DEADLINE_POLICY.floorMs, Math.ceil(typicalSeconds*multiplier*1000)),
+      typicalSeconds, multiplier, source:'timings.json'};
+  }
   const prior = records.filter(r => r.driver === driver && r.exitCode === 0
     && !r.interrupted && !r.timedOut && !r.partial && !r.error
     && Number.isFinite(r.durationSeconds) && r.durationSeconds >= 1).at(-1);
-  return prior ? Math.max(300000, prior.durationSeconds * 3000) : 900000;
+  return {deadlineMs:prior ? Math.max(300000, prior.durationSeconds*3000) : 900000,
+    typicalSeconds:null, source:prior ? 'local successful history' : 'unmeasured default'};
+}
+function attemptTimeout(driver, records, timings, platform) {
+  return attemptPolicy(driver, records, timings, platform).deadlineMs;
+}
+function timeoutDetails(attempts) {
+  return attempts.flatMap((attempt,index) => attempt.timedOut ? [{attempt:index+1,
+    deadlineSeconds:attempt.deadlineMs/1000, typicalSeconds:attempt.typicalSeconds ?? null,
+    source:attempt.deadlineSource ?? 'legacy attempt'}] : []);
 }
 // Synchronous so exit/signal handlers can also enforce the shutdown boundary.
 // Throws only when an Electron process is still alive, because only then is
@@ -228,6 +252,7 @@ async function runInvocations(invocation, variants, fd, hooks, deadline, attempt
 async function execute(row, state, out, list, hooks, deadline, known) {
   const attempts = state.results[row.path]?.attempts || [];
   state.results[row.path] = { attempts };
+  const policy = attemptPolicy(row.path, history());
   while (attempts.length < 2 && !attempts.some(a => a.exitCode === 0)) {
     if (hooks.stopped() || Date.now() >= deadline) return false;
     const log = path.join(out, 'logs', `${row.path.replace(/[\\/]/g, '__')}.${attempts.length + 1}.${Date.now()}.log`);
@@ -235,15 +260,16 @@ async function execute(row, state, out, list, hooks, deadline, known) {
     state.activeAttempt = {driver: row.path, log, startedAt: started};
     write(path.join(out, 'state.json'), state);
     console.log(`Running ${row.path}${attempts.length ? ' (one retry)' : ''}`);
+    console.log(`[runner] attempt deadline ${policy.deadlineMs/1000}s; measured typical ${policy.typicalSeconds ?? "unknown"}s (${policy.source})`);
     let results;
     try {
       const variants = [invocation.args, ...(row.launch.followupArgs || []).map(args => command({ ...row, launch: { ...row.launch, args } }, out, list).args)];
-      results = await runInvocations(invocation, variants, fd, hooks, deadline, started + attemptTimeout(row.path, history()));
+      results = await runInvocations(invocation, variants, fd, hooks, deadline, started + policy.deadlineMs);
     } finally { fs.closeSync(fd); }
     const result = results.find(result => result.timedOut) || results.find(result => result.exitCode !== 0) || results.at(-1) || { exitCode: null };
     checkProjects(state.fixtures);
     if (git('rev-parse', 'HEAD') !== state.revision) throw Error('STOP: HEAD moved during the run; results cover different revisions.');
-    const record = { ...result, log, durationSeconds: (Date.now() - started) / 1000, interrupted: hooks.stopped(), command: invocation.args };
+    const record = { ...result, deadlineMs:policy.deadlineMs, typicalSeconds:policy.typicalSeconds, deadlineSource:policy.source, recordedAt: new Date().toISOString(), platform: process.platform, log, durationSeconds: (Date.now() - started) / 1000, interrupted: hooks.stopped(), command: invocation.args };
     fs.appendFileSync(path.join(OUTPUT, 'history.jsonl'), JSON.stringify({ driver: row.path, revision: state.revision, run: out, ...record }) + '\n');
     delete state.activeAttempt;
     if (hooks.stopped()) { state.interruptedAttempt = { driver: row.path, ...record }; return false; }
@@ -393,23 +419,31 @@ async function main(args = process.argv.slice(2)) {
     if (unsafe || fatal && /tree-kill|verif|shutdown|close was not/.test(fatal)) fs.writeFileSync(lock, JSON.stringify({pid:process.pid, childPid:active?.pid || null, unsafe:true}));
     else fs.unlinkSync(lock);
   }
-  const counts = { passed: 0, flaky: 0, known: 0, new: 0, unfinished: 0 };
+  // Check the committed inputs before writing our own tracked timing outputs.
+  // Attempts are already durable in history.jsonl, including interrupted runs.
+  if (list.schemaVersion >= 2) {
+    require('./timings.cjs').updateTimings(history().filter(item => !item.partial));
+    require('../../tools/test-catalogue.cjs').generate();
+  }
+  const counts = { passed: 0, flaky: 0, known: 0, new: 0, timeout: 0, unfinished: 0 };
   for (const file of state.drivers) counts[state.results[file]?.classification || 'unfinished']++;
-  const verdict = fatal ? 'STOPPED: safety check failed' : capReached ? 'STOPPED: time cap reached; ask Steve' : counts.unfinished ? 'INTERRUPTED: rerun the same command to resume' : counts.new || counts.known ? 'NOT READY' : counts.flaky ? 'PASS WITH FLAKY CHECKS' : 'PASS';
+  const verdict = fatal ? 'STOPPED: safety check failed' : capReached ? 'STOPPED: time cap reached; ask Steve' : counts.unfinished ? 'INTERRUPTED: rerun the same command to resume' : counts.new || counts.known || counts.timeout ? 'NOT READY' : counts.flaky ? 'PASS WITH FLAKY CHECKS' : 'PASS';
   const lines = [verdict, `Revision ${revision}; ${Object.entries(counts).map(([key, count]) => `${count} ${key}`).join(', ')}; ${(state.elapsedMs / 60000).toFixed(1)} minutes.`];
   for (const file of state.drivers) {
     const result = state.results[file];
     if (!result || result.classification === 'passed') continue;
     const last = result.attempts.at(-1);
     const message = last ? summaryFailureMessage(cleanLog(fs.readFileSync(last.log, 'utf8')), known, file) : '';
-    lines.push(`${result.classification || 'unfinished'}: ${file}${message ? `: ${message.slice(0, 320)}` : ''}`);
+    const timeouts = timeoutDetails(result.attempts);
+    const detail = timeouts.map(a=>`timeout attempt ${a.attempt}: deadline ${a.deadlineSeconds}s, measured typical ${a.typicalSeconds ?? 'unknown'}s (${a.source})`).join('; ');
+    lines.push(`${result.classification || 'unfinished'}: ${file}${detail ? `: ${detail}` : message ? `: ${message.slice(0, 320)}` : ''}`);
   }
   if (fatal) lines.push(fatal);
   fs.writeFileSync(path.join(out, 'summary.txt'), lines.join('\n') + '\n');
-  write(path.join(out, 'summary.json'), { verdict, counts, revision, elapsedMs: state.elapsedMs, fixtures: state.fixtures, fatal });
+  write(path.join(out, 'summary.json'), { verdict, counts, revision, elapsedMs: state.elapsedMs, fixtures: state.fixtures, fatal, timeouts: Object.fromEntries(Object.entries(state.results).filter(([,r])=>timeoutDetails(r.attempts).length).map(([file,r])=>[file,timeoutDetails(r.attempts)])) });
   console.log(lines.join('\n'));
-  process.exitCode = fatal || counts.new || counts.known ? 1 : counts.unfinished ? 130 : 0;
+  process.exitCode = fatal || counts.new || counts.known || counts.timeout ? 1 : counts.unfinished ? 130 : 0;
   return { out, state, counts };
 }
-module.exports = { attemptTimeout, launchFailed, stopTree, enforceShutdown, electronRoots, verifyElectronGone, runInvocations, inventory, validate, changedAreas, select, command, history, estimate, classify, knownMessage, summaryFailureMessage, unfinishedSelection, hashProjects, checkProjects, parse, main };
+module.exports = { DEADLINE_POLICY, attemptPolicy, timeoutDetails, attemptTimeout, launchFailed, stopTree, enforceShutdown, electronRoots, verifyElectronGone, runInvocations, inventory, validate, changedAreas, select, command, history, estimate, classify, knownMessage, summaryFailureMessage, unfinishedSelection, hashProjects, checkProjects, parse, main };
 if (require.main === module) main().catch(error => { console.error(error.message); process.exitCode = 1; });

@@ -1,11 +1,11 @@
 const test=require('node:test'),assert=require('node:assert/strict'),vm=require('node:vm'),fs=require('node:fs');
-function setup({stale=false}={}){
-  const writes=[],requests=[];
+function setup({stale=false,beforeResponse=async()=>{}}={}){
+  const writes=[],requests=[],initializations=[];
   const gpu={configureSurface:()=>({format:'bgra8unorm'}),device:{queue:{writeTexture:(_dst,body)=>writes.push([...body]),onSubmittedWorkDone:async()=>{}}}};
   const context={HDRLibraryQuery:require('../frontend/library-query.js'),navigator:{gpu:{getPreferredCanvasFormat:()=>"bgra8unorm"}},console,performance,URLSearchParams,TextDecoder,TextEncoder,DataView,Uint8Array,DOMException,queueMicrotask,
-    HDRLibraryPictures:{initialize:async()=>gpu},HDRLibraryStopwatch:()=>{},
+    HDRLibraryPictures:{initialize:async()=>{initializations.push(true);return gpu;}},HDRLibraryStopwatch:()=>{},
     fetch:async(url,options)=>{
-      requests.push(url);const paths=JSON.parse(options.body).paths;assert.ok(paths.length<=32);const parts=paths.map((_,i)=>Uint8Array.from([i+1,2,3,4]));
+      requests.push(url);await beforeResponse(requests.length);const paths=JSON.parse(options.body).paths;assert.ok(paths.length<=32);const parts=paths.map((_,i)=>Uint8Array.from([i+1,2,3,4]));
       let offset=0;
       const rows=paths.map((path,i)=>{const row={path,offset,length:parts[i].length,meta:{key:'surface-'+i,width:1,height:1,stride:4,identity:{format:"bgra8unorm",bytes:12,mtime_ns:100,grade:stale?'changed':'grade'}}};offset+=parts[i].length;return row;});
       const header=new TextEncoder().encode(JSON.stringify(rows)),body=new Uint8Array(4+header.length+offset);
@@ -15,7 +15,7 @@ function setup({stale=false}={}){
   context.window=context;vm.createContext(context);vm.runInContext(fs.readFileSync('frontend/library-finished-thumbnails.js','utf8'),context);
   const canvas=()=>({dataset:{},getContext:()=>({getCurrentTexture:()=>({})})});
   const load=(path,options={})=>{const target=canvas();return {target,promise:context.HDRLibraryFinishedThumbnails.load({path,type:options.type,edited:options.edited,bytes:12,mtime_ns:100,grade_identity:'grade'},target,options.signal||new AbortController().signal,options.current||(()=>true),options.hdr||false)}};
-  return {load,writes,requests};
+  return {load,writes,requests,initializations};
 }
 test('visible stored surfaces share one request and upload the original exact bytes',async()=>{
   const s=setup(),a=s.load('a'),b=s.load('b');
@@ -55,4 +55,39 @@ test("stored screen reads use SDR for an unedited RAW, including virtual copies"
   await context.window.HDRLibraryScreenPreviews.load({path:"photo|copy|one",type,edited},{},null,()=>true,true);
   assert.equal(new URL(requests.at(-1),"http://test").searchParams.get("lane"),lane);
  }
+});
+
+
+test('scroll cancellation skips unsent thumbnail groups and GPU initialization',async()=>{
+ let release,started;
+ const pending=new Promise(resolve=>{release=resolve;});
+ const ready=new Promise(resolve=>{started=resolve;});
+ const s=setup({beforeResponse:async()=>{started();await pending;}});
+ const controller=new AbortController();
+ const items=Array.from({length:72},(_,i)=>s.load('photo-'+i,{signal:controller.signal}));
+ const settled=Promise.allSettled(items.map(item=>item.promise));
+ await ready;
+ controller.abort();release();
+ const results=await settled;
+ assert.equal(s.requests.length,1,'Only the already in-flight group is requested');
+ assert.ok(results.every(result=>result.status==='rejected'&&result.reason.name==='AbortError'));
+ assert.equal(s.initializations.length,0,'Cancelled cells do not initialize the GPU');
+ assert.deepEqual(s.writes,[]);
+});
+
+test('cancelling one thumbnail group preserves later visible groups',async()=>{
+ let release,started;
+ const pending=new Promise(resolve=>{release=resolve;});
+ const ready=new Promise(resolve=>{started=resolve;});
+ const s=setup({beforeResponse:async n=>{if(n===1){started();await pending;}}});
+ const controller=new AbortController();
+ const items=Array.from({length:72},(_,i)=>s.load('photo-'+i,i>=32&&i<64?{signal:controller.signal}:{}));
+ const settled=Promise.allSettled(items.map(item=>item.promise));
+ await ready;
+ controller.abort();release();
+ const results=await settled;
+ assert.equal(s.requests.length,2);
+ assert.equal(s.writes.length,40);
+ assert.ok(results.slice(32,64).every(result=>result.status==='rejected'&&result.reason.name==='AbortError'));
+ assert.ok([...results.slice(0,32),...results.slice(64)].every(result=>result.status==='fulfilled'));
 });

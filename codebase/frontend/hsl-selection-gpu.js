@@ -231,17 +231,27 @@ fn feathered(xy: vec2i, axis: vec2i) -> vec4f {
       // textures, so they are retired, not destroyed, until dropRetired().
       this.retired.push(...Object.values(this.textures)); this.textures = {}; this.capacity = null; this.invalidate();
       const usage = GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.COPY_SRC | GPUTextureUsage.COPY_DST;
-      const make = (label, w, h, extra = 0, depth = 1) => this.device.createTexture({ label, size: [w, h, depth], format: "rgba32float", usage: usage | extra });
-      this.textures = {
-        fields: make("HSL selection fields", next.width, next.height, GPUTextureUsage.RENDER_ATTACHMENT),
-        guide: make("HSL selection guide", next.width, next.height),
-        a: make("HSL selection coefficient a", next.width, next.height),
-        b: make("HSL selection coefficient b", next.width, next.height),
-        output: make("HSL selection", next.width, next.height, 0, next.layers),
-        coarse: make("HSL coarse chroma", next.cw, next.ch),
-        scratch: make("HSL coarse scratch", next.cw, next.ch),
-        qualified: make("HSL qualified coarse", next.cw, next.ch),
+      const created = [];
+      const make = (label, w, h, extra = 0, depth = 1) => {
+        const texture = this.device.createTexture({ label, size: [w, h, depth], format: "rgba32float", usage: usage | extra });
+        created.push(texture);
+        return texture;
       };
+      try {
+        this.textures = {
+          fields: make("HSL selection fields", next.width, next.height, GPUTextureUsage.RENDER_ATTACHMENT),
+          guide: make("HSL selection guide", next.width, next.height),
+          a: make("HSL selection coefficient a", next.width, next.height),
+          b: make("HSL selection coefficient b", next.width, next.height),
+          output: make("HSL selection", next.width, next.height, 0, next.layers),
+          coarse: make("HSL coarse chroma", next.cw, next.ch),
+          scratch: make("HSL coarse scratch", next.cw, next.ch),
+          qualified: make("HSL qualified coarse", next.cw, next.ch),
+        };
+      } catch (error) {
+        for (const texture of created) texture.destroy();
+        throw error;
+      }
       this.capacity = next; this.preparedKey = null; this.selectedKey = null;
       this.onAllocate?.(next.width * next.height * (64 + 16 * next.layers) + next.cw * next.ch * 48, next);
     }
@@ -254,6 +264,10 @@ fn feathered(xy: vec2i, axis: vec2i) -> vec4f {
     isPrepared(key) { return key != null && key === this.preparedKey; }
     paramBuffer(values) {
       const buffer = this.device.createBuffer({ size: Math.max(16, values.byteLength), usage: GPUBufferUsage.STORAGE, mappedAtCreation: true });
+      // Bind groups may outlive this call until their encoder is submitted.
+      // Reuse the retired-resource lifetime rather than relying on GC to free
+      // one new device buffer per preparation/layer on every edit.
+      this.retired.push(buffer);
       new Float32Array(buffer.getMappedRange()).set(values); buffer.unmap(); return buffer;
     }
     dispatch(encoder, entry, resources, width, height) {
@@ -330,8 +344,8 @@ fn feathered(xy: vec2i, axis: vec2i) -> vec4f {
     }
     /** Forget cached preparation; the next encode re-reads the fields. */
     invalidate() { this.preparedKey = null; this.selectedKey = null; }
-    /** Destroy grown-out textures; call only once every encoder using them is submitted or dropped. */
-    dropRetired() { for (const texture of this.retired) texture.destroy(); this.retired = []; }
+    /** Destroy grown-out textures and parameter buffers after their encoders are submitted or dropped. */
+    dropRetired() { for (const resource of this.retired) resource.destroy(); this.retired = []; }
     release() { for (const texture of Object.values(this.textures)) texture.destroy(); this.textures = {}; this.capacity = null; this.dropRetired(); this.invalidate(); }
     destroy() { this.release(); }
   }

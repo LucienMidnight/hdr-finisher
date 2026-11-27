@@ -53,6 +53,7 @@ tifffile.imwrite(sys.argv[1],rgb,photometric='rgb')`,[path.join(root,'hues.tiff'
     Object.assign(state.adjustments[lane].color_grading,{balance:35,blending:80,shadows:{hue:210,saturation:15,luminance_ev:.1},highlights:{hue:120,saturation:20,luminance_ev:.2}});
     Object.assign(state.adjustments[lane].film_look,{film_stock:"none",print_exposure:.5,look_strength:50,grain_enabled:false,halation_enabled:false});
    }
+   state.adjustments.sdr.output_exposure = .65;
    for(const lane of ['hdr','sdr']){
     const b=state.adjustments[lane];b.highlight_section_enabled=true;b.highlight_compression_mode=highlightMode;b.highlight_compression_softness=60;
     if(lane==='hdr'){b.highlight_compression_target_nits=1000;b.highlight_compression_start_nits=400;}
@@ -69,7 +70,17 @@ tifffile.imwrite(sys.argv[1],rgb,photometric='rgb')`,[path.join(root,'hues.tiff'
   await delivery.waitForFunction(()=>typeof HDRGpuDeliveryFinishing==='function');
   await delivery.evaluate(()=>{
     window.__finished=[];const read=HDRGpuDeliveryFinishing.prototype.read;
-    HDRGpuDeliveryFinishing.prototype.read=async function(texture){const pixels=await read.call(this,texture);window.__finished.push(Array.from(pixels));return pixels;};
+    HDRGpuDeliveryFinishing.prototype.read=async function(texture,sendRows){
+      if(!sendRows){
+        const pixels=await read.call(this,texture);window.__finished.push(Array.from(pixels));return pixels;
+      }
+      const finished=new Float32Array(texture.width*texture.height*4);
+      await read.call(this,texture,async (row,rows,pixels)=>{
+        finished.set(pixels,row*texture.width*4);
+        await sendRows(row,rows,pixels);
+      });
+      window.__finished.push(Array.from(finished));
+    };
   });
   fs.writeFileSync(path.join(root,'document.json'),JSON.stringify(await page.evaluate(()=>state.editDocument)));
   for(const forced of [false,true]){

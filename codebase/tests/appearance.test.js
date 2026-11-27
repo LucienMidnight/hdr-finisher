@@ -15,6 +15,18 @@ test("malformed accents return the approved purple default",()=>{
  for(const accent of [null,{}, {preset:"custom",color:"red"},{preset:"custom",color:"#123"},{preset:"unknown"}])
   assert.deepEqual(sanitizeApplicationPreferences({accent}).accent,appearance.normalize());
 });
+
+test("Retouch markings read current appearance tokens instead of caching startup colours",()=>{
+ const vm=require('node:vm'),fs=require('node:fs');
+ const palette={'--retouch-source':'#66e0ff','--retouch-destination':'#ffb347','--retouch-brush':'#ffffff'};
+ const context=vm.createContext({uiToken:name=>palette[name]});
+ vm.runInContext(fs.readFileSync(require.resolve('../frontend/retouch-ui.js'),'utf8'),context);
+ for(const role of ['source','destination','brush']){
+  assert.equal(vm.runInContext(`retouchColors.${role}`,context),palette[`--retouch-${role}`]);
+  palette[`--retouch-${role}`]='#123456';
+  assert.equal(vm.runInContext(`retouchColors.${role}`,context),'#123456');
+ }
+});
 test("accent foreground uses linearized sRGB luminance",()=>{
  assert.equal(appearance.luminance("#000000"),0);
  assert.equal(appearance.luminance("#ffffff"),1);

@@ -111,19 +111,25 @@
     } catch {
       return null;
     } finally {
-      if (resource.readBuffer.mapState === "mapped") resource.readBuffer.unmap();
-      if (transient) {
-        const key = `${width}x${height}`, pool = renderer.scopeResources.get(key);
-        if (pool) { const index = pool.indexOf(resource); if (index >= 0) pool.splice(index, 1); if (!pool.length) renderer.scopeResources.delete(key); }
-        resource.texture.destroy(); resource.readBuffer.destroy(); resource.paramBuffer.destroy();
-      }
-      resource.busy = false;
-      renderer.activeScopeCount = Math.max(0, renderer.activeScopeCount - 1);
-      renderer.flushDeferredDestroy();
+      releaseAnalysis(renderer, resource, width, height, transient);
     }
   }
 
-  const HDRScopeReadback = Object.freeze({ readPeak, readAnalysis });
+  // Encoding can fail before a readback owns the resource. Both paths must
+  // restore the pool and the active count so deferred destruction can finish.
+  function releaseAnalysis(renderer, resource, width, height, transient = false) {
+    if (resource.readBuffer.mapState === "mapped") resource.readBuffer.unmap();
+    if (transient) {
+      const key = `${width}x${height}`, pool = renderer.scopeResources.get(key);
+      if (pool) { const index = pool.indexOf(resource); if (index >= 0) pool.splice(index, 1); if (!pool.length) renderer.scopeResources.delete(key); }
+      resource.texture.destroy(); resource.readBuffer.destroy(); resource.paramBuffer.destroy();
+  }
+  resource.busy = false;
+  renderer.activeScopeCount = Math.max(0, renderer.activeScopeCount - 1);
+  renderer.flushDeferredDestroy();
+  }
+
+  const HDRScopeReadback = Object.freeze({ readPeak, readAnalysis, releaseAnalysis });
 
   if (typeof window !== "undefined") window.HDRScopeReadback = HDRScopeReadback;
   if (typeof module !== "undefined" && module.exports) module.exports = { HDRScopeReadback };

@@ -40,6 +40,13 @@ fs.mkdirSync(out, {recursive:true});
     return Object.fromEntries(['--panel','--text','--muted','--border'].map(k => [k,style.getPropertyValue(k).trim()]));
    });
    assert.equal(await page.locator('.theme-option').count(),3);
+   await page.keyboard.press('Tab');
+   await page.locator(`[data-theme-option="${theme}"]`).focus();
+   const focusOutline = await page.locator(`[data-theme-option="${theme}"]`).evaluate(e => {
+    const style = getComputedStyle(e);
+    return { style: style.outlineStyle, width: style.outlineWidth };
+   });
+   assert.deepEqual(focusOutline, { style: 'solid', width: '2px' }, `${theme}: selected theme keeps keyboard focus visible`);
    await page.locator('#settings-dialog').screenshot({path:path.join(out,theme+'-settings.png')});
    await page.locator('#settings-close').click();
    if (theme === 'modern-dark' && process.argv.includes('--update-preview')) await page.screenshot({path:path.join(out,'modern-dark-app.png')});

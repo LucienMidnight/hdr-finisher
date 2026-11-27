@@ -166,3 +166,115 @@ Still open after the merge:
 - `tests/test_denoise_native_model.py::test_fixed_calibration_matches_the_seeded_white_noise_measurement`
   fails by ~6e-7 (also on `feat/denoise-v1` alone); tolerance not changed.
 - Native helpers changed: run setup after pulling on the PC.
+
+## PC follow-up - November 26 (fix/overnight-report-followups)
+
+Repeated delivery: the PC did not reproduce the Mac's refusal before the fix.
+Both pre-change exports and both post-change exports admitted the GPU at 3 GiB
+then 2 GiB test caps. HDR and SDR finished pixels matched exactly; each full-size
+Proof was byte-identical to its delivered JPEG; encoded peaks passed the existing
+1% allowance. A real cleanup race was found: the next job cancelled the hidden
+renderer's 250 ms idle collection timer. Collection is now acknowledged and
+bounded by the existing one-second collection deadline before the next job can
+start. No memory default, GPU allowance, shader or CPU-strip policy changed.
+The Mac refusal needs a repeat on the Mac; the PC result cannot certify that
+machine's free memory.
+
+Checks: delivery acknowledgement/pressure Node checks 16 pass; Python broker
+38 pass; gpu-delivery-repeat passes before and after the fix, sequentially at
+2560x1440. Logs: codebase/output/overnight-repeat.log,
+overnight-repeat-fixed.log and overnight-broker-tests.log. Steve's already-open
+Electron app was left running; only launcher-owned test apps were stopped.
+
+Other PC follow-ups:
+
+- Menu shortcuts: fixed the test's paste-dialog race. Re-select the photo and
+  let Escape's close event finish before starting the next paste. Awaiting the
+  paste command itself would wait for the dialog being tested. A three-minute
+  driver deadline now bounds startup, actions and teardown; the native launcher
+  stops only that test's process tree. Native menu check passes at 2560x1440.
+- Film: the combined character/presets/panel check passes. The presets test
+  reactivated the opening session payload after the character check advanced
+  its backend revision; its next save got 409 and replaced the optimistic stage
+  settings. It now fetches a current session before reload, and the character
+  check restores the backend grade and lane before returning. Stage counts use
+  semantic ownership, including common Camera controls. The isolated presets
+  check also passes. The focused Neutral maximum paper-gain check reproduces
+  the exact accepted PC signature (mean 3.2009965277764834, p99.9 250).
+  The real runner matcher recognizes it as KNOWN, and still rejects an added
+  unexpected error. No known-failure signature, shader or image limit changed;
+  no full Film matrix or full release pass is claimed. Release runner tests:
+  27 pass. Logs: overnight-film-current-revision.log,
+  overnight-presets-isolated.log, overnight-film-known-signature.log.
+- Noise-free EXR: requirement and lab blender-render/render-noise case retired,
+  as Steve requested. Photographic lab cases remain. Test-photo documentation,
+  Denoise module and active limitations no longer request that file.
+- Sony 50 MP: DSC00636.ARW registered by size and SHA-256 in the curated
+  manifest, so setup finds it. Large-photo Grain uses the normal reusable-photo
+  helper. LibRaw confirms 8672 x 5784 sensor / 8660 x 5784 active pixels; the
+  driver's existing active-size assertion stays unchanged. All manifest files
+  match; corpus verification exits nonzero only for nine existing extra files
+  (listed in overnight-photo-check.log). No private RAW was committed. Copy
+  DSC00636.ARW to the Mac's HDR Test Images separately. The full large-photo
+  Grain matrix was not run in this follow-up.
+- DSC00950: its curated RAW hash matches the protected project's fingerprint.
+  The two review drivers now supply that RAW as an explicit source grant when
+  opening a disposable session; the backend still verifies identity. Neither
+  protected project nor RAW was changed. No file is needed from Steve. Full
+  Proof/Grade and preview/export diagnostic runs were not repeated here.
+- Denoise calibration: PC native and NumPy-fallback recomputations match the
+  pinned constants exactly. An explicit scalar float32 dot-product experiment
+  changes quantiles by up to 2.65e-5 absolute / 1.14e-5 relative, without changing
+  the algorithm, supporting accumulation rounding rather than a Denoise model
+  regression. The reported Mac 6e-7 miss is smaller. The recomputation test now
+  permits 2e-5 relative (0.002%); shipping constants, exact browser/CPU constant
+  equality and all pixel limits remain unchanged. All 16 native-model tests
+  pass. Mac revalidation remains necessary.
+
+Final fast checks: Node 1444 pass, 1 skipped, 1 pre-existing tooltip-catalogue
+sync failure (also present before edits; no pending tooltip text regenerated).
+Python full suite: 4874 pass, 56 skipped, 88 fail (overnight-pytest.log).
+Failures outside these changes include Denoise research/helper FileNotFoundError,
+Windows text encoding and cross-volume path errors; these were not repaired or
+waived. This is not a green release qualification.
+Focused Python broker/native-model checks: 38 + 16 pass. No push, main merge,
+installer build or full release sweep was performed.
+
+Scratch output finished at 46.6 GB, below the 100 GB limit.
+
+
+## PC fast-tooling fixes - November 26
+
+- Machine settings: Git emits forward slashes on Windows. JavaScript kept
+  those in `mainRepository` while Python normalized them. Normalize the
+  JavaScript repository path too; settings now agree without relaxing the test.
+- AI highlight review: HTML includes Unicode minus signs that Windows cp1252
+  cannot write. JSON and HTML now explicitly use UTF-8; the regression also
+  checks a Unicode row title survives. Partial/completed selection is unchanged.
+- Tooltip catalogue: the extractor truncated raw HTML at 600 characters,
+  sometimes cutting an SVG tag in half. CRLF vs LF shifted that cut and produced
+  different bogus control names. Strip markup before limiting the label; an
+  icon-only button now uses its accessible name. A fixture proves LF/CRLF
+  equality. The only catalogue change is that control name; no pending wording
+  edits were present or overwritten, and no app tooltip changed.
+
+Focused checks: machine/highlight Python files 21 pass, 2 platform skips;
+Unicode regression passes; tooltip checks 3 pass. Full Node suite: 1446 pass,
+1 skipped, zero failures. Logs: `codebase/output/assigned-followups-node.log`
+and `codebase/output/assigned-followups-pytest.log` (full Python run).
+No application processing, pixel tolerance, GPU budget or product decision
+changed. No GPU driver directly covers these offline-tooling changes.
+
+The report's historical slow-driver failures have fixes or machine-specific
+explanations in the follow-ups above. This pass does not claim new GPU runs,
+Mac memory validation, or Mac calibration validation. Denoise research and
+export failures in the PC Python log are handled by separate workers.
+
+
+Full Python result for the tooling pass: **4955 passed, 56 skipped, 7 failed**.
+All seven failures are in `test_export_memory_exactness.py`: the three
+`test_staged_creative_graph_is_exact` cases and four
+`test_staged_spatial_delivery_matches_whole_frame` cases. These are assigned
+to the export worker. The run started during that worker's edits, so its
+result does not replace validation of the final export changes. No other
+Python failure remained in this run; both assigned Windows regressions passed.

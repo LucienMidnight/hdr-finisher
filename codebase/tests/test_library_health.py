@@ -77,6 +77,7 @@ def test_writer_pause_and_progress_do_not_claim_unwritten_files(library):
     assert (status["done"], status["total"], status["waiting"]) == (1, 3, 2)
 
 
+@pytest.mark.slow
 def test_failure_flood_is_one_group_with_three_examples(library, monkeypatch, capsys):
     store, photos, _ = library
     def broken(path):
@@ -182,6 +183,7 @@ def test_unclipped_edge_colour_is_logged_but_not_listed_as_a_problem(monkeypatch
     assert library_diagnostics.recent() == events[1:]
 
 
+@pytest.mark.serial  # Native helper/process startup deadlines need uncontended CPU.
 def test_helper_problems_are_forwarded_into_backend_health(tmp_path, capsys):
     from hdr_finisher.library_worker import LibraryWorker
     from hdr_finisher.library_diagnostics import recent

@@ -1,3 +1,34 @@
+### November 26, 2026: window-state write failures
+
+Saving window bounds is best effort for close, Windows session end and app
+shutdown. A full disk or unwritable preferences folder logs the failure and
+cannot interrupt the close/save decision flow. The duplicate shutdown-only
+exception wrapper is removed. A targeted regression checks failed persistence
+and retention of the previous bounds for minimized/destroyed windows.
+
+The review also traced main/preload IPC, menus/shortcuts, dialogs, window
+ownership, startup/backend readiness, shutdown/process cleanup and packaging
+references. Active diagnostics and test shell helpers were retained. New native
+window/GPU checks and package builds are left to the parent review.
+
+### November 26, 2026: retired native-browser bridge
+
+Removed the unused native project Open/Save and export-directory IPC handlers,
+their preload methods and project filter constant. The unified media browser
+already owns those flows and grants; active source relinking, native export-file
+selection and batch-export directory grants stay. Rendering-mode changes use
+application preferences and the native menu, so its unused direct IPC was also
+removed. The old bridge-only rendering-mode source assertion was retired;
+preference sanitization and native menu checks remain.
+
+### November 26, 2026: cancelled close-save requests
+
+Cancelling or failing a project Save during a window-close request clears the
+pending close through the existing close acknowledgement. A later unrelated
+successful Save keeps the window open. Successful close-saves and sidecar
+close acknowledgements retain their existing behavior. Five targeted desktop
+regressions cover cancellation, failure, later Save and the sidecar route.
+
 ## November 16: menu layering and platform shortcut labels
 
 Context menus, application menus and viewer/Library popovers use Chromium's

@@ -100,24 +100,21 @@ def test_link_survives_saved_document_roundtrip():
     assert AdjustmentState.model_validate_json(a.model_dump_json()) == a
 
 
-def test_match_evaluates_common_film_once_and_fallback_keeps_independent_fit(monkeypatch):
+def test_new_match_materializes_even_when_a_link_would_be_safe():
     from hdr_finisher.sdr_match import materialize_sdr_match, _materialize_sdr_match_impl
-    source = tifffile.imread(Path(__file__).parent / 'fixtures/hdr_match_scene.tiff').astype(np.float32)
-    a = AdjustmentState(); a.hdr.film_look.film_stock = 'kodak_portra_400'; a.hdr.film_look.look_strength = 50
-    calls = []; film = rendering._apply_film_look
-    def counted(*args, **kwargs):
-        calls.append(args[2]); return film(*args, **kwargs)
-    monkeypatch.setattr(rendering, '_apply_film_look', counted)
-    linked = materialize_sdr_match(source, a, [], reference_white_nits=203, source_pixel_scale=1)
-    assert linked.adjustments.sdr.linked_to_hdr
-    assert calls == [PreviewKind.HDR]
-    monkeypatch.setattr('hdr_finisher.sdr_link.try_linked_match', lambda *args, **kwargs: (None, 'white-growth test'))
-    fallback = materialize_sdr_match(source, a, [], reference_white_nits=203, source_pixel_scale=1)
-    incumbent = _materialize_sdr_match_impl(source, a, [], reference_white_nits=203, source_pixel_scale=1)
-    assert fallback.adjustments == incumbent.adjustments
-    assert fallback.local_adjustments == incumbent.local_adjustments
-    assert fallback.quality == incumbent.quality and fallback.status == incumbent.status
-    assert fallback.link_fallback_reason == 'white-growth test'
+    # Neutral ramp with both body and highlights, without the inversions
+    # exposed by the brighter target on the coloured fixture.
+    ramp = np.linspace(.01, .17, 96, dtype=np.float32)[None, :, None]
+    source = np.broadcast_to(ramp, (48, 96, 3)).copy()
+    a = AdjustmentState()
+    old, reason = try_linked_match(source, a, [], None, reference_white_nits=203, source_pixel_scale=1)
+    assert old is not None, reason
+    result = materialize_sdr_match(source, a, [], reference_white_nits=203, source_pixel_scale=1)
+    expected = _materialize_sdr_match_impl(source, a, [], reference_white_nits=203, source_pixel_scale=1)
+    assert not result.adjustments.sdr.linked_to_hdr
+    assert result.adjustments == expected.adjustments
+    assert result.local_adjustments == expected.local_adjustments
+    assert result.quality == expected.quality
 
 
 def test_refused_and_equal_local_matches_keep_link(tmp_path, monkeypatch):

@@ -45,6 +45,7 @@ def test_recycle_interruptions_keep_settings_and_pending_marks(setup,monkeypatch
     c.marks.writer.drain();assert not Path(str(photo)+'.hdrf').exists()
 
 
+@pytest.mark.windows_only
 @pytest.mark.parametrize('stage',['record','delete_settings_staged','settings_published','settings','delete_prepared','photo_deleted','settings_deleted','indexed','before_clear'])
 @permanent_windows
 def test_permanent_delete_is_explicit_and_recovers(setup,monkeypatch,stage):
@@ -171,6 +172,7 @@ def test_delete_preview_warns_about_bad_item_but_keeps_valid_selection(setup,mon
     assert side.exists() or side.is_symlink()
 
 
+@pytest.mark.mac_only
 @pytest.mark.skipif(sys.platform!='darwin',reason='macOS Trash registers in-app Undo.')
 def test_retry_cannot_claim_just_confirmed_trash_delete(setup,monkeypatch):
     from concurrent.futures import ThreadPoolExecutor
@@ -221,6 +223,7 @@ def test_delete_rejected_only_and_late_answer(setup,monkeypatch):
     c.index.remember_facts([{'path':str(photo),'bytes':5,'mtime_ns':1}]);assert not c.marks._query('SELECT * FROM files WHERE path=?',(str(photo),))
 
 
+@pytest.mark.windows_only
 @permanent_windows
 def test_delete_before_attempt_reports_present_original_conservatively(setup,monkeypatch):
     photo,_,c,_=setup;monkeypatch.setattr(library_recycle,'available',lambda p:False)
@@ -231,6 +234,7 @@ def test_delete_before_attempt_reports_present_original_conservatively(setup,mon
     assert photo.exists() and Path(str(photo)+'.hdrf').exists() and restarted.status()['attention']
 
 
+@pytest.mark.windows_only
 @permanent_windows
 def test_permanent_gap_and_explorer_move_never_guess_settings_destination(setup,monkeypatch):
     photo,destination,c,_=setup;monkeypatch.setattr(library_recycle,'available',lambda p:False)
@@ -243,6 +247,7 @@ def test_permanent_gap_and_explorer_move_never_guess_settings_destination(setup,
     assert 'could not be proved' in restarted.status()['attention'][0]['message']
 
 
+@pytest.mark.windows_only
 def test_actual_windows_bin_receipt_recovers_before_checkpoint(setup):
     """Only pytest's disposable originals enter the real Bin; never empty it."""
     import os

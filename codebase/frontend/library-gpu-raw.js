@@ -1157,7 +1157,22 @@
         root.HDRLibraryScenes?.stage(meta.path,"Developing photo");
         try {
           const result=await (meta.rgb ? root.HDRLibraryRGB.develop : developRaw)({mosaic, meta, lensData, edges, beforeSubmit, syncStages, signal, context:allocations.context, memoryBudget:bytes,direct:background && !!meta.rgb && !meta.dng_warp && !meta.dng_linear && !edges.includes(100000) && !root.HDRLibraryProfileLegacy,keepNative:!!consume});
-          try{await allocations.check();}
+          try{
+            await allocations.check();
+            // Validate downloaded scenes before drawing or deferring their save.
+            // A transport rejection is invalid GPU output and must reach the CPU
+            // fallback while this job still owns its scheduler identity.
+            for(const [edge,picture] of Object.entries(result.reduced || {})){
+              if(Number(edge)===100000 || (picture.sample_bytes || 4)!==4)continue;
+              for(const plane of picture.planes || []){
+                if(plane.gpuBuffer)continue; // Native planes stay on the GPU.
+                const samples=new Float32Array(plane);
+                for(let i=0;i<samples.length;i++)if(!Number.isFinite(samples[i]) || Math.abs(samples[i])>65504){
+                  throw Object.assign(Error(`GPU RAW source exceeds finite half-float transport (sample ${i}: ${samples[i]}).`),{gpuUnavailable:true,gpuInvalidPixels:true});
+                }
+              }
+            }
+          }
           catch(error){for(const picture of Object.values(result.reduced || {}))for(const texture of picture.textures || [])texture.destroy();destroyKept(result.reduced);throw error;}
           root.HDRLibraryStopwatch?.('picture_development_gpu_done',{path:meta.path,gpu_estimate_bytes:bytes,gpu_peak_bytes:result.memory_peak_bytes,peak_scope:'job-allocated'});
           if(consume){try{

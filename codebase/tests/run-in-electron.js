@@ -31,6 +31,8 @@
  *   - A test that needs two pages at once is not supported here. Run it under
  *     Chromium, where it was already working.
  */
+const { installOwnedLaunches, stopOwnedLaunches } = require("./owned-electron-launch.cjs");
+installOwnedLaunches();
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
@@ -122,6 +124,7 @@ let startupTimer;
       path.resolve(__dirname, "../backend"), process.env.PYTHONPATH].filter(Boolean).join(path.delimiter);
   }
   delete launchEnvironment.ELECTRON_RUN_AS_NODE;
+  launchEnvironment.HDR_FINISHER_TEST_MODE = "1";
   launchEnvironment.HDR_FINISHER_USER_DATA_DIR = userDataDirectory;
   if (process.env.HDR_FINISHER_RUNNER_DEBUG === "1") {
     console.error(`[runner] env ${JSON.stringify({
@@ -141,7 +144,8 @@ let startupTimer;
   startupTimer = setTimeout(() => {
     console.error("[runner] STARTUP TIMEOUT: launch/window/driver setup exceeded 180000 ms");
     if (!app) {
-      console.error("[runner] shutdown failed: launch returned no process handle; cannot verify Electron exited");
+      console.error("[runner] launch did not connect; stopping captured OS process tree");
+      stopOwnedLaunches();
       process.exit(86);
     }
     try { cleanup(); } finally { process.exit(process.exitCode || 1); }
@@ -226,6 +230,7 @@ let startupTimer;
     console.log(`Splash steps: ${steps.join(" | ")}`);
     if (steps[0] !== "Starting image engine…" || !steps.includes("Loading interface…")) throw Error(`Splash steps out of order: ${JSON.stringify(steps)}`);
   }
+  window = await require("./electron-initial-load").waitForMainWindow(app);
   await require("./electron-initial-load").waitForInitialLoad(app, window);
   if (testPath.replaceAll("\\", "/").endsWith("startup-state.js")) {
     const log = fs.readFileSync(path.join(userDataDirectory,"logs/backend.log"),"utf8");
@@ -539,7 +544,13 @@ let startupTimer;
     },
     close: async ({ afterShutdown } = {}) => {
       console.log("[runner] driver end (harness.close)");
-      stop();
+      let closeDeadline;
+      try {
+        await Promise.race([app.close(), new Promise((_, reject) => {
+          closeDeadline = setTimeout(() => reject(Error("Graceful Electron close exceeded 5000 ms")), 5000);
+        })]);
+      } catch (error) { console.error(`[runner] ${error.message}; forcing owned tree cleanup`); }
+      finally { clearTimeout(closeDeadline); stop(); }
       try {
         // The disposable profile remains available until process exit.
         if (afterShutdown) {

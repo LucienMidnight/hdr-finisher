@@ -444,6 +444,8 @@ async function main() {
       await page.evaluate(group => {
         document.querySelector(`[data-group="${group}"]`)?.classList.remove('collapsed');
         for (const d of document.querySelectorAll(`[data-group="${group}"] details`)) d.open = true;
+        const panel = document.querySelector(`[data-group="${group}"]`);
+        for (const heading of panel?.querySelectorAll('.tone-range-heading[aria-expanded="false"]') || []) heading.click();
       }, batch);
       for (const zoom of (args.includes('--followup')&&batch==='film-look'&&!args.includes('--respect-only') ? 'fit,actual' : opt('--zooms',batch==='raw-highlights'?'fit':'fit,actual')).split(',')) {
         await page.evaluate(zoom => setZoomMode(zoom), zoom); await stable(page);

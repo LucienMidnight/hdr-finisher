@@ -260,7 +260,7 @@ Implementation: [`finishing.apply_geometry`](../../codebase/backend/hdr_finisher
 | 3 | White balance, ACEScg primaries/tint, saturation/vibrance | Scene-referred color |
 | 4 | Tone equalizer / Exposure Bands | Scene-EV bands |
 | 5 | Frozen-guide five-control Tone, then HSL | Global endpoint and broad-zone shaping |
-| 6 | HDR curves | Global curves |
+| 6 | Shared-domain curves | Global curves |
 | 7 | Global color grading and Detail | Global creative grade before locals |
 | 8 | Ordered local layers | Each layer grades and blends the running result using a stable source mask |
 | 9 | Lens Filter | Energy-conserving film-plane PSF, or None bypass |
@@ -286,12 +286,13 @@ Generated SDR starts from the ACEScg HDR source:
 6. display-linear tone equalizer / Exposure Bands.
 7. contrast.
 8. frozen-guide five-control Tone, then HSL.
-9. SDR curves.
+9. Shared-domain curves.
 10. global color grading and Detail.
 11. ordered local layers.
 12. lens filter, film resolution, halation, negative and density grain, paper/scanner, one Look Strength mix.
 13. Detail structure and vignette.
-14. output resize/sharpening when delivering, then Highlight Compression and unconditional hue-preserving sRGB gamut mapping to `[0, 1]`.
+14. SDR exposure comp, a gain in finished display-linear sRGB (neutral at 0 EV).
+15. output resize/sharpening when delivering, then Highlight Compression and unconditional hue-preserving sRGB gamut mapping to `[0, 1]`.
 
 The scene-to-display conversion boundary is important. Moving a scene-linear control after it changes both its numerical meaning and its visual behavior.
 
@@ -309,13 +310,31 @@ When a source contains an authored SDR rendition, the branch begins from its ret
 8. ordered local layers;
 9. Film Look, including negative/density grain before paper/scan, and spatial finishing;
 10. vignette;
-11. output resize/sharpening when delivering, then optional Highlight Compression and unconditional hue-preserving sRGB gamut mapping to `[0, 1]`.
+11. SDR exposure comp, on the same finished SDR scale as generated SDR;
+12. output resize/sharpening when delivering, then optional Highlight Compression and unconditional hue-preserving sRGB gamut mapping to `[0, 1]`.
 
 Do not collapse this branch into generated SDR. The authored base is a distinct creative endpoint in a gain-map source. Existing SDR grades intentionally render through the new final-shoulder order; there is no compatibility renderer.
 
 ### 5.4 Local-layer internal order
 
 Within one local layer, the CPU applies its supported tone/zone/exposure/contrast operations, then white balance/saturation, curves, and color grading before blending with `mask × opacity`. SDR color work temporarily uses ACEScg where required. Layers are sequential and therefore generally non-commutative.
+
+#### Shared global and local curves
+
+HDR enters the curve stage as scene-linear ACEScg. Both generated and authored
+SDR enter through the CAT02 linear-sRGB-to-ACEScg matrix divided by
+`SDR_SCENE_TO_DISPLAY_SCALE`, then return through the other matrix and multiply
+by the same scale. Off or all-neutral curves bypass those conversions exactly.
+
+The shared graph uses `log1p(v / .004) / log(901)` for positive scene values
+and the matched linear tangent through zero below black. Decode uses the
+inverse. Scene reference white is always 0.18. A 1,024-sample monotone cubic LUT
+is linearly interpolated and extended outside its graph using the two closest
+samples at either endpoint. Luma uses AP1 weights, applying a neutral black
+floor plus a luminance gain above 1e-5 and an additive correction at or below
+1e-5. R, G and B map individual AP1 channels. Signed and above-white pixels
+remain available to the later finishing stages. The old HDR transfer belongs
+only to the film-response helpers, not to editable curves or Tone.
 
 ### 5.5 Film and grain separation
 
@@ -357,9 +376,11 @@ geometry-fixed source proxy
   -> display mapping and diagnostic overlay
 ```
 
-The global shaders mirror the CPU branch order and parameter meanings. Some unsupported local curves/color-grading cases deliberately request CPU fallback. Device loss also falls back. A GPU approximation must not pretend to be authoritative when parity is unknown.
+The global shaders mirror the CPU branch order and parameter meanings. Global and local curves use the same evaluator. An unsupported GPU route or device loss falls back to CPU. A GPU approximation must not pretend to be authoritative when parity is unknown.
 
 RGBA16F transport is preferred when the proxy is finite and representable; RGBA32F is the fallback. Rows are packed to WebGPU's alignment requirements. Proxy textures are retained at no more than two levels per lane and concurrent fetches are deduplicated.
+
+GPU delivery finishing owns each texture and buffer immediately after allocation. Local cleanup releases completed scratch; job cleanup releases anything left by allocation, pipeline compilation, binding, cancellation or encoder-handoff failure. Readback strips use 256-byte-aligned rows and remove padding before handing float samples to the encoder. Shaders, admission budgets and finishing order are unchanged by this ownership rule.
 
 HDR canvas presentation uses extended-range Display P3 under Chromium's 203-nit convention. SDR canvas presentation uses sRGB. This is display behavior, not delivery encoding or the colorimetric authority for export.
 
@@ -422,7 +443,16 @@ Gain-map outputs render matched full-resolution HDR and SDR endpoints independen
 
 The JPEG Ultra HDR exporter currently performs a bounded, SDR-guided filter on the generated logarithmic gain map before repacking/validating the delivery file. This changes publishing metadata/residual data only. It does **not** denoise the authored HDR image, the authored SDR image, the working source, preview, or grading pipeline. Refer to it as **delivery-only gain-map cleanup** to avoid confusing it with the reverted authored-image denoiser.
 
-## 10. Denoising rollback: what future work must learn
+## 10. Denoising rollback and historical isolation design
+
+**November 26 status:** the rollback below is history. Authored-image Denoise
+is implemented for preview and delivery. Simple uses `adaptive-atrous-v1`,
+Clean Grain adds brightness-grain fitting and colour cleanup, and experimental
+Micro Grain develops signed Bayer samples before its scene-light stage.
+`denoise_measurement.py` owns shared measurement identities; the source stage
+precedes ordinary creative grading. See the [Denoise module PRD](../product/modules/denoise.md)
+for current controls, defaults and supported routes. The old Haar-cache worktree
+snapshot and proposed sequence below do not describe the shipping algorithm.
 
 ### 10.1 Established facts
 
@@ -437,9 +467,9 @@ Observed failures were:
 
 That evidence establishes an integration regression. It does not, by itself, prove which single line or algorithm caused it. Likely causes such as unconditional generalized shader/state overhead or coupling proxy dimensions to layout are useful hypotheses, not historical facts.
 
-The `feature/denoising` worktree now contains an interactive authored-image denoising stage after geometry and before the established Exposure/Color/Film/local pipeline. It lazily analyzes the active 1K/2K/4K geometry-corrected proxy into a compact two-level Haar residual cache, retains both original and resolved proxies, and lets the four live controls reconstruct without analysis. The stage is absent from full-resolution export, and a never-enabled Off document retains the established pre-denoise route with zero denoise allocations or dispatches. The separate Ultra HDR delivery gain-map cleanup described above remains active and is not part of authored-image denoising.
+The August 2026 `feature/denoising` worktree snapshot contained an interactive authored-image denoising stage after geometry and before the established Exposure/Color/Film/local pipeline. It lazily analyzes the active 1K/2K/4K geometry-corrected proxy into a compact two-level Haar residual cache, retains both original and resolved proxies, and lets the four live controls reconstruct without analysis. The stage is absent from full-resolution export, and a never-enabled Off document retains the established pre-denoise route with zero denoise allocations or dispatches. The separate Ultra HDR delivery gain-map cleanup described above remains active and is not part of authored-image denoising.
 
-The [Denoising v2 implementation contract](denoising.md) defines the authoritative wavelet-cache direction, records the implemented Phase 0–3 evidence, and identifies the unresolved per-device memory-budget stop gate. Broader technology research remains non-normative.
+The [Denoising v2 implementation contract](denoising.md) records the historical wavelet-cache direction, the implemented Phase 0–3 evidence, and the then-unresolved per-device memory-budget stop gate (subsequently closed, as that document records). Broader technology research remains non-normative.
 
 ### 10.2 Required gates before denoise returns
 

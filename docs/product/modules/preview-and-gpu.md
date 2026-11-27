@@ -2,11 +2,91 @@
 
 - **Owner:** Steve
 - **Master PRD:** [PRD](../PRD.md)
-- **Last status check:** October 18, 2026, against the code.
+- **Last status check:** November 26, 2026, resource ownership and route contracts; numerical qualifications retain their dates.
 - **Code:** frontend `webgpu-preview.js`, `webgpu-shaders.js`, `gpu-*.js`
-  (including `gpu-param-layout.js`, `graph-scale.js`), `render-plan*.js`,
+  (including `gpu-param-layout.js`, `graph-scale.js`), `gpu-render-plan.js`,
   scopes UI; backend `render_cache.py`, `cpu_strips.py`, `preview.py`,
   `scopes.py`, `overlay.py`, `peak_*.py`.
+
+## November 26: frontend review validation
+
+588 targeted Node checks pass across 56 GPU, scheduling, controls, mask,
+geometry, Denoise, Film and scope test files. The PC shared HSL GPU/CPU oracle
+passes all 35 whole/tile/reduced-scale cases, zero tile seams, Global/Local
+equality, preparation reuse and invalidation, with no WebGPU validation errors.
+The oracle now retires buffers immediately after submission and removes its
+disposable profile. It ran through the native Electron wrapper and shared lock
+at 2560x1440; Steve's running app stayed open. No shader arithmetic, tolerance,
+budget or successful image result was changed. No end-to-end speedup is claimed.
+The full suites and protected Vignette, Match SDR and delivery-finishing work
+remain owned by their other reviewers.
+
+## November 26: partial GPU allocation cleanup
+
+HSL scratch growth and scope-resource creation now destroy any resources
+already created if a later allocation throws. A failed scope allocation also
+removes its empty pool. Forced mid-allocation regressions check both paths;
+working-set sizes, successful allocation order and shaders are unchanged.
+
+## November 26: Tone diagnostic device recovery
+
+Tone clipping diagnostics discard the old engine when the Grade renderer's
+WebGPU device changes. A failure on the old device no longer suppresses
+preparation on its replacement. Pointer/animation-loop regression coverage
+checks the replacement while keeping the same photo, lane and control.
+The diagnostic shader and finished image are unchanged.
+
+## November 26: unused helpers and stale planning comments
+
+Removed the uncalled in-flight-promise accessor and HSL byte-summing method
+(confirmed against frontend, tests, tools and docs). Delivery now reads its job
+size directly instead of optionally calling a geometry helper that does not
+exist and always fell back to that same size. Viewport/tile comments describe
+the shipped region route; Auto-budget comments name the existing calibration.
+
+## November 26: explicit HSL parameter-buffer retirement
+
+HSL selection parameter buffers now join the existing retired-resource list.
+They stay alive through command encoding and are explicitly destroyed after
+submission or abandonment, including the tiled-render cleanup path. Previously
+only outgrown textures used that cleanup; buffers depended on garbage collection.
+No shader, selection arithmetic, cache cap or image output changes.
+
+## November 26: presentation setup recovery
+
+A throwing staleness check or canvas-resize callback releases the canvas gate
+before propagating its error. Later pictures can acquire the same gate rather
+than waiting forever. Callback-failure regression tests cover both boundaries;
+successful serialization and stale-frame refusal are unchanged.
+
+## November 27: Scopes readout and graph alignment
+
+Histogram, Waveform and Vectorscope show Peak (preview or estimate), Brightest
+1% (P99) and Median brightness. HDR also shows the share above the project
+reference white and the share above the current display's reported peak. Show
+the reported number directly, use 1,000 nits when unavailable, and update it
+when the window changes displays. The current Windows display is matched to
+native telemetry by its physical bounds. These are analysis readings, not
+delivery or compression targets.
+
+Each row has a plain-language tooltip and fits on one line without scrolling at
+the minimum dock height. Plots start at the Scopes title's left edge. Waveform
+axis labels sit to the right to keep the plot aligned without hiding its scale.
+
+## November 26: scope encoding failure cleanup
+
+Scope encoding now releases its busy pool slot and active-scope count when
+buffer writes or command setup throw before readback begins. The readback and
+encoding failure paths share the same cleanup. A forced device-error regression
+checks recovery without changing the scope shader or successful analysis.
+
+## November 26: mask batch failure cleanup
+
+A failed mask batch aborts sibling requests and waits for all workers to unwind
+before returning the error. This keeps the caller's shared scene-mask pin alive
+through body-reader and GPU cleanup. The mask coordinator regression tests
+cover delayed sibling cleanup and preservation of the original failure.
+No shader, output, concurrency cap or memory allowance changes.
 
 ## November 16: measured stage costs and exact scope cleanup
 
@@ -268,7 +348,7 @@ fresh results.
 
 ## November 8: movable Navigate window
 
-The Navigate window can be moved by dragging its labelled title bar, marked
+The Navigate window can be moved by dragging the solid top strip, marked
 with two grip lines. Dragging the picture still pans the photo. Placement
 lasts for the app session across photos, zoom and visibility changes; resizing
 the viewer keeps the window inside its bounds. It starts at bottom-right on

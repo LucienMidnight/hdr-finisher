@@ -173,7 +173,11 @@ def review(columns):
         record['images'] = images
         rows.append('<tr><th>' + escape(record['title']) + '</th>' + ''.join(cells) + '</tr>')
     write(manifest_path, manifest)
-    tokens = os.path.relpath(ROOT / 'frontend/visual-tokens.css', OUTPUT / 'decision')
+    token_path = ROOT / 'frontend/visual-tokens.css'
+    try:
+        tokens = Path(os.path.relpath(token_path, OUTPUT / 'decision')).as_posix()
+    except ValueError:  # A Windows temporary review may live on another drive.
+        tokens = token_path.resolve().as_uri()
     html = ('<!doctype html><meta charset="utf-8"><title>Signed demosaic noise decision crops</title>'
             '<link rel="stylesheet" href="' + tokens + '"><style>'
             'body{background:var(--app);color:var(--text);font-family:var(--font-body);'

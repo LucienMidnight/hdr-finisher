@@ -1,6 +1,7 @@
 const assert = require('node:assert/strict');
 const path = require('node:path');
 module.exports = async function checkFilmPanel(page) {
+ await require('./helpers/indicator-dots.cjs')(page);
  const group = page.locator('[data-group="film-look"]');
  const head = group.locator(':scope > .control-group-header .group-toggle');
  if (await head.getAttribute('aria-expanded') !== 'true') await head.click();
@@ -19,6 +20,14 @@ module.exports = async function checkFilmPanel(page) {
  }
  assert.equal(await page.evaluate(()=>JSON.stringify(state.adjustments[state.currentView].film_look)),originalFilm,'folding changes processing');
  await stage('camera').click();
+ assert.equal(await group.locator('[data-film-shortcuts="Lens"]').count(),0);
+ for (const id of ['film-lens-filter','film-lens-strength','film-lens-size']) assert.equal(await group.locator(`#${id}`).isVisible(),true);
+ for (const section of ['print','scan']) {
+  await stage(section).click();
+  assert.equal(await group.locator(`[data-film-section="${section}"] .film-stage-shortcuts`).count(),0);
+  for (const control of await group.locator(`[data-film-section="${section}"] input, [data-film-section="${section}"] select`).all()) assert.equal(await control.isVisible(),true);
+  await stage(section).click();
+ }
  await head.click(); await head.click();
  assert.equal(await stage('camera').getAttribute('aria-expanded'),'true');
  const choose = async id => {
@@ -122,5 +131,6 @@ module.exports = async function checkFilmPanel(page) {
   return [...g.querySelectorAll('button,input,select')].filter(e=>e.getClientRects().length && !e.hidden).filter(e=>{const r=e.getBoundingClientRect();return r.left<bounds.left-1||r.right>bounds.right+1;}).map(e=>e.id||e.textContent);
  });
  assert.deepEqual(overflow,[],'controls overflow panel');
+ await require('./helpers/film-select-preview-ui.cjs')(page);
  console.log('Phase 6 panel: folding/session, summaries/Mod, equal edits, stock tags, dots/double-click, custom format, slide locks, SDR Match, shared preset apply/save/delete, keyboard and narrow layout PASS');
 };

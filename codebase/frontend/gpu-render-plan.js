@@ -292,9 +292,9 @@ const GPU_PARAMS = window.HDRGpuParamLayout.indices;
       .map((name) => [name, Number(limits[name])]));
   }
 
-  // PRD 4.2: Auto is an application allocation budget, not detected physical
-  // VRAM. WebGPU does not report capacity, so the default is a stated policy
-  // number rather than a measurement.
+  // Conservative fallback for Auto before gpu-budget.js calibrates from the
+  // desktop's detected dedicated VRAM, adapter limits and allocation probe.
+  // WebGPU alone cannot report physical VRAM capacity.
   const GPU_BUDGET_AUTO_BYTES = 2 * 1024 * 1024 * 1024;
   const GPU_PLAN_CONTINGENCY_FRACTION = 0.1;
 

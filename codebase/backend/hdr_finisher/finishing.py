@@ -1107,7 +1107,7 @@ def _finish_sharpen_rows(image, source_luma, signal, detail, kind, strength, loc
 
 def _luminance(image: np.ndarray, kind: PreviewKind) -> np.ndarray:
     weights = np.array([0.2722287, 0.6740818, 0.0536895], dtype=np.float32) if kind == PreviewKind.HDR else np.array([0.2126, 0.7152, 0.0722], dtype=np.float32)
-    return np.einsum("...c,c->...", image[..., :3], weights, optimize=True).astype(np.float32)
+    return np.einsum("...c,c->...", image[..., :3], weights, optimize=False).astype(np.float32)
 
 
 def _fork_bands(source, count):

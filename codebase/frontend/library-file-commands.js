@@ -22,12 +22,15 @@
   let fileRevision=0, pending=Promise.resolve();
   function receive(result) {
    if (!(result.revision > fileRevision)) return pending;
-   const changes=result.recent_changes.filter(entry=>entry.revision>fileRevision);
-   const missed=changes[0]?.revision!==fileRevision+1;
-   fileRevision=Math.max(fileRevision,result.revision);
-   // Claim revisions before asynchronous refreshes so health and the direct
-   // response cannot apply the same deletion twice.
-   const task=pending.then(()=>apply(changes,missed));
+   // Check inside the queue: overlapping health/direct replies must wait for
+   // a successful refresh before retiring a revision. Failed refreshes retry.
+   const task=pending.then(async()=>{
+    if (!(result.revision > fileRevision)) return;
+    const changes=result.recent_changes.filter(entry=>entry.revision>fileRevision);
+    const missed=changes[0]?.revision!==fileRevision+1;
+    await apply(changes,missed);
+    fileRevision=result.revision;
+   });
    pending=task.catch(()=>{});
    return task;
   }

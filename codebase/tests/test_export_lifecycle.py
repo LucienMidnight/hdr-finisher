@@ -90,3 +90,54 @@ def test_shared_export_executor_removes_failed_staging_file(tmp_path: Path) -> N
     assert len(staged_paths) == 1
     assert not staged_paths[0].exists()
     assert not (tmp_path / "output.png").exists()
+
+
+@pytest.mark.windows_only
+@pytest.mark.skipif(exporters.os.name != "nt", reason="Windows exclusive rename")
+def test_windows_publication_preserves_file_created_after_final_check(tmp_path, monkeypatch):
+    output = tmp_path / "race.png"
+    native_rename = exporters.os.rename
+
+    def concurrent_rename(source, destination):
+        output.write_bytes(b"concurrent writer")
+        return native_rename(source, destination)
+
+    monkeypatch.setattr(exporters.os, "rename", concurrent_rename)
+    with pytest.raises(exporters.ExportOverwriteRequired):
+        exporters._execute_export(
+            SimpleNamespace(name="fixture"), SimpleNamespace(session_id="session"),
+            _settings(output), suffix=".png",
+            prepare=lambda: exporters._PreparedExport(".png", lambda p: p.write_bytes(b"export"), lambda _: None),
+            success_message=lambda *_: "saved", failure_prefix=None,
+        )
+    assert output.read_bytes() == b"concurrent writer"
+    assert [p.name for p in tmp_path.iterdir()] == ["race.png"]
+
+
+@pytest.mark.parametrize("overwrite", [False, True])
+def test_file_created_during_encoding_requires_overwrite_permission(tmp_path, overwrite):
+    output = tmp_path / "output.png"
+    staged_paths = []
+
+    def write(path):
+        staged_paths.append(path)
+        path.write_bytes(b"encoded export")
+        output.write_bytes(b"another export")
+
+    def run():
+        return exporters._execute_export(
+            SimpleNamespace(name="fixture"), SimpleNamespace(session_id="session"),
+            _settings(output).model_copy(update={"overwrite": overwrite}),
+            suffix=".png",
+            prepare=lambda: exporters._PreparedExport(".png", write, lambda _: None),
+            success_message=lambda *_: "saved", failure_prefix=None,
+        )
+
+    if overwrite:
+        assert run().accepted
+        assert output.read_bytes() == b"encoded export"
+    else:
+        with pytest.raises(exporters.ExportOverwriteRequired):
+            run()
+        assert output.read_bytes() == b"another export"
+    assert not staged_paths[0].exists()

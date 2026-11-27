@@ -1,6 +1,37 @@
 (function () {
   "use strict";
 
+  const DEFAULT_DISPLAY_PEAK_NITS = 1000;
+
+  const scopeStatTooltips = {
+    "Peak": "The brightest point in the picture.",
+    "Peak (preview)": "The brightest point the current preview found. A tiny highlight may be missed.",
+    "Peak (estimate)": "The brightest point found in a more detailed preview. This is still an estimate.",
+    "Brightest 1%": "How bright the brightest 1% of the picture is, ignoring tiny specks.",
+    "Median brightness": "Half the picture is darker than this. Compare it to see if HDR and SDR main tones match.",
+    "Above reference white": "Share of the picture brighter than the project's HDR reference white.",
+    "Display threshold": "Share of the picture above the display's reported peak. Uses 1,000 nits if no reading is available.",
+  };
+
+  function statTooltip(label) {
+    return /^% > /.test(label) ? scopeStatTooltips["Display threshold"] : scopeStatTooltips[label];
+  }
+
+  function displayPeakNits(currentDisplay, displays = []) {
+    const bounds = currentDisplay?.physicalBounds;
+    if (!bounds) return DEFAULT_DISPLAY_PEAK_NITS;
+    // Use the physical midpoint so a fractional Windows scale factor cannot
+    // miss a monitor when its DIP bounds round by a pixel at the edge.
+    const x = bounds.x + bounds.width / 2, y = bounds.y + bounds.height / 2;
+    const matches = displays.filter(({ physical_bounds: rect }) => rect
+      && x >= rect.x && x < rect.x + rect.width && y >= rect.y && y < rect.y + rect.height);
+    // Mirrored outputs can have identical bounds. Don't silently guess which
+    // peak to use if they disagree.
+    const peaks = new Set(matches.map((display) => display.max_luminance_nits));
+    const [peak] = peaks;
+    return peaks.size === 1 && Number.isFinite(peak) && peak > 0 ? peak : DEFAULT_DISPLAY_PEAK_NITS;
+  }
+
   function freshnessLabel(tier) {
     return tier === "interactive" ? "Preview" : tier === "refinement" ? "Refined" : "Settled";
   }
@@ -92,6 +123,8 @@
   }
 
   const HDRScopeUI = Object.freeze({
+    displayPeakNits,
+    statTooltip,
     freshnessLabel,
     requestResolution,
     qualityProfile,

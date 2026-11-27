@@ -18,7 +18,7 @@ window.HDRLibraryPictureLog = (meta = {}, fields = {}) => ({
   window.HDRLibraryStopwatch = (stage, fields = {}) => {
     fields = {...fields};
     if (stage.startsWith("picture_") || stage === "navigation") {
-      if (fields.quick_draw && fields.sharp_draw) { fields.picture_size = "thumbnail,screen preview"; fields.step = "quick draw,sharp draw"; }
+      if (fields.quick_draw && fields.sharp_draw) fields.picture_size = "thumbnail,screen preview";
       else if (fields.quick_draw) fields.picture_size = "thumbnail";
       else if (fields.sharp_draw) fields.picture_size = "screen preview";
       fields.picture_size ||= "thumbnail,screen preview,detail preview";

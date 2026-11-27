@@ -888,29 +888,33 @@
   grid.addEventListener("pointerdown", () => { restoreReviewGrid = null; });
   grid.addEventListener("keydown", () => { restoreReviewGrid = null; });
   let gridRequests = 0, gridSettleTimer;
-  let lastGridTop = 0, gridWidth = 0, gridHeight = 0;
+  let gridWidth = 0, gridHeight = 0;
+  const gridLaneWidth = parseFloat(getComputedStyle(grid).getPropertyValue("--scrollbar-w"));
+  function measureGrid(top) {
+    return HDRLibraryLayout.gridLayout(state.photos.length, grid.offsetWidth, grid.clientHeight, top, state.size, gridLaneWidth);
+  }
   let reviewGrid = null, restoreReviewGrid = null;
   function paintGrid(reveal = false) {
     const count = state.photos.length ? String(state.photos.length) : ""; if ($("place-count").textContent !== count) $("place-count").textContent = count;
     if (!state.active || state.view !== "grid") return;
     // Keep the current photo in view through the fullscreen window resize too.
-    const resized = gridWidth !== grid.clientWidth || gridHeight !== grid.clientHeight;
+    const resized = gridWidth !== grid.offsetWidth || gridHeight !== grid.clientHeight;
     reveal ||= !restoreReviewGrid && resized && state.layout && state.index >= state.layout.first && state.index < state.layout.last;
-    gridWidth = grid.clientWidth; gridHeight = grid.clientHeight;
-    let layout = HDRLibraryLayout.gridLayout(state.photos.length, gridWidth, gridHeight, grid.scrollTop, state.size);
+    gridWidth = grid.offsetWidth; gridHeight = grid.clientHeight;
+    let layout = measureGrid(grid.scrollTop);
     space.style.height = `${layout.totalHeight}px`;
     if (restoreReviewGrid) {
       grid.scrollTop = selected()?.path === restoreReviewGrid.path ? restoreReviewGrid.top
         : Math.max(0, layout.scrollFor(state.index) + layout.rowHeight / 2 - gridHeight / 2);
       reveal = false;
-      layout = HDRLibraryLayout.gridLayout(state.photos.length, gridWidth, gridHeight, grid.scrollTop, state.size);
+      layout = measureGrid(grid.scrollTop);
     }
     if (reveal && state.index >= 0) {
       const top = layout.scrollFor(state.index);
       const bottom = layout.scrollFor(state.index + layout.columns);
       if (top < grid.scrollTop) grid.scrollTop = top;
       else if (bottom > grid.scrollTop + gridHeight) grid.scrollTop = bottom - gridHeight;
-      layout = HDRLibraryLayout.gridLayout(state.photos.length, gridWidth, gridHeight, grid.scrollTop, state.size);
+      layout = measureGrid(grid.scrollTop);
     }
     state.layout = layout;
     $("library-empty").hidden = state.photos.length > 0;
@@ -921,13 +925,8 @@
     gridRequests += reconcile(state.cells, layout.first, layout.last, space, (element, index) => {
       element.style.cssText = `left:${3 + (index % layout.columns) * layout.cellWidth}px;top:${layout.top(index)}px;width:${layout.cellWidth - 3}px;height:${layout.rowHeight - 3}px`;
     });
-    const screen = Math.max(layout.columns, layout.last - layout.first);
-    const forward = grid.scrollTop >= lastGridTop; lastGridTop = grid.scrollTop;
-    const first = forward ? layout.last : Math.max(0, layout.first - screen);
-    const last = forward ? Math.min(state.photos.length, layout.last + screen) : layout.first;
     paintMemoryNeeds();
   }
-  let lastFilmLeft = 0;
   let FILM_PITCH = 119; // filmstrip tile width plus the 3px gap
   function paintFilm() {
     if (!state.active || state.view !== "single" || state.review) { clearCells(state.filmCells); return; }
@@ -935,7 +934,6 @@
     const first = Math.max(0, Math.floor((film.scrollLeft - 3) / FILM_PITCH));
     const last = Math.min(state.photos.length, Math.ceil((film.scrollLeft + film.clientWidth) / FILM_PITCH));
     reconcile(state.filmCells, first, last, $("film-space"), (element, index) => { element.style.left = `${3 + index * FILM_PITCH}px`; });
-    const forward = film.scrollLeft >= lastFilmLeft; lastFilmLeft = film.scrollLeft;
   }
   function updateDetails() {
     if (window.HDRLibraryCommands) commandState();
@@ -1661,8 +1659,8 @@
       if (place.kind && !controller.signal.aborted) action?.finish("success", { photo_count: state.allPhotos.length });
     }
   }
-  let folderPaintTimer;
   async function openFolderStream(path, controller, action) {
+    let folderPaintTimer;
     const started = performance.now(), rows = new Map(), copies = new Map();
     const opening = {path, controller, started, request:null, presented:false, action};
     state.folderOpen = opening;
@@ -1686,7 +1684,7 @@
       applyQuery(false);
       // Grow the scroll extent before restoring: Chromium otherwise clamps
       // against the previous height. Anchor by photo when sorted rows arrive.
-      const layout=HDRLibraryLayout.gridLayout(state.photos.length,grid.clientWidth,grid.clientHeight,top,state.size);
+      const layout=measureGrid(top);
       const index=state.photos.findIndex(photo=>photo.path===anchor);
       space.style.height=`${layout.totalHeight}px`;
       grid.scrollTop=index>=0 ? layout.scrollFor(index)+offset : top;
@@ -1814,10 +1812,15 @@
   };
   // Batch visible settings reads before any picture work. Offscreen rows already
   // carry indexed marks/grades; their sources are never opened for drawing.
-  let visibleDetails = new Map(), detailsTimer;
+  let visibleDetails = new Map(), detailsTimer, detailsOwner;
   function hydrateVisible(photo, current, signal) {
     if(!state.folderOpen || state.folderOpen.controller !== state.scan || photo._details)return Promise.resolve();
     const controller=state.scan;
+    if(detailsOwner!==controller){
+      clearTimeout(detailsTimer);detailsTimer=null;
+      for(const items of visibleDetails.values())for(const item of items)item.reject(new DOMException("Cancelled","AbortError"));
+      visibleDetails.clear();detailsOwner=controller;
+    }
     return new Promise((resolve,reject)=>{
       const key=photo.source_path || photo.path;
       const pending=visibleDetails.get(key)||[];

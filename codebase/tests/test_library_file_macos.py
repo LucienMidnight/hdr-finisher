@@ -34,6 +34,7 @@ def receipts(monkeypatch):
             Path(path).unlink()
 
 
+@pytest.mark.mac_only
 def test_native_no_replace_preserves_files_and_folders(tmp_path):
     for folder in (False,True):
         source=tmp_path/('source-'+str(folder));target=tmp_path/('target-'+str(folder))
@@ -46,6 +47,7 @@ def test_native_no_replace_preserves_files_and_folders(tmp_path):
         if not folder: assert source.read_bytes()==b'source' and target.read_bytes()==b'occupant'
 
 
+@pytest.mark.mac_only
 def test_trash_unavailable_never_offers_permanent_delete(setup,monkeypatch):
     photo,_,service,_=setup
     side=Path(str(photo)+'.hdrf');before=side.read_bytes()
@@ -57,6 +59,7 @@ def test_trash_unavailable_never_offers_permanent_delete(setup,monkeypatch):
     assert photo.exists() and side.read_bytes()==before and not service.records
 
 
+@pytest.mark.mac_only
 @real_trash
 def test_saved_recovery_reference_survives_its_creating_process(tmp_path,receipts):
     photo=tmp_path/'bookmark-photo';photo.write_bytes(b'process-independent recovery')
@@ -71,6 +74,7 @@ def test_saved_recovery_reference_survives_its_creating_process(tmp_path,receipt
     assert photo.read_bytes()==b'process-independent recovery'
 
 
+@pytest.mark.mac_only
 def test_cross_volume_copy_preserves_extended_attributes(setup):
     photo,destination,service,_=setup
     subprocess.run(['xattr','-w','org.hdrfinisher.test','photo-metadata',str(photo)],check=True)
@@ -84,6 +88,7 @@ def test_cross_volume_copy_preserves_extended_attributes(setup):
         assert subprocess.check_output(['xattr','-p','org.hdrfinisher.test',str(path)],text=True).strip()==expected
 
 
+@pytest.mark.mac_only
 def test_owned_removal_recovers_after_atomic_capture(tmp_path,monkeypatch):
     photo=tmp_path/'photo';photo.write_bytes(b'checked original')
     stamp=library_file_io.signature(photo);checksum=library_file_io.digest(photo)
@@ -99,6 +104,7 @@ def test_owned_removal_recovers_after_atomic_capture(tmp_path,monkeypatch):
     assert not photo.exists() and not library_file_io.removal_pending(photo,stamp)
 
 
+@pytest.mark.mac_only
 def test_owned_removal_never_unlinks_a_replacement(tmp_path):
     photo=tmp_path/'photo';photo.write_bytes(b'checked original')
     stamp=library_file_io.signature(photo);checksum=library_file_io.digest(photo)
@@ -107,6 +113,7 @@ def test_owned_removal_never_unlinks_a_replacement(tmp_path):
     assert photo.read_bytes()==b'replacement'
 
 
+@pytest.mark.mac_only
 def test_changed_destination_retains_original_even_during_removal(tmp_path):
     source=tmp_path/'source';target=tmp_path/'target'
     source.write_bytes(b'original');target.write_bytes(b'original')
@@ -119,6 +126,7 @@ def test_changed_destination_retains_original_even_during_removal(tmp_path):
     assert source.read_bytes()==b'original' and target.read_bytes()==b'changed'
 
 
+@pytest.mark.mac_only
 @pytest.mark.skipif(not os.environ.get('HDR_FINISHER_TEST_CROSS_VOLUME'), reason='No disposable second volume selected')
 @pytest.mark.parametrize('stage',['copy_chunk','verified','photo','source_removed','settings_published','settings','indexed','before_clear'])
 def test_real_cross_volume_recovery_and_undo(setup,stage):
@@ -146,6 +154,7 @@ def test_real_cross_volume_recovery_and_undo(setup,stage):
         assert not photo.exists() and target.read_bytes()==b'original pixels'*100
 
 
+@pytest.mark.mac_only
 @pytest.mark.parametrize('stage',['record','photo_staged','photo','settings_published','settings','indexed','cleared_item','before_clear'])
 @real_trash
 def test_trash_undo_recovers_after_crash(setup,receipts,stage):
@@ -162,6 +171,7 @@ def test_trash_undo_recovers_after_crash(setup,receipts,stage):
     assert restarted.marks.album_paths('keepers')==[str(photo)]
 
 
+@pytest.mark.mac_only
 @real_trash
 @pytest.mark.parametrize('stage',['record','delete_settings_staged','settings_published','settings',
     'delete_prepared','recycle_returned','photo_deleted','settings_recycle_returned',
@@ -184,6 +194,7 @@ def test_real_trash_recovers_every_checkpoint(setup,receipts,stage):
     assert saved['marks']['rating']==5
 
 
+@pytest.mark.mac_only
 @real_trash
 def test_native_trash_undo_restores_grades_marks_copies_and_albums(setup,receipts):
     photo,_,service,document=setup;service.recycle=library_recycle.recycle
@@ -201,6 +212,7 @@ def test_native_trash_undo_restores_grades_marks_copies_and_albums(setup,receipt
     assert not any(Path(path).exists() for path,_,_ in receipts)
 
 
+@pytest.mark.mac_only
 @real_trash
 def test_trash_undo_refuses_occupied_original_name(setup,receipts):
     photo,_,service,_=setup;service.recycle=library_recycle.recycle
@@ -210,6 +222,7 @@ def test_trash_undo_refuses_occupied_original_name(setup,receipts):
     assert photo.read_bytes()==b'new arrival' and all(Path(path).exists() for path,_,_ in receipts)
 
 
+@pytest.mark.mac_only
 @real_trash
 def test_delete_started_recovery_does_not_delete_possible_restoration(setup,receipts):
     photo,_,service,_=setup;service.recycle=library_recycle.recycle

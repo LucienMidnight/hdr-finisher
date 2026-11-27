@@ -21,10 +21,21 @@ if sys.stdout is None or sys.stderr is None:
 if __name__ == "__main__":
     multiprocessing.freeze_support()
 
+    if "--desktop-sidecar" in sys.argv and "--parent-pid" in sys.argv:
+        from backend_parent_watch import watch_desktop
+        watch_desktop(int(sys.argv[sys.argv.index("--parent-pid") + 1]))
+
     # Micro Grain distributes tiles on the shared CPU pool. OpenCV's process
     # setting must be configured before any requests or worker calls start.
+    import json
+    import time
+    def startup_progress(phase):
+        if "--desktop-sidecar" in sys.argv:
+            print("HDR_FINISHER_PROGRESS " + json.dumps({"phase": phase, "time": time.time()}), flush=True)
+    startup_progress("Loading OpenCV")
     import cv2
     cv2.setNumThreads(1)
+    startup_progress("OpenCV loaded")
 
 ROOT = Path(__file__).resolve().parent
 BACKEND = ROOT / "backend"
@@ -37,7 +48,11 @@ if __name__ == "__main__" and len(sys.argv) == 4 and sys.argv[1] == "--batch-exp
     batch_main()
     raise SystemExit(0)
 
+if __name__ == "__main__":
+    startup_progress("Loading server runtime")
 from hdr_finisher.launcher import run, run_desktop_sidecar
+if __name__ == "__main__":
+    startup_progress("Server runtime loaded")
 
 
 if __name__ == "__main__":

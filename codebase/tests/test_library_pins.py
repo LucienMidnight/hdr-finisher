@@ -1,3 +1,4 @@
+import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -26,6 +27,7 @@ def test_unpin_offline_folder_keeps_other_pins_and_source(tmp_path):
     assert MediaBrowserStore(store.root).pinned() == response.json()['pinned']
 
 
+@pytest.mark.slow
 def test_pin_commands_return_while_upkeep_is_blocked(tmp_path, monkeypatch):
     from threading import Event
     from time import perf_counter

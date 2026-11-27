@@ -9,8 +9,37 @@ specific file, rule or message.
 - Sections 1 to 10 describe what is built. Section 11 lists the remaining
   gaps. Section 12 explains the library-wide health report and diagnostics.
 - The Library is still being built, and its controls change often. A
-  how-to-use guide will be written when they settle. Product intent lives in
-  the [Photo Library PRD](../product/archive/Photo_Library_PRD_2026-10-09.md).
+  how-to-use guide is available in the [Library manual](../user-guide/library.md).
+  Product intent lives in the [Photo Library PRD](../product/modules/photo-library.md).
+
+### November 26 review validation limit
+
+The targeted Library, desktop and project-transition checks passed (98 distinct
+Node tests, including the new cancellation, refresh-retry and close-save cases).
+The one plain-Electron quick Library check at 2560x1440 was invalidated by a
+hidden/occluded renderer; viewport coverage was incomplete and the timer probe
+reported a 1161 ms stall. This run does not qualify visible drawing or establish
+a change-related timing regression. Repeat with the test window visible before
+claiming real-app acceptance. Report:
+`codebase/output/quick-library-check/library-shell-review/report.json`.
+
+### Thumbnail cancellation (November 26, 2026)
+
+Stored-thumbnail reads recheck cancellation before each 32-photo request and
+before GPU initialization. In-flight shared reads finish normally; later
+cancelled groups are skipped without affecting surviving visible cells.
+The controlled 72-cell regression makes 1 request instead of 3 when all cells
+are cancelled during the first read, or 2 instead of 3 when only the middle
+group is cancelled. These are request counts, not measured screen-time gains.
+`library-finished-thumbnails.test.js` checks both races and unchanged pixel bytes.
+
+### File-command refresh recovery (November 26, 2026)
+
+The frontend serializes direct replies and health updates. A file-command
+revision is acknowledged only after its Library refresh succeeds; a later health
+reply retries failed refreshes and successful duplicates remain ignored.
+`library-file-command-feedback.test.js` covers overlapping replies, retry and
+catch-up after failure.
 
 ### Native macOS original-file operations (November 14, 2026)
 

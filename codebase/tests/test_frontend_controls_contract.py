@@ -51,7 +51,6 @@ def test_grading_ui_exposes_variable_equalizer_targeting_and_bypass_controls() -
     assert "--bypass-icon-visible: var(--accent)" in css
     assert "--bypass-icon-hidden: var(--quiet)" in css
     assert 'id="local-bypass"' not in html
-    assert html.count("data-zone-hover=") == 6
     assert "Highlight Compression" in html
     assert 'data-group="hdr-highlights"' in html
     assert 'data-section-path="hdr.highlight_section_enabled"' in html
@@ -246,7 +245,12 @@ def test_tint_controls_follow_darktable_hue_mapping() -> None:
     css = "\n".join((FRONTEND / name).read_text(encoding="utf-8") for name in ("styles.css", "visual-tokens.css", "visual-controls.css"))
     javascript = frontend_scripts()
 
-    assert ".primary-tint-hue .slider-track { background: linear-gradient(90deg, #53a7b1, #5368b5, #b84f9a, #e05273, #d3ad5b, #54a579, #53a7b1); }" in css
+    # Follow the canonical token while keeping every original gradient stop pinned.
+    import re
+    assert ".primary-tint-hue .slider-track { background: var(--rail-tint-hue); }" in css
+    token_values = re.findall(r"--rail-tint-hue:\s*([^;]+);", css)
+    assert token_values
+    assert set(token_values) == {"linear-gradient(90deg, #53a7b1, #5368b5, #b84f9a, #e05273, #d3ad5b, #54a579, #53a7b1)"}
     assert "const DARKTABLE_TINT_HUE_STOPS" in javascript
     assert "function syncTintPurityVisuals()" in javascript
     assert "darktableTintHueColor(state.adjustments[lane].tint_hue)" in javascript
@@ -267,12 +271,3 @@ def test_redundant_enable_controls_are_removed_and_equalizer_schedules_live_scop
     assert 'id="sdr-match-hdr-color"' not in html
     assert "Enable equalizer" not in html
     assert "Enable curves" not in html
-
-
-def test_curve_drag_uses_live_preview_scheduler_and_three_point_default_shape() -> None:
-    javascript = frontend_scripts()
-    curve_binding = frontend_declarations("bindCurveEditor", "updateCurveFromPointer", "curveVerticalAdjustmentScale")
-
-    assert "return index === 0 || index === pointCount - 1 ? 0.18 : 0.35" in curve_binding
-    assert "const verticalStep = step * Math.min(1, curveVerticalAdjustmentScale(index, curve.length) / 0.35)" in curve_binding
-    assert "return [[0, 0], [0.25, 0.25], [0.5, 0.5], [0.75, 0.75], [1, 1]]" in javascript

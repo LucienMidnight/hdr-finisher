@@ -1,6 +1,7 @@
 const assert = require("node:assert/strict");
 const { test } = require("node:test");
 
+const { HDRScopeUI } = require("../frontend/scope-ui.js");
 const { HDRScopeAnalysis } = require("../frontend/scope-analysis.js");
 const { createHash } = require("node:crypto");
 
@@ -17,23 +18,24 @@ test("scope transport conversion retains the exact pre-cleanup double-precision 
 });
 
 test("histogram and waveform numeric payloads retain the pre-allocation-cleanup results exactly", () => {
+  // Baseline taken before the readout change, excluding removed rows.
   const expected = [
-    "371d355641eb5596b1d0972c300aa173252b9e3c7135bc9575875dfaa2b994a5",
-    "6efd9f8a6b50bb9fd5d1ef03f7b541ac4e413554d88ea990d3bd8f5dbdf3c2c9",
-    "572369efd3edecabcebc0f33ef8b571c830bcba82d3fb21174507af751d64ad2",
-    "78a5dee228ad68ee329ba36c6301ca06349403b2e5b4152eadb342ae5919a528",
-    "3dc0baa5576db85a883ef4c1b2b3dc33b15d40e66ad94ece69e8c0e533742867",
-    "777609bcf65162e5085f200c25b15ebc84400edcfe6028e97a378ed4a3eee19f",
-    "980547f3840130e58afa5eda8273bcd338ad76037742cbbdfb0946c22c85a36b",
-    "0704f0e1bee3ec8f238c261dbc274e277c42289a82a533e7c73dac90103c9794",
-    "7a2c09ef9fcb08d8b6f95b21be2d653724237c58b8e03fab2f5c0a86c234fa07",
-    "8e014626771ffc3f9d2299ff0dda607d2c6035c03d6fd0417147f9e49b050ff8",
-    "235cc9cac4ac6fcce26855281295861756ad4ca995af9a679ed788dd816ebbf4",
-    "bbabb7595439a2d20ace6bc3a1f71390bb204210173b3d0eaed75067e3b91396",
-    "8a2f08139d48e4211bddda59f58b4333fe13fd5588e256c5fe0ba05db865bec8",
-    "e1ca97978a10aa25ab06b305f5fbd73b1ea5d677da002e0be005295459e042aa",
-    "8f79ee36ccf75cd38603c954154147c755d2678a10ff1ce48b6d0f7122bddcfb",
-    "94b1131b740421837bffdbab9674f894899d543df6bd99eab3c477c823363fdf",
+    "b2e78a50b8cf02b10e7923c21298163ca4a19354f6b5d381d666a9ede11ee7a4",
+    "a96884b9897e019b271865d162f98a0c4a6e85b30ed1d2cf839691f079ac20ca",
+    "ad50972535b2d71ae6c9dca5c5e49b4cfee907dd7d40e21c3239afd5df22b30b",
+    "a2de5997dd14ab34784d9c6cbd4631f198610169faefc40b95b19fd8aaef7b25",
+    "bd1b008b74bee92fdf507926e22f0230d8b58f350fde9a0e0a337160fdaf602b",
+    "6e8d4df4b6be3ca2b6c27fe13aeb8487ba3ed1b5b1188b9a23ddebf6f1cd94ca",
+    "ab441adeacee319d3fa8bf5a9d05a1ca3d600f9e9b1288e2afab2e26c0df98a5",
+    "6aaa85da9c3e6536d3dda73465facf66e0697218ff6d78663f013b4b6fb76bd1",
+    "6cda15b0df937db87a804103f7e2a35658f82f5c48607dcae01e9f359e6e0de2",
+    "8f55090bbe5a46f410c445b97ec5202a780ada2fb54c321db1fcfff7b42d2322",
+    "2bb2967ddab2e19f3387fcdfc2d871f1e061d76bcaae64ca03b1e95eedc1aea7",
+    "a472f8d1b167349acdd1fd7039fbe9676ff6499f8faa7198be054fd5f9d1df4c",
+    "40dab5d3518ca2cdb468e48c868ae10f92c59c6524727308e837735cca3fa297",
+    "0e4b8e3f8fa8a5825a634738c603547dc1c7ba7ec91cbd6249e09af5f16f27be",
+    "6da07d3a0ba71b2d96b388cf03623ad071d274db1bbc8b1615d5c8298bb9e12d",
+    "67cc136c299413d774bf6dcb35759586229cc54df9ace05bfaca6c04ca619674",
   ];
   const width = 64, height = 48;
   const pixels = Float32Array.from({ length: width * height * 3 }, (_, index) => index % 29 === 0 ? 0
@@ -49,7 +51,7 @@ test("histogram and waveform numeric payloads retain the pre-allocation-cleanup 
       });
       const numbers = { counts: payload.channels.map(channel => [channel.bins, channel.grid]),
         peak: payload.peak_value, population: payload.normalization_peak, clipped: payload.clipped,
-        stats: payload.stats.map(stat => stat.value) };
+        stats: payload.stats.filter(({ label }) => lane === "hdr" || label !== "Brightest 1%").map(stat => stat.value) };
       assert.equal(createHash("sha256").update(JSON.stringify(numbers)).digest("hex"), expected[index++],
         `${lane} ${mode} ${channelMode} region=${region}`);
     }
@@ -76,7 +78,7 @@ test("SDR histogram payloads use explicit channel mode and preserve population",
   assert.equal(payload.scope_type, "normalized_histogram");
   assert.deepEqual(payload.channels.map(({ name }) => name), ["Y"]);
   assert.equal(payload.channels[0].bins.reduce((sum, value) => sum + value, 0), 2);
-  assert.equal(payload.stats.find(({ label }) => label === "Median").value, "0.739");
+  assert.equal(payload.stats.find(({ label }) => label === "Median brightness").value, "0.739");
 });
 
 test("a full-resolution HDR peak replaces a proxy overshoot", () => {
@@ -118,4 +120,47 @@ test("vectorscope payloads retain every sampled pixel in the density grid", () =
   assert.equal(payload.scope_type, "vectorscope");
   assert.equal(payload.channels[0].grid.flat().reduce((sum, value) => sum + value, 0), 2);
   assert.ok(payload.normalization_peak >= 1);
+});
+
+test("HDR readout uses project white and the display threshold in every scope mode", () => {
+  const levels = [50, 99, 150, 300, 450, 1200];
+  const pixels = levels.flatMap(nits => Array(3).fill(nits * 0.18 / 100));
+  for (const mode of ["histogram", "waveform", "vectorscope"]) {
+    const options = { lane: "hdr", mode, bins: 8, columns: 8, referenceWhite: 100 };
+    const readout = (extra) => Object.fromEntries(HDRScopeAnalysis.buildGpuScopePayload(
+      analysis(pixels, levels.length), { ...options, ...extra },
+    ).stats.map(({ label, value }) => [label, value]));
+    const hdr = readout({ displayPeakNits: 445.25 });
+    assert.equal(hdr["Above reference white"], "66.67%", mode);
+    assert.equal(hdr["% > 445.25 nit"], "33.33%", mode);
+    assert.equal(readout()["% > 1000 nit"], "16.67%", mode);
+    assert.equal(Object.keys(hdr).length, 5, mode);
+  }
+});
+
+test("SDR uses the brightest 1%, not the former 5%, and omits HDR thresholds", () => {
+  const levels = Array(98).fill(0.1).concat([0.5, 0.5, 0.5]);
+  const pixels = levels.flatMap(level => Array(3).fill(level));
+  for (const mode of ["histogram", "waveform", "vectorscope"]) {
+    const { stats } = HDRScopeAnalysis.buildGpuScopePayload(analysis(pixels, levels.length),
+      { lane: "sdr", mode, bins: 8, columns: 8 });
+    assert.deepEqual(stats.map(({ label }) => label), ["Peak (preview)", "Brightest 1%", "Median brightness"]);
+    assert.equal(stats[1].value, mode === "vectorscope" ? "0.500" : "0.735", mode);
+    assert.equal(stats[2].value, mode === "vectorscope" ? "0.100" : "0.349", mode);
+  }
+});
+
+test("display peak follows physical monitor position and falls back for a missing or ambiguous reading", () => {
+  const main = { x: 0, y: 0, width: 2560, height: 1440 };
+  const side = { x: -1920, y: 90, width: 1920, height: 1080 };
+  const telemetry = [
+    { physical_bounds: main, max_luminance_nits: 445.25 },
+    { physical_bounds: side, max_luminance_nits: 400 },
+  ];
+  const peak = (bounds, displays = telemetry) => HDRScopeUI.displayPeakNits({ physicalBounds: bounds }, displays);
+  assert.equal(peak({ ...main, width: 2561 }), 445.25);
+  assert.equal(peak(side), 400);
+  assert.equal(peak(side, telemetry.slice(0, 1)), 1000);
+  assert.equal(peak(main, telemetry.concat({ physical_bounds: main, max_luminance_nits: 650 })), 1000);
+  assert.equal(peak(null), 1000);
 });

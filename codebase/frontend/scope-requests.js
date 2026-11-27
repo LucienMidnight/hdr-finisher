@@ -36,6 +36,10 @@ function scopeLongEdge(tier) {
   return Math.min(profile.settledEdge, settledProxyLongEdge());
 }
 
+function scopeDisplayPeakNits() {
+  return scopeUi.displayPeakNits(state.desktopEnvironment?.currentDisplay, state.displayTelemetry?.displays);
+}
+
 function refreshScopes(longEdge = 960, { tier = "settled", generation = null, lane = state.currentView, retryAuxiliary = true } = {}) {
   if (["import", "export"].includes(state.activeWorkflow) || document.hidden || !state.session || geometryDraftActive()) return Promise.resolve(false);
   if (state.rawRedevelopGeneration != null && state.rawRedevelopGeneration === state.importGeneration) {
@@ -171,8 +175,14 @@ function scopeWaitingForWholePicture(lane) {
 }
 
 function refreshScopesAfterPresentation(lane) {
-  if (state.zoomScopeTimer || !scopePresentationMatches(state.acceptedPresentation, lane)
-    || (!scopePresentationMatches(state.scopeAwaitingPresentation, lane) && !scopeWaitingForWholePicture(lane))) return;
+  if (state.zoomScopeTimer || !scopePresentationMatches(state.acceptedPresentation, lane)) return;
+  // A display move can replace the accepted preview more than once while
+  // the desktop surface and browser media queries settle. Keep requesting
+  // the new threshold on acceptance until a matching scope is shown.
+  const staleDisplayThreshold = lane === "hdr" && state.lastScope?.preview_kind === "hdr"
+    && state.lastScope.stats.at(-1)?.label !== `% > ${scopeDisplayPeakNits()} nit`;
+  if (!staleDisplayThreshold && !scopePresentationMatches(state.scopeAwaitingPresentation, lane)
+    && !scopeWaitingForWholePicture(lane)) return;
   void refreshScopes(scopeLongEdge("settled"), { tier: "settled", lane });
 }
 
@@ -482,7 +492,8 @@ async function runScopeRequest(request) {
   try {
     const { sessionId, lane, mode, tier, generation, longEdge, resolution, maxNits, edit_revision, include_locals, localAdjustments: requestLocals, channelMode, scopeRegion } = request;
     const requestedChannels = channelMode === "luma" ? "luma" : "rgb";
-    const resolutionQuery = `&bins=${resolution.bins}&columns=${resolution.columns}&channels=${requestedChannels}`;
+    const resolutionQuery = `&bins=${resolution.bins}&columns=${resolution.columns}&channels=${requestedChannels}`
+      + (lane === "hdr" ? `&display_peak_nits=${scopeDisplayPeakNits()}` : "");
     const requestScope = (revision) => fetch(`/api/session/${sessionId}/scopes?kind=${lane}&mode=${mode}&long_edge=${longEdge}&max_nits=${maxNits}${resolutionQuery}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -712,6 +723,7 @@ function buildGpuScopePayload(analysis, options) {
     ...options,
     channelMode: state.scopeChannelMode,
     referenceWhite: projectReferenceWhiteNits(),
+    displayPeakNits: scopeDisplayPeakNits(),
   });
 }
 

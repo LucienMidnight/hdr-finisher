@@ -47,7 +47,7 @@ At **100%** and above, Ready means the visible region was processed at native so
 
 Proxy resampling preserves float values and uses a high-quality filter, but downsampling can still hide single-pixel clipping or artifacts.
 
-Drag the **Navigate** window by its title bar (beside the two grip lines) to
+Drag the **Navigate** window by the solid strip with two grip lines above its preview to
 move it out of your way. Drag inside its thumbnail to pan the photo. Its
 position stays while the app is open and resets on the next launch.
 
@@ -107,6 +107,16 @@ The waveform measures the processed rendition, not panel output. A 1,000-nit val
 The vectorscope plots chroma direction and saturation independently of image position. The center is neutral; samples farther from center are more saturated. Use it to compare color balance, watch saturated HDR highlights, and spot an unexpected cast that may be hard to see in the histogram.
 
 Vectorscope density is intentionally reduced during interaction and becomes more precise after the edit settles. It is a diagnostic of the authored rendition, not a gamut-compliance certification.
+
+## Scope readout
+
+Histogram, Waveform and Vectorscope show the following readings in HDR and SDR:
+
+- **Peak (preview)** is the brightest point found in the preview. **Peak (estimate)** means a more detailed preview was measured, but the reading is still an estimate.
+- **Brightest 1%** shows where the brightest 1% begins, so a few tiny highlights do not dominate the reading.
+- **Median brightness** is the midpoint. Half the picture is darker. Compare this reading when matching the main tones in HDR and SDR.
+
+HDR also shows **Above reference white**, the percentage above the project's reference white (203 or 100 nits), and **% > N nit**, the percentage above the current display's reported peak. The display number follows the window to another monitor and defaults to 1,000 nits when the app has no reading. It is a display report, not a measurement of the screen or a limit on your export.
 
 ## Technical and Diagnostics panels
 
@@ -178,7 +188,7 @@ Use full-size output/Proof for final delivery judgement.
 
 ## Scope accuracy and limits
 
-On supported WebGPU paths, histogram, waveform, and vectorscope are generated from a compact render of the same current GPU output used by the visible preview. Unsupported geometry, proof/comparison states, and WebGPU fallback use the CPU scope path. Both routes describe the processed authored rendition; they are deterministic numerical diagnostics, not instruments measuring the screen. With **Exact peak** enabled, the peak and clipping readouts are reduced over the pixels of the accepted selected-tier frame on both GPU and bounded CPU routes, independently of the compact distributions used to draw the scopes.
+On supported WebGPU paths, histogram, waveform, and vectorscope are generated from a compact render of the same current GPU output used by the visible preview. Unsupported geometry, proof/comparison states, and WebGPU fallback use the CPU scope path. Both routes describe the processed authored rendition; they are deterministic numerical diagnostics, not instruments measuring the screen. For the settled whole-picture peak, the GPU and bounded CPU routes can measure a more detailed frame independently of the compact distributions used to draw the scopes. If that measurement is unavailable, the panel labels the peak as coming from the preview.
 
 The freshness badge can show **Updating**, **Preview**, **Settled**, or
 **Refined**. Preview scopes use fewer samples during live edits. During zoom

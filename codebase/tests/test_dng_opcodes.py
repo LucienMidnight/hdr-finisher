@@ -263,3 +263,12 @@ def test_unsupported_mandatory_opcode_rejects_instead_of_being_ignored() -> None
     opcodes = parse_opcode_list(encoded, "OpcodeList3")
     with pytest.raises(DngOpcodeError, match="Unsupported mandatory opcode"):
         apply_opcode_list3(np.ones((2, 2, 3), np.float32), opcodes)
+
+
+@pytest.mark.parametrize("offset", [40, 48, 56, 64])
+@pytest.mark.parametrize("value", [float("nan"), float("inf"), -float("inf")])
+def test_gain_map_parser_rejects_nonfinite_geometry(offset, value):
+    parameters = bytearray(_gain_parameters(np.ones((1, 1, 1)), planes=3))
+    struct.pack_into(">d", parameters, offset, value)
+    with pytest.raises(DngOpcodeError, match="finite"):
+        parse_gain_map(bytes(parameters))

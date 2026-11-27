@@ -200,6 +200,7 @@ def test_windows_default_keeps_existing_cache_shares(monkeypatch):
     assert raised_shares['raw'] > shares['raw']
 
 
+@pytest.mark.windows_only
 @pytest.mark.skipif(os.name != "nt", reason="Windows private commit and EmptyWorkingSet")
 def test_windows_child_commit_survives_working_set_trim(monkeypatch):
     size = 128 * 1024**2
@@ -384,6 +385,7 @@ def test_memory_control_answers_while_default_request_workers_are_full():
     asyncio.run(run())
 
 
+@pytest.mark.serial  # Native helper/process startup deadlines need uncontended CPU.
 def test_memory_endpoint_answers_during_coalesced_slow_reclaim(tmp_path, monkeypatch):
     import asyncio
     import httpx
@@ -492,6 +494,7 @@ def test_shortage_releases_only_needed_bytes_and_stops_before_next_owner(monkeyp
     assert app_memory.cache_snapshot()["raw"]["bytes"] == 500
 
 
+@pytest.mark.serial  # Native helper/process startup deadlines need uncontended CPU.
 def test_memory_polls_never_wait_for_grade_lock(tmp_path, monkeypatch):
     import asyncio, httpx, time
     import numpy as np
@@ -538,6 +541,7 @@ def test_memory_polls_never_wait_for_grade_lock(tmp_path, monkeypatch):
     assert store._retained_session_bytes() == 0
 
 
+@pytest.mark.serial  # Native helper/process startup deadlines need uncontended CPU.
 def test_memory_endpoint_coalesces_a_stuck_sample(tmp_path, monkeypatch):
     import asyncio, httpx
     from fastapi import FastAPI
@@ -585,6 +589,7 @@ def test_loop_lag_heartbeat_reports_delayed_loop(monkeypatch):
     assert logs[0][1]['lag_ms'] > 250
 
 
+@pytest.mark.serial  # Native helper/process startup deadlines need uncontended CPU.
 def test_preview_acceptance_does_not_block_memory_poll(tmp_path, monkeypatch):
     import asyncio, httpx
     from fastapi import FastAPI
@@ -618,6 +623,7 @@ def test_preview_acceptance_does_not_block_memory_poll(tmp_path, monkeypatch):
     asyncio.run(run())
 
 
+@pytest.mark.serial  # Native helper/process startup deadlines need uncontended CPU.
 def test_memory_controller_and_scheduler_do_not_wait_for_album_marks_lock(tmp_path, monkeypatch):
     """A slow album owner must not hold up the independent memory lane."""
     import asyncio

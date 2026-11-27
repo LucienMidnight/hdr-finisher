@@ -67,6 +67,7 @@ def test_library_unknown_jxl_partial_override_is_ineligible(tmp_path,monkeypatch
   library_rgb.decoded(path,inputs)
 
 
+@pytest.mark.needs_native_helper
 @pytest.mark.skipif(__import__("hdr_finisher.binaries", fromlist=["resolve_binary"]).resolve_binary("hdrf-jxl-info") is None,
                     reason="Structured JPEG XL colour profiles need the native hdrf-jxl-info helper (Windows build only).")
 def test_auto_jxl_descriptor_keeps_source_interpretation(tmp_path):

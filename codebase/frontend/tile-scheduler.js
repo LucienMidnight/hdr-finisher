@@ -40,8 +40,8 @@
     grading: 0,
     vignette: 0,
     grain: 0,
-    // Neighbourhood modules declare radius-derived halos in later phases; the
-    // vocabulary exists now so the scheduler can already carry them.
+    // Neighbourhood modules supply their radius-derived halo per plan;
+    // unlike pointwise nodes, these cannot have a fixed halo here.
     detail: null,
     "black-and-white": null,
     "hsl-selection": null,

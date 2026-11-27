@@ -92,7 +92,7 @@ function extract(sourceRoot=root) {
       if (!context) context=all.map(a=>a.id||'').filter(id=>/raw-settings|analysis-dock|settings-dialog|directory-browser/.test(id)).join(' / ');
       if (all.some(a=>a['aria-label']==='Retouch')) context='Retouch';
       const tail=source.slice(tagRe.lastIndex); const end=tail.indexOf(`</${tag}>`);
-      const label=plain(tail.slice(0,end>=0?Math.min(end,600):0));
+      const label=plain(tail.slice(0,end>=0?end:0)).slice(0,600);
       const anchor=attrs.id?`#${attrs.id}`:attrs['data-path']?`data-path=${attrs['data-path']}`:attrs.for?`for=${attrs.for}`:'';
       const name=(label && /[a-z0-9]/i.test(label) ? label : '') || attrs['aria-label'] || attrs.id || attrs['data-path'] || tag;
       let authored=false;
@@ -126,7 +126,7 @@ function extract(sourceRoot=root) {
         dependencies(def,depth+1);
       }
     }
-    for (const key of ['exportOptionTooltips','exportFormatNotes','branchCopy']) {
+    for (const key of ['exportOptionTooltips','exportFormatNotes','branchCopy','scopeStatTooltips']) {
       const def=definitions.get(key); if(!def)continue;
       const keys=[];
       for(let j=0;j<def.length;j++) {

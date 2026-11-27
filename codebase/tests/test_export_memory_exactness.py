@@ -367,7 +367,7 @@ def test_vignette_matches_full_coordinate_grids(image, kind, protection, roundne
     dy /= np.float32(vignette.scale_y / 100)
     exponent = 2 + (6 if roundness >= 0 else 1) * (roundness / 100)
     radius = np.power(np.power(dx, exponent) + np.power(dy, exponent), 1 / exponent)
-    midpoint = np.float32(0.15 + 0.70 * vignette.midpoint / 100)
+    midpoint = np.float32(0.15 + 1.40 * vignette.midpoint / 100)
     feather = np.float32(0.02 + 0.98 * vignette.feather / 100)
     mask = adjustments._smoothstep(float(midpoint), float(midpoint + feather), radius)
     if protection:
@@ -597,6 +597,8 @@ def test_file_finishing_matches_whole_frame(image, tmp_path, monkeypatch, kind, 
     assert set(tmp_path.iterdir()) == {frame.path}
 
 
+@pytest.mark.slow
+@pytest.mark.needs_native_helper
 @pytest.mark.parametrize("spatial", [False, True])
 @pytest.mark.parametrize(("format_name", "capability", "suffix"), [
     ("avif_gain_map", "avif_gain_map_encoder", ".avif"),

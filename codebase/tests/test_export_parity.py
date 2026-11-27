@@ -272,6 +272,8 @@ def test_export_correctness_requires_the_gain_map_container(tmp_path: Path) -> N
     assert "sdr_base_present" in failed
 
 
+@pytest.mark.slow
+@pytest.mark.needs_native_helper
 @pytest.mark.parametrize(
     "delivered_format",
     ["jpeg_ultrahdr"],

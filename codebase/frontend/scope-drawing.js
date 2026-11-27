@@ -27,7 +27,7 @@ function drawHistogram(scope) {
       ? "SDR waveform plots horizontal image position against the nonlinear Rec.709/sRGB output signal. Guides and percentages are signal levels, not scene-linear values."
       : "SDR histogram plots sRGB/Rec.709 signal values from black to white. Density is log-scaled so small tonal populations remain visible.";
   canvas.title = scopeGuideTooltip(scope);
-  renderKeyValueList(els.scopeStats, (scope.stats || []).map((item) => [item.label, item.value]));
+  renderScopeStats(scope.stats || []);
 
   if (scope.scope_type === "vectorscope") {
     drawVectorscope(ctx, scope, width, height);
@@ -42,8 +42,8 @@ function drawHistogram(scope) {
     Y: uiToken("--scope-luma"),
   };
   const isWaveform = scope.scope_type.includes("waveform");
-  const plotLeft = isWaveform ? 62 : 14;
-  const plotRight = 22;
+  const plotLeft = 0;
+  const plotRight = isWaveform ? 62 : 22;
   const plotTop = 8;
   const plotBottom = 22;
   const plotWidth = Math.max(1, width - plotLeft - plotRight);
@@ -85,7 +85,7 @@ function drawVectorscope(ctx, scope, width, height) {
   const bins = grid.length;
   if (!bins) return;
   const size = Math.max(1, Math.min(width - 28, height - 20));
-  const left = (width - size) / 2;
+  const left = 0.5;
   const top = (height - size) / 2;
   ctx.save();
   ctx.strokeStyle = uiToken("--scope-guide-line-labeled");
@@ -136,8 +136,8 @@ function drawScopeGrid(ctx, scope, isWaveform, plotLeft, plotTop, plotWidth, plo
       ctx.lineTo(plotLeft + plotWidth, y);
       ctx.stroke();
       if (showLabel) {
-        ctx.textAlign = "right";
-        ctx.fillText(compactScopeGuideLabel(scope, guide), plotLeft - 7, clamp(y, plotTop + 6, plotTop + plotHeight - 6));
+        ctx.textAlign = "left";
+        ctx.fillText(compactScopeGuideLabel(scope, guide), plotLeft + plotWidth + 7, clamp(y, plotTop + 6, plotTop + plotHeight - 6));
       }
     } else {
       const x = graphLinePosition(plotLeft + normalized * plotWidth);
@@ -555,3 +555,17 @@ function drawGraphFrame(ctx, left, top, width, height) {
   ctx.restore();
 }
 
+
+function renderScopeStats(stats) {
+  const entries = document.createDocumentFragment();
+  for (const { label, value } of stats) {
+    const dt = document.createElement("dt");
+    const dd = document.createElement("dd");
+    dt.textContent = label;
+    dd.textContent = value;
+    const help = scopeUi.statTooltip(label);
+    if (help) dt.dataset.tooltip = dd.dataset.tooltip = help;
+    entries.append(dt, dd);
+  }
+  els.scopeStats.replaceChildren(entries);
+}

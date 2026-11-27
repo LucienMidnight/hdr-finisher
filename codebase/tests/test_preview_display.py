@@ -72,6 +72,7 @@ def test_sdr_display_fallback_is_finite_for_extended_hdr_values() -> None:
     assert np.all(np.diff(decoded[0, :, 0].astype(np.int16)) >= 0)
 
 
+@pytest.mark.needs_native_helper
 def test_banded_hdr_preview_matches_whole_frame_avif() -> None:
     if resolve_binary("avifenc") is None:
         pytest.skip("AVIF preview encoder unavailable")

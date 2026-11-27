@@ -116,3 +116,5 @@ The range key says **Pre-look neutral-ray range**, with **before spatial mask**
 and opacity for locals. The clipping key says **Finished, post-cap**. HDR adds
 100-nit SDR-white, primary-display overrange (or unknown), and HC-target-guide
 keys. Those two states must not be presented as the same measurement.
+
+Vignette Midpoint: Sets where the vignette starts. 100% reaches near the corners of a 3:2 frame; values up to 200% push it beyond the frame. Roundness and Scale also change its reach.

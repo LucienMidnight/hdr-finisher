@@ -20,7 +20,10 @@ async function worker(){
     async loadProxy(){return {width:64,height:64,identity:'source'};}
     async renderTo(...args){await args.at(-1).beforeDeliverySubmit();args.at(-1).delivery.params=[];return {execution:'direct'};}
   }
+  const admission={window:{}};
+  vm.runInNewContext(fs.readFileSync(path.join(__dirname,"../frontend/gpu-delivery-finishing.js"),"utf8"),admission);
   class Finishing{
+    static reservation(job){return admission.window.HDRGpuDeliveryFinishing.reservation(job);}
     async initialize(){}
     texture(){return {};}
     async finish(){return {};}
@@ -46,9 +49,10 @@ async function worker(){
     }};
   };
   let resolveIdle;
-  vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../frontend/gpu-delivery.js'),'utf8'),{
+  vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../frontend/delivery-activity.js'),'utf8')+'\n'+fs.readFileSync(path.join(__dirname,'../frontend/gpu-delivery.js'),'utf8'),{
     document:{createElement:()=>({})},window:{hdrDeliveryMemory:{idle:value=>{if(value)resolveIdle();}}},
-    performance:{now:()=>clock+=101},fetch,setTimeout,setInterval:()=>{},console:{error:(...args)=>errors.push(args),info:(...args)=>events.push(args)},
+    performance:{now:()=>clock+=101},fetch,setTimeout,setInterval:()=>{},clearInterval(){},
+    HDRDeliveryActivity:class {progress(){} stop(){}},console:{error:(...args)=>errors.push(args),info:(...args)=>events.push(args)},
     HDRIdleWarmup:{run(){}},HDRWebGPUPreview:GPU,HDRGpuDeliveryFinishing:Finishing,
     HDRRetouchGPU:{run:async()=>({pixels:plane(),reservedBytes:65536})},
     HDRLibraryRGB:{develop:async()=>({reduced:{100000:{planes:[plane(),plane(),plane()]}},timings:{}})},

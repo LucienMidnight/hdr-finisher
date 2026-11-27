@@ -110,6 +110,7 @@ const MANUAL_VALUE_RULES = {
   "hdr.contrast_pivot": { min: 0.0001, max: 18, decimals: 4 },
   "hdr.tone_equalizer_smoothing": { min: 0, max: 1, decimals: 2 },
   "sdr.exposure": { min: -8, max: 8, decimals: 2 },
+  "sdr.output_exposure": { min: -5, max: 5, decimals: 2 },
   "sdr.highlight_compression_start_percent": { min: 1, max: 99, decimals: 0 },
   "sdr.highlight_compression_softness": { min: 0, max: 100, decimals: 1 },
   "sdr.highlight_compression_peak_detail": { min: 0, max: 100, decimals: 0 },
@@ -160,7 +161,7 @@ Object.assign(MANUAL_VALUE_RULES, {
   "current.color_grading.blending": { min: 0, max: 100, decimals: 0 },
   "current.color_grading.balance": { min: -100, max: 100, decimals: 0 },
   "current.vignette.amount": { min: -200, max: 200, decimals: 0 },
-  "current.vignette.midpoint": { min: 0, max: 100, decimals: 0 },
+  "current.vignette.midpoint": { min: 0, max: 200, decimals: 1 },
   "current.vignette.roundness": { min: -100, max: 100, decimals: 0 },
   "current.vignette.feather": { min: 0, max: 100, decimals: 0 },
   "current.vignette.highlight_protection": { min: 0, max: 100, decimals: 0 },
@@ -747,7 +748,7 @@ const defaultColorGrading = () => ({
   balance: 0,
 });
 
-const defaultVignette = () => ({ amount: 0, midpoint: 50, roundness: 0, feather: 75, highlight_protection: 0, center_x: 0.5, center_y: 0.5, scale_x: 100, scale_y: 100 });
+const defaultVignette = () => ({ amount: 0, midpoint: 25, midpoint_scale_version: 2, roundness: 0, feather: 75, highlight_protection: 0, center_x: 0.5, center_y: 0.5, scale_x: 100, scale_y: 100 });
 // BW-01 Black & White: how bright each colour becomes in grey. All zero is the
 // plain luminance conversion, the same as Saturation -100.
 const BLACK_AND_WHITE_SLIDERS = Object.freeze(["reds", "oranges", "yellows", "greens", "aquas", "blues", "purples", "magentas"]);
@@ -1073,6 +1074,7 @@ const els = {
   sdrMatchHdrBands: document.getElementById("sdr-match-hdr-bands"),
   sdrMatchEntireActions: document.getElementById("sdr-match-entire-actions"),
   sdrMatchEntire: document.getElementById("sdr-match-entire"),
+  sdrMatchModuleActions: document.querySelectorAll("[data-sdr-module-match]"),
   sdrMatchEntireStatus: document.getElementById("sdr-match-entire-status"),
   detailSdrActions: document.getElementById("detail-sdr-actions"),
   blackAndWhiteSdrActions: document.getElementById("black-and-white-sdr-actions"),
@@ -1350,7 +1352,7 @@ const controlGroups = {
   // Black & White: its Reset returns the sliders only. It is deliberately not
   // in sectionPathForGroup, so Reset leaves the module on or off as it was.
   "hdr-black-and-white": ["hdr.black_and_white"],
-  "sdr-tone": ["sdr.exposure", "sdr.contrast", "sdr.contrast_pivot", "sdr.blacks", "sdr.whites", "sdr.shadows", "sdr.shadows_center", "sdr.shadows_width", "sdr.midtones", "sdr.midtones_center", "sdr.midtones_width", "sdr.highlights", "sdr.highlights_center", "sdr.highlights_width"],
+  "sdr-tone": ["sdr.exposure", "sdr.output_exposure", "sdr.contrast", "sdr.contrast_pivot", "sdr.blacks", "sdr.whites", "sdr.shadows", "sdr.shadows_center", "sdr.shadows_width", "sdr.midtones", "sdr.midtones_center", "sdr.midtones_width", "sdr.highlights", "sdr.highlights_center", "sdr.highlights_width"],
   "sdr-highlights": ["sdr.highlight_compression_mode", "sdr.highlight_compression_start_percent", "sdr.highlight_compression_softness", "sdr.highlight_compression_peak_detail", "sdr.highlight_compression_peak_measurement", "sdr.highlight_compression_manual_peak_percent", "sdr.highlight_compression_bias", "sdr.highlight_compression_color_handling"],
   "sdr-equalizer": ["sdr.tone_equalizer_nodes", "sdr.tone_equalizer_influence_radius", "sdr.tone_equalizer_smoothing"],
   "sdr-color": ["sdr.white_balance_kelvin", "sdr.tint", "sdr.saturation", "sdr.vibrance", "sdr.highlight_desaturation", "sdr.highlight_desaturation_start", "sdr.shadow_desaturation", "sdr.shadow_desaturation_start", "sdr.red_hue", "sdr.red_purity", "sdr.green_hue", "sdr.green_purity", "sdr.blue_hue", "sdr.blue_purity", "sdr.tint_hue", "sdr.tint_purity"],

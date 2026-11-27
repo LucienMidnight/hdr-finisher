@@ -48,14 +48,15 @@ def build_scope(
     max_nits: int = 4000,
     color_context: RenderColorContext | None = None,
     channel_names: tuple[str, ...] | None = None,
+    *,
+    display_peak_nits: float = 1000.0,
 ) -> ScopeResponse:
     context = color_context or RenderColorContext()
     processed = apply_adjustments(image, adjustments, kind, sdr_reference_image=sdr_reference_image, color_context=context)
-    if mode == ScopeMode.WAVEFORM:
-        return _build_waveform(processed, kind, bins=bins or 256, columns=waveform_columns, max_nits=max_nits, color_context=context, channel_names=channel_names)
-    if mode == ScopeMode.VECTORSCOPE:
-        return _build_vectorscope(processed, kind, bins=bins or 128, color_context=context)
-    return _build_histogram(processed, kind, bins=bins or 256, max_nits=max_nits, color_context=context, channel_names=channel_names)
+    return build_scope_from_processed(
+        processed, kind, mode, bins, waveform_columns, max_nits, context, channel_names,
+        display_peak_nits=display_peak_nits,
+    )
 
 
 def build_scope_from_processed(
@@ -67,13 +68,15 @@ def build_scope_from_processed(
     max_nits: int = 4000,
     color_context: RenderColorContext | None = None,
     channel_names: tuple[str, ...] | None = None,
+    *,
+    display_peak_nits: float = 1000.0,
 ) -> ScopeResponse:
     context = color_context or RenderColorContext()
     if mode == ScopeMode.WAVEFORM:
-        return _build_waveform(processed, kind, bins=bins or 256, columns=waveform_columns, max_nits=max_nits, color_context=context, channel_names=channel_names)
+        return _build_waveform(processed, kind, bins=bins or 256, columns=waveform_columns, max_nits=max_nits, color_context=context, channel_names=channel_names, display_peak_nits=display_peak_nits)
     if mode == ScopeMode.VECTORSCOPE:
-        return _build_vectorscope(processed, kind, bins=bins or 128, color_context=context)
-    return _build_histogram(processed, kind, bins=bins or 256, max_nits=max_nits, color_context=context, channel_names=channel_names)
+        return _build_vectorscope(processed, kind, bins=bins or 128, color_context=context, display_peak_nits=display_peak_nits)
+    return _build_histogram(processed, kind, bins=bins or 256, max_nits=max_nits, color_context=context, channel_names=channel_names, display_peak_nits=display_peak_nits)
 
 
 def _build_histogram(
@@ -83,9 +86,11 @@ def _build_histogram(
     max_nits: int,
     color_context: RenderColorContext,
     channel_names: tuple[str, ...] | None = None,
+    *,
+    display_peak_nits: float,
 ) -> ScopeResponse:
     if kind == PreviewKind.HDR:
-        return _build_hdr_histogram(processed, bins=bins, max_nits=max_nits, color_context=color_context, channel_names=channel_names)
+        return _build_hdr_histogram(processed, bins=bins, max_nits=max_nits, color_context=color_context, channel_names=channel_names, display_peak_nits=display_peak_nits)
     return _build_sdr_histogram(processed, bins=bins, channel_names=channel_names)
 
 
@@ -95,6 +100,8 @@ def _build_hdr_histogram(
     max_nits: int,
     color_context: RenderColorContext,
     channel_names: tuple[str, ...] | None = None,
+    *,
+    display_peak_nits: float,
 ) -> ScopeResponse:
     ceiling = _hdr_scope_ceiling(max_nits)
     selected = set(channel_names or ("R", "G", "B", "Y"))
@@ -130,7 +137,7 @@ def _build_hdr_histogram(
         x_axis="reference_nits_log10",
         bin_edges=[float(edge) for edge in edges.tolist()],
         guides=_hdr_guides(ceiling, color_context),
-        stats=_hdr_stats(luminance_nits),
+        stats=_hdr_stats(luminance_nits, color_context.hdr_reference_white_nits, display_peak_nits),
         channels=channels,
         normalization_peak=_normalization_peak(channels),
         peak_value=scope_peak_value(processed, PreviewKind.HDR, color_context),
@@ -192,6 +199,8 @@ def _build_waveform(
     max_nits: int,
     color_context: RenderColorContext,
     channel_names: tuple[str, ...] | None = None,
+    *,
+    display_peak_nits: float,
 ) -> ScopeResponse:
     selected = set(channel_names or ("R", "G", "B", "Y"))
     clipped = np.clip(processed.astype(np.float32, copy=False), 0.0, None if kind == PreviewKind.HDR else 1.0)
@@ -228,7 +237,7 @@ def _build_waveform(
             x_axis="reference_nits_log10",
             bin_edges=[float(edge) for edge in edges.tolist()],
             guides=_hdr_guides(ceiling, color_context),
-            stats=_hdr_stats(luminance_nits),
+            stats=_hdr_stats(luminance_nits, color_context.hdr_reference_white_nits, display_peak_nits),
             channels=channels,
             normalization_peak=_normalization_peak(channels),
             peak_value=float(np.max(luminance_nits)),
@@ -279,7 +288,10 @@ def _waveform_grid(values: np.ndarray, edges: np.ndarray, columns: int) -> list[
     return grid.reshape(bin_count, output_columns).astype(np.int32, copy=False).tolist()
 
 
-def _build_vectorscope(processed: np.ndarray, kind: PreviewKind, bins: int, color_context: RenderColorContext) -> ScopeResponse:
+def _build_vectorscope(
+    processed: np.ndarray, kind: PreviewKind, bins: int, color_context: RenderColorContext,
+    *, display_peak_nits: float,
+) -> ScopeResponse:
     working_rgb = processed[..., :3].astype(np.float32, copy=False)
     if kind == PreviewKind.HDR:
         # The grading buffer is ACEScg scene-linear, while a conventional HDR
@@ -314,7 +326,11 @@ def _build_vectorscope(processed: np.ndarray, kind: PreviewKind, bins: int, colo
         x_axis="chroma_uv",
         bin_edges=np.linspace(0.0, 1.0, bins + 1, dtype=np.float32).tolist(),
         guides=[],
-        stats=_hdr_stats(display_luma) if kind == PreviewKind.HDR else _sdr_stats(display_luma),
+        stats=(
+            _hdr_stats(display_luma, color_context.hdr_reference_white_nits, display_peak_nits)
+            if kind == PreviewKind.HDR
+            else _sdr_stats(display_luma)
+        ),
         channels=[HistogramChannel(name="Y", bins=[], grid=grid.astype(np.int32, copy=False).tolist())],
         normalization_peak=_normalization_peak([HistogramChannel(name="Y", bins=[], grid=grid.tolist())]),
         peak_value=float(np.max(display_luma)),
@@ -406,23 +422,24 @@ def _hdr_edges(bins: int, max_nits: int = 4000) -> np.ndarray:
     return np.power(10.0, log_edges, dtype=np.float32)
 
 
-def _hdr_stats(luminance_nits: np.ndarray) -> list[ScopeStat]:
+def _hdr_stats(luminance_nits: np.ndarray, reference_white_nits: float, display_peak_nits: float) -> list[ScopeStat]:
+    p50, p99 = np.percentile(luminance_nits, [50, 99])
     return [
-        ScopeStat(label="Peak", value=_format_nits(np.max(luminance_nits))),
-        ScopeStat(label="P99", value=_format_nits(np.percentile(luminance_nits, 99))),
-        ScopeStat(label="P95", value=_format_nits(np.percentile(luminance_nits, 95))),
-        ScopeStat(label="Median", value=_format_nits(np.percentile(luminance_nits, 50))),
-        ScopeStat(label="% > 100", value=_format_percent(np.mean(luminance_nits > 100.0) * 100.0)),
-        ScopeStat(label="% > 203", value=_format_percent(np.mean(luminance_nits > 203.0) * 100.0)),
-        ScopeStat(label="% > 1000", value=_format_percent(np.mean(luminance_nits > 1000.0) * 100.0)),
+        ScopeStat(label="Peak (preview)", value=_format_nits(np.max(luminance_nits))),
+        ScopeStat(label="Brightest 1%", value=_format_nits(p99)),
+        ScopeStat(label="Median brightness", value=_format_nits(p50)),
+        ScopeStat(label="Above reference white", value=_format_percent(np.mean(luminance_nits > reference_white_nits) * 100.0)),
+        ScopeStat(label=f"% > {display_peak_nits:.15g} nit", value=_format_percent(np.mean(luminance_nits > display_peak_nits) * 100.0)),
     ]
 
 
 def _sdr_stats(luma: np.ndarray) -> list[ScopeStat]:
+    p50, p99 = np.percentile(luma, [50, 99])
+    peak = np.max(luma)
     return [
-        ScopeStat(label="Peak", value=f"{float(np.max(luma)):.3f}"),
-        ScopeStat(label="P95", value=f"{float(np.percentile(luma, 95)):.3f}"),
-        ScopeStat(label="Median", value=f"{float(np.percentile(luma, 50)):.3f}"),
+        ScopeStat(label="Peak (preview)", value=f"{peak:.3f}"),
+        ScopeStat(label="Brightest 1%", value=f"{p99:.3f}"),
+        ScopeStat(label="Median brightness", value=f"{p50:.3f}"),
     ]
 
 

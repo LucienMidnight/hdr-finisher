@@ -38,7 +38,7 @@ function validateRecipe(value) {
   if (!value || value.version !== 1 || !Array.isArray(value.ranges) || value.ranges.length > MAX_RANGES) throw Error('Invalid HSL prototype recipe');
   const finite = (v, lo, hi) => { if (!Number.isFinite(v) || v < lo || v > hi) throw Error('Recipe value outside supported range'); return v; };
   return { version: 1, ranges: value.ranges.map(r => ({ center: finite(r.center, 0, 360), width: finite(r.width, 1, 180), feather: finite(r.feather, 1, 90), subtract: Boolean(r.subtract) })),
-    edge: finite(value.edge ?? 0, -8, 8), edge_feather: finite(value.edge_feather ?? 0, 0, 16), edge_detail: finite(value.edge_detail ?? 50, 0, 100),
+    edge: finite(value.edge ?? 0, -8, 8), edge_feather: finite(value.edge_feather ?? 0, 0, 64), edge_detail: finite(value.edge_detail ?? 50, 0, 100),
     hue: finite(value.hue, -180, 180), saturation: finite(value.saturation, -100, 100), luminance: finite(value.luminance, -2, 2), uniformity: finite(value.uniformity, 0, 100), opacity: finite(value.opacity, 0, 1) };
 }
 function addSample(recipe, rgb, mode = 'pick', width = 16, feather = 12) {

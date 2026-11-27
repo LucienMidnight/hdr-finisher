@@ -8,8 +8,9 @@ const {_electron}=require('playwright');
  require('node:child_process').execFileSync(require('../tools/lib/platform.cjs').pythonExecutable(),[path.join(root,'tools/hsl_selection_fixture.py')],{stdio:'inherit'});
  const fixture=JSON.parse(fs.readFileSync(path.join(out,'fixture.json')));
  const profile=fs.mkdtempSync(path.join(os.tmpdir(),'hdr-test-selection-'));
- const app=await _electron.launch({executablePath:require('../desktop/node_modules/electron'),args:[path.join(root,'tools/hsl-prototype/electron-main.cjs')],env:{...process.env,HDR_FINISHER_USER_DATA_DIR:profile,HSL_PROTOTYPE_TEST:'1'}});
- try{
+ let app;
+ try {
+ app=await _electron.launch({executablePath:require('../desktop/node_modules/electron'),args:[path.join(root,'tools/hsl-prototype/electron-main.cjs')],env:{...process.env,HDR_FINISHER_USER_DATA_DIR:profile,HSL_PROTOTYPE_TEST:'1'}});
   const page=await app.firstWindow();await page.waitForFunction(()=>window.hslPrototype?.ready);
   await page.addScriptTag({content:fs.readFileSync(path.join(root,'frontend/hsl-selection-gpu.js'),'utf8')});
   const report=await page.evaluate(async f=>{
@@ -29,7 +30,7 @@ const {_electron}=require('playwright');
     const row=Math.ceil(c.width*16/256)*256;
     const read=device.createBuffer({size:row*c.height*layers,usage:GPUBufferUsage.COPY_DST|GPUBufferUsage.MAP_READ});
     encoder.copyTextureToBuffer({texture:engine.textures.output},{buffer:read,bytesPerRow:row,rowsPerImage:c.height},{width:c.width,height:c.height,depthOrArrayLayers:layers});
-    device.queue.submit([encoder.finish()]);engine.commit(token);await read.mapAsync(GPUMapMode.READ);
+    device.queue.submit([encoder.finish()]);engine.commit(token);engine.dropRetired();await read.mapAsync(GPUMapMode.READ);
     const v=new Float32Array(read.getMappedRange().slice(0));read.unmap();read.destroy();
     return (lane,x,y)=>v[Math.floor(lane/4)*row/4*c.height+y*row/4+x*4+lane%4];
    }
@@ -72,5 +73,5 @@ const {_electron}=require('playwright');
   assert.ok(report.edgeEditMs<=report.rangeEditMs*1.2+10,'Edge edit exceeds proposed timing allowance');
   assert.ok(fixture.selected_mean>.8);assert.ok(fixture.noisy_std_after<fixture.noisy_std_before*.3);assert.ok(fixture.fringe_mean>.8);assert.ok(fixture.neutral_mean<.001);
   fs.writeFileSync(path.join(out,'result.json'),JSON.stringify(report,null,2));console.log('PASS shared selection GPU/CPU',JSON.stringify(report));
- }finally{await app.close();}
+ }finally{try{await app?.close();}finally{fs.rmSync(profile,{recursive:true,force:true});}}
 })().catch(e=>{console.error(e);process.exitCode=1});

@@ -93,8 +93,11 @@ def test_weighted_fit_keeps_deep_shadow_observations():
     assert all(phase['a'] == 0 and phase['b'] > 0 for phase in settings['noise'])
 
 
-def test_untouched_sources_keep_pre_qualification_decoder_versions(monkeypatch):
+def test_cleanup_versions_keep_pre_qualification_suffixes(monkeypatch):
     old_loader = previous(loader, monkeypatch)
+    # TIFF orientation/ICC intentionally invalidates the shared decoder base.
+    # This Denoise contract covers recipe suffixes, independently of that base.
+    monkeypatch.setattr(old_loader, "SOURCE_DECODER_VERSION", loader.SOURCE_DECODER_VERSION)
     for specks in (False, True):
         assert loader.source_decoder_version(specks, bayer_cleanup=False) == old_loader.source_decoder_version(specks)
     assert loader.source_decoder_version(True, bayer_cleanup=False) != loader.source_decoder_version(False, bayer_cleanup=False)

@@ -34,7 +34,6 @@ contextBridge.exposeInMainWorld("hdrFinisherDesktop", Object.freeze({
   checkForUpdates: (options) => ipcRenderer.invoke("desktop:check-for-updates", options),
   openProjectWebsite: (url) => ipcRenderer.invoke("desktop:open-project-website", url),
   openDocumentation: (url) => ipcRenderer.invoke("desktop:open-documentation", url),
-  setRenderingMode: (mode) => ipcRenderer.invoke("desktop:set-rendering-mode", mode),
   writeClipboardText: (value) => ipcRenderer.invoke("desktop:write-clipboard-text", value),
   openSource: () => ipcRenderer.invoke("desktop:open-source"),
   popOutLibrary: (state) => ipcRenderer.invoke("desktop:pop-out-library", state),
@@ -60,13 +59,10 @@ contextBridge.exposeInMainWorld("hdrFinisherDesktop", Object.freeze({
   grantSourcePath: (filePath) => ipcRenderer.invoke("desktop:grant-source-path", filePath),
   grantProjectPath: (filePath, intent) => ipcRenderer.invoke("desktop:grant-project-path", filePath, intent),
   listRecentProjects: () => ipcRenderer.invoke("desktop:recent-projects"),
-  openProject: () => ipcRenderer.invoke("desktop:open-project"),
   relinkSource: () => ipcRenderer.invoke("desktop:relink-source"),
-  saveProject: (options) => ipcRenderer.invoke("desktop:save-project", options),
   confirmUnsavedTransition: (options) => ipcRenderer.invoke("desktop:confirm-unsaved-transition", options),
   completePhotoClose: (allowed) => ipcRenderer.invoke("desktop:complete-photo-close", allowed),
   chooseExportPath: (options) => ipcRenderer.invoke("desktop:choose-export-path", options),
-  chooseExportDirectory: (initialPath) => ipcRenderer.invoke("desktop:choose-export-directory", initialPath),
   resolveDroppedFile: async (file) => {
     let filePath = "";
     try { filePath = webUtils.getPathForFile(file); } catch {}

@@ -334,7 +334,7 @@ section 3; the October 18 list below is kept as history.
 
 1. **GPU delivery:** export, batch export, Proof and saved-grade Library
    pictures on the GPU. Brief:
-   [codex-brief-gpu-delivery-build-2026-10-18](../technical/briefs/codex-brief-gpu-delivery-build-2026-10-18.md).
+   [codex-brief-gpu-delivery-build-2026-10-18](../technical/archive/briefs/codex-brief-gpu-delivery-build-2026-10-18.md).
    Details: [export-and-proof](modules/export-and-proof.md).
 2. **Library responsiveness** (goal clarified by Steve, October 25): prepare
    a folder of roughly 200-300 photos, then browse and rate fullscreen in real
@@ -397,8 +397,31 @@ Found during the November 8 release check. Each needs a brief before work starts
 | Film grain values, Looks and lens filter by eye | Test | Film Look |
 | Black & White slider strength, fade points and presets | Test | Grade |
 | Exposure-warning wording, shadow warning threshold | Test | Photo Library |
-| Match entire HDR grade fault: photos and message | Report | Grade |
+| Review Match SDR: extreme highlights still differ from the old look (p99.9 ΔE about 3.65); the richer HDR-headroom scene still needs review. Match is a one-off action; it does not follow HDR edits. Press Match again to re-sync. | Test | Grade |
 | Micro Grain before v1: tune its quality (today it looks less good than Clean Grain, the default), and whether to move Micro Grain with lens correction to the GPU (about 1–2 weeks; today about 55 s on the MacBook Neo when both are on). Steve, Nov 22: after other testing, smaller bug fixes and feature tweaks | Decision | [Denoise](modules/denoise.md#7-open-work-and-next-steps) |
+
+Before v1: keep the Denoise research adapters and QUAL switches for now, then clean them up before release.
+
+<a id="export-exclusive-rename-follow-up"></a>
+
+Next Mac session: close the small macOS/Linux export overwrite race with the OS exclusive rename (rename only if absent).
+
+### Next Mac session checklist (from PC work, 27 Nov 2026)
+
+- [ ] After the full release run fills `timings.json`, review the derived cutoffs and tune the constants.
+
+- Populate Mac timings from the next release run: commit `codebase/tests/release/timings.json` and regenerate `docs/technical/test-catalogue.md`; keep PC/Mac baselines separate.
+
+- [ ] Run the [focused release check](../../codebase/tests/release/README.md), then, with Steve's OK, merge `integrate/pc-tests-review-2026-11-26` into `main`. The PC GPU has faulty VRAM; GPU-dependent release results must come from the Mac.
+- [ ] Re-check every GPU-only PC finding on the Mac, including the [large-export GPU-vs-CPU comparison](../technical/research/large-export-cpu-default.md) and the [overnight follow-ups](../technical/reports/overnight-release-check-2026-11-25.md).
+- [ ] Watch app memory on the 8 GB Mac during a Library scroll and a 50 MP export with the new CPU path (`e86cc23a`). PC peak was 5.80 GB versus 5.69 GB before, against its higher ceiling; the Mac ceiling is 4 GB and its last Library peak was about 2.8 GB. Complete the [long-open 8 GB Mac acceptance](modules/photo-library.md#november-14-8-gb-library-fixes-built-full-acceptance-remains-open) too.
+- [ ] Run the quick Library check (expect 30/30; [commands](../technical/development.md)) and the [CPU-path timings](../technical/research/large-export-cpu-default.md) on the Mac.
+- [ ] Copy `D:\Photos\HDR Test Images\DSC00636.ARW` (Sony A1, 50 MP) to the Mac test-images folder (`~/HDR Finisher Tool/Photos/HDR Test Images`; [photo setup](../technical/test-photos.md)).
+- [ ] Repeat the delivery (repeated GPU export) and Denoise calibration checks in the [overnight report](../technical/reports/overnight-release-check-2026-11-25.md#pc-follow-up---november-26-fixovernight-report-followups).
+- [ ] Time [tools/test-python.py](../../codebase/tools/test-python.py) on the 8 GB Mac with at most 2 workers.
+- [ ] Fix the macOS/Linux export no-overwrite race using an exclusive rename; see the [existing follow-up](#export-exclusive-rename-follow-up) from `6cec6b3c`.
+- [ ] Update the PC and Mac apps together: Vignette saves now carry version metadata (`3c4e014d`) that older builds may reject; the Film Exposure fix (`1ff5f3e6`) changes the look of old edits with non-zero Film Exposure.
+- [ ] Ask Steve to review Match SDR; see the [existing review note](#7-waiting-on-steve) from `6cec6b3c`.
 
 ## 8. How the documents are kept
 

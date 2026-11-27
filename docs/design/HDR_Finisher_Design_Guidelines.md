@@ -1,3 +1,35 @@
+## November 27: Film Look picker preview transactions
+
+Film Look retains the native base-select picker. Focused options preview the
+picture without committing the recipe. Enter/click/ordinary closing accepts;
+Escape restores the opening recipe. Closing on the same value is a no-op.
+The entire open/preview/close cycle produces at most one undo step, to the
+pre-open recipe, and no intermediate autosave, sidecar or changed-marker
+state. Latest preview generation wins. Other selects retain their behavior.
+
+## November 27: one changed marker per control heading
+
+Top-level module changed dots remain. Complex modules may also summarize
+modified controls on subsection headings. A single heading/control line must
+never draw an adjacent pair of indicators. Film's clickable deliberate-override
+reset dot takes the place of the passive changed-from-default label dot when
+visible. When it is hidden, the ordinary passive dot still reports a changed
+value. Reset action, equal-value ownership, counts, bypass and inherited stock
+default semantics are unchanged. Do not hide a parent module marker merely
+because it contains changed controls on separate lines.
+
+Grade's adjustment-controls, Denoise, Geometry and HSL keep deciding their
+existing changed state; the shared CSS owns passive label markers. Film owns
+its reset buttons and subsection summaries. Colour-wheel/HSL tabs and HDR/SDR
+lane indicators keep their separate scope. Proof/Export have no second changed
+marker system; shared control-heading styling follows this same rule. Unsaved
+and status/conflict badges are different signals and are not changed.
+
+The shared passive selector excludes a control with a visible Film reset dot;
+its former duplicate size override is consolidated. No new indicator colour or
+size is introduced: existing accent/muted and spacing tokens continue to apply
+in Modern Dark, Default Light and Studio Gray.
+
 # HDR Finisher Design Guidelines
 
 Status: living guideline for the shipped application
@@ -63,6 +95,13 @@ display” is explicit and undoable; telemetry never changes a delivery target.
 
 ## Information hierarchy
 
+November 26: the Navigate overview has a thin `plate-edge` border directly around
+its preview, without padding. A solid `raised` strip above the preview holds two
+full-width `muted` grip lines and remains the drag target. No visible title is
+shown; the button retains its Navigator accessible name, keyboard centring and
+picture click-to-pan. The strip uses the existing chevron height and disclosure
+inset tokens. A translucent separator token must never fill this floating frame.
+
 The workspace has four stable regions:
 
 - Source rail: source identity, interpretation, metadata, and preview facts.
@@ -124,6 +163,14 @@ The visible Reset action and accessible state supply meaning alongside the dot.
 ## Color system
 
 Runtime `frontend/visual-tokens.css` owns the three current neutral palettes and material faces. The v1 reference [tokens.json](v1-visual-refinement/tokens.json) retains the deprecated Default Dark column as history, not a current theme. `visual-controls.css` applies runtime tokens to the existing app structure. Do not add literal interface colours in component styles.
+
+November 26: exact-value extraction centralizes the fixed wheel/rail spectra,
+shared `space-*` scale, graph-selection ink and Retouch overlays in the runtime
+tokens. These common-root values are available in every theme; they are not
+missing theme overrides. Retouch source/destination/brush and their dark edging
+retain their previous colours and alpha values over photos. Equal-valued tokens
+with different roles (for example a font size and a panel height, or a label and
+a scope channel) stay independent. No palette, spacing or material changed.
 
 | Role | Modern Dark | Default Light | Studio Gray |
 |---|---|---|---|
@@ -191,9 +238,16 @@ Runtime geometry is in `visual-tokens.css`: 9×20px ordinary satin thumb, 7×15p
 ### Parent and subordinate slider tiles
 
 - One raised tile and inset ring form the grouping boundary. The full-size parent appears first, followed by a divider, an honest relationship label, and compact child rails.
-- Use `Targeting` when independently stored Range/Pivot controls define the parent's zone. Use `Tone distribution` for the independent Local Light tone controls. Use `Applies to` only when the parent actually changes or distributes into its children.
+- Use `Targeting` for a raised tile with independently stored subordinate controls. Use `Applies to` only when the parent actually changes or distributes into its children.
 - Child rows use aligned fixed label and value columns around the compact rail. Default child values remain muted; modified values use primary ink plus structural modified state.
 - Visual hierarchy never invents data coupling. Child edits remain isolated unless the product model explicitly defines a coupled operation. Parent, child, and whole-group reset meanings remain distinct.
+
+### Tone Range disclosures
+
+- Global HDR and SDR Tone and Local Light use ordinary, full-width instrument sliders for all main controls. No tile surrounds the zone sliders and Local Light has no Tone distribution heading.
+- Shadows, Midtones and Highlights each get a quiet, initially closed Range disclosure. Use the Film Look triangle, muted sentence-case minimum-size text, the current Center and Width on the right, and the standard changed dot when either value differs from default.
+- When opened, the two compact rows sit beneath an indented hairline, without a raised tile, tinted well or relationship label. Keep the same compact track and pointer target as other subordinate rails.
+- Range disclosure state is shared per zone across both renditions and Global/Local for the session only. The heading and sliders keep the histogram range preview available.
 
 ### Toggle and segmented controls
 
@@ -221,7 +275,7 @@ November 4 follow-up: the v1 Control Panel section layout is implemented. The so
 - Global shows shared Raw development, Highlight reconstruction, Crop & rotate and Perspective beneath **Both renditions**, followed by **Per rendition** and the underline rendition switch. Local holds masks and local grades; Retouch holds source repairs beneath **HDR + SDR · before crop**.
 - Global and Local share one underline HDR grade / SDR grade switch, including the preview's rendition choice. It stays pinned beneath the mode header once reached, without folder borders. Global SDR shows a recessed Match SDR row below it; stale matches add a 3 px attention rule and Rematch SDR.
 - Multiple top-level disclosures may remain open. Sections have no numbers. An open section keeps the hairline and full-width raised content surface. Long names truncate before the independent Preset, Reset, bypass and modified-dot controls. Display names are Color sliders and Color wheels; internal keys are unchanged.
-- Local shows New adjustment and four mask tools, overlay and More; Masks · HDR + SDR and stack actions; the selected mask's folded settings; then the pinned local underline rendition switch with Light open and Color, HSL and Detail folded. Paint / Erase belongs inside Brush settings. Invert, gizmo visibility, overlay colour and brush clearing/undo live in More. Mask and repair lists reserve scrollbar space and show about four rows.
+- Local shows New adjustment and four mask tools, overlay and More; Masks · HDR + SDR and stack actions; the selected mask's folded settings; then the pinned local underline rendition switch with Light open and Color, HSL and Detail folded. Paint / Erase belongs inside Brush settings. Invert, gizmo visibility, overlay colour and brush clearing/undo live in More. Mask and repair lists show up to six rows before scrolling.
 - Clicking a mask tool starts an adjustment immediately, including clicking the lit tool. Clicking a row selects it without creating one. An unused row stays muted until its first brush stroke, gradient placement, completed path, or luma range edit/photo sample. Another tool converts it; clicking the lit tool starts a new draft. Selecting another row, leaving Local, or loading a photo discards an unused draft without a history edit. Creation and first content form one undo step (Luma rule approved by Steve, October 23).
 - Retouch has Inpaint, disabled Heal/Clone marked Soon, Size (up to 1,024 native pixels) and Hardness instrument sliders, automatic search/patch/iterations/seed settings and newest-first repairs. New settings apply to the next stroke; the selected repair offers Retry and Remove. Solving and errors use the status row, with Cancel only while solving. Heal and Clone remain unbuilt.
 - Leaving a mode ends its viewer tools, including mask/retouch gestures, HSL picking and crop/perspective drafts. Hidden mode controls cannot receive keyboard focus.
@@ -263,7 +317,7 @@ The curve graph is a reusable instrument component. Its runtime values live in `
 | Green channel curve | `--curve-green` | `#7fe6a8` | Green-channel stroke only |
 | Blue channel curve | `--curve-blue` | `#7db8ff` | Blue-channel stroke only |
 | Fixed endpoint fill | `--curve-endpoint` | `#7f7a6f` | SDR endpoint fill; HDR endpoints use their exposure-band color |
-| SDR selected fill | `--curve-selected` | `#efbb55` | Selected SDR point fill; HDR selection retains its exposure-band fill |
+| SDR selected fill | `--graph-selected` | `#efbb55` | Selected SDR point fill; HDR selection retains its exposure-band fill |
 | Curve width | `--curve-line-width` | `2.5` | Main curve stroke width in canvas pixels |
 | Editable point radius | `--curve-node-radius` | `5` | Default interior control point |
 | Endpoint radius | `--curve-endpoint-radius` | `4` | Fixed black and white anchors are intentionally smaller |
@@ -288,7 +342,7 @@ HDR exposure-band colors are shared by the False Color key and the curve graph. 
 
 - HDR graph backgrounds use low-opacity vertical exposure bands derived from the selected exposure preset. Boundary guides, Luma curve segments, and point fills use the same ordered palette.
 - Red, Green, and Blue curves retain their channel-token stroke so channel identity remains unambiguous; their HDR background and nodes still expose the input exposure bands.
-- HDR point selection uses the exposure-band fill plus the selected ring. SDR point selection uses `--curve-selected`; SDR endpoints use `--curve-endpoint`, and other SDR points use `--curve-neutral`.
+- HDR point selection uses the exposure-band fill plus the selected ring. SDR point selection uses `--graph-selected`; SDR endpoints use `--curve-endpoint`, and other SDR points use `--curve-neutral`.
 - A displaced point carries the shared return-to-home cue on the side facing the identity line: below a point that is above identity, and above a point that is below identity.
 - HDR nit labels include the `0` endpoint, every visible exposure-band boundary, and the `10K` PQ endpoint. Labels may use two rows and must be collision-checked; do not hide the low-end labels to solve overlap.
 - The HDR horizontal domain must match processing: the active project reference-white anchor (203 nits by default, or the controlled 100-nit workflow) is at 50%, the shadow half uses the production shadow-power mapping, and the upper half is logarithmic through 10,000 nits.
@@ -310,11 +364,11 @@ Exposure Bands is a stop-based equalizer centered on the active project referenc
 | Minor grid | `--equalizer-grid` | `#ffffff14` | One-pixel EV grid |
 | Zero-adjustment grid | `--equalizer-grid-strong` | `#ece9df42` | Stronger horizontal home line at 0 EV adjustment |
 | Reference-white guide | `--equalizer-zero` | `#9b7bff52` | Vertical input guide at 0 EV / active project reference white |
-| PQ-limit guide | `--equalizer-pq` | `#d9b672a6` | Dashed vertical guide at 10,000 nits |
+| PQ-limit guide | `--graph-limit-line` | `var(--attention)` | Dashed vertical guide at 10,000 nits |
 | Zero-axis label | `--equalizer-axis` | `#9fbcca` | Emphasizes the 0 EV input label |
 | Active curve | `--equalizer-curve` | `#edf0f1` | Enabled equalizer curve stroke |
 | Default point | `--equalizer-node` | `#ece9df` | Unselected enabled band point |
-| Selected point | `--equalizer-selected` | `#efbb55` | Selected band point and influence emphasis |
+| Selected point | `--graph-selected` | `#efbb55` | Selected band point and influence emphasis |
 | Disabled state | `--equalizer-disabled` | `#7f878d` | Bypassed curve and point treatment |
 | Influence wash | `--equalizer-influence-wash` | `#efbb5517` | Selected band's horizontal influence range |
 | Curve width | `--equalizer-line-width` | `2.25` | Main curve stroke in canvas pixels |
@@ -517,9 +571,8 @@ use the button hover face and text-ink chevron. RAW toggles are plain rows.
 Film section switches sit in their header without Enabled/Disabled copy or a box.
 
 Local and Retouch lists use one input-colour surface with hairline dividers,
-list-row-h (34px) rows, no pills, and a permanently visible raised-colour rail
-with a pill thumb (scrollbar-w, 10px). Empty lists keep that well and rail with
-one centred muted line. Accent-bed is plate-down in every theme and is never
+list-row-h (34px) rows and no pills. The shared scrollbar appears only when the
+rows overflow. Empty lists keep the well and one centred muted line. Accent-bed is plate-down in every theme and is never
 derived from the accent. Selected rows and cells use plate-press; existing
 accent text and edges remain. Library selections are the November 14 exception:
 folder/album rows use a flat deep fill from divider to divider, and thumbnails
@@ -537,6 +590,31 @@ Limits use graph-limit-line (attention),
 4-by-3 dashes and matching labels. Identity lines are solid curve-identity;
 Highlight Compression uses curve-neutral. Exposure Bands zero is strong grid
 grey and its influence wash is #ff7a1f1f orange. Selected points remain yellow.
+
+## November 27: one scrollbar style
+
+Use the Library's classic scrollbar throughout the app. The lane is
+\`--scrollbar-w\` (15 px), with a \`--panel\` track, \`--border\` pill thumb and
+matching arrow buttons. The lane's first pixel is \`--hairline\` on the left
+(top for horizontal scrollbars). The same stylesheet paints these native
+Chromium parts in Default Light, Modern Dark and Studio Gray.
+
+Use automatic overflow on the scroll owner. The lane is visible and draggable
+throughout overflow, with no fade or hover requirement. Nothing is reserved
+when the content fits. Keep section surfaces and dividers flush with the
+content edge, where they meet the lane when present or the panel wall when
+absent. Add space inside rows and fields, not around the scroll container.
+This applies to the Control Panel and its boxed stacks, Proof, Export,
+Metadata, Library, Scopes and auxiliary scrollable areas. Scrolling remains
+native for the keyboard, wheel, trackpad, mouse and focus.
+
+The Library thumbnail grid decides whether it needs a lane from the full
+available width first, so a borderline folder does not keep reflowing as the
+lane appears and disappears.
+
+The upper status row uses a 1 px \`--hairline\` top border in Library, Grade,
+Proof and Export. The lower Library and Export rows keep their matching top
+borders.
 
 ## November 15: source browsing
 

@@ -1092,9 +1092,6 @@ fn fineGrainResizeBase(@builtin(global_invocation_id) id: vec3u) {
       let t = clamp((v - a) / max(b - a, 0.000001), 0.0, 1.0);
       return t * t * (3.0 - 2.0 * t);
     }
-    fn curveValue(channel: u32, value: f32) -> f32 {
-      return curveValueOffset(channel,value,0u);
-    }
     fn curveValueOffset(channel: u32, value: f32, offset: u32) -> f32 {
       let base = offset + channel * 1024u;
       if (value < 0.0) {
@@ -1111,59 +1108,61 @@ fn fineGrainResizeBase(@builtin(global_invocation_id) id: vec3u) {
       let amount = fract(location);
       return mix(curveLuts[base + lower], curveLuts[base + upper], amount);
     }
-    fn curveEncodeChannel(value: f32) -> f32 {
+    fn filmHdrEncodeLuma(value: f32) -> f32 {
       if (value < 0.0) { return value / 0.36; }
       if (value <= 0.18) { return 0.5 * pow(value / 0.18, 1.0 / log(100.0)); }
       return 0.5 + 0.5 * log2(value / 0.18) / log2(100.0);
     }
-    fn curveDecodeChannel(value: f32) -> f32 {
+    fn filmHdrDecodeLuma(value: f32) -> f32 {
       if (value < 0.0) { return value * 0.36; }
       if (value <= 0.5) { return 0.18 * pow(2.0 * value, log(100.0)); }
       return 0.18 * exp2((value - 0.5) * 2.0 * log2(100.0));
     }
-    fn curveEncode(rgb: vec3f, hdr: bool) -> vec3f {
-      if (!hdr) { return rgb; }
-      return vec3f(curveEncodeChannel(rgb.r), curveEncodeChannel(rgb.g), curveEncodeChannel(rgb.b));
+    const CURVE_C: f32 = 0.004;
+    const CURVE_LOG_SPAN: f32 = log2(901.0);
+    const CURVE_TOE: f32 = CURVE_C * CURVE_LOG_SPAN * log(2.0);
+    const CURVE_SDR_SCALE: f32 = (100.0 / 203.0) / 0.18;
+
+    fn curveEncodeChannel(value: f32) -> f32 {
+      if (value < 0.0) { return value / CURVE_TOE; }
+      return log2(1.0 + value / CURVE_C) / CURVE_LOG_SPAN;
     }
-    fn curveDecode(rgb: vec3f, hdr: bool) -> vec3f {
-      if (!hdr) { return rgb; }
-      return vec3f(curveDecodeChannel(rgb.r), curveDecodeChannel(rgb.g), curveDecodeChannel(rgb.b));
+    fn curveDecodeChannel(value: f32) -> f32 {
+      if (value < 0.0) { return value * CURVE_TOE; }
+      return CURVE_C * (exp2(value * CURVE_LOG_SPAN) - 1.0);
+    }
+    // Match color.py's CAT02 matrix here without changing other shader stages.
+    fn curveSrgbToAcescg(rgb: vec3f) -> vec3f {
+      return vec3f(
+        0.6131178129 * rgb.r + 0.3411819959 * rgb.g + 0.0457873443 * rgb.b,
+        0.0699340823 * rgb.r + 0.9181030375 * rgb.g + 0.0119327755 * rgb.b,
+        0.0204629926 * rgb.r + 0.1067686634 * rgb.g + 0.8727159106 * rgb.b
+      );
     }
     fn applyCurves(input: vec3f, hdr: bool) -> vec3f {
-      if (p[${GPU_PARAMS.CURVES_ENABLED}] < 0.5) { return input; }
-      var rgb = input;
-      let sourceLuma = select(lumaSrgb(rgb), lumaAces(rgb), hdr);
-      let curveLuma = select(sourceLuma, curveEncodeChannel(sourceLuma), hdr);
-      let mappedCurveLuma = curveValue(0u, curveLuma);
-      let mappedLuma = select(mappedCurveLuma, curveDecodeChannel(mappedCurveLuma), hdr);
-      if (abs(sourceLuma) > 0.00001) { rgb *= mappedLuma / sourceLuma; }
-      rgb = curveEncode(rgb, hdr);
-      for (var channel = 0u; channel < 3u; channel++) {
-        let value = rgb[channel];
-        rgb[channel] = curveValue(channel + 1u, value);
-      }
-      return curveDecode(rgb, hdr);
+      return applyCurvesOffset(input, hdr, u32(p[${GPU_PARAMS.CURVES_ENABLED}]), 0u);
     }
     fn applyCurvesOffset(input: vec3f, hdr: bool, channels: u32, offset: u32) -> vec3f {
+      if (channels == 0u) { return input; }
       var rgb = input;
+      if (!hdr) { rgb = curveSrgbToAcescg(rgb) / CURVE_SDR_SCALE; }
       if ((channels & 1u) != 0u) {
-      let sourceLuma = select(lumaSrgb(rgb), lumaAces(rgb), hdr);
-      let curveLuma = select(sourceLuma, curveEncodeChannel(sourceLuma), hdr);
-      let mappedCurveLuma = curveValueOffset(0u, curveLuma,offset);
-      let mappedLuma = select(mappedCurveLuma, curveDecodeChannel(mappedCurveLuma), hdr);
-      if (abs(sourceLuma) > 0.00001) { rgb *= mappedLuma / sourceLuma; }
-      }
-      if ((channels & 14u) == 0u) { return rgb; }
-      var encoded = curveEncode(rgb, hdr);
-      for (var channel = 0u; channel < 3u; channel++) {
-        if ((channels & (2u << channel)) != 0u) {
-          encoded[channel] = curveValueOffset(channel + 1u, encoded[channel],offset);
+        let sourceLuma = lumaAces(rgb);
+        let mapped = curveDecodeChannel(curveValueOffset(0u, curveEncodeChannel(sourceLuma), offset));
+        if (sourceLuma > 0.00001) {
+          let black = max(0.0, min(curveDecodeChannel(curveLuts[offset]), mapped));
+          rgb = vec3f(black) + rgb * ((mapped - black) / sourceLuma);
+        } else {
+          rgb += vec3f(mapped - sourceLuma);
         }
       }
-      let decoded = curveDecode(encoded, hdr);
       for (var channel = 0u; channel < 3u; channel++) {
-        if ((channels & (2u << channel)) != 0u) { rgb[channel] = decoded[channel]; }
+        if ((channels & (2u << channel)) != 0u) {
+          let encoded = curveEncodeChannel(rgb[channel]);
+          rgb[channel] = curveDecodeChannel(curveValueOffset(channel + 1u, encoded, offset));
+        }
       }
+      if (!hdr) { return acescgToSrgb(rgb) * CURVE_SDR_SCALE; }
       return rgb;
     }
     fn acescgToSrgb(rgb: vec3f) -> vec3f {
@@ -1932,10 +1931,10 @@ fn fineGrainResizeBase(@builtin(global_invocation_id) id: vec3u) {
       return select(lumaSrgb(rgb), lumaAces(rgb), p[${GPU_PARAMS.HDR_LANE}] > 0.5);
     }
     fn filmSignalFromLuma(value: f32) -> f32 {
-      return select(srgbEncode(clamp(value, 0.0, 1.0)), curveEncodeChannel(max(value, 0.0)), p[${GPU_PARAMS.HDR_LANE}] > 0.5);
+      return select(srgbEncode(clamp(value, 0.0, 1.0)), filmHdrEncodeLuma(max(value, 0.0)), p[${GPU_PARAMS.HDR_LANE}] > 0.5);
     }
     fn filmLumaFromSignal(value: f32) -> f32 {
-      return select(srgbDecode(clamp(value, 0.0, 1.0)), curveDecodeChannel(value), p[${GPU_PARAMS.HDR_LANE}] > 0.5);
+      return select(srgbDecode(clamp(value, 0.0, 1.0)), filmHdrDecodeLuma(value), p[${GPU_PARAMS.HDR_LANE}] > 0.5);
     }
     // Film stock: the chain F of backend/hdr_finisher/film_stock.py on the
     // stock's baked tables, read from the lane's slot of filmStock. Lookups
@@ -1977,11 +1976,11 @@ fn fineGrainResizeBase(@builtin(global_invocation_id) id: vec3u) {
     }
     // Linear sRGB -> film layer exposure -> developed density (two passes
     // for the DIR couplers). film_stock.py _film_exposure and _film_density.
-    fn stockDensity(base: u32, rgb: vec3f) -> vec3f {
+    fn stockDensity(base: u32, rgb: vec3f, exposureGain: f32) -> vec3f {
       let matrix = base + ${STOCK.INPUT_MATRIX}u;
       let exposure = max(vec3f(
         dot(stockVec3(matrix), rgb), dot(stockVec3(matrix + 3u), rgb), dot(stockVec3(matrix + 6u), rgb),
-      ), vec3f(0.0)) * p[${GPU_PARAMS.FILM_STOCK_EXPOSURE_GAIN}];
+      ), vec3f(0.0)) * exposureGain;
       let logExposure = stockLog10(exposure + vec3f(1e-10));
       let gamma = p[${GPU_PARAMS.FILM_DEVELOPMENT_GAMMA}];
       if (filmStock[base + ${STOCK.SCAN_FILM}u] >= 2.0) { return logExposure * gamma; }
@@ -2028,6 +2027,10 @@ fn fineGrainResizeBase(@builtin(global_invocation_id) id: vec3u) {
         let logE = filmStock[base + ${STOCK.FILM_LOW}u] + position/filmStock[base + ${STOCK.FILM_SCALE}u];
         result[c] = exp2(-logE * 3.32192809488736235);
       }
+      // The ideal scanner has no physical white. Saturate extreme signals
+      // to white before ACES/half-float cancellation can create false colour.
+      // Keep in sync with film_stock.py scan_density; measured stocks bypass it.
+      if (any(result > vec3f(16.0))) { result = vec3f(16.0); }
       let levels = stockVec3(base + ${STOCK.FILM_DENSITY_MAX}u);
       if (levels.z > 0.5) {
         let y = dot(result, vec3f(.2126,.7152,.0722));
@@ -2060,13 +2063,14 @@ fn fineGrainResizeBase(@builtin(global_invocation_id) id: vec3u) {
       let tone = p[${GPU_PARAMS.FILM_STOCK_TONE}];
       let referenceWhite = 1.0 / stockLaneScale();
       let middleGrey = 0.18 / stockLaneScale();
-      let middle = stockFromSrgb(stockPrintScan(base, stockDensity(base, stockToSrgb(vec3f(middleGrey))), 1.0));
+      // Calibrate at zero camera/print EV, independently of the picture.
+      let middle = stockFromSrgb(stockPrintScan(base, stockDensity(base, stockToSrgb(vec3f(middleGrey)), 1.0), 1.0));
       let neutral = filmStock[base + ${STOCK.SCAN_FILM}u] >= 2.0;
       let delta = select(densityDelta, -densityDelta, neutral);
       let toneGain = select(middleGrey / max(filmLuma(middle), 0.000001), 1.0, neutral);
       let luma = max(filmLuma(rgb), 0.0);
       let highlightScale = referenceWhite / max(luma, referenceWhite);
-      let greyDensity = stockDensity(base, stockToSrgb(vec3f(luma * highlightScale)));
+      let greyDensity = stockDensity(base, stockToSrgb(vec3f(luma * highlightScale)), p[${GPU_PARAMS.FILM_STOCK_EXPOSURE_GAIN}]);
       let cleanGreyLuma = max(filmLuma(stockFromSrgb(stockPrintScan(base, greyDensity, p[${GPU_PARAMS.FILM_PRINT_EXPOSURE_GAIN}]))), 0.000001);
       var greyLuma = cleanGreyLuma;
       if (any(densityDelta != vec3f(0.0))) {
@@ -2075,7 +2079,7 @@ fn fineGrainResizeBase(@builtin(global_invocation_id) id: vec3u) {
       let toneTarget = (luma + (toneGain * cleanGreyLuma / highlightScale - luma) * tone) * (greyLuma / cleanGreyLuma);
       var result = rgb * (toneTarget / max(luma, 0.0000001));
       if (color > 0.0) {
-        var density = stockDensity(base, stockToSrgb(rgb * highlightScale));
+        var density = stockDensity(base, stockToSrgb(rgb * highlightScale), p[${GPU_PARAMS.FILM_STOCK_EXPOSURE_GAIN}]);
         if (p[${GPU_PARAMS.FILM_STOCK_SEPARATION_GAIN}] != 1.0) {
           density = greyDensity + (density - greyDensity) * p[${GPU_PARAMS.FILM_STOCK_SEPARATION_GAIN}];
         }
@@ -2121,9 +2125,11 @@ fn fineGrainResizeBase(@builtin(global_invocation_id) id: vec3u) {
     fn outputIsHdr() -> bool {
       return p[${GPU_PARAMS.HDR_LANE}] > 0.5 && p[${GPU_PARAMS.LINKED_SDR}] < 0.5;
     }
-    fn linkedSdrOutput(input: vec3f) -> vec3f {
-      if (p[${GPU_PARAMS.LINKED_SDR}] < 0.5) { return input; }
-      return acescgToSrgb(input) * (100.0 / 203.0 / 0.18) * p[${GPU_PARAMS.OUTPUT_EXPOSURE_GAIN}];
+    fn applyOutputExposure(input: vec3f) -> vec3f {
+      if (p[${GPU_PARAMS.LINKED_SDR}] > 0.5) {
+        return acescgToSrgb(input) * (100.0 / 203.0 / 0.18) * p[${GPU_PARAMS.OUTPUT_EXPOSURE_GAIN}];
+      }
+      return input * p[${GPU_PARAMS.OUTPUT_EXPOSURE_GAIN}];
     }
     fn applyOutputHighlights(input: vec3f) -> vec3f {
       let mode = p[${GPU_PARAMS.HIGHLIGHT_MODE}];
@@ -3387,7 +3393,7 @@ fn fineGrainResizeBase(@builtin(global_invocation_id) id: vec3u) {
       let blur = filmDetailBlur(coordinate, vec2i(local.xy), bound, radius, true);
       if (any(coordinate > bound)) { return; }
       let rgb = filmStoredRgb(textureLoad(sourceTexture, coordinate, 0));
-      textureStore(filmDetailOutput, coordinate, storeFilm(linkedSdrOutput(finishStructure(rgb, blur, coordinate))));
+      textureStore(filmDetailOutput, coordinate, storeFilm(applyOutputExposure(finishStructure(rgb, blur, coordinate))));
     }
 
     const LENS_COMPONENTS = array<vec4f,108>(${LENS_COMPONENTS_WGSL});
@@ -3463,7 +3469,7 @@ fn fineGrainResizeBase(@builtin(global_invocation_id) id: vec3u) {
       let structure = p[${GPU_PARAMS.STRUCTURE_ENABLED}] > 0.5
         && (abs(p[${GPU_PARAMS.STRUCTURE_SOFTNESS}]) > 0.000001 || abs(p[${GPU_PARAMS.STRUCTURE_MICROCONTRAST}]) > 0.000001);
       if (structure && !filmDiagnosticMap()) { return storeFilm(rgb); }
-      return storeFilm(linkedSdrOutput(rgb));
+      return storeFilm(applyOutputExposure(rgb));
     }
 
     @fragment fn finishFragmentMain(input: VertexOut) -> @location(0) vec4f {

@@ -55,6 +55,7 @@ test('cancelled CPU work cannot mark a replacement GPU scope fresh', async () =>
   const ctx = vm.createContext({ state, AbortController, document: { hidden: false },
     markScopeUpdating() {}, els: { scopeFreshness: { classList: { remove() { cleared = true; } } } },
     geometryDraftActive: () => false, scopePresentationMatches: () => true, scopeWaitingForWholePicture: () => false,
+    scopeDisplayPeakNits: () => 1000,
     fetch: (_, { signal }) => new Promise((_, reject) => signal.addEventListener('abort', () => reject(Object.assign(new Error(), { name: 'AbortError' })))),
   });
   vm.runInContext(declarations('restoreScopeFreshnessIfIdle', 'runScopeRequest'), ctx);

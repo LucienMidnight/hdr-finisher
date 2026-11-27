@@ -256,6 +256,8 @@ def test_library_native_source_uses_same_repair_before_reduction(photo, tmp_path
     assert _develop_cpu(tmp_path, session.source_path, saved, 32, cache=CaptureCache()) == 32
 
 
+@pytest.mark.slow
+@pytest.mark.needs_native_helper
 @pytest.mark.parametrize("method", ["standard","edge-feather","original-detail","donor-detail","clone","heal"])
 def test_repair_invalidates_proof_cache_and_full_proof_matches_export(photo, tmp_path, method):
     from hashlib import sha256
@@ -364,3 +366,27 @@ def test_prototype_project_replay_and_history_keep_method_and_settings(photo,tmp
     restored=open_project(store,project)
     assert restored.repairs[0].recipe == repair.recipe
     np.testing.assert_array_equal(restored.image,result)
+
+
+@pytest.mark.parametrize("action", ["rename", "undo", "redo"])
+def test_repair_name_edits_need_no_frame_memory(photo, monkeypatch, action):
+    from hdr_finisher import resource_preflight
+    store, session = photo
+    repair = record()
+    edit(store, session, records=[repair])
+    pixels = session.image
+    renamed = repair.model_copy(update={"name": "Window dust"})
+    if action in ("undo", "redo"):
+        edit(store, session, records=[renamed])
+    if action == "redo":
+        edit(store, session, "undo")
+    revision = session.edit_revision
+    monkeypatch.setattr(resource_preflight, "detect_memory_resources", lambda:
+        resource_preflight.ResourceSnapshot(8 * resource_preflight.GIB, 2 * resource_preflight.GIB, "test"))
+    if action == "rename":
+        edit(store, session, records=[renamed])
+    else:
+        edit(store, session, action)
+    assert session.image is pixels
+    assert session.repairs[0].name == (repair.name if action == "undo" else renamed.name)
+    assert session.edit_revision == revision + 1

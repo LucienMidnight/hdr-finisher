@@ -296,6 +296,7 @@ def test_router_lifespan_resumes_pending_on_backend_start(tmp_path):
         assert document(photos[0])["marks"]["rating"] == 4
 
 
+@pytest.mark.serial  # Native helper/process startup deadlines need uncontended CPU.
 @pytest.mark.parametrize("boundary", ["database", "temporary", "replace"])
 def test_hard_process_exit_recovers_database_and_owned_temporary_file(tmp_path, boundary):
     store, photos = setup(tmp_path, 3)

@@ -110,6 +110,7 @@ def test_photo_progress_uses_version_format_before_the_clock_has_a_plan():
         assert photo.snapshot()["label"] == "Rendering SDR"
 
 
+@pytest.mark.needs_native_helper
 @pytest.mark.parametrize("format_name,proof", [
     ("sdr_jpegxl", False), ("jpegxl_hdr", False), ("jpegxl_hdr", True),
 ])
@@ -214,10 +215,14 @@ def test_progress_follows_ticks_and_lanes_and_never_goes_back():
     assert seen[-1] == .99  # Only the caller marks the export done.
 
 
-def test_photo_progress_moves_during_development_and_continues_from_it():
+def test_photo_progress_moves_during_development_and_continues_from_it(monkeypatch):
+    now = [100.0]
+    monkeypatch.setattr("hdr_finisher.batch_export.monotonic", lambda: now[0])
     photo = PhotoProgress(versions=2)
+    assert photo.fraction() == 0
+    now[0] += .01
     first = photo.fraction()
-    time.sleep(.05)
+    now[0] += .05
     during = photo.fraction()
     assert 0 < first < during < PhotoProgress.DEVELOP_SHARE
     assert photo.snapshot()["label"] == "Developing RAW"

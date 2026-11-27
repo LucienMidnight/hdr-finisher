@@ -363,11 +363,12 @@ def test_old_export_is_not_starved_by_new_raw_thumbnails(tmp_path, monkeypatch):
         assert not client.post('/api/delivery/gpu/raw-budget/new',json={"bytes":400}).json()["granted"]
 
 
+@pytest.mark.serial  # Preserve the 200 ms fake-render deadline without CPU contention.
 def test_a_queued_job_waits_past_the_render_deadline_and_still_uses_the_gpu(tmp_path, monkeypatch):
     # Waiting behind other delivery work is not a GPU failure (Steve's batch
     # fell back to the CPU while visible Library pictures held the queue).
     app = _broker(tmp_path, monkeypatch)
-    monkeypatch.setattr(gpu_delivery, "RENDER_DEADLINE_SECONDS", .2)
+    monkeypatch.setattr(gpu_delivery, "RENDER_IDLE_SECONDS", .2)
     frame = _frame()
     with TestClient(app) as client, ThreadPoolExecutor(max_workers=1) as worker:
         client.get("/api/delivery/gpu/permit")
@@ -385,9 +386,10 @@ def test_a_queued_job_waits_past_the_render_deadline_and_still_uses_the_gpu(tmp_
         assert frame._delivery_record == {"renderer": "gpu", "fallback_reason": None}
 
 
+@pytest.mark.serial  # Preserve the 200 ms fake-render deadline without CPU contention.
 def test_a_claimed_job_past_the_render_deadline_falls_back(tmp_path, monkeypatch):
     app = _broker(tmp_path, monkeypatch)
-    monkeypatch.setattr(gpu_delivery, "RENDER_DEADLINE_SECONDS", .2)
+    monkeypatch.setattr(gpu_delivery, "RENDER_IDLE_SECONDS", .2)
     frame = _frame()
     with TestClient(app) as client, ThreadPoolExecutor(max_workers=1) as worker:
         client.get("/api/delivery/gpu/permit")
@@ -655,3 +657,28 @@ def test_spool_deleted_mid_delivery_ends_the_wait_and_retries_gpu_next_time(tmp_
         assert (root / "heartbeat").exists()
         if os.name != "nt":  # Windows ignores POSIX mode bits.
             assert oct(root.stat().st_mode & 0o777) == "0o700"
+
+
+@pytest.mark.serial
+def test_claimed_export_with_activity_has_no_total_duration_limit(tmp_path, monkeypatch):
+    app = _broker(tmp_path, monkeypatch)
+    monkeypatch.setattr(gpu_delivery, "RENDER_IDLE_SECONDS", .5)
+    frame = _frame()
+    with TestClient(app) as client, ThreadPoolExecutor(max_workers=1) as worker:
+        client.get("/api/delivery/gpu/permit")
+        pending = worker.submit(gpu_delivery.render_pair, frame, ExportSettings(), frame.adjustments)
+        job = None
+        while job is None:
+            job = client.get("/api/delivery/gpu/next").json()
+            time.sleep(.01)
+        end = time.monotonic() + 1.6
+        while time.monotonic() < end:
+            client.post(f"/api/delivery/gpu/{job['id']}/progress")
+            client.get("/api/delivery/gpu/permit")
+            time.sleep(.04)
+        assert not pending.done()
+        monkeypatch.setattr(gpu_delivery, "RENDER_IDLE_SECONDS", 60.)
+        for lane in ("hdr", "sdr"):
+            client.post(f"/api/delivery/gpu/{job['id']}/pixels/{lane}", content=np.full((4,6,4), .18, dtype="<f4").tobytes())
+        client.post(f"/api/delivery/gpu/{job['id']}/complete", json={})
+        assert pending.result(timeout=5) is not None

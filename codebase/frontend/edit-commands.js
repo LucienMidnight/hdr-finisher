@@ -205,6 +205,8 @@ function queueEditCommand(commandType, payload = {}, targetId = null, { refreshP
 }
 
 async function syncGlobalEditState() {
+  // Dropdown highlights are preview-only, never document/history writes.
+  if (state.filmSelectDraft) return true;
   if (!state.session) return true;
   const sessionId = state.session.session_id;
   // Perspective owns a transaction-local copy represented in the shared

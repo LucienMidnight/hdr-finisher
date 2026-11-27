@@ -153,6 +153,8 @@ def test_optional_pairs_keep_linear_values_and_reject_misalignment(tmp_path):
     assert np.array_equal(sample.clean,clean)
     assert sample.bayer is None
     assert sample.rgb[0,0,0]<0 and sample.rgb[0,0,1]>1
+    # The sample borrows read-only mmap inputs; Windows forbids rewriting an open mapping.
+    del sample
     np.save(tmp_path/'noisy.npy',np.zeros((33,32,3),'float32'))
     with pytest.raises(ValueError,match='shapes differ'):
         next(paired_samples(tmp_path))

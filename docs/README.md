@@ -4,7 +4,7 @@ This manual is organized by what you are trying to do. You do not need to unders
 
 HDR Finisher is a full HDR photo editor: a photo Library, camera RAW development, HDR and SDR grading, local adjustments, Denoise, Film Look, Proof, and batch export to gain-map formats. The [project README](../README.md) summarises its capabilities and supported formats.
 
-Pages carry their own verification dates where implementation freshness matters. The [image-processing pipeline technical contract](technical/image-processing-pipeline.md) was last reviewed on **August 25, 2026**; GPU-first rendering for export, Proof and Library pictures (October 18, 2026) is described in [Architecture](technical/architecture.md) and the [Export and Proof module PRD](product/modules/export-and-proof.md). Browser, operating-system, and display behavior can change; dated platform guidance links to first-party sources.
+Pages carry their own verification dates where implementation freshness matters. Read the [image-processing pipeline technical contract](technical/image-processing-pipeline.md) with [Architecture](technical/architecture.md) and the current [Export and Proof module PRD](product/modules/export-and-proof.md) for rendering routes and delivery safeguards. Browser, operating-system, and display behavior can change; dated platform guidance links to first-party sources.
 
 ## Choose a path
 

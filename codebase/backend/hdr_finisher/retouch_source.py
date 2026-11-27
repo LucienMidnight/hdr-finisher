@@ -52,6 +52,14 @@ def build_repaired_source(session, records, checkpoint=lambda: None, *, dirty_re
     for record in records:
         if record.recipe.source_size != (base.shape[1], base.shape[0]):
             raise ValueError("Repair source dimensions changed; remove or redraw this repair")
+    if dirty_rects is None:
+        dirty = [(0, 0, base.shape[1], base.shape[0])]
+    else:
+        dirty = dirty_rects
+    if not dirty:
+        checkpoint()
+        return session.image
+
     # Use the established host reserve. Fail before allocating another native
     # owner; originals, last valid pixels and the document remain untouched.
     from .resource_preflight import detect_memory_resources, GIB
@@ -60,13 +68,6 @@ def build_repaired_source(session, records, checkpoint=lambda: None, *, dirty_re
         safe = max(0, resources.available_ram_bytes - max(2 * GIB, int(resources.total_ram_bytes * .15)))
         if base.nbytes + REPAIR_PUBLICATION_SCRATCH_BYTES > safe:
             raise ValueError("Not enough memory to publish this repair; free memory and try again")
-    if dirty_rects is None:
-        dirty = [(0, 0, base.shape[1], base.shape[0])]
-    else:
-        dirty = dirty_rects
-    if not dirty:
-        checkpoint()
-        return session.image
 
     def intersects(a, b):
         return a[0] < b[2] and a[2] > b[0] and a[1] < b[3] and a[3] > b[1]

@@ -175,6 +175,7 @@ def test_real_pending_grade_history_and_copies_travel(tmp_path):
     marks.undo();assert photo.exists() and copies.items(str(photo))[0]['name']=='Alternative'
 
 
+@pytest.mark.windows_only
 def test_cross_drive_extra_streams_are_left_whole(setup):
     import os
     if os.name!='nt': pytest.skip('Windows named streams')
@@ -186,6 +187,7 @@ def test_cross_drive_extra_streams_are_left_whole(setup):
     assert photo.exists() and stream.read_bytes()==b'additional original data'
 
 
+@pytest.mark.windows_only
 def test_settings_with_extra_streams_are_not_rewritten(setup):
     import os
     if os.name!='nt': pytest.skip('Windows named streams')

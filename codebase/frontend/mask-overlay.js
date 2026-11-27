@@ -1228,7 +1228,7 @@ function drawPathNode(context, node, index, x, y, selected, hovered, closeTarget
   withScreenSpaceCanvas(context, centerX, centerY, (screenX, screenY) => {
     context.lineWidth = selected ? 2.5 : 2;
     context.strokeStyle = closeTarget ? uiToken("--ready") : selected ? uiToken("--curve-selected-ring") : uiToken("--accent");
-    context.fillStyle = selected ? uiToken("--curve-selected") : uiToken("--raised");
+    context.fillStyle = selected ? uiToken("--graph-selected") : uiToken("--raised");
     context.shadowColor = "rgba(0, 0, 0, .95)";
     context.shadowBlur = 3;
     context.beginPath();
@@ -1272,7 +1272,7 @@ function drawSelectedPathHandles(context, node, nodeIndex, x, y) {
       if (state.hoveredPathTarget?.type === "handle" && state.hoveredPathTarget.index === nodeIndex && state.hoveredPathTarget.handle === handle) {
         context.beginPath();
         context.arc(screenX, screenY, 10, 0, Math.PI * 2);
-        context.strokeStyle = uiToken("--curve-selected");
+        context.strokeStyle = uiToken("--graph-selected");
         context.lineWidth = 2;
         context.stroke();
       }

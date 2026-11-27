@@ -84,8 +84,7 @@ def test_webgpu_pipeline_preserves_cpu_section_order_and_lane_specific_exposure_
     assert "if (value <= 0.18) { return 0.5 * pow(value / 0.18, 1.0 / log(100.0)); }" in shader
     assert "if (value <= 0.5) { return 0.18 * pow(2.0 * value, log(100.0)); }" in shader
     assert "log2(value / 0.18) / log2(100.0)" in shader
-    assert "let mappedLuma = select(mappedCurveLuma, curveDecodeChannel(mappedCurveLuma), hdr)" in shader
-    assert "rgb = curveEncode(rgb, hdr)" in shader
+    # Shared Curves are covered by actual CPU and WGSL pixels in local-grade-reference.js.
     assert "let targetLevel = max(p[73], start + 0.0018)" in shader
     assert "let softness = clamp(p[3] / 100.0, 0.0, 1.0)" in shader
     assert 'branch.highlight_compression_mode === "peak_fit" ? 1' in shader
@@ -268,7 +267,6 @@ def test_electron_preview_correctness_contract() -> None:
     assert "const activeBackend = backend;" in main
     assert 'activeBackend.authoringSecret' in main
     assert 'details.requestHeaders["X-HDR-Finisher-Token"] = backend.authoringSecret' not in main
-    assert 'setRenderingMode: (mode)' in preload
     assert 'writeClipboardText: (value)' in preload
     assert 'resolveDroppedFile: async (file)' in preload
     assert 'webUtils.getPathForFile(file)' in preload

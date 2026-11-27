@@ -1,0 +1,68 @@
+/* Classic Chromium scrollbar parts keep native dragging, tracking and arrows.
+   The lane occupies space only when the scroll container actually overflows. */
+::-webkit-scrollbar {
+  width: var(--scrollbar-w);
+  height: var(--scrollbar-w);
+  background: var(--panel);
+}
+
+::-webkit-scrollbar:vertical {
+  background-image: linear-gradient(var(--hairline), var(--hairline));
+  background-size: var(--space-1) 100%;
+  background-repeat: no-repeat;
+}
+
+::-webkit-scrollbar:horizontal {
+  background-image: linear-gradient(var(--hairline), var(--hairline));
+  background-size: 100% var(--space-1);
+  background-repeat: no-repeat;
+}
+
+::-webkit-scrollbar-thumb {
+  min-width: var(--scrollbar-w);
+  min-height: var(--scrollbar-w);
+  border: var(--space-3) solid transparent;
+  border-radius: var(--radius-pill);
+  background: var(--border) padding-box;
+}
+
+::-webkit-scrollbar-button:single-button {
+  display: block;
+  width: var(--scrollbar-w);
+  height: var(--scrollbar-w);
+  background-position: center;
+  background-repeat: no-repeat;
+}
+
+/* Filled triangles like the Library's native arrows. Keep the lane line
+   visible underneath each transparent button and along the thumb. */
+::-webkit-scrollbar-button:vertical:single-button {
+  background-size: calc(var(--scrollbar-w) - 2 * var(--space-3)) var(--space-6);
+}
+::-webkit-scrollbar-button:vertical:single-button:decrement {
+  background-image: conic-gradient(from 143deg at 50% 0%, var(--border) 74deg, transparent 0);
+}
+::-webkit-scrollbar-button:vertical:single-button:increment {
+  background-image: conic-gradient(from -37deg at 50% 100%, var(--border) 74deg, transparent 0);
+}
+::-webkit-scrollbar-button:horizontal:single-button {
+  background-size: var(--space-6) calc(var(--scrollbar-w) - 2 * var(--space-3));
+}
+::-webkit-scrollbar-button:horizontal:single-button:decrement {
+  background-image: conic-gradient(from 53deg at 0% 50%, var(--border) 74deg, transparent 0);
+}
+::-webkit-scrollbar-button:horizontal:single-button:increment {
+  background-image: conic-gradient(from 233deg at 100% 50%, var(--border) 74deg, transparent 0);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background-color: var(--quiet);
+}
+
+::-webkit-scrollbar-button:single-button:hover {
+  background-color: var(--hairline);
+}
+
+::-webkit-scrollbar-corner {
+  background: var(--panel);
+}

@@ -1,3 +1,230 @@
+## November 27: Brighter SDR Match target (PC)
+
+Match click to exact SDR presentation, or to refusal, in disposable Electron at
+2560 x 1440 under the shared GPU lock. Prior target at `400eb1e4`; brighter
+target at `4b6d2a2a`. One timed attempt per saved grade and target, excluding
+project open. Nine photo copies, including the current _DSC7970.ARW grade.
+
+| Action | Prior target | Brighter target | Conditions |
+| --- | ---: | ---: | --- |
+| Match SDR, click to settled picture | 4.92-10.69 s GPU (8 photos), 27.51 s CPU (one candidate timeout) | 4.56-7.12 s GPU (6 photos) | All successful GPU fits were certified on CPU. |
+| Match SDR, click to refusal | None | 37.24-47.47 s (3 photos) | GPU attempt followed by CPU fallback; the unchanged safety gates refused both fits. |
+
+The new target does not meet the nine-photo qualification. The flower
+(DSC09738), beach (PC290598) and reported _DSC7970 photo were refused, and
+some successful fits exceeded the body colour-error limit. The paired
+pictures, brightness, colour errors and settings replace the earlier local
+review at `codebase/output/review/sdr-match-tone-fit/index.html`.
+
+## November 27: Windows shared-curves qualification
+
+Single diagnostic runs on Steve's PC with disposable Electron at 2560×1440
+under the shared GPU lock. Tested code at `aab6d698`. These are test-case
+timings and not an app-wide latency comparison.
+
+| Action | Time | Conditions |
+| --- | ---: | --- |
+| Whole Match request with copied HDR Red curve | 2.86 s | Synthetic HDR headroom fixture, 170 GPU candidates and CPU certification. The run completed as Needs review at the existing gates. |
+| Export request with active HDR Luma and Red curves | 35.59 s GPU / 40.79 s forced CPU | Saved DSC04375 grade, JPEG Ultra HDR at 4,000 pixels, 1,000-nit target. Export, full-size Proof and decoded verification together took 66.22 / 87.05 s. Both decoded at 999.09 nits, and each Proof was byte-identical to its route's export. |
+| Mixed Library viewport after picture-cache version bump | 90 s smoke | All 30 eligible viewport photos pictured. First, tenth and twentieth pictures at 1.1, 1.6 and 22.0 s, on the frozen v1 fixture. No release speed comparison. |
+
+## November 27: HSL live selection check (PC)
+
+On Windows PC at 2560x1440, a fresh Electron profile with the GPU lock and a
+disposable saved grade of _DSC7970.ARW (Clean Grain and Film Look) showed a
+changed selection overlay about 0.93 s after the start of a six-step wheel
+drag, before pointer-up. The detailed overlay replaced it on release.
+One real-app behaviour check on the Compare/HSL fix checkout, with the fast
+Python suite also running. This is not a warm frame-rate benchmark or a new
+performance tolerance.
+
+## November 27 ? Windows SDR Match picture fit
+
+Compare button click to the exact SDR presentation (or refusal), with the
+saved grade already open, in disposable Electron at 2560?1440 under the shared
+GPU lock. Baseline `ff49cb97`, picture fit `2d1251ef`. Use the existing 10%
+Grade timing tolerance,
+since it leaves room for ordinary PC run-to-run variation. The reference photos
+are the eight PC-only copies named in the [brief](briefs/sdr-match-tone-fit-2026-11-27.md).
+
+| Action | Before | Picture fit | Conditions |
+| --- | ---: | ---: | --- |
+| Match SDR, click to settled picture | 6.70?34.17 s for seven successful matches; flower refused at 55.72 s | 4.60?6.90 s, all eight committed | One timed trial per saved grade and version, PC WebGPU, source already open. All eight new fits used GPU candidates and CPU certification. |
+
+The seven previously successful photos were all faster. The median for those
+same seven photos fell from 18.56 s to 5.73 s. The flower and black-and-white
+photo now both report matched at the unchanged gates. Per-photo timings,
+settings, perceptual measurements and images are in the local review at
+`codebase/output/review/sdr-match-tone-fit/index.html`.
+
+
+## November 27: release-driver speed work blocked on PC
+
+HSL delivery now has a `--all` mode: one neutral case, the global edit, then
+reset global HSL and test the local hue mask alone. Release registration uses
+`args: ["--all"]` without the old `--local` follow-up. All original
+full-resolution renderer, HDR ceiling, Proof-byte and added-difference gates
+remain. This removes one duplicate neutral GPU/CPU export+Proof pair and one
+app launch; no measured speed claim is available yet.
+
+| Attempt | PC observation | Conditions |
+| --- | --- | --- |
+| HSL standalone global baseline | 25.70 s, failed before driver start | Electron target closed during initial page load. |
+| HSL standalone local baseline / startup retry | 186.71 s, failed before driver start | 180 s startup timeout; no launch process handle. |
+| RAW Single baseline | 44.83 s, failed before reference comparison | First RAW GPU development rejected an invalid finite-half-float sample (1.31e21), consistent with this PC's known faulty VRAM. No profile was produced. Driver unchanged. |
+
+Windows PC, 2560x1440, shared GPU run lock; direct release-equivalent Electron
+launchers, per Agent01's instruction because other workers were editing the
+shared checkout. Baseline HSL invocations retained their original standalone
+behavior while `362673ec` added combined mode. Whole launcher times exclude
+lock queueing. Evidence: `codebase/output/test-driver-speed/before.json` and
+adjacent `*-before.log`. No valid before/after comparison, after GPU run or
+next-driver work; stop after the startup retry. Four behavioral HSL driver
+tests pass at `8f658a27`, including local gate failure and standalone modes.
+Further real-app validation is required before treating combined mode as
+qualified. Output remains 36.7 GB (100 GB limit).
+
+## November 27: Neutral extreme scanner saturation qualification (PC)
+
+| Action | Result | Conditions |
+| --- | --- | --- |
+| Film parity release driver with exposure and UI follow-ups | 408.736 s; STOPPED on final UI Electron startup/shutdown verification. Main matrix and 72 exposures passed; not a complete-driver speed comparison. | Windows PC / NVIDIA Lovelace / 2560x1440, exclusive GPU wrapper, d487a8a9. Startup timeout also reproduced without concurrent Python tests. Evidence: codebase/output/release-checks/2026-11-27T05-44-22-681Z-43634390507ec9a031f1/. Prior attempt: EPERM replacing progress file, then startup timeout. |
+| Required Node/Python checks | Node 66.881 s (1,549 passed / 1 skipped); Python 914.41 s (5,245 passed / 56 skipped, including 48 serial checks). | Same Windows PC, d487a8a9 change set. Python wrapper was redirected through PowerShell, which reports native stderr as an error despite both pytest phases passing; no assertions failed. Logs: codebase/output/film-neutral-{node,python}.log. No app-speed claim. |
+
+## November 27: Film stock parity driver transport (PC)
+
+| Action | Observation | Conditions |
+| --- | --- | --- |
+| Complete Film stock parity release driver, including exposure and UI follow-ups | 212.596 s, completed; 1 known failure, 0 new, 0 unfinished. Earlier d7da33c1 attempt hit its 900 s deadline during exposure; retry/cap left the 1804.206 s selection unfinished. | Windows PC / NVIDIA Lovelace / 2560x1440 machine window, exclusive shared GPU lock, 8ba7be54. The driver's byte comparison remains 1200x800. Exact in-renderer histogram replaces millions of CDP values and sorted copies; no app speed claim or deadline change. Different completion states prevent a full-run speed ratio. Evidence: codebase/output/release-checks/2026-11-27T05-13-07-686Z-90e04d6b10d96bf309ff/. |
+
+## November 27: CPU Library progress and native band sampling (PC)
+
+| Action | Before | After | Conditions |
+| --- | --- | --- | --- |
+| 50 MP DSC00636.ARW CPU scene preparation, 640 with shared 2560 companion | 56.4 s | 26.1 s (54% less wait) | Windows PC, 12 logical CPUs / 64 GB, curated read-only RAW, fresh disposable Library cache, cProfile, shared GPU lock; open user app retained. Baseline d5a76c0c versus this change. Intermediate native horizontal reduction alone: 51.3 s, including 31.6 s in NumPy planar lens sampling; native sampling removes that bottleneck. No full-resolution, lens, highlight, cleanup or measurement work skipped. Single samples establish the large gain, not a narrow timing guarantee. |
+| Frozen mixed Library viewport | 26/30 at 90 s; helper restarted three times, then stopped | 30/30; all viewport photos pictured by 79.1 s, zero helper restarts | Same PC/2560x1440/frozen v1/plain Electron/shared GPU lock, faulty VRAM exercising four real CPU recoveries, user app retained. Own suites finished before final run. First/ten/twenty pictures 0.9/1.4/22.2 s. Final `codebase/output/quick-library-check/cpu-library-partition/report.json`, base 6c734ec0 plus this change. Earlier timeout/native-sampling-only run reached 28/30: queued recovery memory reservations serialized behind one worker; sharing the existing CPU foreground partition cleared them. |
+| Library drawing / whole-app peak | Longest reported frame gap 91 ms, main-thread block 106 ms; peak 5.688 GB | No recorded long frame gaps, longest main-thread block 55 ms, peak 5.804 GB (+2.0%) | Same final run and transport-recovery-final baseline. Existing drawing and memory guards pass without relaxed limits; this is faulty-card fallback qualification, not a healthy-GPU performance benchmark. Memory peak includes concurrently active admitted CPU recovery jobs. |
+
+
+## November 27: GPU transport recovery investigation (PC)
+
+| Action | Observation | Conditions |
+| --- | --- | --- |
+| Mixed Library viewport, original rejection reproduced | 28/30 in 90 s; same DSC00264.ARW / DSC01226.ARW transport errors as Film qualification. First/ten/twenty: 1.0/1.5/21.2 s. | Windows PC, 2560x1440, frozen v1 verified by hash, shared GPU lock, plain Electron, 8a488025 before this fix. `codebase/output/quick-library-check/transport-investigation/report.json`. |
+| Mixed Library viewport, early validation + fair CPU recovery | Still incomplete: 26/30 in 90 s; first/ten/twenty 0.9/1.6/21.5 s; peak 5.67 GB. Existing memory/drawing limits pass. Four corrupt RAW developments reach CPU recovery, then hit the existing decoder deadline and exhaust helper restarts. | Same PC/fixture/lock; own CPU suites finished before launch; commit containing this note. No tolerance or deadline changed. `codebase/output/quick-library-check/transport-recovery-final/report.json` and `backend.log`. Not a speed qualification or a successful Library smoke. |
+| RAW decoder before/after TIFF correctness diagnostic | Both full 42 MP RGB arrays byte-identical, finite; DSC00264 peak 1.6372, DSC01226 peak 2.8520. Individual CPU decode events 11.6-17.1 s, not a performance comparison. | Loader from d7443be9 parent versus current loader, identical current dependencies/default RAW settings; reused read-only v1 run photos. Early GPU check/CPU tests overlapped part of this correctness diagnostic. |
+| Full Python correctness run | Parallel: 5190 passed, 56 skipped in 860.51 s; serial: 46 passed in 62.76 s; runner wall 933.07 s. | Current PC, four bounded workers; early RAW correctness diagnostic/app run overlapped first part. Do not compare speed against the isolated baseline below. Two added scheduler tests passed separately with the 61-case focused scheduler suite. `codebase/output/transport-investigation-python.log`. |
+
+## November 27: Film Look qualification Library smoke (PC)
+
+| Action | Observation | Date / commit | Conditions |
+| --- | --- | --- | --- |
+| Mixed Library viewport, Film Look qualification | Incomplete: 28/30 expected viewport photos in 90 s. First/ten/twenty pictures 1.2/1.7/24.0 s; longest picture gap 16.7 s. No speed comparison or improvement claim. | 2026-11-27, commit containing this note | Windows PC, 2560x1440, plain Electron, shared GPU lock, frozen library-mixed-v1. Full Python run completed before launch. DSC00264.ARW and DSC01226.ARW rejected by GPU RAW finite-half-float transport; no Film-stage error. Memory limits pass, external app peak 2.739 GB. Evidence: `codebase/output/quick-library-check/film-library-final/report.json`. |
+
+## November 26-27: bounded parallel Python tests (PC)
+
+| Action | Serial baseline | Parallel runner | Conditions |
+| --- | --- | --- | --- |
+| Full Python suite, 5,088 collected cases | 949.56 s (15m 50s) | 604.66 / 588.89 s (10m 05s / 9m 49s), 36-38% less wall time | Windows PC, nominal 64 GB RAM, 12 logical CPUs; CPU-only. Four xdist workers followed by 45 serial process/deadline cases. Each full run: 5,032 passed / 56 skipped. `194d01c9` + this tooling change; baseline after token-contract repairs. Whole runner time includes both phases, collection and startup. Original pixel/data fixtures and all deadlines/tolerances retained; no cases removed. [Logs and counters](../../codebase/output/test-speed-2026-11-27/results.json). |
+
+## November 26: HSL resource-retirement correctness diagnostic (PC)
+
+| Action | Observed | Conditions |
+| --- | --- | --- |
+| Shared HSL oracle range edit / edge edit | 3.7 / 3.6 ms | Windows PC, 2560x1440, isolated Electron profile, exclusive GPU lock; `dd9b8269` + `57439f70`. Single correctness run, not a user-action timing or before/after speed comparison. Existing driver timing guard unchanged. All 35 CPU/GPU cases and zero-seam/reuse checks pass after immediate post-submit buffer retirement. Evidence: `codebase/output/hsl-selection-engine/result.json`. |
+
+## November 26 - Batch progress result lookup
+
+| Action | Before | After | Conditions |
+| --- | --- | --- | --- |
+| Batch grid progress refresh JavaScript (DOM stand-ins, not compositor time) | 63.45-72.42 ms; median 66.90 ms | 4.11-8.84 ms; median 5.60 ms | Windows PC, Node 24, actual `renderGrid` extracted into the `batch-grid.test.js` harness; 2,000 photos / 4,000 results, rows retained, one warm-up per arm and nine alternating pairs. Before: `a5e46ad3`; after: same base with one result-grouping pass per refresh. 5% noise allowance. Badge precedence, active progress, selected state and row identity unchanged. No claim about end-to-end screen time. |
+
+Local evidence links under `codebase/output/` refer to ignored measurement
+artifacts. They may be absent on another device or after scratch cleanup;
+the dated results below remain the record, not a promise those files ship.
+
+## November 26 - Library/shell review visibility-limited check
+
+| Action | Result | Conditions and evidence |
+| --- | --- | --- |
+| Plain-app Library viewport check | Invalid: renderer hidden/occluded, incomplete viewport coverage; timer probe 1161 ms against 250 ms limit. No qualified screen timing or before/after claim. | Windows PC, 2560x1440, shared GPU lock, 90-second default scenario, `f52c06cb` shared checkout including Library cancellation/refresh fixes and desktop close-save fix. Steve's app stayed open. `codebase/output/quick-library-check/library-shell-review/report.json`. Repeat only with the test window visible. |
+
+## November 26 - FIFO GPU-lock fixture timing
+
+The shared wrapper now admits new waiters in registration order. Disposable
+subprocess/temporary-lock tests use 50 ms polling; production retains its
+5-second wait interval. All 9 applicable tooling tests pass (2 platform skips).
+With the same new FIFO coverage, reducing test-only polling took the group
+from 27.23 s to 16.60 s and the three-waiter FIFO case from 17.40 s to 6.38 s.
+Concurrent load varied (setup 1.57 s versus 5.87 s); these are observations,
+not an app/GPU performance claim. Evidence: `codebase/output/test-infra-fifo-tests.txt`
+and `codebase/output/test-infra-fifo-tests-after.txt`. No real GPU was used.
+
+## November 26 - Python review timing and profile cleanup
+
+One serial full run with `--durations=50` during concurrent edits: 1,391.36 s,
+4,934 passed / 30 failed / 56 skipped. The lead reviewer's clean pre-review
+baseline was 1,203 s, 4,962 passed / 56 skipped; this run is not an after-speed
+comparison. Failures were in memory polling (1), HSL paste (1), Library paste
+(22) and RAW cleanup state (6), forwarded to their reviewers.
+The slowest calls were real batch/two-version encoding (37.54 s), the 5,000-file
+cache accounting test (28.28 s), full-size Proof identity AVIF/JPEG/JXL
+(23.79/22.79/14.31 s), and the 10,000-failure Library flood test (16.21 s).
+Those input sizes and all real codec cases remain: reducing them would remove
+the behavior or scale being tested. Capability discovery is already cached.
+The lock-fixture polling improvement is measured separately above; the final
+full-suite time remains for the lead reviewer after all concurrent work ends.
+Evidence: `codebase/output/test-infra-durations-baseline.txt`.
+
+That full run also exposed a Windows teardown error: a process-cached SQLite
+ledger held the disposable profile open. Pytest now closes handles belonging
+only to its own temporary profile before deleting it. A child-pytest regression
+checks successful exit and actual directory removal (passed in the focused
+run; `codebase/output/test-infra-profile-cleanup.txt`). Production is unchanged.
+
+## November 26 - Test infrastructure (PC review)
+
+Test-only changes on `integrate/pc-tests-review-2026-11-26`; app behavior and
+GPU waits are unchanged. Single observations during concurrent review, with
+5% treated as timing noise rather than a regression. From `codebase`,
+`npm run test:release -- --plan` took 19.81 s before and 5.81 s after lazy
+photo-path/project lookup and avoiding irrelevant history-log reads. The
+selection grew from 123 to 124 drivers during other reviewers' work, so this
+is not a controlled benchmark. The command launches no drivers.
+The targeted runner checks took 68.47 s before (28 passing) and 41.56 s after
+(30 passing, including the photo-path checks); process/Git tests dominate.
+Evidence: `codebase/output/test-infra-release-plan-{before,after}.txt`,
+`test-infra-runner-targeted.txt` and `test-infra-runner-after.txt` in the
+same output directory. Python full-suite after-time is deferred until all
+reviewers finish; no full-suite speedup is claimed here.
+
+## November 26 - Native large export, GPU versus CPU on Windows
+
+Windows 11 PC, Ryzen 5 7600 / RTX 4070 Ti, unpackaged Electron at 2560×1440,
+`76f1cf12`, 8 GB diagnostic ceiling, one native HDR JPEG XL Q95/12-bit
+Library export per arm. No Grade photo held. Time is batch start to finish,
+including RAW development, encode, validation and finished-pixel capture.
+Peak is sampled private commit for the test app tree, not dedicated VRAM.
+
+| Source | CPU wait / peak | GPU wait / peak | Finished HDR agreement |
+| --- | --- | --- | --- |
+| DSC00636.ARW, 50.09 MP, default grade | 155.7 s / 5.857 GB | 177.3 s / 8.174 GB | Fail. Extreme finite samples in the GPU render made ΔE ITP non-finite. |
+| DSC04375.ARW, 42.39 MP, saved grade | 157.4 s / 5.740 GB | 131.5 s / 7.536 GB | Pass. ΔE ITP mean 0.02246 / P99.9 0.06071. |
+
+Single observations, not speed baselines. JXL encoding was 103–118 s per
+arm. The initial 6 GB DSC00636 Ultra HDR JPEG probe selected bounded CPU
+and stopped at the codec's 8192-pixel width limit (65.4 s, 3.921 GB).
+[Settings, method and caveats](research/large-export-cpu-default.md).
+
+## November 26 - PC repeated-delivery follow-up
+
+Windows PC, 2560x1440, commit fef365cb (fix/overnight-report-followups), Steve's Electron
+app still open on the shared GPU. gpu-delivery-repeat's post-change rounds took
+80.2 s then 43.0 s, each including export, full-size Proof and two read-only
+ceiling decodes. These are test-round times, not export-only speed measurements
+or a before/after performance comparison. Both stayed on GPU and matched exactly.
+Evidence: codebase/output/gpu-delivery-repeat/result.json.
+
 ## November 16: controlled draft-grain comparison and interactive stage costs
 
 **The earlier slowdown is not reproduced consistently; its cause remains
@@ -8143,3 +8370,18 @@ are verification runs, not a speed comparison.
 
 All four runs pass the existing HDR and SDR renderer agreement, encoded HDR
 ceiling and byte-identical full-size Proof checks.
+
+
+## November 26: CPU HSL obsolete protection-plane cleanup (PC)
+
+The old bright-spot protection plane was uniformly one. Removing it preserves
+selection pixels exactly (nine signed/HDR, scale and edge-control comparisons)
+and avoids one retained float32 plane. At 2048 x 1536, prepared-selection arrays
+fall from 26,738,688 to 14,155,776 bytes: 12 MiB saved.
+
+CPU `prepare` plus `select`, including all preparation and mask processing,
+measured median 451.31 ms before and 469.40 ms after over five paired samples
+(one warmup omitted, same deterministic 3 MP RGB array). The 4.0% change is
+inside the existing 5% comparison band; no speedup or whole-app latency claim.
+Other reviewers and Steve's app were running on the PC. This is an allocation
+cleanup and CPU diagnostic, not a new timing baseline or GPU qualification.

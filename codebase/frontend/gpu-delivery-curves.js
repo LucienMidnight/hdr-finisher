@@ -1,3 +1,4 @@
+// Shared curve sampling for Grade, Library and GPU delivery.
 window.clamp = (v,a,b) => Math.max(a,Math.min(b,v));
 function sampleCurvePoints(points, samples, forcedX = null) {
   const sampleX = forcedX === null

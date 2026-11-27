@@ -97,3 +97,48 @@ test("Display guidance maps reported physical nits, not headroom against an assu
   assert.equal(model.displayPeak({ nominal_headroom: 2 }), 0);
   assert.equal(model.displayPeak(null), 0);
 });
+
+
+test("Tone preview replaces its diagnostic engine after the renderer device changes", () => {
+  const listeners = new Map();
+  let nextFrame;
+  const engines = [];
+  class Element {
+    constructor() { this.dataset = {}; this.classList = { add() {}, remove() {}, contains: () => true }; }
+    matches() { return true; }
+    closest() { return null; }
+    getClientRects() { return [{}]; }
+    setAttribute() {}
+    append() {}
+  }
+  const input = new Element();
+  input.dataset.path = "hdr.blacks";
+  input.isConnected = true;
+  const renderer = { available: true, device: {} };
+  const window = { HDRShortcuts: { isMac: () => false }, HDRTonePreviewModel: { control: () => ({ lane: "hdr", zone: "blacks", dimension: "amount" }),
+    influence: () => ({ limiter: 1, weight: 1 }) },
+    HDRTonePreviewGpu: class {
+      constructor(gpu) { this.device = gpu.device; this.ready = Promise.resolve(); engines.push(this); }
+      destroy() { this.destroyed = true; }
+    }, addEventListener() {} };
+  const context = vm.createContext({ window, Element,
+    state: { activeWorkflow: "grade", currentView: "hdr", session: { session_id: "photo" }, adjustments: { hdr: {} } },
+    document: { querySelectorAll: () => [], getElementById: () => null, createElement: () => new Element(),
+      addEventListener: (name, handler) => listeners.set(name, handler) },
+    els: { previewPrimaryPane: new Element() }, MutationObserver: class { observe() {} },
+    geometryDraftActive: () => false, denoiseNoiseViewActive: () => false, geometrySignature: () => "{}",
+    projectReferenceWhiteNits: () => 203, uiToken: () => "ink", drawHistogram() {},
+    requestAnimationFrame: callback => { nextFrame = callback; return 1; } });
+  context.state.gpuPreview = renderer;
+  vm.runInContext(fs.readFileSync(path.join(__dirname, "../frontend/tone-preview-ui.js"), "utf8"), context);
+  listeners.get("pointerover")({ target: input });
+  nextFrame();
+  assert.equal(engines.length, 1);
+  const oldDevice = renderer.device;
+  renderer.device = {};
+  nextFrame();
+  assert.equal(engines.length, 2);
+  assert.equal(engines[0].destroyed, true);
+  assert.equal(engines[0].device, oldDevice);
+  assert.equal(engines[1].device, renderer.device);
+});

@@ -46,7 +46,7 @@ from .models import (
 )
 from .render_cache import SessionRenderCache, SourceMipIdentity, default_source_mip_store
 from .source_luminance import describe_source_luminance
-from .sdr_match import MATCH_ANALYSIS_EDGE, SDRMatchMaterializationError, materialize_sdr_match
+from .sdr_match import MATCH_ANALYSIS_EDGE, MatchSection, SDRMatchMaterializationError, materialize_sdr_match
 from .sdr_match_remote import RemoteCandidateBridge
 
 
@@ -740,6 +740,7 @@ class SessionStore:
         authored_sdr_override_consent: bool = False,
         timing: dict[str, object] | None = None,
         candidate_bridge: RemoteCandidateBridge | None = None,
+        section: MatchSection = "whole",
     ) -> EditStateResponse:
         """Fit the SDR grade to the HDR grade and write it as ordinary SDR settings.
 
@@ -755,41 +756,35 @@ class SessionStore:
             reference_white = session.hdr_reference_white_nits
             has_authored_sdr = session.sdr_reference_image is not None
 
-        if has_authored_sdr and not authored_sdr_override_consent:
+        if section == "whole" and has_authored_sdr and not authored_sdr_override_consent:
             raise EditCommandError("Replacing the authored SDR rendition requires explicit consent.")
 
         source_started = perf_counter()
-        source, _ = session.render_cache.source_pair(MATCH_ANALYSIS_EDGE)
+        source, reference = session.render_cache.source_pair(MATCH_ANALYSIS_EDGE)
         if timing is not None:
             timing["source_proxy_ms"] = round((perf_counter() - source_started) * 1000.0, 3)
-        linked_source = None
-        linked_refusal_reason = None
-        if current_denoise.hdr.enabled:
-            from .denoise_adaptive import AdaptiveControls, estimate_adaptive_model, resolve_adaptive
-            try:
-                linked_source = resolve_adaptive(source, estimate_adaptive_model(source),
-                    AdaptiveControls(**current_denoise.hdr.controls.model_dump()))
-            except (ValueError, IndexError):
-                # Some tiny/flat sources cannot support a noise measurement.
-                # Refuse this proposal and keep the incumbent independent fit.
-                linked_refusal_reason = "the shared Denoise source could not be prepared"
         try:
             materialized = materialize_sdr_match(
                 source,
-                current_adjustments.model_copy(deep=True),
-                [item.model_copy(deep=True) for item in current_locals],
+                current_adjustments,
+                current_locals,
                 reference_white_nits=reference_white,
-                source_pixel_scale=min(1.0, 768 / max(session.image.shape[:2])),
+                source_pixel_scale=min(1.0, MATCH_ANALYSIS_EDGE / max(session.image.shape[:2])),
                 timing=timing,
                 candidate_bridge=candidate_bridge,
-                linked_source=linked_source,
-                linked_refusal_reason=linked_refusal_reason,
+                section=section,
+                sdr_reference=reference if section != "whole" else None,
             )
         except SDRMatchMaterializationError as exc:
             raise EditCommandError(str(exc)) from exc
 
-        target_adjustments = current_adjustments.model_copy(deep=True)
-        target_adjustments.sdr = materialized.adjustments.sdr.model_copy(deep=True)
+        target_adjustments = materialized.adjustments
+        if section != "whole":
+            return self.apply_edit_commands(session_id, [EditCommand(
+                expected_revision=expected_revision,
+                command_type="set_global_adjustments",
+                payload={"adjustments": target_adjustments.model_dump(mode="json")},
+            )])
         translated_by_id = {item.id: item.sdr_grade for item in materialized.local_adjustments}
         target_locals = [
             item.model_copy(

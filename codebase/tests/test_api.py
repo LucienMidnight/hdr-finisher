@@ -1879,12 +1879,14 @@ def test_tiff_manual_interpretation_clears_gate_and_auto_restores_it(linear) -> 
                       dtype=np.float32 if linear else np.uint8)
     tifffile.imwrite(buffer, samples, photometric="rgb", metadata=None, extratags=extra_tags)
     expected_class = "HDR_LINEAR_UNCONFIRMED" if linear else "SDR_ONLY"
+    # A float TIFF profile name no longer establishes a transfer function.
+    automatic_class = "SDR_ONLY"
     upload = client.post("/api/session", files={"file": ("low-headroom.tiff", buffer.getvalue(), "image/tiff")})
     assert upload.status_code == 200
     initial = upload.json()["session"]
     session_id = initial["session_id"]
     try:
-        assert initial["analysis"]["classification"] == expected_class
+        assert initial["analysis"]["classification"] == automatic_class
         assert initial["analysis"]["peak_linear"] <= 1.0
         assert initial["analysis"]["needs_color_override"] is True
         transfer = "LINEAR" if linear else "sRGB"
@@ -1906,7 +1908,7 @@ def test_tiff_manual_interpretation_clears_gate_and_auto_restores_it(linear) -> 
         assert automatic.status_code == 200
         restored = automatic.json()["session"]
         assert restored["source"]["interpretation_mode"] == "auto"
-        assert restored["analysis"]["classification"] == expected_class
+        assert restored["analysis"]["classification"] == automatic_class
         assert restored["analysis"]["needs_color_override"] is True
     finally:
         store.clear()

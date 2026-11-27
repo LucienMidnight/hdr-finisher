@@ -12,8 +12,8 @@
    * logged and replayed.
    *
    * This module is geometry and contract only. It performs no GPU work and
-   * holds no resources; the coordinator and the offscreen presentation target
-   * that consume it land with the rest of Phase 2.
+   * holds no resources; render-coordinator.js and webgpu-preview.js consume
+   * the requests to schedule and atomically present the completed region.
    */
 
   const DEFAULT_MINIMUM_ROI_FRACTION = 0.15;
