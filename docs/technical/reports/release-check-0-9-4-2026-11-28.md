@@ -1,26 +1,31 @@
 # Local v0.9.4 release check — November 28, 2026
 
-**NOT READY — needs Steve’s approval to run the full 125-driver release check.**
+**NOT READY — focused run failures are being classified and rechecked.**
 
-The focused plan selected 125 drivers and estimates 109.1 minutes against the approved 75-minute
-cap. That includes 33.9 minutes for possible retries and excludes three drivers
-with no timing history: `vignette-midpoint.js`, `grain-large-photo-parity.js`
-and `scope-readout-layout.js`. The plan stopped before launch. No drivers
-were removed and no limit was changed. A longer approved window is needed to
-run the focused selection, including the export and Proof checks.
+The approved run attempted all 125 focused drivers at `c97690cc` in 65.8
+minutes on the MacBook Neo (A18 Pro, 8 GB, 1408×794). It recorded **109
+passed, 1 flaky, 12 new failures and 3 timeouts**. The prior plan-only blocker
+is superseded. The current branch started at `2688a3a4`, 10 commits ahead of
+`origin/main` and not behind. The package and latest remote tag were both
+0.9.3. The release run and its timing history are separate from installer
+build verification.
 
-MacBook Neo (A18 Pro, 8 GB), 1408×794 planned window. Started from clean
-`main` at `e314814b`, matching `origin/main`. The latest release tag and local
-package version were both v0.9.3. The final fast checks used `f161fd07`.
-The read-only plan produced the same selection and estimate at `8e32e68d`.
+- Original evidence: `codebase/output/release-checks/2026-11-27T18-17-37-541Z-5bfef6e72a6695b41926/`
+- Individual rerun logs: `codebase/output/release-checks/v0.9.4-local/`
+- Scratch at start: 19.8 GB against the 100 GB limit.
 
-| Check | Passed | Failed | Other | Runtime |
-| --- | ---: | ---: | --- | ---: |
-| Node, initial and final (each) | 1,572 | 0 | 1 skipped | 31.6 s / 33.2 s |
-| Python, initial | 5,187 | 1 | 126 skipped, 1 unexpected pass | 6 min 1 s |
-| Python, frontend contracts after fix | 83 | 0 | — | 1.4 s |
-| Python, final | 5,188 | 0 | 126 skipped, 1 unexpected pass | 5 min 47 s |
-| Focused release drivers | 0 | 0 | 0 flaky, 125 not run | 0 min |
+## Driver outcomes
+
+Classes are (a) release regression, (b) known/pre-existing, and (c) test or
+fixture issue. A pass after an earlier timeout is recorded explicitly.
+
+- `tests/grade-dng.js` — (b) standalone browser needs Microsoft Edge, absent on this Mac. Both release attempts show that exact error, as recorded in AGENTS.md item 7 and the 0.9.3 Mac check. Not a DNG pixel pass.
+- `tests/jxl-source-colour.js` — (b) native colour oracle remains Windows-only (AGENTS.md item 7). Both attempts fail with `KeyError: 'data_color_encoding'`, the existing 0.9.3 signature. Not a JPEG XL colour pass.
+
+## Earlier fast checks
+
+The pre-run Node suites each passed 1,572 checks with one skip. Python at
+`f161fd07` passed 5,188 checks with 126 skips and one unexpected pass.
 
 **Failure fixed — test bookkeeping.** The Python frontend inventory still
 expected 83 contract functions after `aab6d698` intentionally retired the old
@@ -29,8 +34,3 @@ coverage. The exact inventory now expects 82 functions, with the duplicate-name
 check unchanged. Fix `f161fd07` passed the frontend contracts and the full fast
 suites. No application output, pixel guard, or runtime limit changed.
 
-Total elapsed time from the first fast check through the final check was
-11 min 56 s, including concurrent Node/Python time and planning. Scratch
-output was 18.2 GB before and after. No GPU processes were launched and no
-protected projects were written. Local evidence is in
-`codebase/output/release-checks/v0.9.4-local/`.
