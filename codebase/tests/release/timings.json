@@ -77,24 +77,17 @@
     },
     "desktop/tests/proof-grade-diagnostic.js": {
       "mac": {
-        "medianSeconds": 2.8605,
-        "lastSeconds": 3.252,
-        "sampleCount": 8,
+        "medianSeconds": 18.48,
+        "lastSeconds": 18.48,
+        "sampleCount": 1,
         "sampleSeconds": [
-          2.722,
-          2.826,
-          2.759,
-          2.863,
-          2.858,
-          2.979,
-          3.083,
-          3.252
+          18.48
         ],
-        "revision": "c97690cc9f4dba78760310d42109e19dc10d1bdc",
+        "revision": "7472bfba",
         "date": "2026-11-27",
-        "exitCode": 1,
-        "source": "release runner history (complete attempts, including failures)",
-        "lastSampleKey": "2026-11-27T18:38:39.461Z|desktop__tests__proof-grade-diagnostic.js.2.1795804716200.log"
+        "exitCode": 0,
+        "source": "complete successful release-driver attempts",
+        "lastSampleKey": "2026-11-27T19:33:58.374Z|proof-grade-diagnostic-relink.log"
       }
     },
     "tests/batch-export-ui.js": {
@@ -395,40 +388,34 @@
     },
     "tests/gpu-delivery-ceiling.js": {
       "mac": {
-        "medianSeconds": 30.986,
-        "lastSeconds": 31.031,
-        "sampleCount": 5,
+        "medianSeconds": 55.2835,
+        "lastSeconds": 43.741,
+        "sampleCount": 2,
         "sampleSeconds": [
           66.826,
-          18.938,
-          18.934,
-          30.986,
-          31.031
+          43.741
         ],
-        "revision": "c97690cc9f4dba78760310d42109e19dc10d1bdc",
+        "revision": "2688a3a4",
         "date": "2026-11-27",
-        "exitCode": 1,
-        "source": "release runner history (complete attempts, including failures)",
-        "lastSampleKey": "2026-11-27T19:07:29.956Z|tests__gpu-delivery-ceiling.js.2.1795806418926.log"
+        "exitCode": 0,
+        "source": "complete successful release-driver attempts",
+        "lastSampleKey": "2026-11-27T19:28:30.836Z|gpu-delivery-ceiling.log"
       }
     },
     "tests/gpu-delivery-repeat.js": {
       "mac": {
-        "medianSeconds": 31.229,
-        "lastSeconds": 32.687,
-        "sampleCount": 5,
+        "medianSeconds": 83.4465,
+        "lastSeconds": 82.898,
+        "sampleCount": 2,
         "sampleSeconds": [
           83.995,
-          18.809,
-          19.216,
-          31.229,
-          32.687
+          82.898
         ],
-        "revision": "c97690cc9f4dba78760310d42109e19dc10d1bdc",
+        "revision": "2688a3a4",
         "date": "2026-11-27",
-        "exitCode": 1,
-        "source": "release runner history (complete attempts, including failures)",
-        "lastSampleKey": "2026-11-27T19:06:27.858Z|tests__gpu-delivery-repeat.js.2.1795806355171.log"
+        "exitCode": 0,
+        "source": "complete successful release-driver attempts",
+        "lastSampleKey": "2026-11-27T19:27:23.555Z|gpu-delivery-repeat.log"
       }
     },
     "tests/gpu-delivery-smoke.js": {
@@ -450,20 +437,17 @@
     },
     "tests/gpu-denoise-measurement.js": {
       "mac": {
-        "medianSeconds": 3.0614999999999997,
-        "lastSeconds": 3.049,
-        "sampleCount": 4,
+        "medianSeconds": 63.833,
+        "lastSeconds": 63.833,
+        "sampleCount": 1,
         "sampleSeconds": [
-          3.065,
-          3.124,
-          3.058,
-          3.049
+          63.833
         ],
-        "revision": "74286a5487f8af06bb6a47371158a961fb7439a2",
-        "date": "2026-11-26",
-        "exitCode": 1,
-        "source": "release runner history (complete attempts, including failures)",
-        "lastSampleKey": "2026-11-26T05:26:25.088Z|tests__gpu-denoise-measurement.js.2.1795672880069.log"
+        "revision": "8dfdeb5f",
+        "date": "2026-11-27",
+        "exitCode": 0,
+        "source": "complete successful release-driver attempts",
+        "lastSampleKey": "2026-11-27T19:37:06.556Z|gpu-denoise-measurement.log"
       }
     },
     "tests/gpu-edge-colour.js": {
@@ -931,22 +915,17 @@
     },
     "tests/library-export-live-tiles.js": {
       "mac": {
-        "medianSeconds": 38.3665,
-        "lastSeconds": 16.162,
-        "sampleCount": 6,
+        "medianSeconds": 146.88,
+        "lastSeconds": 146.88,
+        "sampleCount": 1,
         "sampleSeconds": [
-          44.41,
-          45.055,
-          37.214,
-          39.519,
-          16.538,
-          16.162
+          146.88
         ],
-        "revision": "c97690cc9f4dba78760310d42109e19dc10d1bdc",
+        "revision": "8dfdeb5f",
         "date": "2026-11-27",
-        "exitCode": 1,
-        "source": "release runner history (complete attempts, including failures)",
-        "lastSampleKey": "2026-11-27T19:12:22.470Z|tests__library-export-live-tiles.js.2.1795806726308.log"
+        "exitCode": 0,
+        "source": "complete successful release-driver attempts",
+        "lastSampleKey": "2026-11-27T19:40:16.591Z|library-export-live-tiles.log"
       }
     },
     "tests/library-export-menu.js": {
@@ -1299,19 +1278,18 @@
     },
     "tests/library-precision-source.js": {
       "mac": {
-        "medianSeconds": 11.628,
-        "lastSeconds": 57.378,
-        "sampleCount": 3,
+        "medianSeconds": 57.3275,
+        "lastSeconds": 57.277,
+        "sampleCount": 2,
         "sampleSeconds": [
-          11.628,
-          11.392,
-          57.378
+          57.378,
+          57.277
         ],
-        "revision": "74286a5487f8af06bb6a47371158a961fb7439a2",
-        "date": "2026-11-26",
+        "revision": "7472bfba",
+        "date": "2026-11-27",
         "exitCode": 0,
-        "source": "release runner history (complete attempts, including failures)",
-        "lastSampleKey": "2026-11-26T05:26:25.088Z|tests__library-precision-source.js.1.1795679120428.log"
+        "source": "complete successful release-driver attempts",
+        "lastSampleKey": "2026-11-27T19:35:52.404Z|library-precision-source.log"
       }
     },
     "tests/library-raw-overlays.js": {
@@ -1521,21 +1499,18 @@
     },
     "tests/overlay-backlog.js": {
       "mac": {
-        "medianSeconds": 9.451,
-        "lastSeconds": 42.528,
-        "sampleCount": 5,
+        "medianSeconds": 42.607,
+        "lastSeconds": 42.686,
+        "sampleCount": 2,
         "sampleSeconds": [
-          8.794,
-          43.147,
-          9.381,
-          9.451,
-          42.528
+          42.528,
+          42.686
         ],
-        "revision": "74286a5487f8af06bb6a47371158a961fb7439a2",
-        "date": "2026-11-26",
+        "revision": "6350ce79",
+        "date": "2026-11-27",
         "exitCode": 0,
-        "source": "release runner history (complete attempts, including failures)",
-        "lastSampleKey": "2026-11-26T05:26:25.088Z|tests__overlay-backlog.js.1.1795672488168.log"
+        "source": "complete successful release-driver attempts",
+        "lastSampleKey": "2026-11-27T19:33:34.867Z|overlay-backlog.log"
       }
     },
     "tests/path-mask-interaction.js": {
