@@ -302,7 +302,6 @@ def test_annotation_refinements_keep_metadata_and_scopes_useful() -> None:
     assert ".media-browser-preview-image-frame" in css
     assert "aspect-ratio: 1;" not in css.split(".media-browser-preview img", 1)[1].split("}", 1)[0]
     assert 'height: clamp(300px, 58vh, 520px);' in css
-    assert 'scrollbar-gutter: stable;' in css
     assert '.media-browser-sidebar {' in css
     assert 'overflow-y: auto;' in css
     assert 'content: "▸"' not in css

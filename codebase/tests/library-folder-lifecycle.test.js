@@ -3,14 +3,14 @@ const source=fs.readFileSync(require.resolve('../frontend/photo-library.js'),'ut
 const tick=()=>new Promise(setImmediate);
 test('a previous folder stream cannot cancel the current folder paint timer',async()=>{
  const readers=[];const timers=new Map();let serial=0;
- const state={photos:[],allPhotos:[],sort:'name',descending:false,size:190},grid={scrollTop:0,clientWidth:900,clientHeight:600},film={scrollLeft:0};
+ const state={photos:[],allPhotos:[],sort:'name',descending:false,size:190},grid={scrollTop:0,offsetWidth:900,clientHeight:600},film={scrollLeft:0};
  const context={state,grid,film,space:{style:{}},performance,Map,TextDecoder,Promise,DOMException,
-  folderPaintTimer:null,HDRLibraryStopwatch(){},paintGrid(){},paintFilm(){},status(){},readDates:async()=>{},
+  gridLaneWidth:15,folderPaintTimer:null,HDRLibraryStopwatch(){},paintGrid(){},paintFilm(){},status(){},readDates:async()=>{},
   applyQuery(){state.photos=state.allPhotos;},HDRLibraryLayout:require('../frontend/library-layout.js'),aborted:error=>error.name==='AbortError',
   requestAnimationFrame:fn=>queueMicrotask(fn),setTimeout:(fn,delay)=>{if(!delay){queueMicrotask(fn);return 0;}const id=++serial;timers.set(id,fn);return id;},clearTimeout:id=>timers.delete(id),
   fetch:async()=>{const reader={read:()=>new Promise(resolve=>{reader.next=resolve;}),releaseLock(){}};readers.push(reader);return {ok:true,body:{getReader:()=>reader}};}};
  vm.createContext(context);const start=source.indexOf('  async function openFolderStream('),end=source.indexOf('  window.HDRLibraryFolderAction',start);
- vm.runInContext(source.slice(start,end),context);
+ vm.runInContext(source.slice(source.indexOf("  function measureGrid("),source.indexOf("  let reviewGrid"))+source.slice(start,end),context);
  async function open(path){const controller=new AbortController();state.scan=controller;const ready=context.openFolderStream(path,controller);await tick();readers.at(-1).next({value:new TextEncoder().encode(JSON.stringify({kind:'rows',photos:[{path:path+'/one'}]})+'\n'),done:false});await ready;await tick();return readers.at(-1);}
  const old=await open('old'),current=await open('new');
  current.next({value:new TextEncoder().encode(JSON.stringify({kind:'rows',photos:[{path:'new/two'}]})+'\n'),done:false});await tick();

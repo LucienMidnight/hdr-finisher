@@ -7,6 +7,7 @@
 <!-- The app's own tokens. This page defines no colours, fonts or sizes of its own
      and reads its approved tokens from the app. -->
 <link rel="stylesheet" href="../../codebase/frontend/visual-tokens.css">
+<link rel="stylesheet" href="../../codebase/frontend/scrollbars.css">
 
 <!-- Sheet layout only: not part of the app's components. -->
 <style id="sheet">
@@ -249,28 +250,19 @@
   .hf-group-body { padding: 4px 14px 12px; background: var(--raised); }
 
   /* Proposed side-panel overlay. These static specimens do not set timing. */
-  .hf-overlay-specimen { position: relative; padding: 0; }
-  .hf-overlay-specimen > .overlay-row {
+  /* Full-width rows meet the lane in the overflowing example. */
+  .hf-panel-scroll { padding: 0; max-height: calc(3.5 * var(--list-row-h)); overflow-y: auto; }
+  .hf-panel-row {
     display: flex; align-items: center; justify-content: space-between;
-    min-block-size: var(--list-row-h); padding-inline: var(--space-12);
-    border-block-end: var(--space-1) solid var(--hairline);
+    min-height: var(--list-row-h); padding-inline: var(--space-12);
+    border-bottom: 1px solid var(--hairline);
   }
-  .hf-overlay-specimen > .overlay-title { font: var(--section-title-font); background: var(--raised); }
-  .hf-overlay-specimen > .overlay-thumb {
-    position: absolute; inset-block-start: var(--space-40); inset-inline-end: var(--space-3);
-    inline-size: var(--space-4); block-size: var(--space-40); pointer-events: none;
-    border-radius: var(--radius-pill); background: var(--quiet);
-  }
-  .hf-overlay-specimen > .overlay-row small { font-size: var(--font-size-sm); color: var(--muted); }
+  .hf-panel-title { font: var(--section-title-font); background: var(--raised); }
+  .hf-panel-row small { font-size: var(--font-size-sm); color: var(--muted); }
 
-  /* List: one solid surface, thin dividers, and a scrollbar rail that is
-     always shown and lighter than the list. The outer box clips the corners. */
+  /* One solid list surface clips its native lane at the corners. */
   .hf-list { border: 1px solid var(--border); border-radius: var(--radius-1); overflow: hidden; background: var(--raised); }
-  .hf-list-scroll { height: calc(var(--list-row-h) * 4); overflow-y: scroll; }
-  .hf-list-scroll::-webkit-scrollbar { width: var(--scrollbar-w); }
-  .hf-list-scroll::-webkit-scrollbar-track { background: var(--border); }
-  .hf-list-scroll::-webkit-scrollbar-thumb { border: 2px solid transparent; border-radius: var(--radius-pill); background: var(--quiet) padding-box; }
-  .hf-list-scroll::-webkit-scrollbar-thumb:hover { background: var(--muted) padding-box; }
+  .hf-list-scroll { height: calc(var(--list-row-h) * 4); overflow-y: auto; }
   .hf-list-row { display: flex; align-items: center; gap: 8px; height: var(--list-row-h); padding: 0 6px 0 12px; border-bottom: 1px solid var(--hairline); color: var(--text); font: var(--font-weight-medium) var(--font-size-sm) var(--font-body); cursor: pointer; }
   .hf-list-row:hover { background: var(--plate-up-hover); }
   /* Selected is neutral: the row is pushed in like a selected tab; only the 2px edge carries the accent. */
@@ -349,7 +341,7 @@
   <a href="#sliders">Sliders</a>
   <a href="#panels">Panels and sections</a>
   <a href="#lists">Lists and scrollbars</a>
-  <a href="#overlay-scrollbars">Side-panel overlay scrollbar</a>
+  <a href="#scrollbars">Panel scrollbar</a>
   <a href="#graphs">Graphs</a>
   <a href="#tooltips">Tooltips</a>
 </nav>
@@ -626,8 +618,8 @@
   <ul class="rules">
     <li>A list is one solid surface with thin dividers between rows, no pills. Rows are <code>--list-row-h</code> (34 px).</li>
     <li>The list's own border clips everything inside, so the scrollbar can't poke out at the corners.</li>
-    <li>The scrollbar rail is always shown, lighter than the list, with a quiet pill thumb that brightens on hover.</li>
-    <li>An empty list keeps the same surface and rail, with one centred muted line. No black blocks.</li>
+    <li>The same Library-style lane appears only when the rows overflow.</li>
+    <li>An empty list keeps the same surface, with one centred muted line and no lane. No black blocks.</li>
     <li>The selected row is neutral: pushed in like a selected tab (<code>--plate-down</code>, <code>--plate-press</code>), with a 2 px accent edge at the left. No coloured background.</li>
   </ul>
   <div class="specimens">
@@ -642,51 +634,28 @@
   </div>
 </section>
 
-<section id="overlay-scrollbars">
-  <h2>Side-panel overlay scrollbar</h2>
-  <p>Approved November 27, 2026. These are static previews in the selected theme. The dividers
-    reach the outside edge in every state. The visible thumb sits in the
-    existing right padding. It has no painted track.</p>
+<section id="scrollbars">
+  <h2>Panel scrollbar</h2>
+  <p>The native 15 px lane uses the Library&#8217;s pill thumb and arrow buttons,
+    with a hairline along its left edge. The line meets the panel dividers.
+    The lane is always visible while needed and takes no space when content fits.</p>
   <div class="specimens">
-    <div class="specimen"><h3>Grade <small>overflow, thumb visible</small></h3>
-      <div class="demo hf-overlay-specimen" data-css="hf-overlay-specimen">
-        <div class="overlay-row overlay-title">Control Panel</div>
-        <div class="overlay-row">HDR Grade <small>SDR Grade</small></div>
-        <div class="overlay-row">Tone <small>Reset</small></div>
-        <div class="overlay-row">Exposure <small>+1.00 EV</small></div>
-        <span class="overlay-thumb" aria-hidden="true"></span>
-      </div>
-    </div>
-    <div class="specimen"><h3>Grade <small>overflow, thumb idle</small></h3>
-      <div class="demo hf-overlay-specimen">
-        <div class="overlay-row overlay-title">Control Panel</div>
-        <div class="overlay-row">HDR Grade <small>SDR Grade</small></div>
-        <div class="overlay-row">Tone <small>Reset</small></div>
-        <div class="overlay-row">Exposure <small>+1.00 EV</small></div>
-      </div>
-    </div>
-    <div class="specimen"><h3>Proof <small>overflow, thumb visible</small></h3>
-      <div class="demo hf-overlay-specimen">
-        <div class="overlay-row overlay-title">Proof Settings</div>
-        <div class="overlay-row">Rendition <small>HDR</small></div>
-        <div class="overlay-row">Delivery format <small>JPEG Ultra HDR</small></div>
-        <div class="overlay-row">Proof size <small>Reduced</small></div>
-        <span class="overlay-thumb" aria-hidden="true"></span>
-      </div>
-    </div>
-    <div class="specimen"><h3>Proof <small>content fits</small></h3>
-      <div class="demo hf-overlay-specimen">
-        <div class="overlay-row overlay-title">Proof Settings</div>
-        <div class="overlay-row">Rendition <small>HDR</small></div>
-        <div class="overlay-row">Delivery format <small>JPEG Ultra HDR</small></div>
-        <div class="overlay-row">Proof size <small>Reduced</small></div>
-      </div>
-    </div>
+    <div class="specimen"><h3>Overflows</h3>
+      <div class="demo hf-panel-scroll" tabindex="0" aria-label="Overflowing control panel example" data-css="hf-panel-scroll hf-panel-row">
+        <div class="hf-panel-row hf-panel-title">Control Panel</div>
+        <div class="hf-panel-row">Tone <small>Reset</small></div>
+        <div class="hf-panel-row">Exposure <small>+1.00 EV</small></div>
+        <div class="hf-panel-row">Shadows <small>0.00 EV</small></div>
+        <div class="hf-panel-row">Highlights <small>0.00 EV</small></div>
+        <div class="hf-panel-row">Color</div>
+      </div></div>
+    <div class="specimen"><h3>Fits</h3>
+      <div class="demo hf-panel-scroll">
+        <div class="hf-panel-row hf-panel-title">Control Panel</div>
+        <div class="hf-panel-row">Tone</div>
+        <div class="hf-panel-row">Color</div>
+      </div></div>
   </div>
-  <p class="note">The thumb hides after the approved 650 ms idle delay and
-    160 ms fade. Reduced motion removes the fade. The larger pointer target remains
-    inside the existing padding. Wheel, keyboard and screen-reader interaction
-    stays with the real scrolling panel.</p>
 </section>
 
 <section id="graphs">

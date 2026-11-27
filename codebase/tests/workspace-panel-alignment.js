@@ -1,103 +1,273 @@
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
+const os = require("node:os");
 const { chromium } = require("playwright");
 
-async function verifyOverlayScrollbars(page) {
+async function verifyScrollbars(page) {
   const review = path.resolve(__dirname, "../output/review/overlay-scrollbars");
   fs.mkdirSync(review, { recursive: true });
-  await page.locator("#file-input").setInputFiles(path.resolve(__dirname, "fixtures/sdr_gradient.png"));
-  await page.waitForFunction(() => state.session && !state.importInProgress && document.body.dataset.workflow === "grade");
-  const waitThumb = (selector, state) => page.waitForFunction(({ selector, state }) => {
-    const rail = document.querySelector(selector);
-    const thumb = rail.querySelector(":scope > .overlay-scrollbar-thumb");
-    const opacity = Number(getComputedStyle(thumb).opacity);
-    return state === "fits" ? !thumb.hasAttribute("data-scrollable") : thumb.hasAttribute("data-scrollable")
-      && (state === "shown" ? opacity === 1 : opacity === 0);
-  }, { selector, state });
-  const away = () => page.mouse.move(340, 95);
-  for (const theme of ["default-light", "modern-dark", "studio-gray"]) {
-    await page.evaluate(theme => {
-      HDRApplicationShell.openSettings("appearance");
-      document.querySelector('[data-theme-option="' + theme + '"]').click();
-    }, theme);
-    await page.locator("#settings-close").click();
-    for (const [stage, selector, dividers] of [
-      ["grade", ".grade-rail", [".control-title-row", ".grade-folder-tabs", '[data-group="hdr-tone"] .control-group-header']],
-      ["proof", "#proof-workflow-panel", [".workflow-rail-header"]],
-    ]) {
-      await page.locator('[data-workflow-tab="' + stage + '"]').click();
-      const rail = page.locator(selector);
-      const thumb = rail.locator(":scope > .overlay-scrollbar-thumb");
-      const assertEdge = () => rail.evaluate((node, dividers) => {
-        const end = node.getBoundingClientRect().right - parseFloat(getComputedStyle(node).borderRightWidth);
-        return dividers.map(selector => Math.abs(node.querySelector(selector).getBoundingClientRect().right - end));
-      }, dividers).then(errors => assert(errors.every(error => error <= 1), stage + " dividers stop short: " + errors));
-      const shot = name => rail.screenshot({ path: path.join(review, [theme, stage, name].join("-") + ".png") });
-      await away();
-      await waitThumb(selector, "fits");
-      await assertEdge();
-      await shot("fits");
-      if (stage === "grade") {
-        await rail.locator('[data-group="hdr-tone"] .group-toggle').click();
-      }
-      // Exercise the same real controls with a compact panel viewport.
-      await rail.evaluate(node => { node.style.maxBlockSize = "340px"; node.scrollTop = 0; });
-      await waitThumb(selector, "idle");
-      await assertEdge();
-      await shot("overflow-idle");
-      const box = await rail.boundingBox();
-      await page.mouse.move(box.x + box.width / 2, box.y + 130);
-      await waitThumb(selector, "shown");
-      const geometry = await rail.evaluate(node => {
-        const thumb = node.querySelector(":scope > .overlay-scrollbar-thumb");
-        const rect = thumb.getBoundingClientRect();
-        const controls = [...node.querySelectorAll("button, input, select, textarea, output, a[href]")];
-        const covered = controls.filter(control => {
-          const r = control.getBoundingClientRect();
-          return r.width && r.height && r.right > rect.left + .5 && r.left < rect.right
-            && getComputedStyle(control).visibility === "visible";
-        }).map(control => control.id || control.className || control.textContent.trim());
-        const pseudo = getComputedStyle(thumb, "::after");
-        return { covered, hit: rect.width, paint: parseFloat(pseudo.width), aria: thumb.getAttribute("aria-hidden"),
-          gutter: node.offsetWidth - node.clientWidth - parseFloat(getComputedStyle(node).borderLeftWidth) - parseFloat(getComputedStyle(node).borderRightWidth) };
-      });
-      assert.deepEqual(geometry.covered, [], stage + " controls enter the thumb hit strip");
-      assert.equal(geometry.gutter, 0);
-      assert.equal(geometry.aria, "true");
-      assert(geometry.hit > geometry.paint && geometry.paint > 0);
-      await page.mouse.wheel(0, 130);
-      await page.waitForFunction(selector => document.querySelector(selector).scrollTop > 0, selector);
-      await shot("scrolled-shown");
-
-      if (theme === "default-light") {
-        await rail.evaluate(node => { node.scrollTop = 0; });
-        const r = await thumb.boundingBox();
-        await page.mouse.move(r.x + r.width / 2, r.y + r.height / 2);
-        await page.mouse.down();
-        await page.mouse.move(r.x - 18, r.y + r.height / 2 + 52, { steps: 8 });
-        assert.equal(await thumb.getAttribute("data-dragging"), "", "Pointer capture keeps the thumb active");
-        await page.mouse.up();
-        assert(await rail.evaluate(node => node.scrollTop > 0), "Drag must move native scroll");
-        await rail.evaluate(node => { node.scrollTop = 0; });
-        const focus = stage === "grade" ? "#grade-mode-global" : '[data-proof-lane="hdr"]';
-        await rail.locator(focus).focus();
-        await page.keyboard.press("PageDown");
-        await page.waitForFunction(selector => document.querySelector(selector).scrollTop > 0, selector);
-        await page.emulateMedia({ reducedMotion: "reduce" });
-        assert.equal(await thumb.evaluate(node => getComputedStyle(node).transitionDuration), "0s");
-        await page.emulateMedia({ reducedMotion: "no-preference" });
-      }
-      await away();
-      assert.equal(await thumb.getAttribute("data-active"), "", "Hold the thumb through the idle interval");
-      await waitThumb(selector, "idle");
-      await shot("scrolled-hidden");
-      await rail.evaluate(node => { node.style.removeProperty("max-block-size"); node.scrollTop = 0; });
-      if (stage === "grade") await rail.locator('[data-group="hdr-tone"] .group-toggle').click();
-      await waitThumb(selector, "fits");
+  const photo = path.resolve(__dirname, "fixtures/sdr_gradient.png");
+  const shot = (theme, name) => path.join(review, theme + "-" + name + ".png");
+  const close = (a, b, label) => assert(Math.abs(a - b) <= 1, label + ": " + a + " vs " + b);
+  async function checkLane(rail, overflowing, dividers = []) {
+    const result = await rail.evaluate((node, dividers) => {
+      const css = getComputedStyle(node), rect = node.getBoundingClientRect();
+      const edge = rect.left + node.clientLeft + node.clientWidth;
+      return {
+        overflow: node.scrollHeight > node.clientHeight,
+        heights: [node.scrollHeight, node.clientHeight],
+        width: node.offsetWidth - node.clientWidth - parseFloat(css.borderLeftWidth) - parseFloat(css.borderRightWidth),
+        edges: dividers.map(selector => {
+          const row = node.querySelector(selector);
+          const style = getComputedStyle(row);
+          const line = [style.borderTopWidth, style.borderBottomWidth].includes("1px")
+            || style.boxShadow.includes("0px -1px 0px 0px inset");
+          return { delta: row.getBoundingClientRect().right - edge, line, selector, shadow: style.boxShadow };
+        }),
+      };
+    }, dividers);
+    assert.equal(result.overflow, overflowing, String(rail) + " " + JSON.stringify(result));
+    assert.equal(result.width, overflowing ? 15 : 0, String(rail));
+    for (const edge of result.edges) {
+      close(edge.delta, 0, String(rail) + " divider meets content edge");
+      assert(edge.line, String(rail) + " divider is drawn: " + JSON.stringify(edge));
     }
   }
-  console.log("PASS: Grade and Proof full-bleed dividers, overflow and fit, safe thumb hit targets, wheel, drag, keyboard, idle and reduced motion in three themes.");
+  async function capturePanel(rail, file, maxHeight) {
+    const box = await rail.boundingBox();
+    await page.screenshot({ path: file, clip: {
+      x: box.x, y: box.y, width: box.width, height: Math.min(box.height, maxHeight),
+    } });
+  }
+  async function checkLanePaint(rail) {
+    const box = await rail.boundingBox();
+    const geometry = await rail.evaluate(node => {
+      const css = getComputedStyle(node);
+      return { x: node.clientLeft + node.clientWidth, panel: css.getPropertyValue("--panel"),
+        hairline: css.getPropertyValue("--hairline") };
+    });
+    const strip = await page.screenshot({ scale: "css", clip: {
+      x: Math.round(box.x + geometry.x), y: Math.round(box.y + 22), width: 2, height: 16,
+    } });
+    const paint = await page.evaluate(async ({ strip, geometry }) => {
+      const img = new Image();
+      img.src = "data:image/png;base64," + strip;
+      await img.decode();
+      const canvas = document.createElement("canvas");
+      canvas.width = 2; canvas.height = img.height;
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(img, 0, 0);
+      const pixels = ctx.getImageData(0, 0, 2, img.height).data;
+      ctx.fillStyle = geometry.panel;
+      ctx.fillRect(0, 0, 2, 1);
+      ctx.fillStyle = geometry.hairline;
+      ctx.fillRect(0, 0, 1, 1);
+      const reference = ctx.getImageData(0, 0, 2, 1).data;
+      return Array.from({ length: img.height }, (_, y) =>
+        reference.every((value, i) => Math.abs(value - pixels[y * 8 + i]) <= 2)).filter(Boolean).length;
+    }, { strip: strip.toString("base64"), geometry });
+    assert(paint >= 12, String(rail) + " has a painted left hairline separate from the track: " + paint);
+  }
+  async function status(theme, workflow) {
+    const dock = page.locator("#viewer-status-dock");
+    await dock.waitFor();
+    const chrome = await dock.evaluate(node => {
+      const css = getComputedStyle(node);
+      const sample = document.createElement("i");
+      sample.style.color = "var(--hairline)";
+      node.append(sample);
+      const expected = getComputedStyle(sample).color;
+      sample.remove();
+      const bottom = node.getBoundingClientRect().bottom;
+      const childBottom = node.querySelector(".application-status-entries").getBoundingClientRect().bottom;
+      return { border: [css.borderTopWidth, css.borderTopStyle, css.borderTopColor, expected], spill: childBottom - bottom };
+    });
+    assert.deepEqual(chrome.border.slice(0, 3), ["1px", "solid", chrome.border[3]], workflow);
+    assert(chrome.spill <= 0, workflow + " entries extend over the next divider");
+    const lower = workflow === "library" ? page.frameLocator("#library-frame").locator(".library-footer")
+      : workflow === "export" ? page.locator(".batch-statusbar") : null;
+    if (lower) {
+      const edge = await lower.evaluate(node => {
+        const css = getComputedStyle(node);
+        return [css.borderTopWidth, css.borderTopStyle, css.borderTopColor];
+      });
+      assert.deepEqual(edge, ["1px", "solid", chrome.border[3]], workflow + " lower divider");
+    }
+    const box = await dock.boundingBox();
+    await page.screenshot({ path: shot(theme, workflow + "-status"),
+      clip: { x: box.x + 1, y: box.y - 5, width: box.width - 2, height: box.height + 28 } });
+  }
+  const positiveScroll = (rail, gesture) => rail.evaluate((node, gesture) => new Promise((resolve, reject) => {
+    if (node.scrollTop > 0) return resolve();
+    const scrolled = () => { if (node.scrollTop > 0) { clearTimeout(timer); node.removeEventListener("scroll", scrolled); resolve(); } };
+    node.addEventListener("scroll", scrolled);
+    const timer = setTimeout(() => {
+      node.removeEventListener("scroll", scrolled);
+      reject(new Error(gesture + " did not scroll " + (node.id || node.className)));
+    }, 1800);
+  }), gesture);
+  async function dragThumb(rail, keyControl) {
+    const box = await rail.boundingBox();
+    const before = await rail.evaluate(node => {
+      node.scrollTop = 0;
+      return { border: node.offsetWidth - node.clientLeft - node.clientWidth - 15, top: node.clientTop };
+    });
+    const x = box.x + box.width - before.border - 7.5;
+    const y = box.y + before.top + 26;
+    await page.mouse.move(x, y);
+    await page.mouse.down();
+    await page.mouse.move(x, y + 52, { steps: 8 });
+    try {
+      await positiveScroll(rail, "Thumb drag");
+    } finally {
+      await page.mouse.up();
+    }
+    const dragTop = await rail.evaluate(node => node.scrollTop);
+    await page.mouse.click(x, box.y + before.top + 7);
+    await rail.evaluate((node, previous) => new Promise((resolve, reject) => {
+      if (node.scrollTop < previous) return resolve();
+      const scrolled = () => {
+        if (node.scrollTop < previous) {
+          clearTimeout(timer);
+          node.removeEventListener("scroll", scrolled);
+          resolve();
+        }
+      };
+      node.addEventListener("scroll", scrolled);
+      const timer = setTimeout(() => {
+        node.removeEventListener("scroll", scrolled);
+        reject(new Error("Top arrow did not scroll " + (node.id || node.className)));
+      }, 1800);
+    }), dragTop);
+    await rail.evaluate(node => { node.scrollTop = 0; });
+    await page.mouse.move(box.x + box.width / 2, box.y + 62);
+    await page.mouse.wheel(0, 92);
+    await positiveScroll(rail, "Wheel");
+    if (keyControl) {
+      await keyControl.focus();
+      await rail.evaluate(node => { node.scrollTop = 0; });
+      await page.keyboard.press("PageDown");
+      await positiveScroll(rail, "PageDown");
+    }
+    await rail.evaluate(node => { node.scrollTop = 0; });
+  }
+  const library = page.frameLocator("#library-frame");
+  const grid = library.locator("#library-grid");
+  const grade = page.locator(".grade-rail");
+  const proof = page.locator("#proof-workflow-panel");
+  const scope = page.locator(".scope-readings");
+  const workflow = stage => page.locator('[data-workflow-tab="' + stage + '"]').click();
+  const cap = (rail, value) => rail.evaluate((node, value) => {
+    node.style.maxBlockSize = value;
+    node.scrollTop = 0;
+  }, value);
+  const samples = fs.mkdtempSync(path.join(os.tmpdir(), "hdr-scrollbar-fixture-"));
+  try {
+    const one = path.join(samples, "One photo");
+    const many = path.join(samples, "Many photos");
+    fs.mkdirSync(one);
+    fs.mkdirSync(many);
+    const thumbnail = path.join(__dirname, "fixtures/library_photo.png");
+    fs.copyFileSync(thumbnail, path.join(one, "Sample.png"));
+    for (let i = 0; i < 80; i++) fs.copyFileSync(thumbnail, path.join(many, "Sample " + (i + 1) + ".png"));
+    const host = page.locator("#library-frame");
+    const browse = async (folder, count) => {
+      await host.evaluate((iframe, folder) => {
+        return iframe.contentWindow.HDRLibrary.browse(folder);
+      }, folder);
+      await page.waitForFunction(count => document.querySelector("#library-frame").contentWindow.HDRLibrary.getSnapshot().count === count, count)
+        .catch(async error => { throw new Error("Could not open " + path.basename(folder) + ": " + await library.locator("#library-status").textContent(), { cause: error }); });
+    };
+    await page.locator("#file-input").setInputFiles(photo);
+    await page.waitForFunction(() => state.session && !state.importInProgress && document.body.dataset.workflow === "grade");
+    for (const theme of ["default-light", "modern-dark", "studio-gray"]) {
+      await page.evaluate(theme => {
+        HDRApplicationShell.openSettings("appearance");
+        document.querySelector('[data-theme-option="' + theme + '"]').click();
+      }, theme);
+      await page.locator("#settings-close").click();
+      await workflow("import");
+      await library.locator('html[data-theme="' + theme + '"]').waitFor({ state: "attached" });
+      await browse(one, 1);
+      await checkLane(grid, false);
+      const size = library.locator("#thumbnail-size");
+      await size.evaluate(input => {
+        input.value = "250";
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+      await browse(many, 80);
+      await library.locator(".library-cell canvas[data-picture-key]").first().waitFor();
+      await checkLane(grid, true);
+      await checkLanePaint(grid);
+      const gridBox = await grid.boundingBox();
+      await page.mouse.move(20, 20);
+      await page.screenshot({ path: shot(theme, "library"), clip: {
+        x: Math.floor(gridBox.x + gridBox.width - 350), y: Math.floor(gridBox.y - 40), width: 470, height: 395,
+      } });
+      await status(theme, "library");
+      if (theme === "default-light") await dragThumb(grid);
+
+      await workflow("grade");
+      await status(theme, "grade");
+      const gradeEdges = [".control-title-row", ".grade-folder-tabs", '[data-group="hdr-tone"]'];
+      await checkLane(grade, false, gradeEdges);
+      await capturePanel(grade, shot(theme, "grade-fits"), 705);
+      await cap(grade, "340px");
+      await checkLane(grade, true, gradeEdges);
+      await checkLanePaint(grade);
+      if (theme === "default-light") await dragThumb(grade, grade.locator("#grade-mode-global"));
+      await page.mouse.move(20, 20);
+      await grade.screenshot({ path: shot(theme, "grade-overflow") });
+      for (const mode of ["local", "retouch"]) {
+        await page.locator("#grade-mode-" + mode).click();
+        await cap(grade, "240px");
+        await checkLane(grade, true, [".control-title-row"]);
+      }
+      await page.locator("#grade-mode-global").click();
+      await cap(grade, "");
+      await checkLane(grade, false, gradeEdges);
+
+      const source = page.locator(".source-rail");
+      if (await source.evaluate(node => node.classList.contains("collapsed"))) await page.locator("#source-rail-expand").click();
+      await cap(source, "90px");
+      await checkLane(source, true, [".rail-title-row"]);
+      await cap(source, "");
+
+      await cap(scope, "100px");
+      await page.waitForFunction(() => document.querySelector(".scope-readings").scrollHeight > 100);
+      await checkLane(scope, true, [".scope-reading-status"]);
+      await checkLanePaint(scope);
+      await scope.screenshot({ path: shot(theme, "scopes") });
+      await cap(scope, "");
+
+      await workflow("proof");
+      await status(theme, "proof");
+      await checkLane(proof, false, [".workflow-rail-header"]);
+      await cap(proof, "235px");
+      await checkLane(proof, true, [".workflow-rail-header"]);
+      await checkLanePaint(proof);
+      if (theme === "default-light") await dragThumb(proof, proof.locator('[data-proof-lane="hdr"]'));
+      await page.mouse.move(20, 20);
+      await proof.screenshot({ path: shot(theme, "proof") });
+      await cap(proof, "");
+
+      await workflow("export");
+      const batch = page.locator(".batch-settings-scroll");
+      await batch.waitFor();
+      await status(theme, "export");
+      await cap(batch, "265px");
+      await checkLane(batch, true);
+      await checkLanePaint(batch);
+      if (theme === "default-light") await dragThumb(batch);
+      await page.mouse.move(20, 20);
+      await capturePanel(page.locator("#export-sheet"), shot(theme, "export"), 470);
+      await cap(batch, "");
+    }
+  } finally {
+    fs.rmSync(samples, { recursive: true, force: true, maxRetries: 5 });
+  }
+  console.log("PASS: Library, Grade modes, Metadata, Scopes, Proof and Export lanes; dividers, drag, arrows, wheel, keyboard and four status bars across all three themes.");
 }
 (async () => {
   const browser = await chromium.launch({ headless: true });
@@ -116,9 +286,12 @@ async function verifyOverlayScrollbars(page) {
     await page.waitForTimeout(100);
   };
   try {
+    if (process.argv.includes("--unified-scrollbars")) {
+      await page.addInitScript(() => localStorage.setItem("hdr-finisher:library-show-all-files", "true"));
+    }
     await page.goto(process.env.HDR_FINISHER_URL || "http://127.0.0.1:8765", { waitUntil: "networkidle" });
-    if (process.argv.includes("--overlay-scrollbars")) {
-      await verifyOverlayScrollbars(page);
+    if (process.argv.includes("--unified-scrollbars")) {
+      await verifyScrollbars(page);
       return;
     }
     const frame = page.frameLocator("#library-frame");

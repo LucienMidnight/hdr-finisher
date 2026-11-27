@@ -11,9 +11,9 @@
   <link rel="icon" type="image/svg+xml" href="/static/assets/brand/hdr-finisher-favicon-small.svg">
   <script src="/static/appearance.js?v=__HDR_FINISHER_ASSET_VERSION__"></script><script src="/static/theme-startup.js?v=__HDR_FINISHER_ASSET_VERSION__"></script><link rel="stylesheet" href="/static/styles.css?v=__HDR_FINISHER_ASSET_VERSION__"><link rel="stylesheet" href="/static/hsl.css?v=__HDR_FINISHER_ASSET_VERSION__">
   <link rel="stylesheet" href="/static/control-panel.css?v=__HDR_FINISHER_ASSET_VERSION__">
-<link rel="stylesheet" href="/static/visual-tokens.css?v=__HDR_FINISHER_ASSET_VERSION__"><link rel="stylesheet" href="/static/visual-controls.css?v=__HDR_FINISHER_ASSET_VERSION__"><script defer src="/static/tooltips.js?v=__HDR_FINISHER_ASSET_VERSION__"></script><link rel="stylesheet" href="/static/library-picker.css?v=__HDR_FINISHER_ASSET_VERSION__"></head>
-  <link rel="stylesheet" href="/static/overlay-scrollbar.css?v=__HDR_FINISHER_ASSET_VERSION__">
-  <script defer src="/static/overlay-scrollbar.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
+<link rel="stylesheet" href="/static/visual-tokens.css?v=__HDR_FINISHER_ASSET_VERSION__"><link rel="stylesheet" href="/static/visual-controls.css?v=__HDR_FINISHER_ASSET_VERSION__"><script defer src="/static/tooltips.js?v=__HDR_FINISHER_ASSET_VERSION__"></script><link rel="stylesheet" href="/static/library-picker.css?v=__HDR_FINISHER_ASSET_VERSION__">
+  <link rel="stylesheet" href="/static/scrollbars.css?v=__HDR_FINISHER_ASSET_VERSION__">
+</head>
 <body>
   <header class="window-chrome" aria-label="Application menu">
     <nav class="window-menu-bar" aria-label="Application menus">
@@ -136,7 +136,7 @@
       <iframe id="library-frame" src="/library?v=__HDR_FINISHER_ASSET_VERSION__" title="Photo Library"></iframe>
     </div>
 
-    <aside class="source-rail panel" data-overlay-scroll aria-label="Metadata">
+    <aside class="source-rail panel" aria-label="Metadata">
       <div class="rail-title-row">
         <h1 class="panel-title">Metadata</h1>
         <button id="source-rail-expand" class="source-rail-expand panel-collapse-button" type="button" aria-expanded="true" aria-label="Collapse source metadata" title="Collapse metadata"></button>
@@ -364,7 +364,7 @@
               </span>
             </label>
           </div>
-          <aside id="proof-workflow-panel" class="workflow-side-panel proof-rail panel" data-overlay-scroll data-workflow-panel="proof" aria-label="Chromium Proof settings">
+          <aside id="proof-workflow-panel" class="workflow-side-panel proof-rail panel" data-workflow-panel="proof" aria-label="Chromium Proof settings">
             <div class="workflow-rail-header">
               <div><p class="section-kicker">Browser review</p><h1 class="panel-title">Proof Settings</h1></div>
             </div>
@@ -598,7 +598,7 @@
       aria-valuenow="336"
     ></div>
 
-    <aside data-overlay-scroll class="grade-rail panel" aria-label="Workflow settings">
+    <aside class="grade-rail panel" aria-label="Workflow settings">
       <section id="import-workflow-panel" class="workflow-rail-panel import-workflow-panel" data-workflow-panel="import" aria-label="Import settings">
         <div class="grade-header">
           <h1 class="panel-title">Control Panel</h1>
@@ -1615,7 +1615,7 @@
     </aside>
   </div>
 
-  <aside id="export-sheet" class="export-sheet workflow-side-panel panel" data-overlay-scroll data-workflow-panel="export" aria-label="Export settings">
+  <aside id="export-sheet" class="export-sheet workflow-side-panel panel" data-workflow-panel="export" aria-label="Export settings">
     <div class="sheet-header">
       <div>
         <h1 class="panel-title">Control Panel</h1>

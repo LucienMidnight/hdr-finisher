@@ -15,7 +15,7 @@ test("large folders keep only intersecting rows in the virtual grid", () => {
 
 test("last row and narrow empty views never point outside the photo list", () => {
   const empty = gridLayout(0, 10, 50, 0, 190);
-  assert.equal(empty.first, 0); assert.equal(empty.last, 0); assert.equal(empty.columns, 1);
+  assert.equal(empty.first, 0); assert.equal(empty.last, 0); assert.equal(empty.columns, 1); assert.equal(empty.totalHeight, 0);
   const initial = gridLayout(13, 1400, 100, 0, 190);
   const bottom = gridLayout(13, 1400, 100, initial.totalHeight - 100, 190);
   assert.equal(bottom.last, 13); assert.ok(bottom.first >= 0);
@@ -29,4 +29,17 @@ test("jumping to the end of a folder beyond Chromium's height limit keeps the fi
   assert.ok(bottom.last > bottom.first);
   assert.ok(bottom.top(bottom.first) <= first.totalHeight - 900 + 3);
   assert.ok(bottom.top(999999) < first.totalHeight);
+});
+
+test("the Library uses the full width when it fits and settles when lane width changes row height", () => {
+  const full = gridLayout(37, 1360, 1000, 0, 190);
+  const narrow = gridLayout(37, 1345, 1000, 0, 190);
+  const height = Math.floor((full.totalHeight + narrow.totalHeight) / 2);
+  assert(narrow.totalHeight <= height && height < full.totalHeight);
+  const overflowing = gridLayout(37, 1360, height, 0, 190, 15);
+  assert(overflowing.totalHeight > height);
+  assert.equal(overflowing.cellWidth, narrow.cellWidth);
+  const fits = gridLayout(37, 1360, full.totalHeight, 0, 190, 15);
+  assert.equal(fits.totalHeight, full.totalHeight);
+  assert.equal(fits.cellWidth, full.cellWidth);
 });

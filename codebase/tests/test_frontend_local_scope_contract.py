@@ -164,7 +164,6 @@ def test_local_adjustment_stack_grows_to_a_scrollable_cap() -> None:
     assert "min-height: 72px;" in stack_rule
     assert "max-height: 220px;" in stack_rule
     assert "overflow-y: auto;" in stack_rule
-    assert "scrollbar-gutter: auto;" in stack_rule
     assert "min-height: 0;" in list_rule
 
 

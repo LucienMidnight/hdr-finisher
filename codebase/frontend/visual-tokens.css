@@ -341,10 +341,7 @@
   --section-title-font: var(--font-weight-medium) var(--font-size-lg)/var(--line-height-tight) var(--font-body);
   --subsection-title-font: var(--font-weight-medium) var(--font-size-md)/var(--line-height-tight) var(--font-body);
   --list-row-h: 34px;
-  --scrollbar-w: 10px;
-  /* Full-bleed side-panel scrollbar timing, approved by Steve 2026-11-27. */
-  --overlay-scrollbar-idle-delay: 650ms;
-  --overlay-scrollbar-fade-duration: 160ms;
+  --scrollbar-w: 15px; /* Classic Library scrollbar lane */
   --graph-limit-line: var(--attention);
 }
 

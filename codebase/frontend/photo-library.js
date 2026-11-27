@@ -889,28 +889,32 @@
   grid.addEventListener("keydown", () => { restoreReviewGrid = null; });
   let gridRequests = 0, gridSettleTimer;
   let gridWidth = 0, gridHeight = 0;
+  const gridLaneWidth = parseFloat(getComputedStyle(grid).getPropertyValue("--scrollbar-w"));
+  function measureGrid(top) {
+    return HDRLibraryLayout.gridLayout(state.photos.length, grid.offsetWidth, grid.clientHeight, top, state.size, gridLaneWidth);
+  }
   let reviewGrid = null, restoreReviewGrid = null;
   function paintGrid(reveal = false) {
     const count = state.photos.length ? String(state.photos.length) : ""; if ($("place-count").textContent !== count) $("place-count").textContent = count;
     if (!state.active || state.view !== "grid") return;
     // Keep the current photo in view through the fullscreen window resize too.
-    const resized = gridWidth !== grid.clientWidth || gridHeight !== grid.clientHeight;
+    const resized = gridWidth !== grid.offsetWidth || gridHeight !== grid.clientHeight;
     reveal ||= !restoreReviewGrid && resized && state.layout && state.index >= state.layout.first && state.index < state.layout.last;
-    gridWidth = grid.clientWidth; gridHeight = grid.clientHeight;
-    let layout = HDRLibraryLayout.gridLayout(state.photos.length, gridWidth, gridHeight, grid.scrollTop, state.size);
+    gridWidth = grid.offsetWidth; gridHeight = grid.clientHeight;
+    let layout = measureGrid(grid.scrollTop);
     space.style.height = `${layout.totalHeight}px`;
     if (restoreReviewGrid) {
       grid.scrollTop = selected()?.path === restoreReviewGrid.path ? restoreReviewGrid.top
         : Math.max(0, layout.scrollFor(state.index) + layout.rowHeight / 2 - gridHeight / 2);
       reveal = false;
-      layout = HDRLibraryLayout.gridLayout(state.photos.length, gridWidth, gridHeight, grid.scrollTop, state.size);
+      layout = measureGrid(grid.scrollTop);
     }
     if (reveal && state.index >= 0) {
       const top = layout.scrollFor(state.index);
       const bottom = layout.scrollFor(state.index + layout.columns);
       if (top < grid.scrollTop) grid.scrollTop = top;
       else if (bottom > grid.scrollTop + gridHeight) grid.scrollTop = bottom - gridHeight;
-      layout = HDRLibraryLayout.gridLayout(state.photos.length, gridWidth, gridHeight, grid.scrollTop, state.size);
+      layout = measureGrid(grid.scrollTop);
     }
     state.layout = layout;
     $("library-empty").hidden = state.photos.length > 0;
@@ -1680,7 +1684,7 @@
       applyQuery(false);
       // Grow the scroll extent before restoring: Chromium otherwise clamps
       // against the previous height. Anchor by photo when sorted rows arrive.
-      const layout=HDRLibraryLayout.gridLayout(state.photos.length,grid.clientWidth,grid.clientHeight,top,state.size);
+      const layout=measureGrid(top);
       const index=state.photos.findIndex(photo=>photo.path===anchor);
       space.style.height=`${layout.totalHeight}px`;
       grid.scrollTop=index>=0 ? layout.scrollFor(index)+offset : top;

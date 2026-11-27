@@ -65,7 +65,7 @@ body { margin: 0; color: var(--body); background: var(--app); }
 .library-popover button:disabled { color: var(--muted); cursor: default; }
 .library-popover [aria-checked="true"] { color: var(--text); }
 .library-popover [aria-checked="true"]::after { content: "✓"; color: var(--accent-strong); }
-#library-grid { position: relative; overflow-x: hidden; overflow-y: scroll; min-height: 0; outline: 0; }
+#library-grid { position: relative; overflow-x: hidden; overflow-y: auto; min-height: 0; outline: 0; }
 #grid-space { position: relative; width: 100%; }
 /* Each photo sits on its own tile, a step lighter than the surround. No lines: the gap between tiles is the grid. */
 .library-cell { position: absolute; display: flex; flex-direction: column; padding: 7px 7px 0; cursor: default; border-radius: var(--radius); overflow: hidden; background: var(--panel); }
@@ -257,7 +257,6 @@ body { margin: 0; color: var(--body); background: var(--app); }
 .library-left-closed #smart-albums { display: none; }
 
 /* Scrollable library surfaces use the same themed colours as Grade's rail. */
-.library *, .library-picker *, .library-smart-editor *, .library-tags *, .library-filter-panel * { scrollbar-color: var(--border) var(--panel); }
 .library-nav { overflow-y: auto; }
 .library-nav-section { display: flex; flex-direction: column; flex: 0 0 auto; min-height: 0; }
 .library-nav-section #folders, .library-nav-section #albums, .library-nav-section #smart-albums { max-height: none; overflow: visible; min-height: 0; }

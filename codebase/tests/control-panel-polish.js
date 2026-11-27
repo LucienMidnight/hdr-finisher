@@ -190,14 +190,14 @@ async function verifyToneHierarchy(page) {
   const compact=await page.evaluate(()=>{
    const surface=document.querySelector('#local-adjustments-panel > .local-stack-surface');
    const list=document.getElementById('local-adjustment-list'),style=getComputedStyle(surface);
-   const short={gutter:surface.offsetWidth-surface.clientWidth,overflow:style.overflowY,track:getComputedStyle(surface,'::-webkit-scrollbar-track').backgroundColor};
+   const lane=()=>surface.offsetWidth-surface.clientWidth-surface.clientLeft-parseFloat(style.borderRightWidth);
+   const short=lane();
    while(list.children.length<7){const row=list.firstElementChild.cloneNode(true);row.dataset.layoutFixture='true';list.append(row);}
    const rows=[...list.children].map(row=>row.getBoundingClientRect());
-   return {short,height:surface.clientHeight,sixFit:rows[5].bottom<=surface.getBoundingClientRect().bottom,seventhBelow:rows[6].bottom>surface.getBoundingClientRect().bottom,heights:rows.map(r=>r.height),nested:getComputedStyle(list).overflowY,gutter:surface.offsetWidth-surface.clientWidth};
+   return {short,height:surface.clientHeight,sixFit:rows[5].bottom<=surface.getBoundingClientRect().bottom,seventhBelow:rows[6].bottom>surface.getBoundingClientRect().bottom,heights:rows.map(r=>r.height),nested:getComputedStyle(list).overflowY,gutter:lane()};
   });
   assert.equal(compact.height,204);assert(compact.sixFit&&compact.seventhBelow);assert(compact.heights.every(h=>h===34));
-  assert.equal(compact.short.overflow,'scroll');assert(compact.short.gutter>1);assert.equal(compact.gutter,compact.short.gutter);
-  assert.notEqual(compact.short.track,'rgba(0, 0, 0, 0)');assert.equal(compact.nested,'visible');
+  assert.equal(compact.short,0);assert.equal(compact.gutter,15);assert.equal(compact.nested,'visible');
   await page.screenshot({path:path.join(output,'compact-local.png')});
   await page.evaluate(()=>document.querySelectorAll('[data-layout-fixture]').forEach(row=>row.remove()));
   await page.screenshot({path:path.join(output,'local.png')});
@@ -208,11 +208,12 @@ async function verifyToneHierarchy(page) {
     const rect = rail.getBoundingClientRect();
     const style = getComputedStyle(rail);
     return { edge: rect.right - header.getBoundingClientRect().right,
+      overflowing: rail.scrollHeight > rail.clientHeight,
       rightBorder: parseFloat(style.borderRightWidth),
       gutter: rail.offsetWidth - rail.clientWidth - parseFloat(style.borderLeftWidth) - parseFloat(style.borderRightWidth) };
   });
-  assert.equal(railChrome.gutter, 0, "Outer rail must not reserve a gutter");
-  assert(Math.abs(railChrome.edge - railChrome.rightBorder) <= 1, "Grade title divider must reach the right edge");
+  assert.equal(railChrome.gutter, railChrome.overflowing ? 15 : 0, "Outer rail takes space only when needed");
+  assert(Math.abs(railChrome.edge - railChrome.rightBorder - railChrome.gutter) <= 1, "Grade title divider must reach the lane or outside edge");
   const tool=await page.evaluate(()=>`#retouch-mode-${retouchUI.mode}`);
   await page.locator(tool).click();assert.equal(await page.evaluate(()=>retouchUI.active),false);
   await page.locator(tool).click();assert.equal(await page.evaluate(()=>retouchUI.active),true);
@@ -231,7 +232,7 @@ async function verifyToneHierarchy(page) {
   await page.screenshot({path:path.join(output,'export.png')});
   assert.equal(await page.locator('.batch-preset-help').count(),0);
   const field=await page.locator('#batch-directory').evaluate(e=>({height:e.getBoundingClientRect().height,box:getComputedStyle(e).boxSizing}));assert(field.height>=34,`Export field: ${JSON.stringify(field)}`);assert.equal(field.box,'border-box');
-  assert.deepEqual(errors,[]);console.log('PASS: default state, title spacing, full-bleed outer panel and unchanged boxed list, title tokens, EV readout, stable SDR scroll, local actions, round icons, retouch brush stroke and export fields');
+  assert.deepEqual(errors,[]);console.log('PASS: default state, title spacing, overflow-only lanes on outer panel and boxed list, title tokens, EV readout, stable SDR scroll, local actions, round icons, retouch brush stroke and export fields');
  } catch(error) {
   console.error('Panel diagnostics',await page.evaluate(()=>({errors:typeof state==='undefined'?null:state.gpuPreview?.detail,workflow:document.body.dataset.workflow,retouch:typeof retouchUI==='undefined'?null:{active:retouchUI.active,busy:retouchUI.busy},status:document.querySelector('#retouch-status')?.textContent})).catch(()=>null),errors);
   await page.screenshot({path:path.join(output,'failure.png')}).catch(()=>{});throw error;

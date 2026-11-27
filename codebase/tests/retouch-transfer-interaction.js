@@ -22,20 +22,20 @@ const hash=p=>crypto.createHash("sha256").update(fs.readFileSync(p)).digest("hex
   });
   await page.locator("#file-input").setInputFiles({name:"transfer-texture.png",mimeType:"image/png",buffer:Buffer.from(data,"base64")});
   await page.waitForFunction(()=>state.session&&!state.importInProgress&&state.gpuPreview?.lastPresentedFrame,null,{timeout:120000});
-  // The same six compact rows and permanent rail are used by both panels.
+  // The same six compact rows and overflow-only lane are used by both panels.
   await page.locator("#grade-mode-local").click();
   const localLayout = await page.evaluate(() => {
     const surface=document.querySelector("#local-adjustments-panel > .local-stack-surface");
     const list=document.getElementById("local-adjustment-list"), style=getComputedStyle(surface);
-    return {rowHeight:parseFloat(style.getPropertyValue("--list-row-h")), height:surface.clientHeight, overflow:style.overflowY, rail:style.getPropertyValue("scrollbar-gutter"), nested:getComputedStyle(list).overflowY};
+    return {rowHeight:parseFloat(style.getPropertyValue("--list-row-h")), height:surface.clientHeight, lane:surface.offsetWidth-surface.clientWidth-surface.clientLeft-parseFloat(style.borderRightWidth), nested:getComputedStyle(list).overflowY};
   });
-  assert(localLayout.rowHeight>0,"List row token must resolve");assert.equal(localLayout.height,6*localLayout.rowHeight,"Local surface must fit six token-sized rows");assert.equal(localLayout.overflow,"scroll");assert.equal(localLayout.nested,"visible");
+  assert(localLayout.rowHeight>0,"List row token must resolve");assert.equal(localLayout.height,6*localLayout.rowHeight,"Local surface must fit six token-sized rows");assert.equal(localLayout.lane,0);assert.equal(localLayout.nested,"visible");
   await page.locator("#grade-mode-retouch").click();
   const repairLayout = await page.evaluate(() => {
     const surface=document.querySelector(".repair-stack-surface"), tools=document.querySelector(".retouch-mode-switch");
-    return {height:surface.clientHeight,overflow:getComputedStyle(surface).overflowY,toolsBeforeList:tools.getBoundingClientRect().bottom<=surface.getBoundingClientRect().top};
+    return {height:surface.clientHeight,lane:surface.offsetWidth-surface.clientWidth-surface.clientLeft-parseFloat(getComputedStyle(surface).borderRightWidth),toolsBeforeList:tools.getBoundingClientRect().bottom<=surface.getBoundingClientRect().top};
   });
-  assert.equal(repairLayout.height,localLayout.height);assert.equal(repairLayout.overflow,"scroll");assert(repairLayout.toolsBeforeList, "Repair tools must precede the repair list");
+  assert.equal(repairLayout.height,localLayout.height);assert.equal(repairLayout.lane,0);assert(repairLayout.toolsBeforeList, "Repair tools must precede the repair list");
   assert.equal(await page.evaluate(()=>retouchUI.active),true,"entering Retouch did not start the tool");
   const screen=point=>page.evaluate(p=>{const r=activePreviewElement().getBoundingClientRect(),q=sourcePointToDisplay(p);return{x:r.left+q.x*r.width,y:r.top+q.y*r.height};},point);
   const altClick=async p=>{await page.keyboard.down("Alt");try{await page.mouse.click(p.x,p.y);}finally{await page.keyboard.up("Alt");}};

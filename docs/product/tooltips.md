@@ -65,30 +65,30 @@ Clipped lane, scope, preview and filename labels use their visible text; dynamic
 | name.title | photo.name | dynamic expression; name/status supplied at runtime | codebase/frontend/photo-library.js:692 · [source](../../codebase/frontend/photo-library.js#L692) |
 | element.title | Online-only. Open this photo to download it. | fixed | codebase/frontend/photo-library.js:824 · [source](../../codebase/frontend/photo-library.js#L824) |
 | element aria-label | Photo row loading | name only (fallback candidate) | codebase/frontend/photo-library.js:872 · [source](../../codebase/frontend/photo-library.js#L872) |
-| element.title | name | dynamic expression | codebase/frontend/photo-library.js:966 · [source](../../codebase/frontend/photo-library.js#L966) |
-| reviewMarks aria-label | Photo marks | name only (fallback candidate) | codebase/frontend/photo-library.js:1231 · [source](../../codebase/frontend/photo-library.js#L1231) |
-| button.title | warning.reason | dynamic expression | codebase/frontend/photo-library.js:1239 · [source](../../codebase/frontend/photo-library.js#L1239) |
-| next aria-label | Detail preview | name only (fallback candidate) | codebase/frontend/photo-library.js:1474 · [source](../../codebase/frontend/photo-library.js#L1474) |
-| .title | place.kind === "smart" ? "Smart album · saved filter across the indexed library" : place.kind === "album" ? "Album. Photos stay where they are." : place.kind ? "Every connected photo that carries this tag" : path | dynamic expression | codebase/frontend/photo-library.js:1623 · [source](../../codebase/frontend/photo-library.js#L1623) |
-| path — text used by dynamic tooltips | place.path &#124;&#124; "" | dynamic supporting definition | codebase/frontend/photo-library.js:1601 · [source](../../codebase/frontend/photo-library.js#L1601) |
-| expand aria-label | &#96;Expand ${folder.name}&#96; | dynamic expression | codebase/frontend/photo-library.js:1939 · [source](../../codebase/frontend/photo-library.js#L1939) |
-| name.title | folder.path | dynamic expression; name/status supplied at runtime | codebase/frontend/photo-library.js:1940 · [source](../../codebase/frontend/photo-library.js#L1940) |
-| ) aria-label | &#96;${closed ? "Expand" : "Collapse"} ${side === "left" ? "folders" : "details"}&#96; | dynamic expression | codebase/frontend/photo-library.js:2183 · [source](../../codebase/frontend/photo-library.js#L2183) |
-| closed — text used by dynamic tooltips | !(library.classList.contains("library-left-closed") && library.classList.contains("library-right-closed")) | dynamic supporting definition | codebase/frontend/photo-library.js:2656 · [source](../../codebase/frontend/photo-library.js#L2656) |
+| element.title | name | dynamic expression | codebase/frontend/photo-library.js:970 · [source](../../codebase/frontend/photo-library.js#L970) |
+| reviewMarks aria-label | Photo marks | name only (fallback candidate) | codebase/frontend/photo-library.js:1235 · [source](../../codebase/frontend/photo-library.js#L1235) |
+| button.title | warning.reason | dynamic expression | codebase/frontend/photo-library.js:1243 · [source](../../codebase/frontend/photo-library.js#L1243) |
+| next aria-label | Detail preview | name only (fallback candidate) | codebase/frontend/photo-library.js:1478 · [source](../../codebase/frontend/photo-library.js#L1478) |
+| .title | place.kind === "smart" ? "Smart album · saved filter across the indexed library" : place.kind === "album" ? "Album. Photos stay where they are." : place.kind ? "Every connected photo that carries this tag" : path | dynamic expression | codebase/frontend/photo-library.js:1627 · [source](../../codebase/frontend/photo-library.js#L1627) |
+| path — text used by dynamic tooltips | place.path &#124;&#124; "" | dynamic supporting definition | codebase/frontend/photo-library.js:1605 · [source](../../codebase/frontend/photo-library.js#L1605) |
+| expand aria-label | &#96;Expand ${folder.name}&#96; | dynamic expression | codebase/frontend/photo-library.js:1943 · [source](../../codebase/frontend/photo-library.js#L1943) |
+| name.title | folder.path | dynamic expression; name/status supplied at runtime | codebase/frontend/photo-library.js:1944 · [source](../../codebase/frontend/photo-library.js#L1944) |
+| ) aria-label | &#96;${closed ? "Expand" : "Collapse"} ${side === "left" ? "folders" : "details"}&#96; | dynamic expression | codebase/frontend/photo-library.js:2187 · [source](../../codebase/frontend/photo-library.js#L2187) |
+| closed — text used by dynamic tooltips | !(library.classList.contains("library-left-closed") && library.classList.contains("library-right-closed")) | dynamic supporting definition | codebase/frontend/photo-library.js:2660 · [source](../../codebase/frontend/photo-library.js#L2660) |
 | library — text used by dynamic tooltips | $("library") | dynamic supporting definition | codebase/frontend/photo-library.js:7 · [source](../../codebase/frontend/photo-library.js#L7) |
-| .title | &#96;Sorted by ${item.textContent.toLowerCase()}&#96; | dynamic expression | codebase/frontend/photo-library.js:2212 · [source](../../codebase/frontend/photo-library.js#L2212) |
-| item — text used by dynamic tooltips | event.target.closest("[data-sort]") | dynamic supporting definition | codebase/frontend/photo-library.js:2230 · [source](../../codebase/frontend/photo-library.js#L2230) |
-| event — text used by dynamic tooltips | JSON.parse(pending.join("")) | dynamic supporting definition | codebase/frontend/photo-library.js:1701 · [source](../../codebase/frontend/photo-library.js#L1701) |
-| ) aria-label | label | dynamic expression; name/status supplied at runtime | codebase/frontend/photo-library.js:2215 · [source](../../codebase/frontend/photo-library.js#L2215) |
-| label — text used by dynamic tooltips | state.descending ? "Descending. Switch to ascending" : "Ascending. Switch to descending" | dynamic supporting definition | codebase/frontend/photo-library.js:2214 · [source](../../codebase/frontend/photo-library.js#L2214) |
+| .title | &#96;Sorted by ${item.textContent.toLowerCase()}&#96; | dynamic expression | codebase/frontend/photo-library.js:2216 · [source](../../codebase/frontend/photo-library.js#L2216) |
+| item — text used by dynamic tooltips | event.target.closest("[data-sort]") | dynamic supporting definition | codebase/frontend/photo-library.js:2234 · [source](../../codebase/frontend/photo-library.js#L2234) |
+| event — text used by dynamic tooltips | JSON.parse(pending.join("")) | dynamic supporting definition | codebase/frontend/photo-library.js:1705 · [source](../../codebase/frontend/photo-library.js#L1705) |
+| ) aria-label | label | dynamic expression; name/status supplied at runtime | codebase/frontend/photo-library.js:2219 · [source](../../codebase/frontend/photo-library.js#L2219) |
+| label — text used by dynamic tooltips | state.descending ? "Descending. Switch to ascending" : "Ascending. Switch to descending" | dynamic supporting definition | codebase/frontend/photo-library.js:2218 · [source](../../codebase/frontend/photo-library.js#L2218) |
 | state — text used by dynamic tooltips | { photos: [], allPhotos: [], reading: false, hdr: false, zoom: false, zoomX: .5, zoomY: .5, zoomScale: 1, native: null, nativeMeta: null, nativeLoading: false, fitMeta: null, displayEpoch: 0, scanError: "", sort: "time", descending: false, filters: {}, index: -1, path: "", view: "grid", review: false, beforeReview: "grid", pins: [], cells: new Map(), filmCells: new Map(), size: 190, selection: new Set(), anchor: -1, scan: null, single: null, active: true, timing: false, picker: null, hiddenFiles: 0, folderSelection: new Set(), folderAnchor: "", collection: null, smartFilters: null, allFacts: false, labelNames: {}, indexing: null } | dynamic supporting definition | codebase/frontend/photo-library.js:8 · [source](../../codebase/frontend/photo-library.js#L8) |
-| .title | label | dynamic expression; name/status supplied at runtime | codebase/frontend/photo-library.js:2215::2 · [source](../../codebase/frontend/photo-library.js#L2215) |
-| ) aria-label | Dock Library | name only (fallback candidate) | codebase/frontend/photo-library.js:2735 · [source](../../codebase/frontend/photo-library.js#L2735) |
-| .title | Return Library to the main window | fixed | codebase/frontend/photo-library.js:2736 · [source](../../codebase/frontend/photo-library.js#L2736) |
-| notice.title | job.stage | dynamic expression | codebase/frontend/photo-library.js:2766 · [source](../../codebase/frontend/photo-library.js#L2766) |
-| job — text used by dynamic tooltips | jobs.filter(j=&gt;j.path===cell.dataset.path && j.kind!=="quick" && j.reason==="needs more memory").sort((a,b)=&gt;b.estimate-a.estimate)[0] | dynamic supporting definition | codebase/frontend/photo-library.js:2762 · [source](../../codebase/frontend/photo-library.js#L2762) |
-| stage — text used by dynamic tooltips | $("single-stage") | dynamic supporting definition | codebase/frontend/photo-library.js:1493 · [source](../../codebase/frontend/photo-library.js#L1493) |
-| notice aria-label | job.stage+" Open memory settings" | dynamic expression | codebase/frontend/photo-library.js:2767 · [source](../../codebase/frontend/photo-library.js#L2767) |
+| .title | label | dynamic expression; name/status supplied at runtime | codebase/frontend/photo-library.js:2219::2 · [source](../../codebase/frontend/photo-library.js#L2219) |
+| ) aria-label | Dock Library | name only (fallback candidate) | codebase/frontend/photo-library.js:2739 · [source](../../codebase/frontend/photo-library.js#L2739) |
+| .title | Return Library to the main window | fixed | codebase/frontend/photo-library.js:2740 · [source](../../codebase/frontend/photo-library.js#L2740) |
+| notice.title | job.stage | dynamic expression | codebase/frontend/photo-library.js:2770 · [source](../../codebase/frontend/photo-library.js#L2770) |
+| job — text used by dynamic tooltips | jobs.filter(j=&gt;j.path===cell.dataset.path && j.kind!=="quick" && j.reason==="needs more memory").sort((a,b)=&gt;b.estimate-a.estimate)[0] | dynamic supporting definition | codebase/frontend/photo-library.js:2766 · [source](../../codebase/frontend/photo-library.js#L2766) |
+| stage — text used by dynamic tooltips | $("single-stage") | dynamic supporting definition | codebase/frontend/photo-library.js:1497 · [source](../../codebase/frontend/photo-library.js#L1497) |
+| notice aria-label | job.stage+" Open memory settings" | dynamic expression | codebase/frontend/photo-library.js:2771 · [source](../../codebase/frontend/photo-library.js#L2771) |
 
 ### library albums
 
@@ -846,7 +846,7 @@ Clipped lane, scope, preview and filename labels use their visible text; dynamic
 | model — text used by dynamic tooltips | {paths:[],photos:[],presets:[],draft:null,saved:null,version:0,job:null,selected:new Set(),directory:"",grant:null,anchor:0,closedJob:null} | dynamic supporting definition | codebase/frontend/batch-export.js:3 · [source](../../codebase/frontend/batch-export.js#L3) |
 | job — text used by dynamic tooltips | await api("/api/batch-export",{paths,preset,directory:model.directory,path_grant:model.grant},"POST",{id:crypto.randomUUID()}) | dynamic supporting definition | codebase/frontend/batch-export.js:238 · [source](../../codebase/frontend/batch-export.js#L238) |
 | skipped — text used by dynamic tooltips | results.filter(r=&gt;r.outcome==="skipped").length | dynamic supporting definition | codebase/frontend/batch-export.js:154 · [source](../../codebase/frontend/batch-export.js#L154) |
-| results — text used by dynamic tooltips | node("ul") | dynamic supporting definition | codebase/frontend/batch-export.js:331 · [source](../../codebase/frontend/batch-export.js#L331) |
+| results — text used by dynamic tooltips | node("ul") | dynamic supporting definition | codebase/frontend/batch-export.js:329 · [source](../../codebase/frontend/batch-export.js#L329) |
 | b.title | label | dynamic expression; name/status supplied at runtime | codebase/frontend/batch-export.js:58::2 · [source](../../codebase/frontend/batch-export.js#L58) |
 | els.exportResizeMode.title | els.exportResizeMode.selectedOptions[0]?.textContent &#124;&#124; "" | dynamic expression | codebase/frontend/batch-export.js:107 · [source](../../codebase/frontend/batch-export.js#L107) |
 | patternHelp.dataset.tooltip | $("batch-example").textContent | dynamic expression | codebase/frontend/batch-export.js:108 · [source](../../codebase/frontend/batch-export.js#L108) |
@@ -861,25 +861,25 @@ Clipped lane, scope, preview and filename labels use their visible text; dynamic
 | collapse.title | collapsed?"Expand export presets":"Collapse export presets" | dynamic expression | codebase/frontend/batch-export.js:258 · [source](../../codebase/frontend/batch-export.js#L258) |
 | collapse aria-label | Collapse export presets | name only (fallback candidate) | codebase/frontend/batch-export.js:262 · [source](../../codebase/frontend/batch-export.js#L262) |
 | collapse.title | Collapse export presets | fixed | codebase/frontend/batch-export.js:262::2 · [source](../../codebase/frontend/batch-export.js#L262) |
-| select aria-label | Output version | name only (fallback candidate) | codebase/frontend/batch-export.js:273 · [source](../../codebase/frontend/batch-export.js#L273) |
-| exportFormat aria-label | Format | name only (fallback candidate) | codebase/frontend/batch-export.js:279 · [source](../../codebase/frontend/batch-export.js#L279) |
-| exportPreset aria-label | Quality profile | name only (fallback candidate) | codebase/frontend/batch-export.js:279::2 · [source](../../codebase/frontend/batch-export.js#L279) |
-| els.exportResizeMode.title | els.exportResizeMode.selectedOptions[0]?.textContent &#124;&#124; "" | dynamic expression | codebase/frontend/batch-export.js:281 · [source](../../codebase/frontend/batch-export.js#L281) |
-| input aria-label | &#96;${label} in pixels&#96; | dynamic expression | codebase/frontend/batch-export.js:286 · [source](../../codebase/frontend/batch-export.js#L286) |
-| pattern aria-label | File name pattern | name only (fallback candidate) | codebase/frontend/batch-export.js:302 · [source](../../codebase/frontend/batch-export.js#L302) |
-| tokens aria-label | Insert filename token | name only (fallback candidate) | codebase/frontend/batch-export.js:303 · [source](../../codebase/frontend/batch-export.js#L303) |
-| dest aria-label | Destination folder | name only (fallback candidate) | codebase/frontend/batch-export.js:315 · [source](../../codebase/frontend/batch-export.js#L315) |
-| dest.title | dest.value | dynamic expression; name/status supplied at runtime | codebase/frontend/batch-export.js:315::2 · [source](../../codebase/frontend/batch-export.js#L315) |
-| dest — text used by dynamic tooltips | node("input") | dynamic supporting definition | codebase/frontend/batch-export.js:315::3 · [source](../../codebase/frontend/batch-export.js#L315) |
-| b aria-label | kind==="grid"?"Grid":"Preview" | dynamic expression | codebase/frontend/batch-export.js:322 · [source](../../codebase/frontend/batch-export.js#L322) |
-| b.title | kind==="grid"?"Grid":"Preview" | dynamic expression | codebase/frontend/batch-export.js:322::2 · [source](../../codebase/frontend/batch-export.js#L322) |
-| b.title | label | dynamic expression; name/status supplied at runtime | codebase/frontend/batch-export.js:323 · [source](../../codebase/frontend/batch-export.js#L323) |
-| b aria-label | label | dynamic expression; name/status supplied at runtime | codebase/frontend/batch-export.js:323::2 · [source](../../codebase/frontend/batch-export.js#L323) |
-| grid aria-label | Photos in this batch | name only (fallback candidate) | codebase/frontend/batch-export.js:325 · [source](../../codebase/frontend/batch-export.js#L325) |
-| meter aria-label | Overall export progress | name only (fallback candidate) | codebase/frontend/batch-export.js:331::2 · [source](../../codebase/frontend/batch-export.js#L331) |
-| Export help | Each output version creates a separate file from the same saved photo edits, with its own export settings (format, size and naming). Changes here affect only the selected version. Export creates all versions. | fixed | codebase/frontend/batch-export.js:275 · [source](../../codebase/frontend/batch-export.js#L275) |
-| Export help | framingNote.textContent | dynamic expression | codebase/frontend/batch-export.js:292 · [source](../../codebase/frontend/batch-export.js#L292) |
-| Export help | Filename preview | fixed | codebase/frontend/batch-export.js:306 · [source](../../codebase/frontend/batch-export.js#L306) |
+| select aria-label | Output version | name only (fallback candidate) | codebase/frontend/batch-export.js:271 · [source](../../codebase/frontend/batch-export.js#L271) |
+| exportFormat aria-label | Format | name only (fallback candidate) | codebase/frontend/batch-export.js:277 · [source](../../codebase/frontend/batch-export.js#L277) |
+| exportPreset aria-label | Quality profile | name only (fallback candidate) | codebase/frontend/batch-export.js:277::2 · [source](../../codebase/frontend/batch-export.js#L277) |
+| els.exportResizeMode.title | els.exportResizeMode.selectedOptions[0]?.textContent &#124;&#124; "" | dynamic expression | codebase/frontend/batch-export.js:279 · [source](../../codebase/frontend/batch-export.js#L279) |
+| input aria-label | &#96;${label} in pixels&#96; | dynamic expression | codebase/frontend/batch-export.js:284 · [source](../../codebase/frontend/batch-export.js#L284) |
+| pattern aria-label | File name pattern | name only (fallback candidate) | codebase/frontend/batch-export.js:300 · [source](../../codebase/frontend/batch-export.js#L300) |
+| tokens aria-label | Insert filename token | name only (fallback candidate) | codebase/frontend/batch-export.js:301 · [source](../../codebase/frontend/batch-export.js#L301) |
+| dest aria-label | Destination folder | name only (fallback candidate) | codebase/frontend/batch-export.js:313 · [source](../../codebase/frontend/batch-export.js#L313) |
+| dest.title | dest.value | dynamic expression; name/status supplied at runtime | codebase/frontend/batch-export.js:313::2 · [source](../../codebase/frontend/batch-export.js#L313) |
+| dest — text used by dynamic tooltips | node("input") | dynamic supporting definition | codebase/frontend/batch-export.js:313::3 · [source](../../codebase/frontend/batch-export.js#L313) |
+| b aria-label | kind==="grid"?"Grid":"Preview" | dynamic expression | codebase/frontend/batch-export.js:320 · [source](../../codebase/frontend/batch-export.js#L320) |
+| b.title | kind==="grid"?"Grid":"Preview" | dynamic expression | codebase/frontend/batch-export.js:320::2 · [source](../../codebase/frontend/batch-export.js#L320) |
+| b.title | label | dynamic expression; name/status supplied at runtime | codebase/frontend/batch-export.js:321 · [source](../../codebase/frontend/batch-export.js#L321) |
+| b aria-label | label | dynamic expression; name/status supplied at runtime | codebase/frontend/batch-export.js:321::2 · [source](../../codebase/frontend/batch-export.js#L321) |
+| grid aria-label | Photos in this batch | name only (fallback candidate) | codebase/frontend/batch-export.js:323 · [source](../../codebase/frontend/batch-export.js#L323) |
+| meter aria-label | Overall export progress | name only (fallback candidate) | codebase/frontend/batch-export.js:329::2 · [source](../../codebase/frontend/batch-export.js#L329) |
+| Export help | Each output version creates a separate file from the same saved photo edits, with its own export settings (format, size and naming). Changes here affect only the selected version. Export creates all versions. | fixed | codebase/frontend/batch-export.js:273 · [source](../../codebase/frontend/batch-export.js#L273) |
+| Export help | framingNote.textContent | dynamic expression | codebase/frontend/batch-export.js:290 · [source](../../codebase/frontend/batch-export.js#L290) |
+| Export help | Filename preview | fixed | codebase/frontend/batch-export.js:304 · [source](../../codebase/frontend/batch-export.js#L304) |
 
 ### export ui
 
@@ -936,7 +936,7 @@ Clipped lane, scope, preview and filename labels use their visible text; dynamic
 | Control / visible name | Text | Flags | ID and source |
 | --- | --- | --- | --- |
 | Close | Close folder browser | name only (fallback) | codebase/frontend/index.html::#directory-browser-close · [source](../../codebase/frontend/index.html#L1772) |
-| Close | Close folder browser | name only (fallback) | codebase/frontend/media-browser-standalone.html::#directory-browser-close · [source](../../codebase/frontend/media-browser-standalone.html#L15) |
+| Close | Close folder browser | name only (fallback) | codebase/frontend/media-browser-standalone.html::#directory-browser-close · [source](../../codebase/frontend/media-browser-standalone.html#L17) |
 
 ### directory-browser
 
@@ -947,11 +947,11 @@ Clipped lane, scope, preview and filename labels use their visible text; dynamic
 | Resize Kind column | Resize Kind column | name only (fallback) | codebase/frontend/index.html:1798 · [source](../../codebase/frontend/index.html#L1798) |
 | Resize Date Added column | Resize Date Added column | name only (fallback) | codebase/frontend/index.html:1802 · [source](../../codebase/frontend/index.html#L1802) |
 | Resize preview panel | Resize preview panel | name only (fallback) | codebase/frontend/index.html:1807 · [source](../../codebase/frontend/index.html#L1807) |
-| Resize Name column | Resize Name column | name only (fallback) | codebase/frontend/media-browser-standalone.html:33 · [source](../../codebase/frontend/media-browser-standalone.html#L33) |
-| Resize Size column | Resize Size column | name only (fallback) | codebase/frontend/media-browser-standalone.html:37 · [source](../../codebase/frontend/media-browser-standalone.html#L37) |
-| Resize Kind column | Resize Kind column | name only (fallback) | codebase/frontend/media-browser-standalone.html:41 · [source](../../codebase/frontend/media-browser-standalone.html#L41) |
-| Resize Date Added column | Resize Date Added column | name only (fallback) | codebase/frontend/media-browser-standalone.html:45 · [source](../../codebase/frontend/media-browser-standalone.html#L45) |
-| Resize preview panel | Resize preview panel | name only (fallback) | codebase/frontend/media-browser-standalone.html:50 · [source](../../codebase/frontend/media-browser-standalone.html#L50) |
+| Resize Name column | Resize Name column | name only (fallback) | codebase/frontend/media-browser-standalone.html:35 · [source](../../codebase/frontend/media-browser-standalone.html#L35) |
+| Resize Size column | Resize Size column | name only (fallback) | codebase/frontend/media-browser-standalone.html:39 · [source](../../codebase/frontend/media-browser-standalone.html#L39) |
+| Resize Kind column | Resize Kind column | name only (fallback) | codebase/frontend/media-browser-standalone.html:43 · [source](../../codebase/frontend/media-browser-standalone.html#L43) |
+| Resize Date Added column | Resize Date Added column | name only (fallback) | codebase/frontend/media-browser-standalone.html:47 · [source](../../codebase/frontend/media-browser-standalone.html#L47) |
+| Resize preview panel | Resize preview panel | name only (fallback) | codebase/frontend/media-browser-standalone.html:52 · [source](../../codebase/frontend/media-browser-standalone.html#L52) |
 
 ### settings-dialog
 

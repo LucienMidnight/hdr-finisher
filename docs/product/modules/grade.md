@@ -3579,3 +3579,12 @@ pointer-up and swallowed the first click on the minimum Mac. The same framing
 UI steps succeed on v0.9.2 before its missing local encoder stops delivery.
 Clicks that open Metadata keep it open; the pre-click open state is captured
 before dismissal. No grade, rendering, framing dimensions or delivery settings change.
+
+### November 27, 2026: Unified scrollbars and status borders
+
+The Grade Control Panel (Global, Local and Retouch), both boxed stacks,
+and the shared Metadata and Scopes areas use the Library's 15 px native
+scrollbar. It has arrows and a left hairline when content overflows, with
+no fade or reserved lane when content fits. The stacks still show six rows
+before scrolling. The Grade and Proof status rows regain their top hairline.
+This replaces the earlier permanent stack rail and fading panel thumb.

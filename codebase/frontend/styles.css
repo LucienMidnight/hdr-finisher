@@ -42,8 +42,6 @@
   --local-icon-color: var(--text);
   --local-stack-background: var(--raised);
   --local-stack-border: var(--border);
-  --local-stack-scrollbar-track: var(--deep);
-  --local-stack-scrollbar-thumb: var(--quiet);
   --local-disabled-opacity: 0.42;
   --group-chevron-shape: url("assets/icons/tabler/chevron-right.svg");
 
@@ -1290,7 +1288,6 @@ input[type="text"] {
    the rail's themed thumb and track, never the user's Frame override. */
 .viewport-frame.zoom-custom {
   overflow: auto;
-  scrollbar-color: var(--border) var(--panel);
 }
 
 #preview-overlay {
@@ -1588,7 +1585,6 @@ input[type="text"] {
   border-left: 1px solid var(--border);
   border-radius: 0;
   background: var(--hf-panel);
-  scrollbar-color: var(--border) var(--panel);
   /* Stack rows are inserted above the focused toolbar. Browser scroll
      anchoring must not move the surrounding control panel when that happens;
      the stack owns its own overflow. */
@@ -2349,7 +2345,6 @@ input[type="range"] {
   margin: 0;
   border: 0;
   border-radius: 0;
-  scrollbar-gutter: stable;
 }
 
 .media-browser-sidebar,
@@ -2360,7 +2355,6 @@ input[type="range"] {
 
 .media-browser-sidebar {
   overflow-y: auto;
-  scrollbar-gutter: stable;
 }
 
 .media-browser-sidebar strong {
@@ -4839,7 +4833,7 @@ body[data-grade-mode="local"] .local-mask-overlay.editing {
 #group-preset-search { width: 100%; min-width: 0; height: 32px; padding: var(--space-6) var(--space-8); border: 1px solid var(--hairline); border-radius: var(--radius); background: var(--raised); color: var(--text); font: var(--font-size-xs) var(--font-body); }
 .group-preset-content > section { padding: var(--space-18) 22px; }
 .group-preset-content h3 { margin: 0 0 var(--space-10); font-size: var(--font-size-md); }
-.group-preset-content > section[aria-labelledby="group-preset-saved-title"] { min-height: 0; overflow-y: auto; scrollbar-color: var(--border) var(--panel); }
+.group-preset-content > section[aria-labelledby="group-preset-saved-title"] { min-height: 0; overflow-y: auto; }
 .group-preset-list { display: grid; gap: var(--space-6); }
 .group-preset-row { display: grid; grid-template-columns: minmax(0, 1fr) repeat(4, auto); min-height: 40px; padding: var(--space-5) var(--space-6) var(--space-5) 11px; border: 1px solid var(--hairline); align-items: center; gap: var(--space-5); background: var(--input); }
 .group-preset-row.built-in { grid-template-columns: minmax(0, 1fr) auto; }
@@ -5356,7 +5350,6 @@ body[data-workflow="export"] .grade-rail {
   overflow-y: auto;
   border-left: 1px solid var(--hairline);
   background: var(--panel);
-  scrollbar-color: var(--border) var(--panel);
 }
 
 body[data-workflow="proof"] #proof-workflow-panel {
@@ -6416,24 +6409,6 @@ input[type="range"]::-webkit-slider-thumb {
   overflow-x: hidden;
   overflow-y: auto;
   overscroll-behavior: contain;
-  scrollbar-gutter: auto;
-  scrollbar-color: var(--local-stack-scrollbar-thumb) var(--local-stack-scrollbar-track);
-  scrollbar-width: thin;
-}
-
-.local-adjustments-group .local-stack-surface::-webkit-scrollbar {
-  width: 9px;
-}
-
-.local-adjustments-group .local-stack-surface::-webkit-scrollbar-track {
-  background: var(--local-stack-scrollbar-track);
-}
-
-.local-adjustments-group .local-stack-surface::-webkit-scrollbar-thumb {
-  min-height: 28px;
-  border: 2px solid var(--local-stack-scrollbar-track);
-  border-radius: 8px;
-  background: var(--local-stack-scrollbar-thumb);
 }
 
 .local-adjustments-group .local-adjustment-list {
@@ -8372,7 +8347,7 @@ img:not([src]), img[src=""] { visibility:hidden; }
 #batch-preset-editor > label { display: flex; flex-direction: column; gap: var(--space-6); color: var(--body); font: var(--font-size-xs) var(--font-body); }
 
 /* Export uses the shared panel titles, fields, switches and disclosure tokens. */
-body.batch-export-ready[data-workflow="export"] #export-sheet { display:flex; flex-direction:column; padding:0; overflow:hidden; scrollbar-gutter:auto; }
+body.batch-export-ready[data-workflow="export"] #export-sheet { display:flex; flex-direction:column; padding:0; overflow:hidden; }
 .batch-export-ready #export-sheet .sheet-header { position:static; flex:none; }
 .batch-settings-scroll { flex:1; min-height:0; overflow:auto; padding:0; }
 .batch-settings-section { margin:0; padding:0; border-bottom:var(--group-divider-width) solid var(--group-divider); }

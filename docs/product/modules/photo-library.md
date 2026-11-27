@@ -9889,3 +9889,12 @@ Grade's source interpretation and reference-white handling for the samples.
 Reduced and repaired scenes keep their existing measurement inputs. Drawing
 storage, delivery and colour limits stay unchanged. The old half-float noise
 measurement is not reused for the float32 route.
+
+### November 27, 2026: Unified scrollbars and status borders
+
+The Library grid, navigation, Details, filmstrip and auxiliary lists use
+the shared Library-style 15 px native scrollbar with a hairline. The grid
+no longer reserves a lane when the photos fit. Layout decides whether to
+show the lane from the full width first, so near the threshold the rail and
+thumbnail sizes do not repeatedly flip. The upper status row uses the
+same top hairline as the other workflows.

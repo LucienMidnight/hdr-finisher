@@ -122,7 +122,7 @@ Source: `codebase/tests/inventory.json`. Seconds are summed case time, not paral
 | tests/library-grants.test.js | one ask waits without HTTP retries, is promoted and cancels immediately | 23 | 0.493 | unknown |  |
 | tests/library-idle-warmup.test.js | Library prepares every render and compute pipeline asynchronously when no names are given | 7 | 0.5761 | unknown |  |
 | tests/library-invalid-gpu-retry.test.js | an invalid result goes to the CPU at once and releases its reservation | 12 | 0.4991 | unknown |  |
-| tests/library-layout.test.js | large folders keep only intersecting rows in the virtual grid | 3 | 0.0012 | unknown |  |
+| tests/library-layout.test.js | virtual grid draws only visible rows and stabilizes when the scrollbar appears | 4 | 0.0012 | unknown |  |
 | tests/library-measure-viewport.test.js | folder discovery replaces the observed screen instead of waiting on rows that moved offscreen | 1 | 0.0024 | unknown |  |
 | tests/library-membership.test.js | whole library includes kept photos, selected and unpinned folder rules do not | 1 | 0.0009 | unknown |  |
 | tests/library-memory-monitor.test.js | brief overrun passes and records peak, active type, duration and settling | 6 | 0.0023 | unknown |  |
@@ -1460,7 +1460,7 @@ Slice 3 Stage A: one real window, disposable originals and app profile. Runs ass
 
 #### `tests/library-grid-stability.js`
 
-Scrollbar appearance cannot trigger repeated thumbnail resizing; control reproduces the 37-photo feedback loop. Launches the native Electron shell with a disposable profile to check window or renderer behaviour. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
+The Library fills the available width when it fits and settles after one lane change when it overflows; control reproduces the 37-photo feedback loop. Launches the native Electron shell with a disposable profile to check window or renderer behaviour. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
 - Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
@@ -1622,7 +1622,7 @@ Signed Bayer AHD on all four CFA phases and orientations, finite negative scene 
 
 #### `tests/workspace-panel-alignment.js`
 
-Aligned workflow headers and pointer/keyboard panel resizing. Optional --overlay-scrollbars verifies full-bleed Grade and Proof rails, fit/overflow, hit targets, wheel, keyboard, drag, idle and reduced motion in three themes. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
+Aligned workflow headers and pointer/keyboard panel resizing. Optional --unified-scrollbars verifies overflow-only lanes, shared width, divider alignment, native thumb and arrow interaction, and all four status bars in three themes. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
 - Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
@@ -4543,7 +4543,7 @@ Library grade clipboard, single confirmation and settings persistence, virtual-c
 
 #### `tests/library-grid-stability.js`
 
-Scrollbar appearance cannot trigger repeated thumbnail resizing; control reproduces the 37-photo feedback loop. Launches the native Electron shell with a disposable profile to check window or renderer behaviour. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
+The Library fills the available width when it fits and settles after one lane change when it overflows; control reproduces the 37-photo feedback loop. Launches the native Electron shell with a disposable profile to check window or renderer behaviour. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
 - Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
@@ -4705,7 +4705,7 @@ The mask editor canvas sits over the shared preview element, so a gizmo left. Ru
 
 #### `tests/workspace-panel-alignment.js`
 
-Aligned workflow headers and pointer/keyboard panel resizing. Optional --overlay-scrollbars verifies full-bleed Grade and Proof rails, fit/overflow, hit targets, wheel, keyboard, drag, idle and reduced motion in three themes. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
+Aligned workflow headers and pointer/keyboard panel resizing. Optional --unified-scrollbars verifies overflow-only lanes, shared width, divider alignment, native thumb and arrow interaction, and all four status bars in three themes. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
 - Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.

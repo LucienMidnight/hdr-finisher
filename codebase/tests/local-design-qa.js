@@ -198,17 +198,13 @@ function assert(condition, message) {
 
     const stackSurface = page.locator(".local-stack-surface");
     const singleBrushScrollbar = await stackSurface.evaluate((node) => ({
-      overflowY: getComputedStyle(node).overflowY,
-      gutter: getComputedStyle(node).scrollbarGutter,
-      webkitWidth: getComputedStyle(node, "::-webkit-scrollbar").width,
-      track: getComputedStyle(node, "::-webkit-scrollbar-track").backgroundColor,
+      lane: node.offsetWidth - node.clientWidth - node.clientLeft - parseFloat(getComputedStyle(node).borderRightWidth),
+      rowHeight: parseFloat(getComputedStyle(node).getPropertyValue("--list-row-h")),
       clientHeight: node.clientHeight,
       scrollHeight: node.scrollHeight,
     }));
-    assert(singleBrushScrollbar.overflowY === "scroll", "The adjustment stack does not keep its scrollbar rail visible.");
-    assert(singleBrushScrollbar.webkitWidth === "12px", "The adjustment scrollbar width is not applied in Edge.");
-    assert(singleBrushScrollbar.track !== "rgba(0, 0, 0, 0)", "The adjustment scrollbar track is not painted.");
-    assert(singleBrushScrollbar.clientHeight === 192, `The adjustment stack is not fixed at six 32px rows: ${JSON.stringify(singleBrushScrollbar)}`);
+    assert.equal(singleBrushScrollbar.lane, 0, "The fitting stack should have no lane.");
+    assert.equal(singleBrushScrollbar.clientHeight, 6 * singleBrushScrollbar.rowHeight);
 
     await createLocalAdjustment(page, "linear_gradient");
     await page.waitForFunction(() => document.querySelectorAll("#local-adjustment-list > li").length === 2);
@@ -287,16 +283,17 @@ function assert(condition, message) {
           `${count} compact rows did not match the six-row viewport boundary: ${JSON.stringify(rows)}`);
       }
     }
-    const scrollMetrics = await stackSurface.evaluate((node) => ({ clientHeight: node.clientHeight, scrollHeight: node.scrollHeight, overflowY: getComputedStyle(node).overflowY }));
-    assert(scrollMetrics.scrollHeight > scrollMetrics.clientHeight && scrollMetrics.overflowY === "scroll", "The adjustment list does not use an internal scrollbar.");
+    const scrollMetrics = await stackSurface.evaluate((node) => ({ clientHeight: node.clientHeight, scrollHeight: node.scrollHeight, lane: node.offsetWidth - node.clientWidth - node.clientLeft - parseFloat(getComputedStyle(node).borderRightWidth) }));
+    assert(scrollMetrics.scrollHeight > scrollMetrics.clientHeight && scrollMetrics.lane === 15, "The adjustment list does not use an internal scrollbar.");
+    const listHeight = 6 * singleBrushScrollbar.rowHeight + 2;
     const cappedSurfaceHeight = (await stackSurface.boundingBox()).height;
-    assert(Math.abs(cappedSurfaceHeight - 194) < 1 && Math.abs(initialSurfaceHeight - cappedSurfaceHeight) < 1,
+    assert(Math.abs(cappedSurfaceHeight - listHeight) < 1 && Math.abs(initialSurfaceHeight - cappedSurfaceHeight) < 1,
       `The six-row viewport changed size as rows were added: ${JSON.stringify({ initialSurfaceHeight, cappedSurfaceHeight })}`);
     for (let targetCount = 7; targetCount >= 4; targetCount -= 1) {
       await removeButton.click();
       await page.waitForFunction((count) => document.querySelectorAll("#local-adjustment-list > li").length === count, targetCount);
       const surfaceHeight = (await stackSurface.boundingBox()).height;
-      assert(Math.abs(surfaceHeight - 194) < 1, "The fixed adjustment viewport changed size while removing items.");
+      assert(Math.abs(surfaceHeight - listHeight) < 1, "The fixed adjustment viewport changed size while removing items.");
     }
     await page.locator("#local-adjustment-list button[data-local-id]").nth(1).click();
 

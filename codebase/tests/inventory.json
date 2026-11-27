@@ -1319,8 +1319,8 @@
       "file": "tests/library-layout.test.js",
       "suite": "node",
       "area": "library",
-      "purpose": "large folders keep only intersecting rows in the virtual grid",
-      "test_count": 3,
+      "purpose": "virtual grid draws only visible rows and stabilizes when the scrollbar appears",
+      "test_count": 4,
       "seconds": {
         "windows": 0.0012,
         "mac": null

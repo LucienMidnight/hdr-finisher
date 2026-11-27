@@ -1084,11 +1084,11 @@
         "ui"
       ],
       "tier": "area",
-      "protects": "Scrollbar appearance cannot trigger repeated thumbnail resizing; control reproduces the 37-photo feedback loop.",
+      "protects": "The Library fills the available width when it fits and settles after one lane change when it overflows; control reproduces the 37-photo feedback loop.",
       "launch": {
         "method": "native"
       },
-      "brief": "Scrollbar appearance cannot trigger repeated thumbnail resizing; control reproduces the 37-photo feedback loop. Launches the native Electron shell with a disposable profile to check window or renderer behaviour. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.",
+      "brief": "The Library fills the available width when it fits and settles after one lane change when it overflows; control reproduces the 37-photo feedback loop. Launches the native Electron shell with a disposable profile to check window or renderer behaviour. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.",
       "expectedMinutes": {
         "win": null,
         "mac": null
@@ -2262,11 +2262,11 @@
         "library"
       ],
       "tier": "area",
-      "protects": "Aligned workflow headers and pointer/keyboard panel resizing. Optional --overlay-scrollbars verifies full-bleed Grade and Proof rails, fit/overflow, hit targets, wheel, keyboard, drag, idle and reduced motion in three themes.",
+      "protects": "Aligned workflow headers and pointer/keyboard panel resizing. Optional --unified-scrollbars verifies overflow-only lanes, shared width, divider alignment, native thumb and arrow interaction, and all four status bars in three themes.",
       "launch": {
         "method": "electron"
       },
-      "brief": "Aligned workflow headers and pointer/keyboard panel resizing. Optional --overlay-scrollbars verifies full-bleed Grade and Proof rails, fit/overflow, hit targets, wheel, keyboard, drag, idle and reduced motion in three themes. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.",
+      "brief": "Aligned workflow headers and pointer/keyboard panel resizing. Optional --unified-scrollbars verifies overflow-only lanes, shared width, divider alignment, native thumb and arrow interaction, and all four status bars in three themes. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.",
       "expectedMinutes": {
         "win": null,
         "mac": null
