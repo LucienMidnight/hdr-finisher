@@ -408,6 +408,8 @@ Next Mac session: close the small macOS/Linux export overwrite race with the OS 
 
 ### Next Mac session checklist (from PC work, 27 Nov 2026)
 
+- [ ] After the full release run fills `timings.json`, review the derived cutoffs and tune the constants.
+
 - Populate Mac timings from the next release run: commit `codebase/tests/release/timings.json` and regenerate `docs/technical/test-catalogue.md`; keep PC/Mac baselines separate.
 
 - [ ] Run the [focused release check](../../codebase/tests/release/README.md), then, with Steve's OK, merge `integrate/pc-tests-review-2026-11-26` into `main`. The PC GPU has faulty VRAM; GPU-dependent release results must come from the Mac.

@@ -41,7 +41,7 @@ function render(list = require('../tests/release/drivers.json'), timings = readT
     for (const row of rows) {
       lines.push(`#### \`${row.path}\``, '', row.brief, '',
         `- Expected minutes: Windows ${minutes(row,'win')?.toFixed(3) ?? 'unknown'}; Mac ${minutes(row,'mac')?.toFixed(3) ?? 'unknown'}.`,
-        `- Deadline: ${row.deadlineMinutes ?? 'parent'} minutes. ${row.deadlinePolicy}`,
+        `- Unmeasured default deadline: ${row.deadlineMinutes ?? 'parent'} minutes. ${row.deadlinePolicy}`,
         `- Requirements: ${row.requirements.join(' ')}`,
         `- Platforms: ${row.platforms.os.join(', ')}. ${row.platforms.notes.join(' ')}`, '');
     }

@@ -376,13 +376,23 @@ preset-await finding remain open, and the combined Film result is new.
 ## Hang and shutdown protection (November 7, 2026)
 
 Each attempt has one deadline shared by its primary invocation and all
-follow-ups: the greater of five minutes or three times the latest successful
-complete attempt, or fifteen minutes without usable successful history.
-Interrupted, timed-out, partial, errored, non-successful and sub-second records
-cannot calibrate that deadline. Existing selection, one-retry policy, known
-failure signatures and overall time caps are unchanged. A timeout is recorded
-as `TIMEOUT` and follows the usual retry/classification rules; it cannot be
-classified as a known failure just because an earlier error matched.
+follow-ups. With a measured median in `timings.json` for the current platform,
+it is max(30 seconds, 1.7 times that median); above 20 minutes typical duration,
+the multiplier is 1.25. Thus 18 seconds gets 30.6 seconds, and 25 minutes gets
+31.25 minutes (still subject to the overall selection cap). Constants live in
+`DEADLINE_POLICY` in `runner.cjs`. Current timings cover complete drivers, so
+follow-ups share the whole-driver budget; they have no separate timing baseline.
+The derived policy is frozen before attempts: the single retry uses the same
+cutoff, never a timeout-inflated duration. Timeout samples cannot update medians.
+
+Unmeasured platforms/drivers retain the previous rule: max(5 minutes, 3 times
+the latest successful complete local attempt), or 15 minutes without usable
+history. Interrupted, timed-out, partial, errored and sub-second records cannot
+calibrate that fallback. Selection caps, protected hashes and shutdown checks
+remain unchanged. A verified timeout allows the run to continue to later drivers;
+unverifiable cleanup still stops it. Exhausted timeout retries are a distinct
+`timeout` failure, never a known assertion failure. Text/JSON summaries retain
+the timeout deadline and measured typical time, also if a retry passes as flaky.
 
 Each shared log labels the primary invocation and numbered follow-ups.
 Before retrying after a timeout the runner kills the child tree and verifies
@@ -439,8 +449,8 @@ and shutdown failure without launching Electron or using the GPU.
 Read each driver's `brief`, `requirements`, `platforms`, `expectedMinutes.win/mac`
 and `deadlinePolicy` in `drivers.json` before selecting it. `deadlineMinutes` is
 15 (the default attempt deadline), not a fixed override; helpers use their parent.
-The actual deadline remains max(5 minutes, 3 times the latest successful complete
-local attempt), with a 15-minute default. The runner still accepts schema-1
+Measured current-platform medians use the tiered cutoff above. The local-history
+rule and 15-minute default apply only without a measured median. The runner still accepts schema-1
 manifests; the catalogue test requires the committed schema-2 briefs.
 
 `timings.json` survives output cleanups. After checking tracked inputs at the end of a selection, the runner imports
@@ -453,8 +463,8 @@ partial and launch-failed attempts are excluded. Completed assertion failures ar
 useful duration samples, not passes. Approximate report imports are labelled.
 
 When local history is absent the runner uses the committed same-platform median;
-local records take precedence. Summaries never calibrate attempt deadlines or
-certify results. Estimates conservatively reserve a retry when a saved failed
+local records take precedence. Same-platform measured medians calibrate attempt deadlines as described above;
+summary timings never certify results. Estimates conservatively reserve a retry when a saved failed
 sample has no surviving log to match an exact known signature. Unknown durations
 stay null; do not copy PC times to the 8 GB Mac or use individual action latencies
 as whole-test durations. Manifest expected minutes are a reviewed baseline;

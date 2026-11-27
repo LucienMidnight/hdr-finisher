@@ -281,10 +281,10 @@ test('tree-kill failure rejects instead of continuing to another driver', async 
   await assert.rejects(fakeInvocations(t,['setInterval(()=>{},1000)'],200,
     ()=>{throw Error('STOP: simulated tree-kill failure');}), /simulated tree-kill failure/);
 });
-test('timed-out known-message attempt is a new failure', t => {
+test('timed-out known-message attempt is a distinct timeout failure', t => {
   const log=path.join(scratch(t),'attempt.log'); fs.writeFileSync(log,'Error: old failure');
   assert.equal(runner.classify([{exitCode:1,timedOut:true,log}],
-    {failures:[{driver:'a',messages:['Error: old failure']}]},'a'),'new');
+    {failures:[{driver:'a',messages:['Error: old failure']}]},'a'),'timeout');
 });
 test('failed-start status stops the run without a retry or later drivers', {skip:process.platform!=='win32'}, t => {
   const fixture=isolatedRunner(t);
@@ -370,4 +370,34 @@ test('schema-2 generated outputs do not trip the tracked-input guard, but driver
     assert.equal(fixture.states()[0].completed,!mutate);
     if (mutate) assert.match(result.stdout,/tracked files changed/);
   }
+});
+
+
+test('measured deadlines use the current platform median, a floor, and a smaller long-driver multiplier', () => {
+  const timings = {drivers:{a:{win:{medianSeconds:18},mac:{medianSeconds:1500}}}};
+  const short = runner.attemptPolicy('a',[],timings,'win32');
+  assert.equal(short.deadlineMs,30600);
+  assert.equal(short.typicalSeconds,18);
+  assert.equal(runner.attemptTimeout('a',[],timings,'darwin'),1875000);
+  timings.drivers.a.win.medianSeconds = 1;
+  assert.equal(runner.attemptTimeout('a',[],timings,'win32'),30000);
+  timings.drivers.a.win.medianSeconds = 1200;
+  assert.equal(runner.attemptTimeout('a',[],timings,'win32'),2040000);
+  timings.drivers.a.win.medianSeconds = 1201;
+  assert.equal(runner.attemptTimeout('a',[],timings,'win32'),1501250);
+  assert.equal(runner.attemptTimeout('missing',[],timings,'win32'),900000);
+  assert.equal(runner.attemptTimeout('a',[],timings,'linux'),900000);
+  assert.equal(runner.attemptTimeout('missing',[{driver:'missing',exitCode:0,durationSeconds:200}],timings,'win32'),600000);
+  for (const bad of [null,0,-1,NaN]) {
+    timings.drivers.a.win.medianSeconds = bad;
+    assert.equal(runner.attemptTimeout('a',[],timings,'win32'),900000);
+  }
+});
+
+test('timeouts remain distinct failures with cutoff evidence, including when a retry passes', () => {
+  const timeout = {exitCode:null,timedOut:true,deadlineMs:30600,typicalSeconds:18,deadlineSource:'timings.json'};
+  assert.equal(runner.classify([timeout,timeout],{failures:[]},'a'),'timeout');
+  assert.equal(runner.classify([timeout,{exitCode:0}],{failures:[]},'a'),'flaky');
+  assert.deepEqual(runner.timeoutDetails([timeout,{exitCode:0}]),[
+    {attempt:1,deadlineSeconds:30.6,typicalSeconds:18,source:'timings.json'}]);
 });

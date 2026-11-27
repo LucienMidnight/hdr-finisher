@@ -29,177 +29,177 @@ Source: `codebase/tests/inventory.json`. Seconds are summed case time, not paral
 
 | File | Purpose | Cases | Windows seconds | Mac seconds | Requirements / platform skips |
 | --- | --- | ---: | ---: | ---: | --- |
-| tests/analytic-mask-region.test.js | live gradient eligibility retains content and resampling fallbacks | 8 | 1.3626 | unknown |  |
-| tests/app-dialog.test.js | Escape in the open app dialog allows native cancel without reaching page controls | 2 | 0.0074 | unknown |  |
-| tests/appearance.test.js | accent choices survive preference sanitization and match browser normalization | 9 | 0.6906 | unknown |  |
-| tests/backend-log.test.js | slow diagnostic disk has bounded buffers and reports omitted records | 1 | 0.0349 | unknown |  |
-| tests/backend-startup.test.js | startup extends the idle deadline for genuine progress | 7 | 9.4448 | unknown |  |
-| tests/batch-grid.test.js | batch progress groups each photo without changing badge precedence or retained rows | 3 | 0.0202 | unknown |  |
-| tests/brush-native-feather.test.js | native Feather plans the export reduction grid and needs no viewport halo | 18 | 6.2618 | unknown |  |
-| tests/brush-native-shift.test.js | native Shift plan uses native sigma and the complete summed finite halo | 8 | 2.6311 | unknown |  |
-| tests/brush-regional-erase.test.js | paint qualification excludes erasers; native attenuation retains repaint and frame placement | 4 | 1.3391 | unknown |  |
-| tests/color-wheels.test.js | hdr: stationary puck is exact; pad input and drawing share radius | 2 | 0.0153 | unknown |  |
-| tests/control-panel-values.test.js | edited status ignores object key order and default roundoff but preserves real changes and array order | 4 | 0.4814 | unknown |  |
-| tests/cpu-preview-singleflight.test.js | Concurrent identical CPU preview requests share one computation | 6 | 0.6538 | unknown |  |
-| tests/curve-sampling.test.js | index.html samples the same bounded monotone curves | 3 | 0.0273 | unknown |  |
-| tests/delivery-activity.test.js | active exports can exceed 60 seconds indefinitely | 3 | 0.025 | unknown |  |
-| tests/delivery-memory-ack.test.js | delivery idle reports await the main process collection acknowledgement | 1 | 0.0032 | unknown |  |
-| tests/delivery-settings.test.js | delivery setting saves a CPU override and can turn it off | 2 | 0.0031 | unknown |  |
-| tests/denoise-analysis-singleflight.test.js | Denoise method controls recover after a rejected save, missing GPU, or expired preparation | 8 | 1.5808 | unknown |  |
-| tests/denoise-compare-presentation.test.js | hdr standard split-vertical waits for and presents its denoised comparison | 40 | 1.5048 | unknown |  |
-| tests/denoise-measurement-fit.test.js | CPU and GPU host fit sparse or repeated brightness observations alike | 11 | 0.0061 | unknown |  |
-| tests/denoise-ownership.test.js | Denoise off starts saving its own photo alongside a delayed redraw | 21 | 4.3132 | unknown |  |
-| tests/denoise-preview-presentation.test.js | panning back reveals a covering Clean Grain picture immediately and skips a stale grade | 49 | 7.889 | unknown |  |
-| tests/denoise-source-load-ownership.test.js | adaptive source loading survives a grading supersession while its source stays current | 3 | 0.0012 | unknown |  |
-| tests/desktop-memory-pressure.test.js | trims once per level rise, never at none | 15 | 0.0718 | unknown |  |
+| tests/analytic-mask-region.test.js | live gradient eligibility retains content and resampling fallbacks | 8 | 0.1636 | unknown |  |
+| tests/app-dialog.test.js | Escape in the open app dialog allows native cancel without reaching page controls | 2 | 0.0049 | unknown |  |
+| tests/appearance.test.js | accent choices survive preference sanitization and match browser normalization | 9 | 0.0253 | unknown |  |
+| tests/backend-log.test.js | slow diagnostic disk has bounded buffers and reports omitted records | 1 | 0.011 | unknown |  |
+| tests/backend-startup.test.js | startup extends the idle deadline for genuine progress | 7 | 10.7715 | unknown |  |
+| tests/batch-grid.test.js | batch progress groups each photo without changing badge precedence or retained rows | 3 | 0.0065 | unknown |  |
+| tests/brush-native-feather.test.js | native Feather plans the export reduction grid and needs no viewport halo | 18 | 0.9929 | unknown |  |
+| tests/brush-native-shift.test.js | native Shift plan uses native sigma and the complete summed finite halo | 8 | 0.2699 | unknown |  |
+| tests/brush-regional-erase.test.js | paint qualification excludes erasers; native attenuation retains repaint and frame placement | 4 | 0.1596 | unknown |  |
+| tests/color-wheels.test.js | hdr: stationary puck is exact; pad input and drawing share radius | 2 | 0.0056 | unknown |  |
+| tests/control-panel-values.test.js | edited status ignores object key order and default roundoff but preserves real changes and array order | 4 | 0.0156 | unknown |  |
+| tests/cpu-preview-singleflight.test.js | Concurrent identical CPU preview requests share one computation | 6 | 0.126 | unknown |  |
+| tests/curve-sampling.test.js | index.html samples the same bounded monotone curves | 3 | 0.0249 | unknown |  |
+| tests/delivery-activity.test.js | active exports can exceed 60 seconds indefinitely | 3 | 0.006 | unknown |  |
+| tests/delivery-memory-ack.test.js | delivery idle reports await the main process collection acknowledgement | 1 | 0.0025 | unknown |  |
+| tests/delivery-settings.test.js | delivery setting saves a CPU override and can turn it off | 2 | 0.0025 | unknown |  |
+| tests/denoise-analysis-singleflight.test.js | Denoise method controls recover after a rejected save, missing GPU, or expired preparation | 8 | 0.9084 | unknown |  |
+| tests/denoise-compare-presentation.test.js | hdr standard split-vertical waits for and presents its denoised comparison | 40 | 0.8207 | unknown |  |
+| tests/denoise-measurement-fit.test.js | CPU and GPU host fit sparse or repeated brightness observations alike | 11 | 0.0069 | unknown |  |
+| tests/denoise-ownership.test.js | Denoise off starts saving its own photo alongside a delayed redraw | 21 | 1.2629 | unknown |  |
+| tests/denoise-preview-presentation.test.js | panning back reveals a covering Clean Grain picture immediately and skips a stale grade | 49 | 2.4151 | unknown |  |
+| tests/denoise-source-load-ownership.test.js | adaptive source loading survives a grading supersession while its source stays current | 3 | 0.0016 | unknown |  |
+| tests/desktop-memory-pressure.test.js | trims once per level rise, never at none | 15 | 0.0711 | unknown |  |
 | tests/desktop-window-state.test.js | native window-state events update maximize/restore image and accessible name together | 1 | 0.0013 | unknown |  |
-| tests/diagnostics.test.js | concurrent actions carry separate ids and preserve request headers | 4 | 0.0251 | unknown |  |
-| tests/direct-mask-coordination.test.js | Direct masks use the foreground coordinator and preserve local order | 4 | 0.0442 | unknown |  |
-| tests/display-driven-scale.test.js | Fit uses the source scale needed by the displayed aspect and crop | 5 | 6.8844 | unknown |  |
-| tests/edge-colour-range.test.js | non-finite input goes straight to CPU before reconstruction | 2 | 0.0038 | unknown |  |
-| tests/edit-sync-retry.test.js | refreshScopes() stops retrying with perspective draft | 14 | 0.7075 | unknown |  |
-| tests/editing-mask-cache.test.js | measurement and magnified masks cannot evict unchanged Fit bitmaps | 5 | 0.0033 | unknown |  |
-| tests/electron-initial-load.test.js | initial load completes when finish-load has passed but stop-loading is pending | 8 | 0.2107 | unknown |  |
-| tests/exact-peak-singleflight.test.js | Repeated robust highlight anchor measurements retain one dedicated set of intermediates | 18 | 3.117 | unknown |  |
-| tests/export-patterns.test.js | live exported filename expands every token and sanitizes reserved characters | 2 | 0.003 | unknown |  |
-| tests/film-character-data.test.js | bootstrap exactly matches source metadata and every default has confidence and source | 1 | 0.5265 | unknown |  |
-| tests/film-character.test.js | stock defaults update only inherited controls, including equal-value deliberate edits | 6 | 0.005 | unknown |  |
-| tests/film-parity-limits.test.js | strict byte cases fail mean drift and keep the existing p99.9 gate | 6 | 29.7391 | unknown |  |
-| tests/film-presets.test.js | all approved Looks replace previous choices and survive sparse save/reopen and stock changes | 6 | 0.0234 | unknown |  |
-| tests/film-select-preview.test.js | arrows are temporary; a changed commit makes exactly one undo to the opening value | 6 | 0.0058 | unknown |  |
-| tests/font-tokens.test.js | size tokens never go below the minimum | 3 | 1.3246 | unknown |  |
-| tests/geometry-math.test.js | neutral geometry is decided from geometry alone | 9 | 0.5885 | unknown |  |
-| tests/geometry-preview-recovery.test.js | capacity recovery requests the bounded route at the same reduced edge | 8 | 4.6646 | unknown |  |
-| tests/geometry-resample.test.js | the plan and Pillow bicubic reproduce the export geometry stage pixel for pixel | 3 | 0.2166 | unknown |  |
-| tests/gpu-allocator.test.js | the least recently used registered entry is evicted first | 8 | 0.5252 | unknown |  |
-| tests/gpu-brush-mask.test.js | qualified brush bitmap reuses cache without a CPU mask request | 7 | 4.5458 | unknown |  |
-| tests/gpu-budget.test.js | with nothing verified, Auto is the stated policy and says it is the fallback | 12 | 0.0269 | unknown |  |
-| tests/gpu-delivery-finishing.test.js | finish: job cleanup releases every allocation after failure at any setup or submission step | 10 | 8.5401 | unknown |  |
-| tests/gpu-delivery-lifetime.test.js | completed delivery buffers are unreachable before the next job, on success, failure, cancellation and hand-over | 1 | 5.2358 | unknown |  |
-| tests/gpu-param-layout.test.js | the global parameter list pins Tone endpoint allocations without moving existing positions | 8 | 0.8076 | unknown |  |
-| tests/gpu-pass-layout.test.js | local and mask pass slots have one frozen position list | 7 | 0.7192 | unknown |  |
-| tests/gpu-pass-probe.test.js | GPU pass probe leaves disabled encoders untouched | 3 | 0.0079 | unknown |  |
-| tests/grade-background-pause.test.js | Grade resumes when a canvas tool consumes pointerup | 8 | 0.5935 | unknown |  |
-| tests/grade-library-pictures.test.js | publication starts after saving, defers capture, and preserves release timing | 11 | 0.0321 | unknown |  |
-| tests/grade-module-collapse.test.js | opening a photo closes modules and RAW settings without changing adjustments | 1 | 0.625 | unknown |  |
-| tests/grade-open-loading.test.js | Grade loads immediately with an empty preview and locked controls, then returns to Library on failure | 15 | 4.0121 | unknown |  |
-| tests/grade-opening.test.js | a failed http presentation POST retries without another picture and success is idempotent | 5 | 0.0407 | unknown |  |
-| tests/grade-panel-order.test.js | both lanes interleave the same live sections without losing their identity or fold state | 3 | 0.0113 | unknown |  |
-| tests/grade-paste.test.js | paste selection preserves partial choices and inactive lane values | 18 | 0.7079 | unknown |  |
-| tests/grade-preview-settle.test.js | a zoomed tiled edit settles exactly once after edit sync and requests one scope | 14 | 11.1696 | unknown |  |
-| tests/grade-speed.test.js | only interactive and coarse requests reduce grain, never delivery or measurement | 14 | 1.8383 | unknown |  |
-| tests/grade-tile-reuse.test.js | catch-up reuses tiles when the saved revision is the only change | 6 | 1.2424 | unknown |  |
-| tests/grading-preset-files.test.js | saved grading presets round trip without changing settings | 7 | 0.0332 | unknown |  |
-| tests/grain-route.test.js | the help line appears only when the slower CPU route is used or the method cannot run | 21 | 4.7 | unknown |  |
-| tests/grain-work.test.js | CPU reason distinguishes eligibility and actual renderer refusal | 5 | 0.0167 | unknown |  |
-| tests/graph-scale.test.js | the declared contract names every module the sprint asks about | 16 | 0.0094 | unknown |  |
-| tests/highlight-anchor.test.js | a measurement on the denoised source is not reused for the original, or for another reconstruction | 11 | 0.0209 | unknown |  |
-| tests/highlight-delivery-floor.test.js | peak input and pasted state keep HDR headroom at 100-nit white | 3 | 0.0246 | unknown |  |
-| tests/hsl-packing.test.js | HSL packs every bounded channel and range without touching existing slots | 4 | 0.0087 | unknown |  |
-| tests/hsl-picker.test.js | HSL picks visible image coordinates in CSS points at 1x, including pan | 10 | 0.6859 | unknown |  |
-| tests/hsl-preview-pacing.test.js | Global HSL exact drag frames finish across newer slider inputs, only while enabled | 4 | 1.3976 | unknown |  |
-| tests/hsl-prototype.test.js | picker unions separated colors, subtracts, wraps red and rejects neutral samples | 9 | 0.0244 | unknown |  |
-| tests/hsl-resource-lifetime.test.js | HSL parameter buffers survive encoding and are destroyed with retired submission resources | 2 | 0.0016 | unknown |  |
-| tests/hsl-selection-delivery.test.js | combined HSL mode delivers neutral once and checks both isolated edits in full | 4 | 0.1547 | unknown |  |
-| tests/hsl-viewport.test.js | 2x selection requests the clipped viewport and places its cropped overlay in full-photo coordinates | 2 | 0.6616 | unknown |  |
-| tests/interpretation-ownership.test.js | late interpretation success cannot reinstall a replaced photo | 4 | 0.5874 | unknown |  |
-| tests/latest-work-queue.test.js | rapid submits collapse to one in-flight run plus the latest pending | 5 | 0.0025 | unknown |  |
-| tests/lens-filters.test.js | lens components agree with pinned upstream coefficients and preserve channel energy | 3 | 0.0042 | unknown |  |
-| tests/library-activity.test.js | remembered errors stay in Activity after workers finish; ignored errors stay quiet | 12 | 0.0336 | unknown |  |
-| tests/library-album-names.test.js | copy names are editable proposals, unique across album kinds and capitals | 1 | 0.0008 | unknown |  |
-| tests/library-build-previews.test.js | preview completion retains success when refreshing disk usage fails | 2 | 0.045 | unknown |  |
-| tests/library-collection-removal.test.js | manual: newest list wins | 22 | 1.1965 | unknown |  |
-| tests/library-culling-feedback.test.js | ratings appear before saving, keep their captured photo and survive older replies; errors roll back | 1 | 0.0217 | unknown |  |
-| tests/library-denoise-setup.test.js | identical Library source/lane/scale/geometry/model keeps scratch and selector; controls update | 9 | 0.0203 | unknown |  |
-| tests/library-detail-stream.test.js | full-size detail planes leave the GPU in bands of at most 64 MB, every byte in order | 3 | 0.7917 | unknown |  |
-| tests/library-editor.test.js | paste asks the leave gate for the exact open virtual copy and respects Cancel | 4 | 0.0157 | unknown |  |
-| tests/library-file-command-feedback.test.js | Delete uses the backend's Recycle Bin destination without changing its confirmation route | 7 | 0.0164 | unknown |  |
-| tests/library-finished-thumbnails.test.js | visible stored surfaces share one request and upload the original exact bytes | 8 | 0.0864 | unknown |  |
-| tests/library-folder-lifecycle.test.js | a previous folder stream cannot cancel the current folder paint timer | 2 | 0.0119 | unknown |  |
-| tests/library-fullscreen-selection.test.js | fullscreen keeps a multi-photo selection for when it closes | 6 | 0.0353 | unknown |  |
-| tests/library-gpu-raw.test.js | Library releases finished cache memory before accepting a RAW budget refusal | 30 | 1.792 | unknown |  |
-| tests/library-gpu-residency.test.js | Library session change keeps owned scenes while releasing ordinary proxies | 4 | 0.0152 | unknown |  |
-| tests/library-grants.test.js | one ask waits without HTTP retries, is promoted and cancels immediately | 23 | 0.5383 | unknown |  |
-| tests/library-idle-warmup.test.js | Library prepares every render and compute pipeline asynchronously when no names are given | 7 | 1.2534 | unknown |  |
-| tests/library-invalid-gpu-retry.test.js | an invalid result goes to the CPU at once and releases its reservation | 12 | 0.6115 | unknown |  |
+| tests/diagnostics.test.js | concurrent actions carry separate ids and preserve request headers | 4 | 0.0232 | unknown |  |
+| tests/direct-mask-coordination.test.js | Direct masks use the foreground coordinator and preserve local order | 4 | 0.0448 | unknown |  |
+| tests/display-driven-scale.test.js | Fit uses the source scale needed by the displayed aspect and crop | 5 | 6.9058 | unknown |  |
+| tests/edge-colour-range.test.js | non-finite input goes straight to CPU before reconstruction | 2 | 0.0033 | unknown |  |
+| tests/edit-sync-retry.test.js | refreshScopes() stops retrying with perspective draft | 14 | 0.2989 | unknown |  |
+| tests/editing-mask-cache.test.js | measurement and magnified masks cannot evict unchanged Fit bitmaps | 5 | 0.0034 | unknown |  |
+| tests/electron-initial-load.test.js | initial load completes when finish-load has passed but stop-loading is pending | 8 | 0.1987 | unknown |  |
+| tests/exact-peak-singleflight.test.js | Repeated robust highlight anchor measurements retain one dedicated set of intermediates | 18 | 0.3419 | unknown |  |
+| tests/export-patterns.test.js | live exported filename expands every token and sanitizes reserved characters | 2 | 0.0016 | unknown |  |
+| tests/film-character-data.test.js | bootstrap exactly matches source metadata and every default has confidence and source | 1 | 0.0027 | unknown |  |
+| tests/film-character.test.js | stock defaults update only inherited controls, including equal-value deliberate edits | 6 | 0.0036 | unknown |  |
+| tests/film-parity-limits.test.js | strict byte cases fail mean drift and keep the existing p99.9 gate | 6 | 1.0525 | unknown |  |
+| tests/film-presets.test.js | all approved Looks replace previous choices and survive sparse save/reopen and stock changes | 6 | 0.0164 | unknown |  |
+| tests/film-select-preview.test.js | arrows are temporary; a changed commit makes exactly one undo to the opening value | 6 | 0.0024 | unknown |  |
+| tests/font-tokens.test.js | size tokens never go below the minimum | 3 | 0.0938 | unknown |  |
+| tests/geometry-math.test.js | neutral geometry is decided from geometry alone | 9 | 0.0447 | unknown |  |
+| tests/geometry-preview-recovery.test.js | capacity recovery requests the bounded route at the same reduced edge | 8 | 1.0211 | unknown |  |
+| tests/geometry-resample.test.js | the plan and Pillow bicubic reproduce the export geometry stage pixel for pixel | 3 | 0.227 | unknown |  |
+| tests/gpu-allocator.test.js | the least recently used registered entry is evicted first | 8 | 0.008 | unknown |  |
+| tests/gpu-brush-mask.test.js | qualified brush bitmap reuses cache without a CPU mask request | 7 | 0.2529 | unknown |  |
+| tests/gpu-budget.test.js | with nothing verified, Auto is the stated policy and says it is the fallback | 12 | 0.0158 | unknown |  |
+| tests/gpu-delivery-finishing.test.js | finish: job cleanup releases every allocation after failure at any setup or submission step | 10 | 0.4849 | unknown |  |
+| tests/gpu-delivery-lifetime.test.js | completed delivery buffers are unreachable before the next job, on success, failure, cancellation and hand-over | 1 | 2.8878 | unknown |  |
+| tests/gpu-param-layout.test.js | the global parameter list pins Tone endpoint allocations without moving existing positions | 8 | 0.1846 | unknown |  |
+| tests/gpu-pass-layout.test.js | local and mask pass slots have one frozen position list | 7 | 0.1265 | unknown |  |
+| tests/gpu-pass-probe.test.js | GPU pass probe leaves disabled encoders untouched | 3 | 0.0072 | unknown |  |
+| tests/grade-background-pause.test.js | Grade resumes when a canvas tool consumes pointerup | 8 | 0.019 | unknown |  |
+| tests/grade-library-pictures.test.js | publication starts after saving, defers capture, and preserves release timing | 11 | 0.035 | unknown |  |
+| tests/grade-module-collapse.test.js | opening a photo closes modules and RAW settings without changing adjustments | 1 | 0.0022 | unknown |  |
+| tests/grade-open-loading.test.js | Grade loads immediately with an empty preview and locked controls, then returns to Library on failure | 15 | 0.3822 | unknown |  |
+| tests/grade-opening.test.js | a failed http presentation POST retries without another picture and success is idempotent | 5 | 0.0094 | unknown |  |
+| tests/grade-panel-order.test.js | both lanes interleave the same live sections without losing their identity or fold state | 3 | 0.0093 | unknown |  |
+| tests/grade-paste.test.js | paste selection preserves partial choices and inactive lane values | 18 | 0.036 | unknown |  |
+| tests/grade-preview-settle.test.js | a zoomed tiled edit settles exactly once after edit sync and requests one scope | 14 | 3.3591 | unknown |  |
+| tests/grade-speed.test.js | only interactive and coarse requests reduce grain, never delivery or measurement | 14 | 0.1095 | unknown |  |
+| tests/grade-tile-reuse.test.js | catch-up reuses tiles when the saved revision is the only change | 6 | 0.0636 | unknown |  |
+| tests/grading-preset-files.test.js | saved grading presets round trip without changing settings | 7 | 0.0106 | unknown |  |
+| tests/grain-route.test.js | the help line appears only when the slower CPU route is used or the method cannot run | 21 | 0.7219 | unknown |  |
+| tests/grain-work.test.js | CPU reason distinguishes eligibility and actual renderer refusal | 5 | 0.0125 | unknown |  |
+| tests/graph-scale.test.js | the declared contract names every module the sprint asks about | 16 | 0.0075 | unknown |  |
+| tests/highlight-anchor.test.js | a measurement on the denoised source is not reused for the original, or for another reconstruction | 11 | 0.0078 | unknown |  |
+| tests/highlight-delivery-floor.test.js | peak input and pasted state keep HDR headroom at 100-nit white | 3 | 0.004 | unknown |  |
+| tests/hsl-packing.test.js | HSL packs every bounded channel and range without touching existing slots | 4 | 0.007 | unknown |  |
+| tests/hsl-picker.test.js | HSL picks visible image coordinates in CSS points at 1x, including pan | 10 | 0.0257 | unknown |  |
+| tests/hsl-preview-pacing.test.js | Global HSL exact drag frames finish across newer slider inputs, only while enabled | 4 | 0.1416 | unknown |  |
+| tests/hsl-prototype.test.js | picker unions separated colors, subtracts, wraps red and rejects neutral samples | 9 | 0.0091 | unknown |  |
+| tests/hsl-resource-lifetime.test.js | HSL parameter buffers survive encoding and are destroyed with retired submission resources | 2 | 0.0017 | unknown |  |
+| tests/hsl-selection-delivery.test.js | combined HSL mode delivers neutral once and checks both isolated edits in full | 4 | 0.2202 | unknown |  |
+| tests/hsl-viewport.test.js | 2x selection requests the clipped viewport and places its cropped overlay in full-photo coordinates | 2 | 0.0547 | unknown |  |
+| tests/interpretation-ownership.test.js | late interpretation success cannot reinstall a replaced photo | 4 | 0.0061 | unknown |  |
+| tests/latest-work-queue.test.js | rapid submits collapse to one in-flight run plus the latest pending | 5 | 0.0022 | unknown |  |
+| tests/lens-filters.test.js | lens components agree with pinned upstream coefficients and preserve channel energy | 3 | 0.0032 | unknown |  |
+| tests/library-activity.test.js | remembered errors stay in Activity after workers finish; ignored errors stay quiet | 12 | 0.0231 | unknown |  |
+| tests/library-album-names.test.js | copy names are editable proposals, unique across album kinds and capitals | 1 | 0.0007 | unknown |  |
+| tests/library-build-previews.test.js | preview completion retains success when refreshing disk usage fails | 2 | 0.0036 | unknown |  |
+| tests/library-collection-removal.test.js | manual: newest list wins | 22 | 0.0662 | unknown |  |
+| tests/library-culling-feedback.test.js | ratings appear before saving, keep their captured photo and survive older replies; errors roll back | 1 | 0.0199 | unknown |  |
+| tests/library-denoise-setup.test.js | identical Library source/lane/scale/geometry/model keeps scratch and selector; controls update | 9 | 0.0063 | unknown |  |
+| tests/library-detail-stream.test.js | full-size detail planes leave the GPU in bands of at most 64 MB, every byte in order | 3 | 0.0933 | unknown |  |
+| tests/library-editor.test.js | paste asks the leave gate for the exact open virtual copy and respects Cancel | 4 | 0.0077 | unknown |  |
+| tests/library-file-command-feedback.test.js | Delete uses the backend's Recycle Bin destination without changing its confirmation route | 7 | 0.0138 | unknown |  |
+| tests/library-finished-thumbnails.test.js | visible stored surfaces share one request and upload the original exact bytes | 8 | 0.0371 | unknown |  |
+| tests/library-folder-lifecycle.test.js | a previous folder stream cannot cancel the current folder paint timer | 2 | 0.0092 | unknown |  |
+| tests/library-fullscreen-selection.test.js | fullscreen keeps a multi-photo selection for when it closes | 6 | 0.0149 | unknown |  |
+| tests/library-gpu-raw.test.js | Library releases finished cache memory before accepting a RAW budget refusal | 30 | 0.5859 | unknown |  |
+| tests/library-gpu-residency.test.js | Library session change keeps owned scenes while releasing ordinary proxies | 4 | 0.0112 | unknown |  |
+| tests/library-grants.test.js | one ask waits without HTTP retries, is promoted and cancels immediately | 23 | 0.493 | unknown |  |
+| tests/library-idle-warmup.test.js | Library prepares every render and compute pipeline asynchronously when no names are given | 7 | 0.5761 | unknown |  |
+| tests/library-invalid-gpu-retry.test.js | an invalid result goes to the CPU at once and releases its reservation | 12 | 0.4991 | unknown |  |
 | tests/library-layout.test.js | large folders keep only intersecting rows in the virtual grid | 3 | 0.0012 | unknown |  |
-| tests/library-measure-viewport.test.js | folder discovery replaces the observed screen instead of waiting on rows that moved offscreen | 1 | 0.0023 | unknown |  |
-| tests/library-membership.test.js | whole library includes kept photos, selected and unpinned folder rules do not | 1 | 0.001 | unknown |  |
+| tests/library-measure-viewport.test.js | folder discovery replaces the observed screen instead of waiting on rows that moved offscreen | 1 | 0.0024 | unknown |  |
+| tests/library-membership.test.js | whole library includes kept photos, selected and unpinned folder rules do not | 1 | 0.0009 | unknown |  |
 | tests/library-memory-monitor.test.js | brief overrun passes and records peak, active type, duration and settling | 6 | 0.0023 | unknown |  |
 | tests/library-navigation.test.js | pin drag previews before/after insertion, persists that order and ignores photo drops | 1 | 0.0032 | unknown |  |
-| tests/library-overlays.test.js | switching Exposure preserves Focus request and switching Focus preserves Exposure | 27 | 2.425 | unknown |  |
-| tests/library-picture-errors.test.js | interpretation refusal stays blocked through folder rechecks, until explicitly cleared or source changes | 7 | 0.5381 | unknown |  |
-| tests/library-picture-shape.test.js | Library camera-raw-gpu keeps old shape during loading | 3 | 0.6775 | unknown |  |
-| tests/library-publication.test.js | a saved-thumbnail flight cannot publish after Undo | 8 | 0.0224 | unknown |  |
-| tests/library-query.test.js | Capture dates sort with unknown dates last in both directions | 8 | 0.0246 | unknown |  |
-| tests/library-quick-draw.test.js | quick work runs independently and selected sharp follows only the in-flight neighbour | 2 | 0.6928 | unknown |  |
-| tests/library-ram.test.js | ready surfaces and direct scenes share one byte ceiling | 2 | 0.0138 | unknown |  |
-| tests/library-ready-window.test.js | ready pictures reuse only their exact photo, grade, source and display identity | 8 | 0.0236 | unknown |  |
-| tests/library-refresh.test.js | Refresh acknowledges before the backend answers and rejects old front-end work at both boundaries | 9 | 0.0307 | unknown |  |
-| tests/library-request-queue.test.js | picture decoding leaves two browser connections available for pixels | 4 | 0.0106 | unknown |  |
-| tests/library-rgb-layout.test.js | RGB clamp flag occupies lensc.z without aliasing DNG tile dimensions | 1 | 0.0022 | unknown |  |
-| tests/library-rules.test.js | Offered values come from the photos on screen, with counts and honest gaps | 7 | 0.0174 | unknown |  |
-| tests/library-scene-scheduler.test.js | source demand merges, promotes selected work and stops only after its last user leaves | 24 | 0.1568 | unknown |  |
-| tests/library-scenes.test.js | quick stored-scene misses never start a source; a stopped request may prepare it | 54 | 3.1832 | unknown |  |
-| tests/library-selection.test.js | Ctrl toggles independently and Shift keeps its anchor in both directions | 3 | 0.0033 | unknown |  |
-| tests/library-single-ready.test.js | Single swaps the correct finished canvas and hides the previous grade while a replacement waits | 10 | 0.6632 | unknown |  |
-| tests/library-smart-rules.test.js | every filter field is available to the smart album and handles is not | 5 | 0.0569 | unknown |  |
-| tests/library-smart-worker.test.js | worker caches counts and choices, checks versions, and invalidates on index change | 1 | 0.0143 | unknown |  |
-| tests/library-tags-selection.test.js | filtering tags after selecting the last row makes Shift-click safe | 2 | 0.562 | unknown |  |
-| tests/library-tile-pool.test.js | completed surfaces are reused without disposal and the recent pool stays bounded | 3 | 0.0023 | unknown |  |
-| tests/library-upload.test.js | streamed detail bands transfer once, upload bounded pieces and release ownership | 2 | 0.0775 | unknown |  |
+| tests/library-overlays.test.js | switching Exposure preserves Focus request and switching Focus preserves Exposure | 27 | 0.0672 | unknown |  |
+| tests/library-picture-errors.test.js | interpretation refusal stays blocked through folder rechecks, until explicitly cleared or source changes | 7 | 0.0098 | unknown |  |
+| tests/library-picture-shape.test.js | Library camera-raw-gpu keeps old shape during loading | 3 | 0.0108 | unknown |  |
+| tests/library-publication.test.js | a saved-thumbnail flight cannot publish after Undo | 8 | 0.0095 | unknown |  |
+| tests/library-query.test.js | Capture dates sort with unknown dates last in both directions | 8 | 0.005 | unknown |  |
+| tests/library-quick-draw.test.js | quick work runs independently and selected sharp follows only the in-flight neighbour | 2 | 0.0146 | unknown |  |
+| tests/library-ram.test.js | ready surfaces and direct scenes share one byte ceiling | 2 | 0.003 | unknown |  |
+| tests/library-ready-window.test.js | ready pictures reuse only their exact photo, grade, source and display identity | 8 | 0.0072 | unknown |  |
+| tests/library-refresh.test.js | Refresh acknowledges before the backend answers and rejects old front-end work at both boundaries | 9 | 0.0145 | unknown |  |
+| tests/library-request-queue.test.js | picture decoding leaves two browser connections available for pixels | 4 | 0.0081 | unknown |  |
+| tests/library-rgb-layout.test.js | RGB clamp flag occupies lensc.z without aliasing DNG tile dimensions | 1 | 0.0012 | unknown |  |
+| tests/library-rules.test.js | Offered values come from the photos on screen, with counts and honest gaps | 7 | 0.0161 | unknown |  |
+| tests/library-scene-scheduler.test.js | source demand merges, promotes selected work and stops only after its last user leaves | 24 | 0.139 | unknown |  |
+| tests/library-scenes.test.js | quick stored-scene misses never start a source; a stopped request may prepare it | 54 | 1.6844 | unknown |  |
+| tests/library-selection.test.js | Ctrl toggles independently and Shift keeps its anchor in both directions | 3 | 0.003 | unknown |  |
+| tests/library-single-ready.test.js | Single swaps the correct finished canvas and hides the previous grade while a replacement waits | 10 | 0.0547 | unknown |  |
+| tests/library-smart-rules.test.js | every filter field is available to the smart album and handles is not | 5 | 0.0328 | unknown |  |
+| tests/library-smart-worker.test.js | worker caches counts and choices, checks versions, and invalidates on index change | 1 | 0.0042 | unknown |  |
+| tests/library-tags-selection.test.js | filtering tags after selecting the last row makes Shift-click safe | 2 | 0.024 | unknown |  |
+| tests/library-tile-pool.test.js | completed surfaces are reused without disposal and the recent pool stays bounded | 3 | 0.0016 | unknown |  |
+| tests/library-upload.test.js | streamed detail bands transfer once, upload bounded pieces and release ownership | 2 | 0.0349 | unknown |  |
 | tests/library-zoom.test.js | 100% needs detail unless the Fit picture on screen is full size | 5 | 0.002 | unknown |  |
-| tests/local-adjustment-drafts.test.js | tool clicks create selected unused drafts; another type converts and the lit tool creates anew | 5 | 1.156 | unknown |  |
-| tests/local-detail-passes.test.js | only shader-active Texture and Sharpen need the packed band pair | 3 | 0.0074 | unknown |  |
-| tests/local-sdr-match.test.js | local acknowledgements refresh stale markers without replacing newer strokes | 6 | 0.0087 | unknown |  |
-| tests/luma-region-routing.test.js | locals with shared range stops retain independent immutable feather results | 9 | 3.8946 | unknown |  |
-| tests/mask-expression.test.js | mask leaf defaults remain complete for every authoring tool | 6 | 0.003 | unknown |  |
-| tests/mask-loader.test.js | a stale mask response is cancelled without an upload | 9 | 0.0109 | unknown |  |
-| tests/mask-raster.test.js | only geometry and feather forms with an exact tile contract are admitted | 4 | 0.0032 | unknown |  |
-| tests/mask-request-coordinator.test.js | mask requests never exceed the configured concurrency | 10 | 0.0302 | unknown |  |
-| tests/mask-resample.test.js | only straighten and perspective leaves get a resampling plan | 14 | 7.1617 | unknown |  |
-| tests/mask-sampling.test.js | range sampling waits for saved upstream edits and reacquires the acknowledged mask | 7 | 0.0352 | unknown |  |
-| tests/match-preview-recovery.test.js | Match retries a peak handoff on GPU without CPU fallback | 15 | 0.3062 | unknown |  |
-| tests/micro-grain-transport.test.js | Micro Grain cancels an unread superseded response | 5 | 1.1572 | unknown |  |
-| tests/native-anchor-scheduling.test.js | Native anchors coalesce latest inputs and wait for foreground presentation | 5 | 1.3941 | unknown |  |
-| tests/navigation-thumbnail-scheduling.test.js | Navigate uses the retained lower picture once active zoom work settles | 6 | 0.2965 | unknown |  |
-| tests/parity-bytes.test.js | byte histogram preserves the former sorted full-frame parity calculation exactly | 2 | 1.8617 | unknown |  |
-| tests/perspective-draft-preview.test.js | perspective draft cancellation leaves the current status alone | 2 | 0.0769 | unknown |  |
-| tests/photo-framing.test.js | viewer framing keeps photo pixels and independent per-side layers | 4 | 0.0061 | unknown |  |
-| tests/photo-transition.test.js | clean transitions and synchronous system exit avoid prompting | 5 | 0.0037 | unknown |  |
-| tests/photos-root.test.js | non-photo arguments and explicit roots need no machine discovery | 2 | 0.5801 | unknown |  |
-| tests/picture-request-monitor.test.js | picture monitor counts bodies after headers and detects five live requests | 3 | 0.0094 | unknown |  |
-| tests/platform-panels.test.js | Linux HDR warning waits for a photo and clears when it closes | 1 | 0.0039 | unknown |  |
-| tests/presentation-gate.test.js | presentations to one canvas never overlap | 7 | 0.0215 | unknown |  |
-| tests/preview-coarse-scale.test.js | Faster dragging uses a stable 2K coarse source before exact refinement | 1 | 0.0012 | unknown |  |
-| tests/preview-latency-controller.test.js | Precise always starts exact and interaction ends at exact scale | 5 | 0.003 | unknown |  |
-| tests/preview-scheduler-pacing.test.js | drag frames are capped at 60 fps on a 164 Hz display | 4 | 0.0168 | unknown |  |
-| tests/preview-scheduler-settle.test.js | release after a completed drag frame settles without the 110 ms wait | 10 | 0.0694 | unknown |  |
-| tests/preview-source-memory.test.js | a 507 single-response proxy refusal reports Unavailable instead of preparing | 5 | 0.6214 | unknown |  |
-| tests/preview-watchdog.test.js | watchdog waits for real scheduler work {"frameInFlight":true} | 5 | 0.0962 | unknown |  |
-| tests/process-tree.test.js | a stale parent ID does not pull an older unrelated process into the tree | 18 | 2.7037 | unknown | test('a killed child that is not yet collected counts as stopped', { skip: process.platform === 'win32' && 'Windows has no zombie processes' }, () => { |
-| tests/project-io.test.js | desktop project open owns grant shape and optional relink grant | 7 | 0.0509 | unknown |  |
-| tests/quick-library-check.test.js | unset quick switch touches no app, page, filesystem or backend capability | 20 | 0.0807 | unknown |  |
-| tests/raw-pixel-cleanup.test.js | Pixel cleanup is enabled only for supported Bayer RAW and restores saved state | 3 | 0.008 | unknown |  |
-| tests/recent-projects.test.js | recent projects survive restart, put the latest first and reject non-project entries | 1 | 0.0112 | unknown |  |
-| tests/release-runner.test.js | every standalone JS driver is listed once and all listed files exist | 29 | 15.4511 | unknown | test('failed-start status stops the run without a retry or later drivers', {skip:process.platform!=='win32'}, t => { |
-| tests/render-coordinator.test.js | queued preview keeps the action that requested it | 24 | 0.0269 | unknown |  |
-| tests/render-failure.test.js | every Section 5.8 class is recognized from the error it produces | 7 | 0.0112 | unknown |  |
-| tests/render-plan-admission.test.js | a recorded graph produces an identical plan every time | 23 | 0.0289 | unknown |  |
-| tests/retouch-source-refresh.test.js | repair refresh changes only bounded native pixels and discards reduced evidence | 9 | 0.0323 | unknown |  |
-| tests/reuse-test-photo.test.js | persistent test copies reuse pixels and restore disposable sidecars on success or failure | 2 | 2.0151 | unknown |  |
-| tests/roi-source-region.test.js | a magnified fetch region covers every foreground tile's halo rect | 4 | 0.0646 | unknown |  |
-| tests/saved-preset-read.test.js | saved Film Look reaches recovery before unknown or damaged data is discarded: {"bloom_amount":20} | 3 | 1.1994 | unknown |  |
-| tests/scope-analysis.test.js | scope transport conversion retains the exact pre-cleanup double-precision results | 6 | 0.0558 | unknown |  |
-| tests/scope-gpu-handoff.test.js | first GPU picture defers CPU scopes, while an accepted CPU picture retains fallback | 4 | 0.6834 | unknown |  |
-| tests/scope-peak-disclosure.test.js | a refused editing measurement cannot become an exact peak through CPU fallback | 3 | 0.0039 | unknown |  |
-| tests/scope-readback.test.js | scope analysis unpacks padded half-float rows and releases its resource | 7 | 0.081 | unknown |  |
-| tests/scope-ui.test.js | scope quality and freshness policies are pure inputs | 5 | 0.0024 | unknown |  |
-| tests/sdr-match-session.test.js | a Match response (200) for a replaced photo cannot update the new photo | 4 | 0.0082 | unknown |  |
-| tests/shared-export-status.test.js | shared export progress offers pause/resume and cancel, completion removes controls | 4 | 0.0117 | unknown |  |
-| tests/shortcut-labels.test.js | Mac explicit bindings use Apple modifier order and distinguish Control from Command | 5 | 0.0067 | unknown |  |
-| tests/source-interpretation.test.js | unresolved interpretation stays visible and export stays blocked until real resolution | 1 | 0.0036 | unknown |  |
-| tests/source-transport.test.js | in-place repair refresh retains native textures with their new source epoch | 52 | 5.7079 | unknown |  |
+| tests/local-adjustment-drafts.test.js | tool clicks create selected unused drafts; another type converts and the lit tool creates anew | 5 | 0.0098 | unknown |  |
+| tests/local-detail-passes.test.js | only shader-active Texture and Sharpen need the packed band pair | 3 | 0.0086 | unknown |  |
+| tests/local-sdr-match.test.js | local acknowledgements refresh stale markers without replacing newer strokes | 6 | 0.0086 | unknown |  |
+| tests/luma-region-routing.test.js | locals with shared range stops retain independent immutable feather results | 9 | 0.2176 | unknown |  |
+| tests/mask-expression.test.js | mask leaf defaults remain complete for every authoring tool | 6 | 0.0026 | unknown |  |
+| tests/mask-loader.test.js | a stale mask response is cancelled without an upload | 9 | 0.0066 | unknown |  |
+| tests/mask-raster.test.js | only geometry and feather forms with an exact tile contract are admitted | 4 | 0.003 | unknown |  |
+| tests/mask-request-coordinator.test.js | mask requests never exceed the configured concurrency | 10 | 0.0154 | unknown |  |
+| tests/mask-resample.test.js | only straighten and perspective leaves get a resampling plan | 14 | 0.4368 | unknown |  |
+| tests/mask-sampling.test.js | range sampling waits for saved upstream edits and reacquires the acknowledged mask | 7 | 0.0181 | unknown |  |
+| tests/match-preview-recovery.test.js | Match retries a peak handoff on GPU without CPU fallback | 15 | 0.2756 | unknown |  |
+| tests/micro-grain-transport.test.js | Micro Grain cancels an unread superseded response | 5 | 0.0069 | unknown |  |
+| tests/native-anchor-scheduling.test.js | Native anchors coalesce latest inputs and wait for foreground presentation | 5 | 0.212 | unknown |  |
+| tests/navigation-thumbnail-scheduling.test.js | Navigate uses the retained lower picture once active zoom work settles | 6 | 0.3183 | unknown |  |
+| tests/parity-bytes.test.js | byte histogram preserves the former sorted full-frame parity calculation exactly | 2 | 2.2143 | unknown |  |
+| tests/perspective-draft-preview.test.js | perspective draft cancellation leaves the current status alone | 2 | 0.0475 | unknown |  |
+| tests/photo-framing.test.js | viewer framing keeps photo pixels and independent per-side layers | 4 | 0.0047 | unknown |  |
+| tests/photo-transition.test.js | clean transitions and synchronous system exit avoid prompting | 5 | 0.0022 | unknown |  |
+| tests/photos-root.test.js | non-photo arguments and explicit roots need no machine discovery | 2 | 0.0033 | unknown |  |
+| tests/picture-request-monitor.test.js | picture monitor counts bodies after headers and detects five live requests | 3 | 0.0033 | unknown |  |
+| tests/platform-panels.test.js | Linux HDR warning waits for a photo and clears when it closes | 1 | 0.0019 | unknown |  |
+| tests/presentation-gate.test.js | presentations to one canvas never overlap | 7 | 0.0071 | unknown |  |
+| tests/preview-coarse-scale.test.js | Faster dragging uses a stable 2K coarse source before exact refinement | 1 | 0.0006 | unknown |  |
+| tests/preview-latency-controller.test.js | Precise always starts exact and interaction ends at exact scale | 5 | 0.0019 | unknown |  |
+| tests/preview-scheduler-pacing.test.js | drag frames are capped at 60 fps on a 164 Hz display | 4 | 0.0184 | unknown |  |
+| tests/preview-scheduler-settle.test.js | release after a completed drag frame settles without the 110 ms wait | 10 | 0.0402 | unknown |  |
+| tests/preview-source-memory.test.js | a 507 single-response proxy refusal reports Unavailable instead of preparing | 5 | 0.0492 | unknown |  |
+| tests/preview-watchdog.test.js | watchdog waits for real scheduler work {"frameInFlight":true} | 5 | 0.0592 | unknown |  |
+| tests/process-tree.test.js | a stale parent ID does not pull an older unrelated process into the tree | 18 | 0.6107 | unknown | test('a killed child that is not yet collected counts as stopped', { skip: process.platform === 'win32' && 'Windows has no zombie processes' }, () => { |
+| tests/project-io.test.js | desktop project open owns grant shape and optional relink grant | 7 | 0.0224 | unknown |  |
+| tests/quick-library-check.test.js | unset quick switch touches no app, page, filesystem or backend capability | 20 | 0.0429 | unknown |  |
+| tests/raw-pixel-cleanup.test.js | Pixel cleanup is enabled only for supported Bayer RAW and restores saved state | 3 | 0.0063 | unknown |  |
+| tests/recent-projects.test.js | recent projects survive restart, put the latest first and reject non-project entries | 1 | 0.0132 | unknown |  |
+| tests/release-runner.test.js | every standalone JS driver is listed once and all listed files exist | 31 | 19.7425 | unknown | test('failed-start status stops the run without a retry or later drivers', {skip:process.platform!=='win32'}, t => { |
+| tests/render-coordinator.test.js | queued preview keeps the action that requested it | 24 | 0.012 | unknown |  |
+| tests/render-failure.test.js | every Section 5.8 class is recognized from the error it produces | 7 | 0.0022 | unknown |  |
+| tests/render-plan-admission.test.js | a recorded graph produces an identical plan every time | 23 | 0.012 | unknown |  |
+| tests/retouch-source-refresh.test.js | repair refresh changes only bounded native pixels and discards reduced evidence | 9 | 0.0373 | unknown |  |
+| tests/reuse-test-photo.test.js | persistent test copies reuse pixels and restore disposable sidecars on success or failure | 2 | 0.1993 | unknown |  |
+| tests/roi-source-region.test.js | a magnified fetch region covers every foreground tile's halo rect | 4 | 0.0304 | unknown |  |
+| tests/saved-preset-read.test.js | saved Film Look reaches recovery before unknown or damaged data is discarded: {"bloom_amount":20} | 3 | 0.0066 | unknown |  |
+| tests/scope-analysis.test.js | scope transport conversion retains the exact pre-cleanup double-precision results | 6 | 0.0345 | unknown |  |
+| tests/scope-gpu-handoff.test.js | first GPU picture defers CPU scopes, while an accepted CPU picture retains fallback | 4 | 0.0944 | unknown |  |
+| tests/scope-peak-disclosure.test.js | a refused editing measurement cannot become an exact peak through CPU fallback | 3 | 0.0038 | unknown |  |
+| tests/scope-readback.test.js | scope analysis unpacks padded half-float rows and releases its resource | 7 | 0.0518 | unknown |  |
+| tests/scope-ui.test.js | scope quality and freshness policies are pure inputs | 5 | 0.0022 | unknown |  |
+| tests/sdr-match-session.test.js | a Match response (200) for a replaced photo cannot update the new photo | 4 | 0.0067 | unknown |  |
+| tests/shared-export-status.test.js | shared export progress offers pause/resume and cancel, completion removes controls | 4 | 0.0111 | unknown |  |
+| tests/shortcut-labels.test.js | Mac explicit bindings use Apple modifier order and distinguish Control from Command | 5 | 0.0049 | unknown |  |
+| tests/source-interpretation.test.js | unresolved interpretation stays visible and export stays blocked until real resolution | 1 | 0.0032 | unknown |  |
+| tests/source-transport.test.js | in-place repair refresh retains native textures with their new source epoch | 52 | 1.238 | unknown |  |
 | tests/test_adjustments.py | Checks adjustments behavior and regression contracts. | 236 | 9.8053 | unknown |  |
 | tests/test_advanced_finishing.py | Checks advanced finishing behavior and regression contracts. | 25 | 0.5381 | unknown |  |
 | tests/test_ai_highlights_research.py | Checks ai highlights research behavior and regression contracts. | 15 | 0.6675 | unknown |  |
@@ -457,24 +457,24 @@ Source: `codebase/tests/inventory.json`. Seconds are summed case time, not paral
 | tests/test_vignette_midpoint.py | Checks vignette midpoint behavior and regression contracts. | 20 | 0.0578 | unknown |  |
 | tests/test_watermark.py | Checks watermark behavior and regression contracts. | 11 | 43.6971 | unknown | needs_native_helper; Conditional skip: backend.capability.status.value != 'available'; pytest.skip(backend.capability.detail) |
 | tests/test_zoom_block_compare.py | Validate PRD block alignment/area integration before trusting its verdicts. | 5 | 0.4375 | unknown |  |
-| tests/test-catalogue.test.js | all release drivers have usable agent briefs, requirements and platform estimates | 4 | 0.0305 | unknown |  |
-| tests/tier-acceptance-geometry.test.js | the tier target still comes from the source, not from the trimmed frame | 11 | 1.5956 | unknown |  |
-| tests/tile-scheduler.test.js | tiles are anchored to global output coordinates, not to an index | 17 | 0.1049 | unknown |  |
-| tests/tiled-cancellation-cleanup.test.js | Cancellation closes validation scope, releases peak target and temporary buffers | 9 | 0.0156 | unknown |  |
-| tests/tiled-local-state.test.js | Local Detail prefixes preserve the original cache identity exactly | 4 | 1.9261 | unknown |  |
-| tests/tiled-render-lifetime.test.js | direct renderTiledTo calls retain resources until their async lifetime ends | 3 | 0.0195 | unknown |  |
-| tests/tone-preview.test.js | darwin endpoint tooltips name the platform's drag modifier | 10 | 1.1424 | unknown |  |
-| tests/tone-zones.test.js | CPU and GPU parameter-only interval bounds agree across lanes, references, endpoints and extreme ranges | 2 | 48.3952 | unknown |  |
-| tests/tooltip-catalogue.test.js | tooltip catalogue matches source (preserve pending edits before regenerating) | 3 | 21.414 | unknown |  |
-| tests/tooltips.test.js | Escape cancels pending help but still reaches the dialog | 5 | 0.7114 | unknown |  |
-| tests/viewer-state-transitions.test.js | an exact result at the current generation is Ready | 16 | 0.0049 | unknown |  |
-| tests/viewport-request.test.js | Fit produces a whole-output request with no padding to amplify | 14 | 0.0064 | unknown |  |
-| tests/vignette-midpoint.test.js | typed midpoint rule accepts 200 and preserves migrated half steps | 2 | 0.0063 | unknown |  |
-| tests/webgpu-allocation-agreement.test.js | grading residency reports the four core textures the device actually created | 14 | 4.8584 | unknown |  |
-| tests/webgpu-memory-diagnostics.test.js | direct model reproduces the approved two-level 24MP logical baseline | 9 | 0.0199 | unknown |  |
-| tests/webgpu-shaders.test.js | the peak and Denoise WGSL sources retain the audited byte identities | 4 | 0.0142 | unknown |  |
-| tests/whole-image-preview-pipe.test.js | whole-image purposes cannot inherit a native Full edge | 3 | 0.0018 | unknown |  |
-| tests/zoom-scope-recovery.test.js | single-action zoom finishes ahead of one settled scope refresh | 75 | 13.6249 | unknown |  |
+| tests/test-catalogue.test.js | all release drivers have usable agent briefs, requirements and platform estimates | 4 | 0.0528 | unknown |  |
+| tests/tier-acceptance-geometry.test.js | the tier target still comes from the source, not from the trimmed frame | 11 | 1.1637 | unknown |  |
+| tests/tile-scheduler.test.js | tiles are anchored to global output coordinates, not to an index | 17 | 0.1731 | unknown |  |
+| tests/tiled-cancellation-cleanup.test.js | Cancellation closes validation scope, releases peak target and temporary buffers | 9 | 0.0096 | unknown |  |
+| tests/tiled-local-state.test.js | Local Detail prefixes preserve the original cache identity exactly | 4 | 0.0948 | unknown |  |
+| tests/tiled-render-lifetime.test.js | direct renderTiledTo calls retain resources until their async lifetime ends | 3 | 0.0517 | unknown |  |
+| tests/tone-preview.test.js | darwin endpoint tooltips name the platform's drag modifier | 10 | 0.0796 | unknown |  |
+| tests/tone-zones.test.js | CPU and GPU parameter-only interval bounds agree across lanes, references, endpoints and extreme ranges | 2 | 2.4653 | unknown |  |
+| tests/tooltip-catalogue.test.js | tooltip catalogue matches source (preserve pending edits before regenerating) | 3 | 1.1398 | unknown |  |
+| tests/tooltips.test.js | Escape cancels pending help but still reaches the dialog | 5 | 0.0077 | unknown |  |
+| tests/viewer-state-transitions.test.js | an exact result at the current generation is Ready | 16 | 0.0028 | unknown |  |
+| tests/viewport-request.test.js | Fit produces a whole-output request with no padding to amplify | 14 | 0.0062 | unknown |  |
+| tests/vignette-midpoint.test.js | typed midpoint rule accepts 200 and preserves migrated half steps | 2 | 0.0058 | unknown |  |
+| tests/webgpu-allocation-agreement.test.js | grading residency reports the four core textures the device actually created | 14 | 0.2667 | unknown |  |
+| tests/webgpu-memory-diagnostics.test.js | direct model reproduces the approved two-level 24MP logical baseline | 9 | 0.0222 | unknown |  |
+| tests/webgpu-shaders.test.js | the peak and Denoise WGSL sources retain the audited byte identities | 4 | 0.0118 | unknown |  |
+| tests/whole-image-preview-pipe.test.js | whole-image purposes cannot inherit a native Full edge | 3 | 0.0016 | unknown |  |
+| tests/zoom-scope-recovery.test.js | single-action zoom finishes ahead of one settled scope refresh | 75 | 12.125 | unknown |  |
 
 ## Driver briefs
 
@@ -487,7 +487,7 @@ Drivers with multiple areas appear in each area. Requirements and platform notes
 proof grade diagnostic. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. Source inputs/fixtures referenced by driver (originals read-only): C://Users//Steve//Desktop//_DSC2743.hdrfinisher; DSC00950.ARW; DSC00950.hdrfinisher.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock. Old Mac source-link blocker repaired in PC follow-up: disposable session explicitly grants curated DSC00950.ARW; retain protected hashes.
 
@@ -496,7 +496,7 @@ proof grade diagnostic. Runs assertions and captures in an isolated Electron app
 Batch preset versions, saved setting round trip, filename examples, Grid/Preview and Quick export dialog. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock. Contains platform branches: inspect source skip/setup messages before treating the result as coverage.
 
@@ -505,7 +505,7 @@ Batch preset versions, saved setting round trip, filename examples, Grid/Preview
 export file browser interaction. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. Source inputs/fixtures referenced by driver (originals read-only): /root-project.hdrfinisher; D://root-project.hdrfinisher.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -514,7 +514,7 @@ export file browser interaction. Runs assertions and captures in an isolated Ele
 export presets interaction. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. Source inputs/fixtures referenced by driver (originals read-only): tests/fixtures/hdr_headroom.tiff.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -523,7 +523,7 @@ export presets interaction. Runs assertions and captures in an isolated Electron
 Saved DSC04375 RAW export and full-size Proof remain under the enabled HDR target on GPU and forced CPU, with the optional codec check off. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. Python virtual environment and pinned backend dependencies. Source inputs/fixtures referenced by driver (originals read-only): DSC04375.ARW.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -532,7 +532,7 @@ Saved DSC04375 RAW export and full-size Proof remain under the enabled HDR targe
 Independent saved-grade exports under 3 GiB and 2 GiB memory admission agree within existing delivery limits; full-size Proof identity and HDR ceiling; Optional --cpu comparison. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. Python virtual environment and pinned backend dependencies. Source inputs/fixtures referenced by driver (originals read-only): DSC04375.ARW.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -541,7 +541,7 @@ Independent saved-grade exports under 3 GiB and 2 GiB memory admission agree wit
 Small GPU and forced-CPU export for all three Denoise methods, delivery resize/sharpening, watermarked full-size Proof byte identity, finished perceptual limits and HDR peak. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -550,7 +550,7 @@ Small GPU and forced-CPU export for all three Denoise methods, delivery resize/s
 Bounded 1600px real-photo fixture: all-codec CPU/GPU exports and reduced/full-size Proof decoded targets with encoding allowance, full-size Proof identity and mandatory checking with checkbox off. --native-source keeps the original source for a separate native-size diagnostic. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. Python virtual environment and pinned backend dependencies. Source inputs/fixtures referenced by driver (originals read-only): output/test-photos/DSC00264.ARW; source.exr.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -559,7 +559,7 @@ Bounded 1600px real-photo fixture: all-codec CPU/GPU exports and reduced/full-si
 Own-source JXL fidelity, metadata and ceilings. Runs only through its registered parent drivers, never as a standalone check. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: parent minutes. Parent attempt deadline applies.
+- Unmeasured default deadline: parent minutes. Parent attempt deadline applies.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Parent driver(s): tests/jpegxl-high-fidelity.js.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline.
 
@@ -568,7 +568,7 @@ Own-source JXL fidelity, metadata and ceilings. Runs only through its registered
 Opt-in lossless12 HDR/lossless8 SDR JXL, unchanged defaults, UI/preset settings, per-image own-source fidelity, renderer agreement, exact finished ceilings, encoded allowance and reduced/full Proof byte identity. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. Curated <photosRoot>/HDR Test Images corpus; verify codebase/tests/test-photos.manifest.json; resolve through machine settings.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -577,7 +577,7 @@ Opt-in lossless12 HDR/lossless8 SDR JXL, unchanged defaults, UI/preset settings,
 Library selection reaches Export without a photo open in Grade: menu availability, Open in Export and Select all. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. Python virtual environment and pinned backend dependencies.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -586,7 +586,7 @@ Library selection reaches Export without a photo open in Grade: menu availabilit
 File-side half of the export/reference parity run (PRD 4.8, 15.27). Runs only through its registered parent drivers, never as a standalone check. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: parent minutes. Parent attempt deadline applies.
+- Unmeasured default deadline: parent minutes. Parent attempt deadline applies.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Parent driver(s): tests/performance/export-parity.js.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline.
 
@@ -595,7 +595,7 @@ File-side half of the export/reference parity run (PRD 4.8, 15.27). Runs only th
 Phase 0 item 7 / PRD 15.27 -- export/reference parity. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal. Python virtual environment and pinned backend dependencies.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -604,7 +604,7 @@ Phase 0 item 7 / PRD 15.27 -- export/reference parity. Runs assertions and captu
 Phase 0 item 6 fixture: one deterministic HDR source that carries all six. Runs only through its registered parent drivers, never as a standalone check. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: parent minutes. Parent attempt deadline applies.
+- Unmeasured default deadline: parent minutes. Parent attempt deadline applies.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Parent driver(s): tests/performance/export-parity.js.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline.
 
@@ -613,7 +613,7 @@ Phase 0 item 6 fixture: one deterministic HDR source that carries all six. Runs 
 Test-only observations; never changes product routing or saves a project. Runs only through its registered parent drivers, never as a standalone check. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: parent minutes. Parent attempt deadline applies.
+- Unmeasured default deadline: parent minutes. Parent attempt deadline applies.
 - Requirements: Repository setup completed; Node/npm dependencies installed. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal. Source inputs/fixtures referenced by driver (originals read-only): DSC00950.ARW; DSC00950.hdrfinisher. Parent driver(s): tests/performance/preview-export-compare.js.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline.
 
@@ -622,7 +622,7 @@ Test-only observations; never changes product routing or saves a project. Runs o
 Reference half of the preview-versus-export comparison (Viewport PRD 4.6). Runs only through its registered parent drivers, never as a standalone check. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: parent minutes. Parent attempt deadline applies.
+- Unmeasured default deadline: parent minutes. Parent attempt deadline applies.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Source inputs/fixtures referenced by driver (originals read-only): {manifest_path.stem}-document.hdrfinisher. Parent driver(s): tests/performance/preview-export-compare.js.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline.
 
@@ -631,7 +631,7 @@ Reference half of the preview-versus-export comparison (Viewport PRD 4.6). Runs 
 Preview-versus-export comparison (Viewport-Bounded GPU Preview PRD, 4.6). $env:HDR_FINISHER_ELECTRON_WINDOW_SIZE = "2560x1440". Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock. Old Mac source-link blocker repaired in PC follow-up: disposable session explicitly grants curated DSC00950.ARW; retain protected hashes.
 
@@ -640,7 +640,7 @@ Preview-versus-export comparison (Viewport-Bounded GPU Preview PRD, 4.6). $env:H
 Open a project in-process for reference renders, without touching it. Runs only through its registered parent drivers, never as a standalone check. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: parent minutes. Parent attempt deadline applies.
+- Unmeasured default deadline: parent minutes. Parent attempt deadline applies.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Parent driver(s): tests/performance/preview-export-compare.js.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline.
 
@@ -649,7 +649,7 @@ Open a project in-process for reference renders, without touching it. Runs only 
 Proof size: a reduced proof says it is reduced, and a full-size proof is. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -660,7 +660,7 @@ Proof size: a reduced proof says it is reduced, and a full-size proof is. Runs a
 Color desaturation active GPU preview, CPU/GPU finished output, Proof/export agreement and HDR ceiling. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -669,7 +669,7 @@ Color desaturation active GPU preview, CPU/GPU finished output, Proof/export agr
 Clipped real RAWs use GPU in Grade and Library, preserve perceptual appearance, and agree in Proof/export. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. Python virtual environment and pinned backend dependencies. Curated <photosRoot>/HDR Test Images corpus; verify codebase/tests/test-photos.manifest.json; resolve through machine settings. Source inputs/fixtures referenced by driver (originals read-only): D:/Photos/HDR Test Images/DSC00264.ARW; D:/Photos/HDR Test Images/IMG_3129.CR2.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -678,7 +678,7 @@ Clipped real RAWs use GPU in Grade and Library, preserve perceptual appearance, 
 Single-photo export shows the export's own numeric progress, stage labels and time left in the status bar, never going back, instead of the old wall-clock messages. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. Source inputs/fixtures referenced by driver (originals read-only): IMG_0790.CR2.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -687,7 +687,7 @@ Single-photo export shows the export's own numeric progress, stage labels and ti
 GPU measurement versus current CPU on the existing Denoise corpus, finished HDR/SDR perceptual limits, exact ceiling and shared source reuse. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal. Python virtual environment and pinned backend dependencies. Source inputs/fixtures referenced by driver (originals read-only): DSC00264.ARW.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -696,7 +696,7 @@ GPU measurement versus current CPU on the existing Denoise corpus, finished HDR/
 Shared Edge colour reconstruction executes on hardware GPU and agrees with CPU spatial reconstruction. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -705,7 +705,7 @@ Shared Edge colour reconstruction executes on hardware GPU and agrees with CPU s
 Default grain and one-sample draft remain byte-identical to their frozen numerical references across scale, size, film type and lane. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -714,7 +714,7 @@ Default grain and one-sample draft remain byte-identical to their frozen numeric
 Reference-relative HDR Peak slider, typed entry and pasted-state floor at both project whites and window layouts. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. Source inputs/fixtures referenced by driver (originals read-only): fixtures/hdr_match_scene.tiff.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -723,7 +723,7 @@ Reference-relative HDR Peak slider, typed entry and pasted-state floor at both p
 HSL real-device preview, stage picker, wheel, channel/preset/local authoring and finished GPU/CPU Proof/export perceptual agreement and ceiling. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -732,7 +732,7 @@ HSL real-device preview, stage picker, wheel, channel/preset/local authoring and
 Checks neutral, global and local HSL selection delivery in one isolated app session using --all, retaining preview/export and selection assertions. A failure usually means HSL delivery or selection containment diverged; inspect the first assertion and captured output. The earlier Mac report timed the pre-trim recipe and does not estimate this invocation.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal. Curated <photosRoot>/HDR Test Images corpus; verify codebase/tests/test-photos.manifest.json; resolve through machine settings. Source inputs/fixtures referenced by driver (originals read-only): D:/Photos/HDR Test Images/IMG_0114.CR2; IMG_0114.CR2.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -741,7 +741,7 @@ Checks neutral, global and local HSL selection delivery in one isolated app sess
 Sampled fixed-source hue mask GPU preview and GPU/CPU Proof/export agreement and ceiling. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -750,7 +750,7 @@ Sampled fixed-source hue mask GPU preview and GPU/CPU Proof/export agreement and
 SDR local Detail headroom through Film Look agrees with CPU export. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal. Python virtual environment and pinned backend dependencies.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -759,7 +759,7 @@ SDR local Detail headroom through Film Look agrees with CPU export. Runs asserti
 Local Match parent selection, independent SDR state, complete action/explanation layouts, Undo, stale marker, overwrite consent, CPU/GPU finished delivery and full-size Proof/export identity. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal. Source inputs/fixtures referenced by driver (originals read-only): fixtures/hdr_match_scene.tiff.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -768,7 +768,7 @@ Local Match parent selection, independent SDR state, complete action/explanation
 Attached per-photo framing controls and actual GPU/CPU delivery geometry in all six formats, with full Proof inclusion and cache isolation. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -777,7 +777,7 @@ Attached per-photo framing controls and actual GPU/CPU delivery geometry in all 
 Real Bayer RAW hot-pixel and harsh-speck cleanup enabled in Grade, restored checkboxes, threshold release/reset, CPU/GPU Edge colour, saved Library GPU development and identical encoded Proof/export; inherits the existing edge-colour delivery comparison guards. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -786,7 +786,7 @@ Real Bayer RAW hot-pixel and harsh-speck cleanup enabled in Grade, restored chec
 Optional hot-pixel and signed harsh-speck sensor cleanup integrated with production GPU normalization, Opposed color, signed AHD and WB, four CFA patterns/orientations and Off/hot-only/speck-only/combined states, threshold endpoints and exact old/explicit-Off GPU pixel equality; finished SDR DeltaE2000/HDR DeltaE ITP mean <1 and p99 <3 at -6/0/+6 EV. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -795,7 +795,7 @@ Optional hot-pixel and signed harsh-speck sensor cleanup integrated with product
 Safe linked Match, live HDR edits, unlink, SDR global/local edits, one Undo, N4 consent and linked finished GPU/CPU export plus reduced/full Proof agreement. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal. Source inputs/fixtures referenced by driver (originals read-only): tests/fixtures/hdr_match_scene.tiff.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -804,7 +804,7 @@ Safe linked Match, live HDR edits, unlink, SDR global/local edits, one Undo, N4 
 Linked SDR common HDR creatives and overlapping locals; finished float CPU/GPU agreement before encoding. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -813,7 +813,7 @@ Linked SDR common HDR creatives and overlapping locals; finished float CPU/GPU a
 Signed Bayer AHD on all four CFA phases and orientations, finite negative scene values, and finished SDR/HDR CPU/GPU colour at -6/0/+6 EV. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -822,7 +822,7 @@ Signed Bayer AHD on all four CFA phases and orientations, finite negative scene 
 Frozen five-control Tone (Blacks, Shadows, Midtones, Highlights, Whites): GPU finished output equals CPU within perceptual limits, Proof equals export, HDR ceiling. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -831,7 +831,7 @@ Frozen five-control Tone (Blacks, Shadows, Midtones, Highlights, Whites): GPU fi
 Expanded Vignette midpoint authoring and real GPU preview versus CPU rendering and CPU/GPU PNG exports at 100 and 200 percent. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal. Python virtual environment and pinned backend dependencies.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -842,7 +842,7 @@ Expanded Vignette midpoint authoring and real GPU preview versus CPU rendering a
 Denoise action-to-final-picture preparation, Recalculate, Fit/native zoom changes and pan on 18 MP and 42 MP RAWs. Opt-in Clean Grain Grade trials cover matching HDR/SDR Fit reuse, timing, memory, CPU fallback and finished colour and HDR ceiling captures. Separate baseline covers native export and Proof timings. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal. Python virtual environment and pinned backend dependencies. Source inputs/fixtures referenced by driver (originals read-only): DSC01212.ARW; IMG_0790.CR2; _DSC7970.ARW.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -851,7 +851,7 @@ Denoise action-to-final-picture preparation, Recalculate, Fit/native zoom change
 Full-size Proof versus export on a real project (PRD section 3). Runs the Python recipe in the configured virtual environment and checks numerical or file results. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Python virtual environment and pinned backend dependencies.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. Broad full-size real-project file identity; synthetic exact identity remains in every fast Python suite.
 
@@ -862,7 +862,7 @@ Full-size Proof versus export on a real project (PRD section 3). Runs the Python
 Unexposed X2 research only: no visible action, both layouts, unchanged SDR and existing document-swap Undo, bounded candidate CPU/GPU encoded ceiling and Proof/export identity. Runs assertions and captures in an isolated Electron app. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal. Python virtual environment and pinned backend dependencies. Source inputs/fixtures referenced by driver (originals read-only): fixtures/hdr_headroom.tiff.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -871,7 +871,7 @@ Unexposed X2 research only: no visible action, both layouts, unchanged SDR and e
 Real-app batch export of the Santorini export-speed recipe on the Sony RAW with Grade open: whole wait, whole-app peak, live progress gaps and the memory-trim rounds logged during the export. Runs assertions and captures in an isolated Electron app. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. Python virtual environment and pinned backend dependencies. Source inputs/fixtures referenced by driver (originals read-only): _DSC7970.ARW; tests/fixtures/export-speed. Reuses output/test-photos/export-speed-app/_DSC7970.ARW. Run under gpu-run-lock.py.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock. Contains platform branches: inspect source skip/setup messages before treating the result as coverage.
 
@@ -880,7 +880,7 @@ Real-app batch export of the Santorini export-speed recipe on the Sony RAW with 
 Real read-only photo CPU export and reduced/full Proof decoded ceilings, full Proof identity, and paired CPU or Electron GPU full-export cost with/without post-encode decoding. Runs the Python recipe in the configured virtual environment and checks numerical or file results. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Python virtual environment and pinned backend dependencies. Source inputs/fixtures referenced by driver (originals read-only): photo-{index}.exr. Pass existing source photo paths; --gpu measures Electron request timing. Run under gpu-run-lock.py for isolated timings.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline.
 
@@ -889,7 +889,7 @@ Real read-only photo CPU export and reduced/full Proof decoded ceilings, full Pr
 Checks delivered Retouch output against the finished preview. Runs assertions and captures in an isolated Electron app. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -900,7 +900,7 @@ Checks delivered Retouch output against the finished preview. Runs assertions an
 GPU analysis overlays, Library review controls and file drops, Performance settings and theme restart. Launches the native Electron shell with a disposable profile to check window or renderer behaviour. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal. Python virtual environment and pinned backend dependencies. Source inputs/fixtures referenced by driver (originals read-only): .exr; drop.hdrfinisher; linear.exr; tests/fixtures/linear_unconfirmed.exr; tests/fixtures/sdr_gradient.png.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -909,7 +909,7 @@ GPU analysis overlays, Library review controls and file drops, Performance setti
 Film stock: the WebGPU preview matches the CPU export. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows 3.560; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal. Python virtual environment and pinned backend dependencies.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -918,7 +918,7 @@ Film stock: the WebGPU preview matches the CPU export. Runs assertions and captu
 Grade tile grain pruning preserves the original WebGPU grain samples bit for bit. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -927,7 +927,7 @@ Grade tile grain pruning preserves the original WebGPU grain samples bit for bit
 Film grain: the WebGPU preview matches the CPU export. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal. Python virtual environment and pinned backend dependencies.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -936,7 +936,7 @@ Film grain: the WebGPU preview matches the CPU export. Runs assertions and captu
 Default grain and one-sample draft remain byte-identical to their frozen numerical references across scale, size, film type and lane. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -945,7 +945,7 @@ Default grain and one-sample draft remain byte-identical to their frozen numeric
 SDR local Detail headroom through Film Look agrees with CPU export. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal. Python virtual environment and pinned backend dependencies.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -954,7 +954,7 @@ SDR local Detail headroom through Film Look agrees with CPU export. Runs asserti
 Compare the visible contribution of spatial film effects at 4K and Full. The page compositor is sampled rather than drawImage(canvas): Chromium may return zeroes when a presented WebGPU canvas is copied through 2D canvas. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal. Python virtual environment and pinned backend dependencies. Curated <photosRoot>/HDR Test Images corpus; verify codebase/tests/test-photos.manifest.json; resolve through machine settings. Source inputs/fixtures referenced by driver (originals read-only): D:/Photos/HDR Test Images/A7R00619.exr.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -963,7 +963,7 @@ Compare the visible contribution of spatial film effects at 4K and Full. The pag
 Safe linked Match, live HDR edits, unlink, SDR global/local edits, one Undo, N4 consent and linked finished GPU/CPU export plus reduced/full Proof agreement. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal. Source inputs/fixtures referenced by driver (originals read-only): tests/fixtures/hdr_match_scene.tiff.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -972,7 +972,7 @@ Safe linked Match, live HDR edits, unlink, SDR global/local edits, one Undo, N4 
 Linked SDR common HDR creatives and overlapping locals; finished float CPU/GPU agreement before encoding. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -981,7 +981,7 @@ Linked SDR common HDR creatives and overlapping locals; finished float CPU/GPU a
 tiled film parity. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -992,7 +992,7 @@ tiled film parity. Runs assertions and captures in an isolated Electron app. A f
 film character ui check. Runs only through its registered parent drivers, never as a standalone check. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: parent minutes. Parent attempt deadline applies.
+- Unmeasured default deadline: parent minutes. Parent attempt deadline applies.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Parent driver(s): tests/film-stock-parity.js.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline.
 
@@ -1001,7 +1001,7 @@ film character ui check. Runs only through its registered parent drivers, never 
 film panel ui check. Runs only through its registered parent drivers, never as a standalone check. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: parent minutes. Parent attempt deadline applies.
+- Unmeasured default deadline: parent minutes. Parent attempt deadline applies.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Parent driver(s): tests/film-stock-parity.js.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline.
 
@@ -1010,7 +1010,7 @@ film panel ui check. Runs only through its registered parent drivers, never as a
 Keep preset persistence in memory so this driver cannot write Steve's preset folder. Runs only through its registered parent drivers, never as a standalone check. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: parent minutes. Parent attempt deadline applies.
+- Unmeasured default deadline: parent minutes. Parent attempt deadline applies.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Python virtual environment and pinned backend dependencies. Parent driver(s): tests/film-stock-parity.js.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline.
 
@@ -1019,7 +1019,7 @@ Keep preset persistence in memory so this driver cannot write Steve's preset fol
 Real RAW stacked Film grade: native Exposure with HSL Pick armed at Fit and 100%, latest edits during Denoise, current exact presentation and changed visible pixels. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal. Curated <photosRoot>/HDR Test Images corpus; verify codebase/tests/test-photos.manifest.json; resolve through machine settings. Source inputs/fixtures referenced by driver (originals read-only): D:/Photos/HDR Test Images/DSC00264.ARW; DSC00264.ARW.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock. Contains platform branches: inspect source skip/setup messages before treating the result as coverage.
 
@@ -1028,7 +1028,7 @@ Real RAW stacked Film grade: native Exposure with HSL Pick armed at Fit and 100%
 film look interaction. Launches the native Electron shell with a disposable profile to check window or renderer behaviour. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -1039,7 +1039,7 @@ film look interaction. Launches the native Electron shell with a disposable prof
 Pass/fail: native and reduced preview versus a full-resolution scan downsized. Runs assertions and captures in an isolated Electron app. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -1048,7 +1048,7 @@ Pass/fail: native and reduced preview versus a full-resolution scan downsized. R
 Scan reference and CPU fallback for the Fit grain acceptance matrix. Runs the Python recipe in the configured virtual environment and checks numerical or file results. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Python virtual environment and pinned backend dependencies.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline.
 
@@ -1057,7 +1057,7 @@ Scan reference and CPU fallback for the Fit grain acceptance matrix. Runs the Py
 MacBook whole-wait Show selection, Film/lens input-to-present throughput and Exposure after Denoise; exact settlement after drags. Runs assertions and captures in an isolated Electron app. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal. Reusable output/test-photos/grade-24mp.tiff; --input accepts another source. Pair before/after on the same machine.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock. Contains platform branches: inspect source skip/setup messages before treating the result as coverage.
 
@@ -1066,7 +1066,7 @@ MacBook whole-wait Show selection, Film/lens input-to-present throughput and Exp
 Bounded photo preparation and perceptual/texture analysis for grain-sample-sweep.js. Runs the Python recipe in the configured virtual environment and checks numerical or file results. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Python virtual environment and pinned backend dependencies.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline.
 
@@ -1075,7 +1075,7 @@ Bounded photo preparation and perceptual/texture analysis for grain-sample-sweep
 Real-photo grain sample-count colour, texture and GPU-cost comparison; prepares inputs with grain-sample-reference.py. Runs assertions and captures in an isolated Electron app. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -1084,7 +1084,7 @@ Real-photo grain sample-count colour, texture and GPU-cost comparison; prepares 
 NEXT-01 #1 -- does the Show halation map change with preview resolution?. Runs assertions and captures in an isolated Electron app. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal. Curated <photosRoot>/HDR Test Images corpus; verify codebase/tests/test-photos.manifest.json; resolve through machine settings. Source inputs/fixtures referenced by driver (originals read-only): D:/Photos/HDR Test Images/A7R00619.exr.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -1093,7 +1093,7 @@ NEXT-01 #1 -- does the Show halation map change with preview resolution?. Runs a
 Whole Film-on slider wait on machine window, linked and independent SDR, before/after eager-prefix branch comparison on identical source. Runs assertions and captures in an isolated Electron app. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal. Source inputs/fixtures referenced by driver (originals read-only): tests/fixtures/hdr_match_scene.tiff.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -1102,7 +1102,7 @@ Whole Film-on slider wait on machine window, linked and independent SDR, before/
 Opt-in copied saved-grade RAW action-to-GPU-completion observations, native slider drags, zoom/pan, lane switches, ablations, CPU profile and whole-tree memory; never saves source or sidecar. Runs assertions and captures in an isolated Electron app. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal. Source inputs/fixtures referenced by driver (originals read-only): output/test-photos/DSC01287.ARW. Use output/test-photos copy and saved sidecar; --part baseline, zoom, ablate, raw, probe, tiers, race or profile; race --before-zoom restores former scheduling in the disposable renderer. Shared GPU lock and machine window required.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock. Contains platform branches: inspect source skip/setup messages before treating the result as coverage.
 
@@ -1111,7 +1111,7 @@ Opt-in copied saved-grade RAW action-to-GPU-completion observations, native slid
 Isolated equal-input Film GPU timing prototype; compilation failed on its first attempt, corrected harness remains GPU-unvalidated and is not a shipping gate. Runs assertions and captures in an isolated Electron app. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal. Prepare inputs with film_equal_input_trial.py --only gpu-prepare and pass the output folder. Use the shared GPU lock; a later run needs Steve's decision, not a retry of the failed compilation.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -1120,7 +1120,7 @@ Isolated equal-input Film GPU timing prototype; compilation failed on its first 
 Opt-in frozen-backend equal-input Film colour, Match-body, character, saved-grade drift and CPU cost research; never changes production order or projects. Runs the Python recipe in the configured virtual environment and checks numerical or file results. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Python virtual environment and pinned backend dependencies. Curated <photosRoot>/HDR Test Images corpus; verify codebase/tests/test-photos.manifest.json; resolve through machine settings. Source inputs/fixtures referenced by driver (originals read-only): A7R00619.ARW; DSC00264.ARW; IMG_0790.CR2; IMG_3129.CR2; Projects/DSC00950.hdrfinisher. Pass --output and optionally --backend/--backend-revision; needs existing M1 reduced RAW inputs. Modes all, character, gpu-prepare and timing are explicit separate steps.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline.
 
@@ -1131,7 +1131,7 @@ Opt-in frozen-backend equal-input Film colour, Match-body, character, saved-grad
 Lens filters: the WebGPU preview matches the CPU export for each filter at its strongest glow, HDR and SDR. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -1140,7 +1140,7 @@ Lens filters: the WebGPU preview matches the CPU export for each filter at its s
 Camera RAW grid thumbnails developed on the GPU, including Lensfun correction, against Grade's CPU development; disposable photo copies only. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. Python virtual environment and pinned backend dependencies. Curated <photosRoot>/HDR Test Images corpus; verify codebase/tests/test-photos.manifest.json; resolve through machine settings. Source inputs/fixtures referenced by driver (originals read-only): D:/Photos/HDR Test Images/A7R00619.ARW; D:/Photos/HDR Test Images/DSC_3931.NEF; D:/Photos/HDR Test Images/IMG_0790.CR2.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -1149,7 +1149,7 @@ Camera RAW grid thumbnails developed on the GPU, including Lensfun correction, a
 Compare the visible contribution of spatial film effects at 4K and Full. The page compositor is sampled rather than drawImage(canvas): Chromium may return zeroes when a presented WebGPU canvas is copied through 2D canvas. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal. Python virtual environment and pinned backend dependencies. Curated <photosRoot>/HDR Test Images corpus; verify codebase/tests/test-photos.manifest.json; resolve through machine settings. Source inputs/fixtures referenced by driver (originals read-only): D:/Photos/HDR Test Images/A7R00619.exr.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -1160,7 +1160,7 @@ Compare the visible contribution of spatial film effects at 4K and Full. The pag
 Film stock: the WebGPU preview matches the CPU export. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal. Python virtual environment and pinned backend dependencies.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -1169,7 +1169,7 @@ Film stock: the WebGPU preview matches the CPU export. Runs assertions and captu
 Physical lens filters: exact Direct/Tiled bytes at Fit and native, and exact Mist reuse and invalidation with Grade edits. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -1180,7 +1180,7 @@ Physical lens filters: exact Direct/Tiled bytes at Fit and native, and exact Mis
 MacBook whole-wait Show selection, Film/lens input-to-present throughput and Exposure after Denoise; exact settlement after drags. Runs assertions and captures in an isolated Electron app. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal. Reusable output/test-photos/grade-24mp.tiff; --input accepts another source. Pair before/after on the same machine.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock. Contains platform branches: inspect source skip/setup messages before treating the result as coverage.
 
@@ -1191,7 +1191,7 @@ MacBook whole-wait Show selection, Film/lens input-to-present throughput and Exp
 Batch preset versions, saved setting round trip, filename examples, Grid/Preview and Quick export dialog. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock. Contains platform branches: inspect source skip/setup messages before treating the result as coverage.
 
@@ -1200,7 +1200,7 @@ Batch preset versions, saved setting round trip, filename examples, Grid/Preview
 Eligible DNG GainMap/warp and linear preparation preserve finished SDR/HDR, borders, responsive Activity, mixed-folder routing and the H toggle. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. Python virtual environment and pinned backend dependencies. Curated <photosRoot>/HDR Test Images corpus; verify codebase/tests/test-photos.manifest.json; resolve through machine settings. Source inputs/fixtures referenced by driver (originals read-only): DJI_0071-2.DNG; Leica-X2-L1021324.DNG; tests/fixtures/library_photo.png.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -1209,7 +1209,7 @@ Eligible DNG GainMap/warp and linear preparation preserve finished SDR/HDR, bord
 Visible Export tiles draw once, retain through progress and keep three-photo export throughput within its agreed allowance. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. Python virtual environment and pinned backend dependencies. Source inputs/fixtures referenced by driver (originals read-only): .ARW.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -1218,7 +1218,7 @@ Visible Export tiles draw once, retain through progress and keep three-photo exp
 Library selection reaches Export without a photo open in Grade: menu availability, Open in Export and Select all. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. Python virtual environment and pinned backend dependencies.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -1227,7 +1227,7 @@ Library selection reaches Export without a photo open in Grade: menu availabilit
 A vertical mouse wheel scrolls the Single view filmstrip sideways. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -1236,7 +1236,7 @@ A vertical mouse wheel scrolls the Single view filmstrip sideways. Runs assertio
 GPU thumbnail starting documents are reused by concurrent paste preparation, change checks and unchanged paste. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. Python virtual environment and pinned backend dependencies. Source inputs/fixtures referenced by driver (originals read-only): DSC06615.ARW; after.ARW; before.ARW.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -1245,7 +1245,7 @@ GPU thumbnail starting documents are reused by concurrent paste preparation, cha
 GPU-developed grid and screen pictures share development, neighbouring Single/full-screen views retain scenes, and native GPU crops agree with Grade at Fit and 100%. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac 5.000.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. Python virtual environment and pinned backend dependencies. Source inputs/fixtures referenced by driver (originals read-only): .ARW.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock. Approximate five-minute Mac baseline comes from the pre-trim November 25 report; remeasure after driver changes.
 
@@ -1254,7 +1254,7 @@ GPU-developed grid and screen pictures share development, neighbouring Single/fu
 ISO AVIF explicitly retains CPU reconstruction; real SDR/HDR-base scenes, full-source peaks, both tiers, cached native reuse and saved-grade live HDR/SDR drawing agree with Grade. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -1263,7 +1263,7 @@ ISO AVIF explicitly retains CPU reconstruction; real SDR/HDR-base scenes, full-s
 Requested tiers develop independently and reuse matching scenes; grid/recovery make 640 only, Single requests 2560 now and neighbours soon, departure stops screen work; M20 redraws without development. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal. Python virtual environment and pinned backend dependencies. Source inputs/fixtures referenced by driver (originals read-only): .ARW; DSC00264.ARW; DSC04375.ARW; DSC06615.ARW; tests/fixtures/sdr_gradient.png.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -1272,7 +1272,7 @@ Requested tiers develop independently and reuse matching scenes; grid/recovery m
 Selected-photo native detail shows Fit immediately and reuses one full-size development across zooms. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. Python virtual environment and pinned backend dependencies. Source inputs/fixtures referenced by driver (originals read-only): DSC06615.ARW; tests/fixtures/sdr_gradient.png.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -1281,7 +1281,7 @@ Selected-photo native detail shows Fit immediately and reuses one full-size deve
 Live Library HDR and SDR pictures agree with Grade before any thumbnail codec, including saved Portra stock, grain and halation; opt-in real-photo thumbnail/quick and screen comparisons. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. Python virtual environment and pinned backend dependencies. Source inputs/fixtures referenced by driver (originals read-only): DSC06615.ARW; tests/fixtures/sdr_gradient.png.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock. Contains platform branches: inspect source skip/setup messages before treating the result as coverage.
 
@@ -1290,7 +1290,7 @@ Live Library HDR and SDR pictures agree with Grade before any thumbnail codec, i
 Authored uint16 TIFF and JPEG/PNG preserve SDR, saved finishing edits, full-source defaults and native reuse. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -1299,7 +1299,7 @@ Authored uint16 TIFF and JPEG/PNG preserve SDR, saved finishing edits, full-sour
 EXR/TIFF float preparation, concurrent tiers, native reuse and finished pixels against Grade. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. Python virtual environment and pinned backend dependencies. Curated <photosRoot>/HDR Test Images corpus; verify codebase/tests/test-photos.manifest.json; resolve through machine settings. Source inputs/fixtures referenced by driver (originals read-only): D:/Photos/HDR Test Images/A7R00619.exr.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -1308,7 +1308,7 @@ EXR/TIFF float preparation, concurrent tiers, native reuse and finished pixels a
 JPEG/PNG cells and saved-grade native detail preserve selected-only reuse and recover automatically after device loss. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal. Python virtual environment and pinned backend dependencies. Curated <photosRoot>/HDR Test Images corpus; verify codebase/tests/test-photos.manifest.json; resolve through machine settings.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -1317,7 +1317,7 @@ JPEG/PNG cells and saved-grade native detail preserve selected-only reuse and re
 Ordinary JPEG/PNG shared GPU preparation preserves authored SDR, full-source defaults, both tiers and native reuse against Grade. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. Python virtual environment and pinned backend dependencies. Curated <photosRoot>/HDR Test Images corpus; verify codebase/tests/test-photos.manifest.json; resolve through machine settings. Source inputs/fixtures referenced by driver (originals read-only): signed-layer.exr; white100.exr.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock. Contains platform branches: inspect source skip/setup messages before treating the result as coverage.
 
@@ -1328,7 +1328,7 @@ Ordinary JPEG/PNG shared GPU preparation preserves authored SDR, full-source def
 GPU analysis overlays, Library review controls and file drops, Performance settings and theme restart. Launches the native Electron shell with a disposable profile to check window or renderer behaviour. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal. Python virtual environment and pinned backend dependencies. Source inputs/fixtures referenced by driver (originals read-only): .exr; drop.hdrfinisher; linear.exr; tests/fixtures/linear_unconfirmed.exr; tests/fixtures/sdr_gradient.png.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -1337,7 +1337,7 @@ GPU analysis overlays, Library review controls and file drops, Performance setti
 Clipped real RAWs use GPU in Grade and Library, preserve perceptual appearance, and agree in Proof/export. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. Python virtual environment and pinned backend dependencies. Curated <photosRoot>/HDR Test Images corpus; verify codebase/tests/test-photos.manifest.json; resolve through machine settings. Source inputs/fixtures referenced by driver (originals read-only): D:/Photos/HDR Test Images/DSC00264.ARW; D:/Photos/HDR Test Images/IMG_3129.CR2.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -1346,7 +1346,7 @@ Clipped real RAWs use GPU in Grade and Library, preserve perceptual appearance, 
 GPU measurement versus current CPU on the existing Denoise corpus, finished HDR/SDR perceptual limits, exact ceiling and shared source reuse. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal. Python virtual environment and pinned backend dependencies. Source inputs/fixtures referenced by driver (originals read-only): DSC00264.ARW.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -1355,7 +1355,7 @@ GPU measurement versus current CPU on the existing Denoise corpus, finished HDR/
 Shared Edge colour reconstruction executes on hardware GPU and agrees with CPU spatial reconstruction. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -1364,7 +1364,7 @@ Shared Edge colour reconstruction executes on hardware GPU and agrees with CPU s
 Real Leica/DJI Grade DNG import preserves finished SDR/HDR and borders through bounded GPU correction and CPU fallback. Runs the Node recipe and checks assertions or diagnostic output. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal. Python virtual environment and pinned backend dependencies. Curated <photosRoot>/HDR Test Images corpus; verify codebase/tests/test-photos.manifest.json; resolve through machine settings. Source inputs/fixtures referenced by driver (originals read-only): D:/Photos/HDR Test Images/DJI_0071-2.DNG; D:/Photos/HDR Test Images/Leica-X2-L1021324.DNG. Microsoft Edge (Playwright msedge channel); real Leica/DJI DNG fixtures.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. Overnight Mac run lacked Edge; install it before running.
 
@@ -1373,7 +1373,7 @@ Real Leica/DJI Grade DNG import preserves finished SDR/HDR and borders through b
 Standard JXL P3/PQ auto interpretation, source-primary PQ/HLG GPU colour, Grade presentation and sidebar visibility menus. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal. Python virtual environment and pinned backend dependencies. Windows-only JPEG XL helper used by tests/helpers/jxl_source_colour.py.
 - Platforms: win. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock. Mac/Linux blocked by JPEG XL helper, not an app pixel failure.
 
@@ -1382,7 +1382,7 @@ Standard JXL P3/PQ auto interpretation, source-primary PQ/HLG GPU colour, Grade 
 Activity controls and Stage C conflict attention, disposable photo copies only. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. Python virtual environment and pinned backend dependencies.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -1391,7 +1391,7 @@ Activity controls and Stage C conflict attention, disposable photo copies only. 
 JXL/HEIF cells, selected native reuse, saved grades and automatic GPU recovery. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -1400,7 +1400,7 @@ JXL/HEIF cells, selected native reuse, saved grades and automatic GPU recovery. 
 JXL/AVIF/HEIF precision, transfer, scene tiers and cached/native reuse against Grade. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -1409,7 +1409,7 @@ JXL/AVIF/HEIF precision, transfer, scene tiers and cached/native reuse against G
 Cold source Exposure and next-photo navigation on shared unmodified RAWs, optional simultaneous Focus. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. Python virtual environment and pinned backend dependencies. Source inputs/fixtures referenced by driver (originals read-only): IMG_0114.CR2; IMG_3129.CR2.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock. Contains platform branches: inspect source skip/setup messages before treating the result as coverage.
 
@@ -1418,7 +1418,7 @@ Cold source Exposure and next-photo navigation on shared unmodified RAWs, option
 Cold camera-JPEG Focus, rapid filmstrip/fullscreen navigation, cancellation and delayed native refinement without developing photos. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock. Contains platform branches: inspect source skip/setup messages before treating the result as coverage.
 
@@ -1427,7 +1427,7 @@ Cold camera-JPEG Focus, rapid filmstrip/fullscreen navigation, cancellation and 
 Camera RAW grid thumbnails developed on the GPU, including Lensfun correction, against Grade's CPU development; disposable photo copies only. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. Python virtual environment and pinned backend dependencies. Curated <photosRoot>/HDR Test Images corpus; verify codebase/tests/test-photos.manifest.json; resolve through machine settings. Source inputs/fixtures referenced by driver (originals read-only): D:/Photos/HDR Test Images/A7R00619.ARW; D:/Photos/HDR Test Images/DSC_3931.NEF; D:/Photos/HDR Test Images/IMG_0790.CR2.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -1436,7 +1436,7 @@ Camera RAW grid thumbnails developed on the GPU, including Lensfun correction, a
 Library GPU out-of-memory, device loss and unsupported source adapters: bounded CPU fallback, cached reopen, no broken-photo records and no stuck grants. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. Source inputs/fixtures referenced by driver (originals read-only): tests/fixtures/library_photo.png.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -1445,7 +1445,7 @@ Library GPU out-of-memory, device loss and unsupported source adapters: bounded 
 Library grade clipboard, single confirmation and settings persistence, virtual-copy bulk paste, live redraw from the same stored scenes and one-step Undo. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. Python virtual environment and pinned backend dependencies.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock. Contains platform branches: inspect source skip/setup messages before treating the result as coverage.
 
@@ -1454,7 +1454,7 @@ Library grade clipboard, single confirmation and settings persistence, virtual-c
 Slice 3 Stage A: one real window, disposable originals and app profile. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -1463,7 +1463,7 @@ Slice 3 Stage A: one real window, disposable originals and app profile. Runs ass
 Scrollbar appearance cannot trigger repeated thumbnail resizing; control reproduces the 37-photo feedback loop. Launches the native Electron shell with a disposable profile to check window or renderer behaviour. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -1472,7 +1472,7 @@ Scrollbar appearance cannot trigger repeated thumbnail resizing; control reprodu
 Native GPU-first finished pixels, source reuse, CPU fallback and prompt Grade hand-over. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -1481,7 +1481,7 @@ Native GPU-first finished pixels, source reuse, CPU fallback and prompt Grade ha
 Damaged, whole-failure and newer grades keep real-photo pictures visible with warning badges; Leave does not write and Continue retains the untouched backup. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. Python virtual environment and pinned backend dependencies.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -1490,7 +1490,7 @@ Damaged, whole-failure and newer grades keep real-photo pictures visible with wa
 GPU setup must overlap a visible photo request, using the existing renderer. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. Source inputs/fixtures referenced by driver (originals read-only): tests/fixtures/library_photo.png.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -1499,7 +1499,7 @@ GPU setup must overlap a visible photo request, using the existing renderer. Run
 one pending Library program, retained picture and native file-command guard. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. Python virtual environment and pinned backend dependencies. Source inputs/fixtures referenced by driver (originals read-only): fixtures/library_photo.png.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock. Contains platform branches: inspect source skip/setup messages before treating the result as coverage.
 
@@ -1508,7 +1508,7 @@ one pending Library program, retained picture and native file-command guard. Run
 Focus and Exposure on undeveloped RAW camera previews: aligned within 1 CSS px, nothing developed, same maps after Develop. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. Source inputs/fixtures referenced by driver (originals read-only): A7R00619.ARW; B07060.ARW; B3129.CR2; IMG_0114.CR2; IMG_3129.CR2.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -1517,7 +1517,7 @@ Focus and Exposure on undeveloped RAW camera previews: aligned within 1 CSS px, 
 Completed live thumbnail surfaces survive scrolling beyond one screen without backend work or lost pixels. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. Python virtual environment and pinned backend dependencies. Curated <photosRoot>/HDR Test Images corpus; verify codebase/tests/test-photos.manifest.json; resolve through machine settings.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock. Contains platform branches: inspect source skip/setup messages before treating the result as coverage.
 
@@ -1526,7 +1526,7 @@ Completed live thumbnail surfaces survive scrolling beyond one screen without ba
 A real upload timeout and Edge-colour rejection recover without durable errors; --invalid-input exercises immediate input rejection and CPU fallback. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. Python virtual environment and pinned backend dependencies. Source inputs/fixtures referenced by driver (originals read-only): .ARW.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -1535,7 +1535,7 @@ A real upload timeout and Edge-colour rejection recover without durable errors; 
 Top-layer menus/popovers, default and minimum geometry, scrolling, pop-out Library and native platform shortcuts. Launches the native Electron shell with a disposable profile to check window or renderer behaviour. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. Source inputs/fixtures referenced by driver (originals read-only): tests/fixtures/library_photo.png. Driver has its own three-minute action/startup/teardown deadline; runner default is an outer bound.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock. Contains platform branches: inspect source skip/setup messages before treating the result as coverage.
 
@@ -1544,7 +1544,7 @@ Top-layer menus/popovers, default and minimum geometry, scrolling, pop-out Libra
 Latest-only instruments, grain drag memory and Library recovery. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal. Python virtual environment and pinned backend dependencies. Curated <photosRoot>/HDR Test Images corpus; verify codebase/tests/test-photos.manifest.json; resolve through machine settings. Source inputs/fixtures referenced by driver (originals read-only): fixtures/sdr_gradient.png.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -1553,7 +1553,7 @@ Latest-only instruments, grain drag memory and Library recovery. Runs assertions
 Attached per-photo framing controls and actual GPU/CPU delivery geometry in all six formats, with full Proof inclusion and cache isolation. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -1562,7 +1562,7 @@ Attached per-photo framing controls and actual GPU/CPU delivery geometry in all 
 Focused Stage A check. All generated photos live in disposable test output. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. Python virtual environment and pinned backend dependencies. Curated <photosRoot>/HDR Test Images corpus; verify codebase/tests/test-photos.manifest.json; resolve through machine settings. Source inputs/fixtures referenced by driver (originals read-only): D:/Photos/HDR Test Images/DSC00264.ARW.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock. Contains platform branches: inspect source skip/setup messages before treating the result as coverage.
 
@@ -1571,7 +1571,7 @@ Focused Stage A check. All generated photos live in disposable test output. Runs
 Stage B exercises only disposable copies, never the owner's photo folders. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. Python virtual environment and pinned backend dependencies.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock. Contains platform branches: inspect source skip/setup messages before treating the result as coverage.
 
@@ -1580,7 +1580,7 @@ Stage B exercises only disposable copies, never the owner's photo folders. Runs 
 Disposable sources only. Stage C sort/filter/HDR and loading regression. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. Curated <photosRoot>/HDR Test Images corpus; verify codebase/tests/test-photos.manifest.json; resolve through machine settings. Source inputs/fixtures referenced by driver (originals read-only): D:/Photos/HDR Test Images/DSC00264.ARW.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -1589,7 +1589,7 @@ Disposable sources only. Stage C sort/filter/HDR and loading regression. Runs as
 Real Bayer RAW hot-pixel and harsh-speck cleanup enabled in Grade, restored checkboxes, threshold release/reset, CPU/GPU Edge colour, saved Library GPU development and identical encoded Proof/export; inherits the existing edge-colour delivery comparison guards. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -1598,7 +1598,7 @@ Real Bayer RAW hot-pixel and harsh-speck cleanup enabled in Grade, restored chec
 Optional hot-pixel and signed harsh-speck sensor cleanup integrated with production GPU normalization, Opposed color, signed AHD and WB, four CFA patterns/orientations and Off/hot-only/speck-only/combined states, threshold endpoints and exact old/explicit-Off GPU pixel equality; finished SDR DeltaE2000/HDR DeltaE ITP mean <1 and p99 <3 at -6/0/+6 EV. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -1607,7 +1607,7 @@ Optional hot-pixel and signed harsh-speck sensor cleanup integrated with product
 A saved repaired RAW uses GPU development before thumbnail reduction, with bounded frozen source regions and warm reuse. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. Curated <photosRoot>/HDR Test Images corpus; verify codebase/tests/test-photos.manifest.json; resolve through machine settings. Source inputs/fixtures referenced by driver (originals read-only): D:/Photos/HDR Test Images/DSC04375.ARW; DSC04375.ARW.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -1616,7 +1616,7 @@ A saved repaired RAW uses GPU development before thumbnail reduction, with bound
 Signed Bayer AHD on all four CFA phases and orientations, finite negative scene values, and finished SDR/HDR CPU/GPU colour at -6/0/+6 EV. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -1625,7 +1625,7 @@ Signed Bayer AHD on all four CFA phases and orientations, finite negative scene 
 Aligned workflow panel headers and pointer/keyboard panel resizing. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -1636,7 +1636,7 @@ Aligned workflow panel headers and pointer/keyboard panel resizing. Runs asserti
 Pointer-driven Grade Denoise switches, pixels and durable saves from the Library, at Fit and 110%. Runs the Node recipe and checks assertions or diagnostic output. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal. Python virtual environment and pinned backend dependencies. Curated <photosRoot>/HDR Test Images corpus; verify codebase/tests/test-photos.manifest.json; resolve through machine settings. Source inputs/fixtures referenced by driver (originals read-only): IMG_0790.CR2.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. Contains platform branches: inspect source skip/setup messages before treating the result as coverage.
 
@@ -1645,7 +1645,7 @@ Pointer-driven Grade Denoise switches, pixels and durable saves from the Library
 library album commands. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. Python virtual environment and pinned backend dependencies.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -1654,7 +1654,7 @@ library album commands. Runs assertions and captures in an isolated Electron app
 library appearance navigation. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. Python virtual environment and pinned backend dependencies. Source inputs/fixtures referenced by driver (originals read-only): tests/fixtures/library_photo.png.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -1663,7 +1663,7 @@ library appearance navigation. Runs assertions and captures in an isolated Elect
 library background interaction. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. Python virtual environment and pinned backend dependencies.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -1672,7 +1672,7 @@ library background interaction. Runs assertions and captures in an isolated Elec
 Stage A: immediate marks/Undo and Details states. Disposable photo copies only. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. Python virtual environment and pinned backend dependencies.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -1681,7 +1681,7 @@ Stage A: immediate marks/Undo and Details states. Disposable photo copies only. 
 library compare. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. Python virtual environment and pinned backend dependencies.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -1690,7 +1690,7 @@ library compare. Runs assertions and captures in an isolated Electron app. A fai
 library delete file commands. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. Python virtual environment and pinned backend dependencies.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock. Contains platform branches: inspect source skip/setup messages before treating the result as coverage.
 
@@ -1699,7 +1699,7 @@ library delete file commands. Runs assertions and captures in an isolated Electr
 library exposure. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -1708,7 +1708,7 @@ library exposure. Runs assertions and captures in an isolated Electron app. A fa
 Focused filter UI acceptance: synthetic metadata over disposable real pictures. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. Source inputs/fixtures referenced by driver (originals read-only): tests/fixtures/sdr_gradient.png.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -1717,7 +1717,7 @@ Focused filter UI acceptance: synthetic metadata over disposable real pictures. 
 Saved grades never get an original map, even while both overlays are on. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -1726,7 +1726,7 @@ Saved grades never get an original map, even while both overlays are on. Runs as
 One focused Electron check, disposable intake folders only. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. Python virtual environment and pinned backend dependencies.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -1735,7 +1735,7 @@ One focused Electron check, disposable intake folders only. Runs assertions and 
 library folder controls. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. Python virtual environment and pinned backend dependencies. Source inputs/fixtures referenced by driver (originals read-only): Delivery proof test pattern.exr; HDR test pattern.exr; Hue and exposure sweep.exr.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -1744,7 +1744,7 @@ library folder controls. Runs assertions and captures in an isolated Electron ap
 library folder file commands. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. Python virtual environment and pinned backend dependencies.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -1753,7 +1753,7 @@ library folder file commands. Runs assertions and captures in an isolated Electr
 library fullscreen raw. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. Curated <photosRoot>/HDR Test Images corpus; verify codebase/tests/test-photos.manifest.json; resolve through machine settings. Source inputs/fixtures referenced by driver (originals read-only): .ARW; DSC04761.ARW; photo-0.ARW; photo-1.ARW; photo-2.ARW.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock. Contains platform branches: inspect source skip/setup messages before treating the result as coverage.
 
@@ -1762,7 +1762,7 @@ library fullscreen raw. Runs assertions and captures in an isolated Electron app
 Slice 3 Stage A: one real window, disposable originals and app profile. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. Python virtual environment and pinned backend dependencies.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -1771,7 +1771,7 @@ Slice 3 Stage A: one real window, disposable originals and app profile. Runs ass
 library measurement identity. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. Python virtual environment and pinned backend dependencies.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -1780,7 +1780,7 @@ library measurement identity. Runs assertions and captures in an isolated Electr
 library membership. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. Python virtual environment and pinned backend dependencies.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -1789,7 +1789,7 @@ library membership. Runs assertions and captures in an isolated Electron app. A 
 Slow non-RAW fitted pictures survive pause, navigation and repeat waiters. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. Python virtual environment and pinned backend dependencies. Curated <photosRoot>/HDR Test Images corpus; verify codebase/tests/test-photos.manifest.json; resolve through machine settings.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -1798,7 +1798,7 @@ Slow non-RAW fitted pictures survive pause, navigation and repeat waiters. Runs 
 library photo file commands. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. Python virtual environment and pinned backend dependencies.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -1807,7 +1807,7 @@ library photo file commands. Runs assertions and captures in an isolated Electro
 library slice4 a. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. Python virtual environment and pinned backend dependencies.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -1816,7 +1816,7 @@ library slice4 a. Runs assertions and captures in an isolated Electron app. A fa
 library smart albums. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. Python virtual environment and pinned backend dependencies.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -1825,7 +1825,7 @@ library smart albums. Runs assertions and captures in an isolated Electron app. 
 Slice 3 Stage A: one real window, disposable originals and app profile. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. Python virtual environment and pinned backend dependencies.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -1834,7 +1834,7 @@ Slice 3 Stage A: one real window, disposable originals and app profile. Runs ass
 Real 155,000-row SQLite index and HTTP endpoint, isolated from Steve's library. Runs only through its registered parent drivers, never as a standalone check. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: parent minutes. Parent attempt deadline applies.
+- Unmeasured default deadline: parent minutes. Parent attempt deadline applies.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Python virtual environment and pinned backend dependencies. Parent driver(s): tests/library-smart-albums.js.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline.
 
@@ -1843,7 +1843,7 @@ Real 155,000-row SQLite index and HTTP endpoint, isolated from Steve's library. 
 Disposable synthetic 155,000-photo index; no real photo folder is accessed. Runs only through its registered parent drivers, never as a standalone check. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: parent minutes. Parent attempt deadline applies.
+- Unmeasured default deadline: parent minutes. Parent attempt deadline applies.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Parent driver(s): tests/library-smart-albums.js.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline.
 
@@ -1852,7 +1852,7 @@ Disposable synthetic 155,000-photo index; no real photo folder is accessed. Runs
 Disposable Electron check for folder navigation and Library window handoff. Launches the native Electron shell with a disposable profile to check window or renderer behaviour. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. Python virtual environment and pinned backend dependencies.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -1861,7 +1861,7 @@ Disposable Electron check for folder navigation and Library window handoff. Laun
 Slice 2: details, filter rules, tag management, albums and background indexing. Disposable copies only. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. Python virtual environment and pinned backend dependencies.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -1872,7 +1872,7 @@ Slice 2: details, filter rules, tag management, albums and background indexing. 
 DxO SubIFD preview admission after Grade and hidden delivery private-memory collection. Runs only through its registered parent drivers, never as a standalone check. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: parent minutes. Parent attempt deadline applies.
+- Unmeasured default deadline: parent minutes. Parent attempt deadline applies.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Curated <photosRoot>/HDR Test Images corpus; verify codebase/tests/test-photos.manifest.json; resolve through machine settings. Parent driver(s): tools/quick-library-check.cjs.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline.
 
@@ -1881,7 +1881,7 @@ DxO SubIFD preview admission after Grade and hidden delivery private-memory coll
 Pixel-visible stand-ins and full-size detail refusal through the quick Library check. Runs only through its registered parent drivers, never as a standalone check. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: parent minutes. Parent attempt deadline applies.
+- Unmeasured default deadline: parent minutes. Parent attempt deadline applies.
 - Requirements: Repository setup completed; Node/npm dependencies installed. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal. Python virtual environment and pinned backend dependencies. Parent driver(s): tools/quick-library-check.cjs.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline.
 
@@ -1890,7 +1890,7 @@ Pixel-visible stand-ins and full-size detail refusal through the quick Library c
 Exact Library Denoise setup reuse, identical redraw pixels and control-only reconstruction. Runs assertions and captures in an isolated Electron app. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. Python virtual environment and pinned backend dependencies.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -1899,7 +1899,7 @@ Exact Library Denoise setup reuse, identical redraw pixels and control-only reco
 Real copied edited ARW, NEF and 16-bit TIFF sharp-picture timing and finished pixel capture. Runs assertions and captures in an isolated Electron app. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. Python virtual environment and pinned backend dependencies. Source inputs/fixtures referenced by driver (originals read-only): DSC00264.ARW; DSC_3931.NEF.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -1908,7 +1908,7 @@ Real copied edited ARW, NEF and 16-bit TIFF sharp-picture timing and finished pi
 Exact 42 MP before/after source, measurements, candidates and proxy check. Runs the Python recipe in the configured virtual environment and checks numerical or file results. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Python virtual environment and pinned backend dependencies. Curated <photosRoot>/HDR Test Images corpus; verify codebase/tests/test-photos.manifest.json; resolve through machine settings. Source inputs/fixtures referenced by driver (originals read-only): D:/Photos/HDR Test Images/DSC00264.ARW; identity.ARW.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline.
 
@@ -1917,7 +1917,7 @@ Exact 42 MP before/after source, measurements, candidates and proxy check. Runs 
 One serial/overlapped open, measuring peak memory without pixel copies. Runs the Python recipe in the configured virtual environment and checks numerical or file results. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Python virtual environment and pinned backend dependencies. Source inputs/fixtures referenced by driver (originals read-only): identity/identity.ARW.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline.
 
@@ -1926,7 +1926,7 @@ One serial/overlapped open, measuring peak memory without pixel copies. Runs the
 Click-to-first-frame stopwatch: real 42 MP copies and a disposable profile. Launches the native Electron shell with a disposable profile to check window or renderer behaviour. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. Python virtual environment and pinned backend dependencies. Curated <photosRoot>/HDR Test Images corpus; verify codebase/tests/test-photos.manifest.json; resolve through machine settings. Source inputs/fixtures referenced by driver (originals read-only): D:/Photos/HDR Test Images/DSC00264.ARW; new-1.ARW; new-2.ARW; new-3.ARW; saved.ARW.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -1935,7 +1935,7 @@ Click-to-first-frame stopwatch: real 42 MP copies and a disposable profile. Laun
 Serial real-camera launch, six maps, save-to-picture and folder-check coverage. Launches the native Electron shell with a disposable profile to check window or renderer behaviour. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. Python virtual environment and pinned backend dependencies.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -1944,7 +1944,7 @@ Serial real-camera launch, six maps, save-to-picture and folder-check coverage. 
 Disposable prepared screen preview restart timing and decoded HDR compression ceiling. Runs assertions and captures in an isolated Electron app. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. Python virtual environment and pinned backend dependencies. Curated <photosRoot>/HDR Test Images corpus; verify codebase/tests/test-photos.manifest.json; resolve through machine settings. Source inputs/fixtures referenced by driver (originals read-only): D:/Photos/2026/20261017 badminton/DSC07202.ARW; DSC07202.ARW.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock. Contains platform branches: inspect source skip/setup messages before treating the result as coverage.
 
@@ -1953,7 +1953,7 @@ Disposable prepared screen preview restart timing and decoded HDR compression ce
 Grade first picture idle versus during real paste, native-release segment reported separately; unchanged memory gates. Runs assertions and captures in an isolated Electron app. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -1962,7 +1962,7 @@ Grade first picture idle versus during real paste, native-release segment report
 Real shipped Library UI, M10 sources/order, disposable D: copies only. Runs assertions and captures in an isolated Electron app. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. Python virtual environment and pinned backend dependencies.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -1971,7 +1971,7 @@ Real shipped Library UI, M10 sources/order, disposable D: copies only. Runs asse
 M10 medians and joined per-selection traces. No app or source-folder writes. Runs the Python recipe in the configured virtual environment and checks numerical or file results. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Python virtual environment and pinned backend dependencies.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline.
 
@@ -1980,7 +1980,7 @@ M10 medians and joined per-selection traces. No app or source-folder writes. Run
 M10 uses the M9 renderer verbatim. Only test service and workloads differ. Runs assertions and captures in an isolated Electron app. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -1989,7 +1989,7 @@ M10 uses the M9 renderer verbatim. Only test service and workloads differ. Runs 
 M10 only: single unbuffered piece reader; M9 GPU preparation from memory. Runs only through its registered parent drivers, never as a standalone check. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: parent minutes. Parent attempt deadline applies.
+- Unmeasured default deadline: parent minutes. Parent attempt deadline applies.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Parent driver(s): tests/performance/library-disk-reader-trial.js.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline.
 
@@ -1998,7 +1998,7 @@ M10 only: single unbuffered piece reader; M9 GPU preparation from memory. Runs o
 Small, read-only trial; controlled softness supplements unlabeled real frames. Runs the Python recipe in the configured virtual environment and checks numerical or file results. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Python virtual environment and pinned backend dependencies. Curated <photosRoot>/HDR Test Images corpus; verify codebase/tests/test-photos.manifest.json; resolve through machine settings. Source inputs/fixtures referenced by driver (originals read-only): D:/Photos/HDR Test Images/DSC00264.ARW; D:/Photos/HDR Test Images/DSC01212.ARW; D:/Photos/HDR Test Images/IMG_0790.CR2.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline.
 
@@ -2007,7 +2007,7 @@ Small, read-only trial; controlled softness supplements unlabeled real frames. R
 Measure one unchanged-folder check, without decoding or writing source files. Runs the Python recipe in the configured virtual environment and checks numerical or file results. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Python virtual environment and pinned backend dependencies. Read the script usage and provide its explicit input/corpus arguments; this diagnostic is never automatic.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline.
 
@@ -2016,7 +2016,7 @@ Measure one unchanged-folder check, without decoding or writing source files. Ru
 Aggregate M7/M8 by median per file first; preserve slowest names. Runs the Python recipe in the configured virtual environment and checks numerical or file results. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Python virtual environment and pinned backend dependencies.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline.
 
@@ -2025,7 +2025,7 @@ Aggregate M7/M8 by median per file first; preserve slowest names. Runs the Pytho
 M7/M8 measurement only; run through tests/run-in-electron.js at 2560x1440. Runs assertions and captures in an isolated Electron app. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. Python virtual environment and pinned backend dependencies.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock. Contains platform branches: inspect source skip/setup messages before treating the result as coverage.
 
@@ -2034,7 +2034,7 @@ M7/M8 measurement only; run through tests/run-in-electron.js at 2560x1440. Runs 
 M7/M8 disposable instrument. No production patches survive this process. Runs only through its registered parent drivers, never as a standalone check. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: parent minutes. Parent attempt deadline applies.
+- Unmeasured default deadline: parent minutes. Parent attempt deadline applies.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Source inputs/fixtures referenced by driver (originals read-only): DSC01287.exr. Parent driver(s): tests/performance/library-fullscreen-speed-trial.js.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. Contains platform branches: inspect source skip/setup messages before treating the result as coverage.
 
@@ -2043,7 +2043,7 @@ M7/M8 disposable instrument. No production patches survive this process. Runs on
 Immediate ready-thumbnail return using the native handoff scenario; optional committed-frontend comparison. Runs assertions and captures in an isolated Electron app. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. Python virtual environment and pinned backend dependencies. Source inputs/fixtures referenced by driver (originals read-only): DSC00264.ARW; DSC04375.ARW.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -2052,7 +2052,7 @@ Immediate ready-thumbnail return using the native handoff scenario; optional com
 Isolated pinned-libavif base/map metadata, native precision, full-size YUV map scaling and exact HDR compatibility investigation; does not qualify GPU preparation. Runs the Python recipe in the configured virtual environment and checks numerical or file results. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Python virtual environment and pinned backend dependencies. Build tools/iso-gainmap-probe against pinned libavif first; supply --probe EXE --source AVIF and choose --repeats before comparison. See photo-library section 5.1.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline.
 
@@ -2061,7 +2061,7 @@ Isolated pinned-libavif base/map metadata, native precision, full-size YUV map s
 Read-only corrected-source / reduced export-rendition timing trial. Runs the Python recipe in the configured virtual environment and checks numerical or file results. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Python virtual environment and pinned backend dependencies. Read the script usage and provide its explicit input/corpus arguments; this diagnostic is never automatic.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline.
 
@@ -2070,7 +2070,7 @@ Read-only corrected-source / reduced export-rendition timing trial. Runs the Pyt
 Opt-in large-folder index-first timing, first grid thumbnail, complete disk check and backend memory on a disposable Library database. Runs assertions and captures in an isolated Electron app. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock. Contains platform branches: inspect source skip/setup messages before treating the result as coverage.
 
@@ -2079,7 +2079,7 @@ Opt-in large-folder index-first timing, first grid thumbnail, complete disk chec
 Measure Stage A HTTP acceptance on disposable local photo copies; no decode. Runs the Python recipe in the configured virtual environment and checks numerical or file results. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Python virtual environment and pinned backend dependencies.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline.
 
@@ -2088,7 +2088,7 @@ Measure Stage A HTTP acceptance on disposable local photo copies; no decode. Run
 Summarize the M9 prototype's ignored JSON results and make review crops. Runs the Python recipe in the configured virtual environment and checks numerical or file results. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Python virtual environment and pinned backend dependencies.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline.
 
@@ -2097,7 +2097,7 @@ Summarize the M9 prototype's ignored JSON results and make review crops. Runs th
 M9 isolated measurement: CPU LibRaw, GPU conversion kept resident; no shipped changes. Runs assertions and captures in an isolated Electron app. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. Python virtual environment and pinned backend dependencies.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -2106,7 +2106,7 @@ M9 isolated measurement: CPU LibRaw, GPU conversion kept resident; no shipped ch
 M9 test-only RAW probe. All writes confined to ignored output; no app patches. Runs only through its registered parent drivers, never as a standalone check. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: parent minutes. Parent attempt deadline applies.
+- Unmeasured default deadline: parent minutes. Parent attempt deadline applies.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Source inputs/fixtures referenced by driver (originals read-only): DJI_0071-2.DNG; DSC01212.ARW; DSC06615.ARW; DSC_3931.NEF; IMG_0114.CR2. Parent driver(s): tests/performance/library-raw-deep-dive.js.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. Contains platform branches: inspect source skip/setup messages before treating the result as coverage.
 
@@ -2115,7 +2115,7 @@ M9 test-only RAW probe. All writes confined to ignored output; no app patches. R
 library smart query. Runs the Node recipe and checks assertions or diagnostic output. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. A JSON corpus file with 50,000 photos, passed after the driver path.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline.
 
@@ -2124,7 +2124,7 @@ library smart query. Runs the Node recipe and checks assertions or diagnostic ou
 Non-RAW source-stage baseline, paired-tier/cache counts and ISO map-interface/CPU decode diagnostics. Runs the Python recipe in the configured virtual environment and checks numerical or file results. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Python virtual environment and pinned backend dependencies. Provide --manifest with representative read-only sources; --synthetic adds controlled cases; or use --iso-gainmap-profile FILE for the unqualified map boundary. Choose --repeats before comparisons.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline.
 
@@ -2133,7 +2133,7 @@ Non-RAW source-stage baseline, paired-tier/cache counts and ISO map-interface/CP
 Read-only M1/M4/R1 corpus probe; no grading or preview-pipeline changes. Runs the Python recipe in the configured virtual environment and checks numerical or file results. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Python virtual environment and pinned backend dependencies. Curated <photosRoot>/HDR Test Images corpus; verify codebase/tests/test-photos.manifest.json; resolve through machine settings. Read the script usage and provide its explicit input/corpus arguments; this diagnostic is never automatic.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. Contains platform branches: inspect source skip/setup messages before treating the result as coverage.
 
@@ -2142,7 +2142,7 @@ Read-only M1/M4/R1 corpus probe; no grading or preview-pipeline changes. Runs th
 Switched-off quick-open instrument; run only through run-in-electron.js. Runs assertions and captures in an isolated Electron app. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal. Python virtual environment and pinned backend dependencies. Source inputs/fixtures referenced by driver (originals read-only): DSC00264.ARW.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -2151,7 +2151,7 @@ Switched-off quick-open instrument; run only through run-in-electron.js. Runs as
 Test-only quick-open service. Originals read-only; no disk pixels/cache/encoder. Runs only through its registered parent drivers, never as a standalone check. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: parent minutes. Parent attempt deadline applies.
+- Unmeasured default deadline: parent minutes. Parent attempt deadline applies.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Curated <photosRoot>/HDR Test Images corpus; verify codebase/tests/test-photos.manifest.json; resolve through machine settings. Source inputs/fixtures referenced by driver (originals read-only): DJI_0071-2.DNG; DSC01212.ARW; DSC06615.ARW; DSC_3931.NEF; IMG_0114.CR2. Parent driver(s): tests/performance/photo-library-quick-open-trial.js.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline.
 
@@ -2160,7 +2160,7 @@ Test-only quick-open service. Originals read-only; no disk pixels/cache/encoder.
 External M6 scheduling trial. No app changes; equivalent-priority CPU. Runs assertions and captures in an isolated Electron app. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal. Curated <photosRoot>/HDR Test Images corpus; verify codebase/tests/test-photos.manifest.json; resolve through machine settings. Source inputs/fixtures referenced by driver (originals read-only): D:/Photos/HDR Test Images/DSC00264.ARW; DSC00264.ARW.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -2169,7 +2169,7 @@ External M6 scheduling trial. No app changes; equivalent-priority CPU. Runs asse
 External M2/M3/M6/T1 instrument, not an adopted library pipeline or schema. Runs the Python recipe in the configured virtual environment and checks numerical or file results. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Python virtual environment and pinned backend dependencies. Curated <photosRoot>/HDR Test Images corpus; verify codebase/tests/test-photos.manifest.json; resolve through machine settings. Source inputs/fixtures referenced by driver (originals read-only): .hdrfinisher; DJI_0071-2.DNG; DSC01212.ARW; DSC06615.ARW; DSC_3931.NEF; IMG_0114.CR2. Read the script usage and provide its explicit input/corpus arguments; this diagnostic is never automatic.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline.
 
@@ -2178,7 +2178,7 @@ External M2/M3/M6/T1 instrument, not an adopted library pipeline or schema. Runs
 External measurement only. Existing shaders/readback/Ultra HDR encoder;. Runs assertions and captures in an isolated Electron app. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal. Python virtual environment and pinned backend dependencies. Source inputs/fixtures referenced by driver (originals read-only): DSC00264.ARW.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -2187,7 +2187,7 @@ External measurement only. Existing shaders/readback/Ultra HDR encoder;. Runs as
 Disposable library speed trial. No shipped pipeline, format or cache changes. Runs only through its registered parent drivers, never as a standalone check. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: parent minutes. Parent attempt deadline applies.
+- Unmeasured default deadline: parent minutes. Parent attempt deadline applies.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Parent driver(s): tests/performance/photo-library-speed-trial.js.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline.
 
@@ -2196,7 +2196,7 @@ Disposable library speed trial. No shipped pipeline, format or cache changes. Ru
 Measures experimental hot-pixel GPU output against the reference. Runs assertions and captures in an isolated Electron app. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -2205,7 +2205,7 @@ Measures experimental hot-pixel GPU output against the reference. Runs assertion
 Plain Electron Library acceptance, including opt-in --batch5c screen-pixel capture on copied photos. Runs the Node recipe and checks assertions or diagnostic output. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal. Use an existing output/test-photos copy; choose --folder, --idle, --hdr or --popout as appropriate.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. Contains platform branches: inspect source skip/setup messages before treating the result as coverage.
 
@@ -2216,7 +2216,7 @@ Plain Electron Library acceptance, including opt-in --batch5c screen-pixel captu
 brush mask interaction. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. Python virtual environment and pinned backend dependencies.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -2225,7 +2225,7 @@ brush mask interaction. Runs assertions and captures in an isolated Electron app
 Control Panel title tokens, stable rendition tabs, brush actions and export field presentation. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal. Source inputs/fixtures referenced by driver (originals read-only): tests/fixtures/sdr_gradient.png.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -2234,7 +2234,7 @@ Control Panel title tokens, stable rendition tabs, brush actions and export fiel
 HSL real-device preview, stage picker, wheel, channel/preset/local authoring and finished GPU/CPU Proof/export perceptual agreement and ceiling. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -2243,7 +2243,7 @@ HSL real-device preview, stage picker, wheel, channel/preset/local authoring and
 Real-photo selection containment, zoom alignment, disclosure cleanup and Library grid pixels. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal. Curated <photosRoot>/HDR Test Images corpus; verify codebase/tests/test-photos.manifest.json; resolve through machine settings. Source inputs/fixtures referenced by driver (originals read-only): D:/Photos/HDR Test Images/IMG_0114.CR2; IMG_0114.CR2; tests/fixtures/library_photo.png.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -2252,7 +2252,7 @@ Real-photo selection containment, zoom alignment, disclosure cleanup and Library
 Actual HSL photo picking and wheel gestures, Local hue sampling/gizmo pixels, pending upstream-save and cancelled-sample results in both lanes on a shared RAW. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal. Curated <photosRoot>/HDR Test Images corpus; verify codebase/tests/test-photos.manifest.json; resolve through machine settings. Source inputs/fixtures referenced by driver (originals read-only): D:/Photos/HDR Test Images/DSC00264.ARW; output/hsl-h1/DSC00264.ARW.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock. Contains platform branches: inspect source skip/setup messages before treating the result as coverage.
 
@@ -2261,7 +2261,7 @@ Actual HSL photo picking and wheel gestures, Local hue sampling/gizmo pixels, pe
 Checks neutral, global and local HSL selection delivery in one isolated app session using --all, retaining preview/export and selection assertions. A failure usually means HSL delivery or selection containment diverged; inspect the first assertion and captured output. The earlier Mac report timed the pre-trim recipe and does not estimate this invocation.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal. Curated <photosRoot>/HDR Test Images corpus; verify codebase/tests/test-photos.manifest.json; resolve through machine settings. Source inputs/fixtures referenced by driver (originals read-only): D:/Photos/HDR Test Images/IMG_0114.CR2; IMG_0114.CR2.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -2270,7 +2270,7 @@ Checks neutral, global and local HSL selection delivery in one isolated app sess
 Shared Light colour selection: real GPU against CPU coverage at full and reduced scale, halo tile equals the whole frame, fringe/neutral rejection, Global/Local equality and preparation reuse. Launches the native Electron shell with a disposable profile to check window or renderer behaviour. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -2279,7 +2279,7 @@ Shared Light colour selection: real GPU against CPU coverage at full and reduced
 Sampled fixed-source hue mask GPU preview and GPU/CPU Proof/export agreement and ceiling. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -2288,7 +2288,7 @@ Sampled fixed-source hue mask GPU preview and GPU/CPU Proof/export agreement and
 local adjustments interaction. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -2297,7 +2297,7 @@ local adjustments interaction. Runs assertions and captures in an isolated Elect
 local crop anchor interaction. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -2306,7 +2306,7 @@ local crop anchor interaction. Runs assertions and captures in an isolated Elect
 Local Match parent selection, independent SDR state, complete action/explanation layouts, Undo, stale marker, overwrite consent, CPU/GPU finished delivery and full-size Proof/export identity. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal. Source inputs/fixtures referenced by driver (originals read-only): fixtures/hdr_match_scene.tiff.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -2315,7 +2315,7 @@ Local Match parent selection, independent SDR state, complete action/explanation
 GPU regional luma versus the existing whole-source GPU mask. No project. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -2324,7 +2324,7 @@ GPU regional luma versus the existing whole-source GPU mask. No project. Runs as
 Native GPU shape tiles versus CPU export masks. No project is opened. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -2333,7 +2333,7 @@ Native GPU shape tiles versus CPU export masks. No project is opened. Runs asser
 A Path node/handle drag only commits when the pointer gesture actually. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. Python virtual environment and pinned backend dependencies.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -2342,7 +2342,7 @@ A Path node/handle drag only commits when the pointer gesture actually. Runs ass
 Native Inpaint gesture, source refresh, history, retry and enabled repairs. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -2351,7 +2351,7 @@ Native Inpaint gesture, source refresh, history, retry and enabled repairs. Runs
 Clone and Heal source picking, source editing, opacity, history, native preview and optional saved-grade RAW comparison. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -2360,7 +2360,7 @@ Clone and Heal source picking, source editing, opacity, history, native preview 
 Safe linked Match, live HDR edits, unlink, SDR global/local edits, one Undo, N4 consent and linked finished GPU/CPU export plus reduced/full Proof agreement. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal. Source inputs/fixtures referenced by driver (originals read-only): tests/fixtures/hdr_match_scene.tiff.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -2369,7 +2369,7 @@ Safe linked Match, live HDR edits, unlink, SDR global/local edits, one Undo, N4 
 Linked SDR common HDR creatives and overlapping locals; finished float CPU/GPU agreement before encoding. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -2380,7 +2380,7 @@ Linked SDR common HDR creatives and overlapping locals; finished float CPU/GPU a
 brush feather reference. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -2389,7 +2389,7 @@ brush feather reference. Runs assertions and captures in an isolated Electron ap
 Native Feather (with and without Shift Edge) against exact CPU export masks. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -2398,7 +2398,7 @@ Native Feather (with and without Shift Edge) against exact CPU export masks. Run
 brush native shift reference. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -2407,7 +2407,7 @@ brush native shift reference. Runs assertions and captures in an isolated Electr
 Check actual R16 regional attenuation against export; admission is unchanged. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -2416,7 +2416,7 @@ Check actual R16 regional attenuation against export; admission is unchanged. Ru
 gradient mask interaction. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -2425,7 +2425,7 @@ gradient mask interaction. Runs assertions and captures in an isolated Electron 
 Shared GPU gradients versus export's source-rasterized geometry masks. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -2434,7 +2434,7 @@ Shared GPU gradients versus export's source-rasterized geometry masks. Runs asse
 local adjustment usability. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -2443,7 +2443,7 @@ local adjustment usability. Runs assertions and captures in an isolated Electron
 local design qa. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -2452,7 +2452,7 @@ local design qa. Runs assertions and captures in an isolated Electron app. A fai
 Actual local GPU pass versus CPU export, with colour wheels and opacity. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -2461,7 +2461,7 @@ Actual local GPU pass versus CPU export, with colour wheels and opacity. Runs as
 A feathered luma mask is a smooth blur of what it selects, in the preview and in the export, whatever the feather amount. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal. Python virtual environment and pinned backend dependencies.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -2470,7 +2470,7 @@ A feathered luma mask is a smooth blur of what it selects, in the preview and in
 Regional expression masks versus CPU export and whole-source GPU masks. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -2479,7 +2479,7 @@ Regional expression masks versus CPU export and whole-source GPU masks. Runs ass
 luma mask interaction. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -2488,7 +2488,7 @@ luma mask interaction. Runs assertions and captures in an isolated Electron app.
 mask graph interaction. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal. Python virtual environment and pinned backend dependencies.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -2497,7 +2497,7 @@ mask graph interaction. Runs assertions and captures in an isolated Electron app
 GPU masks under straighten/perspective against exact CPU export masks:. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -2506,7 +2506,7 @@ GPU masks under straighten/perspective against exact CPU export masks:. Runs ass
 Path Feather drag must never cache the committed mask under a newer leaf. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -2515,7 +2515,7 @@ Path Feather drag must never cache the committed mask under a newer leaf. Runs a
 gpu linear gradient parity. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -2524,7 +2524,7 @@ gpu linear gradient parity. Runs assertions and captures in an isolated Electron
 gpu local adjustments. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal. Python virtual environment and pinned backend dependencies.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -2533,7 +2533,7 @@ gpu local adjustments. Runs assertions and captures in an isolated Electron app.
 One Fit edit and zoom sequence; disposable session, never saves a project. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -2542,7 +2542,7 @@ One Fit edit and zoom sequence; disposable session, never saves a project. Runs 
 Phase 1.3 -- local masks must travel as bounded batches, not one request per tile. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -2553,7 +2553,7 @@ Phase 1.3 -- local masks must travel as bounded batches, not one request per til
 full tier brush feather. Runs assertions and captures in an isolated Electron app. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock. Retired Bloom fields remain in recipe; diagnostic until Steve decides whether to remove or update.
 
@@ -2562,7 +2562,7 @@ full tier brush feather. Runs assertions and captures in an isolated Electron ap
 Isolated HSL prototype float GPU/CPU agreement, multi-range selection and basic UI gestures; no app integration. Launches the native Electron shell with a disposable profile to check window or renderer behaviour. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -2571,7 +2571,7 @@ Isolated HSL prototype float GPU/CPU agreement, multi-range selection and basic 
 local stack sizing. Runs assertions and captures in an isolated Electron app. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock. Conservative diagnostic tier: investigation, measurement or broad visual capture; not an automatic release gate.
 
@@ -2580,7 +2580,7 @@ local stack sizing. Runs assertions and captures in an isolated Electron app. Th
 Hold GPU-generated soft verdicts to native CPU-mask accuracy, without changing the trial. Runs the Python recipe in the configured virtual environment and checks numerical or file results. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Python virtual environment and pinned backend dependencies. Read the script usage and provide its explicit input/corpus arguments; this diagnostic is never automatic.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline.
 
@@ -2589,7 +2589,7 @@ Hold GPU-generated soft verdicts to native CPU-mask accuracy, without changing t
 Repeated packing-only A/B, separated from queue waits and classification. Runs assertions and captures in an isolated Electron app. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -2598,7 +2598,7 @@ Repeated packing-only A/B, separated from queue waits and classification. Runs a
 GPU admission decomposition. Read-only fixture, disposable session. Runs assertions and captures in an isolated Electron app. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -2607,7 +2607,7 @@ GPU admission decomposition. Read-only fixture, disposable session. Runs asserti
 HSL picker input scoping and Retina coordinates; HDR/SDR Fit/100% Show selection whole-wait and backend stage timings on plain and optional stacked grades. Runs assertions and captures in an isolated Electron app. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal. Source inputs/fixtures referenced by driver (originals read-only): output/test-photos/DSC00264.ARW. --input RAW path; --stacked accepts a read-only .hdrf copy. Temporary same-volume hardlinks reuse output/test-photos bytes. --observe re-registers the picker from --picker-ref (default HEAD) and disables viewport cropping; it does not roll back backend code.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock. Contains platform branches: inspect source skip/setup messages before treating the result as coverage.
 
@@ -2616,7 +2616,7 @@ HSL picker input scoping and Retina coordinates; HDR/SDR Fit/100% Show selection
 local mask performance. Runs assertions and captures in an isolated Electron app. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -2625,7 +2625,7 @@ local mask performance. Runs assertions and captures in an isolated Electron app
 P7 acceptance: a feathered luma local, zoomed to 200% on the 42.4 MP fixture, settles quickly after a Feather change and after a grade change. Runs assertions and captures in an isolated Electron app. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -2634,7 +2634,7 @@ P7 acceptance: a feathered luma local, zoomed to 200% on the 42.4 MP fixture, se
 Build the second Viewport-Bounded GPU Preview fixture (PRD section 8). Runs the Python recipe in the configured virtual environment and checks numerical or file results. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Python virtual environment and pinned backend dependencies. Curated <photosRoot>/HDR Test Images corpus; verify codebase/tests/test-photos.manifest.json; resolve through machine settings. Source inputs/fixtures referenced by driver (originals read-only): D://Photos//HDR Test Images//DSC00264.ARW. Read the script usage and provide its explicit input/corpus arguments; this diagnostic is never automatic.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline.
 
@@ -2643,7 +2643,7 @@ Build the second Viewport-Bounded GPU Preview fixture (PRD section 8). Runs the 
 many local layers. Runs assertions and captures in an isolated Electron app. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock. Conservative diagnostic tier: investigation, measurement or broad visual capture; not an automatic release gate.
 
@@ -2652,7 +2652,7 @@ many local layers. Runs assertions and captures in an isolated Electron app. Thi
 Render inspectable CPU/GPU evidence for admitted masks over two levels. Runs the Python recipe in the configured virtual environment and checks numerical or file results. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Python virtual environment and pinned backend dependencies. Read the script usage and provide its explicit input/corpus arguments; this diagnostic is never automatic.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline.
 
@@ -2661,7 +2661,7 @@ Render inspectable CPU/GPU evidence for admitted masks over two levels. Runs the
 Isolated whole-frame/strip feather comparison; no source photos needed. Runs the Python recipe in the configured virtual environment and checks numerical or file results. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Python virtual environment and pinned backend dependencies. Read the script usage and provide its explicit input/corpus arguments; this diagnostic is never automatic.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. Contains platform branches: inspect source skip/setup messages before treating the result as coverage.
 
@@ -2670,7 +2670,7 @@ Isolated whole-frame/strip feather comparison; no source photos needed. Runs the
 Read-only fixture tracing and isolated old/new feather A/B; no RAW decode. Runs the Python recipe in the configured virtual environment and checks numerical or file results. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Python virtual environment and pinned backend dependencies. Read the script usage and provide its explicit input/corpus arguments; this diagnostic is never automatic.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline.
 
@@ -2679,7 +2679,7 @@ Read-only fixture tracing and isolated old/new feather A/B; no RAW decode. Runs 
 Random masks: when can one small bitmap stand in for the exact mask? (Viewport PRD 5.1). Runs the Python recipe in the configured virtual environment and checks numerical or file results. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Python virtual environment and pinned backend dependencies. Read the script usage and provide its explicit input/corpus arguments; this diagnostic is never automatic.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline.
 
@@ -2688,7 +2688,7 @@ Random masks: when can one small bitmap stand in for the exact mask? (Viewport P
 How well does a small bitmap stand in for each mask of a project? (Viewport PRD 5.1). Runs the Python recipe in the configured virtual environment and checks numerical or file results. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Python virtual environment and pinned backend dependencies. Read the script usage and provide its explicit input/corpus arguments; this diagnostic is never automatic.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline.
 
@@ -2697,7 +2697,7 @@ How well does a small bitmap stand in for each mask of a project? (Viewport PRD 
 Paired Global and Local hue input throughput and settle latency, edge defaults/non-defaults, both lanes at Fit/100/400, copied RAWs, per-pass counts and full/regional mask coverage. Runs assertions and captures in an isolated Electron app. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal. Curated <photosRoot>/HDR Test Images corpus; verify codebase/tests/test-photos.manifest.json; resolve through machine settings. Source inputs/fixtures referenced by driver (originals read-only): D:/Photos/HDR Test Images/IMG_0114.CR2. Choose --tag and --photo; run Global then --local serially. --local --compare-region compares kept GPU pixels with the full mask. --baseline --only-navigation measures old-path navigation. Default photo is a disposable Balanced Rock copy.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -2706,7 +2706,7 @@ Paired Global and Local hue input throughput and settle latency, edge defaults/n
 Balanced Rock copy at 423%: non-default selection edges and a review page for both luminance directions with Show selection. Runs assertions and captures in an isolated Electron app. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal. Curated <photosRoot>/HDR Test Images corpus; verify codebase/tests/test-photos.manifest.json; resolve through machine settings. Source inputs/fixtures referenced by driver (originals read-only): D:/Photos/HDR Test Images/IMG_0114.CR2; IMG_0114.CR2.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -2717,7 +2717,7 @@ Balanced Rock copy at 423%: non-default selection edges and a review page for bo
 Clarity's brightness map: the WebGPU preview matches the CPU export. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal. Python virtual environment and pinned backend dependencies.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -2726,7 +2726,7 @@ Clarity's brightness map: the WebGPU preview matches the CPU export. Runs assert
 Standard and experimental Denoise preview against the CPU reference, exact zero-evenness, live blends and recalculation. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock. Contains platform branches: inspect source skip/setup messages before treating the result as coverage.
 
@@ -2735,7 +2735,7 @@ Standard and experimental Denoise preview against the CPU reference, exact zero-
 Denoise zoomed in: only what is on screen is loaded and reconstructed. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac 0.300.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -2744,7 +2744,7 @@ Denoise zoomed in: only what is on screen is loaded and reconstructed. Runs asse
 GPU measurement versus current CPU on the existing Denoise corpus, finished HDR/SDR perceptual limits, exact ceiling and shared source reuse. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal. Python virtual environment and pinned backend dependencies. Source inputs/fixtures referenced by driver (originals read-only): DSC00264.ARW.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -2753,7 +2753,7 @@ GPU measurement versus current CPU on the existing Denoise corpus, finished HDR/
 50 MP Grade Fine and Clean Small GPU routing and finished HDR/SDR agreement at Fit and 110%, plus the Micro Fit route or its logged refusal. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal. Source inputs/fixtures referenced by driver (originals read-only): DSC00636.ARW; output/grain-large-photo-parity/DSC00636.ARW.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -2762,7 +2762,7 @@ GPU measurement versus current CPU on the existing Denoise corpus, finished HDR/
 SDR local Detail headroom through Film Look agrees with CPU export. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal. Python virtual environment and pinned backend dependencies.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -2771,7 +2771,7 @@ SDR local Detail headroom through Film Look agrees with CPU export. Runs asserti
 GPU Sharpen blur versus the CPU export kernel, including image edges. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -2782,7 +2782,7 @@ GPU Sharpen blur versus the CPU export kernel, including image edges. Runs asser
 Denoise "Show noise": the preview shows only what Denoise removes. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -2791,7 +2791,7 @@ Denoise "Show noise": the preview shows only what Denoise removes. Runs assertio
 Isolated 42 MP regression for pan -> enable -> Exposure drag, and warmed zoom. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -2800,7 +2800,7 @@ Isolated 42 MP regression for pan -> enable -> Exposure drag, and warmed zoom. R
 PRD 6.3 -- progressive disclosure for the Denoise controls. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -2809,7 +2809,7 @@ PRD 6.3 -- progressive disclosure for the Denoise controls. Runs assertions and 
 Denoise zoomed in: a grade edit reuses the tiles Denoise already reconstructed. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -2818,7 +2818,7 @@ Denoise zoomed in: a grade edit reuses the tiles Denoise already reconstructed. 
 Isolated global/local Detail controls versus apply_detail. Disposable GPU only. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -2827,7 +2827,7 @@ Isolated global/local Detail controls versus apply_detail. Disposable GPU only. 
 Denoise must be switchable off at every tier, including Full. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal. Python virtual environment and pinned backend dependencies.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -2836,7 +2836,7 @@ Denoise must be switchable off at every tier, including Full. Runs assertions an
 Real RAW stacked Film grade: native Exposure with HSL Pick armed at Fit and 100%, latest edits during Denoise, current exact presentation and changed visible pixels. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal. Curated <photosRoot>/HDR Test Images corpus; verify codebase/tests/test-photos.manifest.json; resolve through machine settings. Source inputs/fixtures referenced by driver (originals read-only): D:/Photos/HDR Test Images/DSC00264.ARW; DSC00264.ARW.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock. Contains platform branches: inspect source skip/setup messages before treating the result as coverage.
 
@@ -2845,7 +2845,7 @@ Real RAW stacked Film grade: native Exposure with HSL Pick armed at Fit and 100%
 A source larger than the 4K tier, written without any image dependency. Runs only through its registered parent drivers, never as a standalone check. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: parent minutes. Parent attempt deadline applies.
+- Unmeasured default deadline: parent minutes. Parent attempt deadline applies.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Parent driver(s): tests/denoise-zoomed-region.js.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline.
 
@@ -2854,7 +2854,7 @@ A source larger than the 4K tier, written without any image dependency. Runs onl
 NEXT-01 #4 -- a zoomed-in Denoise drag reconstructs only what is on. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -2863,7 +2863,7 @@ NEXT-01 #4 -- a zoomed-in Denoise drag reconstructs only what is on. Runs assert
 Denoise action-to-final-picture preparation, Recalculate, Fit/native zoom changes and pan on 18 MP and 42 MP RAWs. Opt-in Clean Grain Grade trials cover matching HDR/SDR Fit reuse, timing, memory, CPU fallback and finished colour and HDR ceiling captures. Separate baseline covers native export and Proof timings. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal. Python virtual environment and pinned backend dependencies. Source inputs/fixtures referenced by driver (originals read-only): DSC01212.ARW; IMG_0790.CR2; _DSC7970.ARW.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -2872,7 +2872,7 @@ Denoise action-to-final-picture preparation, Recalculate, Fit/native zoom change
 Phase 1.6 -- live Denoise input is coalesced to one in-flight. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -2881,7 +2881,7 @@ Phase 1.6 -- live Denoise input is coalesced to one in-flight. Runs assertions a
 denoise scale identity. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -2890,7 +2890,7 @@ denoise scale identity. Runs assertions and captures in an isolated Electron app
 denoise selector seam. Launches the native Electron shell with a disposable profile to check window or renderer behaviour. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -2899,7 +2899,7 @@ denoise selector seam. Launches the native Electron shell with a disposable prof
 A replaced source copy never leaves the preview drawing from freed memory. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -2908,7 +2908,7 @@ A replaced source copy never leaves the preview drawing from freed memory. Runs 
 Phase 5 exit gate 3: Detail peak residency remains bounded at 24 MP, 42 MP. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -2917,7 +2917,7 @@ Phase 5 exit gate 3: Detail peak residency remains bounded at 24 MP, 42 MP. Runs
 Phase 5 exit gate 4: global and local Detail match the CPU reference across. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal. Python virtual environment and pinned backend dependencies.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -2926,7 +2926,7 @@ Phase 5 exit gate 4: global and local Detail match the CPU reference across. Run
 ui refinement detail qa. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -2937,7 +2937,7 @@ ui refinement detail qa. Runs assertions and captures in an isolated Electron ap
 Exact Library Denoise setup reuse, identical redraw pixels and control-only reconstruction. Runs assertions and captures in an isolated Electron app. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. Python virtual environment and pinned backend dependencies.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -2946,7 +2946,7 @@ Exact Library Denoise setup reuse, identical redraw pixels and control-only reco
 How much work a Clarity Radius costs the tiled preview. Runs assertions and captures in an isolated Electron app. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -2955,7 +2955,7 @@ How much work a Clarity Radius costs the tiled preview. Runs assertions and capt
 Isolate denoise order and grade amplification on a saved project; read only. Runs the Python recipe in the configured virtual environment and checks numerical or file results. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Python virtual environment and pinned backend dependencies. Read the script usage and provide its explicit input/corpus arguments; this diagnostic is never automatic.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline.
 
@@ -2964,7 +2964,7 @@ Isolate denoise order and grade amplification on a saved project; read only. Run
 Compare reused intermediate HDR models against fresh models and export. Runs the Python recipe in the configured virtual environment and checks numerical or file results. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Python virtual environment and pinned backend dependencies. Read the script usage and provide its explicit input/corpus arguments; this diagnostic is never automatic.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline.
 
@@ -2973,7 +2973,7 @@ Compare reused intermediate HDR models against fresh models and export. Runs the
 Disposable proposal probe; forces native processing through the existing Full override. Runs assertions and captures in an isolated Electron app. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -2982,7 +2982,7 @@ Disposable proposal probe; forces native processing through the existing Full ov
 Recheck bounded GPU readbacks through actual geometry source mappings. Runs the Python recipe in the configured virtual environment and checks numerical or file results. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Python virtual environment and pinned backend dependencies. Read the script usage and provide its explicit input/corpus arguments; this diagnostic is never automatic.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline.
 
@@ -2991,7 +2991,7 @@ Recheck bounded GPU readbacks through actual geometry source mappings. Runs the 
 Read an existing cached native Detail texel; disposable session, no export. Runs assertions and captures in an isolated Electron app. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -3000,7 +3000,7 @@ Read an existing cached native Detail texel; disposable session, no export. Runs
 Compare pre-Detail rounding and early clipping on a native patch; never saves input. Runs the Python recipe in the configured virtual environment and checks numerical or file results. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Python virtual environment and pinned backend dependencies. Read the script usage and provide its explicit input/corpus arguments; this diagnostic is never automatic.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline.
 
@@ -3009,7 +3009,7 @@ Compare pre-Detail rounding and early clipping on a native patch; never saves in
 Editing Peak with Clarity: the reduced-surround map against the patch's own. Measurement only; disposable session, never saves a project. Runs assertions and captures in an isolated Electron app. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock. Conservative diagnostic tier: investigation, measurement or broad visual capture; not an automatic release gate.
 
@@ -3018,7 +3018,7 @@ Editing Peak with Clarity: the reduced-surround map against the patch's own. Mea
 Builds the Denoise proxy corpus for subsequent diagnostic comparisons. Runs the Python recipe in the configured virtual environment and checks numerical or file results. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Python virtual environment and pinned backend dependencies. Source inputs/fixtures referenced by driver (originals read-only): denoise-{args.width}x{args.height}.exr. Read the script usage and provide its explicit input/corpus arguments; this diagnostic is never automatic.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline.
 
@@ -3027,7 +3027,7 @@ Builds the Denoise proxy corpus for subsequent diagnostic comparisons. Runs the 
 Measures experimental hot-pixel GPU output against the reference. Runs assertions and captures in an isolated Electron app. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -3038,7 +3038,7 @@ Measures experimental hot-pixel GPU output against the reference. Runs assertion
 geometry transactions. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. Python virtual environment and pinned backend dependencies.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -3047,7 +3047,7 @@ geometry transactions. Runs assertions and captures in an isolated Electron app.
 local crop anchor interaction. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -3056,7 +3056,7 @@ local crop anchor interaction. Runs assertions and captures in an isolated Elect
 perspective interaction. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal. Python virtual environment and pinned backend dependencies.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -3067,7 +3067,7 @@ perspective interaction. Runs assertions and captures in an isolated Electron ap
 crop apply handoff. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -3076,7 +3076,7 @@ crop apply handoff. Runs assertions and captures in an isolated Electron app. A 
 GPU masks under straighten/perspective against exact CPU export masks:. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -3085,7 +3085,7 @@ GPU masks under straighten/perspective against exact CPU export masks:. Runs ass
 Path Feather guide geometry. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -3094,7 +3094,7 @@ Path Feather guide geometry. Runs assertions and captures in an isolated Electro
 perspective preview ownership. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -3103,7 +3103,7 @@ perspective preview ownership. Runs assertions and captures in an isolated Elect
 Above 100% each source pixel is a sharp square; at and below 100% the view stays smoothly filtered. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -3114,7 +3114,7 @@ Above 100% each source pixel is a sharp square; at and below 100% the view stays
 A DOM-ready page may still belong to Electron's pending loadURL promise. Runs only through its registered parent drivers, never as a standalone check. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: parent minutes. Parent attempt deadline applies.
+- Unmeasured default deadline: parent minutes. Parent attempt deadline applies.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Parent driver(s): tests/startup-state.js.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline.
 
@@ -3123,7 +3123,7 @@ A DOM-ready page may still belong to Electron's pending loadURL promise. Runs on
 Finds frontend code by name instead of by file, so a unit test keeps. Runs only through its registered parent drivers, never as a standalone check. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: parent minutes. Parent attempt deadline applies.
+- Unmeasured default deadline: parent minutes. Parent attempt deadline applies.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Parent driver(s): tests/gpu-param-layout.test.js.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline.
 
@@ -3132,7 +3132,7 @@ Finds frontend code by name instead of by file, so a unit test keeps. Runs only 
 gpu highlight compression parity. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -3141,7 +3141,7 @@ gpu highlight compression parity. Runs assertions and captures in an isolated El
 Audit the production global buffer writers and compiled shader consumers. Runs only through its registered parent drivers, never as a standalone check. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: parent minutes. Parent attempt deadline applies.
+- Unmeasured default deadline: parent minutes. Parent attempt deadline applies.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Parent driver(s): tests/gpu-param-layout.test.js.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline.
 
@@ -3150,7 +3150,7 @@ Audit the production global buffer writers and compiled shader consumers. Runs o
 gpu param layout.test. Runs the Node recipe and checks assertions or diagnostic output. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline.
 
@@ -3159,7 +3159,7 @@ gpu param layout.test. Runs the Node recipe and checks assertions or diagnostic 
 gpu pass layout audit. Runs only through its registered parent drivers, never as a standalone check. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: parent minutes. Parent attempt deadline applies.
+- Unmeasured default deadline: parent minutes. Parent attempt deadline applies.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Parent driver(s): tests/gpu-pass-layout.test.js.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline.
 
@@ -3168,7 +3168,7 @@ gpu pass layout audit. Runs only through its registered parent drivers, never as
 gpu pass layout.test. Runs the Node recipe and checks assertions or diagnostic output. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline.
 
@@ -3177,7 +3177,7 @@ gpu pass layout.test. Runs the Node recipe and checks assertions or diagnostic o
 Attenuate (AgX-style) highlight colour handling: WebGPU preview matches the CPU export in HDR and SDR. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal. Python virtual environment and pinned backend dependencies.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -3186,7 +3186,7 @@ Attenuate (AgX-style) highlight colour handling: WebGPU preview matches the CPU 
 Launcher exit report: the driver result first, a shutdown problem on its own line. Runs only through its registered parent drivers, never as a standalone check. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: parent minutes. Parent attempt deadline applies.
+- Unmeasured default deadline: parent minutes. Parent attempt deadline applies.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Parent driver(s): tests/startup-state.js.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline.
 
@@ -3195,7 +3195,7 @@ Launcher exit report: the driver result first, a shutdown problem on its own lin
 Owned Electron process capture at spawn and verified cleanup before DevTools connects. Shared launcher helper; run through the standard Electron or native launcher, never standalone.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: parent minutes. Parent attempt deadline applies.
+- Unmeasured default deadline: parent minutes. Parent attempt deadline applies.
 - Requirements: Repository setup completed; Node/npm and Electron dependencies installed. Disposable test profile and shared GPU run lock. Parent drivers: tests/startup-state.js and desktop/tests/electron-smoke.js.
 - Platforms: win, mac, linux. Windows verifies process trees by PID and creation time; POSIX owns process groups.
 
@@ -3204,7 +3204,7 @@ Owned Electron process capture at spawn and verified cleanup before DevTools con
 run in electron. Runs only through its registered parent drivers, never as a standalone check. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: parent minutes. Parent attempt deadline applies.
+- Unmeasured default deadline: parent minutes. Parent attempt deadline applies.
 - Requirements: Repository setup completed; Node/npm dependencies installed. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal. Parent driver(s): tests/startup-state.js.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline.
 
@@ -3213,7 +3213,7 @@ run in electron. Runs only through its registered parent drivers, never as a sta
 sdr gamut gpu parity. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -3222,7 +3222,7 @@ sdr gamut gpu parity. Runs assertions and captures in an isolated Electron app. 
 startup state. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. Python virtual environment and pinned backend dependencies. Source inputs/fixtures referenced by driver (originals read-only): fixtures/library_photo.png; fixtures/sdr_gradient.png.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -3231,7 +3231,7 @@ startup state. Runs assertions and captures in an isolated Electron app. A failu
 Launchers refuse a profile without test- in its path or inside the real profile. Runs only through its registered parent drivers, never as a standalone check. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: parent minutes. Parent attempt deadline applies.
+- Unmeasured default deadline: parent minutes. Parent attempt deadline applies.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Parent driver(s): tests/startup-state.js.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline.
 
@@ -3240,7 +3240,7 @@ Launchers refuse a profile without test- in its path or inside the real profile.
 Phase 4 exit gate 1: Direct and Tiled pointwise results meet parity. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal. Python virtual environment and pinned backend dependencies.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -3249,7 +3249,7 @@ Phase 4 exit gate 1: Direct and Tiled pointwise results meet parity. Runs assert
 preview-raw is intentionally an SDR/sRGB byte surface. On an HDR desktop. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal. Python virtual environment and pinned backend dependencies.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -3260,7 +3260,7 @@ preview-raw is intentionally an SDR/sRGB byte surface. On an HDR desktop. Runs a
 electron smoke. Launches the native Electron shell with a disposable profile to check window or renderer behaviour. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. Python virtual environment and pinned backend dependencies. Source inputs/fixtures referenced by driver (originals read-only): .exr; blender_linear_rec2020.exr; blender_linear_rec2020.hdrfinisher; electron-smoke.hdrfinisher.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock. Contains platform branches: inspect source skip/setup messages before treating the result as coverage.
 
@@ -3269,7 +3269,7 @@ electron smoke. Launches the native Electron shell with a disposable profile to 
 GPU analysis overlays, Library review controls and file drops, Performance settings and theme restart. Launches the native Electron shell with a disposable profile to check window or renderer behaviour. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal. Python virtual environment and pinned backend dependencies. Source inputs/fixtures referenced by driver (originals read-only): .exr; drop.hdrfinisher; linear.exr; tests/fixtures/linear_unconfirmed.exr; tests/fixtures/sdr_gradient.png.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -3278,7 +3278,7 @@ GPU analysis overlays, Library review controls and file drops, Performance setti
 BW-01 Black & White: the WebGPU preview matches the CPU export. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal. Python virtual environment and pinned backend dependencies.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -3287,7 +3287,7 @@ BW-01 Black & White: the WebGPU preview matches the CPU export. Runs assertions 
 Color desaturation active GPU preview, CPU/GPU finished output, Proof/export agreement and HDR ceiling. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -3296,7 +3296,7 @@ Color desaturation active GPU preview, CPU/GPU finished output, Proof/export agr
 Phase 5 item 6: device loss is recoverable and classified. The application. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -3305,7 +3305,7 @@ Phase 5 item 6: device loss is recoverable and classified. The application. Runs
 gpu scope parity. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal. Python virtual environment and pinned backend dependencies.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -3314,7 +3314,7 @@ gpu scope parity. Runs assertions and captures in an isolated Electron app. A fa
 Real Leica/DJI Grade DNG import preserves finished SDR/HDR and borders through bounded GPU correction and CPU fallback. Runs the Node recipe and checks assertions or diagnostic output. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal. Python virtual environment and pinned backend dependencies. Curated <photosRoot>/HDR Test Images corpus; verify codebase/tests/test-photos.manifest.json; resolve through machine settings. Source inputs/fixtures referenced by driver (originals read-only): D:/Photos/HDR Test Images/DJI_0071-2.DNG; D:/Photos/HDR Test Images/Leica-X2-L1021324.DNG. Microsoft Edge (Playwright msedge channel); real Leica/DJI DNG fixtures.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. Overnight Mac run lacked Edge; install it before running.
 
@@ -3323,7 +3323,7 @@ Real Leica/DJI Grade DNG import preserves finished SDR/HDR and borders through b
 50 MP Grade Fine and Clean Small GPU routing and finished HDR/SDR agreement at Fit and 110%, plus the Micro Fit route or its logged refusal. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal. Source inputs/fixtures referenced by driver (originals read-only): DSC00636.ARW; output/grain-large-photo-parity/DSC00636.ARW.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -3332,7 +3332,7 @@ Real Leica/DJI Grade DNG import preserves finished SDR/HDR and borders through b
 Default grain and one-sample draft remain byte-identical to their frozen numerical references across scale, size, film type and lane. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -3341,7 +3341,7 @@ Default grain and one-sample draft remain byte-identical to their frozen numeric
 HSL real-device preview, stage picker, wheel, channel/preset/local authoring and finished GPU/CPU Proof/export perceptual agreement and ceiling. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -3350,7 +3350,7 @@ HSL real-device preview, stage picker, wheel, channel/preset/local authoring and
 Checks neutral, global and local HSL selection delivery in one isolated app session using --all, retaining preview/export and selection assertions. A failure usually means HSL delivery or selection containment diverged; inspect the first assertion and captured output. The earlier Mac report timed the pre-trim recipe and does not estimate this invocation.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal. Curated <photosRoot>/HDR Test Images corpus; verify codebase/tests/test-photos.manifest.json; resolve through machine settings. Source inputs/fixtures referenced by driver (originals read-only): D:/Photos/HDR Test Images/IMG_0114.CR2; IMG_0114.CR2.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -3359,7 +3359,7 @@ Checks neutral, global and local HSL selection delivery in one isolated app sess
 Shared Light colour selection: real GPU against CPU coverage at full and reduced scale, halo tile equals the whole frame, fringe/neutral rejection, Global/Local equality and preparation reuse. Launches the native Electron shell with a disposable profile to check window or renderer behaviour. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -3368,7 +3368,7 @@ Shared Light colour selection: real GPU against CPU coverage at full and reduced
 Standard JXL P3/PQ auto interpretation, source-primary PQ/HLG GPU colour, Grade presentation and sidebar visibility menus. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal. Python virtual environment and pinned backend dependencies. Windows-only JPEG XL helper used by tests/helpers/jxl_source_colour.py.
 - Platforms: win. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock. Mac/Linux blocked by JPEG XL helper, not an app pixel failure.
 
@@ -3377,7 +3377,7 @@ Standard JXL P3/PQ auto interpretation, source-primary PQ/HLG GPU colour, Grade 
 Native GPU-first finished pixels, source reuse, CPU fallback and prompt Grade hand-over. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -3386,7 +3386,7 @@ Native GPU-first finished pixels, source reuse, CPU fallback and prompt Grade ha
 Latest-only instruments, grain drag memory and Library recovery. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal. Python virtual environment and pinned backend dependencies. Curated <photosRoot>/HDR Test Images corpus; verify codebase/tests/test-photos.manifest.json; resolve through machine settings. Source inputs/fixtures referenced by driver (originals read-only): fixtures/sdr_gradient.png.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -3395,7 +3395,7 @@ Latest-only instruments, grain drag memory and Library recovery. Runs assertions
 Warm 24 MP Inpaint, Clone and Heal CPU fallback through accepted native and Fit presentation, against the accepted three-second native and two-second Fit targets. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -3404,7 +3404,7 @@ Warm 24 MP Inpaint, Clone and Heal CPU fallback through accepted native and Fit 
 Warm 24 MP saved Inpaint spot deletion at 100% and Fit, action to exact preview, with bounded source transfers. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal. Python virtual environment and pinned backend dependencies.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -3413,7 +3413,7 @@ Warm 24 MP saved Inpaint spot deletion at 100% and Fit, action to exact preview,
 Real Bayer RAW hot-pixel and harsh-speck cleanup enabled in Grade, restored checkboxes, threshold release/reset, CPU/GPU Edge colour, saved Library GPU development and identical encoded Proof/export; inherits the existing edge-colour delivery comparison guards. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -3422,7 +3422,7 @@ Real Bayer RAW hot-pixel and harsh-speck cleanup enabled in Grade, restored chec
 Optional hot-pixel and signed harsh-speck sensor cleanup integrated with production GPU normalization, Opposed color, signed AHD and WB, four CFA patterns/orientations and Off/hot-only/speck-only/combined states, threshold endpoints and exact old/explicit-Off GPU pixel equality; finished SDR DeltaE2000/HDR DeltaE ITP mean <1 and p99 <3 at -6/0/+6 EV. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -3431,7 +3431,7 @@ Optional hot-pixel and signed harsh-speck sensor cleanup integrated with product
 Deterministic bounded and whole-photo input fixtures for the hardware repair check. Runs only through its registered parent drivers, never as a standalone check. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: parent minutes. Parent attempt deadline applies.
+- Unmeasured default deadline: parent minutes. Parent attempt deadline applies.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Parent driver(s): tests/retouch-gpu-kernels.js.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline.
 
@@ -3440,7 +3440,7 @@ Deterministic bounded and whole-photo input fixtures for the hardware repair che
 Retouch GPU kernel results, donor correspondence and native finishing against CPU behavior. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -3449,7 +3449,7 @@ Retouch GPU kernel results, donor correspondence and native finishing against CP
 Native Inpaint gesture, source refresh, history, retry and enabled repairs. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -3458,7 +3458,7 @@ Native Inpaint gesture, source refresh, history, retry and enabled repairs. Runs
 Clone and Heal source picking, source editing, opacity, history, native preview and optional saved-grade RAW comparison. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -3467,7 +3467,7 @@ Clone and Heal source picking, source editing, opacity, history, native preview 
 session replacement interaction. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -3476,7 +3476,7 @@ session replacement interaction. Runs assertions and captures in an isolated Ele
 Signed Bayer AHD on all four CFA phases and orientations, finite negative scene values, and finished SDR/HDR CPU/GPU colour at -6/0/+6 EV. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -3485,7 +3485,7 @@ Signed Bayer AHD on all four CFA phases and orientations, finite negative scene 
 tiled admission scope fallback. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -3494,7 +3494,7 @@ tiled admission scope fallback. Runs assertions and captures in an isolated Elec
 Solid HDR/SDR endpoint-channel pixels, global/local Option/Alt gestures, current-frame matching through cold/tiled/deferred preparation, instant release and exact recipe/finished-frame/export invariance. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal. Curated <photosRoot>/HDR Test Images corpus; verify codebase/tests/test-photos.manifest.json; resolve through machine settings.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -3503,7 +3503,7 @@ Solid HDR/SDR endpoint-channel pixels, global/local Option/Alt gestures, current
 Frozen five-control Tone (Blacks, Shadows, Midtones, Highlights, Whites): GPU finished output equals CPU within perceptual limits, Proof equals export, HDR ceiling. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -3512,7 +3512,7 @@ Frozen five-control Tone (Blacks, Shadows, Midtones, Highlights, Whites): GPU fi
 Expanded Vignette midpoint authoring and real GPU preview versus CPU rendering and CPU/GPU PNG exports at 100 and 200 percent. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal. Python virtual environment and pinned backend dependencies.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -3523,7 +3523,7 @@ Expanded Vignette midpoint authoring and real GPU preview versus CPU rendering a
 Pointer-driven Grade Denoise switches, pixels and durable saves from the Library, at Fit and 110%. Runs the Node recipe and checks assertions or diagnostic output. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal. Python virtual environment and pinned backend dependencies. Curated <photosRoot>/HDR Test Images corpus; verify codebase/tests/test-photos.manifest.json; resolve through machine settings. Source inputs/fixtures referenced by driver (originals read-only): IMG_0790.CR2.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. Contains platform branches: inspect source skip/setup messages before treating the result as coverage.
 
@@ -3532,7 +3532,7 @@ Pointer-driven Grade Denoise switches, pixels and durable saves from the Library
 highlight lane 4k. Launches the native Electron shell with a disposable profile to check window or renderer behaviour. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal. Source inputs/fixtures referenced by driver (originals read-only): C://Users//Steve//Desktop//_DSC2743.hdrfinisher.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -3541,7 +3541,7 @@ highlight lane 4k. Launches the native Electron shell with a disposable profile 
 multi window. Launches the native Electron shell with a disposable profile to check window or renderer behaviour. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -3550,7 +3550,7 @@ multi window. Launches the native Electron shell with a disposable profile to ch
 preview menu. Launches the native Electron shell with a disposable profile to check window or renderer behaviour. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -3559,7 +3559,7 @@ preview menu. Launches the native Electron shell with a disposable profile to ch
 preview restore. Launches the native Electron shell with a disposable profile to check window or renderer behaviour. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -3568,7 +3568,7 @@ preview restore. Launches the native Electron shell with a disposable profile to
 Deliberately crashes only the renderer of an isolated source-test instance. Launches the native Electron shell with a disposable profile to check window or renderer behaviour. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. Python virtual environment and pinned backend dependencies.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -3577,7 +3577,7 @@ Deliberately crashes only the renderer of an isolated source-test instance. Laun
 DISPLAY-01: a display capability change replaces an already-current frame. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -3586,7 +3586,7 @@ DISPLAY-01: a display capability change replaces an already-current frame. Runs 
 Playwright contexts are sequential here: each uses the runner's one window. Runs only through its registered parent drivers, never as a standalone check. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: parent minutes. Parent attempt deadline applies.
+- Unmeasured default deadline: parent minutes. Parent attempt deadline applies.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Parent driver(s): tests/electron-context-isolation.js.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline.
 
@@ -3595,7 +3595,7 @@ Playwright contexts are sequential here: each uses the runner's one window. Runs
 electron context isolation. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -3604,7 +3604,7 @@ electron context isolation. Runs assertions and captures in an isolated Electron
 exposure bands interaction. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -3613,7 +3613,7 @@ exposure bands interaction. Runs assertions and captures in an isolated Electron
 full tier preview. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -3622,7 +3622,7 @@ full tier preview. Runs assertions and captures in an isolated Electron app. A f
 Real RAW stacked Film grade: native Exposure with HSL Pick armed at Fit and 100%, latest edits during Denoise, current exact presentation and changed visible pixels. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal. Curated <photosRoot>/HDR Test Images corpus; verify codebase/tests/test-photos.manifest.json; resolve through machine settings. Source inputs/fixtures referenced by driver (originals read-only): D:/Photos/HDR Test Images/DSC00264.ARW; DSC00264.ARW.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock. Contains platform branches: inspect source skip/setup messages before treating the result as coverage.
 
@@ -3631,7 +3631,7 @@ Real RAW stacked Film grade: native Exposure with HSL Pick armed at Fit and 100%
 lane roundtrip interaction. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -3640,7 +3640,7 @@ lane roundtrip interaction. Runs assertions and captures in an isolated Electron
 Regression driver for the "Native region exact" refinement stall. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal. Python virtual environment and pinned backend dependencies.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock. Contains platform branches: inspect source skip/setup messages before treating the result as coverage.
 
@@ -3649,7 +3649,7 @@ Regression driver for the "Native region exact" refinement stall. Runs assertion
 A source region copied from the whole-frame store held for panning must be. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -3658,7 +3658,7 @@ A source region copied from the whole-frame store held for panning must be. Runs
 Preview Responsiveness Tuning Sprint P2: Direct GPU is chosen when it. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -3667,7 +3667,7 @@ Preview Responsiveness Tuning Sprint P2: Direct GPU is chosen when it. Runs asse
 Phase 1.5 -- Section 5.8 failure policy: a recoverable failure must not. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -3676,7 +3676,7 @@ Phase 1.5 -- Section 5.8 failure policy: a recoverable failure must not. Runs as
 Highlight-compression shoulder stability while dragging (owner report. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -3685,7 +3685,7 @@ Highlight-compression shoulder stability while dragging (owner report. Runs asse
 The Highlight compression output ceiling holds whatever the shoulder anchor. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -3694,7 +3694,7 @@ The Highlight compression output ceiling holds whatever the shoulder anchor. Run
 The 100% inspection contract for a 2400-wide source: the processed edge is. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -3703,7 +3703,7 @@ The 100% inspection contract for a 2400-wide source: the processed edge is. Runs
 Phase 0 packaged baselines -- the 42.4 MP fixture at Fit, 100%, 200%, and a. Checks an existing packaged Electron build. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal. Existing packaged build; see desktop release module.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -3712,7 +3712,7 @@ Phase 0 packaged baselines -- the 42.4 MP fixture at Fit, 100%, 200%, and a. Che
 phase4 preview. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -3721,7 +3721,7 @@ phase4 preview. Runs assertions and captures in an isolated Electron app. A fail
 phase5 inactive lane. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -3730,7 +3730,7 @@ phase5 inactive lane. Runs assertions and captures in an isolated Electron app. 
 Phase 5 exit gate: "Logical peak agrees with instrumented application. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -3739,7 +3739,7 @@ Phase 5 exit gate: "Logical peak agrees with instrumented application. Runs asse
 Phase 1.4 -- concurrent generations must not resize the presentation target. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -3748,7 +3748,7 @@ Phase 1.4 -- concurrent generations must not resize the presentation target. Run
 Phase 2 work item 7 verification -- the deferred whole-frame catch-up that. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -3757,7 +3757,7 @@ Phase 2 work item 7 verification -- the deferred whole-frame catch-up that. Runs
 Phase 2 work item 8 verification -- the display-scale pan cache. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -3766,7 +3766,7 @@ Phase 2 work item 8 verification -- the display-scale pan cache. Runs assertions
 Viewport refinement -- the diagnostic switch controls refinement; custom. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -3775,7 +3775,7 @@ Viewport refinement -- the diagnostic switch controls refinement; custom. Runs a
 Phase 3 work item 2 -- ROI source routing and the warm-Fit transport gate. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal. Python virtual environment and pinned backend dependencies.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -3784,7 +3784,7 @@ Phase 3 work item 2 -- ROI source routing and the warm-Fit transport gate. Runs 
 PERF-07 -- the viewer must not go blank when the tier changes. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -3793,7 +3793,7 @@ PERF-07 -- the viewer must not go blank when the tier changes. Runs assertions a
 Phase 2 stop gate -- a new input must stop further obsolete submissions. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -3802,7 +3802,7 @@ Phase 2 stop gate -- a new input must stop further obsolete submissions. Runs as
 P5: one opt-in replaced the three-way Preview response menu. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -3811,7 +3811,7 @@ P5: one opt-in replaced the three-way Preview response menu. Runs assertions and
 preview scheduler coalescing. Runs the Node recipe and checks assertions or diagnostic output. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline.
 
@@ -3820,7 +3820,7 @@ preview scheduler coalescing. Runs the Node recipe and checks assertions or diag
 project open session interaction. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. Source inputs/fixtures referenced by driver (originals read-only): fixtures/sdr_gradient.png; invalid.hdrfinisher; saved.hdrfinisher.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -3829,7 +3829,7 @@ project open session interaction. Runs assertions and captures in an isolated El
 Run a driver that owns its Electron launch, without starting a second app. Runs only through its registered parent drivers, never as a standalone check. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: parent minutes. Parent attempt deadline applies.
+- Unmeasured default deadline: parent minutes. Parent attempt deadline applies.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Parent driver(s): desktop/tests/electron-smoke.js.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline.
 
@@ -3838,7 +3838,7 @@ Run a driver that owns its Electron launch, without starting a second app. Runs 
 scope exact peak. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -3847,7 +3847,7 @@ scope exact peak. Runs assertions and captures in an isolated Electron app. A fa
 Automatic editing peak and preview replacement. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal. Source inputs/fixtures referenced by driver (originals read-only): fixtures/hdr_headroom.tiff.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -3856,7 +3856,7 @@ Automatic editing peak and preview replacement. Runs assertions and captures in 
 sdr match gpu interaction. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -3865,7 +3865,7 @@ sdr match gpu interaction. Runs assertions and captures in an isolated Electron 
 Regression driver for the abandoned-stream connection-pool exhaustion. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal. Python virtual environment and pinned backend dependencies.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -3874,7 +3874,7 @@ Regression driver for the abandoned-stream connection-pool exhaustion. Runs asse
 Regression driver: the exposure overlay (zebra / false colour) must follow. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -3883,7 +3883,7 @@ Regression driver: the exposure overlay (zebra / false colour) must follow. Runs
 Regression driver for the lost-wake-up stall the owner hit while adding a. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -3894,7 +3894,7 @@ Regression driver for the lost-wake-up stall the owner hit while adding a. Runs 
 Interactive reproduction harness. Opens a separate profile and never saves. Launches the native Electron shell with a disposable profile to check window or renderer behaviour. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -3903,7 +3903,7 @@ Interactive reproduction harness. Opens a separate profile and never saves. Laun
 css app shell matrix. Runs assertions and captures in an isolated Electron app. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock. Conservative diagnostic tier: investigation, measurement or broad visual capture; not an automatic release gate.
 
@@ -3912,7 +3912,7 @@ css app shell matrix. Runs assertions and captures in an isolated Electron app. 
 Phase 2: editing measurement cannot request native sources or native masks. Runs assertions and captures in an isolated Electron app. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock. Conservative diagnostic tier: investigation, measurement or broad visual capture; not an automatic release gate.
 
@@ -3921,7 +3921,7 @@ Phase 2: editing measurement cannot request native sources or native masks. Runs
 Generate the measurement inventory for every static data-path control. This does not benchmark product code. It prevents the performance sweep from silently omitting a control as the UI evolves and assigns each path to the module and processing family used by the sprint matrix. Runs the Node recipe and checks assertions or diagnostic output. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline.
 
@@ -3930,7 +3930,7 @@ Generate the measurement inventory for every static data-path control. This does
 Measure CPU Full through the bounded strip path on a real source. Runs the Python recipe in the configured virtual environment and checks numerical or file results. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Python virtual environment and pinned backend dependencies. Read the script usage and provide its explicit input/corpus arguments; this diagnostic is never automatic.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline.
 
@@ -3939,7 +3939,7 @@ Measure CPU Full through the bounded strip path on a real source. Runs the Pytho
 P6 (Preview Responsiveness Tuning Sprint): GPU load while dragging. Runs assertions and captures in an isolated Electron app. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -3948,7 +3948,7 @@ P6 (Preview Responsiveness Tuning Sprint): GPU load while dragging. Runs asserti
 Bounded peak diagnostics on a disposable edit state; never saves a project. Runs assertions and captures in an isolated Electron app. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -3957,7 +3957,7 @@ Bounded peak diagnostics on a disposable edit state; never saves a project. Runs
 Measure the section 11.1 acceptance targets on a real WebGPU adapter. Runs assertions and captures in an isolated Electron app. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -3966,7 +3966,7 @@ Measure the section 11.1 acceptance targets on a real WebGPU adapter. Runs asser
 Phase 0 work item 6 -- Fit filtering A/B, set up so the owner can judge it. Runs assertions and captures in an isolated Electron app. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal. Python virtual environment and pinned backend dependencies.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock. Retired Bloom fields remain in recipe; diagnostic until Steve decides whether to remove or update.
 
@@ -3975,7 +3975,7 @@ Phase 0 work item 6 -- Fit filtering A/B, set up so the owner can judge it. Runs
 Phase 0 item 6 comparator: numbers for a pair of displayed screenshots. Runs only through its registered parent drivers, never as a standalone check. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: parent minutes. Parent attempt deadline applies.
+- Unmeasured default deadline: parent minutes. Parent attempt deadline applies.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Parent driver(s): tests/performance/fit-filtering-ab.js.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline.
 
@@ -3984,7 +3984,7 @@ Phase 0 item 6 comparator: numbers for a pair of displayed screenshots. Runs onl
 Sequential GPU campaign with frozen source and read-only fixture hashes. Runs the Python recipe in the configured virtual environment and checks numerical or file results. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Python virtual environment and pinned backend dependencies. Curated <photosRoot>/HDR Test Images corpus; verify codebase/tests/test-photos.manifest.json; resolve through machine settings. Source inputs/fixtures referenced by driver (originals read-only): D:/Photos/HDR Test Images/DSC00950.ARW; D:/Photos/HDR Test Images/Projects/DSC00950.hdrfinisher.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline.
 
@@ -3993,7 +3993,7 @@ Sequential GPU campaign with frozen source and read-only fixture hashes. Runs th
 PERF-05 -- a tiled render at Full must survive GPU instrumentation. Runs assertions and captures in an isolated Electron app. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -4002,7 +4002,7 @@ PERF-05 -- a tiled render at Full must survive GPU instrumentation. Runs asserti
 PERF-03 -- what one tone drag costs at the Full tier. Runs assertions and captures in an isolated Electron app. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -4011,7 +4011,7 @@ PERF-03 -- what one tone drag costs at the Full tier. Runs assertions and captur
 Test-only named GPU timestamps; preserves draw commands and releases query resources. Runs only through its registered parent drivers, never as a standalone check. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: parent minutes. Parent attempt deadline applies.
+- Unmeasured default deadline: parent minutes. Parent attempt deadline applies.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Parent driver(s): tests/performance/stacked-raw-latency.js.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline.
 
@@ -4020,7 +4020,7 @@ Test-only named GPU timestamps; preserves draw commands and releases query resou
 Grade first picture idle versus during real paste, native-release segment reported separately; unchanged memory gates. Runs assertions and captures in an isolated Electron app. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -4029,7 +4029,7 @@ Grade first picture idle versus during real paste, native-release segment report
 0.9.2 per-control Grade inventory, screen change/reset and lingering latency. Runs assertions and captures in an isolated Electron app. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -4038,7 +4038,7 @@ Grade first picture idle versus during real paste, native-release segment report
 MacBook whole-wait Show selection, Film/lens input-to-present throughput and Exposure after Denoise; exact settlement after drags. Runs assertions and captures in an isolated Electron app. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal. Reusable output/test-photos/grade-24mp.tiff; --input accepts another source. Pair before/after on the same machine.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock. Contains platform branches: inspect source skip/setup messages before treating the result as coverage.
 
@@ -4047,7 +4047,7 @@ MacBook whole-wait Show selection, Film/lens input-to-present throughput and Exp
 Real-photo grain sample-count colour, texture and GPU-cost comparison; prepares inputs with grain-sample-reference.py. Runs assertions and captures in an isolated Electron app. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -4056,7 +4056,7 @@ Real-photo grain sample-count colour, texture and GPU-cost comparison; prepares 
 Phase 5 item 7: capture one machine's row of the supported hardware matrix. Runs assertions and captures in an isolated Electron app. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -4065,7 +4065,7 @@ Phase 5 item 7: capture one machine's row of the supported hardware matrix. Runs
 Phase 5 item 7: merge the captured per-machine rows into a markdown table. Runs the Node recipe and checks assertions or diagnostic output. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline.
 
@@ -4074,7 +4074,7 @@ Phase 5 item 7: merge the captured per-machine rows into a markdown table. Runs 
 Â§8.1 headline latency under the Â§8 measurement rule. Runs assertions and captures in an isolated Electron app. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock. Contains platform branches: inspect source skip/setup messages before treating the result as coverage.
 
@@ -4083,7 +4083,7 @@ Phase 5 item 7: merge the captured per-machine rows into a markdown table. Runs 
 Measurement-only baseline for a real, already-graded HDR Finisher project. Run through the disposable-profile Electron harness:. Runs assertions and captures in an isolated Electron app. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. Curated <photosRoot>/HDR Test Images corpus; verify codebase/tests/test-photos.manifest.json; resolve through machine settings. Source inputs/fixtures referenced by driver (originals read-only): D://Photos//HDR Test Images//Projects//DSC00950.hdrfinisher.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock. Contains platform branches: inspect source skip/setup messages before treating the result as coverage.
 
@@ -4092,7 +4092,7 @@ Measurement-only baseline for a real, already-graded HDR Finisher project. Run t
 heavy project control sweep. Runs assertions and captures in an isolated Electron app. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. Source inputs/fixtures referenced by driver (originals read-only): ...//DSC00950.hdrfinisher.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock. Retired Bloom fields remain in recipe; diagnostic until Steve decides whether to remove or update.
 
@@ -4101,7 +4101,7 @@ heavy project control sweep. Runs assertions and captures in an isolated Electro
 Native-pointer representative drag coverage. Disposable session, never saves. Runs assertions and captures in an isolated Electron app. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -4110,7 +4110,7 @@ Native-pointer representative drag coverage. Disposable session, never saves. Ru
 Measurement-only dynamic controls, local masks, scopes, and viewer tasks. Runs assertions and captures in an isolated Electron app. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -4119,7 +4119,7 @@ Measurement-only dynamic controls, local masks, scopes, and viewer tasks. Runs a
 Bounded endurance replay using original automatic anchors. No project saves. Runs assertions and captures in an isolated Electron app. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -4128,7 +4128,7 @@ Bounded endurance replay using original automatic anchors. No project saves. Run
 Measurement-only scopes, zoom, pan, compare, and overlay workflow timings. Runs assertions and captures in an isolated Electron app. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -4137,7 +4137,7 @@ Measurement-only scopes, zoom, pan, compare, and overlay workflow timings. Runs 
 Focused automatic-anchor verification. Disposable session; never saves. Runs assertions and captures in an isolated Electron app. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -4146,7 +4146,7 @@ Focused automatic-anchor verification. Disposable session; never saves. Runs ass
 HSL picker input scoping and Retina coordinates; HDR/SDR Fit/100% Show selection whole-wait and backend stage timings on plain and optional stacked grades. Runs assertions and captures in an isolated Electron app. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal. Source inputs/fixtures referenced by driver (originals read-only): output/test-photos/DSC00264.ARW. --input RAW path; --stacked accepts a read-only .hdrf copy. Temporary same-volume hardlinks reuse output/test-photos bytes. --observe re-registers the picker from --picker-ref (default HEAD) and disables viewport cropping; it does not roll back backend code.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock. Contains platform branches: inspect source skip/setup messages before treating the result as coverage.
 
@@ -4155,7 +4155,7 @@ HSL picker input scoping and Retina coordinates; HDR/SDR Fit/100% Show selection
 Attach to a running HDR Finisher window started with `electron . --remote-debugging-port=9333` and read what it has been doing. Read-only: it records timings in the page and never edits or saves. Runs the Node recipe and checks assertions or diagnostic output. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal. An existing test app with --remote-debugging-port=9333 (read-only attachment).
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline.
 
@@ -4164,7 +4164,7 @@ Attach to a running HDR Finisher window started with `electron . --remote-debugg
 Disposable photo-derived Ultra HDR fixture; never overwrite any input. Runs the Python recipe in the configured virtual environment and checks numerical or file results. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Python virtual environment and pinned backend dependencies. Source inputs/fixtures referenced by driver (originals read-only): authored-photo.hdrfinisher. Read the script usage and provide its explicit input/corpus arguments; this diagnostic is never automatic.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline.
 
@@ -4173,7 +4173,7 @@ Disposable photo-derived Ultra HDR fixture; never overwrite any input. Runs the 
 match candidate review. Runs assertions and captures in an isolated Electron app. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -4182,7 +4182,7 @@ match candidate review. Runs assertions and captures in an isolated Electron app
 What does the scope panel report as Peak? Measurement only; never saves. Runs assertions and captures in an isolated Electron app. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -4191,7 +4191,7 @@ What does the scope panel report as Peak? Measurement only; never saves. Runs as
 Phase 3 coverage audit: every static control and the mask edits, at 100%. Runs assertions and captures in an isolated Electron app. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock. Retired Bloom fields remain in recipe; diagnostic until Steve decides whether to remove or update.
 
@@ -4200,7 +4200,7 @@ Phase 3 coverage audit: every static control and the mask edits, at 100%. Runs a
 phase3 manual baseline. Runs assertions and captures in an isolated Electron app. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal. Python virtual environment and pinned backend dependencies.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -4209,7 +4209,7 @@ phase3 manual baseline. Runs assertions and captures in an isolated Electron app
 Phase 5 item 6: endurance. Repeated scale changes and edits must not leak. Runs assertions and captures in an isolated Electron app. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal. Python virtual environment and pinned backend dependencies.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -4218,7 +4218,7 @@ Phase 5 item 6: endurance. Repeated scale changes and edits must not leak. Runs 
 Phase 5 item 4: measure the candidate pixel transports for one above-budget. Runs assertions and captures in an isolated Electron app. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal. Python virtual environment and pinned backend dependencies.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -4227,7 +4227,7 @@ Phase 5 item 4: measure the candidate pixel transports for one above-budget. Run
 phase5 transport probe. Runs the Node recipe and checks assertions or diagnostic output. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Python virtual environment and pinned backend dependencies. Uses unauthenticated Node fetch against a sidecar; existing standalone invocation needs HDR_FINISHER_URL pointing to a test backend.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline.
 
@@ -4236,7 +4236,7 @@ phase5 transport probe. Runs the Node recipe and checks assertions or diagnostic
 preview performance. Runs assertions and captures in an isolated Electron app. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal. Python virtual environment and pinned backend dependencies. Source inputs/fixtures referenced by driver (originals read-only): tests/fixtures/blender_linear_rec2020.exr; tests/fixtures/hdr_headroom.tiff.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock. Contains platform branches: inspect source skip/setup messages before treating the result as coverage.
 
@@ -4245,7 +4245,7 @@ preview performance. Runs assertions and captures in an isolated Electron app. T
 Measurement-only RAW import stage baseline. Never saves a project. Runs assertions and captures in an isolated Electron app. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. Python virtual environment and pinned backend dependencies.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock. Contains platform branches: inspect source skip/setup messages before treating the result as coverage.
 
@@ -4254,7 +4254,7 @@ Measurement-only RAW import stage baseline. Never saves a project. Runs assertio
 Preview Responsiveness Tuning Sprint: route and work probe. Runs assertions and captures in an isolated Electron app. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -4263,7 +4263,7 @@ Preview Responsiveness Tuning Sprint: route and work probe. Runs assertions and 
 Phase 2 work item 9 -- legacy-versus-ROI parity over the visible region. Runs assertions and captures in an isolated Electron app. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock. Retired Bloom fields remain in recipe; diagnostic until Steve decides whether to remove or update.
 
@@ -4272,7 +4272,7 @@ Phase 2 work item 9 -- legacy-versus-ROI parity over the visible region. Runs as
 param([int]$RootProcessId). Samples process memory with the platform sampler. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Provide the owned test process RootProcessId; sampler runs until that process exits. On POSIX the runner uses tools/sample-process-memory.py and HDR_FINISHER_ELECTRON_MAIN_PID.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. Runner substitutes tools/sample-process-memory.py on POSIX; Windows uses PowerShell.
 
@@ -4281,7 +4281,7 @@ param([int]$RootProcessId). Samples process memory with the platform sampler. Th
 Whole Film-on slider wait on machine window, linked and independent SDR, before/after eager-prefix branch comparison on identical source. Runs assertions and captures in an isolated Electron app. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal. Source inputs/fixtures referenced by driver (originals read-only): tests/fixtures/hdr_match_scene.tiff.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -4290,7 +4290,7 @@ Whole Film-on slider wait on machine window, linked and independent SDR, before/
 Record cold, memory-warm and disk-warm source mip costs. Runs the Python recipe in the configured virtual environment and checks numerical or file results. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Python virtual environment and pinned backend dependencies.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline.
 
@@ -4299,7 +4299,7 @@ Record cold, memory-warm and disk-warm source mip costs. Runs the Python recipe 
 Measurement only: where a native source-region fetch spends its time. Runs assertions and captures in an isolated Electron app. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. Python virtual environment and pinned backend dependencies.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -4308,7 +4308,7 @@ Measurement only: where a native source-region fetch spends its time. Runs asser
 Opt-in copied saved-grade RAW action-to-GPU-completion observations, native slider drags, zoom/pan, lane switches, ablations, CPU profile and whole-tree memory; never saves source or sidecar. Runs assertions and captures in an isolated Electron app. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal. Source inputs/fixtures referenced by driver (originals read-only): output/test-photos/DSC01287.ARW. Use output/test-photos copy and saved sidecar; --part baseline, zoom, ablate, raw, probe, tiers, race or profile; race --before-zoom restores former scheduling in the disposable renderer. Shared GPU lock and machine window required.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock. Contains platform branches: inspect source skip/setup messages before treating the result as coverage.
 
@@ -4317,7 +4317,7 @@ Opt-in copied saved-grade RAW action-to-GPU-completion observations, native slid
 summarize phase4 regression. Runs the Node recipe and checks assertions or diagnostic output. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline.
 
@@ -4326,7 +4326,7 @@ summarize phase4 regression. Runs the Node recipe and checks assertions or diagn
 Reproducible read-only summary of drag/endurance artifacts. Runs the Node recipe and checks assertions or diagnostic output. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline.
 
@@ -4335,7 +4335,7 @@ Reproducible read-only summary of drag/endurance artifacts. Runs the Node recipe
 Summarize Viewport-Bounded GPU Preview baseline runs (PRD section 6). Runs the Node recipe and checks assertions or diagnostic output. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline.
 
@@ -4344,7 +4344,7 @@ Summarize Viewport-Bounded GPU Preview baseline runs (PRD section 6). Runs the N
 Where does a zoom spend its time right after a local edit? Disposable session, never saves. Runs assertions and captures in an isolated Electron app. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -4353,7 +4353,7 @@ Where does a zoom spend its time right after a local edit? Disposable session, n
 Profile repeated Fit <-> magnified zoom cycles and pans on a project, with. Runs assertions and captures in an isolated Electron app. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -4362,7 +4362,7 @@ Profile repeated Fit <-> magnified zoom cycles and pans on a project, with. Runs
 Checks delivered Retouch output against the finished preview. Runs assertions and captures in an isolated Electron app. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -4371,7 +4371,7 @@ Checks delivered Retouch output against the finished preview. Runs assertions an
 DSC04375 labelled GPU/CPU native and Fit repair crops with informational finished-colour differences. Runs assertions and captures in an isolated Electron app. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal. Curated <photosRoot>/HDR Test Images corpus; verify codebase/tests/test-photos.manifest.json; resolve through machine settings. Source inputs/fixtures referenced by driver (originals read-only): D:/Photos/HDR Test Images/DSC04375.ARW.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -4380,7 +4380,7 @@ DSC04375 labelled GPU/CPU native and Fit repair crops with informational finishe
 Isolated equal-input Film GPU timing prototype; compilation failed on its first attempt, corrected harness remains GPU-unvalidated and is not a shipping gate. Runs assertions and captures in an isolated Electron app. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal. Prepare inputs with film_equal_input_trial.py --only gpu-prepare and pass the output folder. Use the shared GPU lock; a later run needs Steve's decision, not a retry of the failed compilation.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -4389,7 +4389,7 @@ Isolated equal-input Film GPU timing prototype; compilation failed on its first 
 Paired Global and Local hue input throughput and settle latency, edge defaults/non-defaults, both lanes at Fit/100/400, copied RAWs, per-pass counts and full/regional mask coverage. Runs assertions and captures in an isolated Electron app. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal. Curated <photosRoot>/HDR Test Images corpus; verify codebase/tests/test-photos.manifest.json; resolve through machine settings. Source inputs/fixtures referenced by driver (originals read-only): D:/Photos/HDR Test Images/IMG_0114.CR2. Choose --tag and --photo; run Global then --local serially. --local --compare-region compares kept GPU pixels with the full mask. --baseline --only-navigation measures old-path navigation. Default photo is a disposable Balanced Rock copy.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -4398,7 +4398,7 @@ Paired Global and Local hue input throughput and settle latency, edge defaults/n
 Balanced Rock copy at 423%: non-default selection edges and a review page for both luminance directions with Show selection. Runs assertions and captures in an isolated Electron app. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal. Curated <photosRoot>/HDR Test Images corpus; verify codebase/tests/test-photos.manifest.json; resolve through machine settings. Source inputs/fixtures referenced by driver (originals read-only): D:/Photos/HDR Test Images/IMG_0114.CR2; IMG_0114.CR2.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -4409,7 +4409,7 @@ Balanced Rock copy at 423%: non-default selection edges and a review page for bo
 Opt-in lossless12 HDR/lossless8 SDR JXL, unchanged defaults, UI/preset settings, per-image own-source fidelity, renderer agreement, exact finished ceilings, encoded allowance and reduced/full Proof byte identity. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. Curated <photosRoot>/HDR Test Images corpus; verify codebase/tests/test-photos.manifest.json; resolve through machine settings.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -4420,7 +4420,7 @@ Opt-in lossless12 HDR/lossless8 SDR JXL, unchanged defaults, UI/preset settings,
 MINOR-10, the Electron half -- a confirmation must not raise a native modal. Launches the native Electron shell with a disposable profile to check window or renderer behaviour. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock. Contains platform branches: inspect source skip/setup messages before treating the result as coverage.
 
@@ -4429,7 +4429,7 @@ MINOR-10, the Electron half -- a confirmation must not raise a native modal. Lau
 GPU analysis overlays, Library review controls and file drops, Performance settings and theme restart. Launches the native Electron shell with a disposable profile to check window or renderer behaviour. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal. Python virtual environment and pinned backend dependencies. Source inputs/fixtures referenced by driver (originals read-only): .exr; drop.hdrfinisher; linear.exr; tests/fixtures/linear_unconfirmed.exr; tests/fixtures/sdr_gradient.png.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -4438,7 +4438,7 @@ GPU analysis overlays, Library review controls and file drops, Performance setti
 Updates Releases action and Linux HDR warning photo-open lifecycle. Launches the native Electron shell with a disposable profile to check window or renderer behaviour. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -4447,7 +4447,7 @@ Updates Releases action and Linux HDR warning photo-open lifecycle. Launches the
 Color desaturation active GPU preview, CPU/GPU finished output, Proof/export agreement and HDR ceiling. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -4456,7 +4456,7 @@ Color desaturation active GPU preview, CPU/GPU finished output, Proof/export agr
 Control Panel title tokens, stable rendition tabs, brush actions and export field presentation. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal. Source inputs/fixtures referenced by driver (originals read-only): tests/fixtures/sdr_gradient.png.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -4465,7 +4465,7 @@ Control Panel title tokens, stable rendition tabs, brush actions and export fiel
 curve editor interaction. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -4474,7 +4474,7 @@ curve editor interaction. Runs assertions and captures in an isolated Electron a
 HDR/SDR module and Peak ordering, shared-section identity, mode visibility, presets, fold state, bypass, focus, sticky headers, advisory-only display peak with one-step Undo/Redo, and unchanged sampled GPU pixels. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -4483,7 +4483,7 @@ HDR/SDR module and Peak ordering, shared-section identity, mode visibility, pres
 grading value entry. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -4492,7 +4492,7 @@ grading value entry. Runs assertions and captures in an isolated Electron app. A
 Reference-relative HDR Peak slider, typed entry and pasted-state floor at both project whites and window layouts. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. Source inputs/fixtures referenced by driver (originals read-only): fixtures/hdr_match_scene.tiff.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -4501,7 +4501,7 @@ Reference-relative HDR Peak slider, typed entry and pasted-state floor at both p
 HSL real-device preview, stage picker, wheel, channel/preset/local authoring and finished GPU/CPU Proof/export perceptual agreement and ceiling. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -4510,7 +4510,7 @@ HSL real-device preview, stage picker, wheel, channel/preset/local authoring and
 Real-photo selection containment, zoom alignment, disclosure cleanup and Library grid pixels. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal. Curated <photosRoot>/HDR Test Images corpus; verify codebase/tests/test-photos.manifest.json; resolve through machine settings. Source inputs/fixtures referenced by driver (originals read-only): D:/Photos/HDR Test Images/IMG_0114.CR2; IMG_0114.CR2; tests/fixtures/library_photo.png.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -4519,7 +4519,7 @@ Real-photo selection containment, zoom alignment, disclosure cleanup and Library
 Actual HSL photo picking and wheel gestures, Local hue sampling/gizmo pixels, pending upstream-save and cancelled-sample results in both lanes on a shared RAW. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal. Curated <photosRoot>/HDR Test Images corpus; verify codebase/tests/test-photos.manifest.json; resolve through machine settings. Source inputs/fixtures referenced by driver (originals read-only): D:/Photos/HDR Test Images/DSC00264.ARW; output/hsl-h1/DSC00264.ARW.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock. Contains platform branches: inspect source skip/setup messages before treating the result as coverage.
 
@@ -4528,7 +4528,7 @@ Actual HSL photo picking and wheel gestures, Local hue sampling/gizmo pixels, pe
 Sampled fixed-source hue mask GPU preview and GPU/CPU Proof/export agreement and ceiling. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -4537,7 +4537,7 @@ Sampled fixed-source hue mask GPU preview and GPU/CPU Proof/export agreement and
 Library grade clipboard, single confirmation and settings persistence, virtual-copy bulk paste, live redraw from the same stored scenes and one-step Undo. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. Python virtual environment and pinned backend dependencies.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock. Contains platform branches: inspect source skip/setup messages before treating the result as coverage.
 
@@ -4546,7 +4546,7 @@ Library grade clipboard, single confirmation and settings persistence, virtual-c
 Scrollbar appearance cannot trigger repeated thumbnail resizing; control reproduces the 37-photo feedback loop. Launches the native Electron shell with a disposable profile to check window or renderer behaviour. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -4555,7 +4555,7 @@ Scrollbar appearance cannot trigger repeated thumbnail resizing; control reprodu
 Damaged, whole-failure and newer grades keep real-photo pictures visible with warning badges; Leave does not write and Continue retains the untouched backup. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. Python virtual environment and pinned backend dependencies.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -4564,7 +4564,7 @@ Damaged, whole-failure and newer grades keep real-photo pictures visible with wa
 A real upload timeout and Edge-colour rejection recover without durable errors; --invalid-input exercises immediate input rejection and CPU fallback. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. Python virtual environment and pinned backend dependencies. Source inputs/fixtures referenced by driver (originals read-only): .ARW.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -4573,7 +4573,7 @@ A real upload timeout and Edge-colour rejection recover without durable errors; 
 Local Match parent selection, independent SDR state, complete action/explanation layouts, Undo, stale marker, overwrite consent, CPU/GPU finished delivery and full-size Proof/export identity. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal. Source inputs/fixtures referenced by driver (originals read-only): fixtures/hdr_match_scene.tiff.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -4582,7 +4582,7 @@ Local Match parent selection, independent SDR state, complete action/explanation
 Top-layer menus/popovers, default and minimum geometry, scrolling, pop-out Library and native platform shortcuts. Launches the native Electron shell with a disposable profile to check window or renderer behaviour. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. Source inputs/fixtures referenced by driver (originals read-only): tests/fixtures/library_photo.png. Driver has its own three-minute action/startup/teardown deadline; runner default is an outer bound.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock. Contains platform branches: inspect source skip/setup messages before treating the result as coverage.
 
@@ -4591,7 +4591,7 @@ Top-layer menus/popovers, default and minimum geometry, scrolling, pop-out Libra
 Warm 24 MP Inpaint, Clone and Heal CPU fallback through accepted native and Fit presentation, against the accepted three-second native and two-second Fit targets. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -4600,7 +4600,7 @@ Warm 24 MP Inpaint, Clone and Heal CPU fallback through accepted native and Fit 
 Warm 24 MP saved Inpaint spot deletion at 100% and Fit, action to exact preview, with bounded source transfers. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal. Python virtual environment and pinned backend dependencies.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -4609,7 +4609,7 @@ Warm 24 MP saved Inpaint spot deletion at 100% and Fit, action to exact preview,
 Attached per-photo framing controls and actual GPU/CPU delivery geometry in all six formats, with full Proof inclusion and cache isolation. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -4618,7 +4618,7 @@ Attached per-photo framing controls and actual GPU/CPU delivery geometry in all 
 Real Bayer RAW hot-pixel and harsh-speck cleanup enabled in Grade, restored checkboxes, threshold release/reset, CPU/GPU Edge colour, saved Library GPU development and identical encoded Proof/export; inherits the existing edge-colour delivery comparison guards. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -4627,7 +4627,7 @@ Real Bayer RAW hot-pixel and harsh-speck cleanup enabled in Grade, restored chec
 Retouch GPU kernel results, donor correspondence and native finishing against CPU behavior. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -4636,7 +4636,7 @@ Retouch GPU kernel results, donor correspondence and native finishing against CP
 Native Inpaint gesture, source refresh, history, retry and enabled repairs. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -4645,7 +4645,7 @@ Native Inpaint gesture, source refresh, history, retry and enabled repairs. Runs
 Clone and Heal source picking, source editing, opacity, history, native preview and optional saved-grade RAW comparison. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -4654,7 +4654,7 @@ Clone and Heal source picking, source editing, opacity, history, native preview 
 Safe linked Match, live HDR edits, unlink, SDR global/local edits, one Undo, N4 consent and linked finished GPU/CPU export plus reduced/full Proof agreement. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal. Source inputs/fixtures referenced by driver (originals read-only): tests/fixtures/hdr_match_scene.tiff.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -4663,7 +4663,7 @@ Safe linked Match, live HDR edits, unlink, SDR global/local edits, one Undo, N4 
 theme persistence, Settings readability and menu boundaries. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock. Contains platform branches: inspect source skip/setup messages before treating the result as coverage.
 
@@ -4672,7 +4672,7 @@ theme persistence, Settings readability and menu boundaries. Runs assertions and
 Solid HDR/SDR endpoint-channel pixels, global/local Option/Alt gestures, current-frame matching through cold/tiled/deferred preparation, instant release and exact recipe/finished-frame/export invariance. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal. Curated <photosRoot>/HDR Test Images corpus; verify codebase/tests/test-photos.manifest.json; resolve through machine settings.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -4681,7 +4681,7 @@ Solid HDR/SDR endpoint-channel pixels, global/local Option/Alt gestures, current
 Photo picker cursor lifecycle, nearby delayed tooltips, customizable select popups and keyboard behaviour across workflows and minimum-size windows. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -4690,7 +4690,7 @@ Photo picker cursor lifecycle, nearby delayed tooltips, customizable select popu
 Expanded Vignette midpoint authoring and real GPU preview versus CPU rendering and CPU/GPU PNG exports at 100 and 200 percent. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal. Python virtual environment and pinned backend dependencies.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -4699,7 +4699,7 @@ Expanded Vignette midpoint authoring and real GPU preview versus CPU rendering a
 The mask editor canvas sits over the shared preview element, so a gizmo left. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -4708,7 +4708,7 @@ The mask editor canvas sits over the shared preview element, so a gizmo left. Ru
 Aligned workflow panel headers and pointer/keyboard panel resizing. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -4719,7 +4719,7 @@ Aligned workflow panel headers and pointer/keyboard panel resizing. Runs asserti
 standalone browser. Launches the native Electron shell with a disposable profile to check window or renderer behaviour. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. Source inputs/fixtures referenced by driver (originals read-only): F4 check.hdrfinisher.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -4728,7 +4728,7 @@ standalone browser. Launches the native Electron shell with a disposable profile
 fine adjustment interaction. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -4737,7 +4737,7 @@ fine adjustment interaction. Runs assertions and captures in an isolated Electro
 MINOR-10 -- confirmations are in-application, not native. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. Python virtual environment and pinned backend dependencies.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -4746,7 +4746,7 @@ MINOR-10 -- confirmations are in-application, not native. Runs assertions and ca
 media browser preview interaction. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -4755,7 +4755,7 @@ media browser preview interaction. Runs assertions and captures in an isolated E
 Actual GPU grading versus export, including signed near-black RAW pixels. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -4764,7 +4764,7 @@ Actual GPU grading versus export, including signed near-black RAW pixels. Runs a
 phase4 regression browser. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal. Python virtual environment and pinned backend dependencies.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -4773,7 +4773,7 @@ phase4 regression browser. Runs assertions and captures in an isolated Electron 
 Area-average 8x8 screen-pixel blocks at any zoom (PRD 4.4). Runs only through its registered parent drivers, never as a standalone check. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: parent minutes. Parent attempt deadline applies.
+- Unmeasured default deadline: parent minutes. Parent attempt deadline applies.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Parent driver(s): tests/performance/zoom-block-continuity.js.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline.
 
@@ -4782,7 +4782,7 @@ Area-average 8x8 screen-pixel blocks at any zoom (PRD 4.4). Runs only through it
 Same-scene 50%/100% continuity at the PRD's 8-screen-pixel block size. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -4791,7 +4791,7 @@ Same-scene 50%/100% continuity at the PRD's 8-screen-pixel block size. Runs asse
 recent projects interaction. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. Source inputs/fixtures referenced by driver (originals read-only): First.hdrfinisher; Second.hdrfinisher; fixtures/sdr_gradient.png.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -4800,7 +4800,7 @@ recent projects interaction. Runs assertions and captures in an isolated Electro
 scope region interaction. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -4809,7 +4809,7 @@ scope region interaction. Runs assertions and captures in an isolated Electron a
 Every rendered slider's fill runs between its home and its thumb. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -4818,7 +4818,7 @@ Every rendered slider's fill runs between its home and its thumb. Runs assertion
 source disclosures interaction. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -4827,7 +4827,7 @@ source disclosures interaction. Runs assertions and captures in an isolated Elec
 status manager interaction. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -4836,7 +4836,7 @@ status manager interaction. Runs assertions and captures in an isolated Electron
 The Technical scope type is a short, plain-language readout that fits the scopes panel at its minimum height; Diagnostics carries the full list. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -4845,7 +4845,7 @@ The Technical scope type is a short, plain-language readout that fits the scopes
 The viewer tools around the picture: the Navigate window, the View menu's Navigate Window and Preview Compares choices, Before / After, the Local Adjustments eye, perspective guides under zoom, the Vignette scale sliders and outline, and a crowded status bar. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -4856,7 +4856,7 @@ The viewer tools around the picture: the Navigate window, the View menu's Naviga
 Unexposed X2 research only: no visible action, both layouts, unchanged SDR and existing document-swap Undo, bounded candidate CPU/GPU encoded ceiling and Proof/export identity. Runs assertions and captures in an isolated Electron app. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal. Python virtual environment and pinned backend dependencies. Source inputs/fixtures referenced by driver (originals read-only): fixtures/hdr_headroom.tiff.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -4865,7 +4865,7 @@ Unexposed X2 research only: no visible action, both layouts, unchanged SDR and e
 Isolated HSL prototype float GPU/CPU agreement, multi-range selection and basic UI gestures; no app integration. Launches the native Electron shell with a disposable profile to check window or renderer behaviour. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -4874,7 +4874,7 @@ Isolated HSL prototype float GPU/CPU agreement, multi-range selection and basic 
 0.9.2 per-control Grade inventory, screen change/reset and lingering latency. Runs assertions and captures in an isolated Electron app. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -4883,7 +4883,7 @@ Isolated HSL prototype float GPU/CPU agreement, multi-range selection and basic 
 MacBook whole-wait Show selection, Film/lens input-to-present throughput and Exposure after Denoise; exact settlement after drags. Runs assertions and captures in an isolated Electron app. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal. Reusable output/test-photos/grade-24mp.tiff; --input accepts another source. Pair before/after on the same machine.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock. Contains platform branches: inspect source skip/setup messages before treating the result as coverage.
 
@@ -4892,7 +4892,7 @@ MacBook whole-wait Show selection, Film/lens input-to-present throughput and Exp
 HSL picker input scoping and Retina coordinates; HDR/SDR Fit/100% Show selection whole-wait and backend stage timings on plain and optional stacked grades. Runs assertions and captures in an isolated Electron app. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal. Source inputs/fixtures referenced by driver (originals read-only): output/test-photos/DSC00264.ARW. --input RAW path; --stacked accepts a read-only .hdrf copy. Temporary same-volume hardlinks reuse output/test-photos bytes. --observe re-registers the picker from --picker-ref (default HEAD) and disables viewport cropping; it does not roll back backend code.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock. Contains platform branches: inspect source skip/setup messages before treating the result as coverage.
 
@@ -4901,7 +4901,7 @@ HSL picker input scoping and Retina coordinates; HDR/SDR Fit/100% Show selection
 DSC04375 labelled GPU/CPU native and Fit repair crops with informational finished-colour differences. Runs assertions and captures in an isolated Electron app. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal. Curated <photosRoot>/HDR Test Images corpus; verify codebase/tests/test-photos.manifest.json; resolve through machine settings. Source inputs/fixtures referenced by driver (originals read-only): D:/Photos/HDR Test Images/DSC04375.ARW.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -4910,7 +4910,7 @@ DSC04375 labelled GPU/CPU native and Fit repair crops with informational finishe
 Application menu in four themes: square panels, rounded row highlight, panels level with their rows, shortcut labels and submenus that stay open across the panel gap. Runs assertions and captures in an isolated Electron app. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -4919,7 +4919,7 @@ Application menu in four themes: square panels, rounded row highlight, panels le
 Three-theme 30px panel and 26px compact actions, four-page expanded/collapsed alignment within 1px, Scopes, long preset names, open menus and Local/Retouch row centring at 2560x1440. Runs assertions and captures in an isolated Electron app. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. Source inputs/fixtures referenced by driver (originals read-only): tests/fixtures/sdr_gradient.png.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -4928,7 +4928,7 @@ Three-theme 30px panel and 26px compact actions, four-page expanded/collapsed al
 Approved component-sheet plates, fields, list rails and graph review in four themes. Runs assertions and captures in an isolated Electron app. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. Python virtual environment and pinned backend dependencies.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -4937,7 +4937,7 @@ Approved component-sheet plates, fields, list rails and graph review in four the
 Type scale review: Library, Details, menu, Grade and Export captures and a report of any text drawn below the 11px minimum. Runs assertions and captures in an isolated Electron app. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. Python virtual environment and pinned backend dependencies.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -4946,7 +4946,7 @@ Type scale review: Library, Details, menu, Grade and Export captures and a repor
 Paired Global and Local hue input throughput and settle latency, edge defaults/non-defaults, both lanes at Fit/100/400, copied RAWs, per-pass counts and full/regional mask coverage. Runs assertions and captures in an isolated Electron app. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal. Curated <photosRoot>/HDR Test Images corpus; verify codebase/tests/test-photos.manifest.json; resolve through machine settings. Source inputs/fixtures referenced by driver (originals read-only): D:/Photos/HDR Test Images/IMG_0114.CR2. Choose --tag and --photo; run Global then --local serially. --local --compare-region compares kept GPU pixels with the full mask. --baseline --only-navigation measures old-path navigation. Default photo is a disposable Balanced Rock copy.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -4955,7 +4955,7 @@ Paired Global and Local hue input throughput and settle latency, edge defaults/n
 Balanced Rock copy at 423%: non-default selection edges and a review page for both luminance directions with Show selection. Runs assertions and captures in an isolated Electron app. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal. Curated <photosRoot>/HDR Test Images corpus; verify codebase/tests/test-photos.manifest.json; resolve through machine settings. Source inputs/fixtures referenced by driver (originals read-only): D:/Photos/HDR Test Images/IMG_0114.CR2; IMG_0114.CR2.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -4964,7 +4964,7 @@ Balanced Rock copy at 423%: non-default selection edges and a review page for bo
 Modern Dark/Default Light neutral page tabs, retired-theme fallback, fixed Grade chrome at Fit/119% with panning, immediate source chevrons, reachable Grade/Proof/Export scope toggles and chart containment at 1408x794 and 2560x1440. Original --after mode retains Library selection, joined-divider and Export disclosure checks. Runs assertions and captures in an isolated Electron app. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. Python virtual environment and pinned backend dependencies.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -4973,7 +4973,7 @@ Modern Dark/Default Light neutral page tabs, retired-theme fallback, fixed Grade
 Three-theme UI review, menu access, Recent projects, wheel range retention/reset and small screenshots. Runs assertions and captures in an isolated Electron app. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. Python virtual environment and pinned backend dependencies.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -4982,7 +4982,7 @@ Three-theme UI review, menu access, Recent projects, wheel range retention/reset
 Three-theme title fonts, Export empty-state and switch/button materials, menu captures and Library toolbar at full and minimum sizes. Runs assertions and captures in an isolated Electron app. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. Python virtual environment and pinned backend dependencies.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -4991,7 +4991,7 @@ Three-theme title fonts, Export empty-state and switch/button materials, menu ca
 Numbered workflow badge geometry, navigation, ARIA and three-theme toolbar captures at full and narrow widths. Runs assertions and captures in an isolated Electron app. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -5000,7 +5000,7 @@ Numbered workflow badge geometry, navigation, ARIA and three-theme toolbar captu
 Vertical menu keyboard and hover, neutral view sliders, sidebar controls and single-row toolbars in three themes at full and minimum width. Runs assertions and captures in an isolated Electron app. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. Python virtual environment and pinned backend dependencies.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -5009,7 +5009,7 @@ Vertical menu keyboard and hover, neutral view sliders, sidebar controls and sin
 Toolbar fit in three themes at 1100, 1200, 1201, 1300 and 1500 pixels with panels open and closed, plus icon tooltip review. Runs assertions and captures in an isolated Electron app. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. Python virtual environment and pinned backend dependencies.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
@@ -5018,7 +5018,7 @@ Toolbar fit in three themes at 1100, 1200, 1201, 1300 and 1500 pixels with panel
 W6 Export spacing, keyboard focus, module actions, review marks, context-menu latency, Frame containment and navigation insertion lines at Mac/minimum sizes. Runs assertions and captures in an isolated Electron app. This is a diagnostic, not a release gate; inspect its measurements, captures and prerequisites before interpreting an error.
 
 - Expected minutes: Windows unknown; Mac unknown.
-- Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. Python virtual environment and pinned backend dependencies.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
