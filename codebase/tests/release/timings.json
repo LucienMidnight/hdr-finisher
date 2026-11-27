@@ -1259,21 +1259,17 @@
     },
     "tests/library-precision-rendition.js": {
       "mac": {
-        "medianSeconds": 33.625,
-        "lastSeconds": 34.765,
-        "sampleCount": 5,
+        "medianSeconds": 30.3,
+        "lastSeconds": 30.3,
+        "sampleCount": 1,
         "sampleSeconds": [
-          33.625,
-          33.179,
-          32.699,
-          33.887,
-          34.765
+          30.3
         ],
-        "revision": "c97690cc9f4dba78760310d42109e19dc10d1bdc",
+        "revision": "231d7369",
         "date": "2026-11-27",
-        "exitCode": 1,
-        "source": "release runner history (complete attempts, including failures)",
-        "lastSampleKey": "2026-11-27T19:16:20.451Z|tests__library-precision-rendition.js.2.1795806945685.log"
+        "exitCode": 0,
+        "source": "complete successful release-driver attempts",
+        "lastSampleKey": "2026-11-27T19:48:42.942Z|library-precision-rendition-float32.log"
       }
     },
     "tests/library-precision-source.js": {
@@ -1550,22 +1546,17 @@
     },
     "tests/performance/preview-export-compare.js": {
       "mac": {
-        "medianSeconds": 3.449,
-        "lastSeconds": 3.412,
-        "sampleCount": 6,
+        "medianSeconds": 171.59,
+        "lastSeconds": 171.59,
+        "sampleCount": 1,
         "sampleSeconds": [
-          3.275,
-          3.138,
-          3.721,
-          3.486,
-          3.616,
-          3.412
+          171.59
         ],
-        "revision": "c97690cc9f4dba78760310d42109e19dc10d1bdc",
+        "revision": "84fd0991",
         "date": "2026-11-27",
-        "exitCode": 1,
-        "source": "release runner history (complete attempts, including failures)",
-        "lastSampleKey": "2026-11-27T18:58:10.497Z|tests__performance__preview-export-compare.js.2.1795805887076.log"
+        "exitCode": 0,
+        "source": "complete successful release-driver attempts",
+        "lastSampleKey": "2026-11-27T19:43:11.922Z|preview-export-compare-viewport.log"
       }
     },
     "tests/performance/retouch-cpu-fallback.js": {
@@ -1680,20 +1671,17 @@
     },
     "tests/photo-library-stage-b.js": {
       "mac": {
-        "medianSeconds": 5.6175,
-        "lastSeconds": 5.355,
-        "sampleCount": 4,
+        "medianSeconds": 5.92,
+        "lastSeconds": 5.92,
+        "sampleCount": 1,
         "sampleSeconds": [
-          5.748,
-          34.111,
-          5.487,
-          5.355
+          5.92
         ],
-        "revision": "c97690cc9f4dba78760310d42109e19dc10d1bdc",
+        "revision": "84fd0991",
         "date": "2026-11-27",
         "exitCode": 0,
-        "source": "release runner history (complete attempts, including failures)",
-        "lastSampleKey": "2026-11-27T19:00:27.522Z|tests__photo-library-stage-b.js.2.1795806022166.log"
+        "source": "complete successful release-driver attempts",
+        "lastSampleKey": "2026-11-27T19:44:13.073Z|photo-library-stage-b-redraw.log"
       }
     },
     "tests/photo-library-stage-c.js": {
@@ -1872,20 +1860,17 @@
     },
     "tests/sdr-linked-interaction.js": {
       "mac": {
-        "medianSeconds": 6.433999999999999,
-        "lastSeconds": 5.677,
-        "sampleCount": 4,
+        "medianSeconds": 7.77,
+        "lastSeconds": 7.77,
+        "sampleCount": 1,
         "sampleSeconds": [
-          7.191,
-          7.568,
-          5.566,
-          5.677
+          7.77
         ],
-        "revision": "c97690cc9f4dba78760310d42109e19dc10d1bdc",
+        "revision": "7472bfba",
         "date": "2026-11-27",
-        "exitCode": 1,
-        "source": "release runner history (complete attempts, including failures)",
-        "lastSampleKey": "2026-11-27T18:20:25.729Z|tests__sdr-linked-interaction.js.2.1795803620052.log"
+        "exitCode": 0,
+        "source": "complete successful release-driver attempts",
+        "lastSampleKey": "2026-11-27T19:36:01.459Z|sdr-linked-interaction.log"
       }
     },
     "tests/sdr-linked-render.js": {

@@ -1,5 +1,3 @@
-## November 27: Brighter SDR Match target (PC)
-
 ## November 28, 2026 — v0.9.4 Mac release rechecks
 
 MacBook Neo, A18 Pro, 8 GB, at 1408×794. Standalone Electron runs under the shared GPU lock.
@@ -10,7 +8,10 @@ MacBook Neo, A18 Pro, 8 GB, at 1408×794. Standalone Electron runs under the sha
 | Overlay backlog | 42.7 s complete | Parent `6350ce79`. Required 30 s drag alone exceeds the old 30 s runner deadline; the existing growth guard and recovery pass. |
 | Library precision sources | 57.3 s complete | Parent `7472bfba`. 640/2560 source pairs, preemption/re-admission and Grade pixel comparisons. EXR CPU/GPU median preparation 7.92/3.42 s, float TIFF 0.367/0.109 s. |
 | Denoise measurement | 63.8 s complete | Remaining corpus without the retired EXR, then 42 MP Grade. 696 ms CPU model / 140 ms GPU model including transport (66 ms GPU compute). |
+| DSC00950 100% preview against pre-encode export | 171.59 s for both lanes and all six viewports | Parent `84fd0991` plus mounted detail capture correction. Native-relinked protected project, unchanged pixel and mask gates, exact GPU editing and offline CPU export reference. |
+| Library rendition matrix | 30.30 s after TIFF measurement correction | Parent `231d7369` plus reduced TIFF float32 noise inputs. BT.709 HDR p99.9 3.261 before and 0.170 after, with the 3.0 limit unchanged. |
 
+## November 27: Brighter SDR Match target (PC)
 
 Match click to exact SDR presentation, or to refusal, in disposable Electron at
 2560 x 1440 under the shared GPU lock. Prior target at `400eb1e4`; brighter
