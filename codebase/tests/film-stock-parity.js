@@ -118,6 +118,15 @@ if (stockCharacterOnly) {
   CASES.push({label:"Character set controls", stock:overridden});
 }
 
+// Focused exposure regression: negative, slide, neutral and measured push.
+const exposureOnly = process.argv.includes("--exposure-only");
+if (exposureOnly) CASES = ["kodak_portra_400", "fujifilm_velvia_100", "none", "kodak_portra_800"].flatMap(id =>
+  [-2, 0, 2].flatMap(push => [-1, 0, 1].map(ev => ({
+    label: `Exposure ${id} push ${push} EV ${ev}`,
+    stock: {film_stock:id, push_pull:push, stock_exposure:ev},
+  }))));
+const exposureReadings = new Map();
+
 if (selectedCase && !CASES.some(c => c.label === selectedCase)) throw new Error(`Unknown case: ${selectedCase}`);
 
 function writeFixture() {
@@ -306,7 +315,16 @@ const inputPath = inputIndex >= 0 ? path.resolve(process.argv[inputIndex + 1]) :
         for(let i=0;i<values.length;i+=32768) binary += String.fromCharCode(...values.subarray(i,i+32768));
         return btoa(binary);
       };
-      return { size, differences, raw, worst, textureStats, captured: capture ? {gpu:encode(gpu), cpu:encode(cpu)} : null, slot: state.gpuPreview && window.HDRFilmStocks.slot(stock.film_stock, stock) };
+      // Read the fixed grey strip, away from highlight clipping and the toe.
+      const greyMean = values => {
+        let sum = 0, count = 0;
+        for (let y = Math.floor(surface.height * .55); y < Math.floor(surface.height * .7); y++) {
+          const i = (y * surface.width + 40) * 4;
+          sum += .2126 * values[i] + .7152 * values[i+1] + .0722 * values[i+2]; count++;
+        }
+        return sum / count;
+      };
+      return { grey: {gpu:greyMean(gpu), cpu:greyMean(cpu)}, size, differences, raw, worst, textureStats, captured: capture ? {gpu:encode(gpu), cpu:encode(cpu)} : null, slot: state.gpuPreview && window.HDRFilmStocks.slot(stock.film_stock, stock) };
     }, { lane, stock, lookStrength, longEdge: LONG_EDGE, extremeHdr, capture:!!diagnosticOutput || needColour, synthetic:!inputPath });
 
     const capture = (lane, label, result) => {
@@ -329,7 +347,15 @@ const inputPath = inputIndex >= 0 ? path.resolve(process.argv[inputIndex + 1]) :
         if (on.error) throw new Error(`${lane} ${label}: ${on.error}`);
         if (stockCharacterOnly && stock.film_stock === "none") {
           if (on.slot) throw new Error(`${lane} ${label}: Neutral default should bypass stock allocation`);
-        } else if (!on.slot) throw new Error(`${lane} ${label}: the stock never reached the GPU`);
+        } else if (!(exposureOnly && stock.film_stock === "none" && !stock.push_pull && !stock.stock_exposure) && !on.slot) throw new Error(`${lane} ${label}: the stock never reached the GPU`);
+        if (exposureOnly) {
+          const key = `${lane}/${stock.film_stock}/${stock.push_pull}`;
+          const previous = exposureReadings.get(key);
+          if (previous) for (const route of ["gpu", "cpu"]) {
+            if (!(on.grey[route] > previous[route])) throw Error(`${label}: ${route} Film Exposure did not brighten`);
+          }
+          exposureReadings.set(key, on.grey);
+        }
         if (extremeHdr) {
           console.log("Finished texture:",JSON.stringify(on.textureStats));
           const absolute=[...on.differences].sort((a,b)=>a-b);

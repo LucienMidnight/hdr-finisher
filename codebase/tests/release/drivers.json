@@ -903,6 +903,7 @@
       "launch": {
         "method": "electron",
         "followupArgs": [
+          ["--exposure-only"],
           [
             "--stock-character-only",
             "--ui-only",

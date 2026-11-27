@@ -1,3 +1,27 @@
+## November 27: Film Exposure direction
+
+Film Exposure now uses a fixed zero-EV middle-grey calibration on CPU and
+WebGPU. The camera exposure remains `2^EV` before film development; positive
+EV brightens and negative EV darkens on negative, slide and neutral/B&W
+stocks, including measured and approximate Push/Pull. Previously the
+reference was exposed along with the picture, cancelling the gain and
+sometimes reversing it through the stock's curved response. Print Exposure
+still models light on paper: positive EV darkens the print; slides bypass it.
+Stock Tone at zero still preserves the original luminance.
+
+Saved values are retained without migration. A sign flip cannot preserve the
+old appearance: the bug changed a normalization ratio, not the camera gain's
+sign, and its effect depends on stock, development and pixel brightness.
+Keeping that appearance would require the old renderer or a new compensating
+control. In line with the pre-1.0 no-compatibility rule, existing negative/slide
+recipes with nonzero Film Exposure will change when rendered again. Zero-EV
+recipes and the neutral/B&W chain retain their existing behavior. The current
+tooltip already describes camera exposure correctly and needs no copy change.
+
+Qualification: 259 targeted CPU tests pass. All 72 focused HDR/SDR WebGPU
+exposure cases pass direction and the unchanged CPU/export parity gate,
+covering negative, slide, neutral and measured-push Portra 800.
+
 ## November 16: draft-grain follow-up
 
 Seven interleaved parent/`4e84549e` pairs (84 Fit drags) do not reproduce the

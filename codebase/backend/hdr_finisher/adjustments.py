@@ -2066,7 +2066,10 @@ def _film_stock_renderer(look, kind, master):
     reference_white = FILM_STOCK_REFERENCE_WHITE / lane_scale
     lane_middle_grey = FILM_STOCK_MIDDLE_GREY / lane_scale
     middle_grey = to_srgb(np.full((1, 3), lane_middle_grey, dtype=np.float32))
-    middle = from_srgb(render_film_stock(stock, middle_grey, replace(parameters, print_exposure_gain=np.float32(1))))
+    # Calibrate the stock at zero camera/print EV. Re-exposing this reference
+    # with the picture cancels Film Exposure and can reverse its direction.
+    middle = from_srgb(render_film_stock(stock, middle_grey, replace(
+        parameters, exposure_gain=np.float32(1), print_exposure_gain=np.float32(1))))
     tone_gain = np.float32(1) if stock.type.startswith("neutral") else lane_middle_grey / np.maximum(_film_luma(middle, kind)[0], np.float32(1e-6))
 
     def render(rgb, density_delta):

@@ -1977,11 +1977,11 @@ fn fineGrainResizeBase(@builtin(global_invocation_id) id: vec3u) {
     }
     // Linear sRGB -> film layer exposure -> developed density (two passes
     // for the DIR couplers). film_stock.py _film_exposure and _film_density.
-    fn stockDensity(base: u32, rgb: vec3f) -> vec3f {
+    fn stockDensity(base: u32, rgb: vec3f, exposureGain: f32) -> vec3f {
       let matrix = base + ${STOCK.INPUT_MATRIX}u;
       let exposure = max(vec3f(
         dot(stockVec3(matrix), rgb), dot(stockVec3(matrix + 3u), rgb), dot(stockVec3(matrix + 6u), rgb),
-      ), vec3f(0.0)) * p[${GPU_PARAMS.FILM_STOCK_EXPOSURE_GAIN}];
+      ), vec3f(0.0)) * exposureGain;
       let logExposure = stockLog10(exposure + vec3f(1e-10));
       let gamma = p[${GPU_PARAMS.FILM_DEVELOPMENT_GAMMA}];
       if (filmStock[base + ${STOCK.SCAN_FILM}u] >= 2.0) { return logExposure * gamma; }
@@ -2060,13 +2060,14 @@ fn fineGrainResizeBase(@builtin(global_invocation_id) id: vec3u) {
       let tone = p[${GPU_PARAMS.FILM_STOCK_TONE}];
       let referenceWhite = 1.0 / stockLaneScale();
       let middleGrey = 0.18 / stockLaneScale();
-      let middle = stockFromSrgb(stockPrintScan(base, stockDensity(base, stockToSrgb(vec3f(middleGrey))), 1.0));
+      // Calibrate at zero camera/print EV, independently of the picture.
+      let middle = stockFromSrgb(stockPrintScan(base, stockDensity(base, stockToSrgb(vec3f(middleGrey)), 1.0), 1.0));
       let neutral = filmStock[base + ${STOCK.SCAN_FILM}u] >= 2.0;
       let delta = select(densityDelta, -densityDelta, neutral);
       let toneGain = select(middleGrey / max(filmLuma(middle), 0.000001), 1.0, neutral);
       let luma = max(filmLuma(rgb), 0.0);
       let highlightScale = referenceWhite / max(luma, referenceWhite);
-      let greyDensity = stockDensity(base, stockToSrgb(vec3f(luma * highlightScale)));
+      let greyDensity = stockDensity(base, stockToSrgb(vec3f(luma * highlightScale)), p[${GPU_PARAMS.FILM_STOCK_EXPOSURE_GAIN}]);
       let cleanGreyLuma = max(filmLuma(stockFromSrgb(stockPrintScan(base, greyDensity, p[${GPU_PARAMS.FILM_PRINT_EXPOSURE_GAIN}]))), 0.000001);
       var greyLuma = cleanGreyLuma;
       if (any(densityDelta != vec3f(0.0))) {
@@ -2075,7 +2076,7 @@ fn fineGrainResizeBase(@builtin(global_invocation_id) id: vec3u) {
       let toneTarget = (luma + (toneGain * cleanGreyLuma / highlightScale - luma) * tone) * (greyLuma / cleanGreyLuma);
       var result = rgb * (toneTarget / max(luma, 0.0000001));
       if (color > 0.0) {
-        var density = stockDensity(base, stockToSrgb(rgb * highlightScale));
+        var density = stockDensity(base, stockToSrgb(rgb * highlightScale), p[${GPU_PARAMS.FILM_STOCK_EXPOSURE_GAIN}]);
         if (p[${GPU_PARAMS.FILM_STOCK_SEPARATION_GAIN}] != 1.0) {
           density = greyDensity + (density - greyDensity) * p[${GPU_PARAMS.FILM_STOCK_SEPARATION_GAIN}];
         }
