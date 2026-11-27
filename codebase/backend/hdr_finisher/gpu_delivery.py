@@ -44,8 +44,8 @@ _activity = {"until": 0., "bytes": 0, "budget": 536870912}
 # One priority step per this many seconds of waiting. Visible Library pictures
 # (15) still go before export (20), but an export waits at most about 25 s.
 AGING_SECONDS_PER_STEP = 5.
-# A claimed job that the renderer has not finished by then falls back to the CPU.
-RENDER_DEADLINE_SECONDS = 180.
+# A claimed job must report progress; total render duration is unbounded.
+RENDER_IDLE_SECONDS = 60.
 # A finished job's directory is read within moments; an unclaimed one belongs
 # to a worker that may have died. Both are removed after these ages.
 FINISHED_SPOOL_SECONDS = 120.
@@ -403,8 +403,9 @@ class SpoolRemovedError(FileNotFoundError):
 def _wait_for_result(directory, root, frame):
     # Queue time is not render time: a job waiting behind Library pictures
     # or another export keeps waiting while the renderer is alive. Only a
-    # claimed job has a render deadline.
-    deadline = None
+    # claimed job has an inactivity deadline.
+    last_activity = time.monotonic()
+    activity_stamp = None
     while not (directory / "result.json").exists():
         if getattr(frame, "delivery_cancelled", lambda: False)():
             from concurrent.futures import CancelledError
@@ -414,9 +415,15 @@ def _wait_for_result(directory, root, frame):
             # the root and its heartbeat, so the heartbeat check alone would
             # wait forever for a request that no longer exists.
             raise SpoolRemovedError("The GPU delivery spool was removed while waiting.")
-        if deadline is None and (directory / "claimed").exists():
-            deadline = time.monotonic() + RENDER_DEADLINE_SECONDS
-        if (deadline is not None and time.monotonic() > deadline) or not (root / "heartbeat").exists() or time.time() - (root / "heartbeat").stat().st_mtime > 10:
+        claimed = directory / "claimed"
+        if claimed.exists():
+            stamp = claimed.stat().st_mtime_ns
+            if stamp != activity_stamp:
+                activity_stamp = stamp
+                last_activity = time.monotonic()
+        if claimed.exists() and time.monotonic() - last_activity > RENDER_IDLE_SECONDS:
+            raise RuntimeError("GPU export stopped after 60 seconds without progress. Retrying on the CPU.")
+        if not (root / "heartbeat").exists() or time.time() - (root / "heartbeat").stat().st_mtime > 10:
             raise RuntimeError("The GPU delivery renderer stopped or timed out.")
         time.sleep(.03)
     return json.loads((directory / "result.json").read_text(encoding="utf-8"))
@@ -581,6 +588,7 @@ def create_gpu_delivery_router():
         higher = False
         priority_reason = None
         if identity in active:
+            (active[identity][0] / "claimed").touch()
             # Compare waiting-adjusted priorities, so a job that waited its
             # turn is not interrupted by each newly queued Library picture.
             now = time.time()
@@ -608,6 +616,14 @@ def create_gpu_delivery_router():
             "idle": not active and not any(not job.get("retained") for job in raw_jobs.values())
                 and not any(root.glob("delivery-*/request.json")),
             "budget": max(0, _activity["budget"] - _activity["bytes"])}
+
+    @router.post("/{identity}/progress")
+    @budget_locked
+    def progress(identity: str):
+        if identity not in active:
+            raise HTTPException(404, "GPU delivery job no longer active.")
+        (active[identity][0] / "claimed").touch()
+        return {}
 
     @router.get("/next")
     @budget_locked

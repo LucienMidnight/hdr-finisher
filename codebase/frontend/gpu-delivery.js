@@ -1,5 +1,24 @@
 /* One serial hidden renderer, reusing Grade's class, masks, stocks and Denoise. */
 (async () => {
+  let activity=null,stalled=false;
+  const nativeFetch=globalThis.fetch.bind(globalThis);
+  // Track returned bytes as well as completed stages. Never count the periodic
+  // renderer-liveness poll: it continues even when a GPU fence is stuck.
+  globalThis.fetch=async(url,options)=>{
+    const watched=activity&&!String(url).includes("/permit")&&!String(url).endsWith("/complete");
+    const current=watched?activity:null;
+    const response=await nativeFetch(url,options);
+    if(stalled)throw Error("GPU delivery stalled.");
+    current?.progress();
+    if(!current||[204,205,304].includes(response.status)||!response.body?.getReader)return response;
+    const reader=response.body.getReader();
+    return new Response(new ReadableStream({
+      async pull(controller){try{const {done,value}=await reader.read();
+        if(done)controller.close();else{current.progress();controller.enqueue(value);}
+      }catch(error){controller.error(error);}},
+      cancel(reason){return reader.cancel(reason);}
+    }),{status:response.status,statusText:response.statusText,headers:response.headers});
+  };
   const pause=ms=>new Promise(resolve=>setTimeout(resolve,ms));
   const canvas=document.createElement("canvas");let gpu,identity=null,initializing;
   async function initialize(beforeNext = async () => {}) {
@@ -29,6 +48,7 @@
       const value=await response.json();
       if(value.cancelled)throw Error("GPU delivery job cancelled.");
       if(value.preempt)throw yielded(value.reason);
+      activity?.progress();
       if(value.ready){permitted=performance.now();return;}await pause(30);}
   }
   async function finishStreamedLane(job,lane,capture,finishing){
@@ -65,15 +85,32 @@
     const diagnostics = globalThis.HDRDiagnostics;
     const action = job.action ? { id: job.action } : null;
     const started = performance.now();
-    const complete = payload => fetch(`/api/delivery/gpu/${job.id}/complete`, {
+    const complete = payload => stalled?Promise.resolve():fetch(`/api/delivery/gpu/${job.id}/complete`, {
       method: "POST", headers: diagnostics?.headers(action, { "Content-Type": "application/json" }) ?? { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
     try{
-      identity=job.id;permitted=0;
+      identity=job.id;permitted=0;stalled=false;
+      activity=new HDRDeliveryActivity(()=>{
+        stalled=true;
+        // Destroying the device releases outstanding maps, textures and GPU
+        // commands. Reload the isolated worker rather than reuse a suspended
+        // async frame. The backend result releases its reservation/spool and
+        // follows the established one-attempt CPU fallback.
+        gpu?.device?.destroy();finishing?.destroy();
+        setTimeout(()=>location.reload(),2000);
+        nativeFetch(`/api/delivery/gpu/${job.id}/complete`,{method:"POST",
+          headers:{"Content-Type":"application/json"},body:JSON.stringify({error:
+            "GPU export stopped after 60 seconds without progress. Retrying on the CPU."})})
+          .catch(()=>{}).finally(()=>location.reload());
+      });
+      const localProgress=activity.progress.bind(activity);let reported=0;
+      activity.progress=()=>{localProgress();const now=performance.now();
+        if(now-reported>=1000){reported=now;
+          nativeFetch(`/api/delivery/gpu/${job.id}/progress`,{method:"POST"}).catch(()=>{});}};
       const timings={};let mark=started;
       const stamp=(name,lane)=>{const now=performance.now(),spent=now-mark;timings[name]=(timings[name]||0)+spent;
-        if(lane)timings[`${lane}_${name}`]=spent;mark=now;};
+        if(lane)timings[`${lane}_${name}`]=spent;mark=now;activity?.progress();};
       await initialize();
       if(gpu.adapterInfo?.fallback)throw Error("No hardware GPU is available.");
       gpu.resetSession(job.id);
@@ -197,17 +234,12 @@
       const {width,height}=job;
       // Reserve all full-frame finishing scratch before admitting the creative
       // graph. It can choose its existing tiled route within the remainder.
-      const filmPixels=width*height,outputPixels=job.output[0]*job.output[1];
       if([...job.output,...(job.photo_output||job.output)].some(value=>value>gpu.device.limits.maxTextureDimension2D))
         throw Error("Framed output exceeds the GPU texture limit.");
       // Count the largest live finishing stage, including the two-pass resize
       // and six float scratch images used by sharpening. An unsharpened export
       // must not be refused for sharpening buffers it never allocates.
-      const resizeBytes=(width!==job.output[0]||height!==job.output[1])
-        ?16*(filmPixels+job.output[0]*height+outputPixels):0;
-      const reserve=job.streamed ? filmPixels*8+width*32*16*2+32*1024*1024 :
-        Math.max(filmPixels*24,resizeBytes,
-          outputPixels*(job.finishing.sharpening==="off"?32:96))+(job.framing?outputPixels*16:0)+32*1024*1024;
+      const reserve=HDRGpuDeliveryFinishing.reservation(job);
       if(reserve>job.budget*.8)throw Error("GPU delivery finishing exceeds the available memory budget.");
       const lease=await fetch(`/api/delivery/gpu/${job.id}/reserve`,{method:"POST",
         headers:{"Content-Type":"application/json"},body:JSON.stringify({bytes:job.budget})});
@@ -305,11 +337,12 @@
       await complete({error:error.message}).catch(()=>{});
       await pause(100);
     }finally{
-      identity=null;finishing?.destroy();gpu?.resetSession(null);
+      activity?.stop();activity=null;identity=null;finishing?.destroy();gpu?.resetSession(null);
     }
   }
   for(;;){
     try{
+      if(stalled)await new Promise(()=>{});
       const response=await fetch("/api/delivery/gpu/next");if(!response.ok)throw Error("Delivery queue unavailable.");
       const job=await response.json();
       if(!job){await pause(50);continue;}
