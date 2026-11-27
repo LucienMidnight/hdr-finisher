@@ -195,3 +195,5 @@ Reopening an existing RAW grade can make deep shadows darker or change their
 colour/noise even though its saved sliders are unchanged. Old clipped previews
 are regenerated. X-Trans demosaicing remains on the older unsigned decoder;
 signed development and its end-to-end delivery checks are not yet release-qualified.
+
+TIFF import honours all eight Orientation tag values in both Library and full-resolution loading. Embedded RGB ICC profiles on 8-bit and 16-bit integer TIFFs are applied to the samples, preserving 16-bit conversion precision rather than guessing from the profile name. Invalid, non-RGB and floating-point TIFF ICC encodings require an explicit source colour choice. This can correct the appearance of TIFFs previously interpreted by profile name alone.

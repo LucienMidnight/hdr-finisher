@@ -12,7 +12,7 @@ from .models import SourceInterpretationOverride, SourceImageDescriptor, SourceR
 from .import_defaults import starting_adjustments
 from .source_luminance import describe_source_luminance
 
-VERSION = "library-rgb-reduced-v5"
+VERSION = "library-rgb-reduced-v6"
 
 
 
@@ -45,9 +45,15 @@ def assumed_interpretation(path, override=None):
         with tifffile.TiffFile(path) as tif:
             page = tif.pages[0]
             tag = page.tags.get("InterColorProfile") or page.tags.get("ICCProfile")
+            if tag is not None and np.dtype(page.dtype) in (np.dtype("uint8"), np.dtype("uint16")):
+                try:
+                    from PIL import ImageCms
+                    from io import BytesIO
+                    if ImageCms.ImageCmsProfile(BytesIO(tag.value)).profile.xcolor_space.strip() == "RGB":
+                        return None
+                except (OSError, ValueError):
+                    pass
             declared = loader._classify_icc_profile_name(loader._read_icc_profile_name(tag.value)) if tag is not None else None
-            if declared is not None and declared not in loader.UNRESOLVED_PROFILES:
-                return None
             return assumed_for(np.dtype(page.dtype).kind == "f", declared=declared)
     if suffix == ".exr":
         import OpenEXR

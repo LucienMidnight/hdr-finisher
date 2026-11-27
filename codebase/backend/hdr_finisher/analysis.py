@@ -96,6 +96,13 @@ def classify_hdr(
         classification = HDRClassification.SDR_ONLY
         badge = "No HDR gain map or transfer metadata detected. Treating this JPEG as SDR."
         latitude = SourceLatitude.MEDIUM
+    elif metadata.get("icc_converted_to_linear_srgb") and not metadata.get("user_override"):
+        # The ICC transform's output is linear, but the integer TIFF remains a
+        # finished display-referred picture, not an ambiguous scene-linear file.
+        classification = HDRClassification.SDR_ONLY
+        badge = "Embedded TIFF ICC profile applied. Treating this picture as SDR."
+        needs_override = False
+        latitude = SourceLatitude.NARROW
     elif peak > 1.0:
         classification = HDRClassification.HDR_TRUE
         badge = f"True HDR detected, peak {compute_peak_stops(image):.2f} stops above diffuse white."
