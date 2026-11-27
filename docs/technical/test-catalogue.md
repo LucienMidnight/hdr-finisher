@@ -11,15 +11,15 @@ The selection depends on changed areas since the last tag. Core is the smallest 
 | Selection | Drivers | Windows minutes + retry | Windows unknown | Mac minutes + retry | Mac unknown |
 | --- | ---: | ---: | ---: | ---: | ---: |
 | Core | 34 | 0.00 + 0.00 | 34 | 5.00 + 0.00 | 33 |
-| All areas | 124 | 3.56 + 0.00 | 123 | 5.30 + 0.00 | 122 |
-| export-proof | 54 | 0.00 + 0.00 | 54 | 5.00 + 0.00 | 53 |
+| All areas | 124 | 17.30 + 0.00 | 122 | 5.30 + 0.00 | 122 |
+| export-proof | 54 | 13.74 + 0.00 | 53 | 5.00 + 0.00 | 53 |
 | film | 44 | 3.56 + 0.00 | 43 | 5.00 + 0.00 | 43 |
 | lens | 37 | 0.00 + 0.00 | 37 | 5.00 + 0.00 | 36 |
 | library | 68 | 0.00 + 0.00 | 68 | 5.00 + 0.00 | 67 |
-| masks | 52 | 0.00 + 0.00 | 52 | 5.00 + 0.00 | 51 |
+| masks | 52 | 13.74 + 0.00 | 51 | 5.00 + 0.00 | 51 |
 | detail | 41 | 0.00 + 0.00 | 41 | 5.30 + 0.00 | 39 |
 | geometry | 37 | 0.00 + 0.00 | 37 | 5.00 + 0.00 | 36 |
-| preview | 62 | 0.00 + 0.00 | 62 | 5.00 + 0.00 | 61 |
+| preview | 62 | 13.74 + 0.00 | 61 | 5.00 + 0.00 | 61 |
 | ui | 67 | 0.00 + 0.00 | 67 | 5.00 + 0.00 | 66 |
 
 ## Everyday tests
@@ -731,7 +731,7 @@ HSL real-device preview, stage picker, wheel, channel/preset/local authoring and
 
 Checks neutral, global and local HSL selection delivery in one isolated app session using --all, retaining preview/export and selection assertions. A failure usually means HSL delivery or selection containment diverged; inspect the first assertion and captured output. The earlier Mac report timed the pre-trim recipe and does not estimate this invocation.
 
-- Expected minutes: Windows unknown; Mac unknown.
+- Expected minutes: Windows 13.739; Mac unknown.
 - Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal. Curated <photosRoot>/HDR Test Images corpus; verify codebase/tests/test-photos.manifest.json; resolve through machine settings. Source inputs/fixtures referenced by driver (originals read-only): D:/Photos/HDR Test Images/IMG_0114.CR2; IMG_0114.CR2.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
@@ -2260,7 +2260,7 @@ Actual HSL photo picking and wheel gestures, Local hue sampling/gizmo pixels, pe
 
 Checks neutral, global and local HSL selection delivery in one isolated app session using --all, retaining preview/export and selection assertions. A failure usually means HSL delivery or selection containment diverged; inspect the first assertion and captured output. The earlier Mac report timed the pre-trim recipe and does not estimate this invocation.
 
-- Expected minutes: Windows unknown; Mac unknown.
+- Expected minutes: Windows 13.739; Mac unknown.
 - Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal. Curated <photosRoot>/HDR Test Images corpus; verify codebase/tests/test-photos.manifest.json; resolve through machine settings. Source inputs/fixtures referenced by driver (originals read-only): D:/Photos/HDR Test Images/IMG_0114.CR2; IMG_0114.CR2.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
@@ -3349,7 +3349,7 @@ HSL real-device preview, stage picker, wheel, channel/preset/local authoring and
 
 Checks neutral, global and local HSL selection delivery in one isolated app session using --all, retaining preview/export and selection assertions. A failure usually means HSL delivery or selection containment diverged; inspect the first assertion and captured output. The earlier Mac report timed the pre-trim recipe and does not estimate this invocation.
 
-- Expected minutes: Windows unknown; Mac unknown.
+- Expected minutes: Windows 13.739; Mac unknown.
 - Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal. Curated <photosRoot>/HDR Test Images corpus; verify codebase/tests/test-photos.manifest.json; resolve through machine settings. Source inputs/fixtures referenced by driver (originals read-only): D:/Photos/HDR Test Images/IMG_0114.CR2; IMG_0114.CR2.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.

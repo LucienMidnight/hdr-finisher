@@ -33,6 +33,21 @@
         "lastSampleKey": "2026-11-27T06:41:24.074Z|tests__film-stock-parity.js.1.1795761470492.log"
       }
     },
+    "tests/hsl-selection-delivery.js": {
+      "win": {
+        "medianSeconds": 824.339,
+        "lastSeconds": 824.339,
+        "sampleCount": 1,
+        "sampleSeconds": [
+          824.339
+        ],
+        "revision": "eeba5df51d65a8052ba7dd5ee4e0a08671d4f627",
+        "date": "2026-11-27",
+        "exitCode": 0,
+        "source": "release runner history (complete attempts, including failures)",
+        "lastSampleKey": "2026-11-27T06:57:35.135Z|tests__hsl-selection-delivery.js.1.1795761830795.log"
+      }
+    },
     "tests/library-gpu-raw-single.js": {
       "mac": {
         "medianSeconds": 300,
