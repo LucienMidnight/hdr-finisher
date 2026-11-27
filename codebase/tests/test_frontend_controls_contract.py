@@ -51,7 +51,6 @@ def test_grading_ui_exposes_variable_equalizer_targeting_and_bypass_controls() -
     assert "--bypass-icon-visible: var(--accent)" in css
     assert "--bypass-icon-hidden: var(--quiet)" in css
     assert 'id="local-bypass"' not in html
-    assert html.count("data-zone-hover=") == 6
     assert "Highlight Compression" in html
     assert 'data-group="hdr-highlights"' in html
     assert 'data-section-path="hdr.highlight_section_enabled"' in html

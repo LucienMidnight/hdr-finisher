@@ -1,6 +1,136 @@
 const assert = require("node:assert/strict");
 const { chromium } = require("playwright");
 const fs = require("node:fs"), path = require("node:path");
+const { createLocalAdjustment } = require("./helpers/local-adjustments");
+async function verifyToneHierarchy(page) {
+ const review = path.resolve("output/review/tone-slider-hierarchy");
+ const capture = process.argv.includes("--tone-review");
+ const measurement = {};
+ const measure = (panel) => panel.evaluate(element => {
+  const box = node => node.getBoundingClientRect();
+  const typography = node => {
+   const {fontFamily, fontSize, fontWeight, fontVariantNumeric} = getComputedStyle(node);
+   return [fontFamily, fontSize, fontWeight, fontVariantNumeric];
+  };
+  return [...element.querySelectorAll(".tone-primary")].map(row => {
+   const label = row.querySelector("label"), output = row.querySelector("output");
+   const rail = row.querySelector(".slider-track"), input = row.querySelector('input[type="range"]');
+   return {
+    label: label.textContent, x: box(rail).x, labelX: box(label).x, width: box(rail).width, trackHeight: box(rail).height,
+    hitHeight: box(input).height, labelFont: typography(label), valueFont: typography(output),
+    stacked: box(label).bottom <= box(rail).top,
+   };
+  });
+ });
+ const snapshot = async (panel, name) => {
+  if (!capture) return;
+  await panel.screenshot({path: path.join(review, name + ".png")});
+ };
+ const globalTone = lane => page.locator('[data-group="' + lane + '-tone"]');
+ const localLight = page.locator('[data-local-grade-section="light"]');
+ const heading = panel => panel.locator(".tone-range-heading").first();
+ const change = (input, value) => input.evaluate((element, value) => {
+  element.value = value;
+  element.dispatchEvent(new Event("input", {bubbles: true}));
+  element.dispatchEvent(new Event("change", {bubbles: true}));
+ }, value);
+
+ const hdr = globalTone("hdr");
+ await page.locator("#grade-mode-global").click();
+ if (await hdr.locator(".group-toggle").getAttribute("aria-expanded") === "false") await hdr.locator(".group-toggle").click();
+ const trigger = heading(hdr);
+ assert.equal(await trigger.getAttribute("aria-expanded"), "false", "Tone ranges should start closed.");
+ const rangeId = await trigger.getAttribute("aria-controls");
+ const range = page.locator("#" + rangeId);
+ const width = range.locator('input[id$="-width"]');
+ assert.equal(await range.isVisible(), false);
+ await trigger.focus();
+ assert.equal(await width.evaluate(input => { input.focus(); return document.activeElement === input; }), false,
+  "A closed Range must not receive focus.");
+ await page.keyboard.press("Enter");
+ assert.equal(await trigger.getAttribute("aria-expanded"), "true");
+ assert.equal(await range.isVisible(), true);
+ assert.equal(await heading(globalTone("sdr")).getAttribute("aria-expanded"), "true");
+ assert.equal(await heading(localLight).getAttribute("aria-expanded"), "true");
+ assert.equal(await hdr.locator('.tone-range-heading[aria-expanded="true"]').count(), 1);
+ for (const target of [hdr.locator("#hdr-shadows"), trigger, width]) {
+  await target.hover();
+  await page.waitForFunction(() => HDRTonePreview.selection()?.zone === "shadows" && !HDRTonePreview.selection()?.local);
+ }
+ const defaultSummary = await trigger.locator(".tone-range-summary").textContent();
+ await change(hdr.locator("#hdr-shadows"), 10);
+ await change(width, 6);
+ assert.notEqual(await trigger.locator(".tone-range-summary").textContent(), defaultSummary);
+ assert(await trigger.locator(".tone-range-name").evaluate(el => getComputedStyle(el, "::before").content !== "none"),
+  "A changed Range needs a visible dot.");
+ await hdr.locator("#hdr-shadows").dblclick();
+ assert.equal(Number(await hdr.locator("#hdr-shadows").inputValue()), 0);
+ assert.equal(Number(await width.inputValue()), 6, "Resetting a main slider must leave its Range alone.");
+ await width.dblclick();
+ assert.equal(Number(await width.inputValue()), 5);
+ assert.equal(await trigger.locator(".tone-range-summary").textContent(), defaultSummary);
+ assert.equal(await trigger.locator(".tone-range-name").evaluate(el => getComputedStyle(el, "::before").content), "none");
+ await trigger.focus();
+ await page.keyboard.press("Space");
+ assert.equal(await trigger.getAttribute("aria-expanded"), "false");
+ assert.equal(await range.isVisible(), false);
+ assert.equal(await heading(globalTone("sdr")).getAttribute("aria-expanded"), "false");
+ assert.equal(await heading(localLight).getAttribute("aria-expanded"), "false");
+
+ await createLocalAdjustment(page, "linear_gradient");
+ if (capture) fs.mkdirSync(review, {recursive: true});
+ for (const theme of ["default-light", "modern-dark"]) {
+  await page.evaluate(theme => {
+   HDRApplicationShell.openSettings("appearance");
+   document.querySelector('[data-theme-option="' + theme + '"]').click();
+  }, theme);
+  await page.locator("#settings-close").click();
+  const rows = measurement[theme] = {};
+  for (const [name, panel, lane] of [
+   ["global-hdr-tone", hdr, "hdr"], ["global-sdr-tone", globalTone("sdr"), "sdr"], ["local-light", localLight, "hdr"],
+  ]) {
+   await page.evaluate(lane => switchLane(lane), lane);
+   await page.locator(name === "local-light" ? "#grade-mode-local" : "#grade-mode-global").click();
+   if (name !== "local-light" && await panel.locator(".group-toggle").getAttribute("aria-expanded") === "false") {
+    await panel.locator(".group-toggle").click();
+   }
+   await page.evaluate(() => document.fonts.ready);
+   assert(await panel.isVisible(), name + " must be visible before measuring.");
+   rows[name] = await measure(panel);
+   assert.equal(rows[name].length, name === "local-light" ? 7 : 8);
+   await snapshot(panel, theme + "-" + name);
+   const button = heading(panel);
+   await button.click();
+   if (name === "local-light") {
+    await button.hover();
+    await page.waitForFunction(() => HDRTonePreview.selection()?.zone === "shadows" && HDRTonePreview.selection()?.local);
+   }
+   const sliders = await panel.locator(".tone-range-body:visible").locator('input[type="range"]').evaluateAll(inputs =>
+    inputs.map(input => ({
+     x: input.getBoundingClientRect().x, trackHeight: input.closest(".range-shell").querySelector(".slider-track").getBoundingClientRect().height,
+     width: input.getBoundingClientRect().width, hitHeight: input.getBoundingClientRect().height,
+    })));
+   assert.equal(sliders.length, 2);
+   assert(sliders.every(row => row.trackHeight < rows[name][0].trackHeight && row.hitHeight === rows[name][0].hitHeight
+    && row.x > rows[name][0].x && row.width < rows[name][0].width), JSON.stringify({name, sliders, primary: rows[name][0]}));
+   assert.deepEqual(await measure(panel), rows[name], "Opening Range must not resize the main rails.");
+   await snapshot(panel, theme + "-" + name + "-range-open");
+   await button.click();
+  }
+  const reference = rows["global-hdr-tone"][0];
+  for (const row of Object.values(rows).flat()) {
+   assert(row.stacked, JSON.stringify(row));
+   for (const dimension of ["x", "labelX", "width", "trackHeight", "hitHeight"]) {
+    assert(Math.abs(row[dimension] - reference[dimension]) < 1, JSON.stringify({dimension, row, reference}));
+   }
+   assert.deepEqual(row.labelFont, reference.labelFont);
+   assert.deepEqual(row.valueFont, reference.valueFont);
+  }
+ }
+ if (capture) fs.writeFileSync(path.join(review, "computed-tone-hierarchy.json"), JSON.stringify(measurement, null, 2) + "\n");
+ console.log("PASS: Global/Local Tone rail alignment, keyboard disclosure, live Range summary, reset isolation and zone preview in light/dark.");
+}
+
 (async () => {
  const browser = await chromium.launch(), page = await browser.newPage();
  const errors = []; page.on("pageerror", e => errors.push(e.message));
@@ -63,6 +193,7 @@ const fs = require("node:fs"), path = require("node:path");
   await page.screenshot({path:path.join(output,'compact-local.png')});
   await page.evaluate(()=>document.querySelectorAll('[data-layout-fixture]').forEach(row=>row.remove()));
   await page.screenshot({path:path.join(output,'local.png')});
+  await verifyToneHierarchy(page);
   await page.locator('#grade-mode-retouch').click();
   // Retouch fits without scrolling. The rail still reserves and paints its track.
   const railChrome = await page.evaluate(() => {

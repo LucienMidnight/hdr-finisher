@@ -668,7 +668,8 @@ html.desktop-shell .window-menu-popover button[role="menuitemradio"][aria-checke
 :root .control-group-header:has(.group-preset) .group-reset { grid-column: 2; order: 2; }
 :root .control-group-header:has(.group-preset) .group-preset { grid-column: 3; order: 3; opacity: 1; justify-self: end; }
 :root .control-group.modified .group-reset::after { content: none; }
-:root .control-group.modified .group-reset::before { content: ""; display: inline-block; vertical-align: middle; margin-right: var(--space-4); width: 5px; height: 5px; border-radius: var(--radius-pill); background: var(--muted); }
+:root .control-group.modified .group-reset::before,
+:root .tone-range-heading.modified .tone-range-name::before { content: ""; display: inline-block; vertical-align: middle; margin-right: var(--space-4); width: 5px; height: 5px; border-radius: var(--radius-pill); background: var(--muted); }
 :root :is(.window-menu-popover button, .window-menu-trigger, .unified-menu-button):hover:not(:disabled) { background: var(--plate-up-hover); }
 
 /* W7: only the shared, viewport-bounded top-layer controller paints help. */
@@ -707,4 +708,23 @@ html.desktop-shell .window-menu-popover button[role="menuitemradio"][aria-checke
  :root select option:disabled { color: var(--muted); }
  :root select option::checkmark { color: var(--accent-strong); }
  :root select optgroup { color: var(--muted); font: inherit; }
+}
+
+/* Global Tone and Local Light use the same instrument rails and typography. */
+:root .tone-primary .range-shell input[type="range"] {
+  height: var(--instrument-slider-hit-h);
+}
+:root .tone-range-body .compact-subrail > .range-shell {
+  margin-bottom: 0;
+}
+:root .tone-range-body .compact-subrail > .control-heading label,
+:root .tone-range-body .compact-subrail > .control-heading output {
+  font: var(--font-weight-regular) var(--font-size-min)/var(--line-height-tight) var(--font-body);
+}
+:root .tone-range-body .compact-subrail > .control-heading label {
+  color: var(--muted);
+}
+:root .tone-range-body .compact-subrail .slider-fill {
+  top: calc((var(--instrument-slider-hit-h) - var(--instrument-compact-slider-track-h)) / 2 + 1px);
+  height: calc(var(--instrument-compact-slider-track-h) - 2px);
 }

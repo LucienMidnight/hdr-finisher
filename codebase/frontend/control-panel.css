@@ -92,6 +92,10 @@ body[data-grade-mode="local"] .sdr-match-entire-actions { display: none; }
 .brush-paint-erase { display: flex; margin-bottom: var(--space-12); }
 .brush-paint-erase > button { flex: 1; }
 .local-grade-folder-body .local-grade-section { padding: 0 var(--space-10); border: 0; }
+.local-grade-folder-body [data-local-grade-section="light"] {
+  gap: var(--space-8);
+  padding-inline: var(--space-16);
+}
 .local-grade-folder-body .local-grade-controls { display: block; padding: 0; }
 .local-grade-folder-body .local-adjustment-opacity { padding: var(--space-12) var(--space-10); }
 

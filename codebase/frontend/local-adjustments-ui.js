@@ -355,6 +355,8 @@ function bindLocalAdjustmentEvents() {
       if (!local) return;
       setValueByPath(local[`${state.currentView}_grade`], control.dataset.localGrade, Number(control.value));
       updateLocalGradeOutput(control.dataset.localGrade, Number(control.value));
+      const zone = control.closest(".tone-range-body")?.parentElement;
+      if (zone) renderToneRange(zone, local[`${state.currentView}_grade`], defaultLocalGrade(state.currentView));
       hideLocalMaskOverlayForGradePreview();
       scheduleLocalPreview();
     });
@@ -823,6 +825,10 @@ function renderLocalAdjustments() {
       control.value = String(getValueByPath(grade, control.dataset.localGrade));
       updateLocalGradeOutput(control.dataset.localGrade, Number(control.value));
     });
+    const baseline = defaultLocalGrade(state.currentView);
+    for (const zone of document.querySelectorAll('[data-local-grade-section="light"] .tone-zone')) {
+      renderToneRange(zone, grade, baseline);
+    }
     renderMaskTreeEditor(local);
   } else if (els.localMaskTreeSummary) {
     els.localMaskTreeSummary.textContent = "";

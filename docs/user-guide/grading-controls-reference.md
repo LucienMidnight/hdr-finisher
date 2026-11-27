@@ -223,6 +223,11 @@ Softness and Microcontrast moved to the Detail section:
 
 ## Global and Local Tone ranges in HDR and SDR
 
+Open **Range** below Shadows, Midtones or Highlights to reveal Center and
+Width. The closed heading shows both values in EV. Range starts closed when
+the app opens and stays open or closed for that zone as you switch between
+HDR, SDR, Global and Local.
+
 The former Lift/Gamma/Gain controls are replaced by the five-control Tone block
 in the HDR table. All five strengths are −100…+100. Shadows/Midtones/Highlights
 use Center/Width targeting; Blacks/Whites are narrow fixed endpoints. Local

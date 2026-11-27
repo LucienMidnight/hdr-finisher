@@ -162,7 +162,9 @@ function assert(condition, message) {
     assert(await activeProof.getAttribute("tabindex") === "0", "Proof rendition segment did not move its roving tab stop.");
     await page.locator("#proof-preview-switch").evaluate((rail) => rail.classList.add("hidden"));
 
-    await page.locator('[data-group="hdr-zones"] .group-toggle').click();
+    await page.locator('[data-group="hdr-tone"] .group-toggle').click();
+    const shadowsRange = page.locator('[aria-controls="hdr-shadows-range"]');
+    await shadowsRange.click();
     const setRange = async (selector, value) => {
       await page.locator(selector).evaluate((control, next) => {
         control.value = String(next);
@@ -170,24 +172,25 @@ function assert(condition, message) {
         control.dispatchEvent(new Event("change", { bubbles: true }));
       }, value);
     };
-    await setRange("#hdr-lift", 0.1);
-    await setRange("#hdr-lift-range", 6);
-    await page.locator("#hdr-lift").dblclick();
-    await page.waitForFunction(() => Number(document.querySelector("#hdr-lift")?.value) === 0);
-    assert(Number(await page.locator("#hdr-lift-range").inputValue()) === 6, "Resetting the parent rail changed its compact child.");
-    await page.locator("#hdr-lift-range").dblclick();
-    await page.waitForFunction(() => Number(document.querySelector("#hdr-lift-range")?.value) === 4);
-    assert(Number(await page.locator("#hdr-lift").inputValue()) === 0, "Resetting the compact child changed its parent rail.");
-    await setRange("#hdr-lift", 0.1);
-    await setRange("#hdr-lift-range", 6);
-    await page.locator('[data-lane-panel="hdr"] [data-zone-hover="lift"]').focus();
-    assert(await page.evaluate(() => state.scopeZoneOverlay?.zone === "lift" && state.scopeZoneOverlay?.lane === "hdr"), "Compact targeting controls did not expose their scope influence on focus.");
+    await setRange("#hdr-shadows", 10);
+    await setRange("#hdr-shadows-width", 6);
+    await page.locator("#hdr-shadows").dblclick();
+    await page.waitForFunction(() => Number(document.querySelector("#hdr-shadows")?.value) === 0);
+    assert(Number(await page.locator("#hdr-shadows-width").inputValue()) === 6, "Resetting the parent rail changed its compact child.");
+    await page.locator("#hdr-shadows-width").dblclick();
+    await page.waitForFunction(() => Number(document.querySelector("#hdr-shadows-width")?.value) === 5);
+    assert(Number(await page.locator("#hdr-shadows").inputValue()) === 0, "Resetting the compact child changed its parent rail.");
+    await setRange("#hdr-shadows", 10);
+    await setRange("#hdr-shadows-width", 6);
+    await shadowsRange.focus();
+    assert(await page.evaluate(() => HDRTonePreview.selection()?.zone === "shadows" && HDRTonePreview.selection()?.lane === "hdr"), "Compact targeting controls did not expose their scope influence on focus.");
     await page.locator(".product-name").focus().catch(() => null);
-    await page.locator('[data-lane-panel="hdr"] [data-zone-hover="lift"]').evaluate((target) => target.blur());
-    await page.waitForFunction(() => state.scopeZoneOverlay === null);
-    await page.locator('[data-reset-group="hdr-zones"]').click();
-    await page.waitForFunction(() => Number(document.querySelector("#hdr-lift")?.value) === 0 && Number(document.querySelector("#hdr-lift-range")?.value) === 4);
+    await shadowsRange.evaluate((target) => target.blur());
+    await page.waitForFunction(() => HDRTonePreview.selection() === null);
+    await page.locator('[data-reset-group="hdr-tone"]').click();
+    await page.waitForFunction(() => Number(document.querySelector("#hdr-shadows")?.value) === 0 && Number(document.querySelector("#hdr-shadows-width")?.value) === 5);
 
+    await shadowsRange.click();
     await page.locator("#grade-mode-local").click();
 
     await createLocalAdjustment(page, "brush");
@@ -350,17 +353,16 @@ function assert(condition, message) {
     assert(await localGroup.getByText("Temperature", { exact: true }).isVisible(), "Color controls are hidden.");
     assert(await localGroup.getByText("Exposure", { exact: true }).isVisible(), "Light controls are hidden.");
     assert(await page.locator('[data-local-grade-tab]').count() === 0, "Nested Light/Color tabs are still rendered.");
-    const lightSliderGeometry = await page.locator('[data-local-grade-section="light"] [data-local-grade]').evaluateAll((controls) => controls.map((control) => ({
-      name: control.dataset.localGrade,
-      width: control.getBoundingClientRect().width,
-      compact: control.closest(".compact-subrail") !== null,
-      nested: control.closest(".slider-group-tile") !== null,
-    })));
-    const exposureGeometry = lightSliderGeometry.find((item) => item.name === "exposure");
-    const compactGeometry = lightSliderGeometry.filter((item) => item.compact);
-    assert(exposureGeometry.nested && !exposureGeometry.compact, `Exposure is not the standard parent rail: ${JSON.stringify(lightSliderGeometry)}`);
-    assert(compactGeometry.length === 5 && compactGeometry.every((item) => item.nested && item.width < exposureGeometry.width), `Light sub-rails are not compact and nested: ${JSON.stringify(lightSliderGeometry)}`);
-    assert(new Set(compactGeometry.map((item) => Math.round(item.width))).size === 1, `Compact sub-rails are not aligned: ${JSON.stringify(lightSliderGeometry)}`);
+    const light = page.locator('[data-local-grade-section="light"]');
+    const lightSliderGeometry = await light.locator('.tone-primary input[type="range"]').evaluateAll(controls => controls.map(control => {
+      const {x, width} = control.getBoundingClientRect();
+      return {x, width};
+    }));
+    assert(lightSliderGeometry.length === 7 && lightSliderGeometry[0].width > 0
+      && lightSliderGeometry.every(row => Math.abs(row.x - lightSliderGeometry[0].x) < 1
+        && Math.abs(row.width - lightSliderGeometry[0].width) < 1),
+      `Light peer rails are not aligned: ${JSON.stringify(lightSliderGeometry)}`);
+    assert(await light.locator(".tone-range-body:visible").count() === 0, "Light ranges should start closed.");
     const instrumentRows = await page.locator(".local-lane-folder .instrument-slider-control").evaluateAll((rows) => rows.map((row) => {
       const heading = row.querySelector(".control-heading") || row.querySelector(":scope > span");
       const shell = row.querySelector(":scope > .range-shell");
@@ -369,7 +371,7 @@ function assert(condition, message) {
       const shellBox = shell?.getBoundingClientRect();
       return {
         compact: row.classList.contains("compact-subrail"),
-        nested: row.closest(".slider-group-tile") !== null,
+        nested: row.closest(".slider-group-tile, .tone-range-body") !== null,
         fullWidth: Boolean(shellBox) && Math.abs(shellBox.x - rowBox.x) < 1 && Math.abs(shellBox.width - rowBox.width) < 1,
         stacked: Boolean(headingBox && shellBox) && shellBox.y >= headingBox.bottom - 0.5,
         visualMarks: shell?.querySelectorAll(".slider-ticks, .home-tick, .center-tick").length || 0,
@@ -513,38 +515,6 @@ function assert(condition, message) {
     });
     assert(primaryActionSurface.background.includes("linear-gradient"), `Primary action lost its material gradient: ${JSON.stringify(primaryActionSurface)}`);
     assert(!primaryActionSurface.shadow.includes("inset"), `Primary action retains a white inset edge: ${JSON.stringify(primaryActionSurface)}`);
-
-    const groupedZoneGeometry = await page.locator('[data-group="hdr-zones"] .slider-group-tile').evaluateAll((tiles) => tiles.map((tile) => ({
-      relationship: tile.querySelector(".slider-group-relationship")?.textContent.trim(),
-      parentCount: tile.querySelectorAll(":scope > .slider-group-parent").length,
-      childCount: tile.querySelectorAll(".compact-subrails .compact-subrail").length,
-      strayCompact: tile.parentElement.querySelectorAll(":scope > .compact-subrail").length,
-    })));
-    assert(groupedZoneGeometry.length === 3, `HDR zone tiles are missing: ${JSON.stringify(groupedZoneGeometry)}`);
-    assert(groupedZoneGeometry.every((tile) => tile.relationship === "Targeting" && tile.parentCount === 1 && tile.childCount === 2 && tile.strayCompact === 0), `HDR zone hierarchy is structurally incorrect: ${JSON.stringify(groupedZoneGeometry)}`);
-
-    const compactComponentGeometry = await page.evaluate(() => {
-      const inspect = (selector) => {
-        const row = document.querySelector(selector);
-        const input = row.querySelector('input[type="range"]');
-        const track = row.querySelector(".slider-track");
-        return {
-          hitHeight: getComputedStyle(input).height,
-          trackHeight: getComputedStyle(track).height,
-          nested: Boolean(row.closest(".slider-group-tile")),
-        };
-      };
-      return {
-        local: inspect('.local-light-tile .compact-subrail'),
-        global: inspect('[data-group="hdr-zones"] .compact-subrail'),
-        allNested: [...document.querySelectorAll(".compact-subrail")].every((row) => row.closest(".slider-group-tile")),
-        relationships: [...document.querySelectorAll(".slider-group-relationship")].map((node) => node.textContent.trim()),
-      };
-    });
-    assert(compactComponentGeometry.local.hitHeight === "28px" && compactComponentGeometry.global.hitHeight === "28px", `Compact pointer targets are below contract: ${JSON.stringify(compactComponentGeometry)}`);
-    assert(compactComponentGeometry.local.trackHeight === "7px" && compactComponentGeometry.global.trackHeight === "7px", `Global/local compact rails do not share visual geometry: ${JSON.stringify(compactComponentGeometry)}`);
-    assert(compactComponentGeometry.allNested, `A compact rail escaped its grouping tile: ${JSON.stringify(compactComponentGeometry)}`);
-    assert(compactComponentGeometry.relationships.includes("Tone distribution") && compactComponentGeometry.relationships.filter((label) => label === "Targeting").length === 6, `Relationship labels are missing or imply false coupling: ${JSON.stringify(compactComponentGeometry)}`);
 
     const siblingIsolation = await page.evaluate(() => {
       const local = selectedLocal();

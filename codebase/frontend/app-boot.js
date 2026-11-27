@@ -944,6 +944,7 @@ function bindEvents() {
   });
   bindCurveEditor();
   bindToneEqualizerEditor();
+  bindToneRangeDisclosures();
   bindZoneScopeOverlays();
 
   els.exportConfirmButton.addEventListener("click", exportCurrentSession);

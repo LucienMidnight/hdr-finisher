@@ -4598,7 +4598,7 @@ body[data-grade-mode="local"] .local-mask-overlay.editing {
   display: contents;
 }
 
-.local-grade-controls .control-row .control-heading label,
+.local-grade-controls .control-row:not(:is(.tone-primary, .tone-range-body .compact-subrail)) .control-heading label,
 .local-four-way label > span,
 .local-adjustment-opacity .control-heading label {
   grid-column: 1;
@@ -4623,7 +4623,7 @@ body[data-grade-mode="local"] .local-mask-overlay.editing {
   min-width: 0;
 }
 
-.local-grade-controls .control-row output,
+.local-grade-controls .control-row:not(:is(.tone-primary, .tone-range-body .compact-subrail)) output,
 .local-four-way label > output,
 .local-adjustment-opacity .control-heading output {
   grid-column: 3;
@@ -4644,7 +4644,7 @@ body[data-grade-mode="local"] .local-mask-overlay.editing {
   display: contents;
 }
 
-.local-lane-folder .local-grade-controls .control-heading label,
+.local-lane-folder .local-grade-controls .control-row:not(:is(.tone-primary, .tone-range-body .compact-subrail)) .control-heading label,
 .local-lane-folder .local-four-way label > span,
 .local-lane-folder .local-adjustment-opacity .control-heading label {
   color: var(--body);
@@ -4653,7 +4653,7 @@ body[data-grade-mode="local"] .local-mask-overlay.editing {
   text-transform: none;
 }
 
-.local-lane-folder .local-grade-controls output,
+.local-lane-folder .local-grade-controls .control-row:not(:is(.tone-primary, .tone-range-body .compact-subrail)) output,
 .local-lane-folder .local-adjustment-opacity output {
   color: var(--muted);
   font: var(--font-weight-semibold) var(--font-size-min)/var(--line-height-tight) var(--font-body);
@@ -7116,7 +7116,7 @@ input[type="range"]:focus-visible::-webkit-slider-thumb,
   opacity: .48;
 }
 
-/* Raised parent/sub-slider tile. Compact rails are legal only in this boundary. */
+/* Raised parent/sub-slider tile. Compact rails also serve Tone Range disclosures. */
 .slider-group-tile {
   display: grid;
   gap: var(--space-5);
@@ -7148,8 +7148,8 @@ input[type="range"]:focus-visible::-webkit-slider-thumb,
   gap: var(--space-1);
 }
 
-.slider-group-tile .compact-subrail,
-.slider-group-tile .compact-subrail.instrument-slider-control {
+:is(.slider-group-tile, .tone-range-body) .compact-subrail,
+:is(.slider-group-tile, .tone-range-body) .compact-subrail.instrument-slider-control {
   display: grid;
   grid-template-columns: 64px minmax(64px, 1fr) 58px;
   grid-template-rows: var(--instrument-slider-hit-h);
@@ -7158,11 +7158,11 @@ input[type="range"]:focus-visible::-webkit-slider-thumb,
   align-items: center;
 }
 
-.slider-group-tile .compact-subrail > .control-heading {
+:is(.slider-group-tile, .tone-range-body) .compact-subrail > .control-heading {
   display: contents;
 }
 
-.slider-group-tile .compact-subrail > .control-heading label {
+:is(.slider-group-tile, .tone-range-body) .compact-subrail > .control-heading label {
   grid-column: 1;
   grid-row: 1;
   overflow: hidden;
@@ -7172,7 +7172,7 @@ input[type="range"]:focus-visible::-webkit-slider-thumb,
   white-space: nowrap;
 }
 
-.slider-group-tile .compact-subrail > .control-heading output {
+:is(.slider-group-tile, .tone-range-body) .compact-subrail > .control-heading output {
   grid-column: 3;
   grid-row: 1;
   min-width: 0;
@@ -7182,28 +7182,28 @@ input[type="range"]:focus-visible::-webkit-slider-thumb,
   text-align: right;
 }
 
-.slider-group-tile .compact-subrail.modified > .control-heading output {
+:is(.slider-group-tile, .tone-range-body) .compact-subrail.modified > .control-heading output {
   color: var(--text);
 }
 
-.slider-group-tile .compact-subrail > .range-shell {
+:is(.slider-group-tile, .tone-range-body) .compact-subrail > .range-shell {
   grid-column: 2;
   grid-row: 1;
   width: 100%;
   height: var(--instrument-slider-hit-h);
 }
 
-.local-lane-folder .slider-group-tile .compact-subrail > .range-shell,
-.local-lane-folder .slider-group-tile .compact-subrail input[type="range"] {
+.local-lane-folder :is(.slider-group-tile, .tone-range-body) .compact-subrail > .range-shell,
+.local-lane-folder :is(.slider-group-tile, .tone-range-body) .compact-subrail input[type="range"] {
   height: var(--instrument-slider-hit-h);
 }
 
-.slider-group-tile .compact-subrail .slider-track {
+:is(.slider-group-tile, .tone-range-body) .compact-subrail .slider-track {
   top: calc((var(--instrument-slider-hit-h) - var(--instrument-compact-slider-track-h)) / 2);
   height: var(--instrument-compact-slider-track-h);
 }
 
-.slider-group-tile .compact-subrail .slider-fill {
+:is(.slider-group-tile, .tone-range-body) .compact-subrail .slider-fill {
   /* Half the standard rail's inset, matching this rail's half-height track. */
   --fill-inset: 1px;
   --fill-h-inset: 0.5px;
@@ -7211,18 +7211,18 @@ input[type="range"]:focus-visible::-webkit-slider-thumb,
   height: calc(var(--instrument-compact-slider-track-h) - 2px);
 }
 
-.slider-group-tile .compact-subrail input[type="range"]::-webkit-slider-runnable-track {
+:is(.slider-group-tile, .tone-range-body) .compact-subrail input[type="range"]::-webkit-slider-runnable-track {
   height: var(--instrument-compact-slider-track-h);
 }
 
-.slider-group-tile .compact-subrail input[type="range"]::-webkit-slider-thumb {
+:is(.slider-group-tile, .tone-range-body) .compact-subrail input[type="range"]::-webkit-slider-thumb {
   width: var(--instrument-compact-slider-thumb-w);
   height: var(--instrument-compact-slider-thumb-h);
   margin-top: calc((var(--instrument-compact-slider-track-h) - var(--instrument-compact-slider-thumb-h)) / 2);
 }
 
-.slider-group-tile .compact-subrail:hover input[type="range"]::-webkit-slider-thumb,
-.slider-group-tile .compact-subrail:focus-within input[type="range"]::-webkit-slider-thumb {
+:is(.slider-group-tile, .tone-range-body) .compact-subrail:hover input[type="range"]::-webkit-slider-thumb,
+:is(.slider-group-tile, .tone-range-body) .compact-subrail:focus-within input[type="range"]::-webkit-slider-thumb {
   width: var(--instrument-compact-slider-thumb-w);
 }
 
@@ -7240,8 +7240,41 @@ input[type="range"]:focus-visible::-webkit-slider-thumb,
   }
 }
 
-.local-light-tile {
-  margin-top: var(--space-2);
+.tone-zone {
+  display: grid;
+  min-width: 0;
+}
+
+.tone-range-heading {
+  display: flex;
+  align-items: center;
+  gap: var(--space-6);
+  width: 100%;
+  min-height: var(--compact-action-size);
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font: var(--font-weight-regular) var(--font-size-min)/var(--line-height-tight) var(--font-body);
+  text-align: left;
+  cursor: pointer;
+}
+
+.tone-range-summary {
+  margin-inline-start: auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tone-range-body {
+  margin-inline-start: var(--space-4);
+  padding-inline-start: var(--space-12);
+  border-inline-start: 1px solid var(--hairline);
+}
+
+.tone-range-body[hidden] {
+  display: none;
 }
 
 /* Recessed segments with a raised selected plate. */
@@ -8200,7 +8233,7 @@ body[data-workflow="import"] #viewer-status-dock { display: none; }
 .film-stage { border-top: 1px solid var(--hairline); margin: 0 -12px; min-width: 0; }
 .film-stage-heading { display: flex; align-items: center; gap: var(--space-6); width: 100%; min-height: 34px; padding: var(--space-6) var(--space-12); border: 0; background: transparent; color: var(--body); text-align: left; cursor: pointer; }
 .film-stage-triangle { width: 0; height: 0; border-left: 6px solid var(--muted); border-top: 4px solid transparent; border-bottom: 4px solid transparent; flex: none; }
-.film-stage-heading[aria-expanded="true"] .film-stage-triangle { transform: rotate(90deg); border-left-color: var(--accent-strong); }
+:is(.film-stage-heading, .tone-range-heading)[aria-expanded="true"] .film-stage-triangle { transform: rotate(90deg); border-left-color: var(--accent-strong); }
 .film-stage-name { font: var(--font-weight-semibold) var(--font-size-min) var(--font-body); text-transform: uppercase; letter-spacing: var(--tracking-label); flex: none; }
 .film-stage-summary { margin-left: auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; font: var(--font-size-min) var(--font-body); color: var(--muted); }
 .film-stage-mod { flex: none; font: var(--font-size-min) var(--font-body); color: var(--body); }

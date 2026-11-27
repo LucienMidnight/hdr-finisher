@@ -238,9 +238,16 @@ Runtime geometry is in `visual-tokens.css`: 9×20px ordinary satin thumb, 7×15p
 ### Parent and subordinate slider tiles
 
 - One raised tile and inset ring form the grouping boundary. The full-size parent appears first, followed by a divider, an honest relationship label, and compact child rails.
-- Use `Targeting` when independently stored Range/Pivot controls define the parent's zone. Use `Tone distribution` for the independent Local Light tone controls. Use `Applies to` only when the parent actually changes or distributes into its children.
+- Use `Targeting` for a raised tile with independently stored subordinate controls. Use `Applies to` only when the parent actually changes or distributes into its children.
 - Child rows use aligned fixed label and value columns around the compact rail. Default child values remain muted; modified values use primary ink plus structural modified state.
 - Visual hierarchy never invents data coupling. Child edits remain isolated unless the product model explicitly defines a coupled operation. Parent, child, and whole-group reset meanings remain distinct.
+
+### Tone Range disclosures
+
+- Global HDR and SDR Tone and Local Light use ordinary, full-width instrument sliders for all main controls. No tile surrounds the zone sliders and Local Light has no Tone distribution heading.
+- Shadows, Midtones and Highlights each get a quiet, initially closed Range disclosure. Use the Film Look triangle, muted sentence-case minimum-size text, the current Center and Width on the right, and the standard changed dot when either value differs from default.
+- When opened, the two compact rows sit beneath an indented hairline, without a raised tile, tinted well or relationship label. Keep the same compact track and pointer target as other subordinate rails.
+- Range disclosure state is shared per zone across both renditions and Global/Local for the session only. The heading and sliders keep the histogram range preview available.
 
 ### Toggle and segmented controls
 

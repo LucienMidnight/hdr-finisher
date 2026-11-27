@@ -17,10 +17,12 @@
   let proxyGeneration = null;
   const metrics = { frames: [], resources: null };
 
-  function target(element) {
+  function target(element, includeZoneHeading = true) {
     if (!(element instanceof Element)) return null;
     const row = element.closest(".control-row");
-    const input = element.matches("input[type=range]") ? element : row?.querySelector("input[type=range]");
+    const zone = includeZoneHeading ? element.closest("[data-zone-hover]") : null;
+    const input = element.matches("input[type=range]") ? element
+      : row?.querySelector("input[type=range]") || zone?.querySelector(".tone-primary input[type=range]");
     const local = input?.dataset.localGrade;
     const match = model.control(local || input?.dataset.path);
     return match && !input.disabled ? { ...match, input, local: Boolean(local), lane: match.lane || state.currentView } : null;
@@ -195,7 +197,7 @@
   document.addEventListener("focusin", event => { hovered = target(event.target); wake(); }, true);
   document.addEventListener("focusout", event => { if (!dragging) hovered = target(event.relatedTarget); wake(); }, true);
   document.addEventListener("pointerdown", event => {
-    const selected = target(event.target);
+    const selected = target(event.target, false);
     if (event.button !== 0 || !selected) return;
     dragging = selected;
     clipping = event.altKey && ["blacks", "whites"].includes(selected.zone) && selected.dimension === "amount";

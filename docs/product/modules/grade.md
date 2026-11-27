@@ -1,3 +1,13 @@
+## November 27: make Tone sliders peers
+
+Steve approved full-width peer sliders in Global HDR and SDR Tone and in
+Local Light. Only Center and Width are subordinate. Shadows, Midtones and
+Highlights each have a quiet Range disclosure with a live EV summary, a changed
+dot and the existing histogram range preview. The disclosure starts closed and
+is shared per zone across both renditions and Global/Local for the session.
+Opening it does not edit the grade or save anything into a project or preset.
+Slider values, defaults, resets, undo and Match are unchanged.
+
 ## November 27: one scale for HDR and SDR Curves
 
 Steve approved the same settings across both renditions and gentler tonal
