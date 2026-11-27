@@ -39,8 +39,7 @@ backend_executable="$codebase_dir/dist/HDR Finisher Backend/HDR Finisher Backend
 [[ -x "$backend_executable" ]] || { echo "PyInstaller did not produce the Linux backend executable." >&2; exit 1; }
 
 package_version="$(node -p "require('$desktop_dir/package.json').version")"
-sidecar_output="$(HDR_FINISHER_DESKTOP_SECRET=build-check HDR_FINISHER_DESKTOP_CONTROL_SECRET=build-check "$backend_executable" --desktop-sidecar --parent-pid 999999999)"
-grep -q "\"backend_version\":\"$package_version\"" <<<"$sidecar_output" || { echo "Packaged backend version/startup check failed." >&2; exit 1; }
+timeout 90 "$python_bin" tools/check_packaged_backend.py "$backend_executable" "$package_version"
 backend_ldd="$(ldd "$backend_executable" 2>&1 || true)"
 if grep -q "not found" <<<"$backend_ldd"; then
   echo "The packaged backend has missing ELF dependencies:" >&2
