@@ -25,7 +25,456 @@ The selection depends on changed areas since the last tag. Core is the smallest 
 ## Everyday tests
 
 <!-- everyday-inventory-include -->
-**Pending include:** `codebase/tests/inventory.json` (everyday-test inventory worker). Regenerate when it arrives.
+Source: `codebase/tests/inventory.json`. Seconds are summed case time, not parallel suite wall time. Unknown Mac values remain unknown.
+
+| File | Purpose | Cases | Windows seconds | Mac seconds | Requirements / platform skips |
+| --- | --- | ---: | ---: | ---: | --- |
+| tests/analytic-mask-region.test.js | live gradient eligibility retains content and resampling fallbacks | 8 | 1.3626 | unknown |  |
+| tests/app-dialog.test.js | Escape in the open app dialog allows native cancel without reaching page controls | 2 | 0.0074 | unknown |  |
+| tests/appearance.test.js | accent choices survive preference sanitization and match browser normalization | 9 | 0.6906 | unknown |  |
+| tests/backend-log.test.js | slow diagnostic disk has bounded buffers and reports omitted records | 1 | 0.0349 | unknown |  |
+| tests/backend-startup.test.js | startup extends the idle deadline for genuine progress | 5 | 2.1308 | unknown |  |
+| tests/batch-grid.test.js | batch progress groups each photo without changing badge precedence or retained rows | 3 | 0.0202 | unknown |  |
+| tests/brush-native-feather.test.js | native Feather plans the export reduction grid and needs no viewport halo | 18 | 6.2618 | unknown |  |
+| tests/brush-native-shift.test.js | native Shift plan uses native sigma and the complete summed finite halo | 8 | 2.6311 | unknown |  |
+| tests/brush-regional-erase.test.js | paint qualification excludes erasers; native attenuation retains repaint and frame placement | 4 | 1.3391 | unknown |  |
+| tests/color-wheels.test.js | hdr: stationary puck is exact; pad input and drawing share radius | 2 | 0.0153 | unknown |  |
+| tests/control-panel-values.test.js | edited status ignores object key order and default roundoff but preserves real changes and array order | 4 | 0.4814 | unknown |  |
+| tests/cpu-preview-singleflight.test.js | Concurrent identical CPU preview requests share one computation | 6 | 0.6538 | unknown |  |
+| tests/curve-sampling.test.js | index.html samples the same bounded monotone curves | 3 | 0.0273 | unknown |  |
+| tests/delivery-activity.test.js | active exports can exceed 60 seconds indefinitely | 3 | 0.025 | unknown |  |
+| tests/delivery-memory-ack.test.js | delivery idle reports await the main process collection acknowledgement | 1 | 0.0032 | unknown |  |
+| tests/delivery-settings.test.js | delivery setting saves a CPU override and can turn it off | 2 | 0.0031 | unknown |  |
+| tests/denoise-analysis-singleflight.test.js | Denoise method controls recover after a rejected save, missing GPU, or expired preparation | 8 | 1.5808 | unknown |  |
+| tests/denoise-compare-presentation.test.js | hdr standard split-vertical waits for and presents its denoised comparison | 40 | 1.5048 | unknown |  |
+| tests/denoise-measurement-fit.test.js | CPU and GPU host fit sparse or repeated brightness observations alike | 11 | 0.0061 | unknown |  |
+| tests/denoise-ownership.test.js | Denoise off starts saving its own photo alongside a delayed redraw | 21 | 4.3132 | unknown |  |
+| tests/denoise-preview-presentation.test.js | panning back reveals a covering Clean Grain picture immediately and skips a stale grade | 49 | 7.889 | unknown |  |
+| tests/denoise-source-load-ownership.test.js | adaptive source loading survives a grading supersession while its source stays current | 3 | 0.0012 | unknown |  |
+| tests/desktop-memory-pressure.test.js | trims once per level rise, never at none | 15 | 0.0718 | unknown |  |
+| tests/desktop-window-state.test.js | native window-state events update maximize/restore image and accessible name together | 1 | 0.0013 | unknown |  |
+| tests/diagnostics.test.js | concurrent actions carry separate ids and preserve request headers | 4 | 0.0251 | unknown |  |
+| tests/direct-mask-coordination.test.js | Direct masks use the foreground coordinator and preserve local order | 4 | 0.0442 | unknown |  |
+| tests/display-driven-scale.test.js | Fit uses the source scale needed by the displayed aspect and crop | 5 | 6.8844 | unknown |  |
+| tests/edge-colour-range.test.js | non-finite input goes straight to CPU before reconstruction | 2 | 0.0038 | unknown |  |
+| tests/edit-sync-retry.test.js | refreshScopes() stops retrying with perspective draft | 14 | 0.7075 | unknown |  |
+| tests/editing-mask-cache.test.js | measurement and magnified masks cannot evict unchanged Fit bitmaps | 5 | 0.0033 | unknown |  |
+| tests/electron-initial-load.test.js | initial load completes when finish-load has passed but stop-loading is pending | 8 | 0.2107 | unknown |  |
+| tests/exact-peak-singleflight.test.js | Repeated robust highlight anchor measurements retain one dedicated set of intermediates | 18 | 3.117 | unknown |  |
+| tests/export-patterns.test.js | live exported filename expands every token and sanitizes reserved characters | 2 | 0.003 | unknown |  |
+| tests/film-character-data.test.js | bootstrap exactly matches source metadata and every default has confidence and source | 1 | 0.5265 | unknown |  |
+| tests/film-character.test.js | stock defaults update only inherited controls, including equal-value deliberate edits | 6 | 0.005 | unknown |  |
+| tests/film-parity-limits.test.js | strict byte cases fail mean drift and keep the existing p99.9 gate | 6 | 29.7391 | unknown |  |
+| tests/film-presets.test.js | all approved Looks replace previous choices and survive sparse save/reopen and stock changes | 6 | 0.0234 | unknown |  |
+| tests/film-select-preview.test.js | arrows are temporary; a changed commit makes exactly one undo to the opening value | 6 | 0.0058 | unknown |  |
+| tests/font-tokens.test.js | size tokens never go below the minimum | 3 | 1.3246 | unknown |  |
+| tests/geometry-math.test.js | neutral geometry is decided from geometry alone | 9 | 0.5885 | unknown |  |
+| tests/geometry-preview-recovery.test.js | capacity recovery requests the bounded route at the same reduced edge | 8 | 4.6646 | unknown |  |
+| tests/geometry-resample.test.js | the plan and Pillow bicubic reproduce the export geometry stage pixel for pixel | 3 | 0.2166 | unknown |  |
+| tests/gpu-allocator.test.js | the least recently used registered entry is evicted first | 8 | 0.5252 | unknown |  |
+| tests/gpu-brush-mask.test.js | qualified brush bitmap reuses cache without a CPU mask request | 7 | 4.5458 | unknown |  |
+| tests/gpu-budget.test.js | with nothing verified, Auto is the stated policy and says it is the fallback | 12 | 0.0269 | unknown |  |
+| tests/gpu-delivery-finishing.test.js | finish: job cleanup releases every allocation after failure at any setup or submission step | 10 | 8.5401 | unknown |  |
+| tests/gpu-delivery-lifetime.test.js | completed delivery buffers are unreachable before the next job, on success, failure, cancellation and hand-over | 1 | 5.2358 | unknown |  |
+| tests/gpu-param-layout.test.js | the global parameter list pins Tone endpoint allocations without moving existing positions | 8 | 0.8076 | unknown |  |
+| tests/gpu-pass-layout.test.js | local and mask pass slots have one frozen position list | 7 | 0.7192 | unknown |  |
+| tests/gpu-pass-probe.test.js | GPU pass probe leaves disabled encoders untouched | 3 | 0.0079 | unknown |  |
+| tests/grade-background-pause.test.js | Grade resumes when a canvas tool consumes pointerup | 8 | 0.5935 | unknown |  |
+| tests/grade-library-pictures.test.js | publication starts after saving, defers capture, and preserves release timing | 11 | 0.0321 | unknown |  |
+| tests/grade-module-collapse.test.js | opening a photo closes modules and RAW settings without changing adjustments | 1 | 0.625 | unknown |  |
+| tests/grade-open-loading.test.js | Grade loads immediately with an empty preview and locked controls, then returns to Library on failure | 15 | 4.0121 | unknown |  |
+| tests/grade-opening.test.js | a failed http presentation POST retries without another picture and success is idempotent | 5 | 0.0407 | unknown |  |
+| tests/grade-panel-order.test.js | both lanes interleave the same live sections without losing their identity or fold state | 3 | 0.0113 | unknown |  |
+| tests/grade-paste.test.js | paste selection preserves partial choices and inactive lane values | 18 | 0.7079 | unknown |  |
+| tests/grade-preview-settle.test.js | a zoomed tiled edit settles exactly once after edit sync and requests one scope | 14 | 11.1696 | unknown |  |
+| tests/grade-speed.test.js | only interactive and coarse requests reduce grain, never delivery or measurement | 14 | 1.8383 | unknown |  |
+| tests/grade-tile-reuse.test.js | catch-up reuses tiles when the saved revision is the only change | 6 | 1.2424 | unknown |  |
+| tests/grading-preset-files.test.js | saved grading presets round trip without changing settings | 7 | 0.0332 | unknown |  |
+| tests/grain-route.test.js | the help line appears only when the slower CPU route is used or the method cannot run | 21 | 4.7 | unknown |  |
+| tests/grain-work.test.js | CPU reason distinguishes eligibility and actual renderer refusal | 5 | 0.0167 | unknown |  |
+| tests/graph-scale.test.js | the declared contract names every module the sprint asks about | 16 | 0.0094 | unknown |  |
+| tests/highlight-anchor.test.js | a measurement on the denoised source is not reused for the original, or for another reconstruction | 11 | 0.0209 | unknown |  |
+| tests/highlight-delivery-floor.test.js | peak input and pasted state keep HDR headroom at 100-nit white | 3 | 0.0246 | unknown |  |
+| tests/hsl-packing.test.js | HSL packs every bounded channel and range without touching existing slots | 4 | 0.0087 | unknown |  |
+| tests/hsl-picker.test.js | HSL picks visible image coordinates in CSS points at 1x, including pan | 10 | 0.6859 | unknown |  |
+| tests/hsl-preview-pacing.test.js | Global HSL exact drag frames finish across newer slider inputs, only while enabled | 4 | 1.3976 | unknown |  |
+| tests/hsl-prototype.test.js | picker unions separated colors, subtracts, wraps red and rejects neutral samples | 9 | 0.0244 | unknown |  |
+| tests/hsl-resource-lifetime.test.js | HSL parameter buffers survive encoding and are destroyed with retired submission resources | 2 | 0.0016 | unknown |  |
+| tests/hsl-selection-delivery.test.js | combined HSL mode delivers neutral once and checks both isolated edits in full | 4 | 0.1547 | unknown |  |
+| tests/hsl-viewport.test.js | 2x selection requests the clipped viewport and places its cropped overlay in full-photo coordinates | 2 | 0.6616 | unknown |  |
+| tests/interpretation-ownership.test.js | late interpretation success cannot reinstall a replaced photo | 4 | 0.5874 | unknown |  |
+| tests/latest-work-queue.test.js | rapid submits collapse to one in-flight run plus the latest pending | 5 | 0.0025 | unknown |  |
+| tests/lens-filters.test.js | lens components agree with pinned upstream coefficients and preserve channel energy | 3 | 0.0042 | unknown |  |
+| tests/library-activity.test.js | remembered errors stay in Activity after workers finish; ignored errors stay quiet | 12 | 0.0336 | unknown |  |
+| tests/library-album-names.test.js | copy names are editable proposals, unique across album kinds and capitals | 1 | 0.0008 | unknown |  |
+| tests/library-build-previews.test.js | preview completion retains success when refreshing disk usage fails | 2 | 0.045 | unknown |  |
+| tests/library-collection-removal.test.js | manual: newest list wins | 22 | 1.1965 | unknown |  |
+| tests/library-culling-feedback.test.js | ratings appear before saving, keep their captured photo and survive older replies; errors roll back | 1 | 0.0217 | unknown |  |
+| tests/library-denoise-setup.test.js | identical Library source/lane/scale/geometry/model keeps scratch and selector; controls update | 9 | 0.0203 | unknown |  |
+| tests/library-detail-stream.test.js | full-size detail planes leave the GPU in bands of at most 64 MB, every byte in order | 3 | 0.7917 | unknown |  |
+| tests/library-editor.test.js | paste asks the leave gate for the exact open virtual copy and respects Cancel | 4 | 0.0157 | unknown |  |
+| tests/library-file-command-feedback.test.js | Delete uses the backend's Recycle Bin destination without changing its confirmation route | 7 | 0.0164 | unknown |  |
+| tests/library-finished-thumbnails.test.js | visible stored surfaces share one request and upload the original exact bytes | 8 | 0.0864 | unknown |  |
+| tests/library-folder-lifecycle.test.js | a previous folder stream cannot cancel the current folder paint timer | 2 | 0.0119 | unknown |  |
+| tests/library-fullscreen-selection.test.js | fullscreen keeps a multi-photo selection for when it closes | 6 | 0.0353 | unknown |  |
+| tests/library-gpu-raw.test.js | Library releases finished cache memory before accepting a RAW budget refusal | 30 | 1.792 | unknown |  |
+| tests/library-gpu-residency.test.js | Library session change keeps owned scenes while releasing ordinary proxies | 4 | 0.0152 | unknown |  |
+| tests/library-grants.test.js | one ask waits without HTTP retries, is promoted and cancels immediately | 23 | 0.5383 | unknown |  |
+| tests/library-idle-warmup.test.js | Library prepares every render and compute pipeline asynchronously when no names are given | 7 | 1.2534 | unknown |  |
+| tests/library-invalid-gpu-retry.test.js | an invalid result goes to the CPU at once and releases its reservation | 12 | 0.6115 | unknown |  |
+| tests/library-layout.test.js | large folders keep only intersecting rows in the virtual grid | 3 | 0.0012 | unknown |  |
+| tests/library-measure-viewport.test.js | folder discovery replaces the observed screen instead of waiting on rows that moved offscreen | 1 | 0.0023 | unknown |  |
+| tests/library-membership.test.js | whole library includes kept photos, selected and unpinned folder rules do not | 1 | 0.001 | unknown |  |
+| tests/library-memory-monitor.test.js | brief overrun passes and records peak, active type, duration and settling | 6 | 0.0023 | unknown |  |
+| tests/library-navigation.test.js | pin drag previews before/after insertion, persists that order and ignores photo drops | 1 | 0.0032 | unknown |  |
+| tests/library-overlays.test.js | switching Exposure preserves Focus request and switching Focus preserves Exposure | 27 | 2.425 | unknown |  |
+| tests/library-picture-errors.test.js | interpretation refusal stays blocked through folder rechecks, until explicitly cleared or source changes | 7 | 0.5381 | unknown |  |
+| tests/library-picture-shape.test.js | Library camera-raw-gpu keeps old shape during loading | 3 | 0.6775 | unknown |  |
+| tests/library-publication.test.js | a saved-thumbnail flight cannot publish after Undo | 8 | 0.0224 | unknown |  |
+| tests/library-query.test.js | Capture dates sort with unknown dates last in both directions | 8 | 0.0246 | unknown |  |
+| tests/library-quick-draw.test.js | quick work runs independently and selected sharp follows only the in-flight neighbour | 2 | 0.6928 | unknown |  |
+| tests/library-ram.test.js | ready surfaces and direct scenes share one byte ceiling | 2 | 0.0138 | unknown |  |
+| tests/library-ready-window.test.js | ready pictures reuse only their exact photo, grade, source and display identity | 8 | 0.0236 | unknown |  |
+| tests/library-refresh.test.js | Refresh acknowledges before the backend answers and rejects old front-end work at both boundaries | 9 | 0.0307 | unknown |  |
+| tests/library-request-queue.test.js | picture decoding leaves two browser connections available for pixels | 4 | 0.0106 | unknown |  |
+| tests/library-rgb-layout.test.js | RGB clamp flag occupies lensc.z without aliasing DNG tile dimensions | 1 | 0.0022 | unknown |  |
+| tests/library-rules.test.js | Offered values come from the photos on screen, with counts and honest gaps | 7 | 0.0174 | unknown |  |
+| tests/library-scene-scheduler.test.js | source demand merges, promotes selected work and stops only after its last user leaves | 24 | 0.1568 | unknown |  |
+| tests/library-scenes.test.js | quick stored-scene misses never start a source; a stopped request may prepare it | 54 | 3.1832 | unknown |  |
+| tests/library-selection.test.js | Ctrl toggles independently and Shift keeps its anchor in both directions | 3 | 0.0033 | unknown |  |
+| tests/library-single-ready.test.js | Single swaps the correct finished canvas and hides the previous grade while a replacement waits | 10 | 0.6632 | unknown |  |
+| tests/library-smart-rules.test.js | every filter field is available to the smart album and handles is not | 5 | 0.0569 | unknown |  |
+| tests/library-smart-worker.test.js | worker caches counts and choices, checks versions, and invalidates on index change | 1 | 0.0143 | unknown |  |
+| tests/library-tags-selection.test.js | filtering tags after selecting the last row makes Shift-click safe | 2 | 0.562 | unknown |  |
+| tests/library-tile-pool.test.js | completed surfaces are reused without disposal and the recent pool stays bounded | 3 | 0.0023 | unknown |  |
+| tests/library-upload.test.js | streamed detail bands transfer once, upload bounded pieces and release ownership | 2 | 0.0775 | unknown |  |
+| tests/library-zoom.test.js | 100% needs detail unless the Fit picture on screen is full size | 5 | 0.002 | unknown |  |
+| tests/local-adjustment-drafts.test.js | tool clicks create selected unused drafts; another type converts and the lit tool creates anew | 5 | 1.156 | unknown |  |
+| tests/local-detail-passes.test.js | only shader-active Texture and Sharpen need the packed band pair | 3 | 0.0074 | unknown |  |
+| tests/local-sdr-match.test.js | local acknowledgements refresh stale markers without replacing newer strokes | 6 | 0.0087 | unknown |  |
+| tests/luma-region-routing.test.js | locals with shared range stops retain independent immutable feather results | 9 | 3.8946 | unknown |  |
+| tests/mask-expression.test.js | mask leaf defaults remain complete for every authoring tool | 6 | 0.003 | unknown |  |
+| tests/mask-loader.test.js | a stale mask response is cancelled without an upload | 9 | 0.0109 | unknown |  |
+| tests/mask-raster.test.js | only geometry and feather forms with an exact tile contract are admitted | 4 | 0.0032 | unknown |  |
+| tests/mask-request-coordinator.test.js | mask requests never exceed the configured concurrency | 10 | 0.0302 | unknown |  |
+| tests/mask-resample.test.js | only straighten and perspective leaves get a resampling plan | 14 | 7.1617 | unknown |  |
+| tests/mask-sampling.test.js | range sampling waits for saved upstream edits and reacquires the acknowledged mask | 7 | 0.0352 | unknown |  |
+| tests/match-preview-recovery.test.js | Match retries a peak handoff on GPU without CPU fallback | 15 | 0.3062 | unknown |  |
+| tests/micro-grain-transport.test.js | Micro Grain cancels an unread superseded response | 5 | 1.1572 | unknown |  |
+| tests/native-anchor-scheduling.test.js | Native anchors coalesce latest inputs and wait for foreground presentation | 5 | 1.3941 | unknown |  |
+| tests/navigation-thumbnail-scheduling.test.js | Navigate uses the retained lower picture once active zoom work settles | 6 | 0.2965 | unknown |  |
+| tests/parity-bytes.test.js | byte histogram preserves the former sorted full-frame parity calculation exactly | 2 | 1.8617 | unknown |  |
+| tests/perspective-draft-preview.test.js | perspective draft cancellation leaves the current status alone | 2 | 0.0769 | unknown |  |
+| tests/photo-framing.test.js | viewer framing keeps photo pixels and independent per-side layers | 4 | 0.0061 | unknown |  |
+| tests/photo-transition.test.js | clean transitions and synchronous system exit avoid prompting | 5 | 0.0037 | unknown |  |
+| tests/photos-root.test.js | non-photo arguments and explicit roots need no machine discovery | 2 | 0.5801 | unknown |  |
+| tests/picture-request-monitor.test.js | picture monitor counts bodies after headers and detects five live requests | 3 | 0.0094 | unknown |  |
+| tests/platform-panels.test.js | Linux HDR warning waits for a photo and clears when it closes | 1 | 0.0039 | unknown |  |
+| tests/presentation-gate.test.js | presentations to one canvas never overlap | 7 | 0.0215 | unknown |  |
+| tests/preview-coarse-scale.test.js | Faster dragging uses a stable 2K coarse source before exact refinement | 1 | 0.0012 | unknown |  |
+| tests/preview-latency-controller.test.js | Precise always starts exact and interaction ends at exact scale | 5 | 0.003 | unknown |  |
+| tests/preview-scheduler-pacing.test.js | drag frames are capped at 60 fps on a 164 Hz display | 4 | 0.0168 | unknown |  |
+| tests/preview-scheduler-settle.test.js | release after a completed drag frame settles without the 110 ms wait | 10 | 0.0694 | unknown |  |
+| tests/preview-source-memory.test.js | a 507 single-response proxy refusal reports Unavailable instead of preparing | 5 | 0.6214 | unknown |  |
+| tests/preview-watchdog.test.js | watchdog waits for real scheduler work {"frameInFlight":true} | 5 | 0.0962 | unknown |  |
+| tests/process-tree.test.js | a stale parent ID does not pull an older unrelated process into the tree | 18 | 2.7037 | unknown | test('a killed child that is not yet collected counts as stopped', { skip: process.platform === 'win32' && 'Windows has no zombie processes' }, () => { |
+| tests/project-io.test.js | desktop project open owns grant shape and optional relink grant | 7 | 0.0509 | unknown |  |
+| tests/quick-library-check.test.js | unset quick switch touches no app, page, filesystem or backend capability | 20 | 0.0807 | unknown |  |
+| tests/raw-pixel-cleanup.test.js | Pixel cleanup is enabled only for supported Bayer RAW and restores saved state | 3 | 0.008 | unknown |  |
+| tests/recent-projects.test.js | recent projects survive restart, put the latest first and reject non-project entries | 1 | 0.0112 | unknown |  |
+| tests/release-runner.test.js | every standalone JS driver is listed once and all listed files exist | 28 | 134.67 | unknown | test('failed-start status stops the run without a retry or later drivers', {skip:process.platform!=='win32'}, t => { |
+| tests/render-coordinator.test.js | queued preview keeps the action that requested it | 24 | 0.0269 | unknown |  |
+| tests/render-failure.test.js | every Section 5.8 class is recognized from the error it produces | 7 | 0.0112 | unknown |  |
+| tests/render-plan-admission.test.js | a recorded graph produces an identical plan every time | 23 | 0.0289 | unknown |  |
+| tests/retouch-source-refresh.test.js | repair refresh changes only bounded native pixels and discards reduced evidence | 9 | 0.0323 | unknown |  |
+| tests/reuse-test-photo.test.js | persistent test copies reuse pixels and restore disposable sidecars on success or failure | 2 | 2.0151 | unknown |  |
+| tests/roi-source-region.test.js | a magnified fetch region covers every foreground tile's halo rect | 4 | 0.0646 | unknown |  |
+| tests/saved-preset-read.test.js | saved Film Look reaches recovery before unknown or damaged data is discarded: {"bloom_amount":20} | 3 | 1.1994 | unknown |  |
+| tests/scope-analysis.test.js | scope transport conversion retains the exact pre-cleanup double-precision results | 6 | 0.0558 | unknown |  |
+| tests/scope-gpu-handoff.test.js | first GPU picture defers CPU scopes, while an accepted CPU picture retains fallback | 4 | 0.6834 | unknown |  |
+| tests/scope-peak-disclosure.test.js | a refused editing measurement cannot become an exact peak through CPU fallback | 3 | 0.0039 | unknown |  |
+| tests/scope-readback.test.js | scope analysis unpacks padded half-float rows and releases its resource | 7 | 0.081 | unknown |  |
+| tests/scope-ui.test.js | scope quality and freshness policies are pure inputs | 5 | 0.0024 | unknown |  |
+| tests/sdr-match-session.test.js | a Match response (200) for a replaced photo cannot update the new photo | 4 | 0.0082 | unknown |  |
+| tests/shared-export-status.test.js | shared export progress offers pause/resume and cancel, completion removes controls | 4 | 0.0117 | unknown |  |
+| tests/shortcut-labels.test.js | Mac explicit bindings use Apple modifier order and distinguish Control from Command | 5 | 0.0067 | unknown |  |
+| tests/source-interpretation.test.js | unresolved interpretation stays visible and export stays blocked until real resolution | 1 | 0.0036 | unknown |  |
+| tests/source-transport.test.js | in-place repair refresh retains native textures with their new source epoch | 52 | 5.7079 | unknown |  |
+| tests/test_adjustments.py | Checks adjustments behavior and regression contracts. | 236 | 9.4813 | unknown |  |
+| tests/test_advanced_finishing.py | Checks advanced finishing behavior and regression contracts. | 25 | 0.8608 | unknown |  |
+| tests/test_ai_highlights_research.py | Checks ai highlights research behavior and regression contracts. | 15 | 1.015 | unknown |  |
+| tests/test_api.py | Checks api behavior and regression contracts. | 69 | 23.8915 | unknown |  |
+| tests/test_app_memory.py | Checks app memory behavior and regression contracts. | 35 | 7.6254 | unknown | windows_only; pytest.mark.skipif(os.name != "nt", reason="Windows private commit and EmptyWorkingSet") |
+| tests/test_avif_info.py | Checks avif info behavior and regression contracts. | 3 | 4.5381 | unknown | needs_native_helper; pytest.mark.skipif(resolve_binary("avifdec") is None, reason="avifdec is not available"); pytest.mark.skipif(resolve_binary("avifenc") is None or resolve_binary("avifdec") is None, reason="AVIF tools are not available") |
+| tests/test_batch_export.py | Result-based batch orchestration checks; tiny disposable sources only. | 31 | 150.1323 | unknown | needs_native_helper; Conditional skip: encoder.status.value != 'available'; Conditional skip: format in required and caps[required[format]].status.value != 'available'; pytest.skip(caps[required[format]].detail); pytest.skip(encoder.detail) |
+| tests/test_black_and_white.py | BW-01 Black & White: a per-rendition monochrome conversion with an | 19 | 0.087 | unknown |  |
+| tests/test_bordermuse_geometry.py | Measured conformance vectors, plus exact-arithmetic boundary checks. | 5 | 0.005 | unknown |  |
+| tests/test_camera_linear_raw_bridge.py | Checks camera linear raw bridge behavior and regression contracts. | 19 | 0.0668 | unknown |  |
+| tests/test_camera_linear_raw_corpus.py | Checks camera linear raw corpus behavior and regression contracts. | 1 | 0.0002 | unknown | needs_test_photos; windows_only; pytest.mark.skipif(     sys.platform != 'win32' or not CORPUS_ROOT,     reason="PC-only historical qualification: dropped 1.7 GB line-scan DNG and clipped Canon sample; set HDR_FINISHER_RAW_TEST_SUITE on PC", ) |
+| tests/test_capability_gates.py | Checks capability gates behavior and regression contracts. | 1 | 0.0004 | unknown |  |
+| tests/test_clarity_map.py | Clarity's blurred base: a smooth pyramid, not a staircase. | 9 | 0.0767 | unknown | pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed") |
+| tests/test_color_desaturation.py | Checks color desaturation behavior and regression contracts. | 2 | 0.007 | unknown |  |
+| tests/test_color_wheels_headroom.py | W3: grading ranges are edits, never an implicit output limiter. | 15 | 0.1119 | unknown |  |
+| tests/test_coordinate_map_bounded.py | Checks coordinate map bounded behavior and regression contracts. | 24 | 0.2767 | unknown |  |
+| tests/test_core.py | Checks core behavior and regression contracts. | 71 | 0.4471 | unknown |  |
+| tests/test_cpu_budget.py | Checks cpu budget behavior and regression contracts. | 2 | 0.0041 | unknown |  |
+| tests/test_cpu_strips_api.py | Phase 4: the bounded CPU path has to be reachable, and honest when it is not. | 6 | 2.0643 | unknown |  |
+| tests/test_cpu_strips.py | Phase 4: the bounded CPU strip path must equal the whole-frame path exactly. | 185 | 33.8385 | unknown |  |
+| tests/test_delivery_colour.py | Checks delivery colour behavior and regression contracts. | 7 | 0.0307 | unknown |  |
+| tests/test_delivery_comparison.py | Checks delivery comparison behavior and regression contracts. | 6 | 1.4298 | unknown |  |
+| tests/test_delivery_policy.py | Checks delivery policy behavior and regression contracts. | 8 | 13.3081 | unknown |  |
+| tests/test_denoise_adaptive.py | Adaptive denoise: the contracts the preview and export both rely on. | 13 | 2.393 | unknown | needs_native_helper; Conditional skip: native is None; pytest.skip("Native Denoise filters have not been built") |
+| tests/test_denoise_chroma_cleanup.py | Behaviour checks for non-shipping colour-cleanup research. | 12 | 0.0572 | unknown |  |
+| tests/test_denoise_classical.py | Behavioural checks for non-shipping, CPU-only classical prototypes. | 10 | 0.6166 | unknown | needs_native_helper; pytest.mark.skipif(not BINARY.exists(), reason='Offline GALOSH binary not built') |
+| tests/test_denoise_dark_noise.py | Behavioural regression cases for the isolated dark-noise research adapters. | 11 | 0.7154 | unknown |  |
+| tests/test_denoise_demosaic_noise.py | Checks denoise demosaic noise behavior and regression contracts. | 20 | 0.9121 | unknown |  |
+| tests/test_denoise_document.py | Checks denoise document behavior and regression contracts. | 12 | 0.2311 | unknown |  |
+| tests/test_denoise_early_outlier.py | Checks denoise early outlier behavior and regression contracts. | 20 | 0.9761 | unknown |  |
+| tests/test_denoise_eval.py | Result-based checks for the CPU quality harness; no private corpus needed. | 11 | 0.2573 | unknown |  |
+| tests/test_denoise_grain.py | Checks denoise grain behavior and regression contracts. | 13 | 0.6022 | unknown | needs_native_helper; Conditional skip: enabled == '1' and (not hasattr(native, 'colour_guides_relative')); Conditional skip: not hasattr(native, 'colour_guides'); pytest.skip("Run machine setup to build the optional native filters."); pytest.skip("Run machine setup to rebuild the optional native filters.") |
+| tests/test_denoise_hot_pixel.py | Checks denoise hot pixel behavior and regression contracts. | 12 | 0.0224 | unknown |  |
+| tests/test_denoise_informative.py | Shipping measurement rejects censored evidence without changing reconstruction. | 10 | 0.1497 | unknown |  |
+| tests/test_denoise_lmmse.py | Checks denoise lmmse behavior and regression contracts. | 45 | 0.4542 | unknown |  |
+| tests/test_denoise_measurement.py | Measurements belong to source pixels, survive restart, and reject stale work. | 15 | 6.7984 | unknown |  |
+| tests/test_denoise_model_windows.py | The Denoise noise model reads a few sample windows, so the preview corrects | 7 | 2.7525 | unknown |  |
+| tests/test_denoise_native_model.py | At full size the Denoise noise model is the source's own: one measurement per | 16 | 2.8349 | unknown |  |
+| tests/test_denoise_noise_model_specks.py | Behavioural coverage for the isolated noise-model/RAW-speck research. | 12 | 0.052 | unknown |  |
+| tests/test_denoise_pilot_wiener.py | Checks denoise pilot wiener behavior and regression contracts. | 12 | 0.2689 | unknown |  |
+| tests/test_denoise_public_pairs.py | Deterministic pair registration, masking and loading; no network/private photos. | 9 | 0.0823 | unknown |  |
+| tests/test_denoise_quality.py | Checks denoise quality behavior and regression contracts. | 5 | 3.5481 | unknown | pytest.skip('The pre-qualification revision is not available in this checkout') |
+| tests/test_denoise_rawnind.py | Optional result tests: local verified weights only, no download. | 15 | 0.6193 | unknown | Conditional skip: candidate.kind != 'bayer'; Conditional skip: not (MODEL_ROOT / f'model_{request.param}.onnx').is_file(); pytest.skip('Bayer camera-RGB gain only'); pytest.skip('Bayer downstream scene-linear colour tail only'); pytest.skip('Bayer sensor convention only'); pytest.skip('Research-only RawNIND model not installed') |
+| tests/test_denoise_speck_cleanup.py | Result-based research tests; no photographs or network weights needed. | 12 | 1.0638 | unknown |  |
+| tests/test_desktop_security.py | Checks desktop security behavior and regression contracts. | 6 | 0.0616 | unknown |  |
+| tests/test_detail_processing.py | Checks detail processing behavior and regression contracts. | 9 | 0.6394 | unknown |  |
+| tests/test_detail_softness_microcontrast.py | Softness and Microcontrast moved from Film Look to Detail (NEXT-01 #2). | 6 | 0.0302 | unknown |  |
+| tests/test_diagnostics.py | Checks diagnostics behavior and regression contracts. | 2 | 0.0373 | unknown |  |
+| tests/test_dng_color.py | Checks dng color behavior and regression contracts. | 16 | 0.0227 | unknown | Conditional skip: logical_cpus() < 2; pytest.skip("One logical CPU") |
+| tests/test_dng_gpu.py | Grade DNG correction hands bounded work to delivery without altering its source. | 12 | 0.1461 | unknown |  |
+| tests/test_dng_opcodes.py | Checks dng opcodes behavior and regression contracts. | 25 | 0.5828 | unknown |  |
+| tests/test_dng_raw_routing.py | Checks dng raw routing behavior and regression contracts. | 6 | 0.0361 | unknown |  |
+| tests/test_dng_resource_preflight.py | Checks dng resource preflight behavior and regression contracts. | 31 | 0.0215 | unknown |  |
+| tests/test_docs_root.py | MINOR-11 -- the in-app Help documents must be the ones the app serves. | 3 | 0.0079 | unknown |  |
+| tests/test_editor_overlays.py | Checks editor overlays behavior and regression contracts. | 1 | 0.0014 | unknown |  |
+| tests/test_encoding_fidelity_options.py | Checks encoding fidelity options behavior and regression contracts. | 3 | 0.0177 | unknown |  |
+| tests/test_even_keep_round4.py | Output checks for the standalone Round 4 Denoise experiments. | 7 | 0.1562 | unknown |  |
+| tests/test_exact_highlight_ceiling.py | The final ceiling is exact, including float32 matrix/unit roundoff. | 177 | 0.4167 | unknown |  |
+| tests/test_export_denoise_parity.py | Authored denoise has to reach the export, and reach it the same way. | 38 | 160.1654 | unknown | needs_native_helper; Conditional skip: exporters.resolve_binary(binary) is None; pytest.skip("The pre-file-delivery revision is unavailable"); pytest.skip(f"{binary} is unavailable") |
+| tests/test_export_lifecycle.py | Checks export lifecycle behavior and regression contracts. | 7 | 0.0474 | unknown | windows_only; pytest.mark.skipif(exporters.os.name != "nt", reason="Windows exclusive rename") |
+| tests/test_export_memory_exactness.py | Checks export memory exactness behavior and regression contracts. | 107 | 65.2525 | unknown | needs_native_helper; Conditional skip: capability is not None and capabilities[capability].status != CapabilityStatus.AVAILABLE; pytest.skip(capabilities[capability].detail) |
+| tests/test_export_metadata.py | Metadata changes must leave delivery-owned bytes and privacy intact. | 10 | 15.8347 | unknown | needs_native_helper; pytest.skip("Run tools/fetch_exiftool.py to install the pinned metadata helper.") |
+| tests/test_export_parallel.py | Checks export parallel behavior and regression contracts. | 9 | 1.809 | unknown |  |
+| tests/test_export_parity.py | Unit and end-to-end tests for the export/reference parity file-side check. | 21 | 5.538 | unknown | needs_native_helper; Conditional skip: capability.status != CapabilityStatus.AVAILABLE; pytest.skip(capability.detail) |
+| tests/test_export_preset_writes.py | Independent API preset stores must not share a temporary filename. | 2 | 0.0199 | unknown |  |
+| tests/test_export_progress.py | Checks export progress behavior and regression contracts. | 14 | 5.3845 | unknown | needs_native_helper; Conditional skip: capabilities['jpegxl_export'].status != CapabilityStatus.AVAILABLE; Conditional skip: resolve_binary('avifgainmaputil') is None; pytest.skip("JPEG XL encoder is unavailable"); pytest.skip("avifgainmaputil is not installed") |
+| tests/test_export_shared_work.py | Export renditions share work they would otherwise repeat, with the same pixels. | 4 | 0.0507 | unknown |  |
+| tests/test_export_speed_profile.py | Checks export speed profile behavior and regression contracts. | 6 | 12.434 | unknown |  |
+| tests/test_export_timing.py | Checks export timing behavior and regression contracts. | 7 | 0.2162 | unknown |  |
+| tests/test_export_y4m.py | Checks export y4m behavior and regression contracts. | 28 | 0.7474 | unknown |  |
+| tests/test_exposure_admission.py | Checks exposure admission behavior and regression contracts. | 12 | 0.1106 | unknown |  |
+| tests/test_extended_formats.py | Checks extended formats behavior and regression contracts. | 95 | 65.1579 | unknown | needs_native_helper; windows_only; pytest.mark.skipif(__import__("hdr_finisher.binaries", fromlist=["resolve_binary"]).resolve_binary("hdrf-jxl-info") is None,                     reason="Structured JPEG XL colour profiles need the native hdrf-jxl-info helper (Windows build only)."); pytest.mark.skipif(os.name != "nt", reason="Windows drive-letter behavior") |
+| tests/test_file_gate.py | The Library's file gate: which files are listed and read (design section 6.9, edge cases F1-F18). | 38 | 1.7952 | unknown | windows_only; pytest.mark.skipif(not WINDOWS, reason="Windows file attributes"); pytest.mark.skipif(not WINDOWS, reason="Windows junctions") |
+| tests/test_film_character.py | Stock metadata and saved ownership; rendering equations remain unchanged. | 23 | 0.0644 | unknown |  |
+| tests/test_film_controls.py | Physical paper/development controls; measured source data stays immutable. | 23 | 4.0493 | unknown |  |
+| tests/test_film_grain.py | The film grain field: statistics, texture, film types and strip exactness. | 19 | 3.7206 | unknown |  |
+| tests/test_film_stock.py | Checks film stock behavior and regression contracts. | 237 | 15.1672 | unknown | Conditional skip: not (REAL_STOCK_DIR / 'kodak_portra_400.json').is_file(); pytest.skip("kodak_portra_400.json has not been baked yet") |
+| tests/test_focus_cached_map.py | Checks focus cached map behavior and regression contracts. | 3 | 0.8302 | unknown |  |
+| tests/test_focus_camera_api.py | Checks focus camera api behavior and regression contracts. | 4 | 1.5447 | unknown |  |
+| tests/test_focus_camera_quality.py | Synthetic camera-JPEG checks; these do not establish real-eye accuracy. | 18 | 0.8512 | unknown |  |
+| tests/test_focus_camera_source.py | Checks focus camera source behavior and regression contracts. | 6 | 1.6124 | unknown |  |
+| tests/test_focus_source_loading.py | Focus source loading preserves import pixels without a Grade document. | 10 | 0.115 | unknown |  |
+| tests/test_folder_picker.py | Checks folder picker behavior and regression contracts. | 6 | 0.0114 | unknown |  |
+| tests/test_frontend_controls_contract.py | Checks frontend controls contract behavior and regression contracts. | 12 | 5.1974 | unknown |  |
+| tests/test_frontend_editor_layout_contract.py | Checks frontend editor layout contract behavior and regression contracts. | 11 | 0.5709 | unknown |  |
+| tests/test_frontend_inventory_contract.py | Checks frontend inventory contract behavior and regression contracts. | 1 | 0.0182 | unknown |  |
+| tests/test_frontend_local_scope_contract.py | Checks frontend local scope contract behavior and regression contracts. | 20 | 0.9928 | unknown |  |
+| tests/test_frontend_presentation_contract.py | Checks frontend presentation contract behavior and regression contracts. | 6 | 4.6047 | unknown |  |
+| tests/test_frontend_render_pipeline_contract.py | Checks frontend render pipeline contract behavior and regression contracts. | 15 | 4.3308 | unknown |  |
+| tests/test_frontend_source_workflow_contract.py | Checks frontend source workflow contract behavior and regression contracts. | 17 | 2.965 | unknown |  |
+| tests/test_frontend_status_contract.py | Checks frontend status contract behavior and regression contracts. | 2 | 0.0038 | unknown |  |
+| tests/test_gainmap_import.py | Checks gainmap import behavior and regression contracts. | 13 | 38.4623 | unknown | needs_native_helper; Conditional skip: capabilities[capability_name].status != CapabilityStatus.AVAILABLE; Conditional skip: resolve('hdrf-avif-decode') is None; pytest.mark.skipif(     probe_capabilities()["avif_decoder"].status != CapabilityStatus.AVAILABLE,     reason="avifdec is unavailable", ); pytest.mark.skipif(     probe_capabilities()["avif_gain_map_decoder"].status != CapabilityStatus.AVAILABLE,     reason="AVIF gain-map decoder tools are unavailable", ); pytest.skip("Native AVIF handoff is not built on this platform"); pytest.skip(capabilities[capability_name].detail) |
+| tests/test_geometry_audit.py | Checks geometry audit behavior and regression contracts. | 94 | 1.3058 | unknown |  |
+| tests/test_geometry_region.py | Phase 3: post-geometry region extraction must equal the full-frame path. | 51 | 0.3428 | unknown |  |
+| tests/test_geometry_roll_cache.py | Resampled source tiles are cut from the source, not from a rebuilt frame. | 8 | 0.6134 | unknown |  |
+| tests/test_gpu_delivery.py | Fast broker checks; the Electron driver checks real decoded GPU pixels. | 39 | 8.9394 | unknown |  |
+| tests/test_gpu_mask_bitmap_verdict.py | Checks gpu mask bitmap verdict behavior and regression contracts. | 2 | 0.0668 | unknown |  |
+| tests/test_graceful_grades.py | Result checks for damaged and future saved grades. All files are disposable. | 45 | 5.1016 | unknown |  |
+| tests/test_grade_open_reuse.py | Fast source identity and single-decode checks using disposable pixels. | 5 | 1.1337 | unknown |  |
+| tests/test_grade_sweep_summary.py | Release reporting distinguishes frame noise and cancelled work from failures. | 2 | 0.0015 | unknown |  |
+| tests/test_grain_work.py | Cancellation and exact grain output from baseline 88775059. | 13 | 6.6657 | unknown | Conditional skip: cpu_budget.logical_cpus() < 2; pytest.skip("Multiple CPU workers are needed") |
+| tests/test_hdr_ceiling.py | Decoded HDR target enforcement and local correction. | 94 | 597.5859 | unknown | needs_native_helper; Conditional skip: backend.capability.status.value != 'available'; Conditional skip: not (resolve_binary('avifgainmaputil') and resolve_binary('avifdec')); pytest.skip("Bundled AVIF gain-map tools are unavailable."); pytest.skip(backend.capability.detail) |
+| tests/test_hdr_delivery.py | Checks hdr delivery behavior and regression contracts. | 6 | 25.6688 | unknown | needs_native_helper; Conditional skip: backend.capability.status.value != 'available'; pytest.skip(backend.capability.detail) |
+| tests/test_hdr_from_sdr.py | Checks hdr from sdr behavior and regression contracts. | 17 | 0.4109 | unknown |  |
+| tests/test_highlight_attenuate.py | AgX-style Attenuate colour handling (prototype, October 2026): results, not wording. | 8 | 0.0193 | unknown |  |
+| tests/test_highlight_delivery_floor.py | Checks highlight delivery floor behavior and regression contracts. | 32 | 189.0542 | unknown | needs_native_helper; Conditional skip: backend.capability.status.value != 'available'; pytest.skip(backend.capability.detail) |
+| tests/test_highlight_edge_colour.py | Edge-colour highlight reconstruction (prototype, October 2026): results on a synthetic clip. | 4 | 1.3936 | unknown |  |
+| tests/test_highlight_edge_gpu.py | Edge-colour uses the shared delivery queue without changing source identity. | 16 | 4.3446 | unknown |  |
+| tests/test_histogram_correctness.py | Checks histogram correctness behavior and regression contracts. | 5 | 0.6277 | unknown |  |
+| tests/test_hosting_probe.py | Checks hosting probe behavior and regression contracts. | 3 | 0.0276 | unknown |  |
+| tests/test_hsl_integration.py | Pipeline, settings carriers, exact neutral and actual-stage sampling. | 49 | 1.5601 | unknown |  |
+| tests/test_hsl_selection.py | Behaviour of the shared colour selection CPU reference and its use by HSL. | 10 | 0.0433 | unknown |  |
+| tests/test_hsl.py | Behavioral contract for the production Python port of the HSL prototype. | 7 | 2.2107 | unknown |  |
+| tests/test_hue_mask.py | Local hue-mask leaves on the shared colour selection (selected before HSL). | 9 | 0.2063 | unknown |  |
+| tests/test_import_bands.py | Checks import bands behavior and regression contracts. | 11 | 0.5048 | unknown |  |
+| tests/test_import_opening.py | Checks import opening behavior and regression contracts. | 10 | 0.0693 | unknown |  |
+| tests/test_instrument_work.py | Checks instrument work behavior and regression contracts. | 2 | 0.1658 | unknown |  |
+| tests/test_jpegxl_helper_fallback.py | Checks jpegxl helper fallback behavior and regression contracts. | 13 | 10.0105 | unknown |  |
+| tests/test_jpegxl_marker_validation.py | Bad typed marker values must be reported as a JPEG XL input error. | 5 | 0.0492 | unknown |  |
+| tests/test_large_avif_import_performance.py | Checks large avif import performance behavior and regression contracts. | 1 | 0.0004 | unknown | needs_test_photos; pytest.mark.skipif(not LARGE_AVIF, reason="Set HDR_FINISHER_LARGE_AVIF to run the local 40+ MP AVIF gate.") |
+| tests/test_launcher.py | Checks launcher behavior and regression contracts. | 7 | 1.9938 | unknown |  |
+| tests/test_lens_correction.py | Checks lens correction behavior and regression contracts. | 23 | 15.6724 | unknown |  |
+| tests/test_lens_filter.py | Physical lens-filter results; no source-text contracts. | 24 | 0.4822 | unknown |  |
+| tests/test_library_album_commands.py | Album creation commands on disposable sources, each one undo step. | 4 | 3.4967 | unknown |  |
+| tests/test_library_cache.py | Behaviour checks for the shared Library cache and its JPEG transport. | 19 | 29.2215 | unknown |  |
+| tests/test_library_collections.py | Tag management, albums and the Library index, on temporary copies only. | 11 | 4.2218 | unknown |  |
+| tests/test_library_copies.py | Checks library copies behavior and regression contracts. | 19 | 16.1328 | unknown |  |
+| tests/test_library_cpu_bands.py | Checks library cpu bands behavior and regression contracts. | 7 | 0.0995 | unknown |  |
+| tests/test_library_direct_draw.py | Which reduced Library scenes the page may draw from its own planes. | 2 | 0.0014 | unknown |  |
+| tests/test_library_dng.py | Checks library dng behavior and regression contracts. | 33 | 0.6067 | unknown |  |
+| tests/test_library_edge_fallback.py | Scoped reconstruction timing, cancellation and isolation after GPU rejection. | 9 | 0.0181 | unknown |  |
+| tests/test_library_embedded_jpeg.py | Checks library embedded jpeg behavior and regression contracts. | 11 | 2.4085 | unknown | needs_test_photos; Conditional skip: not path.exists(); pytest.skip('Mixed v1 fixture required: ' + name) |
+| tests/test_library_estimates.py | Checks library estimates behavior and regression contracts. | 74 | 5.9443 | unknown |  |
+| tests/test_library_file_cache_index.py | Checks library file cache index behavior and regression contracts. | 16 | 3.3827 | unknown |  |
+| tests/test_library_file_commands.py | Checks library file commands behavior and regression contracts. | 43 | 5.6651 | unknown | windows_only; Conditional skip: os.name != 'nt'; pytest.mark.skipif(os.name != 'nt' and sys.platform != 'darwin', reason='Library file commands require Windows or macOS.'); pytest.skip('Windows named streams') |
+| tests/test_library_file_delete.py | Checks library file delete behavior and regression contracts. | 52 | 9.5185 | unknown | mac_only; windows_only; Conditional skip: kind == 'link'; Conditional skip: not library_recycle.available(photo); Conditional skip: os.name != 'nt'; Conditional skip: os.name == 'nt' and getattr(e, 'winerror', None) == 1314; pytest.mark.skipif(os.name != 'nt' and sys.platform != 'darwin', reason='Library file commands require Windows or macOS.'); pytest.mark.skipif(os.name != 'nt', reason='Only Windows offers explicit permanent deletion.'); pytest.mark.skipif(sys.platform!='darwin',reason='macOS Trash registers in-app Undo.'); pytest.skip('This disposable drive has no Bin'); pytest.skip('Windows did not grant symlink creation'); pytest.skip('Windows explicit RecycleItem') |
+| tests/test_library_file_exfat.py | Exercise D's actual unstable IDs only in newly made disposable folders. | 43 | 174.8357 | unknown | Conditional skip: os.name != 'nt' or stable_ids(output); pytest.skip('This workspace is not on a FAT filesystem') |
+| tests/test_library_file_folders.py | Checks library file folders behavior and regression contracts. | 22 | 3.856 | unknown | pytest.mark.skipif(os.name != 'nt' and sys.platform != 'darwin', reason='Library file commands require Windows or macOS.') |
+| tests/test_library_file_macos.py | Disposable-file macOS coverage; real Trash checks require the shared lock. | 38 | 0.0112 | unknown | mac_only; pytest.mark.skipif(not os.environ.get('HDR_FINISHER_TEST_CROSS_VOLUME'), reason='No disposable second volume selected'); pytest.mark.skipif(os.environ.get('HDR_FINISHER_TEST_MAC_TRASH') != '1',     reason='Run with HDR_FINISHER_TEST_MAC_TRASH=1 through gpu-run-lock.py'); pytest.mark.skipif(sys.platform != 'darwin', reason='macOS native primitives') |
+| tests/test_library_file_platform.py | Checks library file platform behavior and regression contracts. | 1 | 0.0372 | unknown |  |
+| tests/test_library_finished_thumbnails.py | Checks library finished thumbnails behavior and regression contracts. | 12 | 1.0177 | unknown |  |
+| tests/test_library_folder_checks.py | Folder checks on disposable photos, with a fake clock and no real timer waits. | 14 | 6.6805 | unknown | windows_only; Conditional skip: os.name != 'nt'; pytest.skip("Windows change notification") |
+| tests/test_library_folder_commands.py | Checks library folder commands behavior and regression contracts. | 20 | 0.0943 | unknown |  |
+| tests/test_library_folder_stream.py | Folder streaming reads the index first and bounds discovery/reconciliation. | 12 | 2.2349 | unknown |  |
+| tests/test_library_gpu_raw.py | Camera RAW Library thumbnails developed on the GPU: the backend half. | 29 | 0.9088 | unknown | Conditional skip: profile is None; pytest.skip("Lensfun profile unavailable") |
+| tests/test_library_grade_pictures.py | Saved-grade hand-offs: identity, persistent pixels, and no development. | 16 | 9.3957 | unknown |  |
+| tests/test_library_grades.py | Slice 3 Stage A: real grade documents, disposable files, writer/recovery boundaries. | 24 | 60.0313 | unknown | needs_native_helper; Conditional skip: capabilities[capability].status != CapabilityStatus.AVAILABLE; pytest.skip(f"{capability} is not available") |
+| tests/test_library_grants.py | Checks library grants behavior and regression contracts. | 6 | 0.0386 | unknown |  |
+| tests/test_library_health.py | Stage B health, controls and diagnostics on disposable photos only. | 13 | 25.4078 | unknown |  |
+| tests/test_library_history.py | Checks library history behavior and regression contracts. | 10 | 6.3668 | unknown |  |
+| tests/test_library_lane_progress.py | Exercise the real helper lanes with deterministic decode checkpoints. | 1 | 0.0098 | unknown |  |
+| tests/test_library_live.py | Stored source identity, read-only grades and the existing cache controls. | 42 | 17.7845 | unknown | Conditional skip: logical_cpus() < 2; pytest.skip("One logical CPU") |
+| tests/test_library_marks.py | Checks library marks behavior and regression contracts. | 16 | 0.9206 | unknown |  |
+| tests/test_library_measurement_identity.py | Checks library measurement identity behavior and regression contracts. | 2 | 0.7274 | unknown |  |
+| tests/test_library_membership.py | Pins/album scope on disposable photos and app data only. | 12 | 2.6944 | unknown |  |
+| tests/test_library_metadata.py | Checks library metadata behavior and regression contracts. | 7 | 0.0638 | unknown |  |
+| tests/test_library_native.py | Checks library native behavior and regression contracts. | 4 | 0.385 | unknown |  |
+| tests/test_library_os_junk.py | Checks library os junk behavior and regression contracts. | 3 | 0.0599 | unknown |  |
+| tests/test_library_overlay_identity.py | Checks library overlay identity behavior and regression contracts. | 2 | 0.8916 | unknown |  |
+| tests/test_library_overlays.py | Checks library overlays behavior and regression contracts. | 54 | 1.3071 | unknown |  |
+| tests/test_library_paste.py | Selective bulk paste exercises saved documents, virtual items and durable work. | 31 | 13.5135 | unknown |  |
+| tests/test_library_picture_errors.py | Failed pictures are durable cache results, never repeated decoder jobs. | 42 | 24.762 | unknown |  |
+| tests/test_library_pictures.py | Checks library pictures behavior and regression contracts. | 24 | 4.6586 | unknown |  |
+| tests/test_library_pins.py | Checks library pins behavior and regression contracts. | 2 | 13.6495 | unknown |  |
+| tests/test_library_raw.py | Checks library raw behavior and regression contracts. | 9 | 6.0736 | unknown |  |
+| tests/test_library_reduced.py | Checks library reduced behavior and regression contracts. | 38 | 2.7087 | unknown |  |
+| tests/test_library_refresh.py | Refresh thumbnail removes one photo's stored pictures and nothing else. | 10 | 0.5369 | unknown |  |
+| tests/test_library_responsiveness.py | Foreground results and lock isolation, using disposable data only. | 8 | 1.8985 | unknown |  |
+| tests/test_library_review.py | Checks library review behavior and regression contracts. | 2 | 0.0017 | unknown |  |
+| tests/test_library_rgb.py | Checks library rgb behavior and regression contracts. | 70 | 63.3598 | unknown | needs_test_photos |
+| tests/test_library_scheduler.py | Execute the RAM admission rules without sampling the test runner. | 52 | 0.0609 | unknown |  |
+| tests/test_library_screen_previews.py | Persistent finished pictures: identity, independent eviction and HDR ceiling. | 6 | 0.9891 | unknown |  |
+| tests/test_library_settings_writer.py | Stage A recovery/Undo boundaries, using only disposable photos and settings. | 36 | 8.1948 | unknown |  |
+| tests/test_library_smart_albums.py | Checks library smart albums behavior and regression contracts. | 16 | 4.5932 | unknown |  |
+| tests/test_library_source_baseline.py | Exercise the measurement driver against real stored scenes in a disposable profile. | 3 | 27.0087 | unknown | pytest.mark.skipif(sys.platform == "darwin" and bool(os.environ.get("CI")), reason="Overlap timing assumption does not hold on the macOS CI runner (0.9.2 follow-up).") |
+| tests/test_library_stage_c.py | Stage C recovery on disposable photos, folders, databases and processes. | 17 | 5.1317 | unknown | windows_only; pytest.mark.skipif(os.name != "nt", reason="Windows case-insensitive filename semantics") |
+| tests/test_library_startup_logging.py | Checks library startup logging behavior and regression contracts. | 2 | 0.0327 | unknown |  |
+| tests/test_library_stopwatch.py | Checks library stopwatch behavior and regression contracts. | 1 | 0.1925 | unknown |  |
+| tests/test_library_test_patterns.py | Checks library test patterns behavior and regression contracts. | 3 | 1.4735 | unknown |  |
+| tests/test_library_trim_concurrency.py | A blocked disk spill must not own the shared transport lock. | 1 | 0.0481 | unknown |  |
+| tests/test_library_worker.py | Checks library worker behavior and regression contracts. | 21 | 42.533 | unknown |  |
+| tests/test_linear_dng_probe.py | Checks linear dng probe behavior and regression contracts. | 11 | 0.0068 | unknown |  |
+| tests/test_linear_dng.py | Checks linear dng behavior and regression contracts. | 26 | 0.4187 | unknown | needs_native_helper; needs_test_photos; Conditional skip: compression in {'jpegxl', 'jpegxl_lossy'}; Conditional skip: not imagecodecs.JPEGXL.available; Conditional skip: not root.exists(); pytest.skip("Shared HDR Test Images corpus is not present."); pytest.skip('JPEG XL decoder unavailable') |
+| tests/test_linked_sdr_tail_probe.py | Checks linked sdr tail probe behavior and regression contracts. | 8 | 0.0134 | unknown |  |
+| tests/test_linux_launcher.py | Checks linux launcher behavior and regression contracts. | 1 | 0.0003 | unknown | posix_only; pytest.mark.skipif(os.name == "nt", reason="POSIX parent-process behavior") |
+| tests/test_loader_fixtures.py | Checks loader fixtures behavior and regression contracts. | 61 | 2.1617 | unknown | needs_test_photos |
+| tests/test_loader_interpretation.py | A manual interpretation resolves both fields and starts from encoded pixels. | 10 | 1.3025 | unknown | needs_native_helper; pytest.mark.skipif(__import__("hdr_finisher.binaries", fromlist=["resolve_binary"]).resolve_binary("hdrf-jxl-info") is None,                     reason="Structured JPEG XL colour profiles need the native hdrf-jxl-info helper (Windows build only).") |
+| tests/test_local_adjustments.py | Checks local adjustments behavior and regression contracts. | 117 | 5.7682 | unknown |  |
+| tests/test_log_noise.py | Checks log noise behavior and regression contracts. | 2 | 0.0033 | unknown |  |
+| tests/test_log_timeline.py | Checks log timeline behavior and regression contracts. | 1 | 4.3415 | unknown |  |
+| tests/test_machine_tooling.py | Tooling checks use disposable locks and small child processes, never the GPU. | 11 | 46.5702 | unknown | mac_only; posix_only; pytest.mark.skipif(os.name == 'nt', reason='POSIX groups; Windows uses existing taskkill /T'); pytest.mark.skipif(sys.platform != 'darwin', reason='macOS physical-footprint diagnostic') |
+| tests/test_mask_blur_strips.py | Checks mask blur strips behavior and regression contracts. | 48 | 0.2939 | unknown |  |
+| tests/test_mask_region.py | Exact masks for a region only (Viewport-Bounded GPU Preview PRD 5.1). | 60 | 9.0543 | unknown |  |
+| tests/test_mask_softness.py | The soft-mask rule (Viewport-Bounded GPU Preview PRD 5.1). | 8 | 8.3976 | unknown |  |
+| tests/test_mask_work.py | Checks mask work behavior and regression contracts. | 12 | 2.5816 | unknown |  |
+| tests/test_media_browser_locations.py | Saved browser locations are shortcuts only; Library pins stay separate (Steve, November 13, 2026). | 1 | 0.4849 | unknown |  |
+| tests/test_media_browser_peek.py | Checks media browser peek behavior and regression contracts. | 6 | 0.8062 | unknown |  |
+| tests/test_metadata_helper_lifecycle.py | Metadata helper shutdown releases pipes as well as the child process. | 1 | 0.9267 | unknown |  |
+| tests/test_metadata.py | Checks metadata behavior and regression contracts. | 16 | 0.0168 | unknown |  |
+| tests/test_micro_grain_cpu_preview.py | Checks micro grain cpu preview behavior and regression contracts. | 52 | 13.3031 | unknown |  |
+| tests/test_model_declaration_contracts.py | Checks model declaration contracts behavior and regression contracts. | 2 | 0.0084 | unknown |  |
+| tests/test_native_source_stream.py | Checks native source stream behavior and regression contracts. | 16 | 0.187 | unknown |  |
+| tests/test_negative_source_gamut.py | Import-boundary gamut projection: signed conversion, shared routes and cache identity. | 11 | 0.0317 | unknown |  |
+| tests/test_peak_accuracy.py | Checks peak accuracy behavior and regression contracts. | 6 | 0.2678 | unknown |  |
+| tests/test_performance_pipeline.py | Checks performance pipeline behavior and regression contracts. | 12 | 0.2167 | unknown |  |
+| tests/test_photo_framing.py | Checks photo framing behavior and regression contracts. | 39 | 1.9308 | unknown | needs_native_helper; Conditional skip: caps['jpegxl_export'].status.value != 'available'; pytest.skip("JPEG XL encoder unavailable") |
+| tests/test_pixel_cleanup.py | Behaviour checks for calibration-backed Pixel cleanup, no private photos. | 22 | 0.0872 | unknown |  |
+| tests/test_preview_display.py | Checks preview display behavior and regression contracts. | 7 | 0.9737 | unknown | needs_native_helper; Conditional skip: resolve_binary('avifenc') is None; pytest.skip("AVIF preview encoder unavailable") |
+| tests/test_preview_export_compare.py | The comparison tool's own arithmetic (Viewport-Bounded GPU Preview PRD, 4.6). | 19 | 0.0435 | unknown |  |
+| tests/test_preview_export_parity.py | Preview and export must be the same graph, differing only where they say so. | 16 | 1.3233 | unknown |  |
+| tests/test_preview_geometry.py | Checks preview geometry behavior and regression contracts. | 12 | 2.2162 | unknown |  |
+| tests/test_preview_resolution_contract.py | Checks preview resolution contract behavior and regression contracts. | 4 | 0.9636 | unknown |  |
+| tests/test_project_manifest.py | Malformed project manifests fail as project errors, without opening a source. | 5 | 0.0519 | unknown |  |
+| tests/test_project_open_tolerance.py | A saved project outlives the settings it was saved with. | 4 | 0.009 | unknown |  |
+| tests/test_project_save_conflicts.py | Saving a project must keep conflict detection attached to its destination. | 2 | 0.0727 | unknown |  |
+| tests/test_proof_export_identity.py | A full-size Proof is the export, byte for byte. | 21 | 206.2887 | unknown | needs_native_helper; Conditional skip: capabilities['ultrahdr_encoder'].status != CapabilityStatus.AVAILABLE; Conditional skip: capabilities[FORMATS['avif_gain_map'][0]].status != CapabilityStatus.AVAILABLE; Conditional skip: capabilities[capability].status != CapabilityStatus.AVAILABLE; pytest.skip("AVIF Gain Map encoder unavailable"); pytest.skip("Finished pixels passed but the Ultra HDR encoder is unavailable"); pytest.skip("Ultra HDR encoder unavailable"); pytest.skip(capabilities[capability].detail); pytest.skip(f"{capability} is not available: {capabilities[capability].detail}"); pytest.skip(f"{capability} unavailable") |
+| tests/test_proofing.py | Checks proofing behavior and regression contracts. | 45 | 102.6534 | unknown | needs_native_helper; Conditional skip: get_capabilities()['avif_gain_map_encoder'].status != CapabilityStatus.AVAILABLE; Conditional skip: get_capabilities()[capability_name].status != CapabilityStatus.AVAILABLE; Conditional skip: proofing_module.resolve_binary('avifenc') is None; Conditional skip: resolve('avifgainmaputil' if use_tonemap else 'avifenc') is None; Conditional skip: utility is None or proofing_module.resolve_binary('avifenc') is None; pytest.skip("AVIF preview encoder unavailable"); pytest.skip("Native AVIF tile helper unavailable"); pytest.skip("Native AVIF tile helpers unavailable"); pytest.skip(get_capabilities()["avif_gain_map_encoder"].detail); pytest.skip(get_capabilities()[capability_name].detail) |
+| tests/test_pytest_profile_cleanup.py | Exercise pytest shutdown itself, including Windows' open-file restriction. | 1 | 8.6784 | unknown |  |
+| tests/test_raw_exposure.py | Checks raw exposure behavior and regression contracts. | 19 | 0.1923 | unknown |  |
+| tests/test_raw_highlight_project_compatibility.py | Checks raw highlight project compatibility behavior and regression contracts. | 1 | 0.0007 | unknown |  |
+| tests/test_raw_pixel_cleanup_state.py | Checks raw pixel cleanup state behavior and regression contracts. | 12 | 2.5366 | unknown |  |
+| tests/test_raw_pixel_cleanup.py | Checks raw pixel cleanup behavior and regression contracts. | 24 | 0.2026 | unknown |  |
+| tests/test_raw_speck_cleanup.py | Checks raw speck cleanup behavior and regression contracts. | 25 | 0.0918 | unknown |  |
+| tests/test_render_cache.py | Checks render cache behavior and regression contracts. | 59 | 7.4187 | unknown |  |
+| tests/test_retouch_integration.py | Interactive repairs publish one native source transaction for every consumer. | 35 | 45.2328 | unknown | needs_native_helper; Conditional skip: capabilities['jpegxl_export'].status != CapabilityStatus.AVAILABLE; pytest.skip("JPEG XL encoder unavailable") |
+| tests/test_retouch_methods.py | Behavioral tests for the explicitly selectable native repair prototypes. | 11 | 0.8253 | unknown |  |
+| tests/test_retouch_parallel.py | Parallel score lanes preserve the serial candidate scores and donor ordering. | 3 | 0.0079 | unknown |  |
+| tests/test_retouch_recipe.py | Checks retouch recipe behavior and regression contracts. | 22 | 2.6927 | unknown |  |
+| tests/test_retouch_routes.py | Finished patch reuse and route disclosure across preview and delivery. | 13 | 2.9586 | unknown |  |
+| tests/test_retouch_transfer.py | Native clone/heal behavior, independent of UI wording or code structure. | 8 | 0.1102 | unknown |  |
+| tests/test_retouch.py | Checks retouch behavior and regression contracts. | 27 | 4.1354 | unknown | Conditional skip: logical_cpus() < 2; pytest.skip("needs two logical CPUs") |
+| tests/test_revert_rendition.py | Checks revert rendition behavior and regression contracts. | 9 | 0.1314 | unknown |  |
+| tests/test_scope_correctness.py | Checks scope correctness behavior and regression contracts. | 6 | 0.5377 | unknown | needs_test_photos |
+| tests/test_sdr_export.py | Checks sdr export behavior and regression contracts. | 13 | 0.3694 | unknown |  |
+| tests/test_sdr_gamut.py | Checks sdr gamut behavior and regression contracts. | 34 | 0.0557 | unknown |  |
+| tests/test_sdr_link.py | Checks sdr link behavior and regression contracts. | 14 | 3.6789 | unknown |  |
+| tests/test_sdr_local_match.py | Checks sdr local match behavior and regression contracts. | 17 | 4.1492 | unknown |  |
+| tests/test_sdr_match_editable.py | Match commits one editable recipe, shared by persistence and rendering. | 3 | 1.5562 | unknown |  |
+| tests/test_sdr_match_inputs.py | Checks sdr match inputs behavior and regression contracts. | 6 | 0.0769 | unknown |  |
+| tests/test_sdr_match_materialization.py | Checks sdr match materialization behavior and regression contracts. | 17 | 7.2299 | unknown |  |
+| tests/test_sdr_match_remote.py | Match candidates rendered by the page instead of the CPU. | 6 | 4.3105 | unknown |  |
+| tests/test_sdr_match_state.py | Checks sdr match state behavior and regression contracts. | 13 | 0.4627 | unknown |  |
+| tests/test_signed_ahd.py | Checks signed ahd behavior and regression contracts. | 17 | 0.0238 | unknown |  |
+| tests/test_signed_raw_development.py | Checks signed raw development behavior and regression contracts. | 29 | 0.0506 | unknown |  |
+| tests/test_signed_shadows.py | Checks signed shadows behavior and regression contracts. | 18 | 0.0528 | unknown |  |
+| tests/test_source_primaries.py | Independent transfer equations and asymmetric colours catch forced BT.2020. | 37 | 0.4976 | unknown |  |
+| tests/test_source_space_luminance_mask.py | A luminance mask under straighten or perspective is finished before the warp. | 7 | 0.5986 | unknown |  |
+| tests/test_source_tile_api.py | Phase 3: the bounded source-tile transport contract. | 16 | 5.0032 | unknown | Conditional skip: probe.status_code == 409; pytest.skip(f"tile path declined this geometry: {probe.json()['detail']}") |
+| tests/test_subprocess_utils.py | Checks subprocess utils behavior and regression contracts. | 1 | 0.0008 | unknown |  |
+| tests/test_test_inventory.py | The everyday inventory must cover every collected source file. | 1 | 0.4692 | unknown |  |
+| tests/test_test_photos.py | Corpus validation uses tiny disposable files, never the private photos. | 5 | 0.0612 | unknown |  |
+| tests/test_tiff_interpretation.py | Generated oriented / custom-gamma TIFF fixtures, before loader changes. | 23 | 0.2343 | unknown |  |
+| tests/test_tone_zones.py | Checks tone zones behavior and regression contracts. | 33 | 0.3529 | unknown |  |
+| tests/test_ultrahdr_export.py | Checks ultrahdr export behavior and regression contracts. | 40 | 87.4909 | unknown | needs_native_helper; Conditional skip: binary is None; Conditional skip: capability.status != CapabilityStatus.AVAILABLE; Conditional skip: native is None; pytest.skip("Native Ultra HDR encoder unavailable"); pytest.skip("Optional gain-map filter build is unavailable"); pytest.skip(capability.detail) |
+| tests/test_vignette_midpoint.py | Checks vignette midpoint behavior and regression contracts. | 20 | 0.0651 | unknown |  |
+| tests/test_watermark.py | Checks watermark behavior and regression contracts. | 11 | 36.6079 | unknown | needs_native_helper; Conditional skip: backend.capability.status.value != 'available'; pytest.skip(backend.capability.detail) |
+| tests/test_zoom_block_compare.py | Validate PRD block alignment/area integration before trusting its verdicts. | 5 | 0.3785 | unknown |  |
+| tests/test-catalogue.test.js | all release drivers have usable agent briefs, requirements and platform estimates | 4 | 0.0305 | unknown |  |
+| tests/tier-acceptance-geometry.test.js | the tier target still comes from the source, not from the trimmed frame | 11 | 1.5956 | unknown |  |
+| tests/tile-scheduler.test.js | tiles are anchored to global output coordinates, not to an index | 17 | 0.1049 | unknown |  |
+| tests/tiled-cancellation-cleanup.test.js | Cancellation closes validation scope, releases peak target and temporary buffers | 9 | 0.0156 | unknown |  |
+| tests/tiled-local-state.test.js | Local Detail prefixes preserve the original cache identity exactly | 4 | 1.9261 | unknown |  |
+| tests/tiled-render-lifetime.test.js | direct renderTiledTo calls retain resources until their async lifetime ends | 3 | 0.0195 | unknown |  |
+| tests/tone-preview.test.js | darwin endpoint tooltips name the platform's drag modifier | 10 | 1.1424 | unknown |  |
+| tests/tone-zones.test.js | CPU and GPU parameter-only interval bounds agree across lanes, references, endpoints and extreme ranges | 2 | 48.3952 | unknown |  |
+| tests/tooltip-catalogue.test.js | tooltip catalogue matches source (preserve pending edits before regenerating) | 3 | 21.414 | unknown |  |
+| tests/tooltips.test.js | Escape cancels pending help but still reaches the dialog | 5 | 0.7114 | unknown |  |
+| tests/viewer-state-transitions.test.js | an exact result at the current generation is Ready | 16 | 0.0049 | unknown |  |
+| tests/viewport-request.test.js | Fit produces a whole-output request with no padding to amplify | 14 | 0.0064 | unknown |  |
+| tests/vignette-midpoint.test.js | typed midpoint rule accepts 200 and preserves migrated half steps | 2 | 0.0063 | unknown |  |
+| tests/webgpu-allocation-agreement.test.js | grading residency reports the four core textures the device actually created | 14 | 4.8584 | unknown |  |
+| tests/webgpu-memory-diagnostics.test.js | direct model reproduces the approved two-level 24MP logical baseline | 9 | 0.0199 | unknown |  |
+| tests/webgpu-shaders.test.js | the peak and Denoise WGSL sources retain the audited byte identities | 4 | 0.0142 | unknown |  |
+| tests/whole-image-preview-pipe.test.js | whole-image purposes cannot inherit a native Full edge | 3 | 0.0018 | unknown |  |
+| tests/zoom-scope-recovery.test.js | single-action zoom finishes ahead of one settled scope refresh | 75 | 13.6249 | unknown |  |
 
 ## Driver briefs
 
