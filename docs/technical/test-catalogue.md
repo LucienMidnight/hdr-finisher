@@ -200,263 +200,263 @@ Source: `codebase/tests/inventory.json`. Seconds are summed case time, not paral
 | tests/shortcut-labels.test.js | Mac explicit bindings use Apple modifier order and distinguish Control from Command | 5 | 0.0067 | unknown |  |
 | tests/source-interpretation.test.js | unresolved interpretation stays visible and export stays blocked until real resolution | 1 | 0.0036 | unknown |  |
 | tests/source-transport.test.js | in-place repair refresh retains native textures with their new source epoch | 52 | 5.7079 | unknown |  |
-| tests/test_adjustments.py | Checks adjustments behavior and regression contracts. | 236 | 9.4813 | unknown |  |
-| tests/test_advanced_finishing.py | Checks advanced finishing behavior and regression contracts. | 25 | 0.8608 | unknown |  |
-| tests/test_ai_highlights_research.py | Checks ai highlights research behavior and regression contracts. | 15 | 1.015 | unknown |  |
-| tests/test_api.py | Checks api behavior and regression contracts. | 69 | 23.8915 | unknown |  |
-| tests/test_app_memory.py | Checks app memory behavior and regression contracts. | 35 | 7.6254 | unknown | windows_only; pytest.mark.skipif(os.name != "nt", reason="Windows private commit and EmptyWorkingSet") |
-| tests/test_avif_info.py | Checks avif info behavior and regression contracts. | 3 | 4.5381 | unknown | needs_native_helper; pytest.mark.skipif(resolve_binary("avifdec") is None, reason="avifdec is not available"); pytest.mark.skipif(resolve_binary("avifenc") is None or resolve_binary("avifdec") is None, reason="AVIF tools are not available") |
-| tests/test_batch_export.py | Result-based batch orchestration checks; tiny disposable sources only. | 31 | 150.1323 | unknown | needs_native_helper; Conditional skip: encoder.status.value != 'available'; Conditional skip: format in required and caps[required[format]].status.value != 'available'; pytest.skip(caps[required[format]].detail); pytest.skip(encoder.detail) |
-| tests/test_black_and_white.py | BW-01 Black & White: a per-rendition monochrome conversion with an | 19 | 0.087 | unknown |  |
-| tests/test_bordermuse_geometry.py | Measured conformance vectors, plus exact-arithmetic boundary checks. | 5 | 0.005 | unknown |  |
-| tests/test_camera_linear_raw_bridge.py | Checks camera linear raw bridge behavior and regression contracts. | 19 | 0.0668 | unknown |  |
-| tests/test_camera_linear_raw_corpus.py | Checks camera linear raw corpus behavior and regression contracts. | 1 | 0.0002 | unknown | needs_test_photos; windows_only; pytest.mark.skipif(     sys.platform != 'win32' or not CORPUS_ROOT,     reason="PC-only historical qualification: dropped 1.7 GB line-scan DNG and clipped Canon sample; set HDR_FINISHER_RAW_TEST_SUITE on PC", ) |
-| tests/test_capability_gates.py | Checks capability gates behavior and regression contracts. | 1 | 0.0004 | unknown |  |
-| tests/test_clarity_map.py | Clarity's blurred base: a smooth pyramid, not a staircase. | 9 | 0.0767 | unknown | pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed") |
-| tests/test_color_desaturation.py | Checks color desaturation behavior and regression contracts. | 2 | 0.007 | unknown |  |
-| tests/test_color_wheels_headroom.py | W3: grading ranges are edits, never an implicit output limiter. | 15 | 0.1119 | unknown |  |
-| tests/test_coordinate_map_bounded.py | Checks coordinate map bounded behavior and regression contracts. | 24 | 0.2767 | unknown |  |
-| tests/test_core.py | Checks core behavior and regression contracts. | 71 | 0.4471 | unknown |  |
-| tests/test_cpu_budget.py | Checks cpu budget behavior and regression contracts. | 2 | 0.0041 | unknown |  |
-| tests/test_cpu_strips_api.py | Phase 4: the bounded CPU path has to be reachable, and honest when it is not. | 6 | 2.0643 | unknown |  |
-| tests/test_cpu_strips.py | Phase 4: the bounded CPU strip path must equal the whole-frame path exactly. | 185 | 33.8385 | unknown |  |
-| tests/test_delivery_colour.py | Checks delivery colour behavior and regression contracts. | 7 | 0.0307 | unknown |  |
-| tests/test_delivery_comparison.py | Checks delivery comparison behavior and regression contracts. | 6 | 1.4298 | unknown |  |
-| tests/test_delivery_policy.py | Checks delivery policy behavior and regression contracts. | 8 | 13.3081 | unknown |  |
-| tests/test_denoise_adaptive.py | Adaptive denoise: the contracts the preview and export both rely on. | 13 | 2.393 | unknown | needs_native_helper; Conditional skip: native is None; pytest.skip("Native Denoise filters have not been built") |
-| tests/test_denoise_chroma_cleanup.py | Behaviour checks for non-shipping colour-cleanup research. | 12 | 0.0572 | unknown |  |
-| tests/test_denoise_classical.py | Behavioural checks for non-shipping, CPU-only classical prototypes. | 10 | 0.6166 | unknown | needs_native_helper; pytest.mark.skipif(not BINARY.exists(), reason='Offline GALOSH binary not built') |
-| tests/test_denoise_dark_noise.py | Behavioural regression cases for the isolated dark-noise research adapters. | 11 | 0.7154 | unknown |  |
-| tests/test_denoise_demosaic_noise.py | Checks denoise demosaic noise behavior and regression contracts. | 20 | 0.9121 | unknown |  |
-| tests/test_denoise_document.py | Checks denoise document behavior and regression contracts. | 12 | 0.2311 | unknown |  |
-| tests/test_denoise_early_outlier.py | Checks denoise early outlier behavior and regression contracts. | 20 | 0.9761 | unknown |  |
-| tests/test_denoise_eval.py | Result-based checks for the CPU quality harness; no private corpus needed. | 11 | 0.2573 | unknown |  |
-| tests/test_denoise_grain.py | Checks denoise grain behavior and regression contracts. | 13 | 0.6022 | unknown | needs_native_helper; Conditional skip: enabled == '1' and (not hasattr(native, 'colour_guides_relative')); Conditional skip: not hasattr(native, 'colour_guides'); pytest.skip("Run machine setup to build the optional native filters."); pytest.skip("Run machine setup to rebuild the optional native filters.") |
-| tests/test_denoise_hot_pixel.py | Checks denoise hot pixel behavior and regression contracts. | 12 | 0.0224 | unknown |  |
-| tests/test_denoise_informative.py | Shipping measurement rejects censored evidence without changing reconstruction. | 10 | 0.1497 | unknown |  |
-| tests/test_denoise_lmmse.py | Checks denoise lmmse behavior and regression contracts. | 45 | 0.4542 | unknown |  |
-| tests/test_denoise_measurement.py | Measurements belong to source pixels, survive restart, and reject stale work. | 15 | 6.7984 | unknown |  |
-| tests/test_denoise_model_windows.py | The Denoise noise model reads a few sample windows, so the preview corrects | 7 | 2.7525 | unknown |  |
-| tests/test_denoise_native_model.py | At full size the Denoise noise model is the source's own: one measurement per | 16 | 2.8349 | unknown |  |
-| tests/test_denoise_noise_model_specks.py | Behavioural coverage for the isolated noise-model/RAW-speck research. | 12 | 0.052 | unknown |  |
-| tests/test_denoise_pilot_wiener.py | Checks denoise pilot wiener behavior and regression contracts. | 12 | 0.2689 | unknown |  |
-| tests/test_denoise_public_pairs.py | Deterministic pair registration, masking and loading; no network/private photos. | 9 | 0.0823 | unknown |  |
-| tests/test_denoise_quality.py | Checks denoise quality behavior and regression contracts. | 5 | 3.5481 | unknown | pytest.skip('The pre-qualification revision is not available in this checkout') |
-| tests/test_denoise_rawnind.py | Optional result tests: local verified weights only, no download. | 15 | 0.6193 | unknown | Conditional skip: candidate.kind != 'bayer'; Conditional skip: not (MODEL_ROOT / f'model_{request.param}.onnx').is_file(); pytest.skip('Bayer camera-RGB gain only'); pytest.skip('Bayer downstream scene-linear colour tail only'); pytest.skip('Bayer sensor convention only'); pytest.skip('Research-only RawNIND model not installed') |
-| tests/test_denoise_speck_cleanup.py | Result-based research tests; no photographs or network weights needed. | 12 | 1.0638 | unknown |  |
-| tests/test_desktop_security.py | Checks desktop security behavior and regression contracts. | 6 | 0.0616 | unknown |  |
-| tests/test_detail_processing.py | Checks detail processing behavior and regression contracts. | 9 | 0.6394 | unknown |  |
-| tests/test_detail_softness_microcontrast.py | Softness and Microcontrast moved from Film Look to Detail (NEXT-01 #2). | 6 | 0.0302 | unknown |  |
-| tests/test_diagnostics.py | Checks diagnostics behavior and regression contracts. | 2 | 0.0373 | unknown |  |
-| tests/test_dng_color.py | Checks dng color behavior and regression contracts. | 16 | 0.0227 | unknown | Conditional skip: logical_cpus() < 2; pytest.skip("One logical CPU") |
-| tests/test_dng_gpu.py | Grade DNG correction hands bounded work to delivery without altering its source. | 12 | 0.1461 | unknown |  |
-| tests/test_dng_opcodes.py | Checks dng opcodes behavior and regression contracts. | 25 | 0.5828 | unknown |  |
-| tests/test_dng_raw_routing.py | Checks dng raw routing behavior and regression contracts. | 6 | 0.0361 | unknown |  |
-| tests/test_dng_resource_preflight.py | Checks dng resource preflight behavior and regression contracts. | 31 | 0.0215 | unknown |  |
-| tests/test_docs_root.py | MINOR-11 -- the in-app Help documents must be the ones the app serves. | 3 | 0.0079 | unknown |  |
-| tests/test_editor_overlays.py | Checks editor overlays behavior and regression contracts. | 1 | 0.0014 | unknown |  |
-| tests/test_encoding_fidelity_options.py | Checks encoding fidelity options behavior and regression contracts. | 3 | 0.0177 | unknown |  |
-| tests/test_even_keep_round4.py | Output checks for the standalone Round 4 Denoise experiments. | 7 | 0.1562 | unknown |  |
-| tests/test_exact_highlight_ceiling.py | The final ceiling is exact, including float32 matrix/unit roundoff. | 177 | 0.4167 | unknown |  |
-| tests/test_export_denoise_parity.py | Authored denoise has to reach the export, and reach it the same way. | 38 | 160.1654 | unknown | needs_native_helper; Conditional skip: exporters.resolve_binary(binary) is None; pytest.skip("The pre-file-delivery revision is unavailable"); pytest.skip(f"{binary} is unavailable") |
-| tests/test_export_lifecycle.py | Checks export lifecycle behavior and regression contracts. | 7 | 0.0474 | unknown | windows_only; pytest.mark.skipif(exporters.os.name != "nt", reason="Windows exclusive rename") |
-| tests/test_export_memory_exactness.py | Checks export memory exactness behavior and regression contracts. | 107 | 65.2525 | unknown | needs_native_helper; Conditional skip: capability is not None and capabilities[capability].status != CapabilityStatus.AVAILABLE; pytest.skip(capabilities[capability].detail) |
-| tests/test_export_metadata.py | Metadata changes must leave delivery-owned bytes and privacy intact. | 10 | 15.8347 | unknown | needs_native_helper; pytest.skip("Run tools/fetch_exiftool.py to install the pinned metadata helper.") |
-| tests/test_export_parallel.py | Checks export parallel behavior and regression contracts. | 9 | 1.809 | unknown |  |
-| tests/test_export_parity.py | Unit and end-to-end tests for the export/reference parity file-side check. | 21 | 5.538 | unknown | needs_native_helper; Conditional skip: capability.status != CapabilityStatus.AVAILABLE; pytest.skip(capability.detail) |
-| tests/test_export_preset_writes.py | Independent API preset stores must not share a temporary filename. | 2 | 0.0199 | unknown |  |
-| tests/test_export_progress.py | Checks export progress behavior and regression contracts. | 14 | 5.3845 | unknown | needs_native_helper; Conditional skip: capabilities['jpegxl_export'].status != CapabilityStatus.AVAILABLE; Conditional skip: resolve_binary('avifgainmaputil') is None; pytest.skip("JPEG XL encoder is unavailable"); pytest.skip("avifgainmaputil is not installed") |
-| tests/test_export_shared_work.py | Export renditions share work they would otherwise repeat, with the same pixels. | 4 | 0.0507 | unknown |  |
-| tests/test_export_speed_profile.py | Checks export speed profile behavior and regression contracts. | 6 | 12.434 | unknown |  |
-| tests/test_export_timing.py | Checks export timing behavior and regression contracts. | 7 | 0.2162 | unknown |  |
-| tests/test_export_y4m.py | Checks export y4m behavior and regression contracts. | 28 | 0.7474 | unknown |  |
-| tests/test_exposure_admission.py | Checks exposure admission behavior and regression contracts. | 12 | 0.1106 | unknown |  |
-| tests/test_extended_formats.py | Checks extended formats behavior and regression contracts. | 95 | 65.1579 | unknown | needs_native_helper; windows_only; pytest.mark.skipif(__import__("hdr_finisher.binaries", fromlist=["resolve_binary"]).resolve_binary("hdrf-jxl-info") is None,                     reason="Structured JPEG XL colour profiles need the native hdrf-jxl-info helper (Windows build only)."); pytest.mark.skipif(os.name != "nt", reason="Windows drive-letter behavior") |
-| tests/test_file_gate.py | The Library's file gate: which files are listed and read (design section 6.9, edge cases F1-F18). | 38 | 1.7952 | unknown | windows_only; pytest.mark.skipif(not WINDOWS, reason="Windows file attributes"); pytest.mark.skipif(not WINDOWS, reason="Windows junctions") |
-| tests/test_film_character.py | Stock metadata and saved ownership; rendering equations remain unchanged. | 23 | 0.0644 | unknown |  |
-| tests/test_film_controls.py | Physical paper/development controls; measured source data stays immutable. | 23 | 4.0493 | unknown |  |
-| tests/test_film_grain.py | The film grain field: statistics, texture, film types and strip exactness. | 19 | 3.7206 | unknown |  |
-| tests/test_film_stock.py | Checks film stock behavior and regression contracts. | 237 | 15.1672 | unknown | Conditional skip: not (REAL_STOCK_DIR / 'kodak_portra_400.json').is_file(); pytest.skip("kodak_portra_400.json has not been baked yet") |
-| tests/test_focus_cached_map.py | Checks focus cached map behavior and regression contracts. | 3 | 0.8302 | unknown |  |
-| tests/test_focus_camera_api.py | Checks focus camera api behavior and regression contracts. | 4 | 1.5447 | unknown |  |
-| tests/test_focus_camera_quality.py | Synthetic camera-JPEG checks; these do not establish real-eye accuracy. | 18 | 0.8512 | unknown |  |
-| tests/test_focus_camera_source.py | Checks focus camera source behavior and regression contracts. | 6 | 1.6124 | unknown |  |
-| tests/test_focus_source_loading.py | Focus source loading preserves import pixels without a Grade document. | 10 | 0.115 | unknown |  |
-| tests/test_folder_picker.py | Checks folder picker behavior and regression contracts. | 6 | 0.0114 | unknown |  |
-| tests/test_frontend_controls_contract.py | Checks frontend controls contract behavior and regression contracts. | 12 | 5.1974 | unknown |  |
-| tests/test_frontend_editor_layout_contract.py | Checks frontend editor layout contract behavior and regression contracts. | 11 | 0.5709 | unknown |  |
-| tests/test_frontend_inventory_contract.py | Checks frontend inventory contract behavior and regression contracts. | 1 | 0.0182 | unknown |  |
-| tests/test_frontend_local_scope_contract.py | Checks frontend local scope contract behavior and regression contracts. | 20 | 0.9928 | unknown |  |
-| tests/test_frontend_presentation_contract.py | Checks frontend presentation contract behavior and regression contracts. | 6 | 4.6047 | unknown |  |
-| tests/test_frontend_render_pipeline_contract.py | Checks frontend render pipeline contract behavior and regression contracts. | 15 | 4.3308 | unknown |  |
-| tests/test_frontend_source_workflow_contract.py | Checks frontend source workflow contract behavior and regression contracts. | 17 | 2.965 | unknown |  |
+| tests/test_adjustments.py | Checks adjustments behavior and regression contracts. | 236 | 9.8053 | unknown |  |
+| tests/test_advanced_finishing.py | Checks advanced finishing behavior and regression contracts. | 25 | 0.5381 | unknown |  |
+| tests/test_ai_highlights_research.py | Checks ai highlights research behavior and regression contracts. | 15 | 0.6675 | unknown |  |
+| tests/test_api.py | Checks api behavior and regression contracts. | 69 | 17.1858 | unknown |  |
+| tests/test_app_memory.py | Checks app memory behavior and regression contracts. | 35 | 5.8398 | unknown | windows_only; pytest.mark.skipif(os.name != "nt", reason="Windows private commit and EmptyWorkingSet") |
+| tests/test_avif_info.py | Checks avif info behavior and regression contracts. | 3 | 2.7838 | unknown | needs_native_helper; pytest.mark.skipif(resolve_binary("avifdec") is None, reason="avifdec is not available"); pytest.mark.skipif(resolve_binary("avifenc") is None or resolve_binary("avifdec") is None, reason="AVIF tools are not available") |
+| tests/test_batch_export.py | Result-based batch orchestration checks; tiny disposable sources only. | 31 | 140.0879 | unknown | needs_native_helper; Conditional skip: encoder.status.value != 'available'; Conditional skip: format in required and caps[required[format]].status.value != 'available'; pytest.skip(caps[required[format]].detail); pytest.skip(encoder.detail) |
+| tests/test_black_and_white.py | BW-01 Black & White: a per-rendition monochrome conversion with an | 19 | 0.095 | unknown |  |
+| tests/test_bordermuse_geometry.py | Measured conformance vectors, plus exact-arithmetic boundary checks. | 5 | 0.0059 | unknown |  |
+| tests/test_camera_linear_raw_bridge.py | Checks camera linear raw bridge behavior and regression contracts. | 19 | 0.0736 | unknown |  |
+| tests/test_camera_linear_raw_corpus.py | Checks camera linear raw corpus behavior and regression contracts. | 1 | 0.0003 | unknown | needs_test_photos; windows_only; pytest.mark.skipif(     sys.platform != 'win32' or not CORPUS_ROOT,     reason="PC-only historical qualification: dropped 1.7 GB line-scan DNG and clipped Canon sample; set HDR_FINISHER_RAW_TEST_SUITE on PC", ) |
+| tests/test_capability_gates.py | Checks capability gates behavior and regression contracts. | 1 | 0.0006 | unknown |  |
+| tests/test_clarity_map.py | Clarity's blurred base: a smooth pyramid, not a staircase. | 9 | 0.0642 | unknown | pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed") |
+| tests/test_color_desaturation.py | Checks color desaturation behavior and regression contracts. | 2 | 0.0062 | unknown |  |
+| tests/test_color_wheels_headroom.py | W3: grading ranges are edits, never an implicit output limiter. | 15 | 0.109 | unknown |  |
+| tests/test_coordinate_map_bounded.py | Checks coordinate map bounded behavior and regression contracts. | 24 | 0.3306 | unknown |  |
+| tests/test_core.py | Checks core behavior and regression contracts. | 71 | 0.442 | unknown |  |
+| tests/test_cpu_budget.py | Checks cpu budget behavior and regression contracts. | 2 | 0.0032 | unknown |  |
+| tests/test_cpu_strips_api.py | Phase 4: the bounded CPU path has to be reachable, and honest when it is not. | 6 | 2.1291 | unknown |  |
+| tests/test_cpu_strips.py | Phase 4: the bounded CPU strip path must equal the whole-frame path exactly. | 185 | 26.6312 | unknown |  |
+| tests/test_delivery_colour.py | Checks delivery colour behavior and regression contracts. | 7 | 0.03 | unknown |  |
+| tests/test_delivery_comparison.py | Checks delivery comparison behavior and regression contracts. | 6 | 0.3222 | unknown |  |
+| tests/test_delivery_policy.py | Checks delivery policy behavior and regression contracts. | 8 | 18.3102 | unknown |  |
+| tests/test_denoise_adaptive.py | Adaptive denoise: the contracts the preview and export both rely on. | 13 | 2.7968 | unknown | needs_native_helper; Conditional skip: native is None; pytest.skip("Native Denoise filters have not been built") |
+| tests/test_denoise_chroma_cleanup.py | Behaviour checks for non-shipping colour-cleanup research. | 12 | 0.5265 | unknown |  |
+| tests/test_denoise_classical.py | Behavioural checks for non-shipping, CPU-only classical prototypes. | 10 | 0.9187 | unknown | needs_native_helper; pytest.mark.skipif(not BINARY.exists(), reason='Offline GALOSH binary not built') |
+| tests/test_denoise_dark_noise.py | Behavioural regression cases for the isolated dark-noise research adapters. | 11 | 1.009 | unknown |  |
+| tests/test_denoise_demosaic_noise.py | Checks denoise demosaic noise behavior and regression contracts. | 20 | 0.7579 | unknown |  |
+| tests/test_denoise_document.py | Checks denoise document behavior and regression contracts. | 12 | 0.2122 | unknown |  |
+| tests/test_denoise_early_outlier.py | Checks denoise early outlier behavior and regression contracts. | 20 | 0.4923 | unknown |  |
+| tests/test_denoise_eval.py | Result-based checks for the CPU quality harness; no private corpus needed. | 11 | 0.254 | unknown |  |
+| tests/test_denoise_grain.py | Checks denoise grain behavior and regression contracts. | 13 | 1.207 | unknown | needs_native_helper; Conditional skip: enabled == '1' and (not hasattr(native, 'colour_guides_relative')); Conditional skip: not hasattr(native, 'colour_guides'); pytest.skip("Run machine setup to build the optional native filters."); pytest.skip("Run machine setup to rebuild the optional native filters.") |
+| tests/test_denoise_hot_pixel.py | Checks denoise hot pixel behavior and regression contracts. | 12 | 0.0208 | unknown |  |
+| tests/test_denoise_informative.py | Shipping measurement rejects censored evidence without changing reconstruction. | 10 | 0.145 | unknown |  |
+| tests/test_denoise_lmmse.py | Checks denoise lmmse behavior and regression contracts. | 45 | 0.6985 | unknown |  |
+| tests/test_denoise_measurement.py | Measurements belong to source pixels, survive restart, and reject stale work. | 15 | 7.1235 | unknown |  |
+| tests/test_denoise_model_windows.py | The Denoise noise model reads a few sample windows, so the preview corrects | 7 | 3.5428 | unknown |  |
+| tests/test_denoise_native_model.py | At full size the Denoise noise model is the source's own: one measurement per | 16 | 3.5409 | unknown |  |
+| tests/test_denoise_noise_model_specks.py | Behavioural coverage for the isolated noise-model/RAW-speck research. | 12 | 0.0586 | unknown |  |
+| tests/test_denoise_pilot_wiener.py | Checks denoise pilot wiener behavior and regression contracts. | 12 | 0.2994 | unknown |  |
+| tests/test_denoise_public_pairs.py | Deterministic pair registration, masking and loading; no network/private photos. | 9 | 0.073 | unknown |  |
+| tests/test_denoise_quality.py | Checks denoise quality behavior and regression contracts. | 5 | 3.0601 | unknown | pytest.skip('The pre-qualification revision is not available in this checkout') |
+| tests/test_denoise_rawnind.py | Optional result tests: local verified weights only, no download. | 15 | 0.164 | unknown | Conditional skip: candidate.kind != 'bayer'; Conditional skip: not (MODEL_ROOT / f'model_{request.param}.onnx').is_file(); pytest.skip('Bayer camera-RGB gain only'); pytest.skip('Bayer downstream scene-linear colour tail only'); pytest.skip('Bayer sensor convention only'); pytest.skip('Research-only RawNIND model not installed') |
+| tests/test_denoise_speck_cleanup.py | Result-based research tests; no photographs or network weights needed. | 12 | 1.0249 | unknown |  |
+| tests/test_desktop_security.py | Checks desktop security behavior and regression contracts. | 6 | 0.1755 | unknown |  |
+| tests/test_detail_processing.py | Checks detail processing behavior and regression contracts. | 9 | 0.4265 | unknown |  |
+| tests/test_detail_softness_microcontrast.py | Softness and Microcontrast moved from Film Look to Detail (NEXT-01 #2). | 6 | 0.0249 | unknown |  |
+| tests/test_diagnostics.py | Checks diagnostics behavior and regression contracts. | 2 | 0.0357 | unknown |  |
+| tests/test_dng_color.py | Checks dng color behavior and regression contracts. | 16 | 0.0233 | unknown | Conditional skip: logical_cpus() < 2; pytest.skip("One logical CPU") |
+| tests/test_dng_gpu.py | Grade DNG correction hands bounded work to delivery without altering its source. | 12 | 0.1211 | unknown |  |
+| tests/test_dng_opcodes.py | Checks dng opcodes behavior and regression contracts. | 25 | 0.4994 | unknown |  |
+| tests/test_dng_raw_routing.py | Checks dng raw routing behavior and regression contracts. | 6 | 0.0305 | unknown |  |
+| tests/test_dng_resource_preflight.py | Checks dng resource preflight behavior and regression contracts. | 31 | 0.0223 | unknown |  |
+| tests/test_docs_root.py | MINOR-11 -- the in-app Help documents must be the ones the app serves. | 3 | 0.0084 | unknown |  |
+| tests/test_editor_overlays.py | Checks editor overlays behavior and regression contracts. | 1 | 0.0016 | unknown |  |
+| tests/test_encoding_fidelity_options.py | Checks encoding fidelity options behavior and regression contracts. | 3 | 0.0187 | unknown |  |
+| tests/test_even_keep_round4.py | Output checks for the standalone Round 4 Denoise experiments. | 7 | 0.1458 | unknown |  |
+| tests/test_exact_highlight_ceiling.py | The final ceiling is exact, including float32 matrix/unit roundoff. | 177 | 0.7999 | unknown |  |
+| tests/test_export_denoise_parity.py | Authored denoise has to reach the export, and reach it the same way. | 38 | 125.9985 | unknown | needs_native_helper; Conditional skip: exporters.resolve_binary(binary) is None; pytest.skip("The pre-file-delivery revision is unavailable"); pytest.skip(f"{binary} is unavailable") |
+| tests/test_export_lifecycle.py | Checks export lifecycle behavior and regression contracts. | 7 | 0.042 | unknown | windows_only; pytest.mark.skipif(exporters.os.name != "nt", reason="Windows exclusive rename") |
+| tests/test_export_memory_exactness.py | Checks export memory exactness behavior and regression contracts. | 107 | 76.1988 | unknown | needs_native_helper; Conditional skip: capability is not None and capabilities[capability].status != CapabilityStatus.AVAILABLE; pytest.skip(capabilities[capability].detail) |
+| tests/test_export_metadata.py | Metadata changes must leave delivery-owned bytes and privacy intact. | 10 | 9.7348 | unknown | needs_native_helper; pytest.skip("Run tools/fetch_exiftool.py to install the pinned metadata helper.") |
+| tests/test_export_parallel.py | Checks export parallel behavior and regression contracts. | 9 | 1.9033 | unknown |  |
+| tests/test_export_parity.py | Unit and end-to-end tests for the export/reference parity file-side check. | 21 | 4.8359 | unknown | needs_native_helper; Conditional skip: capability.status != CapabilityStatus.AVAILABLE; pytest.skip(capability.detail) |
+| tests/test_export_preset_writes.py | Independent API preset stores must not share a temporary filename. | 2 | 0.01 | unknown |  |
+| tests/test_export_progress.py | Checks export progress behavior and regression contracts. | 14 | 4.9783 | unknown | needs_native_helper; Conditional skip: capabilities['jpegxl_export'].status != CapabilityStatus.AVAILABLE; Conditional skip: resolve_binary('avifgainmaputil') is None; pytest.skip("JPEG XL encoder is unavailable"); pytest.skip("avifgainmaputil is not installed") |
+| tests/test_export_shared_work.py | Export renditions share work they would otherwise repeat, with the same pixels. | 4 | 0.0526 | unknown |  |
+| tests/test_export_speed_profile.py | Checks export speed profile behavior and regression contracts. | 6 | 10.0752 | unknown |  |
+| tests/test_export_timing.py | Checks export timing behavior and regression contracts. | 7 | 0.1814 | unknown |  |
+| tests/test_export_y4m.py | Checks export y4m behavior and regression contracts. | 28 | 0.6476 | unknown |  |
+| tests/test_exposure_admission.py | Checks exposure admission behavior and regression contracts. | 12 | 0.0763 | unknown |  |
+| tests/test_extended_formats.py | Checks extended formats behavior and regression contracts. | 95 | 59.5665 | unknown | needs_native_helper; windows_only; pytest.mark.skipif(__import__("hdr_finisher.binaries", fromlist=["resolve_binary"]).resolve_binary("hdrf-jxl-info") is None,                     reason="Structured JPEG XL colour profiles need the native hdrf-jxl-info helper (Windows build only)."); pytest.mark.skipif(os.name != "nt", reason="Windows drive-letter behavior") |
+| tests/test_file_gate.py | The Library's file gate: which files are listed and read (design section 6.9, edge cases F1-F18). | 38 | 1.662 | unknown | windows_only; pytest.mark.skipif(not WINDOWS, reason="Windows file attributes"); pytest.mark.skipif(not WINDOWS, reason="Windows junctions") |
+| tests/test_film_character.py | Stock metadata and saved ownership; rendering equations remain unchanged. | 23 | 0.0683 | unknown |  |
+| tests/test_film_controls.py | Physical paper/development controls; measured source data stays immutable. | 23 | 3.7415 | unknown |  |
+| tests/test_film_grain.py | The film grain field: statistics, texture, film types and strip exactness. | 19 | 4.3681 | unknown |  |
+| tests/test_film_stock.py | Checks film stock behavior and regression contracts. | 237 | 12.33 | unknown | Conditional skip: not (REAL_STOCK_DIR / 'kodak_portra_400.json').is_file(); pytest.skip("kodak_portra_400.json has not been baked yet") |
+| tests/test_focus_cached_map.py | Checks focus cached map behavior and regression contracts. | 3 | 0.7316 | unknown |  |
+| tests/test_focus_camera_api.py | Checks focus camera api behavior and regression contracts. | 4 | 1.1004 | unknown |  |
+| tests/test_focus_camera_quality.py | Synthetic camera-JPEG checks; these do not establish real-eye accuracy. | 18 | 0.7143 | unknown |  |
+| tests/test_focus_camera_source.py | Checks focus camera source behavior and regression contracts. | 6 | 1.403 | unknown |  |
+| tests/test_focus_source_loading.py | Focus source loading preserves import pixels without a Grade document. | 10 | 0.1109 | unknown |  |
+| tests/test_folder_picker.py | Checks folder picker behavior and regression contracts. | 6 | 0.0108 | unknown |  |
+| tests/test_frontend_controls_contract.py | Checks frontend controls contract behavior and regression contracts. | 12 | 5.2374 | unknown |  |
+| tests/test_frontend_editor_layout_contract.py | Checks frontend editor layout contract behavior and regression contracts. | 11 | 0.4676 | unknown |  |
+| tests/test_frontend_inventory_contract.py | Checks frontend inventory contract behavior and regression contracts. | 1 | 0.0139 | unknown |  |
+| tests/test_frontend_local_scope_contract.py | Checks frontend local scope contract behavior and regression contracts. | 20 | 0.8337 | unknown |  |
+| tests/test_frontend_presentation_contract.py | Checks frontend presentation contract behavior and regression contracts. | 6 | 5.206 | unknown |  |
+| tests/test_frontend_render_pipeline_contract.py | Checks frontend render pipeline contract behavior and regression contracts. | 15 | 2.9619 | unknown |  |
+| tests/test_frontend_source_workflow_contract.py | Checks frontend source workflow contract behavior and regression contracts. | 17 | 1.9901 | unknown |  |
 | tests/test_frontend_status_contract.py | Checks frontend status contract behavior and regression contracts. | 2 | 0.0038 | unknown |  |
-| tests/test_gainmap_import.py | Checks gainmap import behavior and regression contracts. | 13 | 38.4623 | unknown | needs_native_helper; Conditional skip: capabilities[capability_name].status != CapabilityStatus.AVAILABLE; Conditional skip: resolve('hdrf-avif-decode') is None; pytest.mark.skipif(     probe_capabilities()["avif_decoder"].status != CapabilityStatus.AVAILABLE,     reason="avifdec is unavailable", ); pytest.mark.skipif(     probe_capabilities()["avif_gain_map_decoder"].status != CapabilityStatus.AVAILABLE,     reason="AVIF gain-map decoder tools are unavailable", ); pytest.skip("Native AVIF handoff is not built on this platform"); pytest.skip(capabilities[capability_name].detail) |
-| tests/test_geometry_audit.py | Checks geometry audit behavior and regression contracts. | 94 | 1.3058 | unknown |  |
-| tests/test_geometry_region.py | Phase 3: post-geometry region extraction must equal the full-frame path. | 51 | 0.3428 | unknown |  |
-| tests/test_geometry_roll_cache.py | Resampled source tiles are cut from the source, not from a rebuilt frame. | 8 | 0.6134 | unknown |  |
-| tests/test_gpu_delivery.py | Fast broker checks; the Electron driver checks real decoded GPU pixels. | 39 | 8.9394 | unknown |  |
-| tests/test_gpu_mask_bitmap_verdict.py | Checks gpu mask bitmap verdict behavior and regression contracts. | 2 | 0.0668 | unknown |  |
-| tests/test_graceful_grades.py | Result checks for damaged and future saved grades. All files are disposable. | 45 | 5.1016 | unknown |  |
-| tests/test_grade_open_reuse.py | Fast source identity and single-decode checks using disposable pixels. | 5 | 1.1337 | unknown |  |
-| tests/test_grade_sweep_summary.py | Release reporting distinguishes frame noise and cancelled work from failures. | 2 | 0.0015 | unknown |  |
-| tests/test_grain_work.py | Cancellation and exact grain output from baseline 88775059. | 13 | 6.6657 | unknown | Conditional skip: cpu_budget.logical_cpus() < 2; pytest.skip("Multiple CPU workers are needed") |
-| tests/test_hdr_ceiling.py | Decoded HDR target enforcement and local correction. | 94 | 597.5859 | unknown | needs_native_helper; Conditional skip: backend.capability.status.value != 'available'; Conditional skip: not (resolve_binary('avifgainmaputil') and resolve_binary('avifdec')); pytest.skip("Bundled AVIF gain-map tools are unavailable."); pytest.skip(backend.capability.detail) |
-| tests/test_hdr_delivery.py | Checks hdr delivery behavior and regression contracts. | 6 | 25.6688 | unknown | needs_native_helper; Conditional skip: backend.capability.status.value != 'available'; pytest.skip(backend.capability.detail) |
-| tests/test_hdr_from_sdr.py | Checks hdr from sdr behavior and regression contracts. | 17 | 0.4109 | unknown |  |
-| tests/test_highlight_attenuate.py | AgX-style Attenuate colour handling (prototype, October 2026): results, not wording. | 8 | 0.0193 | unknown |  |
-| tests/test_highlight_delivery_floor.py | Checks highlight delivery floor behavior and regression contracts. | 32 | 189.0542 | unknown | needs_native_helper; Conditional skip: backend.capability.status.value != 'available'; pytest.skip(backend.capability.detail) |
-| tests/test_highlight_edge_colour.py | Edge-colour highlight reconstruction (prototype, October 2026): results on a synthetic clip. | 4 | 1.3936 | unknown |  |
-| tests/test_highlight_edge_gpu.py | Edge-colour uses the shared delivery queue without changing source identity. | 16 | 4.3446 | unknown |  |
-| tests/test_histogram_correctness.py | Checks histogram correctness behavior and regression contracts. | 5 | 0.6277 | unknown |  |
-| tests/test_hosting_probe.py | Checks hosting probe behavior and regression contracts. | 3 | 0.0276 | unknown |  |
-| tests/test_hsl_integration.py | Pipeline, settings carriers, exact neutral and actual-stage sampling. | 49 | 1.5601 | unknown |  |
-| tests/test_hsl_selection.py | Behaviour of the shared colour selection CPU reference and its use by HSL. | 10 | 0.0433 | unknown |  |
-| tests/test_hsl.py | Behavioral contract for the production Python port of the HSL prototype. | 7 | 2.2107 | unknown |  |
-| tests/test_hue_mask.py | Local hue-mask leaves on the shared colour selection (selected before HSL). | 9 | 0.2063 | unknown |  |
-| tests/test_import_bands.py | Checks import bands behavior and regression contracts. | 11 | 0.5048 | unknown |  |
-| tests/test_import_opening.py | Checks import opening behavior and regression contracts. | 10 | 0.0693 | unknown |  |
-| tests/test_instrument_work.py | Checks instrument work behavior and regression contracts. | 2 | 0.1658 | unknown |  |
-| tests/test_jpegxl_helper_fallback.py | Checks jpegxl helper fallback behavior and regression contracts. | 13 | 10.0105 | unknown |  |
-| tests/test_jpegxl_marker_validation.py | Bad typed marker values must be reported as a JPEG XL input error. | 5 | 0.0492 | unknown |  |
+| tests/test_gainmap_import.py | Checks gainmap import behavior and regression contracts. | 13 | 33.3355 | unknown | needs_native_helper; Conditional skip: capabilities[capability_name].status != CapabilityStatus.AVAILABLE; Conditional skip: resolve('hdrf-avif-decode') is None; pytest.mark.skipif(     probe_capabilities()["avif_decoder"].status != CapabilityStatus.AVAILABLE,     reason="avifdec is unavailable", ); pytest.mark.skipif(     probe_capabilities()["avif_gain_map_decoder"].status != CapabilityStatus.AVAILABLE,     reason="AVIF gain-map decoder tools are unavailable", ); pytest.skip("Native AVIF handoff is not built on this platform"); pytest.skip(capabilities[capability_name].detail) |
+| tests/test_geometry_audit.py | Checks geometry audit behavior and regression contracts. | 94 | 1.2214 | unknown |  |
+| tests/test_geometry_region.py | Phase 3: post-geometry region extraction must equal the full-frame path. | 51 | 0.3074 | unknown |  |
+| tests/test_geometry_roll_cache.py | Resampled source tiles are cut from the source, not from a rebuilt frame. | 8 | 0.5065 | unknown |  |
+| tests/test_gpu_delivery.py | Fast broker checks; the Electron driver checks real decoded GPU pixels. | 39 | 11.1933 | unknown |  |
+| tests/test_gpu_mask_bitmap_verdict.py | Checks gpu mask bitmap verdict behavior and regression contracts. | 2 | 0.066 | unknown |  |
+| tests/test_graceful_grades.py | Result checks for damaged and future saved grades. All files are disposable. | 45 | 3.3949 | unknown |  |
+| tests/test_grade_open_reuse.py | Fast source identity and single-decode checks using disposable pixels. | 5 | 1.1631 | unknown |  |
+| tests/test_grade_sweep_summary.py | Release reporting distinguishes frame noise and cancelled work from failures. | 2 | 0.0016 | unknown |  |
+| tests/test_grain_work.py | Cancellation and exact grain output from baseline 88775059. | 13 | 6.0651 | unknown | Conditional skip: cpu_budget.logical_cpus() < 2; pytest.skip("Multiple CPU workers are needed") |
+| tests/test_hdr_ceiling.py | Decoded HDR target enforcement and local correction. | 94 | 502.9115 | unknown | needs_native_helper; Conditional skip: backend.capability.status.value != 'available'; Conditional skip: not (resolve_binary('avifgainmaputil') and resolve_binary('avifdec')); pytest.skip("Bundled AVIF gain-map tools are unavailable."); pytest.skip(backend.capability.detail) |
+| tests/test_hdr_delivery.py | Checks hdr delivery behavior and regression contracts. | 6 | 24.2887 | unknown | needs_native_helper; Conditional skip: backend.capability.status.value != 'available'; pytest.skip(backend.capability.detail) |
+| tests/test_hdr_from_sdr.py | Checks hdr from sdr behavior and regression contracts. | 17 | 0.4837 | unknown |  |
+| tests/test_highlight_attenuate.py | AgX-style Attenuate colour handling (prototype, October 2026): results, not wording. | 8 | 0.0156 | unknown |  |
+| tests/test_highlight_delivery_floor.py | Checks highlight delivery floor behavior and regression contracts. | 32 | 151.9222 | unknown | needs_native_helper; Conditional skip: backend.capability.status.value != 'available'; pytest.skip(backend.capability.detail) |
+| tests/test_highlight_edge_colour.py | Edge-colour highlight reconstruction (prototype, October 2026): results on a synthetic clip. | 4 | 1.6975 | unknown |  |
+| tests/test_highlight_edge_gpu.py | Edge-colour uses the shared delivery queue without changing source identity. | 16 | 5.2681 | unknown |  |
+| tests/test_histogram_correctness.py | Checks histogram correctness behavior and regression contracts. | 5 | 1.5715 | unknown |  |
+| tests/test_hosting_probe.py | Checks hosting probe behavior and regression contracts. | 3 | 0.0199 | unknown |  |
+| tests/test_hsl_integration.py | Pipeline, settings carriers, exact neutral and actual-stage sampling. | 49 | 1.9528 | unknown |  |
+| tests/test_hsl_selection.py | Behaviour of the shared colour selection CPU reference and its use by HSL. | 10 | 0.0395 | unknown |  |
+| tests/test_hsl.py | Behavioral contract for the production Python port of the HSL prototype. | 7 | 0.859 | unknown |  |
+| tests/test_hue_mask.py | Local hue-mask leaves on the shared colour selection (selected before HSL). | 9 | 0.1824 | unknown |  |
+| tests/test_import_bands.py | Checks import bands behavior and regression contracts. | 11 | 0.5436 | unknown |  |
+| tests/test_import_opening.py | Checks import opening behavior and regression contracts. | 10 | 0.0375 | unknown |  |
+| tests/test_instrument_work.py | Checks instrument work behavior and regression contracts. | 2 | 0.2067 | unknown |  |
+| tests/test_jpegxl_helper_fallback.py | Checks jpegxl helper fallback behavior and regression contracts. | 13 | 9.7682 | unknown |  |
+| tests/test_jpegxl_marker_validation.py | Bad typed marker values must be reported as a JPEG XL input error. | 5 | 0.0429 | unknown |  |
 | tests/test_large_avif_import_performance.py | Checks large avif import performance behavior and regression contracts. | 1 | 0.0004 | unknown | needs_test_photos; pytest.mark.skipif(not LARGE_AVIF, reason="Set HDR_FINISHER_LARGE_AVIF to run the local 40+ MP AVIF gate.") |
-| tests/test_launcher.py | Checks launcher behavior and regression contracts. | 7 | 1.9938 | unknown |  |
-| tests/test_lens_correction.py | Checks lens correction behavior and regression contracts. | 23 | 15.6724 | unknown |  |
-| tests/test_lens_filter.py | Physical lens-filter results; no source-text contracts. | 24 | 0.4822 | unknown |  |
-| tests/test_library_album_commands.py | Album creation commands on disposable sources, each one undo step. | 4 | 3.4967 | unknown |  |
-| tests/test_library_cache.py | Behaviour checks for the shared Library cache and its JPEG transport. | 19 | 29.2215 | unknown |  |
-| tests/test_library_collections.py | Tag management, albums and the Library index, on temporary copies only. | 11 | 4.2218 | unknown |  |
-| tests/test_library_copies.py | Checks library copies behavior and regression contracts. | 19 | 16.1328 | unknown |  |
-| tests/test_library_cpu_bands.py | Checks library cpu bands behavior and regression contracts. | 7 | 0.0995 | unknown |  |
-| tests/test_library_direct_draw.py | Which reduced Library scenes the page may draw from its own planes. | 2 | 0.0014 | unknown |  |
-| tests/test_library_dng.py | Checks library dng behavior and regression contracts. | 33 | 0.6067 | unknown |  |
-| tests/test_library_edge_fallback.py | Scoped reconstruction timing, cancellation and isolation after GPU rejection. | 9 | 0.0181 | unknown |  |
-| tests/test_library_embedded_jpeg.py | Checks library embedded jpeg behavior and regression contracts. | 11 | 2.4085 | unknown | needs_test_photos; Conditional skip: not path.exists(); pytest.skip('Mixed v1 fixture required: ' + name) |
-| tests/test_library_estimates.py | Checks library estimates behavior and regression contracts. | 74 | 5.9443 | unknown |  |
-| tests/test_library_file_cache_index.py | Checks library file cache index behavior and regression contracts. | 16 | 3.3827 | unknown |  |
-| tests/test_library_file_commands.py | Checks library file commands behavior and regression contracts. | 43 | 5.6651 | unknown | windows_only; Conditional skip: os.name != 'nt'; pytest.mark.skipif(os.name != 'nt' and sys.platform != 'darwin', reason='Library file commands require Windows or macOS.'); pytest.skip('Windows named streams') |
-| tests/test_library_file_delete.py | Checks library file delete behavior and regression contracts. | 52 | 9.5185 | unknown | mac_only; windows_only; Conditional skip: kind == 'link'; Conditional skip: not library_recycle.available(photo); Conditional skip: os.name != 'nt'; Conditional skip: os.name == 'nt' and getattr(e, 'winerror', None) == 1314; pytest.mark.skipif(os.name != 'nt' and sys.platform != 'darwin', reason='Library file commands require Windows or macOS.'); pytest.mark.skipif(os.name != 'nt', reason='Only Windows offers explicit permanent deletion.'); pytest.mark.skipif(sys.platform!='darwin',reason='macOS Trash registers in-app Undo.'); pytest.skip('This disposable drive has no Bin'); pytest.skip('Windows did not grant symlink creation'); pytest.skip('Windows explicit RecycleItem') |
-| tests/test_library_file_exfat.py | Exercise D's actual unstable IDs only in newly made disposable folders. | 43 | 174.8357 | unknown | Conditional skip: os.name != 'nt' or stable_ids(output); pytest.skip('This workspace is not on a FAT filesystem') |
-| tests/test_library_file_folders.py | Checks library file folders behavior and regression contracts. | 22 | 3.856 | unknown | pytest.mark.skipif(os.name != 'nt' and sys.platform != 'darwin', reason='Library file commands require Windows or macOS.') |
-| tests/test_library_file_macos.py | Disposable-file macOS coverage; real Trash checks require the shared lock. | 38 | 0.0112 | unknown | mac_only; pytest.mark.skipif(not os.environ.get('HDR_FINISHER_TEST_CROSS_VOLUME'), reason='No disposable second volume selected'); pytest.mark.skipif(os.environ.get('HDR_FINISHER_TEST_MAC_TRASH') != '1',     reason='Run with HDR_FINISHER_TEST_MAC_TRASH=1 through gpu-run-lock.py'); pytest.mark.skipif(sys.platform != 'darwin', reason='macOS native primitives') |
-| tests/test_library_file_platform.py | Checks library file platform behavior and regression contracts. | 1 | 0.0372 | unknown |  |
-| tests/test_library_finished_thumbnails.py | Checks library finished thumbnails behavior and regression contracts. | 12 | 1.0177 | unknown |  |
-| tests/test_library_folder_checks.py | Folder checks on disposable photos, with a fake clock and no real timer waits. | 14 | 6.6805 | unknown | windows_only; Conditional skip: os.name != 'nt'; pytest.skip("Windows change notification") |
-| tests/test_library_folder_commands.py | Checks library folder commands behavior and regression contracts. | 20 | 0.0943 | unknown |  |
-| tests/test_library_folder_stream.py | Folder streaming reads the index first and bounds discovery/reconciliation. | 12 | 2.2349 | unknown |  |
-| tests/test_library_gpu_raw.py | Camera RAW Library thumbnails developed on the GPU: the backend half. | 29 | 0.9088 | unknown | Conditional skip: profile is None; pytest.skip("Lensfun profile unavailable") |
-| tests/test_library_grade_pictures.py | Saved-grade hand-offs: identity, persistent pixels, and no development. | 16 | 9.3957 | unknown |  |
-| tests/test_library_grades.py | Slice 3 Stage A: real grade documents, disposable files, writer/recovery boundaries. | 24 | 60.0313 | unknown | needs_native_helper; Conditional skip: capabilities[capability].status != CapabilityStatus.AVAILABLE; pytest.skip(f"{capability} is not available") |
-| tests/test_library_grants.py | Checks library grants behavior and regression contracts. | 6 | 0.0386 | unknown |  |
-| tests/test_library_health.py | Stage B health, controls and diagnostics on disposable photos only. | 13 | 25.4078 | unknown |  |
-| tests/test_library_history.py | Checks library history behavior and regression contracts. | 10 | 6.3668 | unknown |  |
-| tests/test_library_lane_progress.py | Exercise the real helper lanes with deterministic decode checkpoints. | 1 | 0.0098 | unknown |  |
-| tests/test_library_live.py | Stored source identity, read-only grades and the existing cache controls. | 42 | 17.7845 | unknown | Conditional skip: logical_cpus() < 2; pytest.skip("One logical CPU") |
-| tests/test_library_marks.py | Checks library marks behavior and regression contracts. | 16 | 0.9206 | unknown |  |
-| tests/test_library_measurement_identity.py | Checks library measurement identity behavior and regression contracts. | 2 | 0.7274 | unknown |  |
-| tests/test_library_membership.py | Pins/album scope on disposable photos and app data only. | 12 | 2.6944 | unknown |  |
-| tests/test_library_metadata.py | Checks library metadata behavior and regression contracts. | 7 | 0.0638 | unknown |  |
-| tests/test_library_native.py | Checks library native behavior and regression contracts. | 4 | 0.385 | unknown |  |
-| tests/test_library_os_junk.py | Checks library os junk behavior and regression contracts. | 3 | 0.0599 | unknown |  |
-| tests/test_library_overlay_identity.py | Checks library overlay identity behavior and regression contracts. | 2 | 0.8916 | unknown |  |
-| tests/test_library_overlays.py | Checks library overlays behavior and regression contracts. | 54 | 1.3071 | unknown |  |
-| tests/test_library_paste.py | Selective bulk paste exercises saved documents, virtual items and durable work. | 31 | 13.5135 | unknown |  |
-| tests/test_library_picture_errors.py | Failed pictures are durable cache results, never repeated decoder jobs. | 42 | 24.762 | unknown |  |
-| tests/test_library_pictures.py | Checks library pictures behavior and regression contracts. | 24 | 4.6586 | unknown |  |
-| tests/test_library_pins.py | Checks library pins behavior and regression contracts. | 2 | 13.6495 | unknown |  |
-| tests/test_library_raw.py | Checks library raw behavior and regression contracts. | 9 | 6.0736 | unknown |  |
-| tests/test_library_reduced.py | Checks library reduced behavior and regression contracts. | 38 | 2.7087 | unknown |  |
-| tests/test_library_refresh.py | Refresh thumbnail removes one photo's stored pictures and nothing else. | 10 | 0.5369 | unknown |  |
-| tests/test_library_responsiveness.py | Foreground results and lock isolation, using disposable data only. | 8 | 1.8985 | unknown |  |
+| tests/test_launcher.py | Checks launcher behavior and regression contracts. | 7 | 1.8823 | unknown |  |
+| tests/test_lens_correction.py | Checks lens correction behavior and regression contracts. | 23 | 16.0888 | unknown |  |
+| tests/test_lens_filter.py | Physical lens-filter results; no source-text contracts. | 24 | 0.5519 | unknown |  |
+| tests/test_library_album_commands.py | Album creation commands on disposable sources, each one undo step. | 4 | 3.8994 | unknown |  |
+| tests/test_library_cache.py | Behaviour checks for the shared Library cache and its JPEG transport. | 19 | 37.1472 | unknown |  |
+| tests/test_library_collections.py | Tag management, albums and the Library index, on temporary copies only. | 11 | 3.9018 | unknown |  |
+| tests/test_library_copies.py | Checks library copies behavior and regression contracts. | 19 | 20.3429 | unknown |  |
+| tests/test_library_cpu_bands.py | Checks library cpu bands behavior and regression contracts. | 7 | 0.0901 | unknown |  |
+| tests/test_library_direct_draw.py | Which reduced Library scenes the page may draw from its own planes. | 2 | 0.0012 | unknown |  |
+| tests/test_library_dng.py | Checks library dng behavior and regression contracts. | 33 | 0.2165 | unknown |  |
+| tests/test_library_edge_fallback.py | Scoped reconstruction timing, cancellation and isolation after GPU rejection. | 9 | 0.0154 | unknown |  |
+| tests/test_library_embedded_jpeg.py | Checks library embedded jpeg behavior and regression contracts. | 11 | 2.015 | unknown | needs_test_photos; Conditional skip: not path.exists(); pytest.skip('Mixed v1 fixture required: ' + name) |
+| tests/test_library_estimates.py | Checks library estimates behavior and regression contracts. | 74 | 3.9534 | unknown |  |
+| tests/test_library_file_cache_index.py | Checks library file cache index behavior and regression contracts. | 16 | 1.6679 | unknown |  |
+| tests/test_library_file_commands.py | Checks library file commands behavior and regression contracts. | 43 | 5.7479 | unknown | windows_only; Conditional skip: os.name != 'nt'; pytest.mark.skipif(os.name != 'nt' and sys.platform != 'darwin', reason='Library file commands require Windows or macOS.'); pytest.skip('Windows named streams') |
+| tests/test_library_file_delete.py | Checks library file delete behavior and regression contracts. | 52 | 8.7961 | unknown | mac_only; windows_only; Conditional skip: kind == 'link'; Conditional skip: not library_recycle.available(photo); Conditional skip: os.name != 'nt'; Conditional skip: os.name == 'nt' and getattr(e, 'winerror', None) == 1314; pytest.mark.skipif(os.name != 'nt' and sys.platform != 'darwin', reason='Library file commands require Windows or macOS.'); pytest.mark.skipif(os.name != 'nt', reason='Only Windows offers explicit permanent deletion.'); pytest.mark.skipif(sys.platform!='darwin',reason='macOS Trash registers in-app Undo.'); pytest.skip('This disposable drive has no Bin'); pytest.skip('Windows did not grant symlink creation'); pytest.skip('Windows explicit RecycleItem') |
+| tests/test_library_file_exfat.py | Exercise D's actual unstable IDs only in newly made disposable folders. | 43 | 147.7378 | unknown | Conditional skip: os.name != 'nt' or stable_ids(output); pytest.skip('This workspace is not on a FAT filesystem') |
+| tests/test_library_file_folders.py | Checks library file folders behavior and regression contracts. | 22 | 3.859 | unknown | pytest.mark.skipif(os.name != 'nt' and sys.platform != 'darwin', reason='Library file commands require Windows or macOS.') |
+| tests/test_library_file_macos.py | Disposable-file macOS coverage; real Trash checks require the shared lock. | 38 | 0.0114 | unknown | mac_only; pytest.mark.skipif(not os.environ.get('HDR_FINISHER_TEST_CROSS_VOLUME'), reason='No disposable second volume selected'); pytest.mark.skipif(os.environ.get('HDR_FINISHER_TEST_MAC_TRASH') != '1',     reason='Run with HDR_FINISHER_TEST_MAC_TRASH=1 through gpu-run-lock.py'); pytest.mark.skipif(sys.platform != 'darwin', reason='macOS native primitives') |
+| tests/test_library_file_platform.py | Checks library file platform behavior and regression contracts. | 1 | 0.0381 | unknown |  |
+| tests/test_library_finished_thumbnails.py | Checks library finished thumbnails behavior and regression contracts. | 12 | 1.6239 | unknown |  |
+| tests/test_library_folder_checks.py | Folder checks on disposable photos, with a fake clock and no real timer waits. | 14 | 6.4765 | unknown | windows_only; Conditional skip: os.name != 'nt'; pytest.skip("Windows change notification") |
+| tests/test_library_folder_commands.py | Checks library folder commands behavior and regression contracts. | 20 | 0.0592 | unknown |  |
+| tests/test_library_folder_stream.py | Folder streaming reads the index first and bounds discovery/reconciliation. | 12 | 2.3324 | unknown |  |
+| tests/test_library_gpu_raw.py | Camera RAW Library thumbnails developed on the GPU: the backend half. | 29 | 0.7311 | unknown | Conditional skip: profile is None; pytest.skip("Lensfun profile unavailable") |
+| tests/test_library_grade_pictures.py | Saved-grade hand-offs: identity, persistent pixels, and no development. | 16 | 6.9316 | unknown |  |
+| tests/test_library_grades.py | Slice 3 Stage A: real grade documents, disposable files, writer/recovery boundaries. | 24 | 47.6083 | unknown | needs_native_helper; Conditional skip: capabilities[capability].status != CapabilityStatus.AVAILABLE; pytest.skip(f"{capability} is not available") |
+| tests/test_library_grants.py | Checks library grants behavior and regression contracts. | 6 | 0.0415 | unknown |  |
+| tests/test_library_health.py | Stage B health, controls and diagnostics on disposable photos only. | 13 | 24.733 | unknown |  |
+| tests/test_library_history.py | Checks library history behavior and regression contracts. | 10 | 6.2582 | unknown |  |
+| tests/test_library_lane_progress.py | Exercise the real helper lanes with deterministic decode checkpoints. | 1 | 0.0094 | unknown |  |
+| tests/test_library_live.py | Stored source identity, read-only grades and the existing cache controls. | 42 | 20.3831 | unknown | Conditional skip: logical_cpus() < 2; pytest.skip("One logical CPU") |
+| tests/test_library_marks.py | Checks library marks behavior and regression contracts. | 16 | 0.9415 | unknown |  |
+| tests/test_library_measurement_identity.py | Checks library measurement identity behavior and regression contracts. | 2 | 0.9061 | unknown |  |
+| tests/test_library_membership.py | Pins/album scope on disposable photos and app data only. | 12 | 2.8214 | unknown |  |
+| tests/test_library_metadata.py | Checks library metadata behavior and regression contracts. | 7 | 0.0745 | unknown |  |
+| tests/test_library_native.py | Checks library native behavior and regression contracts. | 4 | 0.4252 | unknown |  |
+| tests/test_library_os_junk.py | Checks library os junk behavior and regression contracts. | 3 | 0.0682 | unknown |  |
+| tests/test_library_overlay_identity.py | Checks library overlay identity behavior and regression contracts. | 2 | 1.0242 | unknown |  |
+| tests/test_library_overlays.py | Checks library overlays behavior and regression contracts. | 54 | 1.6462 | unknown |  |
+| tests/test_library_paste.py | Selective bulk paste exercises saved documents, virtual items and durable work. | 31 | 14.6014 | unknown |  |
+| tests/test_library_picture_errors.py | Failed pictures are durable cache results, never repeated decoder jobs. | 42 | 19.1195 | unknown |  |
+| tests/test_library_pictures.py | Checks library pictures behavior and regression contracts. | 24 | 3.5113 | unknown |  |
+| tests/test_library_pins.py | Checks library pins behavior and regression contracts. | 2 | 13.8804 | unknown |  |
+| tests/test_library_raw.py | Checks library raw behavior and regression contracts. | 9 | 5.3226 | unknown |  |
+| tests/test_library_reduced.py | Checks library reduced behavior and regression contracts. | 38 | 1.7452 | unknown |  |
+| tests/test_library_refresh.py | Refresh thumbnail removes one photo's stored pictures and nothing else. | 10 | 0.5127 | unknown |  |
+| tests/test_library_responsiveness.py | Foreground results and lock isolation, using disposable data only. | 8 | 1.5673 | unknown |  |
 | tests/test_library_review.py | Checks library review behavior and regression contracts. | 2 | 0.0017 | unknown |  |
-| tests/test_library_rgb.py | Checks library rgb behavior and regression contracts. | 70 | 63.3598 | unknown | needs_test_photos |
-| tests/test_library_scheduler.py | Execute the RAM admission rules without sampling the test runner. | 52 | 0.0609 | unknown |  |
-| tests/test_library_screen_previews.py | Persistent finished pictures: identity, independent eviction and HDR ceiling. | 6 | 0.9891 | unknown |  |
-| tests/test_library_settings_writer.py | Stage A recovery/Undo boundaries, using only disposable photos and settings. | 36 | 8.1948 | unknown |  |
-| tests/test_library_smart_albums.py | Checks library smart albums behavior and regression contracts. | 16 | 4.5932 | unknown |  |
-| tests/test_library_source_baseline.py | Exercise the measurement driver against real stored scenes in a disposable profile. | 3 | 27.0087 | unknown | pytest.mark.skipif(sys.platform == "darwin" and bool(os.environ.get("CI")), reason="Overlap timing assumption does not hold on the macOS CI runner (0.9.2 follow-up).") |
-| tests/test_library_stage_c.py | Stage C recovery on disposable photos, folders, databases and processes. | 17 | 5.1317 | unknown | windows_only; pytest.mark.skipif(os.name != "nt", reason="Windows case-insensitive filename semantics") |
-| tests/test_library_startup_logging.py | Checks library startup logging behavior and regression contracts. | 2 | 0.0327 | unknown |  |
-| tests/test_library_stopwatch.py | Checks library stopwatch behavior and regression contracts. | 1 | 0.1925 | unknown |  |
-| tests/test_library_test_patterns.py | Checks library test patterns behavior and regression contracts. | 3 | 1.4735 | unknown |  |
-| tests/test_library_trim_concurrency.py | A blocked disk spill must not own the shared transport lock. | 1 | 0.0481 | unknown |  |
-| tests/test_library_worker.py | Checks library worker behavior and regression contracts. | 21 | 42.533 | unknown |  |
+| tests/test_library_rgb.py | Checks library rgb behavior and regression contracts. | 70 | 54.062 | unknown | needs_test_photos |
+| tests/test_library_scheduler.py | Execute the RAM admission rules without sampling the test runner. | 52 | 0.0613 | unknown |  |
+| tests/test_library_screen_previews.py | Persistent finished pictures: identity, independent eviction and HDR ceiling. | 6 | 0.9509 | unknown |  |
+| tests/test_library_settings_writer.py | Stage A recovery/Undo boundaries, using only disposable photos and settings. | 36 | 8.0055 | unknown |  |
+| tests/test_library_smart_albums.py | Checks library smart albums behavior and regression contracts. | 16 | 2.9495 | unknown |  |
+| tests/test_library_source_baseline.py | Exercise the measurement driver against real stored scenes in a disposable profile. | 3 | 49.998 | unknown | pytest.mark.skipif(sys.platform == "darwin" and bool(os.environ.get("CI")), reason="Overlap timing assumption does not hold on the macOS CI runner (0.9.2 follow-up).") |
+| tests/test_library_stage_c.py | Stage C recovery on disposable photos, folders, databases and processes. | 17 | 4.8961 | unknown | windows_only; pytest.mark.skipif(os.name != "nt", reason="Windows case-insensitive filename semantics") |
+| tests/test_library_startup_logging.py | Checks library startup logging behavior and regression contracts. | 2 | 0.0466 | unknown |  |
+| tests/test_library_stopwatch.py | Checks library stopwatch behavior and regression contracts. | 1 | 0.0767 | unknown |  |
+| tests/test_library_test_patterns.py | Checks library test patterns behavior and regression contracts. | 3 | 1.8925 | unknown |  |
+| tests/test_library_trim_concurrency.py | A blocked disk spill must not own the shared transport lock. | 1 | 0.0493 | unknown |  |
+| tests/test_library_worker.py | Checks library worker behavior and regression contracts. | 21 | 37.8864 | unknown |  |
 | tests/test_linear_dng_probe.py | Checks linear dng probe behavior and regression contracts. | 11 | 0.0068 | unknown |  |
-| tests/test_linear_dng.py | Checks linear dng behavior and regression contracts. | 26 | 0.4187 | unknown | needs_native_helper; needs_test_photos; Conditional skip: compression in {'jpegxl', 'jpegxl_lossy'}; Conditional skip: not imagecodecs.JPEGXL.available; Conditional skip: not root.exists(); pytest.skip("Shared HDR Test Images corpus is not present."); pytest.skip('JPEG XL decoder unavailable') |
-| tests/test_linked_sdr_tail_probe.py | Checks linked sdr tail probe behavior and regression contracts. | 8 | 0.0134 | unknown |  |
+| tests/test_linear_dng.py | Checks linear dng behavior and regression contracts. | 26 | 0.4636 | unknown | needs_native_helper; needs_test_photos; Conditional skip: compression in {'jpegxl', 'jpegxl_lossy'}; Conditional skip: not imagecodecs.JPEGXL.available; Conditional skip: not root.exists(); pytest.skip("Shared HDR Test Images corpus is not present."); pytest.skip('JPEG XL decoder unavailable') |
+| tests/test_linked_sdr_tail_probe.py | Checks linked sdr tail probe behavior and regression contracts. | 8 | 0.0128 | unknown |  |
 | tests/test_linux_launcher.py | Checks linux launcher behavior and regression contracts. | 1 | 0.0003 | unknown | posix_only; pytest.mark.skipif(os.name == "nt", reason="POSIX parent-process behavior") |
-| tests/test_loader_fixtures.py | Checks loader fixtures behavior and regression contracts. | 61 | 2.1617 | unknown | needs_test_photos |
-| tests/test_loader_interpretation.py | A manual interpretation resolves both fields and starts from encoded pixels. | 10 | 1.3025 | unknown | needs_native_helper; pytest.mark.skipif(__import__("hdr_finisher.binaries", fromlist=["resolve_binary"]).resolve_binary("hdrf-jxl-info") is None,                     reason="Structured JPEG XL colour profiles need the native hdrf-jxl-info helper (Windows build only).") |
-| tests/test_local_adjustments.py | Checks local adjustments behavior and regression contracts. | 117 | 5.7682 | unknown |  |
-| tests/test_log_noise.py | Checks log noise behavior and regression contracts. | 2 | 0.0033 | unknown |  |
-| tests/test_log_timeline.py | Checks log timeline behavior and regression contracts. | 1 | 4.3415 | unknown |  |
-| tests/test_machine_tooling.py | Tooling checks use disposable locks and small child processes, never the GPU. | 11 | 46.5702 | unknown | mac_only; posix_only; pytest.mark.skipif(os.name == 'nt', reason='POSIX groups; Windows uses existing taskkill /T'); pytest.mark.skipif(sys.platform != 'darwin', reason='macOS physical-footprint diagnostic') |
-| tests/test_mask_blur_strips.py | Checks mask blur strips behavior and regression contracts. | 48 | 0.2939 | unknown |  |
-| tests/test_mask_region.py | Exact masks for a region only (Viewport-Bounded GPU Preview PRD 5.1). | 60 | 9.0543 | unknown |  |
-| tests/test_mask_softness.py | The soft-mask rule (Viewport-Bounded GPU Preview PRD 5.1). | 8 | 8.3976 | unknown |  |
-| tests/test_mask_work.py | Checks mask work behavior and regression contracts. | 12 | 2.5816 | unknown |  |
-| tests/test_media_browser_locations.py | Saved browser locations are shortcuts only; Library pins stay separate (Steve, November 13, 2026). | 1 | 0.4849 | unknown |  |
-| tests/test_media_browser_peek.py | Checks media browser peek behavior and regression contracts. | 6 | 0.8062 | unknown |  |
-| tests/test_metadata_helper_lifecycle.py | Metadata helper shutdown releases pipes as well as the child process. | 1 | 0.9267 | unknown |  |
-| tests/test_metadata.py | Checks metadata behavior and regression contracts. | 16 | 0.0168 | unknown |  |
-| tests/test_micro_grain_cpu_preview.py | Checks micro grain cpu preview behavior and regression contracts. | 52 | 13.3031 | unknown |  |
-| tests/test_model_declaration_contracts.py | Checks model declaration contracts behavior and regression contracts. | 2 | 0.0084 | unknown |  |
-| tests/test_native_source_stream.py | Checks native source stream behavior and regression contracts. | 16 | 0.187 | unknown |  |
-| tests/test_negative_source_gamut.py | Import-boundary gamut projection: signed conversion, shared routes and cache identity. | 11 | 0.0317 | unknown |  |
-| tests/test_peak_accuracy.py | Checks peak accuracy behavior and regression contracts. | 6 | 0.2678 | unknown |  |
-| tests/test_performance_pipeline.py | Checks performance pipeline behavior and regression contracts. | 12 | 0.2167 | unknown |  |
-| tests/test_photo_framing.py | Checks photo framing behavior and regression contracts. | 39 | 1.9308 | unknown | needs_native_helper; Conditional skip: caps['jpegxl_export'].status.value != 'available'; pytest.skip("JPEG XL encoder unavailable") |
-| tests/test_pixel_cleanup.py | Behaviour checks for calibration-backed Pixel cleanup, no private photos. | 22 | 0.0872 | unknown |  |
-| tests/test_preview_display.py | Checks preview display behavior and regression contracts. | 7 | 0.9737 | unknown | needs_native_helper; Conditional skip: resolve_binary('avifenc') is None; pytest.skip("AVIF preview encoder unavailable") |
-| tests/test_preview_export_compare.py | The comparison tool's own arithmetic (Viewport-Bounded GPU Preview PRD, 4.6). | 19 | 0.0435 | unknown |  |
-| tests/test_preview_export_parity.py | Preview and export must be the same graph, differing only where they say so. | 16 | 1.3233 | unknown |  |
-| tests/test_preview_geometry.py | Checks preview geometry behavior and regression contracts. | 12 | 2.2162 | unknown |  |
-| tests/test_preview_resolution_contract.py | Checks preview resolution contract behavior and regression contracts. | 4 | 0.9636 | unknown |  |
-| tests/test_project_manifest.py | Malformed project manifests fail as project errors, without opening a source. | 5 | 0.0519 | unknown |  |
-| tests/test_project_open_tolerance.py | A saved project outlives the settings it was saved with. | 4 | 0.009 | unknown |  |
-| tests/test_project_save_conflicts.py | Saving a project must keep conflict detection attached to its destination. | 2 | 0.0727 | unknown |  |
-| tests/test_proof_export_identity.py | A full-size Proof is the export, byte for byte. | 21 | 206.2887 | unknown | needs_native_helper; Conditional skip: capabilities['ultrahdr_encoder'].status != CapabilityStatus.AVAILABLE; Conditional skip: capabilities[FORMATS['avif_gain_map'][0]].status != CapabilityStatus.AVAILABLE; Conditional skip: capabilities[capability].status != CapabilityStatus.AVAILABLE; pytest.skip("AVIF Gain Map encoder unavailable"); pytest.skip("Finished pixels passed but the Ultra HDR encoder is unavailable"); pytest.skip("Ultra HDR encoder unavailable"); pytest.skip(capabilities[capability].detail); pytest.skip(f"{capability} is not available: {capabilities[capability].detail}"); pytest.skip(f"{capability} unavailable") |
-| tests/test_proofing.py | Checks proofing behavior and regression contracts. | 45 | 102.6534 | unknown | needs_native_helper; Conditional skip: get_capabilities()['avif_gain_map_encoder'].status != CapabilityStatus.AVAILABLE; Conditional skip: get_capabilities()[capability_name].status != CapabilityStatus.AVAILABLE; Conditional skip: proofing_module.resolve_binary('avifenc') is None; Conditional skip: resolve('avifgainmaputil' if use_tonemap else 'avifenc') is None; Conditional skip: utility is None or proofing_module.resolve_binary('avifenc') is None; pytest.skip("AVIF preview encoder unavailable"); pytest.skip("Native AVIF tile helper unavailable"); pytest.skip("Native AVIF tile helpers unavailable"); pytest.skip(get_capabilities()["avif_gain_map_encoder"].detail); pytest.skip(get_capabilities()[capability_name].detail) |
-| tests/test_pytest_profile_cleanup.py | Exercise pytest shutdown itself, including Windows' open-file restriction. | 1 | 8.6784 | unknown |  |
-| tests/test_raw_exposure.py | Checks raw exposure behavior and regression contracts. | 19 | 0.1923 | unknown |  |
-| tests/test_raw_highlight_project_compatibility.py | Checks raw highlight project compatibility behavior and regression contracts. | 1 | 0.0007 | unknown |  |
-| tests/test_raw_pixel_cleanup_state.py | Checks raw pixel cleanup state behavior and regression contracts. | 12 | 2.5366 | unknown |  |
-| tests/test_raw_pixel_cleanup.py | Checks raw pixel cleanup behavior and regression contracts. | 24 | 0.2026 | unknown |  |
-| tests/test_raw_speck_cleanup.py | Checks raw speck cleanup behavior and regression contracts. | 25 | 0.0918 | unknown |  |
-| tests/test_render_cache.py | Checks render cache behavior and regression contracts. | 59 | 7.4187 | unknown |  |
-| tests/test_retouch_integration.py | Interactive repairs publish one native source transaction for every consumer. | 35 | 45.2328 | unknown | needs_native_helper; Conditional skip: capabilities['jpegxl_export'].status != CapabilityStatus.AVAILABLE; pytest.skip("JPEG XL encoder unavailable") |
-| tests/test_retouch_methods.py | Behavioral tests for the explicitly selectable native repair prototypes. | 11 | 0.8253 | unknown |  |
-| tests/test_retouch_parallel.py | Parallel score lanes preserve the serial candidate scores and donor ordering. | 3 | 0.0079 | unknown |  |
-| tests/test_retouch_recipe.py | Checks retouch recipe behavior and regression contracts. | 22 | 2.6927 | unknown |  |
-| tests/test_retouch_routes.py | Finished patch reuse and route disclosure across preview and delivery. | 13 | 2.9586 | unknown |  |
-| tests/test_retouch_transfer.py | Native clone/heal behavior, independent of UI wording or code structure. | 8 | 0.1102 | unknown |  |
-| tests/test_retouch.py | Checks retouch behavior and regression contracts. | 27 | 4.1354 | unknown | Conditional skip: logical_cpus() < 2; pytest.skip("needs two logical CPUs") |
-| tests/test_revert_rendition.py | Checks revert rendition behavior and regression contracts. | 9 | 0.1314 | unknown |  |
-| tests/test_scope_correctness.py | Checks scope correctness behavior and regression contracts. | 6 | 0.5377 | unknown | needs_test_photos |
-| tests/test_sdr_export.py | Checks sdr export behavior and regression contracts. | 13 | 0.3694 | unknown |  |
-| tests/test_sdr_gamut.py | Checks sdr gamut behavior and regression contracts. | 34 | 0.0557 | unknown |  |
-| tests/test_sdr_link.py | Checks sdr link behavior and regression contracts. | 14 | 3.6789 | unknown |  |
-| tests/test_sdr_local_match.py | Checks sdr local match behavior and regression contracts. | 17 | 4.1492 | unknown |  |
-| tests/test_sdr_match_editable.py | Match commits one editable recipe, shared by persistence and rendering. | 3 | 1.5562 | unknown |  |
-| tests/test_sdr_match_inputs.py | Checks sdr match inputs behavior and regression contracts. | 6 | 0.0769 | unknown |  |
-| tests/test_sdr_match_materialization.py | Checks sdr match materialization behavior and regression contracts. | 17 | 7.2299 | unknown |  |
-| tests/test_sdr_match_remote.py | Match candidates rendered by the page instead of the CPU. | 6 | 4.3105 | unknown |  |
-| tests/test_sdr_match_state.py | Checks sdr match state behavior and regression contracts. | 13 | 0.4627 | unknown |  |
-| tests/test_signed_ahd.py | Checks signed ahd behavior and regression contracts. | 17 | 0.0238 | unknown |  |
-| tests/test_signed_raw_development.py | Checks signed raw development behavior and regression contracts. | 29 | 0.0506 | unknown |  |
-| tests/test_signed_shadows.py | Checks signed shadows behavior and regression contracts. | 18 | 0.0528 | unknown |  |
-| tests/test_source_primaries.py | Independent transfer equations and asymmetric colours catch forced BT.2020. | 37 | 0.4976 | unknown |  |
-| tests/test_source_space_luminance_mask.py | A luminance mask under straighten or perspective is finished before the warp. | 7 | 0.5986 | unknown |  |
-| tests/test_source_tile_api.py | Phase 3: the bounded source-tile transport contract. | 16 | 5.0032 | unknown | Conditional skip: probe.status_code == 409; pytest.skip(f"tile path declined this geometry: {probe.json()['detail']}") |
+| tests/test_loader_fixtures.py | Checks loader fixtures behavior and regression contracts. | 61 | 1.5566 | unknown | needs_test_photos |
+| tests/test_loader_interpretation.py | A manual interpretation resolves both fields and starts from encoded pixels. | 10 | 1.5549 | unknown | needs_native_helper; pytest.mark.skipif(__import__("hdr_finisher.binaries", fromlist=["resolve_binary"]).resolve_binary("hdrf-jxl-info") is None,                     reason="Structured JPEG XL colour profiles need the native hdrf-jxl-info helper (Windows build only).") |
+| tests/test_local_adjustments.py | Checks local adjustments behavior and regression contracts. | 117 | 4.3582 | unknown |  |
+| tests/test_log_noise.py | Checks log noise behavior and regression contracts. | 2 | 0.0013 | unknown |  |
+| tests/test_log_timeline.py | Checks log timeline behavior and regression contracts. | 1 | 3.6075 | unknown |  |
+| tests/test_machine_tooling.py | Tooling checks use disposable locks and small child processes, never the GPU. | 11 | 32.9884 | unknown | mac_only; posix_only; pytest.mark.skipif(os.name == 'nt', reason='POSIX groups; Windows uses existing taskkill /T'); pytest.mark.skipif(sys.platform != 'darwin', reason='macOS physical-footprint diagnostic') |
+| tests/test_mask_blur_strips.py | Checks mask blur strips behavior and regression contracts. | 48 | 0.2613 | unknown |  |
+| tests/test_mask_region.py | Exact masks for a region only (Viewport-Bounded GPU Preview PRD 5.1). | 60 | 9.2243 | unknown |  |
+| tests/test_mask_softness.py | The soft-mask rule (Viewport-Bounded GPU Preview PRD 5.1). | 8 | 9.9213 | unknown |  |
+| tests/test_mask_work.py | Checks mask work behavior and regression contracts. | 12 | 1.7629 | unknown |  |
+| tests/test_media_browser_locations.py | Saved browser locations are shortcuts only; Library pins stay separate (Steve, November 13, 2026). | 1 | 0.9833 | unknown |  |
+| tests/test_media_browser_peek.py | Checks media browser peek behavior and regression contracts. | 6 | 0.2906 | unknown |  |
+| tests/test_metadata_helper_lifecycle.py | Metadata helper shutdown releases pipes as well as the child process. | 1 | 1.3408 | unknown |  |
+| tests/test_metadata.py | Checks metadata behavior and regression contracts. | 16 | 0.0163 | unknown |  |
+| tests/test_micro_grain_cpu_preview.py | Checks micro grain cpu preview behavior and regression contracts. | 52 | 7.1704 | unknown |  |
+| tests/test_model_declaration_contracts.py | Checks model declaration contracts behavior and regression contracts. | 2 | 0.0072 | unknown |  |
+| tests/test_native_source_stream.py | Checks native source stream behavior and regression contracts. | 16 | 0.2046 | unknown |  |
+| tests/test_negative_source_gamut.py | Import-boundary gamut projection: signed conversion, shared routes and cache identity. | 11 | 0.0294 | unknown |  |
+| tests/test_peak_accuracy.py | Checks peak accuracy behavior and regression contracts. | 6 | 0.3004 | unknown |  |
+| tests/test_performance_pipeline.py | Checks performance pipeline behavior and regression contracts. | 12 | 0.2269 | unknown |  |
+| tests/test_photo_framing.py | Checks photo framing behavior and regression contracts. | 39 | 1.8038 | unknown | needs_native_helper; Conditional skip: caps['jpegxl_export'].status.value != 'available'; pytest.skip("JPEG XL encoder unavailable") |
+| tests/test_pixel_cleanup.py | Behaviour checks for calibration-backed Pixel cleanup, no private photos. | 22 | 0.0838 | unknown |  |
+| tests/test_preview_display.py | Checks preview display behavior and regression contracts. | 7 | 1.6042 | unknown | needs_native_helper; Conditional skip: resolve_binary('avifenc') is None; pytest.skip("AVIF preview encoder unavailable") |
+| tests/test_preview_export_compare.py | The comparison tool's own arithmetic (Viewport-Bounded GPU Preview PRD, 4.6). | 19 | 0.0444 | unknown |  |
+| tests/test_preview_export_parity.py | Preview and export must be the same graph, differing only where they say so. | 16 | 2.3913 | unknown |  |
+| tests/test_preview_geometry.py | Checks preview geometry behavior and regression contracts. | 12 | 2.968 | unknown |  |
+| tests/test_preview_resolution_contract.py | Checks preview resolution contract behavior and regression contracts. | 4 | 0.366 | unknown |  |
+| tests/test_project_manifest.py | Malformed project manifests fail as project errors, without opening a source. | 5 | 0.0446 | unknown |  |
+| tests/test_project_open_tolerance.py | A saved project outlives the settings it was saved with. | 4 | 0.0098 | unknown |  |
+| tests/test_project_save_conflicts.py | Saving a project must keep conflict detection attached to its destination. | 2 | 0.0859 | unknown |  |
+| tests/test_proof_export_identity.py | A full-size Proof is the export, byte for byte. | 21 | 200.7816 | unknown | needs_native_helper; Conditional skip: capabilities['ultrahdr_encoder'].status != CapabilityStatus.AVAILABLE; Conditional skip: capabilities[FORMATS['avif_gain_map'][0]].status != CapabilityStatus.AVAILABLE; Conditional skip: capabilities[capability].status != CapabilityStatus.AVAILABLE; pytest.skip("AVIF Gain Map encoder unavailable"); pytest.skip("Finished pixels passed but the Ultra HDR encoder is unavailable"); pytest.skip("Ultra HDR encoder unavailable"); pytest.skip(capabilities[capability].detail); pytest.skip(f"{capability} is not available: {capabilities[capability].detail}"); pytest.skip(f"{capability} unavailable") |
+| tests/test_proofing.py | Checks proofing behavior and regression contracts. | 45 | 84.2827 | unknown | needs_native_helper; Conditional skip: get_capabilities()['avif_gain_map_encoder'].status != CapabilityStatus.AVAILABLE; Conditional skip: get_capabilities()[capability_name].status != CapabilityStatus.AVAILABLE; Conditional skip: proofing_module.resolve_binary('avifenc') is None; Conditional skip: resolve('avifgainmaputil' if use_tonemap else 'avifenc') is None; Conditional skip: utility is None or proofing_module.resolve_binary('avifenc') is None; pytest.skip("AVIF preview encoder unavailable"); pytest.skip("Native AVIF tile helper unavailable"); pytest.skip("Native AVIF tile helpers unavailable"); pytest.skip(get_capabilities()["avif_gain_map_encoder"].detail); pytest.skip(get_capabilities()[capability_name].detail) |
+| tests/test_pytest_profile_cleanup.py | Exercise pytest shutdown itself, including Windows' open-file restriction. | 1 | 21.8701 | unknown |  |
+| tests/test_raw_exposure.py | Checks raw exposure behavior and regression contracts. | 19 | 0.2048 | unknown |  |
+| tests/test_raw_highlight_project_compatibility.py | Checks raw highlight project compatibility behavior and regression contracts. | 1 | 0.0009 | unknown |  |
+| tests/test_raw_pixel_cleanup_state.py | Checks raw pixel cleanup state behavior and regression contracts. | 12 | 2.1042 | unknown |  |
+| tests/test_raw_pixel_cleanup.py | Checks raw pixel cleanup behavior and regression contracts. | 24 | 0.1582 | unknown |  |
+| tests/test_raw_speck_cleanup.py | Checks raw speck cleanup behavior and regression contracts. | 25 | 0.0854 | unknown |  |
+| tests/test_render_cache.py | Checks render cache behavior and regression contracts. | 59 | 7.6057 | unknown |  |
+| tests/test_retouch_integration.py | Interactive repairs publish one native source transaction for every consumer. | 35 | 39.6381 | unknown | needs_native_helper; Conditional skip: capabilities['jpegxl_export'].status != CapabilityStatus.AVAILABLE; pytest.skip("JPEG XL encoder unavailable") |
+| tests/test_retouch_methods.py | Behavioral tests for the explicitly selectable native repair prototypes. | 11 | 0.8049 | unknown |  |
+| tests/test_retouch_parallel.py | Parallel score lanes preserve the serial candidate scores and donor ordering. | 3 | 0.0083 | unknown |  |
+| tests/test_retouch_recipe.py | Checks retouch recipe behavior and regression contracts. | 22 | 2.7964 | unknown |  |
+| tests/test_retouch_routes.py | Finished patch reuse and route disclosure across preview and delivery. | 13 | 2.4298 | unknown |  |
+| tests/test_retouch_transfer.py | Native clone/heal behavior, independent of UI wording or code structure. | 8 | 0.1104 | unknown |  |
+| tests/test_retouch.py | Checks retouch behavior and regression contracts. | 27 | 4.6089 | unknown | Conditional skip: logical_cpus() < 2; pytest.skip("needs two logical CPUs") |
+| tests/test_revert_rendition.py | Checks revert rendition behavior and regression contracts. | 9 | 0.1774 | unknown |  |
+| tests/test_scope_correctness.py | Checks scope correctness behavior and regression contracts. | 6 | 0.4931 | unknown | needs_test_photos |
+| tests/test_sdr_export.py | Checks sdr export behavior and regression contracts. | 13 | 0.3853 | unknown |  |
+| tests/test_sdr_gamut.py | Checks sdr gamut behavior and regression contracts. | 34 | 0.0587 | unknown |  |
+| tests/test_sdr_link.py | Checks sdr link behavior and regression contracts. | 14 | 4.3346 | unknown |  |
+| tests/test_sdr_local_match.py | Checks sdr local match behavior and regression contracts. | 17 | 13.4718 | unknown |  |
+| tests/test_sdr_match_editable.py | Match commits one editable recipe, shared by persistence and rendering. | 3 | 1.9688 | unknown |  |
+| tests/test_sdr_match_inputs.py | Checks sdr match inputs behavior and regression contracts. | 6 | 0.0717 | unknown |  |
+| tests/test_sdr_match_materialization.py | Checks sdr match materialization behavior and regression contracts. | 17 | 8.9325 | unknown |  |
+| tests/test_sdr_match_remote.py | Match candidates rendered by the page instead of the CPU. | 6 | 5.8404 | unknown |  |
+| tests/test_sdr_match_state.py | Checks sdr match state behavior and regression contracts. | 13 | 0.4576 | unknown |  |
+| tests/test_signed_ahd.py | Checks signed ahd behavior and regression contracts. | 17 | 0.0237 | unknown |  |
+| tests/test_signed_raw_development.py | Checks signed raw development behavior and regression contracts. | 29 | 0.047 | unknown |  |
+| tests/test_signed_shadows.py | Checks signed shadows behavior and regression contracts. | 18 | 0.0543 | unknown |  |
+| tests/test_source_primaries.py | Independent transfer equations and asymmetric colours catch forced BT.2020. | 37 | 0.5288 | unknown |  |
+| tests/test_source_space_luminance_mask.py | A luminance mask under straighten or perspective is finished before the warp. | 7 | 0.8412 | unknown |  |
+| tests/test_source_tile_api.py | Phase 3: the bounded source-tile transport contract. | 16 | 5.9038 | unknown | Conditional skip: probe.status_code == 409; pytest.skip(f"tile path declined this geometry: {probe.json()['detail']}") |
 | tests/test_subprocess_utils.py | Checks subprocess utils behavior and regression contracts. | 1 | 0.0008 | unknown |  |
 | tests/test_test_inventory.py | The everyday inventory must cover every collected source file. | 1 | 0.4692 | unknown |  |
-| tests/test_test_photos.py | Corpus validation uses tiny disposable files, never the private photos. | 5 | 0.0612 | unknown |  |
-| tests/test_tiff_interpretation.py | Generated oriented / custom-gamma TIFF fixtures, before loader changes. | 23 | 0.2343 | unknown |  |
-| tests/test_tone_zones.py | Checks tone zones behavior and regression contracts. | 33 | 0.3529 | unknown |  |
-| tests/test_ultrahdr_export.py | Checks ultrahdr export behavior and regression contracts. | 40 | 87.4909 | unknown | needs_native_helper; Conditional skip: binary is None; Conditional skip: capability.status != CapabilityStatus.AVAILABLE; Conditional skip: native is None; pytest.skip("Native Ultra HDR encoder unavailable"); pytest.skip("Optional gain-map filter build is unavailable"); pytest.skip(capability.detail) |
-| tests/test_vignette_midpoint.py | Checks vignette midpoint behavior and regression contracts. | 20 | 0.0651 | unknown |  |
-| tests/test_watermark.py | Checks watermark behavior and regression contracts. | 11 | 36.6079 | unknown | needs_native_helper; Conditional skip: backend.capability.status.value != 'available'; pytest.skip(backend.capability.detail) |
-| tests/test_zoom_block_compare.py | Validate PRD block alignment/area integration before trusting its verdicts. | 5 | 0.3785 | unknown |  |
+| tests/test_test_photos.py | Corpus validation uses tiny disposable files, never the private photos. | 5 | 0.0621 | unknown |  |
+| tests/test_tiff_interpretation.py | Generated oriented / custom-gamma TIFF fixtures, before loader changes. | 23 | 0.2722 | unknown |  |
+| tests/test_tone_zones.py | Checks tone zones behavior and regression contracts. | 33 | 0.3966 | unknown |  |
+| tests/test_ultrahdr_export.py | Checks ultrahdr export behavior and regression contracts. | 40 | 86.1709 | unknown | needs_native_helper; Conditional skip: binary is None; Conditional skip: capability.status != CapabilityStatus.AVAILABLE; Conditional skip: native is None; pytest.skip("Native Ultra HDR encoder unavailable"); pytest.skip("Optional gain-map filter build is unavailable"); pytest.skip(capability.detail) |
+| tests/test_vignette_midpoint.py | Checks vignette midpoint behavior and regression contracts. | 20 | 0.0578 | unknown |  |
+| tests/test_watermark.py | Checks watermark behavior and regression contracts. | 11 | 43.6971 | unknown | needs_native_helper; Conditional skip: backend.capability.status.value != 'available'; pytest.skip(backend.capability.detail) |
+| tests/test_zoom_block_compare.py | Validate PRD block alignment/area integration before trusting its verdicts. | 5 | 0.4375 | unknown |  |
 | tests/test-catalogue.test.js | all release drivers have usable agent briefs, requirements and platform estimates | 4 | 0.0305 | unknown |  |
 | tests/tier-acceptance-geometry.test.js | the tier target still comes from the source, not from the trimmed frame | 11 | 1.5956 | unknown |  |
 | tests/tile-scheduler.test.js | tiles are anchored to global output coordinates, not to an index | 17 | 0.1049 | unknown |  |

@@ -2432,7 +2432,7 @@
       "purpose": "Checks adjustments behavior and regression contracts.",
       "test_count": 236,
       "seconds": {
-        "windows": 9.4813,
+        "windows": 9.8053,
         "mac": null
       },
       "markers": [
@@ -2448,7 +2448,7 @@
       "purpose": "Checks advanced finishing behavior and regression contracts.",
       "test_count": 25,
       "seconds": {
-        "windows": 0.8608,
+        "windows": 0.5381,
         "mac": null
       },
       "markers": [
@@ -2464,7 +2464,7 @@
       "purpose": "Checks ai highlights research behavior and regression contracts.",
       "test_count": 15,
       "seconds": {
-        "windows": 1.015,
+        "windows": 0.6675,
         "mac": null
       },
       "markers": [
@@ -2480,7 +2480,7 @@
       "purpose": "Checks api behavior and regression contracts.",
       "test_count": 69,
       "seconds": {
-        "windows": 23.8915,
+        "windows": 17.1858,
         "mac": null
       },
       "markers": [
@@ -2496,7 +2496,7 @@
       "purpose": "Checks app memory behavior and regression contracts.",
       "test_count": 35,
       "seconds": {
-        "windows": 7.6254,
+        "windows": 5.8398,
         "mac": null
       },
       "markers": [
@@ -2519,7 +2519,7 @@
       "purpose": "Checks avif info behavior and regression contracts.",
       "test_count": 3,
       "seconds": {
-        "windows": 4.5381,
+        "windows": 2.7838,
         "mac": null
       },
       "markers": [
@@ -2541,7 +2541,7 @@
       "purpose": "Result-based batch orchestration checks; tiny disposable sources only.",
       "test_count": 31,
       "seconds": {
-        "windows": 150.1323,
+        "windows": 140.0879,
         "mac": null
       },
       "markers": [
@@ -2566,7 +2566,7 @@
       "purpose": "BW-01 Black & White: a per-rendition monochrome conversion with an",
       "test_count": 19,
       "seconds": {
-        "windows": 0.087,
+        "windows": 0.095,
         "mac": null
       },
       "markers": [
@@ -2582,7 +2582,7 @@
       "purpose": "Measured conformance vectors, plus exact-arithmetic boundary checks.",
       "test_count": 5,
       "seconds": {
-        "windows": 0.005,
+        "windows": 0.0059,
         "mac": null
       },
       "markers": [],
@@ -2596,7 +2596,7 @@
       "purpose": "Checks camera linear raw bridge behavior and regression contracts.",
       "test_count": 19,
       "seconds": {
-        "windows": 0.0668,
+        "windows": 0.0736,
         "mac": null
       },
       "markers": [
@@ -2612,7 +2612,7 @@
       "purpose": "Checks camera linear raw corpus behavior and regression contracts.",
       "test_count": 1,
       "seconds": {
-        "windows": 0.0002,
+        "windows": 0.0003,
         "mac": null
       },
       "markers": [
@@ -2635,7 +2635,7 @@
       "purpose": "Checks capability gates behavior and regression contracts.",
       "test_count": 1,
       "seconds": {
-        "windows": 0.0004,
+        "windows": 0.0006,
         "mac": null
       },
       "markers": [],
@@ -2649,7 +2649,7 @@
       "purpose": "Clarity's blurred base: a smooth pyramid, not a staircase.",
       "test_count": 9,
       "seconds": {
-        "windows": 0.0767,
+        "windows": 0.0642,
         "mac": null
       },
       "markers": [
@@ -2668,7 +2668,7 @@
       "purpose": "Checks color desaturation behavior and regression contracts.",
       "test_count": 2,
       "seconds": {
-        "windows": 0.007,
+        "windows": 0.0062,
         "mac": null
       },
       "markers": [],
@@ -2682,7 +2682,7 @@
       "purpose": "W3: grading ranges are edits, never an implicit output limiter.",
       "test_count": 15,
       "seconds": {
-        "windows": 0.1119,
+        "windows": 0.109,
         "mac": null
       },
       "markers": [
@@ -2698,7 +2698,7 @@
       "purpose": "Checks coordinate map bounded behavior and regression contracts.",
       "test_count": 24,
       "seconds": {
-        "windows": 0.2767,
+        "windows": 0.3306,
         "mac": null
       },
       "markers": [
@@ -2714,7 +2714,7 @@
       "purpose": "Checks core behavior and regression contracts.",
       "test_count": 71,
       "seconds": {
-        "windows": 0.4471,
+        "windows": 0.442,
         "mac": null
       },
       "markers": [
@@ -2730,7 +2730,7 @@
       "purpose": "Checks cpu budget behavior and regression contracts.",
       "test_count": 2,
       "seconds": {
-        "windows": 0.0041,
+        "windows": 0.0032,
         "mac": null
       },
       "markers": [],
@@ -2744,7 +2744,7 @@
       "purpose": "Phase 4: the bounded CPU strip path must equal the whole-frame path exactly.",
       "test_count": 185,
       "seconds": {
-        "windows": 33.8385,
+        "windows": 26.6312,
         "mac": null
       },
       "markers": [
@@ -2761,7 +2761,7 @@
       "purpose": "Phase 4: the bounded CPU path has to be reachable, and honest when it is not.",
       "test_count": 6,
       "seconds": {
-        "windows": 2.0643,
+        "windows": 2.1291,
         "mac": null
       },
       "markers": [
@@ -2777,7 +2777,7 @@
       "purpose": "Checks delivery colour behavior and regression contracts.",
       "test_count": 7,
       "seconds": {
-        "windows": 0.0307,
+        "windows": 0.03,
         "mac": null
       },
       "markers": [
@@ -2793,7 +2793,7 @@
       "purpose": "Checks delivery comparison behavior and regression contracts.",
       "test_count": 6,
       "seconds": {
-        "windows": 1.4298,
+        "windows": 0.3222,
         "mac": null
       },
       "markers": [],
@@ -2807,7 +2807,7 @@
       "purpose": "Checks delivery policy behavior and regression contracts.",
       "test_count": 8,
       "seconds": {
-        "windows": 13.3081,
+        "windows": 18.3102,
         "mac": null
       },
       "markers": [
@@ -2824,7 +2824,7 @@
       "purpose": "Adaptive denoise: the contracts the preview and export both rely on.",
       "test_count": 13,
       "seconds": {
-        "windows": 2.393,
+        "windows": 2.7968,
         "mac": null
       },
       "markers": [
@@ -2845,7 +2845,7 @@
       "purpose": "Behaviour checks for non-shipping colour-cleanup research.",
       "test_count": 12,
       "seconds": {
-        "windows": 0.0572,
+        "windows": 0.5265,
         "mac": null
       },
       "markers": [
@@ -2861,7 +2861,7 @@
       "purpose": "Behavioural checks for non-shipping, CPU-only classical prototypes.",
       "test_count": 10,
       "seconds": {
-        "windows": 0.6166,
+        "windows": 0.9187,
         "mac": null
       },
       "markers": [
@@ -2883,7 +2883,7 @@
       "purpose": "Behavioural regression cases for the isolated dark-noise research adapters.",
       "test_count": 11,
       "seconds": {
-        "windows": 0.7154,
+        "windows": 1.009,
         "mac": null
       },
       "markers": [
@@ -2899,7 +2899,7 @@
       "purpose": "Checks denoise demosaic noise behavior and regression contracts.",
       "test_count": 20,
       "seconds": {
-        "windows": 0.9121,
+        "windows": 0.7579,
         "mac": null
       },
       "markers": [
@@ -2915,7 +2915,7 @@
       "purpose": "Checks denoise document behavior and regression contracts.",
       "test_count": 12,
       "seconds": {
-        "windows": 0.2311,
+        "windows": 0.2122,
         "mac": null
       },
       "markers": [
@@ -2931,7 +2931,7 @@
       "purpose": "Checks denoise early outlier behavior and regression contracts.",
       "test_count": 20,
       "seconds": {
-        "windows": 0.9761,
+        "windows": 0.4923,
         "mac": null
       },
       "markers": [
@@ -2947,7 +2947,7 @@
       "purpose": "Result-based checks for the CPU quality harness; no private corpus needed.",
       "test_count": 11,
       "seconds": {
-        "windows": 0.2573,
+        "windows": 0.254,
         "mac": null
       },
       "markers": [],
@@ -2961,7 +2961,7 @@
       "purpose": "Checks denoise grain behavior and regression contracts.",
       "test_count": 13,
       "seconds": {
-        "windows": 0.6022,
+        "windows": 1.207,
         "mac": null
       },
       "markers": [
@@ -2984,7 +2984,7 @@
       "purpose": "Checks denoise hot pixel behavior and regression contracts.",
       "test_count": 12,
       "seconds": {
-        "windows": 0.0224,
+        "windows": 0.0208,
         "mac": null
       },
       "markers": [
@@ -3000,7 +3000,7 @@
       "purpose": "Shipping measurement rejects censored evidence without changing reconstruction.",
       "test_count": 10,
       "seconds": {
-        "windows": 0.1497,
+        "windows": 0.145,
         "mac": null
       },
       "markers": [
@@ -3016,7 +3016,7 @@
       "purpose": "Checks denoise lmmse behavior and regression contracts.",
       "test_count": 45,
       "seconds": {
-        "windows": 0.4542,
+        "windows": 0.6985,
         "mac": null
       },
       "markers": [
@@ -3032,7 +3032,7 @@
       "purpose": "Measurements belong to source pixels, survive restart, and reject stale work.",
       "test_count": 15,
       "seconds": {
-        "windows": 6.7984,
+        "windows": 7.1235,
         "mac": null
       },
       "markers": [
@@ -3048,7 +3048,7 @@
       "purpose": "The Denoise noise model reads a few sample windows, so the preview corrects",
       "test_count": 7,
       "seconds": {
-        "windows": 2.7525,
+        "windows": 3.5428,
         "mac": null
       },
       "markers": [
@@ -3064,7 +3064,7 @@
       "purpose": "At full size the Denoise noise model is the source's own: one measurement per",
       "test_count": 16,
       "seconds": {
-        "windows": 2.8349,
+        "windows": 3.5409,
         "mac": null
       },
       "markers": [
@@ -3080,7 +3080,7 @@
       "purpose": "Behavioural coverage for the isolated noise-model/RAW-speck research.",
       "test_count": 12,
       "seconds": {
-        "windows": 0.052,
+        "windows": 0.0586,
         "mac": null
       },
       "markers": [],
@@ -3094,7 +3094,7 @@
       "purpose": "Checks denoise pilot wiener behavior and regression contracts.",
       "test_count": 12,
       "seconds": {
-        "windows": 0.2689,
+        "windows": 0.2994,
         "mac": null
       },
       "markers": [
@@ -3110,7 +3110,7 @@
       "purpose": "Deterministic pair registration, masking and loading; no network/private photos.",
       "test_count": 9,
       "seconds": {
-        "windows": 0.0823,
+        "windows": 0.073,
         "mac": null
       },
       "markers": [],
@@ -3124,7 +3124,7 @@
       "purpose": "Checks denoise quality behavior and regression contracts.",
       "test_count": 5,
       "seconds": {
-        "windows": 3.5481,
+        "windows": 3.0601,
         "mac": null
       },
       "markers": [],
@@ -3140,7 +3140,7 @@
       "purpose": "Optional result tests: local verified weights only, no download.",
       "test_count": 15,
       "seconds": {
-        "windows": 0.6193,
+        "windows": 0.164,
         "mac": null
       },
       "markers": [
@@ -3163,7 +3163,7 @@
       "purpose": "Result-based research tests; no photographs or network weights needed.",
       "test_count": 12,
       "seconds": {
-        "windows": 1.0638,
+        "windows": 1.0249,
         "mac": null
       },
       "markers": [],
@@ -3177,7 +3177,7 @@
       "purpose": "Checks desktop security behavior and regression contracts.",
       "test_count": 6,
       "seconds": {
-        "windows": 0.0616,
+        "windows": 0.1755,
         "mac": null
       },
       "markers": [],
@@ -3191,7 +3191,7 @@
       "purpose": "Checks detail processing behavior and regression contracts.",
       "test_count": 9,
       "seconds": {
-        "windows": 0.6394,
+        "windows": 0.4265,
         "mac": null
       },
       "markers": [],
@@ -3205,7 +3205,7 @@
       "purpose": "Softness and Microcontrast moved from Film Look to Detail (NEXT-01 #2).",
       "test_count": 6,
       "seconds": {
-        "windows": 0.0302,
+        "windows": 0.0249,
         "mac": null
       },
       "markers": [
@@ -3221,7 +3221,7 @@
       "purpose": "Checks diagnostics behavior and regression contracts.",
       "test_count": 2,
       "seconds": {
-        "windows": 0.0373,
+        "windows": 0.0357,
         "mac": null
       },
       "markers": [],
@@ -3235,7 +3235,7 @@
       "purpose": "Checks dng color behavior and regression contracts.",
       "test_count": 16,
       "seconds": {
-        "windows": 0.0227,
+        "windows": 0.0233,
         "mac": null
       },
       "markers": [
@@ -3254,7 +3254,7 @@
       "purpose": "Grade DNG correction hands bounded work to delivery without altering its source.",
       "test_count": 12,
       "seconds": {
-        "windows": 0.1461,
+        "windows": 0.1211,
         "mac": null
       },
       "markers": [
@@ -3270,7 +3270,7 @@
       "purpose": "Checks dng opcodes behavior and regression contracts.",
       "test_count": 25,
       "seconds": {
-        "windows": 0.5828,
+        "windows": 0.4994,
         "mac": null
       },
       "markers": [
@@ -3286,7 +3286,7 @@
       "purpose": "Checks dng raw routing behavior and regression contracts.",
       "test_count": 6,
       "seconds": {
-        "windows": 0.0361,
+        "windows": 0.0305,
         "mac": null
       },
       "markers": [
@@ -3302,7 +3302,7 @@
       "purpose": "Checks dng resource preflight behavior and regression contracts.",
       "test_count": 31,
       "seconds": {
-        "windows": 0.0215,
+        "windows": 0.0223,
         "mac": null
       },
       "markers": [
@@ -3319,7 +3319,7 @@
       "purpose": "MINOR-11 -- the in-app Help documents must be the ones the app serves.",
       "test_count": 3,
       "seconds": {
-        "windows": 0.0079,
+        "windows": 0.0084,
         "mac": null
       },
       "markers": [],
@@ -3333,7 +3333,7 @@
       "purpose": "Checks editor overlays behavior and regression contracts.",
       "test_count": 1,
       "seconds": {
-        "windows": 0.0014,
+        "windows": 0.0016,
         "mac": null
       },
       "markers": [],
@@ -3347,7 +3347,7 @@
       "purpose": "Checks encoding fidelity options behavior and regression contracts.",
       "test_count": 3,
       "seconds": {
-        "windows": 0.0177,
+        "windows": 0.0187,
         "mac": null
       },
       "markers": [],
@@ -3361,7 +3361,7 @@
       "purpose": "Output checks for the standalone Round 4 Denoise experiments.",
       "test_count": 7,
       "seconds": {
-        "windows": 0.1562,
+        "windows": 0.1458,
         "mac": null
       },
       "markers": [],
@@ -3375,7 +3375,7 @@
       "purpose": "The final ceiling is exact, including float32 matrix/unit roundoff.",
       "test_count": 177,
       "seconds": {
-        "windows": 0.4167,
+        "windows": 0.7999,
         "mac": null
       },
       "markers": [
@@ -3391,7 +3391,7 @@
       "purpose": "Authored denoise has to reach the export, and reach it the same way.",
       "test_count": 38,
       "seconds": {
-        "windows": 160.1654,
+        "windows": 125.9985,
         "mac": null
       },
       "markers": [
@@ -3415,7 +3415,7 @@
       "purpose": "Checks export lifecycle behavior and regression contracts.",
       "test_count": 7,
       "seconds": {
-        "windows": 0.0474,
+        "windows": 0.042,
         "mac": null
       },
       "markers": [
@@ -3437,7 +3437,7 @@
       "purpose": "Checks export memory exactness behavior and regression contracts.",
       "test_count": 107,
       "seconds": {
-        "windows": 65.2525,
+        "windows": 76.1988,
         "mac": null
       },
       "markers": [
@@ -3460,7 +3460,7 @@
       "purpose": "Metadata changes must leave delivery-owned bytes and privacy intact.",
       "test_count": 10,
       "seconds": {
-        "windows": 15.8347,
+        "windows": 9.7348,
         "mac": null
       },
       "markers": [
@@ -3482,7 +3482,7 @@
       "purpose": "Checks export parallel behavior and regression contracts.",
       "test_count": 9,
       "seconds": {
-        "windows": 1.809,
+        "windows": 1.9033,
         "mac": null
       },
       "markers": [
@@ -3498,7 +3498,7 @@
       "purpose": "Unit and end-to-end tests for the export/reference parity file-side check.",
       "test_count": 21,
       "seconds": {
-        "windows": 5.538,
+        "windows": 4.8359,
         "mac": null
       },
       "markers": [
@@ -3521,7 +3521,7 @@
       "purpose": "Independent API preset stores must not share a temporary filename.",
       "test_count": 2,
       "seconds": {
-        "windows": 0.0199,
+        "windows": 0.01,
         "mac": null
       },
       "markers": [],
@@ -3535,7 +3535,7 @@
       "purpose": "Checks export progress behavior and regression contracts.",
       "test_count": 14,
       "seconds": {
-        "windows": 5.3845,
+        "windows": 4.9783,
         "mac": null
       },
       "markers": [
@@ -3559,7 +3559,7 @@
       "purpose": "Export renditions share work they would otherwise repeat, with the same pixels.",
       "test_count": 4,
       "seconds": {
-        "windows": 0.0507,
+        "windows": 0.0526,
         "mac": null
       },
       "markers": [],
@@ -3573,7 +3573,7 @@
       "purpose": "Checks export speed profile behavior and regression contracts.",
       "test_count": 6,
       "seconds": {
-        "windows": 12.434,
+        "windows": 10.0752,
         "mac": null
       },
       "markers": [
@@ -3590,7 +3590,7 @@
       "purpose": "Checks export timing behavior and regression contracts.",
       "test_count": 7,
       "seconds": {
-        "windows": 0.2162,
+        "windows": 0.1814,
         "mac": null
       },
       "markers": [
@@ -3606,7 +3606,7 @@
       "purpose": "Checks export y4m behavior and regression contracts.",
       "test_count": 28,
       "seconds": {
-        "windows": 0.7474,
+        "windows": 0.6476,
         "mac": null
       },
       "markers": [
@@ -3622,7 +3622,7 @@
       "purpose": "Checks exposure admission behavior and regression contracts.",
       "test_count": 12,
       "seconds": {
-        "windows": 0.1106,
+        "windows": 0.0763,
         "mac": null
       },
       "markers": [
@@ -3638,7 +3638,7 @@
       "purpose": "Checks extended formats behavior and regression contracts.",
       "test_count": 95,
       "seconds": {
-        "windows": 65.1579,
+        "windows": 59.5665,
         "mac": null
       },
       "markers": [
@@ -3663,7 +3663,7 @@
       "purpose": "The Library's file gate: which files are listed and read (design section 6.9, edge cases F1-F18).",
       "test_count": 38,
       "seconds": {
-        "windows": 1.7952,
+        "windows": 1.662,
         "mac": null
       },
       "markers": [
@@ -3686,7 +3686,7 @@
       "purpose": "Stock metadata and saved ownership; rendering equations remain unchanged.",
       "test_count": 23,
       "seconds": {
-        "windows": 0.0644,
+        "windows": 0.0683,
         "mac": null
       },
       "markers": [
@@ -3702,7 +3702,7 @@
       "purpose": "Physical paper/development controls; measured source data stays immutable.",
       "test_count": 23,
       "seconds": {
-        "windows": 4.0493,
+        "windows": 3.7415,
         "mac": null
       },
       "markers": [
@@ -3718,7 +3718,7 @@
       "purpose": "The film grain field: statistics, texture, film types and strip exactness.",
       "test_count": 19,
       "seconds": {
-        "windows": 3.7206,
+        "windows": 4.3681,
         "mac": null
       },
       "markers": [
@@ -3734,7 +3734,7 @@
       "purpose": "Checks film stock behavior and regression contracts.",
       "test_count": 237,
       "seconds": {
-        "windows": 15.1672,
+        "windows": 12.33,
         "mac": null
       },
       "markers": [
@@ -3753,7 +3753,7 @@
       "purpose": "Checks focus cached map behavior and regression contracts.",
       "test_count": 3,
       "seconds": {
-        "windows": 0.8302,
+        "windows": 0.7316,
         "mac": null
       },
       "markers": [],
@@ -3767,7 +3767,7 @@
       "purpose": "Checks focus camera api behavior and regression contracts.",
       "test_count": 4,
       "seconds": {
-        "windows": 1.5447,
+        "windows": 1.1004,
         "mac": null
       },
       "markers": [],
@@ -3781,7 +3781,7 @@
       "purpose": "Synthetic camera-JPEG checks; these do not establish real-eye accuracy.",
       "test_count": 18,
       "seconds": {
-        "windows": 0.8512,
+        "windows": 0.7143,
         "mac": null
       },
       "markers": [
@@ -3797,7 +3797,7 @@
       "purpose": "Checks focus camera source behavior and regression contracts.",
       "test_count": 6,
       "seconds": {
-        "windows": 1.6124,
+        "windows": 1.403,
         "mac": null
       },
       "markers": [
@@ -3813,7 +3813,7 @@
       "purpose": "Focus source loading preserves import pixels without a Grade document.",
       "test_count": 10,
       "seconds": {
-        "windows": 0.115,
+        "windows": 0.1109,
         "mac": null
       },
       "markers": [
@@ -3829,7 +3829,7 @@
       "purpose": "Checks folder picker behavior and regression contracts.",
       "test_count": 6,
       "seconds": {
-        "windows": 0.0114,
+        "windows": 0.0108,
         "mac": null
       },
       "markers": [],
@@ -3843,7 +3843,7 @@
       "purpose": "Checks frontend controls contract behavior and regression contracts.",
       "test_count": 12,
       "seconds": {
-        "windows": 5.1974,
+        "windows": 5.2374,
         "mac": null
       },
       "markers": [],
@@ -3857,7 +3857,7 @@
       "purpose": "Checks frontend editor layout contract behavior and regression contracts.",
       "test_count": 11,
       "seconds": {
-        "windows": 0.5709,
+        "windows": 0.4676,
         "mac": null
       },
       "markers": [],
@@ -3871,7 +3871,7 @@
       "purpose": "Checks frontend inventory contract behavior and regression contracts.",
       "test_count": 1,
       "seconds": {
-        "windows": 0.0182,
+        "windows": 0.0139,
         "mac": null
       },
       "markers": [],
@@ -3885,7 +3885,7 @@
       "purpose": "Checks frontend local scope contract behavior and regression contracts.",
       "test_count": 20,
       "seconds": {
-        "windows": 0.9928,
+        "windows": 0.8337,
         "mac": null
       },
       "markers": [],
@@ -3899,7 +3899,7 @@
       "purpose": "Checks frontend presentation contract behavior and regression contracts.",
       "test_count": 6,
       "seconds": {
-        "windows": 4.6047,
+        "windows": 5.206,
         "mac": null
       },
       "markers": [],
@@ -3913,7 +3913,7 @@
       "purpose": "Checks frontend render pipeline contract behavior and regression contracts.",
       "test_count": 15,
       "seconds": {
-        "windows": 4.3308,
+        "windows": 2.9619,
         "mac": null
       },
       "markers": [],
@@ -3927,7 +3927,7 @@
       "purpose": "Checks frontend source workflow contract behavior and regression contracts.",
       "test_count": 17,
       "seconds": {
-        "windows": 2.965,
+        "windows": 1.9901,
         "mac": null
       },
       "markers": [],
@@ -3955,7 +3955,7 @@
       "purpose": "Checks gainmap import behavior and regression contracts.",
       "test_count": 13,
       "seconds": {
-        "windows": 38.4623,
+        "windows": 33.3355,
         "mac": null
       },
       "markers": [
@@ -3983,7 +3983,7 @@
       "purpose": "Checks geometry audit behavior and regression contracts.",
       "test_count": 94,
       "seconds": {
-        "windows": 1.3058,
+        "windows": 1.2214,
         "mac": null
       },
       "markers": [
@@ -3999,7 +3999,7 @@
       "purpose": "Phase 3: post-geometry region extraction must equal the full-frame path.",
       "test_count": 51,
       "seconds": {
-        "windows": 0.3428,
+        "windows": 0.3074,
         "mac": null
       },
       "markers": [
@@ -4015,7 +4015,7 @@
       "purpose": "Resampled source tiles are cut from the source, not from a rebuilt frame.",
       "test_count": 8,
       "seconds": {
-        "windows": 0.6134,
+        "windows": 0.5065,
         "mac": null
       },
       "markers": [],
@@ -4029,7 +4029,7 @@
       "purpose": "Fast broker checks; the Electron driver checks real decoded GPU pixels.",
       "test_count": 39,
       "seconds": {
-        "windows": 8.9394,
+        "windows": 11.1933,
         "mac": null
       },
       "markers": [
@@ -4046,7 +4046,7 @@
       "purpose": "Checks gpu mask bitmap verdict behavior and regression contracts.",
       "test_count": 2,
       "seconds": {
-        "windows": 0.0668,
+        "windows": 0.066,
         "mac": null
       },
       "markers": [],
@@ -4060,7 +4060,7 @@
       "purpose": "Result checks for damaged and future saved grades. All files are disposable.",
       "test_count": 45,
       "seconds": {
-        "windows": 5.1016,
+        "windows": 3.3949,
         "mac": null
       },
       "markers": [
@@ -4076,7 +4076,7 @@
       "purpose": "Fast source identity and single-decode checks using disposable pixels.",
       "test_count": 5,
       "seconds": {
-        "windows": 1.1337,
+        "windows": 1.1631,
         "mac": null
       },
       "markers": [
@@ -4092,7 +4092,7 @@
       "purpose": "Release reporting distinguishes frame noise and cancelled work from failures.",
       "test_count": 2,
       "seconds": {
-        "windows": 0.0015,
+        "windows": 0.0016,
         "mac": null
       },
       "markers": [],
@@ -4106,7 +4106,7 @@
       "purpose": "Cancellation and exact grain output from baseline 88775059.",
       "test_count": 13,
       "seconds": {
-        "windows": 6.6657,
+        "windows": 6.0651,
         "mac": null
       },
       "markers": [
@@ -4125,7 +4125,7 @@
       "purpose": "Decoded HDR target enforcement and local correction.",
       "test_count": 94,
       "seconds": {
-        "windows": 597.5859,
+        "windows": 502.9115,
         "mac": null
       },
       "markers": [
@@ -4150,7 +4150,7 @@
       "purpose": "Checks hdr delivery behavior and regression contracts.",
       "test_count": 6,
       "seconds": {
-        "windows": 25.6688,
+        "windows": 24.2887,
         "mac": null
       },
       "markers": [
@@ -4173,7 +4173,7 @@
       "purpose": "Checks hdr from sdr behavior and regression contracts.",
       "test_count": 17,
       "seconds": {
-        "windows": 0.4109,
+        "windows": 0.4837,
         "mac": null
       },
       "markers": [
@@ -4189,7 +4189,7 @@
       "purpose": "AgX-style Attenuate colour handling (prototype, October 2026): results, not wording.",
       "test_count": 8,
       "seconds": {
-        "windows": 0.0193,
+        "windows": 0.0156,
         "mac": null
       },
       "markers": [],
@@ -4203,7 +4203,7 @@
       "purpose": "Checks highlight delivery floor behavior and regression contracts.",
       "test_count": 32,
       "seconds": {
-        "windows": 189.0542,
+        "windows": 151.9222,
         "mac": null
       },
       "markers": [
@@ -4226,7 +4226,7 @@
       "purpose": "Edge-colour highlight reconstruction (prototype, October 2026): results on a synthetic clip.",
       "test_count": 4,
       "seconds": {
-        "windows": 1.3936,
+        "windows": 1.6975,
         "mac": null
       },
       "markers": [],
@@ -4240,7 +4240,7 @@
       "purpose": "Edge-colour uses the shared delivery queue without changing source identity.",
       "test_count": 16,
       "seconds": {
-        "windows": 4.3446,
+        "windows": 5.2681,
         "mac": null
       },
       "markers": [
@@ -4256,7 +4256,7 @@
       "purpose": "Checks histogram correctness behavior and regression contracts.",
       "test_count": 5,
       "seconds": {
-        "windows": 0.6277,
+        "windows": 1.5715,
         "mac": null
       },
       "markers": [],
@@ -4270,7 +4270,7 @@
       "purpose": "Checks hosting probe behavior and regression contracts.",
       "test_count": 3,
       "seconds": {
-        "windows": 0.0276,
+        "windows": 0.0199,
         "mac": null
       },
       "markers": [],
@@ -4284,7 +4284,7 @@
       "purpose": "Behavioral contract for the production Python port of the HSL prototype.",
       "test_count": 7,
       "seconds": {
-        "windows": 2.2107,
+        "windows": 0.859,
         "mac": null
       },
       "markers": [],
@@ -4298,7 +4298,7 @@
       "purpose": "Pipeline, settings carriers, exact neutral and actual-stage sampling.",
       "test_count": 49,
       "seconds": {
-        "windows": 1.5601,
+        "windows": 1.9528,
         "mac": null
       },
       "markers": [
@@ -4314,7 +4314,7 @@
       "purpose": "Behaviour of the shared colour selection CPU reference and its use by HSL.",
       "test_count": 10,
       "seconds": {
-        "windows": 0.0433,
+        "windows": 0.0395,
         "mac": null
       },
       "markers": [],
@@ -4328,7 +4328,7 @@
       "purpose": "Local hue-mask leaves on the shared colour selection (selected before HSL).",
       "test_count": 9,
       "seconds": {
-        "windows": 0.2063,
+        "windows": 0.1824,
         "mac": null
       },
       "markers": [],
@@ -4342,7 +4342,7 @@
       "purpose": "Checks import bands behavior and regression contracts.",
       "test_count": 11,
       "seconds": {
-        "windows": 0.5048,
+        "windows": 0.5436,
         "mac": null
       },
       "markers": [
@@ -4358,7 +4358,7 @@
       "purpose": "Checks import opening behavior and regression contracts.",
       "test_count": 10,
       "seconds": {
-        "windows": 0.0693,
+        "windows": 0.0375,
         "mac": null
       },
       "markers": [
@@ -4374,7 +4374,7 @@
       "purpose": "Checks instrument work behavior and regression contracts.",
       "test_count": 2,
       "seconds": {
-        "windows": 0.1658,
+        "windows": 0.2067,
         "mac": null
       },
       "markers": [],
@@ -4388,7 +4388,7 @@
       "purpose": "Checks jpegxl helper fallback behavior and regression contracts.",
       "test_count": 13,
       "seconds": {
-        "windows": 10.0105,
+        "windows": 9.7682,
         "mac": null
       },
       "markers": [
@@ -4404,7 +4404,7 @@
       "purpose": "Bad typed marker values must be reported as a JPEG XL input error.",
       "test_count": 5,
       "seconds": {
-        "windows": 0.0492,
+        "windows": 0.0429,
         "mac": null
       },
       "markers": [
@@ -4441,7 +4441,7 @@
       "purpose": "Checks launcher behavior and regression contracts.",
       "test_count": 7,
       "seconds": {
-        "windows": 1.9938,
+        "windows": 1.8823,
         "mac": null
       },
       "markers": [],
@@ -4455,7 +4455,7 @@
       "purpose": "Checks lens correction behavior and regression contracts.",
       "test_count": 23,
       "seconds": {
-        "windows": 15.6724,
+        "windows": 16.0888,
         "mac": null
       },
       "markers": [
@@ -4471,7 +4471,7 @@
       "purpose": "Physical lens-filter results; no source-text contracts.",
       "test_count": 24,
       "seconds": {
-        "windows": 0.4822,
+        "windows": 0.5519,
         "mac": null
       },
       "markers": [
@@ -4487,7 +4487,7 @@
       "purpose": "Album creation commands on disposable sources, each one undo step.",
       "test_count": 4,
       "seconds": {
-        "windows": 3.4967,
+        "windows": 3.8994,
         "mac": null
       },
       "markers": [],
@@ -4501,7 +4501,7 @@
       "purpose": "Behaviour checks for the shared Library cache and its JPEG transport.",
       "test_count": 19,
       "seconds": {
-        "windows": 29.2215,
+        "windows": 37.1472,
         "mac": null
       },
       "markers": [
@@ -4518,7 +4518,7 @@
       "purpose": "Tag management, albums and the Library index, on temporary copies only.",
       "test_count": 11,
       "seconds": {
-        "windows": 4.2218,
+        "windows": 3.9018,
         "mac": null
       },
       "markers": [
@@ -4534,7 +4534,7 @@
       "purpose": "Checks library copies behavior and regression contracts.",
       "test_count": 19,
       "seconds": {
-        "windows": 16.1328,
+        "windows": 20.3429,
         "mac": null
       },
       "markers": [
@@ -4550,7 +4550,7 @@
       "purpose": "Checks library cpu bands behavior and regression contracts.",
       "test_count": 7,
       "seconds": {
-        "windows": 0.0995,
+        "windows": 0.0901,
         "mac": null
       },
       "markers": [
@@ -4566,7 +4566,7 @@
       "purpose": "Which reduced Library scenes the page may draw from its own planes.",
       "test_count": 2,
       "seconds": {
-        "windows": 0.0014,
+        "windows": 0.0012,
         "mac": null
       },
       "markers": [],
@@ -4580,7 +4580,7 @@
       "purpose": "Checks library dng behavior and regression contracts.",
       "test_count": 33,
       "seconds": {
-        "windows": 0.6067,
+        "windows": 0.2165,
         "mac": null
       },
       "markers": [
@@ -4597,7 +4597,7 @@
       "purpose": "Scoped reconstruction timing, cancellation and isolation after GPU rejection.",
       "test_count": 9,
       "seconds": {
-        "windows": 0.0181,
+        "windows": 0.0154,
         "mac": null
       },
       "markers": [
@@ -4614,7 +4614,7 @@
       "purpose": "Checks library embedded jpeg behavior and regression contracts.",
       "test_count": 11,
       "seconds": {
-        "windows": 2.4085,
+        "windows": 2.015,
         "mac": null
       },
       "markers": [
@@ -4636,7 +4636,7 @@
       "purpose": "Checks library estimates behavior and regression contracts.",
       "test_count": 74,
       "seconds": {
-        "windows": 5.9443,
+        "windows": 3.9534,
         "mac": null
       },
       "markers": [
@@ -4652,7 +4652,7 @@
       "purpose": "Checks library file cache index behavior and regression contracts.",
       "test_count": 16,
       "seconds": {
-        "windows": 3.3827,
+        "windows": 1.6679,
         "mac": null
       },
       "markers": [
@@ -4668,7 +4668,7 @@
       "purpose": "Checks library file commands behavior and regression contracts.",
       "test_count": 43,
       "seconds": {
-        "windows": 5.6651,
+        "windows": 5.7479,
         "mac": null
       },
       "markers": [
@@ -4692,7 +4692,7 @@
       "purpose": "Checks library file delete behavior and regression contracts.",
       "test_count": 52,
       "seconds": {
-        "windows": 9.5185,
+        "windows": 8.7961,
         "mac": null
       },
       "markers": [
@@ -4725,7 +4725,7 @@
       "purpose": "Exercise D's actual unstable IDs only in newly made disposable folders.",
       "test_count": 43,
       "seconds": {
-        "windows": 174.8357,
+        "windows": 147.7378,
         "mac": null
       },
       "markers": [
@@ -4745,7 +4745,7 @@
       "purpose": "Checks library file folders behavior and regression contracts.",
       "test_count": 22,
       "seconds": {
-        "windows": 3.856,
+        "windows": 3.859,
         "mac": null
       },
       "markers": [
@@ -4764,7 +4764,7 @@
       "purpose": "Disposable-file macOS coverage; real Trash checks require the shared lock.",
       "test_count": 38,
       "seconds": {
-        "windows": 0.0112,
+        "windows": 0.0114,
         "mac": null
       },
       "markers": [
@@ -4788,7 +4788,7 @@
       "purpose": "Checks library file platform behavior and regression contracts.",
       "test_count": 1,
       "seconds": {
-        "windows": 0.0372,
+        "windows": 0.0381,
         "mac": null
       },
       "markers": [],
@@ -4802,7 +4802,7 @@
       "purpose": "Checks library finished thumbnails behavior and regression contracts.",
       "test_count": 12,
       "seconds": {
-        "windows": 1.0177,
+        "windows": 1.6239,
         "mac": null
       },
       "markers": [
@@ -4818,7 +4818,7 @@
       "purpose": "Folder checks on disposable photos, with a fake clock and no real timer waits.",
       "test_count": 14,
       "seconds": {
-        "windows": 6.6805,
+        "windows": 6.4765,
         "mac": null
       },
       "markers": [
@@ -4841,7 +4841,7 @@
       "purpose": "Checks library folder commands behavior and regression contracts.",
       "test_count": 20,
       "seconds": {
-        "windows": 0.0943,
+        "windows": 0.0592,
         "mac": null
       },
       "markers": [
@@ -4857,7 +4857,7 @@
       "purpose": "Folder streaming reads the index first and bounds discovery/reconciliation.",
       "test_count": 12,
       "seconds": {
-        "windows": 2.2349,
+        "windows": 2.3324,
         "mac": null
       },
       "markers": [],
@@ -4871,7 +4871,7 @@
       "purpose": "Camera RAW Library thumbnails developed on the GPU: the backend half.",
       "test_count": 29,
       "seconds": {
-        "windows": 0.9088,
+        "windows": 0.7311,
         "mac": null
       },
       "markers": [
@@ -4890,7 +4890,7 @@
       "purpose": "Saved-grade hand-offs: identity, persistent pixels, and no development.",
       "test_count": 16,
       "seconds": {
-        "windows": 9.3957,
+        "windows": 6.9316,
         "mac": null
       },
       "markers": [
@@ -4906,7 +4906,7 @@
       "purpose": "Slice 3 Stage A: real grade documents, disposable files, writer/recovery boundaries.",
       "test_count": 24,
       "seconds": {
-        "windows": 60.0313,
+        "windows": 47.6083,
         "mac": null
       },
       "markers": [
@@ -4930,7 +4930,7 @@
       "purpose": "Checks library grants behavior and regression contracts.",
       "test_count": 6,
       "seconds": {
-        "windows": 0.0386,
+        "windows": 0.0415,
         "mac": null
       },
       "markers": [],
@@ -4944,7 +4944,7 @@
       "purpose": "Stage B health, controls and diagnostics on disposable photos only.",
       "test_count": 13,
       "seconds": {
-        "windows": 25.4078,
+        "windows": 24.733,
         "mac": null
       },
       "markers": [
@@ -4962,7 +4962,7 @@
       "purpose": "Checks library history behavior and regression contracts.",
       "test_count": 10,
       "seconds": {
-        "windows": 6.3668,
+        "windows": 6.2582,
         "mac": null
       },
       "markers": [
@@ -4978,7 +4978,7 @@
       "purpose": "Exercise the real helper lanes with deterministic decode checkpoints.",
       "test_count": 1,
       "seconds": {
-        "windows": 0.0098,
+        "windows": 0.0094,
         "mac": null
       },
       "markers": [],
@@ -4992,7 +4992,7 @@
       "purpose": "Stored source identity, read-only grades and the existing cache controls.",
       "test_count": 42,
       "seconds": {
-        "windows": 17.7845,
+        "windows": 20.3831,
         "mac": null
       },
       "markers": [
@@ -5012,7 +5012,7 @@
       "purpose": "Checks library marks behavior and regression contracts.",
       "test_count": 16,
       "seconds": {
-        "windows": 0.9206,
+        "windows": 0.9415,
         "mac": null
       },
       "markers": [
@@ -5028,7 +5028,7 @@
       "purpose": "Checks library measurement identity behavior and regression contracts.",
       "test_count": 2,
       "seconds": {
-        "windows": 0.7274,
+        "windows": 0.9061,
         "mac": null
       },
       "markers": [],
@@ -5042,7 +5042,7 @@
       "purpose": "Pins/album scope on disposable photos and app data only.",
       "test_count": 12,
       "seconds": {
-        "windows": 2.6944,
+        "windows": 2.8214,
         "mac": null
       },
       "markers": [],
@@ -5056,7 +5056,7 @@
       "purpose": "Checks library metadata behavior and regression contracts.",
       "test_count": 7,
       "seconds": {
-        "windows": 0.0638,
+        "windows": 0.0745,
         "mac": null
       },
       "markers": [
@@ -5072,7 +5072,7 @@
       "purpose": "Checks library native behavior and regression contracts.",
       "test_count": 4,
       "seconds": {
-        "windows": 0.385,
+        "windows": 0.4252,
         "mac": null
       },
       "markers": [
@@ -5088,7 +5088,7 @@
       "purpose": "Checks library os junk behavior and regression contracts.",
       "test_count": 3,
       "seconds": {
-        "windows": 0.0599,
+        "windows": 0.0682,
         "mac": null
       },
       "markers": [],
@@ -5102,7 +5102,7 @@
       "purpose": "Checks library overlay identity behavior and regression contracts.",
       "test_count": 2,
       "seconds": {
-        "windows": 0.8916,
+        "windows": 1.0242,
         "mac": null
       },
       "markers": [],
@@ -5116,7 +5116,7 @@
       "purpose": "Checks library overlays behavior and regression contracts.",
       "test_count": 54,
       "seconds": {
-        "windows": 1.3071,
+        "windows": 1.6462,
         "mac": null
       },
       "markers": [
@@ -5132,7 +5132,7 @@
       "purpose": "Selective bulk paste exercises saved documents, virtual items and durable work.",
       "test_count": 31,
       "seconds": {
-        "windows": 13.5135,
+        "windows": 14.6014,
         "mac": null
       },
       "markers": [
@@ -5148,7 +5148,7 @@
       "purpose": "Failed pictures are durable cache results, never repeated decoder jobs.",
       "test_count": 42,
       "seconds": {
-        "windows": 24.762,
+        "windows": 19.1195,
         "mac": null
       },
       "markers": [
@@ -5165,7 +5165,7 @@
       "purpose": "Checks library pictures behavior and regression contracts.",
       "test_count": 24,
       "seconds": {
-        "windows": 4.6586,
+        "windows": 3.5113,
         "mac": null
       },
       "markers": [
@@ -5182,7 +5182,7 @@
       "purpose": "Checks library pins behavior and regression contracts.",
       "test_count": 2,
       "seconds": {
-        "windows": 13.6495,
+        "windows": 13.8804,
         "mac": null
       },
       "markers": [
@@ -5198,7 +5198,7 @@
       "purpose": "Checks library raw behavior and regression contracts.",
       "test_count": 9,
       "seconds": {
-        "windows": 6.0736,
+        "windows": 5.3226,
         "mac": null
       },
       "markers": [],
@@ -5212,7 +5212,7 @@
       "purpose": "Checks library reduced behavior and regression contracts.",
       "test_count": 38,
       "seconds": {
-        "windows": 2.7087,
+        "windows": 1.7452,
         "mac": null
       },
       "markers": [
@@ -5228,7 +5228,7 @@
       "purpose": "Refresh thumbnail removes one photo's stored pictures and nothing else.",
       "test_count": 10,
       "seconds": {
-        "windows": 0.5369,
+        "windows": 0.5127,
         "mac": null
       },
       "markers": [],
@@ -5242,7 +5242,7 @@
       "purpose": "Foreground results and lock isolation, using disposable data only.",
       "test_count": 8,
       "seconds": {
-        "windows": 1.8985,
+        "windows": 1.5673,
         "mac": null
       },
       "markers": [],
@@ -5270,7 +5270,7 @@
       "purpose": "Checks library rgb behavior and regression contracts.",
       "test_count": 70,
       "seconds": {
-        "windows": 63.3598,
+        "windows": 54.062,
         "mac": null
       },
       "markers": [
@@ -5290,7 +5290,7 @@
       "purpose": "Execute the RAM admission rules without sampling the test runner.",
       "test_count": 52,
       "seconds": {
-        "windows": 0.0609,
+        "windows": 0.0613,
         "mac": null
       },
       "markers": [],
@@ -5304,7 +5304,7 @@
       "purpose": "Persistent finished pictures: identity, independent eviction and HDR ceiling.",
       "test_count": 6,
       "seconds": {
-        "windows": 0.9891,
+        "windows": 0.9509,
         "mac": null
       },
       "markers": [],
@@ -5318,7 +5318,7 @@
       "purpose": "Stage A recovery/Undo boundaries, using only disposable photos and settings.",
       "test_count": 36,
       "seconds": {
-        "windows": 8.1948,
+        "windows": 8.0055,
         "mac": null
       },
       "markers": [
@@ -5335,7 +5335,7 @@
       "purpose": "Checks library smart albums behavior and regression contracts.",
       "test_count": 16,
       "seconds": {
-        "windows": 4.5932,
+        "windows": 2.9495,
         "mac": null
       },
       "markers": [],
@@ -5349,7 +5349,7 @@
       "purpose": "Exercise the measurement driver against real stored scenes in a disposable profile.",
       "test_count": 3,
       "seconds": {
-        "windows": 27.0087,
+        "windows": 49.998,
         "mac": null
       },
       "markers": [
@@ -5368,7 +5368,7 @@
       "purpose": "Stage C recovery on disposable photos, folders, databases and processes.",
       "test_count": 17,
       "seconds": {
-        "windows": 5.1317,
+        "windows": 4.8961,
         "mac": null
       },
       "markers": [
@@ -5391,7 +5391,7 @@
       "purpose": "Checks library startup logging behavior and regression contracts.",
       "test_count": 2,
       "seconds": {
-        "windows": 0.0327,
+        "windows": 0.0466,
         "mac": null
       },
       "markers": [],
@@ -5405,7 +5405,7 @@
       "purpose": "Checks library stopwatch behavior and regression contracts.",
       "test_count": 1,
       "seconds": {
-        "windows": 0.1925,
+        "windows": 0.0767,
         "mac": null
       },
       "markers": [
@@ -5421,7 +5421,7 @@
       "purpose": "Checks library test patterns behavior and regression contracts.",
       "test_count": 3,
       "seconds": {
-        "windows": 1.4735,
+        "windows": 1.8925,
         "mac": null
       },
       "markers": [],
@@ -5435,7 +5435,7 @@
       "purpose": "A blocked disk spill must not own the shared transport lock.",
       "test_count": 1,
       "seconds": {
-        "windows": 0.0481,
+        "windows": 0.0493,
         "mac": null
       },
       "markers": [],
@@ -5449,7 +5449,7 @@
       "purpose": "Checks library worker behavior and regression contracts.",
       "test_count": 21,
       "seconds": {
-        "windows": 42.533,
+        "windows": 37.8864,
         "mac": null
       },
       "markers": [
@@ -5467,7 +5467,7 @@
       "purpose": "Checks linear dng behavior and regression contracts.",
       "test_count": 26,
       "seconds": {
-        "windows": 0.4187,
+        "windows": 0.4636,
         "mac": null
       },
       "markers": [
@@ -5509,7 +5509,7 @@
       "purpose": "Checks linked sdr tail probe behavior and regression contracts.",
       "test_count": 8,
       "seconds": {
-        "windows": 0.0134,
+        "windows": 0.0128,
         "mac": null
       },
       "markers": [
@@ -5546,7 +5546,7 @@
       "purpose": "Checks loader fixtures behavior and regression contracts.",
       "test_count": 61,
       "seconds": {
-        "windows": 2.1617,
+        "windows": 1.5566,
         "mac": null
       },
       "markers": [
@@ -5565,7 +5565,7 @@
       "purpose": "A manual interpretation resolves both fields and starts from encoded pixels.",
       "test_count": 10,
       "seconds": {
-        "windows": 1.3025,
+        "windows": 1.5549,
         "mac": null
       },
       "markers": [
@@ -5587,7 +5587,7 @@
       "purpose": "Checks local adjustments behavior and regression contracts.",
       "test_count": 117,
       "seconds": {
-        "windows": 5.7682,
+        "windows": 4.3582,
         "mac": null
       },
       "markers": [
@@ -5603,7 +5603,7 @@
       "purpose": "Checks log noise behavior and regression contracts.",
       "test_count": 2,
       "seconds": {
-        "windows": 0.0033,
+        "windows": 0.0013,
         "mac": null
       },
       "markers": [],
@@ -5617,7 +5617,7 @@
       "purpose": "Checks log timeline behavior and regression contracts.",
       "test_count": 1,
       "seconds": {
-        "windows": 4.3415,
+        "windows": 3.6075,
         "mac": null
       },
       "markers": [],
@@ -5631,7 +5631,7 @@
       "purpose": "Tooling checks use disposable locks and small child processes, never the GPU.",
       "test_count": 11,
       "seconds": {
-        "windows": 46.5702,
+        "windows": 32.9884,
         "mac": null
       },
       "markers": [
@@ -5656,7 +5656,7 @@
       "purpose": "Checks mask blur strips behavior and regression contracts.",
       "test_count": 48,
       "seconds": {
-        "windows": 0.2939,
+        "windows": 0.2613,
         "mac": null
       },
       "markers": [
@@ -5672,7 +5672,7 @@
       "purpose": "Exact masks for a region only (Viewport-Bounded GPU Preview PRD 5.1).",
       "test_count": 60,
       "seconds": {
-        "windows": 9.0543,
+        "windows": 9.2243,
         "mac": null
       },
       "markers": [
@@ -5688,7 +5688,7 @@
       "purpose": "The soft-mask rule (Viewport-Bounded GPU Preview PRD 5.1).",
       "test_count": 8,
       "seconds": {
-        "windows": 8.3976,
+        "windows": 9.9213,
         "mac": null
       },
       "markers": [
@@ -5704,7 +5704,7 @@
       "purpose": "Checks mask work behavior and regression contracts.",
       "test_count": 12,
       "seconds": {
-        "windows": 2.5816,
+        "windows": 1.7629,
         "mac": null
       },
       "markers": [],
@@ -5718,7 +5718,7 @@
       "purpose": "Saved browser locations are shortcuts only; Library pins stay separate (Steve, November 13, 2026).",
       "test_count": 1,
       "seconds": {
-        "windows": 0.4849,
+        "windows": 0.9833,
         "mac": null
       },
       "markers": [],
@@ -5732,7 +5732,7 @@
       "purpose": "Checks media browser peek behavior and regression contracts.",
       "test_count": 6,
       "seconds": {
-        "windows": 0.8062,
+        "windows": 0.2906,
         "mac": null
       },
       "markers": [],
@@ -5746,7 +5746,7 @@
       "purpose": "Checks metadata behavior and regression contracts.",
       "test_count": 16,
       "seconds": {
-        "windows": 0.0168,
+        "windows": 0.0163,
         "mac": null
       },
       "markers": [
@@ -5762,7 +5762,7 @@
       "purpose": "Metadata helper shutdown releases pipes as well as the child process.",
       "test_count": 1,
       "seconds": {
-        "windows": 0.9267,
+        "windows": 1.3408,
         "mac": null
       },
       "markers": [],
@@ -5776,7 +5776,7 @@
       "purpose": "Checks micro grain cpu preview behavior and regression contracts.",
       "test_count": 52,
       "seconds": {
-        "windows": 13.3031,
+        "windows": 7.1704,
         "mac": null
       },
       "markers": [
@@ -5792,7 +5792,7 @@
       "purpose": "Checks model declaration contracts behavior and regression contracts.",
       "test_count": 2,
       "seconds": {
-        "windows": 0.0084,
+        "windows": 0.0072,
         "mac": null
       },
       "markers": [],
@@ -5806,7 +5806,7 @@
       "purpose": "Checks native source stream behavior and regression contracts.",
       "test_count": 16,
       "seconds": {
-        "windows": 0.187,
+        "windows": 0.2046,
         "mac": null
       },
       "markers": [
@@ -5822,7 +5822,7 @@
       "purpose": "Import-boundary gamut projection: signed conversion, shared routes and cache identity.",
       "test_count": 11,
       "seconds": {
-        "windows": 0.0317,
+        "windows": 0.0294,
         "mac": null
       },
       "markers": [
@@ -5838,7 +5838,7 @@
       "purpose": "Checks peak accuracy behavior and regression contracts.",
       "test_count": 6,
       "seconds": {
-        "windows": 0.2678,
+        "windows": 0.3004,
         "mac": null
       },
       "markers": [
@@ -5854,7 +5854,7 @@
       "purpose": "Checks performance pipeline behavior and regression contracts.",
       "test_count": 12,
       "seconds": {
-        "windows": 0.2167,
+        "windows": 0.2269,
         "mac": null
       },
       "markers": [
@@ -5870,7 +5870,7 @@
       "purpose": "Checks photo framing behavior and regression contracts.",
       "test_count": 39,
       "seconds": {
-        "windows": 1.9308,
+        "windows": 1.8038,
         "mac": null
       },
       "markers": [
@@ -5893,7 +5893,7 @@
       "purpose": "Behaviour checks for calibration-backed Pixel cleanup, no private photos.",
       "test_count": 22,
       "seconds": {
-        "windows": 0.0872,
+        "windows": 0.0838,
         "mac": null
       },
       "markers": [
@@ -5909,7 +5909,7 @@
       "purpose": "Checks preview display behavior and regression contracts.",
       "test_count": 7,
       "seconds": {
-        "windows": 0.9737,
+        "windows": 1.6042,
         "mac": null
       },
       "markers": [
@@ -5931,7 +5931,7 @@
       "purpose": "The comparison tool's own arithmetic (Viewport-Bounded GPU Preview PRD, 4.6).",
       "test_count": 19,
       "seconds": {
-        "windows": 0.0435,
+        "windows": 0.0444,
         "mac": null
       },
       "markers": [
@@ -5947,7 +5947,7 @@
       "purpose": "Preview and export must be the same graph, differing only where they say so.",
       "test_count": 16,
       "seconds": {
-        "windows": 1.3233,
+        "windows": 2.3913,
         "mac": null
       },
       "markers": [
@@ -5963,7 +5963,7 @@
       "purpose": "Checks preview geometry behavior and regression contracts.",
       "test_count": 12,
       "seconds": {
-        "windows": 2.2162,
+        "windows": 2.968,
         "mac": null
       },
       "markers": [
@@ -5979,7 +5979,7 @@
       "purpose": "Checks preview resolution contract behavior and regression contracts.",
       "test_count": 4,
       "seconds": {
-        "windows": 0.9636,
+        "windows": 0.366,
         "mac": null
       },
       "markers": [],
@@ -5993,7 +5993,7 @@
       "purpose": "Malformed project manifests fail as project errors, without opening a source.",
       "test_count": 5,
       "seconds": {
-        "windows": 0.0519,
+        "windows": 0.0446,
         "mac": null
       },
       "markers": [
@@ -6009,7 +6009,7 @@
       "purpose": "A saved project outlives the settings it was saved with.",
       "test_count": 4,
       "seconds": {
-        "windows": 0.009,
+        "windows": 0.0098,
         "mac": null
       },
       "markers": [],
@@ -6023,7 +6023,7 @@
       "purpose": "Saving a project must keep conflict detection attached to its destination.",
       "test_count": 2,
       "seconds": {
-        "windows": 0.0727,
+        "windows": 0.0859,
         "mac": null
       },
       "markers": [
@@ -6039,7 +6039,7 @@
       "purpose": "A full-size Proof is the export, byte for byte.",
       "test_count": 21,
       "seconds": {
-        "windows": 206.2887,
+        "windows": 200.7816,
         "mac": null
       },
       "markers": [
@@ -6069,7 +6069,7 @@
       "purpose": "Checks proofing behavior and regression contracts.",
       "test_count": 45,
       "seconds": {
-        "windows": 102.6534,
+        "windows": 84.2827,
         "mac": null
       },
       "markers": [
@@ -6100,7 +6100,7 @@
       "purpose": "Exercise pytest shutdown itself, including Windows' open-file restriction.",
       "test_count": 1,
       "seconds": {
-        "windows": 8.6784,
+        "windows": 21.8701,
         "mac": null
       },
       "markers": [
@@ -6116,7 +6116,7 @@
       "purpose": "Checks raw exposure behavior and regression contracts.",
       "test_count": 19,
       "seconds": {
-        "windows": 0.1923,
+        "windows": 0.2048,
         "mac": null
       },
       "markers": [
@@ -6132,7 +6132,7 @@
       "purpose": "Checks raw highlight project compatibility behavior and regression contracts.",
       "test_count": 1,
       "seconds": {
-        "windows": 0.0007,
+        "windows": 0.0009,
         "mac": null
       },
       "markers": [],
@@ -6146,7 +6146,7 @@
       "purpose": "Checks raw pixel cleanup behavior and regression contracts.",
       "test_count": 24,
       "seconds": {
-        "windows": 0.2026,
+        "windows": 0.1582,
         "mac": null
       },
       "markers": [
@@ -6162,7 +6162,7 @@
       "purpose": "Checks raw pixel cleanup state behavior and regression contracts.",
       "test_count": 12,
       "seconds": {
-        "windows": 2.5366,
+        "windows": 2.1042,
         "mac": null
       },
       "markers": [
@@ -6178,7 +6178,7 @@
       "purpose": "Checks raw speck cleanup behavior and regression contracts.",
       "test_count": 25,
       "seconds": {
-        "windows": 0.0918,
+        "windows": 0.0854,
         "mac": null
       },
       "markers": [
@@ -6194,7 +6194,7 @@
       "purpose": "Checks render cache behavior and regression contracts.",
       "test_count": 59,
       "seconds": {
-        "windows": 7.4187,
+        "windows": 7.6057,
         "mac": null
       },
       "markers": [
@@ -6210,7 +6210,7 @@
       "purpose": "Checks retouch behavior and regression contracts.",
       "test_count": 27,
       "seconds": {
-        "windows": 4.1354,
+        "windows": 4.6089,
         "mac": null
       },
       "markers": [
@@ -6229,7 +6229,7 @@
       "purpose": "Interactive repairs publish one native source transaction for every consumer.",
       "test_count": 35,
       "seconds": {
-        "windows": 45.2328,
+        "windows": 39.6381,
         "mac": null
       },
       "markers": [
@@ -6252,7 +6252,7 @@
       "purpose": "Behavioral tests for the explicitly selectable native repair prototypes.",
       "test_count": 11,
       "seconds": {
-        "windows": 0.8253,
+        "windows": 0.8049,
         "mac": null
       },
       "markers": [
@@ -6268,7 +6268,7 @@
       "purpose": "Parallel score lanes preserve the serial candidate scores and donor ordering.",
       "test_count": 3,
       "seconds": {
-        "windows": 0.0079,
+        "windows": 0.0083,
         "mac": null
       },
       "markers": [
@@ -6284,7 +6284,7 @@
       "purpose": "Checks retouch recipe behavior and regression contracts.",
       "test_count": 22,
       "seconds": {
-        "windows": 2.6927,
+        "windows": 2.7964,
         "mac": null
       },
       "markers": [
@@ -6300,7 +6300,7 @@
       "purpose": "Finished patch reuse and route disclosure across preview and delivery.",
       "test_count": 13,
       "seconds": {
-        "windows": 2.9586,
+        "windows": 2.4298,
         "mac": null
       },
       "markers": [
@@ -6316,7 +6316,7 @@
       "purpose": "Native clone/heal behavior, independent of UI wording or code structure.",
       "test_count": 8,
       "seconds": {
-        "windows": 0.1102,
+        "windows": 0.1104,
         "mac": null
       },
       "markers": [
@@ -6332,7 +6332,7 @@
       "purpose": "Checks revert rendition behavior and regression contracts.",
       "test_count": 9,
       "seconds": {
-        "windows": 0.1314,
+        "windows": 0.1774,
         "mac": null
       },
       "markers": [
@@ -6348,7 +6348,7 @@
       "purpose": "Checks scope correctness behavior and regression contracts.",
       "test_count": 6,
       "seconds": {
-        "windows": 0.5377,
+        "windows": 0.4931,
         "mac": null
       },
       "markers": [
@@ -6366,7 +6366,7 @@
       "purpose": "Checks sdr export behavior and regression contracts.",
       "test_count": 13,
       "seconds": {
-        "windows": 0.3694,
+        "windows": 0.3853,
         "mac": null
       },
       "markers": [
@@ -6382,7 +6382,7 @@
       "purpose": "Checks sdr gamut behavior and regression contracts.",
       "test_count": 34,
       "seconds": {
-        "windows": 0.0557,
+        "windows": 0.0587,
         "mac": null
       },
       "markers": [
@@ -6398,7 +6398,7 @@
       "purpose": "Checks sdr link behavior and regression contracts.",
       "test_count": 14,
       "seconds": {
-        "windows": 3.6789,
+        "windows": 4.3346,
         "mac": null
       },
       "markers": [
@@ -6414,7 +6414,7 @@
       "purpose": "Checks sdr local match behavior and regression contracts.",
       "test_count": 17,
       "seconds": {
-        "windows": 4.1492,
+        "windows": 13.4718,
         "mac": null
       },
       "markers": [
@@ -6430,7 +6430,7 @@
       "purpose": "Match commits one editable recipe, shared by persistence and rendering.",
       "test_count": 3,
       "seconds": {
-        "windows": 1.5562,
+        "windows": 1.9688,
         "mac": null
       },
       "markers": [],
@@ -6444,7 +6444,7 @@
       "purpose": "Checks sdr match inputs behavior and regression contracts.",
       "test_count": 6,
       "seconds": {
-        "windows": 0.0769,
+        "windows": 0.0717,
         "mac": null
       },
       "markers": [
@@ -6460,7 +6460,7 @@
       "purpose": "Checks sdr match materialization behavior and regression contracts.",
       "test_count": 17,
       "seconds": {
-        "windows": 7.2299,
+        "windows": 8.9325,
         "mac": null
       },
       "markers": [
@@ -6476,7 +6476,7 @@
       "purpose": "Match candidates rendered by the page instead of the CPU.",
       "test_count": 6,
       "seconds": {
-        "windows": 4.3105,
+        "windows": 5.8404,
         "mac": null
       },
       "markers": [
@@ -6492,7 +6492,7 @@
       "purpose": "Checks sdr match state behavior and regression contracts.",
       "test_count": 13,
       "seconds": {
-        "windows": 0.4627,
+        "windows": 0.4576,
         "mac": null
       },
       "markers": [
@@ -6508,7 +6508,7 @@
       "purpose": "Checks signed ahd behavior and regression contracts.",
       "test_count": 17,
       "seconds": {
-        "windows": 0.0238,
+        "windows": 0.0237,
         "mac": null
       },
       "markers": [
@@ -6524,7 +6524,7 @@
       "purpose": "Checks signed raw development behavior and regression contracts.",
       "test_count": 29,
       "seconds": {
-        "windows": 0.0506,
+        "windows": 0.047,
         "mac": null
       },
       "markers": [
@@ -6540,7 +6540,7 @@
       "purpose": "Checks signed shadows behavior and regression contracts.",
       "test_count": 18,
       "seconds": {
-        "windows": 0.0528,
+        "windows": 0.0543,
         "mac": null
       },
       "markers": [
@@ -6556,7 +6556,7 @@
       "purpose": "Independent transfer equations and asymmetric colours catch forced BT.2020.",
       "test_count": 37,
       "seconds": {
-        "windows": 0.4976,
+        "windows": 0.5288,
         "mac": null
       },
       "markers": [
@@ -6572,7 +6572,7 @@
       "purpose": "A luminance mask under straighten or perspective is finished before the warp.",
       "test_count": 7,
       "seconds": {
-        "windows": 0.5986,
+        "windows": 0.8412,
         "mac": null
       },
       "markers": [
@@ -6588,7 +6588,7 @@
       "purpose": "Phase 3: the bounded source-tile transport contract.",
       "test_count": 16,
       "seconds": {
-        "windows": 5.0032,
+        "windows": 5.9038,
         "mac": null
       },
       "markers": [
@@ -6635,7 +6635,7 @@
       "purpose": "Corpus validation uses tiny disposable files, never the private photos.",
       "test_count": 5,
       "seconds": {
-        "windows": 0.0612,
+        "windows": 0.0621,
         "mac": null
       },
       "markers": [
@@ -6651,7 +6651,7 @@
       "purpose": "Generated oriented / custom-gamma TIFF fixtures, before loader changes.",
       "test_count": 23,
       "seconds": {
-        "windows": 0.2343,
+        "windows": 0.2722,
         "mac": null
       },
       "markers": [
@@ -6667,7 +6667,7 @@
       "purpose": "Checks tone zones behavior and regression contracts.",
       "test_count": 33,
       "seconds": {
-        "windows": 0.3529,
+        "windows": 0.3966,
         "mac": null
       },
       "markers": [
@@ -6683,7 +6683,7 @@
       "purpose": "Checks ultrahdr export behavior and regression contracts.",
       "test_count": 40,
       "seconds": {
-        "windows": 87.4909,
+        "windows": 86.1709,
         "mac": null
       },
       "markers": [
@@ -6710,7 +6710,7 @@
       "purpose": "Checks vignette midpoint behavior and regression contracts.",
       "test_count": 20,
       "seconds": {
-        "windows": 0.0651,
+        "windows": 0.0578,
         "mac": null
       },
       "markers": [
@@ -6726,7 +6726,7 @@
       "purpose": "Checks watermark behavior and regression contracts.",
       "test_count": 11,
       "seconds": {
-        "windows": 36.6079,
+        "windows": 43.6971,
         "mac": null
       },
       "markers": [
@@ -6749,7 +6749,7 @@
       "purpose": "Validate PRD block alignment/area integration before trusting its verdicts.",
       "test_count": 5,
       "seconds": {
-        "windows": 0.3785,
+        "windows": 0.4375,
         "mac": null
       },
       "markers": [
