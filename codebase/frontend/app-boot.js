@@ -814,6 +814,7 @@ function bindEvents() {
       });
       return;
     }
+    if (bindFilmSelectPreview(control)) return;
     const transactionOwnedControl = control.dataset.path === "shared.geometry.straighten_angle";
     control.addEventListener("pointerdown", () => {
       if (transactionOwnedControl) return;

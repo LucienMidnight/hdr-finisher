@@ -125,5 +125,6 @@ module.exports = async function checkFilmPanel(page) {
   return [...g.querySelectorAll('button,input,select')].filter(e=>e.getClientRects().length && !e.hidden).filter(e=>{const r=e.getBoundingClientRect();return r.left<bounds.left-1||r.right>bounds.right+1;}).map(e=>e.id||e.textContent);
  });
  assert.deepEqual(overflow,[],'controls overflow panel');
+ await require('./helpers/film-select-preview-ui.cjs')(page);
  console.log('Phase 6 panel: folding/session, summaries/Mod, equal edits, stock tags, dots/double-click, custom format, slide locks, SDR Match, shared preset apply/save/delete, keyboard and narrow layout PASS');
 };

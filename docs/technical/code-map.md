@@ -1,3 +1,14 @@
+## November 27: Film Look dropdown previews
+
+`film-select-preview.js` binds native base-select option focus to a temporary
+recipe transaction; `app-boot.js` routes only Film selects through it.
+`edit-commands.js` excludes those drafts from document/history sync, while
+`adjustment-controls.js` renders committed-only controls and markers.
+`film-select-preview.test.js` covers no-op/cancel/commit/save races;
+`helpers/film-select-preview-ui.cjs` exercises the actual picker, history,
+redo and stale coordinator tokens through the existing Film panel driver.
+`helpers/indicator-dots.cjs` checks shared panel headings in three themes.
+
 # Code map
 
 ## November 16: interruptible Grade preview work

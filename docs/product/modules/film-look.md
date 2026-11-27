@@ -1,3 +1,43 @@
+## November 27: temporary native-dropdown previews
+
+Every Film Look select (Film Stock, Lens Filter, Grain Film Format, Capture
+Geometry, Film Type and Print Paper) previews the focused native option immediately.
+Chromium's existing base-select picker provides option focus events, so its
+native opening, screen-reader semantics, arrow navigation, type-ahead and
+selection remain. Enter, an option click or ordinary closing commits the
+highlighted choice; Escape restores the opening adjustments. No custom
+listbox, menu, token or layout is added.
+
+Each highlight starts from the opening recipe, including stock inheritance,
+rather than accumulating edits. Intermediate adjustments are preview-only:
+global synchronization refuses to persist them, controls and changed markers
+read the opening committed recipe, and autosave/sidecar history continues to
+use the backend document. Closing on the original value or Escape creates no
+history entry and preserves redo. A different final choice uses the normal
+single gesture: one Undo returns to the pre-open recipe; Redo reapplies the
+final choice. Every preview and close retires older render generations through
+the existing coordinator, without writing the preview pipeline.
+
+Qualification on the PC: all six native pickers pass live-arrow/cancel checks;
+Lens also passes option click, ordinary outside close, original-value no-op,
+single Undo, preserved Redo, committed-only indicators/backend state and stale
+coordinator-token rejection. Full preset application and sparse save/reopen
+checks pass. The shared indicator fixture passes all three themes. Final Node
+suite: 1,542 passed, one skipped. Full Python: 5,235 passed, 56 skipped, one
+unrelated Denoise decoder-version pin failure
+(`test_untouched_sources_keep_pre_qualification_decoder_versions`, expects
+signed-RAW v8 where the branch already reports TIFF-ICC v9); left unchanged.
+The 72 Film Exposure GPU/CPU cases and 259 targeted film CPU tests pass. No
+encoded all-codec/release qualification or performance improvement is claimed.
+Library smoke is incomplete: 28/30 viewport photos pictured; DSC00264 and
+DSC01226 fail GPU RAW finite-half-float transport before Film. Memory gates
+pass. Left unchanged; evidence and conditions are in the performance table.
+
+Other dropdowns that could adopt this later, unchanged here: Denoise Method/
+Splotch Size; RAW Lens Mode/Profile and Highlight Recovery; Grade Highlight
+Compression modes/colour handling, scope channel/mode and overlay choices;
+Proof format/size/target/display; Export format/colour/encoding choices.
+
 ## November 27: single changed marker
 
 A deliberate Film control override keeps its clickable reset dot and suppresses

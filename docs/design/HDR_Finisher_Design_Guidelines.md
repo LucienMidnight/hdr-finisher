@@ -1,3 +1,12 @@
+## November 27: Film Look picker preview transactions
+
+Film Look retains the native base-select picker. Focused options preview the
+picture without committing the recipe. Enter/click/ordinary closing accepts;
+Escape restores the opening recipe. Closing on the same value is a no-op.
+The entire open/preview/close cycle produces at most one undo step, to the
+pre-open recipe, and no intermediate autosave, sidecar or changed-marker
+state. Latest preview generation wins. Other selects retain their behavior.
+
 ## November 27: one changed marker per control heading
 
 Top-level module changed dots remain. Complex modules may also summarize

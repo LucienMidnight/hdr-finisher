@@ -1,3 +1,9 @@
+## November 27: Film Look qualification Library smoke (PC)
+
+| Action | Observation | Date / commit | Conditions |
+| --- | --- | --- | --- |
+| Mixed Library viewport, Film Look qualification | Incomplete: 28/30 expected viewport photos in 90 s. First/ten/twenty pictures 1.2/1.7/24.0 s; longest picture gap 16.7 s. No speed comparison or improvement claim. | 2026-11-27, commit containing this note | Windows PC, 2560x1440, plain Electron, shared GPU lock, frozen library-mixed-v1. Full Python run completed before launch. DSC00264.ARW and DSC01226.ARW rejected by GPU RAW finite-half-float transport; no Film-stage error. Memory limits pass, external app peak 2.739 GB. Evidence: `codebase/output/quick-library-check/film-library-final/report.json`. |
+
 ## November 26-27: bounded parallel Python tests (PC)
 
 | Action | Serial baseline | Parallel runner | Conditions |

@@ -98,6 +98,12 @@ function syncPressedControl(control, pressed) {
 }
 
 function syncControlsFromState() {
+  const draft=state.filmSelectDraft;
+  if (draft && state.adjustments !== draft.before) {
+    const preview=state.adjustments;
+    state.adjustments=draft.before;
+    try { return syncControlsFromState(); } finally { state.adjustments=preview; }
+  }
   syncHighlightCompressionMinimum();
   els.controls.forEach((control) => {
     const value = getValueByPath(state.adjustments, control.dataset.path);
@@ -168,6 +174,12 @@ function renderFilmStockControls() {
 }
 
 function renderControlState() {
+  const draft=state.filmSelectDraft;
+  if (draft && state.adjustments !== draft.before) {
+    const preview=state.adjustments;
+    state.adjustments=draft.before;
+    try { return renderControlState(); } finally { state.adjustments=preview; }
+  }
   renderHslPanels();
   const defaults = defaultAdjustments();
   const filmLook = state.adjustments[state.currentView]?.film_look;
