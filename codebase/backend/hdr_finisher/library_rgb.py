@@ -197,7 +197,7 @@ def decoded_precision(path, inputs, edge=2560, cancelled=None):
             facts["orientation"] = int(tag.value) if tag else 1
             facts["bits_per_sample"] = page.bitspersample
             facts["sample_format"] = str(page.sampleformat)
-        # Grade currently leaves the TIFF orientation tag unapplied.
+        # The shared TIFF loader has applied orientation to the decoded samples.
     else:
         try:
             pixels, metadata = loader._load_hdr_like(path)
@@ -264,7 +264,8 @@ def decoded_precision(path, inputs, edge=2560, cancelled=None):
     for row in range(0, pixels.shape[0], 128):
         pixels[row:row+128] = sanitize_finite_array(pixels[row:row+128])
     h, w = pixels.shape[:2]
-    authored = not decoder_normalized and color.display_referred_sdr(metadata["color_space"], metadata["transfer_function"], suffix)
+    authored = not decoder_normalized and (color.display_referred_sdr(metadata["color_space"], metadata["transfer_function"], suffix)
+        or (metadata.get("icc_converted_to_linear_srgb") and not override))
     matrix_space = color.hdr_source_colourspace(operation_space, transfer) if transfer in {"PQ", "HLG"} else operation_space
     matrix = color.normalize_to_acescg(np.eye(3, dtype=np.float32), matrix_space, "LINEAR").T
     # Grade asks the source colourspace to decode "sRGB"; BT.2020 uses
@@ -289,7 +290,7 @@ def decoded_precision(path, inputs, edge=2560, cancelled=None):
             "code_range":None, "ownership":"request-owned", "alpha":"discarded by Grade decoder",
             "data_window":facts.get("dataWindow",[0,0,w,h]), "display_window":facts.get("displayWindow",[0,0,w,h]),
             "origin":facts.get("dataWindow",[0,0])[:2], "decoder_facts":facts},
-        "orientation":{"original":facts.get("orientation",1), "applied":suffix in {".jpg", ".jpeg", ".jxl", ".avif", ".heic", ".heif"}},
+        "orientation":{"original":facts.get("orientation",1), "applied":suffix in {".jpg", ".jpeg", ".jxl", ".avif", ".heic", ".heif", ".tif", ".tiff"}},
         "colour":{"primaries":operation_space, "transfer":transfer, "decoder_normalized":bool(decoder_normalized and override),
             "grade_decoder_normalized":decoder_normalized,
             "eotf_applied":bool(decoder_normalized and override), "matrix_applied":bool(decoder_normalized and override), "reference_scale_applied":False,

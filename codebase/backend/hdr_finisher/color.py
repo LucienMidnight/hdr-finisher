@@ -225,6 +225,9 @@ def map_negative_acescg(image: np.ndarray) -> np.ndarray:
 
 
 def detect_transfer_function(metadata: dict[str, Any], suffix: str) -> str | None:
+    manual_transfer = (metadata.get("user_override") or {}).get("transfer_function")
+    if manual_transfer:
+        return _canonical_transfer_function(manual_transfer)
     if metadata.get("icc_converted_to_linear_srgb"):
         return "LINEAR"
     if metadata.get("icc_interpretation_error"):

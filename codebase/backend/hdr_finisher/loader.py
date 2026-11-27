@@ -42,7 +42,7 @@ EXR_COLOR_INTEROP_SPACES = {
 
 # Provenance for the persistent source mip cache (PRD 5.3). A recipe-specific
 # change can version just the affected source identities.
-SOURCE_DECODER_VERSION = "hdr-finisher-loader-signed-raw-v8"
+SOURCE_DECODER_VERSION = "hdr-finisher-loader-tiff-icc-v9"
 SOURCE_COLOR_TRANSFORM_VERSION = "acescg-signed-raw-source-v4"
 BAYER_NOISE_FIT_CACHE_SUFFIX = ":bayer-noise-fit-v1"
 
