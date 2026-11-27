@@ -470,3 +470,20 @@ test('late sharp request publishes its thumbnail and adopts the retained source 
  assert.deepEqual(events,['publish thumbnail','POST','develop retained samples','DELETE']);
  assert.equal(decodedSources.size,0);assert.equal(shared.source,null);
 });
+
+for(const invalid of [NaN,Infinity,-Infinity,65505,-65505])test(`invalid reduced sample ${invalid} falls back before publication and skips repeat GPU work`,async()=>{
+ const source=require('node:fs').readFileSync(require.resolve('../frontend/library-gpu-raw'),'utf8');
+ const fn=source.slice(source.indexOf('  function allocationScope('),source.indexOf('  async function develop(path,'));
+ const events=[];let attempts=0,destroyed=0;
+ const context={performance,Float32Array,crypto:require('node:crypto').webcrypto,DOMException,wait:async()=>{},
+  gpu:async()=>({state:{lost:false}}),rawBudget:()=>60,destroyKept:()=>{},
+  root:{HDRLibraryScenes:{stage(){}},HDRLibraryStopwatch:(stage,fields)=>events.push({stage,...fields})},
+  fetch:async()=>({ok:true,json:async()=>({granted:true})}),
+  developRaw:async()=>{attempts++;return {reduced:{640:{planes:[new Float32Array([0,-.25,invalid]).buffer],textures:[{destroy(){destroyed++;}}]}}};}};
+ compileScheduled(context,fn);
+ const args={meta:{path:'photo.arw'},edges:[640]};
+ for(let i=0;i<2;i++)await assert.rejects(context.run(args,new AbortController().signal),error=>error.gpuUnavailable&&error.gpuInvalidPixels);
+ assert.equal(attempts,1);assert.equal(destroyed,1);
+ assert.equal(events.filter(e=>e.stage==='picture_development_gpu_retry'||e.stage==='picture_development_gpu_done').length,0);
+ assert.equal(events.filter(e=>e.stage==='picture_development_gpu_rejected').length,1);
+});

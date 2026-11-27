@@ -1,3 +1,12 @@
+## November 27: GPU transport recovery investigation (PC)
+
+| Action | Observation | Conditions |
+| --- | --- | --- |
+| Mixed Library viewport, original rejection reproduced | 28/30 in 90 s; same DSC00264.ARW / DSC01226.ARW transport errors as Film qualification. First/ten/twenty: 1.0/1.5/21.2 s. | Windows PC, 2560x1440, frozen v1 verified by hash, shared GPU lock, plain Electron, 8a488025 before this fix. `codebase/output/quick-library-check/transport-investigation/report.json`. |
+| Mixed Library viewport, early validation + fair CPU recovery | Still incomplete: 26/30 in 90 s; first/ten/twenty 0.9/1.6/21.5 s; peak 5.67 GB. Existing memory/drawing limits pass. Four corrupt RAW developments reach CPU recovery, then hit the existing decoder deadline and exhaust helper restarts. | Same PC/fixture/lock; own CPU suites finished before launch; commit containing this note. No tolerance or deadline changed. `codebase/output/quick-library-check/transport-recovery-final/report.json` and `backend.log`. Not a speed qualification or a successful Library smoke. |
+| RAW decoder before/after TIFF correctness diagnostic | Both full 42 MP RGB arrays byte-identical, finite; DSC00264 peak 1.6372, DSC01226 peak 2.8520. Individual CPU decode events 11.6-17.1 s, not a performance comparison. | Loader from d7443be9 parent versus current loader, identical current dependencies/default RAW settings; reused read-only v1 run photos. Early GPU check/CPU tests overlapped part of this correctness diagnostic. |
+| Full Python correctness run | Parallel: 5190 passed, 56 skipped in 860.51 s; serial: 46 passed in 62.76 s; runner wall 933.07 s. | Current PC, four bounded workers; early RAW correctness diagnostic/app run overlapped first part. Do not compare speed against the isolated baseline below. Two added scheduler tests passed separately with the 61-case focused scheduler suite. `codebase/output/transport-investigation-python.log`. |
+
 ## November 27: Film Look qualification Library smoke (PC)
 
 | Action | Observation | Date / commit | Conditions |

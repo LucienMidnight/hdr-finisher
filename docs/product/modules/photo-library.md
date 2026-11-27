@@ -1,3 +1,42 @@
+### November 27, 2026: rejected GPU transport and CPU recovery
+
+The PC quick check reproduced 28/30 viewport pictures: DSC00264.ARW and
+DSC01226.ARW failed the existing finite-half-float transport guard. The guard
+was introduced November 17, not by today's TIFF/ICC, watchdog or Compare work.
+The new shared decoder/live identity invalidates prior pictures, exposing fresh
+GPU development. Downloaded GPU samples included values around 1e20, whereas
+both full CPU RAW decodes were finite and byte-identical before/after the TIFF
+change (peaks below 3). This is consistent with this PC's known faulty VRAM;
+it is not a RAW decoder-output or fixture acceptance change.
+
+Reduced scenes are now checked before presentation/deferred saving, inside the
+scheduler's failure handling. Invalid/range-rejected samples go straight to the
+CPU and that same GPU work is blocked for the session. The existing finite
+half-float bound stays unchanged; no clipping or extra GPU retry is added.
+An app rerun exposed a second old gap: equal-priority queued work repeatedly
+preempted edge-cpu recovery, preventing progress. CPU recovery now yields its
+turn only to a genuinely higher priority class; Grade preemption remains.
+Memory limits and development/save place counts are unchanged.
+
+The Denoise cache test now checks its original cleanup suffix contract against
+the current shared decoder base. The TIFF/ICC base invalidation remains intact;
+real RAW pixels and Denoise's existing off-candidate byte checks are unchanged.
+Validation: 107 focused Library Node cases passed (30 scheduler/transport cases
+rechecked after the final native-plane scope adjustment), 28 Denoise/TIFF Python
+cases and 61 scheduler/fallback cases passed. Full Python phases: 5190 passed /
+56 skipped, then 46 passed; the two new priority tests also passed separately.
+Full Node: 1546 passed, one skipped, one unrelated release-runner follow-up-log
+deadline failure (null exit code instead of zero); left unchanged.
+
+Remaining blocker: the final isolated-CPU-load app check is still 26/30, not a
+pass. Four RAW scenes now correctly enter CPU recovery, but its existing decoder
+time limit restarts the helper three times before recovery finishes; the helper
+then refuses those pictures. This is separate from the original generic transport
+error and from the fixed equal-priority starvation. No deadline was raised and
+no helper-restart protection was bypassed. Further CPU fallback work or an
+explicitly approved deadline policy change is needed before Library qualification.
+Validation evidence and PC run conditions are recorded in the performance table.
+
 ### November 26, 2026: Library frontend review
 
 Reviewed grid/virtual scrolling, thumbnail/live-tile ownership and cache plumbing,
