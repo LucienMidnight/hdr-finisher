@@ -15,8 +15,10 @@ the search, with lower weight for highlights.
 Both Soft Ceiling (100% softness and Preserve color) and Peak Fit (HDR Highlight
 Color, Detail, Bias and Attenuation with robust peak measurement) are evaluated.
 The closer safe candidate wins. Colour controls come from semantic translation,
-not fitting. Automatic Match does not fit or copy any global curve. The semantic
-translation is the hook for the planned HDR/SDR curve-scale unification.
+not fitting. Whole-photo Match copies the HDR Curves on/off state and all four
+point lists verbatim as fixed controls. Local Match also copies all four
+curves, using a temporary neutral-curve grade for its initial tonal fit so
+the same changes are not counted twice. Match never invents curves.
 
 Candidates use the existing page WebGPU bridge. The chosen recipe is measured
 again on CPU, using the unchanged body gates and highlight-order diagnostic.
@@ -25,7 +27,7 @@ on CPU. Match still reports matched, needs review or refusal. No limit, target,
 colour space, renderer stage or stored recipe schema changes.
 
 SDR HSL and Curves can copy HDR settings with one Undo. Curves copy the points
-literally, so their effect can differ between renditions. SDR Tone and Highlight
+literally on the shared scale used in both renditions. SDR Tone and Highlight
 Compression can instead fit their respective controls against the current HDR
 target while leaving the other SDR modules, locals and Denoise alone. Tone
 includes Exposure Bands. A Tone fit edits the independent grade like any SDR

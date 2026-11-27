@@ -16,6 +16,12 @@ const document=JSON.parse(execFileSync(python,["-c",
     :reusePhoto.savedGrade("DSC04375.ARW.hdrf","gpu-delivery-ceiling")],{env:pythonEnv,encoding:"utf8"}));
 document.source.durable_path=source;
 assert.equal(document.global_adjustments.hdr.highlight_section_enabled,true);
+if(process.argv.includes("--curves")){
+  const hdr=document.global_adjustments.hdr;
+  hdr.curves_section_enabled=true;
+  hdr.luma_curve=[[0,.08],[.3,.32],[.7,.75],[1,1]];
+  hdr.red_curve=[[0,0],[.5,.54],[1,1]];
+}
 const target=document.global_adjustments.hdr.highlight_compression_target_nits;
 const harness=global.HDRFinisherElectronTestHarness;
 (async()=>{

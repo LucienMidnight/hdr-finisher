@@ -402,7 +402,7 @@ Clipped lane, scope, preview and filename labels use their visible text; dynamic
 | Control / visible name | Text | Flags | ID and source |
 | --- | --- | --- | --- |
 | ◉ | Toggle Curves preview | name only (fallback) | codebase/frontend/index.html:1389 · [source](../../codebase/frontend/index.html#L1389) |
-| Match HDR curves | Copies the current HDR curve points and on/off. The two grades interpret the points differently. | fixed | codebase/frontend/index.html::#curves-match-hdr · [source](../../codebase/frontend/index.html#L1393) |
+| Match HDR curves | Copies the current HDR curve points and on/off. HDR and SDR curves share the same scale. | fixed | codebase/frontend/index.html::#curves-match-hdr · [source](../../codebase/frontend/index.html#L1393) |
 
 ### grade / color-grading
 

@@ -53,6 +53,7 @@ def _calibrated_grade() -> tuple[AdjustmentState, list[LocalAdjustment]]:
     local.hdr_grade.exposure = 0.2
     local.hdr_grade.highlights = 0.4
     local.hdr_grade.saturation = 0.08
+    local.hdr_grade.luma_curve = [[0, 0], [.4, .42], [1, 1]]
     return adjustments, [local]
 
 
@@ -151,17 +152,16 @@ def test_calibrated_scene_materializes_into_normal_visible_modules() -> None:
     assert len(nodes) == 5 and nodes[0].input_ev == -6 and nodes[-1].input_ev == 6
     assert np.all(np.diff([node.input_ev for node in nodes]) >= .75 - 1e-6)
     assert np.all(np.diff([node.input_ev + node.adjustment_ev for node in nodes]) > 0)
-    assert all(_curve_is_identity(getattr(sdr, key)) for key in ("luma_curve", "red_curve", "green_curve", "blue_curve"))
-    # Headroom no longer needs RGB curves to compensate channel clipping.
+    keys = ("luma_curve", "red_curve", "green_curve", "blue_curve")
+    assert sdr.curves_section_enabled == adjustments.hdr.curves_section_enabled
+    assert all(getattr(sdr, key) == getattr(adjustments.hdr, key) for key in keys)
+    # Match may never invent RGB curves to compensate channel clipping.
     # Judge the finished result against the existing quality limits above.
     finished = apply_adjustments(source, result.adjustments, PreviewKind.SDR,
                                  include_grain=False, local_adjustments=result.local_adjustments)
     assert np.isfinite(finished).all() and finished.min() >= 0 and finished.max() <= 1
     local_grade = result.local_adjustments[0].sdr_grade
-    assert _curve_is_identity(local_grade.luma_curve)
-    assert _curve_is_identity(local_grade.red_curve)
-    assert _curve_is_identity(local_grade.green_curve)
-    assert _curve_is_identity(local_grade.blue_curve)
+    assert all(getattr(local_grade, key) == getattr(locals_[0].hdr_grade, key) for key in keys)
     assert abs(local_grade.exposure) > 0.01 or abs(local_grade.highlights) > 0.01
     assert result.local_adjustments[0].mask == locals_[0].mask
 

@@ -367,12 +367,17 @@ def _translate_color_grading_wheels(
         wheel.saturation = float(np.clip(scales[best], 0.0, 100.0))
 
 
+def _copy_curves(source, destination) -> None:
+    for name in ("luma_curve", "red_curve", "green_curve", "blue_curve"):
+        setattr(destination, name, [point.copy() for point in getattr(source, name)])
+
+
 def _semantic_sdr_translation(adjustments: AdjustmentState, settled_hdr: np.ndarray) -> SDRAdjustments:
     hdr = adjustments.hdr
     sdr = SDRAdjustments(use_authored_base=False)
     sdr.color_section_enabled = hdr.color_section_enabled
-    # HDR curve translation belongs here once both lanes share curve units.
-    # Neither the picture fit nor CPU certification reads or writes curve controls.
+    sdr.curves_section_enabled = hdr.curves_section_enabled
+    _copy_curves(hdr, sdr)  # Fixed recipe, never a fit parameter.
     sdr.detail_section_enabled = hdr.detail_section_enabled
     sdr.film_look_section_enabled = hdr.film_look_section_enabled
     sdr.color_grading_section_enabled = hdr.color_grading_section_enabled
@@ -465,6 +470,9 @@ def _translate_local_grade(
     reference_white_nits: float = 203.0, target_peak_nits: float = 1000.0,
 ) -> LocalGrade:
     sdr_grade = LocalGrade(enabled=hdr_grade.enabled, highlights_center=1.75, highlights_width=3.5)
+    tonal = hdr_grade.model_copy(deep=True)
+    _copy_curves(sdr_grade, tonal)  # Fit only the local tone, not the copied curves.
+    _copy_curves(hdr_grade, sdr_grade)
     for name in ("white_balance_kelvin", "tint", "saturation", "vibrance"):
         setattr(sdr_grade, name, getattr(hdr_grade, name))
     sdr_grade.detail = hdr_grade.detail.model_copy(deep=True)
@@ -478,7 +486,6 @@ def _translate_local_grade(
         (np.array([0.0], dtype=np.float32), np.geomspace(1e-5, 0.18 * 64.0, 1023).astype(np.float32))
     )
     ramp = np.repeat(scene_values[None, :, None], 3, axis=2)
-    tonal = hdr_grade.model_copy(deep=True)
     tonal.hsl_section_enabled = False
     tonal.white_balance_kelvin = 6500
     tonal.tint = tonal.saturation = tonal.vibrance = 0.0

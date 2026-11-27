@@ -89,7 +89,7 @@ function sameBuffer(left, right) {
       const local = state.editDocument.local_adjustments[0];
       const luma = state.adjustments.sdr.luma_curve;
       const localCurves = ["luma_curve", "red_curve", "green_curve", "blue_curve"];
-      const globalRgbCurves = ["red_curve", "green_curve", "blue_curve"];
+      const curveKeys = ["curves_section_enabled", ...localCurves];
       const curveNeutral = (points) => points.every(([x, y]) => Math.abs(x - y) < 0.000001);
       state.gpuPreview.setInstrumentationEnabled(true);
       const rendered = !await presentMatchedSdrPreview({ longEdge: refinementProxyLongEdge(), tier: "refinement" });
@@ -112,7 +112,7 @@ function sameBuffer(left, right) {
         highlightMode: state.adjustments.sdr.highlight_compression_mode,
         lumaPoints: luma.length,
         lumaNeutral: curveNeutral(luma),
-        rgbCurvesNeutral: globalRgbCurves.every((name) => curveNeutral(state.adjustments.sdr[name])),
+        globalCurvesCopied: curveKeys.every((name) => JSON.stringify(state.adjustments.sdr[name]) === JSON.stringify(state.adjustments.hdr[name])),
         fiveBands: state.adjustments.sdr.tone_equalizer_nodes.length === 5,
         zonesNeutral: ["blacks", "shadows", "midtones", "highlights", "whites"]
           .every(name => state.adjustments.sdr[name] === 0),
@@ -139,7 +139,7 @@ function sameBuffer(left, right) {
     if (!["matched", "needs_review"].includes(matched.status)
       || !matched.highlightEnabled
       || !["soft_ceiling", "peak_fit"].includes(matched.highlightMode) || matched.lumaPoints !== 5
-      || !matched.lumaNeutral || !matched.rgbCurvesNeutral || !matched.fiveBands || !matched.zonesNeutral || matched.localPoints !== 5
+      || !matched.lumaNeutral || !matched.globalCurvesCopied || !matched.fiveBands || !matched.zonesNeutral || matched.localPoints !== 5
       || !matched.localCurvesNeutral || !matched.localTonalMaterialized || !matched.localMaskPreserved
       || !matched.denoiseCopied || !matched.grainCopied
       || !matched.gpuEligible || !matched.gpuRendered || matched.acceptedLane !== "sdr"
@@ -270,7 +270,7 @@ function sameBuffer(left, right) {
         setup: { hsl_section_enabled: true }, copies: true },
       { group: "curves", button: "curves-match-hdr",
         keys: ["curves_section_enabled", "luma_curve", "red_curve", "green_curve", "blue_curve"],
-        setup: {}, copies: true },
+        setup: { curves_section_enabled: false, red_curve: [[0, 0], [.5, .46], [1, 1]] }, copies: true },
       { group: "sdr-tone", button: "tone-match-hdr",
         keys: ["tone_section_enabled", "exposure", "contrast", "blacks", "shadows", "midtones", "highlights", "whites",
           "tone_equalizer_section_enabled", "tone_equalizer_nodes"], setup: { exposure: matchedDocument.global_adjustments.sdr.exposure + .15 } },

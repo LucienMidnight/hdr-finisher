@@ -22,10 +22,11 @@ def fixture():
 
 
 @pytest.mark.parametrize("film", [False, True])
-def test_fit_preserves_inputs_and_copies_detail_without_hidden_curves(film):
+def test_fit_preserves_inputs_and_copies_detail_and_curves(film):
     source, adjustments, local = fixture()
     adjustments.sdr.exposure = -.15
     if film:
+        local.hdr_grade.luma_curve = [[0, 0], [.45, .46], [1, 1]]
         for lane in (adjustments.hdr, adjustments.sdr):
             lane.film_look.film_stock = "kodak_portra_400"
             lane.film_look.look_strength = 50
@@ -41,7 +42,7 @@ def test_fit_preserves_inputs_and_copies_detail_without_hidden_curves(film):
     assert result.metrics["p95_delta_e"] <= 3
     assert result.grade.detail == local.hdr_grade.detail
     for name in ("luma_curve", "red_curve", "green_curve", "blue_curve"):
-        assert all(left == right for left, right in getattr(result.grade, name))
+        assert getattr(result.grade, name) == getattr(local.hdr_grade, name)
     assert before == [adjustments.model_dump(), local.model_dump(), other.model_dump()]
 
 

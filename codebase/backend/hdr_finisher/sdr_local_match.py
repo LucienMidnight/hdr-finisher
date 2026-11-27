@@ -12,7 +12,7 @@ from .color_context import RenderColorContext
 from .local_adjustments import mask_influence_opacity
 from .models import LocalGrade, PreviewKind
 from .sdr_gamut import compress_to_srgb_gamut, linear_srgb_to_oklab
-from .sdr_match import SDRMatchMaterializationError, _quality_metrics, _translate_local_grade, build_sdr_match_target
+from .sdr_match import SDRMatchMaterializationError, _copy_curves, _quality_metrics, _translate_local_grade, build_sdr_match_target
 
 
 LOCAL_MATCH_EDGE = 256
@@ -93,6 +93,8 @@ def fit_local_sdr(source, adjustments, locals_, target_id, *, reference_white_ni
     best = loss(best_pixels)
     neutral = LocalGrade(highlights_center=1.75, highlights_width=3.5,
                          detail=parent.hdr_grade.detail.model_copy(deep=True))
+    # The alternate starting point may reset fitted controls, never the HDR curves.
+    _copy_curves(parent.hdr_grade, neutral)
     pixels = render(PreviewKind.SDR, neutral)
     if loss(pixels) < best:
         best_grade, best_pixels, best = neutral, pixels, loss(pixels)

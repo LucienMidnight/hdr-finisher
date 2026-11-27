@@ -48,6 +48,20 @@ This is a compact GPU preview, so very small clipped features may be missed.
 On a CPU preview, the histogram range trace remains available but the clipping
 view is unavailable. No caption or help panel covers the photo.
 
+## Curves in HDR and SDR
+
+Luma changes brightness, while Red, Green and Blue change the individual
+colour channels. The same points mean the same change in HDR and SDR,
+including in a local adjustment. The point follows your drag directly.
+Moving it by 5% of the graph height changes brightness by about half a stop
+around middle grey and above. Use Ctrl for fine adjustment.
+
+The HDR graph marks the project reference white. The SDR graph marks SDR
+white. The shaded area to its right is editable **Headroom**. Curves leave
+those highlights for Highlight Compression and the final colour limits.
+**Match HDR curves** copies the points and on/off setting once, leaving SDR
+independent. Existing projects with edited curves can look different.
+
 ## HDR Tone and Highlights
 
 In both lanes, Highlight Compression is the first graded module, followed by

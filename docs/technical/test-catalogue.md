@@ -200,7 +200,7 @@ Source: `codebase/tests/inventory.json`. Seconds are summed case time, not paral
 | tests/shortcut-labels.test.js | Mac explicit bindings use Apple modifier order and distinguish Control from Command | 5 | 0.0049 | unknown |  |
 | tests/source-interpretation.test.js | unresolved interpretation stays visible and export stays blocked until real resolution | 1 | 0.0032 | unknown |  |
 | tests/source-transport.test.js | in-place repair refresh retains native textures with their new source epoch | 52 | 1.238 | unknown |  |
-| tests/test_adjustments.py | Checks adjustments behavior and regression contracts. | 236 | 9.8053 | unknown |  |
+| tests/test_adjustments.py | Checks adjustments behavior and regression contracts. | 246 | 9.8053 | unknown |  |
 | tests/test_advanced_finishing.py | Checks advanced finishing behavior and regression contracts. | 25 | 0.5381 | unknown |  |
 | tests/test_ai_highlights_research.py | Checks ai highlights research behavior and regression contracts. | 15 | 0.6675 | unknown |  |
 | tests/test_api.py | Checks api behavior and regression contracts. | 69 | 17.1858 | unknown |  |
@@ -520,7 +520,7 @@ export presets interaction. Runs assertions and captures in an isolated Electron
 
 #### `tests/gpu-delivery-ceiling.js`
 
-Saved DSC04375 RAW export and full-size Proof remain under the enabled HDR target on GPU and forced CPU, with the optional codec check off. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
+Saved DSC04375 RAW export and full-size Proof remain under the enabled HDR target on GPU and forced CPU, with the optional codec check off. Add --curves to run the same test with active HDR Luma and Red curves. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
 - Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
@@ -2449,7 +2449,7 @@ local design qa. Runs assertions and captures in an isolated Electron app. A fai
 
 #### `tests/local-grade-reference.js`
 
-Actual local GPU pass versus CPU export, with colour wheels and opacity. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
+Global and local HDR/SDR curve parity including signed shadows and extrapolation, plus local colour wheels and opacity. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
 - Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
@@ -4462,7 +4462,7 @@ Control Panel title tokens, stable rendition tabs, brush actions and export fiel
 
 #### `tests/curve-editor-interaction.js`
 
-curve editor interaction. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
+Curves pointer and keyboard movement, HDR/SDR white guides, and editing SDR headroom. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
 - Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.

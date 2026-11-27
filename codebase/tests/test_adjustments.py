@@ -1114,6 +1114,14 @@ def test_output_limiter_never_exceeds_the_authored_target(mode: str, color_handl
     assert float(np.max(transport)) <= target_nits * 0.18 / 203.0 + 2e-5
     assert np.isfinite(limited).all()
 
+    state.hdr.luma_curve = [[0, .08], [.3, .32], [.7, .75], [1, 1]]
+    state.hdr.red_curve = [[0, 0], [.5, .54], [1, 1]]
+    curved = _apply_curve_set(image, state.hdr, PreviewKind.HDR)
+    assert not np.array_equal(curved, image)
+    finished = adjustments_module.apply_hdr_output_highlight_compression(curved, state)
+    peak_nits = np.max(acescg_to_linear_bt2020(finished)) / np.float32(.18) * np.float32(203)
+    assert np.isfinite(finished).all() and peak_nits <= target_nits
+
 
 @pytest.mark.parametrize("lane_model", [HDRAdjustments, SDRAdjustments])
 @pytest.mark.parametrize("measurement", ["maximum", "robust", "manual"])

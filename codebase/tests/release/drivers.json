@@ -3366,7 +3366,7 @@
       "launch": {
         "method": "electron"
       },
-      "brief": "curve editor interaction. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.",
+      "brief": "Curves pointer and keyboard movement, HDR/SDR white guides, and editing SDR headroom. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.",
       "expectedMinutes": {
         "win": null,
         "mac": null
@@ -6581,7 +6581,7 @@
         "masks"
       ],
       "tier": "full",
-      "protects": "Actual local GPU pass versus CPU export, with colour wheels and opacity.",
+      "protects": "Global and local HDR/SDR curve parity including signed shadows and extrapolation, plus local colour wheels and opacity.",
       "launch": {
         "method": "electron",
         "args": [
@@ -6589,7 +6589,7 @@
           "{output}/local-grade-reference.js.json"
         ]
       },
-      "brief": "Actual local GPU pass versus CPU export, with colour wheels and opacity. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.",
+      "brief": "Global and local HDR/SDR curve parity including signed shadows and extrapolation, plus local colour wheels and opacity. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.",
       "expectedMinutes": {
         "win": null,
         "mac": null
@@ -14074,7 +14074,7 @@
       "launch": {
         "method": "electron"
       },
-      "brief": "Saved DSC04375 RAW export and full-size Proof remain under the enabled HDR target on GPU and forced CPU, with the optional codec check off. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.",
+      "brief": "Saved DSC04375 RAW export and full-size Proof remain under the enabled HDR target on GPU and forced CPU, with the optional codec check off. Add --curves to run the same test with active HDR Luma and Red curves. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.",
       "expectedMinutes": {
         "win": null,
         "mac": null

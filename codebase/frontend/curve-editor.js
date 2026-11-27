@@ -96,15 +96,14 @@ function bindCurveEditor() {
       event.preventDefault();
       const point = [...curve[index]];
       const step = event.ctrlKey ? 0.001 : 0.01;
-      const verticalStep = step * Math.min(1, curveVerticalAdjustmentScale(index, curve.length) / 0.35);
       if (event.key === "ArrowLeft" && !isLockedCurveEndpoint(index)) {
         point[0] = clamp(point[0] - step, curve[index - 1][0] + 0.02, curve[index + 1][0] - 0.02);
       }
       if (event.key === "ArrowRight" && !isLockedCurveEndpoint(index)) {
         point[0] = clamp(point[0] + step, curve[index - 1][0] + 0.02, curve[index + 1][0] - 0.02);
       }
-      if (event.key === "ArrowUp") point[1] = clamp(point[1] + verticalStep, 0, 1);
-      if (event.key === "ArrowDown") point[1] = clamp(point[1] - verticalStep, 0, 1);
+      if (event.key === "ArrowUp") point[1] = clamp(point[1] + step, 0, 1);
+      if (event.key === "ArrowDown") point[1] = clamp(point[1] - step, 0, 1);
       curve[index] = point;
       setCurveValues(state.selectedCurveChannel, curve);
     } else {
@@ -124,15 +123,15 @@ function updateCurveFromPointer(clientX, clientY, dragOrigin = null) {
   if (index === null) return;
   const curve = currentCurveValues();
   const point = [...curve[index]];
+  const layout = curveEditorLayout();
   const direct = curvePointerPosition(clientX, clientY, rect);
   const directX = direct.x;
   const directY = direct.y;
   const normalizedX = dragOrigin
-    ? dragOrigin.point[0] + (clientX - dragOrigin.clientX) / Math.max(rect.width, 1)
+    ? dragOrigin.point[0] + (clientX - dragOrigin.clientX) / Math.max(rect.width - layout.left - layout.right, 1)
     : directX;
-  const verticalScale = curveVerticalAdjustmentScale(index, curve.length);
   const normalizedY = dragOrigin
-    ? dragOrigin.point[1] - ((clientY - dragOrigin.clientY) / Math.max(rect.height, 1)) * verticalScale
+    ? dragOrigin.point[1] - (clientY - dragOrigin.clientY) / Math.max(rect.height - layout.top - layout.bottom, 1)
     : directY;
   if (index === 0) point[0] = 0;
   else if (index === curve.length - 1) point[0] = 1;
@@ -144,13 +143,6 @@ function updateCurveFromPointer(clientX, clientY, dragOrigin = null) {
   drawCurveEditor();
   invalidatePreview(state.currentView);
   debouncePreview(state.currentView);
-}
-
-function curveVerticalAdjustmentScale(index, pointCount) {
-  if (currentCurveLane() !== "hdr" || state.selectedCurveChannel !== "luma") return 1;
-  // The endpoints alter the black floor and highlight ceiling, so give them
-  // roughly twice the precision of the broad middle-tone control.
-  return index === 0 || index === pointCount - 1 ? 0.18 : 0.35;
 }
 
 function drawCurveEditor() {
@@ -174,6 +166,20 @@ function drawCurveEditor() {
 
   if (currentCurveLane() === "hdr") {
     drawCurveExposureBands(ctx, layout, width, height);
+  } else {
+    const white = plotLeft + curveDomainEncode(CURVE_SDR_WHITE) * plotWidth;
+    ctx.fillStyle = uiToken("--scope-guide-line");
+    ctx.fillRect(white, plotTop, plotRight - white, plotHeight);
+    drawCurveWhiteGuide(ctx, white, plotTop, plotBottom);
+    ctx.save();
+    ctx.font = HDRAppearance.font("min");
+    ctx.fillStyle = uiToken("--curve-axis-label");
+    ctx.textAlign = "right";
+    ctx.textBaseline = "top";
+    ctx.fillText("Headroom", plotRight - 4, plotTop + 4);
+    ctx.textAlign = "center";
+    ctx.fillText("SDR white", white, plotBottom + 4);
+    ctx.restore();
   }
 
   ctx.strokeStyle = uiToken("--curve-grid");
@@ -276,18 +282,20 @@ function drawCurveExposureBands(ctx, layout, width, height) {
   ctx.globalAlpha = uiNumberToken("--curve-band-opacity", 0.1);
   bands.forEach(({ lower, upper, paletteIndex }) => {
     const start = curveDomainPositionForNits(lower ?? 0);
-    const end = curveDomainPositionForNits(upper ?? 10000);
+    const end = upper === null ? 1 : curveDomainPositionForNits(upper);
     ctx.fillStyle = exposureBandColor(paletteIndex);
     ctx.fillRect(plotLeft + start * plotWidth, plotTop, Math.max(0, (end - start) * plotWidth), plotHeight);
   });
   ctx.restore();
 
-  const levels = falseColorLevels();
+  const referenceWhite = projectReferenceWhiteNits();
+  const chartMaxNits = CURVE_VMAX * referenceWhite / CURVE_REFERENCE_WHITE;
   const labelValues = [...new Set([
     0,
     ...bands.flatMap(({ lower, upper }) => [lower, upper]),
-    10000,
-  ].filter((value) => value !== null && value >= 0 && value <= 10000))].sort((a, b) => a - b);
+    referenceWhite,
+    chartMaxNits,
+  ].filter((value) => value !== null && value >= 0 && value <= chartMaxNits))].sort((a, b) => a - b);
 
   ctx.save();
   ctx.font = HDRAppearance.font("min");
@@ -298,14 +306,16 @@ function drawCurveExposureBands(ctx, layout, width, height) {
   labelValues.forEach((nits) => {
     const normalized = curveDomainPositionForNits(nits);
     const x = plotLeft + normalized * plotWidth;
-    const boundaryBand = bands.find(({ upper }) => upper !== null && Math.abs(upper - nits) < 0.001);
-    const boundaryColor = boundaryBand ? exposureBandColor(boundaryBand.paletteIndex) : uiToken("--quiet");
-    ctx.strokeStyle = nits === levels.referenceWhite ? uiToken("--curve-reference-line") : `${boundaryColor}80`;
-    ctx.lineWidth = nits === levels.referenceWhite ? 1.4 : 1;
-    ctx.beginPath();
-    ctx.moveTo(x, plotTop);
-    ctx.lineTo(x, plotBottom);
-    ctx.stroke();
+    if (nits === referenceWhite) {
+      drawCurveWhiteGuide(ctx, x, plotTop, plotBottom);
+    } else {
+      ctx.strokeStyle = uiToken("--curve-grid");
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(x, plotTop);
+      ctx.lineTo(x, plotBottom);
+      ctx.stroke();
+    }
 
     const label = compactCurveNitLabel(nits);
     const labelWidth = ctx.measureText(label).width;
@@ -313,7 +323,7 @@ function drawCurveExposureBands(ctx, layout, width, height) {
     const leftEdge = labelX - labelWidth / 2;
     const row = lastLabelRight.findIndex((rightEdge) => leftEdge >= rightEdge + 3);
     if (row < 0) return;
-    ctx.fillStyle = nits === levels.referenceWhite ? uiToken("--equalizer-axis") : uiToken("--curve-axis-label");
+    ctx.fillStyle = nits === referenceWhite ? uiToken("--equalizer-axis") : uiToken("--curve-axis-label");
     ctx.textAlign = "center";
     ctx.fillText(label, labelX, plotBottom + 4 + row * labelRowPitch);
     lastLabelRight[row] = labelX + labelWidth / 2;
@@ -325,7 +335,8 @@ function curveExposureGradient(ctx, plotLeft, plotRight) {
   const gradient = ctx.createLinearGradient(plotLeft, 0, plotRight, 0);
   falseColorBands().forEach(({ lower, upper, paletteIndex }) => {
     const start = curveDomainPositionForNits(lower ?? 0);
-    const end = curveDomainPositionForNits(upper ?? 10000);
+    const end = upper === null ? 1 : curveDomainPositionForNits(upper);
+    if (end <= start) return;
     gradient.addColorStop(start, exposureBandColor(paletteIndex));
     gradient.addColorStop(Math.max(start, end - 0.0001), exposureBandColor(paletteIndex));
   });
@@ -338,16 +349,35 @@ function curveExposureColorAt(normalized) {
   return exposureBandColor(band?.paletteIndex ?? falseColorPaletteTokens.length - 1);
 }
 
-function curveDomainPositionForNits(value) {
-  const nits = clamp(Number(value) || 0, 0, 10000);
-  if (nits <= 100) return 0.5 * ((nits / 100) ** (1 / Math.log(100)));
-  return clamp(0.5 + 0.5 * Math.log2(nits / 100) / Math.log2(100), 0, 1);
+function drawCurveWhiteGuide(ctx, x, top, bottom) {
+  ctx.strokeStyle = uiToken("--curve-reference-line");
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(x, top);
+  ctx.lineTo(x, bottom);
+  ctx.stroke();
+}
+
+// The same scene-relative domain as adjustments.py and webgpu-shaders.js.
+const CURVE_C = 0.004;
+const CURVE_VMAX = 3.6;
+const CURVE_LN_SPAN = Math.log1p(CURVE_VMAX / CURVE_C);
+const CURVE_REFERENCE_WHITE = 0.18;
+const CURVE_SDR_WHITE = CURVE_REFERENCE_WHITE * 203 / 100;
+
+function curveDomainEncode(scene) {
+  return Math.log1p(scene / CURVE_C) / CURVE_LN_SPAN;
+}
+
+function curveDomainPositionForNits(nits) {
+  const scene = Math.max(Number(nits) || 0, 0) * CURVE_REFERENCE_WHITE / projectReferenceWhiteNits();
+  return clamp(curveDomainEncode(scene), 0, 1);
 }
 
 function curveDomainNitsForPosition(value) {
   const normalized = clamp(Number(value) || 0, 0, 1);
-  if (normalized <= 0.5) return 100 * ((normalized * 2) ** Math.log(100));
-  return 100 * (2 ** ((normalized - 0.5) * 2 * Math.log2(100)));
+  const scene = CURVE_C * Math.expm1(normalized * CURVE_LN_SPAN);
+  return scene * projectReferenceWhiteNits() / CURVE_REFERENCE_WHITE;
 }
 
 function compactCurveNitLabel(value) {

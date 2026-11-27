@@ -3,14 +3,14 @@ const { importTestPattern } = require("./helpers/import-test-pattern");
 
 const baseUrl = process.env.HDR_FINISHER_URL || "http://127.0.0.1:8000";
 
-function curvePointPosition(box, x, y) {
-  const left = 18;
-  const right = 14;
-  const top = 14;
-  const bottom = 34;
+async function geometry(curve) {
+  return curve.evaluate(() => ({ ...curveEditorLayout(), rect: els.curveEditor.getBoundingClientRect().toJSON() }));
+}
+
+function curvePointPosition({ left, right, top, bottom, rect }, x, y) {
   return {
-    x: left + x * (box.width - left - right),
-    y: box.height - bottom - y * (box.height - top - bottom),
+    x: left + x * (rect.width - left - right),
+    y: rect.height - bottom - y * (rect.height - top - bottom),
   };
 }
 
@@ -57,7 +57,8 @@ function curvePointPosition(box, x, y) {
       null,
       { timeout: 2000 },
     );
-    const addedPoint = curvePointPosition(box, 0.375, 0.375);
+    const plot = await geometry(curve);
+    const addedPoint = curvePointPosition(plot, 0.375, 0.375);
     await page.mouse.move(box.x + addedPoint.x, box.y + addedPoint.y);
     await page.mouse.down();
     await page.mouse.move(box.x + addedPoint.x + 16, box.y + addedPoint.y - 12, { steps: 3 });
@@ -71,14 +72,14 @@ function curvePointPosition(box, x, y) {
       throw new Error(`A newly created point did not follow the original drag: ${JSON.stringify(createdPoint)}`);
     }
 
-    const movedPoint = curvePointPosition(box, createdPoint[0], createdPoint[1]);
+    const movedPoint = curvePointPosition(plot, createdPoint[0], createdPoint[1]);
     await curve.click({ position: movedPoint });
     if (await pointCount() !== 6) throw new Error("Left-clicking a point should select it without removing it.");
 
     await curve.click({ position: movedPoint, button: "right" });
     if (await pointCount() !== 5) throw new Error("Right-clicking the new point did not remove it.");
 
-    const middle = curvePointPosition(box, 0.5, 0.5);
+    const middle = curvePointPosition(plot, 0.5, 0.5);
     await page.mouse.move(box.x + middle.x, box.y + middle.y);
     await page.mouse.down();
     await page.mouse.move(box.x + middle.x + 12, box.y + middle.y - 8, { steps: 3 });
@@ -118,6 +119,62 @@ function curvePointPosition(box, x, y) {
       }
       if (!gpu.stages.some((stage) => stage.stage === "grading")) {
         throw new Error("Curve edits did not submit a GPU grading pass.");
+      }
+    }
+
+    for (const [lane, channel] of [["hdr", "luma"], ["hdr", "red"], ["sdr", "luma"]]) {
+      await page.locator(`#view-${lane}`).click();
+      await page.waitForFunction(active => document.body.dataset.activeLane === active, lane);
+      const group = page.locator(`[data-lane-panel="${lane}"] [data-group="curves"]`);
+      if (!await curve.isVisible()) await group.locator(".group-toggle").click();
+      await group.locator(`[data-curve-channel="${channel}"]`).click();
+      const guidePositions = await page.evaluate(() => {
+        const native = projectReferenceWhiteNits;
+        const canvas = els.curveEditor;
+        const ctx = canvas.getContext("2d");
+        const moveTo = ctx.moveTo;
+        ctx.save();
+        ctx.strokeStyle = uiToken("--curve-reference-line");
+        const color = ctx.strokeStyle;
+        ctx.restore();
+        const layout = curveEditorLayout();
+        const { width } = canvasLogicalSize(canvas);
+        const marks = [];
+        try {
+          ctx.moveTo = function (x, y) {
+            if (ctx.strokeStyle === color && y === layout.top) marks.push((x - layout.left) / (width - layout.left - layout.right));
+            moveTo.call(ctx, x, y);
+          };
+          return [100, 203].map(white => {
+            marks.length = 0;
+            projectReferenceWhiteNits = () => white;
+            drawCurveEditor();
+            return marks[0];
+          });
+        } finally {
+          ctx.moveTo = moveTo;
+          projectReferenceWhiteNits = native;
+        }
+      });
+      const desired = lane === "hdr" ? .563 : .665;
+      if (guidePositions.some(x => !Number.isFinite(x) || Math.abs(x - desired) > .002)) {
+        throw new Error(`${lane} curve white guide should be at ${desired}: ${guidePositions}`);
+      }
+
+      // Point 3 is still untouched, including in the headroom when in SDR.
+      const current = await geometry(curve);
+      const pt = curvePointPosition(current, .75, .75);
+      const x = current.rect.x + pt.x;
+      const y = current.rect.y + pt.y;
+      await page.mouse.move(x, y);
+      await page.mouse.down();
+      await page.mouse.move(x, y - 12, { steps: 3 });
+      await page.mouse.up();
+      const actual = await page.evaluate(([lane, channel]) =>
+        window.HDRFinisherPerformance.authoringState().adjustments[lane][`${channel}_curve`][3][1], [lane, channel]);
+      const plotHeight = current.rect.height - current.top - current.bottom;
+      if (Math.abs((actual - .75) * plotHeight - 12) > .2) {
+        throw new Error(`${lane} ${channel} point did not follow the drag: ${actual}`);
       }
     }
 

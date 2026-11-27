@@ -608,6 +608,8 @@ Completed UI polish round 2 (pending visual sign-off): `docs/technical/archive/b
 Completed UI polish round 3 (pending visual sign-off): `docs/technical/archive/briefs/codex-brief-ui-polish-round-3-2026-11-06.md` (November 6: joined-plate in-panel tabs, larger workflow tabs, title-case panel titles, centred menu and stable title hover).
 
 ### Briefs (current work)
+- `docs/technical/briefs/shared-curves-2026-11-27.md`: shared HDR and SDR
+  curve math, editing, Match and parity qualification.
 
 - `docs/technical/briefs/sdr-match-tone-fit-2026-11-27.md`: picture-based
   SDR Tone/Highlight Compression fit and per-module HDR Match actions.

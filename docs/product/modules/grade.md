@@ -1,3 +1,18 @@
+## November 27: one scale for HDR and SDR Curves
+
+Steve approved the same settings across both renditions and gentler tonal
+changes. All four global and local curves use the same scene-relative ACEScg
+scale. A 5% change in graph height is about 0.55 stop at middle grey and about
+half a stop near reference white and above. The point follows the pointer
+directly. HDR labels use the project reference white. SDR marks its white and
+leaves the shaded headroom editable. Curves do not clip that headroom.
+
+Whole-photo Match, local Match and Match HDR curves copy the HDR points
+unchanged. The fit does not author curves, and the local tone fit does not
+count an HDR curve twice. Saved non-neutral curves use the new interpretation
+with no migration. Film Look, Grain, Halation, Vignette and Tone keep their
+previous transfer or pivot.
+
 ## November 27: SDR Match fits the picture
 
 Steve approved fitting Exposure first, Contrast only when HDR uses it, five
@@ -8,9 +23,8 @@ The target, highlight output rendering and Match acceptance gates stay unchanged
 
 HSL and Curves have one-shot copy actions. Tone and Highlight Compression
 have one-shot fitting actions that preserve the other SDR modules. Each is
-one Undo step. Curves copy verbatim in the manual action only.
-Open work: share the HDR/SDR curve scale and colour space before enabling curve
-translation in whole-photo Match. Steve's visual review of highlights is open.
+one Undo step. The shared-curves decision above extends verbatim copying to
+whole-photo and local Match. Steve's visual review of highlights is open.
 
 PC qualification used the eight saved grades in the brief. All eight committed
 and met the body mean Delta E 2000 limit of 2 (range 0.036?1.450), with both the
