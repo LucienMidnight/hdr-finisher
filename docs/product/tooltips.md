@@ -1186,9 +1186,9 @@ Clipped lane, scope, preview and filename labels use their visible text; dynamic
 
 | Control / visible name | Text | Flags | ID and source |
 | --- | --- | --- | --- |
-| els.viewerBranchNote.textContent | branchCopy[lane] | dynamic expression | codebase/frontend/lanes-compare.js:248 · [source](../../codebase/frontend/lanes-compare.js#L248) |
-| els.viewerBranchNote.textContent | &#96;${branchCopy[other]} Release V to return to the authored preview.&#96; | dynamic expression | codebase/frontend/lanes-compare.js:381 · [source](../../codebase/frontend/lanes-compare.js#L381) |
-| other — text used by dynamic tooltips | state.currentView === "hdr" ? "sdr" : "hdr" | dynamic supporting definition | codebase/frontend/lanes-compare.js:406 · [source](../../codebase/frontend/lanes-compare.js#L406) |
+| els.viewerBranchNote.textContent | branchCopy[lane] | dynamic expression | codebase/frontend/lanes-compare.js:249 · [source](../../codebase/frontend/lanes-compare.js#L249) |
+| els.viewerBranchNote.textContent | &#96;${branchCopy[other]} Release V to return to the authored preview.&#96; | dynamic expression | codebase/frontend/lanes-compare.js:382 · [source](../../codebase/frontend/lanes-compare.js#L382) |
+| other — text used by dynamic tooltips | state.currentView === "hdr" ? "sdr" : "hdr" | dynamic supporting definition | codebase/frontend/lanes-compare.js:407 · [source](../../codebase/frontend/lanes-compare.js#L407) |
 
 ### overlay ui
 

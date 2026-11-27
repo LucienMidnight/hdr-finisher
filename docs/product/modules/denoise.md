@@ -1,3 +1,25 @@
+### November 27 - Denoise in HDR/SDR comparisons
+
+The inactive comparison pane now uses the backend's lane-specific denoised
+preview whenever that rendition has Denoise enabled. Its former direct GPU
+render could silently draw the original source because the renderer owns only
+one lane/scale's Denoise selector; that original was then marked finished.
+The active viewer and single-view lane switches retain their existing GPU
+preparation path. Before / After intentionally keeps its original image.
+
+Comparisons wait for the denoised backend image and decode it before display.
+A photo, lane, layout, mode, geometry or preview-generation change discards an
+obsolete result. Denoise-off comparisons explicitly select the original GPU
+source. This avoids replacing the active lane's preparation, at the cost of
+CPU preparation time for the inactive denoised rendition. Node regressions
+cover both lanes, four compare layouts, all methods, deferred completion and
+stale results; targeted Denoise document/adaptive/Grain Python checks pass (38 tests).
+The full Node suite passed (1,534 passed, one skipped). After the shared GPU
+lock cleared, a disposable Electron smoke passed all four layouts in both
+active lanes with Standard Denoise on a generated noisy 640 x 480 source;
+each comparison decoded and displayed its denoised backend cache image. This
+checks presentation and routing, not perceptual pixel parity on the faulty PC GPU.
+
 ### November 26 - Reference corpus and calibration checks
 
 Steve retired the lab's noise-free render reference and its render-only noise
