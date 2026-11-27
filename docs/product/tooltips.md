@@ -10,7 +10,7 @@ Dynamic entries show the JavaScript expression/template, with supporting definit
 
 ## Coverage and limits
 
-This inventory contains **816 source entries**, not 816 distinct hover messages. Shared helpers can produce many messages; multiple sources can feed one control. It scans HTML and JavaScript in frontend and the desktop shell (including embedded markup), title/data-tooltip/data-tip/data-native-tooltip attributes and assignments, authored title-tooltip spans, accessible-label fallbacks, and selected-option names. No app or photo is opened.
+This inventory contains **825 source entries**, not 825 distinct hover messages. Shared helpers can produce many messages; multiple sources can feed one control. It scans HTML and JavaScript in frontend and the desktop shell (including embedded markup), title/data-tooltip/data-tip/data-native-tooltip attributes and assignments, authored title-tooltip spans, accessible-label fallbacks, and selected-option names. No app or photo is opened.
 
 Runtime names, paths, errors, backend capability messages, custom album/label meanings and selected values have no finite list of text: their expression is recorded. Arbitrary computed property names, new helper APIs, external content and native operating-system menus are not discoverable by this static scanner. Supporting expressions are conservative and may include strings that are not shown as tooltips. When adding a new tooltip mechanism, extend the extractor and its fixture test.
 
@@ -1256,12 +1256,21 @@ Clipped lane, scope, preview and filename labels use their visible text; dynamic
 | --- | --- | --- | --- |
 | canvas aria-label | els.scopeTitle.textContent | dynamic expression; name/status supplied at runtime | codebase/frontend/scope-drawing.js:19 · [source](../../codebase/frontend/scope-drawing.js#L19) |
 | canvas.title | scopeGuideTooltip(scope) | dynamic expression | codebase/frontend/scope-drawing.js:29 · [source](../../codebase/frontend/scope-drawing.js#L29) |
+| dt.dataset.tooltip | dd.dataset.tooltip = help | dynamic expression | codebase/frontend/scope-drawing.js:567 · [source](../../codebase/frontend/scope-drawing.js#L567) |
+| dd.dataset.tooltip | help | dynamic expression | codebase/frontend/scope-drawing.js:567::2 · [source](../../codebase/frontend/scope-drawing.js#L567) |
 
 ### scope ui
 
 | Control / visible name | Text | Flags | ID and source |
 | --- | --- | --- | --- |
-| Scope guide tooltip builder | function guideTooltip(scope) { if (scope?.scope_type === "vectorscope") { return "Chroma direction and saturation. Distance from center indicates saturation."; } const labeledGuides = guidesForDisplay(scope); const guides = (scope?.guides &#124;&#124; []).filter((guide) =&gt; labeledGuides.has(Number(guide.value))); if (!guides.length) return ""; const descriptions = guides.map((guide) =&gt; { const shortLabel = compactGuideLabel(scope, guide); if (scope.preview_kind !== "hdr") return &#96;${shortLabel} output&#96;; if (/\bactive\b/i.test(guide.label)) return &#96;${shortLabel}: active HDR reference white&#96;; const detail = String(guide.label &#124;&#124; "").replace(/^\s*[\d.]+\s*/, "").trim(); if (detail === "nit") return &#96;${shortLabel}: 1 nit&#96;; return detail ? &#96;${shortLabel}: ${detail}&#96; : &#96;${shortLabel}: ${Number(guide.value)} nits&#96;; }); return &#96;Scope guides — ${descriptions.join("; ")}. RW means active HDR reference white.&#96;; } | dynamic template | codebase/frontend/scope-ui.js:53 · [source](../../codebase/frontend/scope-ui.js#L53) |
+| scopeStatTooltips / Peak | The brightest point in the picture. | fixed (dynamic lookup) | codebase/frontend/scope-ui.js:7 · [source](../../codebase/frontend/scope-ui.js#L7) |
+| scopeStatTooltips / Peak (preview) | The brightest point the current preview found. A tiny highlight may be missed. | fixed (dynamic lookup) | codebase/frontend/scope-ui.js:8 · [source](../../codebase/frontend/scope-ui.js#L8) |
+| scopeStatTooltips / Peak (estimate) | The brightest point found in a more detailed preview. This is still an estimate. | fixed (dynamic lookup) | codebase/frontend/scope-ui.js:9 · [source](../../codebase/frontend/scope-ui.js#L9) |
+| scopeStatTooltips / Brightest 1% | How bright the brightest 1% of the picture is, ignoring tiny specks. | fixed (dynamic lookup) | codebase/frontend/scope-ui.js:10 · [source](../../codebase/frontend/scope-ui.js#L10) |
+| scopeStatTooltips / Median brightness | Half the picture is darker than this. Compare it to see if HDR and SDR main tones match. | fixed (dynamic lookup) | codebase/frontend/scope-ui.js:11 · [source](../../codebase/frontend/scope-ui.js#L11) |
+| scopeStatTooltips / Above reference white | Share of the picture brighter than the project's HDR reference white. | fixed (dynamic lookup) | codebase/frontend/scope-ui.js:12 · [source](../../codebase/frontend/scope-ui.js#L12) |
+| scopeStatTooltips / Display threshold | Share of the picture above the display's reported peak. Uses 1,000 nits if no reading is available. | fixed (dynamic lookup) | codebase/frontend/scope-ui.js:13 · [source](../../codebase/frontend/scope-ui.js#L13) |
+| Scope guide tooltip builder | function guideTooltip(scope) { if (scope?.scope_type === "vectorscope") { return "Chroma direction and saturation. Distance from center indicates saturation."; } const labeledGuides = guidesForDisplay(scope); const guides = (scope?.guides &#124;&#124; []).filter((guide) =&gt; labeledGuides.has(Number(guide.value))); if (!guides.length) return ""; const descriptions = guides.map((guide) =&gt; { const shortLabel = compactGuideLabel(scope, guide); if (scope.preview_kind !== "hdr") return &#96;${shortLabel} output&#96;; if (/\bactive\b/i.test(guide.label)) return &#96;${shortLabel}: active HDR reference white&#96;; const detail = String(guide.label &#124;&#124; "").replace(/^\s*[\d.]+\s*/, "").trim(); if (detail === "nit") return &#96;${shortLabel}: 1 nit&#96;; return detail ? &#96;${shortLabel}: ${detail}&#96; : &#96;${shortLabel}: ${Number(guide.value)} nits&#96;; }); return &#96;Scope guides — ${descriptions.join("; ")}. RW means active HDR reference white.&#96;; } | dynamic template | codebase/frontend/scope-ui.js:84 · [source](../../codebase/frontend/scope-ui.js#L84) |
 
 ### session import
 

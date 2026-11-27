@@ -310,7 +310,7 @@ async function activateDockTab(tab) {
 
 function renderDockSummary() {
   const stats = state.lastScope?.stats || [];
-  const wanted = stats.filter((item) => /Peak|% > 1000/.test(item.label)).slice(0, 2);
+  const wanted = stats.filter((item) => /^Peak|^% > /.test(item.label)).slice(0, 2);
   els.dockSummary.textContent = wanted.length
     ? wanted.map((item) => `${item.label} ${item.value}`).join(" · ")
     : "Full-resolution processing stats";

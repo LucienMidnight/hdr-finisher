@@ -499,7 +499,13 @@ function existingFileIdentity(filePath) {
 
 function currentDisplayState(window = mainWindow) {
   if (!window || window.isDestroyed()) return null;
-  return serializeDisplay(screen.getDisplayMatching(window.getBounds()));
+  const display = screen.getDisplayMatching(window.getBounds());
+  const serialized = serializeDisplay(display);
+  // DXGI reports physical desktop coordinates, not Electron's DIPs.
+  if (serialized && process.platform === "win32") {
+    serialized.physicalBounds = screen.dipToScreenRect(null, display.bounds);
+  }
+  return serialized;
 }
 
 function desktopEnvironment(window = mainWindow) {

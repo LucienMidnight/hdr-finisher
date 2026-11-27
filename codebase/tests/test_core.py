@@ -12,6 +12,7 @@ from hdr_finisher.models import AdjustmentState, ExportSettings, HDRAdjustments,
 from hdr_finisher.overlay import build_overlay_rgba
 from hdr_finisher.preview import downsample_image
 from hdr_finisher.models import ScopeMode
+from hdr_finisher.color_context import RenderColorContext
 from hdr_finisher.scopes import _rgb_to_reference_nits, build_scope, build_scope_from_processed
 
 
@@ -674,7 +675,7 @@ def test_hdr_scope_reports_reference_nits_and_stats() -> None:
     assert scope.scope_type == "reference_nits_histogram"
     assert scope.x_axis == "reference_nits_log10"
     assert len(scope.guides) >= 5
-    assert any(stat.label == "Peak" for stat in scope.stats)
+    assert any(stat.label == "Peak (preview)" for stat in scope.stats)
     assert len(scope.bin_edges) == 257
     assert any(channel.name == "Y" for channel in scope.channels)
 
@@ -740,10 +741,12 @@ def test_hdr_scope_threshold_percentages_for_known_luminance() -> None:
     adjustments = AdjustmentState(hdr=HDRAdjustments())
     scope = build_scope(image, adjustments, PreviewKind.HDR)
     stats = {stat.label: stat.value for stat in scope.stats}
-    assert stats["Peak"] == "2000 nit"
-    assert stats["% > 100"] == "75.00%"
-    assert stats["% > 203"] == "50.00%"
-    assert stats["% > 1000"] == "25.00%"
+    assert stats["Peak (preview)"] == "2000 nit"
+    assert stats["Brightest 1%"] == "1955 nit"
+    assert stats["Median brightness"] == "325.0 nit"
+    assert stats["Above reference white"] == "50.00%"
+    assert stats["% > 1000 nit"] == "25.00%"
+    assert len(stats) == 5
 
 
 def test_hdr_scope_thresholds_exclude_values_exactly_on_each_guide() -> None:
@@ -757,9 +760,29 @@ def test_hdr_scope_thresholds_exclude_values_exactly_on_each_guide() -> None:
     )
     stats = {stat.label: stat.value for stat in scope.stats}
 
-    assert stats["% > 100"] == "66.67%"
-    assert stats["% > 203"] == "33.33%"
-    assert stats["% > 1000"] == "0.00%"
+    assert stats["Above reference white"] == "33.33%"
+    assert stats["% > 1000 nit"] == "0.00%"
+
+
+@pytest.mark.parametrize("mode", list(ScopeMode))
+def test_scope_readouts_use_project_white_and_reported_display_peak(mode) -> None:
+    nits = np.array([50, 150, 300, 450, 1200], dtype=np.float32)
+    image = np.repeat((nits * np.float32(0.18 / 100)).reshape(1, 5, 1), 3, axis=2)
+    scope = build_scope_from_processed(
+        image, PreviewKind.HDR, mode, bins=64, color_context=RenderColorContext(100),
+        display_peak_nits=445.25,
+    )
+    stats = {stat.label: stat.value for stat in scope.stats}
+    assert stats["Above reference white"] == "80.00%"
+    assert stats["% > 445.25 nit"] == "40.00%"
+
+    sdr_image = np.ones((1, 101, 3), dtype=np.float32) * 0.1
+    sdr_image[:, -3:] = 0.5
+    sdr = build_scope_from_processed(sdr_image, PreviewKind.SDR, mode, bins=64)
+    sdr_stats = {stat.label: stat.value for stat in sdr.stats}
+    assert list(sdr_stats) == ["Peak (preview)", "Brightest 1%", "Median brightness"]
+    assert sdr_stats["Brightest 1%"] == ("0.500" if mode == ScopeMode.VECTORSCOPE else "0.735")
+    assert sdr_stats["Median brightness"] == ("0.100" if mode == ScopeMode.VECTORSCOPE else "0.349")
 
 
 def test_sdr_scope_reports_normalized_histogram() -> None:
@@ -877,4 +900,4 @@ def test_sdr_source_has_predictable_internal_hdr_scope_anchor() -> None:
     scope = build_scope(image, AdjustmentState(), PreviewKind.HDR)
     stats = {stat.label: stat.value for stat in scope.stats}
     assert analysis.classification == HDRClassification.SDR_ONLY
-    assert stats["Peak"] == "203.0 nit"
+    assert stats["Peak (preview)"] == "203.0 nit"

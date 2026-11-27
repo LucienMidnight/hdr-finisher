@@ -108,6 +108,16 @@ The vectorscope plots chroma direction and saturation independently of image pos
 
 Vectorscope density is intentionally reduced during interaction and becomes more precise after the edit settles. It is a diagnostic of the authored rendition, not a gamut-compliance certification.
 
+## Scope readout
+
+Histogram, Waveform and Vectorscope show the following readings in HDR and SDR:
+
+- **Peak (preview)** is the brightest point found in the preview. **Peak (estimate)** means a more detailed preview was measured, but the reading is still an estimate.
+- **Brightest 1%** shows where the brightest 1% begins, so a few tiny highlights do not dominate the reading.
+- **Median brightness** is the midpoint. Half the picture is darker. Compare this reading when matching the main tones in HDR and SDR.
+
+HDR also shows **Above reference white**, the percentage above the project's reference white (203 or 100 nits), and **% > N nit**, the percentage above the current display's reported peak. The display number follows the window to another monitor and defaults to 1,000 nits when the app has no reading. It is a display report, not a measurement of the screen or a limit on your export.
+
 ## Technical and Diagnostics panels
 
 Choose **Technical** in the scope-type menu for a short, plain-language summary that fits the scopes panel at any height:
@@ -178,7 +188,7 @@ Use full-size output/Proof for final delivery judgement.
 
 ## Scope accuracy and limits
 
-On supported WebGPU paths, histogram, waveform, and vectorscope are generated from a compact render of the same current GPU output used by the visible preview. Unsupported geometry, proof/comparison states, and WebGPU fallback use the CPU scope path. Both routes describe the processed authored rendition; they are deterministic numerical diagnostics, not instruments measuring the screen. With **Exact peak** enabled, the peak and clipping readouts are reduced over the pixels of the accepted selected-tier frame on both GPU and bounded CPU routes, independently of the compact distributions used to draw the scopes.
+On supported WebGPU paths, histogram, waveform, and vectorscope are generated from a compact render of the same current GPU output used by the visible preview. Unsupported geometry, proof/comparison states, and WebGPU fallback use the CPU scope path. Both routes describe the processed authored rendition; they are deterministic numerical diagnostics, not instruments measuring the screen. For the settled whole-picture peak, the GPU and bounded CPU routes can measure a more detailed frame independently of the compact distributions used to draw the scopes. If that measurement is unavailable, the panel labels the peak as coming from the preview.
 
 The freshness badge can show **Updating**, **Preview**, **Settled**, or
 **Refined**. Preview scopes use fewer samples during live edits. During zoom

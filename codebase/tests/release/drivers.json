@@ -11619,6 +11619,42 @@
       }
     },
     {
+      "path": "tests/scope-readout-layout.js",
+      "areas": [
+        "ui"
+      ],
+      "tier": "area",
+      "protects": "Scopes row fit, plot alignment and current-display peak.",
+      "launch": {
+        "method": "native"
+      },
+      "brief": "Checks HDR and SDR readouts at the minimum dock height in all three themes at normal and 1100px widths. Checks the plotted frame, labels, tooltips and fallback, and moves the disposable app across Windows displays with native peak readings. Pass --capture to save panel crops.",
+      "expectedMinutes": {
+        "win": null,
+        "mac": null
+      },
+      "deadlineMinutes": 15,
+      "deadlinePolicy": "Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.",
+      "requirements": [
+        "Repository setup completed; Node/npm dependencies installed.",
+        "Electron/Playwright and backend virtual environment with native tools from setup.",
+        "Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile.",
+        "Shared GPU-run lock; real-app checks must not overlap."
+      ],
+      "platforms": {
+        "os": [
+          "win",
+          "mac",
+          "linux"
+        ],
+        "notes": [
+          "Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline.",
+          "MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.",
+          "Native display movement is checked when distinct Windows telemetry is available. The no-telemetry fallback is checked on every platform."
+        ]
+      }
+    },
+    {
       "path": "tests/scope-region-interaction.js",
       "areas": [
         "ui"

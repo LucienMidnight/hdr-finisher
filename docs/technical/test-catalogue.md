@@ -11,7 +11,7 @@ The selection depends on changed areas since the last tag. Core is the smallest 
 | Selection | Drivers | Windows minutes + retry | Windows unknown | Mac minutes + retry | Mac unknown |
 | --- | ---: | ---: | ---: | ---: | ---: |
 | Core | 34 | 0.00 + 0.00 | 34 | 5.00 + 0.00 | 33 |
-| All areas | 124 | 17.30 + 0.00 | 122 | 5.30 + 0.00 | 122 |
+| All areas | 125 | 17.30 + 0.00 | 123 | 5.30 + 0.00 | 123 |
 | export-proof | 54 | 13.74 + 0.00 | 53 | 5.00 + 0.00 | 53 |
 | film | 44 | 3.56 + 0.00 | 43 | 5.00 + 0.00 | 43 |
 | lens | 37 | 0.00 + 0.00 | 37 | 5.00 + 0.00 | 36 |
@@ -20,7 +20,7 @@ The selection depends on changed areas since the last tag. Core is the smallest 
 | detail | 41 | 0.00 + 0.00 | 41 | 5.30 + 0.00 | 39 |
 | geometry | 37 | 0.00 + 0.00 | 37 | 5.00 + 0.00 | 36 |
 | preview | 62 | 13.74 + 0.00 | 61 | 5.00 + 0.00 | 61 |
-| ui | 67 | 0.00 + 0.00 | 67 | 5.00 + 0.00 | 66 |
+| ui | 68 | 0.00 + 0.00 | 68 | 5.00 + 0.00 | 67 |
 
 ## Everyday tests
 
@@ -190,7 +190,7 @@ Source: `codebase/tests/inventory.json`. Seconds are summed case time, not paral
 | tests/reuse-test-photo.test.js | persistent test copies reuse pixels and restore disposable sidecars on success or failure | 2 | 0.1993 | unknown |  |
 | tests/roi-source-region.test.js | a magnified fetch region covers every foreground tile's halo rect | 4 | 0.0304 | unknown |  |
 | tests/saved-preset-read.test.js | saved Film Look reaches recovery before unknown or damaged data is discarded: {"bloom_amount":20} | 3 | 0.0066 | unknown |  |
-| tests/scope-analysis.test.js | scope transport conversion retains the exact pre-cleanup double-precision results | 6 | 0.0345 | unknown |  |
+| tests/scope-analysis.test.js | scope transport conversion retains the exact pre-cleanup double-precision results | 9 | 0.0312 | unknown |  |
 | tests/scope-gpu-handoff.test.js | first GPU picture defers CPU scopes, while an accepted CPU picture retains fallback | 4 | 0.0944 | unknown |  |
 | tests/scope-peak-disclosure.test.js | a refused editing measurement cannot become an exact peak through CPU fallback | 3 | 0.0038 | unknown |  |
 | tests/scope-readback.test.js | scope analysis unpacks padded half-float rows and releases its resource | 7 | 0.0518 | unknown |  |
@@ -216,7 +216,7 @@ Source: `codebase/tests/inventory.json`. Seconds are summed case time, not paral
 | tests/test_color_desaturation.py | Checks color desaturation behavior and regression contracts. | 2 | 0.0062 | unknown |  |
 | tests/test_color_wheels_headroom.py | W3: grading ranges are edits, never an implicit output limiter. | 15 | 0.109 | unknown |  |
 | tests/test_coordinate_map_bounded.py | Checks coordinate map bounded behavior and regression contracts. | 24 | 0.3306 | unknown |  |
-| tests/test_core.py | Checks core behavior and regression contracts. | 71 | 0.442 | unknown |  |
+| tests/test_core.py | Checks core behavior and regression contracts. | 74 | 1.0859 | unknown |  |
 | tests/test_cpu_budget.py | Checks cpu budget behavior and regression contracts. | 2 | 0.0032 | unknown |  |
 | tests/test_cpu_strips_api.py | Phase 4: the bounded CPU path has to be reachable, and honest when it is not. | 6 | 2.1291 | unknown |  |
 | tests/test_cpu_strips.py | Phase 4: the bounded CPU strip path must equal the whole-frame path exactly. | 185 | 26.6312 | unknown |  |
@@ -4648,6 +4648,15 @@ Clone and Heal source picking, source editing, opacity, history, native preview 
 - Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
+
+#### `tests/scope-readout-layout.js`
+
+Checks HDR and SDR readouts at the minimum dock height in all three themes at normal and 1100px widths. Checks the plotted frame, labels, tooltips and fallback, and moves the disposable app across Windows displays with native peak readings. Pass --capture to save panel crops.
+
+- Expected minutes: Windows unknown; Mac unknown.
+- Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
+- Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap.
+- Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock. Native display movement is checked when distinct Windows telemetry is available. The no-telemetry fallback is checked on every platform.
 
 #### `tests/sdr-linked-interaction.js`
 

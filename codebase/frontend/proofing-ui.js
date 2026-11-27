@@ -435,8 +435,11 @@
     return details.join(" · ");
   }
 
+  window.HDRProofing.refreshDisplayTelemetry = refreshDisplayTelemetry;
+
   async function refreshDisplayTelemetry() {
     const previous = JSON.stringify(state.displayTelemetry?.displays || []);
+    const previousScopePeak = scopeDisplayPeakNits();
     try {
       const response = await fetch("/api/display");
       if (!response.ok) throw new Error("Display telemetry is unavailable.");
@@ -446,6 +449,9 @@
     }
     populateDisplayOptions();
     renderHighlightDisplayNote();
+    if (state.currentView === "hdr" && previousScopePeak !== scopeDisplayPeakNits()) {
+      void refreshScopes(scopeLongEdge("settled")).catch(() => null);
+    }
     const changed = previous !== JSON.stringify(state.displayTelemetry?.displays || []);
     if (changed && state.proofTarget === "auto" && state.proofReconstruction) {
       state.proofDirty = true;

@@ -1412,6 +1412,7 @@ async def scopes(
     long_edge: int = Query(default=960, ge=256, le=2000),
     max_nits: ScopeMaxNits = Query(default=ScopeMaxNits.NITS_4000),
     channels: str = Query(default="all", pattern="^(all|rgb|luma)$"),
+    display_peak_nits: float = Query(default=1000.0, gt=0, allow_inf_nan=False),
     edit_revision: int | None = Query(default=None, ge=0),
 ):
     try:
@@ -1431,6 +1432,7 @@ async def scopes(
             columns,
             int(max_nits.value),
             is_current=is_current,
+            display_peak_nits=display_peak_nits,
             local_adjustments=session.adjustments.enabled_locals(session.local_adjustments),
             channel_names=("R", "G", "B") if channels == "rgb" else (("Y",) if channels == "luma" else None),
             **_scope_render_options(session, kind, PreviewRequest(), session.adjustments),
@@ -1455,6 +1457,7 @@ async def scopes_for_adjustments(
     long_edge: int = Query(default=960, ge=256, le=2000),
     max_nits: ScopeMaxNits = Query(default=ScopeMaxNits.NITS_4000),
     channels: str = Query(default="all", pattern="^(all|rgb|luma)$"),
+    display_peak_nits: float = Query(default=1000.0, gt=0, allow_inf_nan=False),
 ):
     try:
         session, adjustments = _resolve_edit_request(session_id, request.adjustments, request.edit_revision)
@@ -1472,6 +1475,7 @@ async def scopes_for_adjustments(
             columns,
             int(max_nits.value),
             is_current=is_current,
+            display_peak_nits=display_peak_nits,
             local_adjustments=adjustments.enabled_locals((
                 request.local_adjustments
                 if request.local_adjustments is not None

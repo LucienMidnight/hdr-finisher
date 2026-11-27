@@ -126,7 +126,7 @@ function extract(sourceRoot=root) {
         dependencies(def,depth+1);
       }
     }
-    for (const key of ['exportOptionTooltips','exportFormatNotes','branchCopy']) {
+    for (const key of ['exportOptionTooltips','exportFormatNotes','branchCopy','scopeStatTooltips']) {
       const def=definitions.get(key); if(!def)continue;
       const keys=[];
       for(let j=0;j<def.length;j++) {

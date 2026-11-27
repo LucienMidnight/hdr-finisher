@@ -16,13 +16,13 @@ function linearSrgbToScopeSignal(value) {
   return linear <= 0.0031308 ? 12.92 * linear : 1.055 * linear ** (1 / 2.4) - 0.055;
 }
 
-function buildGpuScopePayload(analysis, { lane, mode, tier, generation, bins, columns, maxNits, scopeRegion = null, exactPeak = null, channelMode = "rgb", referenceWhite = 203 }) {
+function buildGpuScopePayload(analysis, { lane, mode, tier, generation, bins, columns, maxNits, scopeRegion = null, exactPeak = null, channelMode = "rgb", referenceWhite = 203, displayPeakNits = 1000 }) {
   const hdr = lane === "hdr";
   const ceiling = maxNits === 1000 ? 1000 : maxNits === 10000 ? 10000 : 4000;
   const channelEntries = channelMode === "luma"
     ? [[3, "Y"]]
     : [[0, "R"], [1, "G"], [2, "B"]];
-  if (mode === "vectorscope") return buildGpuVectorscopePayload(analysis, { lane, tier, generation, bins, scopeRegion, referenceWhite });
+  if (mode === "vectorscope") return buildGpuVectorscopePayload(analysis, { lane, tier, generation, bins, scopeRegion, referenceWhite, displayPeakNits });
   const binEdges = hdr
     ? Array.from({ length: bins + 1 }, (_, index) => 10 ** (Math.log10(ceiling) * index / bins))
     : Array.from({ length: bins + 1 }, (_, index) => index / bins);
@@ -32,9 +32,6 @@ function buildGpuScopePayload(analysis, { lane, mode, tier, generation, bins, co
   const values = new Float64Array(4);
   let peak = 0;
   let clipped = false;
-  let above100 = 0;
-  let above203 = 0;
-  let above1000 = 0;
   let regionPixel = 0;
   for (let sourceY = bounds.y0; sourceY < bounds.y1; sourceY += 1) {
     for (let sourceX = bounds.x0; sourceX < bounds.x1; sourceX += 1) {
@@ -65,11 +62,6 @@ function buildGpuScopePayload(analysis, { lane, mode, tier, generation, bins, co
       clipped ||= hdr
         ? values[0] >= 10000 || values[1] >= 10000 || values[2] >= 10000
         : r >= 1 || g >= 1 || b >= 1;
-      if (hdr) {
-        above100 += values[3] > 100 ? 1 : 0;
-        above203 += values[3] > 203 ? 1 : 0;
-        above1000 += values[3] > 1000 ? 1 : 0;
-      }
       const column = Math.min(columns - 1, Math.floor((sourceX - bounds.x0) / bounds.width * columns));
       for (let channel = 0; channel < channelEntries.length; channel += 1) {
         const value = values[channelEntries[channel][0]];
@@ -80,12 +72,6 @@ function buildGpuScopePayload(analysis, { lane, mode, tier, generation, bins, co
       }
     }
   }
-  // TypedArray#sort is numeric and in-place. Avoid boxing every sample into a
-  // second JavaScript array during frequent scope refreshes.
-  const sortedLuma = lumaValues.sort();
-  const percentile = (amount) => sortedLuma[Math.min(sortedLuma.length - 1, Math.round((sortedLuma.length - 1) * amount))] || 0;
-  const formatNits = (value) => value >= 1000 ? `${value.toFixed(0)} nit` : value >= 99.995 ? `${value.toFixed(1)} nit` : `${value.toFixed(2)} nit`;
-  const sampleCount = Math.max(1, lumaValues.length);
   // A measured full-resolution peak replaces the proxy's rather than being
   // maximised with it. The proxy can read *high* as well as low -- Lanczos
   // rings at a hard edge and can overshoot the values it resampled from -- and
@@ -96,19 +82,7 @@ function buildGpuScopePayload(analysis, { lane, mode, tier, generation, bins, co
     : null;
   const reportedPeak = hdr && measuredPeak !== null ? measuredPeak : peak;
   const peakLabel = hdr && measuredPeak !== null ? "Peak" : "Peak (preview)";
-  const stats = hdr ? [
-    { label: peakLabel, value: formatNits(reportedPeak) },
-    { label: "P99", value: formatNits(percentile(0.99)) },
-    { label: "P95", value: formatNits(percentile(0.95)) },
-    { label: "Median", value: formatNits(percentile(0.5)) },
-    { label: "% > 100", value: `${(above100 / sampleCount * 100).toFixed(2)}%` },
-    { label: "% > 203", value: `${(above203 / sampleCount * 100).toFixed(2)}%` },
-    { label: "% > 1000", value: `${(above1000 / sampleCount * 100).toFixed(2)}%` },
-  ] : [
-    { label: "Peak", value: peak.toFixed(3) },
-    { label: "P95", value: percentile(0.95).toFixed(3) },
-    { label: "Median", value: percentile(0.5).toFixed(3) },
-  ];
+  const stats = buildScopeStats(lumaValues, { hdr, peak: reportedPeak, peakLabel, referenceWhite, displayPeakNits });
   const channels = channelEntries.map(([, name], index) => ({
     name,
     bins: mode === "waveform" ? [] : Array.from(counts[index]),
@@ -137,6 +111,37 @@ function buildGpuScopePayload(analysis, { lane, mode, tier, generation, bins, co
   };
 }
 
+function buildScopeStats(luma, { hdr, peak, peakLabel = "Peak (preview)", referenceWhite, displayPeakNits }) {
+  // TypedArray#sort is numeric and in-place.
+  luma.sort();
+  const percentile = (amount) => luma[Math.round((luma.length - 1) * amount)] || 0;
+  const format = (value) => hdr
+    ? `${value.toFixed(value >= 1000 ? 0 : value >= 99.995 ? 1 : 2)} nit`
+    : value.toFixed(3);
+  const stats = [
+    { label: peakLabel, value: format(peak) },
+    { label: "Brightest 1%", value: format(percentile(0.99)) },
+    { label: "Median brightness", value: format(percentile(0.5)) },
+  ];
+  if (hdr) {
+    // Find the first sample strictly above each threshold in the sorted data.
+    const above = (threshold) => {
+      let low = 0, high = luma.length;
+      while (low < high) {
+        const mid = (low + high) >>> 1;
+        if (luma[mid] <= threshold) low = mid + 1;
+        else high = mid;
+      }
+      return `${((luma.length - low) / Math.max(1, luma.length) * 100).toFixed(2)}%`;
+    };
+    stats.push(
+      { label: "Above reference white", value: above(referenceWhite) },
+      { label: `% > ${displayPeakNits} nit`, value: above(displayPeakNits) },
+    );
+  }
+  return stats;
+}
+
 function robustScopePopulationPeak(counts, percentile = 0.995) {
   const positive = [];
   counts.forEach((channel) => channel.forEach((value) => {
@@ -156,12 +161,14 @@ function scopeAnalysisBounds(analysis, region = null) {
   return { x0, y0, x1, y1, width: x1 - x0, height: y1 - y0 };
 }
 
-function buildGpuVectorscopePayload(analysis, { lane, tier, generation, bins, scopeRegion = null, referenceWhite = 203 }) {
+function buildGpuVectorscopePayload(analysis, { lane, tier, generation, bins, scopeRegion = null, referenceWhite = 203, displayPeakNits = 1000 }) {
   const hdr = lane === "hdr";
   const transfer = vectorscopeTransferLut(hdr, referenceWhite);
   const grid = Array.from({ length: bins }, () => new Int32Array(bins));
   let peak = 0;
   const bounds = scopeAnalysisBounds(analysis, scopeRegion);
+  const lumaValues = new Float32Array(bounds.width * bounds.height);
+  let regionPixel = 0;
   for (let sourceY = bounds.y0; sourceY < bounds.y1; sourceY += 1) {
     for (let sourceX = bounds.x0; sourceX < bounds.x1; sourceX += 1) {
       const pixel = sourceY * analysis.width + sourceX;
@@ -184,6 +191,7 @@ function buildGpuVectorscopePayload(analysis, { lane, tier, generation, bins, sc
       const b = sampleVectorscopeTransfer(transfer, linearB);
       const [kr, kg, kb] = hdr ? [0.2627, 0.6780, 0.0593] : [0.2126, 0.7152, 0.0722];
       const y = kr * r + kg * g + kb * b;
+      lumaValues[regionPixel++] = hdr ? sceneY / 0.18 * referenceWhite : clamp(sceneY, 0, 1);
       const u = clamp(0.5 + (b - y) / (2 * (1 - kb)), 0, 1);
       const v = clamp(0.5 + (r - y) / (2 * (1 - kr)), 0, 1);
       grid[Math.min(bins - 1, Math.floor(v * bins))][Math.min(bins - 1, Math.floor(u * bins))] += 1;
@@ -201,7 +209,7 @@ function buildGpuVectorscopePayload(analysis, { lane, tier, generation, bins, sc
     x_axis: "chroma_uv",
     bin_edges: Array.from({ length: bins + 1 }, (_, index) => index / bins),
     guides: [],
-    stats: [{ label: "Peak", value: hdr ? `${peak.toFixed(1)} nit` : peak.toFixed(3) }],
+    stats: buildScopeStats(lumaValues, { hdr, peak, referenceWhite, displayPeakNits }),
     channels: [{ name: "Y", bins: [], grid: grid.map((row) => Array.from(row)) }],
   };
 }

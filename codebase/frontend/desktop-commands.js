@@ -15,7 +15,13 @@ async function initializeDesktopBridge() {
     });
   });
   desktop.onDisplayStateChanged?.((environment) => {
+    const previous = state.desktopEnvironment?.currentDisplay;
+    const current = environment.currentDisplay;
     state.desktopEnvironment = environment;
+    if (environment.platform === "win32" && (previous?.id !== current?.id
+      || JSON.stringify(previous?.physicalBounds) !== JSON.stringify(current?.physicalBounds))) {
+      void window.HDRProofing?.refreshDisplayTelemetry?.().catch(() => null);
+    }
     state.displayInfo = buildDisplayProbe(environment);
     state.displayInfo.gpu = state.gpuPreview?.detail || "Backend fallback";
     clearGpuSurfaceHdr();

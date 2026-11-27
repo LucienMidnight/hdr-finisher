@@ -59,6 +59,20 @@ before propagating its error. Later pictures can acquire the same gate rather
 than waiting forever. Callback-failure regression tests cover both boundaries;
 successful serialization and stale-frame refusal are unchanged.
 
+## November 27: Scopes readout and graph alignment
+
+Histogram, Waveform and Vectorscope show Peak (preview or estimate), Brightest
+1% (P99) and Median brightness. HDR also shows the share above the project
+reference white and the share above the current display's reported peak. Show
+the reported number directly, use 1,000 nits when unavailable, and update it
+when the window changes displays. The current Windows display is matched to
+native telemetry by its physical bounds. These are analysis readings, not
+delivery or compression targets.
+
+Each row has a plain-language tooltip and fits on one line without scrolling at
+the minimum dock height. Plots start at the Scopes title's left edge. Waveform
+axis labels sit to the right to keep the plot aligned without hiding its scale.
+
 ## November 26: scope encoding failure cleanup
 
 Scope encoding now releases its busy pool slot and active-scope count when

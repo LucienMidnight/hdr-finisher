@@ -627,10 +627,12 @@ html.desktop-shell .window-menu-popover button[role="menuitemradio"][aria-checke
 :root .source-rail:not(.collapsed) > :is(.rail-title-row, .source-file-identity, .source-summary, .disclosure-panel) { margin-inline: 0; padding-inline: var(--workspace-leading); }
 :root .compact-workspace.source-overlay-open { grid-template-columns: var(--rail-w) 0 minmax(0, 1fr) var(--splitter-size) var(--grade-w); }
 :root .panel-collapse-button::before { transition: color var(--group-chevron-transition); }
-:root .dock-content.scope-layout { padding: 0; gap: 0; grid-template-rows: minmax(0, 1fr); }
+:root .dock-content.scope-layout { padding: 0; gap: 0; grid-template: minmax(0, 1fr) / minmax(0, 1fr) minmax(200px, max-content); }
 :root .scope-visual { padding: var(--space-10); }
-:root .scope-readings { padding: 0 var(--space-10) var(--space-10); min-height: 0; overflow: auto; }
-:root .scope-reading-status { margin-inline: -10px; padding: var(--space-10); }
+:root .scope-readings { padding: 0 var(--space-10) var(--space-10); min-height: 0; }
+:root .scope-reading-status { margin-inline: calc(-1 * var(--space-10)); padding: var(--space-10); }
+:root .scope-stats { grid-template-columns: max-content minmax(max-content, 1fr); }
+:root .scope-stats :is(dt, dd) { white-space: nowrap; }
 
 :root :is(.batch-preset[aria-pressed="true"], .library-tags-tools [aria-pressed="true"], .library-tag-row[aria-selected="true"]) { box-shadow: var(--plate-press); }
 

@@ -2276,9 +2276,9 @@
       "suite": "node",
       "area": "scope",
       "purpose": "scope transport conversion retains the exact pre-cleanup double-precision results",
-      "test_count": 6,
+      "test_count": 9,
       "seconds": {
-        "windows": 0.0345,
+        "windows": 0.0312,
         "mac": null
       },
       "markers": [],
@@ -2712,9 +2712,9 @@
       "suite": "python",
       "area": "core",
       "purpose": "Checks core behavior and regression contracts.",
-      "test_count": 71,
+      "test_count": 74,
       "seconds": {
-        "windows": 0.442,
+        "windows": 1.0859,
         "mac": null
       },
       "markers": [
