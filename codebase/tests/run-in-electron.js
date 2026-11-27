@@ -525,6 +525,20 @@ let startupTimer;
       if (![1, 2].includes(response)) throw new Error('Tests may Discard or Cancel, never Save fixtures');
       await app.evaluate(({ dialog }, value) => { dialog.hdrFinisherTestUnsavedResponse = value; }, response);
     },
+    selectRelinkSource: async (selectedPath) => {
+      const resolved = path.resolve(selectedPath);
+      if (!fs.statSync(resolved).isFile()) throw new Error('Test relink source must be an existing file');
+      await app.evaluate(({ dialog }, filePath) => {
+        const previous = dialog.showOpenDialog;
+        dialog.showOpenDialog = async (...args) => {
+          const options = args.at(-1);
+          if (options?.title !== "Relink original source" || !options?.properties?.includes("openFile"))
+            return previous.apply(dialog, args);
+          dialog.showOpenDialog = previous;
+          return { canceled: false, filePaths: [filePath] };
+        };
+      }, resolved);
+    },
     selectExportDirectory: async (selectedDirectory) => {
       const resolved = path.resolve(selectedDirectory);
       if (!fs.statSync(resolved).isDirectory()) throw new Error('Test export destination must be an existing directory');

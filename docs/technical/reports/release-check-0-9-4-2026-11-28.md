@@ -27,6 +27,7 @@ fixture issue. A pass after an earlier timeout is recorded explicitly.
 - `tests/ui-picker-help-selects.js` — (c) local Hue softness intentionally has help (`400eb1e4`, renamed in `eed89fea`); the live tooltip, picker and select checks pass in `ui-picker-help-selects.log`.
 - `tests/library-gpu-raw-single.js` — (c) Playwright disposed the app handle before the launcher read its PID, skipping the offline comparison. Cache the owned launch identity while live. Full locked three-photo native handoff, memory checks, post-quit Grade comparisons and no surviving app pass in `library-gpu-raw-single.log`.
 - `tests/sdr-linked-interaction.js` — (c) whole Match intentionally returns editable independent SDR since `b9098170` and `2d1251ef`. A disposable linked grade retains live HDR edits, global/local unlink, history and consent coverage. Locked HDR/SDR finished GPU/CPU parity and reduced/full Proof byte identity pass in `sdr-linked-interaction.log`.
+- `desktop/tests/proof-grade-diagnostic.js` — (c) test supplied a source-open grant to a source-relink operation. Use the real relink action with a one-use picker fixture. AVIF and Ultra HDR JPEG Proof both pass in `proof-grade-diagnostic-relink.log`.
 
 ## Earlier fast checks
 

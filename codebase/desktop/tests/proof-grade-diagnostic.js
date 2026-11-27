@@ -28,9 +28,10 @@ const project = process.env.HDR_FINISHER_TEST_PROJECT || "C:\\Users\\Steve\\Desk
     else await require('../../tests/electron-initial-load.js').waitForInitialLoad(app, page);
     const source = path.basename(project) === 'DSC00950.hdrfinisher'
       ? require('../../tests/helpers/reuse-test-photo.cjs').source('DSC00950.ARW') : null;
+    if (source) await global.HDRFinisherElectronTestHarness.selectRelinkSource(source);
     await page.evaluate(async ({project, source}) => {
       const selected = await desktop.grantProjectPath(project, 'project-open');
-      const relink = source ? await desktop.grantSourcePath(source) : null;
+      const relink = source ? await desktop.relinkSource() : null;
       const {response, payload} = await projectIo.openDesktopProject(fetch, {
         projectGrant:selected.grant, sourceGrant:relink?.grant,
       });

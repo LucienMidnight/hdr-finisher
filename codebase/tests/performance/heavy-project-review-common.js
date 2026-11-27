@@ -53,9 +53,10 @@ async function open(page, project, manual = false) {
   });
   const sourcePath = path.basename(project) === 'DSC00950.hdrfinisher'
     ? require('../helpers/reuse-test-photo.cjs').source('DSC00950.ARW') : null;
+  if (sourcePath) await global.HDRFinisherElectronTestHarness.selectRelinkSource(sourcePath);
   await page.evaluate(async ({target, sourcePath}) => {
     const selection=await desktop.grantProjectPath(target,'project-open');
-    const source = sourcePath ? await desktop.grantSourcePath(sourcePath) : null;
+    const source = sourcePath ? await desktop.relinkSource() : null;
     const {response,payload}=await projectIo.openDesktopProject(fetch,{projectGrant:selection.grant,sourceGrant:source?.grant});
     if(!response.ok)throw Error(`Project fixture could not open: ${JSON.stringify(payload)}`);
     await activateDesktopSession(payload.session,selection.path);

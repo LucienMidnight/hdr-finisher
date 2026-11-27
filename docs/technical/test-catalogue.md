@@ -489,7 +489,7 @@ proof grade diagnostic. Runs assertions and captures in an isolated Electron app
 - Expected minutes: Windows unknown; Mac 0.048.
 - Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. Source inputs/fixtures referenced by driver (originals read-only): C://Users//Steve//Desktop//_DSC2743.hdrfinisher; DSC00950.ARW; DSC00950.hdrfinisher.
-- Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock. Old Mac source-link blocker repaired in PC follow-up: disposable session explicitly grants curated DSC00950.ARW; retain protected hashes.
+- Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock. The disposable session relinks the curated DSC00950.ARW through the native picker; retain protected project hashes.
 
 #### `tests/batch-export-ui.js`
 
@@ -633,7 +633,7 @@ Preview-versus-export comparison (Viewport-Bounded GPU Preview PRD, 4.6). $env:H
 - Expected minutes: Windows unknown; Mac 0.057.
 - Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
-- Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock. Old Mac source-link blocker repaired in PC follow-up: disposable session explicitly grants curated DSC00950.ARW; retain protected hashes.
+- Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock. The disposable session relinks the curated DSC00950.ARW through the native picker; retain protected project hashes.
 
 #### `tests/performance/reference_session.py`
 

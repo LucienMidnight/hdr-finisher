@@ -2860,7 +2860,7 @@
         "notes": [
           "Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline.",
           "MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.",
-          "Old Mac source-link blocker repaired in PC follow-up: disposable session explicitly grants curated DSC00950.ARW; retain protected hashes."
+          "The disposable session relinks the curated DSC00950.ARW through the native picker; retain protected project hashes."
         ]
       }
     },
@@ -10044,7 +10044,7 @@
         "notes": [
           "Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline.",
           "MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.",
-          "Old Mac source-link blocker repaired in PC follow-up: disposable session explicitly grants curated DSC00950.ARW; retain protected hashes."
+          "The disposable session relinks the curated DSC00950.ARW through the native picker; retain protected project hashes."
         ]
       }
     },
