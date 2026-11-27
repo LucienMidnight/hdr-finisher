@@ -52,7 +52,15 @@ for (let i = 0; i < 24; i++) fs.copyFileSync(fixture, path.join(folder, `photo-$
     await library.locator("#library-tag-input").fill("Family"); await page.keyboard.press("Enter");
     await library.waitForFunction(() => HDRLibrary.getSnapshot().marks.tags.includes("Family"));
     await persisted(() => { assert.deepEqual(document(first).marks.tags, ["Family"]); });
-    await library.locator("#library-tag-input").fill("Fam");
+    // A marking change can rebuild Details while the tag query is still
+    // debouncing. Reapply the existing rating without moving input focus.
+    await library.locator("#library-tag-input").evaluate(input => {
+      input.focus();
+      input.value = "Fam";
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      document.querySelector('.library-rating-controls [aria-label="4 stars · 4"]').click();
+      if (document.activeElement !== input) throw Error("Details redraw dropped the tag input");
+    });
     await library.waitForSelector("#library-tag-suggestions [role=option]");
     assert.equal(await library.locator("#library-tag-suggestions [role=option]").first().textContent(), "Family (2)");
     await page.keyboard.press("ArrowDown"); await page.keyboard.press("Enter");

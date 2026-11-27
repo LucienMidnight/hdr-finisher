@@ -97,8 +97,10 @@
       element.setAttribute("aria-label", label); element.title = label; element.className = "text-button";
       element.addEventListener("click", () => change(patch)); return element;
     }
-    function details(root) {
-      tagRequest?.abort(); clearTimeout(tagTimer);
+    function details(root, { keepTagSearch = false } = {}) {
+      // Details may redraw without replacing the focused input. Its pending
+      // lookup still belongs to that input, including during metadata writes.
+      if (!keepTagSearch) { tagRequest?.abort(); clearTimeout(tagTimer); }
       const list = targets();
       if (!list.length) return;
       const section = document.createElement("section"); section.className = "library-culling";

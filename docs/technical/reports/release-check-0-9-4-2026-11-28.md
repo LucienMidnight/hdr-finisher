@@ -33,6 +33,7 @@ fixture issue. A pass after an earlier timeout is recorded explicitly.
 - `tests/gpu-denoise-measurement.js` — (c) the old missing-EXR setup errors seeded a 30 s deadline. The retired EXR is not required. Full standalone passes the remaining corpus and 42 MP GPU case with unchanged finished-pixel and ceiling guards.
 - `tests/library-export-live-tiles.js` — (c) all three previous Sony fixtures exceeded the intentional native 4 GB CPU-strip cutover (`d1556e87`). Replace one with a curated 10.5 MP Sony RAW. Both delivery routes, seven exports, no progress redraws and the unchanged 5% timing check pass in `library-export-live-tiles.log`.
 - `tests/performance/preview-export-compare.js` — (c) relink repaired in `02a05544`; old capture compared a zoomed GPU detail target to the soft base canvas. Capture the visible detail using exact full-frame coordinates. Enforced HDR/SDR, all six viewports, masks and tone gates pass without changing pixel limits or the project.
+- `tests/photo-library-stage-b.js` — (b), fixed. The v0.9.3 Details redraw also cancelled the pending suggestion lookup while preserving the input. The current failure reproduced at the same locator as November 26. Deterministic redraw during debounce now passes with exact suggestion count, keyboard choice and disk persistence.
 
 ## Earlier fast checks
 

@@ -955,7 +955,7 @@
       }
     } else root.append(make("strong", "", `${state.selection.size.toLocaleString()} photos selected`));
     root.append(make("p", "library-kicker", "Marks"));
-    culling.details(root);
+    culling.details(root, { keepTagSearch: Boolean(keptTag) });
     const manage = make("button", "text-button", "Manage tags and labels…"); manage.type = "button"; manage.id = "manage-tags";
     manage.addEventListener("click", () => void tagWindow.open()); root.append(manage);
     if (one) {

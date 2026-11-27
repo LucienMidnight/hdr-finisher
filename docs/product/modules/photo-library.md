@@ -8942,7 +8942,9 @@ Still failing after the fixture repair (no assertions or limits weakened):
 - library-picture-startup: its initialization hook is never called by the current
   picture route.
 - photo-library-stage-a: the first tile does not provide the expected picture edge.
-- photo-library-stage-b: existing-tag suggestions do not appear.
+- photo-library-stage-b: existing-tag suggestions could disappear. Fixed November 28:
+  Details redraw keeps the active tag lookup with the focused input. The Mac
+  Stage B test now forces that redraw and still finds the saved tag.
 - library-smart-albums: ordinary workflow reaches the separate 155,000-row stress
   helper, which times out waiting for 15,500 matches.
 - library-export-menu: Guarantee HDR peak control is not visible when expected.
