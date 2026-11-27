@@ -1,3 +1,36 @@
+## November 27: PC parity deadline investigation
+
+The d7da33c1 release attempt progressed normally into its exposure follow-up
+before the shared 900-second attempt deadline expired. The test transported
+2.88 million channel differences per frame through CDP and sorted normalized
+copies. Commit 8ba7be54 keeps the full baseline in the renderer and returns
+exact histogram statistics. A full-frame unit comparison preserves the old
+mean, p99.9 and maximum bit-for-bit. Limits and case coverage are unchanged.
+Optional --texture-stats reads the finished texture without enabling HDR
+compression; --timings exposes settling, GPU and CPU stage timestamps.
+
+Two repeated uncompressed HDR Neutral maximum-paper-gain runs reproduced
+all bytes of the October PC signature, also present in the v0.9.3 tag:
+mean 3.2009965277764834, p99.9 250, identical worst coordinates/RGB. This is
+an existing numerical limitation, not evidence of random VRAM corruption or
+the November 27 exposure change. Finished Film storage has no NaN/infinity;
+stored magnitudes are at most 32752, decoded magnitudes reach 5382144.
+The scaled final Film texture therefore does not overflow. Extreme precision
+loss and colour conversion remain implicated; this is not a complete
+stage-by-stage attribution of the older shared-range limitation.
+A disposable alternative storage trial reduced but did not fix the error
+(mean 1.919, p99.9 53), and was reverted. No production rendering fix is
+claimed. The existing decision to retain this extreme-preview limitation
+without expanding shared-stage precision or reducing controls remains open
+for Steve to revisit.
+
+Final targeted release driver at 8ba7be54 completed in 212.596 seconds:
+NOT READY, one known failure, zero new failures, zero unfinished checks.
+The complete exposure and stock-character/panel/preset UI follow-ups passed;
+36 focused Node tests passed. No tolerance, deadline, retry policy, protected
+project or production renderer changed. Evidence:
+codebase/output/release-checks/2026-11-27T05-13-07-686Z-90e04d6b10d96bf309ff/.
+
 ## November 27: Print and Scan shortcuts removed
 
 Removed Print's Neutral, Warm, Cool, Soft, Rich and Cinema buttons and Scan's

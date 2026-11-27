@@ -1,3 +1,9 @@
+## November 27: Film stock parity driver transport (PC)
+
+| Action | Observation | Conditions |
+| --- | --- | --- |
+| Complete Film stock parity release driver, including exposure and UI follow-ups | 212.596 s, completed; 1 known failure, 0 new, 0 unfinished. Earlier d7da33c1 attempt hit its 900 s deadline during exposure; retry/cap left the 1804.206 s selection unfinished. | Windows PC / NVIDIA Lovelace / 2560x1440 machine window, exclusive shared GPU lock, 8ba7be54. The driver's byte comparison remains 1200x800. Exact in-renderer histogram replaces millions of CDP values and sorted copies; no app speed claim or deadline change. Different completion states prevent a full-run speed ratio. Evidence: codebase/output/release-checks/2026-11-27T05-13-07-686Z-90e04d6b10d96bf309ff/. |
+
 ## November 27: CPU Library progress and native band sampling (PC)
 
 | Action | Before | After | Conditions |
