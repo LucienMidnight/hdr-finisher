@@ -122,8 +122,8 @@ Clipped lane, scope, preview and filename labels use their visible text; dynamic
 | dot aria-label | named(value.label) | dynamic expression | codebase/frontend/library-culling.js:91::2 · [source](../../codebase/frontend/library-culling.js#L91) |
 | element aria-label | label | dynamic expression; name/status supplied at runtime | codebase/frontend/library-culling.js:97 · [source](../../codebase/frontend/library-culling.js#L97) |
 | element.title | label | dynamic expression; name/status supplied at runtime | codebase/frontend/library-culling.js:97::2 · [source](../../codebase/frontend/library-culling.js#L97) |
-| rating aria-label | Star rating | name only (fallback candidate) | codebase/frontend/library-culling.js:105 · [source](../../codebase/frontend/library-culling.js#L105) |
-| input aria-label | Add tag · T | name only (fallback candidate) | codebase/frontend/library-culling.js:136 · [source](../../codebase/frontend/library-culling.js#L136) |
+| rating aria-label | Star rating | name only (fallback candidate) | codebase/frontend/library-culling.js:107 · [source](../../codebase/frontend/library-culling.js#L107) |
+| input aria-label | Add tag · T | name only (fallback candidate) | codebase/frontend/library-culling.js:138 · [source](../../codebase/frontend/library-culling.js#L138) |
 
 ### library file commands
 
