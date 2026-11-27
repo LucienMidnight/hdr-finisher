@@ -43,5 +43,7 @@ def test_frontend_contract_split_preserves_the_reviewed_inventory() -> None:
     # real-app coverage of the shared tooltip controller (sprint item L1).
     # November 19: the Denoise setup source match is covered by the Electron
     # preparation, live blend, and recalculation checks.
-    assert len(test_names) == 83
+    # November 27: shared Curves replaced the old drag source assertion with
+    # live pointer, keyboard, and preview checks (aab6d698).
+    assert len(test_names) == 82
     assert len(test_names) == len(set(test_names))
