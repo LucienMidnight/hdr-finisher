@@ -397,8 +397,12 @@ Found during the November 8 release check. Each needs a brief before work starts
 | Film grain values, Looks and lens filter by eye | Test | Film Look |
 | Black & White slider strength, fade points and presets | Test | Grade |
 | Exposure-warning wording, shadow warning threshold | Test | Photo Library |
-| Match entire HDR grade fault: photos and message | Report | Grade |
+| Review Match SDR: extreme highlights still differ from the old look (p99.9 ΔE about 3.65); the richer HDR-headroom scene still needs review. Match is a one-off action; it does not follow HDR edits. Press Match again to re-sync. | Test | Grade |
 | Micro Grain before v1: tune its quality (today it looks less good than Clean Grain, the default), and whether to move Micro Grain with lens correction to the GPU (about 1–2 weeks; today about 55 s on the MacBook Neo when both are on). Steve, Nov 22: after other testing, smaller bug fixes and feature tweaks | Decision | [Denoise](modules/denoise.md#7-open-work-and-next-steps) |
+
+Before v1: keep the Denoise research adapters and QUAL switches for now, then clean them up before release.
+
+Next Mac session: close the small macOS/Linux export overwrite race with the OS exclusive rename (rename only if absent).
 
 ## 8. How the documents are kept
 
