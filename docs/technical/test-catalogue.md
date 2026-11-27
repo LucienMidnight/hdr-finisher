@@ -46,7 +46,7 @@ Source: `codebase/tests/inventory.json`. Seconds are summed case time, not paral
 | tests/delivery-memory-ack.test.js | delivery idle reports await the main process collection acknowledgement | 1 | 0.0025 | unknown |  |
 | tests/delivery-settings.test.js | delivery setting saves a CPU override and can turn it off | 2 | 0.0025 | unknown |  |
 | tests/denoise-analysis-singleflight.test.js | Denoise method controls recover after a rejected save, missing GPU, or expired preparation | 8 | 0.9084 | unknown |  |
-| tests/denoise-compare-presentation.test.js | hdr standard split-vertical waits for and presents its denoised comparison | 40 | 0.8207 | unknown |  |
+| tests/denoise-compare-presentation.test.js | hdr standard split-vertical waits for and presents its denoised comparison | 41 | 0.8207 | unknown |  |
 | tests/denoise-measurement-fit.test.js | CPU and GPU host fit sparse or repeated brightness observations alike | 11 | 0.0069 | unknown |  |
 | tests/denoise-ownership.test.js | Denoise off starts saving its own photo alongside a delayed redraw | 21 | 1.2629 | unknown |  |
 | tests/denoise-preview-presentation.test.js | panning back reveals a covering Clean Grain picture immediately and skips a stale grade | 49 | 2.4151 | unknown |  |

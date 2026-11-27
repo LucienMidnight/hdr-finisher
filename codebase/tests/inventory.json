@@ -256,7 +256,7 @@
       "suite": "node",
       "area": "denoise",
       "purpose": "hdr standard split-vertical waits for and presents its denoised comparison",
-      "test_count": 40,
+      "test_count": 41,
       "seconds": {
         "windows": 0.8207,
         "mac": null

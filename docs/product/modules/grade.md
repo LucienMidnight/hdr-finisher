@@ -1,3 +1,13 @@
+## November 27: keep the denoised rendition in Compare
+
+A lane switch keeps the already finished whole picture in the comparison
+canvas when the GPU can copy it safely. Switching to SDR for Match no longer
+discards the HDR picture and waits for a second, much slower CPU render of
+the same grade. Two split views and two side-by-side views reuse the picture
+while its source, geometry and HDR edit are unchanged. If the current frame
+cannot be copied or is no longer current, Compare still renders the actual
+lane-specific grade on the backend. It does not substitute an undenoised frame.
+
 ## November 27: make Tone sliders peers
 
 Steve approved full-width peer sliders in Global HDR and SDR Tone and in

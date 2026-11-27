@@ -90,3 +90,37 @@ test('a comparison decoded after leaving the layout cannot replace its image', a
   assert.equal(await pending, false);
   assert.equal(f.image.src, undefined);
 });
+
+test('a settled denoised picture survives Match and all four layouts without a CPU rerender', async () => {
+  const f = fixture();
+  const canvas = f.context.els.comparisonCanvas;
+  const {state} = f;
+  Object.assign(state, { currentView:'hdr', laneSwitchGeneration:1, acceptedPresentation: {
+    lane:'hdr', generation:1, exact:true, transport:'WebGPU', sourceSerial:42,
+  }});
+  Object.assign(f.context, {denoiseNoiseViewActive:()=>false, refinementProxyLongEdge:()=>1600});
+  let copied = false;
+  Object.assign(state.gpuPreview, {available:true, copyComparisonPicture:async (surface, options)=>{
+    assert.equal(surface,canvas);
+    assert.equal(options.isCurrent(),true);
+    assert.equal(options.sourceSerial,42);
+    copied = true;
+    return {width:1600,height:1000};
+  }});
+  vm.runInContext(declarations('retainDenoisedComparison'),f.context);
+  await f.context.retainDenoisedComparison('hdr',1);
+  assert.equal(copied,true);
+  state.currentView='sdr';
+  state.previewGeneration.sdr++; // Match invalidates only the SDR generation.
+  for (const layout of ['split-vertical','split-horizontal','side-horizontal','side-vertical']) {
+    state.compareLayout=layout;
+    assert.equal(await f.context.renderComparisonPreview('hdr',{force:true}),true);
+    assert.equal(canvas.style.display,'block');
+    assert.deepEqual(f.events,[]);
+  }
+  state.previewGeneration.hdr++;
+  const stale=f.context.renderComparisonPreview('hdr',{force:true});
+  assert.deepEqual(f.events,[['backend','hdr',true]],'An HDR edit cannot reuse the retained pixels');
+  f.finish();
+  assert.equal(await stale,false,'The older fallback frame cannot publish');
+});

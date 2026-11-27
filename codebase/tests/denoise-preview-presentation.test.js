@@ -247,6 +247,7 @@ test("switching lanes after a hard Denoise failure uses the CPU without another 
     previewNeedsRefinement: () => true, endBeforePeek() {}, abandonPerspectiveDraft() {}, suspendGradeInstruments() {},
     renderLaneChrome() {}, renderLocalAdjustments() {}, syncCurveControlsFromState() {}, renderCurveChannelTabs() {},
     drawCurveEditor() {}, renderReadouts() {}, refreshOverlay() {}, refreshScopes() {}, prepareInactivePreview() {} });
+  context.retainDenoisedComparison = async () => {};
   vm.runInContext(declarations("switchLane", "previewSourceCapacityRefused"), context);
   await context.switchLane("sdr");
   assert.deepEqual(calls, ["gpu", "cpu-cache", "denoised-cpu"]);

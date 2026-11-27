@@ -5547,6 +5547,54 @@
       return false;
     }
 
+    // A lane switch can keep the image the viewer already rendered before
+    // the other lane takes over the single Denoise selector. Use the same
+    // compositor/format as the original, not a tone-mapped canvas screenshot.
+    async copyComparisonPicture(canvas, {sessionId, lane, generation, geometry, sourceSerial, maxLongEdge, isCurrent}) {
+      const primary = this.canvas;
+      const frame = this.lastPresentedFrame;
+      if (!this.available || primary.hdrFrameRegion || frame?.sessionId !== sessionId
+        || frame.lane !== lane || frame.applicationGeneration !== generation || frame.geometrySignature !== geometry
+        || primary.width !== frame.width || primary.height !== frame.height
+        || Math.max(frame.width, frame.height) > maxLongEdge) return null;
+      const source = this.scopeSources.get(primary);
+      const direct = frame.execution === "direct" && source?.serial === sourceSerial
+        && source?.comparisonComposite && source.applicationGeneration === generation;
+      const target = frame.execution === "tiled" && this.presentationTarget;
+      const tiled = target?.valid && !target.region && target.width === frame.width
+        && target.height === frame.height && target.format === frame.format;
+      if (!direct && !tiled) return null;
+      const current = () => isCurrent() && this.lastPresentedFrame === frame
+        && this.scopeSources.get(primary) === source && (!tiled || this.presentationTarget === target);
+      const {width, height, format} = frame;
+      if (!await this.admitGradeMemory("comparison-picture", () => this.gradeCanvasSwapGrowth(canvas, width, height, format), current)
+        || !current()) return null;
+      const context = canvas.getContext("webgpu");
+      if (!context) return null;
+      const probe = this.surfaceProbeCanvas();
+      const surface = this.configureSurface(probe, probe.getContext("webgpu"), lane === "hdr");
+      if (surface.format !== format) return null;
+      if (canvas.width !== width) canvas.width = width;
+      if (canvas.height !== height) canvas.height = height;
+      this.configureSurface(canvas, context, lane === "hdr");
+      const texture = context.getCurrentTexture();
+      const encoder = this.device.createCommandEncoder();
+      if (tiled) {
+        encoder.copyTextureToTexture({texture: target.texture}, {texture}, {width, height});
+      } else {
+        const pass = encoder.beginRenderPass({colorAttachments: [{
+          view: texture.createView(), loadOp: "clear", storeOp: "store", clearValue: {r: 0, g: 0, b: 0, a: 1},
+        }]});
+        pass.setPipeline(this.pipelineFor(format).composite);
+        pass.setBindGroup(0, source.comparisonComposite);
+        pass.draw(3);
+        pass.end();
+      }
+      this.device.queue.submit([encoder.finish()]);
+      this.noteGradeCanvasSwap(canvas, format);
+      return { width, height, resourceGeneration: this.resourceGeneration };
+    }
+
     async renderTo(canvas, sessionId, lane, adjustments, curveSampler, longEdge = 1600, localAdjustments = [], editRevision = 0, maskOverlay = null, referenceWhiteNits = 203, sourceSize = null, sourceOptions = null) {
       const renderFrame = () => this.renderToFrame(canvas, sessionId, lane, adjustments, curveSampler, longEdge,
         localAdjustments, editRevision, maskOverlay, referenceWhiteNits, sourceSize, sourceOptions);
@@ -6446,6 +6494,7 @@
         spatialTexture: intermediate.spatialATexture || intermediate.finishTexture,
         params: new Float32Array(params),
         sessionId,
+        comparisonComposite: canvas === this.canvas && overlayIndex < 0 ? compositeBindGroup : null,
       });
       if (this.instrumentationEnabled) {
         const metric = {

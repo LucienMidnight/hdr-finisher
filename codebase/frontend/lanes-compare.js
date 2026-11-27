@@ -40,6 +40,7 @@ function clearComparisonPreview({ keepRenderedState = false } = {}) {
     state.comparisonRenderedLane = null;
     state.comparisonRenderedGeneration = null;
     state.comparisonRenderedGeometry = null;
+    state.comparisonPresentation = null;
     state.beforeRenderedKey = null;
   }
 }
@@ -163,6 +164,10 @@ async function switchLane(lane) {
   if (outgoing !== lane && state.denoiseRuntime[outgoing]?.analysisInFlight) {
     invalidateDenoisePreparation(outgoing);
   }
+  // Keep a settled denoised picture before switching the viewer's sole GPU
+  // selector. The inactive lane otherwise has to wait for a full CPU grade.
+  if (outgoing !== lane) await retainDenoisedComparison(outgoing, switchGeneration);
+  if (switchGeneration !== state.laneSwitchGeneration) return;
   state.currentView = lane;
   state.renderCoordinator?.noteActiveLane(lane);
   state.selectedCurvePoint = Math.min(state.selectedCurvePoint ?? 0, currentCurveValues().length - 1);
@@ -424,6 +429,36 @@ function renderCompareLayout() {
   renderCompareStatus();
 }
 
+async function retainDenoisedComparison(lane, switchGeneration) {
+  const accepted = state.acceptedPresentation;
+  const sessionId = state.session?.session_id;
+  const generation = state.previewGeneration[lane];
+  const geometry = geometrySignature();
+  if (!sessionId || state.compareMode === "before" || state.comparePeekActive
+    || state.localShowMask || denoiseNoiseViewActive(lane) || !comparisonNeedsDenoise(lane)
+    || accepted?.lane !== lane || accepted.generation !== generation || !accepted.exact
+    || accepted.transport !== "WebGPU" || accepted.grainRoute?.route === "original") return;
+  const isCurrent = () => state.laneSwitchGeneration === switchGeneration && state.session?.session_id === sessionId
+    && state.currentView === lane && state.previewGeneration[lane] === generation
+    && state.acceptedPresentation === accepted && geometrySignature() === geometry;
+  try {
+    const picture = await state.gpuPreview?.copyComparisonPicture?.(els.comparisonCanvas, {
+      sessionId, lane, generation, geometry, sourceSerial: accepted.sourceSerial,
+      maxLongEdge: Math.max(settledProxyLongEdge(), refinementProxyLongEdge()), isCurrent,
+    });
+    if (!picture || !isCurrent()) return;
+    state.comparisonRenderedLane = lane;
+    state.comparisonRenderedGeneration = generation;
+    state.comparisonRenderedGeometry = geometry;
+    state.comparisonPresentation = {
+      lane, generation, longEdge: Math.max(picture.width, picture.height),
+      transport: "WebGPU", exact: true, retained: true, sessionId, resourceGeneration: picture.resourceGeneration,
+    };
+  } catch (error) {
+    console.warn("Could not retain denoised picture for Compare.", error);
+  }
+}
+
 async function renderComparisonPreview(lane, { force = false } = {}) {
   if (state.compareMode === "before") {
     return state.compareLayout === "single" ? false : renderBeforePreview({ force });
@@ -438,10 +473,25 @@ async function renderComparisonPreview(lane, { force = false } = {}) {
     && state.compareLayout === layout && state.compareMode !== "before"
     && lane !== state.currentView && generation === state.previewGeneration[lane]
     && gradeSourceIdentity(lane) === sourceIdentity && geometrySignature() === signature;
-  const alreadyRendered = state.comparisonRenderedLane === lane
+  const presentation = state.comparisonPresentation;
+  const matches = state.comparisonRenderedLane === lane
     && state.comparisonRenderedGeneration === generation
-    && state.comparisonRenderedGeometry === signature
+    && state.comparisonRenderedGeometry === signature;
+  const retained = presentation?.retained && presentation.sessionId === sessionId
+    && state.gpuPreview?.available && presentation.resourceGeneration === state.gpuPreview.resourceGeneration
+    && comparisonNeedsDenoise(lane);
+  const alreadyRendered = matches && (!presentation?.retained || retained)
     && (els.comparisonCanvas.style.display !== "none" || els.comparisonImage.style.display !== "none");
+  // Match edits the SDR grade, not the retained HDR pixels. The same
+  // finished picture also works when moving between split and side-by-side.
+  if (matches && retained) {
+    els.previewSecondaryPane.dataset.lane = lane;
+    els.comparisonImage.style.display = "none";
+    els.comparisonCanvas.style.display = "block";
+    applyZoomGeometry();
+    renderCompareStatus();
+    return true;
+  }
   if (!force && alreadyRendered) return true;
 
   els.previewSecondaryPane.dataset.lane = lane;
