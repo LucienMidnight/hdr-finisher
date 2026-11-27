@@ -63,13 +63,25 @@ body mean ΔE 2000 target of 2. P1011900 with S-luma measured 2.52 and stayed
 Needs review. The acceptance gates are unchanged. The small local review is
 at `codebase/output/review/shared-curves/index.html`.
 
+## November 27: SDR Match aims for brighter main tones
+
+Steve approved a roughly one-stop increase to the Match target: "1 stop
+following textbook convention sounds right. Just like in HDR, I expect
+myself and other users to spend time tuning highlights if anything. The
+main tones should be as similar as possible after the button-press."
+
+Match uses 0.985 linear placement at HDR reference white before a smooth
+shoulder starting at 0.75. The body/shoulder split follows the new target.
+Generated SDR placement, existing saved grades, and Match safety thresholds
+are unchanged. Highlight appearance remains open for Steve's visual review.
+
 ## November 27: SDR Match fits the picture
 
 Steve approved fitting Exposure first, Contrast only when HDR uses it, five
 gentle Exposure Bands points and a fitted Highlight Compression Start. Match
 chooses between Soft Ceiling and Peak Fit. The five SDR Tone zone strengths stay
 neutral. No residual RGB curves or colour-slider corrections are authored.
-The target, highlight output rendering and Match acceptance gates stay unchanged.
+This fit initially kept the old target. Highlight output rendering and Match acceptance gates stay unchanged.
 
 HSL and Curves have one-shot copy actions. Tone and Highlight Compression
 have one-shot fitting actions that preserve the other SDR modules. Each is

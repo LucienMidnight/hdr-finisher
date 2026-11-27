@@ -15,11 +15,12 @@ import numpy as np
 import pytest
 import tifffile
 
-from hdr_finisher.adjustments import SDR_DISPLAY_REFERENCE_WHITE, _acescg_luma, apply_adjustments
+from hdr_finisher.adjustments import _acescg_luma, apply_adjustments
 from hdr_finisher.color_context import RenderColorContext
 from hdr_finisher.models import AdjustmentState, LocalAdjustment, PreviewKind
 from hdr_finisher.sdr_match import (
     MATCH_SHOULDER_START,
+    match_uncompressed_luma,
     _quality_metrics,
     build_sdr_match_target,
     materialize_sdr_match,
@@ -176,7 +177,7 @@ def test_page_rendered_candidates_give_a_cpu_certified_recipe() -> None:
     settled = apply_adjustments(source, adjustments, PreviewKind.HDR, include_grain=False,
                                 local_adjustments=locals_, color_context=RenderColorContext(203),
                                 source_pixel_scale=1.0)
-    body = np.maximum(_acescg_luma(settled), 0.0) / np.float32(0.18) * SDR_DISPLAY_REFERENCE_WHITE <= MATCH_SHOULDER_START
+    body = match_uncompressed_luma(_acescg_luma(settled)) <= MATCH_SHOULDER_START
     exported = apply_adjustments(source, result.adjustments, PreviewKind.SDR, include_grain=False,
                                  local_adjustments=result.local_adjustments, source_pixel_scale=1.0)
     assert result.quality == _quality_metrics(build_sdr_match_target(settled), exported, body)

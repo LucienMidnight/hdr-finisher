@@ -15,7 +15,7 @@ from typing import Iterator, Literal
 
 import numpy as np
 
-from .adjustments import SDR_DISPLAY_REFERENCE_WHITE, _acescg_luma, _linear_luma, apply_adjustments
+from .adjustments import _acescg_luma, _linear_luma, apply_adjustments
 from .color import acescg_to_linear_srgb, linear_srgb_to_acescg
 from .color_context import RenderColorContext
 from .finishing import apply_geometry, geometry_output_dimensions
@@ -36,8 +36,10 @@ from .sdr_match_remote import RemoteCandidateBridge, RemoteCandidateUnavailable
 from .sdr_match_tone import PictureToneFit
 
 
-MATCH_SHOULDER_START = np.float32(0.90)
-MATCH_SHOULDER_WIDTH = np.float32(0.10)
+# Match-only placement. Ordinary generated SDR and saved recipes are unchanged.
+MATCH_REFERENCE_WHITE = np.float32(0.985)
+MATCH_SHOULDER_START = np.float32(0.75)
+MATCH_SHOULDER_WIDTH = np.float32(1.0) - MATCH_SHOULDER_START
 MATCH_ANALYSIS_EDGE = 384
 MatchSection = Literal["whole", "tone", "highlight"]
 MATCH_REVIEW_P95_LUMA_LIMIT = 0.06
@@ -77,10 +79,15 @@ class MaterializedSDRMatch:
     link_fallback_reason: str | None = None
 
 
-def automatic_sdr_match_luma(hdr_luma: np.ndarray) -> np.ndarray:
-    """Place reference-relative HDR luminance on SDR and roll only its top 10%."""
+def match_uncompressed_luma(hdr_luma: np.ndarray) -> np.ndarray:
+    """Place reference-relative HDR luma on SDR before the Match shoulder."""
     positive = np.maximum(np.asarray(hdr_luma, dtype=np.float32), 0.0)
-    normalized = positive / np.float32(0.18) * SDR_DISPLAY_REFERENCE_WHITE
+    return positive / np.float32(0.18) * MATCH_REFERENCE_WHITE
+
+
+def automatic_sdr_match_luma(hdr_luma: np.ndarray) -> np.ndarray:
+    """Keep the brighter main tones linear, then roll off toward SDR white."""
+    normalized = match_uncompressed_luma(hdr_luma)
     with np.errstate(over="ignore", under="ignore", invalid="ignore"):
         shoulder = np.float32(1.0) - MATCH_SHOULDER_WIDTH * np.exp(
             -(normalized - MATCH_SHOULDER_START) / MATCH_SHOULDER_WIDTH
@@ -227,11 +234,7 @@ def _materialize_sdr_match_impl(
         raise SDRMatchMaterializationError("The HDR analysis produced invalid values.")
     with _match_stage("target_build"):
         target = build_sdr_match_target(settled_hdr)
-    hdr_normalized_luma = (
-        np.maximum(_acescg_luma(settled_hdr), 0.0)
-        / np.float32(0.18)
-        * SDR_DISPLAY_REFERENCE_WHITE
-    )
+    hdr_normalized_luma = match_uncompressed_luma(_acescg_luma(settled_hdr))
     body = hdr_normalized_luma <= MATCH_SHOULDER_START
     if target.shape[:2] != apply_geometry(source, adjustments.shared.geometry).shape[:2]:
         raise SDRMatchMaterializationError("The HDR analysis target has inconsistent geometry.")
@@ -258,7 +261,8 @@ def _materialize_sdr_match_impl(
         return _render_candidate(source, result_adjustments, result_locals, source_pixel_scale)
 
     with _match_stage("picture_tone_fit"):
-        fit = PictureToneFit(target, body, render, MATCH_REVIEW_P95_LUMA_LIMIT)
+        fit = PictureToneFit(target, body, render, MATCH_REVIEW_P95_LUMA_LIMIT,
+                             shoulder_start=MATCH_SHOULDER_START)
         result_adjustments.sdr, trial = fit.fit(
             result_adjustments.sdr, adjustments.hdr,
             tone=section != "highlight", shoulder=section != "tone",
@@ -404,13 +408,14 @@ def _semantic_sdr_translation(adjustments: AdjustmentState, settled_hdr: np.ndar
     _translate_color_grading_wheels(sdr.color_grading, hdr.color_grading)
 
     luma = np.maximum(_acescg_luma(settled_hdr), 0.0)
-    normalized = luma / np.float32(0.18) * SDR_DISPLAY_REFERENCE_WHITE
+    normalized = match_uncompressed_luma(luma)
     # Use the complete highlight population, not an extreme percentile. A
     # percentile was driven to effectively zero by a few very bright pixels,
     # which removed legitimate highlight color and film response from the SDR
     # body. Weight the shoulder derivative by the region where qualified
     # controls actually become visible.
-    highlight_support = np.clip((normalized - np.float32(0.35)) / np.float32(0.55), 0.0, 1.0)
+    support_start = np.float32(0.35)
+    highlight_support = np.clip((normalized - support_start) / (MATCH_SHOULDER_START - support_start), 0.0, 1.0)
     support_sum = float(np.sum(highlight_support))
     highlight_factor = (
         float(np.sum(highlight_support * automatic_sdr_match_derivative(normalized)) / support_sum)
@@ -445,7 +450,7 @@ def _materialize_local_grades(
     if not local_adjustments:
         return []
     hdr_luma = np.maximum(_acescg_luma(settled_hdr), 0.0)
-    normalized = hdr_luma / np.float32(0.18) * SDR_DISPLAY_REFERENCE_WHITE
+    normalized = match_uncompressed_luma(hdr_luma)
     derivative = automatic_sdr_match_derivative(normalized)
     materialized: list[LocalAdjustment] = []
     for local in local_adjustments:
@@ -685,7 +690,7 @@ def _quality_target(
 
 def _highlight_order_is_safe(settled_hdr: np.ndarray, candidate: np.ndarray) -> bool:
     source_luma = np.maximum(_acescg_luma(settled_hdr), 0.0)
-    normalized = source_luma / np.float32(0.18) * SDR_DISPLAY_REFERENCE_WHITE
+    normalized = match_uncompressed_luma(source_luma)
     output = _linear_luma(candidate)
     selection = normalized > MATCH_SHOULDER_START
     if int(np.count_nonzero(selection)) < 8:

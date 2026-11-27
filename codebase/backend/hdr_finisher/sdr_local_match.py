@@ -12,7 +12,8 @@ from .color_context import RenderColorContext
 from .local_adjustments import mask_influence_opacity
 from .models import LocalGrade, PreviewKind
 from .sdr_gamut import compress_to_srgb_gamut, linear_srgb_to_oklab
-from .sdr_match import SDRMatchMaterializationError, _copy_curves, _quality_metrics, _translate_local_grade, build_sdr_match_target
+from .sdr_match import (MATCH_SHOULDER_START, SDRMatchMaterializationError, _copy_curves,
+                        _quality_metrics, _translate_local_grade, build_sdr_match_target)
 
 
 LOCAL_MATCH_EDGE = 256
@@ -79,7 +80,8 @@ def fit_local_sdr(source, adjustments, locals_, target_id, *, reference_white_ni
         return LocalMatchResult(None, "No change: the mask is empty or has negligible coverage.", {})
     if float(np.max(np.abs(change[support]))) < 1e-5:
         return LocalMatchResult(None, "No change: this adjustment has no visible HDR contribution.", {})
-    body = support & (_linear_luma(target) <= .9) & (_linear_luma(target) >= .0008)
+    target_luma = _linear_luma(target)
+    body = support & (target_luma <= MATCH_SHOULDER_START) & (target_luma >= .0008)
     target_lab = linear_srgb_to_oklab(target)
 
     def loss(pixels):

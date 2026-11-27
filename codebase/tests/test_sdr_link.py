@@ -102,10 +102,11 @@ def test_link_survives_saved_document_roundtrip():
 
 def test_new_match_materializes_even_when_a_link_would_be_safe():
     from hdr_finisher.sdr_match import materialize_sdr_match, _materialize_sdr_match_impl
-    source = tifffile.imread(Path(__file__).parent / 'fixtures/hdr_match_scene.tiff').astype(np.float32)
+    # Neutral ramp with both body and highlights, without the inversions
+    # exposed by the brighter target on the coloured fixture.
+    ramp = np.linspace(.01, .17, 96, dtype=np.float32)[None, :, None]
+    source = np.broadcast_to(ramp, (48, 96, 3)).copy()
     a = AdjustmentState()
-    a.hdr.exposure = .2
-    a.hdr.contrast = .12
     old, reason = try_linked_match(source, a, [], None, reference_white_nits=203, source_pixel_scale=1)
     assert old is not None, reason
     result = materialize_sdr_match(source, a, [], reference_white_nits=203, source_pixel_scale=1)

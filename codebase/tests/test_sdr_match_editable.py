@@ -7,7 +7,6 @@ from hdr_finisher.sessions import SessionStore
 from hdr_finisher.library_marks import LibraryMarks
 from hdr_finisher.library_grades import LibraryGrades
 from hdr_finisher.library_paste import LibraryPaste
-from hdr_finisher.sdr_link import try_linked_match
 
 
 def session(tmp_path):
@@ -72,10 +71,12 @@ def test_match_tweak_history_sidecar_and_paste_keep_the_visible_recipe(tmp_path)
 def test_saved_linked_document_still_renders_identically_after_project_roundtrip(tmp_path):
     from hdr_finisher.projects import save_project, open_project
     _, store, s = session(tmp_path)
-    old, reason = try_linked_match(s.image, s.adjustments, [], None,
-        reference_white_nits=203, source_pixel_scale=1)
-    assert old is not None, reason
-    s.adjustments = old.adjustments
+    # A saved link is independent of today's Match analysis target.
+    s.adjustments.sdr.linked_to_hdr = True
+    s.adjustments.sdr.use_authored_base = False
+    s.adjustments.sdr.output_exposure = .2
+    s.adjustments.sdr.highlight_section_enabled = True
+    s.adjustments.sdr.highlight_compression_start_percent = 86.
     before = apply_adjustments(s.image, s.adjustments, PreviewKind.SDR)
     project = tmp_path / 'linked.hdrfinisher'; save_project(s, project)
     reopened = open_project(store, project)

@@ -2,8 +2,20 @@
 
 ## November 27: picture-based independent Match
 
-Whole-photo Match uses the unchanged settled-HDR target, with a shoulder above
-90% of SDR white. It measures the actual HDR and SDR render paths at a bounded
+Whole-photo Match builds a temporary target from the settled HDR picture.
+Relative to HDR reference white (scene-linear 0.18), the linear placement is
+`x = luma / 0.18 * 0.985`, one stop above the previous 100/203 placement.
+Above the 0.75 knee the target rolls off as `1 - 0.25 * exp(-(x - 0.75)/0.25)`.
+Thus reference white is already on the shoulder (~90% of SDR white after
+roll-off), and below the knee the main tones retain their brighter linear
+placement. The luma ratio preserves colour before the normal sRGB gamut
+compression. Body metrics and highlight ordering use this knee, as do the
+shoulder derivative for semantic translation and the targets for Local Match.
+Standalone Local Match still transfers only the HDR local's relative change.
+
+This is not a change to ordinary generated SDR placement (still 100/203),
+the saved recipe schema, or how an existing SDR grade renders. Match measures
+the actual HDR and SDR render paths at a bounded
 384-pixel proxy, omitting stochastic grain for fitting. It first fits Exposure,
 optional Contrast (only if used by HDR), and Highlight Compression Start.
 Then it places five Exposure Bands points and penalizes large adjustments.
@@ -24,7 +36,7 @@ Candidates use the existing page WebGPU bridge. The chosen recipe is measured
 again on CPU, using the unchanged body gates and highlight-order diagnostic.
 If the GPU route fails or produces an unsafe fit, the same search restarts once
 on CPU. Match still reports matched, needs review or refusal. The fit does
-not change the target, safety limits or stored recipe schema.
+not change safety limits or the stored recipe schema.
 
 SDR HSL and Curves can copy HDR settings with one Undo. Curves copy the points
 literally on the shared scale used in both renditions. SDR Tone and Highlight

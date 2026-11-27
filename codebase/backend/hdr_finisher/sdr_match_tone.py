@@ -49,7 +49,7 @@ class _Trial:
 
 
 class PictureToneFit:
-    def __init__(self, target, body, render, review_luma_limit):
+    def __init__(self, target, body, render, review_luma_limit, *, shoulder_start):
         self.body = body & (_linear_luma(target) >= .0008)
         if not self.body.any():
             self.body = body if body.any() else np.ones(body.shape, dtype=bool)
@@ -59,6 +59,7 @@ class PictureToneFit:
         self.target_luma = _linear_luma(target)
         self.render = render
         self.review_luma_limit = review_luma_limit
+        self.shoulder_start_percent = float(shoulder_start) * 100.
 
     def measure(self, sdr, *, fitting_tone):
         pixels = self.render(sdr)
@@ -157,16 +158,14 @@ class PictureToneFit:
             upper = min(upper, right.input_ev + right.adjustment_ev - .001 - center)
         return "adjustment_ev", lower, upper
 
-    @staticmethod
-    def _seed_shoulder(sdr: SDRAdjustments, hdr, mode):
+    def _seed_shoulder(self, sdr: SDRAdjustments, hdr, mode):
         sdr.highlight_section_enabled = True
         sdr.highlight_compression_mode = mode
+        sdr.highlight_compression_start_percent = self.shoulder_start_percent
         if mode == "soft_ceiling":
             sdr.highlight_compression_softness = 100.
-            sdr.highlight_compression_start_percent = 90.
             sdr.highlight_compression_color_handling = "preserve_color"
         else:
-            sdr.highlight_compression_start_percent = 75.
             sdr.highlight_compression_peak_measurement = "robust"
             for name in ("highlight_compression_color_handling", "highlight_compression_peak_detail",
                          "highlight_compression_bias", "highlight_compression_attenuation"):

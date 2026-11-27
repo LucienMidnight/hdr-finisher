@@ -176,7 +176,7 @@ def test_calibrated_scene_materializes_into_normal_visible_modules() -> None:
     target_luma = np.einsum("...c,c->...", target, SDR_LUMA, optimize=True)
     candidate_luma = np.einsum("...c,c->...", candidate, SDR_LUMA, optimize=True)
     source_luma = np.einsum("...c,c->...", settled_hdr, HDR_LUMA, optimize=True)
-    uncompressed = source_luma / 0.18 * (100.0 / 203.0)
+    uncompressed = source_luma / 0.18 * 0.985
     body = uncompressed <= MATCH_SHOULDER_START
     body_p95 = float(np.percentile(np.abs(target_luma[body] - candidate_luma[body]), 95))
     assert body_p95 <= (0.03 if result.status == "matched" else 0.05)
