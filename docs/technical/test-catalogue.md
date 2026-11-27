@@ -33,7 +33,7 @@ Source: `codebase/tests/inventory.json`. Seconds are summed case time, not paral
 | tests/app-dialog.test.js | Escape in the open app dialog allows native cancel without reaching page controls | 2 | 0.0074 | unknown |  |
 | tests/appearance.test.js | accent choices survive preference sanitization and match browser normalization | 9 | 0.6906 | unknown |  |
 | tests/backend-log.test.js | slow diagnostic disk has bounded buffers and reports omitted records | 1 | 0.0349 | unknown |  |
-| tests/backend-startup.test.js | startup extends the idle deadline for genuine progress | 5 | 2.1308 | unknown |  |
+| tests/backend-startup.test.js | startup extends the idle deadline for genuine progress | 7 | 9.4448 | unknown |  |
 | tests/batch-grid.test.js | batch progress groups each photo without changing badge precedence or retained rows | 3 | 0.0202 | unknown |  |
 | tests/brush-native-feather.test.js | native Feather plans the export reduction grid and needs no viewport halo | 18 | 6.2618 | unknown |  |
 | tests/brush-native-shift.test.js | native Shift plan uses native sigma and the complete summed finite halo | 8 | 2.6311 | unknown |  |
@@ -3189,6 +3189,15 @@ Launcher exit report: the driver result first, a shutdown problem on its own lin
 - Deadline: parent minutes. Parent attempt deadline applies.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Parent driver(s): tests/startup-state.js.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline.
+
+#### `tests/owned-electron-launch.cjs`
+
+Owned Electron process capture at spawn and verified cleanup before DevTools connects. Shared launcher helper; run through the standard Electron or native launcher, never standalone.
+
+- Expected minutes: Windows unknown; Mac unknown.
+- Deadline: parent minutes. Parent attempt deadline applies.
+- Requirements: Repository setup completed; Node/npm and Electron dependencies installed. Disposable test profile and shared GPU run lock. Parent drivers: tests/startup-state.js and desktop/tests/electron-smoke.js.
+- Platforms: win, mac, linux. Windows verifies process trees by PID and creation time; POSIX owns process groups.
 
 #### `tests/run-in-electron.js`
 

@@ -74,9 +74,9 @@
       "suite": "node",
       "area": "backend",
       "purpose": "startup extends the idle deadline for genuine progress",
-      "test_count": 5,
+      "test_count": 7,
       "seconds": {
-        "windows": 2.1308,
+        "windows": 9.4448,
         "mac": null
       },
       "markers": [],

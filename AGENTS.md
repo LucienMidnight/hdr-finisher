@@ -75,7 +75,7 @@ encoders/test photos are read-only. Real GPU/release checks remain sequential
 and keep the shared lock and all rules below unchanged.
 
 
-Everyday test groups are listed at file level in `codebase/tests/inventory.json` (schema version 1). Each entry records suite, area, purpose, expanded test count, Windows measured seconds, separate unmeasured Mac seconds (`null`), markers/requirements and platform skip conditions. Refresh with `codebase/tools/test-inventory.py` using its documented pytest measurement plugin and Node reporter; the fast inventory test rejects missing test files. `slow` means a measured case over five seconds; `serial` still exclusively controls the parallel/serial phases. Requirements describe optional real resources; GPU protocol simulations do not require a GPU.
+Everyday test groups and expanded case counts live in `codebase/tests/inventory.json` (schema version 1). Each entry records suite, area, purpose, expanded test count, Windows measured seconds, separate unmeasured Mac seconds (`null`), markers/requirements and platform skip conditions. Refresh with `codebase/tools/test-inventory.py` using its documented pytest measurement plugin and Node reporter; the fast inventory test rejects missing test files. `slow` means a measured case over five seconds; `serial` still exclusively controls the parallel/serial phases. Requirements describe optional real resources; GPU protocol simulations do not require a GPU.
 
 ### Release points only
 
@@ -879,7 +879,9 @@ Completed RAW overlays (pending visual sign-off): `docs/technical/archive/briefs
 ### Electron test lifecycle (27 November 2026)
 
 Always hold the GPU run lock. Launch through `tests/run-in-electron.js` or
-`tests/run-native-electron.js`; plain launch tools must set
+`tests/run-native-electron.js`, which share `tests/owned-electron-launch.cjs`.
+Register shared helpers with real parent drivers in the release manifest; never
+run them standalone. Plain launch tools must set
 `HDR_FINISHER_TEST_MODE=1`, use a disposable user-data profile, and capture OS
 process ownership at spawn, before awaiting Playwright/DevTools. Backend and
 debug ports are OS-selected. Quit gracefully, then force and verify only the

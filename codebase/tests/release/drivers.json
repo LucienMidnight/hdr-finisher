@@ -11368,6 +11368,43 @@
       }
     },
     {
+      "path": "tests/owned-electron-launch.cjs",
+      "areas": [
+        "preview"
+      ],
+      "tier": "core",
+      "protects": "Owned Electron process capture at spawn and verified cleanup before DevTools connects.",
+      "launch": {
+        "method": "helper",
+        "via": [
+          "tests/startup-state.js",
+          "desktop/tests/electron-smoke.js"
+        ]
+      },
+      "brief": "Owned Electron process capture at spawn and verified cleanup before DevTools connects. Shared launcher helper; run through the standard Electron or native launcher, never standalone.",
+      "expectedMinutes": {
+        "win": null,
+        "mac": null
+      },
+      "deadlineMinutes": null,
+      "deadlinePolicy": "Parent attempt deadline applies.",
+      "requirements": [
+        "Repository setup completed; Node/npm and Electron dependencies installed.",
+        "Disposable test profile and shared GPU run lock.",
+        "Parent drivers: tests/startup-state.js and desktop/tests/electron-smoke.js."
+      ],
+      "platforms": {
+        "os": [
+          "win",
+          "mac",
+          "linux"
+        ],
+        "notes": [
+          "Windows verifies process trees by PID and creation time; POSIX owns process groups."
+        ]
+      }
+    },
+    {
       "path": "tests/run-in-electron.js",
       "areas": [
         "preview"

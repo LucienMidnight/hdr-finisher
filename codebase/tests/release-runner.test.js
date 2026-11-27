@@ -241,13 +241,13 @@ test('attempt deadlines use the latest complete success and reject polluted hist
   assert.equal(runner.launchFailed(-1073741502),true);
   assert.equal(runner.launchFailed(null),false);
 });
-async function fakeInvocations(t, variants, timeout, kill) {
+async function fakeInvocations(t, variants, timeout, kill, onChild = () => {}) {
   const dir = scratch(t), log = path.join(dir,'attempt.log'), fd = fs.openSync(log,'w');
   let active, capped = false;
   try {
     const results = await runner.runInvocations({executable:process.execPath,env:{}},
       variants.map(code=>['-e',code]), fd,
-      {stopped:()=>false,child:child=>{active=child;},cap:()=>{capped=true;}},
+      {stopped:()=>false,child:child=>{active=child;onChild(child);},cap:()=>{capped=true;}},
       Infinity, Date.now()+timeout, kill);
     return {results,log:fs.readFileSync(log,'utf8'),capped};
   } finally {
@@ -264,7 +264,14 @@ test('sleeping fake driver times out and exits before another invocation', async
   assert.doesNotMatch(r.log,/follow-up invocation/);
 });
 test('follow-up logs are labelled and share the primary deadline', async t => {
-  const r = await fakeInvocations(t,['console.log("primary");','setInterval(()=>{},1000)'],1000);
+  // Freeze the attempt clock while the real primary process starts/exits.
+  // Expire that same deadline only after the follow-up has been spawned.
+  t.mock.timers.enable({apis:['Date','setTimeout'],now:10000});
+  let launches = 0;
+  const r = await fakeInvocations(t,['console.log("primary");','setInterval(()=>{},1000)'],1000,
+    undefined, child => {
+      if (child && ++launches === 2) queueMicrotask(() => t.mock.timers.tick(1000));
+    });
   assert.equal(r.results[0].exitCode,0);
   assert.equal(r.results[1].timedOut,true);
   assert.match(r.log,/primary invocation/);
