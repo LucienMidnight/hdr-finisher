@@ -114,6 +114,8 @@ function sameBuffer(left, right) {
         lumaNeutral: curveNeutral(luma),
         globalCurvesCopied: curveKeys.every((name) => JSON.stringify(state.adjustments.sdr[name]) === JSON.stringify(state.adjustments.hdr[name])),
         fiveBands: state.adjustments.sdr.tone_equalizer_nodes.length === 5,
+        exposureKept: state.adjustments.sdr.exposure === state.adjustments.hdr.exposure,
+        outputComp: state.adjustments.sdr.output_exposure,
         zonesNeutral: ["blacks", "shadows", "midtones", "highlights", "whites"]
           .every(name => state.adjustments.sdr[name] === 0),
         localPoints: local.sdr_grade.luma_curve.length,
@@ -137,6 +139,7 @@ function sameBuffer(left, right) {
       };
     });
     if (!["matched", "needs_review"].includes(matched.status)
+      || !matched.exposureKept || matched.outputComp <= 0
       || !matched.highlightEnabled
       || !["soft_ceiling", "peak_fit"].includes(matched.highlightMode) || matched.lumaPoints !== 5
       || !matched.lumaNeutral || !matched.globalCurvesCopied || !matched.fiveBands || !matched.zonesNeutral || matched.localPoints !== 5
@@ -272,8 +275,8 @@ function sameBuffer(left, right) {
         keys: ["curves_section_enabled", "luma_curve", "red_curve", "green_curve", "blue_curve"],
         setup: { curves_section_enabled: false, red_curve: [[0, 0], [.5, .46], [1, 1]] }, copies: true },
       { group: "sdr-tone", button: "tone-match-hdr",
-        keys: ["tone_section_enabled", "exposure", "contrast", "blacks", "shadows", "midtones", "highlights", "whites",
-          "tone_equalizer_section_enabled", "tone_equalizer_nodes"], setup: { exposure: matchedDocument.global_adjustments.sdr.exposure + .15 } },
+        keys: ["tone_section_enabled", "exposure", "output_exposure", "contrast", "blacks", "shadows", "midtones", "highlights", "whites",
+          "tone_equalizer_section_enabled", "tone_equalizer_nodes"], setup: { exposure: matchedDocument.global_adjustments.sdr.exposure + .15, output_exposure: 0 } },
       { group: "sdr-highlights", button: "highlight-match-hdr",
         keys: ["highlight_section_enabled", "highlight_compression_mode", "highlight_compression_start_percent",
           "highlight_compression_softness", "highlight_compression_color_handling", "highlight_compression_peak_detail",
@@ -297,6 +300,12 @@ function sameBuffer(left, right) {
       for (const key of keys) {
         if (copies) assert.deepEqual(after.global_adjustments.sdr[key], expected.global_adjustments.hdr[key], button);
         expected.global_adjustments.sdr[key] = after.global_adjustments.sdr[key];
+      }
+      if (button === "tone-match-hdr") {
+        const slider = page.locator('input[data-path="sdr.output_exposure"]');
+        assert(await slider.isVisible());
+        assert((await page.locator('output[data-value-path="sdr.output_exposure"]').innerText()).endsWith(" EV"));
+        assert(after.global_adjustments.sdr.output_exposure > 0);
       }
       assert.notDeepEqual(after.global_adjustments.sdr, before.document.global_adjustments.sdr, button);
       assert.deepEqual(after, expected, `${button} changed another module`);

@@ -819,7 +819,7 @@ Signed Bayer AHD on all four CFA phases and orientations, finite negative scene 
 
 #### `tests/tone-zones-delivery.js`
 
-Frozen five-control Tone (Blacks, Shadows, Midtones, Highlights, Whites): GPU finished output equals CPU within perceptual limits, Proof equals export, HDR ceiling. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
+Frozen five-control Tone and nonzero SDR exposure comp after Film Look: GPU finished output equals CPU within perceptual limits, Proof equals export, HDR ceiling. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
 - Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
@@ -3500,7 +3500,7 @@ Solid HDR/SDR endpoint-channel pixels, global/local Option/Alt gestures, current
 
 #### `tests/tone-zones-delivery.js`
 
-Frozen five-control Tone (Blacks, Shadows, Midtones, Highlights, Whites): GPU finished output equals CPU within perceptual limits, Proof equals export, HDR ceiling. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
+Frozen five-control Tone and nonzero SDR exposure comp after Film Look: GPU finished output equals CPU within perceptual limits, Proof equals export, HDR ceiling. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
 - Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.

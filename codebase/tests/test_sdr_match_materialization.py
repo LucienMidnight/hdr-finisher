@@ -142,6 +142,8 @@ def test_calibrated_scene_materializes_into_normal_visible_modules() -> None:
     assert result.adjustments.sdr.use_authored_base is False
     assert result.adjustments.sdr.highlight_section_enabled is True
     sdr = result.adjustments.sdr
+    assert sdr.exposure == adjustments.hdr.exposure
+    assert sdr.output_exposure > 0.5
     assert sdr.highlight_compression_mode in {"soft_ceiling", "peak_fit"}
     assert sdr.highlight_compression_color_handling == (
         "preserve_color" if sdr.highlight_compression_mode == "soft_ceiling"
@@ -189,10 +191,7 @@ def test_calibrated_scene_materializes_into_normal_visible_modules() -> None:
     assert float(np.mean(candidate_luma[ordinary_highlights] >= 0.999)) < 0.01
 
     raised = result.adjustments.model_copy(deep=True)
-    if raised.sdr.linked_to_hdr:
-        raised.sdr.output_exposure += 0.5
-    else:
-        raised.sdr.exposure += 0.5
+    raised.sdr.output_exposure += 0.5
     raised_candidate = apply_adjustments(
         source,
         raised,

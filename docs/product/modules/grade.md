@@ -63,6 +63,17 @@ body mean ΔE 2000 target of 2. P1011900 with S-luma measured 2.52 and stayed
 Needs review. The acceptance gates are unchanged. The small local review is
 at `codebase/output/review/shared-curves/index.html`.
 
+## November 27: SDR exposure comp and Match
+
+Steve approved a separate **SDR exposure comp** slider below Exposure. In
+generated, authored and linked SDR it changes the finished picture after Film
+Look and Vignette, before Highlight Compression and the final gamut map.
+Zero EV leaves the SDR untouched. It remains active when Tone is bypassed.
+Match SDR and Match HDR tone keep Exposure at the effective HDR Exposure
+and fit this separate output gain to the brighter SDR Match target. Contrast,
+Exposure Bands and Highlight Compression remain editable. Match acceptance
+guards and the saved adjustment schema did not change.
+
 ## November 27: SDR Match aims for brighter main tones
 
 Steve approved a roughly one-stop increase to the Match target: "1 stop

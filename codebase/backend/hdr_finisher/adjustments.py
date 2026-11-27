@@ -238,7 +238,7 @@ def apply_fixed_source_adjustments(
             selection_origin=selection_origin,
         )
         result = acescg_to_linear_srgb(common) * SDR_SCENE_TO_DISPLAY_SCALE
-        result *= np.float32(2.0 ** adjustments.sdr.output_exposure)
+        result = apply_sdr_output_exposure(result, adjustments.sdr.output_exposure, out=result)
         if include_output_highlight_compression:
             return apply_sdr_output_highlight_compression(result, adjustments, anchor=highlight_anchor)
         return result.astype(np.float32, copy=False)
@@ -819,6 +819,13 @@ def apply_sdr_output_highlight_compression(
     return _compress_to_srgb_gamut(result)
 
 
+def apply_sdr_output_exposure(pixels: np.ndarray, exposure: float, *, out=None) -> np.ndarray:
+    """Gain in finished display-linear SDR, before measuring/compressing peaks."""
+    if exposure == 0.0:
+        return pixels
+    return np.multiply(pixels, np.float32(2.0 ** exposure), out=out)
+
+
 def _apply_sdr_adjustments(
     image: np.ndarray,
     adjustments: AdjustmentState,
@@ -929,6 +936,7 @@ def _apply_sdr_post_highlight_tail(
         result = _apply_film_look(result, adjustments, PreviewKind.SDR, include_grain=include_grain, frame_window=frame_window, source_pixel_scale=source_pixel_scale)
     if sdr.vignette_section_enabled:
         result = _apply_vignette(result, sdr.vignette, PreviewKind.SDR, frame_window=frame_window)
+    result = apply_sdr_output_exposure(result, sdr.output_exposure)
     if include_output_highlight_compression:
         return apply_sdr_output_highlight_compression(result, adjustments, anchor=highlight_anchor)
     # Delivery resizes/sharpens before applying the same final gamut boundary.
@@ -1498,6 +1506,8 @@ def _compress_sdr_highlights(
             )
             if bool(getattr(sdr, "tone_section_enabled", True)):
                 peak *= np.float32(2.0 ** float(getattr(sdr, "exposure", 0.0)))
+            if not getattr(sdr, "linked_to_hdr", False):
+                peak *= np.float32(2.0 ** float(getattr(sdr, "output_exposure", 0.0)))
         elif peak_override is not None:
             peak = np.float32(peak_override)
         else:

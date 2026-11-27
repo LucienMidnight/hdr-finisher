@@ -266,6 +266,7 @@ def _materialize_sdr_match_impl(
         result_adjustments.sdr, trial = fit.fit(
             result_adjustments.sdr, adjustments.hdr,
             tone=section != "highlight", shoulder=section != "tone",
+            reference_white_nits=reference_white_nits,
         )
         candidate = trial.pixels
         quality = _quality_metrics(target, candidate, body)

@@ -75,6 +75,41 @@ def test_linked_sdr_frame_uses_unclamped_hdr_scene(tmp_path):
         np.testing.assert_array_equal(actual, reference)
 
 
+@pytest.mark.parametrize("authored", [False, True])
+@pytest.mark.parametrize("exposure", [-1.25, .75])
+def test_sdr_output_exposure_after_film_before_shoulder(tmp_path, authored, exposure):
+    from hdr_finisher.adjustments import apply_sdr_output_highlight_compression
+    from hdr_finisher.cpu_strips import render_staged_grade
+    from hdr_finisher.delivery_frames import DeliveryFrame
+
+    source = np.random.default_rng(18).uniform(.02, .8, (37, 53, 3)).astype(np.float32)
+    reference = source * .37 if authored else None
+    state = AdjustmentState()
+    state.sdr.film_look.film_stock = "fujifilm_pro_400h"
+    state.sdr.film_look.grain_enabled = False
+    state.sdr.vignette.amount = -35
+    state.sdr.tone_section_enabled = False
+    state.sdr.highlight_section_enabled = True
+    state.sdr.highlight_compression_mode = "peak_fit"
+    state.sdr.highlight_compression_start_percent = 55
+    kwargs = {"sdr_reference_image": reference}
+    neutral = apply_adjustments(source, state, PreviewKind.SDR, include_output_highlight_compression=False, **kwargs)
+    state.sdr.output_exposure = exposure
+    expected = neutral * np.float32(2 ** exposure)
+    finished = apply_sdr_output_highlight_compression(expected, state)
+    actual = apply_adjustments(source, state, PreviewKind.SDR, **kwargs)
+    stripes, _ = render_in_strips(source, state, PreviewKind.SDR, budget_bytes=4096, **kwargs)
+    assert_strips_match(actual, finished)
+    assert_strips_match(stripes, finished)
+
+    frame = DeliveryFrame.spill(tmp_path / "source.rgb", source)
+    authored_frame = None if reference is None else DeliveryFrame.spill(tmp_path / "reference.rgb", reference)
+    staged = render_staged_grade(frame, authored_frame, state, PreviewKind.SDR, tmp_path, rows=9)
+    with staged.map("r") as pixels:
+        # Same creative stages, executed in bounded delivery buffers.
+        np.testing.assert_allclose(pixels, expected, rtol=2e-6, atol=1e-6)
+
+
 # The windowed projective resample perturbs float32 in its last bits, which
 # `test_geometry_region.py` measures at 6e-08 absolute. That difference is in
 # the strip's *input*, so the grade carries it forward; nothing else in this

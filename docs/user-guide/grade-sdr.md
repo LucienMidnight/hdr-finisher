@@ -82,6 +82,15 @@ Start with:
 
 Moves the SDR rendition before/around its display mapping, depending on whether the source supplies an authored SDR reference. Use it to place the overall fallback, not to force all highlights under white.
 
+### SDR exposure comp
+
+Brightens or darkens the finished SDR picture after Film Look and Vignette,
+before Highlight Compression. Use Exposure to change how the grade and film
+stock respond to light. Use SDR exposure comp when you like the look and only
+want to change its finished brightness. It defaults to 0 EV and stays active
+if you bypass the earlier Tone controls. Match SDR and Match HDR tone fit
+this slider to lift the main tones without re-exposing the film stock.
+
 ### Contrast and Pivot
 
 Operate in the display-linear SDR domain. Pivot identifies the normalized value around which contrast expands or compresses.
@@ -191,7 +200,7 @@ For an authored SDR reference such as supported Apple HDR HEIC:
 7. Film Look and spatial finishing
 8. Detail structure and Vignette
 
-Both paths finish with output resize/sharpening, Highlight Compression (bypassed by default for authored SDR), then unconditional hue-preserving sRGB gamut mapping to [0,1].
+Both paths then apply SDR exposure comp and finish with output resize/sharpening, Highlight Compression (bypassed by default for authored SDR), then unconditional hue-preserving sRGB gamut mapping to [0,1].
 
 ## Review checklist
 

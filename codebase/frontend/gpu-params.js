@@ -177,7 +177,7 @@
   function buildParams(lane, adjustments, workingSpace, hdrSurface, referenceWhiteNits = 203, sourcePixelScale = 1) {
     if (lane === "sdr" && adjustments.sdr.linked_to_hdr) {
       const params = buildParams("hdr", adjustments, workingSpace, hdrSurface, referenceWhiteNits, sourcePixelScale);
-      const tail = buildParams("sdr", { ...adjustments, sdr: { ...adjustments.sdr, linked_to_hdr: false } },
+      const tail = buildParams("sdr", { ...adjustments, sdr: { ...adjustments.sdr, linked_to_hdr: false, output_exposure: 0 } },
         workingSpace, hdrSurface, referenceWhiteNits, sourcePixelScale);
       for (const name of ["HIGHLIGHT_SOFTNESS", "HIGHLIGHT_START", "HIGHLIGHT_TARGET", "HIGHLIGHT_TARGET_NITS",
         "HIGHLIGHT_MODE", "HIGHLIGHT_ANCHOR", "HIGHLIGHT_PEAK_DETAIL", "HIGHLIGHT_BIAS",
@@ -196,6 +196,7 @@
       && globalThis.HDRHslSelectionGpu && globalThis.HDRHslSharedSelection !== false ? 1 : 0;
     const colorSource = branch;
     params[GPU_PARAMS.HDR_LANE] = lane === "hdr" ? 1 : 0;
+    params[GPU_PARAMS.OUTPUT_EXPOSURE_GAIN] = lane === "sdr" ? Math.pow(2, branch.output_exposure || 0) : 1;
     params[GPU_PARAMS.SOURCE_LINEAR_SRGB] = workingSpace === "linear-srgb" ? 1 : 0;
     const toneEnabled = branch.tone_section_enabled !== false;
     const highlightEnabled = branch.highlight_section_enabled !== false;
@@ -268,7 +269,8 @@
       ? toneAdjustedHighlightPeakLinear(branch, toneEnabled, projectReferenceWhite)
       : Math.max(0.01, (branch.highlight_compression_peak_measurement === "manual"
         ? branch.highlight_compression_manual_peak_percent ?? 100
-        : branch.highlight_compression_source_peak_percent ?? 100) / 100 * (toneEnabled ? Math.pow(2, branch.exposure || 0) : 1));
+        : branch.highlight_compression_source_peak_percent ?? 100) / 100 * (toneEnabled ? Math.pow(2, branch.exposure || 0) : 1))
+        * params[GPU_PARAMS.OUTPUT_EXPOSURE_GAIN];
     params[GPU_PARAMS.PROJECT_REFERENCE_WHITE_NITS] = projectReferenceWhite;
     params[GPU_PARAMS.FILM_REFERENCE_WHITE_NITS] = 203;
     params[GPU_PARAMS.HIGHLIGHT_PEAK_DETAIL] = Math.min(1, Math.max(0, (branch.highlight_compression_peak_detail ?? 35) / 100));

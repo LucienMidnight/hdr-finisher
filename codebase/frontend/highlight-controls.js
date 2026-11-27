@@ -292,7 +292,8 @@ function sdrHighlightCurveAdapter(sdr) {
     highlight_compression_target_nits: 100,
     highlight_compression_softness: sdr.highlight_compression_softness,
     highlight_compression_source_peak_nits: (Number(sdr.highlight_compression_source_peak_percent) || 100)
-      * (sdr.tone_section_enabled === false ? 1 : 2 ** (Number(sdr.exposure) || 0)),
+      * (sdr.tone_section_enabled === false ? 1 : 2 ** (Number(sdr.exposure) || 0))
+      * (sdr.linked_to_hdr ? 1 : 2 ** (Number(sdr.output_exposure) || 0)),
     highlight_compression_peak_detail: sdr.highlight_compression_peak_detail,
     highlight_compression_bias: sdr.highlight_compression_bias,
     highlight_compression_color_handling: sdr.highlight_compression_color_handling,

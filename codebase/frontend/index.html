@@ -1267,10 +1267,14 @@
             <button class="group-reset text-button" type="button" data-reset-group="sdr-tone">Reset</button>
           </div>
           <div class="control-group-body">
-          <div class="film-look-actions hidden" data-sdr-module-match><button id="tone-match-hdr" class="button-secondary" type="button" data-tooltip="Fits Exposure, Contrast and Exposure Bands to the HDR picture. Leaves other SDR modules unchanged.">Match HDR tone</button><span>Fits once; SDR remains independent.</span></div>
+          <div class="film-look-actions hidden" data-sdr-module-match><button id="tone-match-hdr" class="button-secondary" type="button" data-tooltip="Fits Exposure, SDR exposure comp, Contrast and Exposure Bands to the HDR picture. Leaves other SDR modules unchanged.">Match HDR tone</button><span>Fits once; SDR remains independent.</span></div>
             <div class="control-row instrument-slider-control tone-primary" data-control-path="sdr.exposure">
               <div class="control-heading"><label for="sdr-exposure">Exposure</label><output data-value-path="sdr.exposure">0.00 EV</output></div>
               <input id="sdr-exposure" type="range" min="-4" max="4" step="0.05" value="0" data-path="sdr.exposure">
+            </div>
+            <div class="control-row instrument-slider-control tone-primary" data-control-path="sdr.output_exposure">
+              <div class="control-heading"><label class="tooltip-trigger" for="sdr-output-exposure" data-tooltip="Brightens or darkens the finished SDR picture after Film Look, just before Highlight Compression. Unlike Exposure, it doesn&#39;t change how the film stock, Tone or local adjustments respond. SDR Match uses it to lift the main tones to HDR brightness.">SDR exposure comp</label><output data-value-path="sdr.output_exposure">0.00 EV</output></div>
+              <input id="sdr-output-exposure" type="range" min="-5" max="5" step="0.05" value="0" data-path="sdr.output_exposure">
             </div>
             <div class="control-pair">
               <div class="control-row instrument-slider-control tone-primary" data-control-path="sdr.contrast">

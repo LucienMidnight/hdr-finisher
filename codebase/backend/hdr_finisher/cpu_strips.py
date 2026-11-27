@@ -56,6 +56,7 @@ from .adjustments import (
     hdr_peak_nits_from_measured,
     sdr_highlight_peak_signal,
     apply_sdr_output_highlight_compression,
+    apply_sdr_output_exposure,
 )
 from .color_context import RenderColorContext
 from .cpu_budget import CpuExecutor
@@ -441,6 +442,8 @@ def render_staged_grade(source, reference, adjustments, kind, directory, *, loca
     hue = DeliveryFrame(directory / "hue.rgb", source.shape) if needs_hue else None
     prefix_branch = branch.model_copy(update=dict(detail_section_enabled=False, film_look_section_enabled=False,
                                                   vignette_section_enabled=False))
+    if lane == PreviewKind.SDR:
+        prefix_branch.output_exposure = 0.0  # Apply after the staged Film Look and Vignette.
     prefix = adjustments.model_copy(update={lane.value: prefix_branch,
         "shared": adjustments.shared.model_copy(update={"geometry": GeometryAdjustments()})})
     budget = DEFAULT_STRIP_BUDGET_BYTES if rows is None else rows * width * _BYTES_PER_PIXEL * STRIP_WORKING_SET_MULTIPLIER
@@ -469,6 +472,11 @@ def render_staged_grade(source, reference, adjustments, kind, directory, *, loca
     other = stage_b if result == stage_a else stage_a
     if linked:
         result = linked_sdr_to_frame(result, other, adjustments, rows=rows)
+        other = stage_b if result == stage_a else stage_a
+    elif kind == PreviewKind.SDR and adjustments.sdr.output_exposure:
+        with _stage("tone_colour"):
+            result = transform_bands(result, other, lambda part, top:
+                apply_sdr_output_exposure(part, adjustments.sdr.output_exposure), rows=rows)
         other = stage_b if result == stage_a else stage_a
     if kind == PreviewKind.HDR and apply_output_clamp:
         with _stage("tone_colour"):

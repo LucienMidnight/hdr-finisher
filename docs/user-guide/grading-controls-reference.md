@@ -242,7 +242,8 @@ limiter may reduce extreme settings to keep the response monotonic.
 | Control | Purpose in plain English | How it works | Normal slider range | Direct-entry range |
 |---|---|---|---|---|
 | Peak: SDR white (100%) | Identifies the fixed SDR ceiling before Mode. | Reference only; there is no adjustable SDR target. | Not adjustable | Not adjustable |
-| Exposure | Makes the whole SDR fallback brighter or darker. | Multiplies light by `2^EV` before highlight compression. | Narrow -2 to +2 EV; Medium -3 to +3 EV; Wide -4 to +4 EV | **-8 to +8 EV** |
+| Exposure | Changes the light entering the SDR grade and Film Look. | Multiplies light by `2^EV` before the creative grade. | Narrow -2 to +2 EV; Medium -3 to +3 EV; Wide -4 to +4 EV | **-8 to +8 EV** |
+| SDR exposure comp | Brightens or darkens the finished SDR look. | Multiplies by the same stop-based gain after Film Look and Vignette, before Highlight Compression and gamut mapping. | -5 to +5 EV | **-5 to +5 EV** |
 | Contrast | Separates or compresses SDR tones around Pivot. | Changes the display-domain contrast slope while preserving the selected pivot. | Narrow -0.5 to +0.5; Medium -0.75 to +0.75; Wide -1 to +1 | **-2 to +2** |
 | Pivot | Chooses the normalized SDR brightness that Contrast works around. | Sets the fixed point of the display-domain contrast operation. | Narrow/Medium 0.05 to 0.95; Wide 0.02 to 0.98 | **0.001 to 0.999** |
 | Five-control Tone / Center / Width | Same controls and ranges as HDR above, in placed display-linear SDR. | G=.18×100/203; P=1 even with HC bypassed. Authored SDR needs no additional placement. | See HDR table | See HDR table |
@@ -251,7 +252,7 @@ limiter may reduce extreme settings to keep the response monotonic.
 | Softness | Controls how strongly Soft Ceiling bends highlights. | Zero is identity; higher values engage the luma-preserving asymptote earlier. | 0% to 100% | **0% to 100%** |
 | Highlight Color | Chooses the highlight color trajectory. | Smooth color rolloff maps linear-sRGB channels independently; Preserve color retains ratios; Neutralize peak converges the endpoint to white. | Three named choices | Same choices |
 | Input Peak | Chooses the Peak Fit measurement. | Uses the exact maximum, a robust percentile, or a manual source percentage. | Three named choices | Same choices |
-| Manual Source Peak | Supplies the pre-exposure source peak for manual measurement. | Expressed relative to SDR white; Tone Exposure is included when the curve is built. | 100% to 10,000% | **1% to 1,000,000%** |
+| Manual Source Peak | Supplies the pre-exposure source peak for manual measurement. | Expressed relative to SDR white; Tone Exposure and independent SDR exposure comp are included when the curve is built. | 100% to 10,000% | **1% to 1,000,000%** |
 | Compression Bias | Redistributes separation through the Peak Fit shoulder. | Warps the shoulder parameter without changing its endpoints. | -100 to +100 | **-100 to +100** |
 
 ## Why some controls do not get extra room

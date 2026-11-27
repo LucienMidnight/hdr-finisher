@@ -11,7 +11,7 @@ function renderLinkedSdrState() {
   const actions = els.sdrMatchEntireActions;
   if (!actions) return;
   actions.dataset.matched = String(Boolean(state.editDocument?.sdr_match?.materialized_status));
-  if (linked) els.sdrMatchEntireStatus?.setAttribute("data-tooltip", "Uses HDR tone, colour, local adjustments and Film Look. SDR output exposure and Highlight Compression stay separate. Editing other SDR controls unlinks this photo.");
+  if (linked) els.sdrMatchEntireStatus?.setAttribute("data-tooltip", "Uses HDR tone, colour, local adjustments and Film Look. SDR exposure comp and Highlight Compression stay separate. Editing other SDR controls unlinks this photo.");
   else els.sdrMatchEntireStatus?.removeAttribute("data-tooltip");
   let controls = document.getElementById("sdr-link-controls");
   if (!controls) {
@@ -29,18 +29,9 @@ function renderLinkedSdrState() {
       invalidatePreview("sdr"); debouncePreview("sdr"); renderLaneChrome();
       void syncGlobalEditState();
     });
-    const label = document.createElement("label");
-    label.textContent = "SDR output exposure ";
-    const input = document.createElement("input");
-    input.id = "sdr-output-exposure";
-    input.type = "number"; input.min = "-5"; input.max = "5"; input.step = "0.1";
-    input.setAttribute("aria-label", "SDR output exposure in stops");
-    input.setAttribute("data-tooltip", "Changes SDR brightness after the shared HDR Film Look. Keeps this photo linked.");
-    input.addEventListener("change", () => commitAdjustmentValue("sdr.output_exposure", Number(input.value), { manual: true }));
-    label.append(input); controls.append(unlink, label); actions.append(controls);
+    controls.append(unlink); actions.append(controls);
   }
   controls.classList.toggle("hidden", !linked);
-  controls.querySelector("input").value = String(state.adjustments?.sdr?.output_exposure || 0);
   if (linked && !state.linkedSdrCreativeSnapshot) {
     state.linkedSdrCreativeSnapshot = linkedSdrCreativeSignature(state.adjustments.sdr);
     state.linkedSdrLocalSnapshot = new Map((state.editDocument?.local_adjustments || []).map(local => [local.id, stablePreviewJson(local.sdr_grade)]));

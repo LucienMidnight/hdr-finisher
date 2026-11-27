@@ -2125,9 +2125,11 @@ fn fineGrainResizeBase(@builtin(global_invocation_id) id: vec3u) {
     fn outputIsHdr() -> bool {
       return p[${GPU_PARAMS.HDR_LANE}] > 0.5 && p[${GPU_PARAMS.LINKED_SDR}] < 0.5;
     }
-    fn linkedSdrOutput(input: vec3f) -> vec3f {
-      if (p[${GPU_PARAMS.LINKED_SDR}] < 0.5) { return input; }
-      return acescgToSrgb(input) * (100.0 / 203.0 / 0.18) * p[${GPU_PARAMS.OUTPUT_EXPOSURE_GAIN}];
+    fn applyOutputExposure(input: vec3f) -> vec3f {
+      if (p[${GPU_PARAMS.LINKED_SDR}] > 0.5) {
+        return acescgToSrgb(input) * (100.0 / 203.0 / 0.18) * p[${GPU_PARAMS.OUTPUT_EXPOSURE_GAIN}];
+      }
+      return input * p[${GPU_PARAMS.OUTPUT_EXPOSURE_GAIN}];
     }
     fn applyOutputHighlights(input: vec3f) -> vec3f {
       let mode = p[${GPU_PARAMS.HIGHLIGHT_MODE}];
@@ -3391,7 +3393,7 @@ fn fineGrainResizeBase(@builtin(global_invocation_id) id: vec3u) {
       let blur = filmDetailBlur(coordinate, vec2i(local.xy), bound, radius, true);
       if (any(coordinate > bound)) { return; }
       let rgb = filmStoredRgb(textureLoad(sourceTexture, coordinate, 0));
-      textureStore(filmDetailOutput, coordinate, storeFilm(linkedSdrOutput(finishStructure(rgb, blur, coordinate))));
+      textureStore(filmDetailOutput, coordinate, storeFilm(applyOutputExposure(finishStructure(rgb, blur, coordinate))));
     }
 
     const LENS_COMPONENTS = array<vec4f,108>(${LENS_COMPONENTS_WGSL});
@@ -3467,7 +3469,7 @@ fn fineGrainResizeBase(@builtin(global_invocation_id) id: vec3u) {
       let structure = p[${GPU_PARAMS.STRUCTURE_ENABLED}] > 0.5
         && (abs(p[${GPU_PARAMS.STRUCTURE_SOFTNESS}]) > 0.000001 || abs(p[${GPU_PARAMS.STRUCTURE_MICROCONTRAST}]) > 0.000001);
       if (structure && !filmDiagnosticMap()) { return storeFilm(rgb); }
-      return storeFilm(linkedSdrOutput(rgb));
+      return storeFilm(applyOutputExposure(rgb));
     }
 
     @fragment fn finishFragmentMain(input: VertexOut) -> @location(0) vec4f {

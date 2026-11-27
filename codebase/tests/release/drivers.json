@@ -1944,11 +1944,11 @@
         "export-proof"
       ],
       "tier": "area",
-      "protects": "Frozen five-control Tone (Blacks, Shadows, Midtones, Highlights, Whites): GPU finished output equals CPU within perceptual limits, Proof equals export, HDR ceiling.",
+      "protects": "Frozen five-control Tone and nonzero SDR exposure comp after Film Look: GPU finished output equals CPU within perceptual limits, Proof equals export, HDR ceiling.",
       "launch": {
         "method": "electron"
       },
-      "brief": "Frozen five-control Tone (Blacks, Shadows, Midtones, Highlights, Whites): GPU finished output equals CPU within perceptual limits, Proof equals export, HDR ceiling. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.",
+      "brief": "Frozen five-control Tone and nonzero SDR exposure comp after Film Look: GPU finished output equals CPU within perceptual limits, Proof equals export, HDR ceiling. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.",
       "expectedMinutes": {
         "win": null,
         "mac": null

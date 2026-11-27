@@ -291,7 +291,8 @@ Generated SDR starts from the ACEScg HDR source:
 11. ordered local layers.
 12. lens filter, film resolution, halation, negative and density grain, paper/scanner, one Look Strength mix.
 13. Detail structure and vignette.
-14. output resize/sharpening when delivering, then Highlight Compression and unconditional hue-preserving sRGB gamut mapping to `[0, 1]`.
+14. SDR exposure comp, a gain in finished display-linear sRGB (neutral at 0 EV).
+15. output resize/sharpening when delivering, then Highlight Compression and unconditional hue-preserving sRGB gamut mapping to `[0, 1]`.
 
 The scene-to-display conversion boundary is important. Moving a scene-linear control after it changes both its numerical meaning and its visual behavior.
 
@@ -309,7 +310,8 @@ When a source contains an authored SDR rendition, the branch begins from its ret
 8. ordered local layers;
 9. Film Look, including negative/density grain before paper/scan, and spatial finishing;
 10. vignette;
-11. output resize/sharpening when delivering, then optional Highlight Compression and unconditional hue-preserving sRGB gamut mapping to `[0, 1]`.
+11. SDR exposure comp, on the same finished SDR scale as generated SDR;
+12. output resize/sharpening when delivering, then optional Highlight Compression and unconditional hue-preserving sRGB gamut mapping to `[0, 1]`.
 
 Do not collapse this branch into generated SDR. The authored base is a distinct creative endpoint in a gain-map source. Existing SDR grades intentionally render through the new final-shoulder order; there is no compatibility renderer.
 

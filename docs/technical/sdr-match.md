@@ -16,11 +16,16 @@ Standalone Local Match still transfers only the HDR local's relative change.
 This is not a change to ordinary generated SDR placement (still 100/203),
 the saved recipe schema, or how an existing SDR grade renders. Match measures
 the actual HDR and SDR render paths at a bounded
-384-pixel proxy, omitting stochastic grain for fitting. It first fits Exposure,
-optional Contrast (only if used by HDR), and Highlight Compression Start.
-Then it places five Exposure Bands points and penalizes large adjustments.
-The three interior points start at the dark, middle and bright body percentiles
-with at least 0.75 EV spacing. A final bounded pass settles the controls together.
+384-pixel proxy, omitting stochastic grain for fitting. Exposure stays at the
+effective HDR Exposure, so the film stock does not receive the brightness lift.
+Match fits SDR exposure comp after Film Look and Vignette, optional Contrast
+(only if used by HDR), and Highlight Compression Start. Then it places five
+Exposure Bands points and penalizes large adjustments.
+The three interior points start at dark, middle and bright body percentiles
+with at least 0.75 EV spacing. When HDR uses bands or zones, Match seeds the
+five points from the early HDR tonal response on the SDR scale, so the bands
+do not trade away film-input accuracy for output brightness. A final bounded
+pass settles the controls together.
 The five Tone zone strengths stay at zero. Body mean and P95 OKLab error guide
 the search, with lower weight for highlights.
 
@@ -42,7 +47,7 @@ SDR HSL and Curves can copy HDR settings with one Undo. Curves copy the points
 literally on the shared scale used in both renditions. SDR Tone and Highlight
 Compression can instead fit their respective controls against the current HDR
 target while leaving the other SDR modules, locals and Denoise alone. Tone
-includes Exposure Bands. A Tone fit edits the independent grade like any SDR
+includes SDR exposure comp and Exposure Bands. A Tone fit edits the independent grade like any SDR
 creative edit. A Highlight Compression fit can keep a previously linked grade.
 Neither action changes the authored SDR base choice or the whole-Match status.
 

@@ -504,7 +504,7 @@ function formatControlValue(path, value) {
   if (path.endsWith(".saturation") || path.endsWith(".vibrance")) return `${numeric > 0 ? "+" : ""}${Math.round(numeric * 100)}%`;
   if (path.endsWith("desaturation_start")) return `${(numeric * 100).toFixed(1)}% white`;
   if (path.endsWith("_desaturation")) return `${Math.round(numeric)}%`;
-  if (path.endsWith(".exposure")) return `${numeric.toFixed(2)} EV`;
+  if (path.endsWith(".exposure") || path === "sdr.output_exposure") return `${numeric.toFixed(2)} EV`;
   if (path.endsWith("_nits")) return `${Math.round(numeric)} nit`;
   if (path.endsWith("highlight_compression_start_percent") || path.endsWith("highlight_compression_manual_peak_percent")) return `${Math.round(numeric)}%`;
   if (path.endsWith("film_look.halation_radius")) return `${numeric.toFixed(2)}% 35mm gate`;

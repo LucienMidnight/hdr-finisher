@@ -54,6 +54,8 @@ body:is(.slider-hover, .tool-key-hints) .slider-key-legend { opacity: 1; }
 :root .control-group-body { margin: 0; padding: var(--space-4) var(--space-14) var(--space-12); border: 0; background: var(--raised); }
 :root .control-group:not(.collapsed) > .control-group-header { background: var(--panel); box-shadow: var(--divider-below); }
 :root .control-group.bypassed .control-group-body { opacity: .35; }
+:root [data-group="sdr-tone"].bypassed .control-group-body { opacity: 1; }
+:root [data-group="sdr-tone"].bypassed .control-group-body > :not([data-control-path="sdr.output_exposure"]) { opacity: .35; }
 :root .control-group .group-toggle, :root .control-group .control-group-name, :root .control-foldout > summary { font: var(--font-weight-medium) var(--font-size-md) var(--font-body); letter-spacing: var(--tracking-none); text-transform: none; color: var(--text); }
 :root .group-toggle > .control-group-name { margin-left: 0; }
 :root .control-group .group-reset { opacity: 1; }

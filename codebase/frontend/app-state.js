@@ -110,6 +110,7 @@ const MANUAL_VALUE_RULES = {
   "hdr.contrast_pivot": { min: 0.0001, max: 18, decimals: 4 },
   "hdr.tone_equalizer_smoothing": { min: 0, max: 1, decimals: 2 },
   "sdr.exposure": { min: -8, max: 8, decimals: 2 },
+  "sdr.output_exposure": { min: -5, max: 5, decimals: 2 },
   "sdr.highlight_compression_start_percent": { min: 1, max: 99, decimals: 0 },
   "sdr.highlight_compression_softness": { min: 0, max: 100, decimals: 1 },
   "sdr.highlight_compression_peak_detail": { min: 0, max: 100, decimals: 0 },
@@ -1351,7 +1352,7 @@ const controlGroups = {
   // Black & White: its Reset returns the sliders only. It is deliberately not
   // in sectionPathForGroup, so Reset leaves the module on or off as it was.
   "hdr-black-and-white": ["hdr.black_and_white"],
-  "sdr-tone": ["sdr.exposure", "sdr.contrast", "sdr.contrast_pivot", "sdr.blacks", "sdr.whites", "sdr.shadows", "sdr.shadows_center", "sdr.shadows_width", "sdr.midtones", "sdr.midtones_center", "sdr.midtones_width", "sdr.highlights", "sdr.highlights_center", "sdr.highlights_width"],
+  "sdr-tone": ["sdr.exposure", "sdr.output_exposure", "sdr.contrast", "sdr.contrast_pivot", "sdr.blacks", "sdr.whites", "sdr.shadows", "sdr.shadows_center", "sdr.shadows_width", "sdr.midtones", "sdr.midtones_center", "sdr.midtones_width", "sdr.highlights", "sdr.highlights_center", "sdr.highlights_width"],
   "sdr-highlights": ["sdr.highlight_compression_mode", "sdr.highlight_compression_start_percent", "sdr.highlight_compression_softness", "sdr.highlight_compression_peak_detail", "sdr.highlight_compression_peak_measurement", "sdr.highlight_compression_manual_peak_percent", "sdr.highlight_compression_bias", "sdr.highlight_compression_color_handling"],
   "sdr-equalizer": ["sdr.tone_equalizer_nodes", "sdr.tone_equalizer_influence_radius", "sdr.tone_equalizer_smoothing"],
   "sdr-color": ["sdr.white_balance_kelvin", "sdr.tint", "sdr.saturation", "sdr.vibrance", "sdr.highlight_desaturation", "sdr.highlight_desaturation_start", "sdr.shadow_desaturation", "sdr.shadow_desaturation_start", "sdr.red_hue", "sdr.red_purity", "sdr.green_hue", "sdr.green_purity", "sdr.blue_hue", "sdr.blue_purity", "sdr.tint_hue", "sdr.tint_purity"],
