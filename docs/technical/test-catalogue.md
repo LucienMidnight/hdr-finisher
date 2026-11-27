@@ -11,9 +11,9 @@ The selection depends on changed areas since the last tag. Core is the smallest 
 | Selection | Drivers | Windows minutes + retry | Windows unknown | Mac minutes + retry | Mac unknown |
 | --- | ---: | ---: | ---: | ---: | ---: |
 | Core | 34 | 0.00 + 0.00 | 34 | 5.00 + 0.00 | 33 |
-| All areas | 124 | 3.64 + 0.00 | 123 | 5.30 + 0.00 | 122 |
+| All areas | 124 | 3.56 + 0.00 | 123 | 5.30 + 0.00 | 122 |
 | export-proof | 54 | 0.00 + 0.00 | 54 | 5.00 + 0.00 | 53 |
-| film | 44 | 3.64 + 0.00 | 43 | 5.00 + 0.00 | 43 |
+| film | 44 | 3.56 + 0.00 | 43 | 5.00 + 0.00 | 43 |
 | lens | 37 | 0.00 + 0.00 | 37 | 5.00 + 0.00 | 36 |
 | library | 68 | 0.00 + 0.00 | 68 | 5.00 + 0.00 | 67 |
 | masks | 52 | 0.00 + 0.00 | 52 | 5.00 + 0.00 | 51 |
@@ -182,7 +182,7 @@ Source: `codebase/tests/inventory.json`. Seconds are summed case time, not paral
 | tests/quick-library-check.test.js | unset quick switch touches no app, page, filesystem or backend capability | 20 | 0.0807 | unknown |  |
 | tests/raw-pixel-cleanup.test.js | Pixel cleanup is enabled only for supported Bayer RAW and restores saved state | 3 | 0.008 | unknown |  |
 | tests/recent-projects.test.js | recent projects survive restart, put the latest first and reject non-project entries | 1 | 0.0112 | unknown |  |
-| tests/release-runner.test.js | every standalone JS driver is listed once and all listed files exist | 28 | 134.67 | unknown | test('failed-start status stops the run without a retry or later drivers', {skip:process.platform!=='win32'}, t => { |
+| tests/release-runner.test.js | every standalone JS driver is listed once and all listed files exist | 29 | 15.4511 | unknown | test('failed-start status stops the run without a retry or later drivers', {skip:process.platform!=='win32'}, t => { |
 | tests/render-coordinator.test.js | queued preview keeps the action that requested it | 24 | 0.0269 | unknown |  |
 | tests/render-failure.test.js | every Section 5.8 class is recognized from the error it produces | 7 | 0.0112 | unknown |  |
 | tests/render-plan-admission.test.js | a recorded graph produces an identical plan every time | 23 | 0.0289 | unknown |  |
@@ -908,7 +908,7 @@ GPU analysis overlays, Library review controls and file drops, Performance setti
 
 Film stock: the WebGPU preview matches the CPU export. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
-- Expected minutes: Windows 3.645; Mac unknown.
+- Expected minutes: Windows 3.560; Mac unknown.
 - Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal. Python virtual environment and pinned backend dependencies.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
