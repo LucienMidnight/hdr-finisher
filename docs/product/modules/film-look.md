@@ -1,3 +1,18 @@
+## November 27: Print and Scan shortcuts removed
+
+Removed Print's Neutral, Warm, Cool, Soft, Rich and Cinema buttons and Scan's
+Clean scan and Lab scan buttons, following the Lens shortcut removal.
+Use the underlying Print and Scan controls directly. Development's Push/Pull
+control and the full Film Look presets remain unchanged.
+
+These shortcuts saved renderer control values and deliberate override keys,
+never shortcut names or IDs. Existing edits and sparse/full Look recipes need
+no migration and render identically. Round-trip tests cover all six former
+Print choices combined with both Scan choices through every built-in Look.
+The unused stage recipe table and shortcut button builder are removed; shared
+shortcut CSS remains in use by RAW Expand. The single-indicator-dot rule and
+its three-theme app check remain intact. The tooltip catalogue is regenerated.
+
 ## November 27: temporary native-dropdown previews
 
 Every Film Look select (Film Stock, Lens Filter, Grain Film Format, Capture
@@ -59,12 +74,10 @@ The full Film Look presets remain available. Shortcuts stored only those three
 renderer fields and their deliberate override keys, never a shortcut name or
 ID; existing saved edits and sparse/full Look recipes need no migration.
 The Lens recipe table and its stage-test branch were removed. Shortcut CSS
-is shared with Print, Scan and RAW Expand, so none is Lens-only or dead.
+is shared with RAW Expand, so none is Lens-only or dead.
 The tooltip catalogue is regenerated after removing the row.
 
-Unchanged section shortcuts for Steve's review: Print (Neutral, Warm, Cool,
-Soft, Rich, Cinema); Scan (Clean scan, Lab scan); Development's Push/Pull
-positions (-2, -1, 0, +1, +2). Negative has no shortcut button row: its Film
+Development's Push/Pull positions (-2, -1, 0, +1, +2) remain available. Negative has no shortcut button row: its Film
 Stock and Grain Film Format choices are dropdowns. Whole Film Look presets
 are separate from these rows. Twelve targeted preset/character tests pass,
 including all five former shortcut values through every built-in Look's

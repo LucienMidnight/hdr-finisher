@@ -8,16 +8,6 @@ const context = vm.createContext({HDRFilmCharacter:C});
 vm.runInContext(source.slice(source.indexOf('const defaultFilmLook ='), source.indexOf('const defaultColorGrading ='))+'; globalThis.result={defaultFilmLook,FILM_LOOK_PRESETS};',context);
 const {defaultFilmLook,FILM_LOOK_PRESETS:looks}=context.result;
 const plain = x => JSON.parse(JSON.stringify(x));
-test('each stage changes only its controls and owns every deliberately set value',()=>{
- const allowed={Format:['grain_film_format'],Development:['push_pull'],Print:['print_paper','print_exposure','stock_print_warmth','stock_print_tint','stock_preflash','print_contrast','shadow_contrast','highlight_contrast'],Scan:['scan_sharpening','lab_levels']};
- for(const [stage,entries] of Object.entries(C.stages)) for(let i=0;i<entries.length;i++) {
-  const f=C.select(defaultFilmLook(),'kodak_gold_200');
-  C.set(f,'look_strength',63); const before=plain(f);
-  C.stage(f,stage,i);
-  for(const key of Object.keys(f)) if(key!=='stock_overrides' && !allowed[stage].includes(key)) assert.deepEqual(f[key],before[key],`${stage} changed ${key}`);
-  for(const key of Object.keys(entries[i][1])) assert.ok(f.stock_overrides.includes(key));
- }
-});
 test('all approved Looks replace previous choices and survive sparse save/reopen and stock changes',()=>{
  assert.equal(looks.length,11);
  for(const look of looks) {
@@ -71,5 +61,19 @@ test('saved lens choices round-trip in lane state and full Look recipes',()=>{
    assert.equal(restored.lens_filter,filter); assert.equal(restored.lens_strength,strength); assert.equal(restored.lens_size,1);
    assert.deepEqual(plain(C.expand(plain(C.sparse(restored)))),plain(restored));
   }
+ }
+});
+
+
+test('former Print and Scan values survive saved lane and full Look recipe round-trips',()=>{
+ const printBase={print_paper:'default',print_exposure:0,stock_print_warmth:0,stock_print_tint:0,stock_preflash:0,print_contrast:0,shadow_contrast:0,highlight_contrast:0};
+ const prints=[{}, {stock_print_warmth:15}, {stock_print_warmth:-15}, {print_contrast:-20}, {print_contrast:20}, {print_paper:'kodak_2383'}].map(values=>({...printBase,...values}));
+ const scans=[{scan_sharpening:0,lab_levels:false},{scan_sharpening:25,lab_levels:true}];
+ for(const print of prints) for(const scan of scans) for(const look of looks) {
+  const film=C.expand(plain(look.recipe));
+  for(const [key,value] of Object.entries({...print,...scan})) C.set(film,key,value);
+  const savedLane=plain(film);
+  assert.deepEqual(plain(C.expand(plain(C.sparse(savedLane)))),savedLane);
+  for(const [key,value] of Object.entries({...print,...scan})) assert.equal(savedLane[key],value);
  }
 });

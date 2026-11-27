@@ -66,20 +66,12 @@ module.exports = async function(page) {
    for(const lane of ['hdr','sdr']) {
     await switchLane(lane);
     const outside=structuredClone(state.adjustments);
-    for(const [stage,entries] of Object.entries(HDRFilmCharacter.stages)) {
-
-     for(let i=0;i<entries.length;i++) {
-      const button=stage==='Development'
-       ? document.querySelector(`[data-film-push="${entries[i][1].push_pull}"]`)
-       : document.querySelector(`[data-film-stage="${stage}"][data-film-recipe="${i}"]`);
-      check(button,`missing ${stage} shortcut ${i}`);button.click();await syncGlobalEditState();await state.editCommandQueue;
-      checkPanel();
-      const f=state.adjustments[lane].film_look;
-      for(const [key,value] of Object.entries(entries[i][1])) {
-       check(f[key]===value,`${stage} value ${key}`);
-       check(!document.querySelector(`[data-stock-reset="${key}"]`)?.hidden,`${stage} missing dot ${key}`);
-      }
-     }
+    for(const push of [-2,-1,0,1,2]) {
+     const button=document.querySelector(`[data-film-push="${push}"]`);
+     check(button,`missing Push/Pull ${push}`);button.click();await syncGlobalEditState();await state.editCommandQueue;
+     checkPanel();
+     check(state.adjustments[lane].film_look.push_pull===push,`Push/Pull value ${push}`);
+     check(!document.querySelector('[data-stock-reset="push_pull"]').hidden,'Push/Pull missing dot');
     }
     for(const look of FILM_LOOK_PRESETS) {
      await applyLook(look.id);checkPanel();

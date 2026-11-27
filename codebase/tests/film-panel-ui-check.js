@@ -22,6 +22,12 @@ module.exports = async function checkFilmPanel(page) {
  await stage('camera').click();
  assert.equal(await group.locator('[data-film-shortcuts="Lens"]').count(),0);
  for (const id of ['film-lens-filter','film-lens-strength','film-lens-size']) assert.equal(await group.locator(`#${id}`).isVisible(),true);
+ for (const section of ['print','scan']) {
+  await stage(section).click();
+  assert.equal(await group.locator(`[data-film-section="${section}"] .film-stage-shortcuts`).count(),0);
+  for (const control of await group.locator(`[data-film-section="${section}"] input, [data-film-section="${section}"] select`).all()) assert.equal(await control.isVisible(),true);
+  await stage(section).click();
+ }
  await head.click(); await head.click();
  assert.equal(await stage('camera').getAttribute('aria-expanded'),'true');
  const choose = async id => {

@@ -472,26 +472,8 @@ async function applyGroupPreset(preset) {
 }
 
 
-// Fixed stage shortcuts share the existing recipe application path.
+// Film section folding and Development Push/Pull controls.
 function initializeFilmStagePresets() {
-  document.querySelectorAll("[data-film-shortcuts]").forEach(box => {
-    const name = box.dataset.filmShortcuts;
-    const label = document.createElement("span"); label.textContent = name;
-    box.append(label);
-    HDRFilmCharacter.stages[name].forEach(([title], index) => {
-      const button = document.createElement("button");
-      button.type = "button"; button.className = "button-secondary";
-      button.dataset.filmStage = name; button.dataset.filmRecipe = String(index);
-      button.textContent = title.replace(/ \(.*\)$/, "").replace(/ print$/, "");
-      button.title = title;
-      button.addEventListener("click", () => {
-        if (!state.session || button.disabled) return;
-        HDRFilmCharacter.stage(state.adjustments[state.currentView].film_look, name, index);
-        syncControlsFromState(); renderControlState(); invalidatePreview(state.currentView); debouncePreview(state.currentView);
-      });
-      box.append(button);
-    });
-  });
   document.querySelectorAll(".film-stage-heading").forEach(button => button.addEventListener("click", () => {
     const expanded = button.getAttribute("aria-expanded") !== "true";
     button.setAttribute("aria-expanded", String(expanded));

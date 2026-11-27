@@ -106,22 +106,7 @@
     refresh(film);
     return film;
   }
-  const stages = {
-    Development: [["Pull 1", {push_pull:-1}], ["Normal", {push_pull:0}], ["Push 1", {push_pull:1}], ["Push 2", {push_pull:2}]],
-    Print: [
-      ["Neutral print", {}], ["Warm print", {stock_print_warmth:15}],
-      ["Cool print", {stock_print_warmth:-15}], ["Soft print (lower contrast)", {print_contrast:-20}],
-      ["Rich print (higher contrast)", {print_contrast:20}], ["Cinema print (Kodak 2383)", {print_paper:"kodak_2383"}]]
-      .map(([name, values]) => [name, {print_paper:"default", print_exposure:0, stock_print_warmth:0, stock_print_tint:0, stock_preflash:0, print_contrast:0, shadow_contrast:0, highlight_contrast:0, ...values}]),
-    Scan: [["Clean scan (no sharpening)", {scan_sharpening:0, lab_levels:false}], ["Lab scan (Lab Levels on, light sharpening)", {scan_sharpening:25, lab_levels:true}]],
-  };
-  function stage(film, name, index) {
-    const values = stages[name]?.[index]?.[1];
-    if (!values) return film;
-    for (const [key, value] of Object.entries(values)) set(film, key, value);
-    return film;
-  }
-  const api = {tracked, defaults, sparse, expand, stages, stage, owned, character, refresh, select, set, reset, toUi, fromUi, scale};
+  const api = {tracked, defaults, sparse, expand, owned, character, refresh, select, set, reset, toUi, fromUi, scale};
   if (typeof module !== "undefined") module.exports = api;
   root.HDRFilmCharacter = api;
 })(typeof window === "undefined" ? globalThis : window);
