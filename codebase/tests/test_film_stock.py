@@ -531,3 +531,23 @@ def test_film_exposure_is_not_cancelled_by_middle_grey_calibration(stock_dir, ki
     for ev in (-1, 1):
         output = _stage(image, _look(stock_exposure=ev), kind)
         np.testing.assert_allclose(output, image * 2 ** ev, rtol=2e-3, atol=1e-5)
+
+
+
+def test_neutral_scanner_extreme_white_and_normal_signal_identity():
+    stock = film_stock_module.controlled_film_stock("none", None, 100, 100, 100, False)
+    # Values on the scanner's sampled curve avoid testing inverse interpolation.
+    density = stock.film_curves_plain[[0, 32, 100, 150, 200, 255]].copy()
+    axis = np.linspace(*stock.film_range, film_stock_module.CURVE_SAMPLES)
+    log_e = np.stack([np.interp(density[:, c], stock.film_curves_plain[:, c], axis)
+                      for c in range(3)], axis=-1)
+    original = np.power(10., -log_e).astype(np.float32)
+    output = film_stock_module.scan_density(stock, density)
+    normal = np.all(original <= 16, axis=1)
+    assert np.any(normal) and np.any(~normal)
+    np.testing.assert_array_equal(output[normal], original[normal])
+    np.testing.assert_array_equal(output[~normal], np.full_like(output[~normal], 16))
+    # One over-range channel reaches the same white in all three channels.
+    mixed = density[[0]].copy()
+    mixed[0, 1:] = density[-1, 1:]
+    np.testing.assert_array_equal(film_stock_module.scan_density(stock, mixed), [[16, 16, 16]])

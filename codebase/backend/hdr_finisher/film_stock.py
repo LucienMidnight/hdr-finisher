@@ -365,6 +365,10 @@ def scan_density(stock: FilmStock, density: np.ndarray) -> np.ndarray:
         axis = np.linspace(*stock.film_range, CURVE_SAMPLES)
         log_e = np.stack([np.interp(density[:, c], stock.film_curves_plain[:, c], axis) for c in range(3)], axis=-1)
         rgb = np.power(10., -log_e).astype(np.float32)
+        # Ideal scanner white: bound only extreme Neutral signals before
+        # colour conversion/storage loses the small channels (GPU parity).
+        # Whole-pixel white avoids inventing hue at this synthetic endpoint.
+        rgb[np.any(rgb > np.float32(16), axis=1)] = np.float32(16)
         if stock.film_density_max[2] > 0:
             y = rgb @ np.array([.2126,.7152,.0722], dtype=np.float32)
             m, q = stock.film_density_max[:2]

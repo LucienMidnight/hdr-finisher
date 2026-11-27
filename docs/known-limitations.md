@@ -1039,6 +1039,11 @@ physical HDR display validation remain separate release checks.
 
 ## Extreme HDR preview range (October 16, 2026)
 
+November 27 update: the Film-specific stacked Neutral trigger described below
+is fixed by shared CPU/GPU ideal-scanner white saturation; see the Film Look
+module PRD. Its PC and Mac known-failure signatures are retired. The older
+non-Film shared-stage range limit remains; the following measurements are history.
+
 The preview's earlier shared half-float stages have a finite range of 65,504
 scene units, 18.47 stops above HDR reference white (0.18). Extreme uncompressed
 HDR grades can clip colour channels and show wrong colours or white patches;

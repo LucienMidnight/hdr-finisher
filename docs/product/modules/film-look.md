@@ -1,3 +1,22 @@
+## November 27: Neutral extreme ideal-scanner white
+
+The ideal Neutral scanner now saturates any scanned pixel with a channel above
+16 linear-sRGB units to white (16, 16, 16), identically on CPU and GPU, before
+Lab Levels and working-space conversion. Measured stocks and real papers bypass
+this rule. Normal scanner signals retain their original values without an extra
+colour-space round trip. No control range or test tolerance changes.
+
+The stacked maximum-paper-gain case previously produced millions of scene units.
+Converting and storing those signals loses the nearly empty colour channels;
+preventing texture overflow alone did not fix it. Bounding the ideal scanner
+before that amplification avoids false colour; the synthetic extreme endpoint
+now becomes white deliberately. This replaces the earlier decision to retain
+that Film limitation; the general shared-stage HDR range limit remains separate.
+
+Focused uncompressed HDR case passes at added mean 0.025, p99.9 1 (limits 0.1 / 2).
+The CPU scanner regression also checks normal-signal identity and mixed-channel
+extreme white. Complete driver qualification is recorded after the final run.
+
 ## November 27: PC parity deadline investigation
 
 The d7da33c1 release attempt progressed normally into its exposure follow-up

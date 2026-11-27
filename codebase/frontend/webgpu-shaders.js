@@ -2028,6 +2028,10 @@ fn fineGrainResizeBase(@builtin(global_invocation_id) id: vec3u) {
         let logE = filmStock[base + ${STOCK.FILM_LOW}u] + position/filmStock[base + ${STOCK.FILM_SCALE}u];
         result[c] = exp2(-logE * 3.32192809488736235);
       }
+      // The ideal scanner has no physical white. Saturate extreme signals
+      // to white before ACES/half-float cancellation can create false colour.
+      // Keep in sync with film_stock.py scan_density; measured stocks bypass it.
+      if (any(result > vec3f(16.0))) { result = vec3f(16.0); }
       let levels = stockVec3(base + ${STOCK.FILM_DENSITY_MAX}u);
       if (levels.z > 0.5) {
         let y = dot(result, vec3f(.2126,.7152,.0722));
