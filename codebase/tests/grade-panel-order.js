@@ -39,9 +39,14 @@ fs.mkdirSync(output, { recursive: true });
       const section = page.locator(`[data-group="${lane}-highlights"]`);
       await section.locator(".group-toggle").click();
       if (await section.locator(".section-bypass").getAttribute("aria-pressed") !== "true") await section.locator(".section-bypass").click();
-      const first = await section.locator(".control-group-body > :first-child").evaluate(element => ({ path: element.dataset.controlPath, adjustable: Boolean(element.querySelector("input,select,button")), text: element.textContent }));
-      if (lane === "hdr") assert.equal(first.path, "hdr.highlight_compression_target_nits");
-      else { assert.equal(first.adjustable, false); assert.match(first.text, /100%/); }
+      if (lane === "sdr") {
+        const match = section.getByRole("button", { name: "Match HDR highlight compression" });
+        assert.equal(await match.isVisible(), true);
+        assert.equal(await match.evaluate(button => button.closest(".control-group-body").firstElementChild.contains(button)), true);
+      }
+      const peak = await section.locator(".control-group-body > .control-row").first().evaluate(element => ({ path: element.dataset.controlPath, adjustable: Boolean(element.querySelector("input,select,button")), text: element.textContent }));
+      if (lane === "hdr") assert.equal(peak.path, "hdr.highlight_compression_target_nits");
+      else { assert.equal(peak.adjustable, false); assert.match(peak.text, /100%/); }
       const savedMode = await page.locator(`#${lane}-compression-mode`).inputValue();
       for (const mode of ["peak_fit", "fixed_cap", "soft_ceiling", "clip"]) {
         await page.locator(`#${lane}-compression-mode`).selectOption(mode);

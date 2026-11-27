@@ -23,6 +23,7 @@ fixture issue. A pass after an earlier timeout is recorded explicitly.
 - `tests/jxl-source-colour.js` — (b) native colour oracle remains Windows-only (AGENTS.md item 7). Both attempts fail with `KeyError: 'data_color_encoding'`, the existing 0.9.3 signature. Not a JPEG XL colour pass.
 - `tests/gpu-delivery-repeat.js` — (b) intermittent host-memory refusal, already seen November 26. Standalone replay passes unchanged at both 3 and 2 GiB caps with exact finished pixels and byte-identical Proof. Mac headroom reader/reserve are unchanged from the tag. No evidence of memory left behind between these two exports; no budget changed.
 - `tests/gpu-delivery-ceiling.js` — (b) same measured host-headroom refusal as repeat in the focused run. Standalone at the starting revision passes GPU and forced CPU, both decoded peaks 1008.578 nits under the existing 1010 allowance and both full Proofs byte-identical. No memory or pixel guard changed.
+- `tests/grade-panel-order.js` — (c) the new SDR section Match action intentionally precedes fixed Peak (`2d1251ef`); both lanes, ordering, fold state and exact GPU pixels pass in `grade-panel-order.log`.
 
 ## Earlier fast checks
 
