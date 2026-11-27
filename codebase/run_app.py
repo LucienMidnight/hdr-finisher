@@ -8,6 +8,11 @@ from pathlib import Path
 if sys.version_info < (3, 12):
     raise SystemExit("HDR Finisher requires Python 3.12 or newer.")
 
+ROOT = Path(__file__).resolve().parent
+BACKEND = ROOT / "backend"
+if str(BACKEND) not in sys.path:
+    sys.path.insert(0, str(BACKEND))
+
 # A packaged windowed app (and its spawned helpers) starts with no console:
 # sys.stdout/sys.stderr are None, and any print or traceback would raise.
 if sys.stdout is None or sys.stderr is None:
@@ -22,7 +27,7 @@ if __name__ == "__main__":
     multiprocessing.freeze_support()
 
     if "--desktop-sidecar" in sys.argv and "--parent-pid" in sys.argv:
-        from backend_parent_watch import watch_desktop
+        from hdr_finisher.backend_parent_watch import watch_desktop
         watch_desktop(int(sys.argv[sys.argv.index("--parent-pid") + 1]))
 
     # Micro Grain distributes tiles on the shared CPU pool. OpenCV's process
@@ -36,11 +41,6 @@ if __name__ == "__main__":
     import cv2
     cv2.setNumThreads(1)
     startup_progress("OpenCV loaded")
-
-ROOT = Path(__file__).resolve().parent
-BACKEND = ROOT / "backend"
-if str(BACKEND) not in sys.path:
-    sys.path.insert(0, str(BACKEND))
 
 if __name__ == "__main__" and len(sys.argv) == 4 and sys.argv[1] == "--batch-export-worker":
     from hdr_finisher.batch_export_worker import main as batch_main

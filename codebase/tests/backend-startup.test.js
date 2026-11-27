@@ -65,7 +65,7 @@ test('backend parent watchdog stops Python and its child before readiness', asyn
   const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'hdr-watchdog-test-'));
   t.after(() => fs.rmSync(scratch, {recursive:true,force:true,maxRetries:5}));
   const python = path.resolve(__dirname, process.platform === 'win32' ? '../.venv/Scripts/python.exe' : '../.venv/bin/python');
-  const source = `import sys,os,subprocess,time\nfrom backend_parent_watch import watch_desktop\nwatch_desktop(int(sys.argv[1]))\nc=subprocess.Popen([sys.executable,'-c','import time;time.sleep(60)'])\nprint(str(os.getpid())+','+str(c.pid),flush=True)\ntime.sleep(60)`;
+  const source = `import sys,os,subprocess,time\nsys.path.insert(0,'backend')\nfrom hdr_finisher.backend_parent_watch import watch_desktop\nwatch_desktop(int(sys.argv[1]))\nc=subprocess.Popen([sys.executable,'-c','import time;time.sleep(60)'])\nprint(str(os.getpid())+','+str(c.pid),flush=True)\ntime.sleep(60)`;
   const parent = spawn(process.execPath, ['-e', `
     const cp=require('node:child_process');
     const child=cp.spawn(${JSON.stringify(python)},['-c',${JSON.stringify(source)},String(process.pid)],{detached:process.platform!=='win32',cwd:${JSON.stringify(path.resolve(__dirname,'..'))},stdio:['ignore','pipe',require('node:fs').openSync(${JSON.stringify(path.join(scratch,'stderr.log'))},'w')]});

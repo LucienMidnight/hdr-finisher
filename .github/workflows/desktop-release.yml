@@ -313,9 +313,31 @@ jobs:
           flatpak install --user -y "HDR-Finisher-${package_version}-Linux-x86_64.flatpak"
           flatpak run --user --command=/app/bin/perl io.github.LucienMidnight.hdr-finisher /app/hdr-finisher-runtime/bin/exiftool-runtime/bin/exiftool -ver | grep -x 13.59
           sidecar="/app/hdr-finisher/resources/backend/HDR Finisher Backend"
-          flatpak run --user --env=HDR_FINISHER_DESKTOP_SECRET=ci --env=HDR_FINISHER_DESKTOP_CONTROL_SECRET=ci --env=HDR_FINISHER_APP_DATA_DIR=/tmp/hdr-finisher-ci --command="$sidecar" io.github.LucienMidnight.hdr-finisher --desktop-sidecar --parent-pid 999999999 | grep "\"backend_version\":\"${package_version}\""
+          # The watchdog requires a live parent in the same PID namespace.
+          timeout 90 flatpak run --user --env=HDR_FINISHER_DESKTOP_SECRET=ci --env=HDR_FINISHER_DESKTOP_CONTROL_SECRET=ci --env=HDR_FINISHER_APP_DATA_DIR=/tmp/hdr-finisher-ci --command=/app/bin/python3.12 io.github.LucienMidnight.hdr-finisher - "$sidecar" "$package_version" <<'PY'
+          import json, os, subprocess, sys, urllib.request
+
+          backend = subprocess.Popen(
+              [sys.argv[1], "--desktop-sidecar", "--parent-pid", str(os.getpid())],
+              stdout=subprocess.PIPE, text=True,
+          )
+          try:
+              for line in backend.stdout:
+                  print(line, end="", flush=True)
+                  if line.startswith("HDR_FINISHER_READY "):
+                      ready = json.loads(line.split(" ", 1)[1])
+                      assert ready["backend_version"] == sys.argv[2], ready
+                      with urllib.request.urlopen(ready["health_url"], timeout=10) as response:
+                          assert json.load(response)["status"] == "ok"
+                      break
+              else:
+                  raise SystemExit(f"Flatpak sidecar exited before readiness ({backend.wait()})")
+          finally:
+              backend.terminate()
+              backend.wait(timeout=5)
+          PY
           set +e
-          timeout 20 dbus-run-session -- xvfb-run -a flatpak run --user io.github.LucienMidnight.hdr-finisher --disable-gpu
+          timeout 20 dbus-run-session -- xvfb-run -a flatpak run --user --env=HDR_FINISHER_TEST_MODE=1 io.github.LucienMidnight.hdr-finisher --disable-gpu
           status=$?
           set -e
           test "$status" -eq 0 -o "$status" -eq 124
