@@ -50,7 +50,7 @@ function initializeHslPanels() {
       <button type="button" class="text-button" data-hsl-action="stop" data-tooltip="Stop sampling colours from the photo.">Stop picking</button></div>
       <button type="button" class="text-button hsl-selection-toggle" data-hsl-selection aria-pressed="false" data-tooltip="Show where the active selection applies. Stronger overlay means more coverage.">Show selection</button>
       <div class="hsl-sliders"></div><p class="hsl-notice" role="status" aria-live="polite"></p>`;
-    const specs = [['width','Range',1,180,1,16],['feather','Softness',1,90,1,12],['edge_feather','Feather',0,64,.25,0],['edge','Edge grow/shrink',-8,8,.25,0],['edge_detail','Edge detail',0,100,1,50],['hue','Hue',-180,180,1,0],['saturation','Saturation',-100,100,1,0],['luminance','Luminance',-2,2,.01,0],['uniformity','Uniformity',0,100,1,0],['opacity','Amount',0,1,.01,1]];
+    const specs = [['width','Range',1,180,1,16],['feather','Hue softness',1,90,1,12],['edge_feather','Edge feather',0,64,.25,0],['edge','Edge grow/shrink',-8,8,.25,0],['edge_detail','Edge detail',0,100,1,50],['hue','Hue',-180,180,1,0],['saturation','Saturation',-100,100,1,0],['luminance','Luminance',-2,2,.01,0],['uniformity','Uniformity',0,100,1,0],['opacity','Amount',0,1,.01,1]];
     for (const [key,label,min,max,step,value] of specs.filter(([key]) => scope === 'global' || !['edge','edge_feather','edge_detail'].includes(key))) {
       const row = document.createElement('div'); row.className = 'control-row instrument-slider-control';
       row.innerHTML = `<div class="control-heading"><label>${label}</label><output></output></div><input type="range" aria-label="HSL ${label}" data-hsl-key="${key}" min="${min}" max="${max}" step="${step}" value="${value}">`;
@@ -246,7 +246,7 @@ function hslWheel(ui){
     node('path',{d:arc(r.center-r.width-r.feather,r.center+r.width+r.feather,radius),stroke:'currentColor','stroke-width':6,fill:'none',opacity:.25,'data-hsl-handle':'move','data-range':i});
     node('path',{d:arc(r.center-r.width,r.center+r.width,radius),stroke:'currentColor','stroke-width':5,fill:'none','stroke-dasharray':r.subtract?'4 3':'none','data-hsl-handle':'move','data-range':i});
     handle('move',r.center,radius,i,`${r.subtract?'Excluded':'Included'} range centre`);
-    if(i===ui.range){for(const side of [-1,1]){handle(`edge${side}`,r.center+side*r.width,radius,i,side<0?'Range start':'Range end');handle(`feather${side}`,r.center+side*(r.width+r.feather),radius,i,side<0?'Softness start':'Softness end');}if(!r.subtract)handle('target',r.center+c.recipe.hue,88,i,'Hue shift target');}
+    if(i===ui.range){for(const side of [-1,1]){handle(`edge${side}`,r.center+side*r.width,radius,i,side<0?'Range start':'Range end');handle(`feather${side}`,r.center+side*(r.width+r.feather),radius,i,side<0?'Hue softness start':'Hue softness end');}if(!r.subtract)handle('target',r.center+c.recipe.hue,88,i,'Hue shift target');}
   });
 }
 function hslRemoveRange(ui,i){

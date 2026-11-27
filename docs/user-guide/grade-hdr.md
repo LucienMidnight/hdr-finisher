@@ -167,9 +167,9 @@ colour band or use **Pick** on the picture. **Add** includes more colours
 and **Subtract** excludes them. **Show selection** follows the wheel as you
 drag, then sharpens the overlay when you let go.
 
-- **Range** widens the band that gets the full adjustment. **Softness**
+- **Range** widens the band that gets the full adjustment. **Hue softness**
   fades the adjustment into neighbouring hues beyond that band.
-- **Feather**, next to Softness in Global HSL, spreads the fade across the
+- **Edge feather**, next to Hue softness in Global HSL, spreads the fade across the
   photo at the selection edge. It goes from 0 to 64 source pixels. It
   smooths the mask, not the photo.
 - **Edge grow/shrink** expands or contracts selected areas. Raise
