@@ -592,6 +592,44 @@ Limits use graph-limit-line (attention),
 Highlight Compression uses curve-neutral. Exposure Bands zero is strong grid
 grey and its influence wash is #ff7a1f1f orange. Selected points remain yellow.
 
+## November 27: full-bleed side panels (proposed)
+
+The outside wall of a workflow panel is the edge for its section surfaces and
+hairline dividers. Keep the right padding inside interactive rows and fields,
+not around the entire scroll container. This gives the Grade Control Panel
+(Global, Local and Retouch), Proof Settings, Metadata/source, Export settings
+(including batch) and Library navigation the same edge whether they scroll
+or fit. Preserve the separate, boxed list design and the Library thumbnail
+grid's current sizing.
+
+When a panel can scroll, draw just a thumb in its existing inline-end
+padding. Use `--quiet`, `--radius-pill`, `--space-4` for the visible width,
+`--space-3` for the edge inset, and the existing `--scrollbar-w` (10 px)
+for the larger drag target. The full hit area must fit inside the padding,
+without taking clicks from values, slider ends, Reset or bypass. Keep the
+real scrolling element, with its existing name and keyboard, wheel and
+trackpad behaviour. The drag affordance is pointer-only and does not add a
+tab stop. No thumb when the content fits.
+
+Show during scroll, hover and pointer capture. After these end, leave it
+visible for a brief idle interval, then fade (switch directly to hidden
+with reduced motion). The current token sheet has no durations. Proposed
+tokens, pending Steve's approval, are `--overlay-scrollbar-idle-delay: 650ms`
+and `--overlay-scrollbar-fade-duration: 160ms`. Neither has been added to
+the app. The component sheet shows the visible and hidden states in all
+three themes without simulating the timing.
+
+Use a shared overlay affordance instead of a Chromium feature switch.
+[CSS Overflow](https://drafts.csswg.org/css-overflow-3/#scrollbar-gutter-property)
+leaves classic versus overlay scrollbar choice to the browser. Neither
+clearing the gutter nor using the legacy `overflow: overlay` alias
+guarantees the required geometry or interaction on all platforms.
+
+When implemented, the Grade and Proof drivers should compare rendered edges
+with and without overflow, verify the thumb and hit area stay outside every
+control, and test pointer dragging, wheel, keyboard, idle and reduced motion.
+Capture both rails in Default Light, Modern Dark and Studio Gray.
+
 ## November 15: source browsing
 
 Open image and Open folder share the same thumbnail grid/list browser and

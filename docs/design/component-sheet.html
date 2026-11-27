@@ -248,6 +248,21 @@
   .hf-group-reset::after { content: ""; width: 5px; height: 5px; border-radius: 50%; background: var(--muted); }
   .hf-group-body { padding: 4px 14px 12px; background: var(--raised); }
 
+  /* Proposed side-panel overlay. These static specimens do not set timing. */
+  .hf-overlay-specimen { position: relative; padding: 0; }
+  .hf-overlay-specimen > .overlay-row {
+    display: flex; align-items: center; justify-content: space-between;
+    min-block-size: var(--list-row-h); padding-inline: var(--space-12);
+    border-block-end: var(--space-1) solid var(--hairline);
+  }
+  .hf-overlay-specimen > .overlay-title { font: var(--section-title-font); background: var(--raised); }
+  .hf-overlay-specimen > .overlay-thumb {
+    position: absolute; inset-block-start: var(--space-40); inset-inline-end: var(--space-3);
+    inline-size: var(--space-4); block-size: var(--space-40); pointer-events: none;
+    border-radius: var(--radius-pill); background: var(--quiet);
+  }
+  .hf-overlay-specimen > .overlay-row small { font-size: var(--font-size-sm); color: var(--muted); }
+
   /* List: one solid surface, thin dividers, and a scrollbar rail that is
      always shown and lighter than the list. The outer box clips the corners. */
   .hf-list { border: 1px solid var(--border); border-radius: var(--radius-1); overflow: hidden; background: var(--raised); }
@@ -334,6 +349,7 @@
   <a href="#sliders">Sliders</a>
   <a href="#panels">Panels and sections</a>
   <a href="#lists">Lists and scrollbars</a>
+  <a href="#overlay-scrollbars">Side-panel scrollbar proposal</a>
   <a href="#graphs">Graphs</a>
   <a href="#tooltips">Tooltips</a>
 </nav>
@@ -624,6 +640,53 @@
         <div class="hf-list"><div class="hf-list-scroll"><div class="hf-list-empty">Choose a mask tool to start an adjustment.</div></div></div>
       </div></div>
   </div>
+</section>
+
+<section id="overlay-scrollbars">
+  <h2>Side-panel overlay scrollbar</h2>
+  <p>Proposed. These are static previews in the selected theme. The dividers
+    reach the outside edge in every state. The visible thumb sits in the
+    existing right padding. It has no painted track.</p>
+  <div class="specimens">
+    <div class="specimen"><h3>Grade <small>overflow, thumb visible</small></h3>
+      <div class="demo hf-overlay-specimen" data-css="hf-overlay-specimen">
+        <div class="overlay-row overlay-title">Control Panel</div>
+        <div class="overlay-row">HDR Grade <small>SDR Grade</small></div>
+        <div class="overlay-row">Tone <small>Reset</small></div>
+        <div class="overlay-row">Exposure <small>+1.00 EV</small></div>
+        <span class="overlay-thumb" aria-hidden="true"></span>
+      </div>
+    </div>
+    <div class="specimen"><h3>Grade <small>overflow, thumb idle</small></h3>
+      <div class="demo hf-overlay-specimen">
+        <div class="overlay-row overlay-title">Control Panel</div>
+        <div class="overlay-row">HDR Grade <small>SDR Grade</small></div>
+        <div class="overlay-row">Tone <small>Reset</small></div>
+        <div class="overlay-row">Exposure <small>+1.00 EV</small></div>
+      </div>
+    </div>
+    <div class="specimen"><h3>Proof <small>overflow, thumb visible</small></h3>
+      <div class="demo hf-overlay-specimen">
+        <div class="overlay-row overlay-title">Proof Settings</div>
+        <div class="overlay-row">Rendition <small>HDR</small></div>
+        <div class="overlay-row">Delivery format <small>JPEG Ultra HDR</small></div>
+        <div class="overlay-row">Proof size <small>Reduced</small></div>
+        <span class="overlay-thumb" aria-hidden="true"></span>
+      </div>
+    </div>
+    <div class="specimen"><h3>Proof <small>content fits</small></h3>
+      <div class="demo hf-overlay-specimen">
+        <div class="overlay-row overlay-title">Proof Settings</div>
+        <div class="overlay-row">Rendition <small>HDR</small></div>
+        <div class="overlay-row">Delivery format <small>JPEG Ultra HDR</small></div>
+        <div class="overlay-row">Proof size <small>Reduced</small></div>
+      </div>
+    </div>
+  </div>
+  <p class="note">Pending approval for an idle delay of 650 ms and a fade of
+    160 ms. Reduced motion removes the fade. The larger pointer target remains
+    inside the existing padding. Wheel, keyboard and screen-reader interaction
+    stays with the real scrolling panel.</p>
 </section>
 
 <section id="graphs">
