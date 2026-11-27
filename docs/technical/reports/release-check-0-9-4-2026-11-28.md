@@ -21,6 +21,8 @@ fixture issue. A pass after an earlier timeout is recorded explicitly.
 
 - `tests/grade-dng.js` — (b) standalone browser needs Microsoft Edge, absent on this Mac. Both release attempts show that exact error, as recorded in AGENTS.md item 7 and the 0.9.3 Mac check. Not a DNG pixel pass.
 - `tests/jxl-source-colour.js` — (b) native colour oracle remains Windows-only (AGENTS.md item 7). Both attempts fail with `KeyError: 'data_color_encoding'`, the existing 0.9.3 signature. Not a JPEG XL colour pass.
+- `tests/gpu-delivery-repeat.js` — (b) intermittent host-memory refusal, already seen November 26. Standalone replay passes unchanged at both 3 and 2 GiB caps with exact finished pixels and byte-identical Proof. Mac headroom reader/reserve are unchanged from the tag. No evidence of memory left behind between these two exports; no budget changed.
+- `tests/gpu-delivery-ceiling.js` — (b) same measured host-headroom refusal as repeat in the focused run. Standalone at the starting revision passes GPU and forced CPU, both decoded peaks 1008.578 nits under the existing 1010 allowance and both full Proofs byte-identical. No memory or pixel guard changed.
 
 ## Earlier fast checks
 
