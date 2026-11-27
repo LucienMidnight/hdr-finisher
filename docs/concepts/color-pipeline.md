@@ -164,7 +164,7 @@ SDR temporarily converts from display-linear sRGB and removes its scene-to-displ
 scale. The graph places middle grey at about 0.325, project reference white at
 0.563, and SDR white at 0.665. The SDR headroom area remains editable.
 
-The evaluator uses monotone cubic interpolation with 2?16 points, a 1,024-sample
+The evaluator uses monotone cubic interpolation with 2–16 points, a 1,024-sample
 LUT and linear extrapolation using the LUT endpoint slopes. A Luma edit can lift
 black without multiplying that lift into noise. RGB curves work in ACEScg
 primaries. Signed and above-white results reach the later highlight and gamut

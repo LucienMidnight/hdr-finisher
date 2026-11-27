@@ -13,6 +13,13 @@ count an HDR curve twice. Saved non-neutral curves use the new interpretation
 with no migration. Film Look, Grain, Halation, Vignette and Tone keep their
 previous transfer or pivot.
 
+Windows qualification used the eight saved test copies with an in-memory
+S-luma curve and teal–orange RGB curves, plus WCFA0332's existing HDR Luma
+curve. All 17 fits copied the points exactly. Sixteen stayed at or below the
+body mean ΔE 2000 target of 2. P1011900 with S-luma measured 2.52 and stayed
+Needs review. The acceptance gates are unchanged. The small local review is
+at `codebase/output/review/shared-curves/index.html`.
+
 ## November 27: SDR Match fits the picture
 
 Steve approved fitting Exposure first, Contrast only when HDR uses it, five
