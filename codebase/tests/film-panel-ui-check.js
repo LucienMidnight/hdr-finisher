@@ -1,6 +1,7 @@
 const assert = require('node:assert/strict');
 const path = require('node:path');
 module.exports = async function checkFilmPanel(page) {
+ await require('./helpers/indicator-dots.cjs')(page);
  const group = page.locator('[data-group="film-look"]');
  const head = group.locator(':scope > .control-group-header .group-toggle');
  if (await head.getAttribute('aria-expanded') !== 'true') await head.click();

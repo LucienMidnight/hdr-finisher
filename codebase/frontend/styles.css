@@ -1687,12 +1687,13 @@ input[type="text"] {
   gap: var(--space-4);
 }
 
-.control-row.modified label::before {
+/* One marker per control: a visible Film reset dot replaces the passive dot. */
+.control-row.modified:not(:has(.film-stock-reset:not([hidden]))) label::before {
   content: "";
   display: inline-block;
-  width: 5px;
-  height: 5px;
-  margin-right: var(--space-5);
+  width: 4px;
+  height: 4px;
+  margin-right: var(--space-6);
   border-radius: 50%;
   background: var(--accent);
   vertical-align: 1px;
@@ -5033,12 +5034,6 @@ body[data-grade-mode="local"] .local-mask-overlay.editing {
 .control-row:focus-within .control-heading label,
 .control-row:focus-within .control-heading output {
   color: var(--text);
-}
-
-.control-row.modified label::before {
-  width: 4px;
-  height: 4px;
-  margin-right: var(--space-6);
 }
 
 .featured-control {

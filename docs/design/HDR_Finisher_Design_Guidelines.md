@@ -1,3 +1,26 @@
+## November 27: one changed marker per control heading
+
+Top-level module changed dots remain. Complex modules may also summarize
+modified controls on subsection headings. A single heading/control line must
+never draw an adjacent pair of indicators. Film's clickable deliberate-override
+reset dot takes the place of the passive changed-from-default label dot when
+visible. When it is hidden, the ordinary passive dot still reports a changed
+value. Reset action, equal-value ownership, counts, bypass and inherited stock
+default semantics are unchanged. Do not hide a parent module marker merely
+because it contains changed controls on separate lines.
+
+Grade's adjustment-controls, Denoise, Geometry and HSL keep deciding their
+existing changed state; the shared CSS owns passive label markers. Film owns
+its reset buttons and subsection summaries. Colour-wheel/HSL tabs and HDR/SDR
+lane indicators keep their separate scope. Proof/Export have no second changed
+marker system; shared control-heading styling follows this same rule. Unsaved
+and status/conflict badges are different signals and are not changed.
+
+The shared passive selector excludes a control with a visible Film reset dot;
+its former duplicate size override is consolidated. No new indicator colour or
+size is introduced: existing accent/muted and spacing tokens continue to apply
+in Modern Dark, Default Light and Studio Gray.
+
 # HDR Finisher Design Guidelines
 
 Status: living guideline for the shipped application

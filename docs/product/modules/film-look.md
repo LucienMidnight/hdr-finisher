@@ -1,3 +1,16 @@
+## November 27: single changed marker
+
+A deliberate Film control override keeps its clickable reset dot and suppresses
+the adjacent passive label dot. This removes the duplicate on Lens Strength,
+Size and every other Film slider/numeric row with a visible reset marker.
+Lens Filter keeps its one reset marker. Module headers, Camera/Negative/Print/
+Scan subsection summaries and passive changed controls without an override
+retain their existing meaning. Equal-value deliberate edits still show Reset.
+The design guideline records the shared rule. The DOM/CSS regression checks
+all panel headings (including Proof/Export markup), explicit and passive states,
+in all three themes using the app's Chromium; no GPU/photo is needed by the
+fixture itself.
+
 ## November 27: Lens shortcuts removed
 
 Removed the five Camera Lens shortcut buttons (None, Light diffusion,
