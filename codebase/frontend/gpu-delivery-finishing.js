@@ -3,6 +3,20 @@
  * rgba32float scratch avoids introducing half-float rounding in repeated blur.
  */
 window.HDRGpuDeliveryFinishing = class {
+  static reservation(job) {
+    const {width,height}=job, native=width*height;
+    const [pw,ph]=job.photo_output||job.output, photo=pw*ph;
+    const canvas=job.output[0]*job.output[1];
+    if(job.streamed)return native*8+width*32*16*2+32*1024*1024;
+    const resize=(width!==pw||height!==ph)?16*(native+pw*height+photo):0;
+    // Photo scratch retires before framing. Canvas storage is still charged
+    // for composition, readback and handoff (including row alignment).
+    const readRows=Math.min(job.row_upload?32:128,job.output[1]);
+    const readback=Math.ceil(job.output[0]*16/256)*256*readRows;
+    return Math.max(native*24,resize,photo*(job.finishing.sharpening==="off"?32:96),
+      job.framing?16*(photo+canvas):0,
+      canvas*16+(job.row_upload?job.output[0]*32*16:canvas*16)+readback)+32*1024*1024;
+  }
   constructor(gpu, permit) { this.gpu=gpu; this.device=gpu.device; this.permit=permit; this.owned=new Set(); }
   // Rows per submission. Each submission waits for the GPU, so 128-row strips of
   // a 42 MP image spent more time in round trips than in work. About 4 M pixels

@@ -117,3 +117,16 @@ test('encoder rejection releases the readback buffer and delivered texture', asy
   await assert.rejects(finishing.read(finishing.texture(3, 35), async () => { throw Error('encoder closed'); }), /encoder closed/);
   assert.ok(resources.every(value => value.destroyed === 1));
 });
+
+for(const sharpening of ['off','standard'])test(`framed admission charges photo scratch and the live canvas (${sharpening})`,()=>{
+  const {finishing}=fixture(),F=finishing.constructor;
+  const job={width:6000,height:4000,photo_output:[3000,2000],output:[7000,5000],
+    framing:{},finishing:{sharpening},row_upload:true};
+  const bytes=F.reservation(job),photo=3000*2000,canvas=7000*5000;
+  assert.ok(bytes>=16*(photo+canvas),'composition textures');
+  assert.ok(bytes>=photo*(sharpening==='off'?32:96),'photo finishing scratch');
+  assert.ok(bytes>=16*(6000*4000+3000*4000+photo),'resize scratch');
+  const old=Math.max(6000*4000*24,16*(6000*4000+7000*4000+canvas),
+    canvas*(sharpening==='off'?32:96))+canvas*16+32*1024*1024;
+  assert.ok(bytes<old,'canvas must not be processed as photo scratch');
+});
