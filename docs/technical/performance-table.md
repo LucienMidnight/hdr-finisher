@@ -1,3 +1,29 @@
+## November 27: release-driver speed work blocked on PC
+
+HSL delivery now has a `--all` mode: one neutral case, the global edit, then
+reset global HSL and test the local hue mask alone. Release registration uses
+`args: ["--all"]` without the old `--local` follow-up. All original
+full-resolution renderer, HDR ceiling, Proof-byte and added-difference gates
+remain. This removes one duplicate neutral GPU/CPU export+Proof pair and one
+app launch; no measured speed claim is available yet.
+
+| Attempt | PC observation | Conditions |
+| --- | --- | --- |
+| HSL standalone global baseline | 25.70 s, failed before driver start | Electron target closed during initial page load. |
+| HSL standalone local baseline / startup retry | 186.71 s, failed before driver start | 180 s startup timeout; no launch process handle. |
+| RAW Single baseline | 44.83 s, failed before reference comparison | First RAW GPU development rejected an invalid finite-half-float sample (1.31e21), consistent with this PC's known faulty VRAM. No profile was produced. Driver unchanged. |
+
+Windows PC, 2560x1440, shared GPU run lock; direct release-equivalent Electron
+launchers, per Agent01's instruction because other workers were editing the
+shared checkout. Baseline HSL invocations retained their original standalone
+behavior while `362673ec` added combined mode. Whole launcher times exclude
+lock queueing. Evidence: `codebase/output/test-driver-speed/before.json` and
+adjacent `*-before.log`. No valid before/after comparison, after GPU run or
+next-driver work; stop after the startup retry. Four behavioral HSL driver
+tests pass at `8f658a27`, including local gate failure and standalone modes.
+Further real-app validation is required before treating combined mode as
+qualified. Output remains 36.7 GB (100 GB limit).
+
 ## November 27: Neutral extreme scanner saturation qualification (PC)
 
 | Action | Result | Conditions |
