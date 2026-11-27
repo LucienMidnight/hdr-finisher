@@ -642,11 +642,11 @@
         "ui"
       ],
       "tier": "area",
-      "protects": "Safe linked Match, live HDR edits, unlink, SDR global/local edits, one Undo, N4 consent and linked finished GPU/CPU export plus reduced/full Proof agreement.",
+      "protects": "Seeded linked SDR grade, live HDR edits, unlink, SDR global/local edits, one Undo, N4 consent and linked finished GPU/CPU export plus reduced/full Proof agreement.",
       "launch": {
         "method": "electron"
       },
-      "brief": "Safe linked Match, live HDR edits, unlink, SDR global/local edits, one Undo, N4 consent and linked finished GPU/CPU export plus reduced/full Proof agreement. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.",
+      "brief": "Seeded linked SDR grade, live HDR edits, unlink, SDR global/local edits, one Undo, N4 consent and linked finished GPU/CPU export plus reduced/full Proof agreement. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.",
       "expectedMinutes": {
         "win": null,
         "mac": null

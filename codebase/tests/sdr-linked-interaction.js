@@ -19,18 +19,21 @@ const {resolveInterpretation}=require('./helpers/resolve-interpretation.js');
    state.adjustments.hdr.film_look.film_stock='kodak_portra_400';state.adjustments.hdr.film_look.look_strength=50;
    state.adjustments.hdr.highlight_section_enabled=true;state.adjustments.hdr.highlight_compression_mode='fixed_cap';
    markGlobalEditDirty();if(!await syncGlobalEditState())throw Error('global preparation');
-   const local=newLocalAdjustment('linear_gradient');local.name='HDR window';local.hdr_grade.exposure=.05;
+   const local=newLocalAdjustment('linear_gradient');local.name='HDR window';local.hdr_grade.exposure=.05;local.sdr_grade.exposure=.05;
    if(!await queueEditCommand('create_local',{local}))throw Error('local preparation');state.selectedLocalId=local.id;
+   // Whole Match intentionally materializes independent editable SDR now.
+   // Seed a linked recipe in the disposable session to exercise the linked
+   // renderer and editing/history without depending on the removed entry point.
+   state.adjustments.sdr.linked_to_hdr=true;markGlobalEditDirty();
+   if(!await syncGlobalEditState())throw Error('linked recipe preparation');
    await switchLane('sdr');
   });
-  assert.equal(await page.evaluate(()=>setSdrMatch()),true);
-  assert.equal(await page.evaluate(()=>state.adjustments.sdr.linked_to_hdr),true);
+  assert.equal(await page.evaluate(()=>state.editDocument.global_adjustments.sdr.linked_to_hdr),true);
   await page.waitForFunction(()=>state.acceptedPresentation?.lane==='sdr'&&state.acceptedPresentation.exact&&state.acceptedPresentation.generation===state.previewGeneration.sdr);
   assert.match(await page.locator('#sdr-match-entire-status').innerText(),/Linked to HDR/);
   const visibleStatus=await page.locator('#sdr-match-entire-status').evaluate(e=>({clip:getComputedStyle(e).clipPath,width:e.getBoundingClientRect().width,height:e.getBoundingClientRect().height}));
   assert.equal(visibleStatus.clip,'none');assert(visibleStatus.width>10&&visibleStatus.height>10);
-  assert(await page.locator('#sdr-unlink').isVisible());report.checks.push('real whole Match links and presents');
-  const linked=await page.evaluate(()=>structuredClone(state.editDocument));
+  assert(await page.locator('#sdr-unlink').isVisible());report.checks.push('linked recipe presents');
   await page.evaluate(async()=>{commitAdjustmentValue('hdr.exposure',.1,{manual:true});await syncGlobalEditState();});
   assert.equal(await page.evaluate(()=>state.adjustments.sdr.linked_to_hdr),true);
   await page.waitForFunction(()=>state.acceptedPresentation?.lane==='sdr'&&state.acceptedPresentation.exact&&state.acceptedPresentation.generation===state.previewGeneration.sdr);
@@ -50,8 +53,8 @@ const {resolveInterpretation}=require('./helpers/resolve-interpretation.js');
   assert.equal(await page.evaluate(()=>state.adjustments.hdr.contrast),.12);
   report.checks.push('SDR local edit and unlink share one Undo while an HDR global edit is pending');
   await page.evaluate(()=>setGradeMode('global'));
-  // The linked Match copied HDR local settings into the independent SDR slot;
-  // whole Match still asks before replacing them, and cancel is a no-op.
+  // The seeded grade also contains an independent SDR local. Whole Match
+  // still asks before replacing authored locals, and cancel is a no-op.
   const revision=await page.evaluate(()=>state.editRevision);
   await page.locator('#sdr-match-entire').click();await page.locator('#app-dialog[open]').waitFor();
   assert.match(await page.locator('#app-dialog-message').innerText(),/individually matched or edited/);

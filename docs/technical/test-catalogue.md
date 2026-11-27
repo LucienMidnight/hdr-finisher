@@ -792,7 +792,7 @@ Optional hot-pixel and signed harsh-speck sensor cleanup integrated with product
 
 #### `tests/sdr-linked-interaction.js`
 
-Safe linked Match, live HDR edits, unlink, SDR global/local edits, one Undo, N4 consent and linked finished GPU/CPU export plus reduced/full Proof agreement. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
+Seeded linked SDR grade, live HDR edits, unlink, SDR global/local edits, one Undo, N4 consent and linked finished GPU/CPU export plus reduced/full Proof agreement. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac 0.107.
 - Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
@@ -960,7 +960,7 @@ Compare the visible contribution of spatial film effects at 4K and Full. The pag
 
 #### `tests/sdr-linked-interaction.js`
 
-Safe linked Match, live HDR edits, unlink, SDR global/local edits, one Undo, N4 consent and linked finished GPU/CPU export plus reduced/full Proof agreement. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
+Seeded linked SDR grade, live HDR edits, unlink, SDR global/local edits, one Undo, N4 consent and linked finished GPU/CPU export plus reduced/full Proof agreement. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac 0.107.
 - Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
@@ -2357,7 +2357,7 @@ Clone and Heal source picking, source editing, opacity, history, native preview 
 
 #### `tests/sdr-linked-interaction.js`
 
-Safe linked Match, live HDR edits, unlink, SDR global/local edits, one Undo, N4 consent and linked finished GPU/CPU export plus reduced/full Proof agreement. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
+Seeded linked SDR grade, live HDR edits, unlink, SDR global/local edits, one Undo, N4 consent and linked finished GPU/CPU export plus reduced/full Proof agreement. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac 0.107.
 - Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
@@ -4660,7 +4660,7 @@ Checks HDR and SDR readouts at the minimum dock height in all three themes at no
 
 #### `tests/sdr-linked-interaction.js`
 
-Safe linked Match, live HDR edits, unlink, SDR global/local edits, one Undo, N4 consent and linked finished GPU/CPU export plus reduced/full Proof agreement. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
+Seeded linked SDR grade, live HDR edits, unlink, SDR global/local edits, one Undo, N4 consent and linked finished GPU/CPU export plus reduced/full Proof agreement. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac 0.107.
 - Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
