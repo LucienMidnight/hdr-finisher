@@ -688,22 +688,13 @@ def test_sdr_blacks_at_max_stays_in_display_range() -> None:
     assert output.max() <= 1.0, "SDR Blacks at max should not exceed display white"
 
 
-def test_log_domain_hdr_curves_no_infinities_up_to_peak_10() -> None:
-    image = np.array([[[1.0, 2.0, 5.0], [3.0, 8.0, 10.0]]], dtype=np.float32)
-    encoded = _curve_domain_encode(image, PreviewKind.HDR)
-    assert not np.any(np.isinf(encoded)), "Log HDR curves should not produce infinities"
-    assert not np.any(np.isnan(encoded)), "Log HDR curves should not produce NaNs"
-    assert encoded.max() <= 1.0, "Encoded HDR values should be normalized to 0-1"
-    decoded = _curve_domain_decode(encoded, PreviewKind.HDR)
-    assert not np.any(np.isinf(decoded)), "Decoded HDR curves should not produce infinities"
-    assert not np.any(np.isnan(decoded)), "Decoded HDR curves should not produce NaNs"
-
-
-def test_hdr_curves_preserve_high_values() -> None:
-    image = np.array([[[10.0, 8.0, 6.0]]], dtype=np.float32)
-    encoded = _curve_domain_encode(image, PreviewKind.HDR)
-    decoded = _curve_domain_decode(encoded, PreviewKind.HDR)
-    assert decoded[0, 0, 0] > 5.0, "HDR curve decode should preserve high values above 1.0"
+def test_shared_curve_domain_round_trips_signed_hdr_values() -> None:
+    values = np.concatenate((np.linspace(-.1, 0, 128), np.geomspace(1e-7, 100, 1024))).astype(np.float32)
+    encoded = _curve_domain_encode(values)
+    assert encoded[-1] > 1.0
+    decoded = _curve_domain_decode(encoded)
+    assert decoded.dtype == np.float32
+    np.testing.assert_allclose(decoded, values, rtol=3e-6, atol=1e-8)
 
 
 def test_tiny_hdr_contrast_change_does_not_clamp_wide_exr_values() -> None:
@@ -1374,25 +1365,102 @@ def test_highlight_compression_start_and_target_are_neutral_until_softness_chang
     np.testing.assert_array_equal(_apply_hdr_adjustments(image, state), image)
 
 
-def test_hdr_curve_domain_places_graphics_white_and_peak_predictably() -> None:
-    values = np.array([[[0.0, 0.09, 0.18], [0.36, 18.0, 36.0]]], dtype=np.float32)
-    encoded = _curve_domain_encode(values, PreviewKind.HDR)
-    expected_half_white = 0.5 * np.power(0.5, 1.0 / np.log(100.0))
-    np.testing.assert_allclose(encoded[0, 0], [0.0, expected_half_white, 0.5], atol=1e-6)
-    assert encoded[0, 1, 0] > 0.5
-    np.testing.assert_allclose(encoded[0, 1, 1], 1.0, atol=1e-6)
-    assert encoded[0, 1, 2] > 1.0
-    np.testing.assert_allclose(_curve_domain_decode(encoded, PreviewKind.HDR), values, rtol=2e-6, atol=1e-6)
+def test_shared_curve_domain_places_middle_grey_white_and_headroom() -> None:
+    values = np.array([0, .0324, .18, .3654, 3.6, 10000 * .18 / 203], dtype=np.float32)
+    np.testing.assert_allclose(_curve_domain_encode(values), [0, .325, .563, .665, 1, 1.13], atol=.003)
+    middle = _curve_domain_encode(values[1])
+    sensitivity = .05 * np.log2(_curve_domain_decode(middle + .0001) /
+                                 _curve_domain_decode(middle - .0001)) / .0002
+    assert .48 <= sensitivity <= .58
 
 
-def test_hdr_curve_domain_has_matched_slope_at_reference_white() -> None:
-    epsilon = np.float32(1e-4)
-    encoded = np.array([0.5 - epsilon, 0.5, 0.5 + epsilon], dtype=np.float32)
-    decoded = _curve_domain_decode(encoded, PreviewKind.HDR)
-    lower_slope = (decoded[1] - decoded[0]) / epsilon
-    upper_slope = (decoded[2] - decoded[1]) / epsilon
+@pytest.mark.parametrize("transfer", [_curve_domain_encode, _curve_domain_decode])
+def test_shared_curve_domain_has_matched_slope_at_black(transfer) -> None:
+    eps = np.float32(1e-6)
+    low, zero, high = transfer(np.array([-eps, 0, eps], dtype=np.float32))
+    assert (zero - low) / eps == pytest.approx((high - zero) / eps, rel=2e-3)
 
-    assert lower_slope == pytest.approx(upper_slope, rel=2e-3)
+
+@pytest.mark.parametrize("local", [False, True])
+@pytest.mark.parametrize("recipe", [
+    {"luma_curve": [[0, 0], [.25, .21], [.5, .5], [.7, .76], [1, 1]]},
+    {"luma_curve": [[0, .12], [.5, .5], [1, 1]]},
+    {"red_curve": [[0, 0], [.3, .28], [.55, .60], [1, 1]],
+     "blue_curve": [[0, 0], [.25, .30], [.55, .50], [1, 1]]},
+])
+def test_shared_curves_agree_on_placed_sdr_and_retain_headroom(local, recipe) -> None:
+    import colour
+    from hdr_finisher.adjustments import SDR_SCENE_TO_DISPLAY_SCALE
+    from hdr_finisher.color import acescg_to_linear_srgb, linear_bt2020_to_acescg
+    from hdr_finisher.local_adjustments import _apply_local_grade
+    from hdr_finisher.models import LocalGrade
+
+    body = np.array([[0, 0, 0], [.003, .012, .008], [.08, .06, .15],
+                     [.2, .25, .26], [.3, .3, .3]], dtype=np.float32)
+    wide = np.array([[0, .2, 0], [.2, 0, 0], [0, 0, .2]], dtype=np.float32)
+    p3 = colour.RGB_to_RGB(wide, colour.RGB_COLOURSPACES["Display P3"],
+                           colour.RGB_COLOURSPACES["ACEScg"], chromatic_adaptation_transform="CAT02")
+    scene = np.concatenate((body, linear_bt2020_to_acescg(wide), p3, [[4, 4, 4]]))[None].astype(np.float32)
+    placed = acescg_to_linear_srgb(scene) * SDR_SCENE_TO_DISPLAY_SCALE
+    if local:
+        grade = LocalGrade(**recipe)
+        hdr = _apply_local_grade(scene, grade, PreviewKind.HDR)
+        sdr = _apply_local_grade(placed, grade, PreviewKind.SDR)
+    else:
+        hdr = _apply_curve_set(scene, HDRAdjustments(**recipe), PreviewKind.HDR)
+        sdr = _apply_curve_set(placed, SDRAdjustments(**recipe), PreviewKind.SDR)
+
+    expected = acescg_to_linear_srgb(hdr) * SDR_SCENE_TO_DISPLAY_SCALE
+    # The linear allowance is in shared scene units, not SDR display units.
+    np.testing.assert_allclose(sdr / SDR_SCENE_TO_DISPLAY_SCALE, expected / SDR_SCENE_TO_DISPLAY_SCALE,
+                               rtol=0, atol=1e-3)
+    labs = [colour.XYZ_to_Lab(colour.RGB_to_XYZ(rgb[:, :len(body)], colour.RGB_COLOURSPACES["sRGB"]))
+            for rgb in (sdr, expected)]
+    assert np.mean(colour.difference.delta_E_CIE2000(*labs)) < .05
+    assert np.all(sdr[0, -1] > 1.0)
+
+
+def test_luma_black_floor_lifts_black_without_amplifying_noise_or_inverting_signed_raw() -> None:
+    from hdr_finisher.color import linear_bt2020_to_acescg
+    scene = np.array([[[0, 0, 0], [0, 1e-5, 0], [.00006, -.0002, -.00005]]], dtype=np.float32)
+    green = linear_bt2020_to_acescg(np.array([[[0, .002, 0]]], dtype=np.float32))
+    scene = np.concatenate((scene, green), axis=1)
+    grade = HDRAdjustments(luma_curve=[[0, .12], [.5, .5], [1, 1]])
+    result = _apply_curve_set(scene, grade, PreviewKind.HDR)
+    np.testing.assert_allclose(result[0, 0], _curve_domain_decode(.12), atol=1e-9)
+    np.testing.assert_allclose(result[0, 1, 1] - result[0, 1, 0], 1e-5, atol=1e-9)
+    np.testing.assert_allclose(np.diff(result[0, 2]), np.diff(scene[0, 2]), atol=1e-9)
+    # True BT.2020 green has unequal red and blue coordinates in AP1.
+    # The neutral lift must not add any differential red/blue term.
+    floor = _curve_domain_decode(.12)
+    gain = (result[0, 3, 1] - floor) / green[0, 0, 1]
+    np.testing.assert_allclose(result[0, 3], floor + gain * green[0, 0], atol=1e-9)
+
+
+def test_generated_and_authored_sdr_curve_pipeline_keeps_headroom_before_output() -> None:
+    from hdr_finisher.adjustments import SDR_SCENE_TO_DISPLAY_SCALE, sdr_highlight_stage_input
+    from hdr_finisher.color import acescg_to_linear_srgb
+
+    scene = np.array([[[0, 0, 0], [.1, .2, .3], [4, 4, 4]]], dtype=np.float32)
+    placed = acescg_to_linear_srgb(scene * SDR_SCENE_TO_DISPLAY_SCALE)
+    state = AdjustmentState(sdr=SDRAdjustments(luma_curve=[[0, .1], [.7, .73], [1, 1]]))
+    expected = _apply_curve_set(placed, state.sdr, PreviewKind.SDR)
+    for pixels, authored in ((scene, False), (placed, True)):
+        rendered = sdr_highlight_stage_input(pixels, state, authored_reference=authored)
+        np.testing.assert_array_equal(rendered, expected)
+        assert rendered[0, 0].min() > 0 and rendered[0, 2].min() > 1
+
+
+@pytest.mark.parametrize("kind", [PreviewKind.HDR, PreviewKind.SDR])
+def test_shared_curves_neutral_and_disabled_bypass_exactly(kind) -> None:
+    from hdr_finisher.adjustments import _apply_curves
+    scene = np.array([[[-.1, .0324, 100]]], dtype=np.float32)
+    state = AdjustmentState()
+    assert _apply_curves(scene, state, kind) is scene
+    branch = getattr(state, kind.value)
+    branch.luma_curve = [[0, .1], [1, 1]]
+    branch.curves_section_enabled = False
+    assert _apply_curves(scene, state, kind) is scene
 
 
 def test_hdr_section_bypass_retains_settings_but_removes_render_effect() -> None:

@@ -2430,7 +2430,7 @@
       "suite": "python",
       "area": "adjustments",
       "purpose": "Checks adjustments behavior and regression contracts.",
-      "test_count": 236,
+      "test_count": 246,
       "seconds": {
         "windows": 9.8053,
         "mac": null

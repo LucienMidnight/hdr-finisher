@@ -1063,7 +1063,7 @@ def _apply_luminance_section_controls(
     if kind == PreviewKind.HDR:
         return render_rows(image, lambda part, _: _apply_scene_luminance_controls(part, branch_adjustments))
 
-    pivot = _contrast_pivot_in_curve_domain(branch_adjustments, kind)
+    pivot = np.float32(np.clip(getattr(branch_adjustments, "contrast_pivot", 0.5), 0.0, 1.0))
     return render_rows(image, lambda part, _: _apply_sdr_contrast_rows(part, contrast, pivot))
 
 
@@ -1780,14 +1780,6 @@ def _srgb_decode(value: np.ndarray, *, preserve_headroom: bool = False) -> np.nd
     ).astype(np.float32)
 
 
-def _contrast_pivot_in_curve_domain(branch_adjustments: object, kind: PreviewKind) -> np.float32:
-    pivot = float(getattr(branch_adjustments, "contrast_pivot", 0.5))
-    if kind == PreviewKind.HDR:
-        encoded = _curve_domain_encode(np.array([[[max(pivot, 0.0)] * 3]], dtype=np.float32), kind)
-        return np.float32(encoded[0, 0, 0])
-    return np.float32(np.clip(pivot, 0.0, 1.0))
-
-
 def _smoothstep(edge0: float, edge1: float, value: np.ndarray) -> np.ndarray:
     t = np.clip((value - edge0) / max(edge1 - edge0, 1e-6), 0.0, 1.0)
     return t * t * (3.0 - 2.0 * t)
@@ -1795,7 +1787,7 @@ def _smoothstep(edge0: float, edge1: float, value: np.ndarray) -> np.ndarray:
 
 def _apply_curves(image: np.ndarray, adjustments: AdjustmentState, kind: PreviewKind) -> np.ndarray:
     branch = adjustments.hdr if kind == PreviewKind.HDR else adjustments.sdr
-    if _curve_set_is_neutral(branch):
+    if not branch.curves_section_enabled:
         return image
     return _apply_curve_set(image, branch, kind)
 
@@ -1973,15 +1965,53 @@ def _film_luma(image: np.ndarray, kind: PreviewKind) -> np.ndarray:
     return _acescg_luma(image) if kind == PreviewKind.HDR else _linear_luma(image)
 
 
+# Keep the historical film response independent of the editable Curves stage.
+FILM_HDR_REFERENCE_WHITE = np.float32(0.18)
+FILM_HDR_MAX_NITS = np.float32(10000.0)
+FILM_HDR_STOP_SPAN = np.float32(np.log2(FILM_HDR_MAX_NITS / 100.0))
+# Match the derivative of the highlight log branch at reference white. The old
+# linear shadow branch was 4.6x flatter there, creating a visible kink whenever
+# the default middle control point moved away from the identity line.
+FILM_HDR_SHADOW_POWER = np.float32(np.log(FILM_HDR_MAX_NITS / 100.0))
+
+
+def _film_hdr_encode_luma(image: np.ndarray) -> np.ndarray:
+    value = image.astype(np.float32, copy=False)
+    positive = np.maximum(value, 0.0)
+    below_white = np.float32(0.5) * np.power(
+        positive / FILM_HDR_REFERENCE_WHITE,
+        np.float32(1.0) / FILM_HDR_SHADOW_POWER,
+    )
+    above_white = np.float32(0.5) + np.float32(0.5) * (
+        np.log2(np.maximum(positive, FILM_HDR_REFERENCE_WHITE) / FILM_HDR_REFERENCE_WHITE)
+        / FILM_HDR_STOP_SPAN
+    )
+    encoded = np.where(positive <= FILM_HDR_REFERENCE_WHITE, below_white, above_white)
+    return np.where(value >= 0.0, encoded, value / (np.float32(2.0) * FILM_HDR_REFERENCE_WHITE))
+
+
+def _film_hdr_decode_luma(image: np.ndarray) -> np.ndarray:
+    value = image.astype(np.float32, copy=False)
+    below_white = FILM_HDR_REFERENCE_WHITE * np.power(
+        np.maximum(value * np.float32(2.0), 0.0),
+        FILM_HDR_SHADOW_POWER,
+    )
+    above_white = FILM_HDR_REFERENCE_WHITE * np.exp2(
+        (value - np.float32(0.5)) * np.float32(2.0) * FILM_HDR_STOP_SPAN
+    )
+    decoded = np.where(value <= np.float32(0.5), below_white, above_white)
+    return np.where(value >= 0.0, decoded, value * np.float32(2.0) * FILM_HDR_REFERENCE_WHITE)
+
+
 def _film_encode_luma(luma: np.ndarray, kind: PreviewKind) -> np.ndarray:
     if kind == PreviewKind.HDR:
-        return _curve_domain_encode(luma, kind)
+        return _film_hdr_encode_luma(luma)
     return _srgb_encode(np.clip(luma, 0.0, 1.0))
 
 
 def _film_decode_luma(signal: np.ndarray, kind: PreviewKind) -> np.ndarray:
     if kind == PreviewKind.HDR:
-        return _curve_domain_decode(signal, kind)
+        return _film_hdr_decode_luma(signal)
     return _srgb_decode(np.clip(signal, 0.0, 1.0))
 
 
@@ -2685,101 +2715,71 @@ def _grain_pitch_pixels(width: int, height: int, look: object) -> float:
     return _film_pixels_per_mm(width, height, look) * grain_diameter_mm
 
 
-def _curve_set_is_neutral(curve_source: object) -> bool:
-    for name in ("luma_curve", "red_curve", "green_curve", "blue_curve"):
-        curve = _normalize_curve_points(getattr(curve_source, name))
-        if not _curve_is_neutral_points(curve):
-            return False
-    return True
-
-
 def _curve_is_neutral_points(curve: np.ndarray) -> bool:
     return bool(np.allclose(curve[:, 0], curve[:, 1], rtol=0.0, atol=1e-7))
+
+
+CURVE_C = np.float32(0.004)
+CURVE_VMAX = 3.6
+CURVE_LOG_SPAN = np.float32(np.log2(1.0 + CURVE_VMAX / 0.004))
+_CURVE_LN_SPAN = np.float32(CURVE_LOG_SPAN * np.log(2.0))
+_CURVE_TOE = CURVE_C * _CURVE_LN_SPAN
+
+
+def _curve_domain_encode(image: np.ndarray) -> np.ndarray:
+    value = np.asarray(image, dtype=np.float32)
+    return np.where(value < 0.0, value / _CURVE_TOE,
+                    np.log1p(np.maximum(value, 0.0) / CURVE_C) / _CURVE_LN_SPAN)
+
+
+def _curve_domain_decode(image: np.ndarray) -> np.ndarray:
+    value = np.asarray(image, dtype=np.float32)
+    return np.where(value < 0.0, value * _CURVE_TOE,
+                    CURVE_C * np.expm1(np.maximum(value, 0.0) * _CURVE_LN_SPAN))
 
 
 def _apply_curve_set(image: np.ndarray, curve_source: object, kind: PreviewKind) -> np.ndarray:
     def prepare(name):
         curve = _normalize_curve_points(getattr(curve_source, name))
-        return None if _curve_is_neutral_points(curve) else (curve, *_build_curve_lut(curve))
+        return None if _curve_is_neutral_points(curve) else _build_curve_lut(curve)
 
     luma_curve = prepare("luma_curve")
     rgb_curves = tuple((index, parameters) for index, name in enumerate(("red_curve", "green_curve", "blue_curve"))
                        if (parameters := prepare(name)) is not None)
-    return render_rows(image, lambda part, _: _curve_rows(part, kind, luma_curve, rgb_curves))
+    if luma_curve is None and not rgb_curves:
+        return image
+    black = 0.0 if luma_curve is None else float(_curve_domain_decode(luma_curve[1][0]))
+    return render_rows(image, lambda part, _: _curve_rows(part, kind, luma_curve, rgb_curves, black))
 
 
-def _curve_rows(image, kind, luma_curve, rgb_curves):
-    result = image.astype(np.float32, copy=True)
+def _curve_rows(image, kind, luma_curve, rgb_curves, black):
+    if kind == PreviewKind.HDR:
+        result = image.astype(np.float32, copy=True)
+    else:
+        result = linear_srgb_to_acescg(image) / SDR_SCENE_TO_DISPLAY_SCALE
 
-    # A luma curve must operate on scene/display-linear luminance. Applying its
-    # gain after logarithmically encoding each HDR channel makes the subsequent
-    # per-channel exponential decode change RGB ratios, which can turn a small
-    # shadow adjustment into an extreme blue/cyan cast.
     if luma_curve is not None:
-        luma = _acescg_luma(result) if kind == PreviewKind.HDR else _linear_luma(result)
-        curve_luma = _curve_domain_encode(luma, kind)
-        mapped_curve_luma = _sample_curve_extended(curve_luma, *luma_curve)
-        mapped_luma = _curve_domain_decode(mapped_curve_luma, kind)
-        luma_gain = np.ones_like(luma, dtype=np.float32)
-        np.divide(mapped_luma, luma, out=luma_gain, where=np.abs(luma) > 1e-5)
-        result *= luma_gain[..., None]
+        luma = _acescg_luma(result)
+        mapped = _curve_domain_decode(_sample_curve_extended(_curve_domain_encode(luma), *luma_curve))
+        # Add the black floor instead of multiplying it into shadow noise.
+        # Signed/near-zero luma gets an additive correction, never a negative gain.
+        floor = np.maximum(0.0, np.minimum(black, mapped))
+        scale = np.ones_like(luma)
+        positive = luma > 1e-5
+        np.divide(mapped - floor, luma, out=scale, where=positive)
+        offset = np.where(positive, floor, mapped - luma)
+        result *= scale[..., None]
+        result += offset[..., None]
 
-    # RGB curves intentionally remain per-channel in the perceptual/log curve
-    # domain. They can alter hue by design; the luma curve above cannot.
-    if not rgb_curves:
-        return result
+    for index, curve in rgb_curves:
+        encoded = _curve_domain_encode(result[..., index])
+        result[..., index] = _curve_domain_decode(_sample_curve_extended(encoded, *curve))
 
-    working = _curve_domain_encode(result, kind)
-    for channel_index, curve in rgb_curves:
-        channel = working[..., channel_index]
-        working[..., channel_index] = _sample_curve_extended(channel, *curve)
-
-    return _curve_domain_decode(working, kind)
-
-
-HDR_CURVE_REFERENCE_WHITE = np.float32(0.18)
-HDR_CURVE_MAX_NITS = np.float32(10000.0)
-HDR_CURVE_STOP_SPAN = np.float32(np.log2(HDR_CURVE_MAX_NITS / 100.0))
-# Match the derivative of the highlight log branch at reference white. The old
-# linear shadow branch was 4.6x flatter there, creating a visible kink whenever
-# the default middle control point moved away from the identity line.
-HDR_CURVE_SHADOW_POWER = np.float32(np.log(HDR_CURVE_MAX_NITS / 100.0))
-
-
-def _curve_domain_encode(image: np.ndarray, kind: PreviewKind) -> np.ndarray:
-    if kind == PreviewKind.HDR:
-        value = image.astype(np.float32, copy=False)
-        positive = np.maximum(value, 0.0)
-        below_white = np.float32(0.5) * np.power(
-            positive / HDR_CURVE_REFERENCE_WHITE,
-            np.float32(1.0) / HDR_CURVE_SHADOW_POWER,
-        )
-        above_white = np.float32(0.5) + np.float32(0.5) * (
-            np.log2(np.maximum(positive, HDR_CURVE_REFERENCE_WHITE) / HDR_CURVE_REFERENCE_WHITE)
-            / HDR_CURVE_STOP_SPAN
-        )
-        encoded = np.where(positive <= HDR_CURVE_REFERENCE_WHITE, below_white, above_white)
-        return np.where(value >= 0.0, encoded, value / (np.float32(2.0) * HDR_CURVE_REFERENCE_WHITE))
-    return image.astype(np.float32, copy=False)
-
-
-def _curve_domain_decode(image: np.ndarray, kind: PreviewKind) -> np.ndarray:
-    if kind == PreviewKind.HDR:
-        value = image.astype(np.float32, copy=False)
-        below_white = HDR_CURVE_REFERENCE_WHITE * np.power(
-            np.maximum(value * np.float32(2.0), 0.0),
-            HDR_CURVE_SHADOW_POWER,
-        )
-        above_white = HDR_CURVE_REFERENCE_WHITE * np.exp2(
-            (value - np.float32(0.5)) * np.float32(2.0) * HDR_CURVE_STOP_SPAN
-        )
-        decoded = np.where(value <= np.float32(0.5), below_white, above_white)
-        return np.where(value >= 0.0, decoded, value * np.float32(2.0) * HDR_CURVE_REFERENCE_WHITE)
-    return image.astype(np.float32, copy=False)
+    return result if kind == PreviewKind.HDR else acescg_to_linear_srgb(result) * SDR_SCENE_TO_DISPLAY_SCALE
 
 
 def _normalize_curve_points(points: list[list[float]]) -> np.ndarray:
-    curve = np.asarray(points, dtype=np.float32)
+    curve = np.asarray(points, dtype=np.float64)
     if curve.ndim != 2 or curve.shape[1] != 2 or curve.shape[0] < 2 or curve.shape[0] > 16:
         raise ValueError("Curves must contain between 2 and 16 [x, y] control points.")
     curve = curve[np.argsort(curve[:, 0])]
@@ -2793,28 +2793,20 @@ def _normalize_curve_points(points: list[list[float]]) -> np.ndarray:
 
 
 def _build_curve_lut(points: np.ndarray, samples: int = 1024) -> tuple[np.ndarray, np.ndarray]:
-    x = points[:, 0].astype(np.float32)
-    y = points[:, 1].astype(np.float32)
-    sample_x = np.linspace(0.0, 1.0, samples, dtype=np.float32)
-    sample_y = _monotone_cubic_interpolate(x, y, sample_x)
+    # Match the JS sampler's double-precision evaluation before quantizing
+    # to float32. A one-ULP LUT difference is amplified by endpoint slopes.
+    sample_x = np.arange(samples, dtype=np.float64) / (samples - 1)
+    sample_y = _monotone_cubic_interpolate(points[:, 0], points[:, 1], sample_x)
     return sample_x, np.clip(sample_y, 0.0, 1.0).astype(np.float32)
 
 
-def _sample_curve_extended(
-    values: np.ndarray,
-    curve: np.ndarray,
-    lut_x: np.ndarray,
-    lut_y: np.ndarray,
-) -> np.ndarray:
-    clipped = np.clip(values, 0.0, 1.0)
-    sampled = np.interp(clipped, lut_x, lut_y).astype(np.float32)
-    lower_span = max(float(curve[1, 0] - curve[0, 0]), 1e-6)
-    upper_span = max(float(curve[-1, 0] - curve[-2, 0]), 1e-6)
-    lower_slope = np.float32((curve[1, 1] - curve[0, 1]) / lower_span)
-    upper_slope = np.float32((curve[-1, 1] - curve[-2, 1]) / upper_span)
-    sampled = np.where(values < 0.0, curve[0, 1] + values * lower_slope, sampled)
-    sampled = np.where(values > 1.0, curve[-1, 1] + (values - 1.0) * upper_slope, sampled)
-    return sampled.astype(np.float32, copy=False)
+def _sample_curve_extended(values: np.ndarray, lut_x: np.ndarray, lut_y: np.ndarray) -> np.ndarray:
+    sampled = np.interp(values, lut_x, lut_y).astype(np.float32)
+    span = np.float32(len(lut_y) - 1)
+    lower_slope = (lut_y[1] - lut_y[0]) * span
+    upper_slope = (lut_y[-1] - lut_y[-2]) * span
+    sampled = np.where(values < 0.0, lut_y[0] + values * lower_slope, sampled)
+    return np.where(values > 1.0, lut_y[-1] + (values - 1.0) * upper_slope, sampled)
 
 
 def _monotone_cubic_interpolate(x: np.ndarray, y: np.ndarray, sample_x: np.ndarray) -> np.ndarray:

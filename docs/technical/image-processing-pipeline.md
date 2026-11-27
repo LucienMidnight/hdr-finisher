@@ -260,7 +260,7 @@ Implementation: [`finishing.apply_geometry`](../../codebase/backend/hdr_finisher
 | 3 | White balance, ACEScg primaries/tint, saturation/vibrance | Scene-referred color |
 | 4 | Tone equalizer / Exposure Bands | Scene-EV bands |
 | 5 | Frozen-guide five-control Tone, then HSL | Global endpoint and broad-zone shaping |
-| 6 | HDR curves | Global curves |
+| 6 | Shared-domain curves | Global curves |
 | 7 | Global color grading and Detail | Global creative grade before locals |
 | 8 | Ordered local layers | Each layer grades and blends the running result using a stable source mask |
 | 9 | Lens Filter | Energy-conserving film-plane PSF, or None bypass |
@@ -286,7 +286,7 @@ Generated SDR starts from the ACEScg HDR source:
 6. display-linear tone equalizer / Exposure Bands.
 7. contrast.
 8. frozen-guide five-control Tone, then HSL.
-9. SDR curves.
+9. Shared-domain curves.
 10. global color grading and Detail.
 11. ordered local layers.
 12. lens filter, film resolution, halation, negative and density grain, paper/scanner, one Look Strength mix.
@@ -316,6 +316,23 @@ Do not collapse this branch into generated SDR. The authored base is a distinct 
 ### 5.4 Local-layer internal order
 
 Within one local layer, the CPU applies its supported tone/zone/exposure/contrast operations, then white balance/saturation, curves, and color grading before blending with `mask × opacity`. SDR color work temporarily uses ACEScg where required. Layers are sequential and therefore generally non-commutative.
+
+#### Shared global and local curves
+
+HDR enters the curve stage as scene-linear ACEScg. Both generated and authored
+SDR enter through the CAT02 linear-sRGB-to-ACEScg matrix divided by
+`SDR_SCENE_TO_DISPLAY_SCALE`, then return through the other matrix and multiply
+by the same scale. Off or all-neutral curves bypass those conversions exactly.
+
+The shared graph uses `log1p(v / .004) / log(901)` for positive scene values
+and the matched linear tangent through zero below black. Decode uses the
+inverse. Scene reference white is always 0.18. A 1,024-sample monotone cubic LUT
+is linearly interpolated and extended outside its graph using the two closest
+samples at either endpoint. Luma uses AP1 weights, applying a neutral black
+floor plus a luminance gain above 1e-5 and an additive correction at or below
+1e-5. R, G and B map individual AP1 channels. Signed and above-white pixels
+remain available to the later finishing stages. The old HDR transfer belongs
+only to the film-response helpers, not to editable curves or Tone.
 
 ### 5.5 Film and grain separation
 

@@ -122,7 +122,7 @@ The HDR branch remains linear ACEScg. Current order:
 6. Saturation and vibrance
 7. Monotonic scene-EV Exposure Bands
 8. Lift/Gamma/Gain luminance zones
-9. HDR-domain luma/R/G/B curves
+9. Shared-domain luma/R/G/B curves
 10. Detail and local adjustments
 11. Film Look: lens diffusion, resolution scatter, halation, negative/development, density grain, print, scan sharpening and levels, then Look Strength
 12. Detail Softness and Microcontrast
@@ -144,7 +144,7 @@ Peak Fit measures the final pre-compression grade. Smooth color rolloff measures
 5. Apply SDR Highlight Compression, then compress to the sRGB cube toward display luma
 6. Monotonic display-linear SDR Exposure Bands
 7. Contrast and Lift/Gamma/Gain
-8. SDR-domain curves
+8. Shared-domain curves
 9. Film Look physical stages (as above), then Detail Softness and Microcontrast
 
 ### From an authored SDR HEIC reference
@@ -159,14 +159,17 @@ Peak Fit reuses the HDR stop-domain Hermite construction with an SDR-white endpo
 
 ## Curves
 
-Both branches use monotone cubic interpolation with 2–16 points and a 1,024-sample LUT.
+HDR and SDR use one scene-linear ACEScg graph, for global and local curves.
+SDR temporarily converts from display-linear sRGB and removes its scene-to-display
+scale. The graph places middle grey at about 0.325, project reference white at
+0.563, and SDR white at 0.665. The SDR headroom area remains editable.
 
-SDR curves use the bounded 0–1 domain. HDR curves map:
-
-- ACEScg values from 0 to `0.18` linearly into graph 0 to 0.5.
-- Values from `0.18` to the 10,000-nit equivalent logarithmically into graph 0.5 to 1.
-
-Values beyond graph endpoints are extended with endpoint slopes before conversion back to the branch domain.
+The evaluator uses monotone cubic interpolation with 2?16 points, a 1,024-sample
+LUT and linear extrapolation using the LUT endpoint slopes. A Luma edit can lift
+black without multiplying that lift into noise. RGB curves work in ACEScg
+primaries. Signed and above-white results reach the later highlight and gamut
+stages instead of clipping at the curve. Neutral and bypassed curves leave
+pixels untouched.
 
 ## Film Look
 

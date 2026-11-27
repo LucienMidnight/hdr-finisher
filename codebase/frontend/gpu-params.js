@@ -111,12 +111,17 @@
   }
 
   function curveSetNeutral(branch) {
-    return ["luma_curve", "red_curve", "green_curve", "blue_curve"].every(name=>curvePointsNeutral(branch?.[name]));
+    return curveChannelFlags(branch) === 0;
+  }
+
+  function curveChannelFlags(branch) {
+    return ["luma_curve", "red_curve", "green_curve", "blue_curve"].reduce((flags, name, index) =>
+      curvePointsNeutral(branch?.[name]) ? flags : flags | (1 << index), 0);
   }
 
   function curvePointsNeutral(points) {
-    return Array.isArray(points) && points.length >= 2
-      && points.every(point=>Array.isArray(point) && Math.abs(Number(point[0])-Number(point[1]))<0.000001);
+    return points == null || (Array.isArray(points) && points.length >= 2
+      && points.every(point=>Array.isArray(point) && Math.abs(Number(point[0]) - Number(point[1])) <= 1e-7));
   }
 
   function toneEqualizerNeutral(branch) {
@@ -213,7 +218,8 @@
     params[GPU_PARAMS.CONTRAST_PIVOT] = branch.contrast_pivot || (lane === "hdr" ? 0.1845 : 0.5);
     params[GPU_PARAMS.WHITE_BALANCE_KELVIN] = colorActive ? colorSource.white_balance_kelvin || 6500 : 6500;
     params[GPU_PARAMS.TINT] = colorActive ? colorSource.tint || 0 : 0;
-    params[GPU_PARAMS.CURVES_ENABLED] = branch.curves_section_enabled !== false && !curveSetNeutral(branch) ? 1 : 0;
+    // Same Luma/R/G/B bit order as the local pass. Zero bypasses the stage.
+    params[GPU_PARAMS.CURVES_ENABLED] = branch.curves_section_enabled !== false ? curveChannelFlags(branch) : 0;
     params[GPU_PARAMS.HDR_SURFACE] = hdrSurface ? 1 : 0;
     // The transport limit is absolute; scene-linear scale follows the project.
     params[GPU_PARAMS.HDR_DISPLAY_HEADROOM] = 10000 * 0.18 / projectReferenceWhite;
@@ -495,9 +501,7 @@
     values[MASK_PARAMS.LOCAL.SHARPEN_RADIUS] = Math.min(3, Math.max(0.3, Number(detail.sharpen_radius_px) || 0.8));
     values[MASK_PARAMS.LOCAL.SHARPEN_THRESHOLD] = Math.min(1, Math.max(0, (Number(detail.sharpen_threshold) || 0) / 100)) * 0.5;
     values[MASK_PARAMS.LOCAL.SOURCE_PIXEL_SCALE] = Math.min(1, Math.max(0.05, Number(sourcePixelScale) || 1));
-    ['luma_curve','red_curve','green_curve','blue_curve'].forEach((name,index)=>{
-      if (!curvePointsNeutral(grade[name])) values[MASK_PARAMS.LOCAL.CURVE_FLAGS] += 1 << index;
-    });
+    values[MASK_PARAMS.LOCAL.CURVE_FLAGS] = curveChannelFlags(grade);
     values[MASK_PARAMS.LOCAL.CURVE_OFFSET] = curveOffset;
     const grading = grade.color_grading || {};
     values[GPU_PARAMS.COLOR_GRADING_ENABLED] = 1;
