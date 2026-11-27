@@ -261,6 +261,9 @@ def test_native_warmup_runs_visible_tiles_together(tmp_path, monkeypatch):
         return read(y, x, height, min(x + size, width)), np.s_[:, :]
 
     monkeypatch.setattr(cpu_budget, "_cpu_pool", pool)
+    # A two-thread pool does not override Grain's separate workspace budget.
+    # Model a machine that can admit both tiles, without changing that budget.
+    monkeypatch.setattr(grain, "_PREVIEW_TILE_WORK", cpu_budget.CpuWorkLimit(2))
     monkeypatch.setattr(grain, "_resolved_tile", resolve)
     read = lambda y, x, b, r: source[y:b, x:r]
     settings = adaptive.AdaptiveControls(method="clean_grain", clean_splotches=False, clean_fringes=False)
