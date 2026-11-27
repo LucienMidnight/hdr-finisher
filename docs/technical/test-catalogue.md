@@ -11,9 +11,9 @@ The selection depends on changed areas since the last tag. Core is the smallest 
 | Selection | Drivers | Windows minutes + retry | Windows unknown | Mac minutes + retry | Mac unknown |
 | --- | ---: | ---: | ---: | ---: | ---: |
 | Core | 34 | 0.00 + 0.00 | 34 | 5.00 + 0.00 | 33 |
-| All areas | 124 | 3.53 + 3.53 | 123 | 5.30 + 0.00 | 122 |
+| All areas | 124 | 3.64 + 0.00 | 123 | 5.30 + 0.00 | 122 |
 | export-proof | 54 | 0.00 + 0.00 | 54 | 5.00 + 0.00 | 53 |
-| film | 44 | 3.53 + 3.53 | 43 | 5.00 + 0.00 | 43 |
+| film | 44 | 3.64 + 0.00 | 43 | 5.00 + 0.00 | 43 |
 | lens | 37 | 0.00 + 0.00 | 37 | 5.00 + 0.00 | 36 |
 | library | 68 | 0.00 + 0.00 | 68 | 5.00 + 0.00 | 67 |
 | masks | 52 | 0.00 + 0.00 | 52 | 5.00 + 0.00 | 51 |
@@ -908,7 +908,7 @@ GPU analysis overlays, Library review controls and file drops, Performance setti
 
 Film stock: the WebGPU preview matches the CPU export. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
-- Expected minutes: Windows 3.529; Mac unknown.
+- Expected minutes: Windows 3.645; Mac unknown.
 - Deadline: 15 minutes. 15-minute default only; actual attempt deadline is max(5 minutes, 3 times latest successful complete local attempt). Primary and follow-ups share it; overall selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal. Python virtual environment and pinned backend dependencies.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.

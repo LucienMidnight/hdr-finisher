@@ -18,17 +18,18 @@
     },
     "tests/film-stock-parity.js": {
       "win": {
-        "medianSeconds": 211.735,
-        "lastSeconds": 211.735,
-        "sampleCount": 1,
+        "medianSeconds": 218.69600000000003,
+        "lastSeconds": 225.657,
+        "sampleCount": 2,
         "sampleSeconds": [
-          211.735
+          211.735,
+          225.657
         ],
-        "revision": "8ba7be54f00d1252777fd35cb58d8994cb893094",
+        "revision": "b9448bdd2e4688feebc656390c3366b12638cb9a",
         "date": "2026-11-27",
-        "exitCode": 1,
+        "exitCode": 0,
         "source": "release runner history (complete attempts, including failures)",
-        "lastSampleKey": "2026-11-27T05:13:07.686Z|tests__film-stock-parity.js.1.1795756387974.log"
+        "lastSampleKey": "2026-11-27T06:36:00.903Z|tests__film-stock-parity.js.1.1795761135246.log"
       }
     },
     "tests/library-gpu-raw-single.js": {

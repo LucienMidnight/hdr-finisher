@@ -249,10 +249,6 @@ async function execute(row, state, out, list, hooks, deadline, known) {
     if (git('rev-parse', 'HEAD') !== state.revision) throw Error('STOP: HEAD moved during the run; results cover different revisions.');
     const record = { ...result, recordedAt: new Date().toISOString(), platform: process.platform, log, durationSeconds: (Date.now() - started) / 1000, interrupted: hooks.stopped(), command: invocation.args };
     fs.appendFileSync(path.join(OUTPUT, 'history.jsonl'), JSON.stringify({ driver: row.path, revision: state.revision, run: out, ...record }) + '\n');
-    if (list.schemaVersion >= 2) {
-      require('./timings.cjs').updateTimings(history().filter(item => !item.partial));
-      require('../../tools/test-catalogue.cjs').generate();
-    }
     delete state.activeAttempt;
     if (hooks.stopped()) { state.interruptedAttempt = { driver: row.path, ...record }; return false; }
     attempts.push(record);
@@ -400,6 +396,12 @@ async function main(args = process.argv.slice(2)) {
     // Preserve ownership evidence if shutdown could not be confirmed.
     if (unsafe || fatal && /tree-kill|verif|shutdown|close was not/.test(fatal)) fs.writeFileSync(lock, JSON.stringify({pid:process.pid, childPid:active?.pid || null, unsafe:true}));
     else fs.unlinkSync(lock);
+  }
+  // Check the committed inputs before writing our own tracked timing outputs.
+  // Attempts are already durable in history.jsonl, including interrupted runs.
+  if (list.schemaVersion >= 2) {
+    require('./timings.cjs').updateTimings(history().filter(item => !item.partial));
+    require('../../tools/test-catalogue.cjs').generate();
   }
   const counts = { passed: 0, flaky: 0, known: 0, new: 0, unfinished: 0 };
   for (const file of state.drivers) counts[state.results[file]?.classification || 'unfinished']++;

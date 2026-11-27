@@ -443,7 +443,7 @@ The actual deadline remains max(5 minutes, 3 times the latest successful complet
 local attempt), with a 15-minute default. The runner still accepts schema-1
 manifests; the catalogue test requires the committed schema-2 briefs.
 
-`timings.json` survives output cleanups. After each attempt the runner imports
+`timings.json` survives output cleanups. After checking tracked inputs at the end of a selection, the runner imports
 complete local history records, updates the current platform only, and regenerates
 `docs/technical/test-catalogue.md`. Commit those generated changes before another
 real run. `--plan` stays read-only. The summary retains up to 31 recent sample

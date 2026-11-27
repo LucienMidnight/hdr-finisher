@@ -347,3 +347,27 @@ test('all three protected project hashes and driver arguments map the photo root
   fs.writeFileSync(files[2],'changed');
   assert.throws(()=>runner.checkProjects(hashes),/protected project changed/);
 });
+
+
+test('schema-2 generated outputs do not trip the tracked-input guard, but driver edits do', t => {
+  for (const mutate of [false, true]) {
+    const fixture = isolatedRunner(t);
+    const manifest = path.join(fixture.root,'tests/release/drivers.json');
+    const data = JSON.parse(fs.readFileSync(manifest,'utf8'));
+    data.schemaVersion = 2;
+    fs.writeFileSync(manifest,JSON.stringify(data));
+    fs.mkdirSync(path.join(fixture.root,'docs/technical'),{recursive:true});
+    fs.writeFileSync(path.join(fixture.root,'docs/technical/test-catalogue.md'),'before');
+    fs.writeFileSync(path.join(fixture.root,'tools/test-catalogue.cjs'),
+      `exports.generate=()=>require('fs').writeFileSync(require('path').join(__dirname,'../docs/technical/test-catalogue.md'),'after');`);
+    if (mutate) fs.writeFileSync(path.join(fixture.root,'tests/pass.js'),
+      `require('fs').appendFileSync('tests/pass.js','// unexpected edit');`);
+    fixture.git('add','.');fixture.git('commit','-qm','schema-2 output fixture');
+    const result = fixture.run('--driver','tests/pass.js');
+    assert.equal(result.status,mutate ? 1 : 0,result.stdout+result.stderr);
+    assert.equal(fs.readFileSync(path.join(fixture.root,'docs/technical/test-catalogue.md'),'utf8'),'after');
+    assert.equal(fixture.states()[0].results['tests/pass.js'].classification,'passed');
+    assert.equal(fixture.states()[0].completed,!mutate);
+    if (mutate) assert.match(result.stdout,/tracked files changed/);
+  }
+});
