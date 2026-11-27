@@ -9,6 +9,7 @@ function create(stream, limit = 1024 * 1024) {
   };
   stream.on('drain', summary);
   return line => {
+    if (stream.writableEnded || stream.destroyed) return false;
     const text = line + '\n';
     if (stream.writableLength + Buffer.byteLength(text) > limit) { omitted++; return false; }
     summary();

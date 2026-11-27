@@ -2,6 +2,8 @@
  * Supplies a disposable profile's requested window size and guarantees that
  * only the driver's own process tree is stopped. No owner profile is used.
  */
+const { installOwnedLaunches, stopOwnedLaunches } = require("./owned-electron-launch.cjs");
+installOwnedLaunches();
 const fs = require('node:fs');
 const path = require('node:path');
 const { stopProcessTree } = require('./release/process-tree.cjs');
@@ -26,7 +28,7 @@ function install(_electron) {
  const launch = _electron.launch.bind(_electron);
  _electron.launch = async options => {
   if (trees.size) throw Error('Native test attempted to overlap Electron apps');
-  const env = { ...process.env, ...options.env };
+  const env = { ...process.env, ...options.env, HDR_FINISHER_TEST_MODE: "1" };
   delete env.ELECTRON_RUN_AS_NODE;
   if (!env.HDR_FINISHER_USER_DATA_DIR) throw Error('Native driver must provide a disposable profile');
   assertDisposableProfile(env.HDR_FINISHER_USER_DATA_DIR, 'HDR_FINISHER_USER_DATA_DIR');
@@ -51,7 +53,8 @@ function install(_electron) {
   const timer = setTimeout(() => {
     console.error('[runner] STARTUP TIMEOUT: launch/window/setup exceeded 180000 ms');
     if (!app) {
-      console.error('[runner] shutdown failed: launch returned no process handle; cannot verify Electron exited');
+      console.error('[runner] launch did not connect; stopping captured OS process tree');
+      stopOwnedLaunches();
       process.exit(86);
     }
     try { for (const pid of [...trees.keys()]) stop(pid); } finally { process.exit(process.exitCode || 1); }

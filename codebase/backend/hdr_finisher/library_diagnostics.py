@@ -4,6 +4,7 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from functools import wraps
 import json
+import os
 from pathlib import Path
 import sys
 from threading import RLock
@@ -145,14 +146,21 @@ def timed_lock(lock, operation):
             wait_ms=round((acquired-started)*1000, 3), hold_ms=round(held*1000, 3))
 
 
+def _startup_progress(phase):
+    if os.environ.get("HDR_FINISHER_DESKTOP_PID"):
+        print("HDR_FINISHER_PROGRESS " + json.dumps({"phase": phase}), flush=True)
+
+
 @contextmanager
 def startup_phase(phase):
     started = time.perf_counter()
     log("startup_phase_started", phase=phase)
+    _startup_progress(phase + " starting")
     try:
         yield
     finally:
         log("startup_phase", phase=phase, duration_ms=round((time.perf_counter()-started)*1000, 2))
+        _startup_progress(phase + " completed")
 
 
 @contextmanager
@@ -168,6 +176,7 @@ def startup_imports():
             elapsed = (time.perf_counter()-started)*1000
             if elapsed >= 100:
                 log("startup_import", module=name, duration_ms=round(elapsed, 2))
+                _startup_progress("Imported " + name)
     builtins.__import__ = measured
     try:
         yield

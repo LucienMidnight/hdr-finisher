@@ -875,3 +875,15 @@ Completed RAW overlays (pending visual sign-off): `docs/technical/archive/briefs
   keeps its mapped old code. Remove `.previous` after it is no longer in use.
 - Standalone system `python` may use Windows cp1252. Always specify
   `encoding="utf-8"` for repository text reads; prefer the project venv Python.
+
+### Electron test lifecycle (27 November 2026)
+
+Always hold the GPU run lock. Launch through `tests/run-in-electron.js` or
+`tests/run-native-electron.js`; plain launch tools must set
+`HDR_FINISHER_TEST_MODE=1`, use a disposable user-data profile, and capture OS
+process ownership at spawn, before awaiting Playwright/DevTools. Backend and
+debug ports are OS-selected. Quit gracefully, then force and verify only the
+owned process tree on failure or timeout. Keep failed profiles/logs. Unexpected
+native dialogs fail test mode without displaying; never dismiss them manually
+or kill Steve's app. Use `tools/check-startup-lifecycle.cjs` under the same lock
+for repeated launch/health/quit and missing-backend checks.

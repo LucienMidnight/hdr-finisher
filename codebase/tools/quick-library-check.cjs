@@ -163,7 +163,7 @@ function analyse(text, openedAt, events, openedPageAt, visibleFiles) {
     const configPath=path.join(profile,'quick-config.json');fs.writeFileSync(configPath,JSON.stringify(config));
     const [width,height]=(require('./lib/platform.cjs').machineSettings().windowSize).split('x').map(Number);
     fs.writeFileSync(path.join(profile,'window-state.json'),JSON.stringify({x:0,y:0,width,height}));
-    const env={...process.env,HDR_FINISHER_USER_DATA_DIR:profile,HDR_FINISHER_QUICK_LIBRARY_CONFIG:configPath};
+    const env={...process.env,HDR_FINISHER_TEST_MODE:"1",HDR_FINISHER_USER_DATA_DIR:profile,HDR_FINISHER_QUICK_LIBRARY_CONFIG:configPath};
     delete env.ELECTRON_RUN_AS_NODE;
     const desktop=path.join(root,'desktop');
     stage='launch';app=spawn(require(path.join(desktop,'node_modules/electron')),[desktop],{cwd:desktop,env,windowsHide:true,stdio:['ignore','pipe','pipe']});

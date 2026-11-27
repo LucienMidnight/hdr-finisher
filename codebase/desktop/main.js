@@ -49,6 +49,9 @@ const GRADING_PRESET_GROUPS = new Set([
   "hdr-denoise", "sdr-denoise",
 ]);
 
+if (process.env.HDR_FINISHER_TEST_MODE === "1" && !process.env.HDR_FINISHER_USER_DATA_DIR) {
+  process.env.HDR_FINISHER_USER_DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "hdr-finisher-test-desktop-"));
+}
 if (process.env.HDR_FINISHER_USER_DATA_DIR) {
   app.setPath("userData", path.resolve(process.env.HDR_FINISHER_USER_DATA_DIR));
 }
@@ -74,6 +77,12 @@ let forceClose = false;
 let shuttingDown = false;
 let shutdownComplete = false;
 let quitRequested = false;
+let failedTest = false;
+const testMode = process.env.HDR_FINISHER_TEST_MODE === "1"
+  || (Boolean(process.env.HDR_FINISHER_USER_DATA_DIR) && /(?:^|[-_])test[-_]/i.test(path.basename(app.getPath("userData"))));
+if (testMode) require("./lib/test-mode.cjs").installTestDialogs(dialog, {
+  fail: () => { failedTest = true; void beginShutdown(); },
+});
 let documentState = { path: "", dirty: false, displayName: "Untitled" };
 let renderingMode = "auto";
 let applicationPreferences = null;
@@ -355,6 +364,7 @@ async function startBackend() {
   const proofScratchRoot = createProofScratch(os.tmpdir());
   const current = backendProcess = { authoringSecret, controlSecret, log, logPath, proofScratchRoot };
   const child = current.child = spawn(command.executable, command.args, {
+    detached: process.platform !== "win32",
     cwd: command.cwd,
     env: {
       ...process.env,
@@ -382,29 +392,14 @@ async function startBackend() {
   libraryStage("backend_process_started", { pid: child.pid });
   readline.createInterface({ input: child.stderr }).on("line", line => events.backend(line, child.pid));
 
-  const readiness = new Promise((resolve, reject) => {
-    const timeout = setTimeout(() => reject(new Error("The image-processing backend did not become ready in time.")), 30000);
-    const lines = readline.createInterface({ input: child.stdout });
-    lines.on("line", (line) => {
-      writeBackendLog(line);
-      if (!line.startsWith("HDR_FINISHER_READY ")) return;
-      try {
-        const record = JSON.parse(line.slice("HDR_FINISHER_READY ".length));
-        clearTimeout(timeout);
-        resolve(record);
-      } catch (error) {
-        clearTimeout(timeout);
-        reject(error);
-      }
-    });
-    child.once("error", (error) => {
-      clearTimeout(timeout);
-      reject(error);
-    });
-    child.once("exit", (code) => {
-      clearTimeout(timeout);
-      reject(new Error(`The image-processing backend exited during startup (${code ?? "unknown"}).`));
-    });
+  const readiness = require("./lib/backend-readiness.cjs").waitForBackend(child, {
+    write: writeBackendLog,
+    idleMs: testMode ? 45000 : 90000,
+    totalMs: testMode ? 120000 : 300000,
+    onProgress: (phase, elapsed) => {
+      libraryStage("backend_startup_progress", { phase, duration_ms: elapsed });
+      if (elapsed >= 10000) splash?.step(`Starting image engine: ${phase}...`, 0.1, 0.5);
+    },
   });
 
   try {
@@ -418,7 +413,7 @@ async function startBackend() {
     throw new Error(`Desktop/backend version mismatch (${app.getVersion()} / ${ready.backend_version}).`);
   }
   const url = `http://127.0.0.1:${ready.port}`;
-  const health = await fetch(`${url}/health`);
+  const health = await fetch(`${url}/health`, { signal: AbortSignal.timeout(10000) });
   const healthPayload = await health.json();
   if (!health.ok || healthPayload.status !== "ok") {
     throw new Error("The image-processing backend failed its health check.");
@@ -459,7 +454,7 @@ async function stopBackend() {
     console.warn(`Backend termination failed: ${error.message}`);
   } finally {
     clearProofScratch(current.proofScratchRoot);
-    current.log.end();
+    // The shutdown action still writes to this log after backend termination.
   }
 }
 
@@ -1346,8 +1341,11 @@ async function beginShutdown() {
         action, operation: "shutdown", outcome: "success", duration_ms: Math.round(performance.now() - started),
       });
     } finally {
+      backendLogWriter?.events.flush();
+      if (backendLogWriter) await new Promise(resolve => backendLogWriter.log.end(resolve));
       shutdownComplete = true;
-      app.quit();
+      if (failedTest) app.exit(1);
+      else app.quit();
     }
   }
 }
@@ -1570,12 +1568,14 @@ if (!gotLock) {
       }
     } catch (error) {
       desktopEvent("app", "action_finished", {
-        level: "error", action, operation: "startup", outcome: "error", route: "refused", reason: "startup_failed",
+        level: "error", action, operation: "startup", outcome: "error", route: "refused", reason: "startup_failed", error: error.message, log_path: getBackendLogWriter().logPath,
         duration_ms: Date.now() - libraryAppStarted,
       });
       splash?.close();
       await stopBackend();
       if (shuttingDown) return;
+      console.error(`[startup] ${error.stack || error}; log: ${getBackendLogWriter().logPath}`);
+      if (testMode) { failedTest = true; await beginShutdown(); return; }
       await dialog.showMessageBox({ type: "error", title: "HDR Finisher could not start", message: "HDR Finisher could not start its image-processing backend.", detail: error.message, buttons: ["Quit"] });
       beginShutdown();
     }

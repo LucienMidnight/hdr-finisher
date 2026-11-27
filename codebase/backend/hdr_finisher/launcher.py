@@ -163,8 +163,9 @@ def run_desktop_sidecar(parent_pid: int) -> None:
     listener.listen(2048)
     service = LauncherServer(app, port=0, listener=listener, log_level="warning", ws_per_message_deflate=False)
     service.start()
-    deadline = time.monotonic() + 20.0
-    while not service.started and service.running and time.monotonic() < deadline:
+    # The desktop owns the progress/idle and absolute startup deadlines.
+    # A second fixed deadline here would still reject slow lifespan work.
+    while not service.started and service.running and _parent_is_alive(parent_pid):
         time.sleep(0.025)
     if not service.started:
         service.stop()

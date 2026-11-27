@@ -467,3 +467,13 @@ unknown counts. It is not a promise of a complete estimate when samples are miss
 Keep briefs and fixture/platform prerequisites current whenever editing a driver.
 Validate using `node --test codebase/tests/test-catalogue.test.js
 codebase/tests/release-runner.test.js` (one command, both paths).
+
+## Electron startup and cleanup
+
+Use the GPU lock and the standard `run-in-electron.js` / `run-native-electron.js`
+launchers. Plain launch tools must set `HDR_FINISHER_TEST_MODE=1`, provide a
+disposable profile, capture the OS child before awaiting DevTools, and verify
+that the owned tree exits after graceful quit or forced cleanup. Unexpected
+native dialogs fail without displaying; preserve failure logs. Sidecar/debug
+ports are OS-selected. Repeat startup checks with
+`node tools/check-startup-lifecycle.cjs` under the GPU lock.
