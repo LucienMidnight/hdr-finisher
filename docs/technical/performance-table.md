@@ -4,10 +4,10 @@ MacBook Neo, A18 Pro, 8 GB, at 1408×794. Standalone Electron runs under the sha
 
 | Check | Result | Conditions |
 | --- | --- | --- |
-| Library live tiles, Export closed / open | 17.766 / 17.920 s per photo (+0.87%), within the unchanged 5% allowance | Parent `02a05544` plus test fixture correction. DSC00264 and DSC04375 use bounded CPU strips at the unchanged 4 GB default, DSC00512 uses GPU. One warmup plus three closed and three open native exports. No progress redraws. `library-export-live-tiles.log`. |
-| Overlay backlog | 42.7 s complete | Parent `6350ce79`. Required 30 s drag alone exceeds the old 30 s runner deadline; the existing growth guard and recovery pass. |
+| Library live tiles, Export closed / open | 17.766 / 17.920 s per photo (+0.87%), within the unchanged 5% allowance | Parent `8dfdeb5f` plus test fixture correction. DSC00264 and DSC04375 use bounded CPU strips at the unchanged 4 GB default, DSC00512 uses GPU. One warmup plus three closed and three open native exports. No progress redraws. `library-export-live-tiles.log`. |
+| Overlay backlog | 42.7 s complete | Parent `7472bfba`. Required 30 s drag alone exceeds the old 30 s runner deadline; the existing growth guard and recovery pass. |
 | Library precision sources | 57.3 s complete | Parent `7472bfba`. 640/2560 source pairs, preemption/re-admission and Grade pixel comparisons. EXR CPU/GPU median preparation 7.92/3.42 s, float TIFF 0.367/0.109 s. |
-| Denoise measurement | 63.8 s complete | Remaining corpus without the retired EXR, then 42 MP Grade. 696 ms CPU model / 140 ms GPU model including transport (66 ms GPU compute). |
+| Denoise measurement | 57.6–63.8 s complete | Parent `7472bfba` and final Denoise code `3696dc16`. Remaining corpus without the retired EXR, then 42 MP Grade. 676–696 ms CPU model / 136–140 ms GPU model including transport (66 ms GPU compute). |
 | DSC00950 100% preview against pre-encode export | 171.59 s for both lanes and all six viewports | Parent `84fd0991` plus mounted detail capture correction. Native-relinked protected project, unchanged pixel and mask gates, exact GPU editing and offline CPU export reference. |
 | Library rendition matrix | 30.30 s after TIFF measurement correction | Parent `231d7369` plus reduced TIFF float32 noise inputs. BT.709 HDR p99.9 3.261 before and 0.170 after, with the 3.0 limit unchanged. |
 
