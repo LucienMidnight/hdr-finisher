@@ -1,7 +1,8 @@
-// Portable estimates only. Never use these records to certify a pass or set a deadline.
+// Portable full-run timings feed the existing estimate and deadline policies. They never certify a pass.
 const fs = require('node:fs');
 const path = require('node:path');
 const FILE = path.join(__dirname, 'timings.json');
+const COMPLETE_SUCCESS = 'complete successful release-driver attempts';
 const platformKey = value => ({win32:'win', darwin:'mac', win:'win', mac:'mac'})[value];
 function validateTimings(data) {
   if (data.schemaVersion !== 1 || !data.drivers || Array.isArray(data.drivers)) throw Error('Invalid timings schema');
@@ -27,7 +28,7 @@ function readTimings(file = FILE) {
 }
 function usable(row) {
   return !row.interrupted && !row.timedOut && !row.partial && !row.error && !row.signal
-    && Number.isInteger(row.exitCode) && ![86,3221225794,-1073741502].includes(row.exitCode)
+    && row.exitCode === 0
     && Number.isFinite(row.durationSeconds) && row.durationSeconds >= 1;
 }
 function updateTimings(records, file = FILE, platform = process.platform) {
@@ -40,12 +41,15 @@ function updateTimings(records, file = FILE, platform = process.platform) {
   for (const row of dated) {
     const previous = data.drivers[row.driver]?.[key];
     if (previous && row.key <= previous.lastSampleKey) continue;
-    const samples = [...(previous?.sampleSeconds || []),row.durationSeconds].slice(-31);
+    // A three-second setup error cannot time a complete matrix. Do not
+    // carry mixed legacy samples forward on the first verified full pass.
+    const priorSuccesses = previous?.source === COMPLETE_SUCCESS ? previous.sampleSeconds : [];
+    const samples = [...priorSuccesses,row.durationSeconds].slice(-31);
     const sorted = [...samples].sort((a,b)=>a-b), mid = Math.floor(samples.length/2);
     (data.drivers[row.driver] ||= {})[key] = {medianSeconds: samples.length%2 ? sorted[mid] : (sorted[mid-1]+sorted[mid])/2,
       lastSeconds: row.durationSeconds, sampleCount:samples.length, sampleSeconds:samples,
       revision:row.revision || 'unrecorded', date:row.date.slice(0,10), exitCode:row.exitCode,
-      source:'release runner history (complete attempts, including failures)', lastSampleKey:row.key};
+      source:COMPLETE_SUCCESS, lastSampleKey:row.key};
   }
   data.drivers = Object.fromEntries(Object.entries(data.drivers).sort(([a],[b])=>a.localeCompare(b)));
   for (const driver of Object.keys(data.drivers)) data.drivers[driver] = Object.fromEntries(Object.entries(data.drivers[driver]).sort(([a],[b])=>a.localeCompare(b)));

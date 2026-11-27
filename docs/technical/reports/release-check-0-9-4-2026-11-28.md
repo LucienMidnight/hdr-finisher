@@ -28,6 +28,9 @@ fixture issue. A pass after an earlier timeout is recorded explicitly.
 - `tests/library-gpu-raw-single.js` — (c) Playwright disposed the app handle before the launcher read its PID, skipping the offline comparison. Cache the owned launch identity while live. Full locked three-photo native handoff, memory checks, post-quit Grade comparisons and no surviving app pass in `library-gpu-raw-single.log`.
 - `tests/sdr-linked-interaction.js` — (c) whole Match intentionally returns editable independent SDR since `b9098170` and `2d1251ef`. A disposable linked grade retains live HDR edits, global/local unlink, history and consent coverage. Locked HDR/SDR finished GPU/CPU parity and reduced/full Proof byte identity pass in `sdr-linked-interaction.log`.
 - `desktop/tests/proof-grade-diagnostic.js` — (c) test supplied a source-open grant to a source-relink operation. Use the real relink action with a one-use picker fixture. AVIF and Ultra HDR JPEG Proof both pass in `proof-grade-diagnostic-relink.log`.
+- `tests/overlay-backlog.js` — (c) the runner used a 30 s deadline for a driver with a required 30 s drag. Full standalone passes, including the 39 superseded requests, current overlay, Library pixels during the drag, recovery and unchanged growth guard.
+- `tests/library-precision-source.js` — (c) 30 s ended the precision matrix after GPU preemption, before the six CPU/GPU timing pairs and comparisons. Full standalone passes, including exact preemption/re-admission coverage. This is not the old native-admission error in 0.9.3.
+- `tests/gpu-denoise-measurement.js` — (c) the old missing-EXR setup errors seeded a 30 s deadline. The retired EXR is not required. Full standalone passes the remaining corpus and 42 MP GPU case with unchanged finished-pixel and ceiling guards.
 
 ## Earlier fast checks
 

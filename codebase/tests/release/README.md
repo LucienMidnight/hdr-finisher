@@ -383,7 +383,9 @@ the multiplier is 1.25. Thus 18 seconds gets 30.6 seconds, and 25 minutes gets
 `DEADLINE_POLICY` in `runner.cjs`. Current timings cover complete drivers, so
 follow-ups share the whole-driver budget; they have no separate timing baseline.
 The derived policy is frozen before attempts: the single retry uses the same
-cutoff, never a timeout-inflated duration. Timeout samples cannot update medians.
+cutoff, never a timeout-inflated duration. Only successful complete attempts
+update portable medians. Setup errors and failed assertions still appear with
+their measured duration in local history, but cannot shorten the next deadline.
 
 Unmeasured platforms/drivers retain the previous rule: max(5 minutes, 3 times
 the latest successful complete local attempt), or 15 minutes without usable
