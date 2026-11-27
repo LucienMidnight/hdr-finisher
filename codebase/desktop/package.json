@@ -41,6 +41,7 @@
       "delivery-memory-preload.cjs",
       "memory-pressure.cjs",
       "lib/**/*.js",
+      "lib/**/*.cjs",
       { "from": "../frontend", "to": "shared", "filter": ["photo-transition.js", "visual-tokens.css", "assets/fonts/bebas-neue/BebasNeue-Regular.ttf", "assets/fonts/afacad/Afacad?wght?.ttf", "assets/fonts/ibm-plex-mono/IBMPlexMono-Regular.ttf"] },
       "package.json"
     ],

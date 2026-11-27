@@ -1,6 +1,8 @@
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
+const { installOwnedLaunches, stopOwnedLaunches } = require("../../tests/owned-electron-launch.cjs");
+installOwnedLaunches();
 const { _electron: electron } = require("playwright");
 const electronExecutable = require("electron");
 
@@ -88,22 +90,24 @@ async function main() {
   const launchArgs = packaged ? ["--no-sandbox"] : ["--no-sandbox", "."];
   const testOzonePlatform = process.env.HDR_FINISHER_TEST_OZONE_PLATFORM;
   if (["x11", "wayland"].includes(testOzonePlatform)) launchArgs.push(`--ozone-platform=${testOzonePlatform}`);
-  const electronApp = await electron.launch({
-    executablePath,
-    args: launchArgs,
-    cwd: desktopDirectory,
-    env: { ...process.env, HDR_FINISHER_USER_DATA_DIR: userDataPath, HDR_FINISHER_DISABLE_GPU: "1" },
-  });
   const diagnostics = [];
-  electronApp.process().stdout.on("data", (data) => diagnostics.push(`[main stdout] ${data}`));
-  electronApp.process().stderr.on("data", (data) => diagnostics.push(`[main stderr] ${data}`));
-  const observeWindow = (page) => {
-    page.on("console", (message) => diagnostics.push(`[renderer ${message.type()}] ${message.text()}`));
-    page.on("pageerror", (error) => diagnostics.push(`[renderer error] ${error.stack || error}`));
-  };
-  electronApp.windows().forEach(observeWindow);
-  electronApp.on("window", observeWindow);
+  let electronApp;
+  let passed = false;
   try {
+    electronApp = await electron.launch({
+      executablePath,
+      args: launchArgs,
+      cwd: desktopDirectory,
+      env: { ...process.env, HDR_FINISHER_TEST_MODE: "1", HDR_FINISHER_USER_DATA_DIR: userDataPath, HDR_FINISHER_DISABLE_GPU: "1" },
+    });
+    electronApp.process().stdout.on("data", (data) => diagnostics.push(`[main stdout] ${data}`));
+    electronApp.process().stderr.on("data", (data) => diagnostics.push(`[main stderr] ${data}`));
+    const observeWindow = (page) => {
+      page.on("console", (message) => diagnostics.push(`[renderer ${message.type()}] ${message.text()}`));
+      page.on("pageerror", (error) => diagnostics.push(`[renderer error] ${error.stack || error}`));
+    };
+    electronApp.windows().forEach(observeWindow);
+    electronApp.on("window", observeWindow);
     // The startup splash opens first and closes once the app is ready, and the
     // hidden GPU delivery window is not the app either: wait for the main window.
     const isMainWindow = (page) => !page.isClosed() && /^https?:\/\/[^/]+\/(?:[?#].*)?$/.test(page.url());
@@ -845,9 +849,9 @@ async function main() {
 
     const nativeTitle = await electronApp.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find((win) => !win.webContents.getURL().includes("gpu-delivery.html")).getTitle());
     process.stdout.write(JSON.stringify({ environment, projectPath, exportPath, title: nativeTitle, capabilities }) + "\n");
+    passed = true;
   } catch (error) {
-    console.error(error);
-    for (const [index, page] of electronApp.windows().entries()) {
+    for (const [index, page] of (electronApp?.windows() || []).entries()) {
       if (page.isClosed() || !/^https?:/.test(page.url())) continue;
       await page.screenshot({ path: path.join(outputDirectory, `failure-window-${index}.png`), timeout: 5000 }).catch(() => {});
       diagnostics.push(`[window ${index}] ${await page.locator("body").innerText().catch(() => "unavailable")}`);
@@ -856,17 +860,34 @@ async function main() {
   } finally {
     fs.writeFileSync(path.join(outputDirectory, "diagnostics.log"), diagnostics.join("\n"));
     // Never let cleanup hang the job (a failed run can leave a prompt open).
-    const bounded = (promise, ms) => Promise.race([promise.catch(() => {}), new Promise((resolve) => setTimeout(resolve, ms))]);
-    if (process.platform === "darwin") {
-      await bounded(electronApp.evaluate(({ app }) => app.quit()), 15000);
+    if (electronApp) {
+      const bounded = (promise, ms) => {
+        let timer;
+        return Promise.race([promise.catch(() => {}), new Promise(resolve => { timer = setTimeout(resolve, ms); })])
+          .finally(() => clearTimeout(timer));
+      };
+      if (process.platform === "darwin") {
+        await bounded(electronApp.evaluate(({ app }) => app.quit()), 15000);
+      }
+      await bounded(electronApp.close(), 30000);
     }
-    await bounded(electronApp.close(), 30000);
-    try { electronApp.process()?.kill("SIGKILL"); } catch {}
-    // Keep small diagnostics, not Chromium caches or disposable source copies.
+    const cleanup = stopOwnedLaunches();
+    if (cleanup?.survivors.length || cleanup?.notes.length) {
+      passed = false;
+      console.error(`[electron-smoke] Process cleanup failed: ${JSON.stringify(cleanup)}`);
+    }
     const logs = path.join(userDataPath, "logs");
     if (fs.existsSync(logs)) fs.cpSync(logs, path.join(outputDirectory, "logs"), { recursive: true });
     fs.rmSync(fixtureDirectory, { recursive: true, force: true, maxRetries: 5 });
-    fs.rmSync(userDataPath, { recursive: true, force: true, maxRetries: 5 });
+    if (passed) {
+      fs.rmSync(userDataPath, { recursive: true, force: true, maxRetries: 5 });
+    } else {
+      console.error(`[electron-smoke] Retained profile: ${userDataPath}`);
+      for (const name of ["desktop.log", "backend.log"]) {
+        const log = path.join(logs, name);
+        if (fs.existsSync(log)) console.error(`[electron-smoke] ${name}\n${fs.readFileSync(log, "utf8").trimEnd().split("\n").slice(-40).join("\n")}`);
+      }
+    }
   }
 }
 
