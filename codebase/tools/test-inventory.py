@@ -60,6 +60,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--mark-slow', action='store_true', help='add slow markers to functions with measured cases over 5 seconds')
     options = parser.parse_args()
+    previous = {entry['file']: entry for entry in json.loads(DEST.read_text(encoding='utf-8'))['files']} if DEST.exists() else {}
+    timing_platform = {'Windows': 'windows', 'Darwin': 'mac'}.get(platform.system(), 'linux')
     reports = {}
     for path in sorted(ROOT.glob('output/test-inventory/python-*.json')):
         for nodeid, item in json.loads(path.read_text(encoding='utf-8-sig')).items():
@@ -100,11 +102,13 @@ def main():
         label = path.stem.removeprefix('test_').removesuffix('.test').replace('_', ' ').replace('-', ' ')
         if not purpose:
             purpose = 'Checks ' + label + ' behavior and regression contracts.'
+        seconds = {'windows': None, 'mac': None, **previous.get(relative, {}).get('seconds', {})}
+        seconds[timing_platform] = round(sum(v.get('seconds', 0) if python else v['details']['duration_ms'] / 1000 for v in records), 4) if records and (not python or any('outcome' in v for v in records)) else None
         entries.append({
             'file': relative, 'suite': 'python' if python else 'node',
             'area': label.split()[0], 'purpose': purpose,
             'test_count': len(records),
-            'seconds': {'windows': round(sum(v.get('seconds', 0) if python else v['details']['duration_ms'] / 1000 for v in records), 4) if records and (not python or any('outcome' in v for v in records)) else None, 'mac': None},
+            'seconds': seconds,
             'markers': sorted(markers),
             'requirements': sorted(markers & {'gpu', 'needs_test_photos', 'needs_native_helper', 'windows_only', 'mac_only', 'posix_only'}),
             'platform_notes': sorted(set(notes)),
