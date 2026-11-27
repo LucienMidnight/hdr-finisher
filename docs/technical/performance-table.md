@@ -10,6 +10,16 @@ timings and not an app-wide latency comparison.
 | Export request with active HDR Luma and Red curves | 35.59 s GPU / 40.79 s forced CPU | Saved DSC04375 grade, JPEG Ultra HDR at 4,000 pixels, 1,000-nit target. Export, full-size Proof and decoded verification together took 66.22 / 87.05 s. Both decoded at 999.09 nits, and each Proof was byte-identical to its route's export. |
 | Mixed Library viewport after picture-cache version bump | 90 s smoke | All 30 eligible viewport photos pictured. First, tenth and twentieth pictures at 1.1, 1.6 and 22.0 s, on the frozen v1 fixture. No release speed comparison. |
 
+## November 27: HSL live selection check (PC)
+
+On Windows PC at 2560x1440, a fresh Electron profile with the GPU lock and a
+disposable saved grade of _DSC7970.ARW (Clean Grain and Film Look) showed a
+changed selection overlay about 0.93 s after the start of a six-step wheel
+drag, before pointer-up. The detailed overlay replaced it on release.
+One real-app behaviour check on the Compare/HSL fix checkout, with the fast
+Python suite also running. This is not a warm frame-rate benchmark or a new
+performance tolerance.
+
 ## November 27 ? Windows SDR Match picture fit
 
 Compare button click to the exact SDR presentation (or refusal), with the

@@ -8,6 +8,29 @@ while its source, geometry and HDR edit are unchanged. If the current frame
 cannot be copied or is no longer current, Compare still renders the actual
 lane-specific grade on the backend. It does not substitute an undenoised frame.
 
+## November 27: live HSL selection and more room to feather
+
+**Show selection** follows changes to the wheel's colour band and its
+Range, Softness, and spatial edge controls using one smaller preview at a
+time. It keeps up with new input without writing each drag step, and
+replaces the draft with the detailed overlay after release. Colour
+adjustments stay on their existing render paths.
+
+**Range** sets the fully selected hues. **Softness** extends the fade to
+neighbouring hues and is unchanged (1 to 90 degrees). **Feather** smooths
+the mask across the photo, not across the colour wheel. It now sits beside
+Softness and reaches 64 instead of 16 source pixels in Global HSL. Existing
+settings, including zero, still give exactly the same result. The separate
+Local Hue mask controls and Local HSL have not gained spatial controls.
+
+On a straight, saturated colour boundary at native scale, the transition
+from 10% to 90% coverage was 11 pixels without Feather. At minimum, middle
+and maximum, old widths were 11, 15 and 24 pixels. New widths are 11, 42
+and 82 pixels. On a uniform hue 40 degrees from the centre of a
+15-degree half-width band, minimum, middle and maximum Softness gave
+0%, 43% and 81% coverage. They address different things. The optional names
+**Hue softness** and **Edge feather** await Steve's decision.
+
 ## November 27: make Tone sliders peers
 
 Steve approved full-width peer sliders in Global HDR and SDR Tone and in

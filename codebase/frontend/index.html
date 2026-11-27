@@ -882,7 +882,7 @@
                 <div class="control-row instrument-slider-control"><div class="control-heading"><label>Vibrance</label><output data-local-grade-output="vibrance">0</output></div><input data-local-grade="vibrance" type="range" min="-1" max="3" step="0.02" value="0"></div>
               </section>
               <section class="local-grade-section" data-local-grade-section="hsl">
-                <div class="control-heading"><h4>HSL</h4><button type="button" class="text-button" id="local-hsl-bypass" aria-label="Toggle local HSL" aria-pressed="true">On</button><button type="button" class="text-button" id="local-hsl-reset">Reset</button></div>
+                <div class="control-heading"><h4>HSL</h4><button type="button" class="text-button" id="local-hsl-bypass" aria-label="Toggle local HSL" aria-pressed="true" data-tooltip="Turn local HSL on or off without changing its settings.">On</button><button type="button" class="text-button" id="local-hsl-reset" data-tooltip="Clear this local HSL selection and its adjustments.">Reset</button></div>
                 <div id="hsl-local-panel"></div>
               </section>
               <section class="local-grade-section" data-local-grade-section="detail" aria-labelledby="local-detail-heading">
@@ -1398,8 +1398,8 @@
       <section class="control-group collapsed" data-group="hsl">
         <div class="control-group-header">
           <button class="group-toggle" type="button" aria-expanded="false">HSL</button>
-          <button class="section-bypass text-button" type="button" data-section-path="current.hsl_section_enabled" aria-pressed="true" aria-label="Toggle HSL preview">&#9673;</button>
-          <button id="hsl-reset" class="group-reset text-button" type="button">Reset</button>
+          <button class="section-bypass text-button" type="button" data-section-path="current.hsl_section_enabled" aria-pressed="true" aria-label="Toggle HSL preview" data-tooltip="Turn HSL on or off without changing its settings.">&#9673;</button>
+          <button id="hsl-reset" class="group-reset text-button" type="button" data-tooltip="Restore all HSL channels to their starting settings.">Reset</button>
         </div>
         <div class="control-group-body">
           <div class="film-look-actions hidden" data-sdr-module-match><button id="hsl-match-hdr" class="button-secondary" type="button" data-tooltip="Copies the current HDR HSL settings once, including on/off.">Match HDR HSL</button><span>Copies once; SDR remains independent.</span></div>

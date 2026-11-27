@@ -10,7 +10,7 @@ Dynamic entries show the JavaScript expression/template, with supporting definit
 
 ## Coverage and limits
 
-This inventory contains **803 source entries**, not 803 distinct hover messages. Shared helpers can produce many messages; multiple sources can feed one control. It scans HTML and JavaScript in frontend and the desktop shell (including embedded markup), title/data-tooltip/data-tip/data-native-tooltip attributes and assignments, authored title-tooltip spans, accessible-label fallbacks, and selected-option names. No app or photo is opened.
+This inventory contains **817 source entries**, not 817 distinct hover messages. Shared helpers can produce many messages; multiple sources can feed one control. It scans HTML and JavaScript in frontend and the desktop shell (including embedded markup), title/data-tooltip/data-tip/data-native-tooltip attributes and assignments, authored title-tooltip spans, accessible-label fallbacks, and selected-option names. No app or photo is opened.
 
 Runtime names, paths, errors, backend capability messages, custom album/label meanings and selected values have no finite list of text: their expression is recorded. Arbitrary computed property names, new helper APIs, external content and native operating-system menus are not discoverable by this static scanner. Supporting expressions are conservative and may include strings that are not shown as tooltips. When adding a new tooltip mechanism, extend the extractor and its fixture test.
 
@@ -400,7 +400,8 @@ Clipped lane, scope, preview and filename labels use their visible text; dynamic
 
 | Control / visible name | Text | Flags | ID and source |
 | --- | --- | --- | --- |
-| ◉ | Toggle HSL preview | name only (fallback) | codebase/frontend/index.html:1401 · [source](../../codebase/frontend/index.html#L1401) |
+| Toggle HSL preview | Turn HSL on or off without changing its settings. | fixed | codebase/frontend/index.html:1401 · [source](../../codebase/frontend/index.html#L1401) |
+| Reset | Restore all HSL channels to their starting settings. | fixed | codebase/frontend/index.html::#hsl-reset · [source](../../codebase/frontend/index.html#L1402) |
 | Match HDR HSL | Copies the current HDR HSL settings once, including on/off. | fixed | codebase/frontend/index.html::#hsl-match-hdr · [source](../../codebase/frontend/index.html#L1405) |
 
 ### grade / curves
@@ -586,10 +587,22 @@ Clipped lane, scope, preview and filename labels use their visible text; dynamic
 
 | Control / visible name | Text | Flags | ID and source |
 | --- | --- | --- | --- |
-| input.title | ({edge:'Grow or shrink the selected area.',edge_feather:'Soften the selection boundary.',edge_detail:'Smooth across texture or follow light and dark edges.'})[key] &#124;&#124; label | dynamic expression | codebase/frontend/hsl-panel.js:44 · [source](../../codebase/frontend/hsl-panel.js#L44) |
-| button aria-label | global?&#96;${ch.name} channel&#96;:&#96;${ch.name} quick start&#96; | dynamic expression | codebase/frontend/hsl-panel.js:167 · [source](../../codebase/frontend/hsl-panel.js#L167) |
-| button.title | ch.name | dynamic expression; name/status supplied at runtime | codebase/frontend/hsl-panel.js:171 · [source](../../codebase/frontend/hsl-panel.js#L171) |
-| add.title | add.disabled?'All four Custom channels are in use':'' | dynamic expression | codebase/frontend/hsl-panel.js:182 · [source](../../codebase/frontend/hsl-panel.js#L182) |
+| Reset channel | Restore this channel’s starting settings. | fixed | codebase/frontend/hsl-panel.js:43 · [source](../../codebase/frontend/hsl-panel.js#L43) |
+| Delete | Delete this custom channel and its adjustment. | fixed | codebase/frontend/hsl-panel.js:44 · [source](../../codebase/frontend/hsl-panel.js#L44) |
+| Pick | Click or drag on the photo to replace the colour selection. | fixed | codebase/frontend/hsl-panel.js:47 · [source](../../codebase/frontend/hsl-panel.js#L47) |
+| Add | Click or drag on the photo to include more colours. | fixed | codebase/frontend/hsl-panel.js:48 · [source](../../codebase/frontend/hsl-panel.js#L48) |
+| Subtract | Click or drag on the photo to exclude colours from the selection. | fixed | codebase/frontend/hsl-panel.js:49 · [source](../../codebase/frontend/hsl-panel.js#L49) |
+| Stop picking | Stop sampling colours from the photo. | fixed | codebase/frontend/hsl-panel.js:50 · [source](../../codebase/frontend/hsl-panel.js#L50) |
+| Show selection | Show where the active selection applies. Stronger overlay means more coverage. | fixed | codebase/frontend/hsl-panel.js:51 · [source](../../codebase/frontend/hsl-panel.js#L51) |
+| input.dataset.tooltip | hslSliderTips[key] | dynamic expression | codebase/frontend/hsl-panel.js:59 · [source](../../codebase/frontend/hsl-panel.js#L59) |
+| hslSliderTips — text used by dynamic tooltips | { width: 'Widen the band of colours that get the full adjustment.', feather: 'Higher values blend the adjustment into more neighbouring hues.', edge_feather: 'Higher values spread the fade farther across the photo at selection edges.', edge: 'Negative values shrink selected areas. Positive values grow them.', edge_detail: 'Higher values follow light and dark edges more closely. Lower values smooth over texture.', hue: 'Shift selected colours around the wheel. Positive and negative values turn in opposite directions.', saturation: 'Raise to make selected colours richer. Lower to mute them.', luminance: 'Raise to brighten selected colours. Lower to darken them.', uniformity: 'Raise to pull selected colours closer to the middle of their hue range.', opacity: 'Raise to apply more of the adjustment. Zero turns its effect off.', } | dynamic supporting definition | codebase/frontend/hsl-panel.js:24 · [source](../../codebase/frontend/hsl-panel.js#L24) |
+| button aria-label | global?&#96;${ch.name} channel&#96;:&#96;${ch.name} quick start&#96; | dynamic expression | codebase/frontend/hsl-panel.js:183 · [source](../../codebase/frontend/hsl-panel.js#L183) |
+| button.dataset.tooltip | global ? ch.kind==='all' ? 'Adjust all colours together.' : &#96;Adjust the ${ch.name.toLowerCase()} colour band.&#96; : &#96;Use ${ch.name.toLowerCase()} as a starting colour for Pick, Add or Subtract.&#96; | dynamic expression | codebase/frontend/hsl-panel.js:187 · [source](../../codebase/frontend/hsl-panel.js#L187) |
+| b.dataset.tooltip | Edit this custom colour selection. | fixed | codebase/frontend/hsl-panel.js:198 · [source](../../codebase/frontend/hsl-panel.js#L198) |
+| add.dataset.tooltip | add.disabled?'All four Custom channels are in use.':'Create a separate channel for colours you pick.' | dynamic expression | codebase/frontend/hsl-panel.js:200 · [source](../../codebase/frontend/hsl-panel.js#L200) |
+| group.dataset.tooltip | handleTips[kind.replace(/-?1$/, '')] | dynamic expression | codebase/frontend/hsl-panel.js:241 · [source](../../codebase/frontend/hsl-panel.js#L241) |
+| handleTips — text used by dynamic tooltips | { move: 'Drag to move the whole band to another colour.', edge: 'Drag to widen or narrow the band of fully selected colours.', feather: 'Drag to change how far the selection fades into nearby hues.', target: 'Drag to shift the selected colours toward this hue.', } | dynamic supporting definition | codebase/frontend/hsl-panel.js:234 · [source](../../codebase/frontend/hsl-panel.js#L234) |
+| target — text used by dynamic tooltips | event.target.closest('[data-hsl-handle]') | dynamic supporting definition | codebase/frontend/hsl-panel.js:273 · [source](../../codebase/frontend/hsl-panel.js#L273) |
 
 ### sdr match ui
 
@@ -647,7 +660,8 @@ Clipped lane, scope, preview and filename labels use their visible text; dynamic
 
 | Control / visible name | Text | Flags | ID and source |
 | --- | --- | --- | --- |
-| On | Toggle local HSL | name only (fallback) | codebase/frontend/index.html::#local-hsl-bypass · [source](../../codebase/frontend/index.html#L885) |
+| On | Turn local HSL on or off without changing its settings. | fixed | codebase/frontend/index.html::#local-hsl-bypass · [source](../../codebase/frontend/index.html#L885) |
+| Reset | Clear this local HSL selection and its adjustments. | fixed | codebase/frontend/index.html::#local-hsl-reset · [source](../../codebase/frontend/index.html#L885) |
 
 ### grade / local-adjustments / detail
 
@@ -1206,9 +1220,9 @@ Clipped lane, scope, preview and filename labels use their visible text; dynamic
 
 | Control / visible name | Text | Flags | ID and source |
 | --- | --- | --- | --- |
-| els.viewerBranchNote.textContent | branchCopy[lane] | dynamic expression | codebase/frontend/lanes-compare.js:249 · [source](../../codebase/frontend/lanes-compare.js#L249) |
-| els.viewerBranchNote.textContent | &#96;${branchCopy[other]} Release V to return to the authored preview.&#96; | dynamic expression | codebase/frontend/lanes-compare.js:383 · [source](../../codebase/frontend/lanes-compare.js#L383) |
-| other — text used by dynamic tooltips | state.currentView === "hdr" ? "sdr" : "hdr" | dynamic supporting definition | codebase/frontend/lanes-compare.js:408 · [source](../../codebase/frontend/lanes-compare.js#L408) |
+| els.viewerBranchNote.textContent | branchCopy[lane] | dynamic expression | codebase/frontend/lanes-compare.js:254 · [source](../../codebase/frontend/lanes-compare.js#L254) |
+| els.viewerBranchNote.textContent | &#96;${branchCopy[other]} Release V to return to the authored preview.&#96; | dynamic expression | codebase/frontend/lanes-compare.js:388 · [source](../../codebase/frontend/lanes-compare.js#L388) |
+| other — text used by dynamic tooltips | state.currentView === "hdr" ? "sdr" : "hdr" | dynamic supporting definition | codebase/frontend/lanes-compare.js:413 · [source](../../codebase/frontend/lanes-compare.js#L413) |
 
 ### overlay ui
 

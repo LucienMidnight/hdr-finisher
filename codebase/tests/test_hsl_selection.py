@@ -108,6 +108,14 @@ def test_edge_grows_and_shrinks_and_feather_smooths_without_filling_exclusions()
     assert grow.sum()>base.sum()>shrink.sum()
     feather=select(prepared,ranges,edge_feather=6)
     assert np.abs(np.diff(feather,axis=1)).max()<np.abs(np.diff(base,axis=1)).max()
+    # Global HSL's extended values keep widening the fade, not clipping
+    # to the former 16-pixel maximum. The old values still use the same math.
+    slopes = []
+    for amount in (0, 16, 32, 64):
+        recipe=HSLRecipe(ranges=ranges,edge_feather=amount)
+        weights=select(prepared,recipe.ranges,edge_feather=recipe.edge_feather)
+        slopes.append(np.abs(np.diff(weights,axis=1)).max())
+    assert all(next_slope < slope for slope,next_slope in zip(slopes,slopes[1:]))
     # The excluded red region must stay empty, even with maximal grow/feather.
     excluded=ranges+[HSLRange(center=0,width=25,feather=10,subtract=True)]
     shaped=select(prepared,excluded,edge=8,edge_feather=16)
