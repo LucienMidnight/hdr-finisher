@@ -23,8 +23,8 @@ the same changes are not counted twice. Match never invents curves.
 Candidates use the existing page WebGPU bridge. The chosen recipe is measured
 again on CPU, using the unchanged body gates and highlight-order diagnostic.
 If the GPU route fails or produces an unsafe fit, the same search restarts once
-on CPU. Match still reports matched, needs review or refusal. No limit, target,
-colour space, renderer stage or stored recipe schema changes.
+on CPU. Match still reports matched, needs review or refusal. The fit does
+not change the target, safety limits or stored recipe schema.
 
 SDR HSL and Curves can copy HDR settings with one Undo. Curves copy the points
 literally on the shared scale used in both renditions. SDR Tone and Highlight

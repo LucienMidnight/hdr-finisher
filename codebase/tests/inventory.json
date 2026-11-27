@@ -3841,7 +3841,7 @@
       "suite": "python",
       "area": "frontend",
       "purpose": "Checks frontend controls contract behavior and regression contracts.",
-      "test_count": 12,
+      "test_count": 11,
       "seconds": {
         "windows": 5.2374,
         "mac": null

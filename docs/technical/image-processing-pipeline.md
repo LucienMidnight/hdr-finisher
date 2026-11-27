@@ -374,7 +374,7 @@ geometry-fixed source proxy
   -> display mapping and diagnostic overlay
 ```
 
-The global shaders mirror the CPU branch order and parameter meanings. Some unsupported local curves/color-grading cases deliberately request CPU fallback. Device loss also falls back. A GPU approximation must not pretend to be authoritative when parity is unknown.
+The global shaders mirror the CPU branch order and parameter meanings. Global and local curves use the same evaluator. An unsupported GPU route or device loss falls back to CPU. A GPU approximation must not pretend to be authoritative when parity is unknown.
 
 RGBA16F transport is preferred when the proxy is finite and representable; RGBA32F is the fallback. Rows are packed to WebGPU's alignment requirements. Proxy textures are retained at no more than two levels per lane and concurrent fetches are deduplicated.
 

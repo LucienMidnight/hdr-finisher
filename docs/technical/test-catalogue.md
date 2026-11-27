@@ -283,7 +283,7 @@ Source: `codebase/tests/inventory.json`. Seconds are summed case time, not paral
 | tests/test_focus_camera_source.py | Checks focus camera source behavior and regression contracts. | 6 | 1.403 | unknown |  |
 | tests/test_focus_source_loading.py | Focus source loading preserves import pixels without a Grade document. | 10 | 0.1109 | unknown |  |
 | tests/test_folder_picker.py | Checks folder picker behavior and regression contracts. | 6 | 0.0108 | unknown |  |
-| tests/test_frontend_controls_contract.py | Checks frontend controls contract behavior and regression contracts. | 12 | 5.2374 | unknown |  |
+| tests/test_frontend_controls_contract.py | Checks frontend controls contract behavior and regression contracts. | 11 | 5.2374 | unknown |  |
 | tests/test_frontend_editor_layout_contract.py | Checks frontend editor layout contract behavior and regression contracts. | 11 | 0.4676 | unknown |  |
 | tests/test_frontend_inventory_contract.py | Checks frontend inventory contract behavior and regression contracts. | 1 | 0.0139 | unknown |  |
 | tests/test_frontend_local_scope_contract.py | Checks frontend local scope contract behavior and regression contracts. | 20 | 0.8337 | unknown |  |

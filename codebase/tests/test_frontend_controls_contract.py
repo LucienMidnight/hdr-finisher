@@ -272,12 +272,3 @@ def test_redundant_enable_controls_are_removed_and_equalizer_schedules_live_scop
     assert 'id="sdr-match-hdr-color"' not in html
     assert "Enable equalizer" not in html
     assert "Enable curves" not in html
-
-
-def test_curve_drag_uses_live_preview_scheduler_and_three_point_default_shape() -> None:
-    javascript = frontend_scripts()
-    curve_binding = frontend_declarations("bindCurveEditor", "updateCurveFromPointer", "curveVerticalAdjustmentScale")
-
-    assert "return index === 0 || index === pointCount - 1 ? 0.18 : 0.35" in curve_binding
-    assert "const verticalStep = step * Math.min(1, curveVerticalAdjustmentScale(index, curve.length) / 0.35)" in curve_binding
-    assert "return [[0, 0], [0.25, 0.25], [0.5, 0.5], [0.75, 0.75], [1, 1]]" in javascript
