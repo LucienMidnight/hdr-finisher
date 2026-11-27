@@ -18,7 +18,7 @@ flatpak-pip-generator \
   --output "$manifest_dir/generated-sources/python-sources.json" \
   --cleanup scripts \
   --runtime org.freedesktop.Sdk//25.08 \
-  --prefer-wheels numpy,pillow,pydantic-core,imagecodecs,openexr,pillow-heif,rawpy,httptools,pyyaml,uvloop,watchfiles,websockets \
+  --prefer-wheels numpy,pillow,pydantic-core,imagecodecs,openexr,pillow-heif,rawpy,opencv-python-headless,httptools,pyyaml,uvloop,watchfiles,websockets \
   --wheel-arches x86_64
 
 echo "Offline Flatpak source manifests regenerated."
