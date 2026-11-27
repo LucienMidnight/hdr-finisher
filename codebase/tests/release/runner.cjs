@@ -75,7 +75,7 @@ function command(row, out, list) {
 }
 // Historical results supply estimates only; never count them as current passes.
 function history(output = OUTPUT, root = ROOT) {
-  const records = [];
+  const records = require('./timings.cjs').fallbackRecords(require('./timings.cjs').readTimings(path.join(root, 'tests/release/timings.json')));
   for (const folder of ['prerelease-0.9-2026-10-09', 'prerelease-0.9.1-2026-10-16']) {
     const file = path.join(root, 'output/performance/review', folder, 'results.json');
     if (!fs.existsSync(file)) continue;
@@ -120,7 +120,9 @@ function estimate(rows, records, known = {failures:[]}) {
   let seconds = 0, retrySeconds = 0;
   const unknown = [], evidence = [];
   for (const row of rows) {
-    const prior = records.filter(record => record.driver === row.path && !record.interrupted).at(-1);
+    const prior = records.filter(record => record.driver === row.path && !record.interrupted
+      && !record.timedOut && !record.error && !record.signal && record.exitCode !== 86 && !launchFailed(record.exitCode)
+      && Number.isFinite(record.durationSeconds) && record.durationSeconds > 0).at(-1);
     if (!prior) { unknown.push(row.path); continue; }
     seconds += prior.durationSeconds;
     // Only a failed driver with a matching known signature needs its log read.
@@ -245,8 +247,12 @@ async function execute(row, state, out, list, hooks, deadline, known) {
     const result = results.find(result => result.timedOut) || results.find(result => result.exitCode !== 0) || results.at(-1) || { exitCode: null };
     checkProjects(state.fixtures);
     if (git('rev-parse', 'HEAD') !== state.revision) throw Error('STOP: HEAD moved during the run; results cover different revisions.');
-    const record = { ...result, log, durationSeconds: (Date.now() - started) / 1000, interrupted: hooks.stopped(), command: invocation.args };
+    const record = { ...result, recordedAt: new Date().toISOString(), platform: process.platform, log, durationSeconds: (Date.now() - started) / 1000, interrupted: hooks.stopped(), command: invocation.args };
     fs.appendFileSync(path.join(OUTPUT, 'history.jsonl'), JSON.stringify({ driver: row.path, revision: state.revision, run: out, ...record }) + '\n');
+    if (list.schemaVersion >= 2) {
+      require('./timings.cjs').updateTimings(history().filter(item => !item.partial));
+      require('../../tools/test-catalogue.cjs').generate();
+    }
     delete state.activeAttempt;
     if (hooks.stopped()) { state.interruptedAttempt = { driver: row.path, ...record }; return false; }
     attempts.push(record);

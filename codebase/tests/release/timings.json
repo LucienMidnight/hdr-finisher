@@ -1,0 +1,50 @@
+{
+  "schemaVersion": 1,
+  "drivers": {
+    "tests/denoise-zoomed-region.js": {
+      "mac": {
+        "medianSeconds": 18,
+        "lastSeconds": 18,
+        "sampleCount": 1,
+        "sampleSeconds": [
+          18
+        ],
+        "revision": "0f64b37f (report; later denoise rechecks)",
+        "date": "2026-11-25",
+        "exitCode": 0,
+        "source": "docs/technical/reports/overnight-release-check-2026-11-25.md, Test-suite cost / intermittent sections; approximate, pre-trim",
+        "lastSampleKey": "2026-11-25T23:59:59.000Z|report-tests/denoise-zoomed-region.js"
+      }
+    },
+    "tests/film-stock-parity.js": {
+      "win": {
+        "medianSeconds": 211.735,
+        "lastSeconds": 211.735,
+        "sampleCount": 1,
+        "sampleSeconds": [
+          211.735
+        ],
+        "revision": "8ba7be54f00d1252777fd35cb58d8994cb893094",
+        "date": "2026-11-27",
+        "exitCode": 1,
+        "source": "release runner history (complete attempts, including failures)",
+        "lastSampleKey": "2026-11-27T05:13:07.686Z|tests__film-stock-parity.js.1.1795756387974.log"
+      }
+    },
+    "tests/library-gpu-raw-single.js": {
+      "mac": {
+        "medianSeconds": 300,
+        "lastSeconds": 300,
+        "sampleCount": 1,
+        "sampleSeconds": [
+          300
+        ],
+        "revision": "0f64b37f (report; later denoise rechecks)",
+        "date": "2026-11-25",
+        "exitCode": 0,
+        "source": "docs/technical/reports/overnight-release-check-2026-11-25.md, Test-suite cost / intermittent sections; approximate, pre-trim",
+        "lastSampleKey": "2026-11-25T23:59:59.000Z|report-tests/library-gpu-raw-single.js"
+      }
+    }
+  }
+}

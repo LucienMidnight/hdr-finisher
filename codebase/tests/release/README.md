@@ -399,7 +399,7 @@ The launchers' shutdown check no longer throws or changes the exit code. At
 exit they print `[runner] driver result: passed|failed (exit code N)` first;
 any shutdown problem follows as a separate `SHUTDOWN WARNING (separate from the
 driver result)` line. Each launcher also prints
-`[runner] electron-main {"pid":…,"created":…}`. After every attempt the runner
+`[runner] electron-main {"pid":â€¦,"created":â€¦}`. After every attempt the runner
 re-checks those trees itself (`tests/release/process-tree.cjs`), kills
 anything left, and waits up to 60 s. It stops the run (lock kept, as before)
 only if an Electron process, including its GPU process, is still alive. A
@@ -433,3 +433,37 @@ graceful close five seconds before forcing shutdown. The retouch cancellation
 handshake and evaluate waits also fail with a named bounded error. Unit tests
 exercise timeout calibration, sleeping/exiting fake processes, follow-up logs
 and shutdown failure without launching Electron or using the GPU.
+
+## Agent briefs and durable timing estimates (schema 2)
+
+Read each driver's `brief`, `requirements`, `platforms`, `expectedMinutes.win/mac`
+and `deadlinePolicy` in `drivers.json` before selecting it. `deadlineMinutes` is
+15 (the default attempt deadline), not a fixed override; helpers use their parent.
+The actual deadline remains max(5 minutes, 3 times the latest successful complete
+local attempt), with a 15-minute default. The runner still accepts schema-1
+manifests; the catalogue test requires the committed schema-2 briefs.
+
+`timings.json` survives output cleanups. After each attempt the runner imports
+complete local history records, updates the current platform only, and regenerates
+`docs/technical/test-catalogue.md`. Commit those generated changes before another
+real run. `--plan` stays read-only. The summary retains up to 31 recent sample
+seconds per driver/platform; `sampleCount` and median describe that bounded window.
+Last revision/date and source identify the evidence. Interrupted, timed-out,
+partial and launch-failed attempts are excluded. Completed assertion failures are
+useful duration samples, not passes. Approximate report imports are labelled.
+
+When local history is absent the runner uses the committed same-platform median;
+local records take precedence. Summaries never calibrate attempt deadlines or
+certify results. Estimates conservatively reserve a retry when a saved failed
+sample has no surviving log to match an exact known signature. Unknown durations
+stay null; do not copy PC times to the 8 GB Mac or use individual action latencies
+as whole-test durations. Manifest expected minutes are a reviewed baseline;
+the catalogue prefers the newer timing summary.
+
+Regenerate with `node codebase/tools/test-catalogue.cjs` from the repository root.
+The catalogue includes `codebase/tests/inventory.json` when present, groups slow
+drivers by area/tier and gives core, per-area and all-area focused subtotals with
+unknown counts. It is not a promise of a complete estimate when samples are missing.
+Keep briefs and fixture/platform prerequisites current whenever editing a driver.
+Validate using `node --test codebase/tests/test-catalogue.test.js
+codebase/tests/release-runner.test.js` (one command, both paths).

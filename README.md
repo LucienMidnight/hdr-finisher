@@ -76,6 +76,8 @@ HDR Finisher is a technical alpha, heading for 1.0. Windows is the best-tested p
 
 Python 3.12 with FastAPI and NumPy for decoding, colour maths and encoding; plain HTML, CSS and JavaScript with a WebGPU renderer for the interface; Electron for the desktop app. To run from source, run `npm install` and then `npm start` in `codebase/desktop`. See the [development guide](docs/technical/development.md), [architecture](docs/technical/architecture.md) and [code map](docs/technical/code-map.md).
 
+For test selection, read the [test catalogue](docs/technical/test-catalogue.md) and [release runner guidance](codebase/tests/release/README.md). Each registered driver has an agent brief, requirements and separate Windows/Mac estimates. Keep these current when editing a driver; commit the runner-updated timing summary so measurements survive output cleanups.
+
 ## Acknowledgments
 
 Photo-framing geometry reference code and measured test cases are from

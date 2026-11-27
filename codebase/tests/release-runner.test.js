@@ -107,6 +107,7 @@ function isolatedRunner(t) {
   const root=scratch(t);
   for (const dir of ['tests/release','tests/performance','desktop/tests','output']) fs.mkdirSync(path.join(root,dir),{recursive:true});
   fs.copyFileSync(path.join(__dirname,'release/runner.cjs'),path.join(root,'tests/release/runner.cjs'));
+  fs.copyFileSync(path.join(__dirname,'release/timings.cjs'),path.join(root,'tests/release/timings.cjs'));
   fs.copyFileSync(path.join(__dirname,'release/process-tree.cjs'),path.join(root,'tests/release/process-tree.cjs'));
   fs.mkdirSync(path.join(root,'tests/helpers'),{recursive:true});
   fs.copyFileSync(path.join(__dirname,'helpers/photos-root.cjs'),path.join(root,'tests/helpers/photos-root.cjs'));

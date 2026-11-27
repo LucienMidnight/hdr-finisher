@@ -408,6 +408,8 @@ Next Mac session: close the small macOS/Linux export overwrite race with the OS 
 
 ### Next Mac session checklist (from PC work, 27 Nov 2026)
 
+- Populate Mac timings from the next release run: commit `codebase/tests/release/timings.json` and regenerate `docs/technical/test-catalogue.md`; keep PC/Mac baselines separate.
+
 - [ ] Run the [focused release check](../../codebase/tests/release/README.md), then, with Steve's OK, merge `integrate/pc-tests-review-2026-11-26` into `main`. The PC GPU has faulty VRAM; GPU-dependent release results must come from the Mac.
 - [ ] Re-check every GPU-only PC finding on the Mac, including the [large-export GPU-vs-CPU comparison](../technical/research/large-export-cpu-default.md) and the [overnight follow-ups](../technical/reports/overnight-release-check-2026-11-25.md).
 - [ ] Watch app memory on the 8 GB Mac during a Library scroll and a 50 MP export with the new CPU path (`e86cc23a`). PC peak was 5.80 GB versus 5.69 GB before, against its higher ceiling; the Mac ceiling is 4 GB and its last Library peak was about 2.8 GB. Complete the [long-open 8 GB Mac acceptance](modules/photo-library.md#november-14-8-gb-library-fixes-built-full-acceptance-remains-open) too.
