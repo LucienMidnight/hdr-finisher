@@ -1,3 +1,23 @@
+## November 27 ? Windows SDR Match picture fit
+
+Compare button click to the exact SDR presentation (or refusal), with the
+saved grade already open, in disposable Electron at 2560?1440 under the shared
+GPU lock. Baseline `ff49cb97`, picture fit `2d1251ef`. Use the existing 10%
+Grade timing tolerance,
+since it leaves room for ordinary PC run-to-run variation. The reference photos
+are the eight PC-only copies named in the [brief](briefs/sdr-match-tone-fit-2026-11-27.md).
+
+| Action | Before | Picture fit | Conditions |
+| --- | ---: | ---: | --- |
+| Match SDR, click to settled picture | 6.70?34.17 s for seven successful matches; flower refused at 55.72 s | 4.60?6.90 s, all eight committed | One timed trial per saved grade and version, PC WebGPU, source already open. All eight new fits used GPU candidates and CPU certification. |
+
+The seven previously successful photos were all faster. The median for those
+same seven photos fell from 18.56 s to 5.73 s. The flower and black-and-white
+photo now both report matched at the unchanged gates. Per-photo timings,
+settings, perceptual measurements and images are in the local review at
+`codebase/output/review/sdr-match-tone-fit/index.html`.
+
+
 ## November 27: release-driver speed work blocked on PC
 
 HSL delivery now has a `--all` mode: one neutral case, the global edit, then
