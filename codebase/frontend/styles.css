@@ -1584,7 +1584,6 @@ input[type="text"] {
      summon that bar across the bottom of the panel. */
   overflow-x: hidden;
   overflow-y: auto;
-  scrollbar-gutter: stable;
   border: 0;
   border-left: 1px solid var(--border);
   border-radius: 0;
@@ -5355,7 +5354,6 @@ body[data-workflow="export"] .grade-rail {
   max-width: 420px;
   overflow-x: hidden;
   overflow-y: auto;
-  scrollbar-gutter: stable;
   border-left: 1px solid var(--hairline);
   background: var(--panel);
   scrollbar-color: var(--border) var(--panel);
@@ -5826,7 +5824,7 @@ body[data-workflow="grade"] .import-workflow-panel { display: none; }
 }
 
 .proof-rail { padding: 0 var(--space-16) var(--space-24); }
-.proof-rail .workflow-rail-header { margin: 0 -16px; }
+.proof-rail .workflow-rail-header { margin-inline: calc(-1 * var(--space-16)); }
 
 .export-sheet.workflow-side-panel { background: var(--panel); }
 .export-sheet .sheet-actions { display: block; }
@@ -8376,7 +8374,7 @@ img:not([src]), img[src=""] { visibility:hidden; }
 /* Export uses the shared panel titles, fields, switches and disclosure tokens. */
 body.batch-export-ready[data-workflow="export"] #export-sheet { display:flex; flex-direction:column; padding:0; overflow:hidden; scrollbar-gutter:auto; }
 .batch-export-ready #export-sheet .sheet-header { position:static; flex:none; }
-.batch-settings-scroll { flex:1; min-height:0; overflow:auto; padding:0; scrollbar-gutter:stable; }
+.batch-settings-scroll { flex:1; min-height:0; overflow:auto; padding:0; }
 .batch-settings-section { margin:0; padding:0; border-bottom:var(--group-divider-width) solid var(--group-divider); }
 .batch-settings-section > summary { display:flex; align-items:center; gap:var(--group-disclosure-gap); min-height:var(--control-group-header-h); padding:0 var(--space-12); list-style:none; cursor:pointer; color:var(--group-title-color); font:var(--group-title-font-weight) var(--group-title-font-size)/var(--line-height-tight) var(--group-title-font-family); }
 .batch-settings-section > summary::-webkit-details-marker { display:none; }

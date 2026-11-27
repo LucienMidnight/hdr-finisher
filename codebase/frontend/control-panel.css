@@ -6,12 +6,6 @@
 .control-title-row { display: flex; align-items: center; justify-content: space-between; gap: var(--space-10); height: var(--panel-header-h); padding: 0 var(--space-16); border-bottom: 1px solid var(--hairline); }
 .control-title-row .panel-title { margin: 0; }
 #grade-workflow-panel .control-mode-switch { width: 100%; margin: var(--space-8) 0 0; }
-/* Keep a visible, fixed-width rail in every Control Panel mode. */
-.grade-rail { overflow-y: scroll; scrollbar-color: auto; }
-/* Same lighter rail as the lists, so the empty rail never reads as a black gap. */
-.grade-rail::-webkit-scrollbar { width: var(--scrollbar-w); background: var(--raised); }
-.grade-rail::-webkit-scrollbar-track { background: var(--raised); box-shadow: none; }
-.grade-rail::-webkit-scrollbar-thumb { background: var(--quiet); border: 2px solid var(--raised); border-radius: var(--radius-pill); }
 .control-mode-switch { flex: 0 0 100%; width: 100%; margin: var(--space-8) 0 var(--space-10); }
 .control-mode-switch button { flex: 1; }
 .control-shared-label { padding: var(--space-12) var(--space-16); color: var(--muted); font: var(--font-size-min) var(--font-body); letter-spacing: var(--tracking-caps); text-transform: uppercase; }

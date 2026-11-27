@@ -203,24 +203,16 @@ async function verifyToneHierarchy(page) {
   await page.screenshot({path:path.join(output,'local.png')});
   await verifyToneHierarchy(page);
   await page.locator('#grade-mode-retouch').click();
-  // Retouch fits without scrolling. The rail still reserves and paints its track.
-  const railChrome = await page.evaluate(() => {
-   const rail = document.querySelector('.grade-rail');
-   rail.scrollTop = 0;
-   const measure = () => ({gutter: rail.offsetWidth - rail.clientWidth,
-    overflow: getComputedStyle(rail).overflowY, track: getComputedStyle(rail, '::-webkit-scrollbar-track').backgroundColor,
-    overflowing: rail.scrollHeight > rail.clientHeight});
-   const short = measure();
-   const spacer = document.createElement('div'); spacer.style.height = `${rail.clientHeight * 2}px`;
-   rail.append(spacer); const long = measure(); spacer.remove();
-   return {short, long};
+  const railChrome = await page.locator(".grade-rail").evaluate(rail => {
+    const header = rail.querySelector(".control-title-row");
+    const rect = rail.getBoundingClientRect();
+    const style = getComputedStyle(rail);
+    return { edge: rect.right - header.getBoundingClientRect().right,
+      rightBorder: parseFloat(style.borderRightWidth),
+      gutter: rail.offsetWidth - rail.clientWidth - parseFloat(style.borderLeftWidth) - parseFloat(style.borderRightWidth) };
   });
-  assert.equal(railChrome.short.overflowing, false, 'Retouch should fit for the no-scroll check');
-  assert.equal(railChrome.short.overflow, 'scroll');
-  assert(railChrome.short.gutter > 1, 'Scrollbar rail has no reserved width');
-  assert.notEqual(railChrome.short.track, 'rgba(0, 0, 0, 0)', 'Scrollbar track is invisible');
-  assert(railChrome.long.overflowing);
-  assert.equal(railChrome.short.gutter, railChrome.long.gutter, 'Scrollbar rail changes width on overflow');
+  assert.equal(railChrome.gutter, 0, "Outer rail must not reserve a gutter");
+  assert(Math.abs(railChrome.edge - railChrome.rightBorder) <= 1, "Grade title divider must reach the right edge");
   const tool=await page.evaluate(()=>`#retouch-mode-${retouchUI.mode}`);
   await page.locator(tool).click();assert.equal(await page.evaluate(()=>retouchUI.active),false);
   await page.locator(tool).click();assert.equal(await page.evaluate(()=>retouchUI.active),true);
@@ -239,7 +231,7 @@ async function verifyToneHierarchy(page) {
   await page.screenshot({path:path.join(output,'export.png')});
   assert.equal(await page.locator('.batch-preset-help').count(),0);
   const field=await page.locator('#batch-directory').evaluate(e=>({height:e.getBoundingClientRect().height,box:getComputedStyle(e).boxSizing}));assert(field.height>=34,`Export field: ${JSON.stringify(field)}`);assert.equal(field.box,'border-box');
-  assert.deepEqual(errors,[]);console.log('PASS: default state, title spacing, persistent scrollbar rail, title tokens, EV readout, stable SDR scroll, local actions, round icons, retouch brush stroke and export fields');
+  assert.deepEqual(errors,[]);console.log('PASS: default state, title spacing, full-bleed outer panel and unchanged boxed list, title tokens, EV readout, stable SDR scroll, local actions, round icons, retouch brush stroke and export fields');
  } catch(error) {
   console.error('Panel diagnostics',await page.evaluate(()=>({errors:typeof state==='undefined'?null:state.gpuPreview?.detail,workflow:document.body.dataset.workflow,retouch:typeof retouchUI==='undefined'?null:{active:retouchUI.active,busy:retouchUI.busy},status:document.querySelector('#retouch-status')?.textContent})).catch(()=>null),errors);
   await page.screenshot({path:path.join(output,'failure.png')}).catch(()=>{});throw error;

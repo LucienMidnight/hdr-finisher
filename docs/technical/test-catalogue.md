@@ -1622,7 +1622,7 @@ Signed Bayer AHD on all four CFA phases and orientations, finite negative scene 
 
 #### `tests/workspace-panel-alignment.js`
 
-Aligned workflow panel headers and pointer/keyboard panel resizing. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
+Aligned workflow headers and pointer/keyboard panel resizing. Optional --overlay-scrollbars verifies full-bleed Grade and Proof rails, fit/overflow, hit targets, wheel, keyboard, drag, idle and reduced motion in three themes. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
 - Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
@@ -2222,7 +2222,7 @@ brush mask interaction. Runs assertions and captures in an isolated Electron app
 
 #### `tests/control-panel-polish.js`
 
-Control Panel title tokens, stable rendition tabs, brush actions and export field presentation. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
+Control Panel title tokens, full-bleed outer rail and unchanged boxed lists, stable rendition tabs, brush actions and export field presentation. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
 - Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
@@ -4453,7 +4453,7 @@ Color desaturation active GPU preview, CPU/GPU finished output, Proof/export agr
 
 #### `tests/control-panel-polish.js`
 
-Control Panel title tokens, stable rendition tabs, brush actions and export field presentation. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
+Control Panel title tokens, full-bleed outer rail and unchanged boxed lists, stable rendition tabs, brush actions and export field presentation. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
 - Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
@@ -4705,7 +4705,7 @@ The mask editor canvas sits over the shared preview element, so a gizmo left. Ru
 
 #### `tests/workspace-panel-alignment.js`
 
-Aligned workflow panel headers and pointer/keyboard panel resizing. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
+Aligned workflow headers and pointer/keyboard panel resizing. Optional --overlay-scrollbars verifies full-bleed Grade and Proof rails, fit/overflow, hit targets, wheel, keyboard, drag, idle and reduced motion in three themes. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
 
 - Expected minutes: Windows unknown; Mac unknown.
 - Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.

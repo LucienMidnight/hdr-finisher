@@ -253,7 +253,7 @@ def test_annotation_refinements_keep_metadata_and_scopes_useful() -> None:
     html = (FRONTEND / "index.html").read_text(encoding="utf-8")
     javascript = frontend_scripts()
     css = "\n".join((FRONTEND / name).read_text(encoding="utf-8") for name in ("styles.css", "visual-tokens.css", "visual-controls.css"))
-    assert '<aside class="source-rail panel" aria-label="Metadata">' in html
+    assert re.search(r'<aside\b(?=[^>]*\bclass="source-rail panel")(?=[^>]*\baria-label="Metadata")[^>]*>', html)
     assert 'data-control-mode="global"' in html
     assert 'data-control-mode="local"' in html
     assert 'data-control-mode="retouch"' in html

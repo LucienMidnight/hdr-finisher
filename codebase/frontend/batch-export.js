@@ -264,7 +264,9 @@
     const list=node("div");list.id="batch-preset-list";const name=node("input");name.id="batch-preset-name";name.hidden=true;
     const modified=node("p","","helper");modified.id="batch-modified";modified.setAttribute("aria-live","polite");rail.append(railHead,list,name,modified);document.body.append(rail);
     const sheet=$("export-sheet"),scroll=node("div","","batch-settings-scroll");sheet.querySelector(".panel-title").textContent="Export Settings";
+    scroll.dataset.overlayScroll = "";
     sheet.append(scroll);
+    globalThis.HDROverlayScrollbar?.attach(scroll);
     const section=(title,id)=>{const e=node("details","","batch-settings-section");if(id)e.id=id;e.open=true;const summary=node("summary"),body=node("div","","batch-settings-body");summary.append(node("h2",title,"export-section-title"));e.append(summary,body);scroll.append(e);return body;};
     const field=(label,control)=>{const l=node("label","","batch-setting-row");l.append(node("span",label),control);return l;};
     const editor=section("Output version","batch-preset-editor"),tabs=node("div","","batch-version-row");tabs.id="batch-versions";

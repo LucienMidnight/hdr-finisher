@@ -1,0 +1,48 @@
+/* Keep the native scroll container and its input behaviour. Replace only its paint. */
+[data-overlay-scroll] {
+  scrollbar-gutter: auto;
+  scrollbar-width: none;
+}
+[data-overlay-scroll]::-webkit-scrollbar { display: none; }
+:where(.grade-rail, .source-rail, .batch-settings-scroll, .library-nav)[data-overlay-scroll] { position: relative; }
+/* Keep the rightmost module actions out of the thumb's hit strip. */
+:root .grade-rail .control-group-header { padding-inline-end: max(var(--space-12), var(--scrollbar-w)); }
+.grade-rail .raw-development-group > .disclosure-trigger { inline-size: calc(100% - var(--scrollbar-w)); }
+
+.library-nav .library-folder-row { padding-inline-end: var(--scrollbar-w); }
+
+/* Metadata dividers reach through the row padding, while the controls keep it. */
+.source-rail > :is(.source-file-identity, .source-summary, .disclosure-panel) {
+  margin-inline: calc(-1 * var(--workspace-leading));
+  padding-inline: var(--workspace-leading);
+}
+
+.overlay-scrollbar-thumb {
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline-end: 0;
+  z-index: 8;
+  display: block;
+  inline-size: var(--scrollbar-w);
+  block-size: var(--panel-control-h);
+  opacity: 0;
+  pointer-events: none;
+  touch-action: none;
+  cursor: grab;
+  transition: opacity var(--overlay-scrollbar-fade-duration) ease-out;
+}
+.overlay-scrollbar-thumb[hidden] { display: none; }
+.overlay-scrollbar-thumb::after {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-end: var(--space-3);
+  inline-size: var(--space-4);
+  border-radius: var(--radius-pill);
+  background: var(--quiet);
+  content: "";
+}
+.overlay-scrollbar-thumb[data-active] { opacity: 1; pointer-events: auto; transition: none; }
+.overlay-scrollbar-thumb[data-dragging] { cursor: grabbing; }
+@media (prefers-reduced-motion: reduce) {
+  .overlay-scrollbar-thumb { transition: none; }
+}

@@ -2262,11 +2262,11 @@
         "library"
       ],
       "tier": "area",
-      "protects": "Aligned workflow panel headers and pointer/keyboard panel resizing.",
+      "protects": "Aligned workflow headers and pointer/keyboard panel resizing. Optional --overlay-scrollbars verifies full-bleed Grade and Proof rails, fit/overflow, hit targets, wheel, keyboard, drag, idle and reduced motion in three themes.",
       "launch": {
         "method": "electron"
       },
-      "brief": "Aligned workflow panel headers and pointer/keyboard panel resizing. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.",
+      "brief": "Aligned workflow headers and pointer/keyboard panel resizing. Optional --overlay-scrollbars verifies full-bleed Grade and Proof rails, fit/overflow, hit targets, wheel, keyboard, drag, idle and reduced motion in three themes. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.",
       "expectedMinutes": {
         "win": null,
         "mac": null
@@ -2336,11 +2336,11 @@
         "masks"
       ],
       "tier": "area",
-      "protects": "Control Panel title tokens, stable rendition tabs, brush actions and export field presentation.",
+      "protects": "Control Panel title tokens, full-bleed outer rail and unchanged boxed lists, stable rendition tabs, brush actions and export field presentation.",
       "launch": {
         "method": "electron"
       },
-      "brief": "Control Panel title tokens, stable rendition tabs, brush actions and export field presentation. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.",
+      "brief": "Control Panel title tokens, full-bleed outer rail and unchanged boxed lists, stable rendition tabs, brush actions and export field presentation. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.",
       "expectedMinutes": {
         "win": null,
         "mac": null

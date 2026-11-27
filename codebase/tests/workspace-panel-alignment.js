@@ -2,6 +2,103 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const { chromium } = require("playwright");
+
+async function verifyOverlayScrollbars(page) {
+  const review = path.resolve(__dirname, "../output/review/overlay-scrollbars");
+  fs.mkdirSync(review, { recursive: true });
+  await page.locator("#file-input").setInputFiles(path.resolve(__dirname, "fixtures/sdr_gradient.png"));
+  await page.waitForFunction(() => state.session && !state.importInProgress && document.body.dataset.workflow === "grade");
+  const waitThumb = (selector, state) => page.waitForFunction(({ selector, state }) => {
+    const rail = document.querySelector(selector);
+    const thumb = rail.querySelector(":scope > .overlay-scrollbar-thumb");
+    const opacity = Number(getComputedStyle(thumb).opacity);
+    return state === "fits" ? !thumb.hasAttribute("data-scrollable") : thumb.hasAttribute("data-scrollable")
+      && (state === "shown" ? opacity === 1 : opacity === 0);
+  }, { selector, state });
+  const away = () => page.mouse.move(340, 95);
+  for (const theme of ["default-light", "modern-dark", "studio-gray"]) {
+    await page.evaluate(theme => {
+      HDRApplicationShell.openSettings("appearance");
+      document.querySelector('[data-theme-option="' + theme + '"]').click();
+    }, theme);
+    await page.locator("#settings-close").click();
+    for (const [stage, selector, dividers] of [
+      ["grade", ".grade-rail", [".control-title-row", ".grade-folder-tabs", '[data-group="hdr-tone"] .control-group-header']],
+      ["proof", "#proof-workflow-panel", [".workflow-rail-header"]],
+    ]) {
+      await page.locator('[data-workflow-tab="' + stage + '"]').click();
+      const rail = page.locator(selector);
+      const thumb = rail.locator(":scope > .overlay-scrollbar-thumb");
+      const assertEdge = () => rail.evaluate((node, dividers) => {
+        const end = node.getBoundingClientRect().right - parseFloat(getComputedStyle(node).borderRightWidth);
+        return dividers.map(selector => Math.abs(node.querySelector(selector).getBoundingClientRect().right - end));
+      }, dividers).then(errors => assert(errors.every(error => error <= 1), stage + " dividers stop short: " + errors));
+      const shot = name => rail.screenshot({ path: path.join(review, [theme, stage, name].join("-") + ".png") });
+      await away();
+      await waitThumb(selector, "fits");
+      await assertEdge();
+      await shot("fits");
+      if (stage === "grade") {
+        await rail.locator('[data-group="hdr-tone"] .group-toggle').click();
+      }
+      // Exercise the same real controls with a compact panel viewport.
+      await rail.evaluate(node => { node.style.maxBlockSize = "340px"; node.scrollTop = 0; });
+      await waitThumb(selector, "idle");
+      await assertEdge();
+      await shot("overflow-idle");
+      const box = await rail.boundingBox();
+      await page.mouse.move(box.x + box.width / 2, box.y + 130);
+      await waitThumb(selector, "shown");
+      const geometry = await rail.evaluate(node => {
+        const thumb = node.querySelector(":scope > .overlay-scrollbar-thumb");
+        const rect = thumb.getBoundingClientRect();
+        const controls = [...node.querySelectorAll("button, input, select, textarea, output, a[href]")];
+        const covered = controls.filter(control => {
+          const r = control.getBoundingClientRect();
+          return r.width && r.height && r.right > rect.left + .5 && r.left < rect.right
+            && getComputedStyle(control).visibility === "visible";
+        }).map(control => control.id || control.className || control.textContent.trim());
+        const pseudo = getComputedStyle(thumb, "::after");
+        return { covered, hit: rect.width, paint: parseFloat(pseudo.width), aria: thumb.getAttribute("aria-hidden"),
+          gutter: node.offsetWidth - node.clientWidth - parseFloat(getComputedStyle(node).borderLeftWidth) - parseFloat(getComputedStyle(node).borderRightWidth) };
+      });
+      assert.deepEqual(geometry.covered, [], stage + " controls enter the thumb hit strip");
+      assert.equal(geometry.gutter, 0);
+      assert.equal(geometry.aria, "true");
+      assert(geometry.hit > geometry.paint && geometry.paint > 0);
+      await page.mouse.wheel(0, 130);
+      await page.waitForFunction(selector => document.querySelector(selector).scrollTop > 0, selector);
+      await shot("scrolled-shown");
+
+      if (theme === "default-light") {
+        await rail.evaluate(node => { node.scrollTop = 0; });
+        const r = await thumb.boundingBox();
+        await page.mouse.move(r.x + r.width / 2, r.y + r.height / 2);
+        await page.mouse.down();
+        await page.mouse.move(r.x - 18, r.y + r.height / 2 + 52, { steps: 8 });
+        assert.equal(await thumb.getAttribute("data-dragging"), "", "Pointer capture keeps the thumb active");
+        await page.mouse.up();
+        assert(await rail.evaluate(node => node.scrollTop > 0), "Drag must move native scroll");
+        await rail.evaluate(node => { node.scrollTop = 0; });
+        const focus = stage === "grade" ? "#grade-mode-global" : '[data-proof-lane="hdr"]';
+        await rail.locator(focus).focus();
+        await page.keyboard.press("PageDown");
+        await page.waitForFunction(selector => document.querySelector(selector).scrollTop > 0, selector);
+        await page.emulateMedia({ reducedMotion: "reduce" });
+        assert.equal(await thumb.evaluate(node => getComputedStyle(node).transitionDuration), "0s");
+        await page.emulateMedia({ reducedMotion: "no-preference" });
+      }
+      await away();
+      assert.equal(await thumb.getAttribute("data-active"), "", "Hold the thumb through the idle interval");
+      await waitThumb(selector, "idle");
+      await shot("scrolled-hidden");
+      await rail.evaluate(node => { node.style.removeProperty("max-block-size"); node.scrollTop = 0; });
+      if (stage === "grade") await rail.locator('[data-group="hdr-tone"] .group-toggle').click();
+      await waitThumb(selector, "fits");
+    }
+  }
+  console.log("PASS: Grade and Proof full-bleed dividers, overflow and fit, safe thumb hit targets, wheel, drag, keyboard, idle and reduced motion in three themes.");
+}
 (async () => {
   const browser = await chromium.launch({ headless: true });
   const page = await browser.newPage({ viewport: { width: 2560, height: 1440 } });
@@ -20,6 +117,10 @@ const { chromium } = require("playwright");
   };
   try {
     await page.goto(process.env.HDR_FINISHER_URL || "http://127.0.0.1:8765", { waitUntil: "networkidle" });
+    if (process.argv.includes("--overlay-scrollbars")) {
+      await verifyOverlayScrollbars(page);
+      return;
+    }
     const frame = page.frameLocator("#library-frame");
     await frame.locator(".library-toolbar").waitFor();
     const toolbar = await box(frame, ".library-toolbar");

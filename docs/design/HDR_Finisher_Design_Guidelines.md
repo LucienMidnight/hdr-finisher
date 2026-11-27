@@ -592,7 +592,7 @@ Limits use graph-limit-line (attention),
 Highlight Compression uses curve-neutral. Exposure Bands zero is strong grid
 grey and its influence wash is #ff7a1f1f orange. Selected points remain yellow.
 
-## November 27: full-bleed side panels (proposed)
+## November 27: full-bleed side panels
 
 The outside wall of a workflow panel is the edge for its section surfaces and
 hairline dividers. Keep the right padding inside interactive rows and fields,
@@ -613,22 +613,24 @@ tab stop. No thumb when the content fits.
 
 Show during scroll, hover and pointer capture. After these end, leave it
 visible for a brief idle interval, then fade (switch directly to hidden
-with reduced motion). The current token sheet has no durations. Proposed
-tokens, pending Steve's approval, are `--overlay-scrollbar-idle-delay: 650ms`
-and `--overlay-scrollbar-fade-duration: 160ms`. Neither has been added to
-the app. The component sheet shows the visible and hidden states in all
-three themes without simulating the timing.
+with reduced motion). Steve approved these timing tokens on November 27,
+2026: `--overlay-scrollbar-idle-delay: 650ms`
+and `--overlay-scrollbar-fade-duration: 160ms`. The component sheet shows the
+visible and hidden states in all three themes without simulating the timing.
 
-Use a shared overlay affordance instead of a Chromium feature switch.
+The shared overlay uses the original native scrolling element and simulates
+only the thumb. Grade, Proof, Metadata, single Export, batch Export settings,
+and Library navigation use it. Boxed lists and the Library grid keep their own
+scrollbars. No Chromium feature switch is required.
 [CSS Overflow](https://drafts.csswg.org/css-overflow-3/#scrollbar-gutter-property)
 leaves classic versus overlay scrollbar choice to the browser. Neither
 clearing the gutter nor using the legacy `overflow: overlay` alias
 guarantees the required geometry or interaction on all platforms.
 
-When implemented, the Grade and Proof drivers should compare rendered edges
-with and without overflow, verify the thumb and hit area stay outside every
-control, and test pointer dragging, wheel, keyboard, idle and reduced motion.
-Capture both rails in Default Light, Modern Dark and Studio Gray.
+The Grade and Proof drivers compare rendered edges with and without overflow,
+check the thumb and hit area stay outside interactive controls, and exercise
+dragging, wheel, keyboard, idle and reduced motion. Review captures use
+Default Light, Modern Dark and Studio Gray.
 
 ## November 15: source browsing
 
