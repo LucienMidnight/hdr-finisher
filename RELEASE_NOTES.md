@@ -1,47 +1,46 @@
-# HDR Finisher 0.9.3
+# HDR Finisher 0.9.4
 
-0.9.3 fixes the problems found when running HDR Finisher on an 8 GB MacBook, which is now the minimum supported machine, and keeps HDR exports at or just below their Highlight Compression target.
+0.9.4 makes large exports practical on 8 GB machines, shows real export progress, adds Raw development pixel cleanup and a new Clean Grain, and makes SDR Match follow the HDR grade more faithfully.
 
-## Fixes
+## Export
 
-- Grade controls such as Exposure stopped responding at 100% zoom while the HSL colour picker was armed: the picker caught clicks meant for the controls. It now only takes clicks on the photo.
-- HDR exports and Proof could come out brighter than the Highlight Compression target. Every HDR export and both Proof sizes are now checked after encoding; anything more than 1% over is corrected locally and lands at or just below the target. A file is refused only if it cannot be corrected, without replacing an existing file.
-- On macOS, the app misread how much memory was free, so some photos (for example DJI drone DNGs) would not develop and Retouch refused work on 8 GB machines.
-- On 8 GB Macs, zoomed Denoise and Film previews could be refused or never finish, and graphics-card exports fell back to the CPU: the app counted memory for a copy of the photo it never makes.
-- A photo the Library could not develop was retried over and over; it is now remembered until the file or its grade changes.
-- Export could stay on the CPU if it started before the graphics worker was ready.
-- On Grade, zooming past Fit no longer hides the status line and the start of the scopes behind the side panel.
-
-## Photo Library
-
-- Rename, move and delete now work on macOS, using the Trash with Undo. Marks no longer wait while these run on any system.
-- Much faster and steadier on 8 GB machines: memory used by heavy files is returned to the system, camera RAW previews come first, and visible thumbnails keep their priority. Scrolling a mixed 50-photo folder now shows 47–48 photos instead of 35, and most camera RAWs appear in under a second.
-- No more long drawing gaps while browsing (graphics programs are prepared once).
-- A lost graphics device gets one recovery, then the Library continues on the CPU.
+- Export shows real progress: the current stage and an estimate of the time left. The bar keeps moving when a stage runs longer than expected.
+- Large photos export in strips backed by disk, so very large exports (including Detail, Local adjustments, Film Look, framing and watermark) no longer need the whole picture in memory. On machines with less than 16 GB, batch export uses one worker, and native AVIF above 50 MP shows a memory warning first.
+- Optional lossless high-fidelity JPEG XL delivery.
+- A graphics-card export that stops making progress for 60 seconds recovers instead of hanging.
+- Files created while an export is encoding are no longer overwritten.
 
 ## Grading
 
-- HSL "Show selection" is faster: it only processes the part of the photo you can see.
-- Film Look and lens filter drags are faster.
-- Edge colour checks the graphics card's result and uses the CPU if it is invalid.
+- SDR Match fits from the rendered picture, keeps the linked SDR when it is safe, matches individual adjustments with Undo, and lifts its main-tone target by one stop. HDR and SDR now share the same curves.
+- Raw development: Pixel cleanup is on by default, with optional bright-only and harsh-speck Bayer cleanup.
+- Clean Grain: Luminance and Color Noise sit under Amount, simpler colour controls, and a Protect color edges switch (off by default) that only protects long colour edges.
+- Denoise keeps the current picture on screen while it switches on or off, stays sharp when zoomed, and shows a status line only when the slower CPU route is in use.
+- Vignette midpoint goes up to 200%. HSL selection updates while dragging; Softness and Feather are renamed Hue softness and Edge feather.
+- SDR exposure compensation sits after Film Look. Global and local Tone sliders behave as peers. Tone ranges show on the histogram only, and clipping uses a solid channel view.
+- Removed: Film Look Print and Scan shortcut rows, and Camera Lens mini presets (saved lens values are kept).
+
+## Photo Library
+
+- TIFF files are supported, with orientation and embedded colour profiles applied.
+- Faster safe deletion, steadier recovery after a lost graphics device, and fewer stalls when memory is short.
+- Paste Grade choices line up in paired HDR and SDR lanes. Menus appear promptly and use native Mac shortcut labels.
 
 ## Interface
 
-- Page names (Library, Grade, Proof, Export) are flat tabs with an underline on the active page.
-- Export settings are grouped into collapsible sections, like Grade's control panel.
-- Scopes keep their collapse button clear of the other controls, can always be reopened, and fit with their labels on smaller screens.
-- Cleaner panel borders and dividers, empty-state text for Folders and Smart Albums, and simpler selection styles for thumbnails and folders.
-- The Updates panel links to GitHub Releases. The Linux HDR notice waits until a photo is open.
-- JPEG XL files no longer hold up the Library if the metadata helper stalls (5-second limit).
+- Module headers highlight on hover and open with a click anywhere on the row.
+- Simpler Scopes readouts that follow the active display; scopes pause while zooming.
+- Unified scrollbars and workflow borders, an opaque Navigator grip, and app dialogs take Escape before the page does.
 
-## Changed or removed
+## Fixes
 
-The Default Dark theme is retired: Modern Dark is now the dark theme, and anyone using Default Dark moves to it automatically.
+- Many memory and graphics-card fixes on 8 GB Macs: Grade previews, Library RAW development, Retouch and delivery share memory more fairly and fall back to the CPU cleanly.
+- Scan Sharpening seams in CPU export strips, Film Exposure against a grey reference, lens grids in Library matching Grade, and incomplete GPS data in Details.
+- Denoise no longer mistakes half-precision rounding in reduced TIFF previews for noise.
+- Tag suggestions no longer disappear when the Details panel redraws while you type.
 
 ## Known limitations
 
-This remains a technical alpha. Windows packages are unsigned; macOS packages are not notarized. Editing at 100% is still slow (about 2–4 seconds per change on an 8 GB MacBook) with many Film Look adjustments stacked together with Denoise; this is the next performance target. On 8 GB machines, very large EXR or gain-map AVIF files can wait a long time for memory in the Library. On some PC graphics cards, Edge colour on camera RAWs falls back to the CPU. In HDR with Highlight Compression turned off, extremely bright grades can show blotches in the brightest parts of the preview; export and Proof are correct. On macOS and Linux, JPEG XL colour tags are not read yet, and Library rename, move and delete are not available on Linux.
+This remains a technical alpha. Windows packages are unsigned; macOS packages are not notarized. See [Known limitations](https://github.com/LucienMidnight/hdr-finisher/blob/v0.9.4/docs/known-limitations.md) for support and validation status.
 
-See [Known limitations](https://github.com/LucienMidnight/hdr-finisher/blob/v0.9.3/docs/known-limitations.md) for support and validation status.
-
-**Full changelog:** https://github.com/LucienMidnight/hdr-finisher/compare/v0.9.2...v0.9.3
+**Full changelog:** https://github.com/LucienMidnight/hdr-finisher/compare/v0.9.3...v0.9.4

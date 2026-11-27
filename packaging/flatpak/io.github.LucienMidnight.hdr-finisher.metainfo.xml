@@ -31,6 +31,12 @@
   </categories>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.9.4" date="2026-11-28">
+      <description>
+        <p>Makes large exports practical on 8 GB machines with disk-backed strips and shows real export progress with time left.</p>
+        <p>Adds TIFF support in the Library, Raw development pixel cleanup, a simpler Clean Grain with colour-edge protection, and an SDR Match that follows the HDR grade more faithfully, plus many memory and graphics-card fixes.</p>
+      </description>
+    </release>
     <release version="0.9.3" date="2026-11-14">
       <description>
         <p>Fixes problems found on 8 GB MacBooks, now the minimum supported machine: misread free memory, Full previews and graphics-card exports refused for lack of memory, and Grade controls blocked by the HSL picker.</p>
