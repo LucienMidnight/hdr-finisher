@@ -1,3 +1,10 @@
+## November 27: Neutral extreme scanner saturation qualification (PC)
+
+| Action | Result | Conditions |
+| --- | --- | --- |
+| Film parity release driver with exposure and UI follow-ups | 408.736 s; STOPPED on final UI Electron startup/shutdown verification. Main matrix and 72 exposures passed; not a complete-driver speed comparison. | Windows PC / NVIDIA Lovelace / 2560x1440, exclusive GPU wrapper, d487a8a9. Startup timeout also reproduced without concurrent Python tests. Evidence: codebase/output/release-checks/2026-11-27T05-44-22-681Z-43634390507ec9a031f1/. Prior attempt: EPERM replacing progress file, then startup timeout. |
+| Required Node/Python checks | Node 66.881 s (1,549 passed / 1 skipped); Python 914.41 s (5,245 passed / 56 skipped, including 48 serial checks). | Same Windows PC, d487a8a9 change set. Python wrapper was redirected through PowerShell, which reports native stderr as an error despite both pytest phases passing; no assertions failed. Logs: codebase/output/film-neutral-{node,python}.log. No app-speed claim. |
+
 ## November 27: Film stock parity driver transport (PC)
 
 | Action | Observation | Conditions |

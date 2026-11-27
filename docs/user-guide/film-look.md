@@ -28,7 +28,7 @@ A stock is a film. It supplies colour, tone, grain, halation and a matching pape
 
 The card under the menu tells you what you picked: still or cinema film, how coarse the grain is, how strong the halation is, and which paper it prints on.
 
-**Neutral** is the starting point. It applies a straight response with no stock colour, grain or halation, so you can use the controls without a stock behind them.
+**Neutral** is the starting point. It applies a straight response with no stock colour, grain or halation, so you can use the controls without a stock behind them. With its own paper, extreme combinations of exposure and contrast reach scanner white rather than producing false colours.
 
 ### Negative films
 

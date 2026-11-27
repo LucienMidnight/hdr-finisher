@@ -15,7 +15,24 @@ that Film limitation; the general shared-stage HDR range limit remains separate.
 
 Focused uncompressed HDR case passes at added mean 0.025, p99.9 1 (limits 0.1 / 2).
 The CPU scanner regression also checks normal-signal identity and mixed-channel
-extreme white. Complete driver qualification is recorded after the final run.
+extreme white. At d487a8a9 the complete HDR/SDR matrix and all 72 exposure cases passed.
+The same 72 configurations were also bit-for-bit identical to the old CPU
+renderer on a 120x80 sampled version of the driver's hue/brightness grid.
+Node checks: 1,549 passed, one skipped; Python: 5,245 passed, 56 skipped.
+
+Release orchestration did not pass: its final stock-character/panel/preset UI
+follow-up timed out in Electron launch before obtaining a process handle.
+The earlier run also hit a Windows EPERM progress-file replacement error.
+Own leftover test Electron trees were stopped and verified gone; Steve's
+morning Electron window (12888) was left open. No timeout or tolerance was
+relaxed. One direct stock-character/panel/preset attempt also timed out at
+Electron launch (exit 86); its test processes are verified gone. Root cause
+(launcher/app versus interaction with the owner's old open app) is not isolated.
+The standard Library smoke was not run after the startup failures and handoff
+of the GPU to the timing worker. Final release evidence:
+codebase/output/release-checks/2026-11-27T05-44-22-681Z-43634390507ec9a031f1/.
+The numeric PC/Mac known-failure entries are removed; Mac hardware confirmation
+of this shared rule remains unrun.
 
 ## November 27: PC parity deadline investigation
 
