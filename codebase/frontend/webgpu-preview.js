@@ -8916,7 +8916,8 @@
       if (candidate.sdr.linked_to_hdr) candidate.hdr.film_look = { ...candidate.hdr.film_look, grain_amount: 0 };
       const rendered = await this.renderTo(canvas, sessionId, "sdr", candidate, curveSampler,
         longEdge, locals, revision, null, white, sourceSize,
-        { measureOnly: true, scopeAnalysis: true, forceSdrSurface: true, sourceLane: "hdr", frameAnchor: true });
+        { measureOnly: true, scopeAnalysis: true, forceSdrSurface: true, frameAnchor: true,
+          sourceLane: candidate.sdr.use_authored_base && !candidate.sdr.linked_to_hdr ? "sdr" : "hdr" });
       if (rendered?.execution !== "direct" || rendered.width !== expected.width || rendered.height !== expected.height
         || !this.scopeSources.has(canvas)) return null;
       const renderedAt = performance.now();

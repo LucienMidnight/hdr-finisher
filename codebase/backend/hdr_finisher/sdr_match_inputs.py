@@ -7,14 +7,18 @@ from functools import wraps
 import numpy as np
 
 from .adjustments import apply_adjustments, apply_fixed_source_adjustments
+from .color_context import RenderColorContext
 from .finishing import apply_geometry
 from .local_adjustments import compile_geometry_fixed_mask, spatial_mask_signature
 from .models import PreviewKind
 
 
 class _MatchInputs:
-    def __init__(self, source):
+    def __init__(self, source, sdr_reference, reference_white_nits):
         self.source = source
+        self.sdr_reference = sdr_reference
+        self.reference_geometry = {}
+        self.color_context = RenderColorContext(reference_white_nits)
         self.fixed_sources = {}
         self.masks = {}
 
@@ -31,13 +35,17 @@ class _MatchInputs:
         key = geometry.model_dump_json()
         if key not in self.fixed_sources:
             self.fixed_sources[key] = apply_geometry(self.source, geometry)
+        authored = kind == PreviewKind.SDR and adjustments.sdr.use_authored_base and self.sdr_reference is not None
+        if authored and key not in self.reference_geometry:
+            self.reference_geometry[key] = apply_geometry(self.sdr_reference, geometry)
         masks = {local.id: self.mask(local.mask, geometry)
                  for local in locals if local.enabled and local.opacity > 0.0}
         return apply_fixed_source_adjustments(
             self.fixed_sources[key], adjustments, kind,
+            fixed_sdr_reference=self.reference_geometry[key] if authored else None,
             include_grain=False, local_adjustments=locals,
             compiled_local_masks=masks, source_pixel_scale=source_pixel_scale,
-            color_context=color_context,
+            color_context=color_context or self.color_context,
         )
 
 
@@ -48,7 +56,8 @@ def reuse_match_render_inputs(function):
     @wraps(function)
     def scoped(source, *args, **kwargs):
         source = np.asarray(source, dtype=np.float32)
-        token = _INPUTS.set(_MatchInputs(source))
+        token = _INPUTS.set(_MatchInputs(source, kwargs.get("sdr_reference"),
+                                         kwargs.get("reference_white_nits", 203)))
         try:
             return function(source, *args, **kwargs)
         finally:

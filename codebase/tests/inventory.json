@@ -6430,7 +6430,7 @@
       "purpose": "Match commits one editable recipe, shared by persistence and rendering.",
       "test_count": 3,
       "seconds": {
-        "windows": 1.9688,
+        "windows": 15.193,
         "mac": null
       },
       "markers": [],
@@ -6458,9 +6458,9 @@
       "suite": "python",
       "area": "sdr",
       "purpose": "Checks sdr match materialization behavior and regression contracts.",
-      "test_count": 17,
+      "test_count": 14,
       "seconds": {
-        "windows": 8.9325,
+        "windows": 26.8237,
         "mac": null
       },
       "markers": [
@@ -6476,7 +6476,7 @@
       "purpose": "Match candidates rendered by the page instead of the CPU.",
       "test_count": 6,
       "seconds": {
-        "windows": 5.8404,
+        "windows": 14.0824,
         "mac": null
       },
       "markers": [
@@ -6492,7 +6492,7 @@
       "purpose": "Checks sdr match state behavior and regression contracts.",
       "test_count": 13,
       "seconds": {
-        "windows": 0.4576,
+        "windows": 0.5914,
         "mac": null
       },
       "markers": [

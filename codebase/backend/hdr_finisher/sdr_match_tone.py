@@ -1,0 +1,173 @@
+"""Bounded picture-based search over ordinary SDR Tone and shoulder controls."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+import numpy as np
+
+from .adjustments import (
+    TONE_EQUALIZER_MAX_ADJUSTMENT_EV, TONE_EQUALIZER_MAX_EV,
+    TONE_EQUALIZER_MIN_EV, _linear_luma,
+)
+from .models import SDRAdjustments, ToneEqualizerNode
+from .sdr_gamut import linear_srgb_to_oklab
+
+TONE_ZONES = ("blacks", "shadows", "midtones", "highlights", "whites")
+TONE_FIELDS = ("tone_section_enabled", "exposure", "contrast", *TONE_ZONES,
+               "tone_equalizer_section_enabled", "tone_equalizer_nodes")
+SHOULDER_FIELDS = ("highlight_section_enabled", "highlight_compression_mode",
+                   "highlight_compression_start_percent", "highlight_compression_softness",
+                   "highlight_compression_color_handling", "highlight_compression_peak_detail",
+                   "highlight_compression_bias", "highlight_compression_attenuation",
+                   "highlight_compression_peak_measurement")
+_START = ("highlight_compression_start_percent", 1., 99.)
+
+
+def _band_points(luma, body):
+    luma = luma[body]
+    ev = np.log2(np.maximum(luma, 1e-8) / .18)
+    middle = np.quantile(ev, [.1, .5, .9])
+    low, high = TONE_EQUALIZER_MIN_EV, TONE_EQUALIZER_MAX_EV
+    spacing = .75
+    for index in range(3):
+        lower = middle[index - 1] + spacing if index else low + spacing
+        middle[index] = np.clip(middle[index], lower, high - (3 - index) * spacing)
+    return [ToneEqualizerNode(input_ev=float(value), adjustment_ev=0.)
+            for value in (low, *middle, high)]
+
+
+@dataclass
+class _Trial:
+    pixels: np.ndarray
+    score: float
+    safe: bool
+
+    @property
+    def rank(self):
+        return not self.safe, self.score
+
+
+class PictureToneFit:
+    def __init__(self, target, body, render, review_luma_limit):
+        self.body = body & (_linear_luma(target) >= .0008)
+        if not self.body.any():
+            self.body = body if body.any() else np.ones(body.shape, dtype=bool)
+        self.high = ~body
+        self.highlight_weight = .5 * min(1., 10. * float(self.high.mean()))
+        self.target_lab = linear_srgb_to_oklab(target)
+        self.target_luma = _linear_luma(target)
+        self.render = render
+        self.review_luma_limit = review_luma_limit
+
+    def measure(self, sdr, *, fitting_tone):
+        pixels = self.render(sdr)
+        delta = np.linalg.norm(linear_srgb_to_oklab(np.clip(pixels, 0, 1)) - self.target_lab, axis=-1)
+        body_error = delta[self.body]
+        p95 = float(np.quantile(body_error, .95))
+        luma_error = np.abs(_linear_luma(pixels) - self.target_luma)[self.body]
+        p95_luma = float(np.quantile(luma_error, .95))
+        score = float(body_error.mean()) + .5 * p95
+        if self.highlight_weight:
+            score += self.highlight_weight * float(delta[self.high].mean())
+        if fitting_tone:
+            score += .002 * sum(node.adjustment_ev ** 2 for node in sdr.tone_equalizer_nodes)
+        # Guide an initially poor fit back under the unchanged acceptance gates.
+        score += max(0., p95_luma - self.review_luma_limit) + max(0., p95 - .05)
+        safe = p95_luma <= self.review_luma_limit and p95 <= .05
+        if not np.isfinite(pixels).all():
+            return _Trial(pixels, float("inf"), False)
+        return _Trial(pixels, score, safe)
+
+    def fit(self, current, hdr, *, tone, shoulder):
+        tone_axes = []
+        if tone:
+            tone_axes.append((("exposure", -8., 8.), .36))
+            if hdr.tone_section_enabled and hdr.contrast != 0:
+                tone_axes.append((("contrast", -2., 2.), .40))
+        shoulder_axes = [(_START, 20.)] if shoulder else []
+        results = []
+        for mode in ("soft_ceiling", "peak_fit") if shoulder else (None,):
+            sdr = current.model_copy(deep=True)
+            if tone:
+                sdr.exposure = hdr.exposure
+                sdr.contrast = 0.
+                sdr.tone_section_enabled = True
+                sdr.tone_equalizer_section_enabled = True
+                sdr.tone_equalizer_nodes = _band_points(self.target_luma, self.body)
+                for name in TONE_ZONES:
+                    setattr(sdr, name, 0.)
+            if mode is not None:
+                self._seed_shoulder(sdr, hdr, mode)
+            best = self.measure(sdr, fitting_tone=tone)
+            if tone:
+                # The rendered body's median ratio gives Exposure a useful
+                # first step even when the saved HDR Exposure is a poor seed.
+                rendered = _linear_luma(best.pixels)[self.body]
+                ratio = np.log2(np.maximum(self.target_luma[self.body], 1e-6) / np.maximum(rendered, 1e-6))
+                best = self._axis(sdr, best, tone_axes[0][0], [float(np.median(ratio))], tone)
+            elif current.highlight_section_enabled:
+                best = self._axis(sdr, best, _START,
+                                  [current.highlight_compression_start_percent - sdr.highlight_compression_start_percent], tone)
+            for fraction in (1., .5, .25):
+                for axis, step in tone_axes + shoulder_axes:
+                    best = self._axis(sdr, best, axis, (step * fraction, -step * fraction), tone)
+            if tone:
+                sdr.tone_equalizer_nodes = _band_points(_linear_luma(best.pixels), self.body)
+                # Heavy HDR shoulder/zone edits may need multiple larger
+                # moves before the usual fine search can compare candidates.
+                coarse = (.50, .50, .50) if best.score > .03 and not best.safe else ()
+                for step in (*coarse, .28, .14, .07, .035):
+                    for index, node in enumerate(sdr.tone_equalizer_nodes):
+                        best = self._axis(node, best, self._band_limits(sdr.tone_equalizer_nodes, index),
+                                          (step, -step), tone, sdr=sdr)
+                # Settle the global knobs again after the bands change their response.
+                for fraction in (.25, .125):
+                    for axis, step in tone_axes + shoulder_axes:
+                        best = self._axis(sdr, best, axis, (step * fraction, -step * fraction), tone)
+            results.append((sdr, best))
+        return min(results, key=lambda pair: pair[1].rank)
+
+    def _axis(self, controls, best, spec, offsets, tone, *, sdr=None):
+        name, lower, upper = spec
+        original = chosen = getattr(controls, name)
+        for offset in offsets:
+            value = float(np.clip(original + offset, lower, upper))
+            if abs(value - original) < 1e-5:
+                continue
+            setattr(controls, name, value)
+            trial = self.measure(controls if sdr is None else sdr, fitting_tone=tone)
+            if (not trial.safe, trial.score + 1e-6) < (not best.safe, best.score):
+                chosen, best = value, trial
+        setattr(controls, name, chosen)
+        return best
+
+    @staticmethod
+    def _band_limits(nodes, index):
+        # Stay within the editor's legal range and do not rely on the
+        # renderer to silently straighten a reversed interval.
+        limit = TONE_EQUALIZER_MAX_ADJUSTMENT_EV
+        center = nodes[index].input_ev
+        lower, upper = -limit, limit
+        if index:
+            left = nodes[index - 1]
+            lower = max(lower, left.input_ev + left.adjustment_ev + .001 - center)
+        if index < len(nodes) - 1:
+            right = nodes[index + 1]
+            upper = min(upper, right.input_ev + right.adjustment_ev - .001 - center)
+        return "adjustment_ev", lower, upper
+
+    @staticmethod
+    def _seed_shoulder(sdr: SDRAdjustments, hdr, mode):
+        sdr.highlight_section_enabled = True
+        sdr.highlight_compression_mode = mode
+        if mode == "soft_ceiling":
+            sdr.highlight_compression_softness = 100.
+            sdr.highlight_compression_start_percent = 90.
+            sdr.highlight_compression_color_handling = "preserve_color"
+        else:
+            sdr.highlight_compression_start_percent = 75.
+            sdr.highlight_compression_peak_measurement = "robust"
+            for name in ("highlight_compression_color_handling", "highlight_compression_peak_detail",
+                         "highlight_compression_bias", "highlight_compression_attenuation"):
+                setattr(sdr, name, getattr(hdr, name))

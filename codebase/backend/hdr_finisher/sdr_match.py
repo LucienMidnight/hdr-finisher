@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from contextvars import ContextVar
 from contextlib import contextmanager
 from time import perf_counter
-from typing import Iterator
+from typing import Iterator, Literal
 
 import numpy as np
 
@@ -24,22 +24,22 @@ from .models import (
     AdjustmentState,
     ColorGradingAdjustments,
     DetailAdjustments,
-    GeometryAdjustments,
     LocalAdjustment,
     LocalGrade,
     PreviewKind,
     SDRAdjustments,
     SDRMatchQualityMetrics,
-    ToneEqualizerNode,
 )
 from .sdr_gamut import compress_to_srgb_gamut, linear_srgb_to_oklab
 from .sdr_match_inputs import match_spatial_mask, render_match_candidate, render_match_target, reuse_match_render_inputs
 from .sdr_match_remote import RemoteCandidateBridge, RemoteCandidateUnavailable
+from .sdr_match_tone import PictureToneFit
 
 
 MATCH_SHOULDER_START = np.float32(0.90)
 MATCH_SHOULDER_WIDTH = np.float32(0.10)
-MATCH_ANALYSIS_EDGE = 768
+MATCH_ANALYSIS_EDGE = 384
+MatchSection = Literal["whole", "tone", "highlight"]
 MATCH_REVIEW_P95_LUMA_LIMIT = 0.06
 
 
@@ -107,242 +107,6 @@ def build_sdr_match_target(settled_hdr: np.ndarray) -> np.ndarray:
     return compress_to_srgb_gamut(acescg_to_linear_srgb(mapped_acescg))
 
 
-def _refinement_improves(
-    current: SDRMatchQualityMetrics, trial: SDRMatchQualityMetrics
-) -> bool:
-    """Accept a curve refinement only when nothing a normal match needs regresses.
-
-    Perceptual error at the 95th percentile is what these passes are chasing, but
-    a curve that buys it by pushing the median across a normal-match gate the
-    current candidate still satisfies leaves the whole result worse off.
-    """
-    return (
-        trial.p95_oklab_error < current.p95_oklab_error
-        and trial.p95_luma_error <= max(0.05, current.p95_luma_error)
-        and trial.median_luma_error <= max(0.01, current.median_luma_error)
-        and trial.median_oklab_error <= max(0.015, current.median_oklab_error)
-    )
-
-
-def _apply_tone_equalizer_merge(
-    source: np.ndarray,
-    adjustments: AdjustmentState,
-    local_adjustments: list[LocalAdjustment],
-    source_pixel_scale: float,
-    target: np.ndarray,
-    body: np.ndarray,
-    candidate: np.ndarray,
-    quality: SDRMatchQualityMetrics,
-    *,
-    gain: float = 0.65,
-) -> tuple[np.ndarray, SDRMatchQualityMetrics]:
-    """Merge the image residual into Exposure Bands, keeping it only if it helps.
-
-    Every other stage here proposes a change and verifies it.  This one used to
-    apply unconditionally, and the Tone Equalizer's response over a narrow band
-    is neither strong nor monotonic once the node corrections are re-ordered, so
-    the merge could darken the very band it was computed to lift.
-    """
-    sdr = adjustments.sdr
-    previous_nodes = [node.model_copy(deep=True) for node in sdr.tone_equalizer_nodes]
-    previous_enabled = sdr.tone_equalizer_section_enabled
-    _merge_image_tone_equalizer(sdr, candidate, target, body, gain=gain)
-    trial = _render_candidate(source, adjustments, local_adjustments, source_pixel_scale)
-    trial_quality = _quality_metrics(target, trial, body)
-    improves = (
-        trial_quality.p95_luma_error + 1e-6 < quality.p95_luma_error
-        or (
-            trial_quality.p95_luma_error <= quality.p95_luma_error + 1e-6
-            and trial_quality.median_luma_error + 1e-6 < quality.median_luma_error
-        )
-    )
-    if improves:
-        return trial, trial_quality
-    sdr.tone_equalizer_nodes = previous_nodes
-    sdr.tone_equalizer_section_enabled = previous_enabled
-    return candidate, quality
-
-
-def _refine_image_exposure(
-    source: np.ndarray,
-    adjustments: AdjustmentState,
-    local_adjustments: list[LocalAdjustment],
-    source_pixel_scale: float,
-    target: np.ndarray,
-    body: np.ndarray,
-) -> None:
-    """Correct the neutral-ramp Exposure fit against the actual image.
-
-    The neutral fit only ever sees a synthetic grey ramp, so it is blind to any
-    error that depends on what colour the image was.  A fully desaturated grade
-    is the extreme case: the HDR and SDR desaturation paths weight their
-    primaries differently, which leaves a near-uniform brightness offset the
-    ramp has no way to show.  The Tone Equalizer cannot clean that up on its own
-    -- over a narrow band its authority is weak and not even monotonic -- so a
-    bounded Exposure refinement runs first, against the real target.
-    """
-    sdr = adjustments.sdr
-    authored = float(sdr.exposure)
-
-    def measure(exposure: float) -> SDRMatchQualityMetrics:
-        sdr.exposure = float(np.clip(exposure, -8.0, 8.0))
-        return _quality_metrics(
-            target, _render_candidate(source, adjustments, local_adjustments, source_pixel_scale), body
-        )
-
-    best_exposure = authored
-    best_quality = measure(authored)
-
-    def consider(offset: float) -> None:
-        nonlocal best_exposure, best_quality
-        exposure = authored + offset
-        trial_quality = measure(exposure)
-        if (
-            trial_quality.p95_luma_error + 1e-6 < best_quality.p95_luma_error
-            and trial_quality.p95_oklab_error <= best_quality.p95_oklab_error + 0.003
-        ):
-            best_exposure = float(sdr.exposure)
-            best_quality = trial_quality
-
-    for offset in (-0.30, -0.20, -0.10, 0.10, 0.20, 0.30):
-        consider(offset)
-    coarse = best_exposure - authored
-    for offset in (coarse - 0.05, coarse + 0.05):
-        consider(offset)
-    sdr.exposure = best_exposure
-
-
-def _refine_editable_tones(source, adjustments, locals_, scale, target, body, candidate, quality):
-    """Bounded coordinate search of visible controls, including the bright end.
-
-    Body-only percentile scoring misses small bright populations. Give those
-    pixels their own loss while preserving every already-satisfied body gate.
-    No output curve is baked into the image; the luma curve remains editable.
-    """
-    sdr = adjustments.sdr
-    target_lab = linear_srgb_to_oklab(np.clip(target, 0, 1))
-    bright = ~body
-    def loss(pixels, q):
-        errors = np.linalg.norm(linear_srgb_to_oklab(np.clip(pixels, 0, 1)) - target_lab, axis=-1)
-        highlight_loss = float(np.mean(errors[bright])) if np.any(bright) else 0.
-        return (q.p95_luma_error + q.p95_oklab_error + q.median_luma_error
-                + 10 * max(0., q.median_luma_error - .01) + highlight_loss)
-    best = loss(candidate, quality)
-    axes = [('exposure', .1, -8., 8.), ('contrast', .05, -2., 2.),
-            ('midtones', 10., -100., 100.), ('highlights', 10., -100., 100.),
-            ('whites', 10., -100., 100.),
-            ('highlight_compression_start_percent', 10., 1., 99.),
-            ('highlight_desaturation', 10., 0., 100.)]
-    for step_scale in (1., .5):
-        improved = False
-        for name, step, lower, upper in axes:
-            original = getattr(sdr, name)
-            chosen = original
-            for sign in (-1., 1.):
-                value = float(np.clip(original + sign * step * step_scale, lower, upper))
-                if value == original:
-                    continue
-                setattr(sdr, name, value)
-                trial = _render_candidate(source, adjustments, locals_, scale)
-                q = _quality_metrics(target, trial, body)
-                score = loss(trial, q)
-                if (score + 1e-6 < best and np.isfinite(trial).all()
-                    and q.median_luma_error <= max(.01, quality.median_luma_error)
-                    and q.median_oklab_error <= max(.015, quality.median_oklab_error)
-                    and q.p95_luma_error <= max(.03, quality.p95_luma_error)
-                    and q.p95_oklab_error <= max(.04, quality.p95_oklab_error)):
-                    chosen, candidate, quality, best = value, trial, q, score
-                    improved = True
-            setattr(sdr, name, chosen)
-        if not improved:
-            break
-    return candidate, quality
-
-
-def _refine_image_highlights(
-    source: np.ndarray,
-    adjustments: AdjustmentState,
-    local_adjustments: list[LocalAdjustment],
-    source_pixel_scale: float,
-    target: np.ndarray,
-    body: np.ndarray,
-    candidate: np.ndarray,
-    quality: SDRMatchQualityMetrics,
-) -> tuple[np.ndarray, SDRMatchQualityMetrics]:
-    """Fit the finished shoulder that the body-only neutral fit cannot see.
-
-    Exposure Bands and finishing now feed the final SDR shoulder. Fit the
-    appropriate visible shoulder control against finished highlights, without
-    sacrificing any body quality gate the original recipe already satisfies
-    or creating more clipped white to make the highlight error look smaller.
-    The result remains an ordinary, editable Highlight Compression control.
-    """
-    if adjustments.sdr.highlight_compression_mode == "soft_ceiling":
-        # Start now acts after the look. Keep the existing half-stop trim
-        # guard when a stronger final knee also improves body colour.
-        sdr = adjustments.sdr
-        authored = float(sdr.highlight_compression_start_percent)
-        def growth(pixels):
-            before = float(np.mean(_linear_luma(pixels) >= .999))
-            exposure = sdr.exposure
-            try:
-                sdr.exposure = min(8., exposure + .5)
-                raised = _render_candidate(source, adjustments, local_adjustments, source_pixel_scale)
-            finally:
-                sdr.exposure = exposure
-            return float(np.mean(_linear_luma(raised) >= .999)) - before
-        best_growth = growth(candidate)
-        best_start = authored
-        if best_growth > .01:
-            for offset in (-5., -10., 10., 5.):
-                sdr.highlight_compression_start_percent = float(np.clip(authored + offset, 1., 100.))
-                trial = _render_candidate(source, adjustments, local_adjustments, source_pixel_scale)
-                trial_quality = _quality_metrics(target, trial, body)
-                trial_growth = growth(trial)
-                if trial_growth < best_growth and _refinement_improves(quality, trial_quality):
-                    best_start = sdr.highlight_compression_start_percent
-                    best_growth = trial_growth
-                    candidate, quality = trial, trial_quality
-        sdr.highlight_compression_start_percent = best_start
-        return candidate, quality
-    highlights = ~body
-    if not np.any(highlights):
-        return candidate, quality
-    target_luma = _linear_luma(target)[highlights]
-    candidate_luma = _linear_luma(candidate)
-    best_loss = float(np.mean(np.abs(candidate_luma[highlights] - target_luma)))
-    white_fraction = float(np.mean(candidate_luma >= 0.999))
-    luma_limit = min(MATCH_REVIEW_P95_LUMA_LIMIT, max(0.03, quality.p95_luma_error))
-    color_limit = min(0.05, max(0.04, quality.p95_oklab_error))
-    median_luma_limit = max(0.01, quality.median_luma_error)
-    median_color_limit = max(0.015, quality.median_oklab_error)
-    sdr = adjustments.sdr
-    authored = float(sdr.highlight_compression_peak_detail)
-    best_detail = authored
-    for offset in (-10.0, -5.0, 5.0, 10.0):
-        detail = float(np.clip(authored + offset, 0.0, 100.0))
-        if detail == authored:
-            continue
-        sdr.highlight_compression_peak_detail = detail
-        trial = _render_candidate(source, adjustments, local_adjustments, source_pixel_scale)
-        trial_luma = _linear_luma(trial)
-        loss = float(np.mean(np.abs(trial_luma[highlights] - target_luma)))
-        if loss + 1e-6 >= best_loss or float(np.mean(trial_luma >= 0.999)) > white_fraction:
-            continue
-        trial_quality = _quality_metrics(target, trial, body)
-        if (
-            trial_quality.p95_luma_error <= luma_limit
-            and trial_quality.p95_oklab_error <= color_limit
-            and trial_quality.median_luma_error <= median_luma_limit
-            and trial_quality.median_oklab_error <= median_color_limit
-        ):
-            best_loss = loss
-            best_detail = detail
-            candidate, quality = trial, trial_quality
-    sdr.highlight_compression_peak_detail = best_detail
-    return candidate, quality
-
-
 @reuse_match_render_inputs
 def materialize_sdr_match(
     source: np.ndarray,
@@ -354,6 +118,8 @@ def materialize_sdr_match(
     settled_hdr: np.ndarray | None = None,
     timing: dict[str, object] | None = None,
     candidate_bridge: RemoteCandidateBridge | None = None,
+    section: MatchSection = "whole",
+    sdr_reference: np.ndarray | None = None,
 ) -> MaterializedSDRMatch:
     """Fit a temporary HDR target into normal, editable SDR controls.
 
@@ -378,6 +144,7 @@ def materialize_sdr_match(
             reference_white_nits=reference_white_nits,
             source_pixel_scale=source_pixel_scale,
             settled_hdr=settled_hdr,
+            section=section,
         )
 
     try:
@@ -389,7 +156,7 @@ def materialize_sdr_match(
         # Linked rendering reads HDR instead; disabling that link on a slider
         # change would expose a different, previously hidden SDR recipe.
         if timing is not None:
-            timing["linked"] = False
+            timing["linked"] = section == "highlight" and adjustments.sdr.linked_to_hdr
         if settled_hdr is None:
             target_started = perf_counter()
             settled_hdr = render_match_target(
@@ -441,6 +208,7 @@ def _materialize_sdr_match_impl(
     reference_white_nits: int,
     source_pixel_scale: float,
     settled_hdr: np.ndarray | None = None,
+    section: MatchSection = "whole",
 ) -> MaterializedSDRMatch:
     if reference_white_nits not in {100, 203}:
         raise SDRMatchMaterializationError("SDR Match requires the app-wide 100/203-nit reference convention.")
@@ -470,186 +238,44 @@ def _materialize_sdr_match_impl(
     if not np.isfinite(target).all():
         raise SDRMatchMaterializationError("The HDR analysis produced invalid values.")
 
+    timing = _MATCH_TIMING.get()
     with _match_stage("semantic_translation"):
         result_adjustments = adjustments.model_copy(deep=True)
-        result_adjustments.sdr = _semantic_sdr_translation(adjustments, settled_hdr)
-        result_locals = _materialize_local_grades(
-            source, settled_hdr, adjustments, local_adjustments, reference_white_nits
-        )
-
-    with _match_stage("neutral_tonal_fit"):
-        _fit_neutral_tonal_response(result_adjustments, adjustments, reference_white_nits)
-    with _match_stage("exposure_refinement"):
-        _refine_image_exposure(
-            source, result_adjustments, result_locals, source_pixel_scale, target, body
-        )
-
-    with _match_stage("base_candidate"):
-        candidate = _render_candidate(source, result_adjustments, result_locals, source_pixel_scale)
-        quality = _quality_metrics(target, candidate, body)
-    with _match_stage("tone_equalizer_merge"):
-        candidate, quality = _apply_tone_equalizer_merge(
-            source, result_adjustments, result_locals, source_pixel_scale, target, body, candidate, quality
-        )
-    with _match_stage("semantic_control_fit"):
-        candidate, quality = _fit_image_semantic_controls(
-            source,
-            result_adjustments,
-            result_locals,
-            source_pixel_scale,
-            target,
-            candidate,
-            quality,
-            body,
-        )
-    timing = _MATCH_TIMING.get()
-    rgb_refinement_started = perf_counter()
-    if timing is not None:
-        timing["candidate_label"] = "rgb_curve_refinement"
-    if quality.p95_oklab_error > 0.04:
-        # A color-only residual is occasionally needed for saturated gamut-edge
-        # patches. Keep these curves sparse and strictly sloped; the luma curve
-        # remains neutral, so Exposure stays responsive throughout the range.
-        original_curves = {
-            channel_name: getattr(result_adjustments.sdr, channel_name)
-            for channel_name in ("red_curve", "green_curve", "blue_curve")
-        }
-        jointly_fitted = {
-            channel_name: _fit_image_curve(candidate[..., channel_index], target[..., channel_index], body)
-            for channel_name, channel_index in (("red_curve", 0), ("green_curve", 1), ("blue_curve", 2))
-        }
-        for channel_name, curve in jointly_fitted.items():
-            setattr(result_adjustments.sdr, channel_name, curve)
-        joint_candidate = _render_candidate(source, result_adjustments, result_locals, source_pixel_scale)
-        joint_quality = _quality_metrics(target, joint_candidate, body)
-        if _refinement_improves(quality, joint_quality):
-            candidate = joint_candidate
-            quality = joint_quality
+        if section == "whole":
+            result_adjustments.sdr = _semantic_sdr_translation(adjustments, settled_hdr)
+            result_locals = _materialize_local_grades(
+                source, settled_hdr, adjustments, local_adjustments, reference_white_nits
+            )
         else:
-            for channel_name, curve in original_curves.items():
-                setattr(result_adjustments.sdr, channel_name, curve)
-        # A second small residual pass is materially better than making the
-        # first seven-point fit aggressive. Compose only while both perceptual
-        # error and the luma safety gate improve, retaining editable slope.
-        for _ in range(2):
-            previous_curves = {
-                channel_name: getattr(result_adjustments.sdr, channel_name)
-                for channel_name in ("red_curve", "green_curve", "blue_curve")
-            }
-            for channel_name, channel_index in (("red_curve", 0), ("green_curve", 1), ("blue_curve", 2)):
-                correction = _fit_image_curve(candidate[..., channel_index], target[..., channel_index], body)
-                setattr(
-                    result_adjustments.sdr,
-                    channel_name,
-                    _compose_curve(previous_curves[channel_name], correction),
-                )
-            residual_candidate = _render_candidate(
-                source, result_adjustments, result_locals, source_pixel_scale
-            )
-            residual_quality = _quality_metrics(target, residual_candidate, body)
-            if _refinement_improves(quality, residual_quality):
-                candidate = residual_candidate
-                quality = residual_quality
-            else:
-                for channel_name, curve in previous_curves.items():
-                    setattr(result_adjustments.sdr, channel_name, curve)
-                break
-        for channel_name, channel_index in (("red_curve", 0), ("green_curve", 1), ("blue_curve", 2)):
-            previous = getattr(result_adjustments.sdr, channel_name)
-            setattr(result_adjustments.sdr, channel_name, _fit_image_curve(
-                candidate[..., channel_index], target[..., channel_index], body
-            ))
-            trial_candidate = _render_candidate(source, result_adjustments, result_locals, source_pixel_scale)
-            trial_quality = _quality_metrics(target, trial_candidate, body)
-            if _refinement_improves(quality, trial_quality):
-                candidate = trial_candidate
-                quality = trial_quality
-            else:
-                setattr(result_adjustments.sdr, channel_name, previous)
-    if timing is not None:
-        timing["stage_ms"]["rgb_curve_refinement"] = round(
-            (perf_counter() - rgb_refinement_started) * 1000.0, 3
-        )
-        timing["candidate_label"] = "luma_recovery"
-    luma_recovery_started = perf_counter()
-    if quality.median_luma_error > 0.01 or quality.p95_luma_error > 0.05 or quality.p95_oklab_error > 0.05:
-        # A few conservative luma-only corrections are permitted before
-        # rejecting. Final-stage HDR compression can make the captured shoulder
-        # broader than one Exposure Bands merge can represent. Each proposal is
-        # still retained only when it improves the measured result.
-        for _ in range(6):
-            previous_quality = quality
-            candidate, quality = _apply_tone_equalizer_merge(
-                source, result_adjustments, result_locals, source_pixel_scale, target, body,
-                candidate, quality, gain=0.45,
-            )
-            if quality == previous_quality or (
-                quality.median_luma_error <= 0.01
-                and quality.p95_luma_error <= 0.05 and quality.p95_oklab_error <= 0.05
-            ):
-                break
+            result_locals = local_adjustments
+            if section == "tone":
+                # Like any SDR creative edit, fitting Tone edits the independent
+                # rendition. Highlight Compression alone can keep an HDR link.
+                result_adjustments.sdr.linked_to_hdr = False
 
-    if timing is not None:
-        timing["stage_ms"]["luma_recovery"] = round(
-            (perf_counter() - luma_recovery_started) * 1000.0, 3
-        )
-        timing["candidate_label"] = None
+    def render(sdr):
+        result_adjustments.sdr = sdr
+        return _render_candidate(source, result_adjustments, result_locals, source_pixel_scale)
 
-    with _match_stage("highlight_refinement"):
-        candidate, quality = _refine_image_highlights(
-            source, result_adjustments, result_locals, source_pixel_scale, target, body,
-            candidate, quality,
+    with _match_stage("picture_tone_fit"):
+        fit = PictureToneFit(target, body, render, MATCH_REVIEW_P95_LUMA_LIMIT)
+        result_adjustments.sdr, trial = fit.fit(
+            result_adjustments.sdr, adjustments.hdr,
+            tone=section != "highlight", shoulder=section != "tone",
         )
+        candidate = trial.pixels
+        quality = _quality_metrics(target, candidate, body)
 
     if _MATCH_REMOTE.get() is not None:
-        # The fit explored GPU renders. What it reports, and whether it is
-        # accepted, is decided on the export pipeline's render of the recipe.
+        # Only the exact CPU render can certify a recipe. If it is unsafe, the
+        # caller abandons every GPU decision and restarts the search on CPU.
         with _match_stage("cpu_certification"):
             explored = quality
             candidate = render_match_candidate(source, result_adjustments, result_locals, source_pixel_scale)
             quality = _quality_metrics(target, candidate, body)
-            if quality.p95_oklab_error > 0.04:
-                if timing is not None:
-                    timing["cpu_pre_refinement_quality"] = quality.model_dump(mode="json")
-                for _ in range(3):
-                    previous_curves = {
-                        name: getattr(result_adjustments.sdr, name)
-                        for name in ("red_curve", "green_curve", "blue_curve")
-                    }
-                    for name, channel_index in (("red_curve", 0), ("green_curve", 1), ("blue_curve", 2)):
-                        correction = _fit_image_curve(candidate[..., channel_index], target[..., channel_index], body)
-                        setattr(result_adjustments.sdr, name, _compose_curve(previous_curves[name], correction))
-                    trial = render_match_candidate(source, result_adjustments, result_locals, source_pixel_scale)
-                    trial_quality = _quality_metrics(target, trial, body)
-                    if _refinement_improves(quality, trial_quality):
-                        candidate, quality = trial, trial_quality
-                    else:
-                        for name, curve in previous_curves.items():
-                            setattr(result_adjustments.sdr, name, curve)
-                        break
-                    if quality.p95_oklab_error <= 0.05:
-                        break
-        if timing is not None:
-            timing["gpu_explored_quality"] = explored.model_dump(mode="json")
-            timing["cpu_certified_quality"] = quality.model_dump(mode="json")
-
-    # Refine actual CPU-certified pixels. An unsafe GPU proposal must still
-    # trigger the existing whole-fit CPU fallback, rather than hiding a bad
-    # candidate renderer behind a second fit.
-    if (_MATCH_REMOTE.get() is None or (
-            quality.p95_luma_error <= MATCH_REVIEW_P95_LUMA_LIMIT
-            and quality.p95_oklab_error <= .05)):
-        token = _MATCH_REMOTE.set(None)
-        try:
-            with _match_stage("editable_tone_refinement"):
-                candidate, quality = _refine_editable_tones(
-                    source, result_adjustments, result_locals, source_pixel_scale,
-                    target, body, candidate, quality,
-                )
-        finally:
-            _MATCH_REMOTE.reset(token)
-        if _MATCH_REMOTE.get() is not None and timing is not None and timing.get("cpu_certified_quality"):
-            timing["cpu_certified_quality"] = quality.model_dump(mode="json")
+            if timing is not None:
+                timing["gpu_explored_quality"] = explored.model_dump(mode="json")
+                timing["cpu_certified_quality"] = quality.model_dump(mode="json")
 
     # A final-output HDR shoulder can leave a slightly broader luma residual
     # than the former early-stage curve. Preserve a valid editable recipe as
@@ -744,21 +370,9 @@ def _translate_color_grading_wheels(
 def _semantic_sdr_translation(adjustments: AdjustmentState, settled_hdr: np.ndarray) -> SDRAdjustments:
     hdr = adjustments.hdr
     sdr = SDRAdjustments(use_authored_base=False)
-    sdr.highlight_section_enabled = True
-    # The final shoulder must not squeeze the body according to the brightest
-    # image sample. The existing Soft Ceiling provides a luma-ratio cap with
-    # no peak dependency; new ordinary SDR grades still default to Peak Fit.
-    sdr.highlight_compression_mode = "soft_ceiling"
-    sdr.highlight_compression_softness = 100.
-    sdr.highlight_compression_start_percent = 90.0
-    # Match is reproducing an already rendered HDR target, whose shoulder is
-    # luma-ratio preserving. Ordinary new SDR grades still default to Smooth
-    # Color Rolloff; the materialized recipe chooses the faithful target mode.
-    sdr.highlight_compression_color_handling = "preserve_color"
-    sdr.tone_section_enabled = True
-    sdr.tone_equalizer_section_enabled = True
     sdr.color_section_enabled = hdr.color_section_enabled
-    sdr.curves_section_enabled = True
+    # HDR curve translation belongs here once both lanes share curve units.
+    # Neither the picture fit nor CPU certification reads or writes curve controls.
     sdr.detail_section_enabled = hdr.detail_section_enabled
     sdr.film_look_section_enabled = hdr.film_look_section_enabled
     sdr.color_grading_section_enabled = hdr.color_grading_section_enabled
@@ -924,105 +538,6 @@ def _fit_local_tonal_controls(grade: LocalGrade, source_luma: np.ndarray, target
     for name in ("exposure", "contrast", "blacks", "shadows", "midtones", "highlights", "whites"):
         setattr(grade, name, getattr(trial, name))
     grade.contrast_pivot = trial.contrast_pivot
-    grade.luma_curve = _identity_curve()
-    grade.red_curve = _identity_curve()
-    grade.green_curve = _identity_curve()
-    grade.blue_curve = _identity_curve()
-
-
-def _fit_neutral_tonal_response(
-    target_adjustments: AdjustmentState,
-    hdr_adjustments: AdjustmentState,
-    reference_white_nits: int,
-) -> None:
-    values = np.concatenate(
-        (np.array([0.0], dtype=np.float32), np.geomspace(1e-5, 0.18 * 64.0, 767).astype(np.float32))
-    )
-    ramp = np.repeat(values[None, :, None], 3, axis=2)
-    hdr_analysis = _tonal_analysis_copy(hdr_adjustments)
-    target_hdr = apply_adjustments(
-        ramp,
-        hdr_analysis,
-        PreviewKind.HDR,
-        include_grain=False,
-        color_context=RenderColorContext(reference_white_nits),
-    )
-    target_luma = automatic_sdr_match_luma(np.maximum(_acescg_luma(target_hdr)[0], 0.0))
-    body = (target_luma > 0.002) & (target_luma <= MATCH_SHOULDER_START)
-
-    best: tuple[float, float, float, float] | None = None
-    best_loss = float("inf")
-    exposure_center = float(np.clip(hdr_adjustments.hdr.exposure, -4.0, 4.0))
-    # Only these four scalar controls change in the search. Keep one private
-    # trial rather than deep-copying the entire adjustment tree 324 times.
-    trial = _tonal_analysis_copy(target_adjustments)
-    trial.sdr.tone_equalizer_section_enabled = False
-    for exposure in np.linspace(exposure_center - 2.0, exposure_center + 2.0, 9):
-        for start_percent in (70.0, 80.0, 90.0, 95.0):
-            for detail in ((0.0, 35.0, 70.0) if trial.sdr.highlight_compression_mode == "peak_fit" else (trial.sdr.highlight_compression_peak_detail,)):
-                for bias in ((-35.0, 0.0, 35.0) if trial.sdr.highlight_compression_mode == "peak_fit" else (trial.sdr.highlight_compression_bias,)):
-                    trial.sdr.exposure = float(np.clip(exposure, -8.0, 8.0))
-                    trial.sdr.highlight_compression_start_percent = start_percent
-                    trial.sdr.highlight_compression_peak_detail = detail
-                    trial.sdr.highlight_compression_bias = bias
-                    candidate = apply_adjustments(ramp, trial, PreviewKind.SDR, include_grain=False)
-                    candidate_luma = np.maximum(_linear_luma(candidate)[0], 1e-6)
-                    log_error = np.abs(np.log2(candidate_luma[body] / np.maximum(target_luma[body], 1e-6)))
-                    linear_error = np.abs(candidate_luma[body] - target_luma[body])
-                    loss = float(np.median(log_error) + np.percentile(linear_error, 90))
-                    if loss < best_loss:
-                        best_loss = loss
-                        best = (
-                            trial.sdr.exposure,
-                            start_percent,
-                            detail,
-                            bias,
-                        )
-    assert best is not None
-    (
-        target_adjustments.sdr.exposure,
-        target_adjustments.sdr.highlight_compression_start_percent,
-        target_adjustments.sdr.highlight_compression_peak_detail,
-        target_adjustments.sdr.highlight_compression_bias,
-    ) = best
-    best_contrast = 0.0
-    best_contrast_loss = float("inf")
-    trial = _tonal_analysis_copy(target_adjustments)
-    trial.sdr.tone_equalizer_section_enabled = False
-    for contrast in np.linspace(-0.30, 0.30, 7):
-        trial.sdr.contrast = float(contrast)
-        candidate = apply_adjustments(ramp, trial, PreviewKind.SDR, include_grain=False)
-        candidate_luma = np.maximum(_linear_luma(candidate)[0], 1e-6)
-        loss = float(np.median(np.abs(np.log2(candidate_luma[body] / np.maximum(target_luma[body], 1e-6)))))
-        if loss < best_contrast_loss:
-            best_contrast_loss = loss
-            best_contrast = float(contrast)
-    target_adjustments.sdr.contrast = best_contrast
-    fitted = _tonal_analysis_copy(target_adjustments)
-    fitted.sdr.tone_equalizer_section_enabled = False
-    candidate = apply_adjustments(ramp, fitted, PreviewKind.SDR, include_grain=False)
-    target_adjustments.sdr.tone_equalizer_nodes = _fit_tone_equalizer_nodes(
-        _linear_luma(candidate)[0], target_luma, body
-    )
-    target_adjustments.sdr.tone_equalizer_section_enabled = True
-    target_adjustments.sdr.luma_curve = _identity_curve()
-    target_adjustments.sdr.red_curve = _identity_curve()
-    target_adjustments.sdr.green_curve = _identity_curve()
-    target_adjustments.sdr.blue_curve = _identity_curve()
-
-
-def _tonal_analysis_copy(adjustments: AdjustmentState) -> AdjustmentState:
-    result = adjustments.model_copy(deep=True)
-    result.shared.geometry = GeometryAdjustments()
-    for branch in (result.hdr, result.sdr):
-        branch.detail_section_enabled = False
-        branch.vignette_section_enabled = False
-        look = branch.film_look
-        look.grain_enabled = False
-        look.halation_enabled = False
-        look.lens_filter = "none"
-        look.film_resolution = 100.0
-    return result
 
 
 def _render_candidate(
@@ -1109,285 +624,6 @@ def _parity_diagnostics(candidate: np.ndarray, reference: np.ndarray) -> dict[st
         "cpu_max": float(np.max(cpu)),
         "shape": list(gpu.shape),
     }
-
-
-def _fit_image_semantic_controls(
-    source: np.ndarray,
-    adjustments: AdjustmentState,
-    local_adjustments: list[LocalAdjustment],
-    source_pixel_scale: float,
-    target: np.ndarray,
-    candidate: np.ndarray,
-    quality: SDRMatchQualityMetrics,
-    body: np.ndarray,
-) -> tuple[np.ndarray, SDRMatchQualityMetrics]:
-    """Prefer small visible semantic corrections before authoring RGB curves."""
-    sdr = adjustments.sdr
-
-    def score(metrics: SDRMatchQualityMetrics) -> float:
-        gate_penalty = (
-            10.0 * max(0.0, metrics.p95_luma_error - 0.03)
-            + 10.0 * max(0.0, metrics.p95_oklab_error - 0.04)
-            + 10.0 * max(0.0, metrics.median_luma_error - 0.01)
-            + 10.0 * max(0.0, metrics.median_oklab_error - 0.015)
-        )
-        return float(
-            gate_penalty
-            + metrics.p95_luma_error
-            + metrics.p95_oklab_error
-            + 0.25 * metrics.median_luma_error
-            + 0.25 * metrics.median_oklab_error
-        )
-
-    def accept_trial(trial: np.ndarray, trial_quality: SDRMatchQualityMetrics) -> bool:
-        return (
-            score(trial_quality) + 1e-6 < score(quality)
-            and trial_quality.p95_luma_error <= max(0.05, quality.p95_luma_error + 0.003)
-            and trial_quality.p95_oklab_error <= max(0.05, quality.p95_oklab_error + 0.003)
-            # A semantic correction may improve the aggregate score while
-            # pushing a normal-match gate the current candidate still meets
-            # over its limit. Never trade a satisfied gate away.
-            and trial_quality.median_luma_error <= max(0.01, quality.median_luma_error)
-            and trial_quality.median_oklab_error <= max(0.015, quality.median_oklab_error)
-        )
-
-    if quality.p95_luma_error <= 0.03 and quality.p95_oklab_error <= 0.04:
-        return candidate, quality
-
-    authored_saturation = float(sdr.saturation)
-    authored_vignette = float(sdr.vignette.amount)
-    best_saturation = authored_saturation
-    best_vignette = authored_vignette
-
-    def try_trial(saturation: float, vignette_amount: float) -> None:
-        nonlocal candidate, quality, best_saturation, best_vignette
-        sdr.saturation = float(np.clip(saturation, -1.0, 3.0))
-        sdr.vignette.amount = float(np.clip(vignette_amount, -200.0, 200.0))
-        trial = _render_candidate(source, adjustments, local_adjustments, source_pixel_scale)
-        trial_quality = _quality_metrics(target, trial, body)
-        if accept_trial(trial, trial_quality):
-            candidate, quality = trial, trial_quality
-            best_saturation = sdr.saturation
-            best_vignette = sdr.vignette.amount
-
-    # Saturation is fitted against the vignette the grade actually authored.
-    # Pairing every saturation offset with a scaled-away vignette let a residual
-    # that has nothing to do with falloff quietly halve or erase a copied
-    # Vignette, so the two axes are searched separately.
-    # Ordered by magnitude so the smallest departure from the authored
-    # Saturation wins whenever a larger one is not materially better.
-    for saturation_offset in (-0.08, 0.08, -0.16, 0.16, -0.24, 0.24, -0.32, 0.32, -0.40):
-        try_trial(authored_saturation + saturation_offset, authored_vignette)
-    # Only once saturation has settled may the vignette itself give, and only
-    # when the grade authored one at all.
-    if sdr.vignette_section_enabled and abs(authored_vignette) > 1e-6:
-        for vignette_scale in (0.5, 0.0):
-            try_trial(best_saturation, authored_vignette * vignette_scale)
-    sdr.saturation = best_saturation
-    sdr.vignette.amount = best_vignette
-
-    return candidate, quality
-
-
-_MATCH_TONE_NODE_EV = np.array([-6.0, -4.0, -2.0, 0.0, 1.25, 2.30, 3.50, 6.0], dtype=np.float32)
-
-
-def _fit_tone_equalizer_nodes(
-    source: np.ndarray,
-    target: np.ndarray,
-    selection: np.ndarray,
-) -> list[ToneEqualizerNode]:
-    """Fit a compact, ordered stop-domain residual without authoring curves."""
-    source_luma = np.asarray(source, dtype=np.float32).reshape(-1)
-    target_luma = np.asarray(target, dtype=np.float32).reshape(-1)
-    selected = np.asarray(selection, dtype=bool).reshape(-1)
-    valid = (
-        selected
-        & np.isfinite(source_luma)
-        & np.isfinite(target_luma)
-        & (source_luma > 1e-6)
-        & (target_luma > 1e-6)
-    )
-    if int(np.count_nonzero(valid)) < 8:
-        return [ToneEqualizerNode(input_ev=float(node), adjustment_ev=0.0) for node in _MATCH_TONE_NODE_EV]
-    source_ev = np.log2(source_luma[valid] / np.float32(0.18))
-    target_ev = np.log2(target_luma[valid] / np.float32(0.18))
-    correction = _binned_stop_residual(source_ev, target_ev - source_ev, _MATCH_TONE_NODE_EV)
-    correction = _ordered_tone_corrections(_MATCH_TONE_NODE_EV, correction)
-    return [
-        ToneEqualizerNode(input_ev=float(node), adjustment_ev=float(delta))
-        for node, delta in zip(_MATCH_TONE_NODE_EV, correction, strict=True)
-    ]
-
-
-def _merge_image_tone_equalizer(
-    sdr: SDRAdjustments,
-    candidate: np.ndarray,
-    target: np.ndarray,
-    selection: np.ndarray,
-    *,
-    gain: float = 0.65,
-) -> None:
-    """Merge a conservative image residual into visible Tone Equalizer nodes."""
-    candidate_luma = _linear_luma(candidate).reshape(-1)
-    target_luma = _linear_luma(target).reshape(-1)
-    selected = np.asarray(selection, dtype=bool).reshape(-1)
-    valid = (
-        selected
-        & np.isfinite(candidate_luma)
-        & np.isfinite(target_luma)
-        & (candidate_luma > 1e-6)
-        & (target_luma > 1e-6)
-    )
-    if int(np.count_nonzero(valid)) < 8:
-        return
-    source_ev = np.log2(candidate_luma[valid] / np.float32(0.18))
-    residual = np.log2(target_luma[valid] / np.float32(0.18)) - source_ev
-    node_ev = np.asarray([node.input_ev for node in sdr.tone_equalizer_nodes], dtype=np.float32)
-    current = np.asarray([node.adjustment_ev for node in sdr.tone_equalizer_nodes], dtype=np.float32)
-    delta = _binned_stop_residual(source_ev, residual, node_ev, extrapolate=False)
-    merged = _ordered_tone_corrections(node_ev, current + np.float32(gain) * delta)
-    sdr.tone_equalizer_nodes = [
-        ToneEqualizerNode(input_ev=float(node), adjustment_ev=float(correction))
-        for node, correction in zip(node_ev, merged, strict=True)
-    ]
-    sdr.tone_equalizer_section_enabled = True
-
-
-def _binned_stop_residual(
-    sample_ev: np.ndarray,
-    residual_ev: np.ndarray,
-    node_ev: np.ndarray,
-    *,
-    extrapolate: bool = True,
-) -> np.ndarray:
-    order = np.argsort(sample_ev)
-    sample = np.asarray(sample_ev, dtype=np.float32)[order]
-    residual = np.asarray(residual_ev, dtype=np.float32)[order]
-    centers: list[float] = []
-    values: list[float] = []
-    edges = np.concatenate((
-        np.array([-np.inf], dtype=np.float32),
-        (node_ev[:-1] + node_ev[1:]) * np.float32(0.5),
-        np.array([np.inf], dtype=np.float32),
-    ))
-    for index, node in enumerate(node_ev):
-        members = (sample >= edges[index]) & (sample < edges[index + 1])
-        if int(np.count_nonzero(members)) >= 2:
-            centers.append(float(node))
-            values.append(float(np.median(residual[members])))
-    if not centers:
-        return np.zeros_like(node_ev, dtype=np.float32)
-    left = values[0] if extrapolate else 0.0
-    right = values[-1] if extrapolate else 0.0
-    result = np.interp(node_ev, np.asarray(centers), np.asarray(values), left=left, right=right).astype(np.float32)
-    return np.clip(result, -2.0, 2.0)
-
-
-def _ordered_tone_corrections(node_ev: np.ndarray, corrections: np.ndarray) -> np.ndarray:
-    corrections = np.clip(np.asarray(corrections, dtype=np.float32), -2.0, 2.0)
-    targets = node_ev.astype(np.float32) + corrections
-    minimum_step = np.float32(0.02)
-    for index in range(1, len(targets)):
-        targets[index] = max(targets[index], targets[index - 1] + minimum_step)
-    for index in range(len(targets) - 2, -1, -1):
-        targets[index] = min(targets[index], targets[index + 1] - minimum_step)
-    return np.clip(targets - node_ev, -2.0, 2.0).astype(np.float32)
-
-
-def _fit_image_curve(source: np.ndarray, target: np.ndarray, selection: np.ndarray) -> list[list[float]]:
-    x = np.asarray(source, dtype=np.float32).reshape(-1)
-    y = np.asarray(target, dtype=np.float32).reshape(-1)
-    mask = np.asarray(selection, dtype=bool).reshape(-1)
-    valid = mask & np.isfinite(x) & np.isfinite(y) & (x >= 0.0) & (x <= 1.0)
-    if int(np.count_nonzero(valid)) < 8:
-        return _identity_curve()
-    x = np.clip(x[valid], 0.0, 1.0)
-    y = np.clip(y[valid], 0.0, 1.0)
-    edges = np.linspace(0.0, 1.0, 129, dtype=np.float32)
-    centers: list[float] = []
-    medians: list[float] = []
-    weights: list[float] = []
-    indices = np.minimum(np.searchsorted(edges, x, side="right") - 1, len(edges) - 2)
-    for index in range(len(edges) - 1):
-        selected = indices == index
-        count = int(np.count_nonzero(selected))
-        if count:
-            centers.append(float(np.median(x[selected])))
-            medians.append(float(np.median(y[selected])))
-            weights.append(float(count))
-    if len(centers) < 2:
-        return _identity_curve()
-    centers_array = np.asarray(centers, dtype=np.float32)
-    medians_array = _pav(np.asarray(medians, dtype=np.float32), np.asarray(weights, dtype=np.float32))
-    sample_x = np.array([0.0, 0.08, 0.20, 0.40, 0.65, 0.85, 1.0], dtype=np.float32)
-    sample_y = np.interp(sample_x, centers_array, medians_array, left=0.0, right=1.0).astype(np.float32)
-    sample_y[0] = 0.0
-    sample_y[-1] = 1.0
-    sample_y = _constrain_editable_curve(sample_x, sample_y)
-    return [[float(xx), float(yy)] for xx, yy in zip(sample_x, sample_y, strict=True)]
-
-
-def _constrain_editable_curve(sample_x: np.ndarray, sample_y: np.ndarray) -> np.ndarray:
-    """Keep generated color residuals responsive and free of flat shoulders."""
-    output = np.clip(np.asarray(sample_y, dtype=np.float32), 0.0, 1.0)
-    output[0] = 0.0
-    output[-1] = 1.0
-    minimum_slope = np.float32(0.20)
-    maximum_slope = np.float32(3.0)
-    for _ in range(3):
-        for index in range(1, len(output) - 1):
-            width = sample_x[index] - sample_x[index - 1]
-            output[index] = np.clip(
-                output[index],
-                output[index - 1] + minimum_slope * width,
-                output[index - 1] + maximum_slope * width,
-            )
-        for index in range(len(output) - 2, 0, -1):
-            width = sample_x[index + 1] - sample_x[index]
-            output[index] = np.clip(
-                output[index],
-                output[index + 1] - maximum_slope * width,
-                output[index + 1] - minimum_slope * width,
-            )
-    return output
-
-
-def _pav(values: np.ndarray, weights: np.ndarray) -> np.ndarray:
-    levels: list[float] = []
-    masses: list[float] = []
-    starts: list[int] = []
-    ends: list[int] = []
-    for index, (value, weight) in enumerate(zip(values, weights, strict=True)):
-        levels.append(float(value))
-        masses.append(max(float(weight), 1e-6))
-        starts.append(index)
-        ends.append(index + 1)
-        while len(levels) >= 2 and levels[-2] > levels[-1]:
-            mass = masses[-2] + masses[-1]
-            level = (levels[-2] * masses[-2] + levels[-1] * masses[-1]) / mass
-            levels[-2:] = [level]
-            masses[-2:] = [mass]
-            ends[-2:] = [ends[-1]]
-            starts.pop()
-    result = np.empty_like(values, dtype=np.float32)
-    for level, start, end in zip(levels, starts, ends, strict=True):
-        result[start:end] = np.float32(level)
-    return result
-
-
-def _compose_curve(base: list[list[float]], correction: list[list[float]]) -> list[list[float]]:
-    base_array = np.asarray(base, dtype=np.float32)
-    correction_array = np.asarray(correction, dtype=np.float32)
-    sample_x = np.array([0.0, 0.08, 0.20, 0.40, 0.65, 0.85, 1.0], dtype=np.float32)
-    base_y = np.interp(sample_x, base_array[:, 0], base_array[:, 1]).astype(np.float32)
-    output = np.interp(base_y, correction_array[:, 0], correction_array[:, 1]).astype(np.float32)
-    output = _constrain_editable_curve(sample_x, output)
-    return [[float(xx), float(yy)] for xx, yy in zip(sample_x, output, strict=True)]
-
-
-def _identity_curve() -> list[list[float]]:
-    return [[0.0, 0.0], [0.25, 0.25], [0.5, 0.5], [0.75, 0.75], [1.0, 1.0]]
 
 
 def _quality_metrics(

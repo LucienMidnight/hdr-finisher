@@ -982,6 +982,12 @@ function bindEvents() {
   });
   els.sdrMatchHdrColors.addEventListener("click", matchHdrColorsToSdr);
   els.sdrMatchEntire?.addEventListener("click", () => setSdrMatch());
+  document.getElementById("hsl-match-hdr")?.addEventListener("click", () => copyHdrMatchModule(["hsl", "hsl_section_enabled"]));
+  document.getElementById("curves-match-hdr")?.addEventListener("click", () => copyHdrMatchModule(
+    ["curves_section_enabled", "luma_curve", "red_curve", "green_curve", "blue_curve"],
+  ));
+  document.getElementById("tone-match-hdr")?.addEventListener("click", () => setSdrMatch("tone"));
+  document.getElementById("highlight-match-hdr")?.addEventListener("click", () => setSdrMatch("highlight"));
   els.detailMatchHdr?.addEventListener("click", () => matchLaneObject("detail"));
   els.blackAndWhiteMatchHdr?.addEventListener("click", matchHdrBlackAndWhiteToSdr);
   els.filmLookReset?.addEventListener("click", resetFilmLook);

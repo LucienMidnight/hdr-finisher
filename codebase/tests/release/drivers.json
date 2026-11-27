@@ -11695,11 +11695,11 @@
         "preview"
       ],
       "tier": "full",
-      "protects": "sdr match gpu interaction",
+      "protects": "Whole SDR Match and four module-specific Match actions on WebGPU",
       "launch": {
         "method": "electron"
       },
-      "brief": "sdr match gpu interaction. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.",
+      "brief": "Fits a graded TIFF with a local and verifies GPU candidate rendering, CPU certification, editable pixels and exact Undo/Redo. The four SDR module Match buttons must change only their settings and undo in one step.",
       "expectedMinutes": {
         "win": null,
         "mac": null

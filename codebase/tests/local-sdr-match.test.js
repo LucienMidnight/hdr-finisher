@@ -26,6 +26,7 @@ for (const kind of ["matched", "manual"]) {
     let prompts = 0;
     const local = { sdr_grade: { exposure: kind === "manual" ? .2 : 0 }, sdr_match: kind === "matched" ? {} : null };
     const context = {
+      els: { sdrMatchEntire: { disabled: false } },
       state: { session: { session_id: "photo" }, editDocument: { local_adjustments: [local] } },
       syncGlobalEditState: async () => true, stablePreviewJson: JSON.stringify,
       defaultLocalGrade: () => ({ exposure: 0 }),
@@ -36,6 +37,7 @@ for (const kind of ["matched", "manual"]) {
     vm.runInContext(source, context);
     assert.equal(await context.setSdrMatch(), false);
     assert.equal(prompts, 1);
+    assert.equal(context.els.sdrMatchEntire.disabled, false);
   });
 }
 

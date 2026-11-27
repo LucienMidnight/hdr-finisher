@@ -262,7 +262,8 @@ function renderLaneChrome() {
     els.sdrMatchEntire.textContent = match?.rematch_required ? "↻ Rematch SDR" : "Match SDR";
     els.sdrMatchEntire.classList.toggle("rematch-required", Boolean(match?.rematch_required));
   }
-  if (els.sdrMatchEntire) els.sdrMatchEntire.disabled = !state.session;
+  els.sdrMatchModuleActions?.forEach(row => row.classList.toggle("hidden", lane !== "sdr"));
+  refreshSdrMatchButtons();
   if (els.sdrMatchEntireStatus) {
     els.sdrMatchEntireStatus.textContent = state.adjustments?.sdr?.linked_to_hdr
       ? "Linked to HDR · HDR edits update SDR live. SDR creative edits unlink."

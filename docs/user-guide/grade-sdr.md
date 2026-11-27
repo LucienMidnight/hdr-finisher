@@ -8,6 +8,18 @@ other matched values. Later HDR edits do not update this grade automatically;
 press Match again to replace the SDR grade, including manual tweaks, with a
 fresh fit. Undo restores the previous grade.
 
+Match sets Exposure, uses Contrast only when the HDR grade uses it, and
+shapes the picture with five editable Exposure Bands points. It leaves Blacks,
+Shadows, Midtones, Highlights and Whites at zero. It chooses Soft Ceiling or
+Peak Fit for the highlights. Whole Match starts with neutral Curves, without
+copying HDR curve points or inventing colour corrections.
+
+To work on just one panel, use **Match HDR HSL** or **Match HDR curves** to
+copy it once. The same curve points can look different in HDR and SDR.
+**Match HDR tone** fits Exposure, Contrast and Exposure Bands. **Match HDR
+highlight compression** fits only the compression settings. Other SDR
+modules stay as they were. Undo restores the previous values in one step.
+
 Whole Match still asks before replacing edited SDR locals or an imported
 authored SDR base. Cancel keeps them. A fit can need review or be refused.
 

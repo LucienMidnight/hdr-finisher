@@ -84,22 +84,28 @@ def test_saved_linked_document_still_renders_identically_after_project_roundtrip
     store.clear()
 
 
-def test_bright_population_refinement_improves_actual_pixels_without_sacrificing_body(tmp_path, monkeypatch):
-    import hdr_finisher.sdr_match as matching
-    from hdr_finisher.sdr_gamut import linear_srgb_to_oklab
+def test_section_fits_preserve_other_modules_and_undo_exactly(tmp_path):
+    from hdr_finisher.sdr_match_tone import TONE_FIELDS, SHOULDER_FIELDS
     _, store, s = session(tmp_path)
-    options = dict(reference_white_nits=203, source_pixel_scale=1)
-    refine = matching._refine_editable_tones
-    monkeypatch.setattr(matching, '_refine_editable_tones', lambda *args: args[-2:])
-    baseline = matching.materialize_sdr_match(s.image, s.adjustments, [], **options)
-    monkeypatch.setattr(matching, '_refine_editable_tones', refine)
-    result = matching.materialize_sdr_match(s.image, s.adjustments, [], **options)
-    hdr = apply_adjustments(s.image, s.adjustments, PreviewKind.HDR)
-    target = matching.build_sdr_match_target(hdr)
-    bright = matching._acescg_luma(hdr) * matching.SDR_DISPLAY_REFERENCE_WHITE / .18 > matching.MATCH_SHOULDER_START
-    def error(recipe):
-        pixels = apply_adjustments(s.image, recipe.adjustments, PreviewKind.SDR)
-        return np.linalg.norm(linear_srgb_to_oklab(pixels) - linear_srgb_to_oklab(target), axis=-1)[bright].mean()
-    assert error(result) < error(baseline)
-    assert result.quality.median_luma_error <= max(.01, baseline.quality.median_luma_error)
+    store.apply_sdr_match_action(s.session_id, expected_revision=s.edit_revision)
+    matched = s.adjustments.model_copy(deep=True)
+    for section, fields, changed_key, changed_value in (
+        ("tone", TONE_FIELDS, "exposure", -.1),
+        ("highlight", SHOULDER_FIELDS, "highlight_compression_start_percent", 50.),
+    ):
+        starting = matched.model_copy(deep=True)
+        setattr(starting.sdr, changed_key, changed_value)
+        store.apply_edit_commands(s.session_id, [EditCommand(expected_revision=s.edit_revision,
+            command_type="set_global_adjustments", payload={"adjustments": starting.model_dump(mode="json")})])
+        before = s.edit_document().model_copy(deep=True)
+        after = store.apply_sdr_match_action(s.session_id, expected_revision=s.edit_revision, section=section)
+        old_grade = before.global_adjustments
+        new_grade = after.document.global_adjustments
+        assert new_grade.hdr == old_grade.hdr and new_grade.shared == old_grade.shared
+        assert new_grade.sdr.model_dump(exclude=set(fields)) == old_grade.sdr.model_dump(exclude=set(fields))
+        assert after.document.local_adjustments == before.local_adjustments
+        assert after.document.denoise == before.denoise
+        assert getattr(new_grade.sdr, changed_key) != changed_value
+        store.apply_edit_commands(s.session_id, [EditCommand(expected_revision=s.edit_revision, command_type="undo")])
+        assert s.edit_document() == before
     store.clear()

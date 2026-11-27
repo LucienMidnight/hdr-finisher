@@ -1073,6 +1073,7 @@ const els = {
   sdrMatchHdrBands: document.getElementById("sdr-match-hdr-bands"),
   sdrMatchEntireActions: document.getElementById("sdr-match-entire-actions"),
   sdrMatchEntire: document.getElementById("sdr-match-entire"),
+  sdrMatchModuleActions: document.querySelectorAll("[data-sdr-module-match]"),
   sdrMatchEntireStatus: document.getElementById("sdr-match-entire-status"),
   detailSdrActions: document.getElementById("detail-sdr-actions"),
   blackAndWhiteSdrActions: document.getElementById("black-and-white-sdr-actions"),

@@ -1196,6 +1196,7 @@ class SdrMatchActionRequest(BaseModel):
 
     expected_revision: int = Field(ge=0)
     authored_sdr_override_consent: bool = False
+    section: Literal["whole", "tone", "highlight"] = "whole"
     # The page will render Match candidates on its GPU (sdr_match_remote).
     gpu_candidates: bool = False
     # Diagnostic: also render each GPU candidate on the CPU and report the difference.

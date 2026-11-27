@@ -876,6 +876,7 @@ def post_sdr_match(session_id: str, request: SdrMatchActionRequest, response: Re
                 authored_sdr_override_consent=request.authored_sdr_override_consent,
                 timing=timing,
                 candidate_bridge=bridge,
+                section=request.section,
             )
         finally:
             if bridge is not None:

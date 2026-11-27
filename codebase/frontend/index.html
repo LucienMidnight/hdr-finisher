@@ -1199,6 +1199,7 @@
             <button class="group-reset text-button" type="button" data-reset-group="sdr-highlights">Reset</button>
           </div>
           <div class="control-group-body">
+          <div class="film-look-actions hidden" data-sdr-module-match><button id="highlight-match-hdr" class="button-secondary" type="button" data-tooltip="Fits the compression mode and Start to the HDR picture. Leaves other SDR controls unchanged.">Match HDR highlight compression</button><span>Fits once; SDR remains independent.</span></div>
             <div class="control-row"><div class="control-heading"><span>Peak: SDR white (100%)</span></div></div>
             <div class="control-row select-control" data-control-path="sdr.highlight_compression_mode">
               <div class="control-heading"><label id="sdr-highlight-compression-summary" class="tooltip-trigger" for="sdr-compression-mode" data-tooltip="Peak Fit anchors the measured source peak at display white while preserving a smooth highlight gradient.">Mode</label></div>
@@ -1250,6 +1251,7 @@
             <button class="group-reset text-button" type="button" data-reset-group="sdr-tone">Reset</button>
           </div>
           <div class="control-group-body">
+          <div class="film-look-actions hidden" data-sdr-module-match><button id="tone-match-hdr" class="button-secondary" type="button" data-tooltip="Fits Exposure, Contrast and Exposure Bands to the HDR picture. Leaves other SDR modules unchanged.">Match HDR tone</button><span>Fits once; SDR remains independent.</span></div>
             <div class="control-row" data-control-path="sdr.exposure">
               <div class="control-heading"><label for="sdr-exposure">Exposure</label><output data-value-path="sdr.exposure">0.00 EV</output></div>
               <input id="sdr-exposure" type="range" min="-4" max="4" step="0.05" value="0" data-path="sdr.exposure">
@@ -1377,7 +1379,9 @@
           <button class="section-bypass text-button" type="button" data-section-path="current.hsl_section_enabled" aria-pressed="true" aria-label="Toggle HSL preview">&#9673;</button>
           <button id="hsl-reset" class="group-reset text-button" type="button">Reset</button>
         </div>
-        <div class="control-group-body"><div id="hsl-global-panel"></div></div>
+        <div class="control-group-body">
+          <div class="film-look-actions hidden" data-sdr-module-match><button id="hsl-match-hdr" class="button-secondary" type="button" data-tooltip="Copies the current HDR HSL settings once, including on/off.">Match HDR HSL</button><span>Copies once; SDR remains independent.</span></div>
+          <div id="hsl-global-panel"></div></div>
       </section>
       <section class="control-group collapsed" data-group="curves">
         <div class="control-group-header">
@@ -1386,6 +1390,7 @@
           <button id="curve-reset" class="group-reset text-button" type="button">Reset</button>
         </div>
         <div class="control-group-body">
+          <div class="film-look-actions hidden" data-sdr-module-match><button id="curves-match-hdr" class="button-secondary" type="button" data-tooltip="Copies the current HDR curve points and on/off. The two grades interpret the points differently.">Match HDR curves</button><span>Copies once; SDR remains independent.</span></div>
           <div class="curve-toolbar">
             <div class="channel-tabs">
               <button type="button" class="curve-channel active" data-curve-channel="luma">Luma</button>

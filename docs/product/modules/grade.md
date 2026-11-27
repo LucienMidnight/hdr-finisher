@@ -1,3 +1,24 @@
+## November 27: SDR Match fits the picture
+
+Steve approved fitting Exposure first, Contrast only when HDR uses it, five
+gentle Exposure Bands points and a fitted Highlight Compression Start. Match
+chooses between Soft Ceiling and Peak Fit. The five SDR Tone zone strengths stay
+neutral. No residual RGB curves or colour-slider corrections are authored.
+The target, highlight output rendering and Match acceptance gates stay unchanged.
+
+HSL and Curves have one-shot copy actions. Tone and Highlight Compression
+have one-shot fitting actions that preserve the other SDR modules. Each is
+one Undo step. Curves copy verbatim in the manual action only.
+Open work: share the HDR/SDR curve scale and colour space before enabling curve
+translation in whole-photo Match. Steve's visual review of highlights is open.
+
+PC qualification used the eight saved grades in the brief. All eight committed
+and met the body mean Delta E 2000 limit of 2 (range 0.036?1.450), with both the
+flower and the black-and-white photo marked matched. Fireworks and DSC07654
+still show Needs review at the existing gates. No synthetic RGB curve was
+introduced. See the [performance row](../../technical/performance-table.md#november-27--windows-sdr-match-picture-fit)
+and the local Target / Old / New review.
+
 ## November 26: wider Vignette Midpoint
 
 Midpoint now covers 0?200% on both slider and typed value. The start radius is

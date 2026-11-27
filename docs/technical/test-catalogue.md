@@ -437,11 +437,11 @@ Source: `codebase/tests/inventory.json`. Seconds are summed case time, not paral
 | tests/test_sdr_gamut.py | Checks sdr gamut behavior and regression contracts. | 34 | 0.0587 | unknown |  |
 | tests/test_sdr_link.py | Checks sdr link behavior and regression contracts. | 14 | 4.3346 | unknown |  |
 | tests/test_sdr_local_match.py | Checks sdr local match behavior and regression contracts. | 17 | 13.4718 | unknown |  |
-| tests/test_sdr_match_editable.py | Match commits one editable recipe, shared by persistence and rendering. | 3 | 1.9688 | unknown |  |
+| tests/test_sdr_match_editable.py | Match commits one editable recipe, shared by persistence and rendering. | 3 | 15.193 | unknown |  |
 | tests/test_sdr_match_inputs.py | Checks sdr match inputs behavior and regression contracts. | 6 | 0.0717 | unknown |  |
-| tests/test_sdr_match_materialization.py | Checks sdr match materialization behavior and regression contracts. | 17 | 8.9325 | unknown |  |
-| tests/test_sdr_match_remote.py | Match candidates rendered by the page instead of the CPU. | 6 | 5.8404 | unknown |  |
-| tests/test_sdr_match_state.py | Checks sdr match state behavior and regression contracts. | 13 | 0.4576 | unknown |  |
+| tests/test_sdr_match_materialization.py | Checks sdr match materialization behavior and regression contracts. | 14 | 26.8237 | unknown |  |
+| tests/test_sdr_match_remote.py | Match candidates rendered by the page instead of the CPU. | 6 | 14.0824 | unknown |  |
+| tests/test_sdr_match_state.py | Checks sdr match state behavior and regression contracts. | 13 | 0.5914 | unknown |  |
 | tests/test_signed_ahd.py | Checks signed ahd behavior and regression contracts. | 17 | 0.0237 | unknown |  |
 | tests/test_signed_raw_development.py | Checks signed raw development behavior and regression contracts. | 29 | 0.047 | unknown |  |
 | tests/test_signed_shadows.py | Checks signed shadows behavior and regression contracts. | 18 | 0.0543 | unknown |  |
@@ -3853,7 +3853,7 @@ Automatic editing peak and preview replacement. Runs assertions and captures in 
 
 #### `tests/sdr-match-gpu-interaction.js`
 
-sdr match gpu interaction. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
+Fits a graded TIFF with a local and verifies GPU candidate rendering, CPU certification, editable pixels and exact Undo/Redo. The four SDR module Match buttons must change only their settings and undo in one step.
 
 - Expected minutes: Windows unknown; Mac unknown.
 - Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.

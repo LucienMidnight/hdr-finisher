@@ -73,12 +73,12 @@ class _Page(threading.Thread):
     """Answers candidates the way the page does: half-float RGB, or an empty decline."""
 
     def __init__(self, bridge: RemoteCandidateBridge, source: np.ndarray, *, decline_at: int | None = None,
-                 black_lift: float = 0.0) -> None:
+                 false_best: np.ndarray | None = None) -> None:
         super().__init__(daemon=True)
         self.bridge = bridge
         self.source = source
         self.decline_at = decline_at
-        self.black_lift = black_lift
+        self.false_best = false_best
         self.jobs: list[dict] = []
         self.locals: list[LocalAdjustment] = []
 
@@ -97,7 +97,7 @@ class _Page(threading.Thread):
                 self.source, AdjustmentState.model_validate(job["adjustments"]), PreviewKind.SDR,
                 include_grain=False, local_adjustments=self.locals, source_pixel_scale=1.0,
             )
-            pixels = np.clip(rendered + np.float32(self.black_lift), 0.0, 1.0).astype("<f2").tobytes()
+            pixels = (rendered if self.false_best is None else self.false_best).astype("<f2").tobytes()
             self.bridge.submit(job["job_id"], pixels, job["width"], job["height"])
 
 
@@ -171,7 +171,7 @@ def test_page_rendered_candidates_give_a_cpu_certified_recipe() -> None:
     assert bridge.closed
     # The locals travel once; every later candidate reuses them.
     assert sum(job.get("local_adjustments") is not None for job in page.jobs) == 1
-    assert all(job["long_edge"] == 768 for job in page.jobs)
+    assert all(job["width"] == page.jobs[0]["width"] and job["height"] == page.jobs[0]["height"] for job in page.jobs)
 
     settled = apply_adjustments(source, adjustments, PreviewKind.HDR, include_grain=False,
                                 local_adjustments=locals_, color_context=RenderColorContext(203),
@@ -191,16 +191,18 @@ def test_page_rendered_candidates_give_a_cpu_certified_recipe() -> None:
     assert abs(result.quality.p95_luma_error - baseline.quality.p95_luma_error) < 0.01
 
 
-@pytest.mark.parametrize("failure", ["decline", "lifted_black"])
+@pytest.mark.parametrize("failure", ["decline", "false_best"])
 def test_invalid_page_results_fall_back_to_the_cpu_fit(failure: str) -> None:
     source = tifffile.imread(FIXTURE).astype(np.float32)
     adjustments, locals_ = _grade()
     baseline = materialize_sdr_match(source, adjustments, locals_, **OPTIONS)
 
     bridge = RemoteCandidateBridge()
-    # An artificial 0.002 floor hides errors in the shadow toe. Even when the
-    # page answers every job, an unsafe exact result must trigger the CPU fit.
-    page = _Page(bridge, source, decline_at=3) if failure == "decline" else _Page(bridge, source, black_lift=0.002)
+    # A renderer incorrectly returning the target for every job makes an
+    # unfit recipe look perfect. Exact certification must still reject it.
+    hdr = apply_adjustments(source, adjustments, PreviewKind.HDR, include_grain=False, local_adjustments=locals_)
+    page = (_Page(bridge, source, decline_at=3) if failure == "decline"
+            else _Page(bridge, source, false_best=build_sdr_match_target(hdr)))
     page.start()
     timing: dict[str, object] = {}
     result = materialize_sdr_match(source, adjustments, locals_, timing=timing, candidate_bridge=bridge, **OPTIONS)
@@ -214,7 +216,8 @@ def test_invalid_page_results_fall_back_to_the_cpu_fit(failure: str) -> None:
     else:
         assert timing["gpu_candidates"] == len(page.jobs) > 0
         assert timing["gpu_explored_quality"]["p95_oklab_error"] <= 0.05
-        assert timing["cpu_certified_quality"]["p95_oklab_error"] > 0.05
+        certified = timing["cpu_certified_quality"]
+        assert certified["p95_oklab_error"] > 0.05 or certified["p95_luma_error"] > 0.06
     # Exactly the CPU result: no decision from the abandoned attempt survives.
     assert result.adjustments.model_dump() == baseline.adjustments.model_dump()
     assert [item.model_dump() for item in result.local_adjustments] == [

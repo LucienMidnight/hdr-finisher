@@ -58,27 +58,51 @@ function unlinkSdrCreativeDraft() {
   }
 }
 
-async function setSdrMatch() {
-  if (!state.session) return false;
+function refreshSdrMatchButtons() {
+  const disabled = !state.session || state.sdrMatchInFlight === state.session.session_id;
+  if (els.sdrMatchEntire) els.sdrMatchEntire.disabled = disabled;
+  els.sdrMatchModuleActions?.forEach(row => { row.querySelector("button").disabled = disabled; });
+}
+
+function copyHdrMatchModule(keys) {
+  if (!state.session || state.currentView !== "sdr" || state.sdrMatchInFlight === state.session.session_id) return;
+  for (const key of keys) state.adjustments.sdr[key] = structuredClone(state.adjustments.hdr[key]);
+  syncControlsFromState();
+  invalidatePreview("sdr");
+  renderControlState();
+  syncCurveControlsFromState();
+  drawCurveEditor();
+  debouncePreview("sdr");
+  void syncGlobalEditState();
+}
+
+async function setSdrMatch(section = "whole") {
+  if (!state.session || state.sdrMatchInFlight === state.session.session_id) return false;
+  const sessionId = state.session.session_id;
+  state.sdrMatchInFlight = sessionId;
+  refreshSdrMatchButtons();
   const diagnostics = globalThis.HDRDiagnostics;
   const action = diagnostics?.start("match", "match_sdr", gradeDiagnosticPhoto());
   try {
-    const matched = await setSdrMatchWithDiagnostics(action);
+    const matched = await setSdrMatchWithDiagnostics(action, section);
     action?.finish(matched ? "success" : "cancelled", matched ? {} : { route: "refused", reason: "match_cancelled" });
     return matched;
   } catch (error) {
     action?.finish("error", { level: "error", route: "refused", reason: "match_failed" });
     throw error;
+  } finally {
+    if (state.sdrMatchInFlight === sessionId) state.sdrMatchInFlight = null;
+    if (state.session?.session_id === sessionId) refreshSdrMatchButtons();
   }
 }
 
-async function setSdrMatchWithDiagnostics(action) {
+async function setSdrMatchWithDiagnostics(action, section) {
   const sessionId = state.session.session_id;
   const isCurrent = () => state.session?.session_id === sessionId;
   if (await syncGlobalEditState() === false || !isCurrent()) return false;
   const protectedLocals = (state.editDocument?.local_adjustments || []).filter(local => local.sdr_match
     || stablePreviewJson(local.sdr_grade) !== stablePreviewJson(defaultLocalGrade("sdr")));
-  if (protectedLocals.length) {
+  if (section === "whole" && protectedLocals.length) {
     const confirmed = await window.HDRDialogs.confirm(
       "Whole-picture Match replaces every SDR local, including individually matched or edited adjustments. Undo restores them.",
       { title: "Replace SDR local adjustments", confirmLabel: "Replace SDR locals" },
@@ -87,7 +111,7 @@ async function setSdrMatchWithDiagnostics(action) {
   }
   const authored = state.editDocument?.source?.luminance?.sdr_rendition === "authored";
   let consent = false;
-  if (authored) {
+  if (section === "whole" && authored) {
     consent = await window.HDRDialogs.confirm(
       "This source contains an authored SDR rendition. Match will replace it with an editable generated SDR rendition. Undo restores the authored grade.",
       { title: "Replace authored SDR rendition", confirmLabel: "Continue" },
@@ -95,7 +119,6 @@ async function setSdrMatchWithDiagnostics(action) {
     if (!consent || !isCurrent()) return false;
   }
   setIndeterminatePreviewMessage("Matching HDR grade · analyzing settled HDR proxy");
-  if (els.sdrMatchEntire) els.sdrMatchEntire.disabled = true;
   try {
     // Match explores its candidates on this page's GPU while the
     // request waits; the backend still owns the fit and its final CPU check.
@@ -113,6 +136,7 @@ async function setSdrMatchWithDiagnostics(action) {
       headers: globalThis.HDRDiagnostics?.headers(action, { "Content-Type": "application/json" }) ?? { "Content-Type": "application/json" },
       body: JSON.stringify({
         expected_revision: state.editRevision,
+        section,
         authored_sdr_override_consent: consent,
         gpu_candidates: candidateRenderer !== "cpu",
         verify_gpu_candidates: candidateRenderer === "verify",
@@ -175,7 +199,9 @@ async function setSdrMatchWithDiagnostics(action) {
     if (!isCurrent()) return false;
     syncDesktopDocumentState();
     const reason = result.document.sdr_match?.link_fallback_reason;
-    const message = state.adjustments.sdr.linked_to_hdr ? "SDR linked to HDR."
+    const message = section === "tone" ? "SDR Tone and Exposure Bands fitted."
+      : section === "highlight" ? "SDR Highlight Compression fitted."
+      : state.adjustments.sdr.linked_to_hdr ? "SDR linked to HDR."
       : reason ? `Matched independently. This photo couldn’t be linked because ${reason}.` : "HDR grade matched to SDR.";
     status.post({ id: "match", severity: "success", message });
     return true;

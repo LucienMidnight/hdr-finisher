@@ -1,5 +1,39 @@
 # HDR-to-SDR Match
 
+## November 27: picture-based independent Match
+
+Whole-photo Match uses the unchanged settled-HDR target, with a shoulder above
+90% of SDR white. It measures the actual HDR and SDR render paths at a bounded
+384-pixel proxy, omitting stochastic grain for fitting. It first fits Exposure,
+optional Contrast (only if used by HDR), and Highlight Compression Start.
+Then it places five Exposure Bands points and penalizes large adjustments.
+The three interior points start at the dark, middle and bright body percentiles
+with at least 0.75 EV spacing. A final bounded pass settles the controls together.
+The five Tone zone strengths stay at zero. Body mean and P95 OKLab error guide
+the search, with lower weight for highlights.
+
+Both Soft Ceiling (100% softness and Preserve color) and Peak Fit (HDR Highlight
+Color, Detail, Bias and Attenuation with robust peak measurement) are evaluated.
+The closer safe candidate wins. Colour controls come from semantic translation,
+not fitting. Automatic Match does not fit or copy any global curve. The semantic
+translation is the hook for the planned HDR/SDR curve-scale unification.
+
+Candidates use the existing page WebGPU bridge. The chosen recipe is measured
+again on CPU, using the unchanged body gates and highlight-order diagnostic.
+If the GPU route fails or produces an unsafe fit, the same search restarts once
+on CPU. Match still reports matched, needs review or refusal. No limit, target,
+colour space, renderer stage or stored recipe schema changes.
+
+SDR HSL and Curves can copy HDR settings with one Undo. Curves copy the points
+literally, so their effect can differ between renditions. SDR Tone and Highlight
+Compression can instead fit their respective controls against the current HDR
+target while leaving the other SDR modules, locals and Denoise alone. Tone
+includes Exposure Bands. A Tone fit edits the independent grade like any SDR
+creative edit. A Highlight Compression fit can keep a previously linked grade.
+Neither action changes the authored SDR base choice or the whole-Match status.
+
+The sections below record earlier approaches and do not describe the new fitter.
+
 ## November 26: editable materialization for new Match actions
 
 New whole-photo Match actions use the independent materialization fitter and
@@ -164,8 +198,9 @@ individually matched or non-neutral SDR locals (including manual edits).
 
 ## Current recipe and output contract
 
-`SDRAdjustments.linked_to_hdr` defaults false. Only an accepted new whole-photo
-Match sets it true and disables the authored SDR base. `output_exposure` is a
+`SDRAdjustments.linked_to_hdr` defaults false. The following describes the
+previously shipped live-link path. New whole-photo Match is independent and
+replaces the authored SDR base only with consent. `output_exposure` is a
 visible late trim in stops, applied after the common Film and before SDR HC.
 It defaults to zero and is ignored by independent SDR rendering. No pixel
 snapshot, captured grain selector, migration or compatibility renderer exists.

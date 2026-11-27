@@ -300,12 +300,10 @@ def test_match_action_materializes_visible_controls_and_is_one_undo_step(tmp_pat
     assert matched.document.sdr_match.materialized_status in {"matched", "needs_review"}
     assert matched.document.global_adjustments.sdr.use_authored_base is False
     assert matched.document.global_adjustments.sdr.highlight_section_enabled is True
-    assert matched.document.global_adjustments.sdr.highlight_compression_mode == "soft_ceiling"
+    assert matched.document.global_adjustments.sdr.highlight_compression_mode in {"soft_ceiling", "peak_fit"}
     assert all(abs(x - y) < 1e-7 for x, y in matched.document.global_adjustments.sdr.luma_curve)
-    assert any(
-        abs(node.adjustment_ev) > 0.001
-        for node in matched.document.global_adjustments.sdr.tone_equalizer_nodes
-    )
+    assert len(matched.document.global_adjustments.sdr.tone_equalizer_nodes) == 5
+    assert matched.document.global_adjustments.sdr.contrast == 0.0
     assert matched.document.denoise.sdr == matched.document.denoise.hdr
     assert len(session.undo_history) == 1
 

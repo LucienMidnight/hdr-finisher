@@ -40,6 +40,9 @@ function sameBuffer(left, right) {
       state.adjustments.hdr.film_look.grain_amount = 12;
       state.adjustments.hdr.film_look.grain_size = 41;
       state.adjustments.hdr.highlight_desaturation = 18;
+      state.adjustments.hdr.hsl_section_enabled = false;
+      state.adjustments.hdr.curves_section_enabled = false;
+      state.adjustments.hdr.red_curve = [[0, 0], [.5, .53], [1, 1]];
       markGlobalEditDirty();
       if (!await syncGlobalEditState()) throw new Error("Could not save HDR Match fixture grade: " + status.get("edit")?.message);
       const local = newLocalAdjustment("linear_gradient");
@@ -109,12 +112,10 @@ function sameBuffer(left, right) {
         highlightMode: state.adjustments.sdr.highlight_compression_mode,
         lumaPoints: luma.length,
         lumaNeutral: curveNeutral(luma),
-        rgbCurvesUsable: globalRgbCurves.every((name) => {
-          const points = state.adjustments.sdr[name];
-          return curveNeutral(points) || (points.length <= 7 && points.every((point, index) => (
-            index === 0 || point[1] > points[index - 1][1]
-          )));
-        }),
+        rgbCurvesNeutral: globalRgbCurves.every((name) => curveNeutral(state.adjustments.sdr[name])),
+        fiveBands: state.adjustments.sdr.tone_equalizer_nodes.length === 5,
+        zonesNeutral: ["blacks", "shadows", "midtones", "highlights", "whites"]
+          .every(name => state.adjustments.sdr[name] === 0),
         localPoints: local.sdr_grade.luma_curve.length,
         localCurvesNeutral: localCurves.every((name) => curveNeutral(local.sdr_grade[name])),
         localTonalMaterialized: ["exposure", "highlights", "midtones", "shadows", "blacks", "contrast"]
@@ -137,8 +138,8 @@ function sameBuffer(left, right) {
     });
     if (!["matched", "needs_review"].includes(matched.status)
       || !matched.highlightEnabled
-      || matched.highlightMode !== "soft_ceiling" || matched.lumaPoints !== 5
-      || !matched.lumaNeutral || !matched.rgbCurvesUsable || matched.localPoints !== 5
+      || !["soft_ceiling", "peak_fit"].includes(matched.highlightMode) || matched.lumaPoints !== 5
+      || !matched.lumaNeutral || !matched.rgbCurvesNeutral || !matched.fiveBands || !matched.zonesNeutral || matched.localPoints !== 5
       || !matched.localCurvesNeutral || !matched.localTonalMaterialized || !matched.localMaskPreserved
       || !matched.denoiseCopied || !matched.grainCopied
       || !matched.gpuEligible || !matched.gpuRendered || matched.acceptedLane !== "sdr"
@@ -261,6 +262,50 @@ function sameBuffer(left, right) {
       || history.undoState.sdr !== authored.beforeSdr || !history.redone || !history.restored
       || !history.status) {
       throw new Error(`Match Undo/Redo was not atomic: ${JSON.stringify(history)}`);
+    }
+
+    interactionRequests.tracking = false;
+    const modules = [
+      { group: "hsl", button: "hsl-match-hdr", keys: ["hsl", "hsl_section_enabled"],
+        setup: { hsl_section_enabled: true }, copies: true },
+      { group: "curves", button: "curves-match-hdr",
+        keys: ["curves_section_enabled", "luma_curve", "red_curve", "green_curve", "blue_curve"],
+        setup: {}, copies: true },
+      { group: "sdr-tone", button: "tone-match-hdr",
+        keys: ["tone_section_enabled", "exposure", "contrast", "blacks", "shadows", "midtones", "highlights", "whites",
+          "tone_equalizer_section_enabled", "tone_equalizer_nodes"], setup: { exposure: matchedDocument.global_adjustments.sdr.exposure + .15 } },
+      { group: "sdr-highlights", button: "highlight-match-hdr",
+        keys: ["highlight_section_enabled", "highlight_compression_mode", "highlight_compression_start_percent",
+          "highlight_compression_softness", "highlight_compression_color_handling", "highlight_compression_peak_detail",
+          "highlight_compression_bias", "highlight_compression_attenuation", "highlight_compression_peak_measurement"],
+        setup: { highlight_compression_start_percent: 50 } },
+    ];
+    for (const { group, button, keys, setup, copies } of modules) {
+      const before = await page.evaluate(async setup => {
+        const adjustments = structuredClone(state.adjustments);
+        Object.assign(adjustments.sdr, setup);
+        if (Object.keys(setup).length) await queueEditCommand("set_global_adjustments", { adjustments });
+        return { revision: state.editRevision, document: structuredClone(state.editDocument) };
+      }, setup);
+      const groupToggle = page.locator(`[data-group="${group}"] .group-toggle`).first();
+      if (await groupToggle.getAttribute("aria-expanded") !== "true") await groupToggle.click();
+      await page.locator(`#${button}`).click();
+      await page.waitForFunction(revision => state.editRevision > revision && !state.sdrMatchInFlight,
+        before.revision, { timeout: 15000 });
+      const after = await page.evaluate(() => structuredClone(state.editDocument));
+      const expected = structuredClone(before.document);
+      for (const key of keys) {
+        if (copies) assert.deepEqual(after.global_adjustments.sdr[key], expected.global_adjustments.hdr[key], button);
+        expected.global_adjustments.sdr[key] = after.global_adjustments.sdr[key];
+      }
+      assert.notDeepEqual(after.global_adjustments.sdr, before.document.global_adjustments.sdr, button);
+      assert.deepEqual(after, expected, `${button} changed another module`);
+      const undone = await page.evaluate(async () => {
+        await queueEditCommand("undo");
+        return structuredClone(state.editDocument);
+      });
+      assert.deepEqual(undone, before.document, `${button} must be exactly one Undo step`);
+      if (Object.keys(setup).length) await page.evaluate(() => queueEditCommand("undo"));
     }
 
     const reset = await page.evaluate(async () => {

@@ -609,6 +609,8 @@ Completed UI polish round 3 (pending visual sign-off): `docs/technical/archive/b
 
 ### Briefs (current work)
 
+- `docs/technical/briefs/sdr-match-tone-fit-2026-11-27.md`: picture-based
+  SDR Tone/Highlight Compression fit and per-module HDR Match actions.
 - `docs/technical/briefs/codex-brief-export-gpu-speed-2026-10-20.md`: GPU
   export speed.
 - `docs/technical/briefs/codex-brief-hsl-edge-controls-2026-10-27.md`: HSL
