@@ -3,341 +3,362 @@
   "drivers": {
     "desktop/tests/confirmation-focus.js": {
       "mac": {
-        "medianSeconds": 3.447,
-        "lastSeconds": 3.447,
-        "sampleCount": 3,
+        "medianSeconds": 3.504,
+        "lastSeconds": 4.045,
+        "sampleCount": 4,
         "sampleSeconds": [
           3.402,
           3.561,
-          3.447
+          3.447,
+          4.045
         ],
-        "revision": "74286a5487f8af06bb6a47371158a961fb7439a2",
-        "date": "2026-11-26",
+        "revision": "c97690cc9f4dba78760310d42109e19dc10d1bdc",
+        "date": "2026-11-27",
         "exitCode": 0,
         "source": "release runner history (complete attempts, including failures)",
-        "lastSampleKey": "2026-11-26T05:26:25.088Z|desktop__tests__confirmation-focus.js.1.1795672533475.log"
+        "lastSampleKey": "2026-11-27T18:38:16.250Z|desktop__tests__confirmation-focus.js.1.1795804692205.log"
       }
     },
     "desktop/tests/electron-smoke.js": {
       "mac": {
-        "medianSeconds": 14.648,
-        "lastSeconds": 14.648,
-        "sampleCount": 5,
+        "medianSeconds": 15.7005,
+        "lastSeconds": 16.753,
+        "sampleCount": 6,
         "sampleSeconds": [
           14.428,
           10.266,
           130.833,
           39.084,
-          14.648
+          14.648,
+          16.753
         ],
-        "revision": "74286a5487f8af06bb6a47371158a961fb7439a2",
-        "date": "2026-11-26",
+        "revision": "c97690cc9f4dba78760310d42109e19dc10d1bdc",
+        "date": "2026-11-27",
         "exitCode": 0,
         "source": "release runner history (complete attempts, including failures)",
-        "lastSampleKey": "2026-11-26T05:26:25.088Z|desktop__tests__electron-smoke.js.2.1795672576089.log"
+        "lastSampleKey": "2026-11-27T18:38:33.051Z|desktop__tests__electron-smoke.js.1.1795804696297.log"
       }
     },
     "desktop/tests/overlay-feedback.js": {
       "mac": {
-        "medianSeconds": 3.921,
-        "lastSeconds": 9.673,
-        "sampleCount": 3,
+        "medianSeconds": 6.797,
+        "lastSeconds": 10.029,
+        "sampleCount": 4,
         "sampleSeconds": [
           3.86,
           3.921,
-          9.673
+          9.673,
+          10.029
         ],
-        "revision": "74286a5487f8af06bb6a47371158a961fb7439a2",
-        "date": "2026-11-26",
+        "revision": "c97690cc9f4dba78760310d42109e19dc10d1bdc",
+        "date": "2026-11-27",
         "exitCode": 0,
         "source": "release runner history (complete attempts, including failures)",
-        "lastSampleKey": "2026-11-26T05:26:25.088Z|desktop__tests__overlay-feedback.js.1.1795676948256.log"
+        "lastSampleKey": "2026-11-27T19:03:38.339Z|desktop__tests__overlay-feedback.js.1.1795806208310.log"
       }
     },
     "desktop/tests/platform-panels.js": {
       "mac": {
-        "medianSeconds": 2.896,
-        "lastSeconds": 2.709,
-        "sampleCount": 3,
+        "medianSeconds": 2.9085,
+        "lastSeconds": 3.505,
+        "sampleCount": 4,
         "sampleSeconds": [
           2.921,
           2.896,
-          2.709
+          2.709,
+          3.505
         ],
-        "revision": "74286a5487f8af06bb6a47371158a961fb7439a2",
-        "date": "2026-11-26",
+        "revision": "c97690cc9f4dba78760310d42109e19dc10d1bdc",
+        "date": "2026-11-27",
         "exitCode": 0,
         "source": "release runner history (complete attempts, including failures)",
-        "lastSampleKey": "2026-11-26T05:26:25.088Z|desktop__tests__platform-panels.js.1.1795672530730.log"
+        "lastSampleKey": "2026-11-27T18:38:12.160Z|desktop__tests__platform-panels.js.1.1795804688654.log"
       }
     },
     "desktop/tests/proof-grade-diagnostic.js": {
       "mac": {
-        "medianSeconds": 2.842,
-        "lastSeconds": 2.979,
-        "sampleCount": 6,
+        "medianSeconds": 2.8605,
+        "lastSeconds": 3.252,
+        "sampleCount": 8,
         "sampleSeconds": [
           2.722,
           2.826,
           2.759,
           2.863,
           2.858,
-          2.979
+          2.979,
+          3.083,
+          3.252
         ],
-        "revision": "74286a5487f8af06bb6a47371158a961fb7439a2",
-        "date": "2026-11-26",
+        "revision": "c97690cc9f4dba78760310d42109e19dc10d1bdc",
+        "date": "2026-11-27",
         "exitCode": 1,
         "source": "release runner history (complete attempts, including failures)",
-        "lastSampleKey": "2026-11-26T05:26:25.088Z|desktop__tests__proof-grade-diagnostic.js.2.1795672593669.log"
+        "lastSampleKey": "2026-11-27T18:38:39.461Z|desktop__tests__proof-grade-diagnostic.js.2.1795804716200.log"
       }
     },
     "tests/batch-export-ui.js": {
       "mac": {
-        "medianSeconds": 15.878,
-        "lastSeconds": 16.119,
-        "sampleCount": 2,
+        "medianSeconds": 15.795,
+        "lastSeconds": 15.795,
+        "sampleCount": 3,
         "sampleSeconds": [
           15.637,
-          16.119
+          16.119,
+          15.795
         ],
-        "revision": "74286a5487f8af06bb6a47371158a961fb7439a2",
-        "date": "2026-11-26",
+        "revision": "c97690cc9f4dba78760310d42109e19dc10d1bdc",
+        "date": "2026-11-27",
         "exitCode": 0,
         "source": "release runner history (complete attempts, including failures)",
-        "lastSampleKey": "2026-11-26T05:26:25.088Z|tests__batch-export-ui.js.1.1795677020267.log"
+        "lastSampleKey": "2026-11-27T19:04:53.476Z|tests__batch-export-ui.js.1.1795806277681.log"
       }
     },
     "tests/brush-mask-interaction.js": {
       "mac": {
-        "medianSeconds": 32.541,
-        "lastSeconds": 31.438,
-        "sampleCount": 3,
+        "medianSeconds": 32.8605,
+        "lastSeconds": 33.18,
+        "sampleCount": 4,
         "sampleSeconds": [
           33.826,
           32.541,
-          31.438
+          31.438,
+          33.18
         ],
-        "revision": "74286a5487f8af06bb6a47371158a961fb7439a2",
-        "date": "2026-11-26",
+        "revision": "c97690cc9f4dba78760310d42109e19dc10d1bdc",
+        "date": "2026-11-27",
         "exitCode": 0,
         "source": "release runner history (complete attempts, including failures)",
-        "lastSampleKey": "2026-11-26T05:26:25.088Z|tests__brush-mask-interaction.js.1.1795672596681.log"
+        "lastSampleKey": "2026-11-27T18:39:12.674Z|tests__brush-mask-interaction.js.1.1795804719494.log"
       }
     },
     "tests/bw-parity.js": {
       "mac": {
-        "medianSeconds": 143.021,
-        "lastSeconds": 142.338,
-        "sampleCount": 3,
+        "medianSeconds": 142.6795,
+        "lastSeconds": 141.534,
+        "sampleCount": 4,
         "sampleSeconds": [
           143.021,
           149.316,
-          142.338
+          142.338,
+          141.534
         ],
-        "revision": "74286a5487f8af06bb6a47371158a961fb7439a2",
-        "date": "2026-11-26",
+        "revision": "c97690cc9f4dba78760310d42109e19dc10d1bdc",
+        "date": "2026-11-27",
         "exitCode": 0,
         "source": "release runner history (complete attempts, including failures)",
-        "lastSampleKey": "2026-11-26T05:26:25.088Z|tests__bw-parity.js.1.1795672628153.log"
+        "lastSampleKey": "2026-11-27T18:41:34.240Z|tests__bw-parity.js.1.1795804752706.log"
       }
     },
     "tests/clarity-map-parity.js": {
       "mac": {
-        "medianSeconds": 100.412,
-        "lastSeconds": 100.412,
-        "sampleCount": 3,
+        "medianSeconds": 99.93950000000001,
+        "lastSeconds": 97.079,
+        "sampleCount": 4,
         "sampleSeconds": [
           99.467,
           104.017,
-          100.412
+          100.412,
+          97.079
         ],
-        "revision": "74286a5487f8af06bb6a47371158a961fb7439a2",
-        "date": "2026-11-26",
+        "revision": "c97690cc9f4dba78760310d42109e19dc10d1bdc",
+        "date": "2026-11-27",
         "exitCode": 0,
         "source": "release runner history (complete attempts, including failures)",
-        "lastSampleKey": "2026-11-26T05:26:25.088Z|tests__clarity-map-parity.js.1.1795672770525.log"
+        "lastSampleKey": "2026-11-27T18:43:11.349Z|tests__clarity-map-parity.js.1.1795804894270.log"
       }
     },
     "tests/color-desat-delivery.js": {
       "mac": {
-        "medianSeconds": 5.603,
-        "lastSeconds": 5.603,
-        "sampleCount": 3,
+        "medianSeconds": 5.627,
+        "lastSeconds": 6.672,
+        "sampleCount": 4,
         "sampleSeconds": [
           4.9,
           5.651,
-          5.603
+          5.603,
+          6.672
         ],
-        "revision": "74286a5487f8af06bb6a47371158a961fb7439a2",
-        "date": "2026-11-26",
+        "revision": "c97690cc9f4dba78760310d42109e19dc10d1bdc",
+        "date": "2026-11-27",
         "exitCode": 0,
         "source": "release runner history (complete attempts, including failures)",
-        "lastSampleKey": "2026-11-26T05:26:25.088Z|tests__color-desat-delivery.js.1.1795671944603.log"
+        "lastSampleKey": "2026-11-27T18:33:59.963Z|tests__color-desat-delivery.js.1.1795804433290.log"
       }
     },
     "tests/control-panel-polish.js": {
       "mac": {
-        "medianSeconds": 4.879,
-        "lastSeconds": 4.996,
-        "sampleCount": 3,
+        "medianSeconds": 4.9375,
+        "lastSeconds": 8.6,
+        "sampleCount": 4,
         "sampleSeconds": [
           4.514,
           4.879,
-          4.996
+          4.996,
+          8.6
         ],
-        "revision": "74286a5487f8af06bb6a47371158a961fb7439a2",
-        "date": "2026-11-26",
+        "revision": "c97690cc9f4dba78760310d42109e19dc10d1bdc",
+        "date": "2026-11-27",
         "exitCode": 0,
         "source": "release runner history (complete attempts, including failures)",
-        "lastSampleKey": "2026-11-26T05:26:25.088Z|tests__control-panel-polish.js.1.1795672009692.log"
+        "lastSampleKey": "2026-11-27T18:35:17.694Z|tests__control-panel-polish.js.1.1795804509094.log"
       }
     },
     "tests/curve-editor-interaction.js": {
       "mac": {
-        "medianSeconds": 5.967,
-        "lastSeconds": 5.967,
-        "sampleCount": 3,
+        "medianSeconds": 6.0105,
+        "lastSeconds": 6.266,
+        "sampleCount": 4,
         "sampleSeconds": [
           5.88,
           6.054,
-          5.967
+          5.967,
+          6.266
         ],
-        "revision": "74286a5487f8af06bb6a47371158a961fb7439a2",
-        "date": "2026-11-26",
+        "revision": "c97690cc9f4dba78760310d42109e19dc10d1bdc",
+        "date": "2026-11-27",
         "exitCode": 0,
         "source": "release runner history (complete attempts, including failures)",
-        "lastSampleKey": "2026-11-26T05:26:25.088Z|tests__curve-editor-interaction.js.1.1795672870974.log"
+        "lastSampleKey": "2026-11-27T18:43:17.648Z|tests__curve-editor-interaction.js.1.1795804991382.log"
       }
     },
     "tests/denoise-adaptive-parity.js": {
       "mac": {
-        "medianSeconds": 5.149,
-        "lastSeconds": 27.154,
-        "sampleCount": 3,
+        "medianSeconds": 16.009999999999998,
+        "lastSeconds": 26.871,
+        "sampleCount": 4,
         "sampleSeconds": [
           5.149,
           5.018,
-          27.154
+          27.154,
+          26.871
         ],
-        "revision": "74286a5487f8af06bb6a47371158a961fb7439a2",
-        "date": "2026-11-26",
+        "revision": "c97690cc9f4dba78760310d42109e19dc10d1bdc",
+        "date": "2026-11-27",
         "exitCode": 0,
         "source": "release runner history (complete attempts, including failures)",
-        "lastSampleKey": "2026-11-26T05:26:25.088Z|tests__denoise-adaptive-parity.js.1.1795672883154.log"
+        "lastSampleKey": "2026-11-27T18:44:44.732Z|tests__denoise-adaptive-parity.js.1.1795805057861.log"
       }
     },
     "tests/denoise-zoomed-region.js": {
       "mac": {
-        "medianSeconds": 18.439500000000002,
-        "lastSeconds": 18.879,
-        "sampleCount": 2,
+        "medianSeconds": 18.879,
+        "lastSeconds": 20.595,
+        "sampleCount": 3,
         "sampleSeconds": [
           18,
-          18.879
+          18.879,
+          20.595
         ],
-        "revision": "74286a5487f8af06bb6a47371158a961fb7439a2",
-        "date": "2026-11-26",
+        "revision": "c97690cc9f4dba78760310d42109e19dc10d1bdc",
+        "date": "2026-11-27",
         "exitCode": 0,
         "source": "release runner history (complete attempts, including failures)",
-        "lastSampleKey": "2026-11-26T05:26:25.088Z|tests__denoise-zoomed-region.js.1.1795674710570.log"
+        "lastSampleKey": "2026-11-27T18:46:47.146Z|tests__denoise-zoomed-region.js.1.1795805186551.log"
       }
     },
     "tests/device-loss-fallback.js": {
       "mac": {
-        "medianSeconds": 8.2205,
-        "lastSeconds": 8.606,
-        "sampleCount": 2,
+        "medianSeconds": 8.606,
+        "lastSeconds": 9.313,
+        "sampleCount": 3,
         "sampleSeconds": [
           7.835,
-          8.606
+          8.606,
+          9.313
         ],
-        "revision": "74286a5487f8af06bb6a47371158a961fb7439a2",
-        "date": "2026-11-26",
+        "revision": "c97690cc9f4dba78760310d42109e19dc10d1bdc",
+        "date": "2026-11-27",
         "exitCode": 0,
         "source": "release runner history (complete attempts, including failures)",
-        "lastSampleKey": "2026-11-26T05:26:25.088Z|tests__device-loss-fallback.js.1.1795674735001.log"
+        "lastSampleKey": "2026-11-27T18:47:02.627Z|tests__device-loss-fallback.js.1.1795805213314.log"
       }
     },
     "tests/edge-colour-raw.js": {
       "mac": {
-        "medianSeconds": 119.5805,
-        "lastSeconds": 116.387,
-        "sampleCount": 2,
+        "medianSeconds": 122.449,
+        "lastSeconds": 122.449,
+        "sampleCount": 3,
         "sampleSeconds": [
           122.774,
-          116.387
+          116.387,
+          122.449
         ],
-        "revision": "74286a5487f8af06bb6a47371158a961fb7439a2",
-        "date": "2026-11-26",
+        "revision": "c97690cc9f4dba78760310d42109e19dc10d1bdc",
+        "date": "2026-11-27",
         "exitCode": 0,
         "source": "release runner history (complete attempts, including failures)",
-        "lastSampleKey": "2026-11-26T05:26:25.088Z|tests__edge-colour-raw.js.1.1795679383738.log"
+        "lastSampleKey": "2026-11-27T19:22:57.307Z|tests__edge-colour-raw.js.1.1795807254857.log"
       }
     },
     "tests/export-file-browser-interaction.js": {
       "mac": {
-        "medianSeconds": 10.302,
-        "lastSeconds": 10.034,
-        "sampleCount": 2,
+        "medianSeconds": 10.57,
+        "lastSeconds": 11.403,
+        "sampleCount": 3,
         "sampleSeconds": [
           10.57,
-          10.034
+          10.034,
+          11.403
         ],
-        "revision": "74286a5487f8af06bb6a47371158a961fb7439a2",
-        "date": "2026-11-26",
+        "revision": "c97690cc9f4dba78760310d42109e19dc10d1bdc",
+        "date": "2026-11-27",
         "exitCode": 0,
         "source": "release runner history (complete attempts, including failures)",
-        "lastSampleKey": "2026-11-26T05:26:25.088Z|tests__export-file-browser-interaction.js.1.1795674743644.log"
+        "lastSampleKey": "2026-11-27T18:47:14.067Z|tests__export-file-browser-interaction.js.1.1795805222664.log"
       }
     },
     "tests/export-presets-interaction.js": {
       "mac": {
-        "medianSeconds": 3.6449999999999996,
-        "lastSeconds": 3.788,
-        "sampleCount": 2,
+        "medianSeconds": 3.788,
+        "lastSeconds": 3.951,
+        "sampleCount": 3,
         "sampleSeconds": [
           3.502,
-          3.788
+          3.788,
+          3.951
         ],
-        "revision": "74286a5487f8af06bb6a47371158a961fb7439a2",
-        "date": "2026-11-26",
+        "revision": "c97690cc9f4dba78760310d42109e19dc10d1bdc",
+        "date": "2026-11-27",
         "exitCode": 0,
         "source": "release runner history (complete attempts, including failures)",
-        "lastSampleKey": "2026-11-26T05:26:25.088Z|tests__export-presets-interaction.js.1.1795674753712.log"
+        "lastSampleKey": "2026-11-27T18:47:18.052Z|tests__export-presets-interaction.js.1.1795805234101.log"
       }
     },
     "tests/export-progress-single.js": {
       "mac": {
-        "medianSeconds": 25.839,
-        "lastSeconds": 25.839,
-        "sampleCount": 1,
+        "medianSeconds": 25.691,
+        "lastSeconds": 25.543,
+        "sampleCount": 2,
         "sampleSeconds": [
-          25.839
+          25.839,
+          25.543
         ],
-        "revision": "74286a5487f8af06bb6a47371158a961fb7439a2",
-        "date": "2026-11-26",
+        "revision": "c97690cc9f4dba78760310d42109e19dc10d1bdc",
+        "date": "2026-11-27",
         "exitCode": 0,
         "source": "release runner history (complete attempts, including failures)",
-        "lastSampleKey": "2026-11-26T05:26:25.088Z|tests__export-progress-single.js.1.1795671201748.log"
+        "lastSampleKey": "2026-11-27T18:23:30.560Z|tests__export-progress-single.js.1.1795803785017.log"
       }
     },
     "tests/film-stock-parity.js": {
       "mac": {
-        "medianSeconds": 531.421,
-        "lastSeconds": 539.643,
-        "sampleCount": 5,
+        "medianSeconds": 526.158,
+        "lastSeconds": 144.17,
+        "sampleCount": 6,
         "sampleSeconds": [
           520.895,
           517.569,
           531.421,
           539.468,
-          539.643
+          539.643,
+          144.17
         ],
-        "revision": "74286a5487f8af06bb6a47371158a961fb7439a2",
-        "date": "2026-11-26",
-        "exitCode": 1,
+        "revision": "c97690cc9f4dba78760310d42109e19dc10d1bdc",
+        "date": "2026-11-27",
+        "exitCode": 0,
         "source": "release runner history (complete attempts, including failures)",
-        "lastSampleKey": "2026-11-26T05:26:25.088Z|tests__film-stock-parity.js.2.1795675297046.log"
+        "lastSampleKey": "2026-11-27T18:49:42.258Z|tests__film-stock-parity.js.1.1795805238088.log"
       },
       "win": {
         "medianSeconds": 213.582,
@@ -357,68 +378,74 @@
     },
     "tests/geometry-transactions.js": {
       "mac": {
-        "medianSeconds": 8.611,
-        "lastSeconds": 9.052,
-        "sampleCount": 2,
+        "medianSeconds": 9.052,
+        "lastSeconds": 9.106,
+        "sampleCount": 3,
         "sampleSeconds": [
           8.17,
-          9.052
+          9.052,
+          9.106
         ],
-        "revision": "74286a5487f8af06bb6a47371158a961fb7439a2",
-        "date": "2026-11-26",
+        "revision": "c97690cc9f4dba78760310d42109e19dc10d1bdc",
+        "date": "2026-11-27",
         "exitCode": 0,
         "source": "release runner history (complete attempts, including failures)",
-        "lastSampleKey": "2026-11-26T05:26:25.088Z|tests__geometry-transactions.js.1.1795675836734.log"
+        "lastSampleKey": "2026-11-27T18:49:51.399Z|tests__geometry-transactions.js.1.1795805382293.log"
       }
     },
     "tests/gpu-delivery-ceiling.js": {
       "mac": {
-        "medianSeconds": 18.938,
-        "lastSeconds": 18.934,
-        "sampleCount": 3,
+        "medianSeconds": 30.986,
+        "lastSeconds": 31.031,
+        "sampleCount": 5,
         "sampleSeconds": [
           66.826,
           18.938,
-          18.934
+          18.934,
+          30.986,
+          31.031
         ],
-        "revision": "74286a5487f8af06bb6a47371158a961fb7439a2",
-        "date": "2026-11-26",
+        "revision": "c97690cc9f4dba78760310d42109e19dc10d1bdc",
+        "date": "2026-11-27",
         "exitCode": 1,
         "source": "release runner history (complete attempts, including failures)",
-        "lastSampleKey": "2026-11-26T05:26:25.088Z|tests__gpu-delivery-ceiling.js.2.1795677123086.log"
+        "lastSampleKey": "2026-11-27T19:07:29.956Z|tests__gpu-delivery-ceiling.js.2.1795806418926.log"
       }
     },
     "tests/gpu-delivery-repeat.js": {
       "mac": {
-        "medianSeconds": 19.216,
-        "lastSeconds": 19.216,
-        "sampleCount": 3,
+        "medianSeconds": 31.229,
+        "lastSeconds": 32.687,
+        "sampleCount": 5,
         "sampleSeconds": [
           83.995,
           18.809,
-          19.216
+          19.216,
+          31.229,
+          32.687
         ],
-        "revision": "74286a5487f8af06bb6a47371158a961fb7439a2",
-        "date": "2026-11-26",
+        "revision": "c97690cc9f4dba78760310d42109e19dc10d1bdc",
+        "date": "2026-11-27",
         "exitCode": 1,
         "source": "release runner history (complete attempts, including failures)",
-        "lastSampleKey": "2026-11-26T05:26:25.088Z|tests__gpu-delivery-repeat.js.2.1795677084853.log"
+        "lastSampleKey": "2026-11-27T19:06:27.858Z|tests__gpu-delivery-repeat.js.2.1795806355171.log"
       }
     },
     "tests/gpu-delivery-smoke.js": {
       "mac": {
-        "medianSeconds": 13.376000000000001,
-        "lastSeconds": 21.32,
-        "sampleCount": 2,
+        "medianSeconds": 21.32,
+        "lastSeconds": 22.095,
+        "sampleCount": 3,
         "sampleSeconds": [
           5.432,
-          21.32
+          21.32,
+          22.095
         ],
-        "revision": "74286a5487f8af06bb6a47371158a961fb7439a2",
-        "date": "2026-11-26",
+        "revision": "c97690cc9f4dba78760310d42109e19dc10d1bdc",
+        "date": "2026-11-27",
         "exitCode": 0,
         "source": "release runner history (complete attempts, including failures)",
-        "lastSampleKey": "2026-11-26T05:26:25.088Z|tests__gpu-delivery-smoke.js.1.1795677044646.log"
+        "lastSampleKey": "2026-11-27T19:05:23.868Z|tests__gpu-delivery-smoke.js.1.1795806301773.log"
       }
     },
     "tests/gpu-denoise-measurement.js": {
@@ -441,261 +468,294 @@
     },
     "tests/gpu-edge-colour.js": {
       "mac": {
-        "medianSeconds": 7.2385,
-        "lastSeconds": 7.359,
-        "sampleCount": 2,
+        "medianSeconds": 7.359,
+        "lastSeconds": 7.706,
+        "sampleCount": 3,
         "sampleSeconds": [
           7.118,
-          7.359
+          7.359,
+          7.706
         ],
-        "revision": "74286a5487f8af06bb6a47371158a961fb7439a2",
-        "date": "2026-11-26",
+        "revision": "c97690cc9f4dba78760310d42109e19dc10d1bdc",
+        "date": "2026-11-27",
         "exitCode": 0,
         "source": "release runner history (complete attempts, including failures)",
-        "lastSampleKey": "2026-11-26T05:26:25.088Z|tests__gpu-edge-colour.js.1.1795679500162.log"
+        "lastSampleKey": "2026-11-27T19:23:05.058Z|tests__gpu-edge-colour.js.1.1795807377351.log"
       }
     },
     "tests/gpu-highlight-compression-parity.js": {
       "mac": {
-        "medianSeconds": 6.644,
-        "lastSeconds": 7.02,
-        "sampleCount": 2,
+        "medianSeconds": 6.527,
+        "lastSeconds": 6.527,
+        "sampleCount": 3,
         "sampleSeconds": [
           6.268,
-          7.02
+          7.02,
+          6.527
         ],
-        "revision": "74286a5487f8af06bb6a47371158a961fb7439a2",
-        "date": "2026-11-26",
+        "revision": "c97690cc9f4dba78760310d42109e19dc10d1bdc",
+        "date": "2026-11-27",
         "exitCode": 0,
         "source": "release runner history (complete attempts, including failures)",
-        "lastSampleKey": "2026-11-26T05:26:25.088Z|tests__gpu-highlight-compression-parity.js.1.1795675845829.log"
+        "lastSampleKey": "2026-11-27T18:49:57.963Z|tests__gpu-highlight-compression-parity.js.1.1795805391436.log"
       }
     },
     "tests/gpu-scope-parity.js": {
       "mac": {
-        "medianSeconds": 9.784500000000001,
-        "lastSeconds": 10.253,
-        "sampleCount": 2,
+        "medianSeconds": 9.354,
+        "lastSeconds": 9.354,
+        "sampleCount": 3,
         "sampleSeconds": [
           9.316,
-          10.253
+          10.253,
+          9.354
         ],
-        "revision": "74286a5487f8af06bb6a47371158a961fb7439a2",
-        "date": "2026-11-26",
+        "revision": "c97690cc9f4dba78760310d42109e19dc10d1bdc",
+        "date": "2026-11-27",
         "exitCode": 0,
         "source": "release runner history (complete attempts, including failures)",
-        "lastSampleKey": "2026-11-26T05:26:25.088Z|tests__gpu-scope-parity.js.1.1795675877509.log"
+        "lastSampleKey": "2026-11-27T18:50:31.436Z|tests__gpu-scope-parity.js.1.1795805422081.log"
       }
     },
     "tests/grade-dng.js": {
       "mac": {
-        "medianSeconds": 1.1465,
-        "lastSeconds": 1.005,
-        "sampleCount": 2,
+        "medianSeconds": 1.1800000000000002,
+        "lastSeconds": 1.072,
+        "sampleCount": 4,
         "sampleSeconds": [
           1.288,
-          1.005
+          1.005,
+          1.312,
+          1.072
         ],
-        "revision": "74286a5487f8af06bb6a47371158a961fb7439a2",
-        "date": "2026-11-26",
+        "revision": "c97690cc9f4dba78760310d42109e19dc10d1bdc",
+        "date": "2026-11-27",
         "exitCode": 1,
         "source": "release runner history (complete attempts, including failures)",
-        "lastSampleKey": "2026-11-26T05:26:25.088Z|tests__grade-dng.js.1.1795678918118.log"
+        "lastSampleKey": "2026-11-27T19:12:55.777Z|tests__grade-dng.js.2.1795806774706.log"
       }
     },
     "tests/grade-grain-pruning.js": {
       "mac": {
-        "medianSeconds": 3.283,
-        "lastSeconds": 3.283,
-        "sampleCount": 1,
+        "medianSeconds": 3.1710000000000003,
+        "lastSeconds": 3.059,
+        "sampleCount": 2,
         "sampleSeconds": [
-          3.283
+          3.283,
+          3.059
         ],
-        "revision": "74286a5487f8af06bb6a47371158a961fb7439a2",
-        "date": "2026-11-26",
+        "revision": "c97690cc9f4dba78760310d42109e19dc10d1bdc",
+        "date": "2026-11-27",
         "exitCode": 0,
         "source": "release runner history (complete attempts, including failures)",
-        "lastSampleKey": "2026-11-26T05:26:25.088Z|tests__grade-grain-pruning.js.1.1795675898398.log"
+        "lastSampleKey": "2026-11-27T18:50:44.323Z|tests__grade-grain-pruning.js.1.1795805441264.log"
       }
     },
     "tests/grade-panel-order.js": {
       "mac": {
-        "medianSeconds": 9.2455,
-        "lastSeconds": 9.366,
-        "sampleCount": 2,
+        "medianSeconds": 8.1765,
+        "lastSeconds": 6.966,
+        "sampleCount": 4,
         "sampleSeconds": [
           9.125,
-          9.366
+          9.366,
+          7.228,
+          6.966
         ],
-        "revision": "74286a5487f8af06bb6a47371158a961fb7439a2",
-        "date": "2026-11-26",
-        "exitCode": 0,
+        "revision": "c97690cc9f4dba78760310d42109e19dc10d1bdc",
+        "date": "2026-11-27",
+        "exitCode": 1,
         "source": "release runner history (complete attempts, including failures)",
-        "lastSampleKey": "2026-11-26T05:26:25.088Z|tests__grade-panel-order.js.1.1795670991966.log"
+        "lastSampleKey": "2026-11-27T18:21:15.240Z|tests__grade-panel-order.js.2.1795803668274.log"
       }
     },
     "tests/grading-value-entry.js": {
       "mac": {
-        "medianSeconds": 6.6370000000000005,
-        "lastSeconds": 6.972,
-        "sampleCount": 2,
+        "medianSeconds": 6.438,
+        "lastSeconds": 6.438,
+        "sampleCount": 3,
         "sampleSeconds": [
           6.302,
-          6.972
+          6.972,
+          6.438
         ],
-        "revision": "74286a5487f8af06bb6a47371158a961fb7439a2",
-        "date": "2026-11-26",
+        "revision": "c97690cc9f4dba78760310d42109e19dc10d1bdc",
+        "date": "2026-11-27",
         "exitCode": 0,
         "source": "release runner history (complete attempts, including failures)",
-        "lastSampleKey": "2026-11-26T05:26:25.088Z|tests__grading-value-entry.js.1.1795675887801.log"
+        "lastSampleKey": "2026-11-27T18:50:37.908Z|tests__grading-value-entry.js.1.1795805431469.log"
+      }
+    },
+    "tests/grain-large-photo-parity.js": {
+      "mac": {
+        "medianSeconds": 101.747,
+        "lastSeconds": 101.747,
+        "sampleCount": 1,
+        "sampleSeconds": [
+          101.747
+        ],
+        "revision": "c97690cc9f4dba78760310d42109e19dc10d1bdc",
+        "date": "2026-11-27",
+        "exitCode": 0,
+        "source": "release runner history (complete attempts, including failures)",
+        "lastSampleKey": "2026-11-27T18:46:26.512Z|tests__grain-large-photo-parity.js.1.1795805084765.log"
       }
     },
     "tests/grain-parity.js": {
       "mac": {
-        "medianSeconds": 193.79399999999998,
-        "lastSeconds": 197.079,
-        "sampleCount": 2,
+        "medianSeconds": 190.509,
+        "lastSeconds": 190.354,
+        "sampleCount": 3,
         "sampleSeconds": [
           190.509,
-          197.079
+          197.079,
+          190.354
         ],
-        "revision": "74286a5487f8af06bb6a47371158a961fb7439a2",
-        "date": "2026-11-26",
+        "revision": "c97690cc9f4dba78760310d42109e19dc10d1bdc",
+        "date": "2026-11-27",
         "exitCode": 0,
         "source": "release runner history (complete attempts, including failures)",
-        "lastSampleKey": "2026-11-26T05:26:25.088Z|tests__grain-parity.js.1.1795675901725.log"
+        "lastSampleKey": "2026-11-27T18:53:54.714Z|tests__grain-parity.js.1.1795805444360.log"
       }
     },
     "tests/grain-sampling.js": {
       "mac": {
-        "medianSeconds": 3.6689999999999996,
-        "lastSeconds": 3.538,
-        "sampleCount": 2,
+        "medianSeconds": 3.538,
+        "lastSeconds": 3.288,
+        "sampleCount": 3,
         "sampleSeconds": [
           3.8,
-          3.538
+          3.538,
+          3.288
         ],
-        "revision": "74286a5487f8af06bb6a47371158a961fb7439a2",
-        "date": "2026-11-26",
+        "revision": "c97690cc9f4dba78760310d42109e19dc10d1bdc",
+        "date": "2026-11-27",
         "exitCode": 0,
         "source": "release runner history (complete attempts, including failures)",
-        "lastSampleKey": "2026-11-26T05:26:25.088Z|tests__grain-sampling.js.1.1795675894817.log"
+        "lastSampleKey": "2026-11-27T18:50:41.230Z|tests__grain-sampling.js.1.1795805437942.log"
       }
     },
     "tests/hdr-ceiling-delivery.js": {
       "mac": {
-        "medianSeconds": 85.605,
-        "lastSeconds": 77.1,
-        "sampleCount": 3,
+        "medianSeconds": 81.35249999999999,
+        "lastSeconds": 75.036,
+        "sampleCount": 4,
         "sampleSeconds": [
           97.83,
           85.605,
-          77.1
+          77.1,
+          75.036
         ],
-        "revision": "74286a5487f8af06bb6a47371158a961fb7439a2",
-        "date": "2026-11-26",
+        "revision": "c97690cc9f4dba78760310d42109e19dc10d1bdc",
+        "date": "2026-11-27",
         "exitCode": 0,
         "source": "release runner history (complete attempts, including failures)",
-        "lastSampleKey": "2026-11-26T05:26:25.088Z|tests__hdr-ceiling-delivery.js.1.1795671124611.log"
+        "lastSampleKey": "2026-11-27T18:23:04.985Z|tests__hdr-ceiling-delivery.js.1.1795803709949.log"
       }
     },
     "tests/highlight-attenuate-parity.js": {
       "mac": {
-        "medianSeconds": 23.828,
-        "lastSeconds": 24.066,
-        "sampleCount": 2,
+        "medianSeconds": 23.599,
+        "lastSeconds": 23.599,
+        "sampleCount": 3,
         "sampleSeconds": [
           23.59,
-          24.066
+          24.066,
+          23.599
         ],
-        "revision": "74286a5487f8af06bb6a47371158a961fb7439a2",
-        "date": "2026-11-26",
+        "revision": "c97690cc9f4dba78760310d42109e19dc10d1bdc",
+        "date": "2026-11-27",
         "exitCode": 0,
         "source": "release runner history (complete attempts, including failures)",
-        "lastSampleKey": "2026-11-26T05:26:25.088Z|tests__highlight-attenuate-parity.js.1.1795675852889.log"
+        "lastSampleKey": "2026-11-27T18:50:21.598Z|tests__highlight-attenuate-parity.js.1.1795805397999.log"
       }
     },
     "tests/highlight-delivery-floor.js": {
       "mac": {
-        "medianSeconds": 9.466000000000001,
-        "lastSeconds": 9.972,
-        "sampleCount": 2,
+        "medianSeconds": 9.972,
+        "lastSeconds": 9.977,
+        "sampleCount": 3,
         "sampleSeconds": [
           8.96,
-          9.972
+          9.972,
+          9.977
         ],
-        "revision": "74286a5487f8af06bb6a47371158a961fb7439a2",
-        "date": "2026-11-26",
+        "revision": "c97690cc9f4dba78760310d42109e19dc10d1bdc",
+        "date": "2026-11-27",
         "exitCode": 0,
         "source": "release runner history (complete attempts, including failures)",
-        "lastSampleKey": "2026-11-26T05:26:25.088Z|tests__highlight-delivery-floor.js.1.1795676377870.log"
+        "lastSampleKey": "2026-11-27T18:57:00.104Z|tests__highlight-delivery-floor.js.1.1795805810126.log"
       }
     },
     "tests/hsl-integration.js": {
       "mac": {
-        "medianSeconds": 7.5465,
-        "lastSeconds": 7.597,
-        "sampleCount": 2,
+        "medianSeconds": 7.597,
+        "lastSeconds": 8.28,
+        "sampleCount": 3,
         "sampleSeconds": [
           7.496,
-          7.597
+          7.597,
+          8.28
         ],
-        "revision": "74286a5487f8af06bb6a47371158a961fb7439a2",
-        "date": "2026-11-26",
+        "revision": "c97690cc9f4dba78760310d42109e19dc10d1bdc",
+        "date": "2026-11-27",
         "exitCode": 0,
         "source": "release runner history (complete attempts, including failures)",
-        "lastSampleKey": "2026-11-26T05:26:25.088Z|tests__hsl-integration.js.1.1795679507557.log"
+        "lastSampleKey": "2026-11-27T19:23:13.374Z|tests__hsl-integration.js.1.1795807385093.log"
       }
     },
     "tests/hsl-overlay-review.js": {
       "mac": {
-        "medianSeconds": 17.541,
-        "lastSeconds": 19.166,
-        "sampleCount": 3,
+        "medianSeconds": 18.3535,
+        "lastSeconds": 21.086,
+        "sampleCount": 4,
         "sampleSeconds": [
           17.123,
           17.541,
-          19.166
+          19.166,
+          21.086
         ],
-        "revision": "74286a5487f8af06bb6a47371158a961fb7439a2",
-        "date": "2026-11-26",
+        "revision": "c97690cc9f4dba78760310d42109e19dc10d1bdc",
+        "date": "2026-11-27",
         "exitCode": 0,
         "source": "release runner history (complete attempts, including failures)",
-        "lastSampleKey": "2026-11-26T05:26:25.088Z|tests__hsl-overlay-review.js.1.1795671950242.log"
+        "lastSampleKey": "2026-11-27T18:34:21.090Z|tests__hsl-overlay-review.js.1.1795804440004.log"
       }
     },
     "tests/hsl-picking.js": {
       "mac": {
-        "medianSeconds": 19.244,
-        "lastSeconds": 19.696,
-        "sampleCount": 2,
+        "medianSeconds": 19.696,
+        "lastSeconds": 24.244,
+        "sampleCount": 3,
         "sampleSeconds": [
           18.792,
-          19.696
+          19.696,
+          24.244
         ],
-        "revision": "74286a5487f8af06bb6a47371158a961fb7439a2",
-        "date": "2026-11-26",
+        "revision": "c97690cc9f4dba78760310d42109e19dc10d1bdc",
+        "date": "2026-11-27",
         "exitCode": 0,
         "source": "release runner history (complete attempts, including failures)",
-        "lastSampleKey": "2026-11-26T05:26:25.088Z|tests__hsl-picking.js.1.1795671969447.log"
+        "lastSampleKey": "2026-11-27T18:34:45.367Z|tests__hsl-picking.js.1.1795804461124.log"
       }
     },
     "tests/hsl-selection-delivery.js": {
       "mac": {
-        "medianSeconds": 507.25750000000005,
-        "lastSeconds": 473.373,
-        "sampleCount": 4,
+        "medianSeconds": 541.142,
+        "lastSeconds": 543.595,
+        "sampleCount": 5,
         "sampleSeconds": [
           541.142,
           720.568,
           168.733,
-          473.373
+          473.373,
+          543.595
         ],
-        "revision": "74286a5487f8af06bb6a47371158a961fb7439a2",
-        "date": "2026-11-26",
-        "exitCode": 1,
+        "revision": "c97690cc9f4dba78760310d42109e19dc10d1bdc",
+        "date": "2026-11-27",
+        "exitCode": 0,
         "source": "release runner history (complete attempts, including failures)",
-        "lastSampleKey": "2026-11-26T05:26:25.088Z|tests__hsl-selection-delivery.js.2.1795671450581.log"
+        "lastSampleKey": "2026-11-27T18:33:29.992Z|tests__hsl-selection-delivery.js.1.1795803866397.log"
       },
       "win": {
         "medianSeconds": 824.339,
@@ -713,494 +773,528 @@
     },
     "tests/hsl-selection-engine.js": {
       "mac": {
-        "medianSeconds": 32.082,
-        "lastSeconds": 31.779,
-        "sampleCount": 3,
+        "medianSeconds": 32.1235,
+        "lastSeconds": 33.897,
+        "sampleCount": 4,
         "sampleSeconds": [
           32.165,
           32.082,
-          31.779
+          31.779,
+          33.897
         ],
-        "revision": "74286a5487f8af06bb6a47371158a961fb7439a2",
-        "date": "2026-11-26",
+        "revision": "c97690cc9f4dba78760310d42109e19dc10d1bdc",
+        "date": "2026-11-27",
         "exitCode": 0,
         "source": "release runner history (complete attempts, including failures)",
-        "lastSampleKey": "2026-11-26T05:26:25.088Z|tests__hsl-selection-engine.js.1.1795671249986.log"
+        "lastSampleKey": "2026-11-27T18:24:26.367Z|tests__hsl-selection-engine.js.1.1795803832470.log"
       }
     },
     "tests/hue-mask-delivery.js": {
       "mac": {
-        "medianSeconds": 6.528,
-        "lastSeconds": 7.077,
-        "sampleCount": 3,
+        "medianSeconds": 6.8025,
+        "lastSeconds": 8.93,
+        "sampleCount": 4,
         "sampleSeconds": [
           5.656,
           6.528,
-          7.077
+          7.077,
+          8.93
         ],
-        "revision": "74286a5487f8af06bb6a47371158a961fb7439a2",
-        "date": "2026-11-26",
+        "revision": "c97690cc9f4dba78760310d42109e19dc10d1bdc",
+        "date": "2026-11-27",
         "exitCode": 0,
         "source": "release runner history (complete attempts, including failures)",
-        "lastSampleKey": "2026-11-26T05:26:25.088Z|tests__hue-mask-delivery.js.1.1795671989181.log"
+        "lastSampleKey": "2026-11-27T18:34:54.343Z|tests__hue-mask-delivery.js.1.1795804485413.log"
       }
     },
     "tests/jpegxl-high-fidelity.js": {
       "mac": {
-        "medianSeconds": 20.131500000000003,
-        "lastSeconds": 20.175,
-        "sampleCount": 2,
+        "medianSeconds": 20.088,
+        "lastSeconds": 18.867,
+        "sampleCount": 3,
         "sampleSeconds": [
           20.088,
-          20.175
+          20.175,
+          18.867
         ],
-        "revision": "74286a5487f8af06bb6a47371158a961fb7439a2",
-        "date": "2026-11-26",
+        "revision": "c97690cc9f4dba78760310d42109e19dc10d1bdc",
+        "date": "2026-11-27",
         "exitCode": 0,
         "source": "release runner history (complete attempts, including failures)",
-        "lastSampleKey": "2026-11-26T05:26:25.088Z|tests__jpegxl-high-fidelity.js.1.1795670971751.log"
+        "lastSampleKey": "2026-11-27T18:21:00.979Z|tests__jpegxl-high-fidelity.js.1.1795803642112.log"
       }
     },
     "tests/jxl-source-colour.js": {
       "mac": {
-        "medianSeconds": 2.9675000000000002,
-        "lastSeconds": 3.141,
-        "sampleCount": 4,
+        "medianSeconds": 3.1855,
+        "lastSeconds": 3.284,
+        "sampleCount": 6,
         "sampleSeconds": [
           2.567,
           2.794,
           3.23,
-          3.141
+          3.141,
+          3.396,
+          3.284
         ],
-        "revision": "74286a5487f8af06bb6a47371158a961fb7439a2",
-        "date": "2026-11-26",
+        "revision": "c97690cc9f4dba78760310d42109e19dc10d1bdc",
+        "date": "2026-11-27",
         "exitCode": 1,
         "source": "release runner history (complete attempts, including failures)",
-        "lastSampleKey": "2026-11-26T05:26:25.088Z|tests__jxl-source-colour.js.2.1795679226350.log"
+        "lastSampleKey": "2026-11-27T19:18:12.965Z|tests__jxl-source-colour.js.2.1795807089681.log"
       }
     },
     "tests/lens-filter-quick-parity.js": {
       "mac": {
-        "medianSeconds": 45.831,
-        "lastSeconds": 47.261,
-        "sampleCount": 2,
+        "medianSeconds": 45.188,
+        "lastSeconds": 45.188,
+        "sampleCount": 3,
         "sampleSeconds": [
           44.401,
-          47.261
+          47.261,
+          45.188
         ],
-        "revision": "74286a5487f8af06bb6a47371158a961fb7439a2",
-        "date": "2026-11-26",
+        "revision": "c97690cc9f4dba78760310d42109e19dc10d1bdc",
+        "date": "2026-11-27",
         "exitCode": 0,
         "source": "release runner history (complete attempts, including failures)",
-        "lastSampleKey": "2026-11-26T05:26:25.088Z|tests__lens-filter-quick-parity.js.1.1795676098845.log"
+        "lastSampleKey": "2026-11-27T18:54:39.937Z|tests__lens-filter-quick-parity.js.1.1795805634749.log"
       }
     },
     "tests/library-background-activity.js": {
       "mac": {
-        "medianSeconds": 7.6925,
-        "lastSeconds": 7.398,
-        "sampleCount": 2,
+        "medianSeconds": 7.398,
+        "lastSeconds": 7.264,
+        "sampleCount": 3,
         "sampleSeconds": [
           7.987,
-          7.398
+          7.398,
+          7.264
         ],
-        "revision": "74286a5487f8af06bb6a47371158a961fb7439a2",
-        "date": "2026-11-26",
+        "revision": "c97690cc9f4dba78760310d42109e19dc10d1bdc",
+        "date": "2026-11-27",
         "exitCode": 0,
         "source": "release runner history (complete attempts, including failures)",
-        "lastSampleKey": "2026-11-26T05:26:25.088Z|tests__library-background-activity.js.1.1795676152481.log"
+        "lastSampleKey": "2026-11-27T18:54:53.282Z|tests__library-background-activity.js.1.1795805686018.log"
       }
     },
     "tests/library-codec-native.js": {
       "mac": {
-        "medianSeconds": 65.25649999999999,
-        "lastSeconds": 50.931,
-        "sampleCount": 2,
+        "medianSeconds": 53.442,
+        "lastSeconds": 53.442,
+        "sampleCount": 3,
         "sampleSeconds": [
           79.582,
-          50.931
+          50.931,
+          53.442
         ],
-        "revision": "74286a5487f8af06bb6a47371158a961fb7439a2",
-        "date": "2026-11-26",
+        "revision": "c97690cc9f4dba78760310d42109e19dc10d1bdc",
+        "date": "2026-11-27",
         "exitCode": 0,
         "source": "release runner history (complete attempts, including failures)",
-        "lastSampleKey": "2026-11-26T05:26:25.088Z|tests__library-codec-native.js.1.1795679332772.log"
+        "lastSampleKey": "2026-11-27T19:20:54.820Z|tests__library-codec-native.js.1.1795807201378.log"
       }
     },
     "tests/library-codec-source.js": {
       "mac": {
-        "medianSeconds": 101.93100000000001,
-        "lastSeconds": 103.209,
-        "sampleCount": 2,
+        "medianSeconds": 103.209,
+        "lastSeconds": 108.335,
+        "sampleCount": 3,
         "sampleSeconds": [
           100.653,
-          103.209
+          103.209,
+          108.335
         ],
-        "revision": "74286a5487f8af06bb6a47371158a961fb7439a2",
-        "date": "2026-11-26",
+        "revision": "c97690cc9f4dba78760310d42109e19dc10d1bdc",
+        "date": "2026-11-27",
         "exitCode": 0,
         "source": "release runner history (complete attempts, including failures)",
-        "lastSampleKey": "2026-11-26T05:26:25.088Z|tests__library-codec-source.js.1.1795679229528.log"
+        "lastSampleKey": "2026-11-27T19:20:01.338Z|tests__library-codec-source.js.1.1795807093003.log"
       }
     },
     "tests/library-dng-warp.js": {
       "mac": {
-        "medianSeconds": 193.3315,
-        "lastSeconds": 111.563,
-        "sampleCount": 2,
+        "medianSeconds": 112.674,
+        "lastSeconds": 112.674,
+        "sampleCount": 3,
         "sampleSeconds": [
           275.1,
-          111.563
+          111.563,
+          112.674
         ],
-        "revision": "74286a5487f8af06bb6a47371158a961fb7439a2",
-        "date": "2026-11-26",
+        "revision": "c97690cc9f4dba78760310d42109e19dc10d1bdc",
+        "date": "2026-11-27",
         "exitCode": 0,
         "source": "release runner history (complete attempts, including failures)",
-        "lastSampleKey": "2026-11-26T05:26:25.088Z|tests__library-dng-warp.js.1.1795678920092.log"
+        "lastSampleKey": "2026-11-27T19:14:48.454Z|tests__library-dng-warp.js.1.1795806775779.log"
       }
     },
     "tests/library-export-live-tiles.js": {
       "mac": {
-        "medianSeconds": 41.9645,
-        "lastSeconds": 39.519,
-        "sampleCount": 4,
+        "medianSeconds": 38.3665,
+        "lastSeconds": 16.162,
+        "sampleCount": 6,
         "sampleSeconds": [
           44.41,
           45.055,
           37.214,
-          39.519
+          39.519,
+          16.538,
+          16.162
         ],
-        "revision": "74286a5487f8af06bb6a47371158a961fb7439a2",
-        "date": "2026-11-26",
+        "revision": "c97690cc9f4dba78760310d42109e19dc10d1bdc",
+        "date": "2026-11-27",
         "exitCode": 1,
         "source": "release runner history (complete attempts, including failures)",
-        "lastSampleKey": "2026-11-26T05:26:25.088Z|tests__library-export-live-tiles.js.2.1795678848051.log"
+        "lastSampleKey": "2026-11-27T19:12:22.470Z|tests__library-export-live-tiles.js.2.1795806726308.log"
       }
     },
     "tests/library-export-menu.js": {
       "mac": {
-        "medianSeconds": 4.639,
-        "lastSeconds": 4.863,
-        "sampleCount": 2,
+        "medianSeconds": 4.827,
+        "lastSeconds": 4.827,
+        "sampleCount": 3,
         "sampleSeconds": [
           4.415,
-          4.863
+          4.863,
+          4.827
         ],
-        "revision": "74286a5487f8af06bb6a47371158a961fb7439a2",
-        "date": "2026-11-26",
+        "revision": "c97690cc9f4dba78760310d42109e19dc10d1bdc",
+        "date": "2026-11-27",
         "exitCode": 0,
         "source": "release runner history (complete attempts, including failures)",
-        "lastSampleKey": "2026-11-26T05:26:25.088Z|tests__library-export-menu.js.1.1795677039745.log"
+        "lastSampleKey": "2026-11-27T19:05:01.736Z|tests__library-export-menu.js.1.1795806296909.log"
       }
     },
     "tests/library-exposure-culling.js": {
       "mac": {
-        "medianSeconds": 2.6635,
-        "lastSeconds": 2.868,
-        "sampleCount": 2,
+        "medianSeconds": 2.618,
+        "lastSeconds": 2.618,
+        "sampleCount": 3,
         "sampleSeconds": [
           2.459,
-          2.868
+          2.868,
+          2.618
         ],
-        "revision": "74286a5487f8af06bb6a47371158a961fb7439a2",
-        "date": "2026-11-26",
+        "revision": "c97690cc9f4dba78760310d42109e19dc10d1bdc",
+        "date": "2026-11-27",
         "exitCode": 0,
         "source": "release runner history (complete attempts, including failures)",
-        "lastSampleKey": "2026-11-26T05:26:25.088Z|tests__library-exposure-culling.js.1.1795676159918.log"
+        "lastSampleKey": "2026-11-27T18:54:55.931Z|tests__library-exposure-culling.js.1.1795805693313.log"
       }
     },
     "tests/library-filmstrip-wheel.js": {
       "mac": {
-        "medianSeconds": 3.136,
-        "lastSeconds": 3.285,
-        "sampleCount": 2,
+        "medianSeconds": 3.285,
+        "lastSeconds": 3.361,
+        "sampleCount": 3,
         "sampleSeconds": [
           2.987,
-          3.285
+          3.285,
+          3.361
         ],
-        "revision": "74286a5487f8af06bb6a47371158a961fb7439a2",
-        "date": "2026-11-26",
+        "revision": "c97690cc9f4dba78760310d42109e19dc10d1bdc",
+        "date": "2026-11-27",
         "exitCode": 0,
         "source": "release runner history (complete attempts, including failures)",
-        "lastSampleKey": "2026-11-26T05:26:25.088Z|tests__library-filmstrip-wheel.js.1.1795677036421.log"
+        "lastSampleKey": "2026-11-27T19:04:56.872Z|tests__library-filmstrip-wheel.js.1.1795806293511.log"
       }
     },
     "tests/library-focus-camera.js": {
       "mac": {
-        "medianSeconds": 2.7365,
-        "lastSeconds": 2.916,
-        "sampleCount": 2,
+        "medianSeconds": 2.767,
+        "lastSeconds": 2.767,
+        "sampleCount": 3,
         "sampleSeconds": [
           2.557,
-          2.916
+          2.916,
+          2.767
         ],
-        "revision": "74286a5487f8af06bb6a47371158a961fb7439a2",
-        "date": "2026-11-26",
+        "revision": "c97690cc9f4dba78760310d42109e19dc10d1bdc",
+        "date": "2026-11-27",
         "exitCode": 0,
         "source": "release runner history (complete attempts, including failures)",
-        "lastSampleKey": "2026-11-26T05:26:25.088Z|tests__library-focus-camera.js.1.1795676162849.log"
+        "lastSampleKey": "2026-11-27T18:54:58.732Z|tests__library-focus-camera.js.1.1795805695965.log"
       }
     },
     "tests/library-gpu-raw-paste.js": {
       "mac": {
-        "medianSeconds": 15.362,
-        "lastSeconds": 18.276,
-        "sampleCount": 2,
+        "medianSeconds": 17.83,
+        "lastSeconds": 17.83,
+        "sampleCount": 3,
         "sampleSeconds": [
           12.448,
-          18.276
+          18.276,
+          17.83
         ],
-        "revision": "74286a5487f8af06bb6a47371158a961fb7439a2",
-        "date": "2026-11-26",
+        "revision": "c97690cc9f4dba78760310d42109e19dc10d1bdc",
+        "date": "2026-11-27",
         "exitCode": 0,
         "source": "release runner history (complete attempts, including failures)",
-        "lastSampleKey": "2026-11-26T05:26:25.088Z|tests__library-gpu-raw-paste.js.1.1795677142059.log"
+        "lastSampleKey": "2026-11-27T19:07:47.834Z|tests__library-gpu-raw-paste.js.1.1795806450004.log"
       }
     },
     "tests/library-gpu-raw-single.js": {
       "mac": {
-        "medianSeconds": 290.303,
-        "lastSeconds": 283.463,
-        "sampleCount": 3,
+        "medianSeconds": 283.463,
+        "lastSeconds": 51.802,
+        "sampleCount": 5,
         "sampleSeconds": [
           300,
           290.303,
-          283.463
+          283.463,
+          52.348,
+          51.802
         ],
-        "revision": "74286a5487f8af06bb6a47371158a961fb7439a2",
-        "date": "2026-11-26",
+        "revision": "c97690cc9f4dba78760310d42109e19dc10d1bdc",
+        "date": "2026-11-27",
         "exitCode": 1,
         "source": "release runner history (complete attempts, including failures)",
-        "lastSampleKey": "2026-11-26T05:26:25.088Z|tests__library-gpu-raw-single.js.2.1795677450708.log"
+        "lastSampleKey": "2026-11-27T19:09:32.053Z|tests__library-gpu-raw-single.js.2.1795806520251.log"
       }
     },
     "tests/library-gpu-raw.js": {
       "mac": {
-        "medianSeconds": 39.844,
-        "lastSeconds": 48.183,
-        "sampleCount": 2,
+        "medianSeconds": 45.387,
+        "lastSeconds": 45.387,
+        "sampleCount": 3,
         "sampleSeconds": [
           31.505,
-          48.183
+          48.183,
+          45.387
         ],
-        "revision": "74286a5487f8af06bb6a47371158a961fb7439a2",
-        "date": "2026-11-26",
+        "revision": "c97690cc9f4dba78760310d42109e19dc10d1bdc",
+        "date": "2026-11-27",
         "exitCode": 0,
         "source": "release runner history (complete attempts, including failures)",
-        "lastSampleKey": "2026-11-26T05:26:25.088Z|tests__library-gpu-raw.js.1.1795676957972.log"
+        "lastSampleKey": "2026-11-27T19:04:23.771Z|tests__library-gpu-raw.js.1.1795806218384.log"
       }
     },
     "tests/library-gpu-recovery.js": {
       "mac": {
-        "medianSeconds": 5.1135,
-        "lastSeconds": 5.533,
-        "sampleCount": 2,
+        "medianSeconds": 5.533,
+        "lastSeconds": 5.736,
+        "sampleCount": 3,
         "sampleSeconds": [
           4.694,
-          5.533
+          5.533,
+          5.736
         ],
-        "revision": "74286a5487f8af06bb6a47371158a961fb7439a2",
-        "date": "2026-11-26",
+        "revision": "c97690cc9f4dba78760310d42109e19dc10d1bdc",
+        "date": "2026-11-27",
         "exitCode": 0,
         "source": "release runner history (complete attempts, including failures)",
-        "lastSampleKey": "2026-11-26T05:26:25.088Z|tests__library-gpu-recovery.js.1.1795678365233.log"
+        "lastSampleKey": "2026-11-27T19:10:45.619Z|tests__library-gpu-recovery.js.1.1795806639883.log"
       }
     },
     "tests/library-grade-paste.js": {
       "mac": {
-        "medianSeconds": 13.716000000000001,
-        "lastSeconds": 14.032,
-        "sampleCount": 2,
+        "medianSeconds": 13.83,
+        "lastSeconds": 13.83,
+        "sampleCount": 3,
         "sampleSeconds": [
           13.4,
-          14.032
+          14.032,
+          13.83
         ],
-        "revision": "74286a5487f8af06bb6a47371158a961fb7439a2",
-        "date": "2026-11-26",
+        "revision": "c97690cc9f4dba78760310d42109e19dc10d1bdc",
+        "date": "2026-11-27",
         "exitCode": 0,
         "source": "release runner history (complete attempts, including failures)",
-        "lastSampleKey": "2026-11-26T05:26:25.088Z|tests__library-grade-paste.js.1.1795677006196.log"
+        "lastSampleKey": "2026-11-27T19:04:37.643Z|tests__library-grade-paste.js.1.1795806263813.log"
       }
     },
     "tests/library-grade-saving.js": {
       "mac": {
-        "medianSeconds": 17.167,
-        "lastSeconds": 42.824,
-        "sampleCount": 3,
+        "medianSeconds": 16.9895,
+        "lastSeconds": 13.641,
+        "sampleCount": 4,
         "sampleSeconds": [
           17.167,
           16.812,
-          42.824
+          42.824,
+          13.641
         ],
-        "revision": "74286a5487f8af06bb6a47371158a961fb7439a2",
-        "date": "2026-11-26",
+        "revision": "c97690cc9f4dba78760310d42109e19dc10d1bdc",
+        "date": "2026-11-27",
         "exitCode": 0,
         "source": "release runner history (complete attempts, including failures)",
-        "lastSampleKey": "2026-11-26T05:26:25.088Z|tests__library-grade-saving.js.1.1795676165809.log"
+        "lastSampleKey": "2026-11-27T18:55:12.408Z|tests__library-grade-saving.js.1.1795805698767.log"
       }
     },
     "tests/library-grid-stability.js": {
       "mac": {
-        "medianSeconds": 1.659,
-        "lastSeconds": 1.676,
-        "sampleCount": 3,
+        "medianSeconds": 1.6035,
+        "lastSeconds": 1.215,
+        "sampleCount": 4,
         "sampleSeconds": [
           1.548,
           1.659,
-          1.676
+          1.676,
+          1.215
         ],
-        "revision": "74286a5487f8af06bb6a47371158a961fb7439a2",
-        "date": "2026-11-26",
+        "revision": "c97690cc9f4dba78760310d42109e19dc10d1bdc",
+        "date": "2026-11-27",
         "exitCode": 0,
         "source": "release runner history (complete attempts, including failures)",
-        "lastSampleKey": "2026-11-26T05:26:25.088Z|tests__library-grid-stability.js.1.1795671227626.log"
+        "lastSampleKey": "2026-11-27T18:23:31.810Z|tests__library-grid-stability.js.1.1795803810595.log"
       }
     },
     "tests/library-iso-source.js": {
       "mac": {
-        "medianSeconds": 30.616999999999997,
-        "lastSeconds": 30.473,
-        "sampleCount": 2,
+        "medianSeconds": 30.761,
+        "lastSeconds": 30.845,
+        "sampleCount": 3,
         "sampleSeconds": [
           30.761,
-          30.473
+          30.473,
+          30.845
         ],
-        "revision": "74286a5487f8af06bb6a47371158a961fb7439a2",
-        "date": "2026-11-26",
+        "revision": "c97690cc9f4dba78760310d42109e19dc10d1bdc",
+        "date": "2026-11-27",
         "exitCode": 0,
         "source": "release runner history (complete attempts, including failures)",
-        "lastSampleKey": "2026-11-26T05:26:25.088Z|tests__library-iso-source.js.1.1795678887606.log"
+        "lastSampleKey": "2026-11-27T19:12:53.356Z|tests__library-iso-source.js.1.1795806742511.log"
       }
     },
     "tests/library-live-grid.js": {
       "mac": {
-        "medianSeconds": 126.88,
-        "lastSeconds": 21.954,
-        "sampleCount": 3,
+        "medianSeconds": 75.628,
+        "lastSeconds": 24.376,
+        "sampleCount": 4,
         "sampleSeconds": [
           128.3,
           126.88,
-          21.954
+          21.954,
+          24.376
         ],
-        "revision": "74286a5487f8af06bb6a47371158a961fb7439a2",
-        "date": "2026-11-26",
+        "revision": "c97690cc9f4dba78760310d42109e19dc10d1bdc",
+        "date": "2026-11-27",
         "exitCode": 0,
         "source": "release runner history (complete attempts, including failures)",
-        "lastSampleKey": "2026-11-26T05:26:25.088Z|tests__library-live-grid.js.1.1795678343246.log"
+        "lastSampleKey": "2026-11-27T19:10:39.846Z|tests__library-live-grid.js.1.1795806615470.log"
       }
     },
     "tests/library-live-native.js": {
       "mac": {
-        "medianSeconds": 204.367,
-        "lastSeconds": 204.367,
-        "sampleCount": 3,
+        "medianSeconds": 118.691,
+        "lastSeconds": 33.015,
+        "sampleCount": 4,
         "sampleSeconds": [
           23.711,
           206.23,
-          204.367
+          204.367,
+          33.015
         ],
-        "revision": "74286a5487f8af06bb6a47371158a961fb7439a2",
-        "date": "2026-11-26",
-        "exitCode": 1,
+        "revision": "c97690cc9f4dba78760310d42109e19dc10d1bdc",
+        "date": "2026-11-27",
+        "exitCode": 0,
         "source": "release runner history (complete attempts, including failures)",
-        "lastSampleKey": "2026-11-26T05:26:25.088Z|tests__library-live-native.js.2.1795678606405.log"
+        "lastSampleKey": "2026-11-27T19:11:49.688Z|tests__library-live-native.js.1.1795806676673.log"
       }
     },
     "tests/library-live-picture.js": {
       "mac": {
-        "medianSeconds": 2.58,
-        "lastSeconds": 2.648,
-        "sampleCount": 2,
+        "medianSeconds": 2.648,
+        "lastSeconds": 2.805,
+        "sampleCount": 3,
         "sampleSeconds": [
           2.512,
-          2.648
+          2.648,
+          2.805
         ],
-        "revision": "74286a5487f8af06bb6a47371158a961fb7439a2",
-        "date": "2026-11-26",
+        "revision": "c97690cc9f4dba78760310d42109e19dc10d1bdc",
+        "date": "2026-11-27",
         "exitCode": 0,
         "source": "release runner history (complete attempts, including failures)",
-        "lastSampleKey": "2026-11-26T05:26:25.088Z|tests__library-live-picture.js.1.1795678370801.log"
+        "lastSampleKey": "2026-11-27T19:10:48.459Z|tests__library-live-picture.js.1.1795806645654.log"
       }
     },
     "tests/library-native-direct.js": {
       "mac": {
-        "medianSeconds": 25.6705,
-        "lastSeconds": 26.619,
-        "sampleCount": 2,
+        "medianSeconds": 26.619,
+        "lastSeconds": 28.136,
+        "sampleCount": 3,
         "sampleSeconds": [
           24.722,
-          26.619
+          26.619,
+          28.136
         ],
-        "revision": "74286a5487f8af06bb6a47371158a961fb7439a2",
-        "date": "2026-11-26",
+        "revision": "c97690cc9f4dba78760310d42109e19dc10d1bdc",
+        "date": "2026-11-27",
         "exitCode": 0,
         "source": "release runner history (complete attempts, including failures)",
-        "lastSampleKey": "2026-11-26T05:26:25.088Z|tests__library-native-direct.js.1.1795678373483.log"
+        "lastSampleKey": "2026-11-27T19:11:16.633Z|tests__library-native-direct.js.1.1795806648497.log"
       }
     },
     "tests/library-picture-errors.js": {
       "mac": {
-        "medianSeconds": 6.17,
-        "lastSeconds": 5.675,
-        "sampleCount": 2,
+        "medianSeconds": 6.665,
+        "lastSeconds": 7.078,
+        "sampleCount": 3,
         "sampleSeconds": [
           6.665,
-          5.675
+          5.675,
+          7.078
         ],
-        "revision": "74286a5487f8af06bb6a47371158a961fb7439a2",
-        "date": "2026-11-26",
+        "revision": "c97690cc9f4dba78760310d42109e19dc10d1bdc",
+        "date": "2026-11-27",
         "exitCode": 0,
         "source": "release runner history (complete attempts, including failures)",
-        "lastSampleKey": "2026-11-26T05:26:25.088Z|tests__library-picture-errors.js.1.1795678337538.log"
+        "lastSampleKey": "2026-11-27T19:10:15.431Z|tests__library-picture-errors.js.1.1795806608353.log"
       }
     },
     "tests/library-picture-startup.js": {
       "mac": {
-        "medianSeconds": 3.1275,
-        "lastSeconds": 3.308,
-        "sampleCount": 2,
+        "medianSeconds": 3.277,
+        "lastSeconds": 3.277,
+        "sampleCount": 3,
         "sampleSeconds": [
           2.947,
-          3.308
+          3.308,
+          3.277
         ],
-        "revision": "74286a5487f8af06bb6a47371158a961fb7439a2",
-        "date": "2026-11-26",
+        "revision": "c97690cc9f4dba78760310d42109e19dc10d1bdc",
+        "date": "2026-11-27",
         "exitCode": 0,
         "source": "release runner history (complete attempts, including failures)",
-        "lastSampleKey": "2026-11-26T05:26:25.088Z|tests__library-picture-startup.js.1.1795676211701.log"
+        "lastSampleKey": "2026-11-27T18:55:18.702Z|tests__library-picture-startup.js.1.1795805715425.log"
       }
     },
     "tests/library-pipeline-preparation.js": {
       "mac": {
-        "medianSeconds": 2.7800000000000002,
-        "lastSeconds": 2.994,
-        "sampleCount": 2,
+        "medianSeconds": 2.95,
+        "lastSeconds": 2.95,
+        "sampleCount": 3,
         "sampleSeconds": [
           2.566,
-          2.994
+          2.994,
+          2.95
         ],
-        "revision": "74286a5487f8af06bb6a47371158a961fb7439a2",
-        "date": "2026-11-26",
+        "revision": "c97690cc9f4dba78760310d42109e19dc10d1bdc",
+        "date": "2026-11-27",
         "exitCode": 0,
         "source": "release runner history (complete attempts, including failures)",
-        "lastSampleKey": "2026-11-26T05:26:25.088Z|tests__library-pipeline-preparation.js.1.1795676208669.log"
+        "lastSampleKey": "2026-11-27T18:55:15.391Z|tests__library-pipeline-preparation.js.1.1795805712441.log"
       }
     },
     "tests/library-precision-rendition.js": {
       "mac": {
-        "medianSeconds": 33.179,
-        "lastSeconds": 32.699,
-        "sampleCount": 3,
+        "medianSeconds": 33.625,
+        "lastSeconds": 34.765,
+        "sampleCount": 5,
         "sampleSeconds": [
           33.625,
           33.179,
-          32.699
+          32.699,
+          33.887,
+          34.765
         ],
-        "revision": "74286a5487f8af06bb6a47371158a961fb7439a2",
-        "date": "2026-11-26",
+        "revision": "c97690cc9f4dba78760310d42109e19dc10d1bdc",
+        "date": "2026-11-27",
         "exitCode": 1,
         "source": "release runner history (complete attempts, including failures)",
-        "lastSampleKey": "2026-11-26T05:26:25.088Z|tests__library-precision-rendition.js.2.1795679087690.log"
+        "lastSampleKey": "2026-11-27T19:16:20.451Z|tests__library-precision-rendition.js.2.1795806945685.log"
       }
     },
     "tests/library-precision-source.js": {
@@ -1222,195 +1316,207 @@
     },
     "tests/library-raw-overlays.js": {
       "mac": {
-        "medianSeconds": 65.286,
-        "lastSeconds": 70.166,
-        "sampleCount": 2,
+        "medianSeconds": 66.37,
+        "lastSeconds": 66.37,
+        "sampleCount": 3,
         "sampleSeconds": [
           60.406,
-          70.166
+          70.166,
+          66.37
         ],
-        "revision": "74286a5487f8af06bb6a47371158a961fb7439a2",
-        "date": "2026-11-26",
+        "revision": "c97690cc9f4dba78760310d42109e19dc10d1bdc",
+        "date": "2026-11-27",
         "exitCode": 0,
         "source": "release runner history (complete attempts, including failures)",
-        "lastSampleKey": "2026-11-26T05:26:25.088Z|tests__library-raw-overlays.js.1.1795676215048.log"
+        "lastSampleKey": "2026-11-27T18:56:25.115Z|tests__library-raw-overlays.js.1.1795805718745.log"
       }
     },
     "tests/library-rgb-native.js": {
       "mac": {
-        "medianSeconds": 59.176,
-        "lastSeconds": 45.207,
-        "sampleCount": 2,
+        "medianSeconds": 45.363,
+        "lastSeconds": 45.363,
+        "sampleCount": 3,
         "sampleSeconds": [
           73.145,
-          45.207
+          45.207,
+          45.363
         ],
-        "revision": "74286a5487f8af06bb6a47371158a961fb7439a2",
-        "date": "2026-11-26",
+        "revision": "c97690cc9f4dba78760310d42109e19dc10d1bdc",
+        "date": "2026-11-27",
         "exitCode": 0,
         "source": "release runner history (complete attempts, including failures)",
-        "lastSampleKey": "2026-11-26T05:26:25.088Z|tests__library-rgb-native.js.1.1795679177842.log"
+        "lastSampleKey": "2026-11-27T19:18:06.209Z|tests__library-rgb-native.js.1.1795807040846.log"
       }
     },
     "tests/library-rgb-source.js": {
       "mac": {
-        "medianSeconds": 25.124499999999998,
-        "lastSeconds": 22.743,
-        "sampleCount": 2,
+        "medianSeconds": 23.22,
+        "lastSeconds": 23.22,
+        "sampleCount": 3,
         "sampleSeconds": [
           27.506,
-          22.743
+          22.743,
+          23.22
         ],
-        "revision": "74286a5487f8af06bb6a47371158a961fb7439a2",
-        "date": "2026-11-26",
+        "revision": "c97690cc9f4dba78760310d42109e19dc10d1bdc",
+        "date": "2026-11-27",
         "exitCode": 0,
         "source": "release runner history (complete attempts, including failures)",
-        "lastSampleKey": "2026-11-26T05:26:25.088Z|tests__library-rgb-source.js.1.1795679031694.log"
+        "lastSampleKey": "2026-11-27T19:15:11.720Z|tests__library-rgb-source.js.1.1795806888500.log"
       }
     },
     "tests/library-scroll-cache.js": {
       "mac": {
-        "medianSeconds": 3.11,
-        "lastSeconds": 3.037,
-        "sampleCount": 2,
+        "medianSeconds": 3.037,
+        "lastSeconds": 2.799,
+        "sampleCount": 3,
         "sampleSeconds": [
           3.183,
-          3.037
+          3.037,
+          2.799
         ],
-        "revision": "74286a5487f8af06bb6a47371158a961fb7439a2",
-        "date": "2026-11-26",
+        "revision": "c97690cc9f4dba78760310d42109e19dc10d1bdc",
+        "date": "2026-11-27",
         "exitCode": 0,
         "source": "release runner history (complete attempts, including failures)",
-        "lastSampleKey": "2026-11-26T05:26:25.088Z|tests__library-scroll-cache.js.1.1795677734202.log"
+        "lastSampleKey": "2026-11-27T19:09:34.887Z|tests__library-scroll-cache.js.1.1795806572088.log"
       }
     },
     "tests/library-temporary-recovery.js": {
       "mac": {
-        "medianSeconds": 24.948,
-        "lastSeconds": 24.948,
-        "sampleCount": 1,
+        "medianSeconds": 29.168,
+        "lastSeconds": 33.388,
+        "sampleCount": 2,
         "sampleSeconds": [
-          24.948
+          24.948,
+          33.388
         ],
-        "revision": "0f64b37f015588a8cc388bdd27358e4990ab4e4c",
-        "date": "2026-11-25",
+        "revision": "c97690cc9f4dba78760310d42109e19dc10d1bdc",
+        "date": "2026-11-27",
         "exitCode": 0,
         "source": "release runner history (complete attempts, including failures)",
-        "lastSampleKey": "2026-11-25T15:01:15.425Z|tests__library-temporary-recovery.js.1.1795624824767.log"
+        "lastSampleKey": "2026-11-27T19:10:08.311Z|tests__library-temporary-recovery.js.1.1795806574923.log"
       }
     },
     "tests/local-adjustments-interaction.js": {
       "mac": {
-        "medianSeconds": 39.16,
-        "lastSeconds": 39.16,
-        "sampleCount": 3,
+        "medianSeconds": 25.7675,
+        "lastSeconds": 11.264,
+        "sampleCount": 4,
         "sampleSeconds": [
           12.375,
           40.236,
-          39.16
+          39.16,
+          11.264
         ],
-        "revision": "74286a5487f8af06bb6a47371158a961fb7439a2",
-        "date": "2026-11-26",
-        "exitCode": 1,
+        "revision": "c97690cc9f4dba78760310d42109e19dc10d1bdc",
+        "date": "2026-11-27",
+        "exitCode": 0,
         "source": "release runner history (complete attempts, including failures)",
-        "lastSampleKey": "2026-11-26T05:26:25.088Z|tests__local-adjustments-interaction.js.2.1795676325525.log"
+        "lastSampleKey": "2026-11-27T18:56:36.413Z|tests__local-adjustments-interaction.js.1.1795805785149.log"
       }
     },
     "tests/local-crop-anchor-interaction.js": {
       "mac": {
-        "medianSeconds": 6.3294999999999995,
-        "lastSeconds": 6.253,
-        "sampleCount": 2,
+        "medianSeconds": 6.406,
+        "lastSeconds": 6.622,
+        "sampleCount": 3,
         "sampleSeconds": [
           6.406,
-          6.253
+          6.253,
+          6.622
         ],
-        "revision": "74286a5487f8af06bb6a47371158a961fb7439a2",
-        "date": "2026-11-26",
+        "revision": "c97690cc9f4dba78760310d42109e19dc10d1bdc",
+        "date": "2026-11-27",
         "exitCode": 0,
         "source": "release runner history (complete attempts, including failures)",
-        "lastSampleKey": "2026-11-26T05:26:25.088Z|tests__local-crop-anchor-interaction.js.1.1795676364717.log"
+        "lastSampleKey": "2026-11-27T18:56:43.067Z|tests__local-crop-anchor-interaction.js.1.1795805796445.log"
       }
     },
     "tests/local-detail-film-parity.js": {
       "mac": {
-        "medianSeconds": 5.0675,
-        "lastSeconds": 5.482,
-        "sampleCount": 2,
+        "medianSeconds": 5.482,
+        "lastSeconds": 6.095,
+        "sampleCount": 3,
         "sampleSeconds": [
           4.653,
-          5.482
+          5.482,
+          6.095
         ],
-        "revision": "74286a5487f8af06bb6a47371158a961fb7439a2",
-        "date": "2026-11-26",
+        "revision": "c97690cc9f4dba78760310d42109e19dc10d1bdc",
+        "date": "2026-11-27",
         "exitCode": 0,
         "source": "release runner history (complete attempts, including failures)",
-        "lastSampleKey": "2026-11-26T05:26:25.088Z|tests__local-detail-film-parity.js.1.1795674729484.log"
+        "lastSampleKey": "2026-11-27T18:46:53.278Z|tests__local-detail-film-parity.js.1.1795805207183.log"
       }
     },
     "tests/local-sdr-match.js": {
       "mac": {
-        "medianSeconds": 6.67,
-        "lastSeconds": 6.83,
-        "sampleCount": 2,
+        "medianSeconds": 6.83,
+        "lastSeconds": 6.993,
+        "sampleCount": 3,
         "sampleSeconds": [
           6.51,
-          6.83
+          6.83,
+          6.993
         ],
-        "revision": "74286a5487f8af06bb6a47371158a961fb7439a2",
-        "date": "2026-11-26",
+        "revision": "c97690cc9f4dba78760310d42109e19dc10d1bdc",
+        "date": "2026-11-27",
         "exitCode": 0,
         "source": "release runner history (complete attempts, including failures)",
-        "lastSampleKey": "2026-11-26T05:26:25.088Z|tests__local-sdr-match.js.1.1795676371005.log"
+        "lastSampleKey": "2026-11-27T18:56:50.092Z|tests__local-sdr-match.js.1.1795805803098.log"
       }
     },
     "tests/luma-region-reference.js": {
       "mac": {
-        "medianSeconds": 3.2359999999999998,
-        "lastSeconds": 3.159,
-        "sampleCount": 2,
+        "medianSeconds": 3.159,
+        "lastSeconds": 3.147,
+        "sampleCount": 3,
         "sampleSeconds": [
           3.313,
-          3.159
+          3.159,
+          3.147
         ],
-        "revision": "74286a5487f8af06bb6a47371158a961fb7439a2",
-        "date": "2026-11-26",
+        "revision": "c97690cc9f4dba78760310d42109e19dc10d1bdc",
+        "date": "2026-11-27",
         "exitCode": 0,
         "source": "release runner history (complete attempts, including failures)",
-        "lastSampleKey": "2026-11-26T05:26:25.088Z|tests__luma-region-reference.js.1.1795676387881.log"
+        "lastSampleKey": "2026-11-27T18:57:03.283Z|tests__luma-region-reference.js.1.1795805820136.log"
       }
     },
     "tests/mask-raster-reference.js": {
       "mac": {
-        "medianSeconds": 5.3585,
-        "lastSeconds": 5.514,
-        "sampleCount": 2,
+        "medianSeconds": 5.39,
+        "lastSeconds": 5.39,
+        "sampleCount": 3,
         "sampleSeconds": [
           5.203,
-          5.514
+          5.514,
+          5.39
         ],
-        "revision": "74286a5487f8af06bb6a47371158a961fb7439a2",
-        "date": "2026-11-26",
+        "revision": "c97690cc9f4dba78760310d42109e19dc10d1bdc",
+        "date": "2026-11-27",
         "exitCode": 0,
         "source": "release runner history (complete attempts, including failures)",
-        "lastSampleKey": "2026-11-26T05:26:25.088Z|tests__mask-raster-reference.js.1.1795676391092.log"
+        "lastSampleKey": "2026-11-27T18:57:08.706Z|tests__mask-raster-reference.js.1.1795805823316.log"
       }
     },
     "tests/menu-shortcuts.js": {
       "mac": {
-        "medianSeconds": 49.624,
-        "lastSeconds": 49.624,
-        "sampleCount": 3,
+        "medianSeconds": 35.313,
+        "lastSeconds": 21.002,
+        "sampleCount": 4,
         "sampleSeconds": [
           20.775,
           50.263,
-          49.624
+          49.624,
+          21.002
         ],
-        "revision": "74286a5487f8af06bb6a47371158a961fb7439a2",
-        "date": "2026-11-26",
-        "exitCode": 1,
+        "revision": "c97690cc9f4dba78760310d42109e19dc10d1bdc",
+        "date": "2026-11-27",
+        "exitCode": 0,
         "source": "release runner history (complete attempts, including failures)",
-        "lastSampleKey": "2026-11-26T05:26:25.088Z|tests__menu-shortcuts.js.2.1795671051679.log"
+        "lastSampleKey": "2026-11-27T18:21:36.276Z|tests__menu-shortcuts.js.1.1795803675274.log"
       }
     },
     "tests/overlay-backlog.js": {
@@ -1434,78 +1540,83 @@
     },
     "tests/path-mask-interaction.js": {
       "mac": {
-        "medianSeconds": 5.518,
-        "lastSeconds": 9.705,
-        "sampleCount": 3,
+        "medianSeconds": 7.506,
+        "lastSeconds": 9.494,
+        "sampleCount": 4,
         "sampleSeconds": [
           5.518,
           5.46,
-          9.705
+          9.705,
+          9.494
         ],
-        "revision": "74286a5487f8af06bb6a47371158a961fb7439a2",
-        "date": "2026-11-26",
+        "revision": "c97690cc9f4dba78760310d42109e19dc10d1bdc",
+        "date": "2026-11-27",
         "exitCode": 0,
         "source": "release runner history (complete attempts, including failures)",
-        "lastSampleKey": "2026-11-26T05:26:25.088Z|tests__path-mask-interaction.js.1.1795676396660.log"
+        "lastSampleKey": "2026-11-27T18:57:18.232Z|tests__path-mask-interaction.js.1.1795805828738.log"
       }
     },
     "tests/performance/export-parity.js": {
       "mac": {
-        "medianSeconds": 43.397999999999996,
-        "lastSeconds": 46.008,
-        "sampleCount": 2,
+        "medianSeconds": 45.1,
+        "lastSeconds": 45.1,
+        "sampleCount": 3,
         "sampleSeconds": [
           40.788,
-          46.008
+          46.008,
+          45.1
         ],
-        "revision": "74286a5487f8af06bb6a47371158a961fb7439a2",
-        "date": "2026-11-26",
+        "revision": "c97690cc9f4dba78760310d42109e19dc10d1bdc",
+        "date": "2026-11-27",
         "exitCode": 0,
         "source": "release runner history (complete attempts, including failures)",
-        "lastSampleKey": "2026-11-26T05:26:25.088Z|tests__performance__export-parity.js.1.1795676406404.log"
+        "lastSampleKey": "2026-11-27T18:58:03.367Z|tests__performance__export-parity.js.1.1795805838267.log"
       }
     },
     "tests/performance/preview-export-compare.js": {
       "mac": {
-        "medianSeconds": 3.3805,
-        "lastSeconds": 3.486,
-        "sampleCount": 4,
+        "medianSeconds": 3.449,
+        "lastSeconds": 3.412,
+        "sampleCount": 6,
         "sampleSeconds": [
           3.275,
           3.138,
           3.721,
-          3.486
+          3.486,
+          3.616,
+          3.412
         ],
-        "revision": "74286a5487f8af06bb6a47371158a961fb7439a2",
-        "date": "2026-11-26",
+        "revision": "c97690cc9f4dba78760310d42109e19dc10d1bdc",
+        "date": "2026-11-27",
         "exitCode": 1,
         "source": "release runner history (complete attempts, including failures)",
-        "lastSampleKey": "2026-11-26T05:26:25.088Z|tests__performance__preview-export-compare.js.2.1795676456267.log"
+        "lastSampleKey": "2026-11-27T18:58:10.497Z|tests__performance__preview-export-compare.js.2.1795805887076.log"
       }
     },
     "tests/performance/retouch-cpu-fallback.js": {
       "mac": {
-        "medianSeconds": 146.8425,
-        "lastSeconds": 206.762,
-        "sampleCount": 4,
+        "medianSeconds": 86.923,
+        "lastSeconds": 74.187,
+        "sampleCount": 5,
         "sampleSeconds": [
           76.562,
           86.923,
           240.65,
-          206.762
+          206.762,
+          74.187
         ],
-        "revision": "74286a5487f8af06bb6a47371158a961fb7439a2",
-        "date": "2026-11-26",
-        "exitCode": 1,
+        "revision": "c97690cc9f4dba78760310d42109e19dc10d1bdc",
+        "date": "2026-11-27",
+        "exitCode": 0,
         "source": "release runner history (complete attempts, including failures)",
-        "lastSampleKey": "2026-11-26T05:26:25.088Z|tests__performance__retouch-cpu-fallback.js.2.1795672255408.log"
+        "lastSampleKey": "2026-11-27T18:36:31.923Z|tests__performance__retouch-cpu-fallback.js.1.1795804517737.log"
       }
     },
     "tests/performance/retouch-latency.js": {
       "mac": {
-        "medianSeconds": 45.583,
-        "lastSeconds": 16.988,
-        "sampleCount": 7,
+        "medianSeconds": 45.5535,
+        "lastSeconds": 24.256,
+        "sampleCount": 8,
         "sampleSeconds": [
           45.524,
           48.417,
@@ -1513,502 +1624,565 @@
           50.536,
           44.146,
           45.583,
-          16.988
+          16.988,
+          24.256
         ],
-        "revision": "74286a5487f8af06bb6a47371158a961fb7439a2",
-        "date": "2026-11-26",
+        "revision": "c97690cc9f4dba78760310d42109e19dc10d1bdc",
+        "date": "2026-11-27",
         "exitCode": 0,
         "source": "release runner history (complete attempts, including failures)",
-        "lastSampleKey": "2026-11-26T05:26:25.088Z|tests__performance__retouch-latency.js.1.1795672462206.log"
+        "lastSampleKey": "2026-11-27T18:36:56.224Z|tests__performance__retouch-latency.js.1.1795804591967.log"
       }
     },
     "tests/performance/tier-film-consistency.js": {
       "mac": {
-        "medianSeconds": 59.2685,
-        "lastSeconds": 63.23,
-        "sampleCount": 2,
+        "medianSeconds": 59.274,
+        "lastSeconds": 59.274,
+        "sampleCount": 3,
         "sampleSeconds": [
           55.307,
-          63.23
+          63.23,
+          59.274
         ],
-        "revision": "74286a5487f8af06bb6a47371158a961fb7439a2",
-        "date": "2026-11-26",
+        "revision": "c97690cc9f4dba78760310d42109e19dc10d1bdc",
+        "date": "2026-11-27",
         "exitCode": 0,
         "source": "release runner history (complete attempts, including failures)",
-        "lastSampleKey": "2026-11-26T05:26:25.088Z|tests__performance__tier-film-consistency.js.1.1795676459830.log"
+        "lastSampleKey": "2026-11-27T18:59:09.811Z|tests__performance__tier-film-consistency.js.1.1795805890537.log"
       }
     },
     "tests/perspective-interaction.js": {
       "mac": {
-        "medianSeconds": 15.565999999999999,
-        "lastSeconds": 15.929,
-        "sampleCount": 2,
+        "medianSeconds": 15.203,
+        "lastSeconds": 14.837,
+        "sampleCount": 3,
         "sampleSeconds": [
           15.203,
-          15.929
+          15.929,
+          14.837
         ],
-        "revision": "74286a5487f8af06bb6a47371158a961fb7439a2",
-        "date": "2026-11-26",
+        "revision": "c97690cc9f4dba78760310d42109e19dc10d1bdc",
+        "date": "2026-11-27",
         "exitCode": 0,
         "source": "release runner history (complete attempts, including failures)",
-        "lastSampleKey": "2026-11-26T05:26:25.088Z|tests__perspective-interaction.js.1.1795676523104.log"
+        "lastSampleKey": "2026-11-27T18:59:24.696Z|tests__perspective-interaction.js.1.1795805949859.log"
       }
     },
     "tests/photo-framing-delivery.js": {
       "mac": {
-        "medianSeconds": 11.087,
-        "lastSeconds": 11.688,
-        "sampleCount": 2,
+        "medianSeconds": 11.688,
+        "lastSeconds": 12.416,
+        "sampleCount": 3,
         "sampleSeconds": [
           10.486,
-          11.688
+          11.688,
+          12.416
         ],
-        "revision": "74286a5487f8af06bb6a47371158a961fb7439a2",
-        "date": "2026-11-26",
+        "revision": "c97690cc9f4dba78760310d42109e19dc10d1bdc",
+        "date": "2026-11-27",
         "exitCode": 0,
         "source": "release runner history (complete attempts, including failures)",
-        "lastSampleKey": "2026-11-26T05:26:25.088Z|tests__photo-framing-delivery.js.1.1795679515190.log"
+        "lastSampleKey": "2026-11-27T19:23:25.828Z|tests__photo-framing-delivery.js.1.1795807393412.log"
       }
     },
     "tests/photo-library-stage-a.js": {
       "mac": {
-        "medianSeconds": 3.877,
-        "lastSeconds": 3.836,
-        "sampleCount": 3,
+        "medianSeconds": 15.250499999999999,
+        "lastSeconds": 27.273,
+        "sampleCount": 4,
         "sampleSeconds": [
           26.624,
           3.877,
-          3.836
+          3.836,
+          27.273
         ],
-        "revision": "74286a5487f8af06bb6a47371158a961fb7439a2",
-        "date": "2026-11-26",
-        "exitCode": 1,
+        "revision": "c97690cc9f4dba78760310d42109e19dc10d1bdc",
+        "date": "2026-11-27",
+        "exitCode": 0,
         "source": "release runner history (complete attempts, including failures)",
-        "lastSampleKey": "2026-11-26T05:26:25.088Z|tests__photo-library-stage-a.js.2.1795676543014.log"
+        "lastSampleKey": "2026-11-27T18:59:52.004Z|tests__photo-library-stage-a.js.1.1795805964731.log"
       }
     },
     "tests/photo-library-stage-b.js": {
       "mac": {
-        "medianSeconds": 5.748,
-        "lastSeconds": 5.487,
-        "sampleCount": 3,
+        "medianSeconds": 5.6175,
+        "lastSeconds": 5.355,
+        "sampleCount": 4,
         "sampleSeconds": [
           5.748,
           34.111,
-          5.487
+          5.487,
+          5.355
         ],
-        "revision": "74286a5487f8af06bb6a47371158a961fb7439a2",
-        "date": "2026-11-26",
+        "revision": "c97690cc9f4dba78760310d42109e19dc10d1bdc",
+        "date": "2026-11-27",
         "exitCode": 0,
         "source": "release runner history (complete attempts, including failures)",
-        "lastSampleKey": "2026-11-26T05:26:25.088Z|tests__photo-library-stage-b.js.2.1795676581038.log"
+        "lastSampleKey": "2026-11-27T19:00:27.522Z|tests__photo-library-stage-b.js.2.1795806022166.log"
       }
     },
     "tests/photo-library-stage-c.js": {
       "mac": {
-        "medianSeconds": 110.778,
-        "lastSeconds": 110.778,
-        "sampleCount": 3,
+        "medianSeconds": 75.5675,
+        "lastSeconds": 40.357,
+        "sampleCount": 4,
         "sampleSeconds": [
           36.954,
           112.516,
-          110.778
+          110.778,
+          40.357
         ],
-        "revision": "74286a5487f8af06bb6a47371158a961fb7439a2",
-        "date": "2026-11-26",
-        "exitCode": 1,
+        "revision": "c97690cc9f4dba78760310d42109e19dc10d1bdc",
+        "date": "2026-11-27",
+        "exitCode": 0,
         "source": "release runner history (complete attempts, including failures)",
-        "lastSampleKey": "2026-11-26T05:26:25.088Z|tests__photo-library-stage-c.js.2.1795676699108.log"
+        "lastSampleKey": "2026-11-27T19:01:07.915Z|tests__photo-library-stage-c.js.1.1795806027558.log"
       }
     },
     "tests/proof-size-interaction.js": {
       "mac": {
-        "medianSeconds": 26.1425,
-        "lastSeconds": 25.362,
-        "sampleCount": 2,
+        "medianSeconds": 26.923,
+        "lastSeconds": 27.411,
+        "sampleCount": 3,
         "sampleSeconds": [
           26.923,
-          25.362
+          25.362,
+          27.411
         ],
-        "revision": "74286a5487f8af06bb6a47371158a961fb7439a2",
-        "date": "2026-11-26",
+        "revision": "c97690cc9f4dba78760310d42109e19dc10d1bdc",
+        "date": "2026-11-27",
         "exitCode": 0,
         "source": "release runner history (complete attempts, including failures)",
-        "lastSampleKey": "2026-11-26T05:26:25.088Z|tests__proof-size-interaction.js.1.1795676809918.log"
+        "lastSampleKey": "2026-11-27T19:01:35.367Z|tests__proof-size-interaction.js.1.1795806067956.log"
       }
     },
     "tests/raw-pixel-cleanup-delivery.js": {
       "mac": {
-        "medianSeconds": 149.926,
-        "lastSeconds": 149.926,
-        "sampleCount": 1,
+        "medianSeconds": 144.9925,
+        "lastSeconds": 140.059,
+        "sampleCount": 2,
         "sampleSeconds": [
-          149.926
+          149.926,
+          140.059
         ],
-        "revision": "74286a5487f8af06bb6a47371158a961fb7439a2",
-        "date": "2026-11-26",
+        "revision": "c97690cc9f4dba78760310d42109e19dc10d1bdc",
+        "date": "2026-11-27",
         "exitCode": 0,
         "source": "release runner history (complete attempts, including failures)",
-        "lastSampleKey": "2026-11-26T05:26:25.088Z|tests__raw-pixel-cleanup-delivery.js.1.1795670785114.log"
+        "lastSampleKey": "2026-11-27T18:20:03.489Z|tests__raw-pixel-cleanup-delivery.js.1.1795803463431.log"
       }
     },
     "tests/raw-pixel-cleanup.js": {
       "mac": {
-        "medianSeconds": 7.384,
-        "lastSeconds": 7.384,
-        "sampleCount": 1,
+        "medianSeconds": 7.0865,
+        "lastSeconds": 6.789,
+        "sampleCount": 2,
         "sampleSeconds": [
-          7.384
+          7.384,
+          6.789
         ],
-        "revision": "74286a5487f8af06bb6a47371158a961fb7439a2",
-        "date": "2026-11-26",
+        "revision": "c97690cc9f4dba78760310d42109e19dc10d1bdc",
+        "date": "2026-11-27",
         "exitCode": 0,
         "source": "release runner history (complete attempts, including failures)",
-        "lastSampleKey": "2026-11-26T05:26:25.088Z|tests__raw-pixel-cleanup.js.1.1795670935096.log"
+        "lastSampleKey": "2026-11-27T18:20:10.322Z|tests__raw-pixel-cleanup.js.1.1795803603533.log"
       }
     },
     "tests/retouch-gpu-kernels.js": {
       "mac": {
-        "medianSeconds": 5.51,
-        "lastSeconds": 6.104,
-        "sampleCount": 5,
+        "medianSeconds": 5.7330000000000005,
+        "lastSeconds": 5.956,
+        "sampleCount": 6,
         "sampleSeconds": [
           7.142,
           4.652,
           5.51,
           5.354,
-          6.104
+          6.104,
+          5.956
         ],
-        "revision": "74286a5487f8af06bb6a47371158a961fb7439a2",
-        "date": "2026-11-26",
+        "revision": "c97690cc9f4dba78760310d42109e19dc10d1bdc",
+        "date": "2026-11-27",
         "exitCode": 0,
         "source": "release runner history (complete attempts, including failures)",
-        "lastSampleKey": "2026-11-26T05:26:25.088Z|tests__retouch-gpu-kernels.js.1.1795671243842.log"
+        "lastSampleKey": "2026-11-27T18:23:52.435Z|tests__retouch-gpu-kernels.js.1.1795803826479.log"
       }
     },
     "tests/retouch-interaction.js": {
       "mac": {
-        "medianSeconds": 11.181,
-        "lastSeconds": 8.906,
-        "sampleCount": 3,
+        "medianSeconds": 11.591999999999999,
+        "lastSeconds": 12.003,
+        "sampleCount": 4,
         "sampleSeconds": [
           11.181,
           12.198,
-          8.906
+          8.906,
+          12.003
         ],
-        "revision": "74286a5487f8af06bb6a47371158a961fb7439a2",
-        "date": "2026-11-26",
+        "revision": "c97690cc9f4dba78760310d42109e19dc10d1bdc",
+        "date": "2026-11-27",
         "exitCode": 0,
         "source": "release runner history (complete attempts, including failures)",
-        "lastSampleKey": "2026-11-26T05:26:25.088Z|tests__retouch-interaction.js.1.1795672479226.log"
+        "lastSampleKey": "2026-11-27T18:37:08.274Z|tests__retouch-interaction.js.1.1795804616271.log"
       }
     },
     "tests/retouch-library-gpu.js": {
       "mac": {
-        "medianSeconds": 12.462,
-        "lastSeconds": 14.463,
-        "sampleCount": 4,
+        "medianSeconds": 13.009,
+        "lastSeconds": 14.599,
+        "sampleCount": 5,
         "sampleSeconds": [
           13.009,
           10.482,
           11.915,
-          14.463
+          14.463,
+          14.599
         ],
-        "revision": "74286a5487f8af06bb6a47371158a961fb7439a2",
-        "date": "2026-11-26",
+        "revision": "c97690cc9f4dba78760310d42109e19dc10d1bdc",
+        "date": "2026-11-27",
         "exitCode": 0,
         "source": "release runner history (complete attempts, including failures)",
-        "lastSampleKey": "2026-11-26T05:26:25.088Z|tests__retouch-library-gpu.js.1.1795671229339.log"
+        "lastSampleKey": "2026-11-27T18:23:46.441Z|tests__retouch-library-gpu.js.1.1795803811842.log"
       }
     },
     "tests/retouch-transfer-interaction.js": {
       "mac": {
-        "medianSeconds": 7.899,
-        "lastSeconds": 5.904,
-        "sampleCount": 3,
+        "medianSeconds": 7.5329999999999995,
+        "lastSeconds": 7.167,
+        "sampleCount": 4,
         "sampleSeconds": [
           8.084,
           7.899,
-          5.904
+          5.904,
+          7.167
         ],
-        "revision": "74286a5487f8af06bb6a47371158a961fb7439a2",
-        "date": "2026-11-26",
+        "revision": "c97690cc9f4dba78760310d42109e19dc10d1bdc",
+        "date": "2026-11-27",
         "exitCode": 0,
         "source": "release runner history (complete attempts, including failures)",
-        "lastSampleKey": "2026-11-26T05:26:25.088Z|tests__retouch-transfer-interaction.js.1.1795672003750.log"
+        "lastSampleKey": "2026-11-27T18:35:09.052Z|tests__retouch-transfer-interaction.js.1.1795804501885.log"
+      }
+    },
+    "tests/scope-readout-layout.js": {
+      "mac": {
+        "medianSeconds": 4.402,
+        "lastSeconds": 4.402,
+        "sampleCount": 1,
+        "sampleSeconds": [
+          4.402
+        ],
+        "revision": "c97690cc9f4dba78760310d42109e19dc10d1bdc",
+        "date": "2026-11-27",
+        "exitCode": 0,
+        "source": "release runner history (complete attempts, including failures)",
+        "lastSampleKey": "2026-11-27T19:01:39.810Z|tests__scope-readout-layout.js.1.1795806095407.log"
       }
     },
     "tests/sdr-gamut-gpu-parity.js": {
       "mac": {
-        "medianSeconds": 3.572,
-        "lastSeconds": 3.866,
-        "sampleCount": 2,
+        "medianSeconds": 3.278,
+        "lastSeconds": 3.204,
+        "sampleCount": 3,
         "sampleSeconds": [
           3.278,
-          3.866
+          3.866,
+          3.204
         ],
-        "revision": "74286a5487f8af06bb6a47371158a961fb7439a2",
-        "date": "2026-11-26",
+        "revision": "c97690cc9f4dba78760310d42109e19dc10d1bdc",
+        "date": "2026-11-27",
         "exitCode": 0,
         "source": "release runner history (complete attempts, including failures)",
-        "lastSampleKey": "2026-11-26T05:26:25.088Z|tests__sdr-gamut-gpu-parity.js.1.1795676835316.log"
+        "lastSampleKey": "2026-11-27T19:01:43.052Z|tests__sdr-gamut-gpu-parity.js.1.1795806099848.log"
       }
     },
     "tests/sdr-linked-interaction.js": {
       "mac": {
-        "medianSeconds": 7.3795,
-        "lastSeconds": 7.568,
-        "sampleCount": 2,
+        "medianSeconds": 6.433999999999999,
+        "lastSeconds": 5.677,
+        "sampleCount": 4,
         "sampleSeconds": [
           7.191,
-          7.568
+          7.568,
+          5.566,
+          5.677
         ],
-        "revision": "74286a5487f8af06bb6a47371158a961fb7439a2",
-        "date": "2026-11-26",
-        "exitCode": 0,
+        "revision": "c97690cc9f4dba78760310d42109e19dc10d1bdc",
+        "date": "2026-11-27",
+        "exitCode": 1,
         "source": "release runner history (complete attempts, including failures)",
-        "lastSampleKey": "2026-11-26T05:26:25.088Z|tests__sdr-linked-interaction.js.1.1795670946914.log"
+        "lastSampleKey": "2026-11-27T18:20:25.729Z|tests__sdr-linked-interaction.js.2.1795803620052.log"
       }
     },
     "tests/sdr-linked-render.js": {
       "mac": {
-        "medianSeconds": 16.822,
-        "lastSeconds": 17.182,
-        "sampleCount": 2,
+        "medianSeconds": 16.462,
+        "lastSeconds": 16.317,
+        "sampleCount": 3,
         "sampleSeconds": [
           16.462,
-          17.182
+          17.182,
+          16.317
         ],
-        "revision": "74286a5487f8af06bb6a47371158a961fb7439a2",
-        "date": "2026-11-26",
+        "revision": "c97690cc9f4dba78760310d42109e19dc10d1bdc",
+        "date": "2026-11-27",
         "exitCode": 0,
         "source": "release runner history (complete attempts, including failures)",
-        "lastSampleKey": "2026-11-26T05:26:25.088Z|tests__sdr-linked-render.js.1.1795670954528.log"
+        "lastSampleKey": "2026-11-27T18:20:42.081Z|tests__sdr-linked-render.js.1.1795803625764.log"
       }
     },
     "tests/session-replacement-interaction.js": {
       "mac": {
-        "medianSeconds": 7.8580000000000005,
-        "lastSeconds": 7.979,
-        "sampleCount": 2,
+        "medianSeconds": 7.979,
+        "lastSeconds": 8.052,
+        "sampleCount": 3,
         "sampleSeconds": [
           7.737,
-          7.979
+          7.979,
+          8.052
         ],
-        "revision": "74286a5487f8af06bb6a47371158a961fb7439a2",
-        "date": "2026-11-26",
+        "revision": "c97690cc9f4dba78760310d42109e19dc10d1bdc",
+        "date": "2026-11-27",
         "exitCode": 0,
         "source": "release runner history (complete attempts, including failures)",
-        "lastSampleKey": "2026-11-26T05:26:25.088Z|tests__session-replacement-interaction.js.1.1795676839218.log"
+        "lastSampleKey": "2026-11-27T19:01:51.142Z|tests__session-replacement-interaction.js.1.1795806103090.log"
       }
     },
     "tests/sharpen-blur-reference.js": {
       "mac": {
-        "medianSeconds": 4.2455,
-        "lastSeconds": 4.108,
-        "sampleCount": 2,
+        "medianSeconds": 4.21,
+        "lastSeconds": 4.21,
+        "sampleCount": 3,
         "sampleSeconds": [
           4.383,
-          4.108
+          4.108,
+          4.21
         ],
-        "revision": "74286a5487f8af06bb6a47371158a961fb7439a2",
-        "date": "2026-11-26",
+        "revision": "c97690cc9f4dba78760310d42109e19dc10d1bdc",
+        "date": "2026-11-27",
         "exitCode": 0,
         "source": "release runner history (complete attempts, including failures)",
-        "lastSampleKey": "2026-11-26T05:26:25.088Z|tests__sharpen-blur-reference.js.1.1795676847235.log"
+        "lastSampleKey": "2026-11-27T19:01:55.389Z|tests__sharpen-blur-reference.js.1.1795806111179.log"
       }
     },
     "tests/signed-raw-parity.js": {
       "mac": {
-        "medianSeconds": 4.35,
-        "lastSeconds": 4.35,
-        "sampleCount": 1,
+        "medianSeconds": 4.2044999999999995,
+        "lastSeconds": 4.059,
+        "sampleCount": 2,
         "sampleSeconds": [
-          4.35
+          4.35,
+          4.059
         ],
-        "revision": "74286a5487f8af06bb6a47371158a961fb7439a2",
-        "date": "2026-11-26",
+        "revision": "c97690cc9f4dba78760310d42109e19dc10d1bdc",
+        "date": "2026-11-27",
         "exitCode": 0,
         "source": "release runner history (complete attempts, including failures)",
-        "lastSampleKey": "2026-11-26T05:26:25.088Z|tests__signed-raw-parity.js.1.1795670942523.log"
+        "lastSampleKey": "2026-11-27T18:20:14.413Z|tests__signed-raw-parity.js.1.1795803610354.log"
       }
     },
     "tests/startup-state.js": {
       "mac": {
-        "medianSeconds": 7.535,
-        "lastSeconds": 7.653,
-        "sampleCount": 2,
+        "medianSeconds": 7.653,
+        "lastSeconds": 7.701,
+        "sampleCount": 3,
         "sampleSeconds": [
           7.417,
-          7.653
+          7.653,
+          7.701
         ],
-        "revision": "74286a5487f8af06bb6a47371158a961fb7439a2",
-        "date": "2026-11-26",
+        "revision": "c97690cc9f4dba78760310d42109e19dc10d1bdc",
+        "date": "2026-11-27",
         "exitCode": 0,
         "source": "release runner history (complete attempts, including failures)",
-        "lastSampleKey": "2026-11-26T05:26:25.088Z|tests__startup-state.js.1.1795676851395.log"
+        "lastSampleKey": "2026-11-27T19:02:03.128Z|tests__startup-state.js.1.1795806115427.log"
       }
     },
     "tests/theme-settings.js": {
       "mac": {
-        "medianSeconds": 6.0145,
-        "lastSeconds": 6.286,
-        "sampleCount": 2,
+        "medianSeconds": 6.01,
+        "lastSeconds": 6.01,
+        "sampleCount": 3,
         "sampleSeconds": [
           5.743,
-          6.286
+          6.286,
+          6.01
         ],
-        "revision": "74286a5487f8af06bb6a47371158a961fb7439a2",
-        "date": "2026-11-26",
+        "revision": "c97690cc9f4dba78760310d42109e19dc10d1bdc",
+        "date": "2026-11-27",
         "exitCode": 0,
         "source": "release runner history (complete attempts, including failures)",
-        "lastSampleKey": "2026-11-26T05:26:25.088Z|tests__theme-settings.js.1.1795676146151.log"
+        "lastSampleKey": "2026-11-27T18:54:45.983Z|tests__theme-settings.js.1.1795805679973.log"
       }
     },
     "tests/tiled-admission-scope-fallback.js": {
       "mac": {
-        "medianSeconds": 5.3294999999999995,
-        "lastSeconds": 5.773,
-        "sampleCount": 2,
+        "medianSeconds": 5.773,
+        "lastSeconds": 5.794,
+        "sampleCount": 3,
         "sampleSeconds": [
           4.886,
-          5.773
+          5.773,
+          5.794
         ],
-        "revision": "74286a5487f8af06bb6a47371158a961fb7439a2",
-        "date": "2026-11-26",
+        "revision": "c97690cc9f4dba78760310d42109e19dc10d1bdc",
+        "date": "2026-11-27",
         "exitCode": 0,
         "source": "release runner history (complete attempts, including failures)",
-        "lastSampleKey": "2026-11-26T05:26:25.088Z|tests__tiled-admission-scope-fallback.js.1.1795676859085.log"
+        "lastSampleKey": "2026-11-27T19:02:08.958Z|tests__tiled-admission-scope-fallback.js.1.1795806123164.log"
       }
     },
     "tests/tiled-direct-parity.js": {
       "mac": {
-        "medianSeconds": 11.9875,
-        "lastSeconds": 12.482,
-        "sampleCount": 2,
+        "medianSeconds": 12.149,
+        "lastSeconds": 12.149,
+        "sampleCount": 3,
         "sampleSeconds": [
           11.493,
-          12.482
+          12.482,
+          12.149
         ],
-        "revision": "74286a5487f8af06bb6a47371158a961fb7439a2",
-        "date": "2026-11-26",
+        "revision": "c97690cc9f4dba78760310d42109e19dc10d1bdc",
+        "date": "2026-11-27",
         "exitCode": 0,
         "source": "release runner history (complete attempts, including failures)",
-        "lastSampleKey": "2026-11-26T05:26:25.088Z|tests__tiled-direct-parity.js.1.1795676864891.log"
+        "lastSampleKey": "2026-11-27T19:02:21.141Z|tests__tiled-direct-parity.js.1.1795806128992.log"
       }
     },
     "tests/tiled-film-parity.js": {
       "mac": {
-        "medianSeconds": 55.5205,
-        "lastSeconds": 58.079,
-        "sampleCount": 2,
+        "medianSeconds": 54.139,
+        "lastSeconds": 54.139,
+        "sampleCount": 3,
         "sampleSeconds": [
           52.962,
-          58.079
+          58.079,
+          54.139
         ],
-        "revision": "74286a5487f8af06bb6a47371158a961fb7439a2",
-        "date": "2026-11-26",
+        "revision": "c97690cc9f4dba78760310d42109e19dc10d1bdc",
+        "date": "2026-11-27",
         "exitCode": 0,
         "source": "release runner history (complete attempts, including failures)",
-        "lastSampleKey": "2026-11-26T05:26:25.088Z|tests__tiled-film-parity.js.1.1795676877408.log"
+        "lastSampleKey": "2026-11-27T19:03:15.313Z|tests__tiled-film-parity.js.1.1795806141174.log"
       }
     },
     "tests/tone-preview-overlay.js": {
       "mac": {
-        "medianSeconds": 12.182500000000001,
-        "lastSeconds": 12.742,
-        "sampleCount": 2,
+        "medianSeconds": 12.742,
+        "lastSeconds": 13.954,
+        "sampleCount": 3,
         "sampleSeconds": [
           11.623,
-          12.742
+          12.742,
+          13.954
         ],
-        "revision": "74286a5487f8af06bb6a47371158a961fb7439a2",
-        "date": "2026-11-26",
+        "revision": "c97690cc9f4dba78760310d42109e19dc10d1bdc",
+        "date": "2026-11-27",
         "exitCode": 0,
         "source": "release runner history (complete attempts, including failures)",
-        "lastSampleKey": "2026-11-26T05:26:25.088Z|tests__tone-preview-overlay.js.1.1795671931826.log"
+        "lastSampleKey": "2026-11-27T18:33:53.255Z|tests__tone-preview-overlay.js.1.1795804419300.log"
       }
     },
     "tests/tone-zones-delivery.js": {
       "mac": {
-        "medianSeconds": 7.032,
-        "lastSeconds": 7.785,
-        "sampleCount": 3,
+        "medianSeconds": 7.4085,
+        "lastSeconds": 9.213,
+        "sampleCount": 4,
         "sampleSeconds": [
           5.834,
           7.032,
-          7.785
+          7.785,
+          9.213
         ],
-        "revision": "74286a5487f8af06bb6a47371158a961fb7439a2",
-        "date": "2026-11-26",
+        "revision": "c97690cc9f4dba78760310d42109e19dc10d1bdc",
+        "date": "2026-11-27",
         "exitCode": 0,
         "source": "release runner history (complete attempts, including failures)",
-        "lastSampleKey": "2026-11-26T05:26:25.088Z|tests__tone-zones-delivery.js.1.1795671924003.log"
+        "lastSampleKey": "2026-11-27T18:33:39.249Z|tests__tone-zones-delivery.js.1.1795804410036.log"
       }
     },
     "tests/ui-picker-help-selects.js": {
       "mac": {
-        "medianSeconds": 23.901,
-        "lastSeconds": 23.24,
-        "sampleCount": 2,
+        "medianSeconds": 15.017999999999999,
+        "lastSeconds": 6.796,
+        "sampleCount": 4,
         "sampleSeconds": [
           24.562,
-          23.24
+          23.24,
+          6.785,
+          6.796
         ],
-        "revision": "74286a5487f8af06bb6a47371158a961fb7439a2",
-        "date": "2026-11-26",
+        "revision": "c97690cc9f4dba78760310d42109e19dc10d1bdc",
+        "date": "2026-11-27",
+        "exitCode": 1,
+        "source": "release runner history (complete attempts, including failures)",
+        "lastSampleKey": "2026-11-27T18:21:49.918Z|tests__ui-picker-help-selects.js.2.1795803703122.log"
+      }
+    },
+    "tests/vignette-midpoint.js": {
+      "mac": {
+        "medianSeconds": 5.844,
+        "lastSeconds": 5.844,
+        "sampleCount": 1,
+        "sampleSeconds": [
+          5.844
+        ],
+        "revision": "c97690cc9f4dba78760310d42109e19dc10d1bdc",
+        "date": "2026-11-27",
         "exitCode": 0,
         "source": "release runner history (complete attempts, including failures)",
-        "lastSampleKey": "2026-11-26T05:26:25.088Z|tests__ui-picker-help-selects.js.1.1795671101338.log"
+        "lastSampleKey": "2026-11-27T18:17:43.395Z|tests__vignette-midpoint.js.1.1795803457551.log"
       }
     },
     "tests/webgpu-shader-compilation.js": {
       "mac": {
-        "medianSeconds": 4.702,
-        "lastSeconds": 5.018,
-        "sampleCount": 2,
+        "medianSeconds": 5.018,
+        "lastSeconds": 5.135,
+        "sampleCount": 3,
         "sampleSeconds": [
           4.386,
-          5.018
+          5.018,
+          5.135
         ],
-        "revision": "74286a5487f8af06bb6a47371158a961fb7439a2",
-        "date": "2026-11-26",
+        "revision": "c97690cc9f4dba78760310d42109e19dc10d1bdc",
+        "date": "2026-11-27",
         "exitCode": 0,
         "source": "release runner history (complete attempts, including failures)",
-        "lastSampleKey": "2026-11-26T05:26:25.088Z|tests__webgpu-shader-compilation.js.1.1795676935524.log"
+        "lastSampleKey": "2026-11-27T19:03:20.492Z|tests__webgpu-shader-compilation.js.1.1795806195357.log"
       }
     },
     "tests/workflow-stage-overlays.js": {
       "mac": {
-        "medianSeconds": 7.4239999999999995,
-        "lastSeconds": 7.638,
-        "sampleCount": 2,
+        "medianSeconds": 7.638,
+        "lastSeconds": 7.744,
+        "sampleCount": 3,
         "sampleSeconds": [
           7.21,
-          7.638
+          7.638,
+          7.744
         ],
-        "revision": "74286a5487f8af06bb6a47371158a961fb7439a2",
-        "date": "2026-11-26",
+        "revision": "c97690cc9f4dba78760310d42109e19dc10d1bdc",
+        "date": "2026-11-27",
         "exitCode": 0,
         "source": "release runner history (complete attempts, including failures)",
-        "lastSampleKey": "2026-11-26T05:26:25.088Z|tests__workflow-stage-overlays.js.1.1795676940582.log"
+        "lastSampleKey": "2026-11-27T19:03:28.274Z|tests__workflow-stage-overlays.js.1.1795806200530.log"
       }
     },
     "tests/workspace-panel-alignment.js": {
       "mac": {
-        "medianSeconds": 7.296,
-        "lastSeconds": 7.416,
-        "sampleCount": 3,
+        "medianSeconds": 7.356,
+        "lastSeconds": 7.464,
+        "sampleCount": 4,
         "sampleSeconds": [
           6.725,
           7.296,
-          7.416
+          7.416,
+          7.464
         ],
-        "revision": "74286a5487f8af06bb6a47371158a961fb7439a2",
-        "date": "2026-11-26",
+        "revision": "c97690cc9f4dba78760310d42109e19dc10d1bdc",
+        "date": "2026-11-27",
         "exitCode": 0,
         "source": "release runner history (complete attempts, including failures)",
-        "lastSampleKey": "2026-11-26T05:26:25.088Z|tests__workspace-panel-alignment.js.1.1795671996297.log"
+        "lastSampleKey": "2026-11-27T18:35:01.840Z|tests__workspace-panel-alignment.js.1.1795804494376.log"
       }
     }
   }
