@@ -250,7 +250,8 @@ async function main() {
 
       const scrollTo = async (region) => {
         await page.evaluate(({ x, y }) => {
-          const box = els.previewCanvas.getBoundingClientRect();
+          const canvas = els.previewCanvas;
+          const box = (canvas.hdrFrameRegion ? canvas.parentElement : canvas).getBoundingClientRect();
           const pane = els.dropzone.getBoundingClientRect();
           els.dropzone.scrollLeft += (box.left + x * box.width) - (pane.left + els.dropzone.clientWidth / 2);
           els.dropzone.scrollTop += (box.top + y * box.height) - (pane.top + els.dropzone.clientHeight / 2);
@@ -290,8 +291,12 @@ async function main() {
         }
         return masks;
       };
-      const visibleRect = () => page.evaluate(() => visibleOutputRect(els.previewCanvas.width, els.previewCanvas.height)
-        || { x: 0, y: 0, width: els.previewCanvas.width, height: els.previewCanvas.height });
+      const visibleRect = () => page.evaluate(() => {
+        const { width, height } = previewCanvasFrameSize();
+        const rect = visibleOutputRect(width, height, { includeWhole: true });
+        if (!rect) throw Error('No visible frame region');
+        return rect;
+      });
 
       if (forced) {
         // The masks of the route the app chose by itself, before it is replaced.
@@ -314,13 +319,30 @@ async function main() {
           const target = state.gpuPreview.presentationTarget;
           if (!target?.valid || !target.texture) throw new Error('No retained presentation target to read back.');
           if (gpuLumaMaskOverlayOptions()) throw new Error('A mask overlay is drawn into the preview; the capture would not be the picture.');
-          const visible = visibleOutputRect(els.previewCanvas.width, els.previewCanvas.height)
-            || { x: 0, y: 0, width: target.width, height: target.height };
+          const base = els.previewCanvas, patch = base.hdrFrameRegion;
+          if (patch && base.hdrCpuMicroRegion) throw Error('The displayed detail is not a WebGPU canvas');
+          const drawn = patch ? base.hdrSharpDetail?.element || els.previewDenoiseDetail : base;
+          const { width, height } = previewCanvasFrameSize();
           const accepted = state.acceptedPresentation;
+          const presented = state.gpuPreview.lastPresentedFrame;
+          const resident = { x: target.region?.x ?? 0, y: target.region?.y ?? 0, width: target.width, height: target.height };
+          if (presented?.lane !== accepted?.lane || presented.applicationGeneration !== accepted?.generation
+            || presented.width !== width || presented.height !== height
+            || Boolean(target.region) !== Boolean(patch)
+            || (patch && (patch.x !== resident.x || patch.y !== resident.y))
+            || drawn.width !== resident.width || drawn.height !== resident.height
+            || !drawn.isConnected || drawn.hidden || !drawn.getBoundingClientRect().width) {
+            throw Error(`Readback is not the displayed frame: ${JSON.stringify({resident,patch,width,height,drawn:[drawn.width,drawn.height]})}`);
+          }
+          const visible = visibleOutputRect(width, height, { includeWhole: true });
+          if (!visible || visible.x < resident.x || visible.y < resident.y
+            || visible.x + visible.width > resident.x + resident.width
+            || visible.y + visible.height > resident.y + resident.height) {
+            throw Error(`The presented target does not cover the complete viewport: ${JSON.stringify({resident,visible})}`);
+          }
           return {
-            target: { width: target.width, height: target.height, format: String(target.format) },
-            canvas: { width: els.previewCanvas.width, height: els.previewCanvas.height },
-            visible,
+            target: { width, height, format: String(target.format) },
+            resident, visible,
             accepted: accepted && {
               exact: accepted.exact, processedLongEdge: accepted.processedLongEdge, execution: accepted.execution,
               transport: accepted.transport, generation: accepted.generation, lane: accepted.lane,
@@ -335,18 +357,17 @@ async function main() {
         if (frame.accepted?.execution !== 'tiled' || frame.accepted.lane !== lane || !frame.accepted.exact) {
           throw new Error(`The frame on screen is not a readable exact ${lane} frame: ${JSON.stringify(frame.accepted)}`);
         }
-        if (frame.target.width !== frame.canvas.width || frame.target.height !== frame.canvas.height) {
-          throw new Error(`Presentation target ${JSON.stringify(frame.target)} is not the canvas ${JSON.stringify(frame.canvas)}`);
-        }
         const float16 = frame.target.format.includes('16float');
         const readbackName = `${lane}-${region.id}.f32`;
         const handle = fs.openSync(path.join(work, readbackName), 'w');
         try {
           for (let row = 0; row < frame.visible.height; row += STRIP_ROWS) {
             const rows = Math.min(STRIP_ROWS, frame.visible.height - row);
-            const base64 = await page.evaluate(async ({ rect, row, rows, reorder }) => {
+            const base64 = await page.evaluate(async ({ rect, resident, row, rows, reorder }) => {
               const strip = await state.gpuPreview.readPresentationRegion(rect.width, rows, rect.x, rect.y + row);
-              if (!strip?.values || strip.width !== rect.width || strip.height !== rows) throw new Error(`Readback failed at row ${row}`);
+              if (!strip?.values || strip.width !== rect.width || strip.height !== rows
+                || strip.x !== rect.x - resident.x || strip.y !== rect.y + row - resident.y)
+                throw new Error(`Readback failed at row ${row}`);
               const values = Float32Array.from(strip.values);
               // An 8-bit canvas target is bgra8unorm and the readback does not reorder.
               if (reorder) for (let i = 0; i < values.length; i += 4) { const blue = values[i]; values[i] = values[i + 2]; values[i + 2] = blue; }
@@ -354,7 +375,7 @@ async function main() {
               let binary = '';
               for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
               return btoa(binary);
-            }, { rect: frame.visible, row, rows, reorder: !float16 });
+            }, { rect: frame.visible, resident: frame.resident, row, rows, reorder: !float16 });
             fs.writeSync(handle, Buffer.from(base64, 'base64'));
           }
         } finally { fs.closeSync(handle); }
@@ -365,7 +386,7 @@ async function main() {
         laneCapture.hdrSurface = lane === 'hdr' && float16;
         laneCapture.referenceWhiteNits = frame.referenceWhiteNits;
         laneCapture.regions.push({ id: region.id, anchor: { x: region.x, y: region.y }, rect: frame.visible,
-          readback: readbackName, accepted: frame.accepted, requiredLongEdge: frame.requiredLongEdge,
+          readback: readbackName, resident: frame.resident, accepted: frame.accepted, requiredLongEdge: frame.requiredLongEdge,
           zoomPercent: frame.zoomPercent, hdrDisplay: frame.hdrDisplay, masks });
         console.log(lane, region.id, JSON.stringify(frame.visible), frame.target.format, JSON.stringify(frame.accepted));
       }
