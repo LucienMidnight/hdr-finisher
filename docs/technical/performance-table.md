@@ -1,3 +1,21 @@
+## November 27: Brighter SDR Match target (PC)
+
+Match click to exact SDR presentation, or to refusal, in disposable Electron at
+2560 x 1440 under the shared GPU lock. Prior target at `400eb1e4`; brighter
+target at `4b6d2a2a`. One timed attempt per saved grade and target, excluding
+project open. Nine photo copies, including the current _DSC7970.ARW grade.
+
+| Action | Prior target | Brighter target | Conditions |
+| --- | ---: | ---: | --- |
+| Match SDR, click to settled picture | 4.92-10.69 s GPU (8 photos), 27.51 s CPU (one candidate timeout) | 4.56-7.12 s GPU (6 photos) | All successful GPU fits were certified on CPU. |
+| Match SDR, click to refusal | None | 37.24-47.47 s (3 photos) | GPU attempt followed by CPU fallback; the unchanged safety gates refused both fits. |
+
+The new target does not meet the nine-photo qualification. The flower
+(DSC09738), beach (PC290598) and reported _DSC7970 photo were refused, and
+some successful fits exceeded the body colour-error limit. The paired
+pictures, brightness, colour errors and settings replace the earlier local
+review at `codebase/output/review/sdr-match-tone-fit/index.html`.
+
 ## November 27: Windows shared-curves qualification
 
 Single diagnostic runs on Steve's PC with disposable Electron at 2560×1440

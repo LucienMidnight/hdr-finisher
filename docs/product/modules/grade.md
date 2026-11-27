@@ -75,6 +75,14 @@ shoulder starting at 0.75. The body/shoulder split follows the new target.
 Generated SDR placement, existing saved grades, and Match safety thresholds
 are unchanged. Highlight appearance remains open for Steve's visual review.
 
+**PC qualification remains open.** The new target improved main-tone
+brightness on committed fits, but the 2 Delta E 2000 body target was not
+met on all photos. Three of the nine refused at the unchanged guards,
+including _DSC7970, rather than replacing their SDR grades. Alternate
+Highlight Compression starting points and stronger safety weighting did not
+recover the refused samples in diagnostic trials. No new colour controls or
+rendering changes were added to force a pass.
+
 ## November 27: SDR Match fits the picture
 
 Steve approved fitting Exposure first, Contrast only when HDR uses it, five
