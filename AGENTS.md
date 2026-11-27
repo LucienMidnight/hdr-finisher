@@ -529,6 +529,9 @@ module PRD for the area you touch, then `docs/technical/code-map.md`.
 
 ### Technical (how it works)
 
+- `docs/technical/reports/release-check-0-9-4-2026-11-28.md`: local Mac
+  v0.9.4 fast checks, Curves test fix and focused-run budget blocker.
+
 - `docs/technical/reports/overnight-release-check-2026-11-25.md`: Mac
   release check of Nov 25 (97/117), every failure's cause and fix, Steve's
   open decision on CPU-strip exports (with its ready `.diff`), timings.
