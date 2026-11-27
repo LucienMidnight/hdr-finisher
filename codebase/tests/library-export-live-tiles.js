@@ -3,7 +3,9 @@ const reusePhoto=require('./helpers/reuse-test-photo.cjs');
 const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
 const {chromium}=require('playwright');
 const root=path.resolve(__dirname,'..'),folder=path.join(root,'output/library-export-live-tiles',String(Date.now()));fs.mkdirSync(folder,{recursive:true});
-const photos=['DSC00264','DSC04375','DSC06615'].map(n=>{const p=path.join(folder,n+'.ARW');return reusePhoto(reusePhoto.source(n+'.ARW'),p);});
+// Two 42 MP Sony RAWs exercise native CPU strips at 4 GB. Use the curated
+// 10.5 MP Sony RAW for the GPU case without resizing output or raising memory.
+const photos=['DSC00264.ARW','DSC04375.ARW','DSC00512.ARW'].map(name=>reusePhoto(reusePhoto.source(name),path.join(folder,name)));
 // Exports land beside the reused photos. Delete this run's exports and export
 // staging, pass or fail; keep the reused photo copies and anything already there.
 const photoFolder=path.dirname(photos[0]),existing=new Set(fs.readdirSync(photoFolder)),exported=new Set();

@@ -1,5 +1,14 @@
 ## November 27: Brighter SDR Match target (PC)
 
+## November 28, 2026 — v0.9.4 Mac release rechecks
+
+MacBook Neo, A18 Pro, 8 GB, at 1408×794. Standalone Electron runs under the shared GPU lock.
+
+| Check | Result | Conditions |
+| --- | --- | --- |
+| Library live tiles, Export closed / open | 17.766 / 17.920 s per photo (+0.87%), within the unchanged 5% allowance | Parent `02a05544` plus test fixture correction. DSC00264 and DSC04375 use bounded CPU strips at the unchanged 4 GB default, DSC00512 uses GPU. One warmup plus three closed and three open native exports. No progress redraws. `library-export-live-tiles.log`. |
+
+
 Match click to exact SDR presentation, or to refusal, in disposable Electron at
 2560 x 1440 under the shared GPU lock. Prior target at `400eb1e4`; brighter
 target at `4b6d2a2a`. One timed attempt per saved grade and target, excluding

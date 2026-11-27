@@ -1210,7 +1210,7 @@ Visible Export tiles draw once, retain through progress and keep three-photo exp
 
 - Expected minutes: Windows unknown; Mac 0.639.
 - Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
-- Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. Python virtual environment and pinned backend dependencies. Source inputs/fixtures referenced by driver (originals read-only): .ARW.
+- Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. Python virtual environment and pinned backend dependencies. Source inputs/fixtures referenced by driver (originals read-only): DSC00264.ARW, DSC04375.ARW, DSC00512.ARW.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
 
 #### `tests/library-export-menu.js`

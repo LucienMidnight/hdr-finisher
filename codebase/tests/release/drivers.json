@@ -14572,7 +14572,7 @@
         "Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile.",
         "Shared GPU-run lock; real-app checks must not overlap.",
         "Python virtual environment and pinned backend dependencies.",
-        "Source inputs/fixtures referenced by driver (originals read-only): .ARW."
+        "Source inputs/fixtures referenced by driver (originals read-only): DSC00264.ARW, DSC04375.ARW, DSC00512.ARW."
       ],
       "platforms": {
         "os": [
