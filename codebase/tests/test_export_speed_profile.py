@@ -58,7 +58,10 @@ def test_build_writes_valid_profiles_with_active_max_stages(tmp_path):
     for name in profile.PROFILES:
         raw_grade, settings = _load_profile(tmp_path, name)
         doc = docs[name] = validate_saved_document(raw_grade)
-        assert doc == EditDocument.model_validate(raw_grade)
+        # The saved app_version records the writer, not the grade; ignore it so
+        # a version bump does not change this comparison.
+        expected = EditDocument.model_validate(raw_grade)
+        assert doc.model_copy(update={"app_version": expected.app_version}) == expected
         assert doc.source.raw_import_settings == own.source.raw_import_settings
         assert doc.interpretation_override == own.interpretation_override
         assert doc.source.fingerprint_sha256 == own.source.fingerprint_sha256
