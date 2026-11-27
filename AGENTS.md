@@ -863,3 +863,10 @@ Completed UI polish rounds 6 and 6b (pending visual sign-off): vertical menu, ne
 Completed Retouch gizmo (pending visual sign-off): `docs/technical/archive/briefs/codex-brief-retouch-gizmo-and-tool-shortcuts-2026-11-08.md` (November 8: two-click Heal/Clone, labelled circles, moving repairs, Retouch keys, Play/Pause removed, status bar tool key hints; review crops in `codebase/output/review/retouch-gizmo/`).
 
 Completed RAW overlays (pending visual sign-off): `docs/technical/archive/briefs/codex-brief-library-overlays-undeveloped-raw-2026-11-07.md` (November 7: Focus and Exposure on undeveloped RAW camera previews, placed by registration; review page in `codebase/output/review/library-raw-overlays/`).
+
+- Windows can refuse to replace a loaded native DLL (`WinError 5`) while
+  Steve's app is open. Do not kill his app. Rename the old DLL to `.previous`,
+  then install the newly built `.tmp` DLL at the original path; the open process
+  keeps its mapped old code. Remove `.previous` after it is no longer in use.
+- Standalone system `python` may use Windows cp1252. Always specify
+  `encoding="utf-8"` for repository text reads; prefer the project venv Python.

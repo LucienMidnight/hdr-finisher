@@ -365,3 +365,90 @@ def test_idle_result_reader_does_not_retain_delivered_scene(tmp_path):
         release.set()
         reader.join(2)
     assert not reader.is_alive()
+
+
+def _cpu_progress_stub(connection, root, parent_pid, paused=False):
+    import time
+    connection.send({'event':'ready','pid':0})
+    while True:
+        job=connection.recv()
+        if job['command']=='close': return
+        if 'path' not in job: continue
+        connection.send({'event':'job-started','id':job['id']})
+        for i in range(12):
+            connection.send({'event':'work','id':job['id'],'stage':'Developing bands',
+                             'phase':'demosaic','cpu':True})
+            time.sleep(.05)
+        if job['path'].endswith('hang.arw'):
+            while True: time.sleep(1)
+        connection.send({'event':'work','id':job['id'],'done':True})
+        connection.send({'id':job['id'],'path':job['path']})
+
+
+@pytest.mark.serial
+def test_cpu_progress_outlives_decoder_deadline_but_a_stall_still_recovers(tmp_path,monkeypatch):
+    from hdr_finisher import library_worker
+    monkeypatch.setattr(library_worker,'_worker_main',_cpu_progress_stub)
+    monkeypatch.setattr(library_worker.LibraryWorker,'decoder_timeout',staticmethod(lambda path:.01))
+    monkeypatch.setattr(library_worker.LibraryWorker,'cpu_stall_timeout',staticmethod(lambda path:.3))
+    helper=library_worker.LibraryWorker(tmp_path/'profile')
+    try:
+        _,good=helper.submit_library('live-scene',path=str(tmp_path/'good.arw'),priority=0)
+        assert good.result(timeout=10)==tmp_path/'good.arw'
+        assert helper.status()['restarts']==0
+        _,bad=helper.submit_library('live-scene',path=str(tmp_path/'hang.arw'),priority=0)
+        with pytest.raises(library_worker.DecoderTimeout): bad.result(timeout=10)
+        _,next_photo=helper.submit_library('live-scene',path=str(tmp_path/'next.arw'),priority=0)
+        assert next_photo.result(timeout=10)==tmp_path/'next.arw'
+        assert helper.status()['restarts']==1
+    finally: helper.close()
+
+
+def test_cpu_stall_budget_excludes_grade_pauses_and_queueing(tmp_path,monkeypatch):
+    from hdr_finisher.library_worker import LibraryWorker
+    from concurrent.futures import Future
+    helper=LibraryWorker(tmp_path)
+    monkeypatch.setattr(helper,'decoder_timeout',lambda path:5)
+    helper._requests={'active':dict(command='live-scene',path='a.arw'),
+                      'queued':dict(command='live-scene',path='b.arw')}
+    helper._pending={key:Future() for key in helper._requests}
+    helper._work={'active':dict(cpu=True,phase='demosaic',elapsed=119)}
+    helper._paused.add('Grade')
+    helper._deadline_sample-=600
+    helper._check_deadlines()
+    assert helper._work['active']['elapsed']==119
+    assert not any(f.done() for f in helper._pending.values())
+    helper._paused.clear()
+    helper._deadline_sample-=2
+    with pytest.raises(RuntimeError,match='decoder time limit'):helper._check_deadlines()
+    assert helper._pending['queued'].done() is False
+    assert helper._restarts==0  # supervisor alone owns actual restart counting
+
+
+def _concurrent_recovery_worker(connection,root,parent_pid,paused=False):
+    from hdr_finisher import library_live,library_worker,cpu_budget
+    from pathlib import Path
+    import time
+    cpu_budget.photo_lanes=lambda:2
+    def develop(root,path,*args,**kwargs):
+        marker=Path(path);marker.write_text('started')
+        deadline=time.monotonic()+3
+        while len(list(marker.parent.glob('*.started')))<2:
+            if time.monotonic()>deadline:raise RuntimeError('CPU recoveries were serialized')
+            time.sleep(.01)
+        return {'path':path}
+    library_live.develop_cpu=develop
+    library_worker._worker_main_impl(connection,root,parent_pid,paused)
+
+
+@pytest.mark.serial
+def test_admitted_cpu_recoveries_share_available_cpu_partition(tmp_path,monkeypatch):
+    from hdr_finisher import library_worker
+    monkeypatch.setattr(library_worker,'_worker_main',_concurrent_recovery_worker)
+    helper=library_worker.LibraryWorker(tmp_path/'profile')
+    try:
+        futures=[helper.submit_library('live-scene',path=str(tmp_path/f'{i}.started'),
+                    edge=640,priority=0,gpu_invalid_pixels=True)[1] for i in range(2)]
+        assert all(f.result(timeout=10)['path'].endswith('.started') for f in futures)
+        assert helper.status()['restarts']==0
+    finally: helper.close()

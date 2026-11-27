@@ -106,3 +106,22 @@ EXPORT int lens_remap(const float *source, int source_width, int source_height,
     }
     return 1;
 }
+
+/* Library planar bands: same ordered four-term NumPy interpolation, with
+   double weights and a single float cast. No full-image working arrays. */
+EXPORT void lens_sample_plane(const float *source, int width, int height,
+                              const float *xs, const float *ys, size_t count, float *output)
+{
+    for (size_t i = 0; i < count; ++i) {
+        double x = fmin(fmax(xs[i], 0), width - 1);
+        double y = fmin(fmax(ys[i], 0), height - 1);
+        int x0 = (int)x, y0 = (int)y;
+        int x1 = x0 < width - 1 ? x0 + 1 : x0;
+        int y1 = y0 < height - 1 ? y0 + 1 : y0;
+        double fx = x - x0, fy = y - y0;
+        output[i] = (float)(source[(size_t)y0*width+x0]*(1-fx)*(1-fy)
+                         + source[(size_t)y0*width+x1]*fx*(1-fy)
+                         + source[(size_t)y1*width+x0]*(1-fx)*fy
+                         + source[(size_t)y1*width+x1]*fx*fy);
+    }
+}

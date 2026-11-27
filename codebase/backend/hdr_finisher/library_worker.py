@@ -360,6 +360,13 @@ class LibraryWorker:
         except Exception:
             return baseline
 
+    @staticmethod
+    def cpu_stall_timeout(path):
+        # 50 MP DSC00636 measured 56.4 s before reduction optimization on PC.
+        # Allow at least twice that whole decode without progress; preserve
+        # longer existing codec allowances. Real band progress renews this.
+        return max(120., LibraryWorker.decoder_timeout(path))
+
     def _set_aside(self, key, reason, timed_out=False):
         request = self._requests.pop(key, {})
         future = self._pending.pop(key, None)
@@ -394,7 +401,8 @@ class LibraryWorker:
                     continue
                 if not self._paused:
                     work["elapsed"] = work.get("elapsed", 0) + elapsed
-                if work.get("elapsed", 0) > self.decoder_timeout(request.get("path")):
+                limit = self.cpu_stall_timeout(request.get("path")) if work.get("cpu") else self.decoder_timeout(request.get("path"))
+                if work.get("elapsed", 0) > limit:
                     self._identified_failure = True
                     self._set_aside(key, "This photo took too long. Try again.", timed_out=True)
                     # The native decoder may not honour cancellation. Restart the
@@ -451,7 +459,8 @@ class LibraryWorker:
                             previous = self._work.get(message["id"], {})
                             self._work[message["id"]] = dict(path=message.get("path"), stage=message["stage"],
                                 state=previous.get("state", "running" if message["id"] in self._pending else "stopping"),
-                                elapsed=previous.get("elapsed", 0), edge_elapsed=previous.get("edge_elapsed", 0),
+                                cpu=message.get("cpu", False),
+                                elapsed=0 if message.get("cpu") else previous.get("elapsed", 0), edge_elapsed=previous.get("edge_elapsed", 0),
                                 retouch_elapsed=previous.get("retouch_elapsed", 0),
                                 repair_count=previous.get("repair_count") or message.get("repair_count", 0),
                                 phase=message.get("phase"))
@@ -631,7 +640,7 @@ def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> N
                 while not stopping.is_set():
                     candidates = [(item, index) for index, item in enumerate(queue) if lane(item[2]) == kind]
                     blocked = state["source_reading"] if kind in {"picture", "edge-cpu"} else state["source_busy"]
-                    if candidates and not state["paused"] and (kind in {"main", "stored"} or not blocked) and (kind != "picture" or state["foreground"] < lanes):
+                    if candidates and not state["paused"] and (kind in {"main", "stored"} or not blocked) and (kind not in {"picture", "edge-cpu"} or state["foreground"] < lanes):
                         _, index = min(candidates)
                         _priority, _sequence, job = queue.pop(index)
                         heapq.heapify(queue)
@@ -646,9 +655,9 @@ def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> N
                     continue
                 if kind == "check":
                     state["checking"] += 1
-                elif kind == "picture":
+                elif kind in {"picture", "edge-cpu"}:
                     state["foreground"] += 1
-                if kind == "picture": state["developing"] += 1
+                if kind in {"picture", "edge-cpu"}: state["developing"] += 1
                 if job["command"] == "scan-page": state["scanning"] += 1
 
                 from .library_metadata import pause_readers
@@ -677,12 +686,12 @@ def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> N
 
             last_stage = [None, time.perf_counter()]
             def progress(stage, text):
-                if stage == last_stage[0]: return
+                if stage == last_stage[0] and time.perf_counter()-last_stage[1] < 1: return
                 now = time.perf_counter()
                 log("picture_preparation_stage", edge=job.get("edge"), job=job["id"], path=job.get("path"), stage=stage,
                     previous_stage=last_stage[0], duration_ms=(now-last_stage[1])*1000)
                 last_stage[:] = [stage, now]
-                message = {"event":"work", "id":job["id"], "path":job.get("path"), "stage":text, "phase":stage}
+                message = {"event":"work", "id":job["id"], "path":job.get("path"), "stage":text, "phase":stage, "cpu":True}
                 if stage == "retouch_replay":
                     message["repair_count"] = sum(
                         isinstance(record, dict) and record.get("enabled", True) is not False
@@ -756,9 +765,9 @@ def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> N
                 scene_edges.pop(job["id"], None)
                 if kind == "check":
                     state["checking"] -= 1
-                elif kind == "picture":
+                elif kind in {"picture", "edge-cpu"}:
                     state["foreground"] -= 1
-                if kind == "picture": state["developing"] -= 1
+                if kind in {"picture", "edge-cpu"}: state["developing"] -= 1
                 if job["command"] == "scan-page": state["scanning"] -= 1
                 pause_readers(state["paused"] or state["source_busy"] or bool(state["developing"]) or bool(state["scanning"]))
                 condition.notify_all()
@@ -786,8 +795,11 @@ def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> N
     # native teams together stay within the machine partition.
     for index in range(lanes):
         Thread(target=decode, args=("picture",), name=f"hdr-library-picture-{index}", daemon=True).start()
-    # A rejected GPU photo never occupies an ordinary development/save lane.
-    Thread(target=decode, args=("edge-cpu",), name="hdr-library-edge-cpu", daemon=True).start()
+    # Recovery keeps its separate GPU development/save admission, but shares
+    # the CPU foreground partition. Do not hold admitted memory reservations
+    # idle behind one recovery thread while other CPU slots are free.
+    for index in range(lanes):
+        Thread(target=decode, args=("edge-cpu",), name=f"hdr-library-edge-cpu-{index}", daemon=True).start()
     # Unvisited pinned folders are indexed on their own lane, so a long
     # background scan never queues ahead of the folder the user just clicked.
     Thread(target=decode, args=("index",), name="hdr-library-index", daemon=True).start()

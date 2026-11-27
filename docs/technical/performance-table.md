@@ -1,3 +1,12 @@
+## November 27: CPU Library progress and native band sampling (PC)
+
+| Action | Before | After | Conditions |
+| --- | --- | --- | --- |
+| 50 MP DSC00636.ARW CPU scene preparation, 640 with shared 2560 companion | 56.4 s | 26.1 s (54% less wait) | Windows PC, 12 logical CPUs / 64 GB, curated read-only RAW, fresh disposable Library cache, cProfile, shared GPU lock; open user app retained. Baseline d5a76c0c versus this change. Intermediate native horizontal reduction alone: 51.3 s, including 31.6 s in NumPy planar lens sampling; native sampling removes that bottleneck. No full-resolution, lens, highlight, cleanup or measurement work skipped. Single samples establish the large gain, not a narrow timing guarantee. |
+| Frozen mixed Library viewport | 26/30 at 90 s; helper restarted three times, then stopped | 30/30; all viewport photos pictured by 79.1 s, zero helper restarts | Same PC/2560x1440/frozen v1/plain Electron/shared GPU lock, faulty VRAM exercising four real CPU recoveries, user app retained. Own suites finished before final run. First/ten/twenty pictures 0.9/1.4/22.2 s. Final `codebase/output/quick-library-check/cpu-library-partition/report.json`, base 6c734ec0 plus this change. Earlier timeout/native-sampling-only run reached 28/30: queued recovery memory reservations serialized behind one worker; sharing the existing CPU foreground partition cleared them. |
+| Library drawing / whole-app peak | Longest reported frame gap 91 ms, main-thread block 106 ms; peak 5.688 GB | No recorded long frame gaps, longest main-thread block 55 ms, peak 5.804 GB (+2.0%) | Same final run and transport-recovery-final baseline. Existing drawing and memory guards pass without relaxed limits; this is faulty-card fallback qualification, not a healthy-GPU performance benchmark. Memory peak includes concurrently active admitted CPU recovery jobs. |
+
+
 ## November 27: GPU transport recovery investigation (PC)
 
 | Action | Observation | Conditions |

@@ -1,3 +1,46 @@
+### November 27, 2026: CPU progress and banded development
+
+Steve approved CPU-specific limits for fallback and CPU-only machines. Helper
+CPU work now has an inactivity allowance of at least 120 seconds (or the
+existing size/type decoder allowance when longer). The PC 50 MP DSC00636.ARW
+baseline was 56.4 seconds, so the floor exceeds twice that whole decode.
+Completed sensor/reduction bands renew the allowance, throttled to once a
+second; no timer heartbeat is sent while a native call is stuck. Queueing and
+Grade holds remain excluded. Genuine stalls still set aside the offending file
+and restart the disposable helper; the three-restart budget is unchanged.
+Retouch and rejected-pixel Edge Colour keep their separate existing guards.
+GPU preparation, upload, scheduling and drawing limits are unchanged. The
+15-second grant expiry is an owner-connection lease (5-second heartbeats),
+not a photo deadline; scheduler stall thresholds only log diagnostics. The
+45-second upload and 310-second scene-download guards remain transport guards.
+
+CPU Bayer development retains full-resolution AHD, lens correction, peak and
+robust measurements, and shared 640/2560 scene preparation. Horizontal triangle
+reduction uses Pillow's float filter instead of Python column gathers. Planar
+lens sampling uses the existing native lens helper with ordered double-weight
+interpolation, avoiding large NumPy gather/weight temporaries. The native
+coordinate regression matches the former NumPy result byte for byte; banded
+reduction retains its existing whole-image Pillow tolerance. Source/output
+recipes, cache identities, priorities and memory budgets are unchanged.
+Recovery previously serialized admitted jobs behind one worker, retaining their
+memory reservations and blocking later sources. Recovery now shares the existing
+foreground CPU partition with ordinary picture work (at most photo_lanes active
+CPU pictures/recoveries combined), with a recovery worker per available lane.
+The GPU development/save place counts are unchanged. Selected/visible-first
+ordering and shared-tier source reuse were already present. Before/after measurements and qualification are in the performance
+table.
+
+Validation: the frozen 90-second PC check now passes 30/30 (last viewport
+picture 79.1 s), with four successful real CPU recoveries and zero helper
+restarts. Drawing/memory guards pass unchanged (5.804 GB peak). All 37 focused
+worker/band/fallback tests pass, including real helper progress-versus-stall
+recovery, Grade-pause exclusion, native coordinate bytes, banded filter parity
+and concurrent admitted CPU recovery. Full Python before the final shared-lane
+adjustment: 5192 passed / 56 skipped, plus 47 serial passes; one parallel helper
+startup timeout passed alone afterward. Full Node: 1546 passed / one skipped,
+with the previously recorded unrelated release-runner follow-up-log deadline
+failure unchanged. The focused 37-case suite covers the final lane adjustment.
+
 ### November 27, 2026: rejected GPU transport and CPU recovery
 
 The PC quick check reproduced 28/30 viewport pictures: DSC00264.ARW and
