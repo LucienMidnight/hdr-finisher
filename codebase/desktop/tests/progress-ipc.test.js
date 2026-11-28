@@ -39,3 +39,9 @@ test('progress IPC preserves main-window progress bounds and states', () => {
     [-1, { mode: 'normal' }], [-1, { mode: 'indeterminate' }],
   ]);
 });
+
+test('a malformed progress value cannot throw from the main-process event listener', () => {
+  const s = setup();
+  assert.doesNotThrow(() => s.send({ valid: true }, { value: { toString: null, valueOf: null } }));
+  assert.deepEqual(JSON.parse(JSON.stringify(s.calls)), [[-1, { mode: 'normal' }]]);
+});

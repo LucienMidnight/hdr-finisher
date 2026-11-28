@@ -25,9 +25,10 @@ function create(write, { quietMs = 250 } = {}) {
   }
 
   function ingest(record, proc, pid) {
-    if (!record || !AREAS.has(record.area) || !NAME.test(record.event) || !LEVELS.has(record.level)) return false;
+    if (!record || !AREAS.has(record.area) || typeof record.event !== "string"
+        || !NAME.test(record.event) || !LEVELS.has(record.level)) return false;
     const { time, seq: sourceSeq, instance, action, photo, ...fields } = record;
-    const detail = { ...sanitize(fields), proc, pid, action: ACTION.test(action ?? "") ? action : null,
+    const detail = { ...sanitize(fields), proc, pid, action: typeof action === "string" && ACTION.test(action) ? action : null,
       photo: photo && typeof photo === "object" ? sanitize(photo) : null,
       ...(typeof instance === "string" && ACTION.test(instance) ? { instance } : {}) };
     delete detail.repeat_summary;

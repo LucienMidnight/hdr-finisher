@@ -957,7 +957,7 @@ function registerIpc() {
     try { record = validateSender(event); } catch { return; }
     if (record.role !== "main" || !progress || typeof progress !== "object"
         || !mainWindow || mainWindow.isDestroyed()) return;
-    const value = Number(progress.value);
+    const value = progress.value;
     mainWindow?.setProgressBar(Number.isFinite(value) ? Math.max(-1, Math.min(1, value)) : -1, {
       mode: ["normal", "paused", "error", "indeterminate"].includes(progress.state) ? progress.state : "normal",
     });
