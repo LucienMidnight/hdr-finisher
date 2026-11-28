@@ -816,6 +816,7 @@ function bindEvents() {
     }
     if (bindFilmSelectPreview(control)) return;
     const transactionOwnedControl = control.dataset.path === "shared.geometry.straighten_angle";
+    const deferToneUi = control.type === "range" && Boolean(control.closest('[data-group="hdr-tone"], [data-group="sdr-tone"]'));
     control.addEventListener("pointerdown", () => {
       if (transactionOwnedControl) return;
       beginGlobalEditGesture(control);
@@ -826,6 +827,7 @@ function bindEvents() {
       control.addEventListener(eventName, () => {
         if (transactionOwnedControl) return;
         if (eventName === "change" && control.dataset.historyKeyboardActive === "true") return;
+        if (deferToneUi) flushToneControlState();
         state.previewScheduler?.endInteraction();
         endGlobalEditGesture(control);
       });
@@ -842,6 +844,7 @@ function bindEvents() {
     control.addEventListener("keyup", () => {
       if (transactionOwnedControl) return;
       delete control.dataset.historyKeyboardActive;
+      if (deferToneUi) flushToneControlState();
       state.previewScheduler?.endInteraction();
       endGlobalEditGesture(control);
     });
@@ -855,7 +858,7 @@ function bindEvents() {
         updateCropDraftControl(control.dataset.path, value);
         return;
       }
-      commitAdjustmentValue(control.dataset.path, value);
+      commitAdjustmentValue(control.dataset.path, value, { deferToneUi });
     });
   });
   document.getElementById("hdr-compression-use-display")?.addEventListener("click", useHighlightDisplayPeak);

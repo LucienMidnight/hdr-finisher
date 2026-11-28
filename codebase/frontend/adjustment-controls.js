@@ -70,7 +70,7 @@ function readControlValue(control) {
   return numeric ? filmStockUiValue(control.dataset.path, Number(control.value), false) : control.value;
 }
 
-function commitAdjustmentValue(path, value, { manual = false } = {}) {
+function commitAdjustmentValue(path, value, { manual = false, deferToneUi = false } = {}) {
   const resolvedPath = resolveAdjustmentPath(path);
   if (manual) {
     beginGlobalDetailInteraction(resolvedPath);
@@ -105,7 +105,14 @@ function commitAdjustmentValue(path, value, { manual = false } = {}) {
   if (resolvedPath.includes(".tone_equalizer_")) drawToneEqualizerEditor(resolvedPath.startsWith("sdr.") ? "sdr" : "hdr");
   syncRangeControlFromState(path);
   updateControlReadouts();
-  renderControlState();
+  if (deferToneUi) {
+    // These values are used by the render, not just the graphs. Keep them
+    // current before queuing preview work, even if the controls paint later.
+    syncHighlightCompressionMinimum();
+    if (els.highlightCompressionGraph) syncHighlightCompressionSourcePeak();
+    if (els.sdrHighlightCompressionGraph) syncSdrHighlightCompressionSourcePeak();
+    scheduleToneControlState(resolvedPath.split(".")[0]);
+  } else renderControlState();
   if (path.startsWith("shared.overlay_")) {
     markGlobalEditDirty();
     if (path === "shared.overlay_mode") refreshOverlayAndScopesImmediately();
@@ -204,12 +211,33 @@ function renderFilmStockControls() {
   renderFilmPanel();
 }
 
-function renderControlState() {
+let toneControlStateFrame = null;
+let toneControlStateLanes = new Set();
+
+function scheduleToneControlState(lane) {
+  toneControlStateLanes.add(lane);
+  if (toneControlStateFrame !== null) return;
+  toneControlStateFrame = requestAnimationFrame(flushToneControlState);
+}
+
+function clearToneControlStateFrame() {
+  if (toneControlStateFrame !== null) cancelAnimationFrame(toneControlStateFrame);
+  toneControlStateFrame = null;
+  toneControlStateLanes = new Set();
+}
+
+function flushToneControlState() {
+  if (toneControlStateFrame === null) return;
+  renderControlState({ highlightLanes: toneControlStateLanes });
+}
+
+function renderControlState({ highlightLanes = null } = {}) {
+  clearToneControlStateFrame();
   const draft=state.filmSelectDraft;
   if (draft && state.adjustments !== draft.before) {
     const preview=state.adjustments;
     state.adjustments=draft.before;
-    try { return renderControlState(); } finally { state.adjustments=preview; }
+    try { return renderControlState({ highlightLanes }); } finally { state.adjustments=preview; }
   }
   renderHslPanels();
   const defaults = defaultAdjustments();
@@ -218,8 +246,8 @@ function renderControlState() {
   renderFilmGrainChroma();
   renderFilmStockControls();
   renderFilmStockDots();
-  renderHighlightCompressionControls();
-  renderSdrHighlightCompressionControls();
+  if (!highlightLanes || highlightLanes.has("hdr")) renderHighlightCompressionControls();
+  if (!highlightLanes || highlightLanes.has("sdr")) renderSdrHighlightCompressionControls();
   els.controlRows.forEach((row) => {
     row.classList.toggle("modified", isPathModified(row.dataset.controlPath, defaults));
   });

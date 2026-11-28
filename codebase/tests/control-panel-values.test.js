@@ -64,3 +64,39 @@ test('Grade readout sync updates only changed labels, including replacement cont
  c.updateControlReadouts();
  assert.deepEqual(writes,[]);
 });
+
+test('Tone inputs update readouts and preview immediately but paint the affected highlight graph once', () => {
+ const c=context(), frames=new Map(), readouts=[], previews=[], graphs=[];
+ let frame=0;
+ const adjustments={hdr:{exposure:0},sdr:{exposure:0}};
+ const noOp=()=>{};
+ Object.assign(c,{
+  state:{adjustments,currentView:'hdr'},
+  els:{controlRows:[],viewButtons:[],sectionBypasses:[],gradeModifiedSummary:{},curveGroupState:{},
+   curveReset:{closest:()=>null},highlightCompressionGraph:{},sdrHighlightCompressionGraph:{}},
+  document:{querySelector:()=>null,querySelectorAll:()=>[]},
+  controlGroups:{},defaultAdjustments:()=>({hdr:{exposure:0},sdr:{exposure:0}}),
+  setValueByPath:(_adjustments,path,value)=>{const [lane,key]=path.split('.');adjustments[lane][key]=value;},
+  syncRangeControlFromState:noOp,updateControlReadouts:()=>readouts.push(adjustments.hdr.exposure),
+  syncHighlightCompressionMinimum:noOp,syncHighlightCompressionSourcePeak:noOp,syncSdrHighlightCompressionSourcePeak:noOp,
+  invalidatePreview:lane=>previews.push(adjustments[lane].exposure),debouncePreview:noOp,
+  requestAnimationFrame:cb=>{frames.set(++frame,cb);return frame;},
+  cancelAnimationFrame:id=>frames.delete(id),
+  renderHighlightCompressionControls:()=>graphs.push(['hdr',adjustments.hdr.exposure]),
+  renderSdrHighlightCompressionControls:()=>graphs.push(['sdr',adjustments.sdr.exposure]),
+  renderHslPanels:noOp,renderFilmGrainChroma:noOp,renderFilmStockControls:noOp,renderFilmStockDots:noOp,
+  renderGeometryResetState:noOp,laneCurvesModified:()=>false,syncDesktopDocumentState:noOp,
+ });
+ c.commitAdjustmentValue('hdr.exposure',.1,{deferToneUi:true});
+ c.commitAdjustmentValue('hdr.exposure',.2,{deferToneUi:true});
+ assert.deepEqual(readouts,[.1,.2]);
+ assert.deepEqual(previews,[.1,.2]);
+ assert.deepEqual(graphs,[]);
+ assert.equal(frames.size,1);
+ frames.values().next().value();
+ assert.deepEqual(graphs,[['hdr',.2]]);
+ c.commitAdjustmentValue('hdr.exposure',.3,{deferToneUi:true});
+ c.flushToneControlState();
+ assert.deepEqual(graphs,[['hdr',.2],['hdr',.3]]);
+ assert.equal(frames.size,0);
+});
