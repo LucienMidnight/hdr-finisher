@@ -1,3 +1,13 @@
+## November 28, 2026 — Mac Library viewport check after EXIF startup fix
+
+MacBook Neo, 1408×794, shared GPU lock, plain Electron, 90-second frozen
+`library-mixed-v1` viewport check at `3bfa3ec7`. All nine eligible viewport
+photos appeared, with the first at 0.5 s. The check failed its unchanged
+250 ms drawing limit with one 434 ms frame gap. Only selected and visible
+metadata was requested, and both reads completed before that gap. This run
+did not start the parallel EXIF pool. No speed comparison is claimed.
+Evidence: `codebase/output/quick-library-check/sem-fix/report.json`.
+
 ## November 28, 2026 — Grade audit first presented GPU frame
 
 MacBook Neo, A18 Pro, 8 GB, 1408×794 at 2×, mains power, shared GPU lock.
