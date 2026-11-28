@@ -88,6 +88,7 @@ let documentState = { path: "", dirty: false, displayName: "Untitled" };
 let renderingMode = "auto";
 let applicationPreferences = null;
 let updateCheckCache = null;
+let updateCheckCacheWrite = Promise.resolve();
 let pendingOpenPaths = [];
 let rendererReady = false;
 let splash = null;
@@ -258,15 +259,21 @@ async function checkForUpdates({ force = false } = {}) {
   }
   if (!updateCheckCache) {
     try {
-      const cached = JSON.parse(fs.readFileSync(updateCheckCachePath(), "utf8"));
-      if (Number.isFinite(cached.checkedAt) && cached.result && typeof cached.result === "object") updateCheckCache = cached;
-    } catch {}
+      const cached = JSON.parse(await fs.promises.readFile(updateCheckCachePath(), "utf8"));
+      if (Number.isFinite(cached.checkedAt) && cached.result && typeof cached.result === "object") updateCheckCache ??= cached;
+    } catch (error) {
+      if (error.code !== "ENOENT") console.warn("Could not read the update cache:", error);
+    }
   }
   const cachedResult = cachedUpdateResult(updateCheckCache, currentVersion, now);
   if (!force && cachedResult) return cachedResult;
-  const cacheResult = (result) => {
-    updateCheckCache = { checkedAt: now, result };
-    try { fs.writeFileSync(updateCheckCachePath(), JSON.stringify(updateCheckCache)); } catch {}
+  const cacheResult = async (result) => {
+    const cache = updateCheckCache = { checkedAt: now, result };
+    // A manual check can overlap the automatic one. Save in completion order.
+    updateCheckCacheWrite = updateCheckCacheWrite
+      .then(() => fs.promises.writeFile(updateCheckCachePath(), JSON.stringify(cache)))
+      .catch((error) => console.warn("Could not save the update cache:", error));
+    await updateCheckCacheWrite;
     return result;
   };
   try {
