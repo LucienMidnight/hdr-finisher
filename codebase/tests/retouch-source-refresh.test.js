@@ -2,6 +2,29 @@ const {test} = require('node:test');
 const assert = require('node:assert/strict');
 const {HDRSourceTransport} = require('../frontend/source-transport.js');
 
+test('Retouch still cancels locally if the backend cancel notification cannot be sent', async () => {
+  const vm = require('node:vm');
+  const {frontendSource} = require('./frontend-source.js');
+  const clicks = new Map(), requests = [], errors = [];
+  const cancelError = new TypeError('Network connection lost');
+  const addEventListener = () => {};
+  const context = vm.createContext({
+    els: {localMaskOverlay: {addEventListener}}, window: {addEventListener},
+    state: {session: {session_id: 'photo'}}, bindSliderReadouts() {},
+    document: {querySelector() {}, addEventListener, getElementById: id => ({
+      addEventListener: (type, callback) => { if (type === 'click') clicks.set(id, callback); },
+    })},
+    fetch: async (url, {body}) => { requests.push([url, JSON.parse(body)]); throw cancelError; },
+    console: {warn: (_message, error) => errors.push(error)},
+  });
+  vm.runInContext(frontendSource('retouch-ui.js') + '\nretouchUI.requestId = "repair"; bindRetouchEvents();', context);
+  clicks.get('retouch-cancel')();
+  assert.equal(vm.runInContext('retouchUI.cancelled', context), true);
+  await new Promise(setImmediate);
+  assert.deepEqual(requests, [['/api/session/photo/retouch/cancel', {request_id: 'repair'}]]);
+  assert.deepEqual(errors, [cancelError]);
+});
+
 function fixture() {
   const pixels = new Float32Array(8*6*4).fill(1);
   const texture = {pixels, destroyed:false, destroy(){this.destroyed=true;}};

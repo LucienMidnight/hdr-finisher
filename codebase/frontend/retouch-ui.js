@@ -668,7 +668,8 @@ function bindRetouchEvents() {
   bindSliderReadouts(document.querySelector(".retouch-panel"));
   retouchInput("cancel").addEventListener("click", () => {
     retouchUI.cancelled = true;
-    if (state.session) void fetch(`/api/session/${state.session.session_id}/retouch/cancel`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ request_id: retouchUI.requestId }) });
+    if (state.session) void fetch(`/api/session/${state.session.session_id}/retouch/cancel`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ request_id: retouchUI.requestId }) })
+      .catch(error => console.warn("Retouch cancellation could not reach the backend.", error));
   });
   const list = retouchInput("list");
   list.addEventListener("keydown", event => {
