@@ -11,7 +11,7 @@ const { execFileSync, spawn } = require('node:child_process');
 const { once } = require('node:events');
 const { setTimeout: delay } = require('node:timers/promises');
 const { parseArgs } = require('node:util');
-const { MODULES, PROBES, CLOCKS, MEMORY, canonical, recipeHash, stats, impacts,
+const { MODULES, PROBES, CLOCKS, MEMORY, recipeHash, stats, impacts,
   updateNoiseSpread, validateRun } = require('../../tools/audit-summary.cjs');
 const { photosRoot } = require('../helpers/photos-root.cjs');
 
@@ -35,7 +35,7 @@ const RECIPES = {
   tone: { changes: { '$lane.exposure': .55, '$lane.contrast': .18 } },
   bands: { band: { adjustment_ev: .8 } },
   curves: { changes: { '$lane.luma_curve': [[0, 0], [.25, .19], [.5, .58], [.75, .83], [1, 1]] } },
-  highlight_compression: { hdr: { 'hdr.highlight_compression_target_nits': 600,
+  highlight_compression: { changes: { '$lane.exposure': 3 }, hdr: { 'hdr.highlight_compression_target_nits': 600,
     'hdr.highlight_compression_start_nits': 203 }, sdr: { 'sdr.highlight_compression_start_percent': 55 } },
   color: { changes: { '$lane.saturation': .3, '$lane.tint': 8 } },
   wheels: { changes: { '$lane.color_grading.shadows.hue': 220, '$lane.color_grading.shadows.saturation': 28,
@@ -44,7 +44,7 @@ const RECIPES = {
   bw: { changes: { '$lane.black_and_white_section_enabled': true, '$lane.black_and_white.reds': 40 } },
   vignette: { changes: { '$lane.vignette.amount': -45, '$lane.vignette.midpoint': 30 } },
   detail: { changes: { '$lane.detail.clarity_amount': 35, '$lane.detail.sharpen_amount': 45 } },
-  film: { changes: { '$lane.film_look.film_stock': 'kodak_portra_400', '$lane.film_look.look_strength': .8,
+  film: { changes: { '$lane.film_look.film_stock': 'kodak_portra_400', '$lane.film_look.look_strength': 80,
     '$lane.film_look.lens_filter': 'black_pro_mist', '$lane.film_look.lens_strength': .3,
     '$lane.film_look.halation_enabled': true, '$lane.film_look.halation_amount': 25,
     '$lane.film_look.grain_enabled': true, '$lane.film_look.grain_amount': 28 } },
@@ -70,7 +70,7 @@ const RANGE = {
   color: ['#$lane-saturation', '#$lane-tint'], wheels: ['[data-path="current.color_grading.blending"]'],
   hsl: ['#hsl-global-panel [data-hsl-key="saturation"]'], bw: ['#bw-reds'],
   vignette: ['[data-path="current.vignette.amount"]'], detail: ['#detail-clarity', '#detail-sharpen'],
-  film: ['#film-look-strength', '#film-halation-amount', '#film-grain-amount'],
+  film: ['#film-look-strength', '#film-lens-strength', '#film-halation-amount', '#film-grain-amount'],
   local: ['[data-local-grade="exposure"]'],
 };
 
@@ -482,7 +482,9 @@ async function openPhoto(page, photo, rendition, zoom) {
     activateWorkflowTab('grade');
   }, photo.input), 'Open disposable audit source');
   await page.waitForFunction(previous => state.session?.session_id && state.session.session_id !== previous, id, { timeout: 8000 });
-  await page.evaluate(view => { if (state.currentView !== view) switchLane(view); }, rendition);
+  await bounded(page.evaluate(async view => {
+    if (state.currentView !== view) await switchLane(view);
+  }, rendition), 'Switch Grade lane');
   await setZoom(page, zoom);
 }
 
@@ -498,23 +500,56 @@ async function prime(page) {
   await setDenoise(page, false);
 }
 
-async function seedRaw(page, id, recipe, on, zoom) {
-  const key = { 'raw.cleanup': 'pixel_cleanup', 'raw.lens': 'lens', 'raw.highlights': 'highlight_reconstruction' }[id];
-  const importId = await page.evaluate(async ({ key, values }) => {
+async function setRaw(page, update, zoom) {
+  const reloaded = await bounded(page.evaluate(async ({ key, values }) => {
     const source = sourcePathForClipboard();
     const id = state.session.session_id, previous = state.importGeneration;
-    const rawImportSettings = structuredClone(state.editDocument.source.raw_import_settings);
-    Object.assign(rawImportSettings[key], values);
-    if (JSON.stringify(rawImportSettings) !== JSON.stringify(state.editDocument.source.raw_import_settings)) {
-      await openStagedDesktopSource({ ...await desktop.grantSourcePath(source), rawImportSettings, replaceSessionId: id });
-      if (state.importGeneration <= previous || !Object.entries(values).every(([k, v]) => state.editDocument.source.raw_import_settings[key]?.[k] === v)) {
-        throw Error(`RAW ${key} settings did not persist`);
-      }
+    const existing = state.editDocument.source.raw_import_settings;
+    const rawImportSettings = key ? structuredClone(existing) : values;
+    if (key) Object.assign(rawImportSettings[key], values);
+    if (stablePreviewJson(rawImportSettings) === stablePreviewJson(existing)) return false;
+    await openStagedDesktopSource({ ...await desktop.grantSourcePath(source), rawImportSettings, replaceSessionId: id });
+    if (state.importGeneration <= previous || !state.session?.session_id
+      || (key && !Object.entries(values).every(([k, v]) => state.editDocument.source.raw_import_settings[key]?.[k] === v))) {
+      throw Error(`RAW ${key || 'default'} settings did not persist`);
     }
-    return state.session.session_id;
-  }, { key, values: on ? recipe.on : recipe.off });
-  if (!importId) throw Error('RAW development lost the session');
-  await setZoom(page, zoom);
+    return true;
+  }, update), 'Re-develop RAW for the next settled block');
+  if (reloaded) await setZoom(page, zoom);
+}
+
+async function seedRaw(page, id, recipe, on, zoom) {
+  const key = { 'raw.cleanup': 'pixel_cleanup', 'raw.lens': 'lens', 'raw.highlights': 'highlight_reconstruction' }[id];
+  await setRaw(page, { key, values: on ? recipe.on : recipe.off }, zoom);
+}
+
+async function gradeSnapshot(page) {
+  return bounded(page.evaluate(async () => {
+    if (await syncGlobalEditState() === false) throw Error('Could not synchronise audit grade');
+    return structuredClone(state.editDocument);
+  }), 'Snapshot audit grade');
+}
+
+async function restoreGrade(page, snapshot, rendition, zoom) {
+  const raw = snapshot.source.raw_import_settings;
+  if (raw) await setRaw(page, { values: raw }, zoom);
+  await bounded(page.evaluate(async ({ snapshot, rendition }) => {
+    if (state.currentView !== rendition) await switchLane(rendition);
+    // The backend keeps the current source and disallows source replacement
+    // through edit commands. This restores the grade, including local/repair
+    // edits, without starting a second source import or saving a project.
+    if (await syncGlobalEditState() === false) throw Error('Could not synchronise audit grade');
+    const document = { ...snapshot, source: state.editDocument.source };
+    if (stablePreviewJson(document) !== stablePreviewJson(state.editDocument)) {
+      if (!await queueEditCommand('replace_document', { document })) throw Error('Could not restore the audit grade');
+      renderLaneChrome();
+      syncControlsFromState();
+      renderControlState();
+      syncCurveControlsFromState();
+      drawCurveEditor();
+    }
+  }, { snapshot, rendition }), 'Restore in-session Grade state');
+  await stable(page);
 }
 
 async function applyChanges(page, rendition, changes) {
@@ -523,6 +558,10 @@ async function applyChanges(page, rendition, changes) {
     const adjustments = structuredClone(state.adjustments);
     for (const [key, value] of Object.entries(changes)) setValueByPath(adjustments, key.replaceAll('$lane', rendition), value);
     if (!await queueEditCommand('set_global_adjustments', { adjustments })) throw Error('Audit grade setup was rejected');
+    syncControlsFromState();
+    renderControlState();
+    syncCurveControlsFromState();
+    drawCurveEditor();
   }, { rendition, changes }), 'Seed audit grade');
   await stable(page);
 }
@@ -549,9 +588,7 @@ async function seed(page, id, recipe, rendition, zoom) {
   }
   await applyChanges(page, rendition, { ...recipe.changes, ...(id === 'highlight_compression' ? recipe[rendition] : {}) });
   if (EYES[id]) {
-    await selectTab(page, id === 'local' ? 'local' : 'global');
-    const control = await reveal(page, eye(renameLane(EYES[id], rendition)));
-    if (await control.getAttribute('aria-pressed') !== 'true') await control.click();
+    await setModuleEye(page, id, rendition, true);
   }
   if (id === 'bands') {
     await page.evaluate(({ rendition, band }) => {
@@ -608,13 +645,19 @@ function moduleLane(id, selected) {
 const offMethod = id => isRaw(id) ? 'setting'
   : EYES[id] || ['denoise', 'retouch'].includes(id) ? 'eye' : 'neutral';
 
-async function moduleState(page, id, recipe, rendition, zoom, on) {
+async function setModuleEye(page, id, rendition, on) {
+  await selectTab(page, id === 'local' ? 'local' : 'global');
+  const key = renameLane(EYES[id], rendition);
+  const enabled = () => page.evaluate(path => getValueByPath(state.adjustments, resolveAdjustmentPath(path)) !== false, key);
+  if (await enabled() !== on) await (await reveal(page, eye(key))).click();
+  if (await enabled() !== on) throw Error(`Module eye did not reach the requested state: ${id}`);
+}
+
+async function moduleState(page, id, recipe, rendition, zoom, on, snapshots) {
   if (isRaw(id)) return seedRaw(page, id, recipe, on, zoom);
   if (id === 'denoise') return setDenoise(page, on, 'clean_grain');
   if (EYES[id]) {
-    await selectTab(page, id === 'local' ? 'local' : 'global');
-    const control = await reveal(page, eye(renameLane(EYES[id], rendition)));
-    if ((await control.getAttribute('aria-pressed') === 'true') !== on) await control.click();
+    await setModuleEye(page, id, rendition, on);
   } else if (id === 'retouch') {
     await bounded(page.evaluate(async on => {
       await commitRetouch(state.editDocument.repairs.map(repair => ({ ...repair, enabled: on })));
@@ -622,15 +665,11 @@ async function moduleState(page, id, recipe, rendition, zoom, on) {
   } else if (id === 'geometry' || id === 'sdr_match') {
     // These have no section eye. The OFF recipe is a genuinely fresh grade,
     // rather than pretending that the geometry or matched values were bypassed.
-    await openPhoto(page, currentInput(page), rendition, zoom);
-    if (on) await seed(page, id, recipe, rendition, zoom);
+    await restoreGrade(page, on ? snapshots.seeded : snapshots.defaults, rendition, zoom);
   }
   await selectTab(page);
   await stable(page);
 }
-
-const photoForPage = new WeakMap();
-const currentInput = page => photoForPage.get(page);
 
 async function canvasDrag(page, locator) {
   const b = await locator.boundingBox();
@@ -656,7 +695,7 @@ async function ownControls(page, id, rendition) {
     { selector: '#curve-editor', name: 'curve.drag', type: 'canvas' },
     button(eye(EYES[id]), 'eye'),
   ];
-  if (id === 'geometry') return [{ ...slider('#crop-straighten'), name: 'straighten.drag', geometry: true }];
+  if (id === 'geometry') return [{ ...slider('#crop-straighten'), name: 'straighten.drag', geometry: true, draft: true }];
   if (id === 'sdr_match') return [button('#sdr-match-entire', 'entire.click')];
   if (id === 'retouch') return [
     { ...slider('#retouch-size'), tab: 'retouch', repair: true },
@@ -715,14 +754,20 @@ async function denoiseUnavailable(page, method) {
   });
 }
 
-async function auditModule(page, measure, row, cfg, photo) {
+async function auditModule(page, measure, row, cfg, defaults) {
   const { module: id, lane: rendition, recipe } = row;
   const zoom = cfg.zoom;
   const count = isRaw(id) ? 3 : cfg.samples;
   const warmups = isRaw(id) ? 1 : cfg.warmups;
   const denoiseEye = button('#denoise-bypass', 'eye');
   const sample = async (target, descriptor, warm = false) => {
-    const measured = await performControl(page, measure, target, descriptor);
+    let measured;
+    try { measured = await performControl(page, measure, target, descriptor); }
+    catch (error) {
+      const reason = `${target.step}/${target.state}: ${error.message || error}`;
+      target.errors.push(reason);
+      throw Error(reason, { cause: error });
+    }
     if (!warm) {
       addSample(target, measured);
       if (descriptor.denoise) row.denoiseRebuilds += measured.rebuilds;
@@ -735,26 +780,23 @@ async function auditModule(page, measure, row, cfg, photo) {
     row[target] = await signature(page, true);
   };
   const changeState = async on => {
-    await moduleState(page, id, recipe, rendition, zoom, on);
+    await moduleState(page, id, recipe, rendition, zoom, on, { defaults, seeded });
     if (id !== 'denoise') await prime(page);
     else {
       await prime(page);
       await setDenoise(page, on, 'clean_grain');
     }
   };
-  const seedOn = async () => {
-    await openPhoto(page, photo, rendition, zoom);
-    const skipped = await seed(page, id, recipe, rendition, zoom);
-    if (skipped) return skipped;
-    if (id !== 'denoise') await prime(page);
-    return null;
-  };
-  const skipped = await seedOn();
+  await selectTab(page);
+  await restoreGrade(page, defaults, rendition, zoom);
+  const skipped = await seed(page, id, recipe, rendition, zoom);
   if (skipped) {
     row.status = 'skipped';
     row.errors.push(skipped);
     return;
   }
+  const seeded = await gradeSnapshot(page);
+  if (id !== 'denoise') await prime(page);
 
   if (id === 'denoise') {
     for (const method of METHODS) {
@@ -785,9 +827,12 @@ async function auditModule(page, measure, row, cfg, photo) {
       const label = d.type === 'range' && !d.name.endsWith('.drag') ? d.name + '.drag' : d.name;
       const target = timedStep(row, `own.${id}.${label}`, 'own', 'on');
       for (let i = -warmups; i < count; i++) {
+        if (id === 'sdr_match') {
+          await restoreGrade(page, defaults, rendition, zoom);
+          await applyChanges(page, rendition, recipe.changes);
+        }
         await sample(target, d, i < 0);
-        if (d.raw) { await seedRaw(page, id, recipe, true, zoom); await prime(page); }
-        else await seedOn();
+        await restoreGrade(page, seeded, rendition, zoom);
       }
     }
   }
@@ -824,6 +869,7 @@ async function auditModule(page, measure, row, cfg, photo) {
         }, before);
         await stable(page);
       }
+      if (id === 'sdr_match') await changeState(on);
     }
   };
   if (isRaw(id)) {
@@ -857,7 +903,8 @@ async function runMetadata(page, cfg, photo, file) {
     const gpu = window.HDRFinisherPerformance.gpuSnapshot();
     const { width, height } = state.session.source;
     return { width, height, dpr: devicePixelRatio, window: `${outerWidth}x${outerHeight}`,
-      adapter: gpu.adapter?.description || [gpu.adapter?.vendor, gpu.adapter?.architecture, gpu.adapter?.device].filter(Boolean).join(' '),
+      adapter: [gpu.adapter?.description, gpu.adapter?.vendor, gpu.adapter?.architecture, gpu.adapter?.device]
+        .filter(x => x && x !== 'unknown').join(' '),
       previewResolution: state.previewResolutionOverride ? normalizedPreviewResolution() : 'auto' };
   });
   const power = process.env.HDR_FINISHER_POWER_MODE || 'unknown';
@@ -868,8 +915,9 @@ async function runMetadata(page, cfg, photo, file) {
   return { schema: 'module-impact-v1', audit: path.basename(path.dirname(file)),
     driver: { path: DRIVE, sha256: await shaFile(__filename) },
     machine: { name: os.hostname(), platform: process.platform, chip: os.cpus()[0]?.model.trim() || os.arch(),
-      ramGiB: Math.round(os.totalmem() / 1024 ** 3 * 100) / 100, window: details.window,
+      ramGiB: Math.round(os.totalmem() / 1024 ** 3 * 100) / 100, window: process.env.HDR_FINISHER_ELECTRON_WINDOW_SIZE || details.window,
       dpr: details.dpr, powerSource: power, powerMode: power, gpuAdapter: details.adapter || 'unreported' },
+    observedWindow: details.window,
     app: { version: require('../../desktop/package.json').version, commit: git('rev-parse', 'HEAD'),
       dirty: Boolean(git('status', '--porcelain', '--untracked-files=no')) },
     photo: { role: photo.role, file: photo.file, sha256: photo.sha256, megapixels: details.width * details.height / 1e6 },
@@ -903,7 +951,6 @@ async function audit() {
   const { chromium } = require('playwright');
   const browser = await chromium.launch({ headless: false });
   const page = await browser.newPage();
-  photoForPage.set(page, photo);
   const memory = sampler();
   try {
     await page.goto(process.env.HDR_FINISHER_URL);
@@ -911,14 +958,16 @@ async function audit() {
     await page.evaluate(() => window.HDRFinisherPerformance.enableGpuInstrumentation(true));
     await page.evaluate(installObserve);
     await openPhoto(page, photo, moduleLane(cfg.plan[0].split(':')[0], cfg.lane), cfg.zoom);
+    const defaults = await gradeSnapshot(page);
     const fresh = await runMetadata(page, cfg, photo, file);
+    const changedConditions = old ? Object.keys(fresh.machine).filter(k => old.machine[k] !== fresh.machine[k]) : [];
     if (old && (old.driver.sha256 !== fresh.driver.sha256 || old.photo.sha256 !== fresh.photo.sha256
       || old.zoom !== fresh.zoom || old.samples !== fresh.samples || old.warmups !== fresh.warmups
       || old.previewResolution !== fresh.previewResolution || old.appMemoryCeilingMb !== fresh.appMemoryCeilingMb
-      || canonical(old.machine) !== canonical(fresh.machine)
+      || changedConditions.length
       || old.modules.some(row => cfg.plan.some(item => item.split(':')[0] === row.module)
         && row.lane !== moduleLane(row.module, cfg.lane)))) {
-      throw Error('Cannot resume: driver, input, lane or measurement conditions changed. Use a fresh --out folder.');
+      throw Error(`Cannot resume: driver, input, lane or measurement conditions changed${changedConditions.length ? ' (' + changedConditions.join(', ') + ')' : ''}. Use a fresh --out folder.`);
     }
     const run = old || fresh;
     const start = Date.now(), priorDuration = run.durationSec;
@@ -938,7 +987,7 @@ async function audit() {
       const row = newModule(id, moduleLane(id, cfg.lane));
       console.log(`[module audit] ${cfg.plan[index]} (${row.lane})`);
       let interrupted = false;
-      try { await auditModule(page, measure, row, cfg, photo); }
+      try { await auditModule(page, measure, row, cfg, defaults); }
       catch (error) {
         failed = interrupted = true;
         row.status = 'error';
