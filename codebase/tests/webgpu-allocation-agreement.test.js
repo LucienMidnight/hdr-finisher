@@ -78,7 +78,8 @@ function createRecordingDevice() {
         bytesPerPixel,
         'test stub does not know the byte size of format "' + descriptor.format + '"',
       );
-      return register("texture", width * height * bytesPerPixel, {
+      const depth = descriptor.size.depthOrArrayLayers ?? descriptor.size[2] ?? 1;
+      return register("texture", width * height * depth * bytesPerPixel, {
         width,
         height,
         format: descriptor.format,
@@ -121,19 +122,20 @@ function loadPreviewModule() {
   vm.runInContext(graphScaleSource, context);
   vm.runInContext(allocatorSource, context);
   vm.runInContext(budgetSource, context);
+  vm.runInContext(frontendSource("hsl-selection-gpu.js"), context);
   vm.runInContext(shaderSource, context);
   vm.runInContext(source, context);
-  return context.window.HDRWebGPUPreview;
+  return { Preview: context.window.HDRWebGPUPreview, Hsl: context.HDRHslSelectionGpu };
 }
 
 function createPreview() {
-  const Preview = loadPreviewModule();
+  const { Preview, Hsl } = loadPreviewModule();
   const preview = new Preview(null);
   const { device, ledger } = createRecordingDevice();
   preview.device = device;
   // recordAllocation is a no-op unless instrumentation is on.
   preview.instrumentationEnabled = true;
-  return { preview, ledger };
+  return { preview, ledger, Hsl };
 }
 
 test("grading residency reports the four core textures the device actually created", () => {
@@ -368,6 +370,45 @@ test("evicted textures stay charged through the active encoder and the owning qu
   assert.equal(preview.resourceMemorySnapshot().transient.totalBytes, 0);
   assert.equal(preview.gpuAllocator.usedBytes(), ledger.liveBytes);
   assert.equal(destroys, 1);
+});
+
+test("committed bypass retires Detail, Clarity, Film and global HSL scratch but keeps accepted pixels and hue masks", () => {
+  const { preview, ledger, Hsl } = createPreview();
+  const canvas = {};
+  const direct = preview.ensureIntermediate(canvas, 320, 160, true, true, true);
+  const tiled = preview.ensureTileGraph(64, 64, "rgba16float", "rgba16float");
+  const maps = preview.clarityMapTextures("frame", 80, 40);
+  assert.equal(preview.gpuAllocator.snapshot().byKind["clarity-map"].bytes, maps.byteSize);
+  const accepted = preview.lastPresentedFrame = { completion: "accepted" };
+  preview.scopeSources.set(canvas, { spatialTexture: direct.finishTexture });
+  preview.hslSelectionEngines = new Map();
+  preview.hslSelectionTemplate = new Hsl(preview.device);
+  const global = preview.hslSelectionEngine(canvas, "direct");
+  const hueMask = preview.hslMaskEngine = preview.createHslSelectionEngine();
+  global.ensure(16, 16, 1, 4);
+  hueMask.ensure(32, 32, 2, 4);
+  const bytesBefore = ledger.liveBytes;
+  assert.equal(preview.resourceMemorySnapshot().resident.totalBytes, bytesBefore);
+  assert.equal(preview.gpuAllocator.snapshot().byKind["hsl-selection"].bytes, global.bytes() + hueMask.bytes());
+
+  preview.activeRenderCount = 1;
+  preview.retireInactiveGradeScratch({ detail: false, clarity: false, spatial: false, hsl: true }, () => true);
+  assert.equal(ledger.liveBytes, bytesBefore);
+  preview.finishActiveRender();
+  assert.equal(preview.hslMaskEngine, hueMask);
+  assert.equal(preview.hslSelectionEngines.size, 0);
+  assert.ok(direct.detailATexture, "local Detail is still using the pair");
+  assert.equal(preview.clarityMaps.get("frame"), maps);
+
+  preview.retireInactiveGradeScratch({ detail: true, clarity: true, spatial: true, hsl: true }, () => true);
+  assert.equal(direct.detailATexture, null);
+  assert.equal(direct.spatialATexture, null);
+  assert.equal(direct.lensGlowTexture, null);
+  assert.equal(tiled.detailScratchTexture, null);
+  assert.equal(preview.clarityMaps.size, 0);
+  assert.equal(preview.lastPresentedFrame, accepted);
+  assert.equal(preview.gpuAllocator.snapshot().byKind["hsl-selection"].bytes, hueMask.bytes());
+  assert.equal(preview.resourceMemorySnapshot().resident.totalBytes, ledger.liveBytes);
 });
 
 test("calibrated Auto lowers the budget, adopts the allocator, and reports its source", () => {

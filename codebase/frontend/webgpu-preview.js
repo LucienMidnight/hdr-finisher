@@ -233,6 +233,8 @@
       this.pendingGpuRetireBytes = 0;
       this.gpuRetireFences = new Map();
       this.fineGrainTransientBytes = 0;
+      this.hslSelectionResources = new Map();
+      this.claritySurroundEntries = new Set();
       // Planner state. The budget is an application allocation budget
       // chosen by the user, never a physical VRAM measurement.
       this.memoryBudget = "auto";
@@ -1218,6 +1220,9 @@
       const denoiseTileBytes = [...this.denoiseTiles.values()].reduce((sum, entry) => sum + (entry.byteSize || 0), 0);
       const lensGlowTileBytes = [...this.lensGlowTiles.values()].reduce((sum, entry) => sum + entry.byteSize, 0);
       const tileGraphBytes = (this.tileGraph?.byteSize || 0) + (this.analysisTileGraph?.byteSize || 0);
+      const hslSelectionBytes = [...this.hslSelectionResources.values()].reduce((sum, entry) => sum + entry.byteSize, 0);
+      const clarityMapBytes = [...(this.clarityMaps?.values() || []), ...this.claritySurroundEntries]
+        .reduce((sum, entry) => sum + entry.byteSize, 0);
       const scopeBytes = [...this.scopeResources.values()].reduce(
         (sum, pool) => sum + pool.reduce((poolSum, resource) => poolSum + (resource.byteSize || 0), 0),
         0,
@@ -1276,6 +1281,8 @@
         denoiseTileBytes,
         lensGlowTileBytes,
         tileGraphBytes,
+        hslSelectionBytes,
+        clarityMapBytes,
         scopeBytes,
         denoiseEvidenceBytes,
         denoiseReconstructionScratchBytes,
@@ -1470,6 +1477,53 @@
     /** Which optional stages this parameter set actually switches on. */
     graphActivity(params) {
       return graphScaleContract().graphActivity(params);
+    }
+
+    committedGradeScratch(options, params, activeLocals, lane, detailActive, localDetailActive, spatialActive) {
+      if (!options?.gradePreview || options.tier === "interactive" || options.coarse
+          || options.noiseView || options.measureOnly || options.underlayerOnly) return null;
+      const scale = graphScaleContract();
+      return {
+        detail: !detailActive && !localDetailActive,
+        clarity: !scale.clarityActive(params) && !activeLocals.some(local => scale.localClarityActive(local[`${lane}_grade`])),
+        spatial: !spatialActive,
+        hsl: !this.hslSelectionChannels(params).length,
+      };
+    }
+
+    retireInactiveGradeScratch(inactive, isCurrent) {
+      if (!inactive) return;
+      this.destroyAfterActiveRenders(() => {
+        if (!isCurrent()) return;
+        for (const [canvas, graph] of this.intermediates) {
+          if (inactive.detail) this.retireGraphTextures(graph, ["detailATexture", "detailBTexture"], graph.width * graph.height * 8);
+          if (inactive.spatial && this.scopeSources.get(canvas)?.spatialTexture !== graph.spatialATexture) {
+            const grid = spatialGridScale(graph.width, graph.height);
+            this.retireGraphTextures(graph, ["spatialATexture", "spatialBTexture", "lensGlowTexture"],
+              Math.ceil(graph.width / grid) * Math.ceil(graph.height / grid) * 8);
+            graph.lensGlowKey = null;
+          }
+        }
+        if (inactive.detail && this.tileGraph?.detailScratch) {
+          const graph = this.tileGraph;
+          graph.byteSize -= this.retireGraphTextures(graph, ["detailScratchTexture", "detailResultTexture"], graph.width * graph.height * 8);
+          graph.detailScratch = false;
+          this.syncGpuCacheBytes(graph);
+        }
+        if (inactive.clarity) this.releaseClarityMaps();
+        if (inactive.hsl) this.releaseGlobalHslSelection();
+      });
+    }
+
+    retireGraphTextures(graph, fields, textureBytes) {
+      const textures = [];
+      for (const field of fields) {
+        if (graph[field]) textures.push(graph[field]);
+        graph[field] = null;
+      }
+      const bytes = textures.length * textureBytes;
+      if (bytes) this.retireGpuResource(bytes, () => textures.forEach(texture => texture.destroy()));
+      return bytes;
     }
 
     /**
@@ -1912,17 +1966,49 @@
       if (!this.hslSelectionTemplate) return null;
       let owned = this.hslSelectionEngines.get(canvas);
       if (!owned) this.hslSelectionEngines.set(canvas, owned = {});
-      return owned[route] ||= this.hslSelectionTemplate.fork();
+      return owned[route] ||= this.createHslSelectionEngine();
+    }
+
+    createHslSelectionEngine() {
+      const engine = this.hslSelectionTemplate.fork();
+      const owner = { byteSize: 0, allocatorEntry: null };
+      engine.onMemoryChange = bytes => {
+        if (owner.byteSize === bytes) return;
+        owner.byteSize = bytes;
+        if (!bytes) {
+          this.hslSelectionResources.delete(engine);
+          this.gpuCacheRelease(owner);
+        } else {
+          if (!owner.allocatorEntry) owner.allocatorEntry = this.gpuAllocator?.register({
+            kind: "hsl-selection", bytes, pinned: true,
+          });
+          else this.syncGpuCacheBytes(owner);
+          this.hslSelectionResources.set(engine, owner);
+        }
+      };
+      return engine;
+    }
+
+    retireHslSelectionEngine(engine) {
+      const owner = this.hslSelectionResources.get(engine);
+      this.hslSelectionResources.delete(engine);
+      engine.onMemoryChange = null;
+      this.gpuCacheRelease(owner);
+      this.retireGpuResource(owner?.byteSize || 0, () => engine.destroy());
+    }
+
+    releaseGlobalHslSelection() {
+      for (const owned of this.hslSelectionEngines?.values() || []) {
+        for (const engine of Object.values(owned)) this.retireHslSelectionEngine(engine);
+      }
+      this.hslSelectionEngines = new Map();
     }
 
     releaseHslSelection() {
-      for (const owned of this.hslSelectionEngines?.values() || []) {
-        for (const engine of Object.values(owned)) this.destroyAfterActiveRenders(() => engine.destroy());
-      }
-      this.hslSelectionEngines = new Map();
+      this.releaseGlobalHslSelection();
       const maskEngine = this.hslMaskEngine;
       this.hslMaskEngine = null;
-      if (maskEngine) this.destroyAfterActiveRenders(() => maskEngine.destroy());
+      if (maskEngine) this.retireHslSelectionEngine(maskEngine);
     }
 
     /** Global HSL channels as the selection reads them, from the packed slots. */
@@ -2036,7 +2122,7 @@
           frameRect: region ? [ox / source.width, oy / source.height, width / source.width, height / source.height] : null,
         };
         if (leaf.hue_center != null) {
-          const engine = (this.hslMaskEngine ||= this.hslSelectionTemplate.fork());
+          const engine = (this.hslMaskEngine ||= this.createHslSelectionEngine());
           const scale = hue.params[GPU_PARAMS.SOURCE_PIXEL_SCALE] || 1;
           const reach = globalThis.HDRHslSelectionGpu.geometry(scale, leaf).reach
             + graphScaleContract().blackAndWhiteGuideReach(hue.params);
@@ -2211,22 +2297,22 @@
      * stop following the image and follow the tile instead, so peak residency
      * stays flat as the selected tier grows.
      */
-    tileGraphMatches(graph, width, height, outputFormat, sourceFormat, spatialActive, denoiseActive, spatialGrid) {
+    tileGraphMatches(graph, width, height, outputFormat, sourceFormat, spatialActive, denoiseActive, spatialGrid, detailScratch = true) {
       return graph && graph.width === width && graph.height === height
         && graph.outputFormat === outputFormat && graph.sourceFormat === sourceFormat
         && graph.spatialActive === spatialActive && graph.denoiseActive === denoiseActive
-        && graph.spatialGrid === spatialGrid;
+        && graph.spatialGrid === spatialGrid && (!detailScratch || graph.detailScratch);
     }
 
-    tileGraphBytes(width, height, sourceFormat, spatialActive, denoiseActive, spatialGrid) {
-      return width * height * (8 * 6 + (sourceFormat === "rgba16float" ? 8 : 16) + (denoiseActive ? 8 : 0))
+    tileGraphBytes(width, height, sourceFormat, spatialActive, denoiseActive, spatialGrid, detailScratch = true) {
+      return width * height * (8 * (detailScratch ? 6 : 4) + (sourceFormat === "rgba16float" ? 8 : 16) + (denoiseActive ? 8 : 0))
         + (spatialActive ? Math.ceil(width / spatialGrid) * Math.ceil(height / spatialGrid) * 8 * 2 : 0);
     }
 
-    ensureTileGraph(width, height, outputFormat, sourceFormat, spatialActive = false, denoiseActive = false, spatialGrid = 4, analysis = false) {
+    ensureTileGraph(width, height, outputFormat, sourceFormat, spatialActive = false, denoiseActive = false, spatialGrid = 4, analysis = false, detailScratch = true) {
       const graphKey = analysis ? "analysisTileGraph" : "tileGraph";
       const current = this[graphKey];
-      if (this.tileGraphMatches(current, width, height, outputFormat, sourceFormat, spatialActive, denoiseActive, spatialGrid)) {
+      if (this.tileGraphMatches(current, width, height, outputFormat, sourceFormat, spatialActive, denoiseActive, spatialGrid, detailScratch)) {
         return current;
       }
       this.destroyTileGraph(graphKey);
@@ -2251,8 +2337,9 @@
           sourceTexture: make(sourceFormat, GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST),
           baseTexture: make("rgba16float", attachment),
           localTexture: make("rgba16float", attachment),
-          detailScratchTexture: make("rgba16float", attachment),
-          detailResultTexture: make("rgba16float", attachment | GPUTextureUsage.COPY_SRC | GPUTextureUsage.COPY_DST),
+          detailScratch,
+          detailScratchTexture: detailScratch ? make("rgba16float", attachment) : null,
+          detailResultTexture: detailScratch ? make("rgba16float", attachment | GPUTextureUsage.COPY_SRC | GPUTextureUsage.COPY_DST) : null,
           filmTexture: make("rgba16float", attachment | GPUTextureUsage.STORAGE_BINDING),
           // A measurement copies its patch out of the finished tile.
           finishTexture: make("rgba16float", attachment | GPUTextureUsage.COPY_SRC | GPUTextureUsage.STORAGE_BINDING),
@@ -2275,7 +2362,7 @@
                 | GPUTextureUsage.COPY_SRC,
             })
             : null,
-          byteSize: this.tileGraphBytes(width, height, sourceFormat, spatialActive, denoiseActive, spatialGrid),
+          byteSize: this.tileGraphBytes(width, height, sourceFormat, spatialActive, denoiseActive, spatialGrid, detailScratch),
         };
       } catch (error) {
         this.recordAllocationFailure("tile-graph", error, { width, height });
@@ -4157,6 +4244,7 @@
       const activeLocals = options.activeLocals || [];
       const { detailActive, spatialActive, filmNeighbourhoodActive } = this.graphActivity(params);
       const localDetailActive = activeLocals.some((local) => gpuLocalDetailActive(local[`${lane}_grade`]));
+      const detailScratch = detailActive || localDetailActive || !options.gradePreview;
       writeClarityPlan(params, proxy.width, proxy.height, params[GPU_PARAMS.CLARITY_RADIUS]);
       // Denoise reconstructs into a tile-sized texture rather than reading a
       // whole-frame resolved one. The alignment is the wavelet grid: a Haar
@@ -4389,13 +4477,15 @@
             ? 0 : pictureWidth * pictureHeight * (surface.format === "rgba16float" ? 8 : 4);
           const graph = this.tileGraph;
           const graphGrowth = this.tileGraphMatches(graph, workWidth, workHeight, surface.format, proxy.pixelFormat,
-            spatialActive, denoiseActive, spatialGrid) ? 0
-              : this.tileGraphBytes(workWidth, workHeight, proxy.pixelFormat, spatialActive, denoiseActive, spatialGrid);
+            spatialActive, denoiseActive, spatialGrid, detailScratch) ? 0
+              : this.tileGraphBytes(workWidth, workHeight, proxy.pixelFormat, spatialActive, denoiseActive, spatialGrid, detailScratch);
           // A batch can hold up to four packed Grain tiles even with no free
           // tile-cache space. The existing graph has its own one-tile resolve.
           const grainScratch = adaptiveDenoise && denoiseSelector.cache.grain && !options.fineGrainReduced
             ? workWidth * workHeight * 16 * 4 : 0;
-          return targetGrowth + graphGrowth + grainScratch
+          const clarityGrowth = !noiseView && foregroundTiles.length && !surround?.global && graphScaleContract().clarityActive(params)
+            ? this.gradeClarityMapGrowth("frame", proxy.width, proxy.height, [params[GPU_PARAMS.CLARITY_RADIUS]]) : 0;
+          return targetGrowth + graphGrowth + grainScratch + clarityGrowth
             + this.gradeCanvasSwapGrowth(canvas, pictureWidth, pictureHeight, surface.format);
         }, options.isCurrent, options.action);
         if (options.isCurrent?.() === false) return { rendered: false, refusals: ["superseded-before-presentation"] };
@@ -4410,7 +4500,7 @@
       let lensTileFrameKey = null;
       const graph = this.ensureTileGraph(
         workWidth, workHeight, surface.format, proxy.pixelFormat, spatialActive, denoiseActive,
-        spatialGrid, Boolean(options.analysisPatch),
+        spatialGrid, Boolean(options.analysisPatch), detailScratch,
       );
       if (!graph) return { rendered: false, refusals: ["tile graph allocation failed"] };
 
@@ -4698,8 +4788,8 @@
       const sourceView = graph.sourceTexture.createView();
       const baseView = graph.baseTexture.createView();
       const localView = graph.localTexture.createView();
-      const scratchView = graph.detailScratchTexture.createView();
-      const detailResultView = graph.detailResultTexture.createView();
+      const scratchView = graph.detailScratchTexture?.createView();
+      const detailResultView = graph.detailResultTexture?.createView();
       const filmView = graph.filmTexture.createView();
       const finishView = graph.finishTexture.createView();
       // No finished picture exists in the noise view, so there is no peak to
@@ -5753,13 +5843,15 @@
       // parameter slots, so the surface-format rebuild below cannot change
       // them.
       const { spatialActive, detailActive } = this.graphActivity(params);
+      const localDetailActive = activeLocals.some((local) => gpuLocalDetailActive(local[`${lane}_grade`]));
+      const releaseGradeScratch = this.committedGradeScratch(sourceOptions, params, activeLocals, lane,
+        detailActive, localDetailActive, spatialActive);
       const retainedIntermediate = this.intermediates.get(canvas);
-      const lensGlowCache = Boolean((retainedIntermediate?.width === proxy.width
+      const lensGlowCache = !releaseGradeScratch?.spatial && Boolean((retainedIntermediate?.width === proxy.width
           && retainedIntermediate?.height === proxy.height && retainedIntermediate?.lensGlowTexture)
         || (!sourceOptions?.delivery && !sourceOptions?.measureOnly
           && params[GPU_PARAMS.FILM_RESPONSE_ENABLED] >= 0.5 && params[GPU_PARAMS.FILM_LOOK_STRENGTH] > 0
           && params[GPU_PARAMS.LENS_FILTER] > 0.5 && params[GPU_PARAMS.LENS_SCATTER] > 0));
-      const localDetailActive = activeLocals.some((local) => gpuLocalDetailActive(local[`${lane}_grade`]));
       // Admission runs against the graph this render is about to build, so the
       // plan and the decision describe real work rather than a generic guess.
       // Stale levels leave before admission, so the plan charges what the
@@ -5817,7 +5909,11 @@
           const pixels = width * height;
           const spatialGrid = spatialGridScale(width, height);
           const spatialBytes = Math.ceil(width / spatialGrid) * Math.ceil(height / spatialGrid) * 8;
-          return this.gradeCanvasSwapGrowth(canvas, width, height, surface.format)
+          const clarityRadii = activeLocals.filter(local => graphScaleContract().localClarityActive(local[`${lane}_grade`]))
+            .map(local => Number(local[`${lane}_grade`].detail.clarity_radius_percent) || 0.75);
+          if (graphScaleContract().clarityActive(params)) clarityRadii.push(params[GPU_PARAMS.CLARITY_RADIUS]);
+          const clarityGrowth = sourceOptions?.noiseView ? 0 : this.gradeClarityMapGrowth("work", width, height, clarityRadii);
+          return this.gradeCanvasSwapGrowth(canvas, width, height, surface.format) + clarityGrowth
             + (resident ? 0 : pixels * 8 * 4)
             + ((detailActive || localDetailActive) && !resident?.detailATexture ? pixels * 8 * 2 : 0)
             + (spatialActive && !resident?.spatialATexture ? spatialBytes * 2 : 0)
@@ -6041,6 +6137,7 @@
         // size of the picture it produced: geometry trims the frame. The
         // viewer needs the former to decide whether the selected tier has
         // been reached.
+        this.retireInactiveGradeScratch(releaseGradeScratch, currentRender);
         return { ...tiled, approximate: tiled.approximate || approximateDenoise, sourceSerial: serial, processedLongEdge: proxy.longEdge };
       }
       const intermediate = this.ensureIntermediate(
@@ -6076,7 +6173,8 @@
       // response pass sample from the same texture it renders into, which is
       // invalid in WebGPU even when the inactive shader branch never samples it.
       const fallbackSpatialView = sourceProxy.texture.createView();
-      const spatialAView = intermediate.spatialATexture?.createView() || fallbackSpatialView;
+      const spatialSource = !releaseGradeScratch?.spatial && intermediate.spatialATexture;
+      const spatialAView = spatialSource?.createView() || fallbackSpatialView;
       // Show noise binds the original as the source and the resolved picture
       // in the overlay slot, so the base pass can difference the two.
       let baseBindGroup = params[NOISE_VIEW_INDEX] === 1
@@ -6481,11 +6579,12 @@
         // Scopes read the finished picture the composite pass presented, so they
         // never recompute Film Look and never disagree with it.
         filmTexture: intermediate.finishTexture,
-        spatialTexture: intermediate.spatialATexture || intermediate.finishTexture,
+        spatialTexture: spatialSource || intermediate.finishTexture,
         params: new Float32Array(params),
         sessionId,
         comparisonComposite: canvas === this.canvas && overlayIndex < 0 ? compositeBindGroup : null,
       });
+      this.retireInactiveGradeScratch(releaseGradeScratch, currentRender);
       if (this.instrumentationEnabled) {
         const metric = {
           serial,
@@ -11006,25 +11105,52 @@
       if (existing && existing.width >= width && existing.height >= height) return existing;
       const grownWidth = Math.max(1, width, existing?.width || 0);
       const grownHeight = Math.max(1, height, existing?.height || 0);
-      if (existing) this.destroyAfterActiveRenders(() => existing.textures.forEach((texture) => texture.destroy()));
       const make = () => this.device.createTexture({
         size: { width: grownWidth, height: grownHeight },
         format: CLARITY_MAP_FORMAT,
         usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_SRC,
       });
-      const entry = { width: grownWidth, height: grownHeight, textures: [make(), make(), make()] };
+      const textures = [];
+      try {
+        for (let i = 0; i < 3; i++) textures.push(make());
+      } catch (error) {
+        textures.forEach(texture => texture.destroy());
+        throw error;
+      }
+      if (existing) this.retireClarityTextures(existing);
+      const byteSize = grownWidth * grownHeight * 4 * textures.length;
+      const entry = { width: grownWidth, height: grownHeight, textures, byteSize,
+        allocatorEntry: this.gpuAllocator?.register({ kind: "clarity-map", key, bytes: byteSize, pinned: true }) };
       this.clarityMaps.set(key, entry);
-      this.recordAllocation("clarity-map", grownWidth * grownHeight * 4 * 3, { key, width: grownWidth, height: grownHeight });
+      this.recordAllocation("clarity-map", byteSize, { key, width: grownWidth, height: grownHeight });
       return entry;
+    }
+
+    gradeClarityMapGrowth(key, width, height, radii) {
+      if (!radii.length) return 0;
+      const existing = this.clarityMaps?.get(key);
+      let columns = existing?.width || 0, rows = existing?.height || 0;
+      const params = new Float32Array(PARAM_COUNT);
+      for (const radius of radii) {
+        const plan = writeClarityPlan(params, width, height, radius);
+        const extents = clarityMapExtents(plan, 0, 0, width, height);
+        columns = Math.max(columns, extents.baseWidth);
+        rows = Math.max(rows, extents.baseHeight);
+      }
+      return columns !== existing?.width || rows !== existing?.height ? columns * rows * 12 : 0;
+    }
+
+    retireClarityTextures(entry) {
+      this.gpuCacheRelease(entry);
+      this.retireGpuResource(entry.byteSize, () => entry.textures.forEach(texture => texture.destroy()));
     }
 
     releaseClarityMaps() {
       const maps = this.clarityMaps;
       this.clarityMaps = new Map();
       this.clarityFrameMap = null;
-      if (maps?.size) {
-        this.destroyAfterActiveRenders(() => maps.forEach((entry) => entry.textures.forEach((texture) => texture.destroy())));
-      }
+      this.analysisClarityFrameMap = null;
+      maps?.forEach(entry => this.retireClarityTextures(entry));
     }
 
     clarityFrameInputIdentity(params, proxy, denoiseControls) {
@@ -11188,7 +11314,11 @@
       });
       encoder.copyTextureToTexture({ texture: finished }, { texture },
         { width: extents.width, height: extents.height, depthOrArrayLayers: 1 });
-      return { texture, scale: extents.scale };
+      const byteSize = extents.width * extents.height * 4;
+      const entry = { texture, textures: [texture], scale: extents.scale, byteSize,
+        allocatorEntry: this.gpuAllocator?.register({ kind: "clarity-surround", bytes: byteSize, pinned: true }) };
+      this.claritySurroundEntries.add(entry);
+      return entry;
     }
 
     /**
@@ -11223,8 +11353,9 @@
 
     releaseClaritySurround(surround) {
       if (!surround) return;
-      const textures = [surround.global, ...surround.locals.values()].filter(Boolean).map((kept) => kept.texture);
-      if (textures.length) this.destroyAfterActiveRenders(() => textures.forEach((texture) => texture.destroy()));
+      for (const entry of [surround.global, ...surround.locals.values()]) {
+        if (this.claritySurroundEntries.delete(entry)) this.retireClarityTextures(entry);
+      }
     }
 
     /**
