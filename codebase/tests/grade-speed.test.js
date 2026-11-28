@@ -5,7 +5,8 @@ const { frontendSource, declarations } = require('./frontend-source.js');
 const { HDRGpuParamLayout } = require('../frontend/gpu-param-layout.js');
 
 const context = vm.createContext({ window: {}, performance: { now: () => 0 }, console,
-  GPUTextureUsage: { TEXTURE_BINDING: 4, COPY_DST: 2 }, GPUBufferUsage: { STORAGE: 1, COPY_DST: 2 } });
+  GPUTextureUsage: { TEXTURE_BINDING: 4, COPY_DST: 2, RENDER_ATTACHMENT: 16 },
+  GPUBufferUsage: { STORAGE: 1, COPY_DST: 2 } });
 vm.runInContext(frontendSource('graph-scale.js'), context);
 vm.runInContext(frontendSource('webgpu-shaders.js'), context);
 vm.runInContext(frontendSource('webgpu-preview.js'), context);
@@ -188,6 +189,14 @@ test('tiled Mist waits for ready tiles, replaces changed masks and checks live G
 test('lens cache skips only the summed glow and grain quality changes only the finish pass', () => {
   const preview = new Preview(null);
   const texture = name => ({ name, createView: () => name });
+  const allocations = [];
+  preview.device = {
+    createTexture(descriptor) {
+      allocations.push(descriptor);
+      return texture('weights');
+    },
+    createBindGroup: ({ entries }) => entries[0].resource,
+  };
   const graph = Object.fromEntries(['film', 'finish', 'spatialA', 'spatialB', 'lensGlow']
     .map(name => [name + 'Texture', texture(name)]));
   graph.spatialGrid = 4;
@@ -196,7 +205,7 @@ test('lens cache skips only the summed glow and grain quality changes only the f
   const encoder = { beginRenderPass: () => ({ setViewport() {}, setScissorRect() {},
     setPipeline: pipeline => passes.push(pipeline), setBindGroup() {}, draw() {}, end() {} }),
     copyTextureToTexture: () => { copies++; } };
-  const pipelines = Object.fromEntries(['response', 'lensExtract', 'lensHorizontal', 'lensVertical', 'lens',
+  const pipelines = Object.fromEntries(['response', 'lensWeights', 'lensExtract', 'lensHorizontal', 'lensVertical', 'lens',
     'scatter', 'finish', 'finishInteractive', 'scan', 'structure', 'extract', 'blurHorizontal', 'blurVertical']
     .map(name => [name, name]));
   const params = new Float32Array(HDRGpuParamLayout.count);
@@ -204,12 +213,16 @@ test('lens cache skips only the summed glow and grain quality changes only the f
   const render = interactive => preview.encodeFilmChain(encoder, pipelines, graph, 'original', () => ({}),
     params, 1200, 800, { lensGlowKey: 'same', interactive });
   assert.equal(render(true), true);
+  assert.equal(allocations.length, 1);
+  assert.equal(allocations[0].format, 'r32float');
+  assert.deepEqual(passes.slice(0, 2), ['lensWeights', 'lensExtract']);
   assert.equal(passes.filter(pass => pass === 'lensVertical').length, 27);
   assert.ok(passes.includes('finishInteractive'));
   assert.equal(copies, 1);
   graph.lensGlowKey = 'same';
   passes.length = 0;
   assert.equal(render(false), true);
+  assert.ok(!passes.includes('lensWeights'));
   assert.ok(!passes.includes('lensVertical'));
   assert.ok(passes.includes('blurVertical'));
   assert.ok(passes.includes('finish'));
@@ -235,9 +248,11 @@ test('film detail dispatches over the whole partial tile without a frame scratch
   const preview = new Preview(null);
   const encoded = [];
   const order = [];
+  const inputs = new Map();
   const encoder = {
     beginRenderPass: () => ({ setViewport() {}, setScissorRect() {},
-      setPipeline(name) { order.push(name); }, setBindGroup() {}, draw() {}, end() {} }),
+      setPipeline(name) { this.name = name; order.push(name); },
+      setBindGroup(index, source) { if (index === 0) inputs.set(this.name, source); }, draw() {}, end() {} }),
     beginComputePass: () => ({ setPipeline({ name }) { this.name = name; },
       setBindGroup(index, entries) { this.entries = entries; },
       dispatchWorkgroups(width, height) {
@@ -259,7 +274,7 @@ test('film detail dispatches over the whole partial tile without a frame scratch
   set('FILM_LOOK_STRENGTH', 1);
   set('FILM_RESOLUTION', 1);
   set('STRUCTURE_ENABLED', 1);
-  const render = () => preview.encodeFilmChain(encoder, pipelines, graph, 'original', () => ({}),
+  const render = () => preview.encodeFilmChain(encoder, pipelines, graph, 'original', source => source,
     params, 257, 129, { parameterBinding });
   render();
   assert.deepEqual(encoded, []);
@@ -268,7 +283,8 @@ test('film detail dispatches over the whole partial tile without a frame scratch
   set('STRUCTURE_SOFTNESS', 0.8);
   set('STRUCTURE_MICROCONTRAST', -0.5);
   render();
-  assert.deepEqual(order, ['response', 'lens', 'scatter', 'finish', 'scan', 'structure']);
+  assert.deepEqual(order, ['lens', 'scatter', 'finish', 'scan', 'structure']);
+  assert.equal(inputs.get('lens'), 'original', 'Lens reads the already stored input without copying it');
   assert.deepEqual(encoded.map(({name}) => name), ['scatter', 'structure']);
   const block = context.window.HDRWebGPUShaders.FILM_DETAIL_BLOCK;
   assert.deepEqual(encoded.map(({name,width,height,entries}) => [name,width,height,entries[0],entries[8]]), [
