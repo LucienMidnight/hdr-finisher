@@ -852,6 +852,14 @@ same-Mac v0.9.2 comparisons and exact errors: `docs/known-limitations.md`,
 
 
 
+**Cleanup and performance sprint (Mac, November 28–29), Phase 6 on the PC, after Steve's OK:**
+
+9. Pull the sprint branch, run setup, and run the focused release check and the
+   Grade module audit (`docs/technical/audits/README.md`) on the PC as its own baseline.
+10. If Steve approves branch `film-fast-look`, test the new Grain and Mist on the large
+    screen. Check grain and glow at 100% against Steve's taste, then run the Film
+    delivery checks listed in `docs/technical/briefs/film-fast-look-2026-11-28.md`.
+
 ## Disk space and test output
 
 
@@ -1081,6 +1089,9 @@ module PRD for the area you touch, then `docs/technical/code-map.md`.
   Match experiment. Not exposed in the app.
 
 
+
+- `docs/technical/reports/sprint-cleanup-audit-2026-11-29.md`: morning report of
+  the cleanup and performance sprint: gains, Steve's open decisions, checks.
 
 - `docs/technical/reports/release-check-0-9-4-2026-11-28.md`: local Mac
 
