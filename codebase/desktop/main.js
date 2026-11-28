@@ -173,6 +173,15 @@ function gradingPresetDirectory() {
   return path.join(library, "Grading");
 }
 
+async function pathExists(filePath) {
+  try {
+    await fs.promises.access(filePath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function cleanGradingPresetPayload(value) {
   const groupId = typeof value?.groupId === "string" ? value.groupId : "";
   const name = typeof value?.name === "string" ? value.name.trim().replace(/\s+/g, " ") : "";
@@ -841,7 +850,7 @@ function registerIpc() {
     let resolved = path.resolve(String(filePath || ""));
     if (intent === "project-save" && !isProjectPath(resolved)) resolved = `${resolved}.hdrfinisher`;
     if (!isProjectPath(resolved)) throw new Error("Select an HDR Finisher project file.");
-    const exists = fs.existsSync(resolved);
+    const exists = await pathExists(resolved);
     if (intent === "project-open" && !exists) throw new Error("Select an existing HDR Finisher project.");
     const selection = await grantPath(resolved, intent);
     knownProjectPaths.add(pathKey(selection.path || resolved));
