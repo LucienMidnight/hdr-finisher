@@ -750,6 +750,45 @@ def test_source_mip_corruption_is_discarded_and_rebuilt(tmp_path) -> None:
     np.testing.assert_array_equal(again, built)
 
 
+def test_concurrent_sessions_receive_the_same_default_source_mip_store(tmp_path, monkeypatch) -> None:
+    from concurrent.futures import ThreadPoolExecutor, TimeoutError
+    from pathlib import Path
+    from threading import Event
+
+    from hdr_finisher import render_cache
+
+    root = tmp_path / 'mips'
+    monkeypatch.setenv('HDR_FINISHER_SOURCE_CACHE_DIR', str(root))
+    monkeypatch.delenv('HDR_FINISHER_SOURCE_CACHE_DISABLE', raising=False)
+    monkeypatch.setattr(render_cache, '_default_source_mip_store', None)
+    monkeypatch.setattr(render_cache, '_default_source_mip_store_resolved', False)
+    entered, release, second_started = Event(), Event(), Event()
+    mkdir = Path.mkdir
+
+    def delayed(path, *args, **kwargs):
+        if path == root:
+            entered.set()
+            assert release.wait(2)
+        return mkdir(path, *args, **kwargs)
+
+    def second_session():
+        second_started.set()
+        return render_cache.default_source_mip_store()
+
+    monkeypatch.setattr(Path, 'mkdir', delayed)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        first = pool.submit(render_cache.default_source_mip_store)
+        try:
+            assert entered.wait(2)
+            second = pool.submit(second_session)
+            assert second_started.wait(2)
+            with pytest.raises(TimeoutError):
+                second.result(timeout=.1)
+        finally:
+            release.set()
+        assert first.result() is not None and second.result() is first.result()
+
+
 def test_source_mip_stale_versions_and_interrupted_writes_are_swept(tmp_path) -> None:
     image = _mip_image()
     identity = _mip_identity(image)

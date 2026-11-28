@@ -751,6 +751,7 @@ def _env_int(name: str, fallback: int) -> int:
 
 _default_source_mip_store: SourceMipStore | None = None
 _default_source_mip_store_resolved = False
+_default_source_mip_store_lock = Lock()
 _source_mip_root_failure_logged = False
 
 
@@ -773,7 +774,14 @@ def default_source_mip_store() -> SourceMipStore | None:
     global _default_source_mip_store, _default_source_mip_store_resolved
     if _default_source_mip_store_resolved:
         return _default_source_mip_store
-    _default_source_mip_store_resolved = True
+    with _default_source_mip_store_lock:
+        if not _default_source_mip_store_resolved:
+            _default_source_mip_store = _open_default_source_mip_store()
+            _default_source_mip_store_resolved = True
+        return _default_source_mip_store
+
+
+def _open_default_source_mip_store() -> SourceMipStore | None:
     if os.environ.get("HDR_FINISHER_SOURCE_CACHE_DISABLE"):
         return None
     configured = os.environ.get("HDR_FINISHER_SOURCE_CACHE_DIR")
@@ -783,12 +791,11 @@ def default_source_mip_store() -> SourceMipStore | None:
     except OSError as exc:
         _log_source_mip_root_failure(root, exc)
         return None
-    _default_source_mip_store = SourceMipStore(
+    return SourceMipStore(
         root,
         memory_budget_bytes=app_memory.limit("working"),
         disk_budget_bytes=_env_int("HDR_FINISHER_SOURCE_MIP_DISK_BYTES", DEFAULT_SOURCE_MIP_DISK_BYTES),
     )
-    return _default_source_mip_store
 
 
 @dataclass
