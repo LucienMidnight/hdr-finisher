@@ -1,0 +1,44 @@
+diff --git a/codebase/frontend/webgpu-preview.js b/codebase/frontend/webgpu-preview.js
+--- a/codebase/frontend/webgpu-preview.js
++++ b/codebase/frontend/webgpu-preview.js
+@@ -910,3 +910,9 @@
+       this.filmStockUploads = new Map();
+-      this.peakReductionPipeline = null;
++      const oldPeakTargets = this.scopePeakTargets;
++      this.scopePeakTargets = [];
++      for (const target of oldPeakTargets) {
++        this.destroyAfterActiveRenders(() => { target.texture.destroy(); target.readBuffer.destroy(); });
++      }
++      this.peakReductionPipelines = new Map();
++      this.peakReductionModule = null;
+       this.scaledFilmPeakReductionModule = null;
+@@ -9818,4 +9824,9 @@
+     async ensurePeakReductionPipeline(entryPoint = "peakReductionMain") {
+-      this.peakReductionPipelines = this.peakReductionPipelines || new Map();
+-      const existing = this.peakReductionPipelines.get(entryPoint);
++      const device = this.device;
++      const pipelines = this.peakReductionPipelines ||= new Map();
++      const assertDevice = () => {
++        if (device !== this.device || this.deviceLost) throw new DOMException("WebGPU peak reduction was superseded", "AbortError");
++      };
++      assertDevice();
++      const existing = pipelines.get(entryPoint);
+       if (existing) return existing;
+@@ -9825,4 +9836,5 @@
+         const code = scaledFilm ? window.HDRWebGPUShaders.SCALED_FILM_PEAK_REDUCTION_SHADER_SOURCE : PEAK_REDUCTION_SHADER_SOURCE;
+-        const module = this.device.createShaderModule({code});
++        const module = device.createShaderModule({code});
+         const compilation = await module.getCompilationInfo();
++        assertDevice();
+         const errors = compilation.messages.filter(message => message.type === "error");
+@@ -9831,3 +9843,3 @@
+       }
+-      const pipeline = await this.device.createComputePipelineAsync({
++      const pipeline = await device.createComputePipelineAsync({
+         layout: "auto",
+@@ -9835,3 +9847,4 @@
+       });
+-      this.peakReductionPipelines.set(entryPoint, pipeline);
++      assertDevice();
++      pipelines.set(entryPoint, pipeline);
+       return pipeline;

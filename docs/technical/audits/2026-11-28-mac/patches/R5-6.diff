@@ -1,0 +1,44 @@
+diff --git a/codebase/frontend/webgpu-preview.js b/codebase/frontend/webgpu-preview.js
+--- a/codebase/frontend/webgpu-preview.js
++++ b/codebase/frontend/webgpu-preview.js
+@@ -4246,2 +4246,11 @@
+         : "";
++      // Packed bands and the frame Clarity map depend on the actual picture
++      // entering Detail. Curve samples and reconstruction are supplied apart
++      // from the parameter array and cannot be inferred from the proxy key.
++      const gradeDetailInput = options.gradePreview ? JSON.stringify([
++        proxy.identity, proxy.sourceEpoch, options.detailCurveSignatures?.global,
++        options.fineGrainReduced ? this.lensGlowSourceKey(options.fineGrainReduced, false) : null,
++        denoiseActive ? [this.lensGlowDenoiseKey(denoiseSelector, denoiseControls, options),
++          this.highlightSourceToken(proxy)] : null,
++      ]) : proxy.identity;
+       const draftGrain = HDRWebGPUPreview.usesDraftGrain(options);
+@@ -4594,3 +4603,4 @@
+           params,
+-          identity: this.clarityFrameInputIdentity(params, proxy, denoiseActive ? denoiseControls : null),
++          identity: this.clarityFrameInputIdentity(params, proxy, denoiseActive ? denoiseControls : null)
++            + (options.gradePreview ? "|" + gradeDetailInput : ""),
+           tiles: foregroundTiles,
+@@ -4678,3 +4688,3 @@
+       const tiledLocalState = buildTiledLocalState(
+-        proxy.identity, params, activeLocals, lane, options.sourcePixelScale || 1,this.localCurveOffsets,
++        gradeDetailInput, params, activeLocals, lane, options.sourcePixelScale || 1,this.localCurveOffsets,
+       );
+@@ -4734,3 +4744,3 @@
+       const peakView = peakTarget?.texture.createView() || null;
+-      const globalInputIdentity = detailBandIdentity(params, proxy.identity, "global");
++      const globalInputIdentity = detailBandIdentity(params, gradeDetailInput, "global");
+       const pinnedDetail = [];
+@@ -5113,3 +5123,4 @@
+                 packedBandsView = detailResultView;
+-                const prefix = tiledLocalState[localIndex].detailPrefix;
++                const prefix = tiledLocalState[localIndex].detailPrefix
++                  + (options.gradePreview ? "|" + (options.detailCurveSignatures?.locals.get(local.id) ?? "") : "");
+                 const key = bandTileKey(prefix, tile);
+@@ -6009,2 +6020,6 @@
+           gradePreview: sourceOptions?.gradePreview,
++          detailCurveSignatures: sourceOptions?.gradePreview && (detailActive || localDetailActive) ? {
++            global: this.curveSampleCache.get(lane + ":packed")?.signature,
++            locals: new Map(activeLocals.map(({ id }) => [id, this.curveSampleCache.get(lane + ":local:" + id + ":packed")?.signature])),
++          } : null,
+           lensGlowRecipe: sourceOptions?.gradePreview ? adjustments : null,

@@ -1,0 +1,55 @@
+diff --git a/codebase/frontend/webgpu-preview.js b/codebase/frontend/webgpu-preview.js
+--- a/codebase/frontend/webgpu-preview.js
++++ b/codebase/frontend/webgpu-preview.js
+@@ -4783,2 +4783,17 @@
+       let submissions = 0;
++      const createdDetailBands = new Map();
++      const unsubmittedDetailBands = new Map();
++      const bandFor = (key, tile, scope) => {
++        const band = this.detailBandTile(key, tile.rect.width, tile.rect.height, scope);
++        if (options.gradePreview && !band.hit) {
++          createdDetailBands.set(key, band.texture);
++          unsubmittedDetailBands.set(key, band.texture);
++        }
++        return band;
++      };
++      const discardDetailBands = (entries) => {
++        for (const [key, texture] of entries) {
++          if (this.detailBandTiles.get(key)?.texture === texture) this.evictGpuCacheEntry("detail-band-tile", key);
++        }
++      };
+       try {
+@@ -4794,2 +4809,3 @@
+         denoiseTilesUnsubmitted.length = 0;
++        unsubmittedDetailBands.clear();
+         batchTiles = 0;
+@@ -5079,3 +5095,3 @@
+             const key = bandTileKey(prefix, tile);
+-            const packed = this.detailBandTile(key, tile.rect.width, tile.rect.height, "global");
++            const packed = bandFor(key, tile, "global");
+             pinnedDetail.push(key);
+@@ -5115,3 +5131,3 @@
+                 const key = bandTileKey(prefix, tile);
+-                const packed = this.detailBandTile(key, tile.rect.width, tile.rect.height, "local");
++                const packed = bandFor(key, tile, "local");
+                 pinnedDetail.push(key);
+@@ -5290,2 +5306,3 @@
+         if (validationError && !cancelled) {
++          discardDetailBands(createdDetailBands);
+           floatPeakRead?.destroy();
+@@ -5335,2 +5352,3 @@
+       denoiseTilesUnsubmitted.length = 0;
++      unsubmittedDetailBands.clear();
+       this.recordSubmission(lane, options, 0);
+@@ -5347,2 +5365,3 @@
+         this.dropDenoiseTiles(denoiseTilesUnsubmitted);
++        discardDetailBands(unsubmittedDetailBands);
+         if (cancelled || encodeError) {
+@@ -5353,2 +5372,3 @@
+       if (encodeError) {
++        discardDetailBands(createdDetailBands);
+         floatPeakRead?.destroy();
+@@ -5358,2 +5378,3 @@
+       if (validationError) {
++        discardDetailBands(createdDetailBands);
+         floatPeakRead?.destroy();
