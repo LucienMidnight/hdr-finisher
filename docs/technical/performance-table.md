@@ -1,3 +1,26 @@
+## November 28, 2026 — Film Mist cache-miss benchmark (F2)
+
+MacBook Neo, Apple A18 Pro, 8 GB, 1408×794 at 2×, shared GPU lock.
+HDR Grade Exposure drags on real RAWs with Portra 400, Black Pro-Mist
+(strength 0.3, size 1, 35 mm), Halation and Scan enabled, Grain off to
+isolate Mist. Values are GPU milliseconds from the weight pass through the
+last blur pass, with one untraced warmup, three traced drags and cache hits
+excluded. At 100%, each sample sums the native viewport tiles' Mist time,
+excluding the separate reduced continuity picture. Values are medians and
+ranges, not the whole wait the user sees.
+
+| Black Pro-Mist cache miss | Old 27 lobes, `aee3d656` | Eight lobes, `7e689ff3` |
+| --- | ---: | ---: |
+| IMG_7723.CR3, 24 MP Fit | 105.15 (98.37–111.94) | 24.77 (23.53–32.77) |
+| DSC00636.ARW, 50 MP Fit | 85.92 (80.28–90.77) | Not measured |
+| IMG_7723.CR3, 100%, 24 native tiles | 266.90 (239.34–278.27) | Not measured |
+| DSC00636.ARW, 100%, 21 native tiles | 297.27 (267.78–310.18) | Not measured |
+
+The Canon trial reduced the median by 76%, but several misses still exceeded
+the 25 ms target. It predates symmetric weight reuse (`e8c183db`). GPU timing
+and delivery checks of that final version are pending because macOS could not
+allocate a named semaphore for the app backend.
+
 ## November 28, 2026 — Grade audit first presented GPU frame
 
 MacBook Neo, A18 Pro, 8 GB, 1408×794 at 2×, mains power, shared GPU lock.

@@ -23,6 +23,18 @@ The fit conserves red, green and blue energy, but can slightly redistribute
 light between sharp points, halo and veil in previously authored Mist grades.
 Steve's before-and-after visual review is still needed.
 
+The largest measured change in light inside a radius of a centered point
+is below half a percentage point for each filter at every calibrated strength.
+The fit measures all three colour channels across the fitting and held-out
+grids. The old model is the reference, with zero error in each cell.
+
+| Filter | 1/8 | 1/4 | 1/2 | 1 | 2 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Glimmerglass | 0.035 | 0.071 | 0.124 | 0.195 | 0.266 |
+| Black Pro-Mist | 0.037 | 0.074 | 0.129 | 0.202 | 0.276 |
+| Pro-Mist | 0.057 | 0.113 | 0.198 | 0.311 | 0.424 |
+| CineBloom | 0.053 | 0.106 | 0.185 | 0.291 | 0.397 |
+
 The GPU pairs opposite taps without resampling, so its weight table falls from
 515 × 27 to 259 × 8 R32F (about 56 KB to 8 KB). No new image textures or
 cache budget. Tile planning uses the widest
