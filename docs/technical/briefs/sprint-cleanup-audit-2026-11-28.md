@@ -94,11 +94,11 @@ code, and checkable with targeted fast tests. Everything else is recorded as
 
 | ID | Area (owned files) | Leads from recon | Status | Result |
 | --- | --- | --- | --- | --- |
-| R1 | Electron shell and desktop: `codebase/desktop/**` | Preset listing cap before group filter + sync reads `main.js:193`; sync fs in interactive handlers; 7 empty catches | active | R1-1–R1-4 fixed; resumed after crash |
+| R1 | Electron shell and desktop: `codebase/desktop/**` | Preset listing cap before group filter + sync reads `main.js:193`; sync fs in interactive handlers; 7 empty catches | done | 18 findings: 11 fixed; needs Steve R1-5 (presets hidden by scan cap), R1-6 (packaged Export Grading Presets dialog cannot open), R1-7 (cancelled Quit), R1-12 (engine ready after exit), R1-13 (detached paste pending 5 min); R1-17, R1-18 open |
 | R2 | Library frontend: `photo-library.js`, `library-*.js`, `gpu-delivery.js` | 100 ms polling `photo-library.js:447`; RAM report `library-ram.js:38`; permit polling without in-flight guard `gpu-delivery.js:37`; overlay canvas readbacks `library-overlays.js:114` | done | 12 findings: 8 fixed, R2-9 needs Steve (stale rendition on HDR toggle, patch), R2-10–12 open. Needs real-app Library check before the audit |
 | R3 | Grade frontend non-renderer: `preview-pipeline.js`, `grade-saving.js`, `mask-overlay.js`, `app-state.js`, UI controllers (not `webgpu-*.js`, not R5 files) | JSON deep clones per submission `preview-pipeline.js:1470`; save check renders unchanged session `grade-saving.js:177`; brush replay lookups `mask-overlay.js:688`; 22 empty catches | active | |
 | R4 | Backend: `codebase/backend/hdr_finisher/**` except `exporters.py` and delivery code (review-only there) | Full-array copies `finishing.py:39`; Bayer plane copies `raw_speck_cleanup.py:89`; `adjustments.py` copies; `library_api.py`, `sessions.py` error paths | active | |
-| R5 | Shared preview infrastructure: `webgpu-preview.js` core (device, resources, tile scheduling, caches, allocator), `render-coordinator.js`, `preview-scheduler.js`, `source-transport.js`, `scope-requests.js`. Review first; fixes only with the coordinator, since every module depends on it | Cross-module slowness, cache invalidation, stale work not cancelled, polling `webgpu-preview.js:846` | todo | |
+| R5 | Shared preview infrastructure: `webgpu-preview.js` core (device, resources, tile scheduling, caches, allocator), `render-coordinator.js`, `preview-scheduler.js`, `source-transport.js`, `scope-requests.js`. Review first; fixes only with the coordinator, since every module depends on it | Cross-module slowness, cache invalidation, stale work not cancelled, polling `webgpu-preview.js:846` | active | |
 
 ### H · Audit harness (one worker, Sol high, starts first)
 
