@@ -288,6 +288,48 @@ def test_native_chunk_owner_admits_before_allocation_and_survives_trim(tmp_path,
     assert app_memory.cache_snapshot()['working']['bytes'] == 0
 
 
+def test_native_upload_stops_reading_over_limit_stream_without_content_length(monkeypatch):
+    import asyncio
+
+    import httpx
+    from hdr_finisher.library_pictures import LibraryPictureCache
+    from hdr_finisher.main import app
+
+    observed = []
+
+    def upload(_cache, token, offset, total, chunk):
+        observed.append((token, offset, total, bytes(chunk)))
+        return True
+
+    monkeypatch.setattr(LibraryPictureCache, 'upload_native', upload)
+
+    async def check():
+        sent = 0
+        piece = bytes(1024 * 1024)
+
+        async def oversized():
+            nonlocal sent
+            for _ in range(35):
+                sent += 1
+                yield piece
+
+        async def small():
+            yield b'12'
+            yield b'34'
+
+        token = 'a' * 32
+        url = f'/api/library/native-upload/{token}?offset=0&total=4'
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://testserver') as client:
+            rejected = await client.post(url, content=oversized())
+            assert rejected.status_code == 400 and rejected.json() == {'detail': 'Detail upload piece too large'}
+            assert sent == 33 and observed == []
+            accepted = await client.post(url, content=small())
+            assert accepted.status_code == 200 and accepted.json() == {'received': True}
+            assert observed == [(token, 0, 4, b'1234')]
+
+    asyncio.run(check())
+
+
 def test_abandoned_native_upload_releases_owner_without_expiring_replacement(tmp_path, monkeypatch):
     from hdr_finisher import app_memory
     monkeypatch.setattr(app_memory, '_caches', {})

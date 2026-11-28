@@ -1670,13 +1670,16 @@ def create_library_router(worker, browser, store=None):
     async def native_upload(token: str, request: Request, offset: int, total: int):
         if len(token) != 32 or any(c not in "0123456789abcdef" for c in token):
             raise HTTPException(400, "Invalid detail upload")
-        if int(request.headers.get("content-length",0)) > 32*1024*1024:
+        max_piece_bytes = 32 * 1024 * 1024
+        if int(request.headers.get("content-length", 0)) > max_piece_bytes:
             raise HTTPException(400, "Detail upload piece too large")
         try:
-            chunk = await request.body()
-            if len(chunk) > 32*1024*1024:
-                raise HTTPException(400, "Detail upload piece too large")
-            if not await run_in_threadpool(cache.upload_native, token, offset, total, chunk):
+            piece = bytearray()
+            async for chunk in request.stream():
+                if len(piece) + len(chunk) > max_piece_bytes:
+                    raise HTTPException(400, "Detail upload piece too large")
+                piece.extend(chunk)
+            if not await run_in_threadpool(cache.upload_native, token, offset, total, piece):
                 return JSONResponse({"detail": "Waiting for memory"}, status_code=202)
         except ValueError as error:
             raise HTTPException(409, str(error)) from error
