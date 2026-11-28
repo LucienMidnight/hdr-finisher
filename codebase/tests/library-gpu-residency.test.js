@@ -40,7 +40,7 @@ class Base {
   setDetectedVideoMemory(){}
   memoryBudgetBytes(){return this.deliveryBudgetBytes ?? 1024;}
 }
-  const context=vm.createContext({window:{},document:{createElement:()=>({})},performance,HDRLibrarySceneScheduler:require('../frontend/library-scene-scheduler'),
+  const context=vm.createContext({window:{},document:{createElement:()=>({})},performance,clearInterval,HDRLibrarySceneScheduler:require('../frontend/library-scene-scheduler'),
   HDRLibraryGpuRaw:{directBytes:()=>retained},HDRWebGPUPreview:Base,HDRLibraryStopwatch:()=>{},crypto:{randomUUID:()=> 'test'},
   fetch:async(url,options)=>{const value=JSON.parse(options.body);reports.push(value);return {ok:true,json:async()=>({budget:value.budget-value.bytes})};}});
  vm.runInContext(fs.readFileSync(path.join(__dirname,'../frontend/library-gpu.js'),'utf8'),context);
@@ -59,11 +59,34 @@ test('the Library renderer receives the detected card before its first setup',as
   memoryBudgetBytes(){return 1024;}
  }
  const info={detected:true,bytes:12884901888,device:'NVIDIA GeForce RTX 4070 Ti',source:'windows'};
- const context=vm.createContext({window:{hdrFinisherDesktop:{videoMemory:async()=>info}},document:{createElement:()=>({})},performance,
+ const context=vm.createContext({window:{hdrFinisherDesktop:{videoMemory:async()=>info}},document:{createElement:()=>({})},performance,clearInterval,
   HDRLibrarySceneScheduler:require('../frontend/library-scene-scheduler'),HDRLibraryGpuRaw:{directBytes:()=>0},HDRWebGPUPreview:Base,
   HDRLibraryStopwatch:()=>{},crypto:{randomUUID:()=>'test'},
   fetch:async()=>({ok:true,json:async()=>({budget:1024})})});
  vm.runInContext(fs.readFileSync(path.join(__dirname,'../frontend/library-gpu.js'),'utf8'),context);
  await context.window.HDRLibraryPictures.initialize();
  assert.deepEqual(seen,[info]);
+});
+
+test('ordinary Library draws do not leave a Grade activity timer running',async()=>{
+ const timers=new Set(),drawn=[];
+ const setInterval=callback=>{timers.add(callback);return callback;};
+ const clearInterval=callback=>timers.delete(callback);
+ class Base {
+  constructor(){this.surfaceKeys=new Map();this.pipelines=new Map([['rgba16float',{}]]);}
+  setDetectedVideoMemory(){}
+  async initialize(){this.available=true;this.deliveryActivityTimer=setInterval(()=>this.reportDeliveryActivity());return true;}
+  pipelineFor(format){return this.pipelines.get(format);}
+  async renderTo(canvas,key){drawn.push(key);this.surfaceKeys.set(canvas,key);return {rendered:true};}
+  async waitForSubmittedWork(){}
+ }
+ const context=vm.createContext({window:{},document:{createElement:()=>({})},performance,structuredClone,setInterval,clearInterval,
+  navigator:{gpu:{getPreferredCanvasFormat:()=> 'rgba16float'}},
+  HDRLibrarySceneScheduler:require('../frontend/library-scene-scheduler'),HDRWebGPUPreview:Base,
+  HDRLibraryStopwatch:()=>{},sampleCurvePoints:()=>{}});
+ vm.runInContext(fs.readFileSync(path.join(__dirname,'../frontend/library-gpu.js'),'utf8'),context);
+ const pictures=context.window.HDRLibraryPictures;
+ await pictures.show({path:'photo',key:'one',edge:640,adjustments:{}},{dataset:{}},new AbortController().signal,()=>true);
+ assert.deepEqual(drawn,['one']);
+ assert.equal(timers.size,0);
 });

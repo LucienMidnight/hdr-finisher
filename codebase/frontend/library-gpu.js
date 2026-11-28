@@ -68,6 +68,15 @@ fn main(@builtin(global_invocation_id) g:vec3<u32>){
 }`;
 class HDRLibraryGPU extends HDRWebGPUPreview {
   reuseDenoiseSetup = true;
+  async initialize(...args) {
+    try { return await super.initialize(...args); }
+    finally {
+      // The shared renderer starts Grade's activity timer. Library uses its
+      // own leases and reports no Grade activity, so nothing needs polling.
+      if (this.deliveryActivityTimer) clearInterval(this.deliveryActivityTimer);
+      this.deliveryActivityTimer = null;
+    }
+  }
   async requestPreviewDevice() {
     try { return (await HDRLibraryGpuRaw.shared.gpu()).device; }
     catch(error) { this.libraryInitializationError=error; throw error; }
@@ -363,7 +372,7 @@ const HDRLibraryPictureFactory = (quick = false) => {
   async function initialize(warm = false, beforeNext = async () => {}) {
     if (!warm) initializationDemand = true;
     if (renderer && !renderer.available && renderer.deviceLost) {
-      clearInterval(renderer.deliveryActivityTimer); ready = null; renderer = null;
+      ready = null; renderer = null;
     }
     if (!ready) ready = (async () => {
       const started = performance.now();
@@ -382,7 +391,6 @@ const HDRLibraryPictureFactory = (quick = false) => {
         throw error;
       }
       if (renderer.adapterInfo?.fallback) {
-        clearInterval(renderer.deliveryActivityTimer);
         const device = renderer.device; renderer.device = null; device?.destroy();
         throw Object.assign(Error("Drawing Library previews requires a hardware GPU."),{gpuUnavailable:true});
       }
@@ -429,9 +437,6 @@ const HDRLibraryPictureFactory = (quick = false) => {
       // renderTo resizes through its presentation gate when the new frame is ready.
       gpu.liveMode = meta.route === "library-live";
       if (gpu.liveMode && gpu.adapterInfo?.fallback) throw Object.assign(Error("Drawing Library previews requires a hardware GPU."),{gpuUnavailable:true});
-      if (!gpu.liveMode && !gpu.deliveryActivityTimer) {
-        gpu.deliveryActivityTimer = setInterval(()=>gpu.reportDeliveryActivity().catch(()=>{}),100);
-      }
       gpu.librarySignal = signal;
       gpu.libraryMeta = meta;
       if (meta.route === "camera-raw-gpu" && !gpu.rawPictures?.get(meta.key)) {
@@ -446,7 +451,6 @@ const HDRLibraryPictureFactory = (quick = false) => {
       const leasing = performance.now();
       const lease = meta.route === "library-live" ? await HDRLibraryScenes.lease(meta, signal, native) : null;
       window.HDRLibraryTrace?.mark(meta.trace,"picture_lease_wait",leasing,{...window.HDRLibraryPictureLog?.(meta),key:meta.key});
-      if (lease) { clearInterval(gpu.deliveryActivityTimer); gpu.deliveryActivityTimer = null; }
       let result, refusal, thumbnailSave, grain;
       const rendering = performance.now();
       gpu.libraryFetchMs = 0; gpu.libraryUploadMs = 0;

@@ -12,7 +12,7 @@ for(const route of ['camera-raw-gpu','cached-picture']) test(`Library ${route} k
   async waitForSubmittedWork(){}
  }
  const context=vm.createContext({window:{},navigator:{gpu:{getPreferredCanvasFormat:()=> 'bgra8unorm'}},document:{createElement:()=>({})},HDRWebGPUPreview:Base,
-  performance,structuredClone,sampleCurvePoints:()=>{},HDRLibraryStopwatch:()=>{},HDRLibrarySceneScheduler:require('../frontend/library-scene-scheduler'),
+  performance,structuredClone,clearInterval:()=>{},sampleCurvePoints:()=>{},HDRLibraryStopwatch:()=>{},HDRLibrarySceneScheduler:require('../frontend/library-scene-scheduler'),
   HDRLibraryRawGPU:{create:()=>({get:()=>false,configure(){},convert:()=>{rawStarted.resolve();return raw.promise;}})}});
  vm.runInContext(fs.readFileSync(require('node:path').join(__dirname,'../frontend/library-gpu.js'),'utf8'),context);
  const pictures=context.window.HDRLibraryPictures;
@@ -37,7 +37,7 @@ test('Library sends the saved HDR target through its GPU graph', async()=>{
   async waitForSubmittedWork(){}
  }
  const context=vm.createContext({window:{}, document:{createElement:()=>({})}, navigator:{gpu:{}}, HDRWebGPUPreview:Base,
-  performance,structuredClone,sampleCurvePoints:()=>{},HDRLibraryStopwatch:()=>{},
+  performance,structuredClone,clearInterval:()=>{},sampleCurvePoints:()=>{},HDRLibraryStopwatch:()=>{},
   HDRLibrarySceneScheduler:require('../frontend/library-scene-scheduler')});
  vm.runInContext(fs.readFileSync(require('node:path').join(__dirname,'../frontend/library-gpu.js'),'utf8'),context);
  const canvas={dataset:{}};
