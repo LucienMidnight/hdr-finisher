@@ -194,8 +194,8 @@ it, and a re-audit of the affected modules.
 | O2 | C-2, M4-6, M5-8, M5-11, R5-3, R5-11, M2-9 | GPU memory growth at 100% past the 4 GB ceiling | active (worktree) | |
 | O3 | C-4, M1-15 | Skip unchanged RAW Apply (pre-lens checkpoint, M1-5, needs Steve: disk allowance) | active | Plan: AHD re-development dominates (3–4 s); Lensfun only 0.25 s |
 | O4 | C-5, M3-6, M3-9, R5-5 | Highlight Compression +0.4 s settle on Tone edits | todo | |
-| O5 | C-6, M4-3, M4-4, M3-5, M3-10 | HSL drag lag and panel redraw work | todo | |
-| O6 | M3-13, R4-13, R2-12, M6-13, M6-14, R3-12, R1-17 | Hardening that does not change output | active | |
+| O5 | C-6, M4-3, M4-4, M4-9, M3-5, M3-10 | HSL drag lag and panel redraw work | active | |
+| O6 | M3-13, R4-13, R2-12, M6-13, M6-14, R3-12, R1-17 | Hardening that does not change output | done | Fixed R4-13 `6a34ae81`, R2-12 `60297b09`, M6-14 `c84472e8`, R3-12 `839edaa8`; M3-13, M6-13 open (need webgpu-preview.js, after O1/O2 merge); R1-17 open (write order) |
 
 ## Audit plan (Phase 3)
 
