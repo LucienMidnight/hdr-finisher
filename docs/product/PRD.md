@@ -39,8 +39,8 @@ name stays.
 EXR, who want HDR pictures on the web without an Adobe subscription. They
 know photo editing; they are not programmers.
 
-**Where it stands:** before 1.0, with no outside users. Version 0.9.1 is
-tagged (October 17, 2026). Steve is the only tester.
+**Where it stands:** before 1.0, with no outside users. Version 0.9.4 is
+the current tagged release. Steve is the only tester.
 
 ## 2. Philosophy
 
@@ -323,7 +323,7 @@ Working rules for coding agents, including how much to test:
 | Memory and caches | Whole-app RAM ceiling and its split between caches, disk allowances, VRAM budget pointers, memory-pressure response | `app_memory.py`, `library_raw.py`, `library_pictures.py`, `library_cache.py`, `library-tile-pool.js`, `gpu-budget.js` | [memory-and-caches](modules/memory-and-caches.md) | 4 GB budget agreed October 29; implementation and acceptance status are recorded in the module PRD. |
 | Export and Proof | Output formats, settings, presets, batch export, Proof, HDR ceiling, **GPU delivery** | `exporters.py`, `batch_export.py`, `proofing.py`, `hdr_ceiling.py` | [export-and-proof](modules/export-and-proof.md) | GPU export, Proof and Library pictures built; repeatability and speed follow-ups remain open. |
 | Photo Library | Browsing, culling, albums, sidecars, thumbnails, paste, Library pictures | `library_*.py`, `photo-library.js`, `library-*.js` | [photo-library](modules/photo-library.md) | Slices 0 to 6 and paste built. Batch-export metadata built; Library Looks, links and portable projects deferred to v2. |
-| Desktop and release | Electron shell, windows, packaging, updates, platforms, release process | `codebase/desktop/`, `packaging/`, `.github/` | [desktop-and-release](modules/desktop-and-release.md) | 0.9.1 tagged. Linux leftovers open. |
+| Desktop and release | Electron shell, windows, packaging, updates, platforms, release process | `codebase/desktop/`, `packaging/`, `.github/` | [desktop-and-release](modules/desktop-and-release.md) | 0.9.4 tagged. Linux leftovers open. |
 
 ## 6. Priorities (Steve, October 18, 2026)
 
