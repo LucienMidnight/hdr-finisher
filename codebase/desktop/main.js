@@ -125,7 +125,8 @@ function persistApplicationPreferences() {
 function loadApplicationPreferences() {
   try {
     applicationPreferences = sanitizeApplicationPreferences(JSON.parse(fs.readFileSync(applicationPreferencesPath(), "utf8")));
-  } catch {
+  } catch (error) {
+    if (error.code !== "ENOENT") console.warn("Could not load application preferences:", error);
     applicationPreferences = sanitizeApplicationPreferences(DEFAULT_APPLICATION_PREFERENCES);
   }
   renderingMode = applicationPreferences.renderingMode;
@@ -1125,7 +1126,9 @@ function restoredBounds(role) {
       return value.x < area.x + area.width && value.x + value.width > area.x && value.y < area.y + area.height && value.y + value.height > area.y;
     });
     if (display) return clampWindowBounds(value, display.workArea);
-  } catch {}
+  } catch (error) {
+    if (error.code !== "ENOENT") console.warn(`Could not restore ${role} window bounds:`, error);
+  }
   const primary = screen.getPrimaryDisplay();
   return clampWindowBounds(DEFAULT_WINDOW_BOUNDS, primary.workArea);
 }
