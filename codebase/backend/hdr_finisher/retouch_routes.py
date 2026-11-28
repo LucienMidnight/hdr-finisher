@@ -3,9 +3,37 @@ from dataclasses import replace
 import hashlib
 import json
 from concurrent.futures import CancelledError
+from threading import RLock
 from .retouch_recipe import prepare_repair, stroke_mask
 from .retouch_methods import finish_repair
 from .retouch_transfer import transfer_repair
+
+
+# The document holds at most 256 repairs. Leave space for the active document
+# and two full batches of recent results while edits are being published.
+_ROUTE_RECORD_LIMIT = 3 * 256
+_route_lock = RLock()
+
+
+def _route_key(signature):
+    return hashlib.sha256(signature.encode()).digest()
+
+
+def _remember_route(session, signature, route):
+    key = _route_key(signature)
+    with _route_lock:
+        routes = session.__dict__.setdefault('_repair_routes', {})
+        routes.pop(key, None)
+        if len(routes) >= _ROUTE_RECORD_LIMIT:
+            active = {_route_key(r.recipe.model_dump_json()) for r in getattr(session, 'repairs', ())}
+            # Active repairs may not be solved again on an unrelated edit.
+            # Undo of an evicted, inactive recipe replays it and records its
+            # route again. Drop a batch so we do not rescan active long strokes
+            # for every newly solved recipe once at capacity.
+            stale = [candidate for candidate in routes if candidate not in active]
+            for candidate in stale[:max(1, _ROUTE_RECORD_LIMIT // 3)]:
+                del routes[candidate]
+        routes[key] = route
 
 
 def solve_record(session, record, worker, token, base, checkpoint):
@@ -44,19 +72,21 @@ def solve_record(session, record, worker, token, base, checkpoint):
         return replace(patch,renderer='cpu',fallback_reason=reason)
     patch=worker.completed_recipe(key,token,solve,checkpoint,bounded_replay=recipe.mode!='inpaint')
     checkpoint()
-    if not hasattr(session,'_repair_routes'):session._repair_routes={}
-    session._repair_routes[signature]={'renderer':patch.renderer,'fallback_reason':patch.fallback_reason}
+    route = {'renderer': patch.renderer, 'fallback_reason': patch.fallback_reason}
+    _remember_route(session, signature, route)
     from .library_diagnostics import log
     log('retouch_route',path=str(getattr(session,'source_path','')),photo=getattr(getattr(session,'source',None),'filename','Photo'),
-        repair=record.id,mode=recipe.mode,**session._repair_routes[signature])
+        repair=record.id,mode=recipe.mode,**route)
     return patch
 
 
 def records(session):
     session=getattr(session,'delivery_owner',session)
-    known=getattr(session,'_repair_routes',{})
-    return [dict(id=r.id,name=r.name,mode=r.recipe.mode,**known[r.recipe.model_dump_json()])
-        for r in getattr(session,'repairs',[]) if r.enabled and r.recipe.model_dump_json() in known]
+    repairs = [(r, _route_key(r.recipe.model_dump_json())) for r in getattr(session, 'repairs', ()) if r.enabled]
+    with _route_lock:
+        known = getattr(session, '_repair_routes', {})
+        return [dict(id=r.id, name=r.name, mode=r.recipe.mode, **known[key])
+                for r, key in repairs if key in known]
 
 
 def notice(session):

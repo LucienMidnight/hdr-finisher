@@ -84,9 +84,6 @@ def build_repaired_source(session, records, checkpoint=lambda: None, *, dirty_re
     from .retouch_routes import solve_record
     from .retouch_parallel import ordered_transfers
     from .library_diagnostics import log
-    if not hasattr(session, '_repair_routes'):
-        session._repair_routes = {}
-
     def solve(record):
         started = perf_counter()
         patch = solve_record(session, record, worker, token, base, checkpoint)

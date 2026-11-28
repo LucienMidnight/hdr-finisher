@@ -390,3 +390,41 @@ def test_repair_name_edits_need_no_frame_memory(photo, monkeypatch, action):
     assert session.image is pixels
     assert session.repairs[0].name == (repair.name if action == "undo" else renamed.name)
     assert session.edit_revision == revision + 1
+
+
+def test_superseded_retouch_routes_are_bounded_and_undo_restores_fallback(photo, monkeypatch):
+    from hdr_finisher import retouch_gpu, retouch_routes
+
+    store, session = photo
+    monkeypatch.setattr(retouch_routes, "_ROUTE_RECORD_LIMIT", 6)
+
+    def unavailable(*args, **kwargs):
+        raise RuntimeError("Test GPU route unavailable")
+
+    monkeypatch.setattr(retouch_gpu, "solve", unavailable)
+    # Keep two non-overlapping repairs so the stable one is not solved again
+    # as the larger gesture changes. The original gesture stays undoable.
+    first = record()
+    stable = record().model_copy(update={"id": "stable", "name": "Stable repair", "recipe":
+        first.recipe.model_copy(update={"search_rect": (0, 0, 16, 16),
+            "points": (RepairPoint(x=.1, y=.12),), "radius_px": 3})})
+    long_stroke = first.recipe.model_copy(update={"points": (first.recipe.points[0],) * 96})
+    first = first.model_copy(update={"recipe": long_stroke})
+
+    edit(store, session, records=[stable, first])
+    original = session.image.copy()
+    original_keys = set(session._repair_routes)
+    for i in range(12):
+        latest = first.model_copy(update={"recipe": long_stroke.model_copy(update={"radius_px": 6 + i / 8})})
+        response = store.apply_edit_commands(session.session_id, [EditCommand(
+            expected_revision=session.edit_revision, command_type="set_repairs", history_group="drag",
+            payload={"repairs": [r.model_dump(mode="json") for r in (stable, latest)]})])
+        assert len(session._repair_routes) <= 6
+        assert {r["id"]: r["fallback_reason"] for r in response.repair_rendering} == {
+            "stable": "Test GPU route unavailable", "dust": "Test GPU route unavailable"}
+
+    assert len(original_keys.intersection(session._repair_routes)) == 1
+    restored = edit(store, session, "undo")
+    np.testing.assert_array_equal(session.image, original)
+    assert {r["id"]: r["fallback_reason"] for r in restored.repair_rendering} == {
+        "stable": "Test GPU route unavailable", "dust": "Test GPU route unavailable"}
