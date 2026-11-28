@@ -702,14 +702,14 @@ def api_film_stock(stock_id: str, paper: str | None = None,
 
 
 @app.post("/api/session")
-async def create_session(file: UploadFile = File(...)) -> SessionSummary:
+def create_session(file: UploadFile = File(...)) -> SessionSummary:
     suffix = Path(file.filename or "").suffix
     temp_path: Path | None = None
     transferred = False
     try:
         with NamedTemporaryFile(delete=False, suffix=suffix) as temp:
             temp_path = Path(temp.name)
-            while chunk := await file.read(1024 * 1024):
+            while chunk := file.file.read(1024 * 1024):
                 temp.write(chunk)
         payload = store.create_session(
             temp_path,

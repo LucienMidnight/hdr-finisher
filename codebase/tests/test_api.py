@@ -121,6 +121,37 @@ def test_upload_decode_failure_returns_json_detail(monkeypatch) -> None:
     assert not observed["source_path"].exists()
 
 
+def test_upload_decoding_does_not_block_backend_health(monkeypatch) -> None:
+    import asyncio
+    from threading import Event
+
+    import httpx
+
+    async def check():
+        loop = asyncio.get_running_loop()
+        entered = asyncio.Event()
+        release = Event()
+
+        def decode(source_path, **_kwargs):
+            assert source_path.read_bytes() == b"stub"
+            loop.call_soon_threadsafe(entered.set)
+            assert release.wait(2), "Upload decoding blocked the health request"
+            raise LoaderError("Test decode failure")
+
+        monkeypatch.setattr(store, "create_session", decode)
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://testserver") as connection:
+            upload = asyncio.create_task(connection.post("/api/session", files={"file": ("fixture.png", b"stub")}))
+            try:
+                await asyncio.wait_for(entered.wait(), timeout=2)
+                health = await connection.get("/health")
+                assert health.status_code == 200
+            finally:
+                release.set()
+            assert (await upload).status_code == 400
+
+    asyncio.run(check())
+
+
 def test_perspective_draft_proxy_is_bounded_and_does_not_commit_geometry() -> None:
     upload = client.post("/api/session", files={"file": ("draft.png", make_png_bytes(), "image/png")})
     assert upload.status_code == 200
