@@ -1,0 +1,13 @@
+diff --git a/codebase/frontend/webgpu-preview.js b/codebase/frontend/webgpu-preview.js
+index c58c5c3..87caf3b 100644
+--- a/codebase/frontend/webgpu-preview.js
++++ b/codebase/frontend/webgpu-preview.js
+@@ -6061,6 +6061,8 @@
+           tileSize: sourceOptions?.tileSize,
+           minimumRoiFraction: sourceOptions?.minimumRoiFraction,
+           serial,
++          tier: sourceOptions?.tier,
++          coarse: sourceOptions?.coarse,
+           traceTier: sourceOptions?.tier, // telemetry only, not a draft-grain option
+           viewport: sourceOptions?.viewport || null,
+           // The app's own passes reach the encoder here, not through
