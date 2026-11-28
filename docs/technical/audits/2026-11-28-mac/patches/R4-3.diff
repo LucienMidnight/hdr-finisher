@@ -1,0 +1,81 @@
+diff --git a/codebase/backend/hdr_finisher/render_cache.py b/codebase/backend/hdr_finisher/render_cache.py
+index fb9187e0..42cbae58 100644
+--- a/codebase/backend/hdr_finisher/render_cache.py
++++ b/codebase/backend/hdr_finisher/render_cache.py
+@@ -1472,6 +1472,11 @@ class SessionRenderCache:
+         """
+         return self._source_epoch
+ 
++    def advance_source_epoch_after(self, previous: int) -> None:
++        """Continue the source identity when a fresh cache takes over a session ID."""
++        with self._lock:
++            self._source_epoch = max(self._source_epoch, previous + 1)
++
+     def native_denoise_source(
+         self,
+         kind: PreviewKind,
+diff --git a/codebase/backend/hdr_finisher/sessions.py b/codebase/backend/hdr_finisher/sessions.py
+index f814484d..89e94376 100644
+--- a/codebase/backend/hdr_finisher/sessions.py
++++ b/codebase/backend/hdr_finisher/sessions.py
+@@ -467,6 +467,7 @@ class SessionStore:
+             developed.preview = current.preview
+             from .retouch_source import restore_repairs
+             restore_repairs(developed, _source_mip_identity(developed))
++            developed.render_cache.advance_source_epoch_after(current.render_cache.source_epoch)
+             payload = developed.to_payload()
+             self._current = developed
+             self._publish_retained_session_bytes()
+diff --git a/codebase/tests/test_denoise_native_model.py b/codebase/tests/test_denoise_native_model.py
+index 33b9eea2..ad5e7a1e 100644
+--- a/codebase/tests/test_denoise_native_model.py
++++ b/codebase/tests/test_denoise_native_model.py
+@@ -80,6 +80,48 @@ def test_a_new_source_is_a_new_epoch() -> None:
+     assert source is replacement and after != before
+ 
+ 
++def test_redeveloping_the_same_session_does_not_reuse_its_old_denoise_model(tmp_path, monkeypatch) -> None:
++    from fastapi.testclient import TestClient
++    from PIL import Image
++    from hdr_finisher import main, sessions
++    from hdr_finisher.models import RawImportSettings
++
++    source = tmp_path / "sensor.png"
++    Image.new("RGB", (32, 24), (80, 120, 160)).save(source)
++    store = sessions.SessionStore()
++    monkeypatch.setattr(main, "store", store)
++    initial = store.create_session(source)
++    old_session = store.get(initial.session_id)
++    old_epoch = old_session.render_cache.source_epoch
++    old_pixels = old_session.image.copy()
++
++    def measure(image):
++        return SimpleNamespace(as_dict=lambda: {"sample": float(image[12, 12, 0])})
++
++    monkeypatch.setattr(da, "estimate_adaptive_model", measure)
++    client = TestClient(main.app)
++    url = f"/api/session/{initial.session_id}/denoise-model/hdr?long_edge=256"
++    before = client.get(url)
++    assert before.status_code == 200 and before.json() == measure(old_pixels).as_dict()
++
++    load = sessions.load_image
++
++    def redecode(*args, **kwargs):
++        image, descriptor, metadata, analysis, reference = load(*args, **kwargs)
++        image[12, 12, 0] = 0
++        return image, descriptor, metadata, analysis, reference
++
++    monkeypatch.setattr(sessions, "load_image", redecode)
++    old_session.render_cache.release_development_cache()  # Import job reclaims the old cache before decoding.
++    developed = store.prepare_session(source, raw_import_settings=RawImportSettings())
++    expected = developed.image.copy()
++    store.redevelop_session(initial.session_id, developed)
++    after = client.get(url)
++    assert after.status_code == 200 and after.json() == measure(expected).as_dict()
++    np.testing.assert_array_equal(store.get(initial.session_id).image, expected)
++    assert developed.render_cache.source_epoch > old_session.render_cache.source_epoch > old_epoch
++
++
+ def test_full_size_model_is_the_export_model() -> None:
+     """Export measures ``estimate_adaptive_model`` on the full source; the
+     preview at full size is handed that same image to measure."""
