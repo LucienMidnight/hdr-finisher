@@ -106,8 +106,8 @@ code, and checkable with targeted fast tests. Everything else is recorded as
 | --- | --- | --- | --- |
 | H1 | New test driver `codebase/tests/performance/grade-module-impact.js`, registered in `tests/release/drivers.json` (tier `diagnostic`, area `preview`). Writes `module-impact-v1` JSON (see `docs/technical/audits/README.md`) | done | `279707b5`, `3f1fd3eb`; locked smoke passed (baseline + tone, typical, Fit) |
 | H2 | `codebase/tools/audit-summary.cjs`: merges `findings-<PKG>.jsonl` into `findings.jsonl`, validates both formats, writes the markdown summary (impact matrix, flags, regressions against an earlier run on the same machine) | done | `46672b15`; validated 59 live findings |
-| H4 | Driver corrections from M1–M6 `test` findings (H-c) | active | |
-| H3 | Calibration, machine otherwise idle: `baseline` + `tone` on the typical photo and `film` + `denoise` on the large photo, 2 samples. Proves the JSON, the summary, pixel-change detection and resume; projects the Phase 3 duration | todo | |
+| H4 | Driver corrections from M1–M6 `test` findings (H-c) | done | `603606f5`, `aa369fe9`, `093393e4`; smoke HC/HSL/Color/raw.lens all pixelsChanged, 0 errors; resume verified |
+| H3 | Calibration, machine otherwise idle: `baseline` + `tone` on the typical photo and `film` + `denoise` on the large photo, 2 samples. Proves the JSON, the summary, pixel-change detection and resume; projects the Phase 3 duration | active | Library quick check re-run on a quiet machine: pass (first attempt failed on system memory reserve with three agents running) |
 
 H1 requirements:
 
