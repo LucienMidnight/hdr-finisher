@@ -148,19 +148,23 @@ test("changing colour cleaning while bypassed prepares the new settings on enabl
   assert.deepEqual(draws, [{ method: "clean_grain", clean_splotches: true, clean_fringes: false, grain_evenness: 0.65 }]);
 });
 
-test("CPU comparison requests leave Micro Grain cache priority with the viewer", async () => {
+test("CPU comparison requests pass the current local draft without taking viewer cache priority", async () => {
   const requests = [];
+  const locals = [{ id: "paint", mask: { leaf: { strokes: [{ points: [{ x: 0.4, y: 0.8 }] }] } } }];
+  let bypassed = false;
   const state = {
     session: { session_id: "photo" }, currentView: "hdr", previewCache: {},
-    previewGeneration: { sdr: 1 }, previewControllers: {},
+    previewGeneration: { sdr: 1 }, previewControllers: {}, localPreviewDirty: true,
   };
   const context = vm.createContext({ state, AbortController,
     geometryDraftActive: () => false, geometrySignature: () => "{}", syncGlobalEditState: async () => true,
-    cpuPreviewReason: () => "test", localsBypassed: () => false, previewExecutionForTier: () => "whole",
+    cpuPreviewReason: () => "test", localsBypassed: () => bypassed, localAdjustments: () => locals,
+    previewExecutionForTier: () => "whole",
     mediaQueryMatch: () => false, microGrainPreviewKey: () => null, microGrainPreviewRequest: () => ({}),
     grainCpuPreviewHeaders: () => ({}), safeJson: async () => null, CPU_PREVIEW_MAX_LONG_EDGE: 16384,
     fetch: async (url, options) => {
-      requests.push([url, JSON.parse(options.body).background_preview]);
+      const body = JSON.parse(options.body);
+      requests.push([url, body.background_preview, body.include_locals, body.local_adjustments]);
       return { ok: false };
     },
   });
@@ -168,9 +172,14 @@ test("CPU comparison requests leave Micro Grain cache priority with the viewer",
   for (const raw of [false, true]) {
     await context.renderPreviewForLaneInner("sdr", false, 256, { raw, showProgress: false });
   }
+  bypassed = true;
+  await context.renderPreviewForLaneInner("sdr", false, 256, { raw: false, showProgress: false });
+  locals[0].mask.leaf.strokes[0].points[0].x = 0.7;
+  const originalLocals = [{ id: "paint", mask: { leaf: { strokes: [{ points: [{ x: 0.4, y: 0.8 }] }] } } }];
   assert.deepEqual(requests, [
-    ["/api/session/photo/preview/sdr", true],
-    ["/api/session/photo/preview-raw/sdr", true],
+    ["/api/session/photo/preview/sdr", true, true, originalLocals],
+    ["/api/session/photo/preview-raw/sdr", true, true, undefined],
+    ["/api/session/photo/preview/sdr", true, false, null],
   ]);
 });
 

@@ -538,7 +538,7 @@ async function renderPreviewForLaneInner(
       background_preview: !displayWhenReady,
       ...microGrainPreviewRequest(lane),
       local_adjustments: state.localPreviewDirty && !localsBypassed()
-        ? JSON.parse(JSON.stringify(localAdjustments()))
+        ? localAdjustments()
         : null,
       // The backend renders CPU previews up to 16384 px. For larger pictures
       // (line scans, panoramas) show that size scaled up rather than nothing.
