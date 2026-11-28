@@ -386,6 +386,7 @@ function initializePreviewScheduler() {
           tier: "settled",
           tileSize: Number(options.tileSize) || undefined,
           viewport: options.viewport || null,
+          onFrameSubmitted: options.onFrameSubmitted,
           applicationGeneration: state.previewGeneration[state.currentView],
         },
       );

@@ -2928,6 +2928,7 @@
         analysisMasks: sourceOptions?.analysisMasks,
         analysisNativeLuma: sourceOptions?.analysisNativeLuma,
         claritySurround: sourceOptions?.claritySurround,
+        onFrameSubmitted: sourceOptions?.onFrameSubmitted,
         Scheduler,
         serial,
         signal: sourceOptions?.signal,

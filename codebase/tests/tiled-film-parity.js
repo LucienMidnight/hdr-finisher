@@ -25,6 +25,7 @@ const { importTestPattern } = require("./helpers/import-test-pattern");
 const fs = require("fs");
 const path = require("path");
 const { chromium } = require("playwright");
+const { installFilmParityCapture, waitForFilmParityIdle } = require("./helpers/film-parity-capture.cjs");
 
 function argument(name, fallback = null) {
   const index = process.argv.indexOf(name);
@@ -105,135 +106,25 @@ const MAX_CHANNEL_DELTA = 0;
       while(state.gpuDraftInFlight) await state.gpuDraftInFlight.catch(()=>null);
     }, overrides);
 
-    // What a capture actually shows. The comparison is only meaningful when
-    // each screenshot shows the frame the test just rendered, at the same
-    // backing size. Both diagnostic renders run at the size the app itself
-    // presents, so the viewer stays Ready and has no reason to redraw; if the
-    // app does present a frame of its own between a render and its screenshot
-    // (it announces every presentation), the pair is refused rather than
-    // compared, because resampling alone differs at every edge.
-    const presentedFrame = () => page.evaluate(() => {
-      if (window.__parityPresentations === undefined) {
-        window.__parityPresentations = 0;
-        window.addEventListener("hdrfinisher:preview-presented", () => { window.__parityPresentations += 1; });
-      }
-      return { backing: [els.previewCanvas.width, els.previewCanvas.height], presentations: window.__parityPresentations,
-        execution: state.acceptedPresentation?.execution ?? null };
-    });
-    const assertComparable = (label, tileSize, direct, tiled) => {
-      const stable = (capture) => capture.mark.presentations === capture.after.presentations
-        && capture.mark.backing.join("x") === capture.after.backing.join("x");
-      if (direct.mark.execution !== "direct" || !stable(direct) || !stable(tiled)
-        || direct.after.backing.join("x") !== tiled.after.backing.join("x")) {
-        throw new Error(`${label} tileSize ${tileSize}: the app presented its own frame during the captures, so they are not comparable: `
-          + JSON.stringify({ direct, tiled }));
-      }
-    };
-    await presentedFrame();
-    // Capture the submitted surface before its WebGPU swapchain expires.
-    // Browser screenshots resample the 1004-pixel backing into a fractional
-    // CSS width and can differ even when both rendered surfaces are identical.
-    await page.evaluate(() => {
-      const context = els.previewCanvas.getContext("webgpu");
-      const device = state.gpuPreview.device;
-      const configure = context.configure.bind(context);
-      context.configure = (config) => configure({ ...config, usage: (config.usage || GPUTextureUsage.RENDER_ATTACHMENT) | GPUTextureUsage.COPY_SRC });
-      context.configure(context.getConfiguration());
-      const current = context.getCurrentTexture.bind(context);
-      let pending = null;
-      context.getCurrentTexture = () => { pending = current(); return pending; };
-      const submit = device.queue.submit.bind(device.queue);
-      window.__parityRawFrames = [];
-      device.queue.submit = (commands) => {
-        submit(commands);
-        if (!pending) return;
-        const texture = pending;
-        pending = null;
-        const width = texture.width, height = texture.height, format = texture.format;
-        const pixelBytes = format === "rgba16float" ? 8 : 4;
-        const rowBytes = Math.ceil(width * pixelBytes / 256) * 256;
-        const buffer = device.createBuffer({size: rowBytes * height, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ});
-        const encoder = device.createCommandEncoder();
-        encoder.copyTextureToBuffer({texture}, {buffer, bytesPerRow: rowBytes}, {width, height});
-        submit([encoder.finish()]);
-        window.__parityRawPending = (async () => {
-          await buffer.mapAsync(GPUMapMode.READ);
-          const padded = new Uint8Array(buffer.getMappedRange());
-          const data = new Uint8Array(width * height * pixelBytes);
-          for (let y=0; y<height; y++) data.set(padded.subarray(y*rowBytes, y*rowBytes+width*pixelBytes), y*width*pixelBytes);
-          buffer.unmap(); buffer.destroy();
-          let nonzero=0; for (const byte of data) if (byte) nonzero++;
-          const id = window.__parityRawFrames.push({width,height,format,pixelBytes,data}) - 1;
-          return {id,width,height,format,nonzero};
-        })();
-      };
-    });
-    let lastFrame = null;
-    const capture = async () => {
-      const mark = await presentedFrame();
-      const raw = await page.evaluate(() => window.__parityRawPending);
-      if (!raw || !raw.nonzero) throw new Error("No nonblank submitted surface was captured");
-      const shot = process.env.HDR_FINISHER_DUMP_PARITY
-        ? (await page.locator("#preview-canvas").screenshot()).toString("base64") : null;
-      lastFrame = { mark, after: await presentedFrame() };
-      return { ...raw, shot };
-    };
+    await installFilmParityCapture(page, { dump: Boolean(process.env.HDR_FINISHER_DUMP_PARITY) });
+    const compare = (a, b) => page.evaluate(([left, right]) => window.__filmParity.compare(left, right), [a.id, b.id]);
+    const drop = frame => page.evaluate(id => window.__filmParity.drop(id), frame.id);
+    const renderDirect = (tier = "settled") =>
+      page.evaluate(tier => window.__filmParity.direct(requiredProcessingLongEdge(), tier), tier);
 
-    const compare = async (a, b) => page.evaluate(({ left, right }) => {
-      const first = window.__parityRawFrames[left.id];
-      const second = window.__parityRawFrames[right.id];
-      if (first.width !== second.width || first.height !== second.height || first.format !== second.format) {
-        return { error: "captured sizes or formats differ" };
-      }
-      let differing = 0;
-      let maxDelta = 0;
-      for (let index = 0; index < first.data.length; index += first.pixelBytes) {
-        let delta = 0;
-        // Compare every byte of RGB, including both bytes of half-float HDR.
-        // Alpha is opaque. No tone mapping or conversion enters the comparison.
-        for (let channel = 0; channel < first.pixelBytes * 3 / 4; channel += 1) {
-          delta = Math.max(delta, Math.abs(first.data[index + channel] - second.data[index + channel]));
-        }
-        if (delta > maxDelta) maxDelta = delta;
-        if (delta > 0) differing += 1;
-      }
-      return { width: first.width, height: first.height, samples: first.width * first.height, differing, maxDelta };
-    }, { left: a, right: b });
-
-    const renderDirect = async (tier = "settled") => {
-      const staged = await page.evaluate(async (tier) => {
-        const rendered = await renderGpuDraft(state.currentView, { longEdge: requiredProcessingLongEdge(), tier });
-        if (!rendered) return { error: "direct render failed", lastRefusal: state.lastGpuDraftRefusal || null };
-        if (state.acceptedPresentation?.execution !== "direct") {
-          return { error: `planner selected ${state.acceptedPresentation?.execution || "unknown"}, not direct` };
-        }
-        await state.gpuPreview.device.queue.onSubmittedWorkDone();
-        return { ok: true, exact: state.acceptedPresentation?.exact };
-      }, tier);
-      if (staged.error) throw new Error(JSON.stringify(staged));
-      return { ...await capture(), exact: staged.exact };
-    };
-
-    const renderTiled = async (tileSize) => {
-      const staged = await page.evaluate(async (size) => {
-        const result = await window.HDRFinisherPerformance.renderTiledTier(requiredProcessingLongEdge(), { tileSize: size });
-        if (!result?.rendered) return { error: `tiled render refused: ${(result?.refusals || []).join(", ")}` };
-        await state.gpuPreview.device.queue.onSubmittedWorkDone();
-        return { metrics: result.metrics };
-      }, tileSize);
-      if (staged.error) throw new Error(`tileSize ${tileSize}: ${JSON.stringify(staged)}`);
-      return { shot: await capture(), metrics: staged.metrics };
-    };
+    const renderTiled = tileSize => page.evaluate(size => window.__filmParity.capture(async onFrameSubmitted => {
+      const result = await window.HDRFinisherPerformance.renderTiledTier(requiredProcessingLongEdge(), {
+        tileSize: size, onFrameSubmitted,
+      });
+      if (!result?.rendered) return { error: `tileSize ${size}: tiled render refused: ${(result?.refusals || []).join(", ")}` };
+      return { metrics: result.metrics };
+    }), tileSize);
 
     const parityPass = async (label, tileSize) => {
-      // Start from an idle app: Ready, nothing in flight, and no settle or
-      // refinement timer left to present its own frame over a capture.
-      await page.waitForFunction(() => viewerState().status === "ready" && !state.gpuDraftInFlight && pendingHighlightAnchors.size === 0 && exactHighlightAnchorInflight.size === 0, null, { timeout: 180000 });
-      await page.evaluate(() => state.previewScheduler?.cancel());
+      await waitForFilmParityIdle(page);
       const directShot = await renderDirect();
-      const directFrame = lastFrame;
-      const { shot: tiledShot, metrics } = await renderTiled(tileSize);
-      assertComparable(label, tileSize, directFrame, lastFrame);
+      const tiledShot = await renderTiled(tileSize);
+      const { metrics } = tiledShot;
       if (process.env.HDR_FINISHER_DUMP_PARITY) {
         // The two presented frames, for inspecting where they differ.
         fs.mkdirSync(process.env.HDR_FINISHER_DUMP_PARITY, { recursive: true });
@@ -241,8 +132,11 @@ const MAX_CHANNEL_DELTA = 0;
         fs.writeFileSync(path.join(process.env.HDR_FINISHER_DUMP_PARITY, `film-${slug}-${tileSize}-direct.png`), Buffer.from(directShot.shot, "base64"));
         fs.writeFileSync(path.join(process.env.HDR_FINISHER_DUMP_PARITY, `film-${slug}-${tileSize}-tiled.png`), Buffer.from(tiledShot.shot, "base64"));
       }
-      const comparison = await compare(directShot, tiledShot);
-      if (comparison.error) throw new Error(`${label} tileSize ${tileSize}: ${comparison.error}`);
+      const comparison = await compare(directShot, tiledShot).catch(error => {
+        throw new Error(`${label} tileSize ${tileSize}: ${error.message}`);
+      });
+      await drop(directShot);
+      if (!["vignette+grain", "grain-view-map"].includes(label)) await drop(tiledShot);
       const passed = comparison.maxDelta <= MAX_CHANNEL_DELTA;
       results.push({ label, tileSize, ...comparison, passed, metrics, tiledShot });
       console.log(
@@ -319,6 +213,8 @@ const MAX_CHANNEL_DELTA = 0;
     if (!liveGrain.exact || !settledGrain.exact || acrossTiers.maxDelta !== 0) {
       throw new Error(`Film Grain changed at the same render scale on release: ${JSON.stringify(acrossTiers)}`);
     }
+    await drop(liveGrain);
+    await drop(settledGrain);
     console.log("same-scale interactive and settled Grain are exact and byte-identical  PASS");
     await configure({ grain_view_map: false });
 

@@ -971,7 +971,7 @@ Linked SDR common HDR creatives and overlapping locals; finished float CPU/GPU a
 
 #### `tests/tiled-film-parity.js`
 
-tiled film parity. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
+Compares the actual Direct and Tiled WebGPU submissions byte for byte, including Grain, Mist, Halation and Detail. Also checks that live and settled Grain match at the same scale.
 
 - Expected minutes: Windows unknown; Mac 0.902.
 - Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
@@ -1015,6 +1015,15 @@ Real RAW stacked Film grade: native Exposure with HSL Pick armed at Fit and 100%
 - Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal. Curated <photosRoot>/HDR Test Images corpus; verify codebase/tests/test-photos.manifest.json; resolve through machine settings. Source inputs/fixtures referenced by driver (originals read-only): D:/Photos/HDR Test Images/DSC00264.ARW; DSC00264.ARW.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock. Contains platform branches: inspect source skip/setup messages before treating the result as coverage.
+
+#### `tests/helpers/film-parity-capture.cjs`
+
+Reads the rendered WebGPU canvas for the specific parity probe before a later presentation can replace it. Runs only through its parent drivers.
+
+- Expected minutes: Windows unknown; Mac unknown.
+- Unmeasured default deadline: parent minutes. Parent attempt deadline applies.
+- Requirements: Repository setup completed; Node/npm dependencies installed. Parent driver(s): tests/lens-filter-tiled-parity.js, tests/tiled-film-parity.js.
+- Platforms: win, mac, linux. Runs under the parent's shared GPU lock.
 
 #### `tests/performance/film-look-interaction.js`
 
@@ -1148,6 +1157,15 @@ Compare the visible contribution of spatial film effects at 4K and Full. The pag
 
 ### lens / full
 
+#### `tests/helpers/film-parity-capture.cjs`
+
+Reads the rendered WebGPU canvas for the specific parity probe before a later presentation can replace it. Runs only through its parent drivers.
+
+- Expected minutes: Windows unknown; Mac unknown.
+- Unmeasured default deadline: parent minutes. Parent attempt deadline applies.
+- Requirements: Repository setup completed; Node/npm dependencies installed. Parent driver(s): tests/lens-filter-tiled-parity.js, tests/tiled-film-parity.js.
+- Platforms: win, mac, linux. Runs under the parent's shared GPU lock.
+
 #### `tests/lens-filter-parity.js`
 
 Film stock: the WebGPU preview matches the CPU export. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
@@ -1159,9 +1177,9 @@ Film stock: the WebGPU preview matches the CPU export. Runs assertions and captu
 
 #### `tests/lens-filter-tiled-parity.js`
 
-Physical lens filters: exact Direct/Tiled bytes at Fit and native, and exact Mist reuse and invalidation with Grade edits. Runs assertions and captures in an isolated Electron app. A failure usually means the protected behaviour changed or setup/input prerequisites were not met; inspect the first assertion and run log.
+Compares the actual Direct and Tiled WebGPU submissions at Fit and native with one authored highlight peak per lane. Compares reused and fresh Mist byte for byte after Grade edits and checks that the cache is invalidated or released when expected.
 
-- Expected minutes: Windows unknown; Mac unknown.
+- Expected minutes: Windows unknown; Mac 2.000.
 - Unmeasured default deadline: 15 minutes. Measured current-platform median: max(30 seconds, 1.7 times typical; 1.25 times above 20 minutes). Unmeasured: max(5 minutes, 3 times latest complete local success), or 15-minute default. Primary and follow-ups share it; retry keeps the same cutoff; selection cap may stop earlier.
 - Requirements: Repository setup completed; Node/npm dependencies installed. Electron/Playwright and backend virtual environment with native tools from setup. Display session; machine window 2560x1440 Windows or 1408x794 Mac; disposable test profile. Shared GPU-run lock; real-app checks must not overlap. WebGPU-capable GPU for GPU assertions; fallback cases deliberately simulate loss/refusal.
 - Platforms: win, mac, linux. Windows and Mac timings are separate; unknown time is not zero. Linux has no timing baseline. MacBook Neo A18 Pro / 8 GB is the minimum supported machine; use machine settings and the shared lock.
