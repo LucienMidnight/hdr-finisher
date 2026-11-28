@@ -145,6 +145,22 @@ function hslAddCustom(ui){
   let n=1;while(channels.some(c=>c.name===`Custom ${n}`))n++;
   const c={id:crypto.randomUUID(),name:`Custom ${n}`,kind:'custom',recipe:HDRHSL.newRecipe()};channels.push(c);ui.channel=c.id;ui.range=0;return c;
 }
+// Match the CPU stage tap: these modules are read only after Global HSL.
+const hslDownstreamKeys = new Set(['hsl','hsl_section_enabled','curves_section_enabled',
+  'luma_curve','red_curve','green_curve','blue_curve','detail','detail_section_enabled',
+  'film_look','film_look_section_enabled','vignette','vignette_section_enabled',
+  'color_grading','color_grading_section_enabled','output_exposure']);
+
+function hslGlobalSelectionKey(ui){
+  const lane=state.currentView, adjustments=state.adjustments;
+  const channel=hslChannel(ui), recipe=channel?.recipe;
+  const beforeHsl=branch=>Object.fromEntries(Object.entries(branch||{}).filter(([key])=>!hslDownstreamKeys.has(key)));
+  return stablePreviewJson([state.session?.session_id,lane,state.renderCoordinator?.generation(lane,'source'),
+    state.repairSourceGeneration,state.editDocument?.hdr_reference_white_nits,adjustments?.shared?.geometry,
+    beforeHsl(adjustments?.[lane]),lane==='sdr'&&adjustments?.sdr?.linked_to_hdr?beforeHsl(adjustments.hdr):null,
+    channel?.id,recipe?.ranges,recipe?.edge,recipe?.edge_feather,recipe?.edge_detail]);
+}
+
 function renderHslPanels(){
   if(!hslUI.panels.length)return;
   const identity=`${state.session?.session_id}:${state.currentView}:${state.gradeMode}:${selectedLocal()?.id}`;
@@ -157,10 +173,13 @@ function renderHslPanels(){
   let overlayOwner=hslUI.panels.find(ui=>ui.host.querySelector('[data-hsl-selection]').getAttribute('aria-pressed')==='true');
   // A bypassed tool shows no selection.
   if(overlayOwner&&hslBypassed(overlayOwner)){hslClearSelection();overlayOwner=null;}
-  const selectionKey=`${state.editRevision}:${state.globalEditGeneration}`;
-  if(overlayOwner&&!overlayOwner.gesture&&selectionKey!==hslUI.selectionKey){
-    hslUI.selectionKey=selectionKey;clearTimeout(hslUI.selectionTimer);
-    hslUI.selectionTimer=setTimeout(()=>{if(overlayOwner.host.querySelector('[data-hsl-selection]').getAttribute('aria-pressed')==='true')void hslSelection(overlayOwner);},250);
+  if(overlayOwner&&!overlayOwner.gesture){
+    const selectionKey=overlayOwner.scope==='global'
+      ?hslGlobalSelectionKey(overlayOwner):`${state.editRevision}:${state.globalEditGeneration}`;
+    if(selectionKey!==hslUI.selectionKey){
+      hslUI.selectionKey=selectionKey;clearTimeout(hslUI.selectionTimer);
+      hslUI.selectionTimer=setTimeout(()=>{if(overlayOwner.host.querySelector('[data-hsl-selection]').getAttribute('aria-pressed')==='true')void hslSelection(overlayOwner);},250);
+    }
   }
 }
 function hslBypassed(ui){
@@ -296,6 +315,7 @@ async function hslFetchStage(ui,points,extra={}, {draft=false, isCurrent=()=>tru
     await state.editCommandQueue;
   }
   if(!isCurrent())return null;
+  if(typeof extra==='function')extra=extra();
   const response=await fetch(`/api/session/${state.session.session_id}/hsl-sample`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({lane:state.currentView,local_id:ui.scope==='local'?selectedLocal()?.id:null,points,adjustments:state.adjustments,local_adjustments:localAdjustments(),edit_revision:state.editRevision,long_edge:1000,...extra})});
   const result=await safeJson(response);if(!response.ok)throw Error(typeof result.detail==='string'?result.detail:'HSL stage sampling failed.');return result;
 }
@@ -329,7 +349,7 @@ function hslVisibleRect(){
   if(right<=left||bottom<=top||left===photo.left&&top===photo.top&&right===photo.right&&bottom===photo.bottom)return null;
   return{x:(left-photo.left)/photo.width,y:(top-photo.top)/photo.height,width:(right-left)/photo.width,height:(bottom-top)/photo.height};
 }
-function hslClearSelection(){clearTimeout(hslUI.selectionTimer);clearTimeout(hslUI.viewportTimer);hslUI.overlayRevision++;hslUI.pendingSelection=null;document.getElementById('hsl-selection-overlay')?.remove();for(const ui of hslUI.panels)ui.host.querySelector('[data-hsl-selection]').setAttribute('aria-pressed','false');}
+function hslClearSelection(){clearTimeout(hslUI.selectionTimer);clearTimeout(hslUI.viewportTimer);hslUI.overlayRevision++;hslUI.pendingSelection=null;hslUI.exactSelectionKey=null;hslUI.selectionKey=null;document.getElementById('hsl-selection-overlay')?.remove();for(const ui of hslUI.panels)ui.host.querySelector('[data-hsl-selection]').setAttribute('aria-pressed','false');}
 function hslPlaceOverlay(){
   const image=document.getElementById('hsl-selection-overlay'),preview=activePreviewElement();
   if(!image||!preview)return;
@@ -341,19 +361,23 @@ function hslPlaceOverlay(){
     clearTimeout(hslUI.viewportTimer);
     const visible=hslVisibleRect()||{x:0,y:0,width:1,height:1};
     if(!image.hslOwner?.selectionRequest&&(visible.x<region.x-1e-9||visible.y<region.y-1e-9||visible.x+visible.width>region.x+region.width+1e-9||visible.y+visible.height>region.y+region.height+1e-9)){
-      hslUI.viewportTimer=setTimeout(()=>{if(document.getElementById('hsl-selection-overlay')===image)void hslSelection(image.hslOwner,{draft:Boolean(image.hslOwner?.gesture)});},60);
+      hslUI.viewportTimer=setTimeout(()=>{if(document.getElementById('hsl-selection-overlay')===image)void hslSelection(image.hslOwner,{draft:Boolean(image.hslOwner?.gesture),force:true});},60);
     }
   }
 }
-function hslSelection(ui,{draft=false}={}){
+function hslSelection(ui,{draft=false,force=false}={}){
   const button=ui.host.querySelector('[data-hsl-selection]');
   if(button.getAttribute('aria-pressed')!=='true'||!state.session||state.activeWorkflow!=='grade'||hslBypassed(ui)){hslClearSelection();return;}
+  const key=!draft&&ui.scope==='global'?hslGlobalSelectionKey(ui):null;
+  if(!force&&key!==null&&key===hslUI.exactSelectionKey)return hslUI.selectionWork;
+  hslUI.exactSelectionKey=key;
+  if(key!==null)hslUI.selectionKey=key;
   clearTimeout(hslUI.selectionTimer);clearTimeout(hslUI.viewportTimer);
   for(const panel of hslUI.panels)panel.host.querySelector('[data-hsl-selection]').setAttribute('aria-pressed',String(panel===ui));
   // Let an in-flight draft paint even if more pointer moves arrive. Keep
   // just the newest pending request, and fence drafts when settling or hiding.
   if(!draft)hslUI.overlayRevision++;
-  hslUI.pendingSelection={ui,draft,revision:hslUI.overlayRevision};
+  hslUI.pendingSelection={ui,draft,key,revision:hslUI.overlayRevision};
   hslUI.selectionWork ||= hslDrainSelection();
   return hslUI.selectionWork;
 }
@@ -366,12 +390,17 @@ async function hslDrainSelection(){
     }
   }finally{hslUI.selectionWork=null;}
 }
-async function hslRenderSelection({ui,draft,revision}){
+async function hslRenderSelection({ui,draft,key,revision}){
   const isCurrent=()=>revision===hslUI.overlayRevision;
   ui.selectionRequest=true;
   try{
-    const data=await hslFetchStage(ui,[{x:.5,y:.5}],{selection_recipe:hslChannel(ui).recipe,
-      selection_rect:ui.scope==='global'?hslVisibleRect():null,long_edge:draft?640:1600},{draft,isCurrent});
+    const data=await hslFetchStage(ui,[{x:.5,y:.5}],()=>{
+      // A save can replace the optimistic document. Key the exact mask to
+      // what is actually sent, not the state that first queued the request.
+      if(key!==null)key=hslUI.exactSelectionKey=hslUI.selectionKey=hslGlobalSelectionKey(ui);
+      return {selection_recipe:hslChannel(ui).recipe,selection_rect:ui.scope==='global'?hslVisibleRect():null,
+        long_edge:draft?640:1600};
+    },{draft,isCurrent});
     if(!data||!isCurrent())return;
     const image=document.createElement('img');image.id='hsl-selection-overlay';image.alt='';image.src=data.selection_overlay;image.hslRegion=data.selection_region;image.hslOwner=ui;
     image.style.cssText='position:absolute;pointer-events:none;z-index:3;max-width:none;';
@@ -383,7 +412,10 @@ async function hslRenderSelection({ui,draft,revision}){
   }catch(error){
     // A draft may race a save revision. Keep the last good mask and let
     // the next draft or the settled request use the acknowledged revision.
-    if(!draft&&isCurrent()){document.getElementById('hsl-selection-overlay')?.remove();hslNotice(ui,error.message);}
+    if(!draft&&isCurrent()){
+      if(key===hslUI.exactSelectionKey)hslUI.exactSelectionKey=null;
+      document.getElementById('hsl-selection-overlay')?.remove();hslNotice(ui,error.message);
+    }
   }finally{ui.selectionRequest=false;}
 }
 

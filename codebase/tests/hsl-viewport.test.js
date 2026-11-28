@@ -40,20 +40,27 @@ test('selection retains the last overlay until its replacement decodes and ignor
   let deliver;
   let decode;
   const requests = [];
-  const recipe = {width:16};
+  const recipe = {ranges:[{center:10,width:16,feather:12}]};
   const previous = { replaceWith: image => { active = image; }, remove: () => { active = null; } };
   active = previous;
-  const context = vm.createContext({ state: { session: {}, activeWorkflow: 'grade' }, hslUI: { panels: [ui], overlayRevision: 0 },
+  const stage = { exposure: 0 };
+  let refresh;
+  const context = vm.createContext({ state: { session: { session_id: 'photo' }, activeWorkflow: 'grade',
+    currentView: 'hdr', gradeMode: 'global', adjustments: { hdr: stage } },
+    hslUI: { panels: [ui], overlayRevision: 0, identity: 'photo:hdr:global:undefined' },
+    setTimeout: cb => { refresh = cb; },
     document: { getElementById: () => active, createElement: () => ({ style: {},
       remove: () => { active = null; }, replaceWith: image => { active = image; }, decode: () => new Promise(resolve => { decode = resolve; }) }) },
     els: { previewPrimaryPane: { append: image => { active = image; } } }, clearTimeout() {},
-    hslBypassed: () => false, hslChannel: () => ({ recipe }), hslVisibleRect: () => null,
-    hslFetchStage: (_ui, _points, {selection_recipe, long_edge}, {draft}) => {
-      requests.push([selection_recipe.width, long_edge, draft]);
+    hslBypassed: () => false, hslChannel: () => ({ id:'red',recipe }), hslVisibleRect: () => null,
+    selectedLocal: () => null, hslOwner: () => stage, hslSync() {}, syncPhotoPickCursor() {},
+    hslFetchStage: (_ui, _points, request, {draft}) => {
+      const {selection_recipe, long_edge} = request();
+      requests.push([selection_recipe.ranges[0].width, long_edge, draft]);
       return new Promise(resolve => { deliver = resolve; });
     }, hslPlaceOverlay() {},
     hslNotice: (_ui, message) => assert.fail(message) });
-  vm.runInContext(declarations('hslSelection', 'hslDrainSelection', 'hslRenderSelection', 'hslClearSelection'), context);
+  vm.runInContext(declarations('hslDownstreamKeys', 'hslGlobalSelectionKey', 'stablePreviewJson', 'renderHslPanels', 'hslSelection', 'hslDrainSelection', 'hslRenderSelection', 'hslClearSelection'), context);
   const first = context.hslSelection(ui);
   assert.equal(active, previous);
   deliver({ selection_overlay: 'valid-png' });
@@ -61,10 +68,21 @@ test('selection retains the last overlay until its replacement decodes and ignor
   assert.equal(active, previous, 'Fetch completion must not remove the old image before decode');
   decode();await first;
   assert.notEqual(active, previous);
+  recipe.saturation = 20;
+  stage.color_grading = { shadows: { saturation: 35 } };
+  stage.vignette = { amount: -20 };
+  context.state.editRevision = 2;
+  context.hslSelection(ui);
+  assert.equal(requests.length, 1, 'Unchanged coverage on release needs no request');
+  context.renderHslPanels();
+  assert.equal(refresh, undefined, 'Downstream edits do not schedule an overlay refresh');
+  stage.exposure = .5;
+  context.renderHslPanels();
+  assert.equal(typeof refresh, 'function', 'An upstream edit does schedule an overlay refresh');
   const live = context.hslSelection(ui, {draft:true});
-  recipe.width = 20;
+  recipe.ranges[0].width = 20;
   context.hslSelection(ui, {draft:true});
-  recipe.width = 30;
+  recipe.ranges[0].width = 30;
   context.hslSelection(ui, {draft:true});
   assert.deepEqual(requests, [[16,1600,false],[16,640,true]], 'At most one live request in flight');
   deliver({selection_overlay:'first-drag-png'});
@@ -82,7 +100,7 @@ test('selection retains the last overlay until its replacement decodes and ignor
   await new Promise(resolve => setImmediate(resolve));
   decode();await live;
   assert.equal(active.src,'settled-png');
-  const second = context.hslSelection(ui);
+  const second = context.hslSelection(ui, { force: true });
   context.hslClearSelection();
   deliver({ selection_overlay: 'stale-png' });await second;
   assert.equal(active, null, 'A late response cannot resurrect a cleared selection');
