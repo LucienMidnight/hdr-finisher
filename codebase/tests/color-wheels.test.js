@@ -66,3 +66,39 @@ for(const lane of ['hdr','sdr']) test(`${lane}: stationary puck is exact; pad in
   assert.ok(Math.abs(h.grading.shadows.saturation-40)<1e-12);
   assert.ok(Math.abs(h.grading.shadows.hue-123)<1e-12);
 });
+
+test('Vignette SVG skips hidden layout and only redraws paths when their geometry changes', () => {
+  const pathWrites=[];
+  let layoutReads=0, left=30, hidden;
+  const vignette={center_x:.5,center_y:.5,midpoint:25,feather:75,amount:-50};
+  const state={session:{},vignetteShowOverlay:false,currentView:'hdr',activeWorkflow:'grade',adjustments:{hdr:{vignette}}};
+  const preview={naturalWidth:600,naturalHeight:300,getBoundingClientRect:()=>{
+    layoutReads++; return {left,top:11,width:300,height:150};
+  }};
+  const overlay={classList:{toggle:(_key,value)=>{hidden=value;}},style:{},setAttribute(){},
+    querySelector:selector=>({setAttribute:(_key,d)=>pathWrites.push([selector,d])})};
+  const context=vm.createContext({state,activePreviewElement:()=>preview,HTMLCanvasElement:class {},
+    document:{querySelector:()=>null},els:{vignetteShapeOverlay:overlay,
+      previewPrimaryPane:{getBoundingClientRect(){layoutReads++;return {left:10,top:1};}}}});
+  vm.runInContext(fs.readFileSync(require.resolve('../frontend/color-wheels.js'),'utf8'),context);
+  context.renderVignetteShape();
+  assert.equal(hidden,true);
+  assert.equal(layoutReads,0);
+  state.vignetteShowOverlay=true;
+  context.renderVignetteShape();
+  assert.equal(hidden,false);
+  assert.equal(pathWrites.length,2);
+  assert.equal(overlay.style.left,'20px');
+  vignette.amount=-20;left=50;
+  context.renderVignetteShape();
+  assert.equal(pathWrites.length,2);
+  assert.equal(overlay.style.left,'40px');
+  vignette.center_x=.6;
+  context.renderVignetteShape();
+  assert.equal(pathWrites.length,4);
+  assert.notEqual(pathWrites[0][1],pathWrites[2][1]);
+  vignette.midpoint=40;
+  context.renderVignetteShape();
+  assert.equal(pathWrites.length,6);
+  assert.notEqual(pathWrites[2][1],pathWrites[4][1]);
+});

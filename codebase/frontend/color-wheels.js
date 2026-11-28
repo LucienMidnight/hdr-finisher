@@ -263,29 +263,38 @@ function vignetteBypassed() {
   return state.adjustments?.[state.currentView]?.vignette_section_enabled === false;
 }
 
+const vignetteOutlineKeys = new WeakMap();
+
 function renderVignetteShape() {
   const overlay = els.vignetteShapeOverlay;
   if (!overlay) return;
-  const groupOpen = !document.querySelector(".vignette-group")?.classList.contains("collapsed");
-  const preview = activePreviewElement();
-  const paneRect = els.previewPrimaryPane?.getBoundingClientRect();
-  const imageRect = preview?.getBoundingClientRect();
-  const frameWidth = preview instanceof HTMLCanvasElement ? preview.width : preview?.naturalWidth;
-  const frameHeight = preview instanceof HTMLCanvasElement ? preview.height : preview?.naturalHeight;
-  const visible = Boolean(state.session) && state.vignetteShowOverlay && groupOpen && state.activeWorkflow === "grade"
-    && !vignetteBypassed()
-    && imageRect?.width > 0 && frameWidth > 0 && frameHeight > 0;
-  overlay.classList.toggle("hidden", !visible);
   if (els.vignetteShowOverlay) {
     els.vignetteShowOverlay.setAttribute("aria-pressed", String(state.vignetteShowOverlay));
     els.vignetteShowOverlay.lastElementChild.textContent = state.vignetteShowOverlay ? "Hide overlay" : "Show overlay";
   }
+  const show = state.session && state.vignetteShowOverlay && state.activeWorkflow === "grade"
+    && !vignetteBypassed() && !document.querySelector(".vignette-group")?.classList.contains("collapsed");
+  if (!show) {
+    overlay.classList.toggle("hidden", true);
+    return;
+  }
+  const preview = activePreviewElement();
+  const imageRect = preview?.getBoundingClientRect();
+  const frameWidth = preview instanceof HTMLCanvasElement ? preview.width : preview?.naturalWidth;
+  const frameHeight = preview instanceof HTMLCanvasElement ? preview.height : preview?.naturalHeight;
+  const visible = imageRect?.width > 0 && frameWidth > 0 && frameHeight > 0;
+  overlay.classList.toggle("hidden", !visible);
   if (!visible) return;
-  const vignette = state.adjustments[state.currentView]?.vignette || defaultVignette();
+  const paneRect = els.previewPrimaryPane.getBoundingClientRect();
   Object.assign(overlay.style, {
     left: `${imageRect.left - paneRect.left}px`, top: `${imageRect.top - paneRect.top}px`,
     width: `${imageRect.width}px`, height: `${imageRect.height}px`,
   });
+
+  const vignette = state.adjustments[state.currentView]?.vignette || defaultVignette();
+  const outlineKey = JSON.stringify([frameWidth, frameHeight, vignette.center_x, vignette.center_y,
+    vignette.roundness, vignette.scale_x, vignette.scale_y, vignette.midpoint ?? 25, vignette.feather ?? 75]);
+  if (vignetteOutlineKeys.get(overlay) === outlineKey) return;
   overlay.setAttribute("viewBox", `0 0 ${frameWidth} ${frameHeight}`);
   overlay.setAttribute("preserveAspectRatio", "none");
   // The same start and end the renderer uses: nothing inside the inner line,
@@ -294,6 +303,7 @@ function renderVignetteShape() {
   const end = start + 0.02 + 0.98 * (vignette.feather ?? 75) / 100;
   overlay.querySelector(".vignette-shape-inner").setAttribute("d", vignetteOutlinePath(vignette, start, frameWidth, frameHeight));
   overlay.querySelector(".vignette-shape-outer").setAttribute("d", vignetteOutlinePath(vignette, end, frameWidth, frameHeight));
+  vignetteOutlineKeys.set(overlay, outlineKey);
 }
 
 function renderVignetteCenter() {
