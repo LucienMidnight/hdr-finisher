@@ -1,0 +1,68 @@
+diff --git a/codebase/frontend/range-controls.js b/codebase/frontend/range-controls.js
+index e40aa22a..4037766d 100644
+--- a/codebase/frontend/range-controls.js
++++ b/codebase/frontend/range-controls.js
+@@ -557,9 +557,15 @@ function installSliderMarkings(control, shell) {
+     renderSliderModifierMarkings(control, ""); hoveredInstrumentSlider = null;
+     document.body.classList.remove("slider-hover");
+   });
++  let markingsFramePending = false;
+   control.addEventListener("input", () => {
+-    if (hoveredInstrumentSlider === control) requestAnimationFrame(() => {
+-      sliderOrdinaryReadouts.delete(control); renderSliderModifierMarkings(control);
++    if (hoveredInstrumentSlider !== control) return;
++    sliderOrdinaryReadouts.delete(control);
++    if (markingsFramePending) return;
++    markingsFramePending = true;
++    requestAnimationFrame(() => {
++      markingsFramePending = false;
++      if (hoveredInstrumentSlider === control) renderSliderModifierMarkings(control);
+     });
+   });
+   if (!sliderModifierListenersInstalled) {
+diff --git a/codebase/tests/control-panel-values.test.js b/codebase/tests/control-panel-values.test.js
+index 86ad585a..8ac71d22 100644
+--- a/codebase/tests/control-panel-values.test.js
++++ b/codebase/tests/control-panel-values.test.js
+@@ -1,6 +1,41 @@
+ const test=require('node:test'),assert=require('node:assert/strict'),vm=require('node:vm'),fs=require('node:fs'),path=require('node:path');
+ const HDRHSL=require('../frontend/hsl-engine.js');
+ function context(){const c=vm.createContext({HDRHSL});for(const name of ['adjustment-controls.js','range-controls.js','hsl-panel.js'])vm.runInContext(fs.readFileSync(path.join(__dirname,'../frontend',name),'utf8'),c);return c;}
++
++test('fine slider markings use the latest value once and cannot reappear after pointer leave', () => {
++ const c=context(), frames=[], shellEvents={}, controlEvents={};
++ let appendedTicks=0, scale;
++ const output={dataset:{},textContent:'0.2'}, tag={textContent:''};
++ const row={querySelector: selector => selector==='output' ? output : tag};
++ const shell={dataset:{}, querySelector:()=>scale,
++  addEventListener:(type,fn)=>{shellEvents[type]=fn;},
++  append:(_origin,node)=>{scale=node;}};
++ const slider={value:'0.2',min:'0',max:'1',dataset:{},
++  closest:selector=>selector==='.range-shell'?shell:row,
++  addEventListener:(type,fn)=>{controlEvents[type]=fn;}};
++ Object.assign(c,{clamp:(v,lo,hi)=>Math.min(hi,Math.max(lo,v)), window:{addEventListener(){}},
++  requestAnimationFrame:fn=>frames.push(fn), document:{
++   body:{classList:{add(){},remove(){}}},
++   createElement:()=>({style:{},setAttribute(){},querySelectorAll:()=>[],
++    append(node){if(node.className.startsWith('slider-tick '))appendedTicks++;}}),
++  }});
++ const input=(value,text)=>{slider.value=value;controlEvents.input();output.textContent=text;};
++ const nextFrame=()=>frames.splice(0).forEach(fn=>fn());
++ c.installSliderMarkings(slider,shell);
++ shellEvents.pointerenter({ctrlKey:true});
++ appendedTicks=0;
++ input('0.37','0.4');
++ input('0.48','0.5');
++ nextFrame();
++ assert.equal(output.textContent,'0.48');
++ assert.equal(appendedTicks,41);
++ input('0.61','0.6');
++ shellEvents.pointerleave();
++ nextFrame();
++ assert.equal(output.textContent,'0.6');
++ assert.equal(tag.textContent,'');
++ assert.equal(shell.dataset.modifier,'');
++});
+ test('edited status ignores object key order and default roundoff but preserves real changes and array order',()=>{
+  const c=context();assert.equal(vm.runInContext('valuesEqual({a:1,b:{hue:27.567096839175015}},{b:{hue:27.567096839175008},a:1})',c),true);
+  assert.equal(vm.runInContext('valuesEqual({hue:27},{hue:27.01})',c),false);
