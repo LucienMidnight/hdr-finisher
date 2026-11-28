@@ -139,6 +139,31 @@ test("a published native anchor is reused at every display resolution", async ()
   assert.equal(await preview.resolveHighlightAnchor(otherAnchor, otherSize, params, { lane: "hdr" }), 4.83);
 });
 
+test("native Maximum measurements retain at most 32 anchors and reset with the session", async () => {
+  const preview = new Preview(null);
+  const size = { width: 128, height: 128 };
+  preview.rankEditingPeakCandidates = async (_session, lane, adjustments) => ({
+    ...size, working_space: "acescg", patches: [{ x: 0, y: 0, ...size }],
+    anchor: preview.highlightAnchorRequest(lane, adjustments, original, peakFitParams()),
+  });
+  preview.roiSourceHalo = () => 0;
+  preview.renderTiledTo = async (_canvas, _session, _lane, adjustments) => ({
+    rendered: true, metrics: { exactPeak: adjustments.hdr.exposure },
+  });
+  const keys = [];
+  for (let exposure = 1; exposure <= 40; exposure++) {
+    const adjustments = { hdr: { ...ADJUSTMENTS.hdr, exposure } };
+    const measured = await preview.measureEditingPeak(null, "s", "hdr", adjustments, null, [], 0, 203, size,
+      { highlightAnchorOnly: true });
+    assert.equal(measured.highlightAnchor.value, exposure);
+    keys.push(measured.highlightAnchor.key);
+  }
+  assert.deepEqual([...preview.peakReductionCache.keys()], keys.slice(-32));
+  assert.equal(preview.peakReductionCache.get(keys.at(-1)), 40);
+  preview.resetSession();
+  assert.equal(preview.peakReductionCache.size, 0);
+});
+
 test("an implausible low-level reduction is still rechecked before publication", async () => {
   const { preview, calls } = previewWithReductions([36922.6, 4.5]);
   const params = peakFitParams(3.79);

@@ -1685,7 +1685,7 @@
       const result = {rendered:true, metrics:{exactPeak:peak, exactPeakLongEdge:Math.max(frame.width,frame.height), tileCount:rendered, processedBound, bounded:true,
         claritySurround: Boolean(analysis.claritySurround), nativeLumaMasks: analysis.analysisNativeLuma}};
       if (options.highlightAnchorOnly && ranked.anchor) {
-        this.peakReductionCache.set(ranked.anchor.key,peak);
+        this.cachePeakReduction(ranked.anchor.key, peak);
         result.highlightAnchor = {key:ranked.anchor.key, value:peak};
       }
       return result;
@@ -2813,7 +2813,7 @@
       });
       const measured = result?.metrics?.exactPeak;
       if (highlightAnchorOnly && anchor && Number.isFinite(measured) && !sourceOptions?.analysisPatch) {
-        this.peakReductionCache.set(anchor.key, measured);
+        this.cachePeakReduction(anchor.key, measured);
         this.requestedCanonicalHighlightKeys.delete(anchor.key);
         this.noteHighlightMeasurement(lane, proxy, params, measured);
         result.highlightAnchor = { key: anchor.key, value: measured };
@@ -9920,8 +9920,7 @@
           }
         }
         const measured = Math.max(0.0018, Number.isFinite(peak) ? peak : 0.0018);
-        this.peakReductionCache.set(cacheKey, measured);
-        while (this.peakReductionCache.size > 32) this.peakReductionCache.delete(this.peakReductionCache.keys().next().value);
+        this.cachePeakReduction(cacheKey, measured);
         return measured;
       } finally {
         if (readBuffer.mapState === "mapped") readBuffer.unmap();
@@ -9929,6 +9928,12 @@
         readBuffer.destroy();
         parameterBuffer.destroy();
       }
+    }
+
+    cachePeakReduction(key, peak) {
+      const cache = this.peakReductionCache;
+      cache.set(key, peak);
+      while (cache.size > 32) cache.delete(cache.keys().next().value);
     }
 
     /**
