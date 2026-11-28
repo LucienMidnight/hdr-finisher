@@ -137,8 +137,9 @@ One JSON object per line:
   v1 rows without a module photo inherit the run photo. Regression comparisons
   require the same actual source hash.
 - `samplesDetail` records the route, processed long edge, Denoise preparation
-  identity and separate counts for selector setups, Fit misses, exact reduced
-  misses and CPU preparation misses. RAW steps also record Apply phases when
+  identity and separate counts for selector setups and misses, Fit misses,
+  exact reduced misses and CPU preparation misses. `denoiseRebuilds` counts
+  timed samples with at least one miss. RAW steps also record Apply phases when
   available. `rawStates` records the developed ON/OFF routes and phases before
   priming. Denoise `methods` records each control map's hash, settled ON/OFF
   signatures, and any eligibility skip.

@@ -72,7 +72,7 @@ test('calculates paired deltas and applies strict thresholds without flagging dr
   assert.deepEqual(impacts(m, run), []);
 });
 
-test('rejects wrong recipe hashes, timing statistics and p95 below ten samples', () => {
+test('validates audit recipes, timing statistics, actual photos and reduced CPU fallbacks', () => {
   const run = fixture(), [m] = run.modules;
   assert.equal(validateRun(run), run);
   m.steps[0].settle_ms.median = 0;
@@ -82,9 +82,10 @@ test('rejects wrong recipe hashes, timing statistics and p95 below ten samples',
   m.steps[0].settle_ms = stats([1010]);
   m.recipe.strength = .4;
   assert.throws(() => validateRun(run), /recipeHash/);
+  checkPhotoAndReducedSamples();
 });
 
-test('validates actual module photos, and does not pair a reduced CPU sample with an exact sample', () => {
+function checkPhotoAndReducedSamples() {
   const run = fixture(), [m] = run.modules;
   m.photo = { role: 'override', file: '_DSC7970.ARW', sha256: 'b'.repeat(64), megapixels: 33 };
   const [on] = m.steps;
@@ -103,7 +104,7 @@ test('validates actual module photos, and does not pair a reduced CPU sample wit
   m.photo.role = 'override';
   m.photo.sha256 = 'invalid';
   assert.throws(() => validateRun(run), /photo.sha256/);
-});
+}
 
 test('merges findings, replaces an older merged file, and emits grouped counts and impact flags', t => {
   const [run, , write] = dirs(t);
@@ -144,6 +145,11 @@ test('reports only same-machine regressions above noise and refuses cross-machin
   assert.match(summary, /first_feedback_ms — 100.0 → 141.0/);
   assert.doesNotMatch(summary, /settle_ms —/);
   assert.ok(JSON.parse(fs.readFileSync(path.join(write, filename), 'utf8')).modules[0].impact[0].flags.includes('regression'));
+  before.modules[0].photo = { role: 'override', file: '_DSC7970.ARW', sha256: 'b'.repeat(64), megapixels: 33 };
+  writeJson(prior, filename, before);
+  const differentPhoto = cli('--run', run, '--compare', prior);
+  assert.equal(differentPhoto.status, 0, differentPhoto.stderr);
+  assert.doesNotMatch(differentPhoto.stdout, /100\.0 → 141\.0/);
   before.machine.powerSource = 'battery';
   writeJson(prior, filename, before);
   const unmatched = cli('--run', run, '--compare', prior);
