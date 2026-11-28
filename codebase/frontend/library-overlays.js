@@ -110,8 +110,19 @@
         if(!placeable(r,item,m))return;
         if(item.values&&(item.map?.key===m.key)){item.validating=false;if(!draw(r,item))return;item.badge.textContent='S · refining';item.badge.hidden=!(item.kind==='focus'&&large&&quality==='half');continue;}
         const response=await fetch(`/api/library/overlay-pixels/${m.key}`,{signal:controller.signal});if(!response.ok)throw new Error('Overlay map unavailable; switch the overlay off and on to remake it.');
-        const bitmap=await createImageBitmap(await response.blob());if(!current()){bitmap.close();return;}
-        const temp=document.createElement('canvas');temp.width=bitmap.width;temp.height=bitmap.height;const ctx=temp.getContext('2d');ctx.drawImage(bitmap,0,0);bitmap.close();item.values=ctx.getImageData(0,0,temp.width,temp.height);item.map=m;item.validating=false;if(!draw(r,item))return;
+        let bitmap=await createImageBitmap(await response.blob());
+        let temp;
+        try{
+          if(!current())return;
+          temp=document.createElement('canvas');temp.width=bitmap.width;temp.height=bitmap.height;
+          const ctx=temp.getContext('2d');ctx.drawImage(bitmap,0,0);
+          bitmap.close();bitmap=null;
+          item.values=ctx.getImageData(0,0,temp.width,temp.height);
+        }finally{
+          bitmap?.close();
+          if(temp)temp.width=temp.height=0;
+        }
+        item.map=m;item.validating=false;if(!draw(r,item))return;
         item.badge.textContent='S · refining';item.badge.hidden=!(item.kind==='focus'&&large&&quality==='half');
       }}catch(e){if(e.name!=='AbortError'&&current()){if(item.map?.quality==='camera'){item.badge.hidden=true;return;}item.badge.hidden=false;item.badge.textContent=`${item.kind==='focus'?'S':'E'} · unavailable`;item.badge.title=e.message;}}
     }

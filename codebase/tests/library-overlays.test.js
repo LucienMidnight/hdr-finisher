@@ -14,9 +14,31 @@ function setup(probe){
   const next=element(id),controller=new AbortController();body.append(next);
   const entry={photo,canvas:next,meta:{},controller,current:()=>true};surfaces.push(entry);return entry;
  }
- return {overlay,requests,probes,messages,canvas,owner,elements,frames,timers,surface,surfaces};
+ return {overlay,requests,probes,messages,canvas,owner,elements,frames,timers,surface,surfaces,context};
 }
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
+test('temporary map pixels release the bitmap and canvas after readback or a draw failure',async()=>{
+ for(const fail of [false,true]){
+  const h=setup();let closed=0;
+  h.context.createImageBitmap=async()=>({width:2,height:2,close(){closed++;}});
+  let temp;
+  await h.overlay.toggle('exposure',true);await tick();
+  const create=h.context.document.createElement;
+  h.context.document.createElement=tag=>{
+   const node=create(tag);
+   if(!temp&&tag==='canvas'){
+    temp=node;
+    if(fail)node.getContext=()=>({drawImage(){throw Error('map draw failed');}});
+   }
+   return node;
+  };
+  h.requests[0].resolve({key:'map',quality:'half',frame:[0,0,1,1]});await tick();
+  assert.equal(closed,1);assert.deepEqual([temp.width,temp.height],[0,0]);
+  assert.equal(h.overlay.snapshot().maps[0].ready,!fail);
+  if(fail)assert.equal(h.overlay.snapshot().maps[0].unavailable,'map draw failed');
+  h.owner.abort();
+ }
+});
 test('switching Exposure preserves Focus request and switching Focus preserves Exposure',async()=>{
  const h=setup();await h.overlay.toggle('focus',true);await tick();const focus=h.requests[0];await h.overlay.toggle('exposure',true);const exposure=h.requests[1];
  assert.equal(h.requests.length,2);assert.equal(focus.signal.aborted,false);
