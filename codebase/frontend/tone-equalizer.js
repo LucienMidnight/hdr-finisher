@@ -118,9 +118,13 @@ function bindToneEqualizerEditorForLane(lane) {
   });
   ui.bandValue.addEventListener("pointerdown", () => state.previewScheduler?.beginInteraction());
   ["pointerup", "pointercancel"].forEach((eventName) => {
-    ui.bandValue.addEventListener(eventName, () => state.previewScheduler?.endInteraction());
+    ui.bandValue.addEventListener(eventName, () => {
+      flushToneEqualizerDraw(lane);
+      state.previewScheduler?.endInteraction();
+    });
   });
   ui.bandValue.addEventListener("change", () => {
+    flushToneEqualizerDraw(lane);
     renderControlState();
   });
   ui.add.addEventListener("click", () => addToneEqualizerNode(null, lane));
@@ -212,8 +216,8 @@ function setToneEqualizerBand(index, requestedValue, lane = state.currentView) {
   nodes[index].adjustment_ev = clamp(rounded, Math.ceil(minimum * 100) / 100, Math.floor(maximum * 100) / 100);
   state.adjustments[lane].tone_equalizer_nodes = normalizeToneEqualizerNodes(nodes);
   state.selectedToneEqualizerBand = index;
-  syncControlsFromState();
-  drawToneEqualizerEditor(lane);
+  syncToneEqualizerControls(lane);
+  scheduleToneEqualizerDraw(lane);
   invalidatePreview(lane);
   debouncePreview(lane);
 }
@@ -262,7 +266,25 @@ function syncToneEqualizerControls(lane = state.currentView) {
   ui.add.disabled = nodes.length >= TONE_EQUALIZER_MAX_NODE_COUNT;
 }
 
-function drawToneEqualizerEditor(lane = state.currentView) {
+const toneEqualizerDrawFrames = new Map();
+
+function scheduleToneEqualizerDraw(lane) {
+  if (toneEqualizerDrawFrames.has(lane)) return;
+  toneEqualizerDrawFrames.set(lane, requestAnimationFrame(() => {
+    toneEqualizerDrawFrames.delete(lane);
+    drawToneEqualizerEditor(lane, { syncControls: false });
+  }));
+}
+
+function flushToneEqualizerDraw(lane) {
+  if (toneEqualizerDrawFrames.has(lane)) drawToneEqualizerEditor(lane, { syncControls: false });
+}
+
+function drawToneEqualizerEditor(lane = state.currentView, { syncControls = true } = {}) {
+  if (toneEqualizerDrawFrames.has(lane)) {
+    cancelAnimationFrame(toneEqualizerDrawFrames.get(lane));
+    toneEqualizerDrawFrames.delete(lane);
+  }
   const canvas = toneEqualizerUi(lane).editor;
   const surface = resizeCanvasSurface(canvas);
   if (!surface) return;
@@ -324,9 +346,10 @@ function drawToneEqualizerEditor(lane = state.currentView) {
   ctx.strokeStyle = enabled ? uiToken("--equalizer-curve") : uiToken("--equalizer-disabled");
   ctx.lineWidth = uiNumberToken("--equalizer-line-width", 2.25);
   ctx.beginPath();
+  const sampleAdjustment = prepareToneEqualizerSampler(nodes, smoothing);
   for (let sample = 0; sample < 180; sample += 1) {
     const inputEv = TONE_EQUALIZER_MIN_EV + (sample / 179) * (toneEqualizerPqMaxEv() - TONE_EQUALIZER_MIN_EV);
-    const adjustment = sampleToneEqualizerAdjustment(inputEv, nodes, smoothing);
+    const adjustment = sampleAdjustment(inputEv);
     const x = xForEv(inputEv);
     const y = yForAdjustment(adjustment);
     if (sample === 0) ctx.moveTo(x, y);
@@ -361,13 +384,15 @@ function drawToneEqualizerEditor(lane = state.currentView) {
     ctx.fill();
     drawGraphHomeCue(ctx, x, y, radius, node.adjustment_ev);
   });
-  syncToneEqualizerControls(lane);
+  if (syncControls) syncToneEqualizerControls(lane);
 }
 
 function sampleToneEqualizerAdjustment(inputEv, values, smoothing) {
+  return prepareToneEqualizerSampler(values, smoothing)(inputEv);
+}
+
+function prepareToneEqualizerSampler(values, smoothing) {
   const nodes = normalizeToneEqualizerNodes(values);
-  if (inputEv <= nodes[0].input_ev) return nodes[0].adjustment_ev;
-  if (inputEv >= nodes.at(-1).input_ev) return nodes.at(-1).adjustment_ev;
   const targets = nodes.map((node) => node.input_ev + node.adjustment_ev);
   const widths = nodes.slice(1).map((node, index) => Math.max(node.input_ev - nodes[index].input_ev, 0.001));
   const deltas = targets.slice(1).map((value, index) => (value - targets[index]) / widths[index]);
@@ -378,18 +403,22 @@ function sampleToneEqualizerAdjustment(inputEv, values, smoothing) {
     const following = deltas[index];
     return previous <= 0 || following <= 0 ? 0 : (2 * previous * following) / (previous + following);
   });
-  const segment = Math.min(nodes.findIndex((node) => node.input_ev > inputEv) - 1, nodes.length - 2);
-  const local = (inputEv - nodes[segment].input_ev) / widths[segment];
-  const local2 = local * local;
-  const local3 = local2 * local;
-  const y0 = targets[segment];
-  const y1 = targets[segment + 1];
-  const cubic = ((2 * local3) - (3 * local2) + 1) * y0
-    + (local3 - (2 * local2) + local) * slopes[segment] * widths[segment]
-    + ((-2 * local3) + (3 * local2)) * y1
-    + (local3 - local2) * slopes[segment + 1] * widths[segment];
-  const linear = y0 + (y1 - y0) * local;
-  return ((linear * (1 - smoothing)) + (cubic * smoothing)) - inputEv;
+  return (inputEv) => {
+    if (inputEv <= nodes[0].input_ev) return nodes[0].adjustment_ev;
+    if (inputEv >= nodes.at(-1).input_ev) return nodes.at(-1).adjustment_ev;
+    const segment = Math.min(nodes.findIndex((node) => node.input_ev > inputEv) - 1, nodes.length - 2);
+    const local = (inputEv - nodes[segment].input_ev) / widths[segment];
+    const local2 = local * local;
+    const local3 = local2 * local;
+    const y0 = targets[segment];
+    const y1 = targets[segment + 1];
+    const cubic = ((2 * local3) - (3 * local2) + 1) * y0
+      + (local3 - (2 * local2) + local) * slopes[segment] * widths[segment]
+      + ((-2 * local3) + (3 * local2)) * y1
+      + (local3 - local2) * slopes[segment + 1] * widths[segment];
+    const linear = y0 + (y1 - y0) * local;
+    return ((linear * (1 - smoothing)) + (cubic * smoothing)) - inputEv;
+  };
 }
 
 function normalizeToneEqualizerNodes(values) {
