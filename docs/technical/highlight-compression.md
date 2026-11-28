@@ -264,6 +264,15 @@ The WebGPU implementation retains `hdrPeakFit` / `hdrSoftCeiling` / `fixedCap` f
 
 The authoring preview keeps active HDR and SDR output compression on WebGPU. Peak Fit, Fixed cap, Soft Ceiling, and Clip are applied in the final composite after Film Look, spatial effects, vignette, and grain; Clip therefore remains a true output-boundary clamp without forcing a backend preview. Proof and export use the shared GPU delivery renderer with CPU fallback. Their Peak Fit reduction reads finished pixels after resize/sharpening. Settled direct SDR preview and Library reduce the finished texture too; interactive/tiled editing carries a bounded whole-picture estimate. Fixed cap requests no reduction. Extreme neutral-paper SDR uses the existing scaled half-float storage and float reduction, as HDR already did.
 
+The bounded native Peak Fit measurement keeps the same ranked patches and
+maximum. Small source patches queue the original bytes without a staging wait.
+On neutral paper the patch maxima keep their individual float32 slots and
+are read together. On HDR, changing only Start or Highlight Detail can reuse
+the last matching native measurement. Target remains part of its identity
+because global Tone Whites uses it before compression. When release retains
+an already exact drag frame, the synced settle path wakes the pending native
+measurement without waiting for the fallback timer or drawing another frame.
+
 ## UI, graph, and scopes
 
 The compact graph plots scalar input nits against scalar output nits. Its scalar is luminance for Preserve color, maximum ACEScg channel for Neutralize peak, and maximum BT.2020 channel for Smooth color rolloff. The summary must identify the active color trajectory.

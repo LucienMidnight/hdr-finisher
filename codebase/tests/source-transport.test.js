@@ -1474,6 +1474,28 @@ test("a source region fetches its chunks side by side, bounded by the staging ri
   assert.ok(chunks.every((request) => request.epoch === "7" && request.x === region.x && request.width === region.width));
 });
 
+test("small peak patches upload directly and still validate the source epoch", async () => {
+  const backend = createRegionBackend({ width: 5320, height: 7968, failAt: 384, delayMs: 0 });
+  const { preview, harness } = regionPreview(backend, 128, 128);
+  const uploads = [];
+  harness.device.queue.writeTexture = ({ origin }, data, layout, size) => {
+    uploads.push({ ...origin, bytes: data.byteLength, ...layout, ...size });
+  };
+  const load = y => preview.loadProxyRegion("session", "hdr", 7968, "{}", 0, "source", `key${y}`,
+    { x: 512, y, width: 128, height: 128 }, { peakPatchUpload: true });
+  await load(128);
+  await load(256);
+  await assert.rejects(() => load(384), (error) => error.status === 409);
+  assert.deepEqual(backend.state.requests.map(({ probe, epoch }) => [probe, epoch]),
+    [[true, null], [false, "7"], [true, null], [false, "7"], [true, null], [false, "7"]]);
+  assert.equal(uploads.length, 2, "the stale patch must not upload");
+  for (const upload of uploads) assert.deepEqual(upload, {
+    x: 0, y: 0, bytes: 128 * 128 * 8, bytesPerRow: 128 * 8, rowsPerImage: 128, width: 128, height: 128,
+  });
+  assert.equal(harness.buffers.length, 0);
+  assert.equal(harness.drains, 0);
+});
+
 test("a failed region chunk stops every lane before the partial texture is released", async () => {
   const backend = createRegionBackend({ width: 5320, height: 7968, failAt: 2618 + 300 });
   const region = { x: 686, y: 2618, width: 1024, height: 1000 };

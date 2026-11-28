@@ -28,6 +28,7 @@ const context = vm.createContext({
   console,
   GPUTextureUsage: { COPY_SRC: 1, COPY_DST: 2, TEXTURE_BINDING: 4, STORAGE_BINDING: 8, RENDER_ATTACHMENT: 16 },
   GPUBufferUsage: { MAP_READ: 1, MAP_WRITE: 2, COPY_SRC: 4, COPY_DST: 8, UNIFORM: 64, STORAGE: 128, QUERY_RESOLVE: 512 },
+  GPUMapMode: { READ: 1 },
 });
 vm.runInContext(fs.readFileSync(path.join(__dirname, "../frontend/render-failure.js"), "utf8"), context);
 vm.runInContext(frontendSource("graph-scale.js"), context);
@@ -137,6 +138,101 @@ test("a published native anchor is reused at every display resolution", async ()
   const otherAnchor = preview.highlightAnchorRequest("hdr", ADJUSTMENTS, otherSize, params);
   assert.equal(otherAnchor.key, anchor.key);
   assert.equal(await preview.resolveHighlightAnchor(otherAnchor, otherSize, params, { lane: "hdr" }), 4.83);
+});
+
+test("native Maximum measurements retain at most 32 anchors and reset with the session", async () => {
+  const preview = new Preview(null);
+  const size = { width: 128, height: 128 };
+  preview.rankEditingPeakCandidates = async (_session, lane, adjustments) => ({
+    ...size, working_space: "acescg", patches: [{ x: 0, y: 0, ...size }],
+    anchor: preview.highlightAnchorRequest(lane, adjustments, original, peakFitParams()),
+  });
+  preview.roiSourceHalo = () => 0;
+  preview.renderTiledTo = async (_canvas, _session, _lane, adjustments) => ({
+    rendered: true, metrics: { exactPeak: adjustments.hdr.exposure },
+  });
+  const keys = [];
+  for (let exposure = 1; exposure <= 40; exposure++) {
+    const adjustments = { hdr: { ...ADJUSTMENTS.hdr, exposure } };
+    const measured = await preview.measureEditingPeak(null, "s", "hdr", adjustments, null, [], 0, 203, size,
+      { highlightAnchorOnly: true });
+    assert.equal(measured.highlightAnchor.value, exposure);
+    keys.push(measured.highlightAnchor.key);
+  }
+  assert.deepEqual([...preview.peakReductionCache.keys()], keys.slice(-32));
+  assert.equal(preview.peakReductionCache.get(keys.at(-1)), 40);
+  preview.resetSession();
+  assert.equal(preview.peakReductionCache.size, 0);
+});
+
+test("native Maximum reads each exact neutral-paper patch value in one mapping", async () => {
+  const preview = new Preview(null);
+  const size = { width: 512, height: 128 };
+  const adjustments = { hdr: { ...ADJUSTMENTS.hdr, film_look: { film_stock: "none" } } };
+  const values = [1.25, -0, 8.125, 2.5];
+  const patches = values.map((_, index) => ({ x: index * 128, y: 0, width: 128, height: 128 }));
+  const anchor = preview.highlightAnchorRequest("hdr", adjustments, original, peakFitParams());
+  const maps = [];
+  let destroyed = false;
+  preview.device = { createBuffer({ size }) {
+    const storage = new Float32Array(size / 4);
+    return { storage, mapState: "unmapped",
+      async mapAsync() { maps.push(Array.from(storage)); this.mapState = "mapped"; },
+      getMappedRange() { return storage.buffer; },
+      unmap() { this.mapState = "unmapped"; },
+      destroy() { destroyed = true; },
+    };
+  } };
+  preview.rankEditingPeakCandidates = async () => ({ ...size, working_space: "acescg", patches, anchor });
+  preview.roiSourceHalo = () => 0;
+  preview.renderTiledTo = async (...args) => {
+    const { analysisPatch, peakReadback } = args[11];
+    peakReadback.buffer.storage[peakReadback.offset / 4] = values[analysisPatch.x / 128];
+    return { rendered: true, metrics: { exactPeak: null } };
+  };
+  const measured = await preview.measureEditingPeak(null, "s", "hdr", adjustments, null, [], 0, 203, size,
+    { highlightAnchorOnly: true });
+  assert.equal(measured.highlightAnchor.value, 8.125);
+  assert.equal(measured.metrics.tileCount, 4);
+  assert.deepEqual(maps, [values]);
+  assert.equal(destroyed, true);
+
+  destroyed = false;
+  preview.renderTiledTo = async () => {
+    preview.resetSession();
+    return { rendered: true };
+  };
+  assert.equal(await preview.measureEditingPeak(null, "s", "hdr", adjustments, null, [], 0, 203, size,
+    { highlightAnchorOnly: true }), null);
+  assert.equal(maps.length, 1, "a superseded batch is never read or cached");
+  assert.equal(preview.peakReductionCache.size, 0);
+  assert.equal(destroyed, true);
+});
+
+test("native anchor reuse ignores only post-measurement shoulder controls", () => {
+  const preview = new Preview(null);
+  const params = peakFitParams();
+  params[138] = 203; // project reference white
+  const recipe = { hdr: { ...ADJUSTMENTS.hdr, highlight_compression_start_nits: 200,
+    highlight_compression_peak_detail: 35, highlight_compression_target_nits: 600 } };
+  const withControls = controls => ({ hdr: { ...recipe.hdr, ...controls } });
+  const key = (adjustments, source = original, packed = params, locals = []) =>
+    preview.nativeHighlightReuseKey(adjustments, source, packed, locals);
+  const initial = key(recipe);
+  const shoulderOnly = withControls({ highlight_compression_start_nits: 250, highlight_compression_peak_detail: 50 });
+  assert.equal(key(shoulderOnly), initial);
+  assert.notEqual(preview.highlightAnchorRequest("hdr", recipe, original, params).key,
+    preview.highlightAnchorRequest("hdr", shoulderOnly, original, params).key);
+  assert.notEqual(key(withControls({ highlight_compression_target_nits: 800 })), initial);
+  assert.notEqual(key(withControls({ contrast: 20 })), initial);
+  assert.notEqual(key(recipe, { ...original, sessionId: "second" }), initial);
+  assert.notEqual(key(recipe, { ...original, sourceEpoch: 2 }), initial);
+  const white = new Float32Array(params);
+  white[138] = 100;
+  assert.notEqual(key(recipe, original, white), initial);
+  assert.notEqual(key(recipe, original, params, [{ id: "new-local" }]), initial);
+  preview.resetSession();
+  assert.notEqual(key(recipe), initial);
 });
 
 test("an implausible low-level reduction is still rechecked before publication", async () => {

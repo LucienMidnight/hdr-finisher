@@ -42,6 +42,7 @@ function grainRenderer(context, method, edge) {
 
 function grade({ tiled = true, cpu = false, faster = false, blockDrag = false, coordinated = false, denoiseMethod } = {}) {
   const events = [];
+  const anchorWakes = [];
   const timers = new Map();
   let now = 0;
   let serial = 0;
@@ -147,7 +148,7 @@ function grade({ tiled = true, cpu = false, faster = false, blockDrag = false, c
     activeScopeRegion: () => null,
     microGrainPreviewRequest: () => ({}),
     prepareInactivePreview() {},
-    wakePendingHighlightAnchor() {},
+    wakePendingHighlightAnchor(lane) { anchorWakes.push([lane, state.editRevision]); },
     refreshOverlay() {},
     requestLiveOverlay() {},
     visiblePreviewCanvasRect() {},
@@ -198,7 +199,7 @@ function grade({ tiled = true, cpu = false, faster = false, blockDrag = false, c
     state.acceptedPresentation.generation = state.previewGeneration.hdr;
   }
   return {
-    state, events, dragRequest, local,
+    state, events, anchorWakes, dragRequest, local,
     savedBrushRadius: () => savedLocal?.mask.leaf.brush_radius,
     finishDrag: () => finishDrag(),
     finishPriorRender: () => finishPriorRender(),
@@ -281,7 +282,7 @@ test("CPU-only editing draws one settled CPU frame", async () => {
 });
 
 test("release with an unchanged value adopts the in-flight exact frame once", async () => {
-  const { state, events, edit, tick, finishDrag, dragRequest } = grade({ blockDrag: true });
+  const { state, events, anchorWakes, edit, tick, finishDrag, dragRequest } = grade({ blockDrag: true });
   state.previewScheduler.beginInteraction();
   edit();
   await tick(120);
@@ -293,6 +294,7 @@ test("release with an unchanged value adopts the in-flight exact frame once", as
   await new Promise(setImmediate);
   await tick(160);
   assert.deepEqual(events.slice(1), [["sync", 2], ["scope", "settled", 2]]);
+  assert.deepEqual(anchorWakes, [["hdr", 1], ["hdr", 2]], "the retained exact frame wakes Peak Fit after the edit sync");
 });
 
 test("releasing a coarse drag aborts its pending work before settling exact", async () => {
