@@ -18,7 +18,15 @@
     const other=used(share)-(exclude ? caches.get(exclude)?.bytes() || 0 : 0);
     return other+bytes<=limits[share];
   }
-  async function report() {
+  let reports=Promise.resolve();
+  function report() {
+    // The timer and explicit reclaim both use the same backend report keys.
+    // Send their snapshots in order, measuring bytes when each request starts.
+    const pending=reports.catch(()=>{}).then(sendReport);
+    reports=pending;
+    return pending;
+  }
+  async function sendReport() {
     enforce();
     const response=await fetch('/api/library/memory-report',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({thumbnails:used('thumbnails'),sharp:used('sharp')})});
     if(!response.ok)throw Error('RAM owner unavailable');
