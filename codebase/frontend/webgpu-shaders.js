@@ -2412,7 +2412,7 @@ fn fineGrainResizeBase(@builtin(global_invocation_id) id: vec3u) {
       x = (x ^ (x >> vec4u(15u))) * 0x846ca68bu;
       return x ^ (x >> vec4u(16u));
     }
-    fn grainLayerNoise(frame: vec2f, pitch: f32, scale: f32, signal: f32, salt: u32, mono: bool) -> f32 {
+    fn grainFootprint(frame: vec2f, pitch: f32, salt: u32) -> vec2f {
       let centre = frame / pitch;
       let halfBox = vec2f(0.5 / pitch);
       let first = vec2i(floor(centre - halfBox));
@@ -2436,6 +2436,10 @@ fn fineGrainResizeBase(@builtin(global_invocation_id) id: vec3u) {
         let weight = (grainTentCdf(delta + halfBox.y) - grainTentCdf(delta - halfBox.y)) * pitch;
         field += row * weight.x;
       }
+      return field;
+    }
+    fn grainLayerNoise(frame: vec2f, pitch: f32, scale: f32, signal: f32, salt: u32, mono: bool) -> f32 {
+      let field = grainFootprint(frame, pitch, salt);
       let inv = 1.0 - signal;
       let skew = 1.35 * inv * inv - select(0.42, 0.95, mono) * signal;
       let nativeGain = length(vec2f(1.0, 0.58 * scale / pitch));
@@ -2473,7 +2477,13 @@ fn fineGrainResizeBase(@builtin(global_invocation_id) id: vec3u) {
       let developLuma = clamp(srgbEncode(clamp(lumaSrgb(developLinear), 0.0, 1.0)) / 0.45, 0.0, 1.0);
       var grain = vec3f(0.0);
       if (blackAndWhite) {
-        grain = vec3f(grainLayerNoise(frame, spacing * max(scale, physicalPitch), scale, developLuma, 239u, true));
+        let silverPitch = max(scale, physicalPitch);
+        var silver = grainLayerNoise(frame, spacing * silverPitch, scale, developLuma, 239u, true);
+        if (developLuma < 1.0) {
+          let shadow = 1.0 - developLuma;
+          silver += ((3.35 * 0.46) * (shadow * shadow)) * grainFootprint(frame, 1.5 * silverPitch, 341u).x;
+        }
+        grain = vec3f(silver);
       } else {
         let developRgb = clamp(developLinear, vec3f(0.0), vec3f(1.0));
         let channelSignal = clamp(

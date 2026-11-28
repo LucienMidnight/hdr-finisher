@@ -116,9 +116,16 @@ def preview_grain_noise(signals, luma_signal, luma_weights, left, top, physical_
     # original grain profile. The setting acts identically at every zoom.
     spacing = NODE_SPACING * (F32(1.11) - F32(0.22) * F32(softness))
     if monochrome:
-        mono = _layer(luma_signal, left, top, spacing * max(scale, pitch),
-                      scale, seed, 239, True) * UNIT_RMS
-        return np.repeat(mono[..., None], 3, axis=-1)
+        silver_pitch = max(scale, pitch)
+        mono = _layer(luma_signal, left, top, spacing * silver_pitch, scale, seed, 239, True)
+        # Silver's dark clumps are wider than its individual grains. A second,
+        # independently seeded band restores their low-frequency contrast at
+        # Fit without changing native pitch or inventing a preview-only field.
+        shadow = (F32(1) - luma_signal) ** 2
+        if np.any(shadow):
+            mottle = _layer_features(left, top, *luma_signal.shape, F32(1.5) * silver_pitch, seed_hash(seed, 341))
+            mono += (F32(3.35 * 0.46) * shadow) * mottle[..., 0]
+        return np.repeat((mono * UNIT_RMS)[..., None], 3, axis=-1)
     layers = np.stack([
         _layer(signals[..., channel], left, top, spacing * max(scale, pitch * F32(size)),
                scale, seed, salt, False)

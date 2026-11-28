@@ -75,6 +75,8 @@ def patches(args):
             window = adjustments.FrameWindow((w - n) // 2, (h - n) // 2, w, h)
             for size in args.size:
                 for style, selected in (("color_negative", ["none", *stocks]), ("black_and_white", ["none"])):
+                    if args.film_type and args.film_type != style:
+                        continue
                     look = FilmLookAdjustments(grain_amount=60, grain_size=size, grain_chroma=40,
                                               grain_softness=25, grain_film_type=style)
                     for tone in TONES:
@@ -113,6 +115,7 @@ def main():
     parser.add_argument("--fit-edge", default=1283, type=int)
     parser.add_argument("--patch", default=128, type=int)
     parser.add_argument("--stock", nargs="+", help="Use only the named stock ids, plus the neutral control")
+    parser.add_argument("--film-type", choices=("color_negative", "black_and_white"))
     parser.add_argument("--size", default=[0, 30, 50, 100], nargs="+", type=int)
     parser.add_argument("--photo", choices=tuple(FRAME_SIZES), action="append")
     parser.add_argument("--output", type=Path, default=Path("output/f1-grain/calibration.csv"))
