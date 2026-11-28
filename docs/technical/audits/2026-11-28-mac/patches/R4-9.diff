@@ -1,0 +1,73 @@
+diff --git a/codebase/backend/hdr_finisher/sessions.py b/codebase/backend/hdr_finisher/sessions.py
+index f814484d..c7d488b3 100644
+--- a/codebase/backend/hdr_finisher/sessions.py
++++ b/codebase/backend/hdr_finisher/sessions.py
+@@ -20,7 +20,7 @@ from .capabilities import probe_capabilities
+ from .color_context import DEFAULT_HDR_REFERENCE_WHITE_NITS, RenderColorContext
+ from .delivery_frames import DeliveryFrame, batch_source_buffers
+ from .import_bands import grade_import_bands
+-from .loader import SOURCE_COLOR_TRANSFORM_VERSION, load_image, source_decoder_version
++from .loader import LoaderError, SOURCE_COLOR_TRANSFORM_VERSION, load_image, source_decoder_version
+ from .metadata import extract_metadata
+ from .models import (
+     AdjustmentState,
+@@ -339,11 +339,9 @@ class SessionStore:
+                 )
+                 prepared_fingerprint = fingerprint.result()
+             final_stat = source_stat_key(source_path)
+-            stable_source = initial_stat == final_stat
+-            if not stable_source:
+-                # An external source edit is exceptional: retain the old
+-                # post-decode fingerprint rather than trust the early hash.
+-                prepared_fingerprint = _sha256_file(source_path)
++            if initial_stat != final_stat:
++                # Rehashing the new file cannot make it the file we decoded.
++                raise LoaderError("Photo changed during decoding; open the folder again.")
+             lens_result = metadata.get("lens_correction") or {}
+             if (
+                 source_path.suffix.lower() == ".dng"
+@@ -395,7 +393,7 @@ class SessionStore:
+                 raw_import_settings=resolved_raw_settings,
+                 file_back_sources=file_back_sources,
+             )
+-            if stable_source and library_edge is None:
++            if library_edge is None:
+                 session.source_decode = SourceDecode(
+                     final_stat, (raw_import_settings or RawImportSettings()).model_copy(deep=True),
+                     resolved_override.model_copy(deep=True), hdr_reference_white_nits, ref(image),
+diff --git a/codebase/tests/test_grade_open_reuse.py b/codebase/tests/test_grade_open_reuse.py
+index ab433dc9..3160e569 100644
+--- a/codebase/tests/test_grade_open_reuse.py
++++ b/codebase/tests/test_grade_open_reuse.py
+@@ -131,3 +131,31 @@ def test_file_hash_and_decode_overlap_without_another_image(tmp_path, monkeypatc
+     session = store.prepare_session(photo)
+     assert session.source_fingerprint_sha256 == real_hash(photo)
+     store.clear()
++
++
++def test_import_cannot_publish_old_pixels_with_a_replaced_files_fingerprint(tmp_path, monkeypatch):
++    from hdr_finisher import sessions
++    from hdr_finisher.loader import LoaderError
++
++    active = tmp_path / 'active.png'
++    photo = tmp_path / 'photo.png'
++    replacement = tmp_path / 'replacement.png'
++    for path, color in ((active, (20, 50, 80)), (photo, (150, 80, 15)), (replacement, (5, 100, 180))):
++        Image.new('RGB', (24, 16), color).save(path)
++    store = SessionStore()
++    initial = store.get(store.create_session(active).session_id)
++    expected = initial.image.copy()
++    load = sessions.load_image
++
++    def replace_after_decode(path, **kwargs):
++        decoded = load(path, **kwargs)
++        replacement.replace(path)
++        return decoded
++
++    monkeypatch.setattr(sessions, 'load_image', replace_after_decode)
++    with pytest.raises(LoaderError, match='Photo changed during decoding'):
++        store.create_session(photo)
++    assert store.current() is initial
++    np.testing.assert_array_equal(initial.image, expected)
++    with Image.open(photo) as image:
++        assert image.getpixel((0, 0)) == (5, 100, 180)
