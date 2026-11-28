@@ -1057,8 +1057,10 @@ fn fineGrainResizeBase(@builtin(global_invocation_id) id: vec3u) {
     || (typeof module !== "undefined" && module.exports && require("./lens-filters.js")));
   const LENS_KERNEL_LIMIT = 256;
   const LENS_KERNEL_TAPS = 2 * LENS_KERNEL_LIMIT + 1;
+  const LENS_LOBE_COUNT = LENS_FILTERS.components[1].length;
+  const LENS_TABLE_LENGTH = (LENS_FILTERS.components.length - 1) * LENS_LOBE_COUNT;
   // Each component's row ends with its extent and normalization sum.
-  const LENS_KERNEL_SIZE = Object.freeze([LENS_KERNEL_TAPS + 2, 27]);
+  const LENS_KERNEL_SIZE = Object.freeze([LENS_KERNEL_TAPS + 2, LENS_LOBE_COUNT]);
   const LENS_COMPONENTS_WGSL = LENS_FILTERS.components.slice(1).flat().map(([sigma,weights]) =>
     `vec4f(${[sigma,...weights].map(value=>Number(value).toPrecision(12)).join(",")})`).join(",\n");
 
@@ -3401,9 +3403,9 @@ fn fineGrainResizeBase(@builtin(global_invocation_id) id: vec3u) {
       textureStore(filmDetailOutput, coordinate, storeFilm(applyOutputExposure(finishStructure(rgb, blur, coordinate))));
     }
 
-    const LENS_COMPONENTS = array<vec4f,108>(${LENS_COMPONENTS_WGSL});
+    const LENS_COMPONENTS = array<vec4f,${LENS_TABLE_LENGTH}>(${LENS_COMPONENTS_WGSL});
     fn lensComponent(index: u32) -> vec4f {
-      return LENS_COMPONENTS[(u32(p[${GPU_PARAMS.LENS_FILTER}])-1u)*27u+index];
+      return LENS_COMPONENTS[(u32(p[${GPU_PARAMS.LENS_FILTER}])-1u)*${LENS_LOBE_COUNT}u+index];
     }
     fn lensSigma(index: u32) -> f32 {
       return max(0.000001,lensComponent(index).x*p[${GPU_PARAMS.LENS_SIZE}]*filmPixelsPerMm(frameDimensions())/(1000.0*spatialScale()));
@@ -3425,7 +3427,7 @@ fn fineGrainResizeBase(@builtin(global_invocation_id) id: vec3u) {
     }
     // One full-precision weight per tap, not an exponential per image pixel.
     // Both blurs still normalize in the original tap order, and the vertical
-    // pass still blends all 27 components in order into the half-float target.
+    // pass blends the fitted lobes in order into the half-float target.
     fn lensGaussianWeight(tap: i32, sigma: f32) -> f32 {
       return exp(-0.5*(f32(tap)/sigma)*(f32(tap)/sigma));
     }

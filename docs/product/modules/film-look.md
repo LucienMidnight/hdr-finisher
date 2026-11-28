@@ -13,6 +13,23 @@ GPU slot uploads its static table on first use or when assigned a different
 base, then only the print rows on another contrast value. Slot counts,
 GPU allocation, and memory shares stay unchanged.
 
+## November 28: compact Mist diffusion (F2 branch)
+
+Direct, Tiled, Proof and export use the same eight fitted Gaussian lobes per
+lens, replacing 27. The tightest lobe stays on the existing Mist grid, which is
+pixel resolution at the measured Fit sizes. The coloured halo and wide bloom
+retain the original filters' strength mapping, with no draft-only setting.
+The fit conserves red, green and blue energy, but can slightly redistribute
+light between sharp points, halo and veil in previously authored Mist grades.
+Steve's before-and-after visual review is still needed.
+
+The GPU weight table falls from 515 × 27 to 515 × 8 R32F (about 56 KB to
+16 KB). No new image textures or cache budget. Tile planning uses the widest
+fitted lobe with the same reach cap and grid alignment. CPU delivery continues
+to convolve in bounded blocks. The original point-spread coefficients remain
+test references to check the intentional look change. The delivery limits are
+unchanged.
+
 ## November 27: Neutral extreme ideal-scanner white
 
 The ideal Neutral scanner now saturates any scanned pixel with a channel above
