@@ -164,8 +164,8 @@ Clipped lane, scope, preview and filename labels use their visible text; dynamic
 | button.title | kind === "exposure" ? "Show clipped highlights and near-black shadows from the source photo · E" : &#96;${title} options · ${key}&#96; | dynamic expression | codebase/frontend/library-overlays.js:30 · [source](../../codebase/frontend/library-overlays.js#L30) |
 | panel aria-label | &#96;${title} options&#96; | dynamic expression | codebase/frontend/library-overlays.js:31 · [source](../../codebase/frontend/library-overlays.js#L31) |
 | item.badge.title | m.unavailable | dynamic expression | codebase/frontend/library-overlays.js:108 · [source](../../codebase/frontend/library-overlays.js#L108) |
-| item.badge.title | e.message | dynamic expression | codebase/frontend/library-overlays.js:116 · [source](../../codebase/frontend/library-overlays.js#L116) |
-| item.badge.title | m.camera_frame_error&#124;&#124;'The camera preview could not be lined up with the sensor data. Develop the photo to see this overlay.' | dynamic expression | codebase/frontend/library-overlays.js:122 · [source](../../codebase/frontend/library-overlays.js#L122) |
+| item.badge.title | e.message | dynamic expression | codebase/frontend/library-overlays.js:127 · [source](../../codebase/frontend/library-overlays.js#L127) |
+| item.badge.title | m.camera_frame_error&#124;&#124;'The camera preview could not be lined up with the sensor data. Develop the photo to see this overlay.' | dynamic expression | codebase/frontend/library-overlays.js:133 · [source](../../codebase/frontend/library-overlays.js#L133) |
 
 ### library picture errors
 
@@ -549,9 +549,9 @@ Clipped lane, scope, preview and filename labels use their visible text; dynamic
 
 | Control / visible name | Text | Flags | ID and source |
 | --- | --- | --- | --- |
-| handle aria-label | &#96;${orientation} guide ${guideIndex + 1} ${pointName}. Use arrow keys to move; Shift moves ten pixels.&#96; | dynamic expression | codebase/frontend/geometry-tools.js:450 · [source](../../codebase/frontend/geometry-tools.js#L450) |
-| geometryReset.title | Reset all Crop & Rotate values | fixed | codebase/frontend/geometry-tools.js:1336 · [source](../../codebase/frontend/geometry-tools.js#L1336) |
-| geometryReset aria-label | Reset all Crop & Rotate values | name only (fallback candidate) | codebase/frontend/geometry-tools.js:1337 · [source](../../codebase/frontend/geometry-tools.js#L1337) |
+| handle aria-label | &#96;${orientation} guide ${guideIndex + 1} ${pointName}. Use arrow keys to move; Shift moves ten pixels.&#96; | dynamic expression | codebase/frontend/geometry-tools.js:449 · [source](../../codebase/frontend/geometry-tools.js#L449) |
+| geometryReset.title | Reset all Crop & Rotate values | fixed | codebase/frontend/geometry-tools.js:1335 · [source](../../codebase/frontend/geometry-tools.js#L1335) |
+| geometryReset aria-label | Reset all Crop & Rotate values | name only (fallback candidate) | codebase/frontend/geometry-tools.js:1336 · [source](../../codebase/frontend/geometry-tools.js#L1336) |
 
 ### grade paste
 
@@ -568,7 +568,7 @@ Clipped lane, scope, preview and filename labels use their visible text; dynamic
 
 | Control / visible name | Text | Flags | ID and source |
 | --- | --- | --- | --- |
-| revertPopover aria-label | Revert grade | name only (fallback candidate) | codebase/frontend/grade-saving.js:269 · [source](../../codebase/frontend/grade-saving.js#L269) |
+| revertPopover aria-label | Revert grade | name only (fallback candidate) | codebase/frontend/grade-saving.js:271 · [source](../../codebase/frontend/grade-saving.js#L271) |
 
 ### highlight controls
 
@@ -1177,12 +1177,12 @@ Clipped lane, scope, preview and filename labels use their visible text; dynamic
 | key — text used by dynamic tooltips | path.replace("shared.geometry.", "") | dynamic supporting definition | codebase/frontend/adjustment-controls.js:359 · [source](../../codebase/frontend/adjustment-controls.js#L359) |
 | dot.title | &#96;Mod. Reset ${label} to ${HDRFilmCharacter.owned.includes(key) ? "the stock" : "the baseline"}&#96; | dynamic expression | codebase/frontend/adjustment-controls.js:529 · [source](../../codebase/frontend/adjustment-controls.js#L529) |
 | control.title | film.film_stock === "none" ? "Neutral has no halation of its own; these are absolute effect controls." : "100% is this stock's own value; Hue Offset 0 keeps its colour. Set values stay fixed when changing stock." | dynamic expression | codebase/frontend/adjustment-controls.js:530 · [source](../../codebase/frontend/adjustment-controls.js#L530) |
-| summary.title | summaries[name] | dynamic expression | codebase/frontend/adjustment-controls.js:584 · [source](../../codebase/frontend/adjustment-controls.js#L584) |
-| summaries — text used by dynamic tooltips | { camera:text("grain_film_format")+(film.lens_filter === "none" ? "" : &#96; · ${text("lens_filter")} ${grade}&#96;), negative:(film.grain_enabled ? &#96;Grain ${Math.round(film.grain_amount)}&#96; : "No grain")+" · "+(film.halation_enabled ? &#96;Halation ${Math.round(HDRFilmCharacter.toUi(film, "halation_amount", film.halation_amount))}%&#96; : "No halation"), development:film.push_pull === 0 ? "Normal" : film.push_pull &gt; 0 ? &#96;Push +${film.push_pull}&#96; : &#96;Pull ${film.push_pull}&#96;, print:slide ? "No print" : paper+(film.stock_print_warmth ? film.stock_print_warmth &gt; 0 ? " · Warm" : " · Cool" : ""), scan:(film.lab_levels ? "Lab levels" : "Clean")+(film.scan_sharpening ? &#96; · Sharpen ${film.scan_sharpening}&#96; : "")} | dynamic supporting definition | codebase/frontend/adjustment-controls.js:575 · [source](../../codebase/frontend/adjustment-controls.js#L575) |
-| grade — text used by dynamic tooltips | {0.125:"1/8", 0.25:"1/4", 0.5:"1/2", 1:"1", 2:"2"}[film.lens_strength] &#124;&#124; Number(film.lens_strength).toFixed(2) | dynamic supporting definition | codebase/frontend/adjustment-controls.js:574 · [source](../../codebase/frontend/adjustment-controls.js#L574) |
+| summary.title | summaries[name] | dynamic expression | codebase/frontend/adjustment-controls.js:586 · [source](../../codebase/frontend/adjustment-controls.js#L586) |
+| summaries — text used by dynamic tooltips | { camera:text("grain_film_format")+(film.lens_filter === "none" ? "" : &#96; · ${text("lens_filter")} ${grade}&#96;), negative:(film.grain_enabled ? &#96;Grain ${Math.round(film.grain_amount)}&#96; : "No grain")+" · "+(film.halation_enabled ? &#96;Halation ${Math.round(HDRFilmCharacter.toUi(film, "halation_amount", film.halation_amount))}%&#96; : "No halation"), development:film.push_pull === 0 ? "Normal" : film.push_pull &gt; 0 ? &#96;Push +${film.push_pull}&#96; : &#96;Pull ${film.push_pull}&#96;, print:slide ? "No print" : paper+(film.stock_print_warmth ? film.stock_print_warmth &gt; 0 ? " · Warm" : " · Cool" : ""), scan:(film.lab_levels ? "Lab levels" : "Clean")+(film.scan_sharpening ? &#96; · Sharpen ${film.scan_sharpening}&#96; : "")} | dynamic supporting definition | codebase/frontend/adjustment-controls.js:577 · [source](../../codebase/frontend/adjustment-controls.js#L577) |
+| grade — text used by dynamic tooltips | {0.125:"1/8", 0.25:"1/4", 0.5:"1/2", 1:"1", 2:"2"}[film.lens_strength] &#124;&#124; Number(film.lens_strength).toFixed(2) | dynamic supporting definition | codebase/frontend/adjustment-controls.js:576 · [source](../../codebase/frontend/adjustment-controls.js#L576) |
 | slide — text used by dynamic tooltips | film.film_stock !== "none" && character.default_paper === null | dynamic supporting definition | codebase/frontend/adjustment-controls.js:546 · [source](../../codebase/frontend/adjustment-controls.js#L546) |
 | paper — text used by dynamic tooltips | paperName(film.print_paper === "default" ? character.default_paper : film.print_paper) | dynamic supporting definition | codebase/frontend/adjustment-controls.js:556 · [source](../../codebase/frontend/adjustment-controls.js#L556) |
-| modified.title | count ? &#96;${count} modified controls&#96; : "" | dynamic expression | codebase/frontend/adjustment-controls.js:587 · [source](../../codebase/frontend/adjustment-controls.js#L587) |
+| modified.title | count ? &#96;${count} modified controls&#96; : "" | dynamic expression | codebase/frontend/adjustment-controls.js:589 · [source](../../codebase/frontend/adjustment-controls.js#L589) |
 
 ### app state
 
