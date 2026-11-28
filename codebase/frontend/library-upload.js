@@ -50,7 +50,7 @@ window.HDRLibraryUpload = (() => {
   // buffer answers ok:false with status 503.
   function stream(url,{total,headers={},signal,timeoutMs=45000}={}){
     const key=crypto.randomUUID();let closed=false;
-    const cancel=()=>{if(closed)return;closed=true;try{ensureWorker().postMessage({stream:{kind:'cancel',key}});}catch{}};
+    const cancel=()=>{if(closed)return;closed=true;signal?.removeEventListener('abort',cancel);try{worker?.postMessage({stream:{kind:'cancel',key}});}catch{}};
     signal?.addEventListener('abort',cancel,{once:true});
     const call=(kind,buffer)=>{
       if(signal?.aborted)return Promise.reject(cancelled());

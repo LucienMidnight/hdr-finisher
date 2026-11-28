@@ -45,3 +45,23 @@ test('receiving memory refusal releases the producer instead of polling with its
  assert.equal(calls.length,2,'one admission, then ownership release; never poll while holding full output');
  assert.equal(calls.at(-1)[1],'DELETE');
 });
+
+test('cancelling a stream detaches its abort listener and never starts a replacement worker',async()=>{
+ const {getEventListeners}=require('node:events');
+ let current,created=0;
+ class Worker {
+  constructor(){current=this;created++;}
+  postMessage(){}
+  terminate(){}
+ }
+ const page={URL,Worker,DOMException,setTimeout,clearTimeout,crypto:require('node:crypto').webcrypto,
+  document:{currentScript:{src:'http://app/static/library-upload.js'}},window:{}};
+ vm.runInNewContext(fs.readFileSync(require.resolve('../frontend/library-upload.js'),'utf8'),page);
+ const {signal}=new AbortController();
+ const upload=page.window.HDRLibraryUpload.stream('/api/library/live-developed',{total:16,signal});
+ const pending=assert.rejects(upload.open(),/Library upload could not start/);
+ current.onerror();await pending;
+ assert.equal(getEventListeners(signal,'abort').length,1);
+ upload.cancel();
+ assert.equal(getEventListeners(signal,'abort').length,0);assert.equal(created,1);
+});
