@@ -134,6 +134,13 @@ test("an unclassified refusal can retry once after a device replacement", () => 
   assert.equal(failures.takeRetry("invalid", snapshot, replacement, true), false);
 });
 
+function mockGpuMemorySnapshot(renderer, residentBytes) {
+  renderer.resourceMemorySnapshot = () => ({
+    resident: { totalBytes: residentBytes(), categories: {} },
+    transient: { totalBytes: renderer.pendingGpuRetireBytes },
+  });
+}
+
 test("reclaim drains submitted work, preserves the visible proxy and skips pinned entries", async () => {
   const context = vm.createContext({ window: {}, performance });
   for (const name of ["webgpu-shaders.js", "webgpu-preview.js"]) vm.runInContext(frontendSource(name), context);
@@ -165,7 +172,7 @@ test("reclaim drains submitted work, preserves the visible proxy and skips pinne
     usedBytes: () => entries.size * 100,
     reserve: ({ bytes }) => { assert.ok(drained); return bytes; },
   };
-  renderer.resourceMemorySnapshot = () => ({ resident: { totalBytes: entries.size * 100, categories: {} } });
+  mockGpuMemorySnapshot(renderer, () => entries.size * 100);
   renderer.memoryBudgetBytes = () => 400;
   renderer.waitForSubmittedWork = async () => { drained = true; };
   assert.equal(await renderer.reserveFineGrain("fine-grain-fit", { strip: 120 }, { id: "trace" }), 120);
@@ -187,7 +194,7 @@ test("Grade shares the app ceiling and reclaims after the final active scope", a
   for (const name of ["webgpu-shaders.js", "webgpu-preview.js"]) vm.runInContext(frontendSource(name), context);
   const renderer = new context.window.HDRWebGPUPreview(null);
   let resident = 100;
-  renderer.resourceMemorySnapshot = () => ({ resident: { totalBytes: resident, categories: {} } });
+  mockGpuMemorySnapshot(renderer, () => resident);
   renderer.memoryBudgetBytes = () => 1000;
   const reclaim = renderer.reclaimGrainResources;
   let pressureReclaims = 0;
@@ -220,7 +227,7 @@ test("pressure preserves presented mask tiles and reservations evict them last",
   }]));
   renderer.presentedMaskKeys = new Set(["visible-a", "visible-b"]);
   renderer.gpuAllocator = { entries, unregister: entry => entries.delete(entry.key), usedBytes: () => entries.size * 100 };
-  renderer.resourceMemorySnapshot = () => ({ resident: { totalBytes: entries.size * 100, categories: {} } });
+  mockGpuMemorySnapshot(renderer, () => entries.size * 100);
   renderer.memoryBudgetBytes = () => 333;
   renderer.acceptGrainMemorySample({ unifiedMemory: false, pressure: "warning", grainReclaim: true });
   assert.deepEqual(released, ["old"]);
@@ -232,22 +239,21 @@ test("pressure preserves presented mask tiles and reservations evict them last",
 
 test("a live Grain reservation releases an unused source proxy immediately", async () => {
   const context = vm.createContext({ window: {}, performance, HDRGrainRoute: { headroom } });
-  for (const name of ["webgpu-shaders.js", "webgpu-preview.js"]) vm.runInContext(frontendSource(name), context);
+  for (const name of ["gpu-allocator.js", "webgpu-shaders.js", "webgpu-preview.js"]) vm.runInContext(frontendSource(name), context);
   const renderer = new context.window.HDRWebGPUPreview(null);
+  renderer.gpuAllocator.setBudget(400);
   const destroyed = [];
   for (const [key, longEdge, pins] of [["visible", 1600, 0], ["render", 2000, 1], ["old", 600, 0]]) {
-    const proxy = { lane: "hdr", longEdge, texture: { destroy: () => destroyed.push(key) } };
+    const proxy = { lane: "hdr", longEdge, byteSize: 100, texture: { destroy: () => destroyed.push(key) } };
     renderer.proxies.set(key, proxy);
-    renderer.gpuAllocator ||= { entries: new Map(), usedBytes() { return this.entries.size * 100; },
-      unregister(entry) { this.entries.delete(entry.key); }, reserve: ({ bytes }) => bytes };
-    renderer.gpuAllocator.entries.set(key, { key, kind: "source-proxy", pins, bytes: 100, evict() {} });
+    if (pins) renderer.gpuAllocator.pin(proxy.allocatorEntry);
   }
   renderer.lastPresentedFrame = renderer.proxies.get("visible");
-  renderer.resourceMemorySnapshot = () => ({ resident: { totalBytes: renderer.proxies.size * 100, categories: {} } });
+  mockGpuMemorySnapshot(renderer, () => renderer.proxies.size * 100);
   renderer.memoryBudgetBytes = () => 400;
   renderer.waitForSubmittedWork = async () => {};
   renderer.activeRenderCount = 1;
-  assert.equal(await renderer.reserveFineGrain("grain", { strip: 120 }, { id: "render" }), 120);
+  assert.equal((await renderer.reserveFineGrain("grain", { strip: 120 }, { id: "render" })).bytes, 120);
   assert.deepEqual(destroyed, ["old"]);
   assert.deepEqual([...renderer.proxies.keys()], ["visible", "render"]);
 });
@@ -265,7 +271,7 @@ test("a live Grain reservation reclaims only mask tiles not pinned by the render
   }
   renderer.presentedMaskKeys = new Set(["previous"]);
   renderer.gpuAllocator.pin(renderer.maskTiles.get("current").allocatorEntry);
-  renderer.resourceMemorySnapshot = () => ({ resident: { totalBytes: renderer.maskTiles.size * 100, categories: {} } });
+  mockGpuMemorySnapshot(renderer, () => renderer.maskTiles.size * 100);
   renderer.memoryBudgetBytes = () => 250;
   renderer.waitForSubmittedWork = async () => assert.deepEqual(destroyed, ["previous"]);
   renderer.activeRenderCount = 1;
@@ -283,7 +289,7 @@ test("Grain cannot reclaim a mask collected while another render batch is loadin
   const renderer = new context.window.HDRWebGPUPreview(null);
   renderer.gpuAllocator = new context.window.HDRGpuAllocator({ budgetBytes: 250 });
   renderer.activeRenderCount = 1;
-  renderer.resourceMemorySnapshot = () => ({ resident: { totalBytes: renderer.maskTiles.size * 100, categories: {} } });
+  mockGpuMemorySnapshot(renderer, () => renderer.maskTiles.size * 100);
   renderer.memoryBudgetBytes = () => 250;
   renderer.waitForSubmittedWork = async () => {};
   renderer.loadSceneMaskRegion = async () => null;
@@ -337,7 +343,7 @@ for (const type of ['hue_range', 'luminance_range']) {
     renderer.gpuAllocator = new context.window.HDRGpuAllocator({ budgetBytes: 250 });
     renderer.activeRenderCount = 1;
     renderer.gpuAnalyticMasksEnabled = true;
-    renderer.resourceMemorySnapshot = () => ({ resident: { totalBytes: renderer.maskTiles.size * 100, categories: {} } });
+    mockGpuMemorySnapshot(renderer, () => renderer.maskTiles.size * 100);
     renderer.memoryBudgetBytes = () => 250;
     renderer.waitForSubmittedWork = async () => {};
     renderer.hueContextIdentity = () => 'source';
@@ -409,7 +415,7 @@ test("idle pressure keeps active Grain and Mist work until a real allocation or 
   register("lens-glow-tile", "mist", 100);
   register("denoise-tile", "offscreen", 100);
   register("fine-grain-reduced", "previous", 100);
-  renderer.resourceMemorySnapshot = () => ({ resident: { totalBytes: renderer.gpuAllocator.usedBytes(), categories: {} } });
+  mockGpuMemorySnapshot(renderer, () => renderer.gpuAllocator.usedBytes() - renderer.pendingGpuRetireBytes);
   renderer.memoryBudgetBytes = () => 1000;
 
   renderer.acceptGrainMemorySample({ unifiedMemory: false, pressure: "moderate", grainReclaim: true });
@@ -430,7 +436,7 @@ test("Clean Grain's Fit result survives moderate pressure after the original pro
   renderer.fineGrainReduced = new Map();
   renderer.gpuAllocator = new context.window.HDRGpuAllocator({ budgetBytes: 1000 });
   renderer.memoryBudgetBytes = () => 1000;
-  renderer.resourceMemorySnapshot = () => ({ resident: { totalBytes: renderer.gpuAllocator.usedBytes(), categories: {} } });
+  mockGpuMemorySnapshot(renderer, () => renderer.gpuAllocator.usedBytes() - renderer.pendingGpuRetireBytes);
   const sourceFrame = { width: 320, height: 240, workingSpace: "acescg" };
   const selector = renderer.denoiseSourceSelector = {
     selected: "resolved", original: null,
@@ -480,7 +486,7 @@ for (const [label, deselect] of [
     }
     const renderer = new context.window.HDRWebGPUPreview(null);
     renderer.gpuAllocator = new context.window.HDRGpuAllocator({ budgetBytes: 1000 });
-    renderer.resourceMemorySnapshot = () => ({ resident: { totalBytes: renderer.gpuAllocator.usedBytes(), categories: {} } });
+    mockGpuMemorySnapshot(renderer, () => renderer.gpuAllocator.usedBytes() - renderer.pendingGpuRetireBytes);
     const selector = renderer.denoiseSourceSelector = {
       selected: "resolved", original: { width: 320, height: 240, workingSpace: "acescg" },
       controls: { method: "micro_grain" }, cache: { grain: { gpu: true, micro: true, fitKey: "photo" } },
@@ -505,7 +511,7 @@ test("replacing a tiled frame makes its mask tiles reclaimable without new GPU g
   }
   const renderer = new context.window.HDRWebGPUPreview(null);
   renderer.gpuAllocator = new context.window.HDRGpuAllocator({ budgetBytes: 1000 });
-  renderer.resourceMemorySnapshot = () => ({ resident: { totalBytes: renderer.gpuAllocator.usedBytes(), categories: {} } });
+  mockGpuMemorySnapshot(renderer, () => renderer.gpuAllocator.usedBytes() - renderer.pendingGpuRetireBytes);
   const destroyed = [];
   renderer.maskTiles.set("visible", { byteSize: 100, texture: { destroy: () => destroyed.push("visible") } });
   renderer.retainPresentedTiles(["visible"]);
