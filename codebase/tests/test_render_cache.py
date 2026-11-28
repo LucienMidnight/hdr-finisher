@@ -808,6 +808,62 @@ def test_source_mip_stale_versions_and_interrupted_writes_are_swept(tmp_path) ->
     assert store.diagnostics()["stale_removed"] == 1
 
 
+def test_source_mip_startup_sweep_does_not_remove_a_concurrent_write(tmp_path, monkeypatch) -> None:
+    from concurrent.futures import ThreadPoolExecutor
+    from pathlib import Path
+    from threading import Event
+
+    from hdr_finisher import render_cache
+
+    image = _mip_image()
+    identity = _mip_identity(image)
+    store = SourceMipStore(tmp_path / 'mips')
+    store.root.mkdir()
+    destination = store._level_path(identity, 320)
+    sweep_started, sweep_finished, release_sweep, second_started = (Event() for _ in range(4))
+    rglob, replace = Path.rglob, render_cache.os.replace
+
+    def glob(path, pattern):
+        if path == store.root and pattern == '*.tmp':
+            sweep_started.set()
+            assert release_sweep.wait(2)
+        return rglob(path, pattern)
+
+    def publish(source, target):
+        if target == destination:
+            release_sweep.set()
+            assert sweep_finished.wait(2)
+        return replace(source, target)
+
+    def first_level():
+        try:
+            return store.level(identity, 256, image)
+        finally:
+            sweep_finished.set()
+
+    def second_level():
+        second_started.set()
+        return store.level(identity, 320, image)
+
+    monkeypatch.setattr(Path, 'rglob', glob)
+    monkeypatch.setattr(render_cache.os, 'replace', publish)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        first = pool.submit(first_level)
+        try:
+            assert sweep_started.wait(2)
+            second = pool.submit(second_level)
+            assert second_started.wait(2)
+            release_sweep.wait(.2)
+        finally:
+            release_sweep.set()
+        first.result()
+        expected, _ = second.result()
+    assert destination.exists()
+    actual, state = SourceMipStore(store.root).level(identity, 320, image)
+    assert state == 'disk'
+    np.testing.assert_array_equal(actual, expected)
+
+
 def test_source_mip_memory_and_disk_lrus_are_byte_bounded(tmp_path) -> None:
     image = _mip_image(900, 600)
     identity = _mip_identity(image)

@@ -220,6 +220,7 @@ class SourceMipStore:
         from . import app_memory
         self._ram_key='grade-mips-'+str(id(self))
         app_memory.register(self._ram_key,'working',self.trim_memory)
+        self._cleanup_lock = Lock()
         self._cleaned = False
         self._last_failure: dict[str, str] | None = None
         self._logged_failures: set[str] = set()
@@ -649,10 +650,16 @@ class SourceMipStore:
             app_memory.claim(self._ram_key,'working',self._memory_bytes)
 
     def _ensure_cleaned(self) -> None:
-        with self._lock:
-            if self._cleaned:
-                return
-            self._cleaned = True
+        if self._cleaned:
+            return
+        # Gate new disk writes until the one-time scratch sweep finishes,
+        # without taking the lock used by foreground memory hits.
+        with self._cleanup_lock:
+            if not self._cleaned:
+                self._sweep_stale_files()
+                self._cleaned = True
+
+    def _sweep_stale_files(self) -> None:
         removed = 0
         try:
             children = list(self.root.iterdir())
