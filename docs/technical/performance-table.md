@@ -1,3 +1,23 @@
+## November 28, 2026 — Fast Film Grain, isolated GPU work
+
+MacBook Neo, A18 Pro / 8 GB, 1408×794, shared GPU lock. The production Grain
+functions from `aee3d656` and `91a06728` ran as isolated HDR renders on the
+same tone-mapped RAW inputs (35 mm, Size 50, Amount 28, Chroma 40, Colour
+Negative). Five warmed, alternating GPU timestamp samples, with the
+corresponding no-Grain draw subtracted. Fit uses the full processing raster.
+100% uses the central 1024×1024 native-pixel tile, with each photo's full frame
+size and its real tile origin. This times Grain work, not the full action to
+visible picture. The later silver-shadow calibration does not change Colour
+Negative. Values are milliseconds, median (range).
+
+| Photo | Fit, old → new | 100% tile, old → new |
+| --- | --- | --- |
+| IMG_7723.CR3 (24 MP, Fit 1283×856) | 483.59 (481.49–494.86) → 6.68 (6.62–6.75) | 23.40 (23.33–23.40) → 2.10 (2.10–2.16) |
+| DSC00636.ARW (50 MP, Fit 1283×857) | 509.15 (489.23–514.52) → 6.68 (6.62–6.95) | 21.95 (21.89–22.02) → 2.10 (2.10–2.16) |
+
+Both Fit measurements are below the 25 ms Grain budget. Raw timestamps:
+`codebase/output/f1-grain/gpu.json`.
+
 ## November 28, 2026 — Fast Film Grain, native CPU export
 
 MacBook Neo, A18 Pro / 8 GB, shared run lock. Native SDR PNG from already
