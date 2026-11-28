@@ -1058,6 +1058,12 @@ module PRD for the area you touch, then `docs/technical/code-map.md`.
 
 
 
+- `docs/technical/audits/2026-11-28-mac/repo-organisation.md`: what is
+
+  already well organised, what was tidied and what was left for later.
+
+
+
 - `docs/technical/reviews/backend-delivery-review-2026-11-26.md`: delivery and
 
   IO source review, check coverage and follow-ups.
