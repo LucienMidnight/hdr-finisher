@@ -62,7 +62,7 @@ def statistics(image, clean, bins, taper):
 
 def patches(args):
     baseline = load_baseline(args.baseline)
-    stocks = args.stock or [item["id"] for item in film_stock.available_film_stocks()]
+    stocks = args.stock or film_stock.FILM_STOCK_IDS
     n = args.patch
     frequencies = np.fft.fftfreq(n)
     bins = np.minimum(32, (64 * np.hypot(frequencies[:, None], frequencies[None, :])).astype(int))

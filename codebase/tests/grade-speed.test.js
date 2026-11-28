@@ -292,7 +292,7 @@ test('film detail dispatches over the whole partial tile without a frame scratch
   assert.deepEqual(encoded.map(({name}) => name), ['structure']);
 });
 
-test('presentation records processing resolution and never accepts drag grain as settled', () => {
+test('presentation records processing resolution and never accepts a draft as settled', () => {
   const state = { currentView: 'sdr', previewGeneration: { hdr: 1, sdr: 1 }, zoomMode: 'fit',
     adjustments: { shared: { geometry: {} } } };
   let requiredEdge = 1200;
