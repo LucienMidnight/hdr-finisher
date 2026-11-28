@@ -50,36 +50,63 @@ function bindColorWheels() {
       grid.append(line);
     }
     pad.prepend(grid);
+    const container = pad.closest("[data-wheel]");
+    const wheel = container.dataset.wheel;
     let gesture = null;
-    const update = (event) => {
+    let frame = null;
+    let pending = null;
+    const flush = () => {
+      if (frame !== null) cancelAnimationFrame(frame);
+      frame = null;
+      if (!pending || !gesture) return;
+      const { x, y } = pending;
+      pending = null;
+      if (gesture.lane !== state.currentView || gesture.session !== state.session?.session_id) return;
       const rect = pad.getBoundingClientRect();
-      const dx = event.clientX - (gesture?.offsetX || 0) - rect.left - rect.width / 2;
-      const dy = event.clientY - (gesture?.offsetY || 0) - rect.top - rect.height / 2;
+      const dx = x - gesture.offsetX - rect.left - rect.width / 2;
+      const dy = y - gesture.offsetY - rect.top - rect.height / 2;
       const radius = Math.min(1, Math.hypot(dx, dy) / Math.max(1, rect.width * COLOR_WHEEL_RADIUS));
       const hue = (Math.atan2(dy, dx) * 180 / Math.PI - 210 + 720) % 360;
-      const wheel = pad.closest("[data-wheel]").dataset.wheel;
-      setValueByPath(state.adjustments, `current.color_grading.${wheel}.hue`, hue);
-      setValueByPath(state.adjustments, `current.color_grading.${wheel}.saturation`, radius * 100);
-      syncControlsFromState();
-      invalidatePreview(state.currentView);
-      debouncePreview(state.currentView);
+      const base = `current.color_grading.${wheel}`;
+      setValueByPath(state.adjustments, `${base}.hue`, hue);
+      setValueByPath(state.adjustments, `${base}.saturation`, radius * 100);
+      for (const [name, value] of [["hue", hue], ["saturation", radius * 100]]) {
+        const input = container.querySelector(`input[data-path="${base}.${name}"]`);
+        if (input) input.value = String(Math.round(value));
+      }
+      renderColorWheel(container);
+      invalidatePreview(gesture.lane);
+      debouncePreview(gesture.lane);
     };
     pad.addEventListener("pointerdown", (event) => {
-      if (event.button !== 0) return;
+      if (event.button !== 0 || gesture) return;
       pad.setPointerCapture(event.pointerId);
       const puck = event.target.closest?.(".color-wheel-puck");
       const rect = puck?.getBoundingClientRect();
-      gesture = { x: event.clientX, y: event.clientY,
+      gesture = { x: event.clientX, y: event.clientY, pointerId: event.pointerId,
+        lane: state.currentView, session: state.session?.session_id,
         offsetX: rect ? event.clientX - rect.left - rect.width / 2 : 0,
         offsetY: rect ? event.clientY - rect.top - rect.height / 2 : 0 };
-      if (!puck) update(event);
+      state.previewScheduler?.beginInteraction();
+      if (!puck) {
+        pending = { x: event.clientX, y: event.clientY };
+        flush();
+      }
     });
     pad.addEventListener("pointermove", (event) => {
-      if (!pad.hasPointerCapture(event.pointerId) || !gesture) return;
+      if (gesture?.pointerId !== event.pointerId || !pad.hasPointerCapture(event.pointerId)) return;
       if (event.clientX === gesture.x && event.clientY === gesture.y) return;
-      gesture.x = event.clientX; gesture.y = event.clientY; update(event);
+      gesture.x = event.clientX; gesture.y = event.clientY;
+      pending = { x: event.clientX, y: event.clientY };
+      if (frame === null) frame = requestAnimationFrame(flush);
     });
-    pad.addEventListener("lostpointercapture", () => { gesture = null; });
+    const finish = (event) => {
+      if (!gesture || event.pointerId !== gesture.pointerId) return;
+      flush();
+      gesture = null;
+      state.previewScheduler?.endInteraction();
+    };
+    for (const event of ["pointerup", "pointercancel", "lostpointercapture"]) pad.addEventListener(event, finish);
     pad.addEventListener("keydown", (event) => {
       if (["Delete", "Backspace", "Home"].includes(event.key)) {
         event.preventDefault();
@@ -111,19 +138,21 @@ function bindColorWheels() {
 }
 
 function renderColorWheels() {
-  document.querySelectorAll(".grading-wheel").forEach((container) => {
-    const wheel = state.adjustments[state.currentView]?.color_grading?.[container.dataset.wheel];
-    const tab = document.querySelector(`[data-wheel-range="${container.dataset.wheel}"]`);
-    const modified = wheel && (wheel.hue !== 0 || wheel.saturation !== 0 || wheel.luminance_ev !== 0);
-    tab?.classList.toggle("modified", Boolean(modified));
-    if (tab) tab.setAttribute("aria-label", `${container.dataset.wheel}${modified ? ", modified" : ""}`);
-    const puck = container.querySelector(".color-wheel-puck");
-    if (!wheel || !puck) return;
-    const radius = Math.min(100, Math.max(0, wheel.saturation)) * COLOR_WHEEL_RADIUS;
-    const angle = (wheel.hue + 210) * Math.PI / 180;
-    puck.style.left = `${50 + Math.cos(angle) * radius}%`;
-    puck.style.top = `${50 + Math.sin(angle) * radius}%`;
-  });
+  document.querySelectorAll(".grading-wheel").forEach(renderColorWheel);
+}
+
+function renderColorWheel(container) {
+  const wheel = state.adjustments[state.currentView]?.color_grading?.[container.dataset.wheel];
+  const tab = document.querySelector(`[data-wheel-range="${container.dataset.wheel}"]`);
+  const modified = wheel && (wheel.hue !== 0 || wheel.saturation !== 0 || wheel.luminance_ev !== 0);
+  tab?.classList.toggle("modified", Boolean(modified));
+  if (tab) tab.setAttribute("aria-label", `${container.dataset.wheel}${modified ? ", modified" : ""}`);
+  const puck = container.querySelector(".color-wheel-puck");
+  if (!wheel || !puck) return;
+  const radius = Math.min(100, Math.max(0, wheel.saturation)) * COLOR_WHEEL_RADIUS;
+  const angle = (wheel.hue + 210) * Math.PI / 180;
+  puck.style.left = `${50 + Math.cos(angle) * radius}%`;
+  puck.style.top = `${50 + Math.sin(angle) * radius}%`;
 }
 
 function bindVignetteCenter() {
