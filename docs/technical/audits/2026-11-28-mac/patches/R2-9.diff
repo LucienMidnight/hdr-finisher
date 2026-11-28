@@ -1,0 +1,64 @@
+diff --git a/codebase/frontend/photo-library.js b/codebase/frontend/photo-library.js
+--- a/codebase/frontend/photo-library.js
++++ b/codebase/frontend/photo-library.js
+@@ -738,8 +738,19 @@
+         fallback.hidden = true; frame.append(fallback);
+         // Stored finished pixels get the first opportunity; a camera preview
+         // is requested only on a miss. Local edits invalidate this cell's owner.
+-        const finished=await HDRLibraryFinishedThumbnails.load(photo,fallback,cell.controller.signal,current,state.hdr);
+-        if(!current())return;
++        let finished;
++        for(;;){
++          const epoch=state.displayEpoch;
++          try{finished=await HDRLibraryFinishedThumbnails.load(photo,fallback,owner.signal,
++            ()=>current()&&epoch===state.displayEpoch,state.hdr);}
++          catch(error){if(!aborted(error)||!current()||epoch===state.displayEpoch)throw error;}
++          if(!current())return;
++          if(epoch===state.displayEpoch)break;
++          // A rendition change can land while the old upload is in flight.
++          // Retry on a fresh surface, without publishing or pooling old pixels.
++          fallback.getContext("webgpu")?.unconfigure();fallback.width=fallback.height=0;fallback.remove();
++          fallback=document.createElement("canvas");cell.fallback=fallback;fallback.hidden=true;frame.append(fallback);
++        }
+         if(finished){
+           cell.meta=cell.scene=finished;cell.displayEpoch=state.displayEpoch;cell.elapsed=performance.now()-started;
+           fallback.hidden=false;canvas.hidden=true;element.classList.remove("loading"); frame.querySelector(".library-picture-status")?.remove();
+diff --git a/codebase/tests/library-publication.test.js b/codebase/tests/library-publication.test.js
+--- a/codebase/tests/library-publication.test.js
++++ b/codebase/tests/library-publication.test.js
+@@ -61,3 +61,35 @@
+   const context={state,selected:()=>({path:'photo'}),window:{devicePixelRatio:1},$:()=>({}),AbortController,publicationGuard:()=>()=>false};
+   vm.runInNewContext(native+';this.show=showNative;',context);await context.show();assert.equal(state.nativeLoading,false);
+ });
++
++test('a stored thumbnail still loading during an HDR toggle publishes only the new rendition',async()=>{
++  const makeCell=source.slice(source.indexOf('  function makeCell('),source.indexOf('  // Finished cached-picture cells'));
++  const state={active:true,hdr:false,displayEpoch:0},space={},photo={path:'photo.exr',name:'photo.exr'};
++  const requests=[],presented=[];
++  function element(){
++    return {isConnected:true,hidden:false,dataset:{},style:{},classList:{add(){},remove(){}},width:16,
++      append(){},remove(){this.isConnected=false;},setAttribute(){},addEventListener(){},querySelector(){return null;},
++      getContext:()=>({unconfigure(){}})};
++  }
++  let releaseFirst;
++  const first=new Promise(resolve=>releaseFirst=resolve);
++  const context={state,space,pasteProgress:new Map(),performance,AbortController,
++    document:{createElement:element},make:element,thumbnailEdge:()=>640,pictureIdentity:p=>p.path,
++    pictureErrors:{paint(){}},HDRLibraryStopwatch(){},window:{},aborted:error=>error.name==='AbortError',
++    overlays:{attach(_photo,canvas,meta){presented.push({canvas,meta});}},
++    HDRLibraryFinishedThumbnails:{async load(_photo,canvas,_signal,owns,hdr){
++      requests.push({canvas,hdr});
++      if(!hdr)await first;
++      if(!owns())throw new DOMException('Invalidated','AbortError');
++      return {key:hdr?'hdr':'sdr',route:'finished-thumbnail'};
++    }}};
++  vm.runInNewContext(makeCell+';this.cell=makeCell;',context);
++  const cell=context.cell(photo,element(),0);
++  assert.deepEqual(requests.map(r=>r.hdr),[false]);
++  state.hdr=true;state.displayEpoch++;
++  releaseFirst();await new Promise(resolve=>setImmediate(resolve));
++  assert.deepEqual(presented.map(result=>result.meta.key),['hdr']);
++  assert.deepEqual(requests.map(r=>r.hdr),[false,true]);
++  assert.equal(requests[0].canvas.width,0);
++  assert.equal(cell.fallback,presented[0].canvas);
++});
