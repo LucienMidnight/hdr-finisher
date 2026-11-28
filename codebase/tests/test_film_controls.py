@@ -184,3 +184,43 @@ def test_stock_gpu_return_conversion_matches_exact_cpu_cat02_matrix():
     rows = re.findall(r"dot\(rgb, vec3f\(([^)]+)\)\)",body)
     matrix = np.array([[float(value) for value in row.split(",")] for row in rows])
     np.testing.assert_allclose(matrix, _LINEAR_SRGB_TO_ACESCG.T, rtol=0, atol=1e-10)
+
+
+@pytest.mark.parametrize("stock,paper,lab_levels", [
+    ("kodak_portra_400", None, False),
+    ("kodak_portra_400", "fujifilm_crystal_archive_typeii", True),
+    ("kodak_portra_800_push2", None, False),
+    ("kodak_vision3_500t", None, True),
+    ("none", None, True),
+    ("none", "kodak_2383", True),
+    ("fujifilm_velvia_100", None, True),
+])
+def test_compact_print_curve_reconstructs_the_full_stock_response_exactly(stock, paper, lab_levels):
+    from fastapi.testclient import TestClient
+    from hdr_finisher.film_stock import CURVE_SAMPLES
+    from hdr_finisher.main import app
+
+    client = TestClient(app)
+    url = f"/api/film-stocks/{stock}"
+    paper_params = {"paper": paper} if paper else {}
+    base_params = {**paper_params, "lab_levels": lab_levels}
+    base = client.get(url, params=base_params).json()
+    base.pop("print_curves", None)
+    for contrast, shadows, highlights in [(-100, -42, 30), (12.75, 0, 0), (100, 19, -75)]:
+        controls = dict(contrast=contrast, shadows=shadows, highlights=highlights)
+        full = client.get(url, params={**base_params, **controls}).json()
+        rows = full.pop("print_curves", np.zeros((CURVE_SAMPLES, 3)))
+        assert full == base  # includes the paper and lab-level scanner tables
+        curve = client.get(f"{url}/print-curve", params={**paper_params, **controls})
+        assert curve.status_code == 200
+        assert curve.content == np.asarray(rows, dtype="<f4").tobytes()
+
+
+def test_compact_print_curve_validates_stock_paper_and_contrast():
+    from fastapi.testclient import TestClient
+    from hdr_finisher.main import app
+
+    client = TestClient(app)
+    assert client.get("/api/film-stocks/unknown/print-curve?contrast=50").status_code == 404
+    assert client.get("/api/film-stocks/none/print-curve?paper=unknown&contrast=50").status_code == 404
+    assert client.get("/api/film-stocks/kodak_portra_400/print-curve?contrast=101").status_code == 422

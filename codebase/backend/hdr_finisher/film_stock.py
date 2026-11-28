@@ -473,15 +473,7 @@ def _controlled_film_stock(directory: str, stock_id: str, paper: str | None, con
     metadata = _controls_data()
     changes = {}
     if stock.type != "slide" and (contrast or shadows or highlights):
-        from .film_print_morph import PrintCurvesMorphParams, apply_print_curves_morph
-        raw = metadata["papers"][stock.print_profile]
-        model = SimpleNamespace(**{key: np.asarray(raw[key]) for key in ("centers", "amplitudes", "sigmas")}, n_layers=len(raw["centers"][0]))
-        fast, slow = (highlights, shadows) if raw["type"] != "positive" else (shadows, highlights)
-        params = PrintCurvesMorphParams(gamma_factor=2 ** (contrast / 100),
-            gamma_factor_fast=2 ** (fast / 100), gamma_factor_slow=2 ** (slow / 100),
-            developer_exhaustion=max(0, -highlights / 100))
-        axis = np.linspace(*stock.print_range, CURVE_SAMPLES)
-        changes["print_curves"] = apply_print_curves_morph(axis, model, params, profile_type=raw["type"]).astype(np.float32)
+        changes["print_curves"] = _morph_paper_curves(stock.print_profile, stock.print_range, contrast, shadows, highlights)
     if lab_levels:
         path = film_stock_path(stock_id, paper)
         ref = metadata["scanner"][path.stem]
@@ -491,6 +483,41 @@ def _controlled_film_stock(directory: str, stock_id: str, paper: str | None, con
         values = values * ratio[:, None] + ref["glare_rgb"]
         changes["scan_table"] = replace(stock.scan_table, values=values.astype(np.float32))
     return replace(stock, **changes)
+
+
+def _morph_paper_curves(profile, exposure_range, contrast, shadows, highlights):
+    from .film_print_morph import PrintCurvesMorphParams, apply_print_curves_morph
+
+    raw = _controls_data()["papers"][profile]
+    model = SimpleNamespace(**{key: np.asarray(raw[key]) for key in ("centers", "amplitudes", "sigmas")},
+                            n_layers=len(raw["centers"][0]))
+    fast, slow = (highlights, shadows) if raw["type"] != "positive" else (shadows, highlights)
+    params = PrintCurvesMorphParams(gamma_factor=2 ** (contrast / 100),
+        gamma_factor_fast=2 ** (fast / 100), gamma_factor_slow=2 ** (slow / 100),
+        developer_exhaustion=max(0, -highlights / 100))
+    axis = np.linspace(*exposure_range, CURVE_SAMPLES)
+    return apply_print_curves_morph(axis, model, params, profile_type=raw["type"]).astype(np.float32)
+
+
+def stock_print_curves(stock_id: str, paper: str | None, contrast: float,
+                       shadows: float, highlights: float) -> np.ndarray | None:
+    """The exact float32 print rows, without loading stock or scanner tables."""
+    if stock_id == "none":
+        if paper in (None, "kodak_portra_endura"):
+            from .film_neutral import neutral_print_curves
+            return neutral_print_curves(contrast, shadows, highlights).astype(np.float32)
+        stock_id = "kodak_portra_400"
+    if not (contrast or shadows or highlights):
+        stock = load_film_stock(stock_id, paper)
+        return stock.print_curves if stock is not None else None
+    path = film_stock_path(stock_id, paper)
+    if path is None:
+        return None
+    manifest = json.loads(path.read_text(encoding="utf-8"))
+    if manifest["type"] == "slide":
+        return np.zeros((CURVE_SAMPLES, 3), dtype=np.float32)
+    return _morph_paper_curves(manifest["print_profile"], _range(manifest, "print_log_exposure_range"),
+                             contrast, shadows, highlights)
 
 
 def controlled_stock_payload(stock_id: str, paper: str | None = None, contrast: float = 0,

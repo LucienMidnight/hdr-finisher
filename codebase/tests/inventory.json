@@ -3728,7 +3728,7 @@
       "suite": "python",
       "area": "film",
       "purpose": "Physical paper/development controls; measured source data stays immutable.",
-      "test_count": 23,
+      "test_count": 31,
       "seconds": {
         "windows": 3.7415,
         "mac": null
