@@ -520,22 +520,6 @@
         "lastSampleKey": "2026-11-27T19:12:55.777Z|tests__grade-dng.js.2.1795806774706.log"
       }
     },
-    "tests/grade-grain-pruning.js": {
-      "mac": {
-        "medianSeconds": 3.1710000000000003,
-        "lastSeconds": 3.059,
-        "sampleCount": 2,
-        "sampleSeconds": [
-          3.283,
-          3.059
-        ],
-        "revision": "c97690cc9f4dba78760310d42109e19dc10d1bdc",
-        "date": "2026-11-27",
-        "exitCode": 0,
-        "source": "release runner history (complete attempts, including failures)",
-        "lastSampleKey": "2026-11-27T18:50:44.323Z|tests__grade-grain-pruning.js.1.1795805441264.log"
-      }
-    },
     "tests/grade-panel-order.js": {
       "mac": {
         "medianSeconds": 8.1765,
