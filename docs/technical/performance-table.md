@@ -1,3 +1,21 @@
+## November 29, 2026 — Mac fast Film Look (consistent Grain and eight-lobe Mist), whole slider wait
+
+MacBook Neo, A18 Pro, 8 GB, 1408×794, GPU lock, nothing else running. Driver
+`tests/performance/grade-module-impact.js --module baseline,film`, five samples and two warmups.
+Before: sprint head `47d90f46`. After: branch `film-fast-look` at `e41e2038`; `33cbc94c` only changes
+the parity tests and adds a callback. Recipe: Portra 400, Black Pro-Mist 1/8, Halation, Grain.
+The table shows medians of `first_frame_ms` / `settle_ms`. IMG_7723.CR3 is 24 MP; DSC00636.ARW is 50 MP.
+
+| Action | Before | After | Conditions |
+| --- | --- | --- | --- |
+| Exposure drag with Film on, 24 MP Fit | 164 ms / 725 ms | 59 ms / 52 ms | Film off: 22 ms / 1 ms |
+| Exposure drag with Film on, 50 MP Fit | 141 ms / 714 ms | 55 ms / 22 ms | Film off: 22 ms / 3 ms |
+| Film own sliders, both photos at Fit | 65–98 ms / 528–563 ms | 45–61 ms / 15–21 ms | Print contrast, Look strength, Lens, Halation, Grain |
+| Denoise on with Film on, 24 MP Fit | 631 ms | 81–95 ms | |
+| Exposure drag with Film on, 50 MP at 100% | 1358 ms / 1903 ms | 555 ms / 909 ms | Film off: 435 ms / 105 ms |
+| Film own sliders, 50 MP at 100% | 930–1047 ms / 1641–1765 ms | 383–400 ms / 412–457 ms | |
+| Peak footprint during the Film run | Fit 1.6 GB, 100% 2.5 GB | Fit 1.6 GB, 100% 2.5 GB | No new caches |
+
 ## November 28, 2026 — Fast Film Grain, isolated GPU work
 
 MacBook Neo, A18 Pro / 8 GB, 1408×794, shared GPU lock. The production Grain
