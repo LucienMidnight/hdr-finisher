@@ -1,0 +1,91 @@
+diff --git a/codebase/desktop/main.js b/codebase/desktop/main.js
+--- a/codebase/desktop/main.js
++++ b/codebase/desktop/main.js
+@@ -565,6 +565,15 @@
+   return JSON.parse(text);
+ }
+ 
++function cancelLibraryPastesFor(window) {
++  for (const [requestId, pending] of pendingLibraryPastes) {
++    if (pending.editor !== window && pending.requester !== window) continue;
++    clearTimeout(pending.timer);
++    pendingLibraryPastes.delete(requestId);
++    pending.resolve(false);
++  }
++}
++
+ function registerIpc() {
+   ipcMain.on("desktop:diagnostic-event", (event, value) => {
+     if (!value || typeof value !== "object") return;
+@@ -629,7 +638,7 @@
+     const requestId = ++libraryPasteRequest;
+     return new Promise(resolve => {
+       const timer = setTimeout(() => { pendingLibraryPastes.delete(requestId); resolve(false); }, 300000);
+-      pendingLibraryPastes.set(requestId, { resolve, timer });
++      pendingLibraryPastes.set(requestId, { resolve, timer, editor: mainWindow, requester: record.window });
+       mainWindow.show(); mainWindow.focus();
+       mainWindow.webContents.send("desktop:library-window", { action: "prepare-paste", requestId, paths });
+     });
+@@ -1191,6 +1200,7 @@
+     if (!backend || new URL(url).origin !== new URL(backend.url).origin) event.preventDefault();
+   });
+   window.webContents.on("render-process-gone", (_event, details) => {
++    cancelLibraryPastesFor(window);
+     record.ready = false;
+     desktopEvent("app", "renderer_exited", { level: "warn", role, exit_reason: details.reason, exit_code: details.exitCode });
+   });
+@@ -1222,6 +1232,7 @@
+     }).catch(() => {});
+   });
+   window.on("closed", () => {
++    cancelLibraryPastesFor(window);
+     clearTimeout(record.displayTimer);
+     windows.delete(role);
+     if (!isMain && !shuttingDown && mainWindow && !mainWindow.isDestroyed()) {
+diff --git a/codebase/desktop/tests/library-paste-ipc.test.js b/codebase/desktop/tests/library-paste-ipc.test.js
+new file mode 100644
+--- /dev/null
++++ b/codebase/desktop/tests/library-paste-ipc.test.js
+@@ -0,0 +1,42 @@
++const test = require("node:test");
++const assert = require("node:assert/strict");
++const fs = require("node:fs");
++const vm = require("node:vm");
++
++test("Library paste preparation is cancelled when its editor or requester disappears", async () => {
++  const handlers = new Map();
++  const timers = new Set();
++  const requests = [];
++  const mainWindow = {
++    isDestroyed: () => false, show() {}, focus() {},
++    webContents: { send(_channel, message) { requests.push(message); } },
++  };
++  const library = { role: "library", window: {} };
++  const replacement = { role: "library", window: {} };
++  const editor = { role: "main", window: mainWindow };
++  const source = fs.readFileSync(require.resolve("../main.js"), "utf8");
++  const context = vm.createContext({
++    ipcMain: { handle: (name, callback) => handlers.set(name, callback), on() {} },
++    validateSender: event => event.record,
++    mainWindow, libraryPasteRequest: 0, pendingLibraryPastes: new Map(),
++    setTimeout: callback => { timers.add(callback); return callback; },
++    clearTimeout: callback => timers.delete(callback),
++  });
++  const start = source.indexOf("function cancelLibraryPastesFor(");
++  vm.runInContext(source.slice(start < 0 ? source.indexOf("function registerIpc()") : start,
++    source.indexOf("function updateWindowDocumentState()")) + "\nregisterIpc();", context);
++  const prepare = record => handlers.get("desktop:prepare-library-paste")({ record }, ["photo"]);
++  const complete = id => handlers.get("desktop:complete-library-paste")({ record: editor }, id, true);
++  const first = prepare(library), second = prepare(replacement);
++  assert.equal(timers.size, 2);
++  context.cancelLibraryPastesFor?.(library.window);
++  assert.equal(timers.size, 1);
++  assert.equal(await first, false);
++  assert.equal(await complete(requests[0].requestId), false);
++  assert.equal(await complete(requests[1].requestId), true);
++  assert.equal(await second, true);
++  const third = prepare(replacement);
++  context.cancelLibraryPastesFor(mainWindow);
++  assert.equal(timers.size, 0);
++  assert.equal(await third, false);
++});
