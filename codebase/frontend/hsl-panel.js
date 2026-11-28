@@ -368,16 +368,16 @@ function hslPlaceOverlay(){
 function hslSelection(ui,{draft=false,force=false}={}){
   const button=ui.host.querySelector('[data-hsl-selection]');
   if(button.getAttribute('aria-pressed')!=='true'||!state.session||state.activeWorkflow!=='grade'||hslBypassed(ui)){hslClearSelection();return;}
-  const key=!draft&&ui.scope==='global'?hslGlobalSelectionKey(ui):null;
-  if(!force&&key!==null&&key===hslUI.exactSelectionKey)return hslUI.selectionWork;
-  hslUI.exactSelectionKey=key;
-  if(key!==null)hslUI.selectionKey=key;
+  const exactKey=!draft&&ui.scope==='global'?hslGlobalSelectionKey(ui):null;
+  if(!force&&exactKey!==null&&exactKey===hslUI.exactSelectionKey)return hslUI.selectionWork;
+  hslUI.exactSelectionKey=exactKey;
+  if(exactKey!==null)hslUI.selectionKey=exactKey;
   clearTimeout(hslUI.selectionTimer);clearTimeout(hslUI.viewportTimer);
   for(const panel of hslUI.panels)panel.host.querySelector('[data-hsl-selection]').setAttribute('aria-pressed',String(panel===ui));
   // Let an in-flight draft paint even if more pointer moves arrive. Keep
   // just the newest pending request, and fence drafts when settling or hiding.
   if(!draft)hslUI.overlayRevision++;
-  hslUI.pendingSelection={ui,draft,key,revision:hslUI.overlayRevision};
+  hslUI.pendingSelection={ui,draft,key:exactKey,revision:hslUI.overlayRevision};
   hslUI.selectionWork ||= hslDrainSelection();
   return hslUI.selectionWork;
 }

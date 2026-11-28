@@ -50,8 +50,8 @@ function bindColorWheels() {
       grid.append(line);
     }
     pad.prepend(grid);
-    const container = pad.closest("[data-wheel]");
-    const wheel = container.dataset.wheel;
+    const wheelContainer = pad.closest("[data-wheel]");
+    const wheel = wheelContainer.dataset.wheel;
     let gesture = null;
     let frame = null;
     let pending = null;
@@ -71,10 +71,10 @@ function bindColorWheels() {
       setValueByPath(state.adjustments, `${base}.hue`, hue);
       setValueByPath(state.adjustments, `${base}.saturation`, radius * 100);
       for (const [name, value] of [["hue", hue], ["saturation", radius * 100]]) {
-        const input = container.querySelector(`input[data-path="${base}.${name}"]`);
+        const input = wheelContainer.querySelector(`input[data-path="${base}.${name}"]`);
         if (input) input.value = String(Math.round(value));
       }
-      renderColorWheel(container);
+      renderColorWheel(wheelContainer);
       invalidatePreview(gesture.lane);
       debouncePreview(gesture.lane);
     };
