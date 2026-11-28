@@ -9,7 +9,7 @@ function fixture() {
   const context = vm.createContext({state, window:{setTimeout:(fn,ms) => {timers.set(++serial,{fn,ms});return serial;},clearTimeout:id => timers.delete(id)},
     measureExactHighlightAnchor:r => jobs.push(r)});
   vm.runInContext(declarations('pendingHighlightAnchors', 'scheduleExactHighlightAnchor', 'wakePendingHighlightAnchor'), context);
-  return {state,jobs,wake:context.wakePendingHighlightAnchor,schedule:context.scheduleExactHighlightAnchor, tick:(maxDelay=Infinity) => {const batch=[...timers].filter(([,job])=>job.ms<=maxDelay);batch.forEach(([id])=>timers.delete(id));batch.forEach(([,job])=>job.fn());}};
+  return {state,jobs,timerCount:()=>timers.size,wake:context.wakePendingHighlightAnchor,schedule:context.scheduleExactHighlightAnchor, tick:(maxDelay=Infinity) => {const batch=[...timers].filter(([,job])=>job.ms<=maxDelay);batch.forEach(([id])=>timers.delete(id));batch.forEach(([,job])=>job.fn());}};
 }
 test('Native anchors coalesce latest inputs and wait for foreground presentation', () => {
   const f=fixture(); f.state.previewScheduler.interacting=true;
@@ -53,4 +53,29 @@ test('A GPU fence retiring after presentation wakes without another poll', () =>
   f.wake('hdr'); f.tick(0);
   assert.equal(f.jobs.length,1);
   f.tick(); assert.equal(f.jobs.length,1);
+});
+
+test('A current reduced fallback parks the anchor and an exact presentation wakes it', () => {
+  const f = fixture();
+  f.state.acceptedPresentation = { lane: 'hdr', exact: false, generation: 1, reducedNotice: 'Reduced' };
+  f.state.previewScheduler.interacting = true;
+  f.schedule({ lane: 'hdr', key: 'old' });
+  f.tick();
+  assert.equal(f.timerCount(), 1, 'active input still polls');
+  f.state.previewScheduler.interacting = false;
+  f.tick();
+  assert.equal(f.timerCount(), 0, 'settled refusal has no recurring timer');
+
+  f.schedule({ lane: 'hdr', key: 'latest' });
+  f.tick();
+  assert.equal(f.timerCount(), 0);
+  assert.deepEqual(f.jobs, []);
+
+  f.state.previewGeneration.hdr++;
+  f.state.acceptedPresentation = { lane: 'hdr', exact: true, generation: 2 };
+  f.wake('hdr', { parkedOnly: true });
+  f.tick(0);
+  assert.equal(f.jobs.length, 1);
+  assert.equal(f.jobs[0].key, 'latest');
+  assert.equal(f.timerCount(), 0);
 });

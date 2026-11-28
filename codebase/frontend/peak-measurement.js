@@ -150,14 +150,20 @@ function scheduleExactHighlightAnchor(request) {
   const pending = { request, sessionId: state.session?.session_id, timer: null, dispatch: null };
   const dispatch = () => {
     if (pendingHighlightAnchors.get(lane) !== pending) return;
+    pending.timer = null;
     if (state.session?.session_id !== pending.sessionId || state.currentView !== lane || state.importInProgress) {
       pendingHighlightAnchors.delete(lane);
       return;
     }
     const scheduler = state.previewScheduler;
-    if (scheduler?.interacting || scheduler?.frameInFlight || scheduler?.framePending
-      || state.gpuDraftInFlight || !state.acceptedPresentation?.exact
-      || state.acceptedPresentation?.generation !== state.previewGeneration[lane]) {
+    const busy = scheduler?.interacting || scheduler?.frameInFlight || scheduler?.framePending
+      || state.gpuDraftInFlight;
+    const accepted = state.acceptedPresentation;
+    const current = accepted?.generation === state.previewGeneration[lane];
+    // A reduced fallback is a settled refusal, not a frame still being built.
+    // Keep the latest anchor parked until presentation or recovery wakes it.
+    if (!busy && current && accepted?.lane === lane && !accepted.exact && accepted.reducedNotice) return;
+    if (busy || !accepted?.exact || !current) {
       pending.timer = window.setTimeout(dispatch, 200);
       return;
     }
@@ -171,9 +177,9 @@ function scheduleExactHighlightAnchor(request) {
 
 // The polling delay protects active input; once the exact frame is visible
 // there is no reason to leave its final anchor waiting for that timer.
-function wakePendingHighlightAnchor(lane) {
+function wakePendingHighlightAnchor(lane, { parkedOnly = false } = {}) {
   const pending = pendingHighlightAnchors.get(lane);
-  if (!pending) return;
+  if (!pending || (parkedOnly && pending.timer !== null)) return;
   window.clearTimeout(pending.timer);
   // Leave the presentation callback and its render promise before checking
   // foreground ownership again. Dispatch retains every normal busy guard.

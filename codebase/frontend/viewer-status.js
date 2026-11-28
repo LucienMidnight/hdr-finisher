@@ -234,8 +234,10 @@ function acceptPresentation(lane, schedulerTier, width, height, transport, fallb
   if (transport !== "WebGPU" && lane === state.currentView && longEdge > 0) {
     const sessionId=state.session?.session_id;
     window.requestAnimationFrame?.(()=>{
-      if(state.session?.session_id===sessionId && state.previewGeneration[lane]===generation)
+      if (state.session?.session_id === sessionId && state.previewGeneration[lane] === generation) {
         window.HDRGradeOpenPresented?.(sessionId);
+        if (exact) wakePendingHighlightAnchor(lane, { parkedOnly: true });
+      }
     });
   }
   // Start the source's measurement once a picture is visible, before Denoise
