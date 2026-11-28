@@ -1,5 +1,16 @@
 const {test}=require('node:test'),assert=require('node:assert/strict'),vm=require('node:vm'),fs=require('node:fs');
 const {create}=require('../frontend/library-ready-window');
+test('releasing the last ready picture still reports pooled thumbnail bytes',()=>{
+ const source=fs.readFileSync(require.resolve('../frontend/photo-library'),'utf8');
+ const block=source.slice(source.indexOf('  const readySurfaces = new Map()'),source.indexOf("  HDRLibraryRAM.register('ready-surfaces'"));
+ const reports=[],canvas={width:16,height:16,getContext:()=>({unconfigure(){}})};
+ const tilePool=require('../frontend/library-tile-pool').create(4096);
+ tilePool.put('thumbnail',{},1024);
+ const context={tilePool,canvas,state:{active:false},HDRLibraryPictures:{readyMemory:async bytes=>reports.push(bytes)}};
+ vm.runInNewContext(block+';const picture={canvas,bytes:2048};readySurfaces.set(canvas,picture);readyBytes=2048;releaseReady(picture);',context);
+ assert.equal(canvas.width,0);
+ assert.deepEqual(reports,[1024]);
+});
 test('Single swaps the correct finished canvas and hides the previous grade while a replacement waits',async()=>{
  const source=fs.readFileSync(require.resolve('../frontend/photo-library'),'utf8');
  const fn=source.slice(source.indexOf('  async function showSingle()'),source.indexOf('  function positionZoom()'));

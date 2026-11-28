@@ -284,7 +284,7 @@
     if (value.canvas.id === "single-picture") { value.canvas.hidden = true; if (value.canvas.dataset.singleIdentity === state.singleIdentity) { state.singleIdentity = ""; state.single?.abort(); } }
     value.canvas.width = value.canvas.height = 0;
     value.canvas.getContext("webgpu")?.unconfigure();
-    void HDRLibraryPictures.readyMemory(readyBytes).catch(() => {});
+    void HDRLibraryPictures.readyMemory(readyBytes + tilePool.snapshot().bytes).catch(() => {});
   }
   HDRLibraryRAM.register('ready-surfaces','sharp',()=>readyBytes,target=>{
     const other=photo=>Math.abs(state.photos.findIndex(p=>p.path===photo.path)-state.index)>1;
