@@ -1055,6 +1055,10 @@ fn fineGrainResizeBase(@builtin(global_invocation_id) id: vec3u) {
 
   const LENS_FILTERS = ((typeof window !== "undefined" && window.HDRLensFilters)
     || (typeof module !== "undefined" && module.exports && require("./lens-filters.js")));
+  const LENS_KERNEL_LIMIT = 256;
+  const LENS_KERNEL_TAPS = 2 * LENS_KERNEL_LIMIT + 1;
+  // Each component's row ends with its extent and normalization sum.
+  const LENS_KERNEL_SIZE = Object.freeze([LENS_KERNEL_TAPS + 2, 27]);
   const LENS_COMPONENTS_WGSL = LENS_FILTERS.components.slice(1).flat().map(([sigma,weights]) =>
     `vec4f(${[sigma,...weights].map(value=>Number(value).toPrecision(12)).join(",")})`).join(",\n");
 
@@ -1075,6 +1079,7 @@ fn fineGrainResizeBase(@builtin(global_invocation_id) id: vec3u) {
     // bind a 1x1 placeholder, which keeps HSL pointwise there.
     @group(0) @binding(7) var hslSelection: texture_2d_array<f32>;
     @group(0) @binding(8) var filmDetailOutput: texture_storage_2d<rgba16float, write>;
+    @group(1) @binding(0) var lensWeights: texture_2d<f32>;
 
     struct VertexOut { @builtin(position) position: vec4f, @location(0) @interpolate(flat) lensComponent: u32 }
 
@@ -3404,7 +3409,7 @@ fn fineGrainResizeBase(@builtin(global_invocation_id) id: vec3u) {
       return max(0.000001,lensComponent(index).x*p[${GPU_PARAMS.LENS_SIZE}]*filmPixelsPerMm(frameDimensions())/(1000.0*spatialScale()));
     }
     fn lensExtent(sigma: f32) -> i32 {
-      let cap = floor(256.0*clamp(p[${GPU_PARAMS.SOURCE_PIXEL_SCALE}],0.05,1.0)/spatialScale());
+      let cap = floor(${LENS_KERNEL_LIMIT}.0*clamp(p[${GPU_PARAMS.SOURCE_PIXEL_SCALE}],0.05,1.0)/spatialScale());
       return i32(min(cap,floor(3.0*sigma+0.5)));
     }
     fn lensSourceAtSpatial(pixel: vec2i) -> vec3f {
@@ -3418,27 +3423,51 @@ fn fineGrainResizeBase(@builtin(global_invocation_id) id: vec3u) {
     @fragment fn lensExtractFragmentMain(input: VertexOut) -> @location(0) vec4f {
       return vec4f(lensSourceAtSpatial(vec2i(input.position.xy)),1.0);
     }
-    @fragment fn lensHorizontalFragmentMain(input: VertexOut) -> @location(0) vec4f {
-      let sigma = lensSigma(input.lensComponent);
+    // One full-precision weight per tap, not an exponential per image pixel.
+    // Both blurs still normalize in the original tap order, and the vertical
+    // pass still blends all 27 components in order into the half-float target.
+    fn lensGaussianWeight(tap: i32, sigma: f32) -> f32 {
+      return exp(-0.5*(f32(tap)/sigma)*(f32(tap)/sigma));
+    }
+    @fragment fn lensWeightsFragmentMain(input: VertexOut) -> @location(0) f32 {
+      let column = i32(input.position.x);
+      let sigma = lensSigma(u32(input.position.y));
       let extent = lensExtent(sigma);
-      let base = vec2i(input.position.xy);
-      var total = vec3f(0.0); var weightTotal = 0.0;
-      for(var x = -extent; x <= extent; x++) {
-        let weight = exp(-0.5*(f32(x)/sigma)*(f32(x)/sigma));
-        total += loadSpatialTexel(base+vec2i(x,0)).rgb*weight; weightTotal += weight;
+      if (column == ${LENS_KERNEL_TAPS}) { return f32(extent); }
+      if (column == ${LENS_KERNEL_TAPS + 1}) {
+        var sum = 0.0;
+        for (var tap = -extent; tap <= extent; tap++) { sum += lensGaussianWeight(tap, sigma); }
+        return sum;
       }
-      return vec4f(total/weightTotal,1.0);
+      let tap = column - ${LENS_KERNEL_LIMIT};
+      return lensGaussianWeight(tap, sigma);
+    }
+    fn lensWeight(column: i32, component: u32) -> f32 {
+      return textureLoad(lensWeights, vec2i(column, i32(component)), 0).r;
+    }
+    @fragment fn lensHorizontalFragmentMain(input: VertexOut) -> @location(0) vec4f {
+      let extent = i32(lensWeight(${LENS_KERNEL_TAPS}, input.lensComponent));
+      let base = vec2i(input.position.xy);
+      let upper = validSpatialDimensions() - vec2i(1);
+      let row = clamp(base.y, 0, upper.y);
+      var total = vec3f(0.0);
+      for (var x = -extent; x <= extent; x++) {
+        let weight = lensWeight(x + ${LENS_KERNEL_LIMIT}, input.lensComponent);
+        total += textureLoad(spatialTexture, vec2i(clamp(base.x + x, 0, upper.x), row), 0).rgb * weight;
+      }
+      return vec4f(total / lensWeight(${LENS_KERNEL_TAPS + 1}, input.lensComponent), 1.0);
     }
     @fragment fn lensVerticalFragmentMain(input: VertexOut) -> @location(0) vec4f {
-      let sigma = lensSigma(input.lensComponent);
-      let extent = lensExtent(sigma);
+      let extent = i32(lensWeight(${LENS_KERNEL_TAPS}, input.lensComponent));
       let base = vec2i(input.position.xy);
-      var total = vec3f(0.0); var weightTotal = 0.0;
-      for(var y = -extent; y <= extent; y++) {
-        let weight = exp(-0.5*(f32(y)/sigma)*(f32(y)/sigma));
-        total += loadSpatialTexel(base+vec2i(0,y)).rgb*weight; weightTotal += weight;
+      let upper = validSpatialDimensions() - vec2i(1);
+      let column = clamp(base.x, 0, upper.x);
+      var total = vec3f(0.0);
+      for (var y = -extent; y <= extent; y++) {
+        let weight = lensWeight(y + ${LENS_KERNEL_LIMIT}, input.lensComponent);
+        total += textureLoad(spatialTexture, vec2i(column, clamp(base.y + y, 0, upper.y)), 0).rgb * weight;
       }
-      return vec4f(total/weightTotal*lensComponent(input.lensComponent).yzw,0.0);
+      return vec4f(total / lensWeight(${LENS_KERNEL_TAPS + 1}, input.lensComponent) * lensComponent(input.lensComponent).yzw, 0.0);
     }
 
     @fragment fn spatialExtractFragmentMain(input: VertexOut) -> @location(0) vec4f {
@@ -3942,7 +3971,7 @@ fn fineGrainResizeBase(@builtin(global_invocation_id) id: vec3u) {
     GRAIN_DENOISE_SHADER_SOURCE, GRAIN_DENOISE_BANDS, GRAIN_DENOISE_RADIUS, GRAIN_FIT_BLOCK, GRAIN_RESIZE_SHADER_SOURCE,
     CLEAN_GRAIN_SHADER_SOURCE, CLEAN_GRAIN_RESIZE_SHADER_SOURCE,
     MICRO_GRAIN_SHADER_SOURCE,
-    SHADER_SOURCE,
+    SHADER_SOURCE, LENS_KERNEL_SIZE,
     LUMA_MASK_SHADER_SOURCE,
   });
 

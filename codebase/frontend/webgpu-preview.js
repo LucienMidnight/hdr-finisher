@@ -160,6 +160,9 @@
       this.paramBuffer = null;
       this.curveBuffer = null;
       this.filmStockBuffer = null;
+      this.lensKernel = null;
+      this.lensKernelLayout = null;
+      this.lensBlurLayout = null;
       this.filmStockPlaceholder = null;
       this.filmStockUploads = new Map();
       this.curveSampleCache = new Map();
@@ -556,6 +559,7 @@
       );
       const parameterBufferBytes = (this.paramBuffer?.size || 0) + (this.curveBuffer?.size || 0)
         + (this.filmStockBuffer?.size || 0)
+        + (this.lensKernel?.bytes || (options.lensKernelActive ? this.lensKernelBytes() : 0))
         + [...this.localParamBuffers.values()].reduce((sum, buffer) => sum + (buffer.size || 0), 0);
       // Resident source levels at their real size, plus a whole-frame source
       // this render is about to load (a region proxy that Direct replaces).
@@ -845,6 +849,7 @@
       this.resetSession(sessionId);
       this.gradeCanvasSwaps.clear();
       this._grainFailures = grainFailures;
+      this.lensKernel?.texture.destroy();
       this.device = null;
       this.adapter = null;
       this.adapterInfo = null;
@@ -876,6 +881,9 @@
       this.paramBuffer = null;
       this.curveBuffer = null;
       this.filmStockBuffer = null;
+      this.lensKernel = null;
+      this.lensKernelLayout = null;
+      this.lensBlurLayout = null;
       this.filmStockPlaceholder = null;
       this.filmStockUploads = new Map();
       this.peakReductionPipeline = null;
@@ -1252,6 +1260,7 @@
       const denoiseResolvedBytes = this.denoiseSourceSelector?.resolved?.byteSize || 0;
       const parameterBufferBytes = (this.paramBuffer?.size || 0) + (this.curveBuffer?.size || 0)
         + (this.filmStockBuffer?.size || 0)
+        + (this.lensKernel?.bytes || 0)
         + [...this.localParamBuffers.values()].reduce((sum, buffer) => sum + (buffer.size || 0), 0)
         + intermediateEntries.reduce((sum, entry) => sum + (entry.compositeParamBuffer?.size || 0), 0)
         + denoiseParameterBufferBytes;
@@ -5873,6 +5882,7 @@
         detailActive: detailActive || localDetailActive,
         spatialActive,
         lensGlowCache,
+        lensKernelActive: lensGlowActive(params),
         // Without this the tiled model sizes its working set to a bare tile
         // while the encoder builds one tile plus its halo, and admission would
         // be decided against a working set nobody allocates. A spatial graph
@@ -6430,6 +6440,7 @@
           (source, spatial, original) => makeBindGroup(source, spatial, this.paramBuffer, original),
           params, proxy.width, proxy.height,
           { interactive: HDRWebGPUPreview.usesDraftGrain(sourceOptions || {}),
+            pruneGrain: sourceOptions?.gradePreview && !sourceOptions?.delivery && !sourceOptions?.measureOnly,
             lensGlowKey, parameterBinding: { buffer: this.paramBuffer } });
         if (!glowEncoded) lensGlowKey = null;
       }
@@ -9441,9 +9452,8 @@
     }
 
     lensGlowCacheKey(proxy, lane, adjustments, locals, params, extra, reuseRegion = false) {
-      // The response pass copies the base/Detail/local result. Mist's kernel
-      // reads that picture, working scale, gate and the lens, before any film
-      // response, resolution loss, halation, grain or finishing transform.
+      // Mist reads the stored base/Detail/local result, working scale, gate
+      // and lens, before film response, resolution loss, halation or grain.
       const branch = adjustments[lane === "sdr" && adjustments.sdr.linked_to_hdr ? "hdr" : lane];
       const {
         film_look, film_look_section_enabled, vignette, vignette_section_enabled, output_exposure,
@@ -9466,6 +9476,26 @@
       ]);
     }
 
+    lensKernelBytes() {
+      const [width, height] = window.HDRWebGPUShaders.LENS_KERNEL_SIZE;
+      return width * height * 4;
+    }
+
+    ensureLensKernel() {
+      if (!this.lensKernel) {
+        const texture = this.device.createTexture({
+          label: "film Mist Gaussian weights", size: window.HDRWebGPUShaders.LENS_KERNEL_SIZE, format: "r32float",
+          usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
+        });
+        const view = texture.createView();
+        const group = this.device.createBindGroup({
+          layout: this.lensKernelLayout, entries: [{ binding: 0, resource: view }],
+        });
+        this.lensKernel = { texture, view, group, bytes: this.lensKernelBytes() };
+      }
+      return this.lensKernel;
+    }
+
     encodeFilmChain(encoder, pipelines, graph, originalView, bind, params, width, height, options = {}) {
       const filmView = graph.filmTexture.createView();
       const finishView = graph.finishTexture.createView();
@@ -9476,7 +9506,7 @@
       const glow = glowTexture?.createView();
       const glowHit = options.lensGlowTile ? options.lensGlowTile.ready
         : Boolean(glow && graph.lensGlowKey === options.lensGlowKey);
-      const pass = (view, pipeline, group, w = width, h = height, instance = 0, accumulate = false) => {
+      const pass = (view, pipeline, group, w = width, h = height, instance = 0, accumulate = false, kernel = null) => {
         const render = encoder.beginRenderPass({ colorAttachments: [{
           view, clearValue: { r: 0, g: 0, b: 0, a: 0 }, loadOp: accumulate ? "load" : "clear", storeOp: "store",
         }] });
@@ -9484,6 +9514,7 @@
         render.setScissorRect(0, 0, w, h);
         render.setPipeline(pipeline);
         render.setBindGroup(0, group);
+        if (kernel) render.setBindGroup(1, kernel);
         render.draw(3,1,0,instance);
         render.end();
       };
@@ -9507,46 +9538,66 @@
       const bloom = lensGlowActive(params);
       const halation = active && params[GPU_PARAMS.HALATION_ENABLED] > 0.5;
       const scatter = active && params[GPU_PARAMS.FILM_RESOLUTION] < 1;
+      // The base, Detail and local targets already hold RGBA16F pixels. Reuse
+      // the stored input, not the shader that produced it, so no film stage
+      // loses the half-float boundary at which its input was rounded.
+      let filmInput = originalView;
       const spatial = () => {
         const grid = graph.spatialGrid || spatialGridScale(width, height);
         const sw = Math.ceil(width / grid), sh = Math.ceil(height / grid);
-        pass(a, pipelines.extract, bind(filmView, b, originalView), sw, sh);
-        pass(b, pipelines.blurHorizontal, bind(filmView, a, originalView), sw, sh);
-        pass(a, pipelines.blurVertical, bind(filmView, b, originalView), sw, sh);
+        pass(a, pipelines.extract, bind(filmInput, b, originalView), sw, sh);
+        pass(b, pipelines.blurHorizontal, bind(filmInput, a, originalView), sw, sh);
+        pass(a, pipelines.blurVertical, bind(filmInput, b, originalView), sw, sh);
       };
-      pass(filmView, pipelines.response, bind(originalView, fallback, originalView));
       if (bloom || scatter) {
         if (bloom) {
           const grid = graph.spatialGrid || spatialGridScale(width, height);
           const sw = Math.ceil(width / grid), sh = Math.ceil(height / grid);
           if (!glowHit) {
             if (options.lensGlowKey) graph.lensGlowKey = null;
-            pass(finishView, pipelines.lensExtract, bind(filmView, fallback, originalView), sw, sh);
-            for (let component = 0; component < 27; component++) {
-              pass(a, pipelines.lensHorizontal, bind(filmView, finishView, originalView), sw, sh, component);
-              pass(b, pipelines.lensVertical, bind(filmView, a, originalView), sw, sh, component, component > 0);
+            const [taps, components] = window.HDRWebGPUShaders.LENS_KERNEL_SIZE;
+            const kernel = this.ensureLensKernel();
+            const extractionInput = bind(originalView, fallback, originalView);
+            // Regenerate in the same command stream that consumes it. A tile
+            // or generation can abort without leaving a cached kernel marked ready.
+            pass(kernel.view, pipelines.lensWeights, extractionInput, taps, components);
+            pass(finishView, pipelines.lensExtract, extractionInput, sw, sh);
+            const horizontalInput = bind(originalView, finishView, originalView);
+            const verticalInput = bind(originalView, a, originalView);
+            for (let component = 0; component < components; component++) {
+              pass(a, pipelines.lensHorizontal, horizontalInput, sw, sh, component, false, kernel.group);
+              pass(b, pipelines.lensVertical, verticalInput, sw, sh, component, component > 0, kernel.group);
             }
             if (glow) encoder.copyTextureToTexture({ texture: graph.spatialBTexture }, { texture: glowTexture }, [sw, sh]);
             this.recordStage("lens-glow", { reused: false, width, height });
           } else this.recordStage("lens-glow", { reused: true, width, height });
         }
-        pass(finishView, pipelines.lens, bind(filmView, glow || b, originalView));
+        // On a lens-only frame the mixed picture already belongs in the
+        // half-float film input. Scatter still needs its own separate store.
+        pass(scatter ? finishView : filmView, pipelines.lens, bind(originalView, glow || b, originalView));
         if (scatter) detailPass("scatter", finishView, filmView);
-        else pass(filmView, pipelines.response, bind(finishView, a, originalView));
+        filmInput = filmView;
       }
       if (halation) spatial();
       const finish = options.interactive ? pipelines.finishInteractive
         : options.pruneGrain ? pipelines.finishPrunedGrain : pipelines.finish;
-      pass(finishView, finish, bind(filmView, a, originalView));
       const structure = params[GPU_PARAMS.STRUCTURE_ENABLED] > 0.5
         && (Math.abs(params[GPU_PARAMS.STRUCTURE_SOFTNESS]) > 0.000001 || Math.abs(params[GPU_PARAMS.STRUCTURE_MICROCONTRAST]) > 0.000001);
       const map = active && ((halation && params[GPU_PARAMS.HALATION_VIEW_MAP] > 0.5)
         || (params[GPU_PARAMS.GRAIN_ENABLED] > 0.5 && params[GPU_PARAMS.GRAIN_VIEW_MAP] > 0.5));
-      pass(filmView, pipelines.scan, bind(finishView, fallback, originalView));
-      if (structure && !map) {
-        detailPass("structure", filmView, finishView);
+      if (filmInput === originalView && !(structure && !map)) {
+        // When no lens/scatter occupies filmView, scan can store directly in
+        // the final target without sampling and writing the same texture.
+        pass(filmView, finish, bind(filmInput, a, originalView));
+        pass(finishView, pipelines.scan, bind(filmView, fallback, originalView));
       } else {
-        pass(finishView, pipelines.response, bind(filmView, fallback, originalView));
+        pass(finishView, finish, bind(filmInput, a, originalView));
+        pass(filmView, pipelines.scan, bind(finishView, fallback, originalView));
+        if (structure && !map) {
+          detailPass("structure", filmView, finishView);
+        } else {
+          pass(finishView, pipelines.response, bind(filmView, fallback, originalView));
+        }
       }
       return Boolean(bloom && glow);
     }
@@ -9716,19 +9767,30 @@
         fragment:{module:this.module,entryPoint:"lensExtractFragmentMain",targets:[{format:"rgba16float"}]},
         primitive:{topology:"triangle-list"},
       });
-      const lensHorizontal = create({
+      if (!this.lensBlurLayout) {
+        this.lensKernelLayout = this.device.createBindGroupLayout({ entries: [
+          { binding: 0, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: "unfilterable-float" } },
+        ] });
+        this.lensBlurLayout = this.device.createPipelineLayout({ bindGroupLayouts: [this.bindGroupLayout, this.lensKernelLayout] });
+      }
+      const lensWeights = create({
         layout:this.pipelineLayout, vertex:{module:this.module,entryPoint:"vertexMain"},
+        fragment:{module:this.module,entryPoint:"lensWeightsFragmentMain",targets:[{format:"r32float"}]},
+        primitive:{topology:"triangle-list"},
+      });
+      const lensHorizontal = create({
+        layout:this.lensBlurLayout, vertex:{module:this.module,entryPoint:"vertexMain"},
         fragment:{module:this.module,entryPoint:"lensHorizontalFragmentMain",targets:[{format:"rgba16float"}]},
         primitive:{topology:"triangle-list"},
       });
       const lensVertical = create({
-        layout:this.pipelineLayout, vertex:{module:this.module,entryPoint:"vertexMain"},
+        layout:this.lensBlurLayout, vertex:{module:this.module,entryPoint:"vertexMain"},
         fragment:{module:this.module,entryPoint:"lensVerticalFragmentMain",targets:[{format:"rgba16float",
           blend:{color:{operation:"add",srcFactor:"one",dstFactor:"one"},alpha:{operation:"add",srcFactor:"one",dstFactor:"one"}}}]},
         primitive:{topology:"triangle-list"},
       });
       const pipelines = {
-        lensExtract, lensHorizontal, lensVertical,
+        lensExtract, lensWeights, lensHorizontal, lensVertical,
         peakCandidateLocal: create({
           layout: this.pipelineLayout,
           vertex: { module: this.module, entryPoint: "vertexMain" },
