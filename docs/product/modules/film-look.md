@@ -23,8 +23,9 @@ The fit conserves red, green and blue energy, but can slightly redistribute
 light between sharp points, halo and veil in previously authored Mist grades.
 Steve's before-and-after visual review is still needed.
 
-The GPU weight table falls from 515 × 27 to 515 × 8 R32F (about 56 KB to
-16 KB). No new image textures or cache budget. Tile planning uses the widest
+The GPU pairs opposite taps without resampling, so its weight table falls from
+515 × 27 to 259 × 8 R32F (about 56 KB to 8 KB). No new image textures or
+cache budget. Tile planning uses the widest
 fitted lobe with the same reach cap and grid alignment. CPU delivery continues
 to convolve in bounded blocks. The original point-spread coefficients remain
 test references to check the intentional look change. The delivery limits are

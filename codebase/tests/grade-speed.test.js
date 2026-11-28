@@ -216,7 +216,8 @@ test('lens cache skips only the summed glow and grain quality changes only the f
   assert.equal(allocations.length, 1);
   assert.equal(allocations[0].format, 'r32float');
   assert.deepEqual(passes.slice(0, 2), ['lensWeights', 'lensExtract']);
-  assert.equal(passes.filter(pass => pass === 'lensVertical').length, 27);
+  assert.equal(passes.filter(pass => pass === 'lensVertical').length, 8,
+    'a cache miss runs one vertical pass for each of the eight fitted Mist lobes');
   assert.ok(passes.includes('finishInteractive'));
   assert.equal(copies, 1);
   graph.lensGlowKey = 'same';
